@@ -164,8 +164,10 @@
 
                 <!-- Месяц -->
                 <div class="card" style="padding:20px">
-                    <label class="form-label" style="margin-bottom:10px">Выбери месяц</label>
-                    <select name="month" required class="form-select">
+                    <label class="form-label" style="margin-bottom:10px">
+                        Выбери месяц <span style="color:#DC2626" aria-hidden="true">*</span>
+                    </label>
+                    <select name="month" required class="form-select" aria-required="true">
                         <option value="">— выберите месяц —</option>
                         {% for m in months %}
                         <option value="{{ m }}">{{ m | capitalize }}</option>
@@ -208,7 +210,8 @@
                     Загрузили все фото «До»? Нажмите кнопку ниже — раздел закроется навсегда
                     и откроется раздел «После».
                 </p>
-                <form action="/upload/finish-before" method="post">
+                <form action="/upload/finish-before" method="post"
+                      onsubmit="return confirm('Вы уверены? Раздел «До» закроется навсегда и больше нельзя будет добавить фото.')">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                     <button type="submit" class="btn-finish-before">
                         ✓ Завершить раздел «До»
@@ -224,15 +227,30 @@
                 <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:14px">Как загружать</div>
                 <div style="display:flex;flex-direction:column;gap:12px">
                     <div style="display:flex;gap:12px;align-items:flex-start">
-                        <span style="font-size:18px;flex-shrink:0">📁</span>
+                        <span style="flex-shrink:0;color:var(--accent);margin-top:1px" aria-hidden="true">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                            </svg>
+                        </span>
                         <div style="font-size:13px;color:var(--muted);line-height:1.5">Перетащите фото в область загрузки или нажмите на неё</div>
                     </div>
                     <div style="display:flex;gap:12px;align-items:flex-start">
-                        <span style="font-size:18px;flex-shrink:0">📐</span>
+                        <span style="flex-shrink:0;color:var(--accent);margin-top:1px" aria-hidden="true">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                <circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+                            </svg>
+                        </span>
                         <div style="font-size:13px;color:var(--muted);line-height:1.5">JPG, PNG или WebP · до 10 МБ каждый · до {{ max_files }} штук за раз</div>
                     </div>
                     <div style="display:flex;gap:12px;align-items:flex-start">
-                        <span style="font-size:18px;flex-shrink:0">📅</span>
+                        <span style="flex-shrink:0;color:var(--accent);margin-top:1px" aria-hidden="true">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+                                <line x1="3" y1="10" x2="21" y2="10"/>
+                            </svg>
+                        </span>
                         <div style="font-size:13px;color:var(--muted);line-height:1.5">Выберите месяц, к которому относятся работы</div>
                     </div>
                 </div>
@@ -298,6 +316,7 @@ function renderPreviews() {
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'preview-remove';
+        btn.setAttribute('aria-label', 'Удалить фото ' + (i + 1));
         btn.textContent = '\u2715';
         btn.onclick = function() { removeFile(i); };
         wrap.appendChild(btn);

@@ -11,6 +11,7 @@ import logging
 from datetime import datetime, timezone, timedelta, date
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db.database import SessionLocal
 from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
@@ -90,11 +91,23 @@ def _run_notification_check() -> None:
                     )
                     existing_assigned = {row.user_id for row in existing_all}
                     missing = all_student_ids - existing_assigned
-                    for uid in missing:
-                        a = ExamTicketAssignee(ticket_id=ticket_id, user_id=uid)
-                        db.add(a)
-                        pending.append(a)  # добавим в pending для уведомления
-                db.flush()
+                    if missing:
+                        stmt = pg_insert(ExamTicketAssignee).values(
+                            [{"ticket_id": ticket_id, "user_id": uid} for uid in missing]
+                        ).on_conflict_do_nothing(index_elements=["ticket_id", "user_id"])
+                        db.execute(stmt)
+                        db.flush()
+                        # reload pending для только что добавленных
+                        new_assignees = (
+                            db.query(ExamTicketAssignee)
+                            .filter(
+                                ExamTicketAssignee.ticket_id == ticket_id,
+                                ExamTicketAssignee.user_id.in_(missing),
+                                ExamTicketAssignee.notified_at.is_(None),
+                            )
+                            .all()
+                        )
+                        pending.extend(new_assignees)
 
         # Отправляем уведомления
         now = datetime.now(timezone.utc)

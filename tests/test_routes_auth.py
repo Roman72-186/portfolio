@@ -1,9 +1,11 @@
 """Tests for authentication routes: /, /auth/link, /auth/vk/login, /logout, SSO."""
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
 import pytest
 
+import app.api.auth as auth_module
 from app.config import settings as _app_settings
 from app.models.session import Session as DbSession
 from app.services.auth_links import issue_one_time_login_link, issue_sso_token
@@ -76,6 +78,188 @@ def test_vk_login_redirects_to_vk_when_configured(client, monkeypatch):
     resp = client.get("/auth/vk/login", follow_redirects=False)
     assert resp.status_code == 302
     assert "vk.com" in resp.headers["location"] or "id.vk.com" in resp.headers["location"]
+
+
+def test_vk_login_stores_pkce_in_redis(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "vk_app_id", "12345")
+    monkeypatch.setattr(settings, "vk_app_secret", "secret")
+    monkeypatch.setattr(settings, "vk_group_id", 99999)
+
+    captured = {}
+
+    def fake_set_vk_pkce(state: str, code_verifier: str, ttl: int = 300) -> bool:
+        captured["state"] = state
+        captured["code_verifier"] = code_verifier
+        captured["ttl"] = ttl
+        return True
+
+    monkeypatch.setattr(auth_module, "set_vk_pkce", fake_set_vk_pkce)
+
+    resp = client.get("/auth/vk/login", follow_redirects=False)
+
+    assert resp.status_code == 302
+    state = parse_qs(urlparse(resp.headers["location"]).query)["state"][0]
+    assert captured["state"] == state
+    assert captured["code_verifier"]
+    assert captured["ttl"] == 300
+
+    pkce_cookie = resp.cookies.get("pkce_cv")
+    assert pkce_cookie
+    cookie_data = auth_module._signer.loads(pkce_cookie, max_age=300)
+    assert cookie_data["st"] == state
+    assert cookie_data["v"] == 2
+
+
+def test_vk_callback_succeeds_with_redis_pkce(client, monkeypatch):
+    async def fake_exchange_code(code: str, code_verifier: str, device_id: str) -> dict:
+        assert code == "good-code"
+        assert code_verifier == "redis-verifier"
+        assert device_id == "device-123"
+        return {"access_token": "token-123", "user_id": 658607006}
+
+    async def fake_check_group_membership(*_args, **_kwargs) -> bool:
+        return True
+
+    async def fake_get_user_info(*_args, **_kwargs) -> dict:
+        return {
+            "vk_id": 658607006,
+            "name": "Test Student",
+            "first_name": "Test",
+            "last_name": "Student",
+            "photo_url": None,
+        }
+
+    async def fake_sync_drive_works(*_args, **_kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(auth_module, "pop_vk_pkce", lambda state: {
+        "code_verifier": "redis-verifier",
+        "created_at": "2026-04-19T00:00:00+00:00",
+    } if state == "redis-state" else None)
+    monkeypatch.setattr(auth_module, "exchange_code", fake_exchange_code)
+    monkeypatch.setattr(auth_module, "check_group_membership", fake_check_group_membership)
+    monkeypatch.setattr(auth_module, "get_user_info", fake_get_user_info)
+    monkeypatch.setattr(auth_module.drive_service, "sync_drive_works", fake_sync_drive_works)
+
+    resp = client.get(
+        "/auth/vk/callback?code=good-code&state=redis-state&device_id=device-123",
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/cabinet"
+    assert "session_id" in resp.cookies
+
+
+def test_vk_callback_missing_redis_pkce_shows_session_error(client, monkeypatch):
+    monkeypatch.setattr(auth_module, "pop_vk_pkce", lambda _state: None)
+
+    resp = client.get(
+        "/auth/vk/callback?code=good-code&state=missing-state&device_id=device-123",
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 200
+    assert "Ошибка сессии" in resp.text or "очистите cookies" in resp.text
+
+
+def test_vk_callback_rejects_replay_after_redis_pkce_is_consumed(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "vk_app_id", "12345")
+    monkeypatch.setattr(settings, "vk_app_secret", "secret")
+    monkeypatch.setattr(settings, "vk_group_id", 99999)
+    monkeypatch.setattr(auth_module, "set_vk_pkce", lambda *_args, **_kwargs: True)
+
+    async def fake_exchange_code(_code: str, code_verifier: str, _device_id: str) -> dict:
+        assert code_verifier == "redis-verifier"
+        return {"access_token": "token-123", "user_id": 658607006}
+
+    async def fake_check_group_membership(*_args, **_kwargs) -> bool:
+        return True
+
+    async def fake_get_user_info(*_args, **_kwargs) -> dict:
+        return {
+            "vk_id": 658607006,
+            "name": "Replay User",
+            "first_name": "Replay",
+            "last_name": "User",
+            "photo_url": None,
+        }
+
+    async def fake_sync_drive_works(*_args, **_kwargs) -> None:
+        return None
+
+    pop_results = iter([
+        {"code_verifier": "redis-verifier", "created_at": "2026-04-19T00:00:00+00:00"},
+        None,
+    ])
+
+    monkeypatch.setattr(auth_module, "pop_vk_pkce", lambda _state: next(pop_results))
+    monkeypatch.setattr(auth_module, "exchange_code", fake_exchange_code)
+    monkeypatch.setattr(auth_module, "check_group_membership", fake_check_group_membership)
+    monkeypatch.setattr(auth_module, "get_user_info", fake_get_user_info)
+    monkeypatch.setattr(auth_module.drive_service, "sync_drive_works", fake_sync_drive_works)
+
+    login_resp = client.get("/auth/vk/login", follow_redirects=False)
+    state = parse_qs(urlparse(login_resp.headers["location"]).query)["state"][0]
+
+    first = client.get(
+        f"/auth/vk/callback?code=good-code&state={state}&device_id=device-123",
+        follow_redirects=False,
+    )
+    second = client.get(
+        f"/auth/vk/callback?code=good-code&state={state}&device_id=device-123",
+        follow_redirects=False,
+    )
+
+    assert first.status_code == 302
+    assert second.status_code == 200
+    assert "Ошибка сессии" in second.text or "очистите cookies" in second.text
+
+
+def test_vk_callback_legacy_cookie_fallback_still_works(client, monkeypatch):
+    legacy_cookie = auth_module._signer.dumps({
+        "cv": "legacy-verifier",
+        "st": "legacy-state",
+    })
+    client.cookies.set("pkce_cv", legacy_cookie)
+
+    async def fake_exchange_code(_code: str, code_verifier: str, _device_id: str) -> dict:
+        assert code_verifier == "legacy-verifier"
+        return {"access_token": "token-legacy", "user_id": 658607006}
+
+    async def fake_check_group_membership(*_args, **_kwargs) -> bool:
+        return True
+
+    async def fake_get_user_info(*_args, **_kwargs) -> dict:
+        return {
+            "vk_id": 658607006,
+            "name": "Legacy User",
+            "first_name": "Legacy",
+            "last_name": "User",
+            "photo_url": None,
+        }
+
+    async def fake_sync_drive_works(*_args, **_kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(auth_module, "pop_vk_pkce", lambda _state: None)
+    monkeypatch.setattr(auth_module, "exchange_code", fake_exchange_code)
+    monkeypatch.setattr(auth_module, "check_group_membership", fake_check_group_membership)
+    monkeypatch.setattr(auth_module, "get_user_info", fake_get_user_info)
+    monkeypatch.setattr(auth_module.drive_service, "sync_drive_works", fake_sync_drive_works)
+
+    resp = client.get(
+        "/auth/vk/callback?code=legacy-code&state=legacy-state&device_id=device-123",
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/cabinet"
+    assert "session_id" in resp.cookies
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query
@@ -12,7 +12,8 @@ from app.constants import FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM, FEATURE_R
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf
 from app.models.feature_period import FeaturePeriod
-from app.services.tz import today_msk
+from app.services.tz import today_msk, msk_midnight
+from app.services.feature_periods import get_active_period
 from app.models.notification import Notification
 from app.models.role import Role
 from app.models.user import User
@@ -71,11 +72,23 @@ def _load_dashboard_data(db: DBSession, now: datetime) -> dict:
         .scalar()
     )
     avg_score = round(float(avg_score_raw)) if avg_score_raw is not None else None
-    unscored_mocks = (
-        db.query(func.count(Work.id))
-        .filter(Work.work_type == WORK_TYPE_MOCK_EXAM, Work.score.is_(None), Work.status == "success")
-        .scalar() or 0
-    )
+    mock_period = get_active_period(db, FEATURE_MOCK_EXAM)
+    if mock_period:
+        _mock_start = msk_midnight(mock_period.start_date)
+        _mock_end = msk_midnight(mock_period.end_date + timedelta(days=1))
+        unscored_mocks = (
+            db.query(func.count(Work.id))
+            .filter(
+                Work.work_type == WORK_TYPE_MOCK_EXAM,
+                Work.score.is_(None),
+                Work.status == "success",
+                Work.created_at >= _mock_start,
+                Work.created_at < _mock_end,
+            )
+            .scalar() or 0
+        )
+    else:
+        unscored_mocks = 0
 
     # Curators list (read-only)
     StudentAlias = aliased(User)

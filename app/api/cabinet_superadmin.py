@@ -1,24 +1,24 @@
 import secrets
 import string
 import uuid
-from datetime import datetime, timezone, date
+from datetime import datetime, timedelta, timezone, date
 from typing import Annotated
 
 import bcrypt as _bcrypt_lib
-from fastapi import APIRouter, Request, Depends, Form, HTTPException, UploadFile, File
+from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session as DBSession, aliased
 
 from app.config import settings
-from app.constants import MOCK_SUBJECTS, FEATURE_LABELS, FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM, FEATURE_RETAKE
+from app.constants import MOCK_SUBJECTS, FEATURE_LABELS, FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM, FEATURE_RETAKE, TARIFFS
 from app.db.database import get_db
 from app.dependencies import require_superadmin, require_admin_role, require_csrf
 from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
 from app.models.feature_period import FeaturePeriod
-from app.services.feature_periods import invalidate_feature_cache
-from app.services.tz import today_msk
+from app.services.feature_periods import invalidate_feature_cache, get_active_period
+from app.services.tz import today_msk, msk_midnight
 from app.models.role import Role
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
@@ -111,11 +111,23 @@ def _load_dashboard_data(db: DBSession, now: datetime) -> dict:
         .scalar()
     )
     avg_score = round(float(avg_score_raw)) if avg_score_raw is not None else None
-    unscored_mocks = (
-        db.query(func.count(Work.id))
-        .filter(Work.work_type == WORK_TYPE_MOCK_EXAM, Work.score.is_(None), Work.status == "success")
-        .scalar() or 0
-    )
+    mock_period = get_active_period(db, FEATURE_MOCK_EXAM)
+    if mock_period:
+        _mock_start = msk_midnight(mock_period.start_date)
+        _mock_end = msk_midnight(mock_period.end_date + timedelta(days=1))
+        unscored_mocks = (
+            db.query(func.count(Work.id))
+            .filter(
+                Work.work_type == WORK_TYPE_MOCK_EXAM,
+                Work.score.is_(None),
+                Work.status == "success",
+                Work.created_at >= _mock_start,
+                Work.created_at < _mock_end,
+            )
+            .scalar() or 0
+        )
+    else:
+        unscored_mocks = 0
 
     # ── Curators (rank 2) ─────────────────────────────────────────────────────
     # Limit: max 100 curators (защита от медленной выборки)
@@ -902,16 +914,26 @@ def superadmin_users(
     user: Annotated[dict, Depends(require_superadmin)],
     db: Annotated[DBSession, Depends(get_db)],
     q: str = "",
-    role_rank: int | None = None,
-    show_deleted: bool = False,
+    role_rank: str = Query(default=""),
+    tariff: str = "",
+    show_deleted: str = "",
+    show_blocked: str = "",
     page: int = 1,
 ):
+    role_rank_int: int | None = int(role_rank) if role_rank.strip() else None
+    show_deleted: bool = show_deleted.strip() in ("1", "true", "on", "yes")
+    show_blocked: bool = show_blocked.strip() in ("1", "true", "on", "yes")
+
     page = max(1, page)
     query = db.query(User).outerjoin(Role, User.role_id == Role.id)
-    if not show_deleted:
+    if show_blocked:
+        query = query.filter(User.is_active == False, User.deleted_at.is_(None))  # noqa: E712
+    elif not show_deleted:
         query = query.filter(User.deleted_at.is_(None))
-    if role_rank is not None:
-        query = query.filter(Role.rank == role_rank)
+    if role_rank_int is not None:
+        query = query.filter(Role.rank == role_rank_int)
+    if tariff.strip():
+        query = query.filter(User.tariff == tariff.strip())
     if q.strip():
         like = f"%{q.strip()}%"
         query = query.filter(
@@ -922,16 +944,24 @@ def superadmin_users(
     total = query.count()
     total_pages = max(1, (total + _SU_PAGE_SIZE - 1) // _SU_PAGE_SIZE)
     page = min(page, total_pages)
-    users = query.order_by(User.created_at.desc()).offset((page - 1) * _SU_PAGE_SIZE).limit(_SU_PAGE_SIZE).all()
+    users = (
+        query.order_by(User.created_at.desc())
+        .offset((page - 1) * _SU_PAGE_SIZE)
+        .limit(_SU_PAGE_SIZE)
+        .all()
+    )
     roles = db.query(Role).order_by(Role.rank).all()
     return templates.TemplateResponse("superadmin_users.html", {
         "request": request,
         "user": user,
         "users": users,
         "roles": roles,
+        "tariffs": TARIFFS,
         "q": q,
         "role_rank": role_rank,
+        "tariff": tariff,
         "show_deleted": show_deleted,
+        "show_blocked": show_blocked,
         "current_user_id": user["user_id"],
         "page": page,
         "total_pages": total_pages,

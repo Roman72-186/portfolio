@@ -486,8 +486,6 @@ def mock_exam_form(
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    if not user.get("portfolio_do_completed"):
-        return RedirectResponse("/upload", status_code=302)
     fa, fm = is_feature_available(db, FEATURE_MOCK_EXAM)
     return _render_mock(request, user, db, feature_available=fa, feature_message=fm)
 
@@ -505,9 +503,6 @@ def mock_exam_start(
     Возвращает JSON с данными билета и started_at для старта клиентского таймера.
     """
     from fastapi.responses import JSONResponse
-
-    if not user.get("portfolio_do_completed"):
-        return JSONResponse({"error": "portfolio_not_completed"}, status_code=403)
 
     fa, _ = is_feature_available(db, FEATURE_MOCK_EXAM)
     if not fa:
@@ -595,9 +590,6 @@ async def upload_mock_exam(
     photos: list[UploadFile] = File(...),
     subject: str = Form(...),
 ):
-    if not user.get("portfolio_do_completed"):
-        return RedirectResponse("/upload", status_code=302)
-
     fa, fm = is_feature_available(db, FEATURE_MOCK_EXAM)
     if not fa:
         return _render_mock(request, user, db, feature_available=fa, feature_message=fm)
@@ -706,8 +698,6 @@ def retake_form(
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    if not user.get("portfolio_do_completed"):
-        return RedirectResponse("/upload", status_code=302)
     fa, fm = is_feature_available(db, FEATURE_RETAKE)
     return _render_retake(request, user, feature_available=fa, feature_message=fm)
 
@@ -724,9 +714,6 @@ async def upload_retake(
     photos: list[UploadFile] = File(...),
     student_score: float = Form(...),
 ):
-    if not user.get("portfolio_do_completed"):
-        return RedirectResponse("/upload", status_code=302)
-
     fa, fm = is_feature_available(db, FEATURE_RETAKE)
     if not fa:
         return _render_retake(request, user, feature_available=fa, feature_message=fm)

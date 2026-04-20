@@ -10,7 +10,7 @@
 import asyncio
 import logging
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query, UploadFile, File
@@ -19,7 +19,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session, invalidate_unread
-from app.constants import MOCK_SUBJECTS, MONTHS, TARIFFS
+from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, MONTHS, TARIFFS
 from app.db.database import get_db
 from app.dependencies import get_current_user, require_admin_role, require_csrf
 from app.models.session import Session
@@ -33,6 +33,8 @@ from app.models.work import (
     WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE,
 )
 from app.services import s3 as s3_service
+from app.services.feature_periods import get_active_period
+from app.services.tz import msk_midnight
 from app.services.utils import compress_image, study_duration_text, group_works
 from app.tmpl import templates
 
@@ -54,8 +56,19 @@ def _require_student_panel(
     raise HTTPException(status_code=403, detail="Нет доступа")
 
 
-def _get_accessible_students(user: dict, db: DBSession) -> list:
-    """Возвращает список студентов доступных текущему пользователю."""
+def _get_accessible_students(
+    user: dict,
+    db: DBSession,
+    *,
+    has_unchecked_mocks: bool = False,
+    mock_period_submitted: bool = False,
+) -> list:
+    """Возвращает список студентов доступных текущему пользователю.
+
+    Жёсткие фильтры (`has_unchecked_mocks`, `mock_period_submitted`)
+    применяются только для admin/superadmin (rank>=4). Для куратора
+    игнорируются.
+    """
     if user["role_rank"] == 2:
         return (
             db.query(User)
@@ -67,12 +80,32 @@ def _get_accessible_students(user: dict, db: DBSession) -> list:
     student_role = db.query(Role).filter(Role.rank == 1).first()
     if not student_role:
         return []
-    return (
-        db.query(User)
-        .filter(User.role_id == student_role.id, User.is_active == True)
-        .order_by(User.last_name, User.first_name)
-        .all()
-    )
+
+    q = db.query(User).filter(User.role_id == student_role.id, User.is_active == True)
+
+    if has_unchecked_mocks or mock_period_submitted:
+        active_period = get_active_period(db, FEATURE_MOCK_EXAM)
+        if not active_period:
+            # Фильтры требуют активного периода — его нет → пустая выборка.
+            return []
+        _mp_start = msk_midnight(active_period.start_date)
+        _mp_end = msk_midnight(active_period.end_date + timedelta(days=1))
+
+        sub = db.query(Work.user_id).filter(
+            Work.work_type == WORK_TYPE_MOCK_EXAM,
+            Work.status == "success",
+            Work.created_at >= _mp_start,
+            Work.created_at < _mp_end,
+        )
+        if has_unchecked_mocks:
+            sub = sub.filter(Work.score.is_(None))
+        q = q.filter(User.id.in_(sub.distinct()))
+
+    return q.order_by(User.last_name, User.first_name).all()
+
+
+def _parse_bool(s: str) -> bool:
+    return s.lower() in ("1", "true", "yes", "on")
 
 
 def _check_access(student_id: int, user: dict, db: DBSession) -> User:
@@ -95,6 +128,7 @@ def _enrich(s: User, counts_by_user: dict, avg_by_user: dict) -> dict:
         "upload_count": counts_by_user.get(s.id, 0),
         "curator_id": s.curator_id or 0,
         "enrollment_year": s.enrollment_year or 0,
+        "tg_username": (s.tg_username or "").lstrip("@").lower(),
     }
 
 
@@ -107,8 +141,24 @@ def students_panel(
     db: Annotated[DBSession, Depends(get_db)],
     student: int = Query(0),
     tab: str = Query("portfolio"),
+    has_unchecked_mocks: str = Query(""),
+    mock_period_submitted: str = Query(""),
 ):
-    students = _get_accessible_students(user, db)
+    is_admin_panel = user["role_rank"] >= 4
+    has_unchecked = is_admin_panel and _parse_bool(has_unchecked_mocks)
+    mock_submitted = is_admin_panel and _parse_bool(mock_period_submitted)
+
+    students = _get_accessible_students(
+        user, db,
+        has_unchecked_mocks=has_unchecked,
+        mock_period_submitted=mock_submitted,
+    )
+
+    active_hard_filters: list[dict] = []
+    if has_unchecked:
+        active_hard_filters.append({"key": "has_unchecked_mocks", "label": "Непроверенные пробники"})
+    if mock_submitted:
+        active_hard_filters.append({"key": "mock_period_submitted", "label": "Сдавал в текущий период"})
 
     counts_by_user: dict = {}
     avg_by_user: dict = {}
@@ -179,6 +229,8 @@ def students_panel(
         "show_curator_filter": show_curator_filter,
         "curators": curators,
         "enrollment_years": enrollment_years,
+        "active_hard_filters": active_hard_filters,
+        "is_admin_panel": is_admin_panel,
     })
 
 
@@ -299,15 +351,26 @@ def get_mock_exams(
     student_id: int,
     user: Annotated[dict, Depends(_require_student_panel)],
     db: Annotated[DBSession, Depends(get_db)],
+    period_only: str = Query(""),
 ):
     student = _check_access(student_id, user, db)
     enrolled_at = student.enrolled_at or student.created_at
 
-    mock_works = (
+    period_only_bool = period_only.lower() in ("1", "true", "yes", "on")
+    active_period = get_active_period(db, FEATURE_MOCK_EXAM) if period_only_bool else None
+
+    q = (
         db.query(Work)
         .filter(Work.user_id == student_id, Work.work_type == WORK_TYPE_MOCK_EXAM, Work.status == "success")
-        .order_by(Work.created_at.desc()).limit(100).all()
     )
+    if active_period:
+        _mp_start = msk_midnight(active_period.start_date)
+        _mp_end = msk_midnight(active_period.end_date + timedelta(days=1))
+        q = q.filter(Work.created_at >= _mp_start, Work.created_at < _mp_end)
+    elif period_only_bool:
+        # Period requested, but none active → show nothing
+        q = q.filter(Work.id < 0)
+    mock_works = q.order_by(Work.created_at.desc()).limit(100).all()
     scored = [w for w in mock_works if w.score is not None]
     avg_score = round(sum(float(w.score) for w in scored) / len(scored)) if scored else None
 
@@ -342,6 +405,8 @@ def get_mock_exams(
             for subject, works_list in works_by_subject.items()
         },
         "mock_locks": locks,
+        "period_only": period_only_bool,
+        "period_active": bool(active_period),
     })
 
 

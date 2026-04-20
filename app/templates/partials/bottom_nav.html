@@ -18,11 +18,11 @@
 .nav-btn:hover { color: var(--accent); background: var(--accent-soft); opacity: 1; }
 .nav-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; border-radius: 8px; }
 .nav-btn.nav-active { color: var(--accent); }
-.nav-btn-icon { font-size: 22px; line-height: 1; }
+.nav-btn-icon { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }
 .nav-btn.nav-disabled { opacity: 0.35; cursor: default; pointer-events: none; }
 .nav-soon-badge {
     font-size: 8px; font-weight: 700; letter-spacing: 0.05em;
-    background: var(--surface); color: var(--dim);
+    background: var(--bg2); color: var(--dim);
     border-radius: 6px; padding: 1px 5px; text-transform: uppercase;
 }
 </style>
@@ -35,36 +35,74 @@
         <span class="desk-brand-name">Портфолио</span>
     </div>
 
-    <nav class="desk-nav">
-        <a href="/cabinet" class="desk-nav-item {% if active_tab == '' %}desk-nav-active{% endif %}">
-            <span class="desk-nav-icon">👤</span>
+    <nav class="desk-nav" aria-label="Главное меню">
+        <a href="/cabinet" class="desk-nav-item {% if active_tab == '' %}desk-nav-active{% endif %}"
+           {% if active_tab == '' %}aria-current="page"{% endif %}>
+            <span class="desk-nav-icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                </svg>
+            </span>
             <span>Кабинет</span>
         </a>
-        <a href="/cabinet/portfolio" class="desk-nav-item {% if active_tab == 'portfolio' %}desk-nav-active{% endif %}">
-            <span class="desk-nav-icon">📷</span>
+        <a href="/cabinet/portfolio" class="desk-nav-item {% if active_tab == 'portfolio' %}desk-nav-active{% endif %}"
+           {% if active_tab == 'portfolio' %}aria-current="page"{% endif %}>
+            <span class="desk-nav-icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
+                </svg>
+            </span>
             <span>Портфолио</span>
         </a>
-        <a href="/upload/mock-exam" class="desk-nav-item {% if active_tab == 'mock' %}desk-nav-active{% endif %}">
-            <span class="desk-nav-icon">⭐</span>
+        <a href="/upload/mock-exam" class="desk-nav-item {% if active_tab == 'mock' %}desk-nav-active{% endif %}"
+           {% if active_tab == 'mock' %}aria-current="page"{% endif %}>
+            <span class="desk-nav-icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                </svg>
+            </span>
             <span>Пробник</span>
         </a>
-        <a href="/upload/retake" class="desk-nav-item {% if active_tab == 'retake' %}desk-nav-active{% endif %}">
-            <span class="desk-nav-icon">📝</span>
+        <a href="/upload/retake" class="desk-nav-item {% if active_tab == 'retake' %}desk-nav-active{% endif %}"
+           {% if active_tab == 'retake' %}aria-current="page"{% endif %}>
+            <span class="desk-nav-icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+            </span>
             <span>Отработка</span>
         </a>
-        <a href="/cabinet/scores" class="desk-nav-item {% if active_tab == 'scores' %}desk-nav-active{% endif %}">
-            <span class="desk-nav-icon">📊</span>
+        <a href="/cabinet/scores" class="desk-nav-item {% if active_tab == 'scores' %}desk-nav-active{% endif %}"
+           {% if active_tab == 'scores' %}aria-current="page"{% endif %}>
+            <span class="desk-nav-icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
+                    <line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/>
+                </svg>
+            </span>
             <span>Баллы</span>
         </a>
-        <a href="/3dlab" class="desk-nav-item {% if active_tab == '3dlab' %}desk-nav-active{% endif %}">
-            <span class="desk-nav-icon">🧊</span>
+        <a href="/3dlab" class="desk-nav-item {% if active_tab == '3dlab' %}desk-nav-active{% endif %}"
+           {% if active_tab == '3dlab' %}aria-current="page"{% endif %}>
+            <span class="desk-nav-icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
+                </svg>
+            </span>
             <span>3D Лаб</span>
         </a>
     </nav>
 
     <div class="desk-nav-footer">
         <a href="/auth/logout" class="desk-nav-item desk-nav-logout">
-            <span class="desk-nav-icon">↩</span>
+            <span class="desk-nav-icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                    <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+            </span>
             <span>Выйти</span>
         </a>
     </div>
@@ -72,29 +110,62 @@
 
 <!-- ── Mobile bottom nav ── -->
 <div id="nav-loader"></div>
-<nav class="bottom-nav">
-    <a href="/cabinet/student" class="nav-btn {% if active_tab == '' %}nav-active{% endif %}">
-        <span class="nav-btn-icon">👤</span>
+<nav class="bottom-nav" aria-label="Главное меню">
+    <a href="/cabinet/student" class="nav-btn {% if active_tab == '' %}nav-active{% endif %}"
+       {% if active_tab == '' %}aria-current="page"{% endif %} aria-label="Кабинет">
+        <span class="nav-btn-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+            </svg>
+        </span>
         <span>Кабинет</span>
     </a>
-    <a href="/cabinet/portfolio" class="nav-btn {% if active_tab == 'portfolio' %}nav-active{% endif %}">
-        <span class="nav-btn-icon">📷</span>
+    <a href="/cabinet/portfolio" class="nav-btn {% if active_tab == 'portfolio' %}nav-active{% endif %}"
+       {% if active_tab == 'portfolio' %}aria-current="page"{% endif %} aria-label="Портфолио">
+        <span class="nav-btn-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
+            </svg>
+        </span>
         <span>Портфолио</span>
     </a>
-    <a href="/upload/mock-exam" class="nav-btn {% if active_tab == 'mock' %}nav-active{% endif %}">
-        <span class="nav-btn-icon">⭐</span>
+    <a href="/upload/mock-exam" class="nav-btn {% if active_tab == 'mock' %}nav-active{% endif %}"
+       {% if active_tab == 'mock' %}aria-current="page"{% endif %} aria-label="Пробник">
+        <span class="nav-btn-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+        </span>
         <span>Пробник</span>
     </a>
-    <a href="/upload/retake" class="nav-btn {% if active_tab == 'retake' %}nav-active{% endif %}">
-        <span class="nav-btn-icon">📝</span>
+    <a href="/upload/retake" class="nav-btn {% if active_tab == 'retake' %}nav-active{% endif %}"
+       {% if active_tab == 'retake' %}aria-current="page"{% endif %} aria-label="Отработка">
+        <span class="nav-btn-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+        </span>
         <span>Отработка</span>
     </a>
-    <a href="/cabinet/scores" class="nav-btn {% if active_tab == 'scores' %}nav-active{% endif %}">
-        <span class="nav-btn-icon">📊</span>
+    <a href="/cabinet/scores" class="nav-btn {% if active_tab == 'scores' %}nav-active{% endif %}"
+       {% if active_tab == 'scores' %}aria-current="page"{% endif %} aria-label="Баллы">
+        <span class="nav-btn-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
+                <line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/>
+            </svg>
+        </span>
         <span>Баллы</span>
     </a>
-    <a href="/3dlab" class="nav-btn {% if active_tab == '3dlab' %}nav-active{% endif %}">
-        <span class="nav-btn-icon">🧊</span>
+    <a href="/3dlab" class="nav-btn {% if active_tab == '3dlab' %}nav-active{% endif %}"
+       {% if active_tab == '3dlab' %}aria-current="page"{% endif %} aria-label="3D Лаб">
+        <span class="nav-btn-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+        </span>
         <span>3D Лаб</span>
     </a>
 </nav>

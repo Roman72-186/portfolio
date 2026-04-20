@@ -1,0 +1,91 @@
+version: '3.8'
+
+# Для российского сервера: включает собственный Traefik, не зависит от n8n_default.
+# Деплой: PORTFOLIO_COMPOSE_FILE=docker-compose.prod-ru.yml python scripts/deploy.py
+
+services:
+  traefik:
+    image: dockerhub.timeweb.cloud/library/traefik:v2.11
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web.forwardedHeaders.trustedIPs=103.134.155.0/24,160.25.253.0/24,160.79.120.0/24,185.121.240.0/22,188.0.150.0/24,193.104.120.0/24,193.84.78.0/24,193.84.90.0/24"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.forwardedHeaders.trustedIPs=103.134.155.0/24,160.25.253.0/24,160.79.120.0/24,185.121.240.0/22,188.0.150.0/24,193.104.120.0/24,193.84.78.0/24,193.84.90.0/24"
+      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=30s"
+      - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=60s"
+      - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=120s"
+      - "--entrypoints.web.transport.respondingTimeouts.readTimeout=30s"
+      - "--certificatesresolvers.mytlschallenge.acme.tlschallenge=true"
+      - "--certificatesresolvers.mytlschallenge.acme.email=${SSL_EMAIL}"
+      - "--certificatesresolvers.mytlschallenge.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - traefik_certs:/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - web
+    restart: unless-stopped
+
+  app:
+    build: .
+    expose:
+      - "8000"
+    env_file: .env
+    volumes:
+      - ./app:/app/app
+    labels:
+      - traefik.enable=true
+      # Основной роутер: apparchi.ru (активируется после смены DNS)
+      - traefik.http.routers.portfolio-apparchi.rule=Host(`apparchi.ru`) || Host(`www.apparchi.ru`)
+      - traefik.http.routers.portfolio-apparchi.tls=true
+      - traefik.http.routers.portfolio-apparchi.entrypoints=web,websecure
+      - traefik.http.routers.portfolio-apparchi.tls.certresolver=mytlschallenge
+      - traefik.http.routers.portfolio-apparchi.service=portfolio
+      - traefik.http.routers.portfolio-apparchi.middlewares=portfolio-timeout
+      - traefik.http.services.portfolio.loadbalancer.server.port=8000
+      - traefik.http.middlewares.portfolio-timeout.buffering.maxRequestBodyBytes=20971520
+      - traefik.http.middlewares.portfolio-timeout.buffering.retryExpression=IsNetworkError()
+    networks:
+      - web
+      - default
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 --timeout-keep-alive 30"
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+
+  redis:
+    image: dockerhub.timeweb.cloud/library/redis:7-alpine
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    networks:
+      - default
+    restart: unless-stopped
+
+  db:
+    image: dockerhub.timeweb.cloud/library/postgres:15-alpine
+    env_file: .env
+    volumes:
+      - portfolio_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U portfolio"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - default
+    restart: unless-stopped
+
+volumes:
+  portfolio_postgres:
+  traefik_certs:
+
+networks:
+  web:
+    name: web
+  default: {}

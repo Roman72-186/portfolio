@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
-from app.cache import invalidate_session
+from app.cache import invalidate_session, pop_vk_pkce, set_vk_pkce
 from app.config import settings
 from app.db.database import get_db
 from app.dependencies import get_current_user, require_internal_api_token, require_lab3d_token
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# PKCE state stored in a signed cookie — works across all uvicorn workers.
+# PKCE fallback cookie signer. Primary PKCE storage lives in Redis.
 
 _signer = URLSafeTimedSerializer(settings.session_secret)
 
@@ -61,6 +61,27 @@ def _render_login(request: Request, error: str | None = None):
     if error:
         context["error"] = error
     return templates.TemplateResponse("login.html", context)
+
+
+def _load_pkce_cookie(request: Request) -> tuple[dict | None, str | None]:
+    """Load signed PKCE cookie for temporary backward-compat fallback."""
+    pkce_cookie = request.cookies.get("pkce_cv")
+    if not pkce_cookie:
+        logger.warning("VK callback: pkce_cv cookie missing (cookies=%s)", list(request.cookies.keys()))
+        return None, "Ошибка сессии. Попробуйте снова или очистите cookies."
+    try:
+        pkce_data = _signer.loads(pkce_cookie, max_age=300)
+        if not isinstance(pkce_data, dict):
+            raise KeyError("pkce cookie payload is not a dict")
+        _ = pkce_data["cv"]
+        _ = pkce_data["st"]
+    except SignatureExpired:
+        logger.warning("VK callback: pkce_cv cookie expired (>5 min since login click)")
+        return None, "Ссылка истекла — вы слишком долго авторизовывались. Попробуйте снова."
+    except (BadSignature, KeyError) as exc:
+        logger.warning("VK callback: pkce_cv bad signature or key: %s", exc)
+        return None, "Ссылка истекла. Попробуйте снова."
+    return pkce_data, None
 
 
 def _public_base_url(request: Request) -> str:
@@ -182,8 +203,13 @@ async def vk_login(request: Request):
     code_verifier = generate_code_verifier()
     code_challenge = generate_code_challenge(code_verifier)
 
-    # Store code_verifier + state in a signed cookie — survives across all uvicorn workers
-    pkce_signed = _signer.dumps({"cv": code_verifier, "st": state})
+    # Primary PKCE storage is server-side so mobile "open in VK app" survives.
+    stored_in_redis = set_vk_pkce(state, code_verifier, ttl=300)
+    if not stored_in_redis:
+        logger.warning("VK login: failed to store PKCE in Redis for state=%s", state[:12])
+
+    # Keep a versioned signed cookie only as rollout fallback for pre-deploy flows.
+    pkce_signed = _signer.dumps({"cv": code_verifier, "st": state, "v": 2})
     url = get_authorize_url(state, code_challenge)
     response = RedirectResponse(url, status_code=302)
     response.set_cookie(
@@ -213,21 +239,29 @@ async def vk_callback(
         logger.warning("VK callback: state missing from VK redirect")
         return _render_login(request, "Ошибка безопасности. Попробуйте снова.")
 
-    # Read PKCE data from signed cookie
-    pkce_cookie = request.cookies.get("pkce_cv")
-    if not pkce_cookie:
-        logger.warning("VK callback: pkce_cv cookie missing (cookies=%s)", list(request.cookies.keys()))
+    code_verifier: str | None = None
+    stored_state: str | None = None
+
+    redis_pkce = pop_vk_pkce(state)
+    if redis_pkce:
+        code_verifier = redis_pkce.get("code_verifier")
+        stored_state = state
+        logger.info("VK callback: loaded PKCE from Redis for state=%s", state[:12])
+    else:
+        logger.warning("VK callback: PKCE missing in Redis for state=%s", state[:12])
+        cookie_pkce, cookie_error = _load_pkce_cookie(request)
+        if not cookie_pkce:
+            return _render_login(request, cookie_error)
+        if cookie_pkce.get("v") is not None:
+            logger.warning("VK callback: cookie fallback skipped for current cookie version, state=%s", state[:12])
+            return _render_login(request, "Ошибка сессии. Попробуйте снова или очистите cookies.")
+        logger.info("VK callback: using cookie PKCE fallback for legacy flow state=%s", state[:12])
+        code_verifier = cookie_pkce["cv"]
+        stored_state = cookie_pkce["st"]
+
+    if not code_verifier or not stored_state:
+        logger.warning("VK callback: PKCE payload incomplete for state=%s", state[:12])
         return _render_login(request, "Ошибка сессии. Попробуйте снова или очистите cookies.")
-    try:
-        pkce_data = _signer.loads(pkce_cookie, max_age=300)
-        code_verifier = pkce_data["cv"]
-        stored_state = pkce_data["st"]
-    except SignatureExpired:
-        logger.warning("VK callback: pkce_cv cookie expired (>5 min since login click)")
-        return _render_login(request, "Ссылка истекла — вы слишком долго авторизовывались. Попробуйте снова.")
-    except (BadSignature, KeyError) as exc:
-        logger.warning("VK callback: pkce_cv bad signature or key: %s", exc)
-        return _render_login(request, "Ссылка истекла. Попробуйте снова.")
 
     if stored_state != state:
         logger.warning("VK callback: state mismatch stored=%r url=%r", stored_state[:20], state[:20])

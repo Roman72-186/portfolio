@@ -9,6 +9,7 @@ except ImportError as exc:
 
 LOCAL_DIR = Path(__file__).resolve().parent.parent
 REMOTE_DIR = os.getenv("PORTFOLIO_REMOTE_DIR", "/home/portfolio-saas")
+COMPOSE_FILE = os.getenv("PORTFOLIO_COMPOSE_FILE", "docker-compose.yml")
 
 SKIP = {".git", "__pycache__", ".env", "tests", "venv", ".venv", "node_modules"}
 
@@ -108,9 +109,9 @@ def main():
     print("\nDone! Files uploaded.")
 
     # Build and start (пересобирает только app, db и redis не трогает)
-    print("\nBuilding and starting containers...")
+    print(f"\nBuilding and starting containers (compose: {COMPOSE_FILE})...")
     stdin, stdout, stderr = client.exec_command(
-        f"cd {REMOTE_DIR} && docker compose up -d --build 2>&1",
+        f"cd {REMOTE_DIR} && docker compose -f {COMPOSE_FILE} up -d --build 2>&1",
         timeout=300,
     )
     output = stdout.read().decode()
@@ -122,7 +123,7 @@ def main():
     # Сброс Redis-кэша после деплоя (сессии не трогаем — только app-кэш)
     print("\nFlushing Redis cache...")
     stdin, stdout, stderr = client.exec_command(
-        f"cd {REMOTE_DIR} && docker compose exec -T redis redis-cli FLUSHDB 2>&1",
+        f"cd {REMOTE_DIR} && docker compose -f {COMPOSE_FILE} exec -T redis redis-cli FLUSHDB 2>&1",
         timeout=30,
     )
     redis_out = stdout.read().decode().strip()

@@ -1,8 +1,11 @@
 import io
+import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 
 from app.constants import MONTH_TO_NUM
+
+logger = logging.getLogger(__name__)
 
 
 def compress_image(data: bytes, max_px: int = 1600, quality: int = 82) -> bytes:
@@ -13,27 +16,32 @@ def compress_image(data: bytes, max_px: int = 1600, quality: int = 82) -> bytes:
     - Returns original bytes untouched if PIL is unavailable or image is already small.
     """
     try:
-        from PIL import Image, UnidentifiedImageError
+        from PIL import Image, ImageFile
     except ImportError:
         return data
 
     try:
+        # Mobile galleries sometimes hand us slightly truncated JPEGs that browsers
+        # can still display. Pillow can recover these if we opt in.
+        ImageFile.LOAD_TRUNCATED_IMAGES = True
         img = Image.open(io.BytesIO(data))
-    except Exception:
+        img.load()
+
+        # Convert to RGB (handles RGBA PNG, CMYK, palette mode, etc.)
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+
+        w, h = img.size
+        if max(w, h) > max_px:
+            ratio = max_px / max(w, h)
+            img = img.resize((int(w * ratio), int(h * ratio)), Image.BILINEAR)
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=quality)
+        compressed = buf.getvalue()
+    except Exception as exc:
+        logger.warning("Image compression skipped: %s", exc)
         return data
-
-    # Convert to RGB (handles RGBA PNG, CMYK, palette mode, etc.)
-    if img.mode not in ("RGB", "L"):
-        img = img.convert("RGB")
-
-    w, h = img.size
-    if max(w, h) > max_px:
-        ratio = max_px / max(w, h)
-        img = img.resize((int(w * ratio), int(h * ratio)), Image.BILINEAR)
-
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=quality)
-    compressed = buf.getvalue()
 
     # Only use compressed version if it's actually smaller
     return compressed if len(compressed) < len(data) else data

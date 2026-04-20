@@ -35,7 +35,7 @@ body { background: linear-gradient(160deg, #E8ECF6 0%, #DDE3F2 100%); }
     color: rgba(255,255,255,0.55);
     margin-bottom: 6px;
 }
-.calc-header h2 {
+.calc-header h1 {
     font-size: 22px;
     font-weight: 900;
     letter-spacing: -0.4px;
@@ -194,7 +194,7 @@ body { background: linear-gradient(160deg, #E8ECF6 0%, #DDE3F2 100%); }
     justify-content: center;
 }
 
-.login-text h3 {
+.login-text h2 {
     font-size: 16px;
     font-weight: 700;
     color: var(--text);
@@ -253,6 +253,12 @@ body { background: linear-gradient(160deg, #E8ECF6 0%, #DDE3F2 100%); }
     opacity: 1;
 }
 
+.staff-login-link {
+    font-size: 13px; color: var(--dim);
+    text-decoration: none; transition: color 0.15s;
+}
+.staff-login-link:hover, .staff-login-link:focus-visible { color: var(--accent); }
+
 @media (max-width: 480px) {
     .calc-row { grid-template-columns: 1fr; }
     .calc-header { padding: 22px 22px 20px; }
@@ -269,7 +275,7 @@ body { background: linear-gradient(160deg, #E8ECF6 0%, #DDE3F2 100%); }
     <div class="calc-card">
         <div class="calc-header">
             <div class="calc-header-label">Калькулятор</div>
-            <h2>Рассчитайте стоимость обучения</h2>
+            <h1>Рассчитайте стоимость обучения</h1>
             <p>Выберите тариф и срок — узнайте итоговую цену</p>
         </div>
 
@@ -327,7 +333,7 @@ body { background: linear-gradient(160deg, #E8ECF6 0%, #DDE3F2 100%); }
                 <img src="/static/img/logo.svg" alt="Логотип" width="40" height="40">
             </div>
             <div class="login-text">
-                <h3>Войдите в личный кабинет</h3>
+                <h2>Войдите в личный кабинет</h2>
                 <p>Доступ открыт только участникам закрытого сообщества ВКонтакте</p>
             </div>
         </div>
@@ -355,10 +361,7 @@ body { background: linear-gradient(160deg, #E8ECF6 0%, #DDE3F2 100%); }
         </a>
 
         <div style="text-align:center;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
-            <a href="/auth/staff/login"
-               style="font-size:13px;color:var(--dim);text-decoration:none;transition:color 0.15s"
-               onmouseover="this.style.color='var(--accent)'"
-               onmouseout="this.style.color='var(--dim)'">
+            <a href="/auth/staff/login" class="staff-login-link">
                 Войти как сотрудник →
             </a>
         </div>

@@ -21,17 +21,24 @@
     {% block extra_styles %}{% endblock %}
 </head>
 <body>
+    <a href="#main-content" class="skip-link">Перейти к содержимому</a>
+
     {% if user is defined and user %}
     {% set _unread = unread_count|default(0) %}
-    <a href="/cabinet/notifications" class="notif-bell" title="Уведомления{% if _unread %} ({{ _unread }} непрочитанных){% endif %}">
-        🔔
+    <a href="/cabinet/notifications" class="notif-bell"
+       aria-label="Уведомления{% if _unread %} ({{ _unread }} непрочитанных){% endif %}">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
         {% if _unread > 0 %}
-        <span class="notif-bell-badge">{{ _unread }}</span>
+        <span class="notif-bell-badge" aria-hidden="true">{{ _unread }}</span>
         {% endif %}
     </a>
     {% endif %}
 
-    <main class="main">
+    <main class="main" id="main-content">
         {% block content %}{% endblock %}
     </main>
 </body>

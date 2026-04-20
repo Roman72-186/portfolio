@@ -76,15 +76,28 @@
         <label>
             Роль
             <select name="role_rank">
-                <option value="">Все</option>
+                <option value="">Все роли</option>
                 {% for r in roles %}
-                <option value="{{ r.rank }}" {% if role_rank == r.rank %}selected{% endif %}>{{ r.display_name }}</option>
+                <option value="{{ r.rank }}" {% if role_rank == r.rank|string %}selected{% endif %}>{{ r.display_name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            Тариф
+            <select name="tariff">
+                <option value="">Все тарифы</option>
+                {% for t in tariffs %}
+                <option value="{{ t }}" {% if tariff == t %}selected{% endif %}>{{ t }}</option>
                 {% endfor %}
             </select>
         </label>
         <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
             <input type="checkbox" name="show_deleted" value="1" {% if show_deleted %}checked{% endif %} style="width:auto;padding:0">
             <span style="font-size:12px;font-weight:700;color:var(--dim)">Показать удалённых</span>
+        </label>
+        <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" name="show_blocked" value="1" {% if show_blocked %}checked{% endif %} style="width:auto;padding:0">
+            <span style="font-size:12px;font-weight:700;color:#DC2626">Только заблокированные</span>
         </label>
         <button type="submit">Найти</button>
     </form>
@@ -161,7 +174,7 @@
         </div>
         <div style="display:flex;gap:8px">
             {% if page > 1 %}
-            <a href="?q={{ q }}&role_rank={{ role_rank or '' }}&show_deleted={{ show_deleted }}&page={{ page - 1 }}"
+            <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&page={{ page - 1 }}"
                style="padding:7px 14px;border-radius:9px;background:var(--bg2);border:1.5px solid var(--border);font-size:13px;font-weight:700;color:var(--text);text-decoration:none">
                 ‹ Назад
             </a>
@@ -170,7 +183,7 @@
                 {{ page }} / {{ total_pages }}
             </span>
             {% if page < total_pages %}
-            <a href="?q={{ q }}&role_rank={{ role_rank or '' }}&show_deleted={{ show_deleted }}&page={{ page + 1 }}"
+            <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&page={{ page + 1 }}"
                style="padding:7px 14px;border-radius:9px;background:var(--bg2);border:1.5px solid var(--border);font-size:13px;font-weight:700;color:var(--text);text-decoration:none">
                 Вперёд ›
             </a>

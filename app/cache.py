@@ -1,7 +1,7 @@
-"""Redis cache helpers for session data."""
+"""Redis cache helpers for session data and short-lived auth state."""
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import redis as _redis_lib
@@ -11,6 +11,7 @@ from app.config import settings
 log = logging.getLogger(__name__)
 
 SESSION_TTL = 300  # 5 minutes
+VK_PKCE_TTL = 300  # 5 minutes
 
 
 def _get_client() -> _redis_lib.Redis | None:
@@ -87,6 +88,40 @@ def invalidate_session(session_id: str) -> None:
         _client.delete(f"session:{session_id}")
     except Exception:
         pass
+
+
+def set_vk_pkce(state: str, code_verifier: str, ttl: int = VK_PKCE_TTL) -> bool:
+    """Store VK PKCE verifier server-side so mobile app handoff survives."""
+    if not _client:
+        return False
+    payload = json.dumps({
+        "code_verifier": code_verifier,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    try:
+        _client.setex(f"vk_pkce:{state}", ttl, payload)
+        return True
+    except Exception:
+        return False
+
+
+def pop_vk_pkce(state: str) -> dict[str, Any] | None:
+    """Atomically read and delete VK PKCE verifier for one-time callback use."""
+    if not _client:
+        return None
+    try:
+        pipe = _client.pipeline()
+        pipe.get(f"vk_pkce:{state}")
+        pipe.delete(f"vk_pkce:{state}")
+        raw, _ = pipe.execute()
+        if not raw:
+            return None
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return None
+        return data
+    except Exception:
+        return None
 
 
 # ── Unread notification count cache (TTL 60s) ─────────────────────────────────

@@ -368,6 +368,44 @@
 }
 .sidebar-select:focus { border-color: var(--accent); }
 
+/* ── Server-side (hard) filter pills ── */
+.sidebar-hard-filters {
+    padding: 8px 16px 0; display: flex; flex-wrap: wrap; gap: 6px;
+}
+.filter-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: rgba(37, 99, 235, 0.12);
+    border: 1px solid var(--accent);
+    border-radius: 14px; padding: 3px 4px 3px 10px;
+    font-size: 11px; font-weight: 600; color: var(--accent);
+    line-height: 1.3;
+}
+.filter-pill-remove {
+    background: none; border: none; color: var(--accent);
+    font-size: 16px; line-height: 1; cursor: pointer;
+    width: 18px; height: 18px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0;
+}
+.filter-pill-remove:hover { background: rgba(37, 99, 235, 0.2); }
+.sidebar-hard-filters-add {
+    padding: 6px 16px 0; font-size: 12px;
+}
+.sidebar-hard-filters-add summary {
+    cursor: pointer; color: var(--muted); user-select: none;
+    padding: 4px 0;
+}
+.sidebar-hard-filters-add summary:hover { color: var(--accent); }
+.hard-filter-options {
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 4px 0 0 12px;
+}
+.hard-filter-options a {
+    color: var(--text); text-decoration: none; font-size: 12px;
+    padding: 4px 0;
+}
+.hard-filter-options a:hover { color: var(--accent); text-decoration: underline; }
+
 /* ── Profile details ── */
 .profile-details {
     background: var(--card); border: 1.5px solid var(--border);
@@ -596,9 +634,31 @@
         <div class="sidebar-header">
             <a href="/cabinet" class="sidebar-back">← Кабинет</a>
             <div class="sidebar-title">{{ sidebar_title }}</div>
-            <input type="text" class="sidebar-search" placeholder="Поиск ученика…"
+            <input type="text" class="sidebar-search" placeholder="Имя или @username…"
                    oninput="filterSidebar()" id="student-search">
         </div>
+        {% if active_hard_filters %}
+        <div class="sidebar-hard-filters">
+            {% for f in active_hard_filters %}
+            <span class="filter-pill">
+                <span class="filter-pill-label">{{ f.label }}</span>
+                <button type="button" class="filter-pill-remove" data-param="{{ f.key }}"
+                        onclick="removeServerFilter(this)" aria-label="Снять фильтр">×</button>
+            </span>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% if is_admin_panel %}
+        <div class="sidebar-hard-filters-add">
+            <details>
+                <summary>+ Ещё фильтр</summary>
+                <div class="hard-filter-options">
+                    <a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}has_unchecked_mocks=1">Непроверенные пробники</a>
+                    <a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}mock_period_submitted=1">Сдавал в текущий период</a>
+                </div>
+            </details>
+        </div>
+        {% endif %}
         <div class="sidebar-filters">
             <select class="sidebar-select" id="filter-tariff" onchange="filterSidebar()">
                 <option value="">Все тарифы</option>
@@ -626,7 +686,8 @@
         <div class="sidebar-list" id="student-list">
             {% for s in sidebar_students %}
             <div class="student-row" id="srow-{{ s.id }}" onclick="selectStudent({{ s.id }})"
-                 data-tariff="{{ s.tariff or '' }}" data-curator="{{ s.curator_id }}" data-year="{{ s.enrollment_year }}">
+                 data-tariff="{{ s.tariff or '' }}" data-curator="{{ s.curator_id }}" data-year="{{ s.enrollment_year }}"
+                 data-tg-username="{{ s.tg_username }}">
                 {% if s.photo_url %}
                 <img src="{{ s.photo_url }}" class="student-avatar" alt="">
                 {% else %}
@@ -643,7 +704,12 @@
             {% endfor %}
             {% if not sidebar_students %}
             <div style="padding:24px 16px;font-size:13px;color:var(--dim);text-align:center">
+                {% if active_hard_filters %}
+                По выбранным фильтрам учеников нет.<br>
+                <a href="/cabinet/students" style="color:var(--accent);text-decoration:underline;display:inline-block;margin-top:8px">Сбросить фильтры</a>
+                {% else %}
                 Ученики не найдены
+                {% endif %}
             </div>
             {% endif %}
         </div>
@@ -739,6 +805,12 @@ var _currentStudentId = null;
 var _currentTab = 'portfolio';
 var _tabCache = {};   // { studentId: { tabName: data } }
 var _viewMode = 'profile'; // 'profile' or 'tab'
+var _mockPeriodOnly = (function() {
+    try {
+        var p = new URLSearchParams(location.search).get('period_only');
+        return p === '1' || p === 'true';
+    } catch (e) { return false; }
+})();
 
 // ── Student selection ────────────────────────────────────────────────────────
 
@@ -903,7 +975,11 @@ function switchTab(tabName) {
     var tc = document.getElementById('tab-content');
     if (tc) tc.innerHTML = '<div style="text-align:center;padding:48px 20px;color:var(--dim)">Загружаем…</div>';
 
-    fetch('/cabinet/students/' + _currentStudentId + '/' + tabName)
+    var _url = '/cabinet/students/' + _currentStudentId + '/' + tabName;
+    if (tabName === 'mock-exams' && _mockPeriodOnly) {
+        _url += '?period_only=1';
+    }
+    fetch(_url)
         .then(function(r) { return r.json(); })
         .then(function(data) {
             _tabCache[_currentStudentId][tabName] = data;
@@ -1016,12 +1092,35 @@ function buildPortfolio(data) {
 // ── Mock exams tab ───────────────────────────────────────────────────────────
 
 function buildMockExams(data) {
-    var html = '<div class="subjects-grid">';
+    var html = '';
+    if (data.period_only) {
+        var banner = data.period_active
+            ? 'Показаны только пробники, сданные в текущий период'
+            : 'Сейчас нет активного периода сдачи — работ не найдено';
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;margin-bottom:12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;font-size:13px;color:var(--muted)">'
+            + '<span>⏱ ' + banner + '</span>'
+            + '<button type="button" class="back-to-profile" style="margin:0" onclick="showAllMocks()">Показать все</button>'
+            + '</div>';
+    }
+    html += '<div class="subjects-grid">';
     MOCK_SUBJECTS.forEach(function(subject) {
         html += buildSubjectCard(subject, data);
     });
     html += '</div>';
     return html;
+}
+
+function showAllMocks() {
+    _mockPeriodOnly = false;
+    if (_tabCache[_currentStudentId]) {
+        delete _tabCache[_currentStudentId]['mock-exams'];
+    }
+    try {
+        var u = new URL(location.href);
+        u.searchParams.delete('period_only');
+        history.replaceState(null, '', u.toString());
+    } catch (e) {}
+    switchTab('mock-exams');
 }
 
 function buildSubjectCard(subject, data) {
@@ -1213,15 +1312,25 @@ function showToast(msg) {
 
 // ── Sidebar filters ─────────────────────────────────────────────────────────
 
+function removeServerFilter(btn) {
+    try {
+        var u = new URL(location.href);
+        u.searchParams.delete(btn.dataset.param);
+        location.href = u.toString();
+    } catch (e) {}
+}
+
 function filterSidebar() {
     var q = (document.getElementById('student-search').value || '').toLowerCase();
     var tariff = (document.getElementById('filter-tariff') || {}).value || '';
     var curator = (document.getElementById('filter-curator') || {}).value || '';
     var year = (document.getElementById('filter-year') || {}).value || '';
 
+    var qUser = q.replace(/^@/, '');
     document.querySelectorAll('.student-row').forEach(function(row) {
         var name = row.querySelector('.student-row-name').textContent.toLowerCase();
-        var matchName = !q || name.includes(q);
+        var tgUser = row.dataset.tgUsername || '';
+        var matchName = !q || name.includes(q) || (qUser && tgUser.includes(qUser));
         var matchTariff = !tariff || row.dataset.tariff === tariff;
         var matchCurator = !curator || row.dataset.curator === curator;
         var matchYear = !year || row.dataset.year === year;

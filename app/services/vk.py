@@ -61,6 +61,7 @@ def get_authorize_url(state: str, code_challenge: str) -> str:
         "state": state,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
+        "scope": "groups",
     }
     return f"https://id.vk.com/authorize?{urlencode(params)}"
 

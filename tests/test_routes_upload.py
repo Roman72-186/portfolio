@@ -1,4 +1,5 @@
 """Tests for /upload route — form GET and photo POST."""
+from io import BytesIO
 from datetime import date, timedelta
 from unittest.mock import AsyncMock, patch, MagicMock
 
@@ -13,6 +14,15 @@ _JPG_BYTES = b"\xff\xd8\xff\xe0" + b"\x00" * 16  # minimal JPEG header
 
 def _upload(client, files, month="январь", **kwargs):
     return client.post("/upload", data={"month": month}, files=files, **kwargs)
+
+
+def _truncated_jpg_bytes(cut: int = 1) -> bytes:
+    from PIL import Image
+
+    buf = BytesIO()
+    Image.new("RGB", (120, 120), "red").save(buf, format="JPEG")
+    data = buf.getvalue()
+    return data[:-cut]
 
 
 def _create_active_period(db, user, feature="mock_exam"):
@@ -264,6 +274,27 @@ def test_mock_exam_success(auth_client, db):
         resp = _mock_upload(client, [("photos", ("work.jpg", _JPG_BYTES, "image/jpeg"))])
     assert resp.status_code == 200
     assert "1" in resp.text  # success_count shown
+
+
+def test_mock_exam_truncated_jpeg_still_uploads(auth_client, db):
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Рисунок")
+    truncated = _truncated_jpg_bytes(1)
+
+    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
+        resp = _mock_upload(client, [("photos", ("work.jpg", truncated, "image/jpeg"))])
+
+    assert resp.status_code == 200
+    assert "не удалось загрузить" not in resp.text.lower()
+
+    works = db.query(Work).filter(
+        Work.user_id == user.id,
+        Work.work_type == WORK_TYPE_MOCK_EXAM,
+    ).all()
+    assert len(works) == 1
 
 
 def test_mock_exam_writes_work_record(auth_client, db):

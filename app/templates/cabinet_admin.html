@@ -107,7 +107,7 @@
     <div class="unscored-alert">
         <span style="font-size:20px">⚠️</span>
         <span>{{ unscored_mocks }} пробных экзамен{{ 'ов' if unscored_mocks > 4 else ('а' if unscored_mocks > 1 else '') }} ожидают проверки</span>
-        <a href="/cabinet/students?tab=mock-exams" style="margin-left:auto;font-size:12px;color:#D97706;text-decoration:underline;opacity:1">Проверить →</a>
+        <a href="/cabinet/students?tab=mock-exams&period_only=1&has_unchecked_mocks=1" style="margin-left:auto;font-size:12px;color:#D97706;text-decoration:underline;opacity:1">Проверить →</a>
     </div>
     {% endif %}
 

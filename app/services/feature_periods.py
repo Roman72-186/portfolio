@@ -56,6 +56,21 @@ def is_feature_available(db: DBSession, feature: str) -> tuple[bool, str | None]
     return result
 
 
+def get_active_period(db: DBSession, feature: str) -> FeaturePeriod | None:
+    """Возвращает активный FeaturePeriod на сегодня (MSK) или None."""
+    today = today_msk()
+    return (
+        db.query(FeaturePeriod)
+        .filter(
+            FeaturePeriod.feature == feature,
+            FeaturePeriod.is_active == True,
+            FeaturePeriod.start_date <= today,
+            FeaturePeriod.end_date >= today,
+        )
+        .first()
+    )
+
+
 def invalidate_feature_cache(feature: str | None = None) -> None:
     """Call after creating/updating/deactivating a period."""
     with _cache_lock:

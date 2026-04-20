@@ -15,3 +15,9 @@ def today_msk() -> date:
     «активен сегодня». Контейнер крутится в UTC, поэтому date.today() даст не то.
     """
     return now_msk().date()
+
+
+def msk_midnight(d: date) -> datetime:
+    """00:00 указанной даты в TZ Москва. Для сравнения с DateTime(timezone=True)
+    колонками (например, Work.created_at)."""
+    return datetime(d.year, d.month, d.day, tzinfo=MSK_TZ)

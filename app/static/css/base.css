@@ -6,8 +6,8 @@
     --card-dark:    #1E2D6B;
     --card-dark2:   #3B4FC8;
     --text:         #0F172A;
-    --muted:        #64748B;
-    --dim:          #6B7A90;
+    --muted:        #475569;
+    --dim:          #4D5C73;
     --accent:       #2563EB;
     --accent-mid:   #3B4FC8;
     --accent-dark:  #1E2D6B;
@@ -20,6 +20,16 @@
     --shadow-lg:    0 8px 32px rgba(30,45,107,0.12);
     --shadow-blue:  0 8px 24px rgba(37,99,235,0.25);
 }
+/* ── Skip link (accessibility) ── */
+.skip-link {
+    position: absolute; top: -100%; left: 8px;
+    background: var(--accent); color: #fff;
+    padding: 8px 16px; border-radius: 0 0 8px 8px;
+    font-size: 14px; font-weight: 700; z-index: 10000;
+    transition: top 0.1s;
+}
+.skip-link:focus { top: 0; color: #fff; opacity: 1; }
+
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 body {
     font-family: 'Montserrat', system-ui, sans-serif;
