@@ -47,10 +47,10 @@ services:
       - traefik.http.routers.portfolio-apparchi.entrypoints=web,websecure
       - traefik.http.routers.portfolio-apparchi.tls.certresolver=mytlschallenge
       - traefik.http.routers.portfolio-apparchi.service=portfolio
-      - traefik.http.routers.portfolio-apparchi.middlewares=portfolio-timeout
       - traefik.http.services.portfolio.loadbalancer.server.port=8000
-      - traefik.http.middlewares.portfolio-timeout.buffering.maxRequestBodyBytes=20971520
-      - traefik.http.middlewares.portfolio-timeout.buffering.retryExpression=IsNetworkError()
+      # HTTP→HTTPS redirect middleware (для порта 80)
+      - traefik.http.middlewares.portfolio-https.redirectscheme.scheme=https
+      - traefik.http.middlewares.portfolio-https.redirectscheme.permanent=true
     networks:
       - web
       - default
