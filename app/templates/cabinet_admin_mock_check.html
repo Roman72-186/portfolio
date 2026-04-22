@@ -1,0 +1,532 @@
+{% extends "base.html" %}
+{% block title %}Проверка пробников{% endblock %}
+{% block extra_styles %}
+<style>
+.main { max-width: 100% !important; padding: 0 !important; }
+
+.split-wrap {
+    display: flex;
+    height: calc(100vh - 57px);
+    overflow: hidden;
+}
+
+.sidebar {
+    width: 300px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    background: var(--card);
+}
+.sidebar-header {
+    padding: 16px 16px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.sidebar-back {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13px; color: var(--muted); font-weight: 500;
+    margin-bottom: 12px; opacity: 1;
+}
+.sidebar-back:hover { color: var(--accent); }
+.sidebar-title {
+    font-size: 15px; font-weight: 700; color: var(--text);
+    margin-bottom: 10px;
+}
+.sidebar-search {
+    width: 100%; padding: 8px 12px;
+    background: var(--bg); border: 1.5px solid var(--border);
+    border-radius: 10px; font-size: 13px; color: var(--text);
+    font-family: 'Montserrat', sans-serif; outline: none;
+    transition: border-color 0.2s;
+}
+.sidebar-search:focus { border-color: var(--accent); }
+
+.sidebar-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+.sidebar-list::-webkit-scrollbar { width: 4px; }
+.sidebar-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.student-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; cursor: pointer;
+    transition: background 0.15s;
+}
+.student-row:hover { background: var(--bg); }
+.student-row.active { background: var(--accent-soft); }
+.student-row.active .student-row-name { color: var(--accent); font-weight: 700; }
+.student-avatar {
+    width: 38px; height: 38px; border-radius: 50%;
+    object-fit: cover; border: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.student-avatar-ph {
+    width: 38px; height: 38px; border-radius: 50%;
+    background: var(--bg2); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+}
+.student-row-info { flex: 1; min-width: 0; }
+.student-row-name {
+    font-size: 13px; font-weight: 700; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.student-row-meta { font-size: 11px; color: var(--dim); margin-top: 1px; }
+.pending-badge {
+    background: #D97706; color: #fff;
+    border-radius: 10px; padding: 2px 8px;
+    font-size: 11px; font-weight: 800;
+    flex-shrink: 0;
+}
+
+.split-main {
+    flex: 1;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+}
+.split-main-scroll { flex: 1; overflow-y: auto; padding: 20px 24px; }
+.split-main-scroll::-webkit-scrollbar { width: 6px; }
+.split-main-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.student-hero {
+    background: linear-gradient(135deg, #1E2D6B 0%, #3B4FC8 100%);
+    border-radius: 16px;
+    padding: 20px 24px;
+    display: flex; align-items: center; gap: 18px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 20px rgba(30,45,107,0.2);
+    position: relative; overflow: hidden;
+}
+.student-hero-avatar {
+    width: 56px; height: 56px; border-radius: 50%;
+    object-fit: cover; border: 2px solid rgba(255,255,255,0.25);
+    flex-shrink: 0;
+}
+.student-hero-avatar-ph {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; flex-shrink: 0;
+}
+.student-hero-info { flex: 1; }
+.student-hero-name { font-size: 20px; font-weight: 900; color: #fff; margin-bottom: 6px; }
+.student-hero-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+.student-hero-pill {
+    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 14px; padding: 3px 12px;
+    font-size: 12px; color: rgba(255,255,255,0.85); font-weight: 700;
+}
+.student-hero-score { text-align: right; flex-shrink: 0; }
+.score-big { font-size: 34px; font-weight: 900; color: #FCD34D; line-height: 1; }
+.score-label { font-size: 11px; color: rgba(255,255,255,0.6); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+
+.subjects-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+.subject-card {
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+}
+.subject-card.is-scored { border-color: rgba(5,150,105,0.4); }
+.subject-card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+}
+.subject-title { font-size: 15px; font-weight: 700; color: var(--text); }
+.lock-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 700;
+}
+.lock-badge.locked { background: rgba(220,38,38,0.08); color: #DC2626; }
+.lock-badge.open   { background: rgba(5,150,105,0.08); color: #059669; }
+
+.subject-card-body { padding: 14px 16px; }
+
+.photo-strip {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 6px; margin-bottom: 14px;
+}
+.photo-strip img {
+    width: 100%; aspect-ratio: 1; object-fit: cover;
+    border-radius: 8px; border: 1px solid var(--border);
+    cursor: zoom-in; transition: opacity 0.15s;
+}
+.photo-strip img:hover { opacity: 0.85; }
+.photo-strip-more {
+    aspect-ratio: 1; background: var(--bg2); border-radius: 8px;
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: var(--muted);
+}
+
+.scored-chip {
+    background: rgba(217,119,6,0.1); color: #D97706;
+    border-radius: 8px; padding: 5px 14px; font-size: 15px; font-weight: 900;
+}
+.scored-state {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; background: rgba(5,150,105,0.08);
+    border: 1px solid rgba(5,150,105,0.2); border-radius: 10px;
+    margin-bottom: 10px;
+}
+.scored-state-score { font-size: 16px; font-weight: 900; color: #059669; }
+.scored-state-label { font-size: 11px; color: #059669; font-weight: 700; text-transform: uppercase; }
+
+/* Score form */
+.score-form {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 12px; margin-top: 10px;
+}
+.score-form-label { font-size: 12px; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
+.score-form-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.score-form input[type=number], .score-form textarea {
+    background: var(--card); border: 1.5px solid var(--border);
+    border-radius: 8px; padding: 7px 10px;
+    font-size: 13px; color: var(--text);
+    font-family: 'Montserrat', sans-serif; outline: none;
+    transition: border-color 0.15s;
+}
+.score-form input[type=number]:focus, .score-form textarea:focus { border-color: var(--accent); }
+.score-form input[type=number] { width: 80px; }
+.score-form textarea { width: 100%; min-height: 60px; resize: vertical; }
+.score-form-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.btn-save {
+    padding: 8px 14px; background: var(--accent); color: #fff;
+    border: none; border-radius: 8px; font-size: 13px; font-weight: 700;
+    cursor: pointer; font-family: 'Montserrat', sans-serif;
+    transition: opacity 0.15s;
+}
+.btn-save:hover { opacity: 0.9; }
+.btn-retake {
+    padding: 8px 14px; background: #fff; color: #DC2626;
+    border: 1.5px solid rgba(220,38,38,0.4); border-radius: 8px;
+    font-size: 13px; font-weight: 700; cursor: pointer;
+    font-family: 'Montserrat', sans-serif;
+    transition: background 0.15s, border-color 0.15s;
+}
+.btn-retake:hover { background: rgba(220,38,38,0.05); border-color: #DC2626; }
+.score-err { color: #DC2626; font-size: 12px; margin-top: 6px; }
+.score-ok  { color: #059669; font-size: 12px; margin-top: 6px; }
+
+.no-works { font-size: 13px; color: var(--dim); padding: 12px 0; text-align: center; }
+
+.empty-state { text-align: center; padding: 48px 20px; color: var(--dim); }
+.empty-icon { font-size: 40px; margin-bottom: 12px; }
+.empty-text { font-size: 14px; }
+
+.lb {
+    position: fixed; inset: 0; background: rgba(10,10,30,0.88);
+    z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px;
+}
+.lb.open { display: flex; }
+.lb img { max-width: 100%; max-height: 88vh; border-radius: 12px; box-shadow: 0 24px 80px rgba(0,0,0,0.5); }
+.lb-close {
+    position: absolute; top: 16px; right: 16px;
+    background: rgba(255,255,255,0.15); border: none; color: #fff;
+    width: 44px; height: 44px; border-radius: 50%; font-size: 22px; cursor: pointer;
+}
+.lb-close:hover { background: rgba(255,255,255,0.28); }
+
+@media (max-width: 768px) {
+    .split-wrap { flex-direction: column; height: auto; overflow: visible; }
+    .sidebar { width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+    .sidebar-list { max-height: 260px; }
+    .split-main { overflow: visible; }
+    .split-main-scroll { overflow: visible; padding: 16px; }
+    .subjects-grid { grid-template-columns: 1fr; }
+    .student-hero { padding: 16px; gap: 12px; }
+    .student-hero-name { font-size: 16px; }
+    .score-big { font-size: 26px; }
+}
+</style>
+{% endblock %}
+{% block content %}
+<script>const CSRF_TOKEN = "{{ csrf_token(request) }}";</script>
+<div class="split-wrap">
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <a href="/cabinet/admin-panel" class="sidebar-back">← Кабинет</a>
+            <div class="sidebar-title">Проверка пробников</div>
+            <input type="text" class="sidebar-search" placeholder="Поиск ученика…"
+                   oninput="filterStudents(this.value)" id="student-search">
+        </div>
+        <div class="sidebar-list" id="student-list">
+            {% for s in sidebar_students %}
+            <div class="student-row" id="srow-{{ s.id }}" onclick="selectStudent({{ s.id }})">
+                {% if s.photo_url %}
+                <img src="{{ s.photo_url }}" class="student-avatar" alt="">
+                {% else %}
+                <div class="student-avatar-ph">👤</div>
+                {% endif %}
+                <div class="student-row-info">
+                    <div class="student-row-name">{{ s.name }}</div>
+                    <div class="student-row-meta">
+                        {{ s.tariff or '—' }} · {{ s.mock_count }} работ
+                    </div>
+                </div>
+                {% if s.unchecked %}
+                <span class="pending-badge">{{ s.unchecked }}</span>
+                {% endif %}
+            </div>
+            {% else %}
+            <div style="padding:20px;text-align:center;color:var(--dim);font-size:13px">
+                Нет пробников для проверки
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="split-main">
+        <div class="split-main-scroll" id="main-panel">
+            <div class="empty-state" id="select-prompt">
+                <div class="empty-icon">👈</div>
+                <div class="empty-text">Выберите ученика слева</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="lb" id="lb" onclick="lbClose(event)">
+    <button class="lb-close" onclick="lbClose()">&times;</button>
+    <img id="lb-img" src="" alt="">
+</div>
+
+<script>
+var INITIAL_STUDENT_ID = {{ initial_student_id }};
+var MOCK_SUBJECTS = {{ mock_subjects | tojson }};
+var _currentStudentId = null;
+
+function selectStudent(id) {
+    _currentStudentId = id;
+    document.querySelectorAll('.student-row').forEach(r => r.classList.remove('active'));
+    var row = document.getElementById('srow-' + id);
+    if (row) row.classList.add('active');
+
+    document.getElementById('main-panel').innerHTML =
+        '<div style="text-align:center;padding:48px 20px;color:var(--dim)">Загружаем…</div>';
+
+    fetch('/cabinet/students/' + id + '/mock-exams')
+        .then(r => r.json())
+        .then(data => renderMockExams(data))
+        .catch(() => {
+            document.getElementById('main-panel').innerHTML =
+                '<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">Ошибка загрузки</div></div>';
+        });
+}
+
+function renderMockExams(data) {
+    var s = data.student;
+    var avatar = s.photo_url
+        ? '<img src="' + esc(s.photo_url) + '" class="student-hero-avatar" alt="">'
+        : '<div class="student-hero-avatar-ph">👤</div>';
+    var scoreHtml = s.avg_score != null
+        ? '<div class="student-hero-score"><div class="score-big">' + s.avg_score + '</div><div class="score-label">ср. балл</div></div>'
+        : '';
+    var html = '<div class="student-hero">'
+        + avatar
+        + '<div class="student-hero-info">'
+        +   '<div class="student-hero-name">' + esc(s.name) + '</div>'
+        +   '<div class="student-hero-pills">'
+        +     (s.tariff ? '<span class="student-hero-pill">' + esc(s.tariff) + '</span>' : '')
+        +     (s.study_duration ? '<span class="student-hero-pill">' + esc(s.study_duration) + '</span>' : '')
+        +   '</div>'
+        + '</div>'
+        + scoreHtml
+        + '</div>';
+
+    html += '<div class="subjects-grid">';
+    MOCK_SUBJECTS.forEach(function(subject) {
+        html += buildSubjectCard(subject, data);
+    });
+    html += '</div>';
+
+    document.getElementById('main-panel').innerHTML = html;
+}
+
+function buildSubjectCard(subject, data) {
+    var works = (data.mock_works || {})[subject] || [];
+    var lock = (data.mock_locks || {})[subject] || {};
+    var isLocked = lock.is_locked === true;
+    var sid = data.student.id;
+    var latest = works.length ? works[0] : null;
+    var isScored = latest && latest.score != null;
+
+    var lockBadge = isLocked
+        ? '<span class="lock-badge locked">🔒 Пересдача закрыта</span>'
+        : '<span class="lock-badge open">✓ Открыто</span>';
+
+    var html = '<div class="subject-card' + (isScored ? ' is-scored' : '') + '">'
+        + '<div class="subject-card-header">'
+        +   '<span class="subject-title">' + esc(subject) + '</span>'
+        +   lockBadge
+        + '</div>'
+        + '<div class="subject-card-body">';
+
+    if (works.length) {
+        html += '<div class="photo-strip">';
+        works.slice(0, 6).forEach(function(w) {
+            if (w.s3_url) {
+                html += '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="lbOpen(\'' + esc(w.s3_url) + '\')">';
+            }
+        });
+        if (works.length > 6) html += '<div class="photo-strip-more">+' + (works.length - 6) + '</div>';
+        html += '</div>';
+
+        if (isScored) {
+            html += '<div class="scored-state">'
+                + '<div class="scored-state-score">✅ ' + Math.round(latest.score) + ' / 100</div>'
+                + '<span class="scored-state-label">Проверено</span>'
+                + '</div>';
+            if (latest.comment) {
+                html += '<div style="font-size:13px;color:var(--muted);background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:8px 12px;margin-bottom:10px;white-space:pre-wrap">'
+                    + esc(latest.comment) + '</div>';
+            }
+        }
+
+        html += buildScoreForm(sid, latest.id, latest.score, latest.comment);
+    } else {
+        html += '<div class="no-works">Нет загруженных работ</div>';
+    }
+
+    html += '</div></div>';
+    return html;
+}
+
+function buildScoreForm(sid, workId, currentScore, currentComment) {
+    var scoreVal = currentScore != null ? Math.round(currentScore) : '';
+    var commentVal = currentComment ? esc(currentComment) : '';
+    var formId = 'sform-' + workId;
+    return '<div class="score-form" id="' + formId + '">'
+        + '<div class="score-form-label">Оценка и комментарий</div>'
+        + '<div class="score-form-row">'
+        +   '<input type="number" min="0" max="100" step="1" name="score" value="' + scoreVal + '" placeholder="0–100" required>'
+        +   '<span style="font-size:12px;color:var(--dim)">из 100</span>'
+        + '</div>'
+        + '<textarea name="comment" placeholder="Комментарий" maxlength="500">' + commentVal + '</textarea>'
+        + '<div class="score-form-btns">'
+        +   '<button type="button" class="btn-save" onclick="submitScore(' + sid + ',' + workId + ',\'' + formId + '\')">💾 Сохранить оценку</button>'
+        +   '<button type="button" class="btn-retake" onclick="submitRetake(' + sid + ',' + workId + ',\'' + formId + '\')" title="Поставить оценку, отправить работу на отработку и открыть повторную сдачу">🔄 На отработку</button>'
+        + '</div>'
+        + '<div class="score-msg" style="display:none"></div>'
+        + '</div>';
+}
+
+function _readForm(formId) {
+    var root = document.getElementById(formId);
+    if (!root) return null;
+    var score = root.querySelector('input[name=score]').value.trim();
+    var comment = root.querySelector('textarea[name=comment]').value.trim();
+    return { root: root, score: score, comment: comment };
+}
+
+function _showMsg(root, text, isErr) {
+    var box = root.querySelector('.score-msg');
+    box.style.display = 'block';
+    box.className = 'score-msg ' + (isErr ? 'score-err' : 'score-ok');
+    box.textContent = text;
+}
+
+function submitScore(sid, workId, formId) {
+    var f = _readForm(formId);
+    if (!f) return;
+    if (f.score === '' || isNaN(parseFloat(f.score))) {
+        return _showMsg(f.root, 'Укажите балл (0–100)', true);
+    }
+    var scoreNum = parseFloat(f.score);
+    if (scoreNum < 0 || scoreNum > 100) {
+        return _showMsg(f.root, 'Балл должен быть от 0 до 100', true);
+    }
+
+    var fd = new FormData();
+    fd.append('csrf_token', CSRF_TOKEN);
+    fd.append('tab', 'mock-exams');
+    fd.append('score', f.score);
+    fd.append('comment', f.comment);
+
+    fetch('/cabinet/students/' + sid + '/works/' + workId + '/score', {
+        method: 'POST',
+        body: fd,
+        redirect: 'manual',
+    }).then(function(r) {
+        if (r.ok || r.type === 'opaqueredirect' || r.status === 0) {
+            _showMsg(f.root, 'Сохранено ✓', false);
+            setTimeout(function() { selectStudent(sid); }, 600);
+        } else {
+            _showMsg(f.root, 'Ошибка при сохранении', true);
+        }
+    }).catch(function() { _showMsg(f.root, 'Ошибка сети', true); });
+}
+
+function submitRetake(sid, workId, formId) {
+    var f = _readForm(formId);
+    if (!f) return;
+    if (f.score === '' || isNaN(parseFloat(f.score))) {
+        return _showMsg(f.root, 'Укажите балл (0–100)', true);
+    }
+    var scoreNum = parseFloat(f.score);
+    if (scoreNum < 0 || scoreNum > 100) {
+        return _showMsg(f.root, 'Балл должен быть от 0 до 100', true);
+    }
+    if (!f.comment) {
+        return _showMsg(f.root, 'Комментарий обязателен при отправке на отработку', true);
+    }
+    if (!confirm('Отправить работу на отработку? Ученик получит оценку и сможет загрузить новый пробник.')) return;
+
+    var fd = new FormData();
+    fd.append('csrf_token', CSRF_TOKEN);
+    fd.append('score', f.score);
+    fd.append('comment', f.comment);
+
+    fetch('/cabinet/students/' + sid + '/mock-exams/' + workId + '/retake', {
+        method: 'POST',
+        body: fd,
+    }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(resp) {
+          if (resp.ok && resp.j.ok) {
+              _showMsg(f.root, 'Отправлено на отработку ✓', false);
+              setTimeout(function() { selectStudent(sid); }, 700);
+          } else {
+              _showMsg(f.root, (resp.j && resp.j.detail) || 'Ошибка', true);
+          }
+      })
+      .catch(function() { _showMsg(f.root, 'Ошибка сети', true); });
+}
+
+function filterStudents(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.student-row').forEach(function(row) {
+        var name = row.querySelector('.student-row-name');
+        if (!name) return;
+        row.style.display = name.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+}
+
+function lbOpen(src) {
+    document.getElementById('lb-img').src = src;
+    document.getElementById('lb').classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+function lbClose(e) {
+    if (e && e.target !== document.getElementById('lb') && !e.target.classList.contains('lb-close')) return;
+    document.getElementById('lb').classList.remove('open');
+    document.body.style.overflow = '';
+}
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') lbClose({target: document.getElementById('lb')});
+});
+
+function esc(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+if (INITIAL_STUDENT_ID) selectStudent(INITIAL_STUDENT_ID);
+</script>
+{% endblock %}

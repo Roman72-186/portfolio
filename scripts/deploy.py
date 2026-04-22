@@ -1,5 +1,6 @@
 """Deploy portfolio-saas to remote server via SFTP."""
 import os
+import sys
 from pathlib import Path
 
 try:
@@ -114,11 +115,18 @@ def main():
         f"cd {REMOTE_DIR} && docker compose -f {COMPOSE_FILE} up -d --build 2>&1",
         timeout=300,
     )
-    output = stdout.read().decode()
-    errors = stderr.read().decode()
-    print(output)
+    output = stdout.read().decode("utf-8", errors="replace")
+    errors = stderr.read().decode("utf-8", errors="replace")
+    # Windows console cp1251 не печатает часть UTF-символов — заменяем их на ?
+    def _safe_print(text):
+        try:
+            print(text)
+        except UnicodeEncodeError:
+            enc = sys.stdout.encoding or "cp1251"
+            print(text.encode(enc, errors="replace").decode(enc, errors="replace"))
+    _safe_print(output)
     if errors:
-        print("STDERR:", errors)
+        _safe_print("STDERR: " + errors)
 
     # Сброс Redis-кэша после деплоя (сессии не трогаем — только app-кэш)
     print("\nFlushing Redis cache...")

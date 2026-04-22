@@ -20,6 +20,13 @@ def compress_image(data: bytes, max_px: int = 1600, quality: int = 82) -> bytes:
     except ImportError:
         return data
 
+    # Register HEIC/HEIF decoder if available (iPhone default format).
+    try:
+        from pillow_heif import register_heif_opener
+        register_heif_opener()
+    except ImportError:
+        pass
+
     try:
         # Mobile galleries sometimes hand us slightly truncated JPEGs that browsers
         # can still display. Pillow can recover these if we opt in.

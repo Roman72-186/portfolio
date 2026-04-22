@@ -30,25 +30,37 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
-_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 MAX_SIZE = 10 * 1024 * 1024  # 10 MB per file
 MAX_FILES = 10
 
 
-def _is_allowed_image(content_type: str | None, filename: str | None) -> bool:
-    """Accept standard image types + octet-stream with known image extension.
+_IMAGE_EXTENSIONS = {
+    ".jpg", ".jpeg", ".jpe", ".jfif",
+    ".png", ".apng",
+    ".webp",
+    ".heic", ".heif", ".avif",
+    ".gif", ".bmp", ".tif", ".tiff",
+    ".svg",
+}
 
-    Rationale: some Android browsers (Samsung, Xiaomi, older WebViews) report
-    gallery photos as application/octet-stream; iOS HEIC photos sometimes arrive
-    as image/heic. We check the file extension as fallback.
-    """
+
+def _is_allowed_image(content_type: str | None, filename: str | None) -> bool:
+    """Broad image acceptance: любой image/*, octet-stream/пустой MIME с
+    image-расширением, либо неизвестный MIME с image-расширением.
+    Отклоняем явные не-картинки (application/pdf, video/*, audio/*, text/*)."""
     ct = (content_type or "").lower()
+    ext = ("." + filename.rsplit(".", 1)[-1].lower()) if filename and "." in filename else ""
+
     if ct.startswith("image/"):
         return True
-    if ct in ("application/octet-stream", ""):
-        ext = ("." + filename.rsplit(".", 1)[-1].lower()) if filename and "." in filename else ""
-        return ext in _ALLOWED_EXTENSIONS
+    if ct.startswith(("video/", "audio/", "text/", "application/pdf", "application/zip")):
+        return False
+    # octet-stream / binary / пустой / unknown application → принимаем если расширение image-like
+    if ext in _IMAGE_EXTENSIONS:
+        return True
+    # Mobile quirk: некоторые браузеры шлют octet-stream с произвольным расширением
+    if ct in ("application/octet-stream", "binary/octet-stream", "") and ext:
+        return True
     return False
 
 

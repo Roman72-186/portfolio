@@ -119,7 +119,7 @@ def require_permission(codename: str) -> Callable:
 # Role aliases for use in route dependencies
 require_student    = require_role(1)
 require_curator    = require_role(2)
-# require_moderator  = require_role(3)  # disabled
+require_moderator  = require_role(3)
 require_admin_role = require_role(4)
 require_superadmin = require_role(5)
 

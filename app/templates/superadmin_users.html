@@ -141,10 +141,12 @@
                     {% if u.id != current_user_id and not u.deleted_at %}
                     <div class="actions-cell">
                         {% if u.is_active %}
+                        {% if not (u.role and u.role.rank == 1) %}
                         <button class="action-btn btn-block"
                             onclick="openConfirm('toggle', {{ u.id }}, '{{ (u.last_name or '') ~ ' ' ~ (u.first_name or u.name) }}', false)">
                             Заблокировать
                         </button>
+                        {% endif %}
                         {% else %}
                         <button class="action-btn btn-unblock"
                             onclick="openConfirm('toggle', {{ u.id }}, '{{ (u.last_name or '') ~ ' ' ~ (u.first_name or u.name) }}', true)">

@@ -32,6 +32,12 @@
 .empty-state { padding: 48px; text-align: center; color: var(--dim); }
 .empty-icon { font-size: 40px; margin-bottom: 12px; }
 .empty-text { font-size: 14px; }
+
+@media (max-width: 480px) {
+    .search-form { flex-direction: column; }
+    .search-btn { width: 100%; }
+    .page-title { font-size: 18px; }
+}
 </style>
 {% endblock %}
 {% block content %}

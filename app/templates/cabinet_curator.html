@@ -11,6 +11,7 @@
 .filter-row form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .filter-row select { font-size: 13px; padding: 7px 12px; }
 
+.student-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .student-table { width: 100%; border-collapse: collapse; }
 .student-table th {
     text-align: left; font-size: 11px; font-weight: 700; letter-spacing: 0.07em;
@@ -76,7 +77,8 @@
     </div>
 
     {% if students %}
-    <div class="card" style="padding:0;overflow:hidden">
+    <div class="student-table-wrap">
+    <div class="card" style="padding:0;overflow-x:auto">
         <table class="student-table">
             <thead>
                 <tr>
@@ -129,6 +131,7 @@
                 {% endfor %}
             </tbody>
         </table>
+    </div>
     </div>
     {% else %}
     <div style="text-align:center;padding:60px 20px;color:var(--dim)">

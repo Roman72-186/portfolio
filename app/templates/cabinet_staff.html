@@ -122,7 +122,7 @@
 .tb-mock   { background: rgba(217,119,6,0.1);   color: #D97706; }
 .tb-retake { background: rgba(124,58,237,0.08); color: #7C3AED; }
 
-.unscored-alert { display: flex; align-items: center; gap: 12px; background: rgba(217,119,6,0.08); border: 1px solid rgba(217,119,6,0.2); border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: #D97706; font-weight: 700; }
+.unscored-alert { display: flex; align-items: center; gap: 12px; background: rgba(217,119,6,0.08); border: 1px solid rgba(217,119,6,0.2); border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: #D97706; font-weight: 700; flex-wrap: wrap; }
 
 @media (max-width: 768px) {
     .stats-strip { grid-template-columns: repeat(2, 1fr); }
@@ -131,6 +131,16 @@
     .two-col { grid-template-columns: 1fr; }
     .staff-hero { flex-direction: column; align-items: flex-start; }
     .staff-hero-name { font-size: 22px; }
+}
+@media (max-width: 480px) {
+    .stats-strip { grid-template-columns: 1fr; }
+    .stat-cell { border-right: none; border-bottom: 1px solid var(--border); }
+    .stat-cell:last-child { border-bottom: none; }
+    .staff-hero { padding: 20px; }
+    .staff-hero-name { font-size: 20px; }
+    .banner-row { flex-direction: column; gap: 6px; align-items: stretch; }
+    .banner-row-label { width: auto; }
+    .staff-row { flex-wrap: wrap; }
 }
 </style>
 {% endblock %}
@@ -203,7 +213,7 @@
     <div class="unscored-alert">
         <span style="font-size:20px">⚠️</span>
         <span>{{ unscored_mocks }} пробных экзамен{{ 'ов' if unscored_mocks > 4 else ('а' if unscored_mocks > 1 else '') }} ожидают проверки</span>
-        <a href="/cabinet/students?tab=mock-exams&period_only=1&has_unchecked_mocks=1" style="margin-left:auto;font-size:12px;color:#D97706;text-decoration:underline;opacity:1">Проверить →</a>
+        <a href="/cabinet/admin/mock-check" style="margin-left:auto;font-size:12px;color:#D97706;text-decoration:underline;opacity:1">Проверить →</a>
     </div>
     {% endif %}
 
@@ -242,6 +252,14 @@
             <div>
                 <div style="font-size:14px;font-weight:700;">Ученики</div>
                 <div style="font-size:12px;color:var(--dim);margin-top:2px;">Портфолио и пробники</div>
+            </div>
+            <span style="margin-left:auto;font-size:18px;color:var(--dim);">→</span>
+        </a>
+        <a href="/cabinet/admin/mock-check" style="display:inline-flex;align-items:center;gap:10px;background:var(--card);border:1.5px solid var(--border);border-radius:14px;padding:14px 20px;text-decoration:none;color:var(--text);box-shadow:var(--shadow);transition:border-color 0.2s,box-shadow 0.2s;flex:1;min-width:200px;opacity:1;" onmouseover="this.style.borderColor='var(--border-hover)';this.style.boxShadow='var(--shadow-lg)'" onmouseout="this.style.borderColor='var(--border)';this.style.boxShadow='var(--shadow)'">
+            <span style="width:38px;height:38px;border-radius:10px;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">✅</span>
+            <div>
+                <div style="font-size:14px;font-weight:700;">Проверка пробников</div>
+                <div style="font-size:12px;color:var(--dim);margin-top:2px;">Оценка и отправка на отработку</div>
             </div>
             <span style="margin-left:auto;font-size:18px;color:var(--dim);">→</span>
         </a>

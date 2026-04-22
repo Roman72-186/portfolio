@@ -494,6 +494,61 @@ def score_work(
     )
 
 
+# ── POST: отправить пробник на отработку (оценка + комментарий + разблокировка) ──
+
+@router.post("/students/{student_id}/mock-exams/{work_id}/retake")
+def send_mock_exam_to_retake(
+    student_id: int,
+    work_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    score: float = Form(...),
+    comment: str = Form(...),
+):
+    work = db.query(Work).filter(
+        Work.id == work_id,
+        Work.user_id == student_id,
+        Work.work_type == WORK_TYPE_MOCK_EXAM,
+    ).first()
+    if not work:
+        raise HTTPException(status_code=404, detail="Работа не найдена")
+    if not (0 <= score <= 100):
+        raise HTTPException(status_code=422, detail="Балл должен быть от 0 до 100")
+    comment_clean = comment.strip()
+    if not comment_clean:
+        raise HTTPException(status_code=422, detail="Комментарий обязателен при отправке на отработку")
+    if len(comment_clean) > 500:
+        comment_clean = comment_clean[:500]
+
+    work.score = int(round(score))
+    work.comment = comment_clean
+    work.scored_at = datetime.now(timezone.utc)
+    work.scored_by_id = user["user_id"]
+
+    subject = work.subject
+    if subject and subject in MOCK_SUBJECTS:
+        lock = db.query(MockExamLock).filter(
+            MockExamLock.user_id == student_id,
+            MockExamLock.subject == subject,
+        ).first()
+        if lock:
+            lock.is_locked = False
+            lock.unlocked_at = datetime.now(timezone.utc)
+            lock.unlocked_by_id = user["user_id"]
+
+    db.add(Notification(
+        user_id=work.user_id,
+        title=f"Пробник отправлен на отработку — {int(work.score)} / 100",
+        text=comment_clean,
+        work_id=work.id,
+    ))
+    db.commit()
+    invalidate_unread(work.user_id)
+
+    return JSONResponse({"ok": True, "score": int(round(score)), "comment": comment_clean})
+
+
 # ── POST: разблокировать пробник ──────────────────────────────────────────────
 
 @router.post("/students/{student_id}/mock-exams/unlock")
@@ -687,16 +742,17 @@ async def admin_upload_works(
     fail_count = 0
     loop = asyncio.get_running_loop()
 
+    def _compress_and_upload_s3(raw: bytes, path: str):
+        compressed = compress_image(raw)
+        url = s3_service.upload_to_s3(path, compressed, "image/jpeg")
+        return compressed, url
+
     for fname, raw_bytes in files_data:
         s3_path = _build_s3_path(fname)
         try:
             compressed, s3_url = await loop.run_in_executor(
-                None, lambda b=raw_bytes, p=s3_path: (
-                    compress_image(b),
-                    None,
-                )
+                None, _compress_and_upload_s3, raw_bytes, s3_path
             )
-            s3_url = s3_service.upload_to_s3(s3_path, compressed, "image/jpeg")
 
             work = Work(
                 user_id=student_id,

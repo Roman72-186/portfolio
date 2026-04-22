@@ -7,7 +7,7 @@ from app.models.role import Role, Permission, RolePermission
 ROLES = [
     (1, "ученик",     "Ученик"),
     (2, "куратор",    "Куратор"),
-    # (3, "модератор",  "Модератор"),  # disabled
+    (3, "модератор",  "Модератор"),
     (4, "админ",      "Админ"),
     (5, "суперадмин", "Суперадмин"),
 ]
@@ -40,11 +40,9 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "upload_photos", "view_own_gallery", "view_upload_history", "take_exam",
         "view_own_students", "view_student_photos", "comment_rate_work", "issue_magic_links",
     ],
-    # "модератор": [  # disabled
-    #     "upload_photos", "view_own_gallery", "view_upload_history", "take_exam",
-    #     "view_own_students", "view_student_photos", "comment_rate_work", "issue_magic_links",
-    #     "view_all_students", "manage_curators", "ban_unban_users", "view_upload_stats",
-    # ],
+    "модератор": [
+        "upload_photos", "view_own_gallery", "view_upload_history", "take_exam",
+    ],
     "админ": [
         "upload_photos", "view_own_gallery", "view_upload_history", "take_exam",
         "view_own_students", "view_student_photos", "comment_rate_work", "issue_magic_links",
@@ -70,29 +68,32 @@ def seed_roles_and_permissions(db: DBSession) -> None:
     existing_roles = {r.name: r for r in db.query(Role).all()}
     existing_perms = {p.codename: p for p in db.query(Permission).all()}
 
-    # Seed roles
-    new_roles = []
+    # Seed roles — по одной с SAVEPOINT, чтобы дубликат не ронял всю транзакцию
     for rank, name, display_name in ROLES:
-        if name not in existing_roles:
-            new_role = Role(rank=rank, name=name, display_name=display_name)
-            db.add(new_role)
-            new_roles.append((name, new_role))
-    if new_roles:
-        db.flush()
-        for name, role in new_roles:
-            existing_roles[name] = role
+        if name in existing_roles:
+            continue
+        try:
+            with db.begin_nested():
+                new_role = Role(rank=rank, name=name, display_name=display_name)
+                db.add(new_role)
+                db.flush()
+            existing_roles[name] = new_role
+        except Exception:
+            # Роль уже есть в БД (race/ручная вставка) — перезачитываем
+            existing_roles = {r.name: r for r in db.query(Role).all()}
 
-    # Seed permissions
-    new_perms = []
+    # Seed permissions — аналогично
     for codename, description in PERMISSIONS:
-        if codename not in existing_perms:
-            new_perm = Permission(codename=codename, description=description)
-            db.add(new_perm)
-            new_perms.append((codename, new_perm))
-    if new_perms:
-        db.flush()
-        for codename, perm in new_perms:
-            existing_perms[codename] = perm
+        if codename in existing_perms:
+            continue
+        try:
+            with db.begin_nested():
+                new_perm = Permission(codename=codename, description=description)
+                db.add(new_perm)
+                db.flush()
+            existing_perms[codename] = new_perm
+        except Exception:
+            existing_perms = {p.codename: p for p in db.query(Permission).all()}
 
     # Batch load existing role_permissions
     all_role_perms = db.query(RolePermission).all()

@@ -208,6 +208,76 @@ def cabinet_admin(
     return templates.TemplateResponse("cabinet_staff.html", ctx)
 
 
+# ── Mock exam check (dedicated split-panel) ──────────────────────────────────
+
+@router.get("/admin/mock-check", response_class=HTMLResponse)
+def admin_mock_check(
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    student: int = Query(0),
+):
+    from app.constants import MOCK_SUBJECTS
+    from app.models.role import Role
+
+    student_role = db.query(Role).filter(Role.rank == 1).first()
+    sidebar_students: list[dict] = []
+    if student_role:
+        active_period = get_active_period(db, FEATURE_MOCK_EXAM)
+
+        mock_q = (
+            db.query(Work.user_id, Work.score)
+            .filter(
+                Work.work_type == WORK_TYPE_MOCK_EXAM,
+                Work.status == "success",
+            )
+        )
+        if active_period:
+            _mp_start = msk_midnight(active_period.start_date)
+            _mp_end = msk_midnight(active_period.end_date + timedelta(days=1))
+            mock_q = mock_q.filter(
+                Work.created_at >= _mp_start,
+                Work.created_at < _mp_end,
+            )
+
+        mock_rows = mock_q.all()
+        counts_by_user: dict[int, int] = defaultdict(int)
+        unchecked_by_user: dict[int, int] = defaultdict(int)
+        for row in mock_rows:
+            counts_by_user[row.user_id] += 1
+            if row.score is None:
+                unchecked_by_user[row.user_id] += 1
+
+        if counts_by_user:
+            users = (
+                db.query(User)
+                .filter(
+                    User.id.in_(counts_by_user.keys()),
+                    User.is_active == True,
+                )
+                .order_by(User.last_name, User.first_name)
+                .all()
+            )
+            for s in users:
+                sidebar_students.append({
+                    "id": s.id,
+                    "name": f"{s.last_name or ''} {s.first_name or s.name}".strip(),
+                    "photo_url": s.photo_url,
+                    "tariff": s.tariff,
+                    "mock_count": counts_by_user.get(s.id, 0),
+                    "unchecked": unchecked_by_user.get(s.id, 0),
+                })
+            sidebar_students.sort(key=lambda x: (-x["unchecked"], x["name"]))
+
+    return templates.TemplateResponse("cabinet_admin_mock_check.html", {
+        "request": request,
+        "user": user,
+        "sidebar_students": sidebar_students,
+        "initial_student_id": student,
+        "mock_subjects": MOCK_SUBJECTS,
+    })
+
+
 # ── Students list ─────────────────────────────────────────────────────────────
 
 @router.get("/admin/students", response_class=HTMLResponse)

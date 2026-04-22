@@ -15,7 +15,7 @@ _client: httpx.AsyncClient | None = None
 async def init_client() -> None:
     """Create the shared httpx client. Called once at application startup."""
     global _client
-    _client = httpx.AsyncClient(timeout=45.0)
+    _client = httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=15.0), limits=httpx.Limits(max_connections=20, max_keepalive_connections=10))
 
 
 async def close_client() -> None:
@@ -30,7 +30,7 @@ async def _get_client() -> httpx.AsyncClient:
     """Return the shared client, creating it on-demand if lifespan didn't run (e.g. tests)."""
     global _client
     if _client is None or _client.is_closed:
-        _client = httpx.AsyncClient(timeout=45.0)
+        _client = httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=15.0), limits=httpx.Limits(max_connections=20, max_keepalive_connections=10))
     return _client
 
 
@@ -72,8 +72,8 @@ async def send_photo_to_n8n(
         logger.info("n8n upload OK: %s", result)
         return result
     except httpx.TimeoutException:
-        logger.error("n8n upload timeout after 45s")
-        return {"success": False, "error": "Таймаут загрузки (45с). Попробуйте снова."}
+        logger.error("n8n upload timeout after 90s")
+        return {"success": False, "error": "Таймаут загрузки. Попробуйте снова."}
     except httpx.HTTPStatusError as e:
         logger.error("n8n upload HTTP error: %s %s", e.response.status_code, e.response.text[:200])
         return {"success": False, "error": f"Ошибка сервера: {e.response.status_code}"}

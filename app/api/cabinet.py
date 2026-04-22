@@ -10,7 +10,7 @@ router = APIRouter(prefix="/cabinet")
 ROLE_CABINET_MAP = {
     "суперадмин": "/cabinet/superadmin",
     "админ":      "/cabinet/admin-panel",
-    # "модератор":  "/cabinet/moderator",  # disabled
+    "модератор":  "/cabinet/student",
     "куратор":    "/cabinet/curator",
     "ученик":     "/cabinet/student",
 }

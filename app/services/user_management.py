@@ -70,7 +70,12 @@ def toggle_user_active(db: DBSession, target_user_id: int, performed_by_id: int)
     if not user or user.deleted_at is not None:
         return None
 
-    new_active = not user.is_active
+    if user.is_active:
+        if user.role and user.role.rank == 1:
+            return None
+        new_active = False
+    else:
+        new_active = True
     user.is_active = new_active
 
     if not new_active:

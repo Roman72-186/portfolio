@@ -266,6 +266,12 @@ details[open].create-card > summary::before { content: '−'; }
                 </td>
 
                 <td style="padding:10px 8px">
+                    {% if u.role and u.role.rank == 1 %}
+                    <span style="
+                        background:rgba(52,211,153,0.15);color:#34d399;
+                        padding:4px 10px;border-radius:6px;font-size:12px;font-weight:500;
+                    ">{{ 'Активен' if u.is_active else 'Забанен' }}</span>
+                    {% else %}
                     <form action="/admin/users/{{ u.id }}/toggle-active" method="post" style="margin:0">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <button type="submit" style="
@@ -274,6 +280,7 @@ details[open].create-card > summary::before { content: '−'; }
                             border:none;padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:500;
                         ">{{ 'Активен' if u.is_active else 'Забанен' }}</button>
                     </form>
+                    {% endif %}
                 </td>
                 <td style="padding:10px 8px;min-width:260px">
                     {% if issued_link and issued_link_user_id == u.id %}

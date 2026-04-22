@@ -15,10 +15,10 @@ services:
       - "--entrypoints.web.forwardedHeaders.trustedIPs=103.134.155.0/24,160.25.253.0/24,160.79.120.0/24,185.121.240.0/22,188.0.150.0/24,193.104.120.0/24,193.84.78.0/24,193.84.90.0/24"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.websecure.forwardedHeaders.trustedIPs=103.134.155.0/24,160.25.253.0/24,160.79.120.0/24,185.121.240.0/22,188.0.150.0/24,193.104.120.0/24,193.84.78.0/24,193.84.90.0/24"
-      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=30s"
-      - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=60s"
-      - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=120s"
-      - "--entrypoints.web.transport.respondingTimeouts.readTimeout=30s"
+      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=300s"
+      - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=300s"
+      - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=300s"
+      - "--entrypoints.web.transport.respondingTimeouts.readTimeout=300s"
       - "--certificatesresolvers.mytlschallenge.acme.tlschallenge=true"
       - "--certificatesresolvers.mytlschallenge.acme.email=${SSL_EMAIL}"
       - "--certificatesresolvers.mytlschallenge.acme.storage=/letsencrypt/acme.json"
@@ -41,20 +41,24 @@ services:
       - ./app:/app/app
     labels:
       - traefik.enable=true
-      # Основной роутер: apparchi.ru (активируется после смены DNS)
+      - traefik.docker.network=web
+      # Основной роутер: apparchi.ru
       - traefik.http.routers.portfolio-apparchi.rule=Host(`apparchi.ru`) || Host(`www.apparchi.ru`)
       - traefik.http.routers.portfolio-apparchi.tls=true
-      - traefik.http.routers.portfolio-apparchi.entrypoints=web,websecure
+      - traefik.http.routers.portfolio-apparchi.entrypoints=websecure
       - traefik.http.routers.portfolio-apparchi.tls.certresolver=mytlschallenge
       - traefik.http.routers.portfolio-apparchi.service=portfolio
       - traefik.http.services.portfolio.loadbalancer.server.port=8000
-      # HTTP→HTTPS redirect middleware (для порта 80)
-      - traefik.http.middlewares.portfolio-https.redirectscheme.scheme=https
-      - traefik.http.middlewares.portfolio-https.redirectscheme.permanent=true
     networks:
       - web
       - default
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 --timeout-keep-alive 30"
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 --timeout-keep-alive 75 --limit-concurrency 200 --limit-max-requests 5000"
+    deploy:
+      resources:
+        limits:
+          memory: 1400M
+        reservations:
+          memory: 400M
     restart: unless-stopped
     depends_on:
       db:

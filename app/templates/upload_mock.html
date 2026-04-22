@@ -181,7 +181,7 @@ label:hover .subject-btn { border-color: #D97706; color: #D97706; }
                     <input type="file" name="photos" accept="image/*" required multiple id="photoInput">
                     <div class="upload-circle">★</div>
                     <div class="upload-drop-title">Нажми или перенеси фото</div>
-                    <div class="upload-drop-hint">JPG, PNG, WebP · до 10 МБ · до {{ max_files }} штук</div>
+                    <div class="upload-drop-hint">Любые фото · до 10 МБ · до {{ max_files }} штук</div>
                 </label>
                 <div class="preview-area" id="previewArea">
                     <div class="preview-header">
@@ -455,7 +455,7 @@ function pad(n) { return n < 10 ? '0' + n : n; }
 // Auto-load ticket if subject pre-selected on page load
 (function(){
     var checked = document.querySelector('.subject-radio:checked');
-    if (checked) loadTicket(checked.value);
+    if (checked) onSubjectSelected(checked.value);
 })();
 </script>
 {% endblock %}

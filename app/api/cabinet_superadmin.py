@@ -77,7 +77,6 @@ def _load_dashboard_data(db: DBSession, now: datetime) -> dict:
     role_rows = (
         db.query(Role.display_name, Role.rank, func.count(User.id).label("cnt"))
         .outerjoin(User, (User.role_id == Role.id) & (User.is_active == True))
-        .filter(Role.name != "модератор")
         .group_by(Role.id, Role.display_name, Role.rank)
         .order_by(Role.rank)
         .all()

@@ -18,6 +18,7 @@ from app.models.role import Role
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM
 from app.services import s3 as s3_service
 from app.services.auth_links import issue_one_time_login_link
+from app.services.user_management import toggle_user_active
 from app.tmpl import templates
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ def _render_admin_users(
 ):
     # Limit: max 1000 recent users (защита от медленной выборки при большом кол-ве юзеров)
     users = db.query(User).order_by(User.created_at.desc()).limit(1000).all()
-    roles = db.query(Role).filter(Role.name != "модератор").order_by(Role.rank).all()
+    roles = db.query(Role).order_by(Role.rank).all()
     curator_role = db.query(Role).filter(Role.name == "куратор").first()
     # Limit: max 200 curators
     curators = (
@@ -236,10 +237,7 @@ def toggle_active(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
-    target_user = _get_user_by_id(db, user_id)
-    if target_user:
-        target_user.is_active = not target_user.is_active
-        db.commit()
+    toggle_user_active(db, target_user_id=user_id, performed_by_id=user["user_id"])
     return RedirectResponse("/admin/users", status_code=302)
 
 
