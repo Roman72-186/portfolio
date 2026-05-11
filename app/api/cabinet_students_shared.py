@@ -15,7 +15,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
-from sqlalchemy import func
+from sqlalchemy import func, or_, and_
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session, invalidate_unread
@@ -34,7 +34,7 @@ from app.models.work import (
 )
 from app.services import s3 as s3_service
 from app.services.feature_periods import get_active_period
-from app.services.tz import msk_midnight
+from app.services.tz import MSK_TZ, msk_midnight
 from app.services.utils import compress_image, study_duration_text, group_works
 from app.tmpl import templates
 
@@ -118,17 +118,25 @@ def _check_access(student_id: int, user: dict, db: DBSession) -> User:
     return student
 
 
-def _enrich(s: User, counts_by_user: dict, avg_by_user: dict) -> dict:
+def _enrich(s: User, counts_by_user: dict, avg_by_user: dict,
+            mock_counts_by_user: dict | None = None,
+            unchecked_by_user: dict | None = None,
+            scored_subjects_by_user: dict | None = None) -> dict:
     return {
         "id": s.id,
         "name": f"{s.last_name or ''} {s.first_name or s.name}".strip(),
         "photo_url": s.photo_url,
+        "cohort_tag": s.cohort_tag,
         "tariff": s.tariff,
         "avg_score": avg_by_user.get(s.id),
         "upload_count": counts_by_user.get(s.id, 0),
         "curator_id": s.curator_id or 0,
         "enrollment_year": s.enrollment_year or 0,
         "tg_username": (s.tg_username or "").lstrip("@").lower(),
+        "vk_id": s.vk_id or "",
+        "mock_count": mock_counts_by_user.get(s.id, 0) if mock_counts_by_user else 0,
+        "unchecked": unchecked_by_user.get(s.id, 0) if unchecked_by_user else 0,
+        "scored_subjects": scored_subjects_by_user.get(s.id, []) if scored_subjects_by_user else [],
     }
 
 
@@ -187,8 +195,56 @@ def students_panel(
         )
         avg_by_user = {r.user_id: round(float(r.avg)) for r in avg_rows}
 
-    sidebar_students = [_enrich(s, counts_by_user, avg_by_user) for s in students]
+    mock_counts_by_user: dict = {}
+    unchecked_by_user: dict = {}
+    scored_subjects_by_user: dict = defaultdict(list)
     can_score = user["role_rank"] >= 4
+    if students and can_score:
+        _ids = [s.id for s in students]
+        mock_count_rows = (
+            db.query(Work.user_id, func.count(Work.id).label("cnt"))
+            .filter(
+                Work.user_id.in_(_ids),
+                Work.work_type == WORK_TYPE_MOCK_EXAM,
+                Work.status == "success",
+            )
+            .group_by(Work.user_id)
+            .all()
+        )
+        mock_counts_by_user = {r.user_id: r.cnt for r in mock_count_rows}
+
+        unchecked_rows = (
+            db.query(Work.user_id, func.count(Work.id).label("cnt"))
+            .filter(
+                Work.user_id.in_(_ids),
+                Work.work_type == WORK_TYPE_MOCK_EXAM,
+                Work.status == "success",
+                Work.score.is_(None),
+            )
+            .group_by(Work.user_id)
+            .all()
+        )
+        unchecked_by_user = {r.user_id: r.cnt for r in unchecked_rows}
+
+        scored_subj_rows = (
+            db.query(Work.user_id, Work.subject)
+            .filter(
+                Work.user_id.in_(_ids),
+                Work.work_type == WORK_TYPE_MOCK_EXAM,
+                Work.status == "success",
+                Work.score.isnot(None),
+                Work.subject.isnot(None),
+            )
+            .distinct()
+            .all()
+        )
+        for r in scored_subj_rows:
+            scored_subjects_by_user[r.user_id].append(r.subject)
+
+    sidebar_students = [
+        _enrich(s, counts_by_user, avg_by_user, mock_counts_by_user, unchecked_by_user, scored_subjects_by_user)
+        for s in students
+    ]
     sidebar_title = "Мои ученики" if user["role_rank"] == 2 else "Все ученики"
     valid_tabs = ("portfolio", "mock-exams", "retakes")
     show_curator_filter = user["role_rank"] >= 4
@@ -231,6 +287,7 @@ def students_panel(
         "enrollment_years": enrollment_years,
         "active_hard_filters": active_hard_filters,
         "is_admin_panel": is_admin_panel,
+        "is_superadmin": user["role_rank"] >= 5,
     })
 
 
@@ -271,6 +328,7 @@ def get_student_profile(
             "first_name": student.first_name,
             "last_name": student.last_name,
             "photo_url": student.photo_url,
+            "cohort_tag": student.cohort_tag,
             "phone": student.phone,
             "parent_phone": student.parent_phone,
             "tg_username": student.tg_username,
@@ -329,6 +387,7 @@ def get_portfolio(
             "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
             "avg_score": avg_score,
             "photo_url": student.photo_url,
+            "cohort_tag": student.cohort_tag,
         },
         "before_works": [
             {"s3_url": w.s3_url, "filename": w.filename, "id": w.id}
@@ -374,10 +433,34 @@ def get_mock_exams(
     scored = [w for w in mock_works if w.score is not None]
     avg_score = round(sum(float(w.score) for w in scored) / len(scored)) if scored else None
 
+    avg_score_by_subject: dict = {}
+    for subj in MOCK_SUBJECTS:
+        subj_scored = [w for w in mock_works if w.subject == subj and w.score is not None]
+        if subj_scored:
+            avg_score_by_subject[subj] = round(
+                sum(float(w.score) for w in subj_scored) / len(subj_scored)
+            )
+
     works_by_subject: dict = defaultdict(list)
     for w in mock_works:
         if w.subject:
             works_by_subject[w.subject].append(w)
+
+    def serialize_mock_work(w: Work) -> dict:
+        created_at = w.created_at
+        if created_at and created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        local_dt = created_at.astimezone(MSK_TZ) if created_at else None
+        return {
+            "id": w.id,
+            "s3_url": w.s3_url,
+            "filename": w.filename,
+            "score": float(w.score) if w.score is not None else None,
+            "comment": w.comment,
+            "created_at": created_at.isoformat() if created_at else None,
+            "work_date": local_dt.date().isoformat() if local_dt else "",
+            "date_label": local_dt.strftime("%d.%m.%Y") if local_dt else "",
+        }
 
     locks = {
         lock.subject: {"is_locked": lock.is_locked}
@@ -392,19 +475,14 @@ def get_mock_exams(
             "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
             "avg_score": avg_score,
             "photo_url": student.photo_url,
+            "cohort_tag": student.cohort_tag,
         },
         "mock_works": {
-            subject: [
-                {
-                    "id": w.id, "s3_url": w.s3_url, "filename": w.filename,
-                    "score": float(w.score) if w.score is not None else None,
-                    "comment": w.comment,
-                }
-                for w in works_list
-            ]
+            subject: [serialize_mock_work(w) for w in works_list]
             for subject, works_list in works_by_subject.items()
         },
         "mock_locks": locks,
+        "avg_score_by_subject": avg_score_by_subject,
         "period_only": period_only_bool,
         "period_active": bool(active_period),
     })
@@ -423,7 +501,14 @@ def get_retakes(
 
     retake_works = (
         db.query(Work)
-        .filter(Work.user_id == student_id, Work.work_type == WORK_TYPE_RETAKE, Work.status == "success")
+        .filter(
+            Work.user_id == student_id,
+            Work.status == "success",
+            or_(
+                Work.work_type == WORK_TYPE_RETAKE,
+                and_(Work.work_type == WORK_TYPE_MOCK_EXAM, Work.sent_to_retake == True),
+            ),
+        )
         .order_by(Work.created_at.desc()).limit(100).all()
     )
 
@@ -434,6 +519,7 @@ def get_retakes(
             "tariff": student.tariff or "—",
             "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
             "photo_url": student.photo_url,
+            "cohort_tag": student.cohort_tag,
         },
         "retakes_by_month": [
             {
@@ -444,6 +530,8 @@ def get_retakes(
                         "student_score": float(w.student_score) if w.student_score is not None else None,
                         "curator_score": float(w.score) if w.score is not None else None,
                         "comment": w.comment,
+                        "is_mock": w.work_type == WORK_TYPE_MOCK_EXAM,
+                        "subject": w.subject or "",
                     }
                     for w in g["works"]
                 ],
@@ -494,7 +582,7 @@ def score_work(
     )
 
 
-# ── POST: отправить пробник на отработку (оценка + комментарий + разблокировка) ──
+# ── POST: отправить пробник на отработку (оценка + комментарий) ───────────────
 
 @router.post("/students/{student_id}/mock-exams/{work_id}/retake")
 def send_mock_exam_to_retake(
@@ -525,6 +613,40 @@ def send_mock_exam_to_retake(
     work.comment = comment_clean
     work.scored_at = datetime.now(timezone.utc)
     work.scored_by_id = user["user_id"]
+    work.sent_to_retake = True
+
+    db.add(Notification(
+        user_id=work.user_id,
+        title=f"Пробник отправлен на отработку — {int(work.score)} / 100",
+        text=f"{comment_clean}\n\nМожно загрузить отработку в разделе «Отработка».",
+        work_id=work.id,
+    ))
+    db.commit()
+    invalidate_unread(work.user_id)
+
+    return JSONResponse({"ok": True, "score": int(round(score)), "comment": comment_clean})
+
+
+# ── POST: вернуть пробник на доработку (только разблокировка, без оценки) ────
+
+@router.post("/students/{student_id}/mock-exams/{work_id}/revision")
+def send_mock_exam_to_revision(
+    student_id: int,
+    work_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    if user["role_rank"] < 5:
+        raise HTTPException(status_code=403, detail="Доступно только суперадмину")
+
+    work = db.query(Work).filter(
+        Work.id == work_id,
+        Work.user_id == student_id,
+        Work.work_type == WORK_TYPE_MOCK_EXAM,
+    ).first()
+    if not work:
+        raise HTTPException(status_code=404, detail="Работа не найдена")
 
     subject = work.subject
     if subject and subject in MOCK_SUBJECTS:
@@ -538,15 +660,12 @@ def send_mock_exam_to_retake(
             lock.unlocked_by_id = user["user_id"]
 
     db.add(Notification(
-        user_id=work.user_id,
-        title=f"Пробник отправлен на отработку — {int(work.score)} / 100",
-        text=comment_clean,
-        work_id=work.id,
+        user_id=student_id,
+        title="Пробник возвращён на доработку",
+        text="Загрузи новые фото выполненного задания.",
     ))
     db.commit()
-    invalidate_unread(work.user_id)
-
-    return JSONResponse({"ok": True, "score": int(round(score)), "comment": comment_clean})
+    return JSONResponse({"ok": True})
 
 
 # ── POST: разблокировать пробник ──────────────────────────────────────────────
@@ -693,28 +812,51 @@ async def admin_upload_works(
     _csrf: Annotated[None, Depends(require_csrf)],
     photos: list[UploadFile] = File(...),
     work_type: str = Form(...),
-    month: str = Form(...),
-    year: int = Form(...),
+    month: str = Form(""),
+    year: int | None = Form(None),
     subject: str = Form(""),
+    mock_date: str = Form(""),
+    score: str = Form(""),
 ):
     student = _check_access(student_id, user, db)
 
     valid_types = {WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE}
     if work_type not in valid_types:
         return JSONResponse({"ok": False, "error": "Неверный тип работы"}, status_code=400)
-    if month not in MONTHS:
-        return JSONResponse({"ok": False, "error": "Неверный месяц"}, status_code=400)
     if not student.tariff:
         return JSONResponse({"ok": False, "error": "У ученика не указан тариф"}, status_code=400)
     if not student.vk_id:
         return JSONResponse({"ok": False, "error": "У ученика нет VK ID"}, status_code=400)
-    if work_type == WORK_TYPE_MOCK_EXAM and subject not in MOCK_SUBJECTS:
-        return JSONResponse({"ok": False, "error": "Укажите предмет для пробника"}, status_code=400)
 
     if not photos or (len(photos) == 1 and not photos[0].filename):
         return JSONResponse({"ok": False, "error": "Выберите хотя бы одно фото"}, status_code=400)
     if len(photos) > MAX_FILES:
         return JSONResponse({"ok": False, "error": f"Максимум {MAX_FILES} фото"}, status_code=400)
+
+    work_score = None
+    work_created_at = None
+    if work_type == WORK_TYPE_MOCK_EXAM:
+        if subject not in MOCK_SUBJECTS:
+            return JSONResponse({"ok": False, "error": "Укажите предмет для пробника"}, status_code=400)
+        try:
+            parsed_date = datetime.strptime(mock_date, "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            return JSONResponse({"ok": False, "error": "Укажите дату пробника"}, status_code=400)
+        try:
+            score_value = float(score)
+        except (TypeError, ValueError):
+            return JSONResponse({"ok": False, "error": "Укажите балл за пробник"}, status_code=400)
+        if not (0 <= score_value <= 100):
+            return JSONResponse({"ok": False, "error": "Балл должен быть от 0 до 100"}, status_code=400)
+        month = MONTHS[parsed_date.month - 1]
+        year = parsed_date.year
+        work_score = int(round(score_value))
+        work_created_at = msk_midnight(parsed_date)
+    else:
+        if month not in MONTHS:
+            return JSONResponse({"ok": False, "error": "Неверный месяц"}, status_code=400)
+        if year is None:
+            return JSONResponse({"ok": False, "error": "Укажите год"}, status_code=400)
 
     # Read and validate files
     files_data = []
@@ -764,8 +906,12 @@ async def admin_upload_works(
                 s3_path=s3_path,
                 subject=subject if work_type == WORK_TYPE_MOCK_EXAM else None,
                 tariff=tariff,
+                score=work_score,
+                scored_at=datetime.now(timezone.utc) if work_score is not None else None,
+                scored_by_id=user["user_id"] if work_score is not None else None,
                 status="success",
                 uploaded_by_id=user["user_id"],
+                created_at=work_created_at or datetime.now(timezone.utc),
             )
             db.add(work)
             db.add(UploadLog(
@@ -837,6 +983,101 @@ async def bulk_delete_works(
 
 
 # ── DELETE: удалить работу (фото) ученика ────────────────────────────────────
+
+@router.patch("/students/{student_id}/portfolio/month")
+async def rename_portfolio_month(
+    student_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    if user["role_rank"] < 5:
+        raise HTTPException(status_code=403, detail="Доступно только суперадмину")
+
+    import json
+    try:
+        raw = await request.body()
+        body = json.loads(raw) if raw else {}
+    except Exception:
+        body = {}
+
+    work_type = body.get("work_type", WORK_TYPE_AFTER)
+    from_month = body.get("from_month", "")
+    from_year = body.get("from_year")
+    to_month = body.get("to_month", "")
+    to_year = body.get("to_year")
+
+    if work_type != WORK_TYPE_AFTER:
+        return JSONResponse({"ok": False, "error": "Переименовывать можно только месяцы После обучения"}, status_code=400)
+    if from_month not in MONTHS or to_month not in MONTHS:
+        return JSONResponse({"ok": False, "error": "Неверный месяц"}, status_code=400)
+    try:
+        from_year_int = int(from_year)
+        to_year_int = int(to_year)
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "Неверный год"}, status_code=400)
+
+    _check_access(student_id, user, db)
+    works = (
+        db.query(Work)
+        .filter(
+            Work.user_id == student_id,
+            Work.work_type == WORK_TYPE_AFTER,
+            Work.month == from_month,
+            Work.year == from_year_int,
+            Work.status == "success",
+        )
+        .all()
+    )
+    for work in works:
+        work.month = to_month
+        work.year = to_year_int
+
+    db.commit()
+    return JSONResponse({"ok": True, "updated_count": len(works)})
+
+
+@router.patch("/students/{student_id}/portfolio/works/{work_id}/move")
+async def move_portfolio_work(
+    student_id: int,
+    work_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    if user["role_rank"] < 5:
+        raise HTTPException(status_code=403, detail="Доступно только суперадмину")
+
+    import json
+    try:
+        raw = await request.body()
+        body = json.loads(raw) if raw else {}
+    except Exception:
+        body = {}
+
+    to_month = body.get("to_month", "")
+    to_year = body.get("to_year")
+    if to_month not in MONTHS:
+        return JSONResponse({"ok": False, "error": "Неверный месяц"}, status_code=400)
+    try:
+        to_year_int = int(to_year)
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "Неверный год"}, status_code=400)
+
+    _check_access(student_id, user, db)
+    work = db.query(Work).filter(
+        Work.id == work_id,
+        Work.user_id == student_id,
+        Work.work_type == WORK_TYPE_AFTER,
+    ).first()
+    if not work:
+        raise HTTPException(status_code=404, detail="Работа не найдена")
+
+    work.month = to_month
+    work.year = to_year_int
+    db.commit()
+    return JSONResponse({"ok": True})
+
 
 @router.delete("/students/{student_id}/works/{work_id}")
 def delete_work(

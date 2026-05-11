@@ -217,16 +217,17 @@ def admin_mock_check(
     db: Annotated[DBSession, Depends(get_db)],
     student: int = Query(0),
 ):
-    from app.constants import MOCK_SUBJECTS
+    from app.constants import MOCK_SUBJECTS, TARIFFS
     from app.models.role import Role
 
     student_role = db.query(Role).filter(Role.rank == 1).first()
     sidebar_students: list[dict] = []
+    total_unchecked = 0
     if student_role:
         active_period = get_active_period(db, FEATURE_MOCK_EXAM)
 
         mock_q = (
-            db.query(Work.user_id, Work.score)
+            db.query(Work.user_id, Work.score, Work.subject)
             .filter(
                 Work.work_type == WORK_TYPE_MOCK_EXAM,
                 Work.status == "success",
@@ -243,7 +244,77 @@ def admin_mock_check(
         mock_rows = mock_q.all()
         counts_by_user: dict[int, int] = defaultdict(int)
         unchecked_by_user: dict[int, int] = defaultdict(int)
+        scored_subjects_by_user: dict[int, set] = defaultdict(set)
         for row in mock_rows:
+            counts_by_user[row.user_id] += 1
+            if row.score is None:
+                unchecked_by_user[row.user_id] += 1
+            elif row.subject:
+                scored_subjects_by_user[row.user_id].add(row.subject)
+
+        if counts_by_user:
+            users = (
+                db.query(User)
+                .filter(
+                    User.id.in_(counts_by_user.keys()),
+                    User.is_active == True,
+                )
+                .order_by(User.last_name, User.first_name)
+                .all()
+            )
+            for s in users:
+                sidebar_students.append({
+                    "id": s.id,
+                    "name": f"{s.last_name or ''} {s.first_name or s.name}".strip(),
+                    "photo_url": s.photo_url,
+                    "tariff": s.tariff,
+                    "mock_count": counts_by_user.get(s.id, 0),
+                    "unchecked": unchecked_by_user.get(s.id, 0),
+                    "scored_subjects": list(scored_subjects_by_user.get(s.id, set())),
+                })
+            sidebar_students.sort(key=lambda x: (-x["unchecked"], x["name"]))
+            total_unchecked = sum(unchecked_by_user.values())
+
+    tariffs_present = sorted({s["tariff"] for s in sidebar_students if s["tariff"]})
+
+    return templates.TemplateResponse("cabinet_admin_mock_check.html", {
+        "request": request,
+        "user": user,
+        "sidebar_students": sidebar_students,
+        "initial_student_id": student,
+        "mock_subjects": MOCK_SUBJECTS,
+        "total_unchecked": total_unchecked,
+        "total_students": len(sidebar_students),
+        "tariffs": tariffs_present,
+    })
+
+
+# ── Retake check (dedicated split-panel) ─────────────────────────────────────
+
+@router.get("/admin/retake-check", response_class=HTMLResponse)
+def admin_retake_check(
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    student: int = Query(0),
+):
+    from app.models.role import Role
+
+    student_role = db.query(Role).filter(Role.rank == 1).first()
+    sidebar_students: list[dict] = []
+    total_unchecked = 0
+    if student_role:
+        retake_rows = (
+            db.query(Work.user_id, Work.score)
+            .filter(
+                Work.work_type == WORK_TYPE_RETAKE,
+                Work.status == "success",
+            )
+            .all()
+        )
+        counts_by_user: dict[int, int] = defaultdict(int)
+        unchecked_by_user: dict[int, int] = defaultdict(int)
+        for row in retake_rows:
             counts_by_user[row.user_id] += 1
             if row.score is None:
                 unchecked_by_user[row.user_id] += 1
@@ -264,17 +335,22 @@ def admin_mock_check(
                     "name": f"{s.last_name or ''} {s.first_name or s.name}".strip(),
                     "photo_url": s.photo_url,
                     "tariff": s.tariff,
-                    "mock_count": counts_by_user.get(s.id, 0),
+                    "retake_count": counts_by_user.get(s.id, 0),
                     "unchecked": unchecked_by_user.get(s.id, 0),
                 })
             sidebar_students.sort(key=lambda x: (-x["unchecked"], x["name"]))
+            total_unchecked = sum(unchecked_by_user.values())
 
-    return templates.TemplateResponse("cabinet_admin_mock_check.html", {
+    tariffs_present = sorted({s["tariff"] for s in sidebar_students if s["tariff"]})
+
+    return templates.TemplateResponse("cabinet_admin_retake_check.html", {
         "request": request,
         "user": user,
         "sidebar_students": sidebar_students,
         "initial_student_id": student,
-        "mock_subjects": MOCK_SUBJECTS,
+        "total_unchecked": total_unchecked,
+        "total_students": len(sidebar_students),
+        "tariffs": tariffs_present,
     })
 
 

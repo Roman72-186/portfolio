@@ -15,12 +15,12 @@
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    border-right: 1px solid var(--border);
-    background: var(--card);
+    border-right: 1px solid var(--line);
+    background: var(--surface);
 }
 .sidebar-header {
     padding: 16px 16px 12px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--line);
     flex-shrink: 0;
 }
 .sidebar-back {
@@ -28,40 +28,71 @@
     font-size: 13px; color: var(--muted); font-weight: 500;
     margin-bottom: 12px; opacity: 1;
 }
-.sidebar-back:hover { color: var(--accent); }
+.sidebar-back:hover { color: var(--blue); }
 .sidebar-title {
     font-size: 15px; font-weight: 700; color: var(--text);
+    margin-bottom: 4px;
+    display: flex; align-items: center; gap: 8px;
+}
+.sidebar-counter {
+    background: #D97706; color: #fff;
+    font-size: 11px; font-weight: 800;
+    padding: 2px 8px; border-radius: var(--r-sm);
+}
+.sidebar-subtitle {
+    font-size: 12px; color: var(--dim);
     margin-bottom: 10px;
+}
+.tariff-filter {
+    display: flex; gap: 6px; flex-wrap: wrap;
+    margin-top: 10px;
+}
+.tariff-chip {
+    padding: 4px 10px;
+    border: 1.5px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    font-size: 11px; font-weight: 700;
+    color: var(--muted);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    font-family: inherit;
+}
+.tariff-chip:hover { border-color: var(--blue); color: var(--blue); }
+.tariff-chip.active {
+    background: var(--blue); color: #fff; border-color: var(--blue);
 }
 .sidebar-search {
     width: 100%; padding: 8px 12px;
-    background: var(--bg); border: 1.5px solid var(--border);
-    border-radius: 10px; font-size: 13px; color: var(--text);
-    font-family: 'Montserrat', sans-serif; outline: none;
+    background: var(--bg); border: 1.5px solid var(--line);
+    border-radius: var(--r-sm); font-size: 13px; color: var(--text);
+    font-family: inherit; outline: none;
     transition: border-color 0.2s;
 }
-.sidebar-search:focus { border-color: var(--accent); }
+.sidebar-search:focus { border-color: var(--blue); }
 
 .sidebar-list { flex: 1; overflow-y: auto; padding: 8px 0; }
 .sidebar-list::-webkit-scrollbar { width: 4px; }
-.sidebar-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.sidebar-list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
 
 .student-row {
     display: flex; align-items: center; gap: 12px;
     padding: 10px 16px; cursor: pointer;
     transition: background 0.15s;
+    width: 100%; background: none; border: none; text-align: left; font-family: inherit;
 }
+.student-row:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 .student-row:hover { background: var(--bg); }
-.student-row.active { background: var(--accent-soft); }
-.student-row.active .student-row-name { color: var(--accent); font-weight: 700; }
+.student-row.active { background: var(--blue-soft); }
+.student-row.active .student-row-name { color: var(--blue); font-weight: 700; }
 .student-avatar {
     width: 38px; height: 38px; border-radius: 50%;
-    object-fit: cover; border: 1px solid var(--border);
+    object-fit: cover; border: 1px solid var(--line);
     flex-shrink: 0;
 }
 .student-avatar-ph {
     width: 38px; height: 38px; border-radius: 50%;
-    background: var(--bg2); border: 1px solid var(--border);
+    background: var(--surface-2); border: 1px solid var(--line);
     display: flex; align-items: center; justify-content: center;
     font-size: 16px; flex-shrink: 0;
 }
@@ -73,10 +104,18 @@
 .student-row-meta { font-size: 11px; color: var(--dim); margin-top: 1px; }
 .pending-badge {
     background: #D97706; color: #fff;
-    border-radius: 10px; padding: 2px 8px;
+    border-radius: var(--r-sm); padding: 2px 8px;
     font-size: 11px; font-weight: 800;
     flex-shrink: 0;
 }
+.checked-badge {
+    background: rgba(5,150,105,0.12); color: var(--ok);
+    border-radius: var(--r-sm); padding: 2px 8px;
+    font-size: 11px; font-weight: 800; flex-shrink: 0;
+    display: flex; align-items: center; gap: 4px;
+}
+.subj-scores { display: flex; gap: 16px; }
+.subj-score-item { text-align: center; }
 
 .split-main {
     flex: 1;
@@ -86,15 +125,15 @@
 }
 .split-main-scroll { flex: 1; overflow-y: auto; padding: 20px 24px; }
 .split-main-scroll::-webkit-scrollbar { width: 6px; }
-.split-main-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.split-main-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
 
 .student-hero {
-    background: linear-gradient(135deg, #1E2D6B 0%, #3B4FC8 100%);
-    border-radius: 16px;
+    background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue-mid) 100%);
+    border-radius: var(--r-lg);
     padding: 20px 24px;
     display: flex; align-items: center; gap: 18px;
     margin-bottom: 20px;
-    box-shadow: 0 4px 20px rgba(30,45,107,0.2);
+    box-shadow: var(--sh-blue);
     position: relative; overflow: hidden;
 }
 .student-hero-avatar {
@@ -113,7 +152,7 @@
 .student-hero-pills { display: flex; gap: 8px; flex-wrap: wrap; }
 .student-hero-pill {
     background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18);
-    border-radius: 14px; padding: 3px 12px;
+    border-radius: var(--r-md); padding: 3px 12px;
     font-size: 12px; color: rgba(255,255,255,0.85); font-weight: 700;
 }
 .student-hero-score { text-align: right; flex-shrink: 0; }
@@ -122,30 +161,30 @@
 
 .subjects-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr;
     gap: 16px;
     align-items: start;
 }
 .subject-card {
-    background: var(--card);
-    border: 1.5px solid var(--border);
-    border-radius: 16px;
+    background: var(--surface);
+    border: 1.5px solid var(--line);
+    border-radius: var(--r-lg);
     overflow: hidden;
-    box-shadow: var(--shadow);
+    box-shadow: var(--sh-sm);
 }
 .subject-card.is-scored { border-color: rgba(5,150,105,0.4); }
 .subject-card-header {
     display: flex; align-items: center; justify-content: space-between;
     padding: 14px 16px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--line);
 }
 .subject-title { font-size: 15px; font-weight: 700; color: var(--text); }
 .lock-badge {
     display: inline-flex; align-items: center; gap: 4px;
-    padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 700;
+    padding: 3px 10px; border-radius: var(--r-md); font-size: 11px; font-weight: 700;
 }
-.lock-badge.locked { background: rgba(220,38,38,0.08); color: #DC2626; }
-.lock-badge.open   { background: rgba(5,150,105,0.08); color: #059669; }
+.lock-badge.locked { background: rgba(220,38,38,0.08); color: var(--error); }
+.lock-badge.open   { background: rgba(5,150,105,0.08); color: var(--ok); }
 
 .subject-card-body { padding: 14px 16px; }
 
@@ -155,65 +194,189 @@
 }
 .photo-strip img {
     width: 100%; aspect-ratio: 1; object-fit: cover;
-    border-radius: 8px; border: 1px solid var(--border);
+    border-radius: 8px; border: 1px solid var(--line);
     cursor: zoom-in; transition: opacity 0.15s;
 }
 .photo-strip img:hover { opacity: 0.85; }
+.photo-wrap { position: relative; }
+.photo-del {
+    position: absolute; top: -4px; right: -4px;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: rgba(0,0,0,0.6); color: #fff; border: none;
+    cursor: pointer; font-size: 14px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity 0.15s, background 0.15s;
+    z-index: 2;
+    padding: 0;
+    min-width: 28px;
+}
+.photo-wrap:hover .photo-del { opacity: 1; }
+.photo-del:hover { background: var(--error); }
 .photo-strip-more {
-    aspect-ratio: 1; background: var(--bg2); border-radius: 8px;
-    border: 1px solid var(--border);
+    aspect-ratio: 1; background: var(--surface-2); border-radius: 8px;
+    border: 1px solid var(--line);
     display: flex; align-items: center; justify-content: center;
     font-size: 12px; font-weight: 700; color: var(--muted);
 }
 
+.mock-calendar-layout {
+    display: grid;
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+}
+.mock-calendar-side {
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    border-radius: 12px;
+    padding: 12px;
+}
+.mock-year-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; margin-bottom: 10px;
+}
+.mock-year-label { font-size: 16px; font-weight: 900; color: var(--text); }
+.mock-year-btn {
+    width: 34px; height: 34px; border-radius: 9px;
+    border: 1px solid var(--line); background: var(--surface);
+    color: var(--text); cursor: pointer; font-size: 18px; line-height: 1;
+}
+.mock-month-list {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 6px; margin-bottom: 12px;
+}
+.mock-month-btn {
+    border: 1px solid var(--line); background: var(--surface);
+    color: var(--muted); border-radius: 8px; padding: 7px 6px;
+    font-size: 12px; font-weight: 800; cursor: pointer;
+}
+.mock-month-btn.active {
+    background: rgba(37,99,235,0.09); color: #2563EB; border-color: rgba(37,99,235,0.35);
+}
+.mock-calendar-grid {
+    display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 5px;
+}
+.mock-weekday {
+    text-align: center; font-size: 10px; color: var(--dim);
+    font-weight: 800; text-transform: uppercase;
+}
+.mock-day {
+    aspect-ratio: 1; border-radius: 8px; border: 1px solid transparent;
+    background: transparent; color: var(--dim); font-size: 12px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+    cursor: default;
+}
+.mock-day.has-works {
+    background: #2563EB; color: #fff; cursor: pointer;
+    border-color: rgba(37,99,235,0.75); box-shadow: 0 6px 14px rgba(37,99,235,0.18);
+}
+.mock-day.has-works:hover, .mock-day.has-works.is-selected { background: #1D4ED8; }
+.mock-day.is-empty { visibility: hidden; }
+.mock-day-card {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 14px;
+    min-height: 280px;
+}
+.mock-day-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 10px; margin-bottom: 12px;
+}
+.mock-day-title { font-size: 18px; font-weight: 900; color: var(--text); }
+.mock-day-count { font-size: 12px; color: var(--muted); font-weight: 800; }
+.mock-day-works {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px;
+}
+.mock-work-card {
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    border-radius: 10px;
+    padding: 10px;
+}
+.mock-work-card img {
+    width: 100%; aspect-ratio: 1; object-fit: cover;
+    border-radius: 8px; border: 1px solid var(--line);
+    cursor: zoom-in; margin-bottom: 8px;
+}
+.mock-work-name {
+    font-size: 12px; font-weight: 800; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mock-work-meta { margin-top: 6px; font-size: 12px; color: var(--muted); }
+.mock-work-score { color: #2563EB; font-weight: 900; }
+.mock-calendar-empty {
+    color: var(--dim); text-align: center; padding: 42px 12px;
+    font-size: 13px;
+}
+
 .scored-chip {
-    background: rgba(217,119,6,0.1); color: #D97706;
+    background: rgba(217,119,6,0.1); color: var(--warning);
     border-radius: 8px; padding: 5px 14px; font-size: 15px; font-weight: 900;
 }
 .scored-state {
     display: flex; align-items: center; gap: 8px;
     padding: 8px 12px; background: rgba(5,150,105,0.08);
-    border: 1px solid rgba(5,150,105,0.2); border-radius: 10px;
+    border: 1px solid rgba(5,150,105,0.2); border-radius: var(--r-sm);
     margin-bottom: 10px;
 }
-.scored-state-score { font-size: 16px; font-weight: 900; color: #059669; }
-.scored-state-label { font-size: 11px; color: #059669; font-weight: 700; text-transform: uppercase; }
+.scored-state-score { font-size: 16px; font-weight: 900; color: var(--ok); }
+.scored-state-label { font-size: 11px; color: var(--ok); font-weight: 700; text-transform: uppercase; }
 
 /* Score form */
 .score-form {
-    background: var(--bg2); border: 1px solid var(--border);
-    border-radius: 10px; padding: 10px 12px; margin-top: 10px;
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: var(--r-sm); padding: 10px 12px; margin-top: 10px;
 }
 .score-form-label { font-size: 12px; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
 .score-form-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .score-form input[type=number], .score-form textarea {
-    background: var(--card); border: 1.5px solid var(--border);
+    background: var(--surface); border: 1.5px solid var(--line);
     border-radius: 8px; padding: 7px 10px;
     font-size: 13px; color: var(--text);
-    font-family: 'Montserrat', sans-serif; outline: none;
+    font-family: inherit; outline: none;
     transition: border-color 0.15s;
 }
-.score-form input[type=number]:focus, .score-form textarea:focus { border-color: var(--accent); }
+.score-form input[type=number]:focus, .score-form textarea:focus { border-color: var(--blue); }
 .score-form input[type=number] { width: 80px; }
 .score-form textarea { width: 100%; min-height: 60px; resize: vertical; }
 .score-form-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .btn-save {
-    padding: 8px 14px; background: var(--accent); color: #fff;
+    padding: 8px 14px; background: var(--blue); color: #fff;
     border: none; border-radius: 8px; font-size: 13px; font-weight: 700;
-    cursor: pointer; font-family: 'Montserrat', sans-serif;
+    cursor: pointer; font-family: inherit;
     transition: opacity 0.15s;
 }
 .btn-save:hover { opacity: 0.9; }
 .btn-retake {
-    padding: 8px 14px; background: #fff; color: #DC2626;
+    padding: 8px 14px; background: #fff; color: var(--error);
     border: 1.5px solid rgba(220,38,38,0.4); border-radius: 8px;
     font-size: 13px; font-weight: 700; cursor: pointer;
-    font-family: 'Montserrat', sans-serif;
+    font-family: inherit;
     transition: background 0.15s, border-color 0.15s;
 }
-.btn-retake:hover { background: rgba(220,38,38,0.05); border-color: #DC2626; }
-.score-err { color: #DC2626; font-size: 12px; margin-top: 6px; }
-.score-ok  { color: #059669; font-size: 12px; margin-top: 6px; }
+.btn-retake:hover { background: rgba(220,38,38,0.05); border-color: var(--error); }
+.edit-score-wrap { margin-top: 10px; }
+.btn-edit-score {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--surface-2); color: var(--text); font-size: 13px;
+    font-weight: 600; cursor: pointer; font-family: inherit;
+    transition: border-color 0.15s, color 0.15s;
+}
+.btn-edit-score:hover { border-color: var(--blue); color: var(--blue); }
+.btn-revision {
+    padding: 8px 14px; background: rgba(245,158,11,0.08); color: #b45309;
+    border: 1.5px solid rgba(245,158,11,0.35); border-radius: 8px;
+    font-size: 13px; font-weight: 700; cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, border-color 0.15s;
+}
+.btn-revision:hover { background: rgba(245,158,11,0.14); border-color: #d97706; }
+.score-err { color: var(--error); font-size: 12px; margin-top: 6px; }
+.score-ok  { color: var(--ok); font-size: 12px; margin-top: 6px; }
 
 .no-works { font-size: 13px; color: var(--dim); padding: 12px 0; text-align: center; }
 
@@ -226,7 +389,7 @@
     z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px;
 }
 .lb.open { display: flex; }
-.lb img { max-width: 100%; max-height: 88vh; border-radius: 12px; box-shadow: 0 24px 80px rgba(0,0,0,0.5); }
+.lb img { max-width: 100%; max-height: 88vh; border-radius: var(--r-md); box-shadow: 0 24px 80px rgba(0,0,0,0.5); }
 .lb-close {
     position: absolute; top: 16px; right: 16px;
     background: rgba(255,255,255,0.15); border: none; color: #fff;
@@ -234,36 +397,113 @@
 }
 .lb-close:hover { background: rgba(255,255,255,0.28); }
 
+.mobile-back-btn { display: none; }
+
+/* Score badge на фото пробника */
+.work-score-badge {
+    position: absolute; top: 6px; right: 6px;
+    color: #fff; font-size: 12px; font-weight: 800;
+    padding: 3px 8px; border-radius: 6px;
+    backdrop-filter: blur(4px);
+    pointer-events: none; z-index: 2;
+}
+.score-none   { background: rgba(0,0,0,0.35); color: rgba(255,255,255,0.7); }
+.score-red    { background: rgba(220,38,38,0.85);  }
+.score-orange { background: rgba(234,88,12,0.85);  }
+.score-lime   { background: rgba(101,163,13,0.85); }
+.score-green  { background: rgba(22,163,74,0.85);  }
+
+/* Hero-layout: крупное фото слева + миниатюры справа */
+.mock-hero-layout {
+    display: flex; gap: 10px; align-items: flex-start;
+    margin-bottom: 12px;
+}
+.mock-hero-photo { flex: 1; min-width: 0; }
+.mock-hero-photo > .photo-wrap > img {
+    width: 100%; aspect-ratio: 4/3; object-fit: cover;
+    border-radius: 10px; border: 1px solid var(--line);
+    cursor: zoom-in; display: block;
+}
+.mock-thumbnails {
+    display: flex; flex-direction: column; gap: 6px;
+    width: 88px; flex-shrink: 0;
+}
+.mock-thumbnails .photo-wrap img {
+    width: 88px; height: 88px; object-fit: cover;
+    border-radius: 8px; border: 1px solid var(--line);
+    cursor: zoom-in; display: block;
+}
+
+@media (max-width: 1024px) {
+    .sidebar { width: 260px; }
+    .subjects-grid { grid-template-columns: 1fr; }
+    .split-main-scroll { padding: 16px 18px; }
+}
+
 @media (max-width: 768px) {
     .split-wrap { flex-direction: column; height: auto; overflow: visible; }
-    .sidebar { width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
-    .sidebar-list { max-height: 260px; }
+    .sidebar { width: 100%; height: auto; border-right: none; border-bottom: none; }
+    .sidebar-list { max-height: none; }
     .split-main { overflow: visible; }
     .split-main-scroll { overflow: visible; padding: 16px; }
     .subjects-grid { grid-template-columns: 1fr; }
+    .mock-calendar-layout { grid-template-columns: 1fr; }
+    .mock-month-list { grid-template-columns: repeat(3, 1fr); }
+    .mock-day-card { min-height: 0; }
     .student-hero { padding: 16px; gap: 12px; }
     .student-hero-name { font-size: 16px; }
     .score-big { font-size: 26px; }
+    #select-prompt { display: none; }
+
+    /* Mobile: sidebar OR main, not both */
+    .split-wrap:not(.mobile-show-main) .split-main { display: none; }
+    .split-wrap.mobile-show-main .sidebar { display: none; }
+    .mobile-back-btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: none; border: none;
+        font-size: 14px; font-weight: 700; color: var(--blue);
+        padding: 6px 0; margin-bottom: 10px; cursor: pointer;
+        font-family: inherit;
+    }
 }
 </style>
 {% endblock %}
 {% block content %}
-<script>const CSRF_TOKEN = "{{ csrf_token(request) }}";</script>
+<script>
+const CSRF_TOKEN = "{{ csrf_token(request) }}";
+const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
+</script>
 <div class="split-wrap">
     <div class="sidebar">
         <div class="sidebar-header">
             <a href="/cabinet/admin-panel" class="sidebar-back">← Кабинет</a>
-            <div class="sidebar-title">Проверка пробников</div>
+            <div class="sidebar-title">
+                Проверка пробников
+                {% if total_unchecked %}
+                <span class="sidebar-counter" title="Непроверенных работ">{{ total_unchecked }}</span>
+                {% endif %}
+            </div>
+            <div class="sidebar-subtitle">
+                {{ total_students }} учен{{ 'иков' if total_students != 1 else 'ик' }} · на проверке {{ total_unchecked }} работ
+            </div>
             <input type="text" class="sidebar-search" placeholder="Поиск ученика…"
-                   oninput="filterStudents(this.value)" id="student-search">
+                   oninput="applyFilters()" id="student-search">
+            {% if tariffs %}
+            <div class="tariff-filter" id="tariff-filter">
+                <button type="button" class="tariff-chip active" data-tariff="" onclick="selectTariff(this, '')">Все</button>
+                {% for t in tariffs %}
+                <button type="button" class="tariff-chip" data-tariff="{{ t }}" onclick="selectTariff(this, '{{ t }}')">{{ t }}</button>
+                {% endfor %}
+            </div>
+            {% endif %}
         </div>
         <div class="sidebar-list" id="student-list">
             {% for s in sidebar_students %}
-            <div class="student-row" id="srow-{{ s.id }}" onclick="selectStudent({{ s.id }})">
+            <button type="button" class="student-row" id="srow-{{ s.id }}" data-tariff="{{ s.tariff or '' }}" onclick="selectStudent({{ s.id }})" aria-label="{{ s.name }}">
                 {% if s.photo_url %}
                 <img src="{{ s.photo_url }}" class="student-avatar" alt="">
                 {% else %}
-                <div class="student-avatar-ph">👤</div>
+                <div class="student-avatar-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg></div>
                 {% endif %}
                 <div class="student-row-info">
                     <div class="student-row-name">{{ s.name }}</div>
@@ -271,10 +511,17 @@
                         {{ s.tariff or '—' }} · {{ s.mock_count }} работ
                     </div>
                 </div>
-                {% if s.unchecked %}
+                {% set ss = s.scored_subjects %}
+                {% if ss | length >= 2 %}
+                <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверено</span>
+                {% elif 'Рисунок' in ss %}
+                <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверен рис</span>
+                {% elif 'Композиция' in ss %}
+                <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверен комп</span>
+                {% elif s.unchecked %}
                 <span class="pending-badge">{{ s.unchecked }}</span>
                 {% endif %}
-            </div>
+            </button>
             {% else %}
             <div style="padding:20px;text-align:center;color:var(--dim);font-size:13px">
                 Нет пробников для проверки
@@ -286,22 +533,23 @@
     <div class="split-main">
         <div class="split-main-scroll" id="main-panel">
             <div class="empty-state" id="select-prompt">
-                <div class="empty-icon">👈</div>
+                <div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></div>
                 <div class="empty-text">Выберите ученика слева</div>
             </div>
         </div>
     </div>
 </div>
 
-<div class="lb" id="lb" onclick="lbClose(event)">
-    <button class="lb-close" onclick="lbClose()">&times;</button>
-    <img id="lb-img" src="" alt="">
-</div>
+{% include "partials/lightbox.html" %}
 
 <script>
 var INITIAL_STUDENT_ID = {{ initial_student_id }};
 var MOCK_SUBJECTS = {{ mock_subjects | tojson }};
+var MONTHS_LIST = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+var CURRENT_YEAR = new Date().getFullYear();
 var _currentStudentId = null;
+var _currentData = null;
+var _mockCalendarState = {};
 
 function selectStudent(id) {
     _currentStudentId = id;
@@ -309,15 +557,22 @@ function selectStudent(id) {
     var row = document.getElementById('srow-' + id);
     if (row) row.classList.add('active');
 
+    document.querySelector('.split-wrap').classList.add('mobile-show-main');
+    window.scrollTo(0, 0);
+
     document.getElementById('main-panel').innerHTML =
-        '<div style="text-align:center;padding:48px 20px;color:var(--dim)">Загружаем…</div>';
+        '<button class="mobile-back-btn" onclick="backToList()">← К списку учеников</button>'
+        + '<div style="text-align:center;padding:48px 20px;color:var(--dim)">Загружаем…</div>';
 
     fetch('/cabinet/students/' + id + '/mock-exams')
         .then(r => r.json())
-        .then(data => renderMockExams(data))
+        .then(data => {
+            _currentData = data;
+            renderMockExams(data);
+        })
         .catch(() => {
             document.getElementById('main-panel').innerHTML =
-                '<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">Ошибка загрузки</div></div>';
+                '<div class="empty-state"><div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-text">Ошибка загрузки</div></div>';
         });
 }
 
@@ -325,11 +580,27 @@ function renderMockExams(data) {
     var s = data.student;
     var avatar = s.photo_url
         ? '<img src="' + esc(s.photo_url) + '" class="student-hero-avatar" alt="">'
-        : '<div class="student-hero-avatar-ph">👤</div>';
-    var scoreHtml = s.avg_score != null
-        ? '<div class="student-hero-score"><div class="score-big">' + s.avg_score + '</div><div class="score-label">ср. балл</div></div>'
-        : '';
-    var html = '<div class="student-hero">'
+        : '<div class="student-hero-avatar-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg></div>';
+    var bySubj = data.avg_score_by_subject || {};
+    var hasSubjScores = MOCK_SUBJECTS.some(function(subj) { return bySubj[subj] != null; });
+    var scoreHtml = '';
+    if (hasSubjScores) {
+        scoreHtml = '<div class="student-hero-score subj-scores">';
+        MOCK_SUBJECTS.forEach(function(subj) {
+            var sc = bySubj[subj];
+            if (sc != null) {
+                scoreHtml += '<div class="subj-score-item">'
+                    + '<div class="score-big">' + sc + '</div>'
+                    + '<div class="score-label">' + esc(subj) + '</div>'
+                    + '</div>';
+            }
+        });
+        scoreHtml += '</div>';
+    } else if (s.avg_score != null) {
+        scoreHtml = '<div class="student-hero-score"><div class="score-big">' + s.avg_score + '</div><div class="score-label">ср. балл</div></div>';
+    }
+    var html = '<button class="mobile-back-btn" onclick="backToList()">← К списку учеников</button>'
+        + '<div class="student-hero">'
         + avatar
         + '<div class="student-hero-info">'
         +   '<div class="student-hero-name">' + esc(s.name) + '</div>'
@@ -342,25 +613,27 @@ function renderMockExams(data) {
         + '</div>';
 
     html += '<div class="subjects-grid">';
-    MOCK_SUBJECTS.forEach(function(subject) {
-        html += buildSubjectCard(subject, data);
+    MOCK_SUBJECTS.forEach(function(subject, idx) {
+        html += buildSubjectCard(subject, data, idx);
     });
     html += '</div>';
 
     document.getElementById('main-panel').innerHTML = html;
 }
 
-function buildSubjectCard(subject, data) {
+function buildSubjectCard(subject, data, subjectIndex) {
     var works = (data.mock_works || {})[subject] || [];
     var lock = (data.mock_locks || {})[subject] || {};
     var isLocked = lock.is_locked === true;
     var sid = data.student.id;
     var latest = works.length ? works[0] : null;
-    var isScored = latest && latest.score != null;
+    var isScored = works.some(function(w) { return w.score != null; });
+    var grouped = groupMockWorksByDate(works);
+    var state = getMockCalendarState(sid, subjectIndex, grouped);
 
     var lockBadge = isLocked
-        ? '<span class="lock-badge locked">🔒 Пересдача закрыта</span>'
-        : '<span class="lock-badge open">✓ Открыто</span>';
+        ? '<span class="lock-badge locked"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Пересдача закрыта</span>'
+        : '<span class="lock-badge open"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Открыто</span>';
 
     var html = '<div class="subject-card' + (isScored ? ' is-scored' : '') + '">'
         + '<div class="subject-card-header">'
@@ -370,10 +643,22 @@ function buildSubjectCard(subject, data) {
         + '<div class="subject-card-body">';
 
     if (works.length) {
-        html += '<div class="photo-strip">';
+        html += '<div class="mock-calendar-layout">'
+            + buildMockCalendarSide(sid, subjectIndex, grouped, state)
+            + buildMockDayPanel(sid, subject, grouped, state)
+            + '</div>';
+        html += '</div></div>';
+        return html;
+    }
+
+    if (works.length) {
+        html += '<div class="photo-strip" data-gallery="mock-' + esc(subject) + '">';
         works.slice(0, 6).forEach(function(w) {
             if (w.s3_url) {
-                html += '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="lbOpen(\'' + esc(w.s3_url) + '\')">';
+                html += '<div class="photo-wrap">'
+                    +   '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)">'
+                    +   '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)">&times;</button>'
+                    + '</div>';
             }
         });
         if (works.length > 6) html += '<div class="photo-strip-more">+' + (works.length - 6) + '</div>';
@@ -381,11 +666,11 @@ function buildSubjectCard(subject, data) {
 
         if (isScored) {
             html += '<div class="scored-state">'
-                + '<div class="scored-state-score">✅ ' + Math.round(latest.score) + ' / 100</div>'
+                + '<div class="scored-state-score"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> ' + Math.round(latest.score) + ' / 100</div>'
                 + '<span class="scored-state-label">Проверено</span>'
                 + '</div>';
             if (latest.comment) {
-                html += '<div style="font-size:13px;color:var(--muted);background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:8px 12px;margin-bottom:10px;white-space:pre-wrap">'
+                html += '<div style="font-size:13px;color:var(--muted);background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:8px 12px;margin-bottom:10px;white-space:pre-wrap">'
                     + esc(latest.comment) + '</div>';
             }
         }
@@ -396,6 +681,213 @@ function buildSubjectCard(subject, data) {
     }
 
     html += '</div></div>';
+    return html;
+}
+
+function mockStateKey(sid, subjectIndex) {
+    return sid + ':' + subjectIndex;
+}
+
+function getMockWorkDate(w) {
+    if (w.work_date) return w.work_date;
+    if (!w.created_at) return '';
+    try { return new Date(w.created_at).toISOString().slice(0, 10); }
+    catch (e) { return ''; }
+}
+
+function groupMockWorksByDate(works) {
+    var grouped = {};
+    works.forEach(function(w) {
+        var dateStr = getMockWorkDate(w);
+        if (!dateStr) return;
+        if (!grouped[dateStr]) grouped[dateStr] = [];
+        grouped[dateStr].push(w);
+    });
+    return grouped;
+}
+
+function findLatestMockDate(grouped, year, month) {
+    return Object.keys(grouped).filter(function(dateStr) {
+        var parts = dateStr.split('-');
+        if (parseInt(parts[0], 10) !== year) return false;
+        if (month != null && parseInt(parts[1], 10) !== month + 1) return false;
+        return true;
+    }).sort().reverse()[0] || '';
+}
+
+function getMockCalendarState(sid, subjectIndex, grouped) {
+    var key = mockStateKey(sid, subjectIndex);
+    var now = new Date();
+    if (!_mockCalendarState[key]) {
+        var latestThisYear = findLatestMockDate(grouped, CURRENT_YEAR, null);
+        _mockCalendarState[key] = {
+            year: CURRENT_YEAR,
+            month: latestThisYear ? parseInt(latestThisYear.split('-')[1], 10) - 1 : now.getMonth(),
+            selectedDate: latestThisYear || ''
+        };
+    }
+    var state = _mockCalendarState[key];
+    if (state.selectedDate && !grouped[state.selectedDate]) {
+        state.selectedDate = findLatestMockDate(grouped, state.year, state.month) || findLatestMockDate(grouped, state.year, null);
+        if (state.selectedDate) state.month = parseInt(state.selectedDate.split('-')[1], 10) - 1;
+    }
+    return state;
+}
+
+function rerenderMockTab() {
+    if (_currentData) {
+        renderMockExams(_currentData);
+    }
+}
+
+function setMockCalendarYear(sid, subjectIndex, delta) {
+    var key = mockStateKey(sid, subjectIndex);
+    var state = _mockCalendarState[key] || { year: CURRENT_YEAR, month: new Date().getMonth(), selectedDate: '' };
+    state.year += delta;
+    state.selectedDate = '';
+    _mockCalendarState[key] = state;
+    rerenderMockTab();
+}
+
+function setMockCalendarMonth(sid, subjectIndex, month) {
+    var key = mockStateKey(sid, subjectIndex);
+    var state = _mockCalendarState[key] || { year: CURRENT_YEAR, month: month, selectedDate: '' };
+    state.month = month;
+    state.selectedDate = '';
+    _mockCalendarState[key] = state;
+    rerenderMockTab();
+}
+
+function selectMockDay(sid, subjectIndex, dateStr) {
+    var parts = dateStr.split('-');
+    _mockCalendarState[mockStateKey(sid, subjectIndex)] = {
+        year: parseInt(parts[0], 10),
+        month: parseInt(parts[1], 10) - 1,
+        selectedDate: dateStr
+    };
+    rerenderMockTab();
+}
+
+function buildMockCalendarSide(sid, subjectIndex, grouped, state) {
+    var html = '<div class="mock-calendar-side">';
+    html += '<div class="mock-year-row">'
+        + '<button type="button" class="mock-year-btn" onclick="setMockCalendarYear(' + sid + ',' + subjectIndex + ',-1)">‹</button>'
+        + '<div class="mock-year-label">' + state.year + '</div>'
+        + '<button type="button" class="mock-year-btn" onclick="setMockCalendarYear(' + sid + ',' + subjectIndex + ',1)">›</button>'
+        + '</div>';
+    html += '<div class="mock-month-list">';
+    MONTHS_LIST.forEach(function(monthName, idx) {
+        html += '<button type="button" class="mock-month-btn' + (idx === state.month ? ' active' : '') + '" onclick="setMockCalendarMonth(' + sid + ',' + subjectIndex + ',' + idx + ')">' + esc(cap(monthName).slice(0, 3)) + '</button>';
+    });
+    html += '</div>';
+    html += '<div class="mock-calendar-grid">';
+    ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].forEach(function(day) {
+        html += '<div class="mock-weekday">' + day + '</div>';
+    });
+    var first = new Date(state.year, state.month, 1);
+    var offset = (first.getDay() + 6) % 7;
+    var daysInMonth = new Date(state.year, state.month + 1, 0).getDate();
+    for (var i = 0; i < offset; i++) html += '<div class="mock-day is-empty"></div>';
+    for (var d = 1; d <= daysInMonth; d++) {
+        var dateStr = state.year + '-' + String(state.month + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+        var hasWorks = !!grouped[dateStr];
+        var cls = 'mock-day' + (hasWorks ? ' has-works' : '') + (state.selectedDate === dateStr ? ' is-selected' : '');
+        var click = hasWorks ? ' onclick="selectMockDay(' + sid + ',' + subjectIndex + ',\'' + dateStr + '\')"' : '';
+        html += '<button type="button" class="' + cls + '"' + click + '>' + d + '</button>';
+    }
+    html += '</div></div>';
+    return html;
+}
+
+function formatMockDate(dateStr) {
+    if (!dateStr) return '';
+    var parts = dateStr.split('-');
+    return parts[2] + '.' + parts[1] + '.' + parts[0];
+}
+
+function scoreBadgeClass(score) {
+    if (score == null) return 'score-none';
+    var s = parseFloat(score);
+    if (s <= 30) return 'score-red';
+    if (s <= 60) return 'score-orange';
+    if (s <= 74) return 'score-lime';
+    return 'score-green';
+}
+
+function buildMockDayPanel(sid, subject, grouped, state) {
+    var selected = state.selectedDate && grouped[state.selectedDate] ? state.selectedDate : findLatestMockDate(grouped, state.year, state.month);
+    var works = selected ? grouped[selected] || [] : [];
+    var html = '<div class="mock-day-card">';
+    if (!works.length) {
+        return html + '<div class="mock-calendar-empty">В этом месяце пока нет загруженных работ</div></div>';
+    }
+    html += '<div class="mock-day-head">'
+        + '<div class="mock-day-title">' + formatMockDate(selected) + '</div>'
+        + '<div class="mock-day-count">' + works.length + ' работ</div>'
+        + '</div>';
+    // Primary = оцененная работа (если есть), иначе первая
+    var primary = works.find(function(w){ return w.score != null; }) || works[0];
+    var rest = works.filter(function(w){ return w !== primary; });
+
+    var gallery = 'mock-' + sid + '-' + esc(subject) + '-' + esc(selected);
+
+    if (rest.length === 0) {
+        // Одна работа — компактная карточка
+        html += '<div class="mock-day-works" data-gallery="' + gallery + '">';
+        html += '<div class="mock-work-card">';
+        if (primary.s3_url) {
+            var bc = scoreBadgeClass(primary.score);
+            var bt = primary.score != null ? Math.round(primary.score) + '/100' : '—';
+            html += '<div class="photo-wrap" style="position:relative">'
+                + '<img src="' + esc(primary.s3_url) + '" alt="' + esc(primary.filename) + '" loading="lazy" onclick="openGallery(this)">'
+                + '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
+                + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + primary.id + ',this)">&times;</button>'
+                + '</div>';
+        }
+        html += '<div class="mock-work-name">' + esc(primary.filename || 'Пробник') + '</div>';
+        html += buildScoreFormOrEditButton(sid, primary.id, primary.score, primary.comment);
+        html += '</div>';
+        html += '</div>';
+    } else {
+        // Несколько работ — крупное фото + миниатюры, все в одном data-gallery
+        html += '<div data-gallery="' + gallery + '">';
+        html += '<div class="mock-hero-layout">';
+
+        // Крупное фото (оцененная или первая)
+        html += '<div class="mock-hero-photo">';
+        if (primary.s3_url) {
+            var bc = scoreBadgeClass(primary.score);
+            var bt = primary.score != null ? Math.round(primary.score) + '/100' : '—';
+            html += '<div class="photo-wrap" style="position:relative">'
+                + '<img src="' + esc(primary.s3_url) + '" alt="' + esc(primary.filename) + '" loading="lazy" onclick="openGallery(this)">'
+                + '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
+                + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + primary.id + ',this)">&times;</button>'
+                + '</div>';
+        }
+        html += '</div>';
+
+        // Миниатюры (остальные работы)
+        html += '<div class="mock-thumbnails">';
+        rest.forEach(function(w) {
+            if (w.s3_url) {
+                var wbc = scoreBadgeClass(w.score);
+                html += '<div class="photo-wrap" style="position:relative">'
+                    + '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)">'
+                    + (w.score != null ? '<span class="work-score-badge ' + wbc + '">' + Math.round(w.score) + '/100</span>' : '')
+                    + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)">&times;</button>'
+                    + '</div>';
+            }
+        });
+        html += '</div>';
+
+        html += '</div>'; // .mock-hero-layout
+        html += '</div>'; // data-gallery wrapper
+
+        // Форма оценки — только для оцененной/первой работы
+        html += buildScoreFormOrEditButton(sid, primary.id, primary.score, primary.comment);
+    }
+
+    html += '</div>';
     return html;
 }
 
@@ -411,11 +903,35 @@ function buildScoreForm(sid, workId, currentScore, currentComment) {
         + '</div>'
         + '<textarea name="comment" placeholder="Комментарий" maxlength="500">' + commentVal + '</textarea>'
         + '<div class="score-form-btns">'
-        +   '<button type="button" class="btn-save" onclick="submitScore(' + sid + ',' + workId + ',\'' + formId + '\')">💾 Сохранить оценку</button>'
-        +   '<button type="button" class="btn-retake" onclick="submitRetake(' + sid + ',' + workId + ',\'' + formId + '\')" title="Поставить оценку, отправить работу на отработку и открыть повторную сдачу">🔄 На отработку</button>'
+        +   '<button type="button" class="btn-save" onclick="submitScore(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Сохранить балл</button>'
+        +   '<button type="button" class="btn-retake" onclick="submitRetake(' + sid + ',' + workId + ',\'' + formId + '\')" title="Поставить оценку и отправить работу на отработку"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> На отработку</button>'
+        +   (IS_SUPERADMIN ? '<button type="button" class="btn-revision" onclick="submitRevision(' + sid + ',' + workId + ',\'' + formId + '\')" title="Вернуть на доработку — студент переснимает фото пробника заново"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> На доработку</button>' : '')
         + '</div>'
         + '<div class="score-msg" style="display:none"></div>'
         + '</div>';
+}
+
+function buildScoreFormOrEditButton(sid, workId, score, comment) {
+    if (score != null) {
+        return '<div id="form-wrap-' + workId + '" class="edit-score-wrap">'
+            + '<button type="button" class="btn-edit-score"'
+            +   ' data-sid="' + sid + '" data-wid="' + workId + '"'
+            +   ' data-score="' + Math.round(score) + '" data-comment="' + esc(comment||'') + '"'
+            +   ' onclick="showScoreForm(this)">'
+            +   '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true">'
+            +   '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>'
+            +   '<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
+            +   ' Изменить балл</button>'
+            + '</div>';
+    }
+    return buildScoreForm(sid, workId, score, comment);
+}
+
+function showScoreForm(btn) {
+    var wrap = btn.closest('.edit-score-wrap');
+    if (!wrap) return;
+    var score = btn.dataset.score !== '' ? +btn.dataset.score : null;
+    wrap.outerHTML = buildScoreForm(+btn.dataset.sid, +btn.dataset.wid, score, btn.dataset.comment || '');
 }
 
 function _readForm(formId) {
@@ -456,7 +972,7 @@ function submitScore(sid, workId, formId) {
         redirect: 'manual',
     }).then(function(r) {
         if (r.ok || r.type === 'opaqueredirect' || r.status === 0) {
-            _showMsg(f.root, 'Сохранено ✓', false);
+            _showMsg(f.root, 'Сохранено <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>', false);
             setTimeout(function() { selectStudent(sid); }, 600);
         } else {
             _showMsg(f.root, 'Ошибка при сохранении', true);
@@ -477,7 +993,7 @@ function submitRetake(sid, workId, formId) {
     if (!f.comment) {
         return _showMsg(f.root, 'Комментарий обязателен при отправке на отработку', true);
     }
-    if (!confirm('Отправить работу на отработку? Ученик получит оценку и сможет загрузить новый пробник.')) return;
+    if (!confirm('Отправить работу на отработку? Ученик получит оценку и задание появится в его вкладке Отработки.')) return;
 
     var fd = new FormData();
     fd.append('csrf_token', CSRF_TOKEN);
@@ -490,7 +1006,7 @@ function submitRetake(sid, workId, formId) {
     }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
       .then(function(resp) {
           if (resp.ok && resp.j.ok) {
-              _showMsg(f.root, 'Отправлено на отработку ✓', false);
+              _showMsg(f.root, 'Отправлено на отработку <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>', false);
               setTimeout(function() { selectStudent(sid); }, 700);
           } else {
               _showMsg(f.root, (resp.j && resp.j.detail) || 'Ошибка', true);
@@ -499,32 +1015,80 @@ function submitRetake(sid, workId, formId) {
       .catch(function() { _showMsg(f.root, 'Ошибка сети', true); });
 }
 
-function filterStudents(q) {
-    q = q.toLowerCase();
+function submitRevision(sid, workId, formId) {
+    if (!confirm('Вернуть пробник на доработку? Студент сможет загрузить новые фото пробника.')) return;
+    var fd = new FormData();
+    fd.append('csrf_token', CSRF_TOKEN);
+    var root = document.getElementById(formId);
+    fetch('/cabinet/students/' + sid + '/mock-exams/' + workId + '/revision', {
+        method: 'POST',
+        body: fd,
+    }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(resp) {
+          if (resp.ok && resp.j.ok) {
+              if (root) {
+                  var box = root.querySelector('.score-msg');
+                  if (box) { box.style.display = 'block'; box.className = 'score-msg score-ok'; box.textContent = 'Студент может переснять пробник'; }
+              }
+              setTimeout(function() { selectStudent(sid); }, 700);
+          } else {
+              alert((resp.j && resp.j.detail) || 'Ошибка');
+          }
+      })
+      .catch(function() { alert('Ошибка сети'); });
+}
+
+function deleteWork(sid, workId, btnEl) {
+    if (!confirm('Удалить эту работу? Фото будет удалено из хранилища.')) return;
+    fetch('/cabinet/students/' + sid + '/works/' + workId, {
+        method: 'DELETE', headers: { 'Accept': 'application/json' },
+    }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(resp) {
+          if (resp.ok && resp.j && resp.j.ok) {
+              var wrap = btnEl.closest('.photo-wrap');
+              if (wrap) wrap.remove();
+              setTimeout(function() { selectStudent(sid); }, 200);
+          } else {
+              alert((resp.j && resp.j.detail) || 'Ошибка удаления');
+          }
+      })
+      .catch(function() { alert('Ошибка сети'); });
+}
+
+function backToList() {
+    document.querySelector('.split-wrap').classList.remove('mobile-show-main');
+    window.scrollTo(0, 0);
+}
+
+var _activeTariff = '';
+
+function selectTariff(btn, tariff) {
+    _activeTariff = tariff;
+    document.querySelectorAll('.tariff-chip').forEach(function(c) { c.classList.remove('active'); });
+    btn.classList.add('active');
+    applyFilters();
+}
+
+function applyFilters() {
+    var q = (document.getElementById('student-search').value || '').toLowerCase();
     document.querySelectorAll('.student-row').forEach(function(row) {
         var name = row.querySelector('.student-row-name');
         if (!name) return;
-        row.style.display = name.textContent.toLowerCase().includes(q) ? '' : 'none';
+        var matchesName = name.textContent.toLowerCase().includes(q);
+        var rowTariff = row.getAttribute('data-tariff') || '';
+        var matchesTariff = !_activeTariff || rowTariff === _activeTariff;
+        row.style.display = (matchesName && matchesTariff) ? '' : 'none';
     });
 }
-
-function lbOpen(src) {
-    document.getElementById('lb-img').src = src;
-    document.getElementById('lb').classList.add('open');
-    document.body.style.overflow = 'hidden';
-}
-function lbClose(e) {
-    if (e && e.target !== document.getElementById('lb') && !e.target.classList.contains('lb-close')) return;
-    document.getElementById('lb').classList.remove('open');
-    document.body.style.overflow = '';
-}
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') lbClose({target: document.getElementById('lb')});
-});
 
 function esc(s) {
     if (s == null) return '';
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function cap(s) {
+    s = String(s || '');
+    return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
 if (INITIAL_STUDENT_ID) selectStudent(INITIAL_STUDENT_ID);
