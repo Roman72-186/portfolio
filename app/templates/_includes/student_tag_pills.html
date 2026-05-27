@@ -1,0 +1,33 @@
+{# Renders extra student tag pills (exam period, study mode, publish, case, curator).
+   Expects variable `s` — either a User model or a dict with the same keys.
+   Optional flags:
+     show_curator (default false) — render curator-pill if `s.curator_name` is set
+#}
+{% set _exam_dates = s.exam_dates if s.exam_dates is defined else None %}
+{% set _exam_subjects = s.exam_subjects if s.exam_subjects is defined else None %}
+{% set _study_mode = s.study_mode if s.study_mode is defined else None %}
+{% set _is_publishable = s.is_publishable if s.is_publishable is defined else False %}
+{% set _has_case = s.has_case if s.has_case is defined else False %}
+{% set _curator_name = s.curator_name if s.curator_name is defined else None %}
+
+{% if _exam_dates or _exam_subjects %}
+<span class="tag-pill tag-pill--exam">{{ _exam_dates or '' }}{% if _exam_dates and _exam_subjects %} {% endif %}{{ _exam_subjects or '' }}</span>
+{% endif %}
+
+{% if _study_mode == 'offline' %}
+<span class="tag-pill tag-pill--mode-offline">ОЧНО</span>
+{% elif _study_mode == 'online' %}
+<span class="tag-pill tag-pill--mode-online">ОНЛАЙН</span>
+{% endif %}
+
+{% if _has_case %}
+<span class="tag-pill tag-pill--case">КЕЙС</span>
+{% endif %}
+
+{% if _is_publishable %}
+<span class="tag-pill tag-pill--publish">📌 PUBLISH</span>
+{% endif %}
+
+{% if show_curator|default(false) and _curator_name %}
+<span class="tag-pill tag-pill--curator">👤 {{ _curator_name }}</span>
+{% endif %}

@@ -161,3 +161,54 @@ def test_issue_link_denied_for_admin(client, db, user_factory, session_factory, 
                        data={"target_user_id": curator_user.id, "csrf_token": "bypass"},
                        follow_redirects=False)
     assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# POST /cabinet/superadmin/users/assign-curator-bulk
+# ---------------------------------------------------------------------------
+
+def test_bulk_assign_curator_by_tg_usernames(superadmin_client, db, user_factory, curator_user):
+    client, _ = superadmin_client
+    student_1 = user_factory(vk_id=900101, name="Student One")
+    student_2 = user_factory(vk_id=900102, name="Student Two")
+    student_1.tg_username = "student_one"
+    student_2.tg_username = "student_two"
+    db.add_all([student_1, student_2])
+    db.commit()
+
+    resp = client.post(
+        "/cabinet/superadmin/users/assign-curator-bulk",
+        data={
+            "curator_id": str(curator_user.id),
+            "student_usernames": "@student_one\nstudent_two\nmissing_user",
+            "cohort_tag": "may",
+            "csrf_token": "bypass",
+        },
+    )
+
+    assert resp.status_code == 200
+    db.refresh(student_1)
+    db.refresh(student_2)
+    assert student_1.curator_id == curator_user.id
+    assert student_2.curator_id == curator_user.id
+    assert student_1.cohort_tag == "may"
+    assert student_2.cohort_tag == "may"
+    assert "missing_user" in resp.text
+
+
+def test_bulk_assign_curator_requires_superadmin(client, db, user_factory, session_factory, curator_user):
+    student = user_factory(vk_id=900103, name="Plain Student")
+    sess = session_factory(student)
+    client.cookies.set("session_id", sess.id)
+
+    resp = client.post(
+        "/cabinet/superadmin/users/assign-curator-bulk",
+        data={
+            "curator_id": str(curator_user.id),
+            "student_usernames": "student_one",
+            "csrf_token": "bypass",
+        },
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 403

@@ -29,6 +29,9 @@ PERMISSIONS = [
     ("assign_roles",         "Назначение ролей"),
     ("full_admin_panel",     "Полная административная панель"),
     ("manage_admins",        "Управление администраторами"),
+    # Цикл Пробника + Feedback (план 2026-05-14)
+    ("feedback.write",       "Запись обратной связи на работу"),
+    ("feedback.view_all",    "Просмотр всех обратных связей"),
 ]
 
 # Cumulative: each role includes all permissions of roles below it
@@ -39,6 +42,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
     "куратор": [
         "upload_photos", "view_own_gallery", "view_upload_history", "take_exam",
         "view_own_students", "view_student_photos", "comment_rate_work", "issue_magic_links",
+        "feedback.write",
     ],
     "модератор": [
         "upload_photos", "view_own_gallery", "view_upload_history", "take_exam",
@@ -48,6 +52,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "view_own_students", "view_student_photos", "comment_rate_work", "issue_magic_links",
         "view_all_students", "manage_curators", "ban_unban_users", "view_upload_stats",
         "manage_tariffs", "assign_roles", "full_admin_panel",
+        "feedback.write", "feedback.view_all",
     ],
     "суперадмин": [
         "upload_photos", "view_own_gallery", "view_upload_history", "take_exam",
@@ -55,6 +60,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "view_all_students", "manage_curators", "ban_unban_users", "view_upload_stats",
         "manage_tariffs", "assign_roles", "full_admin_panel",
         "manage_admins",
+        "feedback.write", "feedback.view_all",
     ],
 }
 

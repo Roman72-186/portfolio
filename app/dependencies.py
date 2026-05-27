@@ -66,6 +66,7 @@ def get_current_user(
 
     result = {
         "session_id": session.id,
+        "impersonated_by_id": session.impersonated_by_id,
         "user_id": user.id,
         "vk_id": user.vk_id,
         "name": user.name,
@@ -143,16 +144,22 @@ def require_internal_api_token(
 def require_csrf(
     request: Request,
     csrf_token: Annotated[str, Form(alias="csrf_token")] = "",
+    x_csrf_token: Annotated[str | None, Header(alias="X-CSRF-Token")] = None,
 ) -> None:
-    """Validate CSRF token for state-changing POST forms."""
+    """Validate CSRF token for state-changing POST requests.
+
+    Accepts token either via form field `csrf_token` (classic form POST)
+    or via header `X-CSRF-Token` (AJAX/fetch with multipart FormData).
+    """
     session_id = request.cookies.get("session_id", "")
-    if not validate_csrf_token(session_id, csrf_token):
+    token = x_csrf_token or csrf_token
+    if not validate_csrf_token(session_id, token):
         log.warning(
             "CSRF validation failed | path=%s | has_session=%s | has_token=%s | token_prefix=%s",
             request.url.path,
             bool(session_id),
-            bool(csrf_token),
-            csrf_token[:10] if csrf_token else "(empty)",
+            bool(token),
+            token[:10] if token else "(empty)",
         )
         raise HTTPException(status_code=403, detail="Неверный CSRF-токен. Обновите страницу и попробуйте снова.")
 

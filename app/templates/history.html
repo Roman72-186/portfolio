@@ -8,7 +8,7 @@
             <h1 style="font-size:28px;font-weight:700;margin-bottom:6px" class="text-gradient">История загрузок</h1>
             <p style="color:var(--muted);font-size:15px">
                 {% if total_photos %}
-                    Всего фото: <span style="color:var(--accent)">{{ total_photos }}</span>
+                    Всего фото: <span style="color:var(--blue)">{{ total_photos }}</span>
                     &nbsp;·&nbsp;
                 {% endif %}
                 Успешно: <span style="color:#34d399">{{ total_success }}</span>
@@ -18,7 +18,7 @@
             </p>
         </div>
         <div style="display:flex;gap:12px;align-items:center">
-            <a href="/upload" style="color:var(--accent);font-size:14px;font-weight:500">+ Загрузить</a>
+            <a href="/upload" style="color:var(--blue);font-size:14px;font-weight:500">+ Загрузить</a>
             <a href="/cabinet" style="color:var(--muted);font-size:14px">← Кабинет</a>
         </div>
     </div>
@@ -26,7 +26,7 @@
     {% if not logs %}
     <!-- Empty state -->
     <div class="card" style="text-align:center;padding:56px 32px">
-        <div style="font-size:52px;margin-bottom:20px">📋</div>
+        <div style="font-size:52px;margin-bottom:20px"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/></svg></div>
         <div class="card-title" style="font-size:20px;margin-bottom:8px">Загрузок пока нет</div>
         <div class="card-desc" style="margin-bottom:24px">
             После загрузки фото они появятся здесь
@@ -43,7 +43,7 @@
             <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
                 <div style="display:flex;align-items:center;gap:14px;min-width:0">
                     <div style="font-size:24px;flex-shrink:0">
-                        {% if log.status == 'success' %}📷{% else %}⚠️{% endif %}
+                        {% if log.status == 'success' %}<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>{% else %}<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>{% endif %}
                     </div>
                     <div style="min-width:0">
                         <div style="font-weight:700;font-size:15px;text-transform:capitalize;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">

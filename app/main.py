@@ -1,4 +1,6 @@
 from contextlib import asynccontextmanager
+import mimetypes
+import os
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import HTTPException
@@ -10,6 +12,7 @@ from app.db.database import engine, Base, SessionLocal
 from app.api import auth, cabinet, upload, admin, gallery
 from app.api import cabinet_student, cabinet_curator, cabinet_admin, cabinet_superadmin  # cabinet_moderator disabled
 from app.api import cabinet_students_shared
+from app.api import cycle_upload, feedback as feedback_router
 from app.limiter import limiter
 from app.services.rbac import seed_roles_and_permissions
 from app.services import n8n as n8n_service
@@ -31,11 +34,17 @@ async def lifespan(app: FastAPI):
         db.close()
     await n8n_service.init_client()
     await vk_service.init_client()
-    exam_scheduler.start_scheduler()
+    should_start_scheduler = (
+        not os.environ.get("PYTEST_CURRENT_TEST")
+        and settings.database_url != "sqlite:///:memory:"
+    )
+    if should_start_scheduler:
+        exam_scheduler.start_scheduler()
     yield
     await n8n_service.close_client()
     await vk_service.close_client()
-    exam_scheduler.stop_scheduler()
+    if should_start_scheduler:
+        exam_scheduler.stop_scheduler()
 
 
 app = FastAPI(title="Портфолио", lifespan=lifespan)
@@ -110,6 +119,7 @@ async def unhandled_exception_handler(request: Request, exc):
 
 
 # Static files
+mimetypes.add_type("image/webp", ".webp")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Security headers middleware
@@ -150,6 +160,8 @@ app.include_router(cabinet_admin.router)
 app.include_router(cabinet_superadmin.router)
 app.include_router(cabinet_students_shared.router)
 app.include_router(upload.router)
+app.include_router(cycle_upload.router)
+app.include_router(feedback_router.router)
 app.include_router(gallery.router)
 app.include_router(admin.router)
 

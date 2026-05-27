@@ -71,6 +71,25 @@ def s3_path_retake(vk_id: int, tariff: str, filename: str) -> str:
     return f"Отработки/{tf}/{tf}_{vk_id}/{ym}/{_make_filename(tariff, vk_id, filename)}"
 
 
+def s3_path_probnik_cycle(vk_id: int, cycle_id: int, attempt: int, kind: str, filename: str, tariff: str = "") -> str:
+    """Цикл Пробника: probniki/{vk_id}/{cycle_id}/attempt-{n}/final|intermediate/{filename}."""
+    assert kind in ("final", "intermediate")
+    return f"probniki/{vk_id}/{cycle_id}/attempt-{attempt}/{kind}/{_make_filename(tariff or 'X', vk_id, filename)}"
+
+
+def s3_path_otrabotka_cycle(vk_id: int, cycle_id: int, attempt: int, kind: str, filename: str, tariff: str = "") -> str:
+    """Цикл Отработки: otrabotki/{vk_id}/{cycle_id}/attempt-{n}/final|intermediate/{filename}."""
+    assert kind in ("final", "intermediate")
+    return f"otrabotki/{vk_id}/{cycle_id}/attempt-{attempt}/{kind}/{_make_filename(tariff or 'X', vk_id, filename)}"
+
+
+def s3_path_feedback(work_id: int, filename: str) -> str:
+    """Файлы обратной связи: feedback/{work_id}/{filename}."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpg"
+    rnd = uuid.uuid4().hex[:8]
+    return f"feedback/{work_id}/{rnd}.{ext}"
+
+
 def s3_public_url(s3_path: str) -> str:
     """Construct the public URL for an S3 object."""
     endpoint = settings.s3_endpoint.rstrip("/")

@@ -9,7 +9,7 @@ details > summary::-webkit-details-marker { display: none; }
 .creds-card {
     background: linear-gradient(135deg,#f0fdf4,#dcfce7);
     border: 1.5px solid #86efac;
-    border-radius: 16px;
+    border-radius: var(--r-lg);
     padding: 20px 24px;
     margin-bottom: 24px;
     display: flex;
@@ -18,7 +18,7 @@ details > summary::-webkit-details-marker { display: none; }
 }
 .creds-icon {
     width: 40px; height: 40px; flex-shrink: 0;
-    background: #22c55e; border-radius: 12px;
+    background: #22c55e; border-radius: var(--r-md);
     display: flex; align-items: center; justify-content: center;
     font-size: 20px;
 }
@@ -49,42 +49,78 @@ details > summary::-webkit-details-marker { display: none; }
 
 /* ── Create staff card ── */
 .create-card {
-    background: #fff; border-radius: 16px; padding: 20px 24px;
-    box-shadow: 0 2px 16px rgba(30,45,107,0.08); margin-bottom: 24px;
+    background: #fff; border-radius: var(--r-lg); padding: 20px 24px;
+    box-shadow: var(--sh-sm); margin-bottom: 24px;
 }
 .create-card > summary {
     font-size: 15px; font-weight: 700; color: var(--text); cursor: pointer;
     display: flex; align-items: center; gap: 8px; user-select: none;
 }
-.create-card > summary::before { content: '+'; font-size: 18px; color: var(--accent); font-weight: 900; line-height: 1; }
+.create-card > summary::before { content: '+'; font-size: 18px; color: var(--blue); font-weight: 900; line-height: 1; }
 details[open].create-card > summary::before { content: '−'; }
 .create-grid {
     display: grid; grid-template-columns: 1fr 1fr 1fr auto;
     gap: 10px; margin-top: 16px; align-items: end;
 }
 .create-grid input, .create-grid select {
-    width: 100%; padding: 10px 12px; border: 1.5px solid var(--border);
-    border-radius: 10px; font-size: 13px; font-family: 'Montserrat', sans-serif;
+    width: 100%; padding: 10px 12px; border: 1.5px solid var(--line);
+    border-radius: var(--r-sm); font-size: 13px; font-family: inherit;
     background: var(--surface); color: var(--text); box-sizing: border-box;
 }
-.create-grid input:focus, .create-grid select:focus { outline: none; border-color: var(--accent); }
+.create-grid input:focus, .create-grid select:focus { outline: none; border-color: var(--blue); }
 .create-submit-btn {
-    background: linear-gradient(135deg,#1E2D6B,#3B4FC8); color: #fff;
-    border: none; padding: 10px 22px; border-radius: 10px; font-size: 14px;
+    background: linear-gradient(135deg, var(--blue-deep), var(--blue-mid)); color: #fff;
+    border: none; padding: 10px 22px; border-radius: var(--r-sm); font-size: 14px;
     font-weight: 700; cursor: pointer; white-space: nowrap;
 }
 .create-submit-btn:hover { opacity: 0.9; }
 
+/* ── Bulk curator assignment ── */
+.bulk-card {
+    background: #fff; border-radius: var(--r-lg); padding: 20px 24px;
+    box-shadow: var(--sh-sm); margin-bottom: 24px;
+}
+.bulk-card > summary {
+    font-size: 15px; font-weight: 700; color: var(--text); cursor: pointer;
+    display: flex; align-items: center; gap: 8px; user-select: none;
+}
+.bulk-card > summary::before { content: '+'; font-size: 18px; color: var(--blue); font-weight: 900; line-height: 1; }
+details[open].bulk-card > summary::before { content: '−'; }
+.bulk-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 12px; margin-top: 16px;
+}
+.bulk-field-full { grid-column: 1 / -1; }
+.bulk-grid select, .bulk-grid textarea {
+    width: 100%; padding: 10px 12px; border: 1.5px solid var(--line);
+    border-radius: var(--r-sm); font-size: 13px; font-family: inherit;
+    background: var(--surface); color: var(--text); box-sizing: border-box;
+}
+.bulk-grid textarea { min-height: 110px; resize: vertical; line-height: 1.5; }
+.bulk-grid select:focus, .bulk-grid textarea:focus { outline: none; border-color: var(--blue); }
+.bulk-result {
+    margin-bottom: 18px; padding: 14px 16px; border-radius: var(--r-md);
+    border: 1.5px solid #bfdbfe; background: #eff6ff; color: #1e3a8a;
+    font-size: 13px; line-height: 1.55;
+}
+.bulk-result-error { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
+.bulk-submit-btn {
+    background: linear-gradient(135deg, var(--blue-deep), var(--blue-mid)); color: #fff;
+    border: none; padding: 10px 22px; border-radius: var(--r-sm); font-size: 14px;
+    font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.bulk-submit-btn:hover { opacity: 0.9; }
+
 /* ── Per-row reset button ── */
 .reset-btn {
-    background: none; border: 1px solid var(--border); border-radius: 8px;
+    background: none; border: 1px solid var(--line); border-radius: 8px;
     padding: 4px 10px; font-size: 12px; font-weight: 700; color: var(--muted);
     cursor: pointer; transition: border-color 0.15s, color 0.15s;
 }
-.reset-btn:hover { border-color: var(--accent); color: var(--accent); }
+.reset-btn:hover { border-color: var(--blue); color: var(--blue); }
 
 @media (max-width: 768px) {
-    .create-grid { grid-template-columns: 1fr 1fr; }
+    .create-grid, .bulk-grid { grid-template-columns: 1fr; }
     .creds-card { flex-direction: column; gap: 10px; }
 }
 </style>
@@ -93,8 +129,16 @@ details[open].create-card > summary::before { content: '−'; }
 <div style="margin-bottom:24px">
     <a href="/cabinet" style="font-size:13px;color:var(--dim);text-decoration:none;display:inline-block;margin-bottom:10px">← Кабинет</a>
     <h1 style="font-size:24px;font-weight:700;margin-bottom:6px" class="text-gradient">Управление пользователями</h1>
-    <p style="color:var(--muted);font-size:14px">Всего: {{ users|length }}</p>
+    <p style="color:var(--muted);font-size:14px">Показано: {{ users|length }}</p>
 </div>
+
+<form method="get" action="/admin/users" style="margin-bottom:20px;display:flex;gap:8px;align-items:center">
+    <input type="text" name="q" value="{{ q }}" placeholder="Имя, @username..."
+        style="flex:1;max-width:360px;padding:9px 14px;font-size:14px;font-family:inherit;border:1.5px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);outline:none"
+        autofocus>
+    <button type="submit" style="padding:9px 18px;background:var(--blue);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Найти</button>
+    {% if q %}<a href="/admin/users" style="padding:9px 14px;font-size:14px;color:var(--dim);text-decoration:none">✕ Сбросить</a>{% endif %}
+</form>
 
 {% if page_error %}
 <div class="alert alert-error" style="margin-bottom:20px">{{ page_error }}</div>
@@ -103,7 +147,7 @@ details[open].create-card > summary::before { content: '−'; }
 <!-- ═══ СГЕНЕРИРОВАННЫЕ ДАННЫЕ ═══ -->
 {% if new_staff_creds %}
 <div class="creds-card">
-    <div class="creds-icon">✓</div>
+    <div class="creds-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg></div>
     <div style="flex:1;min-width:0">
         <div class="creds-title">Аккаунт создан — {{ new_staff_creds.name }}</div>
         <div class="creds-row">
@@ -152,11 +196,64 @@ details[open].create-card > summary::before { content: '−'; }
     </form>
 </details>
 
+{% if current_user_rank >= 5 %}
+{% if bulk_result %}
+<div class="bulk-result {% if bulk_result.error %}bulk-result-error{% endif %}">
+    {% if bulk_result.error %}
+    {{ bulk_result.error }}
+    {% else %}
+    Привязка к куратору {{ bulk_result.curator_name }}: найдено {{ bulk_result.matched }} из {{ bulk_result.requested }},
+    назначено {{ bulk_result.assigned }}, без изменений {{ bulk_result.unchanged }}.
+    {% if bulk_result.cohort_tag %}Метка применена.{% endif %}
+    {% if bulk_result.not_found %}
+    Не найдены: {{ bulk_result.not_found|join(', ') }}.
+    {% endif %}
+    {% endif %}
+</div>
+{% endif %}
+
+<details class="bulk-card">
+    <summary>Массово привязать учеников к куратору</summary>
+    <form action="/admin/users/assign-curator-bulk" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <div class="bulk-grid">
+            <div>
+                <label for="bulk-curator" style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--dim);margin-bottom:5px">Куратор</label>
+                <select id="bulk-curator" name="curator_id" required>
+                    <option value="" disabled selected>Выберите куратора</option>
+                    {% for c in curators %}
+                    <option value="{{ c.id }}">{{ c.first_name or c.name }}{% if c.last_name %} {{ c.last_name }}{% endif %}{% if c.tg_username %} · @{{ c.tg_username }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="bulk-cohort" style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--dim);margin-bottom:5px">Бейдж на аватарке</label>
+                <select id="bulk-cohort" name="cohort_tag">
+                    <option value="">Без бейджа</option>
+                    <option value="may">МАЙСКАЯ · цветок М</option>
+                    <option value="june">ИЮНЬ · пух И</option>
+                    <option value="july">ИЮЛЬ · подсолнух И</option>
+                    <option value="august">АВГУСТ · колос А</option>
+                </select>
+            </div>
+            <div class="bulk-field-full">
+                <label for="bulk-usernames" style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--dim);margin-bottom:5px">Telegram username учеников</label>
+                <textarea id="bulk-usernames" name="student_usernames" placeholder="@student1&#10;@student2&#10;student3" required></textarea>
+                <p style="margin-top:8px;font-size:12px;color:var(--dim)">Можно вставлять через строку, запятую или точку с запятой. Если бейдж не выбран, существующие бейджи не меняются.</p>
+            </div>
+            <div class="bulk-field-full" style="display:flex;justify-content:flex-end">
+                <button type="submit" class="bulk-submit-btn">Привязать списком</button>
+            </div>
+        </div>
+    </form>
+</details>
+{% endif %}
+
 <!-- ═══ ТАБЛИЦА ПОЛЬЗОВАТЕЛЕЙ ═══ -->
 <div style="overflow-x:auto">
     <table style="width:100%;border-collapse:collapse;font-size:14px">
         <thead>
-            <tr style="border-bottom:1px solid var(--border);color:var(--muted);text-align:left">
+            <tr style="border-bottom:1px solid var(--line);color:var(--muted);text-align:left">
                 <th style="padding:10px 8px">Имя</th>
                 <th style="padding:10px 8px">VK ID</th>
                 <th style="padding:10px 8px">Тариф</th>
@@ -172,7 +269,7 @@ details[open].create-card > summary::before { content: '−'; }
         </thead>
         <tbody>
         {% for u in users %}
-            <tr style="border-bottom:1px solid var(--border)">
+            <tr style="border-bottom:1px solid var(--line)">
                 <td style="padding:10px 8px">
                     <div style="display:flex;align-items:center;gap:8px">
                         {% if u.photo_url %}
@@ -190,7 +287,7 @@ details[open].create-card > summary::before { content: '−'; }
                             <option value="{{ t }}" {% if tariff_display.get(u.tariff, u.tariff) == t %}selected{% endif %}>{{ t }}</option>
                             {% endfor %}
                         </select>
-                        <button type="submit" style="background:var(--accent);color:#000;border:none;padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:700">OK</button>
+                        <button type="submit" style="background:var(--blue);color:#000;border:none;padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:700">OK</button>
                     </form>
                 </td>
                 <td style="padding:10px 8px">
@@ -260,18 +357,20 @@ details[open].create-card > summary::before { content: '−'; }
                             {{ 'Сбросить пароль' if u.staff_login else '+ Сгенерировать' }}
                         </button>
                     </form>
+                    {% if role_rank == 2 and current_user_rank >= 4 and u.is_active and u.id != user.user_id %}
+                    <form action="/cabinet/superadmin/impersonate/{{ u.id }}" method="post" style="margin:6px 0 0">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                        <button type="submit" style="background:var(--blue);color:#fff;border:none;padding:6px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:700;width:100%">
+                            Войти как куратор
+                        </button>
+                    </form>
+                    {% endif %}
                     {% else %}
                     <span style="color:var(--dim);font-size:12px">—</span>
                     {% endif %}
                 </td>
 
                 <td style="padding:10px 8px">
-                    {% if u.role and u.role.rank == 1 %}
-                    <span style="
-                        background:rgba(52,211,153,0.15);color:#34d399;
-                        padding:4px 10px;border-radius:6px;font-size:12px;font-weight:500;
-                    ">{{ 'Активен' if u.is_active else 'Забанен' }}</span>
-                    {% else %}
                     <form action="/admin/users/{{ u.id }}/toggle-active" method="post" style="margin:0">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <button type="submit" style="
@@ -280,7 +379,6 @@ details[open].create-card > summary::before { content: '−'; }
                             border:none;padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:500;
                         ">{{ 'Активен' if u.is_active else 'Забанен' }}</button>
                     </form>
-                    {% endif %}
                 </td>
                 <td style="padding:10px 8px;min-width:260px">
                     {% if issued_link and issued_link_user_id == u.id %}
@@ -295,7 +393,7 @@ details[open].create-card > summary::before { content: '−'; }
                         <button
                             type="button"
                             onclick="copyAccessLink('{{ u.id }}')"
-                            style="background:var(--accent);color:#000;border:none;padding:6px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:700"
+                            style="background:var(--blue);color:#000;border:none;padding:6px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:700"
                         >
                             Копия
                         </button>
@@ -310,7 +408,7 @@ details[open].create-card > summary::before { content: '−'; }
                     {% else %}
                     <form action="/admin/users/{{ u.id }}/issue-link" method="post" style="margin:0">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                        <button type="submit" style="background:var(--accent);color:#000;border:none;padding:6px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:700">
+                        <button type="submit" style="background:var(--blue);color:#000;border:none;padding:6px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:700">
                             Создать
                         </button>
                     </form>

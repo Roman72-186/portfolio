@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Обратная связь{% endblock %}
+{% block content %}
+<div class="fb-page" style="max-width:720px;margin:0 auto;padding:20px;">
+  {% include "partials/cycle_back.html" %}
+  <h1 style="font-size:24px;font-weight:900;margin:8px 0 18px;">Обратная связь</h1>
+
+  {% if total_unread and total_unread > 0 %}
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:14px;border:1px solid rgba(245,158,11,0.35);background:rgba(245,158,11,0.08);border-radius:12px;color:#B45309;font-weight:700;font-size:14px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      У вас {{ total_unread }} новых обратных связей — посмотри циклы ниже.
+    </div>
+  {% endif %}
+
+  {% if not cycles %}
+    <div style="padding:20px;border:1px solid var(--line);border-radius:12px;color:var(--muted);">
+      Циклов пока нет. Пройди Пробник, чтобы получить обратную связь куратора.
+    </div>
+  {% else %}
+    <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px;">
+      {% for c in cycles %}
+        <li>
+          <a href="/cabinet/feedback/{{ c.id }}"
+             style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 16px;border:1px solid {% if c.unread_count and c.unread_count > 0 %}rgba(245,158,11,0.4){% else %}var(--line){% endif %};border-radius:12px;text-decoration:none;color:inherit;background:{% if c.unread_count and c.unread_count > 0 %}rgba(245,158,11,0.05){% else %}var(--surface){% endif %};">
+            <div style="min-width:0;">
+              <div style="font-weight:700;">{{ c.subject }}</div>
+              <div style="color:var(--muted);font-size:13px;margin-top:4px;">
+                Начат: {{ c.started_at[:10] }} · Попыток: {{ c.attempts }}
+              </div>
+            </div>
+            {% if c.unread_count and c.unread_count > 0 %}
+              <span style="flex-shrink:0;background:#D97706;color:#fff;font-size:11px;font-weight:800;padding:3px 10px;border-radius:999px;letter-spacing:0.04em;">
+                НОВОЕ · {{ c.unread_count }}
+              </span>
+            {% endif %}
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</div>
+{% endblock %}

@@ -113,7 +113,10 @@
     display: none; align-items: center; gap: 4px;
     padding: 10px 20px; background: var(--surface);
     border-bottom: 1px solid var(--line); flex-shrink: 0;
+    overflow-x: auto; scrollbar-width: none;
 }
+.tab-bar::-webkit-scrollbar { display: none; }
+.tab-btn { flex-shrink: 0; }
 .tab-btn {
     padding: 7px 18px; border-radius: var(--r-xl);
     font-size: 13px; font-weight: 700; cursor: pointer;
@@ -549,6 +552,15 @@
     font-family: inherit; transition: border-color 0.15s, background 0.15s;
 }
 .score-revision-btn:hover { background: rgba(217,119,6,0.06); border-color: var(--warning); }
+.edit-score-wrap { margin-top: 10px; }
+.btn-edit-score {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--surface-2); color: var(--text); font-size: 13px;
+    font-weight: 600; cursor: pointer; font-family: inherit;
+    transition: border-color 0.15s, color 0.15s;
+}
+.btn-edit-score:hover { border-color: var(--blue); color: var(--blue); }
 
 /* ── Unlock form ── */
 .unlock-wrap { margin-bottom: 12px; }
@@ -596,6 +608,18 @@
     background: rgba(245,158,11,0.12); color: #b45309;
 }
 .retake-work.is-mock-work { border-color: rgba(245,158,11,0.3); }
+.retake-work[draggable="true"] { cursor: grab; }
+.retake-move-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.retake-move-btn {
+    border: 1px solid var(--line); background: var(--surface-2);
+    color: var(--blue); border-radius: 8px; padding: 6px 10px;
+    font-size: 12px; font-weight: 800; cursor: pointer; font-family: inherit;
+}
+.retake-move-btn:hover { border-color: var(--blue); background: var(--blue-soft); }
+.subject-card.drop-target .subject-card-body {
+    border-color: var(--blue) !important;
+    background: rgba(59,79,200,0.04) !important;
+}
 
 /* ── Sidebar filters ── */
 .sidebar-filters {
@@ -1003,8 +1027,17 @@
                         {{ s.tariff or '—' }}
                         {% if s.avg_score is not none %} · {{ s.avg_score }} ср.{% endif %}
                     </div>
+                    <div class="student-tag-pills" style="margin-top:4px">
+                        {% include "_includes/student_tag_pills.html" %}
+                    </div>
                 </div>
-                {% if can_score %}
+                {% if can_score and initial_tab == 'retakes' %}
+                    {% if s.retake_unchecked %}
+                    <span class="pending-badge">{{ s.retake_unchecked }}</span>
+                    {% elif s.retake_count %}
+                    <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверено</span>
+                    {% endif %}
+                {% elif can_score %}
                     {% set ss = s.scored_subjects %}
                     {% if ss | length >= 2 %}
                     <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверено</span>
@@ -1045,6 +1078,7 @@
             <button class="tab-btn" id="tab-portfolio"  onclick="switchTab('portfolio')">Портфолио</button>
             <button class="tab-btn" id="tab-mock-exams" onclick="switchTab('mock-exams')">Пробники</button>
             <button class="tab-btn" id="tab-retakes"    onclick="switchTab('retakes')">Отработки</button>
+            <button class="tab-btn" id="tab-cycles"     onclick="switchTab('cycles')">Цикл Пробника</button>
         </div>
 
         <div class="split-main-scroll" id="main-panel">
@@ -1134,10 +1168,17 @@
 const CAN_SCORE      = {{ can_score | tojson }};
 const MOCK_SUBJECTS  = {{ mock_subjects | tojson }};
 const MONTHS_LIST    = {{ months | tojson }};
+const MONTH_NAMES    = MONTHS_LIST;
+const MONTH_TO_NUM   = (function() {
+    var m = {};
+    MONTHS_LIST.forEach(function(name, idx) { m[String(name).toLowerCase()] = idx + 1; });
+    return m;
+})();
 const CURRENT_YEAR   = {{ current_year }};
 const INITIAL_STUDENT_ID = {{ initial_student_id }};
 const INITIAL_TAB    = "{{ initial_tab }}";
 const IS_SUPERADMIN  = {{ is_superadmin | tojson }};
+const USER_ROLE_RANK = {{ user.role_rank | tojson }};
 
 var _currentStudentId = null;
 var _currentTab = 'portfolio';
@@ -1159,6 +1200,7 @@ function mobileBackToList() {
 }
 
 function selectStudent(id, forceTab) {
+    if (_currentStudentId && id !== _currentStudentId && !guardUnsavedScore()) return;
     _currentStudentId = id;
     if (!_tabCache[id]) _tabCache[id] = {};
 
@@ -1204,6 +1246,7 @@ function selectStudent(id, forceTab) {
 }
 
 function openTab(tabName) {
+    if (_viewMode === 'tab' && tabName !== _currentTab && !guardUnsavedScore()) return;
     _viewMode = 'tab';
     _currentTab = tabName;
     document.getElementById('tab-bar').style.display = 'flex';
@@ -1215,6 +1258,7 @@ function openTab(tabName) {
 
 function backToProfile() {
     if (!_currentStudentId) return;
+    if (!guardUnsavedScore()) return;
     _viewMode = 'profile';
     document.getElementById('tab-bar').style.display = 'none';
     if (_tabCache[_currentStudentId] && _tabCache[_currentStudentId].profile) {
@@ -1284,6 +1328,11 @@ function renderProfile(data) {
         +   '<div class="profile-action-label">Отработки</div>'
         +   '<div class="profile-action-count">' + (s.retake_count || 0) + ' работ</div>'
         + '</button>'
+        + '<button class="profile-action-btn" onclick="openTab(\'cycles\')">'
+        +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9"/><polyline points="21 3 21 9 15 9"/></svg></div>'
+        +   '<div class="profile-action-label">Цикл Пробника</div>'
+        +   '<div class="profile-action-count">' + (s.cycle_count || 0) + ' циклов</div>'
+        + '</button>'
         + '</div>';
 
     document.getElementById('main-panel').innerHTML = html;
@@ -1301,9 +1350,10 @@ function profileField(label, value, fullWidth) {
 // ── Tab switching ────────────────────────────────────────────────────────────
 
 function switchTab(tabName) {
+    if (_currentTab && tabName !== _currentTab && !guardUnsavedScore()) return;
     _currentTab = tabName;
 
-    ['portfolio', 'mock-exams', 'retakes'].forEach(function(t) {
+    ['portfolio', 'mock-exams', 'retakes', 'cycles'].forEach(function(t) {
         var btn = document.getElementById('tab-' + t);
         if (btn) btn.classList.toggle('active', t === tabName);
     });
@@ -1341,7 +1391,7 @@ function switchTab(tabName) {
 function renderTab(tabName, data) {
     var heroEl = document.getElementById('student-hero-container');
     var bySubj = (tabName === 'mock-exams') ? (data.avg_score_by_subject || null) : null;
-    if (heroEl) heroEl.innerHTML = buildHero(data.student, bySubj);
+    if (heroEl && data.student) heroEl.innerHTML = buildHero(data.student, bySubj);
 
     var tc = document.getElementById('tab-content');
     if (!tc) return;
@@ -1351,6 +1401,50 @@ function renderTab(tabName, data) {
     if (tabName === 'portfolio')  { tc.innerHTML = backBtn + buildPortfolio(data);  }
     if (tabName === 'mock-exams') { tc.innerHTML = backBtn + buildMockExams(data);  }
     if (tabName === 'retakes')    { tc.innerHTML = backBtn + buildRetakes(data);    }
+    if (tabName === 'cycles')     { tc.innerHTML = backBtn + buildCycles(data);     }
+}
+
+function buildCycles(data) {
+    var sid = data.student_id;
+    var html = '<div class="section-title">Цикл Пробника</div>';
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
+        +   '<a href="/cabinet/staff/cycle/probnik/' + sid + '" '
+        +   'style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;'
+        +   'background:rgba(37,99,235,0.10);color:var(--blue);font-weight:800;font-size:13px;'
+        +   'text-decoration:none;border:1px solid rgba(37,99,235,0.30);">📅 Календарь пробников</a>'
+        +   '<a href="/cabinet/staff/cycle/otrabotka/' + sid + '" '
+        +   'style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;'
+        +   'background:rgba(124,58,237,0.10);color:#7C3AED;font-weight:800;font-size:13px;'
+        +   'text-decoration:none;border:1px solid rgba(124,58,237,0.30);">📅 Календарь отработок</a>'
+        + '</div>';
+    if (!data.cycles || data.cycles.length === 0) {
+        return html + '<div class="no-works">У ученика пока нет циклов пробника. Календари выше показывают также архивные работы без цикла.</div>';
+    }
+    html += '<div style="display:flex;flex-direction:column;gap:10px">';
+    data.cycles.forEach(function(c) {
+        var date = (c.started_at || '').slice(0, 10);
+        var fbTotal = c.feedbacks_count || 0;
+        var attempts = c.attempts || 0;
+        var pillCls = fbTotal > 0 ? 'cycle-pill has-fb' : 'cycle-pill no-fb';
+        var pillTxt = fbTotal > 0 ? ('Обратная связь: ' + fbTotal + '/' + attempts) : 'Нет обратной связи';
+        html += '<a href="' + esc(c.url) + '" '
+            + 'style="display:flex;justify-content:space-between;align-items:center;gap:10px;'
+            + 'padding:12px 14px;border:1px solid var(--line);border-radius:10px;'
+            + 'text-decoration:none;color:inherit;transition:background .12s">'
+            + '<div style="display:flex;flex-direction:column;gap:3px;min-width:0">'
+            +   '<span style="font-weight:800;color:var(--ink)">' + esc(c.subject) + '</span>'
+            +   '<span style="font-size:12px;color:var(--muted)">Начат: ' + esc(date) + ' · Попыток: ' + attempts + '</span>'
+            + '</div>'
+            + '<div style="display:flex;gap:8px;align-items:center">'
+            +   '<span class="' + pillCls + '" style="font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;'
+            +   (fbTotal > 0 ? 'background:rgba(34,197,94,0.12);color:#15803D' : 'background:rgba(245,158,11,0.12);color:#B45309')
+            +   '">' + esc(pillTxt) + '</span>'
+            +   '<span aria-hidden="true" style="color:var(--muted)">›</span>'
+            + '</div>'
+            + '</a>';
+    });
+    html += '</div>';
+    return html;
 }
 
 // ── Hero ─────────────────────────────────────────────────────────────────────
@@ -1731,6 +1825,7 @@ function rerenderMockTab() {
 }
 
 function setMockCalendarYear(sid, subjectIndex, delta) {
+    if (!guardUnsavedScore()) return;
     var key = mockStateKey(sid, subjectIndex);
     var state = _mockCalendarState[key] || { year: CURRENT_YEAR, month: new Date().getMonth(), selectedDate: '' };
     state.year += delta;
@@ -1740,6 +1835,7 @@ function setMockCalendarYear(sid, subjectIndex, delta) {
 }
 
 function setMockCalendarMonth(sid, subjectIndex, month) {
+    if (!guardUnsavedScore()) return;
     var key = mockStateKey(sid, subjectIndex);
     var state = _mockCalendarState[key] || { year: CURRENT_YEAR, month: month, selectedDate: '' };
     state.month = month;
@@ -1749,6 +1845,7 @@ function setMockCalendarMonth(sid, subjectIndex, month) {
 }
 
 function selectMockDay(sid, subjectIndex, dateStr) {
+    if (!guardUnsavedScore()) return;
     var parts = dateStr.split('-');
     _mockCalendarState[mockStateKey(sid, subjectIndex)] = {
         year: parseInt(parts[0], 10),
@@ -1854,103 +1951,302 @@ function buildMockDayPanel(sid, subject, grouped, state) {
         html += '</div>'; // data-gallery wrapper
     }
 
-    // Оценка и комментарий — только по primary
-    if (primary.score != null) {
-        html += '<div class="mock-work-meta" style="margin-top:8px">Балл: <span class="mock-work-score">' + Math.round(primary.score) + ' / 100</span></div>';
-    } else {
-        html += '<div class="mock-work-meta" style="margin-top:8px">Не оценено</div>';
-    }
+    // Комментарий куратора — только по primary
     if (primary.comment) {
-        html += '<div style="font-size:12px;color:var(--muted);margin-top:6px;white-space:pre-wrap">' + esc(primary.comment) + '</div>';
+        html += '<div style="font-size:12px;color:var(--muted);margin-top:8px;white-space:pre-wrap">' + esc(primary.comment) + '</div>';
     }
     if (CAN_SCORE) {
-        html += buildScoreForm(sid, primary.id, 'mock-exams', primary.score, primary.comment);
+        html += buildScoreFormOrEditButton(sid, primary.id, 'mock-exams', primary.score, primary.comment);
+    }
+    html += buildFeedbackButton(primary);
+
+    html += '</div>';
+    return html;
+}
+
+function buildFeedbackButton(w) {
+    if (!w || !w.cycle_id) return '';
+    var role = (typeof USER_ROLE_RANK !== 'undefined') ? USER_ROLE_RANK : 0;
+    if (role < 2) return '';
+    var prefix = role >= 5 ? '/cabinet/superadmin/feedback/'
+              : role >= 4 ? '/cabinet/admin/feedback/'
+              : '/cabinet/curator/feedback/';
+    var hasFb = !!w.has_feedback;
+    var lbl = hasFb ? 'Открыть обратную связь' : 'Дать обратную связь';
+    var bg = hasFb ? 'rgba(34,197,94,0.12)' : 'var(--blue-soft)';
+    var col = hasFb ? '#15803D' : 'var(--blue)';
+    return '<a href="' + prefix + w.cycle_id + '#work-' + w.id + '" '
+         + 'style="display:inline-flex;align-items:center;gap:6px;margin-top:10px;padding:7px 12px;border-radius:8px;'
+         + 'background:' + bg + ';color:' + col + ';font-size:13px;font-weight:700;text-decoration:none;border:1px solid transparent;transition:opacity .15s">'
+         + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
+         + '<span>' + lbl + '</span>'
+         + '</a>';
+}
+
+function buildRetakes(data) {
+    var bySubject = data.retakes_by_subject || {};
+    var unassigned = data.retakes_unassigned || [];
+    var subjects = data.subjects || MOCK_SUBJECTS;
+
+    var totalCount = unassigned.length;
+    subjects.forEach(function(s) { totalCount += (bySubject[s] || []).length; });
+
+    if (!totalCount) {
+        return '<div style="text-align:center;padding:48px 20px;color:var(--dim);font-size:14px">Отработок нет</div>';
+    }
+
+    var html = '<div class="subjects-grid">';
+    subjects.forEach(function(subj) {
+        html += buildRetakeSubjectCard(subj, bySubject[subj] || []);
+    });
+    html += '</div>';
+    if (unassigned.length) {
+        html += buildRetakeSubjectCard('Без предмета', unassigned, /*isUnassigned*/ true);
+    }
+    return html;
+}
+
+function buildRetakeSubjectCard(subject, works, isUnassigned) {
+    var sid = _currentStudentId;
+    var allSubjects = MOCK_SUBJECTS || [];
+    var dropAttrs = (IS_SUPERADMIN && !isUnassigned)
+        ? ' data-subject="' + esc(subject) + '" ondragover="allowRetakeDrop(event)" ondragleave="leaveRetakeDrop(event)" ondrop="dropRetakesToSubject(event,' + sid + ',\'' + esc(subject) + '\')"'
+        : '';
+    var groups = groupRetakeWorksByMonth(works);
+    var monthKeys = Object.keys(groups).sort(function(a, b) {
+        var pa = a.split('-'), pb = b.split('-');
+        if (pa[0] !== pb[0]) return parseInt(pb[0], 10) - parseInt(pa[0], 10);
+        return parseInt(pb[1], 10) - parseInt(pa[1], 10);
+    });
+
+    var html = '<div class="subject-card"' + dropAttrs + '>'
+        + '<div class="subject-card-header">'
+        +   '<span class="subject-title">' + esc(subject) + '</span>'
+        +   '<span class="lock-badge ' + (isUnassigned ? 'locked' : 'open') + '">'
+        +     (isUnassigned ? 'Без предмета' : works.length + ' работ')
+        +   '</span>'
+        + '</div>'
+        + '<div class="subject-card-body">';
+
+    if (!works.length) {
+        html += '<div class="no-works">Нет загруженных работ</div></div></div>';
+        return html;
+    }
+
+    monthKeys.forEach(function(key) {
+        var parts = key.split('-');
+        var year = parseInt(parts[0], 10);
+        var monthNum = parseInt(parts[1], 10);
+        var monthName = MONTH_NAMES[monthNum - 1] || '';
+        var works = groups[key];
+        var label = cap(monthName) + ' ' + year;
+        var delBtn = (CAN_SCORE && !isUnassigned)
+            ? '<button class="folder-del-btn" onclick="deleteFolderWorks(' + sid + ',\'retake\',\'' + esc(monthName) + '\',' + year + ',' + works.length + ')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Удалить</button>'
+            : '';
+        html += '<div class="month-block" data-gallery="retake-' + sid + '-' + esc(subject) + '-' + year + '-' + monthNum + '">';
+        html += '<div class="month-header">'
+            + '<span class="month-label">' + esc(label) + '</span>'
+            + '<div style="display:flex;align-items:center;gap:10px">'
+            + '<span class="month-count">' + works.length + ' работ</span>'
+            + delBtn
+            + '</div></div>';
+        html += '<div style="padding:12px 16px">';
+
+        works.forEach(function(w) {
+            html += buildRetakeWorkCard(sid, w, subject, allSubjects, 'retake-' + sid + '-' + esc(subject) + '-' + year + '-' + monthNum);
+        });
+
+        html += '</div></div>';
+    });
+
+    html += '</div></div>'; // close .subject-card-body + .subject-card
+    return html;
+}
+
+function groupRetakeWorksByMonth(works) {
+    var groups = {};
+    works.forEach(function(w) {
+        var year = w.year || (w.created_at ? new Date(w.created_at).getFullYear() : null);
+        var monthName = (w.month || '').toString().toLowerCase();
+        var monthNum = MONTH_TO_NUM[monthName] || 0;
+        if (!monthNum && w.created_at) {
+            try { monthNum = new Date(w.created_at).getMonth() + 1; } catch (e) {}
+        }
+        if (!year || !monthNum) return;
+        var key = year + '-' + String(monthNum).padStart(2, '0');
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(w);
+    });
+    return groups;
+}
+
+// ── Scoring form builder ─────────────────────────────────────────────────────
+
+var _dragRetakeIds = '';
+
+function scoreFormValue(root, selector) {
+    var el = root ? root.querySelector(selector) : null;
+    return el ? String(el.value || '').trim() : '';
+}
+
+function getDirtyScoreForm() {
+    var forms = document.querySelectorAll('.score-form');
+    for (var i = 0; i < forms.length; i++) {
+        var root = forms[i];
+        if (root.dataset.saving === '1') continue;
+        var score = scoreFormValue(root, 'input[name="score"]');
+        var comment = scoreFormValue(root, 'textarea[name="comment"]');
+        var initialScore = root.dataset.initialScore || '';
+        var initialComment = root.dataset.initialComment || '';
+        if (score !== initialScore || comment !== initialComment) return root;
+    }
+    return null;
+}
+
+function guardUnsavedScore() {
+    var dirty = getDirtyScoreForm();
+    if (!dirty) return true;
+    alert('Сначала сохраните введённый балл. После этого можно перейти к другой работе или предмету.');
+    var input = dirty.querySelector('input[name="score"]');
+    if (input) input.focus();
+    return false;
+}
+
+window.addEventListener('beforeunload', function(ev) {
+    if (!getDirtyScoreForm()) return;
+    ev.preventDefault();
+    ev.returnValue = '';
+});
+
+function buildRetakeChipsAndComment(w) {
+    var isMock = !!w.is_mock;
+    var html = '';
+    if (!isMock && w.student_score != null) {
+        html += '<span class="score-blue-chip" title="Оценка ученика"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg> ' + Math.round(w.student_score) + ' / 100</span>';
+    }
+    if (w.curator_score != null) {
+        html += '<span class="scored-chip" title="Оценка куратора">⭐ ' + Math.round(w.curator_score) + ' / 100</span>';
+    }
+    var chips = html ? '<div class="retake-chips-row" style="padding:0 0 8px">' + html + '</div>' : '';
+    var comment = w.comment
+        ? '<div style="font-size:12px;color:var(--muted);margin:0 0 8px;white-space:pre-wrap">' + esc(w.comment) + '</div>'
+        : '';
+    return chips + comment;
+}
+
+function buildRetakeWorkCard(sid, w, subject, allSubjects, gallery) {
+    var isMock = !!w.is_mock;
+    var dragAttrs = IS_SUPERADMIN
+        ? ' draggable="true" data-work-ids="' + w.id + '" ondragstart="startRetakeDrag(event)"'
+        : '';
+    var html = '<div class="retake-work' + (isMock ? ' is-mock-work' : '') + '" data-work-id="' + w.id + '"' + dragAttrs + '>';
+
+    html += isMock
+        ? '<span class="retake-type-badge is-mock"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Пробник' + (w.subject ? ' · ' + esc(w.subject) : '') + '</span>'
+        : '<span class="retake-type-badge is-retake"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Отработка</span>';
+
+    html += '<div style="display:flex;align-items:center;gap:8px;margin:4px 0 10px">';
+    html += '<div class="retake-filename" style="flex:1;min-width:0">' + esc(w.filename || '') + '</div>';
+    if (CAN_SCORE) {
+        html += '<button class="photo-del" style="opacity:1;position:static;flex-shrink:0" onclick="deleteWork(' + sid + ',' + w.id + ',this)" title="Удалить">&times;</button>';
+    }
+    html += '</div>';
+
+    if (w.s3_url) {
+        var bc = scoreBadgeClass(w.curator_score);
+        var bt = w.curator_score != null ? Math.round(w.curator_score) + '/100' : '—';
+        html += '<div style="padding:0 0 8px">'
+            + '<div class="photo-wrap" data-gallery="' + esc(gallery) + '" style="display:inline-block">'
+            + '<img src="' + esc(w.s3_url) + '" loading="lazy" onclick="openGallery(this)" alt="" style="width:100%;max-width:320px;aspect-ratio:1;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--line);cursor:zoom-in;display:block">'
+            + '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
+            + '</div>'
+            + '</div>';
+    } else {
+        html += '<div style="padding:0 0 8px"><div class="retake-thumb-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div></div>';
+    }
+
+    html += buildRetakeChipsAndComment(w);
+    if (CAN_SCORE && !isMock) {
+        html += buildScoreFormOrEditButton(sid, w.id, 'retakes', w.curator_score, w.comment);
+    }
+    html += buildFeedbackButton(w);
+    if (IS_SUPERADMIN) {
+        html += buildRetakeMoveButtons(sid, String(w.id), subject, allSubjects || []);
     }
 
     html += '</div>';
     return html;
 }
 
-function buildRetakes(data) {
-    if (!data.retakes_by_month || !data.retakes_by_month.length) {
-        return '<div style="text-align:center;padding:48px 20px;color:var(--dim);font-size:14px">Отработок нет</div>';
-    }
-
-    var html = '';
-    data.retakes_by_month.forEach(function(g) {
-        var label = cap(g.month) + ' ' + g.year;
-        var delBtn = CAN_SCORE
-            ? '<button class="folder-del-btn" onclick="deleteFolderWorks(' + _currentStudentId + ',\'retake\',\'' + esc(g.month) + '\',' + g.year + ',' + g.total + ')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Удалить</button>'
-            : '';
-        html += '<div class="month-block" data-gallery="retake-' + _currentStudentId + '-' + esc(g.year) + '-' + esc(g.month) + '">';
-        html += '<div class="month-header">'
-            + '<span class="month-label">' + esc(label) + '</span>'
-            + '<div style="display:flex;align-items:center;gap:10px">'
-            + '<span class="month-count">' + g.total + ' работ</span>'
-            + delBtn
-            + '</div></div>';
-        html += '<div style="padding:12px 16px">';
-
-        g.works.forEach(function(w) {
-            var isMock = !!w.is_mock;
-            html += '<div class="retake-work' + (isMock ? ' is-mock-work' : '') + '" data-work-id="' + w.id + '">';
-
-            // Type badge
-            if (isMock) {
-                html += '<span class="retake-type-badge is-mock"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Пробник' + (w.subject ? ' · ' + esc(w.subject) : '') + '</span>';
-            } else {
-                html += '<span class="retake-type-badge is-retake"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Отработка</span>';
-            }
-
-            html += '<div class="retake-work-top">';
-
-            if (w.s3_url) {
-                html += '<img src="' + esc(w.s3_url) + '" class="retake-thumb" loading="lazy" onclick="openGallery(this)" alt="">';
-            } else {
-                html += '<div class="retake-thumb-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>';
-            }
-
-            html += '<div style="flex:1;min-width:0">';
-            html += '<div style="display:flex;align-items:center;gap:8px">';
-            html += '<div class="retake-filename" style="flex:1;min-width:0">' + esc(w.filename) + '</div>';
-            if (CAN_SCORE) {
-                html += '<button class="photo-del" style="opacity:1;position:static;flex-shrink:0" onclick="deleteWork(' + _currentStudentId + ',' + w.id + ',this)" title="Удалить">&times;</button>';
-            }
-            html += '</div>';
-            html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">';
-            if (!isMock && w.student_score != null) {
-                html += '<span class="score-blue-chip" title="Оценка ученика"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg> ' + Math.round(w.student_score) + ' / 100</span>';
-            }
-            if (w.curator_score != null) {
-                html += '<span class="scored-chip" title="Оценка куратора">⭐ ' + Math.round(w.curator_score) + ' / 100</span>';
-            }
-            html += '</div>';
-            if (w.comment) {
-                html += '<div style="font-size:12px;color:var(--muted);margin-top:5px;white-space:pre-wrap">' + esc(w.comment) + '</div>';
-            }
-            html += '</div></div>';
-
-            // Scoring form for admins (only for regular retakes, mock exams are already scored)
-            if (CAN_SCORE && !isMock) {
-                html += buildScoreForm(_currentStudentId, w.id, 'retakes', w.curator_score, w.comment);
-            }
-
-            html += '</div>';
-        });
-
-        html += '</div></div>';
+function buildRetakeMoveButtons(sid, workIds, currentSubject, subjects) {
+    var buttons = '';
+    (subjects || []).forEach(function(sj) {
+        if (sj === currentSubject) return;
+        buttons += '<button type="button" class="retake-move-btn" onclick="moveRetakesToSubject(' + sid + ',\'' + esc(workIds) + '\',\'' + esc(sj) + '\')">В ' + esc(sj) + '</button>';
     });
-
-    return html;
+    return buttons ? '<div class="retake-move-row">' + buttons + '</div>' : '';
 }
 
-// ── Scoring form builder ─────────────────────────────────────────────────────
+function startRetakeDrag(ev) {
+    var ids = ev.currentTarget.getAttribute('data-work-ids') || '';
+    _dragRetakeIds = ids;
+    if (ev.dataTransfer) {
+        ev.dataTransfer.effectAllowed = 'move';
+        ev.dataTransfer.setData('text/plain', ids);
+    }
+}
+
+function allowRetakeDrop(ev) {
+    if (!IS_SUPERADMIN) return;
+    ev.preventDefault();
+    ev.currentTarget.classList.add('drop-target');
+}
+
+function leaveRetakeDrop(ev) {
+    ev.currentTarget.classList.remove('drop-target');
+}
+
+function dropRetakesToSubject(ev, sid, subject) {
+    ev.preventDefault();
+    ev.currentTarget.classList.remove('drop-target');
+    var ids = (ev.dataTransfer && ev.dataTransfer.getData('text/plain')) || _dragRetakeIds;
+    if (ids) moveRetakesToSubject(sid, ids, subject);
+}
+
+function moveRetakesToSubject(sid, ids, subject) {
+    if (!guardUnsavedScore()) return;
+    if (!IS_SUPERADMIN) return;
+    var list = String(ids || '').split(',').map(function(x) { return x.trim(); }).filter(Boolean);
+    if (!list.length || !subject) return;
+    Promise.all(list.map(function(workId) {
+        var fd = new FormData();
+        fd.append('csrf_token', CSRF_TOKEN);
+        fd.append('subject', subject);
+        return fetch('/cabinet/students/' + sid + '/retakes/' + workId + '/subject', {
+            method: 'POST',
+            body: fd,
+            headers: { 'Accept': 'application/json' },
+        }).then(function(r) {
+            if (!r.ok) throw new Error('move failed');
+            return r.json();
+        });
+    })).then(function() {
+        delete _tabCache[sid].retakes;
+        switchTab('retakes');
+    }).catch(function() {
+        alert('Не удалось перенести работу');
+    });
+}
 
 function buildScoreForm(sid, workId, tab, currentScore, currentComment) {
     var formId = 'score-form-' + tab + '-' + workId;
-    var label = currentScore != null ? 'Изменить оценку' : 'Поставить оценку';
-    return '<div class="score-form">'
-        + '<div class="score-form-label">' + label + '</div>'
+    var isScoringTab = (tab === 'mock-exams' || tab === 'retakes');
+    var saveLabel = isScoringTab ? 'Сохранить балл' : 'Сохранить';
+    var formLabel = isScoringTab ? 'Оценка и комментарий' : (currentScore != null ? 'Изменить оценку' : 'Поставить оценку');
+    var initialScore = currentScore != null ? String(Math.round(currentScore)) : '';
+    var initialComment = currentComment ? esc(currentComment) : '';
+    return '<div class="score-form" data-initial-score="' + esc(initialScore) + '" data-initial-comment="' + initialComment + '">'
+        + '<div class="score-form-label">' + formLabel + '</div>'
         + '<form id="' + formId + '" method="post" action="/cabinet/students/' + sid + '/works/' + workId + '/score">'
         + '<input type="hidden" name="csrf_token" value="' + CSRF_TOKEN + '">'
         + '<input type="hidden" name="tab" value="' + esc(tab) + '">'
@@ -1964,14 +2260,39 @@ function buildScoreForm(sid, workId, tab, currentScore, currentComment) {
         + (currentComment ? esc(currentComment) : '')
         + '</textarea>'
         + '<div class="score-form-actions">'
-        + '<button type="submit" class="score-submit-btn" onclick="this.disabled=true;this.textContent=\'Сохраняем…\';this.form.submit()">Сохранить</button>'
+        + '<button type="submit" class="score-submit-btn" onclick="this.form.closest(\'.score-form\').dataset.saving=\'1\';this.disabled=true;this.textContent=\'Сохраняем…\';this.form.submit()"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> ' + saveLabel + '</button>'
         + (tab === 'mock-exams'
-            ? (IS_SUPERADMIN ? '<button type="button" class="score-revision-btn" onclick="submitMockRevision(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> На доработку</button>' : '')
-                + '<button type="button" class="score-retake-btn" onclick="submitMockRetake(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> На отработку</button>'
+            ? '<button type="button" class="score-retake-btn" onclick="submitMockRetake(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> На отработку</button>'
+                + (IS_SUPERADMIN ? '<button type="button" class="score-revision-btn" onclick="submitMockRevision(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> На доработку</button>' : '')
             : '')
         + '</div>'
         + '</form>'
         + '</div>';
+}
+
+function buildScoreFormOrEditButton(sid, workId, tab, score, comment) {
+    // Для пробников и отработок: если балл уже выставлен — показываем только «Изменить балл»,
+    // форма раскрывается по клику. Для остальных вкладок поведение прежнее.
+    if ((tab === 'mock-exams' || tab === 'retakes') && score != null) {
+        return '<div id="form-wrap-' + workId + '" class="edit-score-wrap">'
+            + '<button type="button" class="btn-edit-score"'
+            +   ' data-sid="' + sid + '" data-wid="' + workId + '" data-tab="' + esc(tab) + '"'
+            +   ' data-score="' + Math.round(score) + '" data-comment="' + esc(comment || '') + '"'
+            +   ' onclick="showMockScoreForm(this)">'
+            +   '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true">'
+            +   '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>'
+            +   '<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
+            +   ' Изменить балл</button>'
+            + '</div>';
+    }
+    return buildScoreForm(sid, workId, tab, score, comment);
+}
+
+function showMockScoreForm(btn) {
+    var wrap = btn.closest('.edit-score-wrap');
+    if (!wrap) return;
+    var score = btn.dataset.score !== '' ? +btn.dataset.score : null;
+    wrap.outerHTML = buildScoreForm(+btn.dataset.sid, +btn.dataset.wid, btn.dataset.tab || 'mock-exams', score, btn.dataset.comment || '');
 }
 
 // ── Toggle edit form (scored works) ──────────────────────────────────────────
@@ -2000,6 +2321,7 @@ function submitMockRetake(sid, workId, formId) {
     fd.append('csrf_token', CSRF_TOKEN);
     fd.append('score', score);
     fd.append('comment', comment);
+    form.closest('.score-form').dataset.saving = '1';
 
     fetch('/cabinet/students/' + sid + '/mock-exams/' + workId + '/retake', {
         method: 'POST',
@@ -2015,6 +2337,7 @@ function submitMockRetake(sid, workId, formId) {
         }
         switchTab('mock-exams');
     }).catch(function() {
+        form.closest('.score-form').dataset.saving = '0';
         alert('Ошибка при отправке на отработку');
     });
 }
@@ -2023,6 +2346,8 @@ function submitMockRevision(sid, workId, formId) {
     if (!confirm('Вернуть пробник на доработку? Ученик сможет заново загрузить фото пробника без выставления оценки.')) return;
     var fd = new FormData();
     fd.append('csrf_token', CSRF_TOKEN);
+    var form = document.getElementById(formId);
+    if (form) form.closest('.score-form').dataset.saving = '1';
 
     fetch('/cabinet/students/' + sid + '/mock-exams/' + workId + '/revision', {
         method: 'POST',
@@ -2038,6 +2363,7 @@ function submitMockRevision(sid, workId, formId) {
         }
         switchTab('mock-exams');
     }).catch(function() {
+        if (form) form.closest('.score-form').dataset.saving = '0';
         alert('Ошибка при отправке на доработку');
     });
 }
@@ -2247,7 +2573,10 @@ function closeUploadModal() {
 function toggleSubjectField() {
     var wt = document.getElementById('upload-work-type').value;
     var isMock = wt === 'mock_exam';
+    var isRetake = wt === 'retake';
+    var needsSubject = isMock || isRetake;
     var subjectField = document.getElementById('upload-subject-field');
+    var subjectInput = document.getElementById('upload-subject');
     var monthField = document.getElementById('upload-month-field');
     var yearField = document.getElementById('upload-year-field');
     var dateField = document.getElementById('upload-mock-date-field');
@@ -2260,7 +2589,8 @@ function toggleSubjectField() {
     var photoLabel = document.getElementById('upload-photo-label');
     var hint = document.getElementById('upload-dz-hint');
 
-    subjectField.style.display = isMock ? '' : 'none';
+    subjectField.style.display = needsSubject ? '' : 'none';
+    subjectInput.required = needsSubject;
     monthField.style.display = isMock ? 'none' : '';
     yearField.style.display = isMock ? 'none' : '';
     dateField.style.display = isMock ? '' : 'none';
@@ -2273,7 +2603,7 @@ function toggleSubjectField() {
     dateInput.required = isMock;
     scoreInput.required = isMock;
     photoInput.multiple = true;
-    photoLabel.textContent = isMock ? 'Работы пробника (до 10)' : 'Фотографии (до 10)';
+    photoLabel.textContent = isMock ? 'Работы пробника (до 10)' : (isRetake ? 'Фото отработки (до 10)' : 'Фотографии (до 10)');
     hint.textContent = isMock ? 'До 10 МБ · до 10 работ' : 'До 10 МБ · до 10 штук';
 
     if (isMock && !dateInput.value) {
@@ -2362,6 +2692,10 @@ function submitUpload(e) {
     if (!_currentStudentId) return false;
     if (!_uploadFiles.length) return false;
     var workType = document.getElementById('upload-work-type').value;
+    if (workType === 'mock_exam' || workType === 'retake') {
+        var subjectVal = document.getElementById('upload-subject').value;
+        if (!subjectVal) { alert('Укажите предмет: Рисунок или Композиция'); return false; }
+    }
     if (workType === 'mock_exam') {
         var mockDate = document.getElementById('upload-mock-date').value;
         var score = document.getElementById('upload-score').value;

@@ -13,8 +13,8 @@
     text-transform: uppercase; color: var(--dim);
 }
 .period-card {
-    background: var(--card); border: 1.5px solid var(--border);
-    border-radius: 14px; padding: 14px 18px;
+    background: var(--surface); border: 1.5px solid var(--line);
+    border-radius: var(--r-md); padding: 14px 18px;
     display: flex; align-items: center; justify-content: space-between;
     gap: 12px; margin-bottom: 8px;
 }
@@ -23,39 +23,39 @@
 .period-dates { font-size: 14px; font-weight: 700; color: var(--text); }
 .period-title { font-size: 12px; color: var(--dim); margin-top: 2px; }
 .period-status {
-    font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px;
+    font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: var(--r-xl);
     flex-shrink: 0;
 }
-.status-active { background: rgba(5,150,105,0.1); color: #059669; }
+.status-active { background: rgba(5,150,105,0.1); color: var(--ok); }
 .status-inactive { background: var(--surface); color: var(--dim); }
-.status-upcoming { background: rgba(37,99,235,0.08); color: var(--accent); }
+.status-upcoming { background: rgba(37,99,235,0.08); color: var(--blue); }
 .status-expired { background: rgba(239,68,68,0.07); color: #EF4444; }
 .period-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .btn-sm {
     font-size: 12px; font-weight: 700; padding: 5px 12px;
-    border-radius: 8px; border: 1.5px solid var(--border); background: var(--card);
-    cursor: pointer; font-family: 'Montserrat', sans-serif; transition: all 0.15s;
+    border-radius: 8px; border: 1.5px solid var(--line); background: var(--surface);
+    cursor: pointer; font-family: inherit; transition: border-color 0.15s, color 0.15s, background 0.15s;
     color: var(--text);
 }
-.btn-sm:hover { border-color: var(--accent); color: var(--accent); }
+.btn-sm:hover { border-color: var(--blue); color: var(--blue); }
 .btn-sm.danger:hover { border-color: #EF4444; color: #EF4444; }
 .create-form {
-    background: var(--card); border: 1.5px solid var(--border);
-    border-radius: 14px; padding: 20px; margin-top: 8px;
+    background: var(--surface); border: 1.5px solid var(--line);
+    border-radius: var(--r-md); padding: 20px; margin-top: 8px;
     display: none;
 }
 .create-form.open { display: block; }
 .btn-add {
     font-size: 13px; font-weight: 700; padding: 7px 16px;
-    border-radius: 10px; border: 1.5px dashed var(--border);
+    border-radius: var(--r-sm); border: 1.5px dashed var(--line);
     background: none; cursor: pointer; color: var(--dim);
-    font-family: 'Montserrat', sans-serif; transition: all 0.15s;
+    font-family: inherit; transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
-.btn-add:hover { border-color: var(--accent); color: var(--accent); }
+.btn-add:hover { border-color: var(--blue); color: var(--blue); }
 .empty-periods {
     padding: 16px; text-align: center;
     color: var(--dim); font-size: 13px;
-    border: 1px dashed var(--border); border-radius: 10px;
+    border: 1px dashed var(--line); border-radius: var(--r-sm);
     margin-bottom: 8px;
 }
 </style>

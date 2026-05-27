@@ -1,0 +1,888 @@
+{% extends "base.html" %}
+{% block title %}Проверка отработок{% endblock %}
+{% block extra_styles %}
+<style>
+.main { max-width: 100% !important; padding: 0 !important; }
+
+.split-wrap { display: flex; height: calc(100vh - 57px); overflow: hidden; }
+
+.sidebar {
+    width: 300px; flex-shrink: 0;
+    display: flex; flex-direction: column;
+    border-right: 1px solid var(--line);
+    background: var(--surface);
+}
+.sidebar-header { padding: 16px 16px 12px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+.sidebar-back {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13px; color: var(--muted); font-weight: 500;
+    margin-bottom: 12px;
+}
+.sidebar-back:hover { color: var(--blue); }
+.sidebar-title {
+    font-size: 15px; font-weight: 700; color: var(--text);
+    margin-bottom: 4px;
+    display: flex; align-items: center; gap: 8px;
+}
+.sidebar-counter {
+    background: #D97706; color: #fff;
+    font-size: 11px; font-weight: 800;
+    padding: 2px 8px; border-radius: var(--r-sm);
+}
+.sidebar-subtitle { font-size: 12px; color: var(--dim); margin-bottom: 10px; }
+.sidebar-search {
+    width: 100%; padding: 8px 12px;
+    background: var(--bg); border: 1.5px solid var(--line);
+    border-radius: var(--r-sm); font-size: 13px; color: var(--text);
+    font-family: inherit; outline: none;
+    transition: border-color 0.2s;
+}
+.sidebar-search:focus { border-color: var(--blue); }
+
+.tariff-filter { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.tariff-chip {
+    padding: 4px 10px;
+    border: 1.5px solid var(--line); border-radius: var(--r-md);
+    background: var(--surface);
+    font-size: 11px; font-weight: 700; color: var(--muted);
+    cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s;
+    font-family: inherit;
+}
+.tariff-chip:hover { border-color: var(--blue); color: var(--blue); }
+.tariff-chip.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+
+.sidebar-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+.sidebar-list::-webkit-scrollbar { width: 4px; }
+.sidebar-list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+
+.student-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; cursor: pointer;
+    transition: background 0.15s;
+    width: 100%; background: none; border: none; text-align: left; font-family: inherit;
+}
+.student-row:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.student-row:hover { background: var(--bg); }
+.student-row.active { background: var(--blue-soft); }
+.student-row.active .student-row-name { color: var(--blue); font-weight: 700; }
+.student-avatar {
+    width: 38px; height: 38px; border-radius: 50%;
+    object-fit: cover; border: 1px solid var(--line);
+    flex-shrink: 0;
+}
+.student-avatar-ph {
+    width: 38px; height: 38px; border-radius: 50%;
+    background: var(--surface-2); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+}
+.student-row-info { flex: 1; min-width: 0; }
+.student-row-name {
+    font-size: 13px; font-weight: 700; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.student-row-meta { font-size: 11px; color: var(--dim); margin-top: 1px; }
+.pending-badge {
+    background: #D97706; color: #fff;
+    border-radius: var(--r-sm); padding: 2px 8px;
+    font-size: 11px; font-weight: 800;
+    flex-shrink: 0;
+}
+.checked-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: #16A34A; color: #fff;
+    border-radius: var(--r-sm); padding: 2px 8px;
+    font-size: 11px; font-weight: 800;
+    flex-shrink: 0;
+}
+.checked-badge .svg-icon { width: 12px; height: 12px; }
+
+.split-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
+.split-main-scroll { flex: 1; overflow-y: auto; padding: 20px 24px; }
+.split-main-scroll::-webkit-scrollbar { width: 6px; }
+.split-main-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+
+.student-hero {
+    background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue-mid) 100%);
+    border-radius: var(--r-lg);
+    padding: 20px 24px;
+    display: flex; align-items: center; gap: 18px;
+    margin-bottom: 20px;
+    box-shadow: var(--sh-blue);
+}
+.student-hero-avatar {
+    width: 56px; height: 56px; border-radius: 50%;
+    object-fit: cover; border: 2px solid rgba(255,255,255,0.25);
+    flex-shrink: 0;
+}
+.student-hero-avatar-ph {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; flex-shrink: 0;
+}
+.student-hero-info { flex: 1; }
+.student-hero-name { font-size: 20px; font-weight: 900; color: #fff; margin-bottom: 6px; }
+.student-hero-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+.student-hero-pill {
+    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18);
+    border-radius: var(--r-md); padding: 3px 12px;
+    font-size: 12px; color: rgba(255,255,255,0.85); font-weight: 700;
+}
+
+.month-block {
+    background: var(--surface); border: 1.5px solid var(--line);
+    border-radius: var(--r-md); margin-bottom: 16px;
+    overflow: hidden;
+}
+.month-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+}
+.month-label { font-size: 14px; font-weight: 800; color: var(--text); }
+.month-count { font-size: 12px; color: var(--muted); font-weight: 700; }
+
+.retake-work {
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+}
+.retake-work:last-child { border-bottom: none; }
+.retake-work-top { display: flex; gap: 12px; align-items: flex-start; }
+.retake-thumb {
+    width: 80px; height: 80px; object-fit: cover;
+    border-radius: var(--r-sm); border: 1px solid var(--line);
+    cursor: zoom-in; flex-shrink: 0;
+}
+.retake-thumb-ph {
+    width: 80px; height: 80px; border-radius: var(--r-sm);
+    background: var(--surface-2); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; flex-shrink: 0;
+}
+.retake-info { flex: 1; min-width: 0; }
+.retake-del-btn {
+    flex-shrink: 0; background: none; border: 1px solid var(--line);
+    color: var(--error); border-radius: 8px;
+    width: 36px; height: 36px; cursor: pointer;
+    font-size: 16px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s, border-color 0.15s;
+}
+.retake-del-btn:hover { background: rgba(220,38,38,0.08); border-color: var(--error); }
+.retake-filename {
+    font-size: 13px; font-weight: 700; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    margin-bottom: 6px;
+}
+.chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.score-blue-chip {
+    background: rgba(59,79,200,0.1); color: #3B4FC8;
+    border-radius: 8px; padding: 4px 10px;
+    font-size: 12px; font-weight: 800;
+}
+.scored-chip {
+    background: rgba(217,119,6,0.1); color: var(--warning);
+    border-radius: 8px; padding: 4px 10px;
+    font-size: 12px; font-weight: 800;
+}
+
+.score-form {
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: var(--r-sm); padding: 10px 12px;
+}
+.score-form-label { font-size: 12px; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
+.score-form-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.score-form input[type=number], .score-form textarea {
+    background: var(--surface); border: 1.5px solid var(--line);
+    border-radius: 8px; padding: 7px 10px;
+    font-size: 13px; color: var(--text);
+    font-family: inherit; outline: none;
+}
+.score-form input[type=number]:focus, .score-form textarea:focus { border-color: var(--blue); }
+.score-form input[type=number] { width: 80px; }
+.score-form textarea { width: 100%; min-height: 50px; resize: vertical; }
+.btn-save {
+    padding: 8px 14px; background: var(--blue); color: #fff;
+    border: none; border-radius: 8px; font-size: 13px; font-weight: 700;
+    cursor: pointer; font-family: inherit;
+}
+.btn-save:hover { opacity: 0.9; }
+.edit-score-wrap { margin-top: 10px; }
+.btn-edit-score {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--surface-2); color: var(--text); font-size: 13px;
+    font-weight: 600; cursor: pointer; font-family: inherit;
+    transition: border-color 0.15s, color 0.15s;
+}
+.btn-edit-score:hover { border-color: var(--blue); color: var(--blue); }
+.score-err { color: var(--error); font-size: 12px; margin-top: 6px; }
+.score-ok  { color: var(--ok); font-size: 12px; margin-top: 6px; }
+.retake-move-row { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 16px 10px; }
+.retake-move-btn {
+    border: 1px solid var(--line); background: var(--surface);
+    color: var(--blue); border-radius: 8px; padding: 6px 10px;
+    font-size: 12px; font-weight: 800; cursor: pointer; font-family: inherit;
+}
+.retake-move-btn:hover { border-color: var(--blue); background: var(--blue-soft); }
+.retake-work[draggable="true"] { cursor: grab; }
+.subject-block.drop-target .subject-block-body { border-color: var(--blue) !important; background: rgba(59,79,200,0.04) !important; }
+.student-comment {
+    font-size: 12px; color: var(--muted);
+    background: rgba(59,79,200,0.06);
+    border: 1px solid rgba(59,79,200,0.18);
+    padding: 6px 10px; border-radius: 6px;
+    margin-top: 6px; white-space: pre-wrap;
+}
+
+.photo-wrap { position: relative; display: block; }
+.work-score-badge {
+    position: absolute; bottom: 6px; left: 6px;
+    background: rgba(0,0,0,0.65); color: #fff;
+    font-size: 11px; font-weight: 800;
+    padding: 2px 7px; border-radius: 6px;
+    pointer-events: none;
+}
+.work-score-badge.score-green { background: rgba(22,163,74,0.85); }
+.work-score-badge.score-orange { background: rgba(217,119,6,0.85); }
+.work-score-badge.score-red { background: rgba(220,38,38,0.85); }
+.photo-del {
+    position: absolute; top: 4px; right: 4px;
+    width: 22px; height: 22px;
+    background: rgba(220,38,38,0.75); color: #fff;
+    border: none; border-radius: 4px; cursor: pointer;
+    font-size: 14px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+}
+.photo-del:hover { background: var(--error); }
+.mock-hero-layout {
+    display: grid; grid-template-columns: 1fr 80px;
+    gap: 8px; padding: 12px 16px;
+}
+.mock-hero-photo img {
+    width: 100%; aspect-ratio: 1; object-fit: cover;
+    border-radius: var(--r-sm); border: 1px solid var(--line); cursor: zoom-in;
+}
+.mock-thumbnails { display: flex; flex-direction: column; gap: 6px; }
+.mock-thumbnails .photo-wrap img {
+    width: 80px; height: 80px; object-fit: cover;
+    border-radius: var(--r-sm); border: 1px solid var(--line); cursor: zoom-in;
+}
+.retake-chips-row { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 16px 4px; }
+.retake-form-wrap { padding: 0 16px 12px; }
+
+.empty-state { text-align: center; padding: 48px 20px; color: var(--dim); }
+.empty-icon { font-size: 40px; margin-bottom: 12px; }
+.empty-text { font-size: 14px; }
+
+.lb {
+    position: fixed; inset: 0; background: rgba(10,10,30,0.88);
+    z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px;
+}
+.lb.open { display: flex; }
+.lb img { max-width: 100%; max-height: 88vh; border-radius: var(--r-md); }
+.lb-close {
+    position: absolute; top: 16px; right: 16px;
+    background: rgba(255,255,255,0.15); border: none; color: #fff;
+    width: 44px; height: 44px; border-radius: 50%; font-size: 22px; cursor: pointer;
+}
+
+.mobile-back-btn { display: none; }
+
+@media (max-width: 1024px) {
+    .sidebar { width: 260px; }
+    .split-main-scroll { padding: 16px 18px; }
+}
+
+@media (max-width: 768px) {
+    .split-wrap { flex-direction: column; height: auto; overflow: visible; }
+    .sidebar { width: 100%; height: auto; border-right: none; border-bottom: none; }
+    .sidebar-list { max-height: none; }
+    .split-main { overflow: visible; }
+    .split-main-scroll { overflow: visible; padding: 16px; }
+    .student-hero { padding: 16px; gap: 12px; }
+    .student-hero-name { font-size: 16px; }
+    #select-prompt { display: none; }
+
+    .split-wrap:not(.mobile-show-main) .split-main { display: none; }
+    .split-wrap.mobile-show-main .sidebar { display: none; }
+    .mobile-back-btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: none; border: none;
+        font-size: 14px; font-weight: 700; color: var(--blue);
+        padding: 6px 0; margin-bottom: 10px; cursor: pointer;
+        font-family: inherit;
+    }
+    .retake-thumb, .retake-thumb-ph { width: 64px; height: 64px; }
+}
+</style>
+{% endblock %}
+{% block content %}
+<script>const CSRF_TOKEN = "{{ csrf_token(request) }}";</script>
+<div class="split-wrap">
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <a href="/cabinet/admin-panel" class="sidebar-back">← Кабинет</a>
+            <div class="sidebar-title">
+                Проверка отработок
+                {% if total_unchecked %}
+                <span class="sidebar-counter" title="Непроверенных работ">{{ total_unchecked }}</span>
+                {% endif %}
+            </div>
+            <div class="sidebar-subtitle">
+                {{ total_students }} учен{{ 'иков' if total_students != 1 else 'ик' }} · на проверке {{ total_unchecked }} работ
+            </div>
+            <input type="text" class="sidebar-search" placeholder="Поиск по имени или @username"
+                   oninput="applyFilters()" id="student-search">
+            {% if tariffs %}
+            <div class="tariff-filter" id="tariff-filter">
+                <button type="button" class="tariff-chip active" data-tariff="" onclick="selectTariff(this, '')">Все</button>
+                {% for t in tariffs %}
+                <button type="button" class="tariff-chip" data-tariff="{{ t }}" onclick="selectTariff(this, '{{ t }}')">{{ t }}</button>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        <div class="sidebar-list" id="student-list">
+            {% for s in sidebar_students %}
+            <button type="button" class="student-row" id="srow-{{ s.id }}" data-tariff="{{ s.tariff or '' }}" data-tg="{{ s.tg_username or '' }}" onclick="selectStudent({{ s.id }})" aria-label="{{ s.name }}">
+                {% if s.photo_url %}
+                <img src="{{ s.photo_url }}" class="student-avatar" alt="">
+                {% else %}
+                <div class="student-avatar-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg></div>
+                {% endif %}
+                <div class="student-row-info">
+                    <div class="student-row-name">{{ s.name }}</div>
+                    <div class="student-row-meta">
+                        {{ s.tariff or '—' }} · {{ s.retake_count }} работ{% if s.tg_username %} · @{{ s.tg_username }}{% endif %}
+                    </div>
+                </div>
+                {% if s.unchecked %}
+                <span class="pending-badge">{{ s.unchecked }}</span>
+                {% elif s.retake_count %}
+                <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверено</span>
+                {% endif %}
+            </button>
+            {% else %}
+            <div style="padding:20px;text-align:center;color:var(--dim);font-size:13px">
+                Нет отработок для проверки
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="split-main">
+        <div class="split-main-scroll" id="main-panel">
+            <div class="empty-state" id="select-prompt">
+                <div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></div>
+                <div class="empty-text">Выберите ученика слева</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% include "partials/lightbox.html" %}
+
+<script>
+var INITIAL_STUDENT_ID = {{ initial_student_id }};
+var CAN_MOVE_RETAKES = {{ is_superadmin | tojson }};
+var _currentStudentId = null;
+var _activeTariff = '';
+var _dragRetakeIds = '';
+
+function backToList() {
+    document.querySelector('.split-wrap').classList.remove('mobile-show-main');
+    window.scrollTo(0, 0);
+}
+
+function selectTariff(btn, tariff) {
+    _activeTariff = tariff;
+    document.querySelectorAll('.tariff-chip').forEach(function(c) { c.classList.remove('active'); });
+    btn.classList.add('active');
+    applyFilters();
+}
+
+function applyFilters() {
+    var q = (document.getElementById('student-search').value || '').toLowerCase().trim();
+    var qNoAt = q.replace(/^@+/, '');
+    document.querySelectorAll('.student-row').forEach(function(row) {
+        var name = row.querySelector('.student-row-name');
+        if (!name) return;
+        var matchesName = name.textContent.toLowerCase().includes(q);
+        var tg = (row.getAttribute('data-tg') || '').toLowerCase().replace(/^@+/, '');
+        var matchesTg = !q || tg.includes(qNoAt) || ('@' + tg).includes(q);
+        var rowTariff = row.getAttribute('data-tariff') || '';
+        var matchesTariff = !_activeTariff || rowTariff === _activeTariff;
+        row.style.display = ((matchesName || matchesTg) && matchesTariff) ? '' : 'none';
+    });
+}
+
+function selectStudent(id) {
+    if (_currentStudentId && id !== _currentStudentId && !guardUnsavedScore()) return;
+    _currentStudentId = id;
+    document.querySelectorAll('.student-row').forEach(r => r.classList.remove('active'));
+    var row = document.getElementById('srow-' + id);
+    if (row) row.classList.add('active');
+
+    document.querySelector('.split-wrap').classList.add('mobile-show-main');
+    window.scrollTo(0, 0);
+
+    document.getElementById('main-panel').innerHTML =
+        '<button class="mobile-back-btn" onclick="backToList()">← К списку учеников</button>'
+        + '<div style="text-align:center;padding:48px 20px;color:var(--dim)">Загружаем…</div>';
+
+    fetch('/cabinet/students/' + id + '/retakes')
+        .then(r => r.json())
+        .then(data => renderRetakes(data))
+        .catch(() => {
+            document.getElementById('main-panel').innerHTML =
+                '<div class="empty-state"><div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-text">Ошибка загрузки</div></div>';
+        });
+}
+
+function renderRetakes(data) {
+    var s = data.student;
+    var avatar = s.photo_url
+        ? '<img src="' + esc(s.photo_url) + '" class="student-hero-avatar" alt="">'
+        : '<div class="student-hero-avatar-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg></div>';
+    var html = '<button class="mobile-back-btn" onclick="backToList()">← К списку учеников</button>'
+        + '<div class="student-hero">'
+        + avatar
+        + '<div class="student-hero-info">'
+        +   '<div class="student-hero-name">' + esc(s.name) + '</div>'
+        +   '<div class="student-hero-pills">'
+        +     (s.tariff ? '<span class="student-hero-pill">' + esc(s.tariff) + '</span>' : '')
+        +     (s.study_duration ? '<span class="student-hero-pill">' + esc(s.study_duration) + '</span>' : '')
+        +   '</div>'
+        + '</div>'
+        + '</div>';
+
+    var bySubject = data.retakes_by_subject || {};
+    var unassigned = data.retakes_unassigned || [];
+    var subjects = data.subjects || ['Рисунок', 'Композиция'];
+
+    var totalCount = unassigned.length;
+    subjects.forEach(function(sj) { totalCount += (bySubject[sj] || []).length; });
+
+    if (!totalCount) {
+        html += '<div class="empty-state"><div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div><div class="empty-text">Отработок нет</div></div>';
+    } else {
+        subjects.forEach(function(sj) {
+            html += buildSubjectRetakeBlock(s.id, sj, bySubject[sj] || [], false, subjects);
+        });
+        if (unassigned.length) {
+            html += buildSubjectRetakeBlock(s.id, 'Без предмета', unassigned, true, subjects);
+        }
+    }
+
+    document.getElementById('main-panel').innerHTML = html;
+}
+
+function buildSubjectRetakeBlock(sid, subject, works, isUnassigned, subjects) {
+    var dropAttrs = (CAN_MOVE_RETAKES && !isUnassigned)
+        ? ' data-subject="' + esc(subject) + '" ondragover="allowRetakeDrop(event)" ondragleave="leaveRetakeDrop(event)" ondrop="dropRetakesToSubject(event,' + sid + ',\'' + esc(subject) + '\')"'
+        : '';
+    var html = '<div class="subject-block" style="margin-bottom:24px"' + dropAttrs + '>'
+        + '<div class="subject-block-header" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:var(--surface-2);border:1.5px solid var(--line);border-radius:var(--r-md) var(--r-md) 0 0;border-bottom:none">'
+        +   '<span style="font-family:var(--font-display);font-size:16px;font-weight:800;color:var(--ink)">' + esc(subject) + '</span>'
+        +   '<span style="font-size:12px;color:var(--muted)">' + works.length + ' работ</span>'
+        + '</div>'
+        + '<div class="subject-block-body" style="border:1.5px solid var(--line);border-top:none;border-radius:0 0 var(--r-md) var(--r-md);padding:12px;background:var(--surface)">';
+
+    if (!works.length) {
+        html += '<div style="text-align:center;padding:20px;color:var(--dim);font-size:13px">Нет загруженных работ</div>';
+        return html + '</div></div>';
+    }
+
+    var groups = groupRetakeWorksByMonth(works);
+    var monthKeys = Object.keys(groups).sort(function(a, b) {
+        var pa = a.split('-'), pb = b.split('-');
+        if (pa[0] !== pb[0]) return parseInt(pb[0], 10) - parseInt(pa[0], 10);
+        return parseInt(pb[1], 10) - parseInt(pa[1], 10);
+    });
+    monthKeys.forEach(function(key) {
+        var parts = key.split('-');
+        var year = parseInt(parts[0], 10);
+        var monthNum = parseInt(parts[1], 10);
+        var monthName = MONTH_NAMES_LOCAL[monthNum - 1] || '';
+        var monthWorks = groups[key];
+        var label = cap(monthName) + ' ' + year;
+        html += '<div class="month-block">'
+            + '<div class="month-header">'
+            +   '<span class="month-label">' + esc(label) + '</span>'
+            +   '<span class="month-count">' + monthWorks.length + ' работ</span>'
+            + '</div>';
+        html += buildMonthWorks(sid, monthWorks, year + '-' + monthName + '-' + esc(subject), subject, isUnassigned, subjects || []);
+        html += '</div>';
+    });
+
+    return html + '</div></div>';
+}
+
+var MONTH_NAMES_LOCAL = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+var MONTH_TO_NUM_LOCAL = (function() {
+    var m = {};
+    MONTH_NAMES_LOCAL.forEach(function(name, idx) { m[name] = idx + 1; });
+    return m;
+})();
+
+function groupRetakeWorksByMonth(works) {
+    var groups = {};
+    works.forEach(function(w) {
+        var year = w.year || (w.created_at ? new Date(w.created_at).getFullYear() : null);
+        var monthName = (w.month || '').toString().toLowerCase();
+        var monthNum = MONTH_TO_NUM_LOCAL[monthName] || 0;
+        if (!monthNum && w.created_at) {
+            try { monthNum = new Date(w.created_at).getMonth() + 1; } catch (e) {}
+        }
+        if (!year || !monthNum) return;
+        var key = year + '-' + String(monthNum).padStart(2, '0');
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(w);
+    });
+    return groups;
+}
+
+function scoreBadgeClass(score) {
+    if (score == null) return '';
+    if (score >= 70) return 'score-green';
+    if (score >= 50) return 'score-orange';
+    return 'score-red';
+}
+
+function buildChipsAndComment(w) {
+    var chips = '';
+    if (w.student_score != null) {
+        chips += '<span class="score-blue-chip" title="Оценка ученика"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg> ' + Math.round(w.student_score) + ' / 100</span>';
+    }
+    if (w.curator_score != null) {
+        chips += '<span class="scored-chip" title="Оценка куратора">⭐ ' + Math.round(w.curator_score) + ' / 100</span>';
+    }
+    var commentBlock = w.comment
+        ? '<div class="student-comment" style="margin:6px 16px 0">' + esc(w.comment) + '</div>'
+        : '';
+    return (chips ? '<div class="retake-chips-row">' + chips + '</div>' : '') + commentBlock;
+}
+
+function buildMonthWorks(sid, works, galleryKey, subject, isUnassigned, subjects) {
+    if (!works.length) return '';
+    var primary = works.find(function(w) { return w.curator_score != null; }) || works[0];
+    var rest = works.filter(function(w) { return w !== primary; });
+    var gallery = 'retake-' + galleryKey;
+    var workIds = works.map(function(w) { return w.id; }).join(',');
+    var dragAttrs = CAN_MOVE_RETAKES
+        ? ' draggable="true" data-work-ids="' + esc(workIds) + '" ondragstart="startRetakeDrag(event)"'
+        : '';
+    var html = '<div class="retake-work" data-work-id="' + primary.id + '"' + dragAttrs + '>';
+
+    if (rest.length === 0) {
+        // Одна работа — компактная карточка с фото + скор-бейдж
+        if (primary.s3_url) {
+            var bc = scoreBadgeClass(primary.curator_score);
+            var bt = primary.curator_score != null ? Math.round(primary.curator_score) + '/100' : '—';
+            html += '<div style="padding:12px 16px 8px">'
+                + '<div class="photo-wrap" data-gallery="' + esc(gallery) + '" style="display:inline-block">'
+                + '<img src="' + esc(primary.s3_url) + '" loading="lazy" onclick="openGallery(this)" alt="" style="width:100%;max-width:320px;aspect-ratio:1;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--line);cursor:zoom-in;display:block">'
+                + '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
+                + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + primary.id + ',this)">&times;</button>'
+                + '</div>'
+                + '</div>';
+        }
+        html += buildChipsAndComment(primary);
+        html += '<div class="retake-form-wrap">' + buildScoreFormOrEditButton(sid, primary.id, primary.curator_score, primary.comment) + '</div>';
+    } else {
+        // Несколько работ — крупное фото + миниатюры
+        html += '<div class="mock-hero-layout" data-gallery="' + esc(gallery) + '">';
+        html += '<div class="mock-hero-photo">';
+        if (primary.s3_url) {
+            var bc = scoreBadgeClass(primary.curator_score);
+            var bt = primary.curator_score != null ? Math.round(primary.curator_score) + '/100' : '—';
+            html += '<div class="photo-wrap">'
+                + '<img src="' + esc(primary.s3_url) + '" loading="lazy" onclick="openGallery(this)" alt="">'
+                + '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
+                + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + primary.id + ',this)">&times;</button>'
+                + '</div>';
+        }
+        html += '</div>';
+        html += '<div class="mock-thumbnails">';
+        rest.forEach(function(w) {
+            if (w.s3_url) {
+                var wbc = scoreBadgeClass(w.curator_score);
+                html += '<div class="photo-wrap">'
+                    + '<img src="' + esc(w.s3_url) + '" loading="lazy" onclick="openGallery(this)" alt="">'
+                    + (w.curator_score != null ? '<span class="work-score-badge ' + wbc + '">' + Math.round(w.curator_score) + '/100</span>' : '')
+                    + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)">&times;</button>'
+                    + '</div>';
+            }
+        });
+        html += '</div>';
+        html += '</div>'; // .mock-hero-layout
+        html += buildChipsAndComment(primary);
+        html += '<div class="retake-form-wrap">' + buildScoreFormOrEditButton(sid, primary.id, primary.curator_score, primary.comment) + '</div>';
+    }
+
+    if (CAN_MOVE_RETAKES) {
+        html += buildRetakeMoveButtons(sid, workIds, subject, subjects || []);
+    }
+    html += '</div>'; // .retake-work
+    return html;
+}
+
+function buildRetakeMoveButtons(sid, workIds, currentSubject, subjects) {
+    var buttons = '';
+    subjects.forEach(function(sj) {
+        if (sj === currentSubject) return;
+        buttons += '<button type="button" class="retake-move-btn" onclick="moveRetakesToSubject(' + sid + ',\'' + esc(workIds) + '\',\'' + esc(sj) + '\')">В ' + esc(sj) + '</button>';
+    });
+    return buttons ? '<div class="retake-move-row">' + buttons + '</div>' : '';
+}
+
+function startRetakeDrag(ev) {
+    var ids = ev.currentTarget.getAttribute('data-work-ids') || '';
+    _dragRetakeIds = ids;
+    if (ev.dataTransfer) {
+        ev.dataTransfer.effectAllowed = 'move';
+        ev.dataTransfer.setData('text/plain', ids);
+    }
+}
+
+function allowRetakeDrop(ev) {
+    if (!CAN_MOVE_RETAKES) return;
+    ev.preventDefault();
+    ev.currentTarget.classList.add('drop-target');
+}
+
+function leaveRetakeDrop(ev) {
+    ev.currentTarget.classList.remove('drop-target');
+}
+
+function dropRetakesToSubject(ev, sid, subject) {
+    ev.preventDefault();
+    ev.currentTarget.classList.remove('drop-target');
+    var ids = (ev.dataTransfer && ev.dataTransfer.getData('text/plain')) || _dragRetakeIds;
+    if (ids) moveRetakesToSubject(sid, ids, subject);
+}
+
+function moveRetakesToSubject(sid, ids, subject) {
+    if (!guardUnsavedScore()) return;
+    if (!CAN_MOVE_RETAKES) return;
+    var list = String(ids || '').split(',').map(function(x) { return x.trim(); }).filter(Boolean);
+    if (!list.length || !subject) return;
+    Promise.all(list.map(function(workId) {
+        var fd = new FormData();
+        fd.append('csrf_token', CSRF_TOKEN);
+        fd.append('subject', subject);
+        return fetch('/cabinet/students/' + sid + '/retakes/' + workId + '/subject', {
+            method: 'POST',
+            body: fd,
+            headers: { 'Accept': 'application/json' },
+        }).then(function(r) {
+            if (!r.ok) throw new Error('move failed');
+            return r.json();
+        });
+    })).then(function() {
+        selectStudent(sid);
+    }).catch(function() {
+        alert('Не удалось перенести работу');
+    });
+}
+
+function buildMonthWorks(sid, works, galleryKey, subject, isUnassigned, subjects) {
+    if (!works.length) return '';
+    var gallery = 'retake-' + galleryKey;
+    var html = '';
+    works.forEach(function(w) {
+        var dragAttrs = CAN_MOVE_RETAKES
+            ? ' draggable="true" data-work-ids="' + w.id + '" ondragstart="startRetakeDrag(event)"'
+            : '';
+        html += '<div class="retake-work" data-work-id="' + w.id + '"' + dragAttrs + '>';
+        if (w.s3_url) {
+            var bc = scoreBadgeClass(w.curator_score);
+            var bt = w.curator_score != null ? Math.round(w.curator_score) + '/100' : '—';
+            html += '<div style="padding:12px 16px 8px">'
+                + '<div class="photo-wrap" data-gallery="' + esc(gallery) + '" style="display:inline-block">'
+                + '<img src="' + esc(w.s3_url) + '" loading="lazy" onclick="openGallery(this)" alt="" style="width:100%;max-width:320px;aspect-ratio:1;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--line);cursor:zoom-in;display:block">'
+                + '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
+                + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)">&times;</button>'
+                + '</div>'
+                + '</div>';
+        } else {
+            html += '<div style="padding:12px 16px 8px"><div class="retake-thumb-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div></div>';
+        }
+        html += buildChipsAndComment(w);
+        html += '<div class="retake-form-wrap">' + buildScoreFormOrEditButton(sid, w.id, w.curator_score, w.comment) + '</div>';
+        if (CAN_MOVE_RETAKES) {
+            html += buildRetakeMoveButtons(sid, String(w.id), subject, subjects || []);
+        }
+        html += '</div>';
+    });
+    return html;
+}
+
+function deleteWork(sid, workId, btnEl) {
+    if (!confirm('Удалить эту работу? Фото будет удалено из хранилища.')) return;
+    fetch('/cabinet/students/' + sid + '/works/' + workId, {
+        method: 'DELETE', headers: { 'Accept': 'application/json' },
+    }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
+      .then(function(resp) {
+          if (resp.ok && resp.j && resp.j.ok) {
+              setTimeout(function() { selectStudent(sid); }, 200);
+          } else {
+              alert((resp.j && resp.j.detail) || 'Ошибка удаления');
+          }
+      })
+      .catch(function() { alert('Ошибка сети'); });
+}
+
+function buildScoreForm(sid, workId, currentScore, currentComment) {
+    var scoreVal = currentScore != null ? Math.round(currentScore) : '';
+    var commentVal = currentComment ? esc(currentComment) : '';
+    var formId = 'sform-' + workId;
+    return '<div class="score-form" id="' + formId + '" data-initial-score="' + esc(scoreVal) + '" data-initial-comment="' + commentVal + '">'
+        + '<div class="score-form-label">Оценка и комментарий</div>'
+        + '<div class="score-form-row">'
+        +   '<input type="number" min="0" max="100" step="1" name="score" value="' + scoreVal + '" placeholder="0–100" required>'
+        +   '<span style="font-size:12px;color:var(--dim)">из 100</span>'
+        + '</div>'
+        + '<textarea name="comment" placeholder="Комментарий (необязательно)" maxlength="500">' + commentVal + '</textarea>'
+        + '<div style="margin-top:8px">'
+        +   '<button type="button" class="btn-save" onclick="submitScore(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Сохранить балл</button>'
+        + '</div>'
+        + '<div class="score-msg" style="display:none"></div>'
+        + '</div>';
+}
+
+function buildScoreFormOrEditButton(sid, workId, score, comment) {
+    if (score != null) {
+        return '<div id="form-wrap-' + workId + '" class="edit-score-wrap">'
+            + '<button type="button" class="btn-edit-score"'
+            +   ' data-sid="' + sid + '" data-wid="' + workId + '"'
+            +   ' data-score="' + Math.round(score) + '" data-comment="' + esc(comment||'') + '"'
+            +   ' onclick="showScoreForm(this)">'
+            +   '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true">'
+            +   '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>'
+            +   '<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
+            +   ' Изменить балл</button>'
+            + '</div>';
+    }
+    return buildScoreForm(sid, workId, score, comment);
+}
+
+function showScoreForm(btn) {
+    var wrap = btn.closest('.edit-score-wrap');
+    if (!wrap) return;
+    var score = btn.dataset.score !== '' ? +btn.dataset.score : null;
+    wrap.outerHTML = buildScoreForm(+btn.dataset.sid, +btn.dataset.wid, score, btn.dataset.comment || '');
+}
+
+function scoreFormValue(root, selector) {
+    var el = root ? root.querySelector(selector) : null;
+    return el ? String(el.value || '').trim() : '';
+}
+
+function getDirtyScoreForm() {
+    var forms = document.querySelectorAll('.score-form');
+    for (var i = 0; i < forms.length; i++) {
+        var root = forms[i];
+        if (root.dataset.saving === '1') continue;
+        var score = scoreFormValue(root, 'input[name="score"]');
+        var comment = scoreFormValue(root, 'textarea[name="comment"]');
+        var initialScore = root.dataset.initialScore || '';
+        var initialComment = root.dataset.initialComment || '';
+        if (score !== initialScore || comment !== initialComment) return root;
+    }
+    return null;
+}
+
+function guardUnsavedScore() {
+    var dirty = getDirtyScoreForm();
+    if (!dirty) return true;
+    alert('Сначала сохраните введённый балл. После этого можно перейти к другой работе или ученику.');
+    var input = dirty.querySelector('input[name="score"]');
+    if (input) input.focus();
+    return false;
+}
+
+window.addEventListener('beforeunload', function(ev) {
+    if (!getDirtyScoreForm()) return;
+    ev.preventDefault();
+    ev.returnValue = '';
+});
+
+function _readForm(formId) {
+    var root = document.getElementById(formId);
+    if (!root) return null;
+    return {
+        root: root,
+        score: root.querySelector('input[name=score]').value.trim(),
+        comment: root.querySelector('textarea[name=comment]').value.trim(),
+    };
+}
+
+function _showMsg(root, text, isErr) {
+    var box = root.querySelector('.score-msg');
+    box.style.display = 'block';
+    box.className = 'score-msg ' + (isErr ? 'score-err' : 'score-ok');
+    box.textContent = text;
+}
+
+function updateSidebarScoreState(sid) {
+    var row = document.getElementById('srow-' + sid);
+    if (!row) return;
+    var badge = row.querySelector('.pending-badge');
+    if (badge) {
+        var left = Math.max(0, (parseInt(badge.textContent, 10) || 0) - 1);
+        if (left > 0) {
+            badge.textContent = left;
+            return;
+        }
+        badge.remove();
+    }
+    if (!row.querySelector('.checked-badge')) {
+        row.insertAdjacentHTML('beforeend', '<span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверено</span>');
+    }
+}
+
+function submitScore(sid, workId, formId) {
+    var f = _readForm(formId);
+    if (!f) return;
+    if (f.score === '' || isNaN(parseFloat(f.score))) {
+        return _showMsg(f.root, 'Укажите балл (0–100)', true);
+    }
+    var scoreNum = parseFloat(f.score);
+    if (scoreNum < 0 || scoreNum > 100) {
+        return _showMsg(f.root, 'Балл должен быть от 0 до 100', true);
+    }
+    var fd = new FormData();
+    fd.append('csrf_token', CSRF_TOKEN);
+    fd.append('tab', 'retakes');
+    fd.append('score', f.score);
+    fd.append('comment', f.comment);
+    f.root.dataset.saving = '1';
+
+    fetch('/cabinet/students/' + sid + '/works/' + workId + '/score', {
+        method: 'POST', body: fd, redirect: 'manual',
+    }).then(function(r) {
+        if (r.ok || (r.status >= 300 && r.status < 400) || r.type === 'opaqueredirect' || r.status === 0) {
+            _showMsg(f.root, 'Сохранено <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>', false);
+            updateSidebarScoreState(sid);
+            setTimeout(function() { selectStudent(sid); }, 600);
+        } else {
+            f.root.dataset.saving = '0';
+            _showMsg(f.root, 'Ошибка при сохранении', true);
+        }
+    }).catch(function() { f.root.dataset.saving = '0'; _showMsg(f.root, 'Ошибка сети', true); });
+}
+
+function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+function esc(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+if (INITIAL_STUDENT_ID) selectStudent(INITIAL_STUDENT_ID);
+</script>
+{% endblock %}

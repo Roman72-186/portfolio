@@ -21,12 +21,12 @@
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    border-right: 1px solid var(--border);
-    background: var(--card);
+    border-right: 1px solid var(--line);
+    background: var(--surface);
 }
 .sidebar-header {
     padding: 16px 16px 12px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--line);
     flex-shrink: 0;
 }
 .sidebar-back {
@@ -34,19 +34,19 @@
     font-size: 13px; color: var(--muted); font-weight: 500;
     margin-bottom: 12px; opacity: 1;
 }
-.sidebar-back:hover { color: var(--accent); opacity: 1; }
+.sidebar-back:hover { color: var(--blue); opacity: 1; }
 .sidebar-title {
     font-size: 15px; font-weight: 700; color: var(--text);
     margin-bottom: 10px;
 }
 .sidebar-search {
     width: 100%; padding: 8px 12px;
-    background: var(--bg); border: 1.5px solid var(--border);
-    border-radius: 10px; font-size: 13px; color: var(--text);
-    font-family: 'Montserrat', sans-serif; outline: none;
+    background: var(--bg); border: 1.5px solid var(--line);
+    border-radius: var(--r-sm); font-size: 13px; color: var(--text);
+    font-family: inherit; outline: none;
     transition: border-color 0.2s;
 }
-.sidebar-search:focus { border-color: var(--accent); }
+.sidebar-search:focus { border-color: var(--blue); }
 
 .sidebar-list {
     flex: 1; overflow-y: auto;
@@ -54,24 +54,26 @@
 }
 .sidebar-list::-webkit-scrollbar { width: 4px; }
 .sidebar-list::-webkit-scrollbar-track { background: transparent; }
-.sidebar-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.sidebar-list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
 
 .student-row {
     display: flex; align-items: center; gap: 12px;
     padding: 10px 16px; cursor: pointer;
     transition: background 0.15s;
+    width: 100%; background: none; border: none; text-align: left; font-family: inherit;
 }
+.student-row:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 .student-row:hover { background: var(--bg); }
-.student-row.active { background: var(--accent-soft); }
-.student-row.active .student-row-name { color: var(--accent); font-weight: 700; }
+.student-row.active { background: var(--blue-soft); }
+.student-row.active .student-row-name { color: var(--blue); font-weight: 700; }
 .student-avatar {
     width: 38px; height: 38px; border-radius: 50%;
-    object-fit: cover; border: 1px solid var(--border);
+    object-fit: cover; border: 1px solid var(--line);
     flex-shrink: 0;
 }
 .student-avatar-ph {
     width: 38px; height: 38px; border-radius: 50%;
-    background: var(--bg2); border: 1px solid var(--border);
+    background: var(--surface-2); border: 1px solid var(--line);
     display: flex; align-items: center; justify-content: center;
     font-size: 16px; flex-shrink: 0;
 }
@@ -95,16 +97,16 @@
 }
 .split-main-scroll::-webkit-scrollbar { width: 6px; }
 .split-main-scroll::-webkit-scrollbar-track { background: transparent; }
-.split-main-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.split-main-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
 
 /* Student hero in main panel */
 .student-hero {
-    background: linear-gradient(135deg, #1E2D6B 0%, #3B4FC8 100%);
-    border-radius: 16px;
+    background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue-mid) 100%);
+    border-radius: var(--r-lg);
     padding: 20px 24px;
     display: flex; align-items: center; gap: 18px;
     margin-bottom: 20px;
-    box-shadow: 0 4px 20px rgba(30,45,107,0.2);
+    box-shadow: var(--sh-blue);
     position: relative; overflow: hidden;
 }
 .student-hero::before {
@@ -129,7 +131,7 @@
 .student-hero-pills { display: flex; gap: 8px; flex-wrap: wrap; }
 .student-hero-pill {
     background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18);
-    border-radius: 14px; padding: 3px 12px;
+    border-radius: var(--r-md); padding: 3px 12px;
     font-size: 12px; color: rgba(255,255,255,0.85); font-weight: 700;
 }
 .student-hero-score {
@@ -146,24 +148,24 @@
     align-items: start;
 }
 .subject-card {
-    background: var(--card);
-    border: 1.5px solid var(--border);
-    border-radius: 16px;
+    background: var(--surface);
+    border: 1.5px solid var(--line);
+    border-radius: var(--r-lg);
     overflow: hidden;
-    box-shadow: var(--shadow);
+    box-shadow: var(--sh-sm);
 }
 .subject-card-header {
     display: flex; align-items: center; justify-content: space-between;
     padding: 14px 16px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--line);
 }
 .subject-title { font-size: 15px; font-weight: 700; color: var(--text); }
 .lock-badge {
     display: inline-flex; align-items: center; gap: 4px;
-    padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 700;
+    padding: 3px 10px; border-radius: var(--r-md); font-size: 11px; font-weight: 700;
 }
-.lock-badge.locked { background: rgba(220,38,38,0.08); color: #DC2626; }
-.lock-badge.open { background: rgba(5,150,105,0.08); color: #059669; }
+.lock-badge.locked { background: rgba(220,38,38,0.08); color: var(--error); }
+.lock-badge.open { background: rgba(5,150,105,0.08); color: var(--ok); }
 
 .subject-card-body { padding: 14px 16px; }
 
@@ -176,20 +178,20 @@
 }
 .photo-strip img {
     width: 100%; aspect-ratio: 1; object-fit: cover;
-    border-radius: 8px; border: 1px solid var(--border);
+    border-radius: 8px; border: 1px solid var(--line);
     cursor: zoom-in; transition: opacity 0.15s;
 }
 .photo-strip img:hover { opacity: 0.85; }
 .photo-strip-more {
-    aspect-ratio: 1; background: var(--bg2); border-radius: 8px;
-    border: 1px solid var(--border);
+    aspect-ratio: 1; background: var(--surface-2); border-radius: 8px;
+    border: 1px solid var(--line);
     display: flex; align-items: center; justify-content: center;
     font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer;
 }
 
 /* Score display (read-only) */
 .scored-chip {
-    background: rgba(217,119,6,0.1); color: #D97706;
+    background: rgba(217,119,6,0.1); color: var(--warning);
     border-radius: 8px; padding: 5px 14px; font-size: 15px; font-weight: 900;
 }
 
@@ -198,11 +200,11 @@
 .unlock-btn {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 7px 16px; background: none;
-    border: 1.5px solid rgba(220,38,38,0.3); border-radius: 10px;
-    color: #DC2626; font-size: 13px; font-weight: 700; cursor: pointer;
-    font-family: 'Montserrat', sans-serif; transition: border-color 0.2s, background 0.2s;
+    border: 1.5px solid rgba(220,38,38,0.3); border-radius: var(--r-sm);
+    color: var(--error); font-size: 13px; font-weight: 700; cursor: pointer;
+    font-family: inherit; transition: border-color 0.2s, background 0.2s;
 }
-.unlock-btn:hover { background: rgba(220,38,38,0.05); border-color: #DC2626; }
+.unlock-btn:hover { background: rgba(220,38,38,0.05); border-color: var(--error); }
 
 /* No works placeholder */
 .no-works { font-size: 13px; color: var(--dim); padding: 12px 0; text-align: center; }
@@ -220,7 +222,7 @@
     z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px;
 }
 .lb.open { display: flex; }
-.lb img { max-width: 100%; max-height: 88vh; border-radius: 12px; box-shadow: 0 24px 80px rgba(0,0,0,0.5); }
+.lb img { max-width: 100%; max-height: 88vh; border-radius: var(--r-md); box-shadow: 0 24px 80px rgba(0,0,0,0.5); }
 .lb-close {
     position: absolute; top: 16px; right: 16px;
     background: rgba(255,255,255,0.15); border: none; color: #fff;
@@ -232,11 +234,46 @@
 /* Mobile */
 @media (max-width: 768px) {
     .split-wrap { flex-direction: column; height: auto; overflow: visible; }
-    .sidebar { width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+    .sidebar { width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--line); }
     .sidebar-list { max-height: 200px; }
     .split-main { overflow: visible; }
     .split-main-scroll { overflow: visible; padding: 16px; }
     .subjects-grid { grid-template-columns: 1fr; }
+}
+
+/* Score badge на фото пробника */
+.work-score-badge {
+    position: absolute; top: 6px; right: 6px;
+    color: #fff; font-size: 12px; font-weight: 800;
+    padding: 3px 8px; border-radius: 6px;
+    backdrop-filter: blur(4px);
+    pointer-events: none; z-index: 2;
+}
+.score-none   { background: rgba(0,0,0,0.35); color: rgba(255,255,255,0.7); }
+.score-red    { background: rgba(220,38,38,0.85); }
+.score-orange { background: rgba(234,88,12,0.85); }
+.score-lime   { background: rgba(101,163,13,0.85); }
+.score-green  { background: rgba(22,163,74,0.85); }
+
+/* Hero layout: крупное фото + миниатюры */
+.mock-hero-layout {
+    display: flex; gap: 10px; align-items: flex-start;
+    margin-bottom: 12px;
+}
+.mock-hero-photo { flex: 1; min-width: 0; }
+.mock-hero-photo > .photo-wrap > img {
+    width: 100%; aspect-ratio: 4/3; object-fit: cover;
+    border-radius: 10px; border: 1px solid var(--line);
+    cursor: zoom-in; display: block;
+}
+.mock-thumbnails {
+    display: flex; flex-direction: column; gap: 6px;
+    width: 88px; flex-shrink: 0;
+}
+.mock-thumbnails .photo-wrap img {
+    width: 88px; height: 88px; object-fit: cover;
+    border-radius: 8px; border: 1px solid var(--line);
+    cursor: zoom-in; display: block;
 }
 </style>
 {% endblock %}
@@ -254,11 +291,11 @@
         </div>
         <div class="sidebar-list" id="student-list">
             {% for s in sidebar_students %}
-            <div class="student-row" id="srow-{{ s.id }}" onclick="selectStudent({{ s.id }})">
+            <button type="button" class="student-row" id="srow-{{ s.id }}" onclick="selectStudent({{ s.id }})" aria-label="{{ s.name }}">
                 {% if s.photo_url %}
                 <img src="{{ s.photo_url }}" class="student-avatar" alt="">
                 {% else %}
-                <div class="student-avatar-ph">👤</div>
+                <div class="student-avatar-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg></div>
                 {% endif %}
                 <div class="student-row-info">
                     <div class="student-row-name">{{ s.name }}</div>
@@ -267,7 +304,7 @@
                         {% if s.avg_score is not none %} · {{ s.avg_score }} ср.{% endif %}
                     </div>
                 </div>
-            </div>
+            </button>
             {% endfor %}
         </div>
     </div>
@@ -276,7 +313,7 @@
     <div class="split-main">
         <div class="split-main-scroll" id="main-panel">
             <div class="empty-state" id="select-prompt">
-                <div class="empty-icon">👈</div>
+                <div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></div>
                 <div class="empty-text">Выберите ученика слева</div>
             </div>
         </div>
@@ -284,11 +321,7 @@
 
 </div>
 
-<!-- Lightbox -->
-<div class="lb" id="lb" onclick="lbClose(event)">
-    <button class="lb-close" onclick="lbClose()">&times;</button>
-    <img id="lb-img" src="" alt="">
-</div>
+{% include "partials/lightbox.html" %}
 
 <script>
 var INITIAL_STUDENT_ID = {{ initial_student_id }};
@@ -314,7 +347,7 @@ function selectStudent(id) {
         })
         .catch(() => {
             document.getElementById('main-panel').innerHTML =
-                '<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">Ошибка загрузки</div></div>';
+                '<div class="empty-state"><div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-text">Ошибка загрузки</div></div>';
         });
 }
 
@@ -327,7 +360,7 @@ function renderMockExams(data) {
     // Hero
     var avatar = s.photo_url
         ? '<img src="' + esc(s.photo_url) + '" class="student-hero-avatar" alt="">'
-        : '<div class="student-hero-avatar-ph">👤</div>';
+        : '<div class="student-hero-avatar-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg></div>';
     var scoreHtml = s.avg_score != null
         ? '<div class="student-hero-score"><div class="score-big">' + s.avg_score + '</div><div class="score-label">ср. балл</div></div>'
         : '';
@@ -353,6 +386,15 @@ function renderMockExams(data) {
     document.getElementById('main-panel').innerHTML = html;
 }
 
+function scoreBadgeClass(score) {
+    if (score == null) return 'score-none';
+    var s = parseFloat(score);
+    if (s <= 30) return 'score-red';
+    if (s <= 60) return 'score-orange';
+    if (s <= 74) return 'score-lime';
+    return 'score-green';
+}
+
 function buildSubjectCard(subject, data) {
     var works = (data.mock_works || {})[subject] || [];
     var lock = (data.mock_locks || {})[subject] || {};
@@ -361,8 +403,8 @@ function buildSubjectCard(subject, data) {
     var redirectTo = '/cabinet/curator/mock-exams?student_id=' + studentId;
 
     var lockBadge = isLocked
-        ? '<span class="lock-badge locked">🔒 Закрыт</span>'
-        : '<span class="lock-badge open">✓ Открыт</span>';
+        ? '<span class="lock-badge locked"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Закрыт</span>'
+        : '<span class="lock-badge open"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Открыт</span>';
 
     var html = '<div class="subject-card">';
 
@@ -378,21 +420,62 @@ function buildSubjectCard(subject, data) {
 
     // Photos
     if (works.length) {
-        var previewWorks = works.slice(0, 6);
-        html += '<div class="photo-strip">';
-        previewWorks.forEach(function(w, i) {
-            if (w.s3_url) {
-                html += '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="lbOpen(\'' + esc(w.s3_url) + '\')">';
-            }
-        });
-        if (works.length > 6) {
-            html += '<div class="photo-strip-more">+' + (works.length - 6) + '</div>';
-        }
-        html += '</div>';
+        // Primary = оцененная работа (если есть), иначе первая
+        var primary = works.find(function(w){ return w.score != null; }) || works[0];
+        var rest = works.filter(function(w){ return w !== primary; });
 
-        // Show score info for the most recent work (read-only)
-        var latest = works[0];
-        html += buildScoreDisplay(latest);
+        var gallery = 'mock-curator-' + esc(subject) + '-' + studentId;
+
+        if (rest.length === 0) {
+            // Одна работа — одно фото с бейджем
+            if (primary.s3_url) {
+                var bc = scoreBadgeClass(primary.score);
+                var bt = primary.score != null ? Math.round(primary.score) + '/100' : '—';
+                html += '<div data-gallery="' + gallery + '" style="display:inline-block;margin-bottom:12px">'
+                    + '<div class="photo-wrap" style="position:relative">'
+                    +   '<img src="' + esc(primary.s3_url) + '" alt="' + esc(primary.filename) + '" '
+                    +     'style="width:100%;max-width:320px;aspect-ratio:4/3;object-fit:cover;border-radius:10px;border:1px solid var(--line);cursor:zoom-in;display:block" '
+                    +     'loading="lazy" onclick="openGallery(this)">'
+                    +   '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
+                    + '</div>'
+                    + '</div>';
+            }
+        } else {
+            // Несколько работ — крупное фото + миниатюры, все в одном data-gallery
+            html += '<div data-gallery="' + gallery + '">';
+            html += '<div class="mock-hero-layout">';
+
+            if (primary.s3_url) {
+                var bc = scoreBadgeClass(primary.score);
+                var bt = primary.score != null ? Math.round(primary.score) + '/100' : '—';
+                html += '<div class="mock-hero-photo">'
+                    + '<div class="photo-wrap" style="position:relative">'
+                    +   '<img src="' + esc(primary.s3_url) + '" alt="' + esc(primary.filename) + '" '
+                    +     'loading="lazy" onclick="openGallery(this)">'
+                    +   '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
+                    + '</div>'
+                    + '</div>';
+            }
+
+            html += '<div class="mock-thumbnails">';
+            rest.forEach(function(w) {
+                if (w.s3_url) {
+                    var wbc = scoreBadgeClass(w.score);
+                    html += '<div class="photo-wrap" style="position:relative">'
+                        + '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" '
+                        +   'loading="lazy" onclick="openGallery(this)">'
+                        + (w.score != null ? '<span class="work-score-badge ' + wbc + '">' + Math.round(w.score) + '/100</span>' : '')
+                        + '</div>';
+                }
+            });
+            html += '</div>';
+
+            html += '</div>'; // .mock-hero-layout
+            html += '</div>'; // data-gallery wrapper
+        }
+
+        // Оценка (read-only для куратора) — по оцененной/первой работе
+        html += buildScoreDisplay(primary);
     } else {
         html += '<div class="no-works">Нет загруженных работ</div>';
     }
@@ -408,7 +491,7 @@ function buildScoreDisplay(work) {
             + '<span class="scored-chip">' + Math.round(work.score) + ' / 100</span>'
             + '</div>';
         if (work.comment) {
-            html += '<div style="font-size:13px;color:var(--muted);background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:8px 12px;margin-top:8px;white-space:pre-wrap">'
+            html += '<div style="font-size:13px;color:var(--muted);background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:8px 12px;margin-top:8px;white-space:pre-wrap">'
                 + esc(work.comment) + '</div>';
         }
     } else {
@@ -426,22 +509,6 @@ function filterStudents(q) {
         row.style.display = name.includes(q) ? '' : 'none';
     });
 }
-
-// ── Lightbox ─────────────────────────────────────────────────────────────────
-
-function lbOpen(src) {
-    document.getElementById('lb-img').src = src;
-    document.getElementById('lb').classList.add('open');
-    document.body.style.overflow = 'hidden';
-}
-function lbClose(e) {
-    if (e && e.target !== document.getElementById('lb') && !e.target.classList.contains('lb-close')) return;
-    document.getElementById('lb').classList.remove('open');
-    document.body.style.overflow = '';
-}
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') lbClose({target: document.getElementById('lb')});
-});
 
 // ── Escape helper ────────────────────────────────────────────────────────────
 function esc(s) {

@@ -5,87 +5,99 @@
 .adm-wrap { max-width: 900px; margin: 0 auto; }
 
 .adm-hero {
-    background: linear-gradient(135deg, #0F2340 0%, #1A3A6B 60%, #2B5FC8 100%);
-    border-radius: 20px; padding: 28px 32px; margin-bottom: 20px;
+    background: linear-gradient(135deg, var(--blue-ink) 0%, var(--blue-deep) 60%, var(--blue-mid) 100%);
+    border-radius: var(--r-xl); padding: 28px 32px; margin-bottom: 20px;
     display: flex; align-items: center; justify-content: space-between; gap: 20px;
     box-shadow: 0 8px 32px rgba(15,35,64,0.3); position: relative; overflow: hidden;
 }
 .adm-hero::before { content: ''; position: absolute; width: 360px; height: 360px; border-radius: 50%; background: rgba(255,255,255,0.03); top: -120px; right: -80px; pointer-events: none; }
 .adm-hero-info { position: relative; z-index: 1; }
-.adm-role-tag { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18); border-radius: 20px; padding: 4px 14px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.85); margin-bottom: 10px; }
+.adm-role-tag { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18); border-radius: var(--r-xl); padding: 4px 14px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.85); margin-bottom: 10px; }
 .adm-name { font-size: 26px; font-weight: 900; color: #fff; letter-spacing: -0.5px; margin-bottom: 6px; }
 .adm-sub { font-size: 13px; color: rgba(255,255,255,0.5); font-weight: 500; }
 .adm-hero-action { position: relative; z-index: 1; flex-shrink: 0; display: flex; gap: 10px; flex-wrap: wrap; }
-.adm-hero-btn { display: inline-flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.12); border: 1.5px solid rgba(255,255,255,0.22); color: rgba(255,255,255,0.92); border-radius: 12px; padding: 10px 20px; font-size: 14px; font-weight: 700; text-decoration: none; opacity: 1; transition: background 0.2s, border-color 0.2s; }
+.adm-hero-btn { display: inline-flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.12); border: 1.5px solid rgba(255,255,255,0.22); color: rgba(255,255,255,0.92); border-radius: var(--r-md); padding: 10px 20px; font-size: 14px; font-weight: 700; text-decoration: none; opacity: 1; transition: background 0.2s, border-color 0.2s; }
 .adm-hero-btn:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.35); opacity: 1; }
 
-.stats-strip { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; margin-bottom: 20px; }
-.stat-cell { padding: 18px 20px; border-right: 1px solid var(--border); }
+.stats-strip { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-sm); overflow: hidden; margin-bottom: 20px; }
+.stat-cell { padding: 18px 20px; border-right: 1px solid var(--line); }
 .stat-cell:last-child { border-right: none; }
-.stat-icon-wrap { width: 34px; height: 34px; border-radius: 10px; background: var(--accent-soft); display: flex; align-items: center; justify-content: center; font-size: 15px; margin-bottom: 10px; }
+.stat-icon-wrap { width: 34px; height: 34px; border-radius: var(--r-sm); background: var(--blue-soft); display: flex; align-items: center; justify-content: center; font-size: 15px; margin-bottom: 10px; }
 .stat-val { font-size: 26px; font-weight: 900; color: var(--text); line-height: 1; margin-bottom: 3px; }
 .stat-lbl { font-size: 12px; color: var(--dim); font-weight: 500; line-height: 1.3; }
-.stat-sub { font-size: 11px; color: var(--accent); font-weight: 700; margin-top: 3px; }
+.stat-sub { font-size: 11px; color: var(--blue); font-weight: 700; margin-top: 3px; }
 
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
-.panel { background: var(--card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
-.panel-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-sm); overflow: hidden; }
+.panel-header { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
 .panel-title { font-size: 13px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.07em; }
 
-.role-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 18px; border-bottom: 1px solid var(--border); }
+.role-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 18px; border-bottom: 1px solid var(--line); }
 .role-row:last-child { border-bottom: none; }
 .role-name { font-size: 14px; color: var(--text); display: flex; align-items: center; gap: 8px; }
-.role-count { font-size: 15px; font-weight: 900; color: var(--accent); background: var(--accent-soft); border-radius: 8px; padding: 2px 10px; }
+.role-count { font-size: 15px; font-weight: 900; color: var(--blue); background: var(--blue-soft); border-radius: 8px; padding: 2px 10px; }
 
 .type-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; }
-.type-cell { padding: 14px 18px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.type-cell { padding: 14px 18px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .type-cell:nth-child(2n) { border-right: none; }
 .type-cell:nth-last-child(-n+2) { border-bottom: none; }
 .type-label { font-size: 11px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
 .type-val { font-size: 22px; font-weight: 900; color: var(--text); }
 
-.staff-row { display: flex; align-items: center; gap: 12px; padding: 9px 18px; border-bottom: 1px solid var(--border); }
+.staff-row { display: flex; align-items: center; gap: 12px; padding: 9px 18px; border-bottom: 1px solid var(--line); }
 .staff-row:last-child { border-bottom: none; }
-.staff-ava { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); flex-shrink: 0; }
-.staff-ava-ph { width: 32px; height: 32px; border-radius: 50%; background: var(--bg2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+.staff-ava { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line); flex-shrink: 0; }
+.staff-ava-ph { width: 32px; height: 32px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
 .staff-info { flex: 1; min-width: 0; }
 .staff-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .staff-meta { font-size: 11px; color: var(--dim); margin-top: 1px; }
 
-.feed-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); margin-bottom: 20px; overflow: hidden; }
-.feed-header { padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.07em; display: flex; align-items: center; justify-content: space-between; }
-.feed-item { display: flex; align-items: center; gap: 14px; padding: 11px 18px; border-bottom: 1px solid var(--border); transition: background 0.15s; }
+.feed-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-sm); margin-bottom: 20px; overflow: hidden; }
+.feed-header { padding: 14px 18px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.07em; display: flex; align-items: center; justify-content: space-between; }
+.feed-item { display: flex; align-items: center; gap: 14px; padding: 11px 18px; border-bottom: 1px solid var(--line); transition: background 0.15s; }
 .feed-item:last-child { border-bottom: none; }
 .feed-item:hover { background: var(--bg); }
-.feed-thumb { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; border: 1px solid var(--border); flex-shrink: 0; }
-.feed-thumb-ph { width: 40px; height: 40px; border-radius: 8px; background: var(--bg2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
+.feed-thumb { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; border: 1px solid var(--line); flex-shrink: 0; }
+.feed-thumb-ph { width: 40px; height: 40px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
 .feed-info { flex: 1; min-width: 0; }
 .feed-student { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .feed-meta { font-size: 11px; color: var(--dim); margin-top: 2px; }
 .feed-right { flex-shrink: 0; text-align: right; }
 .feed-date { font-size: 11px; color: var(--dim); }
-.feed-score { font-size: 12px; font-weight: 700; color: #D97706; background: rgba(217,119,6,0.1); border-radius: 6px; padding: 2px 8px; margin-top: 3px; }
+.feed-score { font-size: 12px; font-weight: 700; color: var(--warning); background: rgba(217,119,6,0.1); border-radius: 6px; padding: 2px 8px; margin-top: 3px; }
 .feed-pending { font-size: 11px; color: var(--dim); margin-top: 3px; }
 
 .type-badge { display: inline-flex; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
-.tb-before { background: rgba(220,38,38,0.08); color: #DC2626; }
-.tb-after  { background: rgba(5,150,105,0.08); color: #059669; }
-.tb-mock   { background: rgba(217,119,6,0.1); color: #D97706; }
+.tb-before { background: rgba(220,38,38,0.08); color: var(--error); }
+.tb-after  { background: rgba(5,150,105,0.08); color: var(--ok); }
+.tb-mock   { background: rgba(217,119,6,0.1); color: var(--warning); }
 .tb-retake { background: rgba(124,58,237,0.08); color: #7C3AED; }
 
-.unscored-alert { display: flex; align-items: center; gap: 12px; background: rgba(217,119,6,0.08); border: 1px solid rgba(217,119,6,0.2); border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: #D97706; font-weight: 700; flex-wrap: wrap; }
+.unscored-alert { display: flex; align-items: center; gap: 12px; background: rgba(217,119,6,0.08); border: 1px solid rgba(217,119,6,0.2); border-radius: var(--r-md); padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: var(--warning); font-weight: 700; flex-wrap: wrap; }
+
+/* Color-coded stat icons */
+.stat-cell:nth-child(1) .stat-icon-wrap { background: rgba(37,99,235,0.10); color: #2563EB; }
+.stat-cell:nth-child(2) .stat-icon-wrap { background: rgba(5,150,105,0.10); color: var(--ok); }
+.stat-cell:nth-child(3) .stat-icon-wrap { background: rgba(217,119,6,0.10); color: var(--warning); }
+.stat-cell:nth-child(4) .stat-icon-wrap { background: rgba(124,58,237,0.08); color: #7C3AED; }
+
+/* Feed type — colored ring on thumbnail */
+.feed-type-before    .feed-thumb, .feed-type-before    .feed-thumb-ph { box-shadow: 0 0 0 2px rgba(220,38,38,0.5); border-color: transparent; }
+.feed-type-after     .feed-thumb, .feed-type-after     .feed-thumb-ph { box-shadow: 0 0 0 2px rgba(5,150,105,0.5); border-color: transparent; }
+.feed-type-mock_exam .feed-thumb, .feed-type-mock_exam .feed-thumb-ph { box-shadow: 0 0 0 2px rgba(217,119,6,0.6); border-color: transparent; }
+.feed-type-retake    .feed-thumb, .feed-type-retake    .feed-thumb-ph { box-shadow: 0 0 0 2px rgba(124,58,237,0.45); border-color: transparent; }
 
 @media (max-width: 768px) {
     .stats-strip { grid-template-columns: repeat(2, 1fr); }
     .stat-cell:nth-child(2) { border-right: none; }
-    .stat-cell:nth-child(1), .stat-cell:nth-child(2) { border-bottom: 1px solid var(--border); }
+    .stat-cell:nth-child(1), .stat-cell:nth-child(2) { border-bottom: 1px solid var(--line); }
     .two-col { grid-template-columns: 1fr; }
     .adm-hero { flex-direction: column; align-items: flex-start; }
     .adm-name { font-size: 22px; }
 }
 @media (max-width: 480px) {
     .stats-strip { grid-template-columns: 1fr; }
-    .stat-cell { border-right: none; border-bottom: 1px solid var(--border); }
+    .stat-cell { border-right: none; border-bottom: 1px solid var(--line); }
     .stat-cell:last-child { border-bottom: none; }
     .adm-hero { padding: 20px; }
     .adm-name { font-size: 20px; }
@@ -100,35 +112,35 @@
     <!-- Hero -->
     <div class="adm-hero">
         <div class="adm-hero-info">
-            <div class="adm-role-tag">⚙️ Администратор</div>
+            <div class="adm-role-tag"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Администратор</div>
             <div class="adm-name">{{ user.last_name or '' }} {{ user.first_name or user.name }}</div>
             <div class="adm-sub">Проверка работ · аналитика · портфолио учеников</div>
         </div>
         <div class="adm-hero-action">
-            <a href="/cabinet/students" class="adm-hero-btn">🎓 Ученики</a>
-            <a href="/cabinet/exam-assignments" class="adm-hero-btn">📋 Билеты пробников</a>
-            <a href="/cabinet/periods" class="adm-hero-btn">🗓 Периоды доступа</a>
+            <a href="/cabinet/students" class="adm-hero-btn"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg> Ученики</a>
+            <a href="/cabinet/exam-assignments" class="adm-hero-btn"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/></svg> Билеты пробников</a>
+            <a href="/cabinet/periods" class="adm-hero-btn"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Периоды доступа</a>
         </div>
     </div>
 
     <!-- Unscored alert -->
     {% if unscored_mocks > 0 %}
     <div class="unscored-alert">
-        <span style="font-size:20px">⚠️</span>
+        <span style="font-size:20px"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
         <span>{{ unscored_mocks }} пробных экзамен{{ 'ов' if unscored_mocks > 4 else ('а' if unscored_mocks > 1 else '') }} ожидают проверки</span>
-        <a href="/cabinet/students?tab=mock-exams&period_only=1&has_unchecked_mocks=1" style="margin-left:auto;font-size:12px;color:#D97706;text-decoration:underline;opacity:1">Проверить →</a>
+        <a href="/cabinet/students?tab=mock-exams&period_only=1&has_unchecked_mocks=1" style="margin-left:auto;font-size:12px;color:var(--warning);text-decoration:underline;opacity:1">Проверить →</a>
     </div>
     {% endif %}
 
     <!-- Stats strip -->
     <div class="stats-strip">
         <div class="stat-cell">
-            <div class="stat-icon-wrap">👥</div>
+            <div class="stat-icon-wrap"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
             <div class="stat-val">{{ total_active }}</div>
             <div class="stat-lbl">Активных пользователей</div>
         </div>
         <div class="stat-cell">
-            <div class="stat-icon-wrap">📤</div>
+            <div class="stat-icon-wrap"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
             <div class="stat-val">{{ works_this_month }}</div>
             <div class="stat-lbl">Загружено в {{ month_name }}</div>
             <div class="stat-sub">Всего {{ total_works }} работ</div>
@@ -139,7 +151,7 @@
             <div class="stat-lbl">Средний балл за пробники</div>
         </div>
         <div class="stat-cell">
-            <div class="stat-icon-wrap">🆕</div>
+            <div class="stat-icon-wrap"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3"/></svg></div>
             <div class="stat-val">{{ new_users_month }}</div>
             <div class="stat-lbl">Новых в {{ month_name }}</div>
         </div>
@@ -149,10 +161,10 @@
     <div class="two-col">
         <div class="panel">
             <div class="panel-header"><span class="panel-title">Пользователи по ролям</span></div>
-            {% set role_icons = {1: '🎓', 2: '👤', 3: '🛡', 4: '⚙️', 5: '👑'} %}
+            {% set role_icons = {1: '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>', 2: '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg>', 3: '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>', 4: '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>', 5: '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 20h20"/><path d="M3 9l4 3 5-7 5 7 4-3-1.5 8h-15z"/></svg>'} %}
             {% for r in role_breakdown %}
             <div class="role-row">
-                <span class="role-name"><span>{{ role_icons.get(r.rank, '●') }}</span>{{ r.name }}</span>
+                <span class="role-name"><span>{{ role_icons.get(r.rank, '●')|safe }}</span>{{ r.name }}</span>
                 <span class="role-count">{{ r.count }}</span>
             </div>
             {% endfor %}
@@ -181,11 +193,18 @@
         {% if curators %}
         {% for c in curators %}
         <div class="staff-row">
-            {% if c.photo_url %}<img src="{{ c.photo_url }}" class="staff-ava" alt="">{% else %}<div class="staff-ava-ph">👤</div>{% endif %}
+            {% if c.photo_url %}<img src="{{ c.photo_url }}" class="staff-ava" alt="">{% else %}<div class="staff-ava-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg></div>{% endif %}
             <div class="staff-info">
                 <div class="staff-name">{{ c.name }}</div>
                 <div class="staff-meta">{{ c.student_count }} учеников</div>
             </div>
+            <form method="post" action="/cabinet/superadmin/impersonate/{{ c.id }}" style="margin:0;flex-shrink:0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" style="background:var(--blue);color:#fff;border:none;padding:6px 12px;border-radius:8px;font-size:12px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:4px">
+                    <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true" style="width:14px;height:14px"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+                    Войти
+                </button>
+            </form>
         </div>
         {% endfor %}
         {% else %}
@@ -197,14 +216,15 @@
     <div class="feed-wrap">
         <div class="feed-header">
             <span>Последние загрузки</span>
-            <a href="/cabinet/students" style="font-size:12px;color:var(--accent);font-weight:700;text-decoration:none;opacity:1">Все ученики →</a>
+            <a href="/cabinet/students" style="font-size:12px;color:var(--blue);font-weight:700;text-decoration:none;opacity:1">Все ученики →</a>
         </div>
         {% if recent_works %}
         {% set type_labels = {'before': 'До', 'after': 'После', 'mock_exam': 'Пробник', 'retake': 'Отработка'} %}
         {% set type_classes = {'before': 'tb-before', 'after': 'tb-after', 'mock_exam': 'tb-mock', 'retake': 'tb-retake'} %}
+        <div class="feed-list" data-gallery="admin-feed">
         {% for w in recent_works %}
-        <div class="feed-item">
-            {% if w.s3_url %}<img src="{{ w.s3_url }}" class="feed-thumb" alt="" loading="lazy">{% else %}<div class="feed-thumb-ph">🖼</div>{% endif %}
+        <div class="feed-item feed-type-{{ w.work_type }}">
+            {% if w.s3_url %}<img src="{{ w.s3_url }}" class="feed-thumb" alt="" loading="lazy" style="cursor:zoom-in" onclick="openGallery(this)">{% else %}<div class="feed-thumb-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>{% endif %}
             <div class="feed-info">
                 <div class="feed-student">
                     <a href="/cabinet/students?student={{ w.student_id }}&tab=mock-exams" style="color:var(--text);text-decoration:none;opacity:1">{{ w.student_name }}</a>
@@ -224,10 +244,12 @@
             </div>
         </div>
         {% endfor %}
+        </div>
         {% else %}
         <div style="padding:32px;text-align:center;color:var(--dim);font-size:13px">Загрузок пока нет</div>
         {% endif %}
     </div>
 
 </div>
+{% include "partials/lightbox.html" %}
 {% endblock %}

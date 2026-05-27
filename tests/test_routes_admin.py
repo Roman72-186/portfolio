@@ -168,3 +168,30 @@ def test_assign_role_cannot_change_own_role(admin_client, db):
     )
     db.refresh(admin)
     assert admin.role_id == original_role_id  # unchanged
+
+
+# ---------------------------------------------------------------------------
+# Bulk curator assignment
+# ---------------------------------------------------------------------------
+
+def test_bulk_assign_curator_from_admin_users(admin_client, db, user_factory):
+    client, _ = admin_client
+    curator = user_factory(vk_id=121_212, name="Curator One", role_name="куратор")
+    student = user_factory(vk_id=131_313, name="Student One", role_name="ученик")
+    student.tg_username = "student_one"
+    db.commit()
+
+    resp = client.post(
+        "/admin/users/assign-curator-bulk",
+        data={
+            "curator_id": str(curator.id),
+            "student_usernames": "@student_one",
+            "cohort_tag": "may",
+        },
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 200
+    db.refresh(student)
+    assert student.curator_id == curator.id
+    assert student.cohort_tag == "may"

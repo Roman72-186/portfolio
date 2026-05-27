@@ -1,20 +1,34 @@
+import logging
 import secrets
 import string
 import uuid
 from datetime import datetime, timedelta, timezone, date
 from typing import Annotated
 
+logger = logging.getLogger(__name__)
+
 import bcrypt as _bcrypt_lib
-from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Request, Depends, Form, HTTPException, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session as DBSession, aliased
 
 from app.config import settings
-from app.constants import MOCK_SUBJECTS, FEATURE_LABELS, FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM, FEATURE_RETAKE, TARIFFS
+from app.constants import (
+    MOCK_SUBJECTS,
+    FEATURE_LABELS,
+    FEATURE_PORTFOLIO_UPLOAD,
+    FEATURE_MOCK_EXAM,
+    FEATURE_RETAKE,
+    TARIFFS,
+    STUDY_MODES,
+    STUDY_MODE_LABELS,
+    EXAM_SUBJECT_HINTS,
+)
+from app.cache import invalidate_session as _invalidate_session_cache
 from app.db.database import get_db
-from app.dependencies import require_superadmin, require_admin_role, require_csrf
+from app.dependencies import require_superadmin, require_admin_role, require_csrf, get_current_user
 from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
 from app.models.feature_period import FeaturePeriod
 from app.services.feature_periods import invalidate_feature_cache, get_active_period
@@ -24,6 +38,8 @@ from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
 from app.services import s3 as s3_service
 from app.services.auth_links import issue_one_time_login_link
+from app.services.n8n import send_photo_to_n8n
+from app.services.utils import compress_image
 from app.tmpl import templates
 
 _TRANSLIT = str.maketrans(
@@ -233,7 +249,7 @@ def _load_dashboard_data(db: DBSession, now: datetime) -> dict:
 @router.get("/superadmin", response_class=HTMLResponse)
 def cabinet_superadmin(
     request: Request,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
     now = datetime.now(timezone.utc)
@@ -463,12 +479,25 @@ async def upload_ticket_image(
     _csrf: Annotated[None, Depends(require_csrf)],
     file: UploadFile = File(...),
 ):
+    ct = (file.content_type or "").lower()
+    fname = file.filename or "image.jpg"
+    ext = ("." + fname.rsplit(".", 1)[-1].lower()) if "." in fname else ""
+    allowed_ext = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".avif", ".gif", ".bmp", ".tif", ".tiff"}
+    if not ct.startswith("image/") and ext not in allowed_ext:
+        return JSONResponse({"success": False, "error": "Файл не является изображением"}, status_code=422)
+
     data = await file.read()
     if len(data) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Файл слишком большой (макс. 10 МБ)")
-    s3_path = _ticket_s3_path(file.filename or "image.jpg")
-    url = s3_service.upload_to_s3(s3_path, data, file.content_type or "image/jpeg")
-    return JSONResponse({"url": url, "path": s3_path if url else None})
+        return JSONResponse({"success": False, "error": "Файл слишком большой (макс. 10 МБ)"}, status_code=413)
+    if not data:
+        return JSONResponse({"success": False, "error": "Пустой файл"}, status_code=422)
+
+    compressed = compress_image(data)
+    s3_path = _ticket_s3_path(fname)
+    url = s3_service.upload_to_s3(s3_path, compressed, "image/jpeg")
+    if s3_service.is_configured() and not url:
+        return JSONResponse({"success": False, "error": "Ошибка загрузки в хранилище"}, status_code=502)
+    return JSONResponse({"success": True, "url": url, "path": s3_path if url else None})
 
 
 # ── Сохранение задания ───────────────────────────────────────────────────────
@@ -879,7 +908,7 @@ from app.services.period_stats import get_submission_stats, get_all_periods as _
 @router.get("/superadmin/stats", response_class=HTMLResponse)
 def superadmin_stats(
     request: Request,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     period_id: int | None = None,
     feature: str | None = None,
@@ -894,7 +923,122 @@ def superadmin_stats(
         "selected_period_id": period_id,
         "selected_feature": feature,
         "feature_labels": FEATURE_LABELS,
+        "tariffs": TARIFFS,
     })
+
+
+@router.get("/superadmin/stats/export")
+def superadmin_stats_export(
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    period_id: int | None = None,
+    feature: str | None = None,
+):
+    import io
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from fastapi.responses import StreamingResponse
+
+    stats = get_submission_stats(db, feature=feature, period_id=period_id)
+    by_tariff_mock: dict = stats["by_tariff_mock_status"]
+    not_submitted_by_tariff: dict = stats["not_submitted_by_tariff"]
+
+    HEADER_FONT = Font(bold=True, color="FFFFFF")
+    HEADER_FILL = PatternFill(fill_type="solid", fgColor="2563EB")
+    FILL_YES = PatternFill(fill_type="solid", fgColor="D1FAE5")   # зелёный
+    FILL_NO  = PatternFill(fill_type="solid", fgColor="FEE2E2")   # красный
+    CENTER = Alignment(horizontal="center")
+
+    def _style_header_row(ws, columns: list[str]) -> None:
+        ws.append(columns)
+        for cell in ws[ws.max_row]:
+            cell.font = HEADER_FONT
+            cell.fill = HEADER_FILL
+            cell.alignment = CENTER
+
+    def _set_col_widths(ws, widths: list[int]) -> None:
+        for i, w in enumerate(widths, 1):
+            ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+
+    def _fmt_tg(tg: str) -> str:
+        if not tg:
+            return "—"
+        return tg if tg.startswith("@") else "@" + tg
+
+    wb = openpyxl.Workbook()
+
+    # ── Лист 1: Сводка ────────────────────────────────────────────────────────
+    ws_summary = wb.active
+    ws_summary.title = "Сводка"
+
+    period = stats.get("period")
+    if period:
+        label = FEATURE_LABELS.get(period.feature, period.feature)
+        ws_summary.append([f"Период: {label}  {period.start_date.strftime('%d.%m.%Y')} – {period.end_date.strftime('%d.%m.%Y')}"])
+        ws_summary.append([])
+    elif feature:
+        ws_summary.append([f"Фича: {FEATURE_LABELS.get(feature, feature)}"])
+        ws_summary.append([])
+
+    _style_header_row(ws_summary, ["Тариф", "Всего учеников", "Сдали оба предмета", "Не сдали хотя бы один"])
+    for tariff in TARIFFS:
+        all_students = by_tariff_mock.get(tariff, [])
+        ns = not_submitted_by_tariff.get(tariff, [])
+        submitted_both = len(all_students) - len(ns)
+        ws_summary.append([tariff, len(all_students), submitted_both, len(ns)])
+
+    by_mock_subject: dict = stats.get("by_mock_subject", {})
+    if by_mock_subject:
+        ws_summary.append([])
+        _style_header_row(ws_summary, ["Пробники по предмету", "Кол-во работ", "", ""])
+        for subj, cnt in by_mock_subject.items():
+            ws_summary.append([subj, cnt, "", ""])
+
+    _set_col_widths(ws_summary, [22, 18, 22, 26])
+
+    # ── Листы 2-4: Все ученики по тарифам (статус пробников) ─────────────────
+    for tariff in TARIFFS:
+        students = by_tariff_mock.get(tariff, [])
+        ws = wb.create_sheet(title=tariff[:31])
+        _style_header_row(ws, ["Ученик", "VK ID", "Telegram", "Рисунок", "Композиция"])
+        for s in students:
+            row = [s["student_name"], s["vk_id"], _fmt_tg(s["tg_username"]),
+                   "сдал" if s["risunok"] else "не сдал",
+                   "сдал" if s["kompoziciya"] else "не сдал"]
+            ws.append(row)
+            r_idx = ws.max_row
+            # Цветовая заливка ячеек Рисунок / Композиция
+            ws.cell(r_idx, 4).fill = FILL_YES if s["risunok"] else FILL_NO
+            ws.cell(r_idx, 5).fill = FILL_YES if s["kompoziciya"] else FILL_NO
+        _set_col_widths(ws, [30, 14, 22, 12, 14])
+
+    # ── Листы 5-7: Не сдали хотя бы один предмет ─────────────────────────────
+    for tariff in TARIFFS:
+        ns_students = not_submitted_by_tariff.get(tariff, [])
+        sheet_name = f"Не сдали — {tariff}"[:31]
+        ws_ns = wb.create_sheet(title=sheet_name)
+        _style_header_row(ws_ns, ["Ученик", "VK ID", "Telegram", "Рисунок", "Композиция"])
+        for s in ns_students:
+            row = [s["student_name"], s["vk_id"], _fmt_tg(s["tg_username"]),
+                   "сдал" if s["risunok"] else "не сдал",
+                   "сдал" if s["kompoziciya"] else "не сдал"]
+            ws_ns.append(row)
+            r_idx = ws_ns.max_row
+            ws_ns.cell(r_idx, 4).fill = FILL_YES if s["risunok"] else FILL_NO
+            ws_ns.cell(r_idx, 5).fill = FILL_YES if s["kompoziciya"] else FILL_NO
+        _set_col_widths(ws_ns, [30, 14, 22, 12, 14])
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    from urllib.parse import quote
+    fname = "статистика.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"},
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -905,73 +1049,498 @@ from app.services.user_management import soft_delete_user, toggle_user_active
 
 
 _SU_PAGE_SIZE = 50
+COHORT_TAGS = {"may", "june", "july", "august"}
+
+
+def _normalize_tg_username(raw: str) -> str:
+    return raw.strip().lstrip("@").lower()
+
+
+def _split_tg_usernames(raw: str) -> list[str]:
+    seen: set[str] = set()
+    usernames: list[str] = []
+    for item in raw.replace(",", "\n").replace(";", "\n").splitlines():
+        username = _normalize_tg_username(item)
+        if username and username not in seen:
+            usernames.append(username)
+            seen.add(username)
+    return usernames
+
+
+def _load_superadmin_curators(db: DBSession) -> list[User]:
+    return (
+        db.query(User)
+        .join(Role, User.role_id == Role.id)
+        .filter(Role.rank == 2, User.is_active == True, User.deleted_at.is_(None))  # noqa: E712
+        .order_by(User.last_name, User.first_name, User.name)
+        .limit(500)
+        .all()
+    )
+
+
+def _render_superadmin_users(
+    request: Request,
+    user: dict,
+    db: DBSession,
+    *,
+    q: str = "",
+    role_rank: str = "",
+    tariff: str = "",
+    show_deleted: str = "",
+    show_blocked: str = "",
+    study_mode: str = "",
+    is_publishable: str = "",
+    has_case: str = "",
+    curator_id: str = "",
+    exam_subjects: str = "",
+    page: int = 1,
+    assignment_result: dict | None = None,
+):
+    role_rank_int: int | None = int(role_rank) if role_rank.strip() else None
+    show_deleted_b: bool = show_deleted.strip() in ("1", "true", "on", "yes")
+    show_blocked_b: bool = show_blocked.strip() in ("1", "true", "on", "yes")
+    is_publishable_b: bool = is_publishable.strip() in ("1", "true", "on", "yes")
+    has_case_b: bool = has_case.strip() in ("1", "true", "on", "yes")
+
+    curator_id_int: int | None = None
+    if curator_id.strip():
+        try:
+            curator_id_int = int(curator_id.strip())
+        except ValueError:
+            curator_id_int = None
+
+    study_mode_clean = study_mode.strip().lower()
+    if study_mode_clean and study_mode_clean not in STUDY_MODES:
+        study_mode_clean = ""
+
+    exam_subjects_clean = exam_subjects.strip()
+
+    page = max(1, page)
+    query = db.query(User).outerjoin(Role, User.role_id == Role.id)
+    if show_blocked_b:
+        query = query.filter(User.is_active == False, User.deleted_at.is_(None))  # noqa: E712
+    elif not show_deleted_b:
+        query = query.filter(User.deleted_at.is_(None))
+    if role_rank_int is not None:
+        query = query.filter(Role.rank == role_rank_int)
+    if tariff.strip():
+        query = query.filter(User.tariff == tariff.strip())
+    if study_mode_clean:
+        query = query.filter(User.study_mode == study_mode_clean)
+    if is_publishable_b:
+        query = query.filter(User.is_publishable == True)  # noqa: E712
+    if curator_id_int is not None:
+        query = query.filter(User.curator_id == curator_id_int)
+    if exam_subjects_clean:
+        query = query.filter(User.exam_subjects == exam_subjects_clean)
+
+    q_clean = q.strip().lstrip("@").lower()
+    if q_clean:
+        like = f"%{q_clean}%"
+        db_matched = query.filter(
+            User.name.ilike(like) |
+            User.first_name.ilike(like) |
+            User.last_name.ilike(like) |
+            User.staff_login.ilike(like)
+        ).order_by(User.created_at.desc()).all()
+        db_ids = {u.id for u in db_matched}
+
+        all_candidates = query.order_by(User.created_at.desc()).all()
+        tg_matched = [
+            u for u in all_candidates
+            if u.tg_username and q_clean in u.tg_username.lower()
+        ]
+        tg_ids = {u.id for u in tg_matched}
+
+        merged_ids = db_ids | tg_ids
+        all_users_map = {u.id: u for u in all_candidates + db_matched}
+        all_filtered = [all_users_map[uid] for uid in merged_ids]
+        all_filtered.sort(key=lambda u: u.created_at or u.id, reverse=True)
+    elif has_case_b:
+        all_filtered = query.order_by(User.created_at.desc()).all()
+    else:
+        all_filtered = None
+
+    if has_case_b and all_filtered is not None:
+        # in-memory case filter: загружаем пробники одним SQL-запросом
+        ids = [u.id for u in all_filtered]
+        case_ids: set[int] = set()
+        if ids:
+            rows = (
+                db.query(Work.user_id, Work.subject, Work.score, Work.month,
+                         Work.year, Work.scored_at, Work.created_at, Work.work_type)
+                .filter(
+                    Work.user_id.in_(ids),
+                    Work.work_type == WORK_TYPE_MOCK_EXAM,
+                    Work.status == "success",
+                    Work.score.isnot(None),
+                    Work.subject.isnot(None),
+                )
+                .all()
+            )
+            from collections import defaultdict as _dd
+            from app.services.utils import has_case_growth as _hcg
+            grouped: dict[int, list] = _dd(list)
+            for r in rows:
+                grouped[r.user_id].append(r)
+            for uid, ws in grouped.items():
+                if _hcg(ws):
+                    case_ids.add(uid)
+        all_filtered = [u for u in all_filtered if u.id in case_ids]
+
+    if all_filtered is not None:
+        total = len(all_filtered)
+        total_pages = max(1, (total + _SU_PAGE_SIZE - 1) // _SU_PAGE_SIZE)
+        page = min(max(1, page), total_pages)
+        users = all_filtered[(page - 1) * _SU_PAGE_SIZE: page * _SU_PAGE_SIZE]
+    else:
+        total = query.count()
+        total_pages = max(1, (total + _SU_PAGE_SIZE - 1) // _SU_PAGE_SIZE)
+        page = min(max(1, page), total_pages)
+        users = (
+            query.order_by(User.created_at.desc())
+            .offset((page - 1) * _SU_PAGE_SIZE)
+            .limit(_SU_PAGE_SIZE)
+            .all()
+        )
+    roles = db.query(Role).order_by(Role.rank).all()
+    curators = _load_superadmin_curators(db)
+
+    # has_case для отображения значка в строках (только для тех, кто на текущей странице)
+    has_case_by_user: dict[int, bool] = {}
+    if users:
+        page_ids = [u.id for u in users]
+        rows = (
+            db.query(Work.user_id, Work.subject, Work.score, Work.month, Work.year,
+                     Work.scored_at, Work.created_at, Work.work_type)
+            .filter(
+                Work.user_id.in_(page_ids),
+                Work.work_type == WORK_TYPE_MOCK_EXAM,
+                Work.status == "success",
+                Work.score.isnot(None),
+                Work.subject.isnot(None),
+            )
+            .all()
+        )
+        from collections import defaultdict as _dd
+        from app.services.utils import has_case_growth as _hcg
+        grouped: dict[int, list] = _dd(list)
+        for r in rows:
+            grouped[r.user_id].append(r)
+        for uid, ws in grouped.items():
+            has_case_by_user[uid] = _hcg(ws)
+
+    return templates.TemplateResponse("superadmin_users.html", {
+        "request": request,
+        "user": user,
+        "users": users,
+        "roles": roles,
+        "curators": curators,
+        "tariffs": TARIFFS,
+        "study_modes": STUDY_MODES,
+        "study_mode_labels": STUDY_MODE_LABELS,
+        "exam_subject_hints": EXAM_SUBJECT_HINTS,
+        "has_case_by_user": has_case_by_user,
+        "q": q,
+        "role_rank": role_rank,
+        "tariff": tariff,
+        "show_deleted": show_deleted,
+        "show_blocked": show_blocked,
+        "study_mode": study_mode_clean,
+        "is_publishable": "1" if is_publishable_b else "",
+        "has_case": "1" if has_case_b else "",
+        "curator_id": curator_id,
+        "exam_subjects": exam_subjects_clean,
+        "current_user_id": user["user_id"],
+        "page": page,
+        "total_pages": total_pages,
+        "total": total,
+        "assignment_result": assignment_result,
+    })
 
 
 @router.get("/superadmin/users", response_class=HTMLResponse)
 def superadmin_users(
     request: Request,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     q: str = "",
     role_rank: str = Query(default=""),
     tariff: str = "",
     show_deleted: str = "",
     show_blocked: str = "",
+    study_mode: str = "",
+    is_publishable: str = "",
+    has_case: str = "",
+    curator_id: str = "",
+    exam_subjects: str = "",
     page: int = 1,
 ):
-    role_rank_int: int | None = int(role_rank) if role_rank.strip() else None
-    show_deleted: bool = show_deleted.strip() in ("1", "true", "on", "yes")
-    show_blocked: bool = show_blocked.strip() in ("1", "true", "on", "yes")
+    return _render_superadmin_users(
+        request,
+        user,
+        db,
+        q=q,
+        role_rank=role_rank,
+        tariff=tariff,
+        show_deleted=show_deleted,
+        show_blocked=show_blocked,
+        study_mode=study_mode,
+        is_publishable=is_publishable,
+        has_case=has_case,
+        curator_id=curator_id,
+        exam_subjects=exam_subjects,
+        page=page,
+    )
 
-    page = max(1, page)
-    query = db.query(User).outerjoin(Role, User.role_id == Role.id)
-    if show_blocked:
-        query = query.filter(User.is_active == False, User.deleted_at.is_(None))  # noqa: E712
-    elif not show_deleted:
-        query = query.filter(User.deleted_at.is_(None))
-    if role_rank_int is not None:
-        query = query.filter(Role.rank == role_rank_int)
-    if tariff.strip():
-        query = query.filter(User.tariff == tariff.strip())
-    if q.strip():
-        like = f"%{q.strip()}%"
-        query = query.filter(
-            User.name.ilike(like) |
-            User.first_name.ilike(like) |
-            User.last_name.ilike(like)
-        )
-    total = query.count()
-    total_pages = max(1, (total + _SU_PAGE_SIZE - 1) // _SU_PAGE_SIZE)
-    page = min(page, total_pages)
-    users = (
-        query.order_by(User.created_at.desc())
-        .offset((page - 1) * _SU_PAGE_SIZE)
-        .limit(_SU_PAGE_SIZE)
+
+@router.post("/superadmin/users/assign-curator-bulk", response_class=HTMLResponse)
+def superadmin_assign_curator_bulk(
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    curator_id: int = Form(...),
+    student_usernames: str = Form(""),
+    cohort_tag: str = Form(""),
+):
+    cohort_tag = cohort_tag.strip().lower()
+    if cohort_tag and cohort_tag not in COHORT_TAGS:
+        raise HTTPException(status_code=400, detail="Неверная метка группы")
+
+    curator = (
+        db.query(User)
+        .join(Role, User.role_id == Role.id)
+        .filter(User.id == curator_id, Role.rank == 2, User.is_active == True, User.deleted_at.is_(None))  # noqa: E712
+        .first()
+    )
+    if not curator:
+        raise HTTPException(status_code=404, detail="Куратор не найден")
+
+    usernames = _split_tg_usernames(student_usernames)
+    result = {
+        "curator_name": f"{curator.last_name or ''} {curator.first_name or curator.name}".strip(),
+        "requested": len(usernames),
+        "matched": 0,
+        "assigned": 0,
+        "unchanged": 0,
+        "not_found": [],
+        "cohort_tag": cohort_tag,
+    }
+    if not usernames:
+        result["error"] = "Добавьте хотя бы один Telegram username."
+        return _render_superadmin_users(request, user, db, assignment_result=result)
+
+    wanted = set(usernames)
+    students = (
+        db.query(User)
+        .join(Role, User.role_id == Role.id)
+        .filter(Role.rank == 1, User.is_active == True, User.deleted_at.is_(None))  # noqa: E712
         .all()
     )
+    by_username = {
+        _normalize_tg_username(s.tg_username or ""): s
+        for s in students
+        if _normalize_tg_username(s.tg_username or "") in wanted
+    }
+
+    for username in usernames:
+        student = by_username.get(username)
+        if not student:
+            result["not_found"].append(username)
+            continue
+        result["matched"] += 1
+        if student.curator_id == curator.id:
+            result["unchanged"] += 1
+        else:
+            student.curator_id = curator.id
+            result["assigned"] += 1
+        if cohort_tag:
+            student.cohort_tag = cohort_tag
+
+    if result["assigned"] or cohort_tag and result["matched"]:
+        db.commit()
+    else:
+        db.rollback()
+
+    return _render_superadmin_users(request, user, db, assignment_result=result)
+
+
+def _invalidate_user_sessions(db: DBSession, user_id: int) -> None:
+    """Drop Redis-cached session dicts for every active session of a user."""
+    try:
+        from app.models.session import Session as _SessionModel
+        sessions = db.query(_SessionModel.id).filter(
+            _SessionModel.user_id == user_id,
+            _SessionModel.is_active == True,  # noqa: E712
+        ).all()
+        for (sid,) in sessions:
+            _invalidate_session_cache(sid)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("invalidate_user_sessions failed for user_id=%s: %s", user_id, exc)
+
+
+@router.get("/superadmin/users/{target_id}", response_class=HTMLResponse)
+def superadmin_user_card(
+    target_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    target = (
+        db.query(User)
+        .outerjoin(Role, User.role_id == Role.id)
+        .filter(User.id == target_id)
+        .first()
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    curator = None
+    if target.curator_id:
+        curator = db.query(User).filter(User.id == target.curator_id).first()
+
+    curators = _load_superadmin_curators(db)
     roles = db.query(Role).order_by(Role.rank).all()
-    return templates.TemplateResponse("superadmin_users.html", {
+
+    return templates.TemplateResponse("superadmin_user_card.html", {
         "request": request,
         "user": user,
-        "users": users,
+        "target": target,
+        "target_curator": curator,
+        "curators": curators,
         "roles": roles,
         "tariffs": TARIFFS,
-        "q": q,
-        "role_rank": role_rank,
-        "tariff": tariff,
-        "show_deleted": show_deleted,
-        "show_blocked": show_blocked,
-        "current_user_id": user["user_id"],
-        "page": page,
-        "total_pages": total_pages,
-        "total": total,
+        "cohort_tags": sorted(COHORT_TAGS),
+        "study_modes": STUDY_MODES,
+        "study_mode_labels": STUDY_MODE_LABELS,
+        "exam_subject_hints": EXAM_SUBJECT_HINTS,
+    })
+
+
+@router.post("/superadmin/users/{target_id}/tags")
+def superadmin_user_save_tags(
+    target_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    exam_dates: str = Form(""),
+    exam_subjects: str = Form(""),
+    study_mode: str = Form(""),
+    is_publishable: str = Form(""),
+    curator_id: str = Form(""),
+    tariff: str = Form(""),
+    about: str = Form(""),
+    cohort_tag: str = Form(""),
+):
+    target = db.query(User).filter(User.id == target_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    exam_dates_v = exam_dates.strip()[:30] or None
+    exam_subjects_v = exam_subjects.strip()[:20] or None
+    study_mode_v = study_mode.strip().lower() or None
+    if study_mode_v and study_mode_v not in STUDY_MODES:
+        raise HTTPException(status_code=400, detail="Неверный режим обучения")
+    is_publishable_v = is_publishable.strip() in ("1", "true", "on", "yes")
+
+    curator_id_v: int | None
+    curator_id_clean = curator_id.strip()
+    if curator_id_clean:
+        try:
+            curator_id_v = int(curator_id_clean)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Неверный id куратора")
+        curator_exists = (
+            db.query(User.id)
+            .join(Role, User.role_id == Role.id)
+            .filter(User.id == curator_id_v, Role.rank == 2, User.deleted_at.is_(None))
+            .first()
+        )
+        if not curator_exists:
+            raise HTTPException(status_code=400, detail="Куратор не найден")
+    else:
+        curator_id_v = None
+
+    tariff_v = tariff.strip()
+    if tariff_v and tariff_v not in TARIFFS:
+        raise HTTPException(status_code=400, detail="Неверный тариф")
+
+    about_v = about.strip()[:500] or None
+
+    cohort_tag_v = cohort_tag.strip().lower()
+    if cohort_tag_v and cohort_tag_v not in COHORT_TAGS:
+        raise HTTPException(status_code=400, detail="Неверная метка группы")
+    cohort_tag_v = cohort_tag_v or None
+
+    target.exam_dates = exam_dates_v
+    target.exam_subjects = exam_subjects_v
+    target.study_mode = study_mode_v
+    target.is_publishable = is_publishable_v
+    target.curator_id = curator_id_v
+    if tariff_v:
+        target.tariff = tariff_v
+    target.about = about_v
+    target.cohort_tag = cohort_tag_v
+    db.commit()
+
+    _invalidate_user_sessions(db, target.id)
+
+    return RedirectResponse(
+        f"/cabinet/superadmin/users/{target.id}?saved=1",
+        status_code=303,
+    )
+
+
+@router.post("/superadmin/users/{target_id}/curator")
+def superadmin_user_set_curator(
+    target_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    curator_id: str = Form(""),
+):
+    """Quick endpoint for changing curator from the users list (JSON response)."""
+    target = db.query(User).filter(User.id == target_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    curator_id_clean = curator_id.strip()
+    new_curator_id: int | None
+    new_curator_name: str | None = None
+    if curator_id_clean:
+        try:
+            new_curator_id = int(curator_id_clean)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Неверный id куратора")
+        curator_obj = (
+            db.query(User)
+            .join(Role, User.role_id == Role.id)
+            .filter(User.id == new_curator_id, Role.rank == 2, User.deleted_at.is_(None))
+            .first()
+        )
+        if not curator_obj:
+            raise HTTPException(status_code=400, detail="Куратор не найден")
+        new_curator_name = f"{curator_obj.last_name or ''} {curator_obj.first_name or curator_obj.name}".strip()
+    else:
+        new_curator_id = None
+
+    target.curator_id = new_curator_id
+    db.commit()
+    _invalidate_user_sessions(db, target.id)
+
+    return JSONResponse({
+        "ok": True,
+        "user_id": target.id,
+        "curator_id": new_curator_id,
+        "curator_name": new_curator_name,
     })
 
 
 @router.post("/superadmin/users/{target_id}/delete")
 def superadmin_delete_user(
     target_id: int,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
@@ -984,7 +1553,7 @@ def superadmin_delete_user(
 @router.post("/superadmin/users/{target_id}/toggle-active")
 def superadmin_toggle_active(
     target_id: int,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
@@ -992,3 +1561,270 @@ def superadmin_toggle_active(
     if result is None:
         raise HTTPException(status_code=400, detail="Невозможно изменить статус пользователя")
     return RedirectResponse("/cabinet/superadmin/users", status_code=303)
+
+
+# ── Drive-sync status & retry ────────────────────────────────────────────────
+
+@router.get("/superadmin/drive-sync-status")
+def drive_sync_status(
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Return counts of works by drive_status (admin+)."""
+    rows = (
+        db.query(Work.drive_status, func.count(Work.id))
+        .group_by(Work.drive_status)
+        .all()
+    )
+    counts = {status: cnt for status, cnt in rows}
+    return JSONResponse({
+        "pending": counts.get("pending", 0),
+        "synced": counts.get("synced", 0),
+        "failed": counts.get("failed", 0),
+    })
+
+
+@router.post("/superadmin/works/{work_id}/retry-drive-sync")
+async def retry_drive_sync(
+    work_id: int,
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    """Re-queue a single work for Drive upload (admin+). Resets drive_status to pending."""
+    work = db.query(Work).filter(Work.id == work_id).first()
+    if not work:
+        raise HTTPException(status_code=404, detail="Работа не найдена")
+
+    if not work.s3_url and not work.s3_path:
+        raise HTTPException(status_code=400, detail="У работы нет файла в S3 — ретрай невозможен")
+
+    student = db.query(User).filter(User.id == work.user_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Студент не найден")
+
+    # Reset status so background task will update it
+    work.drive_status = "pending"
+    db.commit()
+
+    # Read bytes from S3 for re-sending to n8n
+    import asyncio, httpx
+    s3_url = work.s3_url
+    photo_bytes: bytes | None = None
+    if s3_url:
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(s3_url)
+                resp.raise_for_status()
+                photo_bytes = resp.content
+        except Exception as exc:
+            logger.warning("retry_drive_sync: could not fetch S3 for work_id=%s: %s", work_id, exc)
+
+    if not photo_bytes:
+        raise HTTPException(status_code=502, detail="Не удалось скачать файл из S3 для повторной отправки")
+
+    from app.api.upload import _send_to_n8n_background
+    from app.constants import MONTHS
+    import datetime as _dt
+    month = work.month or MONTHS[_dt.datetime.now().month - 1]
+
+    user_dict = {
+        "vk_id": student.vk_id,
+        "name": student.name,
+        "tariff": work.tariff or student.tariff or "УВЕРЕННЫЙ",
+        "user_id": student.id,
+        "session_id": None,
+    }
+
+    background_tasks.add_task(
+        _send_to_n8n_background,
+        work_queue=[(work.id, work.filename, photo_bytes, work.s3_path)],
+        user=user_dict,
+        month=month,
+        work_type=work.work_type,
+    )
+    return JSONResponse({"success": True, "message": f"Работа #{work_id} поставлена в очередь на синхронизацию"})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Имперсонация — войти как другой пользователь (только rank=5)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from itsdangerous import URLSafeTimedSerializer as _UTS, BadData as _BadData
+from app.models.audit_log import AuditLog as _AuditLog
+from app.models.session import Session as _DBSession
+
+_IMPERSONATION_TTL_MIN = 30
+_IMPERSONATION_COOKIE = "impersonation_original"
+_IMPERSONATION_MAX_AGE = 60 * 60 * 24  # 24h max — sanity bound for restore
+
+
+def _impersonation_serializer() -> _UTS:
+    return _UTS(settings.session_secret, salt="impersonation-v1")
+
+
+@router.get("/superadmin/curators", response_class=HTMLResponse)
+def superadmin_curators_list(
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    StudentAlias = aliased(User)
+    rows = (
+        db.query(
+            User.id, User.first_name, User.last_name, User.name, User.photo_url,
+            User.staff_login, User.is_active,
+            func.count(StudentAlias.id).label("student_count"),
+        )
+        .join(Role, User.role_id == Role.id)
+        .outerjoin(StudentAlias, (StudentAlias.curator_id == User.id) & (StudentAlias.is_active == True))
+        .filter(Role.rank == 2, User.deleted_at.is_(None))
+        .group_by(User.id, User.first_name, User.last_name, User.name, User.photo_url,
+                  User.staff_login, User.is_active)
+        .order_by(func.count(StudentAlias.id).desc(), User.last_name)
+        .all()
+    )
+    curators = [
+        {
+            "id": r.id,
+            "name": f"{r.last_name or ''} {r.first_name or r.name}".strip(),
+            "photo_url": r.photo_url,
+            "staff_login": r.staff_login,
+            "is_active": r.is_active,
+            "student_count": r.student_count,
+        }
+        for r in rows
+    ]
+    return templates.TemplateResponse("superadmin_curators.html", {
+        "request": request,
+        "user": user,
+        "curators": curators,
+    })
+
+
+@router.post("/superadmin/impersonate/stop")
+def superadmin_impersonate_stop(request: Request, db: Annotated[DBSession, Depends(get_db)]):
+    """Аварийный выход из имперсонации.
+
+    НЕ требует валидного `get_current_user` и НЕ проверяет роль — работает только
+    по подписанной cookie `_IMPERSONATION_COOKIE`. Это нужно, чтобы кнопка
+    «Выйти обратно» работала даже если имперсонируемый пользователь оказался
+    заблокирован / удалён / без прав к текущей странице.
+    """
+    signed = request.cookies.get(_IMPERSONATION_COOKIE, "")
+    impersonation_session_id = request.cookies.get("session_id", "")
+
+    response = RedirectResponse("/cabinet", status_code=303)
+    response.delete_cookie(_IMPERSONATION_COOKIE, path="/")
+
+    if not signed:
+        # Нечего восстанавливать — просто чистим cookie и редиректим.
+        if impersonation_session_id:
+            response.delete_cookie("session_id", path="/")
+        return response
+
+    try:
+        original_session_id = _impersonation_serializer().loads(
+            signed, max_age=_IMPERSONATION_MAX_AGE
+        )
+    except _BadData:
+        if impersonation_session_id:
+            response.delete_cookie("session_id", path="/")
+        return response
+
+    # Деактивируем имперсонационную сессию и пишем аудит (best effort)
+    if impersonation_session_id:
+        try:
+            imp_sess = db.query(_DBSession).filter(_DBSession.id == impersonation_session_id).first()
+            if imp_sess:
+                db.add(_AuditLog(
+                    action="impersonate_stop",
+                    performed_by_id=imp_sess.impersonated_by_id or 0,
+                    target_user_id=imp_sess.user_id,
+                    details=f"session={impersonation_session_id}",
+                ))
+                imp_sess.is_active = False
+                db.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("impersonate_stop: cleanup failed for %s: %s", impersonation_session_id, exc)
+            db.rollback()
+        _invalidate_session_cache(impersonation_session_id)
+
+    _invalidate_session_cache(original_session_id)
+
+    response.set_cookie(
+        key="session_id",
+        value=original_session_id,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=settings.session_ttl_hours * 3600,
+        path="/",
+    )
+    return response
+
+
+@router.post("/superadmin/impersonate/{target_id}")
+def superadmin_impersonate_start(
+    target_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    if user.get("impersonated_by_id"):
+        raise HTTPException(status_code=400, detail="Уже в режиме имперсонации")
+
+    target = (
+        db.query(User)
+        .outerjoin(Role, User.role_id == Role.id)
+        .filter(User.id == target_id, User.is_active == True, User.deleted_at.is_(None))  # noqa: E712
+        .first()
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    target_rank = target.role.rank if target.role else 0
+    if target_rank >= user["role_rank"]:
+        raise HTTPException(status_code=403, detail="Нельзя имперсонировать роль равную или выше своей")
+
+    original_session_id = user["session_id"]
+    new_session = _DBSession(
+        user_id=target.id,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=_IMPERSONATION_TTL_MIN),
+        is_active=True,
+        impersonated_by_id=user["user_id"],
+    )
+    db.add(new_session)
+    db.add(_AuditLog(
+        action="impersonate_start",
+        performed_by_id=user["user_id"],
+        target_user_id=target.id,
+        details=f"session={new_session.id}",
+    ))
+    db.commit()
+    db.refresh(new_session)
+
+    signed = _impersonation_serializer().dumps(original_session_id)
+
+    response = RedirectResponse("/cabinet", status_code=303)
+    response.set_cookie(
+        key="session_id",
+        value=new_session.id,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=_IMPERSONATION_TTL_MIN * 60,
+        path="/",
+    )
+    response.set_cookie(
+        key=_IMPERSONATION_COOKIE,
+        value=signed,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=_IMPERSONATION_MAX_AGE,
+        path="/",
+    )
+    return response

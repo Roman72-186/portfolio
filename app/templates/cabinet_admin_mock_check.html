@@ -486,7 +486,7 @@ const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
             <div class="sidebar-subtitle">
                 {{ total_students }} учен{{ 'иков' if total_students != 1 else 'ик' }} · на проверке {{ total_unchecked }} работ
             </div>
-            <input type="text" class="sidebar-search" placeholder="Поиск ученика…"
+            <input type="text" class="sidebar-search" placeholder="Поиск по имени или @username"
                    oninput="applyFilters()" id="student-search">
             {% if tariffs %}
             <div class="tariff-filter" id="tariff-filter">
@@ -499,7 +499,7 @@ const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
         </div>
         <div class="sidebar-list" id="student-list">
             {% for s in sidebar_students %}
-            <button type="button" class="student-row" id="srow-{{ s.id }}" data-tariff="{{ s.tariff or '' }}" onclick="selectStudent({{ s.id }})" aria-label="{{ s.name }}">
+            <button type="button" class="student-row" id="srow-{{ s.id }}" data-tariff="{{ s.tariff or '' }}" data-tg="{{ s.tg_username or '' }}" onclick="selectStudent({{ s.id }})" aria-label="{{ s.name }}">
                 {% if s.photo_url %}
                 <img src="{{ s.photo_url }}" class="student-avatar" alt="">
                 {% else %}
@@ -508,16 +508,11 @@ const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
                 <div class="student-row-info">
                     <div class="student-row-name">{{ s.name }}</div>
                     <div class="student-row-meta">
-                        {{ s.tariff or '—' }} · {{ s.mock_count }} работ
+                        {{ s.tariff or '—' }} · {{ s.mock_count }} работ{% if s.tg_username %} · @{{ s.tg_username }}{% endif %}
                     </div>
                 </div>
-                {% set ss = s.scored_subjects %}
-                {% if ss | length >= 2 %}
+                {% if s.scored_subjects | length >= 2 %}
                 <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверено</span>
-                {% elif 'Рисунок' in ss %}
-                <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверен рис</span>
-                {% elif 'Композиция' in ss %}
-                <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверен комп</span>
                 {% elif s.unchecked %}
                 <span class="pending-badge">{{ s.unchecked }}</span>
                 {% endif %}
@@ -552,6 +547,7 @@ var _currentData = null;
 var _mockCalendarState = {};
 
 function selectStudent(id) {
+    if (_currentStudentId && id !== _currentStudentId && !guardUnsavedScore()) return;
     _currentStudentId = id;
     document.querySelectorAll('.student-row').forEach(r => r.classList.remove('active'));
     var row = document.getElementById('srow-' + id);
@@ -741,6 +737,7 @@ function rerenderMockTab() {
 }
 
 function setMockCalendarYear(sid, subjectIndex, delta) {
+    if (!guardUnsavedScore()) return;
     var key = mockStateKey(sid, subjectIndex);
     var state = _mockCalendarState[key] || { year: CURRENT_YEAR, month: new Date().getMonth(), selectedDate: '' };
     state.year += delta;
@@ -750,6 +747,7 @@ function setMockCalendarYear(sid, subjectIndex, delta) {
 }
 
 function setMockCalendarMonth(sid, subjectIndex, month) {
+    if (!guardUnsavedScore()) return;
     var key = mockStateKey(sid, subjectIndex);
     var state = _mockCalendarState[key] || { year: CURRENT_YEAR, month: month, selectedDate: '' };
     state.month = month;
@@ -759,6 +757,7 @@ function setMockCalendarMonth(sid, subjectIndex, month) {
 }
 
 function selectMockDay(sid, subjectIndex, dateStr) {
+    if (!guardUnsavedScore()) return;
     var parts = dateStr.split('-');
     _mockCalendarState[mockStateKey(sid, subjectIndex)] = {
         year: parseInt(parts[0], 10),
@@ -891,11 +890,45 @@ function buildMockDayPanel(sid, subject, grouped, state) {
     return html;
 }
 
+function scoreFormValue(root, selector) {
+    var el = root ? root.querySelector(selector) : null;
+    return el ? String(el.value || '').trim() : '';
+}
+
+function getDirtyScoreForm() {
+    var forms = document.querySelectorAll('.score-form');
+    for (var i = 0; i < forms.length; i++) {
+        var root = forms[i];
+        if (root.dataset.saving === '1') continue;
+        var score = scoreFormValue(root, 'input[name="score"]');
+        var comment = scoreFormValue(root, 'textarea[name="comment"]');
+        var initialScore = root.dataset.initialScore || '';
+        var initialComment = root.dataset.initialComment || '';
+        if (score !== initialScore || comment !== initialComment) return root;
+    }
+    return null;
+}
+
+function guardUnsavedScore() {
+    var dirty = getDirtyScoreForm();
+    if (!dirty) return true;
+    alert('Сначала сохраните введённый балл. После этого можно перейти к другой работе или предмету.');
+    var input = dirty.querySelector('input[name="score"]');
+    if (input) input.focus();
+    return false;
+}
+
+window.addEventListener('beforeunload', function(ev) {
+    if (!getDirtyScoreForm()) return;
+    ev.preventDefault();
+    ev.returnValue = '';
+});
+
 function buildScoreForm(sid, workId, currentScore, currentComment) {
     var scoreVal = currentScore != null ? Math.round(currentScore) : '';
     var commentVal = currentComment ? esc(currentComment) : '';
     var formId = 'sform-' + workId;
-    return '<div class="score-form" id="' + formId + '">'
+    return '<div class="score-form" id="' + formId + '" data-initial-score="' + esc(scoreVal) + '" data-initial-comment="' + commentVal + '">'
         + '<div class="score-form-label">Оценка и комментарий</div>'
         + '<div class="score-form-row">'
         +   '<input type="number" min="0" max="100" step="1" name="score" value="' + scoreVal + '" placeholder="0–100" required>'
@@ -965,6 +998,7 @@ function submitScore(sid, workId, formId) {
     fd.append('tab', 'mock-exams');
     fd.append('score', f.score);
     fd.append('comment', f.comment);
+    f.root.dataset.saving = '1';
 
     fetch('/cabinet/students/' + sid + '/works/' + workId + '/score', {
         method: 'POST',
@@ -975,9 +1009,10 @@ function submitScore(sid, workId, formId) {
             _showMsg(f.root, 'Сохранено <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>', false);
             setTimeout(function() { selectStudent(sid); }, 600);
         } else {
+            f.root.dataset.saving = '0';
             _showMsg(f.root, 'Ошибка при сохранении', true);
         }
-    }).catch(function() { _showMsg(f.root, 'Ошибка сети', true); });
+    }).catch(function() { f.root.dataset.saving = '0'; _showMsg(f.root, 'Ошибка сети', true); });
 }
 
 function submitRetake(sid, workId, formId) {
@@ -999,6 +1034,7 @@ function submitRetake(sid, workId, formId) {
     fd.append('csrf_token', CSRF_TOKEN);
     fd.append('score', f.score);
     fd.append('comment', f.comment);
+    f.root.dataset.saving = '1';
 
     fetch('/cabinet/students/' + sid + '/mock-exams/' + workId + '/retake', {
         method: 'POST',
@@ -1009,10 +1045,11 @@ function submitRetake(sid, workId, formId) {
               _showMsg(f.root, 'Отправлено на отработку <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>', false);
               setTimeout(function() { selectStudent(sid); }, 700);
           } else {
+              f.root.dataset.saving = '0';
               _showMsg(f.root, (resp.j && resp.j.detail) || 'Ошибка', true);
           }
       })
-      .catch(function() { _showMsg(f.root, 'Ошибка сети', true); });
+      .catch(function() { f.root.dataset.saving = '0'; _showMsg(f.root, 'Ошибка сети', true); });
 }
 
 function submitRevision(sid, workId, formId) {
@@ -1020,6 +1057,7 @@ function submitRevision(sid, workId, formId) {
     var fd = new FormData();
     fd.append('csrf_token', CSRF_TOKEN);
     var root = document.getElementById(formId);
+    if (root) root.dataset.saving = '1';
     fetch('/cabinet/students/' + sid + '/mock-exams/' + workId + '/revision', {
         method: 'POST',
         body: fd,
@@ -1032,10 +1070,11 @@ function submitRevision(sid, workId, formId) {
               }
               setTimeout(function() { selectStudent(sid); }, 700);
           } else {
+              if (root) root.dataset.saving = '0';
               alert((resp.j && resp.j.detail) || 'Ошибка');
           }
       })
-      .catch(function() { alert('Ошибка сети'); });
+      .catch(function() { if (root) root.dataset.saving = '0'; alert('Ошибка сети'); });
 }
 
 function deleteWork(sid, workId, btnEl) {
@@ -1070,14 +1109,17 @@ function selectTariff(btn, tariff) {
 }
 
 function applyFilters() {
-    var q = (document.getElementById('student-search').value || '').toLowerCase();
+    var q = (document.getElementById('student-search').value || '').toLowerCase().trim();
+    var qNoAt = q.replace(/^@+/, '');
     document.querySelectorAll('.student-row').forEach(function(row) {
         var name = row.querySelector('.student-row-name');
         if (!name) return;
         var matchesName = name.textContent.toLowerCase().includes(q);
+        var tg = (row.getAttribute('data-tg') || '').toLowerCase().replace(/^@+/, '');
+        var matchesTg = !q || tg.includes(qNoAt) || ('@' + tg).includes(q);
         var rowTariff = row.getAttribute('data-tariff') || '';
         var matchesTariff = !_activeTariff || rowTariff === _activeTariff;
-        row.style.display = (matchesName && matchesTariff) ? '' : 'none';
+        row.style.display = ((matchesName || matchesTg) && matchesTariff) ? '' : 'none';
     });
 }
 

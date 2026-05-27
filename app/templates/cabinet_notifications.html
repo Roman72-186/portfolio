@@ -9,41 +9,41 @@
     font-size: 13px; color: var(--muted); font-weight: 600;
     text-decoration: none; margin-bottom: 20px;
 }
-.page-back:hover { color: var(--accent); opacity: 1; }
+.page-back:hover { color: var(--blue); opacity: 1; }
 
 .page-title {
-    font-size: 22px; font-weight: 900; color: var(--text); margin-bottom: 20px;
+    font-size: 22px; font-weight: 900; color: var(--ink); margin-bottom: 20px;
     display: flex; align-items: center; gap: 10px;
 }
 .page-title-badge {
     background: #DC2626; color: #fff;
     font-size: 12px; font-weight: 700;
-    padding: 2px 10px; border-radius: 20px;
+    padding: 2px 10px; border-radius: var(--r-pill);
 }
 
 .notif-list { display: flex; flex-direction: column; gap: 10px; }
 
 .notif-card {
     display: flex; align-items: flex-start; gap: 14px;
-    padding: 16px 18px; border-radius: 16px;
-    background: var(--card); border: 1px solid var(--border);
+    padding: 16px 18px; border-radius: var(--r-lg);
+    background: var(--surface); border: 1px solid var(--line);
     text-decoration: none; color: inherit;
     transition: border-color 0.15s, box-shadow 0.15s;
 }
-.notif-card:hover { border-color: var(--accent); box-shadow: var(--shadow-lg); opacity: 1; }
+.notif-card:hover { border-color: var(--blue); box-shadow: var(--sh-md); opacity: 1; }
 .notif-card.unread {
-    background: rgba(37,99,235,0.04);
-    border-color: rgba(37,99,235,0.2);
+    background: var(--blue-soft);
+    border-color: var(--blue-tint);
 }
 
 .notif-icon { font-size: 22px; flex-shrink: 0; margin-top: 1px; }
 
 .notif-body { flex: 1; min-width: 0; }
 .notif-title {
-    font-size: 14px; font-weight: 700; color: var(--text);
+    font-size: 14px; font-weight: 700; color: var(--ink);
     margin-bottom: 4px; line-height: 1.4;
 }
-.notif-card.unread .notif-title { color: var(--accent); }
+.notif-card.unread .notif-title { color: var(--blue); }
 .notif-text {
     font-size: 13px; color: var(--muted); line-height: 1.5;
     white-space: pre-wrap; margin-bottom: 6px;
@@ -67,7 +67,7 @@
     <a href="/cabinet/student" class="page-back">← Кабинет</a>
 
     <div class="page-title">
-        🔔 Уведомления
+        <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Уведомления
         {% if unread_count > 0 %}
         <span class="page-title-badge">{{ unread_count }} новых</span>
         {% endif %}
@@ -77,11 +77,11 @@
     <div class="notif-list">
         {% for n in notifications %}
         {% if n.work_id %}
-        <a href="/cabinet/scores" class="notif-card {% if not n.is_read %}unread{% endif %}">
+        <a href="/cabinet/cycle" class="notif-card {% if not n.is_read %}unread{% endif %}">
         {% else %}
         <div class="notif-card {% if not n.is_read %}unread{% endif %}">
         {% endif %}
-            <div class="notif-icon">{% if not n.is_read %}🟡{% else %}✓{% endif %}</div>
+            <div class="notif-icon">{% if not n.is_read %}<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true" style="color:#F59E0B"><circle cx="12" cy="12" r="8" fill="currentColor" stroke="none"/></svg>{% else %}<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>{% endif %}</div>
             <div class="notif-body">
                 <div class="notif-title">{{ n.title }}</div>
                 {% if n.text %}
@@ -101,7 +101,7 @@
     </div>
     {% else %}
     <div class="notif-empty">
-        <div class="notif-empty-icon">🔔</div>
+        <div class="notif-empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
         <div class="notif-empty-text">Уведомлений пока нет</div>
     </div>
     {% endif %}

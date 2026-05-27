@@ -31,21 +31,16 @@ logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
-    from sqlalchemy import exists, and_
     from app.db.database import SessionLocal
     from app.models.user import User
     from app.models.role import Role
-    from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER
     from app.services.drive import sync_drive_works
 
     db = SessionLocal()
     try:
-        # Students with tg_username set, profile completed, no before/after Work records
-        has_portfolio = (
-            db.query(Work.user_id)
-            .filter(Work.work_type.in_([WORK_TYPE_BEFORE, WORK_TYPE_AFTER]))
-            .subquery()
-        )
+        # All students with tg_username set and profile completed.
+        # sync_drive_works is idempotent: skips photos already in DB by drive_file_id,
+        # so running on students who already have works is safe — adds only new photos.
         candidates = (
             db.query(User)
             .join(Role, User.role_id == Role.id, isouter=True)
@@ -53,7 +48,6 @@ async def main() -> None:
                 User.tg_username.isnot(None),
                 User.tg_username != "",
                 User.profile_completed.is_(True),
-                User.id.not_in(db.query(has_portfolio.c.user_id)),
             )
             .all()
         )

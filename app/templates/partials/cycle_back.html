@@ -1,0 +1,18 @@
+{# Кнопка «Назад в Цикл Пробника» для подстраниц цикла #}
+<style>
+.cycle-back-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 700; color: var(--muted);
+    text-decoration: none; margin-bottom: 14px;
+    padding: 6px 10px 6px 4px; border-radius: var(--r-pill);
+    transition: color .15s, background .15s;
+}
+.cycle-back-btn:hover { color: var(--blue); background: var(--blue-soft); opacity: 1; }
+.cycle-back-btn svg { width: 14px; height: 14px; }
+</style>
+<a href="/cabinet/cycle" class="cycle-back-btn" aria-label="Назад">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="15 18 9 12 15 6"/>
+    </svg>
+    <span>Назад</span>
+</a>

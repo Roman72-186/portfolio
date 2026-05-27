@@ -4,6 +4,7 @@ import re
 
 from fastapi.templating import Jinja2Templates
 
+from app.config import settings
 from app.csrf import generate_csrf_token
 
 templates = Jinja2Templates(directory="app/templates")
@@ -16,6 +17,7 @@ def _csrf_token_for_request(request) -> str:
 
 # Make csrf_token(request) available in every template automatically
 templates.env.globals["csrf_token"] = _csrf_token_for_request
+templates.env.globals["settings"] = settings
 
 
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)

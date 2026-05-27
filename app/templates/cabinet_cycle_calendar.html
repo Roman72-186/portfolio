@@ -1,0 +1,489 @@
+{% extends "base.html" %}
+{% block title %}{{ page_title }} — Цикл Пробника{% endblock %}
+{% block extra_styles %}
+<style>
+.cyc-page { max-width: 1080px; margin: 0 auto; padding: 22px 18px 110px; }
+.cyc-back {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; color: var(--muted); font-weight: 700;
+    text-decoration: none; margin-bottom: 10px;
+}
+.cyc-back:hover { color: var(--blue); }
+.cyc-head {
+    display: flex; flex-wrap: wrap; gap: 12px;
+    align-items: center; justify-content: space-between;
+    margin-bottom: 18px;
+}
+.cyc-title { font-family: var(--font-display); font-size: 26px; font-weight: 900; letter-spacing: -0.02em; margin: 0; }
+.cyc-upload-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 16px; border-radius: var(--r-pill);
+    background: var(--blue); color: #fff; font-weight: 800; font-size: 14px;
+    text-decoration: none; border: 1px solid var(--blue);
+    transition: background .15s, transform .12s;
+}
+.cyc-upload-btn:hover { background: var(--blue-deep); opacity: 1; transform: translateY(-1px); }
+.cyc-upload-btn.disabled { background: var(--surface-2); color: var(--dim); border-color: var(--line); pointer-events: none; }
+.cyc-upload-msg { font-size: 12px; color: var(--muted); margin-left: 4px; }
+
+.subj-stack { display: grid; gap: 14px; }
+.subj-card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-md); overflow: hidden;
+}
+.subj-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line);
+}
+.subj-title { font-size: 15px; font-weight: 800; color: var(--text); }
+.subj-count { font-size: 12px; color: var(--dim); font-weight: 700; }
+
+.cal-layout {
+    display: grid; grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+    gap: 14px; padding: 14px;
+}
+.cal-side {
+    border: 1px solid var(--line); background: var(--surface-2);
+    border-radius: var(--r-md); padding: 12px;
+}
+.cal-year-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; margin-bottom: 10px;
+}
+.cal-year-btn {
+    width: 34px; height: 34px; border-radius: 9px;
+    border: 1px solid var(--line); background: var(--surface);
+    color: var(--text); cursor: pointer; font-size: 18px; line-height: 1;
+}
+.cal-year-label { font-size: 16px; font-weight: 900; color: var(--text); }
+.cal-month-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 12px; }
+.cal-month-btn {
+    border: 1px solid var(--line); background: var(--surface);
+    color: var(--muted); border-radius: 8px; padding: 7px 6px;
+    font-size: 12px; font-weight: 800; cursor: pointer;
+}
+.cal-month-btn.active {
+    background: rgba(37,99,235,0.09); color: var(--blue); border-color: rgba(37,99,235,0.35);
+}
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
+.cal-weekday {
+    text-align: center; font-size: 10px; color: var(--dim);
+    font-weight: 800; text-transform: uppercase;
+}
+.cal-day {
+    aspect-ratio: 1; border-radius: 8px; border: 1px solid transparent;
+    background: transparent; color: var(--dim); font-size: 12px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center; cursor: default;
+}
+.cal-day.has-works {
+    background: var(--blue); color: #fff; cursor: pointer;
+    border-color: rgba(37,99,235,0.75); box-shadow: 0 6px 14px rgba(37,99,235,0.18);
+}
+.cal-day.has-works:hover, .cal-day.has-works.is-selected { background: #1D4ED8; }
+.cal-day.legacy { background: var(--dim); border-color: rgba(0,0,0,0.18); }
+.cal-day.legacy:hover, .cal-day.legacy.is-selected { background: #555; }
+.cal-day.is-empty { visibility: hidden; }
+
+.cal-detail {
+    border: 1px solid var(--line); background: var(--surface);
+    border-radius: var(--r-md); padding: 16px; min-height: 320px;
+}
+.cal-detail-empty { color: var(--dim); text-align: center; padding: 42px 12px; font-size: 13px; }
+.cal-attempt {
+    border-top: 1px dashed var(--line); padding-top: 14px; margin-top: 14px;
+}
+.cal-attempt:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+.cal-attempt-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 10px; margin-bottom: 10px;
+}
+.cal-attempt-title { font-size: 16px; font-weight: 900; color: var(--text); }
+.cal-attempt-meta { font-size: 12px; color: var(--muted); font-weight: 700; }
+.cal-attempt-legacy-pill {
+    display: inline-block; margin-left: 8px;
+    background: var(--surface-2); color: var(--dim);
+    border-radius: var(--r-pill); padding: 2px 8px;
+    font-size: 10px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;
+}
+
+.cal-hero { display: flex; gap: 14px; flex-wrap: wrap; }
+.cal-hero-photo {
+    flex: 0 0 280px; max-width: 100%;
+    position: relative; border-radius: 10px; overflow: hidden;
+    border: 1px solid var(--line);
+}
+.cal-hero-photo img {
+    display: block; width: 100%; aspect-ratio: 4/3; object-fit: cover; cursor: zoom-in;
+}
+.cal-hero-score {
+    position: absolute; top: 8px; right: 8px;
+    background: var(--blue); color: #fff;
+    font-size: 13px; font-weight: 900;
+    padding: 4px 10px; border-radius: var(--r-pill);
+    box-shadow: 0 6px 14px rgba(0,0,0,0.18);
+}
+.cal-hero-score.no-score { background: var(--dim); }
+.cal-hero-score.score-red { background: #DC2626; }
+.cal-hero-score.score-orange { background: #F97316; }
+.cal-hero-score.score-lime { background: #84CC16; }
+.cal-hero-score.score-green { background: #16A34A; }
+
+.cal-hero-info { flex: 1 1 220px; min-width: 200px; display: flex; flex-direction: column; gap: 8px; }
+.cal-hero-line { font-size: 13px; color: var(--text); }
+.cal-hero-line strong { font-weight: 800; }
+.cal-hero-line.dim { color: var(--muted); }
+
+.cal-stages-title {
+    margin-top: 14px; font-size: 12px; font-weight: 800;
+    color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em;
+}
+.cal-stages {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;
+}
+.cal-stages img {
+    width: 86px; height: 86px; object-fit: cover; cursor: zoom-in;
+    border-radius: 8px; border: 1px solid var(--line);
+}
+
+.cal-fb {
+    margin-top: 16px; background: var(--surface-2);
+    border: 1px solid var(--line); border-radius: 10px; padding: 14px;
+}
+.cal-fb-title {
+    font-size: 13px; font-weight: 900; color: var(--blue);
+    text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px;
+}
+.cal-fb p { margin: 6px 0; font-size: 14px; line-height: 1.5; color: var(--text); }
+.cal-fb p strong { font-weight: 800; }
+.cal-fb-photos { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.cal-fb-photos img {
+    width: 100px; height: 100px; object-fit: cover; cursor: zoom-in;
+    border-radius: 8px; border: 1px solid var(--line);
+}
+.cal-fb-empty { font-size: 13px; color: var(--muted); padding: 10px 0; }
+
+@media (max-width: 768px) {
+    .cal-layout { grid-template-columns: 1fr; }
+    .cal-hero-photo { flex: 1 1 100%; max-width: 100%; }
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="cyc-page">
+    <a class="cyc-back" href="{{ back_url }}">‹ {{ back_label }}</a>
+    <div class="cyc-head">
+        <div>
+            <h1 class="cyc-title">{{ page_title }}{% if staff_view and student_name %} — {{ student_name }}{% endif %}</h1>
+            {% if staff_view %}
+                <div style="font-size:13px;color:var(--muted);font-weight:700;margin-top:4px;">Просмотр работ ученика</div>
+            {% endif %}
+        </div>
+        {% if not staff_view %}
+            {% if upload_open %}
+                <a class="cyc-upload-btn" href="{{ upload_url }}">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    {{ upload_label }}
+                </a>
+            {% else %}
+                <span class="cyc-upload-btn disabled" title="{{ upload_msg }}">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    {{ upload_label }} (закрыто)
+                </span>
+            {% endif %}
+        {% endif %}
+    </div>
+
+    <div class="subj-stack" id="subj-root"></div>
+</div>
+
+{% if staff_view %}
+    {% include "partials/staff_nav.html" %}
+{% else %}
+    {% include "partials/bottom_nav.html" %}
+{% endif %}
+{% include "partials/lightbox.html" %}
+
+<script>
+const SUBJECTS = {{ subjects | tojson }};
+const WORKS_BY_SUBJECT = {{ works_by_subject | tojson }};
+const MONTHS_LIST = {{ months | tojson }};
+const CURRENT_YEAR = {{ current_year }};
+const PAGE_KEY = "{{ work_type }}";
+const _calState = {};
+
+function esc(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function cap(s) { s = String(s||''); return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
+function nl2br(s) { return esc(s).replace(/\n/g, '<br>'); }
+
+function stateKey(subjectIndex) { return PAGE_KEY + ':' + subjectIndex; }
+
+function getWorkDate(w) {
+    if (w.work_date) return w.work_date;
+    if (!w.created_at) return '';
+    try { return new Date(w.created_at).toISOString().slice(0, 10); }
+    catch (e) { return ''; }
+}
+
+function groupByDate(works) {
+    const out = {};
+    works.forEach(function(w) {
+        const d = getWorkDate(w);
+        if (!d) return;
+        (out[d] = out[d] || []).push(w);
+    });
+    return out;
+}
+
+function findLatest(grouped, year, month) {
+    return Object.keys(grouped).filter(function(d) {
+        const p = d.split('-');
+        if (parseInt(p[0],10) !== year) return false;
+        if (month != null && parseInt(p[1],10) !== month+1) return false;
+        return true;
+    }).sort().reverse()[0] || '';
+}
+
+function findOpenCycleDate(grouped) {
+    // Дата самой свежей работы с НЕзакрытым циклом (cycle_id есть, cycle_closed_at пустой)
+    let best = '';
+    Object.keys(grouped).forEach(function(d) {
+        const hasOpen = grouped[d].some(function(w) {
+            return w.cycle_id && !w.cycle_closed_at;
+        });
+        if (hasOpen && d > best) best = d;
+    });
+    return best;
+}
+
+function getState(idx, grouped) {
+    const key = stateKey(idx);
+    const now = new Date();
+    if (!_calState[key]) {
+        // Авто-открытие ТОЛЬКО если есть работа с активным циклом.
+        // Иначе пользователь увидит чистый календарь и сам выберет дату.
+        const openDate = findOpenCycleDate(grouped);
+        const initialYear = openDate ? parseInt(openDate.split('-')[0], 10) : CURRENT_YEAR;
+        const initialMonth = openDate ? parseInt(openDate.split('-')[1], 10) - 1 : now.getMonth();
+        _calState[key] = {
+            year: initialYear,
+            month: initialMonth,
+            selectedDate: openDate || ''
+        };
+    }
+    const s = _calState[key];
+    if (s.selectedDate && !grouped[s.selectedDate]) {
+        // Выбранная дата больше не валидна (теоретический edge-case при ререндере).
+        s.selectedDate = '';
+    }
+    return s;
+}
+
+function setYear(idx, delta) {
+    const key = stateKey(idx);
+    const s = _calState[key] || { year: CURRENT_YEAR, month: new Date().getMonth(), selectedDate: '' };
+    s.year += delta; s.selectedDate = '';
+    _calState[key] = s;
+    renderAll();
+}
+function setMonth(idx, month) {
+    const key = stateKey(idx);
+    const s = _calState[key] || { year: CURRENT_YEAR, month: month, selectedDate: '' };
+    s.month = month; s.selectedDate = '';
+    _calState[key] = s;
+    renderAll();
+}
+function selectDay(idx, dateStr) {
+    const p = dateStr.split('-');
+    _calState[stateKey(idx)] = {
+        year: parseInt(p[0],10),
+        month: parseInt(p[1],10)-1,
+        selectedDate: dateStr
+    };
+    renderAll();
+}
+
+function scoreClass(score) {
+    if (score == null) return 'no-score';
+    const s = Math.round(score);
+    if (s < 50) return 'score-red';
+    if (s < 70) return 'score-orange';
+    if (s < 85) return 'score-lime';
+    return 'score-green';
+}
+
+function isLegacyDate(works) {
+    // дата считается «legacy», если ВСЕ работы за дату без cycle_id
+    return works.length > 0 && works.every(function(w) { return !w.cycle_id; });
+}
+
+function buildSide(idx, grouped, state) {
+    let html = '<div class="cal-side">';
+    html += '<div class="cal-year-row">'
+        + '<button type="button" class="cal-year-btn" onclick="setYear('+idx+',-1)">‹</button>'
+        + '<div class="cal-year-label">' + state.year + '</div>'
+        + '<button type="button" class="cal-year-btn" onclick="setYear('+idx+',1)">›</button>'
+        + '</div>';
+    html += '<div class="cal-month-list">';
+    MONTHS_LIST.forEach(function(m, i) {
+        html += '<button type="button" class="cal-month-btn'+(i===state.month?' active':'')+'" onclick="setMonth('+idx+','+i+')">'+esc(cap(m).slice(0,3))+'</button>';
+    });
+    html += '</div>';
+    html += '<div class="cal-grid">';
+    ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].forEach(function(d){
+        html += '<div class="cal-weekday">'+d+'</div>';
+    });
+    const first = new Date(state.year, state.month, 1);
+    const offset = (first.getDay()+6) % 7;
+    const daysInMonth = new Date(state.year, state.month+1, 0).getDate();
+    for (let i = 0; i < offset; i++) html += '<div class="cal-day is-empty"></div>';
+    for (let d = 1; d <= daysInMonth; d++) {
+        const ds = state.year+'-'+String(state.month+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+        const works = grouped[ds];
+        const has = !!works;
+        const legacy = has && isLegacyDate(works);
+        const cls = 'cal-day'
+            + (has ? ' has-works' : '')
+            + (legacy ? ' legacy' : '')
+            + (state.selectedDate === ds ? ' is-selected' : '');
+        const click = has ? ' onclick="selectDay('+idx+',\''+ds+'\')"' : '';
+        html += '<button type="button" class="'+cls+'"'+click+'>'+d+'</button>';
+    }
+    html += '</div></div>';
+    return html;
+}
+
+function buildHero(w, gallery) {
+    const sc = w.score != null ? Math.round(w.score) : null;
+    const cls = scoreClass(sc);
+    const badge = sc != null ? sc + ' / 100' : 'Не оценено';
+    let html = '<div class="cal-hero">';
+    if (w.s3_url) {
+        html += '<div class="cal-hero-photo">'
+            + '<img src="'+esc(w.s3_url)+'" alt="'+esc(w.filename || '')+'" loading="lazy" onclick="openGallery(this)">'
+            + '<span class="cal-hero-score '+cls+'">'+esc(badge)+'</span>'
+            + '</div>';
+    }
+    html += '<div class="cal-hero-info">';
+    if (w.subject) {
+        html += '<div class="cal-hero-line"><strong>Предмет:</strong> '+esc(w.subject)+'</div>';
+    }
+    if (w.attempt_number) {
+        html += '<div class="cal-hero-line"><strong>Попытка №'+w.attempt_number+'</strong></div>';
+    }
+    if (w.cycle_started_at) {
+        html += '<div class="cal-hero-line dim">Цикл начат: '+esc(w.cycle_started_at.slice(0,10))+(w.cycle_closed_at ? ' · закрыт '+esc(w.cycle_closed_at.slice(0,10)) : '')+'</div>';
+    }
+    if (w.comment) {
+        html += '<div class="cal-hero-line"><strong>Комментарий:</strong> '+esc(w.comment)+'</div>';
+    }
+    html += '</div></div>'; // .cal-hero-info / .cal-hero
+    return html;
+}
+
+function buildStages(w) {
+    if (!w.intermediates || !w.intermediates.length) return '';
+    let html = '<div class="cal-stages-title">Этапы ('+w.intermediates.length+')</div>';
+    html += '<div class="cal-stages">';
+    w.intermediates.forEach(function(s) {
+        if (!s.s3_url) return;
+        html += '<img src="'+esc(s.s3_url)+'" alt="'+esc(s.filename||'')+'" loading="lazy" onclick="openGallery(this)">';
+    });
+    html += '</div>';
+    return html;
+}
+
+function buildFeedback(w) {
+    if (!w.cycle_id) {
+        // legacy запись — feedback-блок не показываем
+        return '';
+    }
+    if (!w.feedback) {
+        return '<div class="cal-fb"><div class="cal-fb-title">Обратная связь куратора</div>'
+            + '<div class="cal-fb-empty">Куратор пока не оставил обратную связь по этой работе.</div></div>';
+    }
+    const f = w.feedback;
+    let html = '<div class="cal-fb"><div class="cal-fb-title">Обратная связь куратора</div>';
+    if (f.greeting)        html += '<p><strong>Приветствие.</strong> '+nl2br(f.greeting)+'</p>';
+    if (f.strengths)       html += '<p><strong>Сильные стороны.</strong> '+nl2br(f.strengths)+'</p>';
+    if (f.weaknesses)      html += '<p><strong>Слабые стороны.</strong> '+nl2br(f.weaknesses)+'</p>';
+    if (f.recommendations) html += '<p><strong>Рекомендации.</strong> '+nl2br(f.recommendations)+'</p>';
+    if (f.photos && f.photos.length) {
+        html += '<div class="cal-fb-photos">';
+        f.photos.forEach(function(ph) {
+            html += '<img src="'+esc(ph.s3_url)+'" alt="" loading="lazy" onclick="openGallery(this)">';
+        });
+        html += '</div>';
+    }
+    if (!f.greeting && !f.strengths && !f.weaknesses && !f.recommendations && !(f.photos && f.photos.length)) {
+        html += '<div class="cal-fb-empty">Куратор пока не оставил обратную связь по этой работе.</div>';
+    }
+    html += '</div>';
+    return html;
+}
+
+function buildDetail(subject, grouped, state) {
+    // Показываем работы ТОЛЬКО когда пользователь сам выбрал дату
+    // (или авто-выбрана дата с открытым циклом — см. getState).
+    const selected = state.selectedDate && grouped[state.selectedDate] ? state.selectedDate : '';
+    const works = selected ? (grouped[selected] || []) : [];
+    let html = '<div class="cal-detail">';
+    if (!works.length) {
+        return html + '<div class="cal-detail-empty">Нажми на синюю дату в календаре, чтобы открыть работу с обратной связью куратора.</div></div>';
+    }
+    works.forEach(function(w, i) {
+        const gallery = PAGE_KEY+'-'+esc(subject)+'-'+esc(selected)+'-'+i;
+        html += '<div class="cal-attempt" data-gallery="'+gallery+'">';
+        html += '<div class="cal-attempt-head">';
+        html += '<div class="cal-attempt-title">' + (w.date_label || selected) + (w.attempt_number ? ' · попытка №'+w.attempt_number : '') + (w.cycle_id ? '' : '<span class="cal-attempt-legacy-pill">архив</span>') + '</div>';
+        html += '<div class="cal-attempt-meta">' + (works.length > 1 ? 'Работ за день: '+works.length : '') + '</div>';
+        html += '</div>';
+        html += buildHero(w, gallery);
+        html += buildStages(w);
+        html += buildFeedback(w);
+        html += '</div>';
+    });
+    html += '</div>';
+    return html;
+}
+
+function renderAll() {
+    const root = document.getElementById('subj-root');
+    if (!root) return;
+    const total = SUBJECTS.reduce(function(s, subj) {
+        return s + ((WORKS_BY_SUBJECT[subj] || []).length);
+    }, 0);
+    if (!total) {
+        root.innerHTML = '<div class="cal-detail-empty" style="border:1px solid var(--line);border-radius:12px;padding:50px 16px;background:var(--surface);">'
+            + 'Работ пока нет. Нажми «'+esc("{{ upload_label }}")+'», чтобы начать.'
+            + '</div>';
+        return;
+    }
+    let html = '';
+    SUBJECTS.forEach(function(subj, idx) {
+        const works = WORKS_BY_SUBJECT[subj] || [];
+        const grouped = groupByDate(works);
+        const state = getState(idx, grouped);
+        html += '<div class="subj-card">';
+        html += '<div class="subj-header">'
+            + '<div class="subj-title">'+esc(subj)+'</div>'
+            + '<div class="subj-count">'+works.length+' работ</div>'
+            + '</div>';
+        if (works.length) {
+            html += '<div class="cal-layout">'
+                + buildSide(idx, grouped, state)
+                + buildDetail(subj, grouped, state)
+                + '</div>';
+        } else {
+            html += '<div class="cal-detail-empty" style="padding:30px 14px">Пока нет работ по этому направлению.</div>';
+        }
+        html += '</div>';
+    });
+    root.innerHTML = html;
+}
+
+renderAll();
+</script>
+{% endblock %}

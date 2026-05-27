@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Кураторы — войти как куратор{% endblock %}
+{% block extra_styles %}
+<style>
+.sc-wrap { max-width: 880px; margin: 0 auto; }
+.sc-head { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; flex-wrap: wrap; }
+.sc-back { font-size: 13px; color: var(--dim); text-decoration: none; font-weight: 600; }
+.sc-back:hover { color: var(--blue); }
+.sc-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
+
+.sc-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--sh-sm); overflow: hidden; }
+.sc-row { display: grid; grid-template-columns: 48px 1fr auto auto; gap: 14px; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+.sc-row:last-child { border-bottom: none; }
+.sc-row:hover { background: var(--bg); }
+.sc-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line); }
+.sc-avatar-placeholder { width: 40px; height: 40px; border-radius: 50%; background: var(--surface-2); display: flex; align-items: center; justify-content: center; color: var(--dim); }
+.sc-name { font-weight: 700; font-size: 14px; color: var(--text); }
+.sc-sub { font-size: 12px; color: var(--dim); margin-top: 2px; }
+.sc-count { font-size: 13px; font-weight: 700; color: var(--blue); }
+.sc-btn { padding: 8px 14px; border-radius: 9px; font-size: 12px; font-weight: 800; background: var(--blue); color: #fff; border: none; cursor: pointer; font-family: inherit; }
+.sc-btn:hover { opacity: 0.88; }
+.sc-btn-disabled { background: var(--surface-2); color: var(--dim); cursor: not-allowed; }
+.sc-empty { padding: 40px; text-align: center; color: var(--dim); font-size: 14px; }
+.sc-warn { background: rgba(252,211,77,0.18); border: 1px solid rgba(202,138,4,0.32); color: #92590A; padding: 12px 16px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; line-height: 1.45; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="sc-wrap">
+    <div class="sc-head">
+        <a href="/cabinet" class="sc-back">← Дашборд</a>
+        <div class="sc-title">Кураторы</div>
+    </div>
+
+    <div class="sc-warn">
+        Имперсонация открывает временную сессию (30 минут) от имени куратора. Все действия логируются в Audit. Чтобы выйти обратно — кнопка «Выйти» в жёлтом банере сверху.
+    </div>
+
+    <div class="sc-card">
+        {% if curators %}
+            {% for c in curators %}
+            <div class="sc-row">
+                <div>
+                    {% if c.photo_url %}
+                    <img src="{{ c.photo_url }}" class="sc-avatar" alt="">
+                    {% else %}
+                    <div class="sc-avatar-placeholder">👤</div>
+                    {% endif %}
+                </div>
+                <div>
+                    <div class="sc-name">{{ c.name }}</div>
+                    <div class="sc-sub">id={{ c.id }}{% if c.staff_login %} · {{ c.staff_login }}{% endif %}{% if not c.is_active %} · заблокирован{% endif %}</div>
+                </div>
+                <div class="sc-count">{{ c.student_count }} учеников</div>
+                <form method="post" action="/cabinet/superadmin/impersonate/{{ c.id }}" style="margin:0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    {% if c.is_active %}
+                    <button type="submit" class="sc-btn">Войти как куратор</button>
+                    {% else %}
+                    <button type="button" class="sc-btn sc-btn-disabled" disabled>Заблокирован</button>
+                    {% endif %}
+                </form>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="sc-empty">Кураторов нет</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

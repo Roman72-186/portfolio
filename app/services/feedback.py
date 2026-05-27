@@ -1,0 +1,149 @@
+"""Feedback dialog (редизайн 2026-05-23).
+
+Контейнер `Feedback` теперь — заголовок диалога по работе (UNIQUE work_id).
+Сообщения хранятся в `FeedbackMessage` (текст ИЛИ фото).
+
+Старые поля Feedback.{greeting,strengths,weaknesses,recommendations} и таблица
+`feedback_photos` — deprecated, оставлены для обратной совместимости.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+
+from sqlalchemy.orm import Session as DBSession
+
+from app.models.feedback import Feedback, FeedbackMessage
+from app.models.notification import Notification
+from app.models.work import Work
+from app.services import s3 as s3_service
+from app.services.utils import compress_image
+
+logger = logging.getLogger(__name__)
+
+ROLE_STUDENT = "student"
+ROLE_CURATOR = "curator"
+ROLE_ADMIN = "admin"
+ROLE_SUPERADMIN = "superadmin"
+STAFF_ROLES = {ROLE_CURATOR, ROLE_ADMIN, ROLE_SUPERADMIN}
+
+
+def role_from_rank(role_rank: int) -> str:
+    """Map numeric role_rank → sender_role string for FeedbackMessage."""
+    if role_rank >= 5:
+        return ROLE_SUPERADMIN
+    if role_rank >= 4:
+        return ROLE_ADMIN
+    if role_rank >= 2:
+        return ROLE_CURATOR
+    return ROLE_STUDENT
+
+
+def get_or_create_feedback(
+    db: DBSession, *, work_id: int, initiator_id: int
+) -> tuple[Feedback, bool]:
+    """Получить или создать контейнер Feedback. Только staff может инициировать.
+
+    Returns (feedback, created).
+    """
+    fb = db.query(Feedback).filter(Feedback.work_id == work_id).first()
+    if fb is not None:
+        return fb, False
+    fb = Feedback(work_id=work_id, curator_id=initiator_id)
+    db.add(fb)
+    db.flush()
+    return fb, True
+
+
+async def _upload_photo(work_id: int, filename: str, data: bytes) -> tuple[str, str] | None:
+    """Сжать и положить фото в S3. Returns (s3_path, s3_url) или None."""
+    loop = asyncio.get_running_loop()
+    s3_path = s3_service.s3_path_feedback(work_id, filename)
+
+    def _do() -> tuple[bytes, str | None]:
+        compressed = compress_image(data)
+        return compressed, s3_service.upload_to_s3(s3_path, compressed, "image/jpeg")
+
+    try:
+        _, s3_url = await loop.run_in_executor(None, _do)
+    except Exception as exc:
+        logger.warning("feedback photo upload exception for work_id=%s: %s", work_id, exc)
+        return None
+    if s3_service.is_configured() and not s3_url:
+        logger.warning("feedback photo upload failed for work_id=%s", work_id)
+        return None
+    return s3_path, (s3_url or "")
+
+
+async def send_message(
+    db: DBSession,
+    *,
+    feedback: Feedback,
+    sender_id: int,
+    sender_role: str,
+    text: str | None,
+    photo: tuple[str, bytes] | None,
+) -> FeedbackMessage:
+    """Создать новое сообщение в диалоге. Хотя бы одно из (text, photo) обязательно.
+
+    Не делает commit — caller отвечает за транзакцию.
+    """
+    text_clean = (text or "").strip() or None
+    photo_path: str | None = None
+    photo_url: str | None = None
+    if photo is not None:
+        filename, data = photo
+        uploaded = await _upload_photo(feedback.work_id, filename, data)
+        if uploaded is not None:
+            photo_path, photo_url = uploaded
+    if text_clean is None and photo_url is None:
+        raise ValueError("Сообщение должно содержать текст или фото")
+
+    msg = FeedbackMessage(
+        feedback_id=feedback.id,
+        sender_id=sender_id,
+        sender_role=sender_role,
+        text=text_clean,
+        photo_s3_path=photo_path,
+        photo_s3_url=photo_url,
+    )
+    db.add(msg)
+    db.flush()
+    return msg
+
+
+def notify_counterpart(
+    db: DBSession,
+    *,
+    work: Work,
+    recipient_id: int,
+    sender_role: str,
+) -> Notification:
+    """In-app уведомление получателю о новом сообщении в диалоге."""
+    if sender_role == ROLE_STUDENT:
+        title = "Ученик ответил в обратной связи"
+    else:
+        title = "Куратор оставил обратную связь"
+    n = Notification(
+        user_id=recipient_id,
+        title=title,
+        text=f"По работе #{work.id} ({work.subject or ''}) есть новое сообщение.",
+        work_id=work.id,
+    )
+    db.add(n)
+    db.flush()
+    return n
+
+
+def serialize_messages(messages: list[FeedbackMessage]) -> list[dict]:
+    return [
+        {
+            "id": m.id,
+            "sender_id": m.sender_id,
+            "sender_role": m.sender_role,
+            "text": m.text,
+            "photo_s3_url": m.photo_s3_url,
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+        }
+        for m in messages
+    ]

@@ -1,0 +1,622 @@
+{# ──────────────────────────────────────────────────────────────────────────────
+   Калькулятор стоимости летнего курса
+   Подключение: {% include "course_calculator.html" %}
+   ────────────────────────────────────────────────────────────────────────────── #}
+
+<style>
+  .calc {
+    --calc-radius: 8px;
+    --calc-radius-lg: 12px;
+    --calc-border: 1px solid var(--line, #E6E8EE);
+    --calc-bg-result: var(--surface-2, #F1F3F8);
+    --calc-badge-bg: var(--blue-soft, #E5EAFF);
+    --calc-badge-color: var(--blue-deep, #2A3FB8);
+    --calc-savings-color: var(--success, #16A34A);
+    --calc-text: var(--text, #1A1F29);
+    --calc-muted: var(--muted, #6B7280);
+    --calc-active-bg: var(--blue, #3B5BFF);
+    --calc-active-hover: var(--blue-deep, #2A3FB8);
+    --calc-active-color: #fff;
+    --calc-surface: var(--surface, #FFFFFF);
+    --calc-hover-bg: var(--blue-soft, #E5EAFF);
+    --calc-hover-border: var(--blue-tint, #DCE3FF);
+    --calc-bonus-text: var(--dim, #666E80);
+    font-family: var(--font-body, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif);
+    width: 100%;
+    max-width: none;
+    color: var(--calc-text);
+  }
+
+  .calc__layout {
+    display: grid;
+    grid-template-columns: minmax(300px, 0.95fr) minmax(320px, 1fr);
+    gap: 0;
+    align-items: stretch;
+    overflow: hidden;
+    background: var(--calc-surface);
+    border: 1px solid var(--line, #E6E8EE);
+    border-radius: 18px;
+    box-shadow: 0 18px 44px rgba(30,45,107,.10);
+  }
+
+  .calc__controls,
+  .calc__summary {
+    min-width: 0;
+  }
+
+  .calc__package-banner {
+    grid-column: 1 / -1;
+    padding: 12px 22px;
+    background: var(--calc-package-accent, var(--calc-active-bg));
+    color: #fff;
+    font-size: clamp(20px, 2.8vw, 30px);
+    font-weight: 800;
+    line-height: 1.1;
+    text-align: center;
+    letter-spacing: 0;
+    box-shadow: inset 0 -1px 0 rgba(255,255,255,.18);
+  }
+
+  .calc__package-banner[hidden] {
+    display: none;
+  }
+
+  .calc__controls {
+    padding: 20px 22px;
+    background: #F8FAFC;
+    border-right: 1px solid var(--line, #E6E8EE);
+  }
+
+  .calc__summary {
+    display: block;
+    background: linear-gradient(135deg, #EFF6FF 0%, #EEF2FF 100%);
+  }
+
+  .calc__label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--calc-muted);
+    margin: 0 0 8px;
+  }
+
+  .calc__hint {
+    margin: 0 0 12px;
+    padding: 9px 11px;
+    border: 1px solid rgba(59,91,255,.12);
+    border-radius: 10px;
+    background: rgba(59,91,255,.06);
+    color: var(--calc-bonus-text);
+    font-size: 12px;
+    font-style: italic;
+    line-height: 1.45;
+  }
+
+  .calc__group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 1.25rem;
+  }
+
+  .calc__controls .calc__group:last-child {
+    margin-bottom: 0;
+  }
+
+  .calc__btn {
+    padding: 9px 20px;
+    font-size: 16px;
+    font-weight: 700;
+    border: 2px solid var(--line, #E6E8EE);
+    background: var(--calc-surface);
+    border-radius: 12px;
+    cursor: pointer;
+    color: var(--calc-text);
+    font-family: inherit;
+    line-height: 1.25;
+    box-shadow: 0 1px 0 rgba(255,255,255,.85);
+    transition: background 0.16s, border-color 0.16s, color 0.16s, transform 0.16s, box-shadow 0.16s;
+  }
+  .calc__btn:hover:not(:disabled) {
+    background: #fff;
+    border-color: var(--calc-hover-border);
+    color: var(--calc-badge-color);
+    transform: translateY(-1px);
+  }
+  .calc__btn--active {
+    background: var(--calc-active-bg);
+    color: var(--calc-active-color);
+    border-color: var(--calc-active-bg);
+    box-shadow: 0 10px 22px rgba(59,91,255,.20);
+  }
+  .calc.is-package-themed .calc__btn--active {
+    background: var(--calc-package-accent);
+    border-color: var(--calc-package-accent);
+    color: #fff;
+    box-shadow: 0 10px 24px var(--calc-package-shadow);
+  }
+  .calc__btn--active:hover:not(:disabled) {
+    background: var(--calc-active-hover);
+    border-color: var(--calc-active-hover);
+    color: var(--calc-active-color);
+  }
+  .calc.is-package-themed .calc__btn--active:hover:not(:disabled) {
+    background: var(--calc-package-accent);
+    border-color: var(--calc-package-accent);
+    color: #fff;
+  }
+  .calc__btn:disabled {
+    opacity: 0.28;
+    cursor: not-allowed;
+  }
+  .calc__btn--active:disabled {
+    opacity: 1;
+    cursor: default;
+  }
+  .calc__btn--hidden {
+    display: none;
+  }
+
+  .calc__result {
+    width: 100%;
+    background: transparent;
+    border-radius: 0;
+    padding: 20px 22px;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+
+  .calc__result-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 6px;
+    text-align: center;
+  }
+
+  .calc__total {
+    font-size: clamp(32px, 4vw, 44px);
+    font-weight: 800;
+    letter-spacing: 0;
+    color: var(--calc-text);
+  }
+
+  .calc__per-lesson {
+    width: 100%;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--calc-muted);
+    text-align: center;
+  }
+
+  .calc__per-lesson-price {
+    color: var(--calc-active-bg);
+    font-size: 15px;
+  }
+
+  .calc__savings {
+    font-size: 13px;
+    font-weight: 700;
+    color: #166534;
+    background: #DCFCE7;
+    border: 1px solid #BBF7D0;
+    border-radius: 12px;
+    margin: 10px 0 0;
+    padding: 8px 10px;
+    text-align: center;
+  }
+
+  .calc__breakdown {
+    font-size: 13px;
+    color: var(--calc-muted);
+    margin: 12px 0 0;
+    line-height: 1.65;
+  }
+
+  .calc__bonus {
+    font-size: 13px;
+    color: #374151;
+    margin: 12px 0 0;
+    padding: 10px;
+    border: 1px solid #FDE68A;
+    border-radius: 12px;
+    background: #FFFBEB;
+    line-height: 1.45;
+  }
+
+  .calc__payment {
+    margin: 16px -22px -20px;
+    padding: 16px 22px 18px;
+    border-top: 1px solid rgba(59,91,255,.18);
+    background: rgba(255,255,255,.72);
+  }
+
+  .calc__prepay-note {
+    margin: 0;
+    color: var(--calc-bonus-text);
+    font-size: 13px;
+    font-style: italic;
+    line-height: 1.5;
+  }
+
+  .calc__prepay {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    margin-top: 10px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: var(--calc-active-bg);
+    color: var(--calc-active-color);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-decoration: none;
+    box-shadow: var(--sh-blue, 0 10px 28px rgba(59,91,255,.28));
+    transition: background 0.12s, transform 0.12s, box-shadow 0.12s;
+  }
+
+  .calc__prepay:hover,
+  .calc__prepay:focus-visible {
+    background: var(--calc-active-hover);
+    color: var(--calc-active-color);
+    opacity: 1;
+    box-shadow: 0 12px 30px rgba(42,63,184,.30);
+  }
+
+  .calc__prepay:active {
+    transform: translateY(1px);
+  }
+
+  .calc__care {
+    margin: 12px 0 0;
+    padding-top: 12px;
+    border-top: 1px solid rgba(42,63,184,.14);
+    text-align: center;
+  }
+
+  .calc__care-text {
+    margin: 0;
+    color: var(--calc-bonus-text);
+    font-size: 13px;
+    font-style: italic;
+    line-height: 1.5;
+  }
+
+  .calc__care-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    margin-top: 10px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: #fff;
+    color: var(--calc-badge-color);
+    border: 1px solid var(--calc-hover-border);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-decoration: none;
+    transition: background 0.12s, color 0.12s, transform 0.12s;
+  }
+
+  .calc__care-link:hover,
+  .calc__care-link:focus-visible {
+    background: var(--calc-active-bg);
+    color: var(--calc-active-color);
+    opacity: 1;
+  }
+
+  .calc__care-link:active {
+    transform: translateY(1px);
+  }
+
+  @media (max-width: 760px) {
+    .calc__layout {
+      grid-template-columns: 1fr;
+      gap: 0;
+    }
+
+    .calc__controls {
+      padding: 22px;
+      border-right: none;
+      border-bottom: 1px solid var(--line, #E6E8EE);
+    }
+
+    .calc__result {
+      min-height: 80px;
+      padding: 22px;
+    }
+
+    .calc__payment {
+      margin: 22px -22px -22px;
+      padding: 20px 22px 22px;
+    }
+  }
+</style>
+
+<div class="calc" id="courseCalc">
+
+  <div class="calc__layout">
+    <div class="calc__package-banner" id="calc-package-banner" hidden></div>
+
+    <div class="calc__controls">
+      <p class="calc__label">Регулярные занятия</p>
+      <p class="calc__hint">Они обязательные, но ты можешь выбрать 6/8/10 занятий.</p>
+      <div class="calc__group">
+        <button type="button" class="calc__btn" data-group="reg" data-val="6">6</button>
+        <button type="button" class="calc__btn" data-group="reg" data-val="8">8</button>
+        <button type="button" class="calc__btn" data-group="reg" data-val="10">10</button>
+      </div>
+
+      <p class="calc__label">Интенсив</p>
+      <p class="calc__hint">Ты можешь заниматься на первой неделе 29 июня-4 июля 5/10 занятий (очно/онлайн) и на второй неделе 6-10 июля 5 занятий (только очно).</p>
+      <div class="calc__group">
+        <button type="button" class="calc__btn" data-group="intensive" data-val="0">0</button>
+        <button type="button" class="calc__btn" data-group="intensive" data-val="5">5</button>
+        <button type="button" class="calc__btn" data-group="intensive" data-val="10">10</button>
+        <button type="button" class="calc__btn" data-group="intensive" data-val="15">15</button>
+      </div>
+
+      <p class="calc__label">Подписка</p>
+      <p class="calc__hint">Ты можешь выбрать подписку для подготовки в период с 29 июня по 11 июля — 1 неделя или 2 недели.</p>
+      <div class="calc__group" id="calc-sub">
+        <button type="button" class="calc__btn" data-group="sub" data-val="0">0</button>
+        <button type="button" class="calc__btn" data-group="sub" data-val="1">1</button>
+        <button type="button" class="calc__btn" data-group="sub" data-val="2">2</button>
+      </div>
+    </div>
+
+    <div class="calc__summary">
+      <div class="calc__result" id="calc-result"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Данные ──────────────────────────────────────────────────────────────────
+
+  var INT_PRICES = { 0: 0, 5: 16000, 10: 30500, 15: 43500 };
+  var SUB_PRICES = { 0: 0, 1: 4255,  2: 8510 };
+  var REG_PRICE  = 2600;
+
+  // Все 21 допустимая комбинация. Ключ: "reg-intensive-sub"
+  var PACKAGES = {
+    '10-0-0':  { price: 26000, perReg: 2600, name: null,                  bonus: false },
+    '8-0-0':   { price: 20800, perReg: 2600, name: null,                  bonus: false },
+    '6-0-0':   { price: 15600, perReg: 2600, name: null,                  bonus: false },
+
+    '10-0-2':  { price: 31510, perReg: 2300, name: 'Базовый минимум',     bonus: true  },
+    '8-0-2':   { price: 27710, perReg: 2400, name: 'Базовый минимум',     bonus: true  },
+    '6-0-2':   { price: 23510, perReg: 2500, name: null,                  bonus: false },
+    '10-0-1':  { price: 27755, perReg: 2350, name: null,                  bonus: false },
+    '8-0-1':   { price: 23855, perReg: 2450, name: null,                  bonus: false },
+    '6-0-1':   { price: 19555, perReg: 2550, name: null,                  bonus: false },
+
+    '10-15-0': { price: 63500, perReg: 2000, name: 'Роскошный максимум',  bonus: true  },
+    '10-10-0': { price: 51500, perReg: 2100, name: 'Идеальный баланс',    bonus: true  },
+    '10-5-0':  { price: 37500, perReg: 2150, name: null,                  bonus: false },
+    '8-15-0':  { price: 59900, perReg: 2050, name: null,                  bonus: false },
+    '8-10-0':  { price: 47500, perReg: 2125, name: null,                  bonus: false },
+    '8-5-0':   { price: 34000, perReg: 2250, name: null,                  bonus: false },
+    '6-15-0':  { price: 56250, perReg: 2125, name: null,                  bonus: false },
+    '6-10-0':  { price: 43400, perReg: 2150, name: null,                  bonus: false },
+    '6-5-0':   { price: 30100, perReg: 2350, name: null,                  bonus: false },
+
+    '10-5-1':  { price: 43255, perReg: 2300, name: 'Базовый расширенный', bonus: true  },
+    '8-5-1':   { price: 38855, perReg: 2325, name: null,                  bonus: false },
+    '6-5-1':   { price: 34805, perReg: 2425, name: null,                  bonus: false }
+  };
+
+  var PACKAGE_THEMES = {
+    '10-15-0': { accent: '#8B5CF6', soft: '#F3E8FF', shadow: 'rgba(139,92,246,.28)' },
+    '10-10-0': { accent: '#EC4899', soft: '#FCE7F3', shadow: 'rgba(236,72,153,.26)' },
+    '10-5-1':  { accent: '#0EA5E9', soft: '#E0F2FE', shadow: 'rgba(14,165,233,.26)' },
+    '10-0-2':  { accent: '#F97316', soft: '#FFEDD5', shadow: 'rgba(249,115,22,.28)' }
+  };
+
+  // ── Состояние ───────────────────────────────────────────────────────────────
+
+  var state = { reg: 10, intensive: 0, sub: 0 };
+
+  // ── Утилиты ─────────────────────────────────────────────────────────────────
+
+  function fmt(n) {
+    return n.toLocaleString('ru-RU') + '\u00a0руб.';
+  }
+
+  function getPackage() {
+    var key = state.reg + '-' + state.intensive + '-' + state.sub;
+    return PACKAGES[key] || null;
+  }
+
+  function getPackageKey() {
+    return state.reg + '-' + state.intensive + '-' + state.sub;
+  }
+
+  function getPackageTheme() {
+    return PACKAGE_THEMES[getPackageKey()] || null;
+  }
+
+  function getPackageLabel(pkg) {
+    if (pkg.name) {
+      return 'пакет ' + pkg.name.toLocaleUpperCase('ru-RU');
+    }
+
+    return 'пакет ' + state.reg + ' РЕГ. / ' + state.intensive + ' ИНТ. / ' + state.sub + ' НЕД.';
+  }
+
+  function syncPackageBanner(pkg) {
+    var banner = document.getElementById('calc-package-banner');
+    if (!banner) return;
+
+    if (pkg && pkg.name) {
+      banner.textContent = getPackageLabel(pkg);
+      banner.hidden = false;
+    } else {
+      banner.textContent = '';
+      banner.hidden = true;
+    }
+  }
+
+  function getCareUrl(pkg) {
+    var message = [
+      'Здравствуйте! Я оплатил(а) предоплату.',
+      'Выбранный пакет: ' + getPackageLabel(pkg) + '.',
+      'Состав: ' + state.reg + ' рег., ' + state.intensive + ' инт., ' + state.sub + ' нед.',
+      'Стоимость: ' + fmt(pkg.price) + '.'
+    ].join('\n');
+
+    return 'https://t.me/lizaV_admin?text=' + encodeURIComponent(message);
+  }
+
+  // ── Ограничения подписки при смене интенсива ─────────────────────────────────
+  // Сбрасывает state.sub один раз, до обновления DOM.
+
+  function enforceSubConstraint() {
+    if ((state.intensive === 10 || state.intensive === 15) && state.sub !== 0) {
+      state.sub = 0;
+    } else if (state.intensive === 5 && state.sub === 2) {
+      state.sub = 0;
+    }
+  }
+
+  // ── Синхронизация DOM с состоянием ──────────────────────────────────────────
+
+  function syncButtons() {
+    var calc = document.getElementById('courseCalc');
+    var theme = getPackageTheme();
+
+    calc.classList.toggle('is-package-themed', !!theme);
+    if (theme) {
+      calc.style.setProperty('--calc-package-accent', theme.accent);
+      calc.style.setProperty('--calc-package-soft', theme.soft);
+      calc.style.setProperty('--calc-package-shadow', theme.shadow);
+    } else {
+      calc.style.removeProperty('--calc-package-accent');
+      calc.style.removeProperty('--calc-package-soft');
+      calc.style.removeProperty('--calc-package-shadow');
+    }
+
+    // Активный класс для всех групп
+    document.querySelectorAll('.calc__btn[data-group]').forEach(function (btn) {
+      var group = btn.dataset.group;
+      var val   = parseInt(btn.dataset.val, 10);
+      var isActive = val === state[group];
+      btn.classList.toggle('calc__btn--active', isActive);
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+
+    // Доступность кнопок подписки
+    document.querySelectorAll('#calc-sub .calc__btn').forEach(function (btn) {
+      var v = parseInt(btn.dataset.val, 10);
+
+      if (state.intensive === 10 || state.intensive === 15) {
+        btn.classList.remove('calc__btn--hidden');
+        btn.disabled = (v !== 0);
+      } else if (state.intensive === 5) {
+        btn.classList.toggle('calc__btn--hidden', v === 2);
+        btn.disabled = false;
+      } else {
+        btn.classList.remove('calc__btn--hidden');
+        btn.disabled = false;
+      }
+    });
+  }
+
+  // ── Результат ───────────────────────────────────────────────────────────────
+
+  function renderResult() {
+    var pkg    = getPackage();
+    var result = document.getElementById('calc-result');
+
+    if (!pkg) {
+      syncPackageBanner(null);
+      result.innerHTML = '<p style="font-size:14px;color:var(--calc-muted);">Эта комбинация недоступна.</p>';
+      return;
+    }
+
+    syncPackageBanner(pkg);
+
+    var basePrice = state.reg * REG_PRICE + INT_PRICES[state.intensive] + SUB_PRICES[state.sub];
+    var savings   = basePrice - pkg.price;
+    var parts     = [];
+
+    parts.push(
+      '<div class="calc__result-top">',
+      '  <span class="calc__total">' + fmt(pkg.price) + '</span>',
+      '  <span class="calc__per-lesson"><span class="calc__per-lesson-price">' + pkg.perReg.toLocaleString('ru-RU') + '\u00a0₽</span> за рег. занятие</span>',
+      '</div>'
+    );
+
+    if (savings > 0) {
+      parts.push('<p class="calc__savings">Экономия: ' + fmt(savings) + ' по сравнению с базовой ценой</p>');
+    }
+
+    var breakdown = [
+      state.reg + '\u00a0рег. × ' + pkg.perReg.toLocaleString('ru-RU') + '\u00a0= ' + fmt(state.reg * pkg.perReg)
+    ];
+    if (state.intensive > 0) {
+      breakdown.push(state.intensive + '\u00a0инт. = ' + fmt(INT_PRICES[state.intensive]));
+    }
+    if (state.sub > 0) {
+      breakdown.push('Подписка ' + state.sub + '\u00a0нед. = ' + fmt(SUB_PRICES[state.sub]));
+    }
+    parts.push('<p class="calc__breakdown">' + breakdown.join('<br>') + '</p>');
+
+    if (pkg.bonus) {
+      parts.push('<p class="calc__bonus">🎁 Включён доступ к образовательным материалам до конца периода экзаменов</p>');
+    }
+
+    parts.push(
+      '<div class="calc__payment">',
+      '  <p class="calc__prepay-note">Для бронирования места внеси предоплату по кнопке ниже.</p>',
+      '  <a class="calc__prepay" href="https://payform.ru/53bpcwS/" target="_blank" rel="noopener noreferrer">Внести предоплату 5000р</a>',
+      '<div class="calc__care">',
+      '  <p class="calc__care-text">После оплаты тебе нужно написать в службу заботы, какой пакет ты выбрал(а).</p>',
+      '  <a class="calc__care-link" href="' + getCareUrl(pkg) + '" target="_blank" rel="noopener noreferrer">Служба заботы</a>',
+      '</div>',
+      '</div>'
+    );
+
+    result.innerHTML = parts.join('\n');
+  }
+
+  // ── Обработчик кликов (делегирование на корневой элемент) ────────────────────
+
+  document.getElementById('courseCalc').addEventListener('click', function (e) {
+    var btn = e.target.closest('.calc__btn');
+    if (!btn || btn.disabled) return;
+
+    var group = btn.dataset.group;
+    var val   = parseInt(btn.dataset.val, 10);
+    if (!group || isNaN(val)) return;
+
+    state[group] = val;
+
+    if (group === 'intensive') {
+      enforceSubConstraint();
+    }
+
+    syncButtons();
+    renderResult();
+  });
+
+  // ── Инициализация ───────────────────────────────────────────────────────────
+
+  syncButtons();
+  renderResult();
+
+}());
+</script>

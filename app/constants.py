@@ -44,3 +44,9 @@ FEATURE_LABELS = {
 }
 
 ENROLLMENT_YEARS = list(range(2020, 2031))  # 2020–2030
+
+# ── Student tags (admin LK) ───────────────────────────────────────────────────
+
+STUDY_MODES = ("offline", "online")
+STUDY_MODE_LABELS = {"offline": "ОЧНО", "online": "ОНЛАЙН"}
+EXAM_SUBJECT_HINTS = ("Р+К", "Р+Ч", "Р+К+Ч", "К+Ч")

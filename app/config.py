@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # n8n
     n8n_base_url: str = "https://n8n-new.twc1.net"
     n8n_webhook_upload: str = "https://n8n-new.twc1.net/webhook/TMEog8ATVv9CW6xh/webhook/portfolio-upload"
+    n8n_webhook_download_file: str = ""  # portfolio-download-file webhook URL (for Drive→S3 migration)
 
     # VK OAuth
     vk_app_id: str = ""
@@ -47,6 +48,9 @@ class Settings(BaseSettings):
     sso_token_ttl_minutes: int = 2   # short-lived cross-service token TTL
     lab3d_url: str = ""              # e.g. https://3dlab.example.com
     lab3d_internal_token: str = ""   # shared secret for /auth/internal/sso/verify
+
+    # Course calculator
+    course_calculator_all_roles: bool = False  # set true to show calculator on login and widget to all logged-in users
 
     class Config:
         env_file = ".env"

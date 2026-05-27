@@ -1,0 +1,165 @@
+/* FileUploader — стили под Spark Design System */
+.fu-root {
+  font-family: var(--font-body);
+  color: var(--text);
+  display: block;
+}
+
+.fu-dropzone {
+  border: 2px dashed var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  padding: 36px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+  user-select: none;
+  outline: none;
+}
+.fu-dropzone:hover,
+.fu-dropzone:focus-visible,
+.fu-dropzone.is-dragging {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+}
+.fu-dropzone.is-dragging { transform: scale(1.01); }
+.fu-dz-icon { font-size: 42px; line-height: 1; margin-bottom: 10px; color: var(--blue); }
+.fu-dz-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; color: var(--ink); }
+.fu-dz-sub { font-size: 12px; color: var(--dim); }
+
+.fu-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.fu-clear {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  color: var(--dim);
+  font-weight: 500;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 12px;
+  font-family: inherit;
+  transition: border-color 0.2s, color 0.2s;
+}
+.fu-clear:hover:not(:disabled) { border-color: var(--error); color: var(--error); }
+.fu-clear:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.fu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.fu-card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: box-shadow 0.2s ease, transform 0.15s ease, border-color 0.2s ease;
+}
+.fu-card:hover {
+  box-shadow: var(--sh-md);
+  border-color: rgba(59,91,255,.18);
+  transform: translateY(-1px);
+}
+.fu-card-preview {
+  aspect-ratio: 1 / 1;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.fu-card-preview img { width: 100%; height: 100%; object-fit: cover; }
+.fu-card-icon { font-size: 32px; color: var(--dim); }
+.fu-card-info { padding: 6px 8px 8px; }
+.fu-card-name {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink);
+}
+.fu-card-size { font-size: 11px; color: var(--dim); margin-top: 2px; }
+.fu-card-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fu-card-remove:hover { background: rgba(220, 38, 38, 0.9); }
+
+.fu-progress {
+  margin-top: 14px;
+  height: 6px;
+  background: var(--line);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+}
+.fu-progress-bar {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, var(--blue-mid), var(--blue));
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.25s ease;
+}
+
+.fu-submit {
+  margin-top: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--blue);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: var(--sh-blue);
+  transition: transform 0.15s ease, filter 0.15s ease, opacity 0.2s ease;
+}
+.fu-submit:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); }
+.fu-submit:disabled { background: var(--line); color: var(--dim); cursor: not-allowed; box-shadow: none; }
+
+.fu-toast {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  font-weight: 500;
+  animation: fu-fade-in 0.25s ease-out;
+}
+.fu-toast-success { background: rgba(22, 163, 74, 0.09); color: #16A34A; border: 1px solid rgba(22, 163, 74, 0.25); }
+.fu-toast-error   { background: rgba(220, 38, 38, 0.09); color: #DC2626; border: 1px solid rgba(220, 38, 38, 0.25); }
+.fu-toast-info    { background: var(--blue-soft); color: var(--blue); border: 1px solid var(--blue-tint); }
+
+.fu-root.is-uploading .fu-dropzone { opacity: 0.6; pointer-events: none; }
+
+@keyframes fu-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

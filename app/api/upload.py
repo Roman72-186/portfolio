@@ -1,18 +1,18 @@
 import asyncio
 import logging
 import mimetypes
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Request, Depends, UploadFile, File, Form, BackgroundTasks
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Request, Depends, UploadFile, File, Form, BackgroundTasks, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session
 from app.constants import MONTHS, MOCK_SUBJECTS, FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM, FEATURE_RETAKE
-from app.services.feature_periods import is_feature_available
-from app.services.tz import today_msk
+from app.services.feature_periods import get_active_period, is_feature_available
+from app.services.tz import msk_midnight, today_msk
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
 from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
@@ -58,14 +58,25 @@ def _is_allowed_image(content_type: str | None, filename: str | None) -> bool:
     # octet-stream / binary / пустой / unknown application → принимаем если расширение image-like
     if ext in _IMAGE_EXTENSIONS:
         return True
-    # Mobile quirk: некоторые браузеры шлют octet-stream с произвольным расширением
-    if ct in ("application/octet-stream", "binary/octet-stream", "") and ext:
+    # Mobile quirk: некоторые браузеры шлют octet-stream — принимаем только image-расширения
+    if ct in ("application/octet-stream", "binary/octet-stream", "") and ext in _IMAGE_EXTENSIONS:
         return True
     return False
 
 
 def _now_year() -> int:
     return datetime.now(timezone.utc).year
+
+
+def _default_month() -> str:
+    return MONTHS[datetime.now(timezone.utc).month - 1]
+
+
+def _resolve_upload_mode(user: dict, requested_section: str | None) -> str:
+    section = (requested_section or "").strip().lower()
+    if section in {"before", "after"}:
+        return section
+    return "before" if not user.get("portfolio_do_completed") else "after"
 
 
 def _render_upload(request, user, *, mode: str = "after", error=None, success=False,
@@ -97,16 +108,54 @@ def _serialize_attempt(a: MockExamAttempt) -> dict:
     }
 
 
+def _submitted_mock_subjects_in_active_period(db: DBSession, user_id: int) -> set[str]:
+    period = get_active_period(db, FEATURE_MOCK_EXAM)
+    if not period:
+        return set()
+    period_start = msk_midnight(period.start_date)
+    period_end = msk_midnight(period.end_date + timedelta(days=1))
+    rows = (
+        db.query(Work.subject)
+        .filter(
+            Work.user_id == user_id,
+            Work.work_type == WORK_TYPE_MOCK_EXAM,
+            Work.status == "success",
+            Work.score.is_(None),
+            Work.created_at >= period_start,
+            Work.created_at < period_end,
+            Work.subject.in_(MOCK_SUBJECTS),
+        )
+        .distinct()
+        .all()
+    )
+    submitted_subjects = {row[0] for row in rows if row[0]}
+    if not submitted_subjects:
+        return set()
+
+    locks = (
+        db.query(MockExamLock)
+        .filter(
+            MockExamLock.user_id == user_id,
+            MockExamLock.subject.in_(submitted_subjects),
+        )
+        .all()
+    )
+    lock_by_subject = {lock.subject: lock for lock in locks}
+    return {
+        subject
+        for subject in submitted_subjects
+        if not (subject in lock_by_subject and lock_by_subject[subject].is_locked is False)
+    }
+
+
 def _render_mock(request, user, db, *, error=None, success=False, success_count=0, selected_subject="",
                  feature_available=True, feature_message=None):
     now = datetime.now(timezone.utc)
     month_name = MONTHS[now.month - 1].capitalize()
     current_date = f"{now.day} {month_name} {now.year}"
-    locks = db.query(MockExamLock).filter(
-        MockExamLock.user_id == user["user_id"],
-        MockExamLock.is_locked == True,
-    ).all()
-    locked_subjects = {lock.subject for lock in locks}
+    # Old MockExamLock rows are informational for curator/admin review queues.
+    # The student UI should only lock subjects submitted in the current active period.
+    locked_subjects = _submitted_mock_subjects_in_active_period(db, user["user_id"])
 
     today = today_msk()
     ticket_rows = (
@@ -155,7 +204,8 @@ def _render_mock(request, user, db, *, error=None, success=False, success_count=
 
 
 def _render_retake(request, user, *, error=None, success=False, success_count=0,
-                   student_score_input: str = "", feature_available=True, feature_message=None):
+                   student_score_input: str = "", selected_subject: str = "",
+                   feature_available=True, feature_message=None):
     now = datetime.now(timezone.utc)
     month_name = MONTHS[now.month - 1].capitalize()
     current_date = f"{now.day} {month_name} {now.year}"
@@ -165,6 +215,8 @@ def _render_retake(request, user, *, error=None, success=False, success_count=0,
         "max_files": MAX_FILES,
         "current_date": current_date,
         "student_score_input": student_score_input,
+        "selected_subject": selected_subject,
+        "subjects": MOCK_SUBJECTS,
         "error": error,
         "success": success,
         "success_count": success_count,
@@ -173,38 +225,77 @@ def _render_retake(request, user, *, error=None, success=False, success_count=0,
     })
 
 
+def _has_retake_assignment(db: DBSession, user_id: int) -> bool:
+    return db.query(Work.id).filter(
+        Work.user_id == user_id,
+        Work.work_type == WORK_TYPE_MOCK_EXAM,
+        Work.status == "success",
+        Work.sent_to_retake == True,  # noqa: E712
+    ).first() is not None
+
+
+def _retake_available_for_user(db: DBSession, user_id: int) -> tuple[bool, str | None]:
+    fa, fm = is_feature_available(db, FEATURE_RETAKE)
+    if fa or _has_retake_assignment(db, user_id):
+        return True, None
+    return fa, fm
+
+
+_N8N_MAX_RETRIES = 3
+_N8N_RETRY_DELAYS = [5, 15]  # seconds between attempt 1→2 and 2→3
+
+
 async def _send_to_n8n_background(
     work_queue: list[tuple[int, str, bytes, str | None]],
     user: dict,
     month: str,
     work_type: str,
 ) -> None:
-    """Background task: send photos to n8n, update drive_file_id when done.
+    """Background task: send photos to n8n, update drive_file_id / drive_status when done.
     work_queue: list of (work_id, filename, photo_bytes, s3_path)
     First photo is sent sequentially (creates Drive folder), rest in parallel.
     """
     from app.db.database import SessionLocal
 
+    def _update_work(work_id: int, *, drive_file_id: str | None = None, drive_status: str) -> None:
+        db = SessionLocal()
+        try:
+            work = db.query(Work).filter(Work.id == work_id).first()
+            if work:
+                work.drive_status = drive_status
+                if drive_file_id:
+                    work.drive_file_id = drive_file_id
+                db.commit()
+        finally:
+            db.close()
+
     async def _send_one(work_id: int, filename: str, photo_bytes: bytes, s3_path: str | None) -> None:
-        result = await send_photo_to_n8n(
-            user_id=user["vk_id"],
-            student_name=user["name"],
-            tariff=user["tariff"],
-            month=month,
-            photo_bytes=photo_bytes,
-            filename=filename,
-            photo_type=work_type,
-            s3_path=s3_path,
-        )
-        if result.get("file_id"):
-            db = SessionLocal()
+        last_error: str | Exception = "unknown error"
+        for attempt in range(_N8N_MAX_RETRIES):
+            if attempt > 0:
+                delay = _N8N_RETRY_DELAYS[min(attempt - 1, len(_N8N_RETRY_DELAYS) - 1)]
+                await asyncio.sleep(delay)
             try:
-                work = db.query(Work).filter(Work.id == work_id).first()
-                if work:
-                    work.drive_file_id = result["file_id"]
-                    db.commit()
-            finally:
-                db.close()
+                result = await send_photo_to_n8n(
+                    user_id=user["vk_id"],
+                    student_name=user["name"],
+                    tariff=user["tariff"],
+                    month=month,
+                    photo_bytes=photo_bytes,
+                    filename=filename,
+                    photo_type=work_type,
+                    s3_path=s3_path,
+                )
+                if result.get("file_id"):
+                    _update_work(work_id, drive_file_id=result["file_id"], drive_status="synced")
+                    return
+                last_error = result.get("error", "n8n returned no file_id")
+            except Exception as exc:
+                last_error = exc
+        # All retries exhausted
+        logger.error("n8n upload failed after %s retries for work_id=%s: %s",
+                     _N8N_MAX_RETRIES, work_id, last_error)
+        _update_work(work_id, drive_status="failed")
 
     if not work_queue:
         return
@@ -213,7 +304,7 @@ async def _send_to_n8n_background(
     try:
         await _send_one(*work_queue[0])
     except Exception as exc:
-        logger.error("n8n background upload failed for work_id=%s: %s", work_queue[0][0], exc)
+        logger.error("n8n background send_one raised for work_id=%s: %s", work_queue[0][0], exc)
 
     # Remaining in parallel
     if len(work_queue) > 1:
@@ -224,7 +315,7 @@ async def _send_to_n8n_background(
         for i, res in enumerate(results):
             if isinstance(res, Exception):
                 work_id = work_queue[i + 1][0]
-                logger.error("n8n background upload failed for work_id=%s: %s", work_id, res)
+                logger.error("n8n background send_one raised for work_id=%s: %s", work_id, res)
 
 
 async def _process_uploads(
@@ -237,9 +328,13 @@ async def _process_uploads(
     work_type: str,
     subject: str | None = None,
     student_score: float | None = None,
+    ticket_id: int | None = None,
 ) -> tuple[int, int, str]:
     """Upload files to S3, create Work records immediately, send to n8n in background.
     Returns (success, fail, last_error).
+
+    Для mock_exam и retake — автоматическое создание/привязка ExamCycle:
+    весь upload-сеанс = одна «финальная попытка» (is_final=True, общий attempt_number).
     """
     success_count = 0
     fail_count = 0
@@ -247,6 +342,26 @@ async def _process_uploads(
     year = _now_year()
     vk_id = user["vk_id"]
     tariff = user["tariff"]
+
+    # ── Цикл Пробника: получить или создать ──
+    cycle_id: int | None = None
+    attempt_no: int | None = None
+    if work_type in (WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE) and subject:
+        from app.services import exam_cycle as cycle_service
+        if work_type == WORK_TYPE_MOCK_EXAM:
+            cycle, _created = cycle_service.get_or_create_cycle_for_probnik(
+                db, user_id=user["user_id"], subject=subject, ticket_id=ticket_id,
+            )
+        else:
+            cycle = cycle_service.find_latest_cycle(db, user["user_id"], subject)
+            if cycle is None:
+                cycle, _created = cycle_service.get_or_create_cycle_for_probnik(
+                    db, user_id=user["user_id"], subject=subject, ticket_id=None,
+                )
+        cycle_id = cycle.id
+        attempt_no = cycle_service.next_attempt_number(
+            db, cycle_id=cycle_id, work_type=work_type,
+        )
 
     def _build_s3_path(filename: str) -> str:
         if work_type == WORK_TYPE_BEFORE:
@@ -305,6 +420,9 @@ async def _process_uploads(
             tariff=user["tariff"],
             student_score=student_score,
             status="success",
+            cycle_id=cycle_id,
+            is_final=True if cycle_id else None,
+            attempt_number=attempt_no,
         )
         db.add(work)
 
@@ -343,8 +461,9 @@ def upload_form(
     request: Request,
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
+    section: str | None = None,
 ):
-    mode = "before" if not user.get("portfolio_do_completed") else "after"
+    mode = _resolve_upload_mode(user, section)
     if mode == "after":
         fa, fm = is_feature_available(db, FEATURE_PORTFOLIO_UPLOAD)
     else:
@@ -362,9 +481,10 @@ async def upload_photos(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     photos: list[UploadFile] = File(...),
-    month: str = Form(...),
+    month: str | None = Form(default=None),
+    section: str | None = Form(default=None),
 ):
-    mode = "before" if not user.get("portfolio_do_completed") else "after"
+    mode = _resolve_upload_mode(user, section)
     work_type = WORK_TYPE_BEFORE if mode == "before" else WORK_TYPE_AFTER
 
     if mode == "after":
@@ -375,7 +495,9 @@ async def upload_photos(
     def _err(msg):
         return _render_upload(request, user, mode=mode, error=msg)
 
-    if month not in MONTHS:
+    if mode == "before":
+        month = _default_month()
+    elif month not in MONTHS:
         return _err("Выберите месяц")
     if not photos or (len(photos) == 1 and not photos[0].filename):
         return _err("Выберите хотя бы одно фото")
@@ -413,6 +535,94 @@ async def upload_photos(
     return _render_upload(request, user, mode=mode,
                           error=error, success=success_count > 0,
                           success_count=success_count, fail_count=fail_count)
+
+
+# ── POST /upload/api (JSON) ──────────────────────────────────────────────────
+
+async def _validate_photos(photos: list[UploadFile]) -> tuple[list[tuple[str, bytes]], str | None]:
+    """Read & validate uploaded files. Returns (files_data, error_msg or None)."""
+    if not photos or (len(photos) == 1 and not photos[0].filename):
+        return [], "Выберите хотя бы одно фото"
+    if len(photos) > MAX_FILES:
+        return [], f"Максимум {MAX_FILES} фото за раз"
+    files_data: list[tuple[str, bytes]] = []
+    for photo in photos:
+        if not _is_allowed_image(photo.content_type, photo.filename):
+            return [], f"Файл «{photo.filename}» — неподдерживаемый формат. Допустимы: JPG, PNG, WebP"
+        photo_bytes = await photo.read()
+        if len(photo_bytes) > MAX_SIZE:
+            return [], f"Файл «{photo.filename}» слишком большой (макс. 10 МБ)"
+        files_data.append((photo.filename or "photo.jpg", photo_bytes))
+    return files_data, None
+
+
+@router.post("/upload/api")
+async def upload_photos_api(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    photos: list[UploadFile] = File(...),
+    month: str | None = Form(default=None),
+    section: str | None = Form(default=None),
+):
+    """AJAX-friendly вариант POST /upload — возвращает JSON вместо редиректа."""
+    mode = _resolve_upload_mode(user, section)
+    work_type = WORK_TYPE_BEFORE if mode == "before" else WORK_TYPE_AFTER
+
+    if mode == "after":
+        fa, fm = is_feature_available(db, FEATURE_PORTFOLIO_UPLOAD)
+        if not fa:
+            return JSONResponse({"success": False, "error": fm or "Раздел закрыт"}, status_code=403)
+
+    if mode == "before":
+        month = _default_month()
+    elif month not in MONTHS:
+        return JSONResponse({"success": False, "error": "Выберите месяц"}, status_code=422)
+
+    files_data, err = await _validate_photos(photos)
+    if err:
+        return JSONResponse({"success": False, "error": err}, status_code=422)
+
+    success_count, fail_count, last_error = await _process_uploads(
+        background_tasks=background_tasks,
+        db=db, user=user, files_data=files_data, month=month, work_type=work_type,
+    )
+
+    mode_changed = False
+    if success_count > 0 and work_type == WORK_TYPE_BEFORE and not user.get("portfolio_do_completed"):
+        db_user = db.query(User).filter(User.id == user["user_id"]).first()
+        if db_user:
+            db_user.portfolio_do_completed = True
+            db.commit()
+            invalidate_session(user["session_id"])
+            mode_changed = True
+
+    return JSONResponse({
+        "success": success_count > 0,
+        "created": success_count,
+        "failed": fail_count,
+        "error": last_error if fail_count and not success_count else None,
+        "mode_changed": mode_changed,
+    })
+
+
+# ARCHIVED 2026-05-21: оригинальные тела /upload/mock-exam/api и /upload/retake/api
+# вынесены в _cleanup/legacy-upload-routes-2026-05-21.py. Сейчас stubs возвращают
+# 410 Gone, чтобы старые AJAX-клиенты/закладки не могли обойти MockExamLock
+# pre-check, который живёт в /upload/probnik/final и /upload/otrabotka/final.
+_LEGACY_GONE_MSG = "Этот endpoint устарел. Загрузка пробников и отработок идёт через /cabinet/cycle."
+
+
+@router.post("/upload/mock-exam/api")
+async def upload_mock_exam_api_legacy():
+    return JSONResponse({"success": False, "error": _LEGACY_GONE_MSG}, status_code=410)
+
+
+@router.post("/upload/retake/api")
+async def upload_retake_api_legacy():
+    return JSONResponse({"success": False, "error": _LEGACY_GONE_MSG}, status_code=410)
 
 
 # ── POST /upload/finish-before ───────────────────────────────────────────────
@@ -503,203 +713,23 @@ def mock_exam_form(
 
 
 # ── POST /upload/mock-exam/start ─────────────────────────────────────────────
+# ARCHIVED 2026-05-21: см. _cleanup/legacy-upload-routes-2026-05-21.py.
+# Создание MockExamAttempt больше не нужно — новый cycle flow начинается с
+# /upload/probnik/final, билеты в нём показываются без отдельного start-вызова.
 
 @router.post("/upload/mock-exam/start")
-def mock_exam_start(
-    user: Annotated[dict, Depends(require_student)],
-    db: Annotated[DBSession, Depends(get_db)],
-    _csrf: Annotated[None, Depends(require_csrf)],
-    subject: str = Form(...),
-):
-    """Фиксирует начало пробника: выбирает случайный билет и создаёт MockExamAttempt.
-    Возвращает JSON с данными билета и started_at для старта клиентского таймера.
-    """
-    from fastapi.responses import JSONResponse
-
-    fa, _ = is_feature_available(db, FEATURE_MOCK_EXAM)
-    if not fa:
-        return JSONResponse({"error": "feature_closed"}, status_code=403)
-
-    if subject not in MOCK_SUBJECTS:
-        return JSONResponse({"error": "invalid_subject"}, status_code=422)
-
-    # Уже заблокирован куратором? (сдал, ждёт проверки)
-    lock = db.query(MockExamLock).filter(
-        MockExamLock.user_id == user["user_id"],
-        MockExamLock.subject == subject,
-        MockExamLock.is_locked == True,
-    ).first()
-    if lock:
-        return JSONResponse({"error": "already_submitted"}, status_code=409)
-
-    # Уже есть активная попытка? Возвращаем её — не заводим новую.
-    existing = (
-        db.query(MockExamAttempt)
-        .filter(
-            MockExamAttempt.user_id == user["user_id"],
-            MockExamAttempt.subject == subject,
-            MockExamAttempt.completed_at.is_(None),
-        )
-        .order_by(MockExamAttempt.started_at.desc())
-        .first()
-    )
-    if existing:
-        return JSONResponse({
-            "attempt_id": existing.id,
-            "subject": existing.subject,
-            "ticket": {
-                "id": existing.ticket_id,
-                "title": existing.ticket_title,
-                "description": format_ticket_description(existing.ticket_description),
-                "image_url": existing.ticket_image_url or "",
-            },
-            "started_at": existing.started_at.isoformat(),
-            "duration_sec": MOCK_EXAM_DURATION_SEC,
-            "resumed": True,
-        })
-
-    # Ищем случайный активный билет
-    ticket = _pick_random_active_ticket(db, user["user_id"], subject)
-    if not ticket:
-        return JSONResponse({"error": "no_active_ticket"}, status_code=404)
-
-    attempt = MockExamAttempt(
-        user_id=user["user_id"],
-        subject=subject,
-        ticket_id=ticket.id,
-        ticket_title=ticket.title,
-        ticket_description=ticket.description,
-        ticket_image_url=ticket.image_s3_url,
-    )
-    db.add(attempt)
-    db.commit()
-    db.refresh(attempt)
-
-    return JSONResponse({
-        "attempt_id": attempt.id,
-        "subject": subject,
-        "ticket": {
-            "id": ticket.id,
-            "title": ticket.title,
-            "description": format_ticket_description(ticket.description),
-            "image_url": ticket.image_s3_url or "",
-        },
-        "started_at": attempt.started_at.isoformat(),
-        "duration_sec": MOCK_EXAM_DURATION_SEC,
-        "resumed": False,
-    })
+def mock_exam_start_legacy():
+    return JSONResponse({"error": "gone", "message": _LEGACY_GONE_MSG}, status_code=410)
 
 
 # ── POST /upload/mock-exam ───────────────────────────────────────────────────
+# ARCHIVED 2026-05-21: form POST на /upload/mock-exam не проверял MockExamLock
+# pre-check и мог обойти блокировку повторной сдачи. Заменён на
+# /upload/probnik/final с pre-check в app/api/cycle_upload.py.
 
 @router.post("/upload/mock-exam", response_class=HTMLResponse)
-async def upload_mock_exam(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    user: Annotated[dict, Depends(require_student)],
-    db: Annotated[DBSession, Depends(get_db)],
-    _csrf: Annotated[None, Depends(require_csrf)],
-    photos: list[UploadFile] = File(...),
-    subject: str = Form(...),
-):
-    fa, fm = is_feature_available(db, FEATURE_MOCK_EXAM)
-    if not fa:
-        return _render_mock(request, user, db, feature_available=fa, feature_message=fm)
-
-    def _err(msg):
-        return _render_mock(request, user, db, error=msg, selected_subject=subject)
-
-    if subject not in MOCK_SUBJECTS:
-        return _err("Выберите предмет")
-
-    lock = db.query(MockExamLock).filter(
-        MockExamLock.user_id == user["user_id"],
-        MockExamLock.subject == subject,
-        MockExamLock.is_locked == True,
-    ).first()
-    if lock:
-        return _err(f"Пробник «{subject}» уже сдан и ожидает проверки. Дождитесь разблокировки куратором.")
-
-    now = datetime.now(timezone.utc)
-    today = today_msk()
-    has_active_ticket = (
-        db.query(ExamTicket)
-        .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
-        .filter(
-            ExamAssignment.status == "published",
-            ExamAssignment.subject == subject,
-            ExamTicket.start_date <= today,
-            ExamTicket.end_date >= today,
-            or_(
-                ExamTicket.assign_to_all.is_(True),
-                ExamTicket.id.in_(
-                    db.query(ExamTicketAssignee.ticket_id)
-                    .filter(ExamTicketAssignee.user_id == user["user_id"])
-                    .scalar_subquery()
-                ),
-            ),
-        )
-        .first()
-    )
-    if not has_active_ticket:
-        return _err(f"Нет активного билета по предмету «{subject}»")
-    month = MONTHS[now.month - 1]
-
-    if not photos or (len(photos) == 1 and not photos[0].filename):
-        return _err("Выберите хотя бы одно фото")
-    if len(photos) > MAX_FILES:
-        return _err(f"Максимум {MAX_FILES} фото за раз")
-
-    files_data = []
-    for photo in photos:
-        if not _is_allowed_image(photo.content_type, photo.filename):
-            return _err(f"Файл «{photo.filename}» — неподдерживаемый формат. Допустимы: JPG, PNG, WebP")
-        photo_bytes = await photo.read()
-        if len(photo_bytes) > MAX_SIZE:
-            return _err(f"Файл «{photo.filename}» слишком большой (макс. 10 МБ)")
-        files_data.append((photo.filename or "photo.jpg", photo_bytes))
-
-    success_count, fail_count, last_error = await _process_uploads(
-        background_tasks=background_tasks,
-        db=db, user=user, files_data=files_data, month=month, work_type=WORK_TYPE_MOCK_EXAM,
-        subject=subject,
-    )
-
-    error = None
-    if fail_count > 0 and success_count == 0:
-        error = f"Не удалось загрузить: {last_error}"
-    elif fail_count > 0:
-        error = f"{fail_count} фото не загружено"
-
-    if success_count > 0:
-        existing_lock = db.query(MockExamLock).filter(
-            MockExamLock.user_id == user["user_id"],
-            MockExamLock.subject == subject,
-        ).first()
-        if existing_lock:
-            existing_lock.is_locked = True
-            existing_lock.locked_at = datetime.now(timezone.utc)
-        else:
-            db.add(MockExamLock(
-                user_id=user["user_id"],
-                subject=subject,
-                is_locked=True,
-                locked_at=datetime.now(timezone.utc),
-            ))
-        # Закрываем активную попытку этого предмета
-        db.query(MockExamAttempt).filter(
-            MockExamAttempt.user_id == user["user_id"],
-            MockExamAttempt.subject == subject,
-            MockExamAttempt.completed_at.is_(None),
-        ).update(
-            {"completed_at": datetime.now(timezone.utc)},
-            synchronize_session=False,
-        )
-        db.commit()
-
-    return _render_mock(request, user, db, error=error,
-                        success=success_count > 0, success_count=success_count,
-                        selected_subject="" if success_count > 0 else subject)
+async def upload_mock_exam_legacy():
+    return JSONResponse({"success": False, "error": _LEGACY_GONE_MSG}, status_code=410)
 
 
 # ── GET /upload/retake ───────────────────────────────────────────────────────
@@ -710,64 +740,14 @@ def retake_form(
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    fa, fm = is_feature_available(db, FEATURE_RETAKE)
+    fa, fm = _retake_available_for_user(db, user["user_id"])
     return _render_retake(request, user, feature_available=fa, feature_message=fm)
 
 
 # ── POST /upload/retake ──────────────────────────────────────────────────────
+# ARCHIVED 2026-05-21: см. _cleanup/legacy-upload-routes-2026-05-21.py.
+# Заменён на /upload/otrabotka/final в app/api/cycle_upload.py.
 
 @router.post("/upload/retake", response_class=HTMLResponse)
-async def upload_retake(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    user: Annotated[dict, Depends(require_student)],
-    db: Annotated[DBSession, Depends(get_db)],
-    _csrf: Annotated[None, Depends(require_csrf)],
-    photos: list[UploadFile] = File(...),
-    student_score: float = Form(...),
-):
-    fa, fm = is_feature_available(db, FEATURE_RETAKE)
-    if not fa:
-        return _render_retake(request, user, feature_available=fa, feature_message=fm)
-
-    def _err(msg):
-        return _render_retake(request, user, error=msg,
-                              student_score_input=str(student_score) if student_score is not None else "")
-
-    if not (0 <= student_score <= 100):
-        return _err("Балл должен быть от 0 до 100")
-    student_score = int(round(student_score))
-
-    now = datetime.now(timezone.utc)
-    month = MONTHS[now.month - 1]
-
-    if not photos or (len(photos) == 1 and not photos[0].filename):
-        return _err("Выберите хотя бы одно фото")
-    if len(photos) > MAX_FILES:
-        return _err(f"Максимум {MAX_FILES} фото за раз")
-
-    files_data = []
-    for photo in photos:
-        if not _is_allowed_image(photo.content_type, photo.filename):
-            return _err(f"Файл «{photo.filename}» — неподдерживаемый формат. Допустимы: JPG, PNG, WebP")
-        photo_bytes = await photo.read()
-        if len(photo_bytes) > MAX_SIZE:
-            return _err(f"Файл «{photo.filename}» слишком большой (макс. 10 МБ)")
-        files_data.append((photo.filename or "photo.jpg", photo_bytes))
-
-    success_count, fail_count, last_error = await _process_uploads(
-        background_tasks=background_tasks,
-        db=db, user=user, files_data=files_data, month=month,
-        work_type=WORK_TYPE_RETAKE,
-        student_score=student_score,
-    )
-
-    error = None
-    if fail_count > 0 and success_count == 0:
-        error = f"Не удалось загрузить: {last_error}"
-    elif fail_count > 0:
-        error = f"{fail_count} фото не загружено"
-
-    return _render_retake(request, user, error=error,
-                          success=success_count > 0, success_count=success_count,
-                          student_score_input="" if success_count > 0 else str(student_score))
+async def upload_retake_legacy():
+    return JSONResponse({"success": False, "error": _LEGACY_GONE_MSG}, status_code=410)

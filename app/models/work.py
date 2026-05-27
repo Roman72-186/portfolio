@@ -28,11 +28,18 @@ class Work(Base):
     tariff: Mapped[str | None] = mapped_column(String(50), nullable=True)       # "МАКСИМУМ" | "УВЕРЕННЫЙ" | "Я С ВАМИ"
     score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)   # 0.00–100.00 (curator's score)
     student_score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)  # student self-reported score (retake)
+    sent_to_retake: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     scored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     scored_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     comment: Mapped[str | None] = mapped_column(String(1000), nullable=True)  # curator comment on the work
     uploaded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | success | failed
+    drive_status: Mapped[str] = mapped_column(String(20), default="pending", server_default="pending", nullable=False)  # pending | synced | failed | s3_only
+    # Цикл Пробника (план 2026-05-14): cycle_id+is_final+parent_work_id+attempt_number
+    cycle_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("exam_cycles.id"), nullable=True)
+    is_final: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
+    parent_work_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("works.id"), nullable=True)
+    attempt_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

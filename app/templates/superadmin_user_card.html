@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Карточка ученика — {{ target.last_name or '' }} {{ target.first_name or target.name }}{% endblock %}
+{% block extra_styles %}
+<style>
+.uc-wrap { max-width: 880px; margin: 0 auto; }
+.uc-head { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; flex-wrap: wrap; }
+.uc-back { font-size: 13px; color: var(--dim); text-decoration: none; font-weight: 600; }
+.uc-back:hover { color: var(--blue); }
+.uc-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
+.uc-meta { font-size: 12px; color: var(--dim); }
+
+.uc-saved { background: rgba(5,150,105,0.08); border: 1px solid rgba(5,150,105,0.24); color: var(--ok); padding: 10px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
+
+.uc-section { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 18px 20px; margin-bottom: 16px; box-shadow: var(--sh-sm); }
+.uc-section h3 { font-size: 14px; font-weight: 900; color: var(--text); margin: 0 0 14px 0; }
+
+.uc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
+.uc-grid label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
+.uc-grid label.uc-full { grid-column: 1 / -1; }
+.uc-grid input[type="text"],
+.uc-grid select,
+.uc-grid textarea {
+    font-family: inherit; font-size: 13px; padding: 9px 12px;
+    border: 1.5px solid var(--line); border-radius: 9px;
+    background: var(--bg); color: var(--text); outline: none;
+}
+.uc-grid input[type="text"]:focus,
+.uc-grid select:focus,
+.uc-grid textarea:focus { border-color: var(--blue); }
+.uc-grid textarea { min-height: 70px; resize: vertical; }
+
+.uc-checkbox { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 700; color: var(--text); }
+.uc-checkbox input { width: 18px; height: 18px; cursor: pointer; }
+
+.uc-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
+.uc-btn { padding: 10px 18px; border-radius: 9px; font-size: 13px; font-weight: 800; cursor: pointer; font-family: inherit; border: none; }
+.uc-btn-primary { background: var(--blue); color: #fff; }
+.uc-btn-primary:hover { opacity: 0.88; }
+.uc-btn-secondary { background: var(--surface-2); color: var(--text); border: 1.5px solid var(--line); }
+
+@media (max-width: 640px) {
+    .uc-grid { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="uc-wrap">
+    <div class="uc-head">
+        <a href="/cabinet/superadmin/users" class="uc-back">← Все ученики</a>
+        <div>
+            <div class="uc-title">{{ target.last_name or '' }} {{ target.first_name or target.name }}</div>
+            <div class="uc-meta">
+                id={{ target.id }} ·
+                {% if target.role %}{{ target.role.display_name }}{% else %}нет роли{% endif %} ·
+                {% if target.tg_username %}@{{ target.tg_username }} · {% endif %}
+                {% if target.staff_login %}логин: {{ target.staff_login }}{% endif %}
+            </div>
+        </div>
+    </div>
+
+    {% if request.query_params.get('saved') %}
+    <div class="uc-saved">Изменения сохранены.</div>
+    {% endif %}
+
+    {% set s = target %}
+    <div class="student-tag-pills" style="margin-bottom:16px">
+        {% include "_includes/student_tag_pills.html" %}
+        {% if target_curator %}
+        <span class="tag-pill tag-pill--curator">👤 {{ target_curator.last_name or '' }} {{ target_curator.first_name or target_curator.name }}</span>
+        {% endif %}
+    </div>
+
+    <form method="post" action="/cabinet/superadmin/users/{{ target.id }}/tags">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+
+        <div class="uc-section">
+            <h3>Метки и сортировка</h3>
+            <div class="uc-grid">
+                <label>
+                    Период экзаменов
+                    <input type="text" name="exam_dates"
+                           value="{{ target.exam_dates or '' }}"
+                           maxlength="30" placeholder="15-20 июня">
+                </label>
+                <label>
+                    Предметы экзаменов
+                    <input type="text" name="exam_subjects" list="exam-subject-hints"
+                           value="{{ target.exam_subjects or '' }}"
+                           maxlength="20" placeholder="Р+К">
+                    <datalist id="exam-subject-hints">
+                        {% for hint in exam_subject_hints %}
+                        <option value="{{ hint }}">
+                        {% endfor %}
+                    </datalist>
+                </label>
+                <label>
+                    Формат обучения
+                    <select name="study_mode">
+                        <option value="">— не указан —</option>
+                        {% for mode in study_modes %}
+                        <option value="{{ mode }}" {% if target.study_mode == mode %}selected{% endif %}>{{ study_mode_labels[mode] }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>
+                    Тариф
+                    <select name="tariff">
+                        {% for t in tariffs %}
+                        <option value="{{ t }}" {% if target.tariff == t %}selected{% endif %}>{{ t }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>
+                    Куратор
+                    <select name="curator_id">
+                        <option value="">— без куратора —</option>
+                        {% for c in curators %}
+                        <option value="{{ c.id }}" {% if target.curator_id == c.id %}selected{% endif %}>{{ c.last_name or '' }} {{ c.first_name or c.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>
+                    Баннер на аватарке
+                    <select name="cohort_tag">
+                        <option value="">— нет —</option>
+                        <option value="may"   {% if target.cohort_tag == 'may'   %}selected{% endif %}>МАЙСКАЯ · М</option>
+                        <option value="june"  {% if target.cohort_tag == 'june'  %}selected{% endif %}>ИЮНЬ · И</option>
+                        <option value="july"  {% if target.cohort_tag == 'july'  %}selected{% endif %}>ИЮЛЬ · И</option>
+                        <option value="august"{% if target.cohort_tag == 'august'%}selected{% endif %}>АВГУСТ · А</option>
+                    </select>
+                </label>
+                <label class="uc-full">
+                    <span class="uc-checkbox">
+                        <input type="checkbox" name="is_publishable" value="1" {% if target.is_publishable %}checked{% endif %}>
+                        Публикация — работы можно использовать для соцсетей и портфолио школы
+                    </span>
+                </label>
+                <label class="uc-full">
+                    Заметка куратора (видна админам и куратору)
+                    <textarea name="about" maxlength="500" placeholder="Внутренняя заметка о ребёнке…">{{ target.about or '' }}</textarea>
+                </label>
+            </div>
+
+            <div class="uc-actions">
+                <a href="/cabinet/superadmin/users" class="uc-btn uc-btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center">Отмена</a>
+                <button type="submit" class="uc-btn uc-btn-primary">Сохранить</button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}

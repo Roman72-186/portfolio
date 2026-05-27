@@ -31,6 +31,13 @@ _photos_cache: dict[int, tuple[float, list[dict]]] = {}
 _file_index: dict[str, dict] = {}
 
 
+def _photo_created_dt(photo: dict) -> datetime:
+    try:
+        return datetime.fromisoformat(photo["created_at"].replace("Z", "+00:00"))
+    except Exception:
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+
 def _list_photos_url() -> str:
     return f"{settings.n8n_base_url}/webhook/37XGEC36WlvKBTGl/webhook/portfolio-list-photos"
 
@@ -70,15 +77,17 @@ async def list_student_photos(vk_id: int, tg_username: str, **_kwargs) -> list[d
     for p in raw_photos:
         photo = {
             "id": p.get("id", ""),
-            "name": p.get("name", ""),
+            "name": (p.get("name") or "").strip(),
             "thumbnail_url": p.get("thumbnail", ""),
             "view_url": p.get("download", ""),
             "created_at": p.get("created", ""),
+            "type": p.get("type", ""),
         }
         photos.append(photo)
         if photo["id"]:
             _file_index[photo["id"]] = photo
 
+    photos.sort(key=_photo_created_dt, reverse=True)
     _photos_cache[vk_id] = (time.time(), photos)
     return photos
 
@@ -133,19 +142,22 @@ async def sync_drive_works(user_id: int, vk_id: int, tariff: str, tg_username: s
             if not file_id or file_id in existing_ids:
                 continue
 
-            work_type = _TYPE_MAP.get((photo.get("created_at") or "").lower(), "after")
-            # photo["created_at"] is createdTime ISO string; type comes from subfolder
+            # type comes from subfolder name returned by n8n ("до"/"после"/"before"/"after")
             work_type = _TYPE_MAP.get((photo.get("type") or "").lower(), "after")
+
+            # Parse month from filename: "02_1283364156_Октябрь_237731.jpg" → index 2
+            name_parts = photo.get("name", "").rsplit(".", 1)[0].split("_")
+            month_from_name = name_parts[2] if len(name_parts) >= 3 else ""
 
             created_str = photo.get("created_at", "")
             try:
                 dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
                 year = dt.year
-                month = MONTHS[dt.month - 1]
+                month = month_from_name if month_from_name in MONTHS else MONTHS[dt.month - 1]
             except Exception:
                 now = datetime.now(timezone.utc)
                 year = now.year
-                month = MONTHS[now.month - 1]
+                month = month_from_name if month_from_name in MONTHS else MONTHS[now.month - 1]
 
             new_works.append(Work(
                 user_id=user_id,

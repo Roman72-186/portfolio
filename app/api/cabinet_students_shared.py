@@ -23,6 +23,7 @@ from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, MONTHS, TARIFFS
 from app.db.database import get_db
 from app.dependencies import get_current_user, require_admin_role, require_csrf
 from app.models.session import Session
+from app.models.exam_cycle import ExamCycle
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
 from app.models.role import Role
@@ -33,9 +34,10 @@ from app.models.work import (
     WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE,
 )
 from app.services import s3 as s3_service
+from app.services.exam_cycle import close_cycle_if_scored
 from app.services.feature_periods import get_active_period
 from app.services.tz import MSK_TZ, msk_midnight
-from app.services.utils import compress_image, study_duration_text, group_works
+from app.services.utils import compress_image, study_duration_text, group_works, has_case_growth
 from app.tmpl import templates
 
 logger = logging.getLogger(__name__)
@@ -121,13 +123,21 @@ def _check_access(student_id: int, user: dict, db: DBSession) -> User:
 def _enrich(s: User, counts_by_user: dict, avg_by_user: dict,
             mock_counts_by_user: dict | None = None,
             unchecked_by_user: dict | None = None,
-            scored_subjects_by_user: dict | None = None) -> dict:
+            scored_subjects_by_user: dict | None = None,
+            retake_counts_by_user: dict | None = None,
+            retake_unchecked_by_user: dict | None = None,
+            has_case_by_user: dict | None = None) -> dict:
     return {
         "id": s.id,
         "name": f"{s.last_name or ''} {s.first_name or s.name}".strip(),
         "photo_url": s.photo_url,
         "cohort_tag": s.cohort_tag,
         "tariff": s.tariff,
+        "exam_dates": s.exam_dates,
+        "exam_subjects": s.exam_subjects,
+        "study_mode": s.study_mode,
+        "is_publishable": s.is_publishable,
+        "has_case": has_case_by_user.get(s.id, False) if has_case_by_user else False,
         "avg_score": avg_by_user.get(s.id),
         "upload_count": counts_by_user.get(s.id, 0),
         "curator_id": s.curator_id or 0,
@@ -137,6 +147,8 @@ def _enrich(s: User, counts_by_user: dict, avg_by_user: dict,
         "mock_count": mock_counts_by_user.get(s.id, 0) if mock_counts_by_user else 0,
         "unchecked": unchecked_by_user.get(s.id, 0) if unchecked_by_user else 0,
         "scored_subjects": scored_subjects_by_user.get(s.id, []) if scored_subjects_by_user else [],
+        "retake_count": retake_counts_by_user.get(s.id, 0) if retake_counts_by_user else 0,
+        "retake_unchecked": retake_unchecked_by_user.get(s.id, 0) if retake_unchecked_by_user else 0,
     }
 
 
@@ -198,6 +210,29 @@ def students_panel(
     mock_counts_by_user: dict = {}
     unchecked_by_user: dict = {}
     scored_subjects_by_user: dict = defaultdict(list)
+    retake_counts_by_user: dict = {}
+    retake_unchecked_by_user: dict = {}
+    has_case_by_user: dict[int, bool] = {}
+    if students:
+        _ids_all = [s.id for s in students]
+        case_works = (
+            db.query(Work.user_id, Work.subject, Work.score, Work.month, Work.year,
+                     Work.scored_at, Work.created_at, Work.work_type)
+            .filter(
+                Work.user_id.in_(_ids_all),
+                Work.work_type == WORK_TYPE_MOCK_EXAM,
+                Work.status == "success",
+                Work.score.isnot(None),
+                Work.subject.isnot(None),
+            )
+            .all()
+        )
+        works_by_uid: dict[int, list] = defaultdict(list)
+        for w in case_works:
+            works_by_uid[w.user_id].append(w)
+        for uid, ws in works_by_uid.items():
+            has_case_by_user[uid] = has_case_growth(ws)
+
     can_score = user["role_rank"] >= 4
     if students and can_score:
         _ids = [s.id for s in students]
@@ -241,12 +276,47 @@ def students_panel(
         for r in scored_subj_rows:
             scored_subjects_by_user[r.user_id].append(r.subject)
 
+        retake_count_rows = (
+            db.query(Work.user_id, func.count(Work.id).label("cnt"))
+            .filter(
+                Work.user_id.in_(_ids),
+                Work.work_type == WORK_TYPE_RETAKE,
+                Work.status == "success",
+            )
+            .group_by(Work.user_id)
+            .all()
+        )
+        retake_counts_by_user = {r.user_id: r.cnt for r in retake_count_rows}
+
+        retake_unchecked_rows = (
+            db.query(Work.user_id, func.count(Work.id).label("cnt"))
+            .filter(
+                Work.user_id.in_(_ids),
+                Work.work_type == WORK_TYPE_RETAKE,
+                Work.status == "success",
+                Work.score.is_(None),
+            )
+            .group_by(Work.user_id)
+            .all()
+        )
+        retake_unchecked_by_user = {r.user_id: r.cnt for r in retake_unchecked_rows}
+
     sidebar_students = [
-        _enrich(s, counts_by_user, avg_by_user, mock_counts_by_user, unchecked_by_user, scored_subjects_by_user)
+        _enrich(
+            s,
+            counts_by_user,
+            avg_by_user,
+            mock_counts_by_user,
+            unchecked_by_user,
+            scored_subjects_by_user,
+            retake_counts_by_user,
+            retake_unchecked_by_user,
+            has_case_by_user,
+        )
         for s in students
     ]
     sidebar_title = "Мои ученики" if user["role_rank"] == 2 else "Все ученики"
-    valid_tabs = ("portfolio", "mock-exams", "retakes")
+    valid_tabs = ("portfolio", "mock-exams", "retakes", "cycles")
     show_curator_filter = user["role_rank"] >= 4
 
     # Curator list for admin filter
@@ -320,6 +390,11 @@ def get_student_profile(
     retake_count = sum(1 for w in works if w.work_type == WORK_TYPE_RETAKE)
     scored = [w for w in mock_works if w.score is not None]
     avg_score = round(sum(float(w.score) for w in scored) / len(scored)) if scored else None
+    cycle_count = (
+        db.query(func.count(ExamCycle.id))
+        .filter(ExamCycle.user_id == student_id)
+        .scalar()
+    ) or 0
 
     return JSONResponse({
         "student": {
@@ -346,6 +421,7 @@ def get_student_profile(
             "portfolio_count": portfolio_count,
             "mock_exam_count": len(mock_works),
             "retake_count": retake_count,
+            "cycle_count": cycle_count,
         },
     })
 
@@ -446,6 +522,13 @@ def get_mock_exams(
         if w.subject:
             works_by_subject[w.subject].append(w)
 
+    # Какие work_id имеют feedback — нужно для бейджа на кнопке
+    from app.models.feedback import Feedback as _FB
+    mock_ids = [w.id for w in mock_works]
+    fb_work_ids: set[int] = set()
+    if mock_ids:
+        fb_work_ids = {row[0] for row in db.query(_FB.work_id).filter(_FB.work_id.in_(mock_ids)).all()}
+
     def serialize_mock_work(w: Work) -> dict:
         created_at = w.created_at
         if created_at and created_at.tzinfo is None:
@@ -460,6 +543,8 @@ def get_mock_exams(
             "created_at": created_at.isoformat() if created_at else None,
             "work_date": local_dt.date().isoformat() if local_dt else "",
             "date_label": local_dt.strftime("%d.%m.%Y") if local_dt else "",
+            "cycle_id": w.cycle_id,
+            "has_feedback": w.id in fb_work_ids,
         }
 
     locks = {
@@ -512,6 +597,37 @@ def get_retakes(
         .order_by(Work.created_at.desc()).limit(100).all()
     )
 
+    from app.models.feedback import Feedback as _FB
+    r_ids = [w.id for w in retake_works]
+    r_fb_ids: set[int] = set()
+    if r_ids:
+        r_fb_ids = {row[0] for row in db.query(_FB.work_id).filter(_FB.work_id.in_(r_ids)).all()}
+
+    def _work_dict(w):
+        return {
+            "id": w.id, "s3_url": w.s3_url, "filename": w.filename,
+            "month": w.month, "year": w.year,
+            "student_score": float(w.student_score) if w.student_score is not None else None,
+            "curator_score": float(w.score) if w.score is not None else None,
+            "comment": w.comment,
+            "is_mock": w.work_type == WORK_TYPE_MOCK_EXAM,
+            "subject": w.subject or "",
+            "created_at": w.created_at.isoformat() if w.created_at else None,
+            "cycle_id": w.cycle_id,
+            "has_feedback": w.id in r_fb_ids,
+        }
+
+    retakes_by_subject: dict[str, list] = {}
+    for s in MOCK_SUBJECTS:
+        retakes_by_subject[s] = []
+    retakes_unassigned: list = []
+    for w in retake_works:
+        d = _work_dict(w)
+        if d["subject"] in retakes_by_subject:
+            retakes_by_subject[d["subject"]].append(d)
+        else:
+            retakes_unassigned.append(d)
+
     return JSONResponse({
         "student": {
             "id": student.id,
@@ -521,20 +637,14 @@ def get_retakes(
             "photo_url": student.photo_url,
             "cohort_tag": student.cohort_tag,
         },
+        "can_move_retakes": user.get("role_rank", 0) >= 5,
+        "subjects": list(MOCK_SUBJECTS),
+        "retakes_by_subject": retakes_by_subject,
+        "retakes_unassigned": retakes_unassigned,
         "retakes_by_month": [
             {
                 "month": g["month"], "year": g["year"], "total": g["total"],
-                "works": [
-                    {
-                        "id": w.id, "s3_url": w.s3_url, "filename": w.filename,
-                        "student_score": float(w.student_score) if w.student_score is not None else None,
-                        "curator_score": float(w.score) if w.score is not None else None,
-                        "comment": w.comment,
-                        "is_mock": w.work_type == WORK_TYPE_MOCK_EXAM,
-                        "subject": w.subject or "",
-                    }
-                    for w in g["works"]
-                ],
+                "works": [_work_dict(w) for w in g["works"]],
             }
             for g in group_works(retake_works)
         ],
@@ -542,6 +652,37 @@ def get_retakes(
 
 
 # ── POST: оценить работу ──────────────────────────────────────────────────────
+
+@router.post("/students/{student_id}/retakes/{work_id}/subject")
+def move_retake_to_subject(
+    student_id: int,
+    work_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    subject: str = Form(...),
+):
+    if user["role_rank"] < 5:
+        raise HTTPException(status_code=403, detail="Доступно только суперадмину")
+    if subject not in MOCK_SUBJECTS:
+        raise HTTPException(status_code=400, detail="Неверный предмет")
+
+    work = db.query(Work).filter(
+        Work.id == work_id,
+        Work.user_id == student_id,
+        Work.status == "success",
+        or_(
+            Work.work_type == WORK_TYPE_RETAKE,
+            and_(Work.work_type == WORK_TYPE_MOCK_EXAM, Work.sent_to_retake == True),
+        ),
+    ).first()
+    if not work:
+        raise HTTPException(status_code=404, detail="Работа не найдена")
+
+    work.subject = subject
+    db.commit()
+    return JSONResponse({"ok": True, "work_id": work.id, "subject": subject})
+
 
 @router.post("/students/{student_id}/works/{work_id}/score")
 def score_work(
@@ -575,6 +716,8 @@ def score_work(
         text=work.comment if work.comment else None,
         work_id=work.id,
     ))
+    # Закрытие цикла Пробника после оценки финальной попытки
+    close_cycle_if_scored(db, work)
     db.commit()
     invalidate_unread(work.user_id)
     return RedirectResponse(
@@ -621,6 +764,7 @@ def send_mock_exam_to_retake(
         text=f"{comment_clean}\n\nМожно загрузить отработку в разделе «Отработка».",
         work_id=work.id,
     ))
+    close_cycle_if_scored(db, work)
     db.commit()
     invalidate_unread(work.user_id)
 
@@ -852,6 +996,13 @@ async def admin_upload_works(
         year = parsed_date.year
         work_score = int(round(score_value))
         work_created_at = msk_midnight(parsed_date)
+    elif work_type == WORK_TYPE_RETAKE:
+        if subject not in MOCK_SUBJECTS:
+            return JSONResponse({"ok": False, "error": "Укажите предмет для отработки: Рисунок или Композиция"}, status_code=400)
+        if month not in MONTHS:
+            return JSONResponse({"ok": False, "error": "Неверный месяц"}, status_code=400)
+        if year is None:
+            return JSONResponse({"ok": False, "error": "Укажите год"}, status_code=400)
     else:
         if month not in MONTHS:
             return JSONResponse({"ok": False, "error": "Неверный месяц"}, status_code=400)
@@ -889,6 +1040,26 @@ async def admin_upload_works(
         url = s3_service.upload_to_s3(path, compressed, "image/jpeg")
         return compressed, url
 
+    # Цикл Пробника: получить/создать для mock_exam/retake
+    cycle_id: int | None = None
+    attempt_no: int | None = None
+    if work_type in (WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE) and subject:
+        from app.services import exam_cycle as cycle_service
+        if work_type == WORK_TYPE_MOCK_EXAM:
+            cycle, _created = cycle_service.get_or_create_cycle_for_probnik(
+                db, user_id=student_id, subject=subject, ticket_id=None,
+            )
+        else:
+            cycle = cycle_service.find_latest_cycle(db, student_id, subject)
+            if cycle is None:
+                cycle, _created = cycle_service.get_or_create_cycle_for_probnik(
+                    db, user_id=student_id, subject=subject, ticket_id=None,
+                )
+        cycle_id = cycle.id
+        attempt_no = cycle_service.next_attempt_number(
+            db, cycle_id=cycle_id, work_type=work_type,
+        )
+
     for fname, raw_bytes in files_data:
         s3_path = _build_s3_path(fname)
         try:
@@ -904,7 +1075,7 @@ async def admin_upload_works(
                 filename=fname,
                 s3_url=s3_url,
                 s3_path=s3_path,
-                subject=subject if work_type == WORK_TYPE_MOCK_EXAM else None,
+                subject=subject if work_type in (WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE) else None,
                 tariff=tariff,
                 score=work_score,
                 scored_at=datetime.now(timezone.utc) if work_score is not None else None,
@@ -912,6 +1083,9 @@ async def admin_upload_works(
                 status="success",
                 uploaded_by_id=user["user_id"],
                 created_at=work_created_at or datetime.now(timezone.utc),
+                cycle_id=cycle_id,
+                is_final=True if cycle_id else None,
+                attempt_number=attempt_no,
             )
             db.add(work)
             db.add(UploadLog(

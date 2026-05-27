@@ -2,8 +2,6 @@
 {% block title %}Вход{% endblock %}
 {% block extra_styles %}
 <style>
-body { background: linear-gradient(160deg, #E8ECF6 0%, #DDE3F2 100%); }
-
 .login-wrap {
     display: flex;
     flex-direction: column;
@@ -12,257 +10,82 @@ body { background: linear-gradient(160deg, #E8ECF6 0%, #DDE3F2 100%); }
     gap: 20px;
 }
 
-/* ── Calculator card ── */
-.calc-card {
-    width: 100%;
-    max-width: 540px;
-    background: #fff;
-    border-radius: 24px;
-    box-shadow: 0 4px 32px rgba(30,45,107,0.11);
-    overflow: hidden;
-}
-
-.calc-header {
-    background: linear-gradient(135deg, #1E2D6B 0%, #3B4FC8 100%);
-    padding: 28px 32px 24px;
-    color: #fff;
-}
-.calc-header-label {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 1.2px;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.55);
-    margin-bottom: 6px;
-}
-.calc-header h1 {
-    font-size: 22px;
-    font-weight: 900;
-    letter-spacing: -0.4px;
-    line-height: 1.2;
-}
-.calc-header p {
-    font-size: 13px;
-    color: rgba(255,255,255,0.6);
-    margin-top: 6px;
-}
-
-.calc-body {
-    padding: 28px 32px;
-}
-
-.calc-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 14px;
-    margin-bottom: 14px;
-}
-
-.calc-field label {
-    display: block;
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: var(--muted);
-    margin-bottom: 8px;
-}
-
-.calc-select {
-    width: 100%;
-    padding: 12px 16px;
-    background: #F4F6FB;
-    border: 1.5px solid var(--border);
-    border-radius: 12px;
-    color: var(--text);
-    font-size: 14px;
-    font-weight: 700;
-    font-family: 'Montserrat', sans-serif;
-    cursor: pointer;
-    outline: none;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2394A3B8' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 14px center;
-    transition: border-color 0.2s, box-shadow 0.2s;
-}
-.calc-select:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
-}
-
-/* Months row — pill buttons */
-.months-pills {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-.month-pill {
-    flex: 1;
-    min-width: 44px;
-    padding: 11px 8px;
-    background: #F4F6FB;
-    border: 1.5px solid var(--border);
-    border-radius: 12px;
-    text-align: center;
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--muted);
-    cursor: pointer;
-    transition: all 0.18s;
-    user-select: none;
-}
-.month-pill:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: var(--accent-soft);
-}
-.month-pill.active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
-    box-shadow: 0 4px 14px rgba(37,99,235,0.28);
-}
-
-/* Result block */
-.calc-result {
-    margin-top: 20px;
-    background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
-    border: 1.5px solid rgba(37,99,235,0.18);
-    border-radius: 16px;
-    padding: 20px 24px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-}
-.calc-result-label {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--muted);
-}
-.calc-result-detail {
-    font-size: 11px;
-    color: var(--dim);
-    margin-top: 3px;
-}
-.calc-result-price {
-    font-size: 30px;
-    font-weight: 900;
-    color: var(--accent);
-    letter-spacing: -1px;
-    white-space: nowrap;
-}
-.calc-result-price span {
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--accent-mid);
-}
-
-.calc-note {
-    margin-top: 14px;
-    font-size: 12px;
-    color: var(--dim);
-    text-align: center;
-    line-height: 1.5;
-}
-
 /* ── Login card ── */
 .login-card {
     width: 100%;
     max-width: 540px;
-    background: #fff;
-    border-radius: 24px;
-    box-shadow: 0 4px 32px rgba(30,45,107,0.11);
+    background: var(--surface);
+    border-radius: var(--r-xl);
+    box-shadow: var(--sh-md);
+    border: 1px solid var(--line);
     padding: 28px 32px;
 }
-
-.login-card-inner {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-}
-
+.login-card-inner { display: flex; align-items: center; gap: 20px; }
 .login-avatar {
-    width: 56px;
-    height: 56px;
+    width: 56px; height: 56px;
     flex-shrink: 0;
-    border-radius: 16px;
-    background: var(--accent-soft);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    border-radius: var(--r-md);
+    background: var(--blue-soft);
+    display: flex; align-items: center; justify-content: center;
 }
-
 .login-text h2 {
-    font-size: 16px;
+    font-family: var(--font-display);
+    font-size: 17px;
     font-weight: 700;
-    color: var(--text);
+    color: var(--ink);
+    letter-spacing: -0.015em;
     margin-bottom: 4px;
 }
-.login-text p {
-    font-size: 13px;
-    color: var(--muted);
-    line-height: 1.5;
-}
+.login-text p { font-size: 13px; color: var(--muted); line-height: 1.5; }
 
 .vk-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
     margin-top: 20px;
     background: #0077FF;
     color: #fff;
-    padding: 16px 28px;
-    border-radius: 14px;
-    font-size: 15px;
-    font-weight: 700;
+    padding: 15px 28px;
+    border-radius: var(--r-pill);
+    font-size: 15px; font-weight: 700;
     text-decoration: none;
-    transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
-    box-shadow: 0 4px 16px rgba(0,119,255,0.28);
+    transition: filter 0.15s, transform 0.15s, box-shadow 0.15s;
+    box-shadow: 0 6px 20px rgba(0,119,255,0.30);
 }
-.vk-btn:hover {
-    background: #0063DB;
-    color: #fff;
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0,119,255,0.38);
-    opacity: 1;
-}
+.vk-btn:hover { filter: brightness(1.08); transform: translateY(-1px); color: #fff; opacity: 1; box-shadow: 0 10px 28px rgba(0,119,255,0.38); }
 
 .tg-support-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
     margin-top: 10px;
-    padding: 13px 28px;
-    border-radius: 14px;
-    font-size: 14px;
-    font-weight: 600;
+    padding: 12px 28px;
+    border-radius: var(--r-pill);
+    font-size: 14px; font-weight: 600;
     text-decoration: none;
     color: var(--muted);
-    background: var(--bg2);
-    border: 1.5px solid var(--border);
-    transition: color 0.18s, border-color 0.18s, background 0.18s;
+    background: transparent;
+    border: 1.5px solid var(--line);
+    transition: color 0.15s, border-color 0.15s;
 }
-.tg-support-btn:hover {
-    color: #0088cc;
-    border-color: #0088cc;
-    background: #f0f9ff;
-    opacity: 1;
+.tg-support-btn:hover { color: #0088cc; border-color: #0088cc; opacity: 1; }
+
+.staff-login-link { font-size: 13px; color: var(--dim); text-decoration: none; transition: color 0.15s; }
+.staff-login-link:hover, .staff-login-link:focus-visible { color: var(--blue); }
+
+{% if settings.course_calculator_all_roles %}
+.login-calculator {
+    width: 100%;
+    max-width: 980px;
 }
 
-.staff-login-link {
-    font-size: 13px; color: var(--dim);
-    text-decoration: none; transition: color 0.15s;
+.login-calculator-title {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--ink);
+    text-align: center;
+    margin: 10px 0 16px;
 }
-.staff-login-link:hover, .staff-login-link:focus-visible { color: var(--accent); }
+{% endif %}
 
 @media (max-width: 480px) {
-    .calc-row { grid-template-columns: 1fr; }
-    .calc-header { padding: 22px 22px 20px; }
-    .calc-body { padding: 22px; }
     .login-card { padding: 22px; }
     .login-card-inner { flex-direction: column; text-align: center; }
 }
@@ -270,61 +93,6 @@ body { background: linear-gradient(160deg, #E8ECF6 0%, #DDE3F2 100%); }
 {% endblock %}
 {% block content %}
 <div class="login-wrap">
-
-    <!-- ═══ CALCULATOR ═══ -->
-    <div class="calc-card">
-        <div class="calc-header">
-            <div class="calc-header-label">Калькулятор</div>
-            <h1>Рассчитайте стоимость обучения</h1>
-            <p>Выберите тариф и срок — узнайте итоговую цену</p>
-        </div>
-
-        <div class="calc-body">
-            <div class="calc-row">
-                <div class="calc-field">
-                    <label>Тариф</label>
-                    <select class="calc-select" id="calcTariff" onchange="calcUpdate()">
-                        <option value="0">Выберите тариф</option>
-                        <option value="4500">Я с вами</option>
-                        <option value="7500">Уверенный</option>
-                        <option value="12000">Максимум</option>
-                    </select>
-                </div>
-                <div class="calc-field">
-                    <label>Направление</label>
-                    <select class="calc-select" id="calcDir" onchange="calcUpdate()">
-                        <option value="1">Фотография</option>
-                        <option value="1.1">Видеосъёмка</option>
-                        <option value="1.2">Ретушь</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="calc-field">
-                <label>Количество месяцев</label>
-                <div class="months-pills" id="monthsPills">
-                    <div class="month-pill" data-val="1" onclick="selectMonth(this)">1</div>
-                    <div class="month-pill" data-val="2" onclick="selectMonth(this)">2</div>
-                    <div class="month-pill active" data-val="3" onclick="selectMonth(this)">3</div>
-                    <div class="month-pill" data-val="4" onclick="selectMonth(this)">4</div>
-                    <div class="month-pill" data-val="6" onclick="selectMonth(this)">6</div>
-                    <div class="month-pill" data-val="12" onclick="selectMonth(this)">12</div>
-                </div>
-            </div>
-
-            <div class="calc-result">
-                <div>
-                    <div class="calc-result-label">Итоговая стоимость</div>
-                    <div class="calc-result-detail" id="calcDetail">Выберите тариф</div>
-                </div>
-                <div class="calc-result-price" id="calcPrice">— <span>₽</span></div>
-            </div>
-
-            <div class="calc-note">
-                Скидка 10% при оплате от 3 месяцев · 15% от 6 месяцев
-            </div>
-        </div>
-    </div>
 
     <!-- ═══ LOGIN ═══ -->
     <div class="login-card">
@@ -360,52 +128,20 @@ body { background: linear-gradient(160deg, #E8ECF6 0%, #DDE3F2 100%); }
             Написать в поддержку
         </a>
 
-        <div style="text-align:center;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <div style="text-align:center;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
             <a href="/auth/staff/login" class="staff-login-link">
                 Войти как сотрудник →
             </a>
         </div>
     </div>
 
+    {% if settings.course_calculator_all_roles %}
+    <section class="login-calculator" aria-label="Калькулятор стоимости курса">
+        <h2 class="login-calculator-title">Стоимость летнего курса</h2>
+        {% include "course_calculator.html" %}
+    </section>
+    {% endif %}
+
 </div>
 
-<script>
-let selectedMonths = 3;
-
-const DISCOUNTS = { 1: 0, 2: 0, 3: 0.10, 4: 0.10, 6: 0.15, 12: 0.15 };
-
-function selectMonth(el) {
-    document.querySelectorAll('.month-pill').forEach(p => p.classList.remove('active'));
-    el.classList.add('active');
-    selectedMonths = parseInt(el.dataset.val);
-    calcUpdate();
-}
-
-function calcUpdate() {
-    const base = parseInt(document.getElementById('calcTariff').value) || 0;
-    const dir  = parseFloat(document.getElementById('calcDir').value) || 1;
-    const disc = DISCOUNTS[selectedMonths] || 0;
-    const priceEl  = document.getElementById('calcPrice');
-    const detailEl = document.getElementById('calcDetail');
-
-    if (!base) {
-        priceEl.innerHTML  = '— <span>₽</span>';
-        detailEl.textContent = 'Выберите тариф';
-        return;
-    }
-
-    const monthly = Math.round(base * dir);
-    const total   = Math.round(monthly * selectedMonths * (1 - disc));
-    const fmt     = n => n.toLocaleString('ru-RU');
-
-    priceEl.innerHTML = fmt(total) + ' <span>₽</span>';
-
-    if (disc > 0) {
-        const saved = Math.round(monthly * selectedMonths * disc);
-        detailEl.textContent = fmt(monthly) + ' ₽/мес · экономия ' + fmt(saved) + ' ₽';
-    } else {
-        detailEl.textContent = fmt(monthly) + ' ₽ × ' + selectedMonths + ' мес';
-    }
-}
-</script>
 {% endblock %}

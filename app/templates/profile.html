@@ -1,10 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Профиль{% endblock %}
-{% block extra_styles %}
-<style>
-body { background: linear-gradient(160deg, #EEEEF6 0%, #E0E0F0 100%); }
-</style>
-{% endblock %}
+{% block extra_styles %}{% endblock %}
 {% block content %}
 <div style="max-width:520px;margin:0 auto">
     <div style="margin-bottom:28px">
@@ -24,7 +20,7 @@ body { background: linear-gradient(160deg, #EEEEF6 0%, #E0E0F0 100%); }
         {% if user.photo_url %}
         <div style="text-align:center;margin-bottom:28px">
             <img src="{{ user.photo_url }}" alt="Фото"
-                 style="width:88px;height:88px;border-radius:50%;object-fit:cover;border:3px solid var(--border)">
+                 style="width:88px;height:88px;border-radius:50%;object-fit:cover;border:3px solid var(--line)">
             <p style="color:var(--dim);font-size:12px;margin-top:8px">Фото из ВКонтакте</p>
         </div>
         {% endif %}
@@ -121,7 +117,7 @@ body { background: linear-gradient(160deg, #EEEEF6 0%, #E0E0F0 100%); }
                 </label>
                 <div id="past-tariffs-wrap"
                      style="display:flex;flex-direction:column;gap:10px;padding:16px;
-                            background:var(--bg2);border:1.5px solid var(--border);
+                            background:var(--surface-2);border:1.5px solid var(--line);
                             border-radius:10px;min-height:60px">
                     {% set current = (form.tariff if form and form.tariff else user.tariff) or '' %}
                     {% set checked = (form.past_tariffs if form and form.past_tariffs is defined else
@@ -131,11 +127,11 @@ body { background: linear-gradient(160deg, #EEEEF6 0%, #E0E0F0 100%); }
                            style="display:{% if t == current %}none{% else %}flex{% endif %};
                                   align-items:center;gap:10px;cursor:pointer;
                                   padding:10px 14px;border-radius:8px;
-                                  border:1.5px solid var(--border);background:var(--card);
+                                  border:1.5px solid var(--line);background:var(--surface);
                                   transition:border-color 0.2s,background 0.2s">
                         <input type="checkbox" name="past_tariffs" value="{{ t }}"
                                {% if t in checked %}checked{% endif %}
-                               style="width:17px;height:17px;accent-color:var(--accent);cursor:pointer">
+                               style="width:17px;height:17px;accent-color:var(--blue);cursor:pointer">
                         <span style="font-size:14px;font-weight:500">{{ t }}</span>
                     </label>
                     {% endfor %}
@@ -189,19 +185,19 @@ document.addEventListener('change', function(e) {
     if (e.target.name === 'past_tariffs') {
         const label = e.target.closest('label');
         if (e.target.checked) {
-            label.style.borderColor = 'var(--accent)';
-            label.style.background = 'var(--accent-soft)';
+            label.style.borderColor = 'var(--blue)';
+            label.style.background = 'var(--blue-soft)';
         } else {
-            label.style.borderColor = 'var(--border)';
-            label.style.background = 'var(--card)';
+            label.style.borderColor = 'var(--line)';
+            label.style.background = 'var(--surface)';
         }
     }
 });
 
 document.querySelectorAll('input[name="past_tariffs"]:checked').forEach(function(cb) {
     const label = cb.closest('label');
-    label.style.borderColor = 'var(--accent)';
-    label.style.background = 'var(--accent-soft)';
+    label.style.borderColor = 'var(--blue)';
+    label.style.background = 'var(--blue-soft)';
 });
 
 document.querySelector('form').addEventListener('submit', function() {

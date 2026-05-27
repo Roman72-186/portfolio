@@ -45,22 +45,55 @@ def _get_user_by_id(db: DBSession, user_id: int) -> User | None:
     return db.query(User).filter(User.id == user_id).first()
 
 
+COHORT_TAGS = {"may", "june", "july", "august"}
+
+
+def _normalize_tg_username(raw: str) -> str:
+    return raw.strip().lstrip("@").lower()
+
+
+def _split_tg_usernames(raw: str) -> list[str]:
+    seen: set[str] = set()
+    usernames: list[str] = []
+    for item in raw.replace(",", "\n").replace(";", "\n").splitlines():
+        username = _normalize_tg_username(item)
+        if username and username not in seen:
+            usernames.append(username)
+            seen.add(username)
+    return usernames
+
+
 def _render_admin_users(
     request: Request,
     user: dict,
     db: DBSession,
     *,
+    q: str = "",
     issued_link_user_id: int | None = None,
     issued_link: str | None = None,
     issued_link_expires_at=None,
     page_error: str | None = None,
     new_staff_creds: dict | None = None,
+    bulk_result: dict | None = None,
 ):
-    # Limit: max 1000 recent users (защита от медленной выборки при большом кол-ве юзеров)
-    users = db.query(User).order_by(User.created_at.desc()).limit(1000).all()
+    all_users = db.query(User).order_by(User.created_at.desc()).limit(1000).all()
+
+    q_clean = q.strip().lstrip("@").lower()
+    if q_clean:
+        # tg_username расшифровывается автоматически при чтении — фильтруем в Python
+        users = [
+            u for u in all_users
+            if q_clean in (u.name or "").lower()
+            or q_clean in (u.first_name or "").lower()
+            or q_clean in (u.last_name or "").lower()
+            or q_clean in (u.staff_login or "").lower()
+            or (u.tg_username and q_clean in u.tg_username.lower())
+        ]
+    else:
+        users = all_users
+
     roles = db.query(Role).order_by(Role.rank).all()
     curator_role = db.query(Role).filter(Role.name == "куратор").first()
-    # Limit: max 200 curators
     curators = (
         db.query(User).filter(User.role_id == curator_role.id, User.is_active == True).limit(200).all()
         if curator_role else []
@@ -69,6 +102,7 @@ def _render_admin_users(
         "request": request,
         "user": user,
         "users": users,
+        "q": q,
         "tariffs": TARIFF_LABELS,
         "tariff_display": TARIFF_DISPLAY,
         "roles": roles,
@@ -79,6 +113,7 @@ def _render_admin_users(
         "issued_link_expires_at": issued_link_expires_at,
         "page_error": page_error,
         "new_staff_creds": new_staff_creds,
+        "bulk_result": bulk_result,
     })
 
 
@@ -87,8 +122,9 @@ def admin_users(
     request: Request,
     user: Annotated[dict, Depends(require_admin)],
     db: Annotated[DBSession, Depends(get_db)],
+    q: str = "",
 ):
-    return _render_admin_users(request, user, db)
+    return _render_admin_users(request, user, db, q=q)
 
 
 def _build_migration_path(work: Work, vk_id: int, new_tariff: str) -> str | None:
@@ -375,6 +411,86 @@ def assign_curator(
         target_user.curator_id = None
     db.commit()
     return RedirectResponse("/admin/users", status_code=302)
+
+
+@router.post("/users/assign-curator-bulk", response_class=HTMLResponse)
+def assign_curator_bulk(
+    request: Request,
+    user: Annotated[dict, Depends(require_admin)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    curator_id: int = Form(...),
+    student_usernames: str = Form(""),
+    cohort_tag: str = Form(""),
+):
+    if user.get("role_rank", 0) < 5:
+        return _render_admin_users(
+            request,
+            user,
+            db,
+            page_error="Массовая привязка доступна только суперадмину.",
+        )
+
+    cohort_tag = cohort_tag.strip().lower()
+    if cohort_tag and cohort_tag not in COHORT_TAGS:
+        return _render_admin_users(request, user, db, page_error="Неверная метка группы.")
+
+    curator = (
+        db.query(User)
+        .join(Role, User.role_id == Role.id)
+        .filter(User.id == curator_id, Role.rank == 2, User.is_active == True, User.deleted_at.is_(None))  # noqa: E712
+        .first()
+    )
+    if not curator:
+        return _render_admin_users(request, user, db, page_error="Куратор не найден.")
+
+    usernames = _split_tg_usernames(student_usernames)
+    result = {
+        "curator_name": f"{curator.last_name or ''} {curator.first_name or curator.name}".strip(),
+        "requested": len(usernames),
+        "matched": 0,
+        "assigned": 0,
+        "unchanged": 0,
+        "not_found": [],
+        "cohort_tag": cohort_tag,
+    }
+    if not usernames:
+        result["error"] = "Добавьте хотя бы один Telegram username."
+        return _render_admin_users(request, user, db, bulk_result=result)
+
+    wanted = set(usernames)
+    students = (
+        db.query(User)
+        .join(Role, User.role_id == Role.id)
+        .filter(Role.rank == 1, User.is_active == True, User.deleted_at.is_(None))  # noqa: E712
+        .all()
+    )
+    by_username = {
+        _normalize_tg_username(student.tg_username or ""): student
+        for student in students
+        if _normalize_tg_username(student.tg_username or "") in wanted
+    }
+
+    for username in usernames:
+        student = by_username.get(username)
+        if not student:
+            result["not_found"].append(username)
+            continue
+        result["matched"] += 1
+        if student.curator_id == curator.id:
+            result["unchanged"] += 1
+        else:
+            student.curator_id = curator.id
+            result["assigned"] += 1
+        if cohort_tag:
+            student.cohort_tag = cohort_tag
+
+    if result["assigned"] or (cohort_tag and result["matched"]):
+        db.commit()
+    else:
+        db.rollback()
+
+    return _render_admin_users(request, user, db, bulk_result=result)
 
 
 @router.post("/works/{work_id}/score")

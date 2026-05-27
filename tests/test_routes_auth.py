@@ -383,6 +383,28 @@ def test_3dlab_enter_redirects_with_token(auth_client, db):
     assert "token=" in location
 
 
+def test_3dlab_enter_admin_redirects_without_sso_token(admin_client):
+    client, _ = admin_client
+    with patch.object(_app_settings, "lab3d_url", "https://3dlab.example.com"):
+        resp = client.get("/cabinet/3dlab/enter", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "https://3dlab.example.com"
+
+
+def test_embedded_3dlab_available_for_student(auth_client):
+    client, _ = auth_client
+    resp = client.get("/3dlab", follow_redirects=False)
+    assert resp.status_code == 200
+    assert b"/static/3dlab/js/app.js" in resp.content
+
+
+def test_embedded_3dlab_available_for_admin(admin_client):
+    client, _ = admin_client
+    resp = client.get("/3dlab", follow_redirects=False)
+    assert resp.status_code == 200
+    assert b"/static/3dlab/js/app.js" in resp.content
+
+
 def test_3dlab_enter_not_group_member_redirects_denied(client, db, user_factory, session_factory):
     user = user_factory(is_group_member=False)
     sess = session_factory(user)

@@ -1,117 +1,439 @@
 {% extends "base.html" %}
-{% block title %}Моя галерея{% endblock %}
+{% block title %}Галерея работ{% endblock %}
+{% block extra_styles %}
+<style>
+.gallery-wrap { max-width: 640px; margin: 0 auto; }
+@media (min-width: 1024px) { .gallery-wrap { max-width: 960px; } }
+
+/* Filter tabs */
+.filter-tabs {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px;
+}
+.filter-tab {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 14px; border-radius: var(--r-pill);
+    border: 1px solid var(--line); background: var(--surface);
+    font-size: 13px; font-weight: 700; color: var(--dim);
+    cursor: pointer; font-family: inherit; transition: all 0.15s;
+    -webkit-tap-highlight-color: transparent;
+}
+.filter-tab:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-soft); }
+.filter-tab.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+.filter-tab .tab-count {
+    font-size: 11px; font-weight: 700; opacity: 0.75;
+    background: rgba(255,255,255,0.2); border-radius: 20px; padding: 1px 6px;
+}
+.filter-tab:not(.active) .tab-count { background: var(--surface-2); color: var(--dim); opacity: 1; }
+
+/* Section */
+.gallery-section { margin-bottom: 32px; }
+.gallery-section.hidden { display: none; }
+.section-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 10px;
+}
+
+/* Month accordion */
+.month-item {
+    border-radius: var(--r-md); border: 1px solid var(--line);
+    background: var(--surface); margin-bottom: 8px; overflow: hidden;
+}
+.month-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; cursor: pointer; user-select: none;
+    width: 100%; text-align: left; background: none; border: none;
+    font-family: inherit; transition: background 0.15s;
+}
+.month-header:hover { background: var(--surface-2); }
+.month-header-left { display: flex; align-items: center; gap: 10px; }
+.month-name { font-size: 14px; font-weight: 700; color: var(--ink); text-transform: capitalize; }
+.month-count { font-size: 12px; color: var(--dim); }
+.month-chevron { font-size: 10px; color: var(--dim); transition: transform 0.2s; }
+.month-item.open .month-chevron { transform: rotate(180deg); }
+.month-body { display: none; padding: 0 16px 14px; }
+.month-item.open .month-body { display: block; }
+
+/* Photo grid */
+.works-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+    margin-bottom: 10px;
+}
+@media (min-width: 480px) { .works-grid { grid-template-columns: repeat(4, 1fr); } }
+@media (min-width: 1024px) { .works-grid { grid-template-columns: repeat(6, 1fr); } }
+.work-cell { position: relative; border-radius: var(--r-sm); overflow: hidden; }
+.work-cell img {
+    width: 100%; aspect-ratio: 1; object-fit: cover; display: block;
+    border: 1px solid var(--line); cursor: zoom-in;
+    transition: opacity 0.2s;
+}
+.work-cell img:hover { opacity: 0.88; }
+.work-no-photo {
+    aspect-ratio: 1; background: var(--surface); border-radius: var(--r-sm);
+    border: 1px solid var(--line); display: flex; align-items: center;
+    justify-content: center; color: var(--dim); font-size: 11px;
+}
+.score-badge {
+    position: absolute; bottom: 4px; right: 4px;
+    background: rgba(0,0,0,0.62); color: #fff;
+    font-size: 10px; font-weight: 700; border-radius: 6px; padding: 2px 6px;
+    pointer-events: none;
+}
+
+/* Pagination */
+.pagination {
+    display: flex; align-items: center; justify-content: space-between; margin-top: 2px;
+}
+.pagination button {
+    font-size: 12px; font-weight: 700; color: var(--blue);
+    background: none; border: 1px solid var(--line); border-radius: var(--r-pill);
+    padding: 4px 12px; cursor: pointer; font-family: inherit;
+    transition: border-color 0.15s;
+}
+.pagination button:disabled { color: var(--dim); cursor: default; }
+.pagination button:not(:disabled):hover { border-color: var(--blue); }
+.pagination-info { font-size: 11px; color: var(--dim); }
+
+/* Empty state */
+.empty-mini {
+    padding: 24px 0; text-align: center; color: var(--dim); font-size: 13px;
+}
+</style>
+{% endblock %}
 {% block content %}
-<div>
-    <!-- Header -->
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:32px;flex-wrap:wrap;gap:12px">
-        <div>
-            <h1 style="font-size:28px;font-weight:700;margin-bottom:6px" class="text-gradient">Моя галерея</h1>
-            <p style="color:var(--muted);font-size:15px">
-                {% if total_uploaded %}
-                    Загружено: <span style="color:var(--accent)">{{ total_uploaded }}</span> фото
-                    {% if albums %} · <span style="color:var(--dim)">{{ albums|length }} мес.</span>{% endif %}
-                {% else %}
-                    Фото пока нет
-                {% endif %}
-            </p>
-        </div>
-        <div style="display:flex;gap:12px;align-items:center">
-            <a href="/upload" style="color:var(--accent);font-size:14px;font-weight:500">+ Загрузить</a>
-            <a href="/cabinet" style="color:var(--muted);font-size:14px">← Кабинет</a>
-        </div>
+<div class="gallery-wrap">
+
+    <div style="margin-bottom:20px">
+        <h1 style="font-size:26px;font-weight:900;letter-spacing:-0.5px" class="text-gradient">
+            Галерея работ
+        </h1>
+        <p style="color:var(--muted);font-size:14px;margin-top:6px">
+            {% if total %}Всего {{ total }} фото{% else %}Фото пока нет{% endif %}
+        </p>
     </div>
 
-    {% if not albums and not drive_photos %}
-    <!-- Empty state -->
-    <div class="card" style="text-align:center;padding:56px 32px">
-        <div style="font-size:52px;margin-bottom:20px">🖼</div>
-        <div class="card-title" style="font-size:20px;margin-bottom:8px">Фото пока нет</div>
-        <div class="card-desc" style="margin-bottom:24px">
-            Загрузите первые фото — они появятся здесь
-        </div>
-        <a href="/upload" class="btn-primary" style="max-width:240px;display:inline-block;padding:12px 28px">
-            Загрузить фото
-        </a>
+    <!-- Filter tabs -->
+    <div class="filter-tabs" role="tablist" aria-label="Фильтр по типу">
+        <button class="filter-tab active" onclick="filterGallery('all', this)"
+                role="tab" aria-selected="true" aria-controls="section-before section-after section-mock section-retake">
+            Все <span class="tab-count">{{ total }}</span>
+        </button>
+        {% if before_count %}
+        <button class="filter-tab" onclick="filterGallery('before', this)"
+                role="tab" aria-selected="false" aria-controls="section-before">
+            До <span class="tab-count">{{ before_count }}</span>
+        </button>
+        {% endif %}
+        {% if after_count %}
+        <button class="filter-tab" onclick="filterGallery('after', this)"
+                role="tab" aria-selected="false" aria-controls="section-after">
+            После <span class="tab-count">{{ after_count }}</span>
+        </button>
+        {% endif %}
+        {% if mock_count %}
+        <button class="filter-tab" onclick="filterGallery('mock', this)"
+                role="tab" aria-selected="false" aria-controls="section-mock">
+            Пробники <span class="tab-count">{{ mock_count }}</span>
+        </button>
+        {% endif %}
+        {% if retake_count %}
+        <button class="filter-tab" onclick="filterGallery('retake', this)"
+                role="tab" aria-selected="false" aria-controls="section-retake">
+            Отработки <span class="tab-count">{{ retake_count }}</span>
+        </button>
+        {% endif %}
     </div>
 
-    {% elif drive_photos %}
-    <!-- Drive photos grid with lightbox -->
-    <div style="margin-bottom:24px">
-        <div style="font-size:14px;color:var(--muted);margin-bottom:16px">
-            {{ drive_photos|length }} фото из Google Drive
+    {% if not total %}
+    <div class="card" style="text-align:center;padding:48px 24px">
+        <div style="font-size:44px;margin-bottom:16px">
+            <svg class="svg-icon" style="width:48px;height:48px" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+            </svg>
         </div>
-        <div class="photo-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
-            {% for photo in drive_photos %}
-            <button type="button" style="position:relative;cursor:pointer;background:none;border:none;padding:0;display:block;width:100%" aria-label="Открыть фото {{ photo.name }}" onclick="openLightbox('{{ photo.view_url }}', '{{ photo.name }}')">
-                {% if photo.thumbnail_url %}
-                <img
-                    src="/cabinet/gallery/thumb/{{ photo.id }}"
-                    alt="{{ photo.name }}"
-                    loading="lazy"
-                    style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;border:1px solid var(--border);transition:opacity 0.2s"
-                    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
-                >
-                {% endif %}
-                <div style="display:{% if not photo.thumbnail_url %}flex{% else %}none{% endif %};width:100%;aspect-ratio:1;border-radius:10px;border:1px solid var(--border);background:var(--card);align-items:center;justify-content:center;font-size:32px">
-                    📷
-                </div>
-            </button>
-            {% endfor %}
-        </div>
+        <div style="font-size:17px;font-weight:700;margin-bottom:8px">Работ пока нет</div>
+        <div style="color:var(--dim);font-size:14px;margin-bottom:20px">Загрузите первые фото — они появятся здесь</div>
+        <a href="/upload" class="btn-primary" style="max-width:220px;display:inline-block;padding:11px 24px">Загрузить фото</a>
     </div>
-
     {% else %}
-    <!-- Album cards from UploadLog -->
-    <div class="grid-2">
-        {% for album in albums %}
-        <div class="card" style="display:flex;align-items:center;gap:16px">
-            <div style="font-size:36px;flex-shrink:0">📁</div>
-            <div style="flex:1;min-width:0">
-                <div style="font-weight:700;font-size:16px;margin-bottom:4px;text-transform:capitalize">
-                    {{ album.month }}
+
+    <!-- До обучения -->
+    <div class="gallery-section" id="section-before" data-filter="before">
+        <div class="section-label">До обучения</div>
+        {% if before_groups %}
+            {% for group in before_groups %}
+            {% set gid = "bf-" ~ loop.index %}
+            <div class="month-item" data-group-id="{{ gid }}">
+                <button class="month-header" type="button"
+                        aria-expanded="false" aria-controls="body-{{ gid }}"
+                        onclick="toggleGroup(this.parentElement)">
+                    <div class="month-header-left">
+                        <span class="month-name">{{ group.year }} — {{ group.month | capitalize }}</span>
+                        <span class="month-count">{{ group.total }} фото</span>
+                    </div>
+                    <span class="month-chevron">▼</span>
+                </button>
+                <div class="month-body" id="body-{{ gid }}">
+                    <div class="works-grid" id="grid-{{ gid }}" data-gallery="{{ gid }}">
+                        {% for w in group.works %}
+                        {% set thumb = w.s3_url or (drive_thumbs.get(w.drive_file_id, '') if w.drive_file_id else '') %}
+                        <div class="work-cell" data-page-index="{{ loop.index0 }}">
+                            {% if thumb %}
+                            <img src="{{ thumb }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)"
+                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                            {% endif %}
+                            <div class="work-no-photo" style="display:{% if not thumb %}flex{% else %}none{% endif %}">фото</div>
+                            {% if w.score is not none %}
+                            <div class="score-badge">{{ w.score | int }}</div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% if group.total > page_size %}
+                    <div class="pagination" id="pag-{{ gid }}">
+                        <button onclick="prevPage('{{ gid }}')" id="prev-{{ gid }}" disabled>‹ Пред.</button>
+                        <span class="pagination-info" id="info-{{ gid }}">Фото 1–{{ [page_size, group.total] | min }} из {{ group.total }}</span>
+                        <button onclick="nextPage('{{ gid }}', {{ group.total }})" id="next-{{ gid }}">След. ›</button>
+                    </div>
+                    {% endif %}
                 </div>
-                <div style="color:var(--muted);font-size:13px;margin-bottom:8px">
-                    {{ album.count }} фото · {{ album.last_upload.strftime('%d.%m.%Y') }}
-                </div>
-                <span class="badge badge-after">Загружено</span>
             </div>
-        </div>
-        {% endfor %}
+            {% endfor %}
+        {% else %}
+        <div class="empty-mini">Нет фотографий «до обучения»</div>
+        {% endif %}
     </div>
 
-    <!-- Drive not configured note -->
-    <div style="margin-top:24px;padding:16px 20px;border:1px solid var(--border);border-radius:12px;background:var(--accent-soft)">
-        <div style="font-size:14px;color:var(--muted)">
-            💡 Для просмотра фото в галерее необходимо подключить Google Drive.
-            Обратитесь к администратору.
-        </div>
+    <!-- После обучения -->
+    <div class="gallery-section" id="section-after" data-filter="after">
+        <div class="section-label">После обучения</div>
+        {% if after_groups %}
+            {% for group in after_groups %}
+            {% set gid = "af-" ~ loop.index %}
+            <div class="month-item" data-group-id="{{ gid }}">
+                <button class="month-header" type="button"
+                        aria-expanded="false" aria-controls="body-{{ gid }}"
+                        onclick="toggleGroup(this.parentElement)">
+                    <div class="month-header-left">
+                        <span class="month-name">{{ group.year }} — {{ group.month | capitalize }}</span>
+                        <span class="month-count">{{ group.total }} фото</span>
+                    </div>
+                    <span class="month-chevron">▼</span>
+                </button>
+                <div class="month-body" id="body-{{ gid }}">
+                    <div class="works-grid" id="grid-{{ gid }}" data-gallery="{{ gid }}">
+                        {% for w in group.works %}
+                        {% set thumb = w.s3_url or (drive_thumbs.get(w.drive_file_id, '') if w.drive_file_id else '') %}
+                        <div class="work-cell" data-page-index="{{ loop.index0 }}">
+                            {% if thumb %}
+                            <img src="{{ thumb }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)"
+                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                            {% endif %}
+                            <div class="work-no-photo" style="display:{% if not thumb %}flex{% else %}none{% endif %}">фото</div>
+                            {% if w.score is not none %}
+                            <div class="score-badge">{{ w.score | int }}</div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% if group.total > page_size %}
+                    <div class="pagination" id="pag-{{ gid }}">
+                        <button onclick="prevPage('{{ gid }}')" id="prev-{{ gid }}" disabled>‹ Пред.</button>
+                        <span class="pagination-info" id="info-{{ gid }}">Фото 1–{{ [page_size, group.total] | min }} из {{ group.total }}</span>
+                        <button onclick="nextPage('{{ gid }}', {{ group.total }})" id="next-{{ gid }}">След. ›</button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+        <div class="empty-mini">Нет фотографий «после обучения»</div>
+        {% endif %}
     </div>
+
+    <!-- Пробники -->
+    <div class="gallery-section" id="section-mock" data-filter="mock">
+        <div class="section-label">Пробные экзамены</div>
+        {% if mock_groups %}
+            {% for group in mock_groups %}
+            {% set gid = "mk-" ~ loop.index %}
+            <div class="month-item" data-group-id="{{ gid }}">
+                <button class="month-header" type="button"
+                        aria-expanded="false" aria-controls="body-{{ gid }}"
+                        onclick="toggleGroup(this.parentElement)">
+                    <div class="month-header-left">
+                        <span class="month-name">{{ group.year }} — {{ group.month | capitalize }}</span>
+                        <span class="month-count">{{ group.total }} фото</span>
+                    </div>
+                    <span class="month-chevron">▼</span>
+                </button>
+                <div class="month-body" id="body-{{ gid }}">
+                    <div class="works-grid" id="grid-{{ gid }}" data-gallery="{{ gid }}">
+                        {% for w in group.works %}
+                        {% set thumb = w.s3_url or '' %}
+                        <div class="work-cell" data-page-index="{{ loop.index0 }}">
+                            {% if thumb %}
+                            <img src="{{ thumb }}" alt="{{ w.subject or w.filename }}" loading="lazy" onclick="openGallery(this)"
+                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                            {% endif %}
+                            <div class="work-no-photo" style="display:{% if not thumb %}flex{% else %}none{% endif %}">фото</div>
+                            {% if w.score is not none %}
+                            <div class="score-badge">{{ w.score | int }}</div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% if group.total > page_size %}
+                    <div class="pagination" id="pag-{{ gid }}">
+                        <button onclick="prevPage('{{ gid }}')" id="prev-{{ gid }}" disabled>‹ Пред.</button>
+                        <span class="pagination-info" id="info-{{ gid }}">Фото 1–{{ [page_size, group.total] | min }} из {{ group.total }}</span>
+                        <button onclick="nextPage('{{ gid }}', {{ group.total }})" id="next-{{ gid }}">След. ›</button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+        <div class="empty-mini">Нет фотографий пробных экзаменов</div>
+        {% endif %}
+    </div>
+
+    <!-- Отработки -->
+    <div class="gallery-section" id="section-retake" data-filter="retake">
+        <div class="section-label">Отработки</div>
+        {% if retake_groups %}
+            {% for group in retake_groups %}
+            {% set gid = "rt-" ~ loop.index %}
+            <div class="month-item" data-group-id="{{ gid }}">
+                <button class="month-header" type="button"
+                        aria-expanded="false" aria-controls="body-{{ gid }}"
+                        onclick="toggleGroup(this.parentElement)">
+                    <div class="month-header-left">
+                        <span class="month-name">{{ group.year }} — {{ group.month | capitalize }}</span>
+                        <span class="month-count">{{ group.total }} фото</span>
+                    </div>
+                    <span class="month-chevron">▼</span>
+                </button>
+                <div class="month-body" id="body-{{ gid }}">
+                    <div class="works-grid" id="grid-{{ gid }}" data-gallery="{{ gid }}">
+                        {% for w in group.works %}
+                        {% set thumb = w.s3_url or '' %}
+                        <div class="work-cell" data-page-index="{{ loop.index0 }}">
+                            {% if thumb %}
+                            <img src="{{ thumb }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)"
+                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                            {% endif %}
+                            <div class="work-no-photo" style="display:{% if not thumb %}flex{% else %}none{% endif %}">фото</div>
+                            {% if w.score is not none %}
+                            <div class="score-badge">{{ w.score | int }}</div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% if group.total > page_size %}
+                    <div class="pagination" id="pag-{{ gid }}">
+                        <button onclick="prevPage('{{ gid }}')" id="prev-{{ gid }}" disabled>‹ Пред.</button>
+                        <span class="pagination-info" id="info-{{ gid }}">Фото 1–{{ [page_size, group.total] | min }} из {{ group.total }}</span>
+                        <button onclick="nextPage('{{ gid }}', {{ group.total }})" id="next-{{ gid }}">След. ›</button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+        <div class="empty-mini">Нет фотографий отработок</div>
+        {% endif %}
+    </div>
+
     {% endif %}
+
+    <div style="height:100px"></div>
 </div>
 
-<!-- Lightbox -->
-<div class="lightbox" id="lightbox" onclick="closeLightbox()">
-    <button class="lightbox-close" onclick="closeLightbox()">✕</button>
-    <a id="lightbox-link" href="#" target="_blank" onclick="event.stopPropagation()">
-        <img id="lightbox-img" src="" alt="" style="max-width:100%;max-height:85vh;border-radius:12px">
-    </a>
-</div>
+{% set active_tab = "gallery" %}
+{% include "partials/bottom_nav.html" %}
+{% include "partials/lightbox.html" %}
 
 <script>
-function openLightbox(url, name) {
-    const lb = document.getElementById('lightbox');
-    const img = document.getElementById('lightbox-img');
-    const link = document.getElementById('lightbox-link');
-    img.src = url;
-    img.alt = name;
-    link.href = url;
-    lb.classList.add('open');
-    document.body.style.overflow = 'hidden';
+// Filter tabs
+function filterGallery(type, btn) {
+    document.querySelectorAll('.filter-tab').forEach(function(b) {
+        b.classList.remove('active');
+        b.setAttribute('aria-selected', 'false');
+    });
+    btn.classList.add('active');
+    btn.setAttribute('aria-selected', 'true');
+    document.querySelectorAll('.gallery-section').forEach(function(s) {
+        if (type === 'all' || s.dataset.filter === type) {
+            s.classList.remove('hidden');
+        } else {
+            s.classList.add('hidden');
+        }
+    });
 }
-function closeLightbox() {
-    document.getElementById('lightbox').classList.remove('open');
-    document.body.style.overflow = '';
+
+// Month accordion
+function toggleGroup(el) {
+    el.classList.toggle('open');
+    var isOpen = el.classList.contains('open');
+    var btn = el.querySelector('.month-header');
+    if (btn) btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    if (isOpen) initPagination(el.dataset.groupId);
 }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+// Pagination
+var _pages = {};
+var PS = {{ page_size }};
+
+function initPagination(gid) {
+    if (_pages[gid] === undefined) _pages[gid] = 0;
+    renderPage(gid);
+}
+
+function renderPage(gid) {
+    var grid = document.getElementById('grid-' + gid);
+    if (!grid) return;
+    var cells = grid.querySelectorAll('.work-cell');
+    var page = _pages[gid] || 0;
+    var start = page * PS;
+    var end = Math.min(start + PS, cells.length);
+    cells.forEach(function(c, i) {
+        c.style.display = (i >= start && i < end) ? '' : 'none';
+    });
+    var info = document.getElementById('info-' + gid);
+    if (info) info.textContent = 'Фото ' + (start + 1) + '–' + end + ' из ' + cells.length;
+    var prev = document.getElementById('prev-' + gid);
+    var next = document.getElementById('next-' + gid);
+    if (prev) prev.disabled = page === 0;
+    if (next) next.disabled = end >= cells.length;
+}
+
+function prevPage(gid) {
+    if (_pages[gid] > 0) { _pages[gid]--; renderPage(gid); }
+}
+
+function nextPage(gid, total) {
+    var maxPage = Math.ceil(total / PS) - 1;
+    if (_pages[gid] < maxPage) { _pages[gid]++; renderPage(gid); }
+}
+
+// Init: hide cells beyond page_size, auto-open last group per section
+document.querySelectorAll('.works-grid').forEach(function(grid) {
+    grid.querySelectorAll('.work-cell').forEach(function(c, i) {
+        if (i >= PS) c.style.display = 'none';
+    });
+});
+
+['section-before','section-after','section-mock','section-retake'].forEach(function(sid) {
+    var sec = document.getElementById(sid);
+    if (!sec) return;
+    var items = sec.querySelectorAll('.month-item');
+    if (!items.length) return;
+    var last = items[items.length - 1];
+    last.classList.add('open');
+    var btn = last.querySelector('.month-header');
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+    initPagination(last.dataset.groupId);
+});
 </script>
 {% endblock %}

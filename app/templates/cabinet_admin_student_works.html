@@ -4,59 +4,59 @@
 <style>
 .adm-works { max-width: 860px; margin: 0 auto; }
 .page-back { font-size: 13px; color: var(--muted); font-weight: 500; text-decoration: none; display: flex; align-items: center; gap: 6px; opacity: 1; margin-bottom: 16px; }
-.page-back:hover { color: var(--accent); opacity: 1; }
+.page-back:hover { color: var(--blue); opacity: 1; }
 
 /* Hero */
-.student-hero { background: linear-gradient(135deg, #0F2340 0%, #1A3A6B 60%, #2B5FC8 100%); border-radius: 16px; padding: 20px 24px; display: flex; align-items: center; gap: 18px; margin-bottom: 24px; box-shadow: 0 4px 20px rgba(15,35,64,0.2); position: relative; overflow: hidden; }
+.student-hero { background: linear-gradient(135deg, var(--blue-ink) 0%, var(--blue-deep) 60%, var(--blue-mid) 100%); border-radius: var(--r-lg); padding: 20px 24px; display: flex; align-items: center; gap: 18px; margin-bottom: 24px; box-shadow: var(--sh-blue); position: relative; overflow: hidden; }
 .student-hero::before { content: ''; position: absolute; width: 200px; height: 200px; border-radius: 50%; background: rgba(255,255,255,0.04); top: -60px; right: -40px; pointer-events: none; }
 .hero-avatar { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,0.25); flex-shrink: 0; position: relative; z-index: 1; }
 .hero-avatar-ph { width: 60px; height: 60px; border-radius: 50%; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; position: relative; z-index: 1; }
 .hero-info { flex: 1; position: relative; z-index: 1; }
 .hero-name { font-size: 22px; font-weight: 900; color: #fff; margin-bottom: 6px; }
 .hero-pills { display: flex; gap: 8px; flex-wrap: wrap; }
-.hero-pill { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; padding: 3px 12px; font-size: 12px; color: rgba(255,255,255,0.85); font-weight: 700; }
+.hero-pill { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18); border-radius: var(--r-md); padding: 3px 12px; font-size: 12px; color: rgba(255,255,255,0.85); font-weight: 700; }
 .hero-score { position: relative; z-index: 1; text-align: right; flex-shrink: 0; }
 .score-big { font-size: 36px; font-weight: 900; color: #FCD34D; line-height: 1; }
 .score-label { font-size: 11px; color: rgba(255,255,255,0.6); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
 
 /* Tabs */
 .tab-nav { display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap; }
-.tab-btn { padding: 8px 18px; border-radius: 20px; font-size: 13px; font-weight: 700; border: 1.5px solid var(--border); background: var(--card); color: var(--muted); cursor: pointer; transition: all 0.2s; font-family: 'Montserrat', sans-serif; }
-.tab-btn:hover { border-color: var(--accent); color: var(--accent); }
-.tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.tab-btn { padding: 8px 18px; border-radius: var(--r-xl); font-size: 13px; font-weight: 700; border: 1.5px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; transition: border-color 0.2s, color 0.2s, background 0.2s; font-family: inherit; }
+.tab-btn:hover { border-color: var(--blue); color: var(--blue); }
+.tab-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
 .tab-content { display: none; }
 .tab-content.active { display: block; }
 
 /* Photo grid */
 .section-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); margin-bottom: 10px; margin-top: 16px; }
 .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin-bottom: 20px; }
-.photo-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); cursor: zoom-in; transition: transform 0.2s, box-shadow 0.2s; }
-.photo-grid img:hover { transform: scale(1.03); box-shadow: var(--shadow-lg); }
+.photo-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-sm); border: 1px solid var(--line); cursor: zoom-in; transition: transform 0.2s, box-shadow 0.2s; }
+.photo-grid img:hover { transform: scale(1.03); box-shadow: var(--sh-md); }
 
 /* Month group */
-.month-group { background: var(--card); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 16px; overflow: hidden; }
-.month-group-header { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 700; color: var(--text); }
+.month-group { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 16px; overflow: hidden; }
+.month-group-header { padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 700; color: var(--text); }
 .month-group-body { padding: 14px 16px; }
 
 /* Score card */
-.work-score-card { background: var(--card); border: 1.5px solid var(--border); border-radius: 14px; margin-bottom: 14px; overflow: hidden; box-shadow: var(--shadow); }
+.work-score-card { background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-md); margin-bottom: 14px; overflow: hidden; box-shadow: var(--sh-sm); }
 .work-score-img { width: 100%; max-height: 220px; object-fit: cover; display: block; cursor: zoom-in; transition: opacity 0.15s; }
 .work-score-img:hover { opacity: 0.9; }
 .work-score-body { padding: 14px 16px; }
 .work-scored { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.scored-chip { background: rgba(217,119,6,0.1); color: #D97706; border-radius: 8px; padding: 5px 14px; font-size: 15px; font-weight: 900; }
-.edit-btn { font-size: 12px; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 8px; padding: 5px 12px; cursor: pointer; font-family: 'Montserrat', sans-serif; }
-.work-comment { font-size: 12px; color: var(--muted); background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin-top: 8px; white-space: pre-wrap; }
+.scored-chip { background: rgba(217,119,6,0.1); color: var(--warning); border-radius: 8px; padding: 5px 14px; font-size: 15px; font-weight: 900; }
+.edit-btn { font-size: 12px; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 8px; padding: 5px 12px; cursor: pointer; font-family: inherit; }
+.work-comment { font-size: 12px; color: var(--muted); background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin-top: 8px; white-space: pre-wrap; }
 
 /* Score form */
 .score-form { display: flex; flex-direction: column; gap: 8px; }
 .score-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.score-input { width: 90px; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 14px; font-weight: 700; color: var(--text); background: var(--bg); font-family: 'Montserrat', sans-serif; outline: none; transition: border-color 0.2s; }
-.score-input:focus { border-color: var(--accent); }
-.score-submit { padding: 8px 18px; background: var(--accent); color: #fff; border: none; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'Montserrat', sans-serif; transition: opacity 0.15s; }
+.score-input { width: 90px; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: var(--r-sm); font-size: 14px; font-weight: 700; color: var(--text); background: var(--bg); font-family: inherit; outline: none; transition: border-color 0.2s; }
+.score-input:focus { border-color: var(--blue); }
+.score-submit { padding: 8px 18px; background: var(--blue); color: #fff; border: none; border-radius: var(--r-sm); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; transition: opacity 0.15s; }
 .score-submit:hover { opacity: 0.85; }
-.comment-input { width: 100%; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 13px; color: var(--text); background: var(--bg); font-family: 'Montserrat', sans-serif; outline: none; resize: vertical; min-height: 60px; transition: border-color 0.2s; }
-.comment-input:focus { border-color: var(--accent); }
+.comment-input { width: 100%; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: var(--r-sm); font-size: 13px; color: var(--text); background: var(--bg); font-family: inherit; outline: none; resize: vertical; min-height: 60px; transition: border-color 0.2s; }
+.comment-input:focus { border-color: var(--blue); }
 
 /* student_score badge */
 .student-score-badge { background: rgba(37,99,235,0.1); color: #2563EB; border-radius: 8px; padding: 4px 12px; font-size: 13px; font-weight: 700; }
@@ -66,7 +66,7 @@
 /* Lightbox */
 .lb { position: fixed; inset: 0; background: rgba(10,10,30,0.88); z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px; }
 .lb.open { display: flex; }
-.lb img { max-width: 100%; max-height: 88vh; border-radius: 12px; box-shadow: 0 24px 80px rgba(0,0,0,0.5); }
+.lb img { max-width: 100%; max-height: 88vh; border-radius: var(--r-md); box-shadow: 0 24px 80px rgba(0,0,0,0.5); }
 .lb-close { position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.15); border: none; color: #fff; width: 44px; height: 44px; border-radius: 50%; font-size: 22px; cursor: pointer; }
 
 @media (max-width: 768px) {
@@ -86,7 +86,7 @@
         {% if student.photo_url %}
         <img src="{{ student.photo_url }}" class="hero-avatar" alt="">
         {% else %}
-        <div class="hero-avatar-ph">🎓</div>
+        <div class="hero-avatar-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg></div>
         {% endif %}
         <div class="hero-info">
             <div class="hero-name">{{ student.last_name or '' }} {{ student.first_name or student.name }}</div>
@@ -105,18 +105,18 @@
 
     <!-- Tab navigation -->
     <div class="tab-nav">
-        <button class="tab-btn active" onclick="switchTab('portfolio', this)">🎨 Портфолио</button>
+        <button class="tab-btn active" onclick="switchTab('portfolio', this)"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.5-.7 1.5-1.5 0-.4-.15-.77-.4-1.05-.24-.27-.39-.63-.39-1.03 0-.83.67-1.5 1.5-1.5H16c3.31 0 6-2.69 6-6 0-4.97-4.5-9-10-9z"/></svg> Портфолио</button>
         <button class="tab-btn" onclick="switchTab('exams', this)">⭐ Пробники</button>
-        <button class="tab-btn" onclick="switchTab('retakes', this)">🔄 Отработки</button>
+        <button class="tab-btn" onclick="switchTab('retakes', this)"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Отработки</button>
     </div>
 
     <!-- ── Портфолио ── -->
     <div id="tab-portfolio" class="tab-content active">
         {% if before_works %}
         <div class="section-label">До обучения ({{ before_works | length }})</div>
-        <div class="photo-grid">
+        <div class="photo-grid" data-gallery="before">
             {% for w in before_works %}
-            {% if w.s3_url %}<img src="{{ w.s3_url }}" alt="{{ w.filename }}" loading="lazy" onclick="lbOpen('{{ w.s3_url }}')">{% endif %}
+            {% if w.s3_url %}<img src="{{ w.s3_url }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)">{% endif %}
             {% endfor %}
         </div>
         {% endif %}
@@ -126,9 +126,9 @@
         <div class="month-group">
             <div class="month-group-header">После — {{ g.month }} {{ g.year }} ({{ g.total }} фото)</div>
             <div class="month-group-body">
-                <div class="photo-grid">
+                <div class="photo-grid" data-gallery="after-{{ loop.index }}">
                     {% for w in g.works %}
-                    {% if w.s3_url %}<img src="{{ w.s3_url }}" alt="{{ w.filename }}" loading="lazy" onclick="lbOpen('{{ w.s3_url }}')">{% endif %}
+                    {% if w.s3_url %}<img src="{{ w.s3_url }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)">{% endif %}
                     {% endfor %}
                 </div>
             </div>
@@ -147,10 +147,10 @@
         {% for g in mock_groups %}
         <div class="month-group">
             <div class="month-group-header">{{ g.month }} {{ g.year }}</div>
-            <div class="month-group-body">
+            <div class="month-group-body" data-gallery="mock-{{ loop.index }}">
                 {% for w in g.works %}
                 <div class="work-score-card">
-                    {% if w.s3_url %}<img src="{{ w.s3_url }}" class="work-score-img" alt="{{ w.filename }}" loading="lazy" onclick="lbOpen('{{ w.s3_url }}')">{% endif %}
+                    {% if w.s3_url %}<img src="{{ w.s3_url }}" class="work-score-img" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)">{% endif %}
                     <div class="work-score-body">
                         {% if w.score is none %}
                         <!-- Score form -->
@@ -199,10 +199,10 @@
         {% for g in retake_groups %}
         <div class="month-group">
             <div class="month-group-header">{{ g.month }} {{ g.year }}</div>
-            <div class="month-group-body">
+            <div class="month-group-body" data-gallery="retake-{{ loop.index }}">
                 {% for w in g.works %}
                 <div class="work-score-card">
-                    {% if w.s3_url %}<img src="{{ w.s3_url }}" class="work-score-img" alt="{{ w.filename }}" loading="lazy" onclick="lbOpen('{{ w.s3_url }}')">{% endif %}
+                    {% if w.s3_url %}<img src="{{ w.s3_url }}" class="work-score-img" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)">{% endif %}
                     <div class="work-score-body">
                         {% if w.student_score is not none %}
                         <span class="student-score-badge" style="margin-bottom:8px;display:inline-block">Ученик: {{ w.student_score | int }}</span>
@@ -246,11 +246,7 @@
 
 </div>
 
-<!-- Lightbox -->
-<div class="lb" id="lb" onclick="lbClose(event)">
-    <button class="lb-close" onclick="lbClose()">&times;</button>
-    <img id="lb-img" src="" alt="">
-</div>
+{% include "partials/lightbox.html" %}
 
 <script>
 function switchTab(name, btn) {
@@ -271,18 +267,6 @@ function toggleEdit(id, btn) {
         btn.textContent = 'Изменить';
     }
 }
-
-function lbOpen(src) {
-    document.getElementById('lb-img').src = src;
-    document.getElementById('lb').classList.add('open');
-    document.body.style.overflow = 'hidden';
-}
-function lbClose(e) {
-    if (e && e.target !== document.getElementById('lb') && !e.target.classList.contains('lb-close')) return;
-    document.getElementById('lb').classList.remove('open');
-    document.body.style.overflow = '';
-}
-document.addEventListener('keydown', e => { if (e.key === 'Escape') lbClose({target: document.getElementById('lb')}); });
 
 // Open exams tab if URL has #exams
 if (location.hash === '#exams') switchTab('exams', document.querySelectorAll('.tab-btn')[1]);

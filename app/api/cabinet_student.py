@@ -17,7 +17,15 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session, get_cached_unread, set_cached_unread, invalidate_unread
-from app.constants import MONTHS, TARIFFS, TARIFF_DISPLAY, ENROLLMENT_YEARS, MONTH_TO_NUM
+from app.constants import (
+    MONTHS,
+    TARIFFS,
+    TARIFF_DISPLAY,
+    ENROLLMENT_YEARS,
+    MONTH_TO_NUM,
+    FEATURE_PORTFOLIO_UPLOAD,
+    MOCK_SUBJECTS,
+)
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
 from app.models.notification import Notification
@@ -25,7 +33,8 @@ from app.models.upload_log import UploadLog
 from app.models.user import User
 from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
-from app.services.tz import today_msk
+from app.services.feature_periods import is_feature_available
+from app.services.tz import MSK_TZ, today_msk
 from app.services.utils import study_duration_text, group_works
 from app.tmpl import templates, format_ticket_description
 
@@ -365,14 +374,109 @@ def mark_notifications_read(
 PAGE_SIZE = 10
 
 
+@router.get("/cycle", response_class=HTMLResponse)
+def cabinet_cycle_hub(
+    request: Request,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    tab: str = Query(default="mock"),
+):
+    """Двухвкладочный экран: Пробник (всегда) + Обратная связь (если есть открытые циклы)."""
+    from app.models.exam_cycle import ExamCycle
+    from app.models.feedback import Feedback
+    from app.models.notification import Notification
+    from app.services.feature_periods import is_feature_available as _is_fa
+    from app.services.exam_cycle import has_open_cycles
+    from app.constants import FEATURE_MOCK_EXAM as _F_MOCK, FEATURE_LABELS
+
+    mock_open, mock_msg = _is_fa(db, _F_MOCK)
+
+    works_by_subject = _collect_cycle_works(db, user["user_id"], WORK_TYPE_MOCK_EXAM)
+    subjects = list(MOCK_SUBJECTS)
+    if "Без предмета" in works_by_subject:
+        subjects.append("Без предмета")
+
+    feedback_visible = has_open_cycles(db, user["user_id"])
+
+    # Сборка списка открытых циклов для вкладки ОС
+    open_cycles: list[dict] = []
+    if feedback_visible:
+        cycles_q = (
+            db.query(ExamCycle)
+            .filter(
+                ExamCycle.user_id == user["user_id"],
+                ExamCycle.closed_at.is_(None),
+            )
+            .order_by(ExamCycle.started_at.desc(), ExamCycle.id.desc())
+            .all()
+        )
+        cycle_ids = [c.id for c in cycles_q]
+        finals_by_cycle: dict[int, list[Work]] = {}
+        if cycle_ids:
+            for w in (
+                db.query(Work)
+                .filter(Work.cycle_id.in_(cycle_ids), Work.is_final == True)  # noqa: E712
+                .all()
+            ):
+                finals_by_cycle.setdefault(w.cycle_id, []).append(w)
+        all_work_ids = [w.id for ws in finals_by_cycle.values() for w in ws]
+        unread_work_ids: set[int] = set()
+        if all_work_ids:
+            unread_work_ids = {
+                row[0] for row in db.query(Notification.work_id).filter(
+                    Notification.user_id == user["user_id"],
+                    Notification.work_id.in_(all_work_ids),
+                    Notification.is_read == False,  # noqa: E712
+                ).all()
+            }
+        for c in cycles_q:
+            finals = finals_by_cycle.get(c.id, [])
+            open_cycles.append({
+                "id": c.id,
+                "subject": c.subject,
+                "started_at": c.started_at.isoformat(),
+                "attempts": len(finals),
+                "unread_count": sum(1 for w in finals if w.id in unread_work_ids),
+            })
+
+    cycles_count = (
+        db.query(ExamCycle).filter(ExamCycle.user_id == user["user_id"]).count()
+    )
+    unread = _get_unread_count(user["user_id"], db)
+
+    if tab not in ("mock", "feedback"):
+        tab = "mock"
+    if tab == "feedback" and not feedback_visible:
+        tab = "mock"
+
+    return templates.TemplateResponse("cabinet_cycle.html", {
+        "request": request,
+        "user": user,
+        "subjects": subjects,
+        "works_by_subject": works_by_subject,
+        "mock_open": mock_open,
+        "mock_msg": mock_msg or FEATURE_LABELS.get(_F_MOCK, ""),
+        "upload_url": "/upload/mock-exam",
+        "upload_label": "Загрузить пробник",
+        "feedback_visible": feedback_visible,
+        "open_cycles": open_cycles,
+        "cycles_count": cycles_count,
+        "unread_count": unread,
+        "months": MONTHS,
+        "current_year": today_msk().year,
+        "active_subtab": tab,
+    })
+
+
 @router.get("/portfolio", response_class=HTMLResponse)
 async def cabinet_portfolio(
     request: Request,
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    """Portfolio tab: before/after works grouped by year-month."""
+    """Portfolio tab: before works as a flat gallery, after works grouped by year-month."""
     from app.services.drive import list_student_photos
+    portfolio_upload_open, _ = is_feature_available(db, FEATURE_PORTFOLIO_UPLOAD)
 
     before_works = (
         db.query(Work)
@@ -409,66 +513,250 @@ async def cabinet_portfolio(
         )
         drive_thumbnails = {p["id"]: p["thumbnail_url"] for p in photos if p.get("id") and p.get("thumbnail_url")}
 
+    def serialize_portfolio_group(group: dict) -> dict:
+        return {
+            "year": group["year"],
+            "month": group["month"],
+            "total": group["total"],
+            "works": [
+                {
+                    "id": w.id,
+                    "filename": w.filename,
+                    "thumb": w.s3_url or (drive_thumbnails.get(w.drive_file_id, "") if w.drive_file_id else ""),
+                }
+                for w in group["works"]
+            ],
+        }
+
+    before_groups = group_works(before_works)
+    after_groups = group_works(after_works)
+
+    # Пробные экзамены: финальные работы из закрытых циклов + название билета
+    from app.models.exam_cycle import ExamCycle
+    from app.models.exam_assignment import ExamTicket
+    mock_rows = (
+        db.query(Work, ExamCycle, ExamTicket)
+        .join(ExamCycle, Work.cycle_id == ExamCycle.id)
+        .outerjoin(ExamTicket, ExamCycle.ticket_id == ExamTicket.id)
+        .filter(
+            Work.user_id == user["user_id"],
+            Work.work_type == WORK_TYPE_MOCK_EXAM,
+            Work.is_final == True,  # noqa: E712
+            Work.status == "success",
+            ExamCycle.closed_at.isnot(None),
+        )
+        .order_by(ExamCycle.closed_at.desc(), Work.id.desc())
+        .limit(200)
+        .all()
+    )
+    portfolio_mock_works = [
+        {
+            "id": w.id,
+            "subject": w.subject or "",
+            "s3_url": w.s3_url,
+            "filename": w.filename,
+            "score": int(w.score) if w.score is not None else None,
+            "ticket_title": t.title if t else None,
+            "closed_at": c.closed_at.isoformat() if c.closed_at else None,
+        }
+        for w, c, t in mock_rows
+    ]
+
     return templates.TemplateResponse("cabinet_portfolio.html", {
         "request": request,
         "user": user,
-        "before_groups": group_works(before_works),
-        "after_groups": group_works(after_works),
+        "can_upload_portfolio_after": bool(portfolio_upload_open),
+        "before_works": before_works,
+        "before_groups": before_groups,
+        "after_groups": after_groups,
+        "portfolio_before_groups": [serialize_portfolio_group(g) for g in before_groups],
+        "portfolio_after_groups": [serialize_portfolio_group(g) for g in after_groups],
+        "portfolio_mock_works": portfolio_mock_works,
+        "months": MONTHS,
+        "current_year": today_msk().year,
         "page_size": PAGE_SIZE,
         "unread_count": _get_unread_count(user["user_id"], db),
         "drive_thumbnails": drive_thumbnails,
     })
 
 
-# ── GET /cabinet/scores ───────────────────────────────────────────────────────
+# ── GET /cabinet/cycle/probnik & /cabinet/cycle/otrabotka ────────────────────
 
-@router.get("/scores", response_class=HTMLResponse)
-def cabinet_scores(
+def _collect_cycle_works(
+    db: DBSession,
+    user_id: int,
+    work_type: str,
+) -> dict[str, list[dict]]:
+    """Календарь Цикла Пробника: финалки + промежуточные + feedback по предметам."""
+    from app.models.feedback import Feedback, FeedbackPhoto
+    from app.models.exam_cycle import ExamCycle
+
+    finals = (
+        db.query(Work)
+        .filter(
+            Work.user_id == user_id,
+            Work.work_type == work_type,
+            Work.status == "success",
+            Work.is_final == True,  # noqa: E712
+        )
+        .order_by(Work.year, Work.month, Work.created_at)
+        .limit(300)
+        .all()
+    )
+    final_ids = [w.id for w in finals]
+
+    intermediates_by_parent: dict[int, list[Work]] = {}
+    if final_ids:
+        for w in (
+            db.query(Work)
+            .filter(Work.parent_work_id.in_(final_ids), Work.is_final == False)  # noqa: E712
+            .order_by(Work.created_at)
+            .all()
+        ):
+            intermediates_by_parent.setdefault(w.parent_work_id, []).append(w)
+
+    feedbacks_by_work: dict[int, Feedback] = {}
+    fb_photos_by_fb: dict[int, list[FeedbackPhoto]] = {}
+    if final_ids:
+        feedbacks_by_work = {
+            f.work_id: f
+            for f in db.query(Feedback).filter(Feedback.work_id.in_(final_ids)).all()
+        }
+        fb_ids = [f.id for f in feedbacks_by_work.values()]
+        if fb_ids:
+            for ph in (
+                db.query(FeedbackPhoto)
+                .filter(FeedbackPhoto.feedback_id.in_(fb_ids))
+                .order_by(FeedbackPhoto.order_idx, FeedbackPhoto.id)
+                .all()
+            ):
+                fb_photos_by_fb.setdefault(ph.feedback_id, []).append(ph)
+
+    cycles_by_id: dict[int, ExamCycle] = {}
+    cycle_ids = {w.cycle_id for w in finals if w.cycle_id}
+    if cycle_ids:
+        cycles_by_id = {
+            c.id: c
+            for c in db.query(ExamCycle).filter(ExamCycle.id.in_(list(cycle_ids))).all()
+        }
+
+    def _serialize(w: Work) -> dict:
+        created = w.created_at
+        if created and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        local_dt = created.astimezone(MSK_TZ) if created else None
+        fb = feedbacks_by_work.get(w.id)
+        fb_payload = None
+        if fb:
+            fb_payload = {
+                "id": fb.id,
+                "greeting": fb.greeting,
+                "strengths": fb.strengths,
+                "weaknesses": fb.weaknesses,
+                "recommendations": fb.recommendations,
+                "updated_at": fb.updated_at.isoformat() if fb.updated_at else None,
+                "photos": [
+                    {"id": ph.id, "s3_url": ph.s3_url}
+                    for ph in fb_photos_by_fb.get(fb.id, [])
+                ],
+            }
+        cycle = cycles_by_id.get(w.cycle_id) if w.cycle_id else None
+        return {
+            "id": w.id,
+            "subject": w.subject or "",
+            "s3_url": w.s3_url,
+            "filename": w.filename,
+            "score": float(w.score) if w.score is not None else None,
+            "student_score": float(w.student_score) if w.student_score is not None else None,
+            "comment": w.comment,
+            "created_at": created.isoformat() if created else None,
+            "work_date": local_dt.date().isoformat() if local_dt else "",
+            "date_label": local_dt.strftime("%d.%m.%Y") if local_dt else "",
+            "attempt_number": w.attempt_number,
+            "cycle_id": w.cycle_id,
+            "cycle_started_at": cycle.started_at.isoformat() if cycle and cycle.started_at else None,
+            "cycle_closed_at": cycle.closed_at.isoformat() if cycle and cycle.closed_at else None,
+            "intermediates": [
+                {"id": i.id, "s3_url": i.s3_url, "filename": i.filename}
+                for i in intermediates_by_parent.get(w.id, [])
+            ],
+            "feedback": fb_payload,
+        }
+
+    by_subject: dict[str, list[dict]] = {s: [] for s in MOCK_SUBJECTS}
+    unassigned: list[dict] = []
+    for w in finals:
+        payload = _serialize(w)
+        if w.subject in by_subject:
+            by_subject[w.subject].append(payload)
+        else:
+            unassigned.append(payload)
+    if unassigned:
+        by_subject["Без предмета"] = unassigned
+    return by_subject
+
+
+def render_cycle_calendar(
     request: Request,
-    user: Annotated[dict, Depends(require_student)],
-    db: Annotated[DBSession, Depends(get_db)],
+    user: dict,
+    db: DBSession,
+    *,
+    target_user_id: int,
+    work_type: str,
+    page_title: str,
+    upload_url: str,
+    upload_label: str,
+    feature_key: str,
+    active_tab: str,
+    staff_view: bool = False,
+    student_name: str | None = None,
+    back_url: str = "/cabinet/cycle",
+    back_label: str = "К Циклу Пробника",
 ):
-    """Scores tab: mock exams and retakes grouped by year-month."""
-    mock_works = (
-        db.query(Work)
-        .filter(
-            Work.user_id == user["user_id"],
-            Work.work_type == WORK_TYPE_MOCK_EXAM,
-            Work.status == "success",
-        )
-        .order_by(Work.year, Work.month, Work.created_at)
-        .limit(200)
-        .all()
-    )
+    from app.constants import FEATURE_LABELS
 
-    retake_works = (
-        db.query(Work)
-        .filter(
-            Work.user_id == user["user_id"],
-            Work.work_type == WORK_TYPE_RETAKE,
-            Work.status == "success",
-        )
-        .order_by(Work.year, Work.month, Work.created_at)
-        .limit(200)
-        .all()
-    )
-
-    mock_scored = [w for w in mock_works if w.score is not None]
-    overall_avg = (
-        round(sum(float(w.score) for w in mock_scored) / len(mock_scored))
-        if mock_scored else None
-    )
-
-    return templates.TemplateResponse("scores.html", {
+    works_by_subject = _collect_cycle_works(db, target_user_id, work_type)
+    subjects = list(MOCK_SUBJECTS)
+    if "Без предмета" in works_by_subject:
+        subjects.append("Без предмета")
+    upload_open, upload_msg = is_feature_available(db, feature_key)
+    return templates.TemplateResponse("cabinet_cycle_calendar.html", {
         "request": request,
         "user": user,
-        "mock_groups": group_works(mock_works),
-        "retake_groups": group_works(retake_works),
-        "overall_avg": overall_avg,
-        "page_size": PAGE_SIZE,
+        "page_title": page_title,
+        "work_type": work_type,
+        "subjects": subjects,
+        "works_by_subject": works_by_subject,
+        "upload_url": upload_url,
+        "upload_label": upload_label,
+        "upload_open": upload_open,
+        "upload_msg": upload_msg or FEATURE_LABELS.get(feature_key, ""),
+        "months": MONTHS,
+        "current_year": today_msk().year,
+        "active_tab": active_tab,
         "unread_count": _get_unread_count(user["user_id"], db),
+        "staff_view": staff_view,
+        "student_name": student_name,
+        "back_url": back_url,
+        "back_label": back_label,
     })
 
+
+# /cycle/probnik и /cycle/otrabotka объединены в двухвкладочный /cycle (редизайн 2026-05-23).
+# Старые URL студента редиректят на новую страницу для обратной совместимости со ссылками
+# из уведомлений и закладок.
+
+@router.get("/cycle/probnik", response_class=HTMLResponse)
+def cabinet_cycle_probnik_redirect(_user: Annotated[dict, Depends(require_student)]):
+    return RedirectResponse("/cabinet/cycle?tab=mock", status_code=302)
+
+
+@router.get("/cycle/otrabotka", response_class=HTMLResponse)
+def cabinet_cycle_otrabotka_redirect(_user: Annotated[dict, Depends(require_student)]):
+    return RedirectResponse("/cabinet/cycle?tab=mock", status_code=302)
+
+
+# ── GET /cabinet/scores удалён в редизайне 2026-05-23 ────────────────────────
 
 # ── GET /cabinet/api/exam-ticket ──────────────────────────────────────────────
 

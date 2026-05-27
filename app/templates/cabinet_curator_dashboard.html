@@ -5,13 +5,13 @@
 .curator-dash { max-width: 600px; margin: 0 auto; }
 
 .curator-hero {
-    background: linear-gradient(135deg, #1E2D6B 0%, #3B4FC8 100%);
-    border-radius: 20px;
+    background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue-mid) 100%);
+    border-radius: var(--r-xl);
     padding: 32px;
     margin-bottom: 24px;
     position: relative;
     overflow: hidden;
-    box-shadow: 0 8px 32px rgba(30,45,107,0.25);
+    box-shadow: var(--sh-blue);
 }
 .curator-hero::before {
     content: '';
@@ -36,7 +36,7 @@
     display: inline-flex; align-items: center; gap: 6px;
     background: rgba(255,255,255,0.15);
     border: 1px solid rgba(255,255,255,0.2);
-    border-radius: 20px;
+    border-radius: var(--r-xl);
     padding: 4px 14px;
     font-size: 11px; font-weight: 700;
     letter-spacing: 0.07em; text-transform: uppercase;
@@ -54,7 +54,7 @@
     display: inline-flex; align-items: center; gap: 8px;
     background: rgba(255,255,255,0.12);
     border: 1px solid rgba(255,255,255,0.18);
-    border-radius: 20px;
+    border-radius: var(--r-xl);
     padding: 6px 18px;
     font-size: 14px; font-weight: 700; color: rgba(255,255,255,0.92);
 }
@@ -68,19 +68,19 @@
 .action-card {
     display: flex;
     flex-direction: column;
-    background: var(--card);
-    border: 1.5px solid var(--border);
-    border-radius: 18px;
+    background: var(--surface);
+    border: 1.5px solid var(--line);
+    border-radius: var(--r-lg);
     padding: 28px 24px;
     text-decoration: none;
     color: var(--text);
     transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
-    box-shadow: var(--shadow);
+    box-shadow: var(--sh-sm);
     opacity: 1;
 }
 .action-card:hover {
-    border-color: var(--border-hover);
-    box-shadow: var(--shadow-lg);
+    border-color: rgba(59,91,255,0.30);
+    box-shadow: var(--sh-md);
     transform: translateY(-3px);
     opacity: 1;
 }
@@ -99,12 +99,65 @@
 }
 .action-card-arrow {
     margin-top: 20px;
-    font-size: 13px; font-weight: 700; color: var(--accent);
+    font-size: 13px; font-weight: 700; color: var(--blue);
 }
+
+/* ── Stats blocks ── */
+.cur-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+.cur-stats-card {
+    background: var(--surface);
+    border: 1.5px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: var(--sh-sm);
+    overflow: hidden;
+}
+.cur-stats-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.cur-stats-title { font-size: 13px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.07em; }
+.cur-stats-meta { font-size: 11px; color: var(--dim); }
+.cur-subj-grid { display: grid; grid-template-columns: 1fr 1fr; }
+.cur-subj-cell { padding: 16px 18px; border-right: 1px solid var(--line); }
+.cur-subj-cell:last-child { border-right: none; }
+.cur-subj-label { font-size: 11px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+.cur-subj-val { font-size: 24px; font-weight: 900; color: var(--text); line-height: 1; }
+.cur-subj-val .total { font-size: 16px; color: var(--dim); font-weight: 700; }
+.cur-subj-avg { font-size: 22px; font-weight: 900; color: var(--text); line-height: 1; }
+.cur-subj-avg.dim { color: var(--dim); font-weight: 700; }
+.cur-subj-progress { height: 6px; border-radius: 3px; background: var(--bg); margin-top: 10px; overflow: hidden; }
+.cur-subj-progress > span { display: block; height: 100%; background: var(--blue); border-radius: 3px; transition: width 0.3s; }
+.cur-empty { padding: 18px; font-size: 13px; color: var(--dim); }
+
+/* График-заглушка */
+.cur-curve-card {
+    background: var(--surface);
+    border: 1.5px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: var(--sh-sm);
+    margin-bottom: 24px;
+    overflow: hidden;
+}
+.cur-curve-stub {
+    padding: 36px 24px;
+    text-align: center;
+    color: var(--dim);
+    background: linear-gradient(135deg, rgba(59,91,255,0.04) 0%, rgba(59,91,255,0.02) 100%);
+}
+.cur-curve-stub-icon { font-size: 32px; margin-bottom: 8px; opacity: 0.5; }
+.cur-curve-stub-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.cur-curve-stub-sub { font-size: 12px; }
 
 @media (max-width: 768px) {
     .action-grid { grid-template-columns: 1fr 1fr; }
     .curator-name { font-size: 24px; }
+    .cur-stats-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 480px) {
     .action-grid { grid-template-columns: 1fr; }
@@ -130,10 +183,72 @@
         </div>
     </div>
 
+    <!-- Stats: subject scoring in current period + avg scores all time -->
+    <div class="cur-stats-grid">
+        <div class="cur-stats-card">
+            <div class="cur-stats-header">
+                <span class="cur-stats-title">Сдано в текущем периоде</span>
+                {% if mock_subject_period %}
+                <span class="cur-stats-meta">
+                    {{ mock_subject_period.start_date.strftime('%d.%m') }} – {{ mock_subject_period.end_date.strftime('%d.%m.%Y') }}
+                </span>
+                {% endif %}
+            </div>
+            {% if mock_subject_period %}
+            <div class="cur-subj-grid">
+                {% for s in mock_subject_stats %}
+                <div class="cur-subj-cell">
+                    <div class="cur-subj-label">{{ s.subject }}</div>
+                    <div class="cur-subj-val">{{ s.scored }} <span class="total">/ {{ s.total }}</span></div>
+                    <div class="cur-subj-progress">
+                        {% set pct = (s.scored / s.total * 100) if s.total else 0 %}
+                        <span style="width: {{ pct|round(0, 'floor')|int }}%"></span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="cur-empty">Активного периода пробников нет.</div>
+            {% endif %}
+        </div>
+
+        <div class="cur-stats-card">
+            <div class="cur-stats-header">
+                <span class="cur-stats-title">Средний балл — за всё время</span>
+            </div>
+            <div class="cur-subj-grid">
+                {% for subj in ['Рисунок', 'Композиция'] %}
+                <div class="cur-subj-cell">
+                    <div class="cur-subj-label">{{ subj }}</div>
+                    {% set v = avg_scores.get(subj) %}
+                    {% if v is not none %}
+                    <div class="cur-subj-avg">{{ v }}</div>
+                    {% else %}
+                    <div class="cur-subj-avg dim">—</div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Score curve — placeholder for curator -->
+    <div class="cur-curve-card">
+        <div class="cur-stats-header">
+            <span class="cur-stats-title">Динамика баллов</span>
+            <span class="cur-stats-meta">скоро</span>
+        </div>
+        <div class="cur-curve-stub">
+            <div class="cur-curve-stub-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true" style="width:32px;height:32px"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg></div>
+            <div class="cur-curve-stub-title">График по вашим ученикам появится здесь</div>
+            <div class="cur-curve-stub-sub">Сейчас разрабатывается — пока доступен у админа</div>
+        </div>
+    </div>
+
     <!-- Action cards -->
     <div class="action-grid">
         <a href="/cabinet/students?tab=portfolio" class="action-card">
-            <div class="action-card-icon">🎨</div>
+            <div class="action-card-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.5-.7 1.5-1.5 0-.4-.15-.77-.4-1.05-.24-.27-.39-.63-.39-1.03 0-.83.67-1.5 1.5-1.5H16c3.31 0 6-2.69 6-6 0-4.97-4.5-9-10-9z"/></svg></div>
             <div class="action-card-title">Портфолио</div>
             <div class="action-card-desc">Работы «До» и «После» по каждому ученику</div>
             <div class="action-card-arrow">Открыть →</div>
@@ -145,7 +260,7 @@
             <div class="action-card-arrow">Открыть →</div>
         </a>
         <a href="/cabinet/students?tab=retakes" class="action-card">
-            <div class="action-card-icon">🔄</div>
+            <div class="action-card-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></div>
             <div class="action-card-title">Отработки</div>
             <div class="action-card-desc">Пересдачи заданий по каждому ученику</div>
             <div class="action-card-arrow">Открыть →</div>

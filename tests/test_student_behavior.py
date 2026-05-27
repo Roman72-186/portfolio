@@ -7,7 +7,7 @@ Covers the full student journey:
   4. Gallery and history
 """
 from decimal import Decimal
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, timedelta
 
 
 def _auth(client, user_factory, session_factory, **user_kwargs):
@@ -159,6 +159,54 @@ def test_dashboard_tariff_history_from_upload_log(auth_client, db):
     assert resp.status_code == 200
 
 
+def test_dashboard_shows_upload_button_when_portfolio_after_is_open(auth_client, db):
+    """Portfolio tab shows /upload CTA when portfolio upload window is open."""
+    from app.constants import FEATURE_PORTFOLIO_UPLOAD
+    from app.models.feature_period import FeaturePeriod
+    from app.models.user import User
+
+    client, user = auth_client
+    db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
+    db.add(FeaturePeriod(
+        feature=FEATURE_PORTFOLIO_UPLOAD,
+        start_date=date.today() - timedelta(days=1),
+        end_date=date.today() + timedelta(days=7),
+        is_active=True,
+        created_by_id=user.id,
+    ))
+    db.commit()
+
+    from app.services.feature_periods import invalidate_feature_cache
+    invalidate_feature_cache(FEATURE_PORTFOLIO_UPLOAD)
+
+    resp = client.get("/cabinet/portfolio")
+    assert resp.status_code == 200
+    assert 'href="/upload?section=after"' in resp.text
+    assert "Загрузить фото" in resp.text
+
+
+def test_portfolio_uses_month_picker_for_before_and_after(auth_client, db):
+    """Portfolio works are rendered through year/month picker data."""
+    from app.models.work import Work, WORK_TYPE_BEFORE
+    from app.models.user import User
+
+    client, user = auth_client
+    db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
+    db.add_all([
+        Work(user_id=user.id, work_type=WORK_TYPE_BEFORE, month="январь", year=2026, filename="before-1.jpg", status="success"),
+        Work(user_id=user.id, work_type=WORK_TYPE_BEFORE, month="февраль", year=2026, filename="before-2.jpg", status="success"),
+    ])
+    db.commit()
+
+    resp = client.get("/cabinet/portfolio")
+    assert resp.status_code == 200
+    assert 'id="portfolio-before-root"' in resp.text
+    assert "PORTFOLIO_BEFORE_GROUPS" in resp.text
+    assert "before-1.jpg" in resp.text
+    assert "before-2.jpg" in resp.text
+    assert 'id="grid-before-flat"' not in resp.text
+
+
 # ---------------------------------------------------------------------------
 # 3. Upload mode switching
 # ---------------------------------------------------------------------------
@@ -183,6 +231,19 @@ def test_upload_shows_after_mode_when_before_done(auth_client, db):
     resp = client.get("/upload")
     assert resp.status_code == 200
     assert "after" in resp.text or "После" in resp.text
+
+
+def test_upload_explicit_before_mode_available_after_completion(auth_client, db):
+    """GET /upload?section=before still opens the BEFORE uploader after completion."""
+    from app.models.user import User
+
+    client, user = auth_client
+    db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
+    db.commit()
+
+    resp = client.get("/upload?section=before")
+    assert resp.status_code == 200
+    assert "Раздел «До»" in resp.text
 
 
 def test_finish_before_without_uploads_shows_error(auth_client, db):
@@ -218,69 +279,49 @@ def test_finish_before_with_works_sets_flag_and_redirects(auth_client, db):
 # 4. Scores
 # ---------------------------------------------------------------------------
 
-def test_scores_page_returns_200_empty(auth_client):
-    """GET /cabinet/scores returns 200 even with no works."""
+# /cabinet/scores removed in 2026-05-23 redesign. Scores visible in portfolio
+# and in the Probnik tab (/cabinet/cycle). Old scores tests dropped; one
+# regression check for the new two-tab page is enough here.
+
+
+def test_cycle_page_returns_200_empty(auth_client):
     client, _ = auth_client
-    resp = client.get("/cabinet/scores")
+    resp = client.get("/cabinet/cycle")
     assert resp.status_code == 200
 
 
-def test_scores_shows_mock_groups_by_month(auth_client, db):
-    """Mock exam works grouped by month appear on scores page."""
-    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
-    from decimal import Decimal
-    client, user = auth_client
-    db.add(Work(user_id=user.id, work_type=WORK_TYPE_MOCK_EXAM,
-                month="январь", year=2026, filename="a.jpg",
-                subject="Рисунок", score=Decimal("75"), status="success"))
-    db.add(Work(user_id=user.id, work_type=WORK_TYPE_MOCK_EXAM,
-                month="март", year=2026, filename="b.jpg",
-                subject="Композиция", score=Decimal("80"), status="success"))
-    db.commit()
-    resp = client.get("/cabinet/scores")
-    assert resp.status_code == 200
-    # Template applies | capitalize: "январь" → "Январь", "март" → "Март"
-    assert "Январь" in resp.text
-    assert "Март" in resp.text
-
-
-def test_scores_mock_groups_show_monthly_avg(auth_client, db):
-    """Mock exam works show monthly average score."""
+def test_cycle_page_shows_mock_works_in_payload(auth_client, db):
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
     client, user = auth_client
-    for score in (70, 90):
-        db.add(Work(user_id=user.id, work_type=WORK_TYPE_MOCK_EXAM,
-                    month="февраль", year=2026, filename="m.jpg",
-                    subject="Рисунок", score=Decimal(str(score)), status="success"))
+    db.add(Work(
+        user_id=user.id,
+        work_type=WORK_TYPE_MOCK_EXAM,
+        month="01", year=2026,
+        filename="a_mock_only.jpg",
+        subject="Drawing-subject",
+        score=Decimal("75"),
+        status="success",
+        is_final=True,
+    ))
     db.commit()
-    resp = client.get("/cabinet/scores")
+    resp = client.get("/cabinet/cycle")
     assert resp.status_code == 200
-    # Template applies | capitalize: "февраль" → "Февраль"
-    assert "Февраль" in resp.text
-    assert "80" in resp.text   # avg(70, 90) = 80
+    assert "a_mock_only.jpg" in resp.text
+    assert "WORKS_BY_SUBJECT" in resp.text
 
 
-def test_scores_overall_avg_uses_mock_exams_only(auth_client, db):
-    """Overall average is computed from mock exams only, not portfolio works."""
-    from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_MOCK_EXAM
-    client, user = auth_client
-    # Portfolio work with score — must NOT affect overall_avg
-    db.add(Work(user_id=user.id, work_type=WORK_TYPE_BEFORE,
-                month="январь", year=2026, filename="p.jpg",
-                score=Decimal("10"), status="success"))
-    # Mock exam with score 95 → overall_avg should be 95
-    db.add(Work(user_id=user.id, work_type=WORK_TYPE_MOCK_EXAM,
-                month="январь", year=2026, filename="m.jpg",
-                subject="Рисунок", score=Decimal("95"), status="success"))
-    db.commit()
-    resp = client.get("/cabinet/scores")
-    assert resp.status_code == 200
-    assert "95" in resp.text
-
-
-# ---------------------------------------------------------------------------
 # 5. Gallery and history
 # ---------------------------------------------------------------------------
+
+def test_portfolio_page_does_not_render_gallery_button(auth_client):
+    """Student portfolio page should not show the separate gallery link."""
+    client, _ = auth_client
+
+    resp = client.get("/cabinet/portfolio")
+
+    assert resp.status_code == 200
+    assert 'href="/cabinet/gallery"' not in resp.text
+
 
 def test_gallery_returns_200(auth_client):
     """GET /cabinet/gallery returns 200."""

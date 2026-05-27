@@ -7,56 +7,77 @@
 .su-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
 .su-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
 .su-back { font-size: 13px; color: var(--dim); text-decoration: none; font-weight: 600; }
-.su-back:hover { color: var(--accent); }
+.su-back:hover { color: var(--blue); }
 
-.su-filters { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
-.su-filters input, .su-filters select { font-family: 'Montserrat', sans-serif; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; }
-.su-filters input:focus, .su-filters select:focus { border-color: var(--accent); }
+.su-filters { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.su-filters input, .su-filters select { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; }
+.su-filters input:focus, .su-filters select:focus { border-color: var(--blue); }
 .su-filters label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
-.su-filters button { padding: 8px 16px; background: var(--accent); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'Montserrat', sans-serif; }
+.su-filters button { padding: 8px 16px; background: var(--blue); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
 .su-filters button:hover { opacity: 0.88; }
 
-.su-table-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); }
+.bulk-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px 18px; margin-bottom: 18px; box-shadow: var(--sh-sm); }
+.bulk-title { font-size: 14px; font-weight: 900; color: var(--text); margin-bottom: 4px; }
+.bulk-sub { font-size: 12px; color: var(--dim); margin-bottom: 12px; line-height: 1.45; }
+.bulk-grid { display: grid; grid-template-columns: minmax(180px, 240px) minmax(150px, 210px) 1fr auto; gap: 10px; align-items: flex-end; }
+.bulk-panel label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
+.bulk-panel select, .bulk-panel textarea { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; }
+.bulk-panel textarea { min-height: 78px; resize: vertical; }
+.bulk-panel select:focus, .bulk-panel textarea:focus { border-color: var(--blue); }
+.bulk-panel button { padding: 10px 16px; background: var(--blue); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 800; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.bulk-panel button:hover { opacity: 0.88; }
+.bulk-result { border-radius: 10px; padding: 12px 14px; margin-bottom: 18px; font-size: 13px; line-height: 1.45; }
+.bulk-result.ok { background: rgba(5,150,105,0.08); border: 1px solid rgba(5,150,105,0.24); color: var(--ok); }
+.bulk-result.warn { background: rgba(217,119,6,0.08); border: 1px solid rgba(217,119,6,0.24); color: var(--warning); }
+.bulk-result strong { color: inherit; }
+.bulk-missing { margin-top: 6px; color: var(--dim); word-break: break-word; }
+
+.su-table-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; box-shadow: var(--sh-sm); }
 .su-table { width: 100%; border-collapse: collapse; }
-.su-table th { text-align: left; padding: 11px 14px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); border-bottom: 1px solid var(--border); background: var(--bg); }
-.su-table td { padding: 10px 14px; font-size: 13px; color: var(--text); border-bottom: 1px solid var(--border); vertical-align: middle; }
+.su-table th { text-align: left; padding: 11px 14px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); border-bottom: 1px solid var(--line); background: var(--bg); }
+.su-table td { padding: 10px 14px; font-size: 13px; color: var(--text); border-bottom: 1px solid var(--line); vertical-align: middle; }
 .su-table tr:last-child td { border-bottom: none; }
 .su-table tr:hover td { background: var(--bg); }
 
 .u-name { font-weight: 700; }
 .u-meta { font-size: 11px; color: var(--dim); margin-top: 2px; }
 .u-role { display: inline-block; padding: 2px 9px; border-radius: 6px; font-size: 11px; font-weight: 700; }
-.r1 { background: rgba(16,185,129,0.1); color: #059669; }
+.r1 { background: rgba(16,185,129,0.1); color: var(--ok); }
 .r2 { background: rgba(37,99,235,0.1); color: #2563EB; }
-.r3 { background: rgba(217,119,6,0.1); color: #D97706; }
+.r3 { background: rgba(217,119,6,0.1); color: var(--warning); }
 .r4 { background: rgba(124,58,237,0.1); color: #7C3AED; }
-.r5 { background: rgba(220,38,38,0.1); color: #DC2626; }
+.r5 { background: rgba(220,38,38,0.1); color: var(--error); }
 .u-inactive { opacity: 0.45; }
 .u-deleted { background: rgba(107,114,128,0.05); }
 .u-deleted td { color: var(--dim); }
 
-.action-btn { padding: 5px 12px; border-radius: 8px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: 'Montserrat', sans-serif; border: 1.5px solid transparent; transition: opacity 0.15s; }
-.btn-block { background: rgba(220,38,38,0.07); color: #DC2626; border-color: rgba(220,38,38,0.2); }
+.action-btn { padding: 5px 12px; border-radius: 8px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; border: 1.5px solid transparent; transition: opacity 0.15s; }
+.btn-block { background: rgba(220,38,38,0.07); color: var(--error); border-color: rgba(220,38,38,0.2); }
 .btn-block:hover { opacity: 0.75; }
-.btn-unblock { background: rgba(5,150,105,0.07); color: #059669; border-color: rgba(5,150,105,0.2); }
+.btn-unblock { background: rgba(5,150,105,0.07); color: var(--ok); border-color: rgba(5,150,105,0.2); }
 .btn-unblock:hover { opacity: 0.75; }
-.btn-delete { background: rgba(107,114,128,0.07); color: var(--dim); border-color: var(--border); }
-.btn-delete:hover { background: rgba(220,38,38,0.07); color: #DC2626; border-color: rgba(220,38,38,0.2); }
+.btn-delete { background: rgba(107,114,128,0.07); color: var(--dim); border-color: var(--line); }
+.btn-delete:hover { background: rgba(220,38,38,0.07); color: var(--error); border-color: rgba(220,38,38,0.2); }
 .actions-cell { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* Confirm modal */
 .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1000; align-items:center; justify-content:center; }
 .modal-overlay.open { display:flex; }
-.modal { background: var(--card); border-radius: 18px; padding: 28px 30px; max-width: 380px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal { background: var(--surface); border-radius: var(--r-lg); padding: 28px 30px; max-width: 380px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
 .modal-title { font-size: 17px; font-weight: 900; color: var(--text); margin-bottom: 10px; }
 .modal-text { font-size: 13px; color: var(--dim); margin-bottom: 22px; line-height: 1.5; }
 .modal-actions { display: flex; gap: 10px; }
-.modal-actions button { flex: 1; padding: 10px; border-radius: 10px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: 'Montserrat', sans-serif; border: none; }
-.modal-cancel { background: var(--bg2); color: var(--text); }
+.modal-actions button { flex: 1; padding: 10px; border-radius: var(--r-sm); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; border: none; }
+.modal-cancel { background: var(--surface-2); color: var(--text); }
 .modal-confirm { background: #DC2626; color: #fff; }
 .modal-confirm.green { background: #059669; }
 
 .su-empty { padding: 40px; text-align: center; color: var(--dim); font-size: 14px; }
+
+@media (max-width: 760px) {
+    .bulk-grid { grid-template-columns: 1fr; }
+    .bulk-panel button { width: 100%; }
+}
 </style>
 {% endblock %}
 {% block content %}
@@ -71,7 +92,7 @@
     <form method="get" action="/cabinet/superadmin/users" class="su-filters">
         <label>
             Поиск
-            <input type="text" name="q" value="{{ q }}" placeholder="Имя..." style="min-width:180px">
+            <input type="text" name="q" value="{{ q }}" placeholder="Имя, @username..." style="min-width:180px">
         </label>
         <label>
             Роль
@@ -91,6 +112,41 @@
                 {% endfor %}
             </select>
         </label>
+        <label>
+            Формат
+            <select name="study_mode">
+                <option value="">Любой</option>
+                {% for m in study_modes %}
+                <option value="{{ m }}" {% if study_mode == m %}selected{% endif %}>{{ study_mode_labels[m] }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            Куратор
+            <select name="curator_id">
+                <option value="">Любой</option>
+                {% for c in curators %}
+                <option value="{{ c.id }}" {% if curator_id == c.id|string %}selected{% endif %}>{{ c.last_name or '' }} {{ c.first_name or c.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            Предметы
+            <input type="text" name="exam_subjects" list="filter-exam-subject-hints" value="{{ exam_subjects }}" placeholder="Р+К" style="min-width:80px;max-width:120px">
+            <datalist id="filter-exam-subject-hints">
+                {% for hint in exam_subject_hints %}
+                <option value="{{ hint }}">
+                {% endfor %}
+            </datalist>
+        </label>
+        <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" name="has_case" value="1" {% if has_case %}checked{% endif %} style="width:auto;padding:0">
+            <span style="font-size:12px;font-weight:700;color:#92590A">КЕЙС</span>
+        </label>
+        <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" name="is_publishable" value="1" {% if is_publishable %}checked{% endif %} style="width:auto;padding:0">
+            <span style="font-size:12px;font-weight:700;color:#7C3AED">PUBLISH</span>
+        </label>
         <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
             <input type="checkbox" name="show_deleted" value="1" {% if show_deleted %}checked{% endif %} style="width:auto;padding:0">
             <span style="font-size:12px;font-weight:700;color:var(--dim)">Показать удалённых</span>
@@ -100,6 +156,57 @@
             <span style="font-size:12px;font-weight:700;color:#DC2626">Только заблокированные</span>
         </label>
         <button type="submit">Найти</button>
+    </form>
+
+    {% if assignment_result %}
+    <div class="bulk-result {% if assignment_result.error or assignment_result.not_found %}warn{% else %}ok{% endif %}">
+        {% if assignment_result.error %}
+            <strong>{{ assignment_result.error }}</strong>
+        {% else %}
+            <strong>{{ assignment_result.curator_name }}:</strong>
+            привязано {{ assignment_result.assigned }} из {{ assignment_result.requested }},
+            уже были у этого куратора {{ assignment_result.unchanged }},
+            не найдено {{ assignment_result.not_found|length }}.
+            {% if assignment_result.cohort_tag %}
+            Метка группы обновлена.
+            {% endif %}
+            {% if assignment_result.not_found %}
+            <div class="bulk-missing">Не найдены: @{{ assignment_result.not_found|join(', @') }}</div>
+            {% endif %}
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <form method="post" action="/cabinet/superadmin/users/assign-curator-bulk" class="bulk-panel">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <div class="bulk-title">Массовая привязка учеников к куратору</div>
+        <div class="bulk-sub">Выберите куратора и вставьте Telegram username учеников списком: по одному в строке, через запятую или точку с запятой.</div>
+        <div class="bulk-grid">
+            <label>
+                Куратор
+                <select name="curator_id" required>
+                    <option value="">Выберите куратора</option>
+                    {% for c in curators %}
+                    <option value="{{ c.id }}">{{ c.last_name or '' }} {{ c.first_name or c.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                Баннер на аватарке
+                <select name="cohort_tag">
+                    <option value="">Не ставить</option>
+                    <option value="may">МАЙСКАЯ · цветок М</option>
+                    <option value="june">ИЮНЬ · пух И</option>
+                    <option value="july">ИЮЛЬ · подсолнух И</option>
+                    <option value="august">АВГУСТ · колос А</option>
+                </select>
+            </label>
+            <label>
+                Username учеников
+                <textarea name="student_usernames" placeholder="@student_one&#10;student_two&#10;@student_three" required></textarea>
+            </label>
+            <button type="submit">Привязать списком</button>
+        </div>
     </form>
 
     <!-- Table -->
@@ -118,8 +225,19 @@
             {% for u in users %}
             <tr class="{% if u.deleted_at %}u-deleted{% elif not u.is_active %}u-inactive{% endif %}">
                 <td>
-                    <div class="u-name">{{ u.last_name or '' }} {{ u.first_name or u.name }}</div>
+                    <a href="/cabinet/superadmin/users/{{ u.id }}" class="u-name" style="color:inherit;text-decoration:none">{{ u.last_name or '' }} {{ u.first_name or u.name }}</a>
                     <div class="u-meta">id={{ u.id }} · {{ u.tariff or '—' }}{% if u.tg_username %} · @{{ u.tg_username }}{% endif %}</div>
+                    {% set s_has_case = has_case_by_user.get(u.id, False) if has_case_by_user else False %}
+                    {% set s = {
+                        'exam_dates': u.exam_dates,
+                        'exam_subjects': u.exam_subjects,
+                        'study_mode': u.study_mode,
+                        'is_publishable': u.is_publishable,
+                        'has_case': s_has_case,
+                    } %}
+                    <div class="student-tag-pills" style="margin-top:5px">
+                        {% include "_includes/student_tag_pills.html" %}
+                    </div>
                 </td>
                 <td>
                     {% if u.role %}
@@ -141,12 +259,10 @@
                     {% if u.id != current_user_id and not u.deleted_at %}
                     <div class="actions-cell">
                         {% if u.is_active %}
-                        {% if not (u.role and u.role.rank == 1) %}
                         <button class="action-btn btn-block"
                             onclick="openConfirm('toggle', {{ u.id }}, '{{ (u.last_name or '') ~ ' ' ~ (u.first_name or u.name) }}', false)">
                             Заблокировать
                         </button>
-                        {% endif %}
                         {% else %}
                         <button class="action-btn btn-unblock"
                             onclick="openConfirm('toggle', {{ u.id }}, '{{ (u.last_name or '') ~ ' ' ~ (u.first_name or u.name) }}', true)">
@@ -176,17 +292,17 @@
         </div>
         <div style="display:flex;gap:8px">
             {% if page > 1 %}
-            <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&page={{ page - 1 }}"
-               style="padding:7px 14px;border-radius:9px;background:var(--bg2);border:1.5px solid var(--border);font-size:13px;font-weight:700;color:var(--text);text-decoration:none">
+            <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&study_mode={{ study_mode }}&curator_id={{ curator_id }}&exam_subjects={{ exam_subjects }}&has_case={{ has_case }}&is_publishable={{ is_publishable }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&page={{ page - 1 }}"
+               style="padding:7px 14px;border-radius:9px;background:var(--surface-2);border:1.5px solid var(--line);font-size:13px;font-weight:700;color:var(--text);text-decoration:none">
                 ‹ Назад
             </a>
             {% endif %}
-            <span style="padding:7px 14px;border-radius:9px;background:var(--accent-soft);color:var(--accent);font-size:13px;font-weight:700">
+            <span style="padding:7px 14px;border-radius:9px;background:var(--blue-soft);color:var(--blue);font-size:13px;font-weight:700">
                 {{ page }} / {{ total_pages }}
             </span>
             {% if page < total_pages %}
-            <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&page={{ page + 1 }}"
-               style="padding:7px 14px;border-radius:9px;background:var(--bg2);border:1.5px solid var(--border);font-size:13px;font-weight:700;color:var(--text);text-decoration:none">
+            <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&study_mode={{ study_mode }}&curator_id={{ curator_id }}&exam_subjects={{ exam_subjects }}&has_case={{ has_case }}&is_publishable={{ is_publishable }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&page={{ page + 1 }}"
+               style="padding:7px 14px;border-radius:9px;background:var(--surface-2);border:1.5px solid var(--line);font-size:13px;font-weight:700;color:var(--text);text-decoration:none">
                 Вперёд ›
             </a>
             {% endif %}

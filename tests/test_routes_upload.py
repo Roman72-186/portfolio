@@ -12,8 +12,11 @@ _OK_RESULT = {"success": True, "drive_file_id": "gdrive_abc"}
 _JPG_BYTES = b"\xff\xd8\xff\xe0" + b"\x00" * 16  # minimal JPEG header
 
 
-def _upload(client, files, month="январь", **kwargs):
-    return client.post("/upload", data={"month": month}, files=files, **kwargs)
+def _upload(client, files, month="январь", section=None, **kwargs):
+    data = {"month": month}
+    if section:
+        data["section"] = section
+    return client.post("/upload", data=data, files=files, **kwargs)
 
 
 def _truncated_jpg_bytes(cut: int = 1) -> bytes:
@@ -89,6 +92,19 @@ def test_upload_form_contains_month_options(auth_client, db):
     assert "декабрь" in resp.text
 
 
+def test_upload_form_allows_explicit_before_mode_even_after_completion(auth_client, db):
+    from app.models.user import User
+
+    client, user = auth_client
+    db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
+    db.commit()
+
+    resp = client.get("/upload?section=before")
+    assert resp.status_code == 200
+    assert "Раздел «До»" in resp.text
+    assert "Выбери месяц" not in resp.text
+
+
 # ---------------------------------------------------------------------------
 # POST /upload — validation
 # ---------------------------------------------------------------------------
@@ -97,7 +113,12 @@ def test_upload_invalid_month_shows_error(auth_client, db):
     client, user = auth_client
     _create_active_period(db, user, "portfolio_upload")
     with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
-        resp = _upload(client, [("photos", ("p.jpg", _JPG_BYTES, "image/jpeg"))], month="martbar")
+        resp = _upload(
+            client,
+            [("photos", ("p.jpg", _JPG_BYTES, "image/jpeg"))],
+            month="martbar",
+            section="after",
+        )
     assert resp.status_code == 200
     assert "месяц" in resp.text.lower()
 
@@ -200,6 +221,46 @@ def test_upload_writes_to_upload_log(auth_client, db):
     assert len(logs) == 1
     assert logs[0].status == "success"
     assert logs[0].month == "январь"
+
+
+def test_upload_before_without_month_succeeds(auth_client, db):
+    from app.models.user import User
+    from app.models.work import Work, WORK_TYPE_BEFORE
+
+    client, user = auth_client
+    db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
+    db.commit()
+
+    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
+        resp = client.post(
+            "/upload",
+            data={"section": "before"},
+            files=[("photos", ("before.jpg", _JPG_BYTES, "image/jpeg"))],
+        )
+
+    assert resp.status_code == 200
+    works = db.query(Work).filter(Work.user_id == user.id, Work.work_type == WORK_TYPE_BEFORE).all()
+    assert len(works) == 1
+
+
+def test_upload_explicit_before_keeps_work_type_before(auth_client, db):
+    from app.models.user import User
+    from app.models.work import Work, WORK_TYPE_BEFORE
+
+    client, user = auth_client
+    db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
+    db.commit()
+
+    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
+        resp = _upload(
+            client,
+            [("photos", ("before.jpg", _JPG_BYTES, "image/jpeg"))],
+            section="before",
+        )
+
+    assert resp.status_code == 200
+    works = db.query(Work).filter(Work.user_id == user.id).all()
+    assert any(work.work_type == WORK_TYPE_BEFORE for work in works)
 
 
 # ---------------------------------------------------------------------------
@@ -364,40 +425,117 @@ def test_mock_exam_locks_subject_after_submission(auth_client, db):
     assert lock.is_locked is True
 
 
-def test_mock_exam_locked_subjects_shown_on_form(auth_client, db):
-    """GET /upload/mock-exam with a locked subject renders it as disabled."""
+def test_mock_exam_locked_subjects_do_not_disable_form(auth_client, db):
+    """GET /upload/mock-exam keeps locked subjects available for a new period."""
     from app.models.mock_exam_lock import MockExamLock
     from datetime import datetime, timezone
     client, user = auth_client
     _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Рисунок")
     db.add(MockExamLock(user_id=user.id, subject="Рисунок", is_locked=True,
                         locked_at=datetime.now(timezone.utc)))
     db.commit()
     resp = client.get("/upload/mock-exam")
     assert resp.status_code == 200
-    assert "subject-locked" in resp.text or 'disabled' in resp.text
+    assert "уже сдано" not in resp.text
 
 
-def test_mock_exam_locked_subject_cannot_be_submitted(auth_client, db):
-    """POST with a locked subject returns an error, no new Work record."""
+def test_mock_exam_current_period_submission_shows_waiting_grade(auth_client, db):
+    """A submitted, unscored mock exam in the active period shows the waiting-grade state."""
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+    from datetime import datetime, timezone
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Рисунок")
+    db.add(Work(
+        user_id=user.id,
+        work_type=WORK_TYPE_MOCK_EXAM,
+        month="январь",
+        year=2026,
+        filename="mock.jpg",
+        subject="Рисунок",
+        tariff=user.tariff,
+        status="success",
+        score=None,
+        created_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+
+    resp = client.get("/upload/mock-exam")
+
+    assert resp.status_code == 200
+    assert "уже сдано" in resp.text
+    assert "ждёт оценки" in resp.text
+
+
+def test_mock_exam_old_period_submission_does_not_show_waiting_grade(auth_client, db):
+    """Old unchecked submissions should not block a new active period."""
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+    from datetime import datetime, timedelta, timezone
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Рисунок")
+    db.add(Work(
+        user_id=user.id,
+        work_type=WORK_TYPE_MOCK_EXAM,
+        month="январь",
+        year=2026,
+        filename="old_mock.jpg",
+        subject="Рисунок",
+        tariff=user.tariff,
+        status="success",
+        score=None,
+        created_at=datetime.now(timezone.utc) - timedelta(days=10),
+    ))
+    db.commit()
+
+    resp = client.get("/upload/mock-exam")
+
+    assert resp.status_code == 200
+    assert "уже сдано" not in resp.text
+
+
+def test_mock_exam_locked_subject_can_be_submitted(auth_client, db):
+    """POST with a locked subject creates a new Work record."""
     from app.models.mock_exam_lock import MockExamLock
     from app.models.work import Work
     from datetime import datetime, timezone
     client, user = auth_client
     _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Рисунок")
     db.add(MockExamLock(user_id=user.id, subject="Рисунок", is_locked=True,
                         locked_at=datetime.now(timezone.utc)))
     db.commit()
     with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
         resp = _mock_upload(client, [("photos", ("w.jpg", _JPG_BYTES, "image/jpeg"))], subject="Рисунок")
     assert resp.status_code == 200
-    assert "ожидает" in resp.text or "разблокировки" in resp.text or "сдан" in resp.text
-    assert db.query(Work).filter(Work.user_id == user.id).count() == 0
+    assert db.query(Work).filter(Work.user_id == user.id).count() == 1
+
+
+def test_mock_exam_locked_subject_can_be_started(auth_client, db):
+    """POST /upload/mock-exam/start ignores old review locks when the period is open."""
+    from app.models.mock_exam_lock import MockExamLock
+    from datetime import datetime, timezone
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Рисунок")
+    db.add(MockExamLock(user_id=user.id, subject="Рисунок", is_locked=True,
+                        locked_at=datetime.now(timezone.utc)))
+    db.commit()
+
+    resp = client.post("/upload/mock-exam/start", data={"subject": "Рисунок"})
+
+    assert resp.status_code == 200
+    assert resp.json()["subject"] == "Рисунок"
+    assert resp.json()["resumed"] is False
 
 
 def test_mock_exam_locks_independent_per_subject(auth_client, db):
-    """Locking Рисунок does not block Композиция."""
+    """Existing locks do not block the locked subject or other subjects."""
     from app.models.mock_exam_lock import MockExamLock
+    from app.models.work import Work
     from datetime import datetime, timezone
     client, user = auth_client
     _create_active_period(db, user, "mock_exam")
@@ -406,18 +544,432 @@ def test_mock_exam_locks_independent_per_subject(auth_client, db):
     db.add(MockExamLock(user_id=user.id, subject="Рисунок", is_locked=True,
                         locked_at=datetime.now(timezone.utc)))
     db.commit()
-    # Locked subject should be rejected
+    # Locked subject should also succeed when mock exams are open.
     with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
         resp_locked = _mock_upload(client, [("photos", ("a.jpg", _JPG_BYTES, "image/jpeg"))], subject="Рисунок")
-    assert "ожидает" in resp_locked.text or "сдан" in resp_locked.text
-    # Unlocked subject should succeed
+    assert resp_locked.status_code == 200
+    # Another subject should succeed too.
     with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
         resp_ok = _mock_upload(client, [("photos", ("b.jpg", _JPG_BYTES, "image/jpeg"))], subject="Композиция")
     assert resp_ok.status_code == 200
+    assert db.query(Work).filter(Work.user_id == user.id).count() == 2
     kompozitsiya_lock = db.query(MockExamLock).filter(
         MockExamLock.user_id == user.id, MockExamLock.subject == "Композиция",
     ).first()
     assert kompozitsiya_lock is not None and kompozitsiya_lock.is_locked is True
+
+
+def test_retake_form_available_when_mock_sent_to_retake(auth_client, db):
+    """A personal retake assignment allows upload even when the global retake period is closed."""
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+    from datetime import datetime, timezone
+
+    client, user = auth_client
+    db.add(Work(
+        user_id=user.id,
+        work_type=WORK_TYPE_MOCK_EXAM,
+        month="январь",
+        year=2026,
+        filename="mock.jpg",
+        subject="Рисунок",
+        tariff=user.tariff,
+        status="success",
+        score=60,
+        sent_to_retake=True,
+        created_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+
+    resp = client.get("/upload/retake")
+
+    assert resp.status_code == 200
+    assert "Отработки закрыты" not in resp.text
+    assert "Сдать отработку" in resp.text
+
+
+def test_retake_api_accepts_upload_when_mock_sent_to_retake(auth_client, db):
+    """POST /upload/retake/api is allowed by a personal retake assignment."""
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
+    from datetime import datetime, timezone
+
+    client, user = auth_client
+    db.add(Work(
+        user_id=user.id,
+        work_type=WORK_TYPE_MOCK_EXAM,
+        month="январь",
+        year=2026,
+        filename="mock.jpg",
+        subject="Рисунок",
+        tariff=user.tariff,
+        status="success",
+        score=60,
+        sent_to_retake=True,
+        created_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+
+    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
+        resp = client.post(
+            "/upload/retake/api",
+            data={"student_score": "60", "subject": "Рисунок"},
+            files=[("photos", ("retake.jpg", _JPG_BYTES, "image/jpeg"))],
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+    assert db.query(Work).filter(
+        Work.user_id == user.id,
+        Work.work_type == WORK_TYPE_RETAKE,
+    ).count() == 1
+
+
+def test_send_mock_to_retake_keeps_subject_locked(admin_client, db, user_factory):
+    """'На отработку' saves a score and retake assignment, but does not unlock mock reupload."""
+    from app.models.mock_exam_lock import MockExamLock
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+    from datetime import datetime, timezone
+
+    client, _ = admin_client
+    student = user_factory(vk_id=151_515, name="Student Retake", role_name="ученик")
+    work = Work(
+        user_id=student.id,
+        work_type=WORK_TYPE_MOCK_EXAM,
+        month="январь",
+        year=2026,
+        filename="mock.jpg",
+        subject="Рисунок",
+        tariff=student.tariff,
+        status="success",
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(work)
+    db.add(MockExamLock(
+        user_id=student.id,
+        subject="Рисунок",
+        is_locked=True,
+        locked_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+    db.refresh(work)
+
+    resp = client.post(
+        f"/cabinet/students/{student.id}/mock-exams/{work.id}/retake",
+        data={"score": "60", "comment": "Переделать штриховку"},
+    )
+
+    assert resp.status_code == 200
+    lock = db.query(MockExamLock).filter(
+        MockExamLock.user_id == student.id,
+        MockExamLock.subject == "Рисунок",
+    ).first()
+    db.refresh(work)
+    assert work.sent_to_retake is True
+    assert lock.is_locked is True
+    assert lock.unlocked_by_id is None
+
+
+def test_send_mock_to_revision_unlocks_subject_without_score(admin_client, db, user_factory):
+    """'На доработку' unlocks mock reupload without setting score or retake assignment."""
+    from app.models.mock_exam_lock import MockExamLock
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+    from datetime import datetime, timezone
+
+    client, admin = admin_client
+    student = user_factory(vk_id=161_616, name="Student Revision", role_name="ученик")
+    work = Work(
+        user_id=student.id,
+        work_type=WORK_TYPE_MOCK_EXAM,
+        month="январь",
+        year=2026,
+        filename="mock.jpg",
+        subject="Рисунок",
+        tariff=student.tariff,
+        status="success",
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(work)
+    db.add(MockExamLock(
+        user_id=student.id,
+        subject="Рисунок",
+        is_locked=True,
+        locked_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+    db.refresh(work)
+
+    resp = client.post(
+        f"/cabinet/students/{student.id}/mock-exams/{work.id}/revision",
+        data={},
+    )
+
+    assert resp.status_code == 200
+    lock = db.query(MockExamLock).filter(
+        MockExamLock.user_id == student.id,
+        MockExamLock.subject == "Рисунок",
+    ).first()
+    db.refresh(work)
+    assert work.score is None
+    assert work.sent_to_retake is False
+    assert lock.is_locked is False
+    assert lock.unlocked_by_id == admin.id
+
+
+def test_regular_admin_cannot_send_mock_to_revision(client, db, user_factory, session_factory):
+    """Only superadmin can use 'На доработку'."""
+    from app.models.mock_exam_lock import MockExamLock
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+    from datetime import datetime, timezone
+
+    admin = user_factory(vk_id=171_717, name="Regular Admin", role_name="админ")
+    student = user_factory(vk_id=181_818, name="Student Revision Denied", role_name="ученик")
+    work = Work(
+        user_id=student.id,
+        work_type=WORK_TYPE_MOCK_EXAM,
+        month="январь",
+        year=2026,
+        filename="mock.jpg",
+        subject="Рисунок",
+        tariff=student.tariff,
+        status="success",
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(work)
+    db.add(MockExamLock(
+        user_id=student.id,
+        subject="Рисунок",
+        is_locked=True,
+        locked_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+    db.refresh(work)
+
+    sess = session_factory(admin)
+    client.cookies.set("session_id", sess.id)
+    resp = client.post(
+        f"/cabinet/students/{student.id}/mock-exams/{work.id}/revision",
+        data={},
+    )
+
+    assert resp.status_code == 403
+
+
+def test_superadmin_can_move_unassigned_retake_to_subject(admin_client, db, user_factory):
+    """Superadmin can assign a subject to retake works that arrived without one."""
+    from app.models.work import Work, WORK_TYPE_RETAKE
+    from datetime import datetime, timezone
+
+    client, _ = admin_client
+    student = user_factory(vk_id=181_819, name="Student Retake Move", role_name="ученик")
+    work = Work(
+        user_id=student.id,
+        work_type=WORK_TYPE_RETAKE,
+        month="январь",
+        year=2026,
+        filename="retake.jpg",
+        subject=None,
+        tariff=student.tariff,
+        status="success",
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(work)
+    db.commit()
+    db.refresh(work)
+
+    resp = client.post(
+        f"/cabinet/students/{student.id}/retakes/{work.id}/subject",
+        data={"subject": "Рисунок"},
+    )
+
+    assert resp.status_code == 200
+    db.refresh(work)
+    assert work.subject == "Рисунок"
+
+
+def test_regular_admin_cannot_move_retake_to_subject(client, db, user_factory, session_factory):
+    """Only superadmin can move retake works between subject sections."""
+    from app.models.work import Work, WORK_TYPE_RETAKE
+    from datetime import datetime, timezone
+
+    admin = user_factory(vk_id=181_820, name="Regular Admin Retake", role_name="админ")
+    student = user_factory(vk_id=181_821, name="Student Retake Denied", role_name="ученик")
+    work = Work(
+        user_id=student.id,
+        work_type=WORK_TYPE_RETAKE,
+        month="январь",
+        year=2026,
+        filename="retake.jpg",
+        subject=None,
+        tariff=student.tariff,
+        status="success",
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(work)
+    db.commit()
+    db.refresh(work)
+
+    sess = session_factory(admin)
+    client.cookies.set("session_id", sess.id)
+    resp = client.post(
+        f"/cabinet/students/{student.id}/retakes/{work.id}/subject",
+        data={"subject": "Рисунок"},
+    )
+
+    assert resp.status_code == 403
+    db.refresh(work)
+    assert work.subject is None
+
+
+def test_move_retake_to_subject_changes_only_selected_photo(admin_client, db, user_factory):
+    """Moving one unassigned retake photo must not move the whole month/group."""
+    from app.models.work import Work, WORK_TYPE_RETAKE
+    from datetime import datetime, timezone
+
+    client, _ = admin_client
+    student = user_factory(vk_id=181_822, name="Student Retake Split", role_name="ученик")
+    first = Work(
+        user_id=student.id,
+        work_type=WORK_TYPE_RETAKE,
+        month="январь",
+        year=2026,
+        filename="first.jpg",
+        subject=None,
+        tariff=student.tariff,
+        status="success",
+        created_at=datetime.now(timezone.utc),
+    )
+    second = Work(
+        user_id=student.id,
+        work_type=WORK_TYPE_RETAKE,
+        month="январь",
+        year=2026,
+        filename="second.jpg",
+        subject=None,
+        tariff=student.tariff,
+        status="success",
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add_all([first, second])
+    db.commit()
+    db.refresh(first)
+    db.refresh(second)
+
+    resp = client.post(
+        f"/cabinet/students/{student.id}/retakes/{first.id}/subject",
+        data={"subject": "Рисунок"},
+    )
+
+    assert resp.status_code == 200
+    db.refresh(first)
+    db.refresh(second)
+    assert first.subject == "Рисунок"
+    assert second.subject is None
+
+
+def test_students_retake_tab_marks_fully_scored_retake_student_checked(admin_client, db, user_factory):
+    """On the shared students page, the retakes tab uses retake scoring status for the sidebar badge."""
+    from app.models.work import Work, WORK_TYPE_RETAKE
+    from datetime import datetime, timezone
+
+    client, _ = admin_client
+    student = user_factory(vk_id=181_823, name="Student Retake Checked")
+    work = Work(
+        user_id=student.id,
+        work_type=WORK_TYPE_RETAKE,
+        month="СЏРЅРІР°СЂСЊ",
+        year=2026,
+        filename="checked.jpg",
+        subject="Р РёСЃСѓРЅРѕРє",
+        tariff=student.tariff,
+        status="success",
+        score=90,
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(work)
+    db.commit()
+
+    resp = client.get("/cabinet/students?tab=retakes")
+
+    assert resp.status_code == 200
+    row = resp.text.split(f'id="srow-{student.id}"', 1)[1].split("</button>", 1)[0]
+    assert "checked-badge" in row
+    assert "pending-badge" not in row
+
+
+def test_students_retake_tab_shows_unchecked_retake_count(admin_client, db, user_factory):
+    """Unscored retakes stay pending in the shared students page sidebar."""
+    from app.models.work import Work, WORK_TYPE_RETAKE
+    from datetime import datetime, timezone
+
+    client, _ = admin_client
+    student = user_factory(vk_id=181_824, name="Student Retake Pending")
+    work = Work(
+        user_id=student.id,
+        work_type=WORK_TYPE_RETAKE,
+        month="СЏРЅРІР°СЂСЊ",
+        year=2026,
+        filename="pending.jpg",
+        subject="Р РёСЃСѓРЅРѕРє",
+        tariff=student.tariff,
+        status="success",
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(work)
+    db.commit()
+
+    resp = client.get("/cabinet/students?tab=retakes")
+
+    assert resp.status_code == 200
+    row = resp.text.split(f'id="srow-{student.id}"', 1)[1].split("</button>", 1)[0]
+    assert "pending-badge" in row
+    assert "checked-badge" not in row
+
+
+def test_revision_opens_mock_exam_upload_again(client, db, user_factory, session_factory):
+    """After superadmin sends to revision, the student can open the mock exam upload again."""
+    from app.models.mock_exam_lock import MockExamLock
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+    from datetime import datetime, timezone
+
+    superadmin = user_factory(vk_id=191_919, name="Super Admin", role_name="суперадмин")
+    student = user_factory(vk_id=202_020, name="Student Reupload", role_name="ученик")
+    _create_active_period(db, superadmin, "mock_exam")
+    _create_active_ticket(db, superadmin, "Рисунок")
+    work = Work(
+        user_id=student.id,
+        work_type=WORK_TYPE_MOCK_EXAM,
+        month="январь",
+        year=2026,
+        filename="mock.jpg",
+        subject="Рисунок",
+        tariff=student.tariff,
+        status="success",
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(work)
+    db.add(MockExamLock(
+        user_id=student.id,
+        subject="Рисунок",
+        is_locked=True,
+        locked_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+    db.refresh(work)
+
+    super_session = session_factory(superadmin)
+    client.cookies.set("session_id", super_session.id)
+    revision_resp = client.post(
+        f"/cabinet/students/{student.id}/mock-exams/{work.id}/revision",
+        data={},
+    )
+    assert revision_resp.status_code == 200
+
+    student_session = session_factory(student)
+    client.cookies.set("session_id", student_session.id)
+    form_resp = client.get("/upload/mock-exam")
+
+    assert form_resp.status_code == 200
+    assert "уже сдано" not in form_resp.text
+    assert "Рисунок" in form_resp.text
 
 
 def test_curator_can_unlock_subject(client, db, user_factory, session_factory):

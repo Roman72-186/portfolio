@@ -449,9 +449,7 @@ def lab3d_page(
     request: Request,
     user: Annotated[dict, Depends(get_current_user)],
 ):
-    """Serve the 3D Lab app — accessible only to VK group members."""
-    if not user.get("is_group_member"):
-        return RedirectResponse("/denied", status_code=302)
+    """Serve the embedded 3D Lab app for any authenticated user."""
     return templates.TemplateResponse("3dlab.html", {
         "request": request,
         "lab_user": {"id": user["vk_id"], "name": user["name"]},
@@ -464,7 +462,22 @@ def enter_3dlab(
     user: Annotated[dict, Depends(get_current_user)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    """Issue a short-lived SSO token and redirect the user to 3D Lab."""
+    """Redirect to 3D Lab.
+
+    Students enter via SSO token. Staff/admin roles can open the lab without
+    issuing a student SSO token.
+    """
+    if user.get("role_rank") == 1 and not user.get("is_group_member"):
+        return RedirectResponse("/denied", status_code=302)
+
+    if not settings.lab3d_url:
+        raise HTTPException(status_code=503, detail="3D Lab не настроена")
+
+    lab3d_url = settings.lab3d_url.rstrip("/")
+
+    if user.get("role_rank") != 1:
+        return RedirectResponse(lab3d_url, status_code=302)
+
     if not user.get("is_group_member"):
         return RedirectResponse("/denied", status_code=302)
 
@@ -477,7 +490,7 @@ def enter_3dlab(
         user=db_user,
         ttl_minutes=settings.sso_token_ttl_minutes,
     )
-    redirect_url = f"{settings.lab3d_url.rstrip('/')}/auth/sso?token={raw_token}"
+    redirect_url = f"{lab3d_url}/auth/sso?token={raw_token}"
     return RedirectResponse(redirect_url, status_code=302)
 
 

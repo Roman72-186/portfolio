@@ -9,23 +9,22 @@
     <meta name="theme-color" content="#ffffff">
     <link rel="manifest" href="/static/manifest.json">
     <title>{% block title %}Портфолио{% endblock %}</title>
-    <!-- Preload critical font subsets (cyrillic + latin weight 500) -->
-    <link rel="preload" as="font" type="font/woff2" href="/static/fonts/montserrat_01.woff2" crossorigin>
-    <link rel="preload" as="font" type="font/woff2" href="/static/fonts/montserrat_04.woff2" crossorigin>
-    <!-- Montserrat: self-hosted, non-blocking -->
-    <link rel="preload" as="style" href="/static/fonts/montserrat.css"
-          onload="this.onload=null;this.rel='stylesheet'">
-    <noscript><link href="/static/fonts/montserrat.css" rel="stylesheet"></noscript>
+    <!-- Google Fonts: Manrope (display) + Figtree (body) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preload" as="image" href="/static/img/bg-mobile.webp?v=1" type="image/webp" media="(max-width: 768px)" fetchpriority="high">
+    <link rel="preload" as="image" href="/static/img/bg-desktop.webp?v=1" type="image/webp" media="(min-width: 769px)" fetchpriority="high">
+    <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
     <!-- Base styles: versioned for cache-busting -->
-    <link rel="stylesheet" href="/static/css/base.css?v=1">
+    <link rel="stylesheet" href="/static/css/base.css?v=16">
     {% block extra_styles %}{% endblock %}
 </head>
 <body>
-    <a href="#main-content" class="skip-link">Перейти к содержимому</a>
-
+    {% include "_includes/impersonation_banner.html" %}
     {% if user is defined and user %}
-    {% set _unread = unread_count|default(0) %}
-    <a href="/cabinet/notifications" class="notif-bell"
+    <div class="floating-widget-tray" id="floatingWidgetTray" aria-label="Быстрые виджеты">
+        {% set _unread = unread_count|default(0) %}
+        <a href="/cabinet/notifications" class="notif-bell"
        aria-label="Уведомления{% if _unread %} ({{ _unread }} непрочитанных){% endif %}">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -35,7 +34,15 @@
         {% if _unread > 0 %}
         <span class="notif-bell-badge" aria-hidden="true">{{ _unread }}</span>
         {% endif %}
-    </a>
+        </a>
+        {% if user.role_rank >= 4 or settings.course_calculator_all_roles or user.role_rank == 1 %}
+        {% include "partials/course_calculator_widget.html" %}
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if user is defined and user and user.role_rank >= 4 %}
+    {% include "partials/staff_nav.html" %}
     {% endif %}
 
     <main class="main" id="main-content">

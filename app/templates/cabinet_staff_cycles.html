@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Цикл Пробника — ученики{% endblock %}
+{% block extra_styles %}
+<style>
+.cycles-page { max-width: 980px; margin: 0 auto; padding: 24px 18px 110px; }
+.cycles-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px; margin-bottom: 18px;
+}
+.cycles-title { font-family: var(--font-display); font-size: 24px; font-weight: 900; letter-spacing: -0.02em; margin: 0; }
+.cycles-meta { font-size: 13px; color: var(--muted); font-weight: 700; }
+.cycles-empty {
+    padding: 28px 22px; border: 1px dashed var(--line);
+    border-radius: var(--r-lg); color: var(--muted); text-align: center;
+}
+.student-block {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-lg); margin-bottom: 14px; overflow: hidden;
+}
+.student-block-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+}
+.student-block-name { font-weight: 800; font-size: 15px; color: var(--ink); }
+.student-block-count { font-size: 12px; font-weight: 700; color: var(--muted); }
+.cycle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 12px 18px; border-top: 1px solid var(--line);
+    text-decoration: none; color: inherit;
+    transition: background .12s;
+}
+.cycle-row:first-child { border-top: none; }
+.cycle-row:hover { background: var(--blue-soft); opacity: 1; }
+.cycle-row-left { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cycle-row-subject { font-size: 14px; font-weight: 800; color: var(--ink); }
+.cycle-row-date { font-size: 12px; color: var(--muted); }
+.cycle-row-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.cycle-pill {
+    font-size: 11px; font-weight: 800; letter-spacing: 0.04em;
+    padding: 3px 9px; border-radius: var(--r-pill);
+    background: var(--surface-2); color: var(--muted);
+}
+.cycle-pill.has-fb { background: rgba(34,197,94,0.12); color: #15803D; }
+.cycle-pill.no-fb { background: rgba(245,158,11,0.12); color: #B45309; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="cycles-page">
+    <div class="cycles-head">
+        <h1 class="cycles-title">Цикл Пробника</h1>
+        <span class="cycles-meta">Циклов: {{ total_cycles }}</span>
+    </div>
+
+    {% if not students %}
+        <div class="cycles-empty">
+            {% if user.role_rank == 2 %}
+                У ваших учеников пока нет циклов Пробника.
+            {% else %}
+                Циклов Пробника пока нет.
+            {% endif %}
+        </div>
+    {% else %}
+        {% for s in students %}
+            <div class="student-block">
+                <div class="student-block-head">
+                    <a href="/cabinet/students?student={{ s.student_id }}" class="student-block-name">{{ s.student_name }}</a>
+                    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                        <a href="/cabinet/staff/cycle/probnik/{{ s.student_id }}"
+                           style="font-size:11px;font-weight:800;letter-spacing:0.04em;padding:4px 9px;border-radius:999px;background:rgba(37,99,235,0.10);color:var(--blue);text-decoration:none;border:1px solid rgba(37,99,235,0.25);">
+                            📅 Пробники
+                        </a>
+                        <a href="/cabinet/staff/cycle/otrabotka/{{ s.student_id }}"
+                           style="font-size:11px;font-weight:800;letter-spacing:0.04em;padding:4px 9px;border-radius:999px;background:rgba(124,58,237,0.10);color:#7C3AED;text-decoration:none;border:1px solid rgba(124,58,237,0.25);">
+                            📅 Отработки
+                        </a>
+                        <span class="student-block-count">{{ s.cycles|length }} цикл(ов)</span>
+                    </div>
+                </div>
+                {% for c in s.cycles %}
+                    <a class="cycle-row" href="{{ detail_prefix }}{{ c.id }}">
+                        <div class="cycle-row-left">
+                            <span class="cycle-row-subject">{{ c.subject }}</span>
+                            <span class="cycle-row-date">Начат: {{ c.started_at[:10] }} · Попыток: {{ c.attempts }}</span>
+                        </div>
+                        <div class="cycle-row-right">
+                            {% if c.feedbacks_count > 0 %}
+                                <span class="cycle-pill has-fb">Обратная связь: {{ c.feedbacks_count }}/{{ c.attempts }}</span>
+                            {% else %}
+                                <span class="cycle-pill no-fb">Нет обратной связи</span>
+                            {% endif %}
+                            <span aria-hidden="true">›</span>
+                        </div>
+                    </a>
+                {% endfor %}
+            </div>
+        {% endfor %}
+    {% endif %}
+</div>
+
+{% include "partials/staff_nav.html" %}
+{% endblock %}

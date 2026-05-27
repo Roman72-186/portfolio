@@ -1,0 +1,236 @@
+<style>
+/* ── Course calculator widget ── */
+.course-calc-widget {
+    position: static;
+    flex: 0 0 auto;
+    width: 48px;
+    height: 48px;
+    pointer-events: none;
+}
+.course-calc-widget-toggle {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    border: none;
+    border-radius: 50%;
+    background: var(--blue);
+    color: #fff;
+    box-shadow: var(--sh-blue);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.course-calc-widget-toggle:hover,
+.course-calc-widget-toggle:focus-visible {
+    background: var(--blue-deep);
+    transform: translateY(-1px);
+    box-shadow: 0 14px 34px rgba(42,63,184,.30);
+    outline: none;
+}
+.course-calc-widget-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 261;
+    background: rgba(14,17,22,.52);
+    backdrop-filter: blur(2px);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .16s, visibility .16s;
+    pointer-events: none;
+}
+.course-calc-widget-panel {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    z-index: 262;
+    width: min(980px, calc(100vw - 32px));
+    max-height: calc(100dvh - 32px);
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-xl);
+    box-shadow: 0 24px 70px rgba(15,23,42,.28);
+    opacity: 0;
+    visibility: hidden;
+    transform: translate(-50%, -48%) scale(.98);
+    transform-origin: center;
+    transition: opacity .16s, visibility .16s, transform .16s;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+}
+.course-calc-widget.is-open .course-calc-widget-backdrop {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+.course-calc-widget.is-open .course-calc-widget-panel {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, -50%) scale(1);
+    pointer-events: auto;
+}
+.course-calc-widget-head {
+    background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue-mid) 100%);
+    color: #fff;
+    padding: 14px 20px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex: 0 0 auto;
+}
+.course-calc-widget-title {
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 800;
+    color: #fff;
+}
+.course-calc-widget-close {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(255,255,255,.25);
+    border-radius: 50%;
+    background: rgba(255,255,255,.10);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+}
+.course-calc-widget-close:hover,
+.course-calc-widget-close:focus-visible {
+    background: rgba(255,255,255,.18);
+    border-color: rgba(255,255,255,.45);
+    outline: none;
+}
+.course-calc-widget-body {
+    padding: 16px;
+    overflow: auto;
+    min-height: 0;
+}
+
+@media (max-width: 1023px) {
+    .course-calc-widget.is-open .course-calc-widget-toggle {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transform: scale(.92);
+    }
+    .course-calc-widget-panel {
+        width: calc(100vw - 24px);
+        max-height: calc(100vh - 24px);
+    }
+}
+
+@media (max-width: 480px) {
+    .course-calc-widget {
+        width: 44px;
+        height: 44px;
+    }
+    .course-calc-widget-toggle {
+        width: 44px;
+        height: 44px;
+    }
+    .course-calc-widget-toggle svg {
+        width: 21px;
+        height: 21px;
+    }
+    .course-calc-widget-panel {
+        width: calc(100vw - 16px);
+        max-height: calc(100dvh - 16px);
+        border-radius: 12px;
+    }
+    .course-calc-widget-head {
+        padding: 14px 16px;
+    }
+    .course-calc-widget-title {
+        font-size: 16px;
+    }
+    .course-calc-widget-body {
+        padding: 14px;
+    }
+}
+
+.course-calc-widget.is-open .course-calc-widget-toggle {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: scale(.92);
+}
+</style>
+
+<div class="course-calc-widget" id="courseCalcWidget">
+    <button class="course-calc-widget-toggle"
+            type="button"
+            aria-label="Открыть калькулятор курса"
+            aria-expanded="false"
+            aria-controls="courseCalcWidgetPanel">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="4" y="2" width="16" height="20" rx="2"/>
+            <line x1="8" y1="6" x2="16" y2="6"/>
+            <line x1="8" y1="10" x2="8.01" y2="10"/>
+            <line x1="12" y1="10" x2="12.01" y2="10"/>
+            <line x1="16" y1="10" x2="16.01" y2="10"/>
+            <line x1="8" y1="14" x2="8.01" y2="14"/>
+            <line x1="12" y1="14" x2="12.01" y2="14"/>
+            <line x1="16" y1="14" x2="16.01" y2="14"/>
+            <line x1="8" y1="18" x2="8.01" y2="18"/>
+            <line x1="12" y1="18" x2="16" y2="18"/>
+        </svg>
+    </button>
+    <div class="course-calc-widget-backdrop" data-course-calc-close aria-hidden="true"></div>
+    <section class="course-calc-widget-panel" id="courseCalcWidgetPanel" aria-label="Калькулятор стоимости курса">
+        <div class="course-calc-widget-head">
+            <div>
+                <div class="course-calc-widget-title">Стоимость летнего курса</div>
+            </div>
+            <button class="course-calc-widget-close" type="button" aria-label="Закрыть калькулятор" data-course-calc-close>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="course-calc-widget-body">
+            {% include "course_calculator.html" %}
+        </div>
+    </section>
+</div>
+
+<script>
+(function () {
+    var widget = document.getElementById('courseCalcWidget');
+    if (!widget) return;
+    var toggle = widget.querySelector('.course-calc-widget-toggle');
+    var closeControls = widget.querySelectorAll('[data-course-calc-close]');
+
+    function setOpen(open) {
+        widget.classList.toggle('is-open', open);
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    toggle.addEventListener('click', function () {
+        setOpen(!widget.classList.contains('is-open'));
+    });
+
+    closeControls.forEach(function (control) {
+        control.addEventListener('click', function () {
+            setOpen(false);
+        });
+    });
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+            setOpen(false);
+        }
+    });
+}());
+</script>

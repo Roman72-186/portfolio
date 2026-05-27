@@ -1,4 +1,10 @@
-"""Deploy portfolio-saas to remote server via SFTP."""
+"""Deploy portfolio-saas to remote server via SFTP.
+
+Usage:
+  python scripts/deploy.py                          # full deploy (все файлы)
+  python scripts/deploy.py app/templates/foo.html  # только указанные файлы
+  python scripts/deploy.py app/templates/a.html app/api/b.py  # несколько файлов
+"""
 import os
 import sys
 from pathlib import Path
@@ -85,7 +91,39 @@ def upload_dir(sftp, local_path, remote_path):
             sftp.put(local_item, remote_item)
 
 
+def upload_files(sftp, local_paths: list[Path]):
+    """Upload specific files, creating parent dirs as needed."""
+    for local_path in local_paths:
+        rel = local_path.relative_to(LOCAL_DIR)
+        remote_path = f"{REMOTE_DIR}/{rel.as_posix()}"
+        # Ensure parent dir exists
+        parent = remote_path.rsplit("/", 1)[0]
+        parts = parent.replace(REMOTE_DIR, "").strip("/").split("/")
+        cur = REMOTE_DIR
+        for part in parts:
+            if not part:
+                continue
+            cur = f"{cur}/{part}"
+            try:
+                sftp.stat(cur)
+            except FileNotFoundError:
+                sftp.mkdir(cur)
+        print(f"  upload {remote_path}")
+        sftp.put(str(local_path), remote_path)
+
+
 def main():
+    # Позиционные аргументы = пути файлов относительно LOCAL_DIR
+    file_args = sys.argv[1:]
+    target_files: list[Path] = []
+    for arg in file_args:
+        p = (LOCAL_DIR / arg).resolve()
+        if not p.exists():
+            raise SystemExit(f"File not found: {p}")
+        if not p.is_file():
+            raise SystemExit(f"Not a file: {p}")
+        target_files.append(p)
+
     host = require_env("PORTFOLIO_SSH_HOST")
     print(f"Connecting to {host}...")
     client = connect_client()
@@ -98,8 +136,12 @@ def main():
     except FileNotFoundError:
         sftp.mkdir(REMOTE_DIR)
 
-    print(f"Uploading {LOCAL_DIR} -> {REMOTE_DIR}")
-    upload_dir(sftp, str(LOCAL_DIR), REMOTE_DIR)
+    if target_files:
+        print(f"Uploading {len(target_files)} file(s) -> {REMOTE_DIR}")
+        upload_files(sftp, target_files)
+    else:
+        print(f"Uploading {LOCAL_DIR} -> {REMOTE_DIR}")
+        upload_dir(sftp, str(LOCAL_DIR), REMOTE_DIR)
 
     print("\n  Uploading app .env to server...")
     env_content = read_app_env()
