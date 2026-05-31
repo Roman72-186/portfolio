@@ -531,37 +531,6 @@ async def cabinet_portfolio(
     before_groups = group_works(before_works)
     after_groups = group_works(after_works)
 
-    # Пробные экзамены: финальные работы из закрытых циклов + название билета
-    from app.models.exam_cycle import ExamCycle
-    from app.models.exam_assignment import ExamTicket
-    mock_rows = (
-        db.query(Work, ExamCycle, ExamTicket)
-        .join(ExamCycle, Work.cycle_id == ExamCycle.id)
-        .outerjoin(ExamTicket, ExamCycle.ticket_id == ExamTicket.id)
-        .filter(
-            Work.user_id == user["user_id"],
-            Work.work_type == WORK_TYPE_MOCK_EXAM,
-            Work.is_final == True,  # noqa: E712
-            Work.status == "success",
-            ExamCycle.closed_at.isnot(None),
-        )
-        .order_by(ExamCycle.closed_at.desc(), Work.id.desc())
-        .limit(200)
-        .all()
-    )
-    portfolio_mock_works = [
-        {
-            "id": w.id,
-            "subject": w.subject or "",
-            "s3_url": w.s3_url,
-            "filename": w.filename,
-            "score": int(w.score) if w.score is not None else None,
-            "ticket_title": t.title if t else None,
-            "closed_at": c.closed_at.isoformat() if c.closed_at else None,
-        }
-        for w, c, t in mock_rows
-    ]
-
     return templates.TemplateResponse("cabinet_portfolio.html", {
         "request": request,
         "user": user,
@@ -571,7 +540,6 @@ async def cabinet_portfolio(
         "after_groups": after_groups,
         "portfolio_before_groups": [serialize_portfolio_group(g) for g in before_groups],
         "portfolio_after_groups": [serialize_portfolio_group(g) for g in after_groups],
-        "portfolio_mock_works": portfolio_mock_works,
         "months": MONTHS,
         "current_year": today_msk().year,
         "page_size": PAGE_SIZE,

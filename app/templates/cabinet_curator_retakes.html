@@ -8,23 +8,22 @@
 .split-wrap { display: flex; height: calc(100vh - 57px); overflow: hidden; }
 
 /* ── Sidebar ── */
-.sidebar { width: 280px; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: var(--surface); }
-.sidebar-header { padding: 16px 16px 12px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+.sidebar { width: 280px; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--card); }
+.sidebar-header { padding: 16px 16px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .sidebar-back { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); font-weight: 500; margin-bottom: 12px; opacity: 1; }
-.sidebar-back:hover { color: var(--blue); opacity: 1; }
+.sidebar-back:hover { color: var(--accent); opacity: 1; }
 .sidebar-title { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 10px; }
-.sidebar-search { width: 100%; padding: 8px 12px; background: var(--bg); border: 1.5px solid var(--line); border-radius: var(--r-sm); font-size: 13px; color: var(--text); font-family: inherit; outline: none; transition: border-color 0.2s; }
-.sidebar-search:focus { border-color: var(--blue); }
+.sidebar-search { width: 100%; padding: 8px 12px; background: var(--bg); border: 1.5px solid var(--border); border-radius: 10px; font-size: 13px; color: var(--text); font-family: 'Montserrat', sans-serif; outline: none; transition: border-color 0.2s; }
+.sidebar-search:focus { border-color: var(--accent); }
 .sidebar-list { flex: 1; overflow-y: auto; padding: 8px 0; }
 .sidebar-list::-webkit-scrollbar { width: 4px; }
-.sidebar-list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
-.student-row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; cursor: pointer; transition: background 0.15s; width: 100%; background: none; border: none; text-align: left; font-family: inherit; }
-.student-row:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.sidebar-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.student-row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; cursor: pointer; transition: background 0.15s; }
 .student-row:hover { background: var(--bg); }
-.student-row.active { background: var(--blue-soft); }
-.student-row.active .student-row-name { color: var(--blue); font-weight: 700; }
-.student-avatar { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line); flex-shrink: 0; }
-.student-avatar-ph { width: 38px; height: 38px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+.student-row.active { background: var(--accent-soft); }
+.student-row.active .student-row-name { color: var(--accent); font-weight: 700; }
+.student-avatar { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); flex-shrink: 0; }
+.student-avatar-ph { width: 38px; height: 38px; border-radius: 50%; background: var(--bg2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
 .student-row-info { flex: 1; min-width: 0; }
 .student-row-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .student-row-meta { font-size: 11px; color: var(--dim); margin-top: 1px; }
@@ -33,12 +32,12 @@
 .split-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
 .split-main-scroll { flex: 1; overflow-y: auto; padding: 20px 24px; }
 .split-main-scroll::-webkit-scrollbar { width: 6px; }
-.split-main-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+.split-main-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
 /* Student hero */
 .student-hero {
     background: linear-gradient(135deg, #2D1B6B 0%, #5B3FC8 100%);
-    border-radius: var(--r-lg); padding: 20px 24px;
+    border-radius: 16px; padding: 20px 24px;
     display: flex; align-items: center; gap: 18px;
     margin-bottom: 20px; box-shadow: 0 4px 20px rgba(45,27,107,0.2);
     position: relative; overflow: hidden;
@@ -49,26 +48,26 @@
 .student-hero-info { flex: 1; position: relative; z-index: 1; }
 .student-hero-name { font-size: 20px; font-weight: 900; color: #fff; margin-bottom: 6px; }
 .student-hero-pills { display: flex; gap: 8px; flex-wrap: wrap; }
-.student-hero-pill { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18); border-radius: var(--r-md); padding: 3px 12px; font-size: 12px; color: rgba(255,255,255,0.85); font-weight: 700; }
+.student-hero-pill { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; padding: 3px 12px; font-size: 12px; color: rgba(255,255,255,0.85); font-weight: 700; }
 
 /* Month section */
 .month-section { margin-bottom: 24px; }
 .month-label { font-size: 12px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--dim); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-.month-count { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 2px 8px; font-size: 11px; color: var(--muted); }
+.month-count { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 2px 8px; font-size: 11px; color: var(--muted); }
 
 /* Retake card */
-.retake-card { background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-md); overflow: hidden; margin-bottom: 12px; box-shadow: var(--sh-sm); }
+.retake-card { background: var(--card); border: 1.5px solid var(--border); border-radius: 14px; overflow: hidden; margin-bottom: 12px; box-shadow: var(--shadow); }
 .retake-card-img { width: 100%; max-height: 240px; object-fit: cover; display: block; cursor: zoom-in; transition: opacity 0.15s; }
 .retake-card-img:hover { opacity: 0.9; }
 .retake-card-body { padding: 12px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .score-badge {
     display: inline-flex; align-items: center; gap: 5px;
-    padding: 4px 12px; border-radius: var(--r-sm); font-size: 13px; font-weight: 700;
+    padding: 4px 12px; border-radius: 10px; font-size: 13px; font-weight: 700;
 }
 .score-badge.student { background: rgba(37,99,235,0.1); color: #2563EB; }
-.score-badge.curator { background: rgba(217,119,6,0.1); color: var(--warning); }
-.score-badge.pending { background: var(--surface-2); color: var(--dim); font-weight: 500; font-size: 12px; }
-.retake-comment { font-size: 12px; color: var(--muted); background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; width: 100%; white-space: pre-wrap; margin-top: 4px; }
+.score-badge.curator { background: rgba(217,119,6,0.1); color: #D97706; }
+.score-badge.pending { background: var(--bg2); color: var(--dim); font-weight: 500; font-size: 12px; }
+.retake-comment { font-size: 12px; color: var(--muted); background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; width: 100%; white-space: pre-wrap; margin-top: 4px; }
 
 .empty-state { text-align: center; padding: 48px 20px; color: var(--dim); }
 .empty-icon { font-size: 40px; margin-bottom: 12px; }
@@ -77,14 +76,14 @@
 /* Lightbox */
 .lb { position: fixed; inset: 0; background: rgba(10,10,30,0.88); z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px; }
 .lb.open { display: flex; }
-.lb img { max-width: 100%; max-height: 88vh; border-radius: var(--r-md); box-shadow: 0 24px 80px rgba(0,0,0,0.5); }
+.lb img { max-width: 100%; max-height: 88vh; border-radius: 12px; box-shadow: 0 24px 80px rgba(0,0,0,0.5); }
 .lb-close { position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.15); border: none; color: #fff; width: 44px; height: 44px; border-radius: 50%; font-size: 22px; cursor: pointer; transition: background 0.2s; }
 .lb-close:hover { background: rgba(255,255,255,0.28); }
 
 /* Mobile */
 @media (max-width: 768px) {
     .split-wrap { flex-direction: column; height: auto; overflow: visible; }
-    .sidebar { width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--line); }
+    .sidebar { width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
     .sidebar-list { max-height: 200px; }
     .split-main { overflow: visible; }
     .split-main-scroll { overflow: visible; padding: 16px; }
@@ -104,17 +103,17 @@
         </div>
         <div class="sidebar-list" id="student-list">
             {% for s in sidebar_students %}
-            <button type="button" class="student-row" id="srow-{{ s.id }}" onclick="selectStudent({{ s.id }})" aria-label="{{ s.name }}">
+            <div class="student-row" id="srow-{{ s.id }}" onclick="selectStudent({{ s.id }})">
                 {% if s.photo_url %}
                 <img src="{{ s.photo_url }}" class="student-avatar" alt="">
                 {% else %}
-                <div class="student-avatar-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg></div>
+                <div class="student-avatar-ph">👤</div>
                 {% endif %}
                 <div class="student-row-info">
                     <div class="student-row-name">{{ s.name }}</div>
                     <div class="student-row-meta">{{ s.tariff or '—' }}</div>
                 </div>
-            </button>
+            </div>
             {% endfor %}
         </div>
     </div>
@@ -123,7 +122,7 @@
     <div class="split-main">
         <div class="split-main-scroll" id="main-panel">
             <div class="empty-state" id="select-prompt">
-                <div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg></div>
+                <div class="empty-icon">👈</div>
                 <div class="empty-text">Выберите ученика слева</div>
             </div>
         </div>
@@ -131,7 +130,11 @@
 
 </div>
 
-{% include "partials/lightbox.html" %}
+<!-- Lightbox -->
+<div class="lb" id="lb" onclick="lbClose(event)">
+    <button class="lb-close" onclick="lbClose()">&times;</button>
+    <img id="lb-img" src="" alt="">
+</div>
 
 <script>
 var INITIAL_STUDENT_ID = {{ initial_student_id }};
@@ -147,7 +150,7 @@ function selectStudent(id) {
         .then(data => renderRetakes(data))
         .catch(() => {
             document.getElementById('main-panel').innerHTML =
-                '<div class="empty-state"><div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-text">Ошибка загрузки</div></div>';
+                '<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">Ошибка загрузки</div></div>';
         });
 }
 
@@ -158,7 +161,7 @@ function renderRetakes(data) {
     // Hero
     var avatar = s.photo_url
         ? '<img src="' + esc(s.photo_url) + '" class="student-hero-avatar" alt="">'
-        : '<div class="student-hero-avatar-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></div>';
+        : '<div class="student-hero-avatar-ph">🔄</div>';
     html += '<div class="student-hero">'
         + avatar
         + '<div class="student-hero-info">'
@@ -172,20 +175,20 @@ function renderRetakes(data) {
 
     var months = data.retakes_by_month || [];
     if (!months.length) {
-        html += '<div class="empty-state"><div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div><div class="empty-text">Нет отработок</div></div>';
+        html += '<div class="empty-state"><div class="empty-icon">📂</div><div class="empty-text">Нет отработок</div></div>';
         document.getElementById('main-panel').innerHTML = html;
         return;
     }
 
     months.forEach(function(group) {
-        html += '<div class="month-section" data-gallery="retake-' + esc(group.year) + '-' + esc(group.month) + '">';
+        html += '<div class="month-section">';
         html += '<div class="month-label">' + esc(group.month) + ' ' + group.year
             + '<span class="month-count">' + group.total + ' шт.</span></div>';
 
         group.works.forEach(function(w) {
             html += '<div class="retake-card">';
             if (w.s3_url) {
-                html += '<img src="' + esc(w.s3_url) + '" class="retake-card-img" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)">';
+                html += '<img src="' + esc(w.s3_url) + '" class="retake-card-img" alt="' + esc(w.filename) + '" loading="lazy" onclick="lbOpen(\'' + esc(w.s3_url) + '\')">';
             }
             html += '<div class="retake-card-body">';
             // Student's self-reported score
@@ -217,6 +220,20 @@ function filterStudents(q) {
         row.style.display = name.includes(q) ? '' : 'none';
     });
 }
+
+function lbOpen(src) {
+    document.getElementById('lb-img').src = src;
+    document.getElementById('lb').classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+function lbClose(e) {
+    if (e && e.target !== document.getElementById('lb') && !e.target.classList.contains('lb-close')) return;
+    document.getElementById('lb').classList.remove('open');
+    document.body.style.overflow = '';
+}
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') lbClose({target: document.getElementById('lb')});
+});
 
 function esc(s) {
     if (!s) return '';

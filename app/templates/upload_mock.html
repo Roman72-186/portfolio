@@ -2,310 +2,460 @@
 {% block title %}Сдать пробник{% endblock %}
 {% block extra_styles %}
 <style>
-.upload-wrap { max-width: 520px; margin: 0 auto; }
-.step-card {
-    background: var(--surface); border: 1px solid var(--line);
-    border-radius: var(--r-xl); padding: 18px 18px 20px; margin-top: 14px;
+.upload-wrap { max-width: 480px; margin: 0 auto; }
+.upload-drop {
+    border: 2px dashed var(--border); border-radius: 20px; padding: 44px 32px;
+    text-align: center; cursor: pointer; background: var(--card);
+    transition: border-color 0.2s, background 0.2s;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
 }
-.step-card.is-hidden { display: none; }
-.step-title { font-size: 15px; font-weight: 800; color: var(--ink); margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
-.step-num {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 22px; height: 22px; border-radius: 50%; background: var(--blue-soft); color: var(--blue);
-    font-size: 12px; font-weight: 900;
+.upload-drop:hover, .upload-drop.drag-over { border-color: var(--accent); background: var(--accent-soft); }
+.upload-drop input[type="file"] { display: none; }
+.upload-circle {
+    width: 96px; height: 96px; border-radius: 50%;
+    background: #FEF9C3; border: 2px dashed #D97706;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 42px; color: #D97706; line-height: 1;
+    transition: background 0.2s, color 0.2s, transform 0.2s;
 }
-.step-hint { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
-.step-card.is-done { border-color: rgba(34,197,94,0.4); background: rgba(34,197,94,0.06); }
-.step-card.is-done .step-num { background: rgba(34,197,94,0.16); color: #15803D; }
-.subject-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.subject-btn {
-    background: var(--surface); border: 2px solid var(--line); border-radius: var(--r-md);
-    padding: 14px 12px; cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 800;
-    color: var(--ink); transition: border-color .15s, background .15s, opacity .15s;
-    display: flex; flex-direction: column; align-items: center; gap: 6px;
-}
-.subject-btn:hover { border-color: var(--blue); background: var(--blue-soft); }
-.subject-btn.is-locked { opacity: .55; cursor: not-allowed; }
-.subject-btn.is-no-ticket { opacity: .55; cursor: not-allowed; }
-.subject-btn.is-selected { border-color: var(--blue); background: var(--blue-soft); color: var(--blue); }
-.subject-meta { font-size: 11px; font-weight: 700; color: var(--muted); }
-.subject-btn.is-locked .subject-meta { color: var(--error); }
-.file-zone {
-    border: 2px dashed var(--line); border-radius: var(--r-xl); padding: 22px 16px;
-    text-align: center; cursor: pointer; background: var(--surface-2);
-    transition: border-color .15s, background .15s;
-}
-.file-zone:hover, .file-zone.drag-over { border-color: var(--blue); background: var(--blue-soft); }
-.file-zone input[type="file"] { display: none; }
-.file-zone-icon {
-    width: 52px; height: 52px; border-radius: 50%;
-    background: var(--blue-soft); color: var(--blue);
-    display: inline-flex; align-items: center; justify-content: center;
-    margin-bottom: 8px;
-}
-.file-zone-title { font-size: 14px; font-weight: 700; color: var(--ink); }
-.file-zone-hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
-.preview-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.upload-drop:hover .upload-circle { background: #D97706; color: #fff; transform: scale(1.07); }
+.upload-drop-title { font-size: 15px; font-weight: 700; color: var(--text); }
+.upload-drop-hint  { font-size: 12px; color: var(--dim); line-height: 1.5; }
+.preview-area { display: none; }
+.preview-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.preview-count { font-size: 14px; font-weight: 700; color: #D97706; }
+.btn-reselect { font-size: 12px; font-weight: 500; color: var(--dim); background: none; border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; cursor: pointer; font-family: 'Montserrat', sans-serif; transition: all 0.2s; }
+.photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.photo-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); }
 .preview-cell { position: relative; }
-.preview-cell img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-sm); border: 1px solid var(--line); }
 .preview-remove {
     position: absolute; top: 4px; right: 4px;
-    width: 22px; height: 22px; border-radius: 50%; border: none;
-    background: rgba(0,0,0,0.55); color: #fff; font-size: 13px; cursor: pointer;
-    display: flex; align-items: center; justify-content: center; line-height: 1;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: rgba(0,0,0,0.6); color: #fff;
+    border: none; cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 2; line-height: 1;
 }
-.btn-primary {
-    display: block; width: 100%; padding: 12px 16px; border-radius: var(--r-md);
-    background: var(--blue); color: #fff; border: none; font-weight: 800; font-size: 14px;
-    cursor: pointer; font-family: inherit; transition: background .15s, opacity .15s;
+.preview-remove:hover { background: rgba(220,38,38,0.85); }
+.btn-add-more {
+    font-size: 12px; font-weight: 500; color: var(--dim);
+    background: none; border: 1px dashed var(--border);
+    border-radius: 20px; padding: 4px 12px; cursor: pointer;
+    font-family: 'Montserrat', sans-serif;
+    transition: border-color 0.2s, color 0.2s;
 }
-.btn-primary:hover:not(:disabled) { background: var(--blue-deep); }
-.btn-primary:disabled { background: var(--surface-2); color: var(--dim); cursor: not-allowed; }
-.btn-ghost {
-    display: block; width: 100%; padding: 11px 16px; border-radius: var(--r-md);
-    background: var(--surface); color: var(--ink); border: 1.5px solid var(--line);
-    font-weight: 700; font-size: 14px; cursor: pointer; font-family: inherit;
-    margin-top: 10px;
+.btn-add-more:hover { border-color: #D97706; color: #D97706; }
+.subject-btn {
+    text-align: center; padding: 12px 16px; border-radius: 12px;
+    border: 2px solid var(--border); background: var(--card);
+    font-size: 15px; font-weight: 700; color: var(--dim);
+    transition: all 0.15s;
 }
-.btn-ghost:hover { border-color: var(--blue); color: var(--blue); }
-.btn-success {
-    display: block; width: 100%; padding: 12px 16px; border-radius: var(--r-md);
-    background: #15803D; color: #fff; border: none; font-weight: 800; font-size: 14px;
-    cursor: pointer; font-family: inherit; margin-top: 10px;
+.subject-radio:checked + .subject-btn,
+.subject-btn.subject-active {
+    border-color: #D97706; background: #FEF9C3; color: #D97706;
 }
-.alert {
-    padding: 10px 14px; border-radius: var(--r-md); font-size: 13px; margin-bottom: 12px;
+label:hover .subject-btn { border-color: #D97706; color: #D97706; }
+.subject-btn.subject-locked {
+    opacity: 0.45; cursor: not-allowed; pointer-events: none;
+    border-style: dashed;
 }
-.alert.error { background: rgba(220,38,38,0.10); color: #B91C1C; border: 1px solid rgba(220,38,38,0.3); }
-.alert.success { background: rgba(34,197,94,0.10); color: #15803D; border: 1px solid rgba(34,197,94,0.3); }
-.alert.info { background: var(--blue-soft); color: var(--blue); border: 1px solid rgba(59,91,255,0.25); }
+.subject-locked-hint { font-size: 10px; font-weight: 500; color: var(--dim); margin-top: 4px; display: block; text-align: center; }
+
+/* ── Ticket widget ── */
+.ticket-card {
+    border-radius: 14px; border: 1.5px solid rgba(217,119,6,0.35);
+    background: #FFFBEB; padding: 16px 18px; margin-top: 16px;
+    animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+.ticket-title { font-size: 15px; font-weight: 700; color: #92400E; margin-bottom: 6px; }
+.ticket-desc { font-size: 13px; color: #78350F; line-height: 1.55; white-space: pre-wrap; }
+.ticket-img { width: 100%; border-radius: 10px; margin-top: 12px; border: 1px solid rgba(217,119,6,0.2); display: block; }
+
+/* ── Timer widget ── */
+.exam-timer {
+    position: fixed; bottom: 80px; right: 16px; z-index: 90;
+    background: #1E293B; color: #fff;
+    border-radius: 14px; padding: 10px 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+    display: none; flex-direction: column; align-items: center; gap: 2px;
+    min-width: 110px;
+}
+.exam-timer.visible { display: flex; }
+.timer-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.5); }
+.timer-value { font-size: 22px; font-weight: 900; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
+.timer-value.expired { color: #EF4444; font-size: 14px; }
+@media (max-width: 480px) {
+    .upload-drop { padding: 28px 20px; }
+    .upload-circle { width: 76px; height: 76px; font-size: 34px; }
+    .upload-wrap { padding: 0 4px; }
+}
 </style>
 {% endblock %}
-
 {% block content %}
-<div class="upload-wrap" style="padding: 20px 16px 110px;">
-    {% include "partials/cycle_back.html" %}
+<div class="upload-wrap">
 
-    <h1 style="font-size:22px;font-weight:900;letter-spacing:-0.02em;margin:8px 0 4px;">Пробник</h1>
-    <p style="color:var(--muted);font-size:13px;margin:0 0 14px;">{{ current_date }}</p>
+    <div style="margin-bottom:24px">
+        <h1 style="font-size:26px;font-weight:900;letter-spacing:-0.5px" class="text-gradient">
+            Сдать пробник
+        </h1>
+        <p style="color:var(--muted);font-size:14px;margin-top:6px;line-height:1.5">
+            Загрузите работы пробного экзамена. После проверки куратор выставит оценку.
+        </p>
+    </div>
 
     {% if not feature_available %}
-        <div class="alert info">🔒 {{ feature_message or "Раздел закрыт администратором." }}</div>
+    <div style="background:rgba(239,68,68,0.06);border:1.5px solid rgba(239,68,68,0.2);
+                border-radius:14px;padding:20px 22px;margin-bottom:20px;text-align:center">
+        <div style="font-size:28px;margin-bottom:8px">🔒</div>
+        <div style="font-size:15px;font-weight:700;color:#DC2626;margin-bottom:6px">Пробники закрыты</div>
+        <div style="font-size:13px;color:var(--muted);line-height:1.6">{{ feature_message }}</div>
+    </div>
     {% else %}
 
-    <div id="alert-slot"></div>
-
-    {# ── Step 1: выбор предмета ── #}
-    <div class="step-card" id="step-subject">
-        <div class="step-title"><span class="step-num">1</span> Выберите предмет</div>
-        <div class="step-hint">Доступны только предметы с активным билетом.</div>
-        <div class="subject-grid">
-            {% for subj in subjects %}
-                {% set has_ticket = subj in subjects_with_tickets %}
-                {% set is_locked = subj in locked_subjects %}
-                <button type="button"
-                        class="subject-btn{% if is_locked %} is-locked{% elif not has_ticket %} is-no-ticket{% endif %}"
-                        data-subject="{{ subj }}"
-                        data-has-ticket="{{ 'true' if has_ticket else 'false' }}"
-                        data-locked="{{ 'true' if is_locked else 'false' }}"
-                        onclick="selectSubject(this)">
-                    <span>{{ subj }}</span>
-                    {% if is_locked %}
-                        <span class="subject-meta">Сдан в этом периоде</span>
-                    {% elif not has_ticket %}
-                        <span class="subject-meta">Нет билета</span>
-                    {% else %}
-                        <span class="subject-meta">Билет активен</span>
-                    {% endif %}
-                </button>
-            {% endfor %}
-        </div>
+    {% if success %}
+    <div class="alert alert-success" style="margin-bottom:20px">
+        Загружено {{ success_count }} фото! Куратор проверит и выставит оценку.
+        <a href="/cabinet" style="margin-left:8px;font-weight:700">В кабинет →</a>
     </div>
-
-    {# ── Step 2: финальная работа ── #}
-    <div class="step-card is-hidden" id="step-final">
-        <div class="step-title"><span class="step-num">2</span> Загрузите финальную работу</div>
-        <div class="step-hint">Только одна фотография — итоговая работа.</div>
-        <label class="file-zone" id="final-zone">
-            <input type="file" id="final-input" accept="image/*" onchange="onFinalSelected()">
-            <div class="file-zone-icon">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 15 21 19 3 19 3 15"/><polyline points="7 9 12 4 17 9"/><line x1="12" y1="4" x2="12" y2="15"/></svg>
-            </div>
-            <div class="file-zone-title">Нажмите чтобы выбрать фото</div>
-            <div class="file-zone-hint">JPG, PNG, WebP, HEIC — до 10 МБ</div>
-        </label>
-        <div class="preview-grid" id="final-preview" style="display:none"></div>
-        <button type="button" class="btn-primary" id="final-submit" disabled onclick="uploadFinal()" style="margin-top:14px">Загрузить финальную</button>
-    </div>
-
-    {# ── Step 3: поэтапные ── #}
-    <div class="step-card is-hidden" id="step-intermediate">
-        <div class="step-title"><span class="step-num">3</span> Загрузите поэтапные работы</div>
-        <div class="step-hint">Фотографии этапов выполнения. До 10 штук. Необязательно.</div>
-        <label class="file-zone" id="inter-zone">
-            <input type="file" id="inter-input" accept="image/*" multiple onchange="onInterSelected()">
-            <div class="file-zone-icon">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-            </div>
-            <div class="file-zone-title">Нажмите чтобы выбрать фото</div>
-            <div class="file-zone-hint">До 10 фото</div>
-        </label>
-        <div class="preview-grid" id="inter-preview" style="display:none"></div>
-        <button type="button" class="btn-ghost" id="inter-upload" disabled onclick="uploadIntermediate()">Загрузить поэтапные</button>
-    </div>
-
-    {# ── Step 4: финальный submit ── #}
-    <div class="step-card is-hidden" id="step-submit">
-        <div class="step-title"><span class="step-num">4</span> Отправить на проверку</div>
-        <div class="step-hint">После отправки куратор увидит работу в своём кабинете и даст обратную связь.</div>
-        <button type="button" class="btn-success" onclick="finishSubmit()">Отправить</button>
-    </div>
-
     {% endif %}
+
+    {% if error %}
+    <div class="alert alert-error" style="margin-bottom:20px">{{ error }}</div>
+    {% endif %}
+
+    <form action="/upload/mock-exam" method="post" enctype="multipart/form-data" id="mockForm"
+          style="display:flex;flex-direction:column;gap:20px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+
+        <div class="card" style="padding:16px 20px;display:flex;align-items:center;gap:10px">
+            <span style="font-size:20px">📅</span>
+            <div>
+                <div style="font-size:11px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--dim)">Дата сдачи</div>
+                <div style="font-size:15px;font-weight:700;color:var(--text)">{{ current_date }}</div>
+            </div>
+        </div>
+
+        <div class="card" style="padding:20px">
+            <label class="form-label" style="margin-bottom:12px">Предмет</label>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+                {% for s in subjects %}
+                {% set is_locked = s in locked_subjects %}
+                {% set has_ticket = s in subjects_with_tickets %}
+                {% set is_disabled = is_locked or not has_ticket %}
+                <label style="flex:1;min-width:120px;cursor:{% if is_disabled %}not-allowed{% else %}pointer{% endif %}">
+                    <input type="radio" name="subject" value="{{ s }}" required
+                           {% if selected_subject == s %}checked{% endif %}
+                           {% if is_disabled %}disabled{% endif %}
+                           style="display:none" class="subject-radio">
+                    <div class="subject-btn {% if selected_subject == s and not is_disabled %}subject-active{% endif %} {% if is_disabled %}subject-locked{% endif %}">
+                        {{ s }}
+                    </div>
+                    {% if is_locked %}
+                    <span class="subject-locked-hint">уже сдано · ждёт оценки</span>
+                    {% elif not has_ticket %}
+                    <span class="subject-locked-hint">нет задания</span>
+                    {% endif %}
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Start button (shown after subject chosen, when no active attempt yet) -->
+        <button type="button" id="startBtn" style="display:none; padding:14px 28px; font-size:15px; font-weight:700;
+                background:linear-gradient(135deg,#D97706,#F59E0B); color:#fff; border:none; border-radius:12px;
+                cursor:pointer; font-family:'Montserrat',sans-serif; transition:opacity 0.15s">
+            ▶ Начать пробник
+        </button>
+
+        <!-- Ticket block (shown by JS after Начать) -->
+        <div id="ticketBlock" style="display:none"></div>
+
+        <div id="uploadSection" style="display:none">
+            <div>
+                <label class="form-label" style="margin-bottom:10px">
+                    Фото <span style="color:var(--dim);font-weight:500">до {{ max_files }} штук</span>
+                </label>
+                <label class="upload-drop" id="dropZone">
+                    <input type="file" name="photos" accept="image/*" required multiple id="photoInput">
+                    <div class="upload-circle">★</div>
+                    <div class="upload-drop-title">Нажми или перенеси фото</div>
+                    <div class="upload-drop-hint">Любые фото · до 10 МБ · до {{ max_files }} штук</div>
+                </label>
+                <div class="preview-area" id="previewArea">
+                    <div class="preview-header">
+                        <span class="preview-count" id="fileCount"></span>
+                        <div style="display:flex;gap:8px">
+                            <button type="button" class="btn-add-more" id="addMoreBtn">+ Добавить</button>
+                            <button type="button" class="btn-reselect" id="reselectBtn">✕ Сбросить</button>
+                        </div>
+                    </div>
+                    <div class="photo-grid" id="previewGrid"></div>
+                </div>
+            </div>
+
+            <button type="submit" id="submitBtn" class="btn-primary" disabled
+                    style="background:linear-gradient(135deg,#D97706,#F59E0B)">
+                Отправить на проверку
+            </button>
+        </div>
+    </form>
+
+    {% endif %}{# end feature gate #}
 </div>
 
-<input type="hidden" id="csrf-token" value="{{ csrf_token(request) }}">
+<!-- Timer widget -->
+<div class="exam-timer" id="examTimer">
+    <span class="timer-label">Время на сдачу</span>
+    <span class="timer-value" id="timerValue">4:00:00</span>
+</div>
+
+{% set active_tab = "mock" %}
+{% include "partials/bottom_nav.html" %}
+{% include "partials/lightbox.html" %}
 
 <script>
-const CSRF_TOKEN = document.getElementById('csrf-token').value;
-let selectedSubject = "";
-let finalFile = null;
-let finalWorkId = null;
-let interFiles = [];
+const MAX_FILES = {{ max_files }}, MAX_SIZE = 10*1024*1024;
+const input = document.getElementById('photoInput'), dropZone = document.getElementById('dropZone');
+const previewArea = document.getElementById('previewArea'), grid = document.getElementById('previewGrid');
+const counter = document.getElementById('fileCount'), submitBtn = document.getElementById('submitBtn');
+const reselectBtn = document.getElementById('reselectBtn');
+const addMoreBtn = document.getElementById('addMoreBtn');
 
-function showAlert(kind, msg) {
-    const slot = document.getElementById('alert-slot');
-    if (!slot) return;
-    slot.innerHTML = '<div class="alert ' + kind + '">' + msg + '</div>';
-    if (kind === 'success') setTimeout(() => { slot.innerHTML = ''; }, 4000);
+var selectedFiles = [];
+
+function syncInputFiles() {
+    var dt = new DataTransfer();
+    selectedFiles.forEach(function(f) { dt.items.add(f); });
+    input.files = dt.files;
 }
 
-function selectSubject(btn) {
-    if (btn.dataset.locked === 'true' || btn.dataset.hasTicket === 'false') {
-        showAlert('info', 'Этот предмет недоступен для сдачи сейчас.');
-        return;
+function removeFile(idx) {
+    selectedFiles.splice(idx, 1);
+    syncInputFiles();
+    renderPreviews();
+    if (!selectedFiles.length) {
+        previewArea.style.display = 'none';
+        dropZone.style.display = 'flex';
+        submitBtn.disabled = true;
     }
-    selectedSubject = btn.dataset.subject;
-    document.querySelectorAll('.subject-btn').forEach(b => b.classList.remove('is-selected'));
-    btn.classList.add('is-selected');
-    document.getElementById('step-final').classList.remove('is-hidden');
-    document.getElementById('step-final').scrollIntoView({behavior: 'smooth', block: 'center'});
 }
 
-function onFinalSelected() {
-    const input = document.getElementById('final-input');
-    const file = input.files && input.files[0];
-    if (!file) return;
-    finalFile = file;
-    const preview = document.getElementById('final-preview');
-    preview.innerHTML = '';
-    const url = URL.createObjectURL(file);
-    const cell = document.createElement('div');
-    cell.className = 'preview-cell';
-    cell.style.gridColumn = 'span 3';
-    cell.innerHTML = '<img src="' + url + '" alt="">';
-    preview.appendChild(cell);
-    preview.style.display = 'grid';
-    document.getElementById('final-submit').disabled = false;
+function renderPreviews() {
+    grid.innerHTML = '';
+    counter.textContent = 'Выбрано: ' + selectedFiles.length + ' из ' + MAX_FILES;
+    selectedFiles.forEach(function(f, i) {
+        var wrap = document.createElement('div');
+        wrap.className = 'preview-cell';
+        var btn = document.createElement('button');
+        btn.type = 'button'; btn.className = 'preview-remove'; btn.textContent = '\u2715';
+        btn.onclick = function() { removeFile(i); };
+        wrap.appendChild(btn);
+        var reader = new FileReader();
+        reader.onload = function(e) { var img = document.createElement('img'); img.src = e.target.result; wrap.appendChild(img); };
+        reader.readAsDataURL(f);
+        grid.appendChild(wrap);
+    });
 }
 
-async function uploadFinal() {
-    if (!finalFile || !selectedSubject) return;
-    const btn = document.getElementById('final-submit');
+function addFiles(newFiles) {
+    var files = Array.from(newFiles);
+    for (var j = 0; j < files.length; j++) {
+        if (files[j].size > MAX_SIZE) { alert(files[j].name + ' — слишком большой'); continue; }
+        if (selectedFiles.length >= MAX_FILES) { alert('Максимум ' + MAX_FILES + ' фото'); break; }
+        selectedFiles.push(files[j]);
+    }
+    syncInputFiles();
+    renderPreviews();
+    if (selectedFiles.length) { dropZone.style.display = 'none'; previewArea.style.display = 'block'; submitBtn.disabled = false; }
+}
+
+input.addEventListener('change', function() { addFiles(input.files); });
+reselectBtn.addEventListener('click', function() {
+    selectedFiles = []; input.value = ''; grid.innerHTML = '';
+    previewArea.style.display = 'none'; dropZone.style.display = 'flex'; submitBtn.disabled = true;
+});
+addMoreBtn.addEventListener('click', function() {
+    var tmp = document.createElement('input'); tmp.type = 'file'; tmp.accept = 'image/*'; tmp.multiple = true;
+    tmp.onchange = function() { addFiles(tmp.files); }; tmp.click();
+});
+dropZone.addEventListener('dragover', function(e){e.preventDefault();dropZone.classList.add('drag-over');});
+dropZone.addEventListener('dragleave', function(){dropZone.classList.remove('drag-over');});
+dropZone.addEventListener('drop', function(e) {
+    e.preventDefault(); dropZone.classList.remove('drag-over');
+    if(e.dataTransfer&&e.dataTransfer.files.length) { addFiles(e.dataTransfer.files); }
+});
+document.getElementById('mockForm').addEventListener('submit', function(){ syncInputFiles(); submitBtn.disabled=true; submitBtn.innerHTML='<span class="spinner"></span>Загружаем…'; });
+
+// ── Server data ──────────────────────────────────────────────────────────────
+var ATTEMPTS = {{ attempts_by_subject | tojson }};  // { "Рисунок": {...}, "Композиция": {...} } | {}
+var TIMER_DURATION = {{ mock_exam_duration_sec }};
+var CSRF_TOKEN = document.querySelector('input[name="csrf_token"]').value;
+var _timerInterval = null;
+var _currentSubject = null;
+
+// Помечаем subject-кнопки «в процессе» если есть активная попытка
+Object.keys(ATTEMPTS).forEach(function(subj){
+    document.querySelectorAll('.subject-radio').forEach(function(r){
+        if (r.value === subj) {
+            var btn = r.nextElementSibling;
+            btn.classList.add('subject-active');
+            // Добавляем хинт «в процессе»
+            var hint = document.createElement('span');
+            hint.className = 'subject-locked-hint';
+            hint.style.color = '#D97706';
+            hint.textContent = '⏱ в процессе';
+            btn.parentNode.appendChild(hint);
+        }
+    });
+});
+
+document.querySelectorAll('.subject-radio').forEach(function(r){
+    r.addEventListener('change', function(){
+        document.querySelectorAll('.subject-btn').forEach(function(b){b.classList.remove('subject-active');});
+        r.nextElementSibling.classList.add('subject-active');
+        onSubjectSelected(r.value);
+    });
+});
+
+function onSubjectSelected(subject) {
+    _currentSubject = subject;
+    // Скрыть всё, кроме шапки
+    document.getElementById('ticketBlock').style.display = 'none';
+    document.getElementById('ticketBlock').innerHTML = '';
+    document.getElementById('uploadSection').style.display = 'none';
+    document.getElementById('startBtn').style.display = 'none';
+    stopTimer();
+
+    if (ATTEMPTS[subject]) {
+        // Уже есть активная попытка → сразу показать билет + таймер + форму загрузки
+        renderTicket(ATTEMPTS[subject]);
+        startTimerFromServer(ATTEMPTS[subject].started_at);
+        document.getElementById('uploadSection').style.display = 'block';
+    } else {
+        // Показать кнопку «Начать пробник»
+        document.getElementById('startBtn').style.display = 'inline-block';
+    }
+}
+
+document.getElementById('startBtn').addEventListener('click', function(){
+    if (!_currentSubject) return;
+    var btn = this;
     btn.disabled = true;
-    btn.textContent = 'Загрузка…';
-    const fd = new FormData();
-    fd.append('subject', selectedSubject);
-    fd.append('photos', finalFile);
+    btn.textContent = 'Выдаём билет…';
+
+    var fd = new FormData();
+    fd.append('subject', _currentSubject);
     fd.append('csrf_token', CSRF_TOKEN);
-    try {
-        const r = await fetch('/upload/probnik/final', {
-            method: 'POST', body: fd,
-            headers: {'X-CSRF-Token': CSRF_TOKEN},
-        });
-        const data = await r.json();
-        if (!data.success) {
-            showAlert('error', data.error || 'Не удалось загрузить');
-            btn.textContent = 'Загрузить финальную';
+
+    fetch('/upload/mock-exam/start', { method: 'POST', body: fd })
+        .then(function(r){ return r.json().then(function(j){ return {status: r.status, body: j}; }); })
+        .then(function(res){
             btn.disabled = false;
+            btn.innerHTML = '▶ Начать пробник';
+            if (res.status !== 200) {
+                var msg = {
+                    'no_active_ticket': 'Нет активного билета по этому предмету',
+                    'already_submitted': 'Пробник уже сдан и ожидает проверки',
+                    'feature_closed': 'Раздел пробников сейчас закрыт',
+                    'invalid_subject': 'Выберите корректный предмет',
+                    'portfolio_not_completed': 'Сначала загрузите портфолио «До»',
+                }[res.body.error] || 'Не удалось начать пробник';
+                alert(msg);
+                return;
+            }
+            var attempt = {
+                id: res.body.attempt_id,
+                subject: res.body.subject,
+                ticket_title: res.body.ticket.title,
+                ticket_description: res.body.ticket.description,
+                ticket_image_url: res.body.ticket.image_url,
+                started_at: res.body.started_at,
+            };
+            ATTEMPTS[_currentSubject] = attempt;
+            document.getElementById('startBtn').style.display = 'none';
+            renderTicket(attempt);
+            startTimerFromServer(attempt.started_at);
+            document.getElementById('uploadSection').style.display = 'block';
+        })
+        .catch(function(){
+            btn.disabled = false;
+            btn.innerHTML = '▶ Начать пробник';
+            alert('Не удалось связаться с сервером');
+        });
+});
+
+function renderTicket(attempt) {
+    var block = document.getElementById('ticketBlock');
+    var html = '<div class="ticket-card">';
+    html += '<div class="ticket-title">📋 ' + escHtml(attempt.ticket_title) + '</div>';
+    if (attempt.ticket_description) {
+        html += '<div class="ticket-desc">' + attempt.ticket_description + '</div>';
+    }
+    if (attempt.ticket_image_url) {
+        html += '<img src="' + escHtml(attempt.ticket_image_url) + '" class="ticket-img" alt="Билет" loading="lazy" style="cursor:zoom-in" onclick="openLightbox(this.src, this.alt)">';
+    }
+    html += '</div>';
+    block.innerHTML = html;
+    block.style.display = 'block';
+}
+
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function stopTimer() {
+    if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
+    var el = document.getElementById('examTimer');
+    el.classList.remove('visible');
+    el.classList.remove('expired');
+}
+
+function startTimerFromServer(startedAtIso) {
+    if (_timerInterval) clearInterval(_timerInterval);
+    var startedAtMs = Date.parse(startedAtIso);
+    var timerEl = document.getElementById('examTimer');
+    var valEl = document.getElementById('timerValue');
+    timerEl.classList.remove('expired');
+    timerEl.classList.add('visible');
+
+    function tick() {
+        var elapsed = Math.floor((Date.now() - startedAtMs) / 1000);
+        var remaining = TIMER_DURATION - elapsed;
+        if (remaining <= 0) {
+            valEl.textContent = 'Время вышло ⏰';
+            valEl.classList.add('expired');
+            clearInterval(_timerInterval);
             return;
         }
-        finalWorkId = (data.work_ids && data.work_ids[0]) || null;
-        document.getElementById('step-final').classList.add('is-done');
-        btn.textContent = '✓ Финальная загружена';
-        showAlert('success', 'Финальная работа загружена. Можешь добавить поэтапные или сразу отправить.');
-        document.getElementById('step-intermediate').classList.remove('is-hidden');
-        document.getElementById('step-submit').classList.remove('is-hidden');
-        document.getElementById('step-intermediate').scrollIntoView({behavior: 'smooth', block: 'center'});
-    } catch (e) {
-        showAlert('error', 'Сетевая ошибка');
-        btn.textContent = 'Загрузить финальную';
-        btn.disabled = false;
+        var h = Math.floor(remaining / 3600);
+        var m = Math.floor((remaining % 3600) / 60);
+        var s = remaining % 60;
+        valEl.textContent = h + ':' + pad(m) + ':' + pad(s);
     }
+    tick();
+    _timerInterval = setInterval(tick, 1000);
 }
 
-function onInterSelected() {
-    const input = document.getElementById('inter-input');
-    interFiles = Array.from(input.files || []).slice(0, 10);
-    const preview = document.getElementById('inter-preview');
-    preview.innerHTML = '';
-    interFiles.forEach((f, i) => {
-        const cell = document.createElement('div');
-        cell.className = 'preview-cell';
-        cell.innerHTML = '<img src="' + URL.createObjectURL(f) + '" alt=""><button class="preview-remove" onclick="removeInter(' + i + ')">×</button>';
-        preview.appendChild(cell);
-    });
-    preview.style.display = interFiles.length ? 'grid' : 'none';
-    document.getElementById('inter-upload').disabled = interFiles.length === 0;
-}
+function pad(n) { return n < 10 ? '0' + n : n; }
 
-function removeInter(idx) {
-    interFiles.splice(idx, 1);
-    const preview = document.getElementById('inter-preview');
-    preview.innerHTML = '';
-    interFiles.forEach((f, i) => {
-        const cell = document.createElement('div');
-        cell.className = 'preview-cell';
-        cell.innerHTML = '<img src="' + URL.createObjectURL(f) + '" alt=""><button class="preview-remove" onclick="removeInter(' + i + ')">×</button>';
-        preview.appendChild(cell);
-    });
-    preview.style.display = interFiles.length ? 'grid' : 'none';
-    document.getElementById('inter-upload').disabled = interFiles.length === 0;
-}
-
-async function uploadIntermediate() {
-    if (!finalWorkId || interFiles.length === 0) return;
-    const btn = document.getElementById('inter-upload');
-    btn.disabled = true;
-    btn.textContent = 'Загрузка…';
-    const fd = new FormData();
-    fd.append('parent_work_id', finalWorkId);
-    fd.append('csrf_token', CSRF_TOKEN);
-    interFiles.forEach(f => fd.append('photos', f));
-    try {
-        const r = await fetch('/upload/probnik/intermediate', {
-            method: 'POST', body: fd,
-            headers: {'X-CSRF-Token': CSRF_TOKEN},
-        });
-        const data = await r.json();
-        if (!data.success) {
-            showAlert('error', data.error || 'Не удалось загрузить');
-            btn.textContent = 'Загрузить поэтапные';
-            btn.disabled = false;
-            return;
+// Auto-select первый subject с активной попыткой, если есть
+(function(){
+    var active = Object.keys(ATTEMPTS);
+    if (active.length > 0) {
+        var radio = document.querySelector('.subject-radio[value="' + active[0] + '"]');
+        if (radio && !radio.disabled) {
+            radio.checked = true;
+            onSubjectSelected(active[0]);
         }
-        document.getElementById('step-intermediate').classList.add('is-done');
-        btn.textContent = '✓ Поэтапные загружены (' + data.created + ')';
-        showAlert('success', 'Поэтапные загружены. Нажми «Отправить».');
-    } catch (e) {
-        showAlert('error', 'Сетевая ошибка');
-        btn.textContent = 'Загрузить поэтапные';
-        btn.disabled = false;
     }
-}
+})();
 
-function finishSubmit() {
-    window.location.href = '/cabinet/cycle';
-}
+// Auto-load ticket if subject pre-selected on page load
+(function(){
+    var checked = document.querySelector('.subject-radio:checked');
+    if (checked) onSubjectSelected(checked.value);
+})();
 </script>
 {% endblock %}

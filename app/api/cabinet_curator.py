@@ -14,9 +14,8 @@ from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
-from app.services.stats import curator_avg_scores, mock_period_subject_stats
 from app.services.tz import MSK_TZ
-from app.services.utils import study_duration_text, group_works, has_case_growth
+from app.services.utils import study_duration_text, group_works
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet")
@@ -75,17 +74,11 @@ def _enrich_for_sidebar(s: User, works_by_user: dict) -> dict:
         "id": s.id,
         "name": f"{s.last_name or ''} {s.first_name or s.name}".strip(),
         "photo_url": s.photo_url,
-        "cohort_tag": s.cohort_tag,
         "tariff": s.tariff,
-        "exam_dates": s.exam_dates,
-        "exam_subjects": s.exam_subjects,
-        "study_mode": s.study_mode,
-        "is_publishable": s.is_publishable,
         "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
         "avg_score": avg_score,
         "upload_count": len(works),
         "portfolio_do_completed": s.portfolio_do_completed,
-        "has_case": has_case_growth(mock_works),
     }
 
 
@@ -108,17 +101,12 @@ def cabinet_curator_dashboard(
 ):
     students = _get_curator_students(user["user_id"], db)
     period_start, period_end = _current_academic_period()
-    mock_subject_period, mock_subject_stats = mock_period_subject_stats(db, curator_id=user["user_id"])
-    avg_scores = curator_avg_scores(db, curator_id=user["user_id"])
     return templates.TemplateResponse("cabinet_curator_dashboard.html", {
         "request": request,
         "user": user,
         "students_count": len(students),
         "period_start": period_start,
         "period_end": period_end,
-        "mock_subject_period": mock_subject_period,
-        "mock_subject_stats": mock_subject_stats,
-        "avg_scores": avg_scores,
     })
 
 
@@ -171,7 +159,6 @@ def get_portfolio_data(
             "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
             "avg_score": avg_score,
             "photo_url": student.photo_url,
-            "cohort_tag": student.cohort_tag,
         },
         "before_works": [
             {"s3_url": w.s3_url, "filename": w.filename, "id": w.id}
@@ -250,7 +237,6 @@ def get_mock_exams_data(
             "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
             "avg_score": avg_score,
             "photo_url": student.photo_url,
-            "cohort_tag": student.cohort_tag,
         },
         "mock_works": {
             subject: [serialize_mock_work(w) for w in works_list]
@@ -300,7 +286,6 @@ def get_retakes_data(
             "tariff": student.tariff or "—",
             "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
             "photo_url": student.photo_url,
-            "cohort_tag": student.cohort_tag,
         },
         "retakes_by_month": [
             {

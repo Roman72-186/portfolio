@@ -608,21 +608,135 @@ async def upload_photos_api(
     })
 
 
-# ARCHIVED 2026-05-21: оригинальные тела /upload/mock-exam/api и /upload/retake/api
-# вынесены в _cleanup/legacy-upload-routes-2026-05-21.py. Сейчас stubs возвращают
-# 410 Gone, чтобы старые AJAX-клиенты/закладки не могли обойти MockExamLock
-# pre-check, который живёт в /upload/probnik/final и /upload/otrabotka/final.
-_LEGACY_GONE_MSG = "Этот endpoint устарел. Загрузка пробников и отработок идёт через /cabinet/cycle."
-
+# ── POST /upload/mock-exam/api ───────────────────────────────────────────────
 
 @router.post("/upload/mock-exam/api")
-async def upload_mock_exam_api_legacy():
-    return JSONResponse({"success": False, "error": _LEGACY_GONE_MSG}, status_code=410)
+async def upload_mock_exam_api(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    photos: list[UploadFile] = File(...),
+    subject: str = Form(...),
+):
+    fa, fm = is_feature_available(db, FEATURE_MOCK_EXAM)
+    if not fa:
+        return JSONResponse({"success": False, "error": fm or "Пробники закрыты"}, status_code=403)
+    if subject not in MOCK_SUBJECTS:
+        return JSONResponse({"success": False, "error": "Выберите предмет"}, status_code=422)
 
+    today = today_msk()
+    has_active_ticket = (
+        db.query(ExamTicket)
+        .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
+        .filter(
+            ExamAssignment.status == "published",
+            ExamAssignment.subject == subject,
+            ExamTicket.start_date <= today,
+            ExamTicket.end_date >= today,
+            or_(
+                ExamTicket.assign_to_all.is_(True),
+                ExamTicket.id.in_(
+                    db.query(ExamTicketAssignee.ticket_id)
+                    .filter(ExamTicketAssignee.user_id == user["user_id"])
+                    .scalar_subquery()
+                ),
+            ),
+        )
+        .first()
+    )
+    if not has_active_ticket:
+        return JSONResponse({"success": False, "error": f"Нет активного билета по предмету «{subject}»"}, status_code=404)
+
+    files_data, err = await _validate_photos(photos)
+    if err:
+        return JSONResponse({"success": False, "error": err}, status_code=422)
+
+    now = datetime.now(timezone.utc)
+    month = MONTHS[now.month - 1]
+    success_count, fail_count, last_error = await _process_uploads(
+        background_tasks=background_tasks,
+        db=db, user=user, files_data=files_data, month=month, work_type=WORK_TYPE_MOCK_EXAM,
+        subject=subject,
+        ticket_id=has_active_ticket.id if has_active_ticket else None,
+    )
+
+    if success_count > 0:
+        existing_lock = db.query(MockExamLock).filter(
+            MockExamLock.user_id == user["user_id"],
+            MockExamLock.subject == subject,
+        ).first()
+        if existing_lock:
+            existing_lock.is_locked = True
+            existing_lock.locked_at = datetime.now(timezone.utc)
+        else:
+            db.add(MockExamLock(
+                user_id=user["user_id"],
+                subject=subject,
+                is_locked=True,
+                locked_at=datetime.now(timezone.utc),
+            ))
+        db.query(MockExamAttempt).filter(
+            MockExamAttempt.user_id == user["user_id"],
+            MockExamAttempt.subject == subject,
+            MockExamAttempt.completed_at.is_(None),
+        ).update(
+            {"completed_at": datetime.now(timezone.utc)},
+            synchronize_session=False,
+        )
+        db.commit()
+
+    return JSONResponse({
+        "success": success_count > 0,
+        "created": success_count,
+        "failed": fail_count,
+        "error": last_error if fail_count and not success_count else None,
+    })
+
+
+# ── POST /upload/retake/api ──────────────────────────────────────────────────
 
 @router.post("/upload/retake/api")
-async def upload_retake_api_legacy():
-    return JSONResponse({"success": False, "error": _LEGACY_GONE_MSG}, status_code=410)
+async def upload_retake_api(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    photos: list[UploadFile] = File(...),
+    student_score: float = Form(...),
+    subject: str = Form(...),
+):
+    fa, fm = _retake_available_for_user(db, user["user_id"])
+    if not fa:
+        return JSONResponse({"success": False, "error": fm or "Пересдача закрыта"}, status_code=403)
+    if subject not in MOCK_SUBJECTS:
+        return JSONResponse({"success": False, "error": "Выберите предмет: Рисунок или Композиция"}, status_code=422)
+    if not (0 <= student_score <= 100):
+        return JSONResponse({"success": False, "error": "Балл должен быть от 0 до 100"}, status_code=422)
+    student_score_int = int(round(student_score))
+
+    files_data, err = await _validate_photos(photos)
+    if err:
+        return JSONResponse({"success": False, "error": err}, status_code=422)
+
+    now = datetime.now(timezone.utc)
+    month = MONTHS[now.month - 1]
+    success_count, fail_count, last_error = await _process_uploads(
+        background_tasks=background_tasks,
+        db=db, user=user, files_data=files_data, month=month,
+        work_type=WORK_TYPE_RETAKE,
+        subject=subject,
+        student_score=student_score_int,
+    )
+
+    return JSONResponse({
+        "success": success_count > 0,
+        "created": success_count,
+        "failed": fail_count,
+        "error": last_error if fail_count and not success_count else None,
+    })
 
 
 # ── POST /upload/finish-before ───────────────────────────────────────────────
@@ -713,23 +827,182 @@ def mock_exam_form(
 
 
 # ── POST /upload/mock-exam/start ─────────────────────────────────────────────
-# ARCHIVED 2026-05-21: см. _cleanup/legacy-upload-routes-2026-05-21.py.
-# Создание MockExamAttempt больше не нужно — новый cycle flow начинается с
-# /upload/probnik/final, билеты в нём показываются без отдельного start-вызова.
 
 @router.post("/upload/mock-exam/start")
-def mock_exam_start_legacy():
-    return JSONResponse({"error": "gone", "message": _LEGACY_GONE_MSG}, status_code=410)
+def mock_exam_start(
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    subject: str = Form(...),
+):
+    """Фиксирует начало пробника: выбирает случайный билет и создаёт MockExamAttempt.
+    Возвращает JSON с данными билета и started_at для старта клиентского таймера.
+    """
+    fa, _ = is_feature_available(db, FEATURE_MOCK_EXAM)
+    if not fa:
+        return JSONResponse({"error": "feature_closed"}, status_code=403)
+
+    if subject not in MOCK_SUBJECTS:
+        return JSONResponse({"error": "invalid_subject"}, status_code=422)
+
+    existing = (
+        db.query(MockExamAttempt)
+        .filter(
+            MockExamAttempt.user_id == user["user_id"],
+            MockExamAttempt.subject == subject,
+            MockExamAttempt.completed_at.is_(None),
+        )
+        .order_by(MockExamAttempt.started_at.desc())
+        .first()
+    )
+    if existing:
+        return JSONResponse({
+            "attempt_id": existing.id,
+            "subject": existing.subject,
+            "ticket": {
+                "id": existing.ticket_id,
+                "title": existing.ticket_title,
+                "description": format_ticket_description(existing.ticket_description),
+                "image_url": existing.ticket_image_url or "",
+            },
+            "started_at": existing.started_at.isoformat(),
+            "duration_sec": MOCK_EXAM_DURATION_SEC,
+            "resumed": True,
+        })
+
+    ticket = _pick_random_active_ticket(db, user["user_id"], subject)
+    if not ticket:
+        return JSONResponse({"error": "no_active_ticket"}, status_code=404)
+
+    attempt = MockExamAttempt(
+        user_id=user["user_id"],
+        subject=subject,
+        ticket_id=ticket.id,
+        ticket_title=ticket.title,
+        ticket_description=ticket.description,
+        ticket_image_url=ticket.image_s3_url,
+    )
+    db.add(attempt)
+    db.commit()
+    db.refresh(attempt)
+
+    return JSONResponse({
+        "attempt_id": attempt.id,
+        "subject": subject,
+        "ticket": {
+            "id": ticket.id,
+            "title": ticket.title,
+            "description": format_ticket_description(ticket.description),
+            "image_url": ticket.image_s3_url or "",
+        },
+        "started_at": attempt.started_at.isoformat(),
+        "duration_sec": MOCK_EXAM_DURATION_SEC,
+        "resumed": False,
+    })
 
 
 # ── POST /upload/mock-exam ───────────────────────────────────────────────────
-# ARCHIVED 2026-05-21: form POST на /upload/mock-exam не проверял MockExamLock
-# pre-check и мог обойти блокировку повторной сдачи. Заменён на
-# /upload/probnik/final с pre-check в app/api/cycle_upload.py.
 
 @router.post("/upload/mock-exam", response_class=HTMLResponse)
-async def upload_mock_exam_legacy():
-    return JSONResponse({"success": False, "error": _LEGACY_GONE_MSG}, status_code=410)
+async def upload_mock_exam(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    photos: list[UploadFile] = File(...),
+    subject: str = Form(...),
+):
+    fa, fm = is_feature_available(db, FEATURE_MOCK_EXAM)
+    if not fa:
+        return _render_mock(request, user, db, feature_available=fa, feature_message=fm)
+
+    def _err(msg):
+        return _render_mock(request, user, db, error=msg, selected_subject=subject)
+
+    if subject not in MOCK_SUBJECTS:
+        return _err("Выберите предмет")
+
+    now = datetime.now(timezone.utc)
+    today = today_msk()
+    has_active_ticket = (
+        db.query(ExamTicket)
+        .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
+        .filter(
+            ExamAssignment.status == "published",
+            ExamAssignment.subject == subject,
+            ExamTicket.start_date <= today,
+            ExamTicket.end_date >= today,
+            or_(
+                ExamTicket.assign_to_all.is_(True),
+                ExamTicket.id.in_(
+                    db.query(ExamTicketAssignee.ticket_id)
+                    .filter(ExamTicketAssignee.user_id == user["user_id"])
+                    .scalar_subquery()
+                ),
+            ),
+        )
+        .first()
+    )
+    if not has_active_ticket:
+        return _err(f"Нет активного билета по предмету «{subject}»")
+    month = MONTHS[now.month - 1]
+
+    if not photos or (len(photos) == 1 and not photos[0].filename):
+        return _err("Выберите хотя бы одно фото")
+    if len(photos) > MAX_FILES:
+        return _err(f"Максимум {MAX_FILES} фото за раз")
+
+    files_data = []
+    for photo in photos:
+        if not _is_allowed_image(photo.content_type, photo.filename):
+            return _err(f"Файл «{photo.filename}» — неподдерживаемый формат. Допустимы: JPG, PNG, WebP")
+        photo_bytes = await photo.read()
+        if len(photo_bytes) > MAX_SIZE:
+            return _err(f"Файл «{photo.filename}» слишком большой (макс. 10 МБ)")
+        files_data.append((photo.filename or "photo.jpg", photo_bytes))
+
+    success_count, fail_count, last_error = await _process_uploads(
+        background_tasks=background_tasks,
+        db=db, user=user, files_data=files_data, month=month, work_type=WORK_TYPE_MOCK_EXAM,
+        subject=subject,
+        ticket_id=has_active_ticket.id if has_active_ticket else None,
+    )
+
+    error = None
+    if fail_count > 0 and success_count == 0:
+        error = f"Не удалось загрузить: {last_error}"
+    elif fail_count > 0:
+        error = f"{fail_count} фото не загружено"
+
+    if success_count > 0:
+        existing_lock = db.query(MockExamLock).filter(
+            MockExamLock.user_id == user["user_id"],
+            MockExamLock.subject == subject,
+        ).first()
+        if existing_lock:
+            existing_lock.is_locked = True
+            existing_lock.locked_at = datetime.now(timezone.utc)
+        else:
+            db.add(MockExamLock(
+                user_id=user["user_id"],
+                subject=subject,
+                is_locked=True,
+                locked_at=datetime.now(timezone.utc),
+            ))
+        db.query(MockExamAttempt).filter(
+            MockExamAttempt.user_id == user["user_id"],
+            MockExamAttempt.subject == subject,
+            MockExamAttempt.completed_at.is_(None),
+        ).update(
+            {"completed_at": datetime.now(timezone.utc)},
+            synchronize_session=False,
+        )
+        db.commit()
+
+    return _render_mock(request, user, db, error=error,
+                        success=success_count > 0, success_count=success_count,
+                        selected_subject="" if success_count > 0 else subject)
 
 
 # ── GET /upload/retake ───────────────────────────────────────────────────────
@@ -745,9 +1018,65 @@ def retake_form(
 
 
 # ── POST /upload/retake ──────────────────────────────────────────────────────
-# ARCHIVED 2026-05-21: см. _cleanup/legacy-upload-routes-2026-05-21.py.
-# Заменён на /upload/otrabotka/final в app/api/cycle_upload.py.
 
 @router.post("/upload/retake", response_class=HTMLResponse)
-async def upload_retake_legacy():
-    return JSONResponse({"success": False, "error": _LEGACY_GONE_MSG}, status_code=410)
+async def upload_retake(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    photos: list[UploadFile] = File(...),
+    student_score: float = Form(...),
+    subject: str = Form(...),
+):
+    fa, fm = _retake_available_for_user(db, user["user_id"])
+    if not fa:
+        return _render_retake(request, user, feature_available=fa, feature_message=fm)
+
+    def _err(msg):
+        return _render_retake(request, user, error=msg,
+                              student_score_input=str(student_score) if student_score is not None else "",
+                              selected_subject=subject or "")
+
+    if subject not in MOCK_SUBJECTS:
+        return _err("Выберите предмет: Рисунок или Композиция")
+    if not (0 <= student_score <= 100):
+        return _err("Балл должен быть от 0 до 100")
+    student_score = int(round(student_score))
+
+    now = datetime.now(timezone.utc)
+    month = MONTHS[now.month - 1]
+
+    if not photos or (len(photos) == 1 and not photos[0].filename):
+        return _err("Выберите хотя бы одно фото")
+    if len(photos) > MAX_FILES:
+        return _err(f"Максимум {MAX_FILES} фото за раз")
+
+    files_data = []
+    for photo in photos:
+        if not _is_allowed_image(photo.content_type, photo.filename):
+            return _err(f"Файл «{photo.filename}» — неподдерживаемый формат. Допустимы: JPG, PNG, WebP")
+        photo_bytes = await photo.read()
+        if len(photo_bytes) > MAX_SIZE:
+            return _err(f"Файл «{photo.filename}» слишком большой (макс. 10 МБ)")
+        files_data.append((photo.filename or "photo.jpg", photo_bytes))
+
+    success_count, fail_count, last_error = await _process_uploads(
+        background_tasks=background_tasks,
+        db=db, user=user, files_data=files_data, month=month,
+        work_type=WORK_TYPE_RETAKE,
+        subject=subject,
+        student_score=student_score,
+    )
+
+    error = None
+    if fail_count > 0 and success_count == 0:
+        error = f"Не удалось загрузить: {last_error}"
+    elif fail_count > 0:
+        error = f"{fail_count} фото не загружено"
+
+    return _render_retake(request, user, error=error,
+                          success=success_count > 0, success_count=success_count,
+                          student_score_input="" if success_count > 0 else str(student_score),
+                          selected_subject="" if success_count > 0 else subject)

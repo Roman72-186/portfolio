@@ -486,7 +486,7 @@ const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
             <div class="sidebar-subtitle">
                 {{ total_students }} учен{{ 'иков' if total_students != 1 else 'ик' }} · на проверке {{ total_unchecked }} работ
             </div>
-            <input type="text" class="sidebar-search" placeholder="Поиск по имени или @username"
+            <input type="text" class="sidebar-search" placeholder="Поиск ученика…"
                    oninput="applyFilters()" id="student-search">
             {% if tariffs %}
             <div class="tariff-filter" id="tariff-filter">
@@ -499,7 +499,7 @@ const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
         </div>
         <div class="sidebar-list" id="student-list">
             {% for s in sidebar_students %}
-            <button type="button" class="student-row" id="srow-{{ s.id }}" data-tariff="{{ s.tariff or '' }}" data-tg="{{ s.tg_username or '' }}" onclick="selectStudent({{ s.id }})" aria-label="{{ s.name }}">
+            <button type="button" class="student-row" id="srow-{{ s.id }}" data-tariff="{{ s.tariff or '' }}" onclick="selectStudent({{ s.id }})" aria-label="{{ s.name }}">
                 {% if s.photo_url %}
                 <img src="{{ s.photo_url }}" class="student-avatar" alt="">
                 {% else %}
@@ -508,11 +508,16 @@ const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
                 <div class="student-row-info">
                     <div class="student-row-name">{{ s.name }}</div>
                     <div class="student-row-meta">
-                        {{ s.tariff or '—' }} · {{ s.mock_count }} работ{% if s.tg_username %} · @{{ s.tg_username }}{% endif %}
+                        {{ s.tariff or '—' }} · {{ s.mock_count }} работ
                     </div>
                 </div>
-                {% if s.scored_subjects | length >= 2 %}
+                {% set ss = s.scored_subjects %}
+                {% if ss | length >= 2 %}
                 <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверено</span>
+                {% elif 'Рисунок' in ss %}
+                <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверен рис</span>
+                {% elif 'Композиция' in ss %}
+                <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверен комп</span>
                 {% elif s.unchecked %}
                 <span class="pending-badge">{{ s.unchecked }}</span>
                 {% endif %}
@@ -1109,17 +1114,14 @@ function selectTariff(btn, tariff) {
 }
 
 function applyFilters() {
-    var q = (document.getElementById('student-search').value || '').toLowerCase().trim();
-    var qNoAt = q.replace(/^@+/, '');
+    var q = (document.getElementById('student-search').value || '').toLowerCase();
     document.querySelectorAll('.student-row').forEach(function(row) {
         var name = row.querySelector('.student-row-name');
         if (!name) return;
         var matchesName = name.textContent.toLowerCase().includes(q);
-        var tg = (row.getAttribute('data-tg') || '').toLowerCase().replace(/^@+/, '');
-        var matchesTg = !q || tg.includes(qNoAt) || ('@' + tg).includes(q);
         var rowTariff = row.getAttribute('data-tariff') || '';
         var matchesTariff = !_activeTariff || rowTariff === _activeTariff;
-        row.style.display = ((matchesName || matchesTg) && matchesTariff) ? '' : 'none';
+        row.style.display = (matchesName && matchesTariff) ? '' : 'none';
     });
 }
 

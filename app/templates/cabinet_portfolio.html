@@ -285,36 +285,6 @@
     </div>
     {% endif %}
 
-    <!-- Пробные экзамены -->
-    <div class="section-title" style="margin-top:32px">Пробные экзамены</div>
-    {% if portfolio_mock_works %}
-        <div data-gallery="portfolio-mock"
-             style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px">
-            {% for w in portfolio_mock_works %}
-                <div style="position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)">
-                    {% if w.s3_url %}
-                        <img src="{{ w.s3_url }}" alt="{{ w.filename }}" loading="lazy"
-                             onclick="openGallery(this)"
-                             style="width:100%;aspect-ratio:1;object-fit:cover;cursor:zoom-in;display:block">
-                    {% endif %}
-                    <div style="padding:8px 10px 10px;font-size:11px;line-height:1.35">
-                        <div style="font-weight:800;color:var(--ink)">{{ w.subject }}</div>
-                        {% if w.ticket_title %}
-                            <div style="color:var(--muted);margin-top:2px">Билет: {{ w.ticket_title }}</div>
-                        {% endif %}
-                        {% if w.score is not none %}
-                            <div style="color:var(--blue);font-weight:800;margin-top:3px">Балл: {{ w.score }}/100</div>
-                        {% endif %}
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-    {% else %}
-        <div style="padding:20px;border:1px dashed var(--line);border-radius:10px;color:var(--muted);font-size:13px;text-align:center">
-            Пробных экзаменов с обратной связью пока нет.
-        </div>
-    {% endif %}
-
     <div style="height:100px"></div>
 </div>
 

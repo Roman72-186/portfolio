@@ -21,7 +21,6 @@ from app.models.work import (
     Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER,
     WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE,
 )
-from app.services.stats import mock_period_subject_stats, score_curve_12m
 from app.services.utils import study_duration_text, group_works
 from app.tmpl import templates
 
@@ -67,18 +66,12 @@ def _load_dashboard_data(db: DBSession, now: datetime) -> dict:
         .scalar() or 0
     )
 
-    twelve_months_ago = now - timedelta(days=365)
-    avg_score_12m_raw = (
+    avg_score_raw = (
         db.query(func.avg(Work.score))
-        .filter(
-            Work.score.isnot(None),
-            Work.status == "success",
-            Work.work_type == WORK_TYPE_MOCK_EXAM,
-            Work.created_at >= twelve_months_ago,
-        )
+        .filter(Work.score.isnot(None), Work.status == "success")
         .scalar()
     )
-    avg_score_12m = round(float(avg_score_12m_raw)) if avg_score_12m_raw is not None else None
+    avg_score = round(float(avg_score_raw)) if avg_score_raw is not None else None
     mock_period = get_active_period(db, FEATURE_MOCK_EXAM)
     if mock_period:
         _mock_start = msk_midnight(mock_period.start_date)
@@ -183,10 +176,6 @@ def _load_dashboard_data(db: DBSession, now: datetime) -> dict:
             "period_id": _period.id if _period else None,
         }
 
-    # Статистика по последнему активному периоду пробников + кривая баллов 12 мес.
-    mock_subject_period, mock_subject_stats = mock_period_subject_stats(db)
-    score_curve = score_curve_12m(db)
-
     return {
         "total_active": total_active,
         "inactive_count": inactive_count,
@@ -195,16 +184,13 @@ def _load_dashboard_data(db: DBSession, now: datetime) -> dict:
         "total_works": total_works,
         "works_this_month": works_this_month,
         "works_by_type": works_by_type,
-        "avg_score_12m": avg_score_12m,
+        "avg_score": avg_score,
         "unscored_mocks": unscored_mocks,
         "curators": curators,
         "admins": admins,
         "recent_works": recent_works,
         "month_name": _month_name_prep(now.month),
         "feature_statuses": feature_statuses,
-        "mock_subject_period": mock_subject_period,
-        "mock_subject_stats": mock_subject_stats,
-        "score_curve": score_curve,
     }
 
 
@@ -280,14 +266,13 @@ def admin_mock_check(
                 sidebar_students.append({
                     "id": s.id,
                     "name": f"{s.last_name or ''} {s.first_name or s.name}".strip(),
-                    "tg_username": s.tg_username,
                     "photo_url": s.photo_url,
                     "tariff": s.tariff,
                     "mock_count": counts_by_user.get(s.id, 0),
                     "unchecked": unchecked_by_user.get(s.id, 0),
                     "scored_subjects": list(scored_subjects_by_user.get(s.id, set())),
                 })
-            sidebar_students.sort(key=lambda x: (len(x.get("scored_subjects", [])) >= 2, -x["unchecked"], x["name"]))
+            sidebar_students.sort(key=lambda x: (-x["unchecked"], x["name"]))
             total_unchecked = sum(unchecked_by_user.values())
 
     tariffs_present = sorted({s["tariff"] for s in sidebar_students if s["tariff"]})
