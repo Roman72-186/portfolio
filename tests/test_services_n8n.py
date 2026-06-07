@@ -20,7 +20,7 @@ def reset_n8n_client():
 
 
 def _call(user_id=123, name="Test", tariff="УВЕРЕННЫЙ", month="январь",
-          photo_bytes=b"fake", filename="photo.jpg"):
+          photo_bytes=b"fake", filename="photo.jpg", work_id=None):
     return asyncio.run(send_photo_to_n8n(
         user_id=user_id,
         student_name=name,
@@ -28,6 +28,7 @@ def _call(user_id=123, name="Test", tariff="УВЕРЕННЫЙ", month="янва
         month=month,
         photo_bytes=photo_bytes,
         filename=filename,
+        work_id=work_id,
     ))
 
 
@@ -69,6 +70,7 @@ def test_send_photo_payload_structure():
             month="март",
             photo_bytes=photo_bytes,
             filename="before.jpg",
+            work_id=42,
         )
 
     _, kwargs = mock_client.post.call_args
@@ -81,7 +83,20 @@ def test_send_photo_payload_structure():
     assert payload["month"] == "март"
     assert payload["filename"] == "before.jpg"
     assert payload["source"] == "web_cabinet"
+    assert payload["work_id"] == 42
+    assert payload["idempotency_key"] == "work:42"
     assert payload["photo_base64"] == base64.b64encode(photo_bytes).decode()
+
+
+def test_send_photo_adds_webhook_secret_header(monkeypatch):
+    mock_client = _make_mock_client({"success": True})
+    monkeypatch.setattr(n8n_module.settings, "n8n_webhook_secret", "secret-value")
+
+    with patch("httpx.AsyncClient", return_value=mock_client):
+        _call()
+
+    _, kwargs = mock_client.post.call_args
+    assert kwargs["headers"]["X-Webhook-Secret"] == "secret-value"
 
 
 def test_tariff_codes_mapped_correctly():

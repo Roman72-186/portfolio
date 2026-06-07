@@ -1,19 +1,25 @@
 from collections import defaultdict
 from datetime import datetime, timezone
+from pathlib import Path
+from urllib.parse import quote_plus
 from typing import Annotated
 
-from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query
+from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
 from app.constants import MOCK_SUBJECTS, TARIFFS, TARIFF_DISPLAY
 from app.db.database import get_db
-from app.dependencies import require_curator, require_admin_role, require_csrf
+from app.dependencies import get_current_user, require_curator, require_admin_role, require_csrf
+from app.models.curator_report import CuratorReport
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
+from app.models.role import Role
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
+from app.services import s3 as s3_service
+from app.services.student_access import get_student_for_staff_access
 from app.services.tz import MSK_TZ
 from app.services.utils import study_duration_text, group_works
 from app.tmpl import templates
@@ -22,6 +28,35 @@ router = APIRouter(prefix="/cabinet")
 
 PAGE_SIZE = 10
 TARIFF_LABELS = list(TARIFF_DISPLAY.values())
+MAX_CURATOR_REPORT_VIDEO_SIZE = 500 * 1024 * 1024
+ALLOWED_CURATOR_REPORT_VIDEO_TYPES = {
+    "video/mp4",
+    "video/quicktime",
+    "video/webm",
+    "video/x-msvideo",
+    "video/x-matroska",
+    "video/x-ms-wmv",
+    "video/3gpp",
+    "video/3gpp2",
+}
+ALLOWED_CURATOR_REPORT_VIDEO_EXTENSIONS = {
+    ".mp4",
+    ".mov",
+    ".webm",
+    ".avi",
+    ".mkv",
+    ".wmv",
+    ".3gp",
+    ".3gpp",
+    ".m4v",
+}
+
+
+def _report_redirect_err(message: str) -> RedirectResponse:
+    return RedirectResponse(
+        f"/cabinet/curator/reports?err={quote_plus(message)}",
+        status_code=302,
+    )
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -83,31 +118,159 @@ def _enrich_for_sidebar(s: User, works_by_user: dict) -> dict:
 
 
 def _check_student_access(student_id: int, user: dict, db: DBSession) -> User:
-    student = db.query(User).filter(User.id == student_id).first()
-    if not student:
-        raise HTTPException(status_code=404, detail="Ученик не найден")
-    if student.curator_id != user["user_id"] and user.get("role_rank", 0) < 3:
-        raise HTTPException(status_code=403, detail="Нет доступа к этому ученику")
-    return student
+    return get_student_for_staff_access(
+        db,
+        user,
+        student_id,
+        not_found_detail="Ученик не найден",
+        forbidden_detail="Нет доступа к этому ученику",
+    )
 
 
 # ── Dashboard ────────────────────────────────────────────────────────────────
 
 @router.get("/curator", response_class=HTMLResponse)
 def cabinet_curator_dashboard(
-    request: Request,
-    user: Annotated[dict, Depends(require_curator)],
-    db: Annotated[DBSession, Depends(get_db)],
+    _user: Annotated[dict, Depends(require_curator)],
 ):
-    students = _get_curator_students(user["user_id"], db)
-    period_start, period_end = _current_academic_period()
-    return templates.TemplateResponse("cabinet_curator_dashboard.html", {
+    """Вход куратора — раздел «Ученики» (список учеников) показывается сразу."""
+    return RedirectResponse("/cabinet/students", status_code=302)
+
+
+# ── Reports (видео-отчёты куратора) ───────────────────────────────────────────
+
+@router.get("/curator/reports", response_class=HTMLResponse)
+def curator_reports(
+    request: Request,
+    user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[DBSession, Depends(get_db)],
+    ok: int = 0,
+    deleted: int = 0,
+    err: str = "",
+):
+    rank = user["role_rank"]
+    # Куратор — своя страница (форма + своя история); админ/SA — список всех отчётов.
+    if not (rank == 2 or rank >= 4):
+        raise HTTPException(status_code=403, detail="Нет доступа")
+    is_staff = rank >= 4
+
+    q = db.query(CuratorReport)
+    if not is_staff:
+        q = q.filter(CuratorReport.curator_id == user["user_id"])
+    reports = q.order_by(CuratorReport.created_at.desc()).limit(100 if is_staff else 50).all()
+
+    # Имена кураторов нужны только для staff-вида
+    curator_names: dict[int, str] = {}
+    if is_staff and reports:
+        ids = {r.curator_id for r in reports}
+        for u in db.query(User).filter(User.id.in_(ids)).all():
+            curator_names[u.id] = f"{u.last_name or ''} {u.first_name or u.name}".strip()
+
+    history = []
+    for r in reports:
+        created = r.created_at
+        if created and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        local_dt = created.astimezone(MSK_TZ) if created else None
+        history.append({
+            "id": r.id,
+            "video_url": r.video_url,
+            "text": r.text,
+            "date_label": local_dt.strftime("%d.%m.%Y %H:%M") if local_dt else "",
+            "curator_name": curator_names.get(r.curator_id) if is_staff else None,
+        })
+    return templates.TemplateResponse("cabinet_curator_reports.html", {
         "request": request,
         "user": user,
-        "students_count": len(students),
-        "period_start": period_start,
-        "period_end": period_end,
+        "nav_active": "reports",
+        "can_submit": rank == 2,
+        "is_staff": is_staff,
+        "history": history,
+        "ok": bool(ok),
+        "deleted": bool(deleted),
+        "err": err,
     })
+
+
+@router.post("/curator/reports")
+async def curator_reports_submit(
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    video: UploadFile = File(...),
+    text: str = Form(""),
+):
+    filename = video.filename or ""
+    ext = Path(filename).suffix.lower()
+    content_type = (video.content_type or "").lower()
+
+    if content_type not in ALLOWED_CURATOR_REPORT_VIDEO_TYPES and ext not in ALLOWED_CURATOR_REPORT_VIDEO_EXTENSIONS:
+        return _report_redirect_err("Загрузите видео-файл в формате mp4, mov, webm, avi, mkv, wmv или 3gp.")
+
+    video_bytes = await video.read()
+    if not video_bytes:
+        return _report_redirect_err("Видео-файл пустой. Выберите или снимите видео заново.")
+    if len(video_bytes) > MAX_CURATOR_REPORT_VIDEO_SIZE:
+        return _report_redirect_err("Видео слишком большое. Максимальный размер файла - 500 МБ.")
+
+    s3_path = s3_service.s3_path_curator_report(user["user_id"], filename)
+    video_url = s3_service.upload_to_s3(s3_path, video_bytes, content_type or "video/mp4")
+    if s3_service.is_configured() and not video_url:
+        return _report_redirect_err("Не удалось загрузить видео. Попробуйте ещё раз.")
+    if not video_url:
+        return _report_redirect_err("Хранилище видео не настроено. Обратитесь к администратору.")
+
+    text = text.strip()[:2000] or None
+
+    report = CuratorReport(
+        curator_id=user["user_id"],
+        video_url=video_url,
+        text=text,
+    )
+    db.add(report)
+
+    curator_name = user.get("name") or user.get("first_name") or "куратор"
+    notif_text = "\n".join(filter(None, [text, video_url]))
+
+    admins = (
+        db.query(User)
+        .join(Role, User.role_id == Role.id)
+        .filter(Role.rank >= 4, User.is_active == True)
+        .all()
+    )
+    for admin in admins:
+        db.add(Notification(
+            user_id=admin.id,
+            title=f"Видео-отчёт от куратора {curator_name}",
+            text=notif_text,
+            work_id=None,
+        ))
+
+    db.commit()
+    for admin in admins:
+        invalidate_unread(admin.id)
+
+    return RedirectResponse("/cabinet/curator/reports?ok=1", status_code=302)
+
+
+@router.post("/curator/reports/{report_id}/delete")
+def curator_reports_delete(
+    report_id: int,
+    _user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    report = db.query(CuratorReport).filter(CuratorReport.id == report_id).first()
+    if not report:
+        return _report_redirect_err("Видео-отчёт не найден")
+
+    s3_path = s3_service.s3_path_from_public_url(report.video_url)
+    if s3_path:
+        s3_service.delete_from_s3(s3_path)
+
+    db.delete(report)
+    db.commit()
+    return RedirectResponse("/cabinet/curator/reports?deleted=1", status_code=302)
 
 
 # ── Portfolio split-panel ────────────────────────────────────────────────────

@@ -159,6 +159,66 @@ def score_curve_12m(db: DBSession) -> list[CurvePoint]:
     return points
 
 
+def student_score_curve(db: DBSession, student_id: int) -> list[CurvePoint]:
+    """
+    Динамика среднего балла одного ученика по mock_exam за последние 12 месяцев,
+    разрез по предмету (Рисунок / Композиция). Группировка по году+месяцу `Work.created_at`.
+    Возвращает 12 точек от старого к новому; нет данных в месяце по предмету → None (разрыв).
+    """
+    now = datetime.now(timezone.utc)
+    year = now.year
+    month = now.month - 11
+    while month <= 0:
+        month += 12
+        year -= 1
+    window_start = datetime(year, month, 1, tzinfo=timezone.utc)
+
+    year_col = extract("year", Work.created_at)
+    month_col = extract("month", Work.created_at)
+
+    rows = (
+        db.query(
+            year_col.label("y"),
+            month_col.label("m"),
+            Work.subject,
+            func.avg(Work.score).label("avg_score"),
+        )
+        .filter(
+            Work.user_id == student_id,
+            Work.work_type == WORK_TYPE_MOCK_EXAM,
+            Work.score.isnot(None),
+            Work.subject.in_(MOCK_SUBJECTS),
+            Work.created_at >= window_start,
+        )
+        .group_by(year_col, month_col, Work.subject)
+        .all()
+    )
+
+    bucket: dict[tuple[int, int], dict[str, Optional[float]]] = {}
+    for r in rows:
+        key = (int(r.y), int(r.m))
+        slot = bucket.setdefault(key, {"Рисунок": None, "Композиция": None})
+        if r.subject in MOCK_SUBJECTS and r.avg_score is not None:
+            slot[r.subject] = round(float(r.avg_score), 1)
+
+    points: list[CurvePoint] = []
+    cy, cm = year, month
+    for _ in range(12):
+        slot = bucket.get((cy, cm), {})
+        points.append({
+            "label": f"{_MONTH_LABELS_RU[cm]} {cy}",
+            "year": cy,
+            "month": cm,
+            "drawing": slot.get("Рисунок"),
+            "composition": slot.get("Композиция"),
+        })
+        cm += 1
+        if cm > 12:
+            cm = 1
+            cy += 1
+    return points
+
+
 def curator_avg_scores(
     db: DBSession,
     curator_id: int,

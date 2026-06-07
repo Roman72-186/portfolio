@@ -243,9 +243,53 @@
     .portfolio-calendar-layout { grid-template-columns: 1fr; }
     .portfolio-month-panel { min-height: 0; }
 }
+
+/* ── Раскрывающиеся блоки по месяцам (До/После) — единый вид со staff-панелью.
+   Свой namespace pf-m*, чтобы не конфликтовать с .month-header/.month-count выше. ── */
+.pf-mblock { background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-md); overflow: hidden; margin-bottom: 16px; box-shadow: var(--sh-sm); }
+.pf-mhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; background: var(--surface-2); width: 100%; border: 0; font-family: inherit; color: inherit; text-align: left; }
+.pf-mblock.open .pf-mhead { border-bottom: 1px solid var(--line); }
+.pf-mblock:not(.open) .pf-mgrid { display: none; }
+.pf-mtoggle { display: inline-flex; align-items: center; gap: 10px; background: transparent; border: 0; padding: 0; font-family: inherit; cursor: pointer; color: inherit; }
+.pf-mtoggle:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; border-radius: 6px; }
+.pf-mchevron { font-size: 12px; color: var(--dim); transition: transform 0.18s; }
+.pf-mblock.open .pf-mchevron { transform: rotate(180deg); }
+.pf-mlabel { font-size: 13px; font-weight: 700; color: var(--text); text-transform: capitalize; }
+.pf-mcount { font-size: 12px; color: var(--dim); white-space: nowrap; }
+.pf-mgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 6px; padding: 12px; }
+.pf-mgrid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); cursor: zoom-in; transition: opacity 0.15s; }
+.pf-mgrid img:hover { opacity: 0.85; }
 </style>
 {% endblock %}
 {% block content %}
+{% macro pf_blocks(key, groups, empty_title, empty_text) %}
+  {% if groups %}
+    {% for g in groups %}
+    {% set safe_id = "pfblk-" ~ key ~ "-" ~ g.year ~ "-" ~ loop.index0 %}
+    <div class="pf-mblock{% if loop.first %} open{% endif %}" id="{{ safe_id }}">
+        <div class="pf-mhead">
+            <button type="button" class="pf-mtoggle" aria-expanded="{{ 'true' if loop.first else 'false' }}" onclick="pfToggleMonth('{{ safe_id }}')">
+                <span class="pf-mchevron">▼</span>
+                <span class="pf-mlabel">{{ g.month }} {{ g.year }}</span>
+            </button>
+            <span class="pf-mcount">{{ g.total }} фото</span>
+        </div>
+        <div class="pf-mgrid" data-gallery="pf-{{ key }}-{{ g.year }}-{{ g.month }}">
+            {% for w in g.works %}
+            {% set src = w.thumb or w.s3_url or "" %}
+            {% if src %}<img src="{{ src }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)">{% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">🖼️</div>
+        <div class="empty-state-title">{{ empty_title }}</div>
+        <div class="empty-state-text">{{ empty_text }}</div>
+    </div>
+  {% endif %}
+{% endmacro %}
 <div class="portfolio-wrap">
 
     <div class="portfolio-head">
@@ -262,7 +306,7 @@
     <!-- До обучения -->
     <div class="section-title">До обучения</div>
 
-    <div id="portfolio-before-root"></div>
+    {{ pf_blocks('before', portfolio_before_groups, 'Фотографий пока нет', 'Загрузите работы «до обучения» — это первый шаг') }}
 
     <div class="portfolio-bottom-action">
         <a href="/upload?section=before" class="portfolio-upload-btn">
@@ -274,7 +318,7 @@
     <!-- После обучения -->
     <div class="section-title" style="margin-top:32px">После обучения</div>
 
-    <div id="portfolio-after-root"></div>
+    {{ pf_blocks('after', portfolio_after_groups, 'Здесь появятся ваши работы', 'Загружайте фото каждый месяц — и прогресс станет виден') }}
 
     {% if can_upload_portfolio_after %}
     <div class="portfolio-bottom-action">
@@ -284,6 +328,20 @@
         </a>
     </div>
     {% endif %}
+
+    <!-- Пробные экзамены (финалки закрытых циклов) — дневной календарь -->
+    <div class="section-title" style="margin-top:32px">Пробные экзамены</div>
+
+    {% set cal_key = "mock-portfolio" %}
+    {% set cal_root_id = "portfolio-mock-root" %}
+    {% set cal_subjects = mock_subjects %}
+    {% set cal_works_by_subject = mock_works_by_subject %}
+    {% set cal_months = months %}
+    {% set cal_current_year = current_year %}
+    {% set cal_show_feedback = false %}
+    {% set cal_show_stages = false %}
+    {% set cal_empty_text = "Пробных экзаменов пока нет. Работы появятся здесь после закрытия цикла Пробника." %}
+    {% include "partials/cycle_day_calendar.html" %}
 
     <div style="height:100px"></div>
 </div>
@@ -420,11 +478,14 @@ function renderPortfolioCalendar(rootId, key, groups, emptyTitle, emptyText) {
         + '</div></div>';
 }
 
-function renderPortfolioCalendars() {
-    renderPortfolioCalendar('portfolio-before-root', 'before', PORTFOLIO_BEFORE_GROUPS, 'Фотографий пока нет', 'Загрузите работы «до обучения» — это первый шаг');
-    renderPortfolioCalendar('portfolio-after-root', 'after', PORTFOLIO_AFTER_GROUPS, 'Здесь появятся ваши работы', 'Загружайте фото каждый месяц — и прогресс станет виден');
+// До/После теперь server-rendered блоки (Jinja-макрос pf_blocks) — единый вид со
+// staff-панелью. Тоггл раскрытия месяца:
+function pfToggleMonth(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var open = el.classList.toggle('open');
+    var btn = el.querySelector('.pf-mtoggle');
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
-
-renderPortfolioCalendars();
 </script>
 {% endblock %}

@@ -19,16 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.config import settings
 from app.db.database import Base
-
-# Импортируем все модели чтобы они зарегистрировались в Base.metadata
-import app.models.user          # noqa: F401
-import app.models.session       # noqa: F401
-import app.models.login_token   # noqa: F401
-import app.models.upload_log    # noqa: F401
-import app.models.work          # noqa: F401
-import app.models.role          # noqa: F401
-import app.models.mock_exam_lock  # noqa: F401
-import app.models.notification  # noqa: F401
+import app.models  # noqa: F401 - register every model in Base.metadata
 
 target_metadata = Base.metadata
 

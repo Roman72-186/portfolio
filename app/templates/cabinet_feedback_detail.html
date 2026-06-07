@@ -69,6 +69,81 @@
 .dlg-send:disabled { opacity: 0.5; cursor: default; }
 .dlg-form-hint { font-size: 11px; color: var(--dim); margin-top: 6px; }
 .dlg-waiting { padding: 16px; background: var(--surface-2); border-radius: 10px; color: var(--muted); font-size: 13px; text-align: center; }
+
+/* Структурная форма «Первая обратная связь» (4 пункта) */
+.dlg-form-structured .dlg-sf-title { font-size: 14px; font-weight: 800; color: var(--text); margin-bottom: 12px; }
+.dlg-sf-field { margin-bottom: 10px; }
+.dlg-sf-label { display: block; font-size: 11px; font-weight: 800; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+.dlg-form-structured textarea {
+    width: 100%; min-height: 48px; max-height: 200px; padding: 9px 12px;
+    border: 1px solid var(--line); border-radius: 10px; font-family: inherit;
+    font-size: 14px; resize: vertical; background: var(--surface); box-sizing: border-box;
+}
+.dlg-form-structured textarea:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: var(--blue); }
+.dlg-sf-bottom { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 6px; }
+
+/* Score panel (admin/superadmin only, open cycle) */
+.dlg-score { padding: 14px 18px; border-top: 1px solid var(--line); background: rgba(37,99,235,0.04); }
+.dlg-score-label { font-size: 12px; color: var(--muted); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
+.dlg-score-row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.dlg-score input[type=number] {
+    width: 90px; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 8px;
+    font-size: 14px; font-weight: 700; color: var(--text); font-family: inherit; background: var(--surface); outline: none;
+    transition: border-color 0.15s;
+}
+.dlg-score input[type=number]:focus { border-color: var(--blue); }
+.dlg-score-hint { font-size: 12px; color: var(--dim); }
+.dlg-score textarea {
+    width: 100%; min-height: 60px; max-height: 180px; padding: 8px 10px; resize: vertical;
+    border: 1.5px solid var(--line); border-radius: 8px; font-size: 13px; color: var(--text);
+    font-family: inherit; background: var(--surface); outline: none; transition: border-color 0.15s;
+}
+.dlg-score textarea:focus { border-color: var(--blue); }
+.dlg-score-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.dlg-score-btn {
+    padding: 8px 14px; background: var(--blue); color: #fff;
+    border: none; border-radius: 8px; font-size: 13px; font-weight: 700;
+    cursor: pointer; font-family: inherit; transition: opacity 0.15s;
+}
+.dlg-score-btn:hover { opacity: 0.9; }
+.dlg-score-btn:disabled { opacity: 0.5; cursor: default; }
+.dlg-score-msg { font-size: 12px; margin-top: 6px; }
+.dlg-score-msg.err { color: var(--error); }
+.dlg-score-msg.ok  { color: var(--ok); }
+.dlg-score-edit {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--text); font-size: 13px; font-weight: 700;
+    cursor: pointer; font-family: inherit;
+}
+.dlg-score-edit:hover { border-color: var(--blue); color: var(--blue); }
+.dlg-score-current { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dlg-score-current-comment { font-size: 13px; color: var(--muted); white-space: pre-wrap; margin-top: 6px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+
+/* Выделенная зона закрытия цикла (внизу страницы) */
+.dlg-close-zone {
+    margin-top: 6px;
+    border: 1.5px solid var(--blue);
+    border-radius: 14px;
+    background: var(--blue);
+    box-shadow: 0 6px 20px rgba(37,99,235,0.22);
+    overflow: hidden;
+}
+.dlg-close-zone .dlg-score { border-top: none; background: transparent; }
+.dlg-close-zone .dlg-score-label { color: rgba(255,255,255,0.85); }
+.dlg-close-zone .dlg-score-hint { color: rgba(255,255,255,0.75); }
+.dlg-close-zone .dlg-score-current { color: #fff; }
+.dlg-close-zone .dlg-score-btn { background: #fff; color: var(--blue); }
+.dlg-close-zone .dlg-score-btn:hover { background: #fff; opacity: 0.92; }
+.dlg-close-zone .dlg-score-edit { background: transparent; color: #fff; border-color: rgba(255,255,255,0.55); }
+.dlg-close-zone .dlg-score-edit:hover { background: rgba(255,255,255,0.12); color: #fff; border-color: #fff; }
+.dlg-close-zone .dlg-score input[type=number],
+.dlg-close-zone .dlg-score textarea { background: #fff; border-color: rgba(255,255,255,0.4); }
+.dlg-close-zone .dlg-score input[type=number]:focus,
+.dlg-close-zone .dlg-score textarea:focus { border-color: #fff; }
+.dlg-close-zone .dlg-score-current-comment { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.3); color: #fff; }
+.dlg-close-zone .dlg-score-msg.ok { color: #fff; }
+.dlg-close-zone .dlg-score-msg.err { color: #FFD9D9; }
 </style>
 {% endblock %}
 {% block content %}
@@ -91,46 +166,46 @@
         </div>
     {% endif %}
 
-    {% for a in attempts %}
-        {% set score_cls = 'no-score' %}
-        {% if a.score is not none %}
-            {% set s = a.score|int %}
-            {% if s < 50 %}{% set score_cls = 'red' %}
-            {% elif s < 70 %}{% set score_cls = 'orange' %}
-            {% elif s < 85 %}{% set score_cls = 'lime' %}
-            {% else %}{% set score_cls = 'green' %}{% endif %}
-        {% endif %}
-        <section class="dlg-attempt" id="attempt-{{ a.work_id }}">
-            <header class="dlg-attempt-head">
-                <h2 class="dlg-attempt-title">Попытка №{{ a.attempt_number or 1 }}</h2>
-                <span class="dlg-attempt-score {{ score_cls }}">
-                    {% if a.score is not none %}{{ a.score|int }} / 100{% else %}Не оценено{% endif %}
-                </span>
-            </header>
-
+    {% if attempts %}
+        <section class="dlg-attempt">
             <div class="dlg-context">
-                <div class="dlg-context-row">
-                    {% if a.s3_url %}
-                        <div class="dlg-final-img">
-                            <img src="{{ a.s3_url }}" alt="" loading="lazy" onclick="openGallery(this)">
-                        </div>
+                {% for a in attempts %}
+                    {% set score_cls = 'no-score' %}
+                    {% if a.score is not none %}
+                        {% set s = a.score|int %}
+                        {% if s < 50 %}{% set score_cls = 'red' %}
+                        {% elif s < 70 %}{% set score_cls = 'orange' %}
+                        {% elif s < 85 %}{% set score_cls = 'lime' %}
+                        {% else %}{% set score_cls = 'green' %}{% endif %}
                     {% endif %}
-                    <div class="dlg-context-meta">
-                        <div>Финальная работа · {{ a.created_at[:10] if a.created_at else '' }}</div>
-                        {% if a.intermediates %}
-                            <div style="margin-top:8px;font-weight:800;color:var(--text);">Этапы:</div>
-                            <div class="dlg-stages" style="margin-top:4px;">
-                                {% for i in a.intermediates %}
-                                    <img src="{{ i.s3_url }}" alt="" loading="lazy" onclick="openGallery(this)">
-                                {% endfor %}
+                    <div class="dlg-context-row"{% if not loop.first %} style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);"{% endif %}>
+                        {% if a.s3_url %}
+                            <div class="dlg-final-img">
+                                <img src="{{ a.s3_url }}" alt="" loading="lazy" onclick="openGallery(this)">
                             </div>
                         {% endif %}
+                        <div class="dlg-context-meta">
+                            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                                <span>Финальная работа · {{ a.created_at[:10] if a.created_at else '' }}</span>
+                                <span class="dlg-attempt-score {{ score_cls }}">
+                                    {% if a.score is not none %}{{ a.score|int }} / 100{% else %}Не оценено{% endif %}
+                                </span>
+                            </div>
+                            {% if a.intermediates %}
+                                <div style="margin-top:8px;font-weight:800;color:var(--text);">Этапы:</div>
+                                <div class="dlg-stages" style="margin-top:4px;">
+                                    {% for i in a.intermediates %}
+                                        <img src="{{ i.s3_url }}" alt="" loading="lazy" onclick="openGallery(this)">
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
                     </div>
-                </div>
+                {% endfor %}
             </div>
 
             <div class="dlg-messages">
-                {% if not a.messages %}
+                {% if not thread %}
                     <div class="dlg-empty-thread">
                         {% if viewer_role == 'student' %}
                             Ждём обратной связи от куратора.
@@ -139,7 +214,7 @@
                         {% endif %}
                     </div>
                 {% endif %}
-                {% for m in a.messages %}
+                {% for m in thread %}
                     {% set is_me =
                         (viewer_role == 'student' and m.sender_role == 'student') or
                         (viewer_role != 'student' and m.sender_role != 'student')
@@ -162,12 +237,42 @@
                 <div class="dlg-form">
                     <div class="dlg-waiting">Цикл закрыт. Отправка сообщений недоступна.</div>
                 </div>
-            {% elif viewer_role == 'student' and not a.has_staff_message %}
+            {% elif viewer_role == 'student' and not has_staff_message %}
                 <div class="dlg-form">
                     <div class="dlg-waiting">Жди обратную связь куратора — после первого сообщения сможешь ответить.</div>
                 </div>
+            {% elif viewer_role != 'student' and not has_staff_message %}
+                <form class="dlg-form dlg-form-structured" method="post" action="/cabinet/feedback/{{ target_work_id }}/message" enctype="multipart/form-data" data-work-id="{{ target_work_id }}" data-structured="1">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    <div class="dlg-sf-title">Первая обратная связь</div>
+                    <div class="dlg-sf-field">
+                        <label class="dlg-sf-label">Общее впечатление</label>
+                        <textarea name="impression" rows="2" placeholder="Как работа в целом"></textarea>
+                    </div>
+                    <div class="dlg-sf-field">
+                        <label class="dlg-sf-label">Что хорошо</label>
+                        <textarea name="good" rows="2" placeholder="Сильные стороны работы"></textarea>
+                    </div>
+                    <div class="dlg-sf-field">
+                        <label class="dlg-sf-label">Что усилить</label>
+                        <textarea name="strengthen" rows="2" placeholder="Слабые места, над чем поработать"></textarea>
+                    </div>
+                    <div class="dlg-sf-field">
+                        <label class="dlg-sf-label">Рекомендации</label>
+                        <textarea name="recommendations" rows="2" placeholder="Что доработать, на что обратить внимание"></textarea>
+                    </div>
+                    <div class="dlg-sf-bottom">
+                        <label class="dlg-attach">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                            <span class="dlg-attach-text">Фото</span>
+                            <input type="file" name="photo" accept="image/*">
+                        </label>
+                        <button type="submit" class="dlg-send">Отправить обратную связь</button>
+                    </div>
+                    <div class="dlg-form-hint">Заполни хотя бы один пункт или прикрепи фото.</div>
+                </form>
             {% else %}
-                <form class="dlg-form" method="post" action="/cabinet/feedback/{{ a.work_id }}/message" enctype="multipart/form-data" data-work-id="{{ a.work_id }}">
+                <form class="dlg-form" method="post" action="/cabinet/feedback/{{ target_work_id }}/message" enctype="multipart/form-data" data-work-id="{{ target_work_id }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                     <div class="dlg-form-row">
                         <textarea name="text" placeholder="Напишите сообщение или прикрепите фото" rows="3"></textarea>
@@ -184,7 +289,56 @@
                 </form>
             {% endif %}
         </section>
-    {% endfor %}
+    {% endif %}
+
+    {% if viewer_role in ('admin', 'superadmin') and not cycle.closed_at and attempts %}
+        {% set a = attempts|last %}
+        {% set score_cls = 'no-score' %}
+        {% if a.score is not none %}
+            {% set s = a.score|int %}
+            {% if s < 50 %}{% set score_cls = 'red' %}
+            {% elif s < 70 %}{% set score_cls = 'orange' %}
+            {% elif s < 85 %}{% set score_cls = 'lime' %}
+            {% else %}{% set score_cls = 'green' %}{% endif %}
+        {% endif %}
+        <section class="dlg-close-zone">
+            <div class="dlg-score" data-work-id="{{ a.work_id }}" data-student-id="{{ student.id }}">
+                <div class="dlg-score-label">Оценить работу (последнее отправленное фото — финальное)</div>
+                {% if a.score is not none %}
+                    <div class="dlg-score-current" id="score-view-{{ a.work_id }}">
+                        <span class="dlg-attempt-score {{ score_cls }}">{{ a.score|int }} / 100</span>
+                        <button type="button" class="dlg-score-edit" onclick="toggleScoreEdit({{ a.work_id }}, true)">
+                            ✎ Изменить балл
+                        </button>
+                    </div>
+                    {% if a.comment %}
+                        <div class="dlg-score-current-comment" id="score-comment-{{ a.work_id }}">{{ a.comment }}</div>
+                    {% endif %}
+                {% endif %}
+                <div class="dlg-score-form" id="score-form-{{ a.work_id }}"
+                     style="{% if a.score is not none %}display:none;{% endif %}margin-top:8px;">
+                    <div class="dlg-score-row">
+                        <input type="number" min="0" max="100" step="1"
+                               name="score" value="{{ a.score|int if a.score is not none else '' }}"
+                               placeholder="0–100">
+                        <span class="dlg-score-hint">из 100</span>
+                    </div>
+                    <textarea name="comment" placeholder="Комментарий (необязательно)" maxlength="500">{{ a.comment or '' }}</textarea>
+                    <div class="dlg-score-actions">
+                        <button type="button" class="dlg-score-btn" onclick="submitDlgScore({{ a.work_id }}, {{ student.id }})">
+                            Сохранить балл · закрыть цикл
+                        </button>
+                        {% if a.score is not none %}
+                            <button type="button" class="dlg-score-edit" onclick="toggleScoreEdit({{ a.work_id }}, false)">
+                                Отмена
+                            </button>
+                        {% endif %}
+                    </div>
+                    <div class="dlg-score-msg" style="display:none"></div>
+                </div>
+            </div>
+        </section>
+    {% endif %}
 </div>
 
 {% if viewer_role == 'student' %}
@@ -208,14 +362,68 @@ document.querySelectorAll('.dlg-attach input[type="file"]').forEach(input => {
     });
 });
 
+function toggleScoreEdit(workId, show) {
+    const form = document.getElementById('score-form-' + workId);
+    const view = document.getElementById('score-view-' + workId);
+    const comment = document.getElementById('score-comment-' + workId);
+    if (form) form.style.display = show ? '' : 'none';
+    if (view) view.style.display = show ? 'none' : '';
+    if (comment) comment.style.display = show ? 'none' : '';
+}
+
+async function submitDlgScore(workId, studentId) {
+    const form = document.getElementById('score-form-' + workId);
+    if (!form) return;
+    const scoreEl = form.querySelector('input[name="score"]');
+    const commentEl = form.querySelector('textarea[name="comment"]');
+    const msg = form.querySelector('.dlg-score-msg');
+    const btn = form.querySelector('.dlg-score-btn');
+    const score = (scoreEl.value || '').trim();
+    const comment = (commentEl.value || '').trim();
+    function showMsg(text, isErr) {
+        msg.style.display = 'block';
+        msg.className = 'dlg-score-msg ' + (isErr ? 'err' : 'ok');
+        msg.textContent = text;
+    }
+    if (score === '' || isNaN(parseFloat(score))) { showMsg('Укажите балл (0–100)', true); return; }
+    const num = parseFloat(score);
+    if (num < 0 || num > 100) { showMsg('Балл должен быть от 0 до 100', true); return; }
+
+    const fd = new FormData();
+    fd.append('csrf_token', document.querySelector('input[name="csrf_token"]').value);
+    fd.append('score', score);
+    fd.append('comment', comment);
+    fd.append('tab', 'mock-exams');
+
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Сохраняем…';
+    try {
+        const r = await fetch('/cabinet/students/' + studentId + '/works/' + workId + '/score', {
+            method: 'POST', body: fd, redirect: 'manual',
+        });
+        if (r.ok || r.type === 'opaqueredirect' || r.status === 0 || r.status === 302) {
+            showMsg('Сохранено. Цикл будет закрыт.', false);
+            setTimeout(() => window.location.reload(), 700);
+        } else {
+            const data = await r.json().catch(() => ({}));
+            showMsg(data.detail || 'Ошибка при сохранении', true);
+            btn.disabled = false; btn.textContent = orig;
+        }
+    } catch (e) {
+        showMsg('Сетевая ошибка', true);
+        btn.disabled = false; btn.textContent = orig;
+    }
+}
+
 document.querySelectorAll('form.dlg-form').forEach(form => {
     form.addEventListener('submit', async ev => {
         ev.preventDefault();
         const btn = form.querySelector('.dlg-send');
-        const text = form.querySelector('textarea[name="text"]').value.trim();
+        const anyText = Array.from(form.querySelectorAll('textarea')).some(t => (t.value || '').trim());
         const fileInput = form.querySelector('input[name="photo"]');
-        const hasFile = fileInput.files && fileInput.files.length > 0;
-        if (!text && !hasFile) { alert('Введи текст или прикрепи фото'); return; }
+        const hasFile = fileInput && fileInput.files && fileInput.files.length > 0;
+        if (!anyText && !hasFile) { alert('Заполни хотя бы один пункт или прикрепи фото'); return; }
         btn.disabled = true;
         const origText = btn.textContent;
         btn.textContent = 'Отправка…';

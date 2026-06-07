@@ -15,7 +15,9 @@ import psycopg2
 
 
 def get_conn():
-    url = os.environ.get("DATABASE_URL", "postgresql://portfolio:prtf_s3cure_2026@db:5432/portfolio")
+    url = os.environ.get("DATABASE_URL", "")
+    if not url:
+        raise RuntimeError("DATABASE_URL env var is not set")
     # psycopg2 doesn't accept the postgresql:// scheme prefix directly in some versions
     return psycopg2.connect(url)
 

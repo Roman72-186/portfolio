@@ -11,13 +11,13 @@ from botocore.client import Config
 
 DB_URL = os.environ.get(
     "DATABASE_URL",
-    "postgresql://portfolio:prtf_s3cure_2026@db:5432/portfolio"
+    ""
 )
-S3_ENDPOINT = "https://s3.twcstorage.ru"
-S3_BUCKET = "985bcc18-a3c0-4708-81cb-46e396573bac"
-S3_ACCESS_KEY = "EDXBLMBUWOUOU2Z2BOO5"
-S3_SECRET_KEY = "UwTmOx7oHPxXyrCvy6gdzZo2swc1jzeJRAB68TTj"
-S3_REGION = "ru-1"
+S3_ENDPOINT = os.environ.get("S3_ENDPOINT", "")
+S3_BUCKET = os.environ.get("S3_BUCKET", "")
+S3_ACCESS_KEY = os.environ.get("S3_ACCESS_KEY", "")
+S3_SECRET_KEY = os.environ.get("S3_SECRET_KEY", "")
+S3_REGION = os.environ.get("S3_REGION", "ru-1")
 
 def confirm():
     print("\n⚠️  ВНИМАНИЕ: Это удалит всех пользователей (кроме суперадмина) и все загруженные фото из БД и S3!")
@@ -107,6 +107,19 @@ def reset_db(cur, keep_ids):
 
 def main():
     confirm()
+    missing = [
+        name for name, value in {
+            "DATABASE_URL": DB_URL,
+            "S3_ENDPOINT": S3_ENDPOINT,
+            "S3_BUCKET": S3_BUCKET,
+            "S3_ACCESS_KEY": S3_ACCESS_KEY,
+            "S3_SECRET_KEY": S3_SECRET_KEY,
+        }.items()
+        if not value
+    ]
+    if missing:
+        print(f"❌ Не заданы переменные окружения: {', '.join(missing)}")
+        sys.exit(1)
 
     conn = psycopg2.connect(DB_URL)
     conn.autocommit = False

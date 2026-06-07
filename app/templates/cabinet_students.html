@@ -131,6 +131,20 @@
     border-color: var(--blue);
 }
 
+/* ── Statistics chart ── */
+.stat-chart-card {
+    background: var(--surface); border: 1.5px solid var(--line);
+    border-radius: 16px; padding: 18px 18px 14px; margin-top: 4px;
+}
+.stat-legend { display: flex; gap: 18px; margin-bottom: 8px; flex-wrap: wrap; }
+.stat-legend-item {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 12px; font-weight: 700; color: var(--text);
+}
+.stat-dot { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
+.stat-chart-wrap { width: 100%; overflow-x: auto; }
+.stat-note { font-size: 12px; color: var(--dim); margin-top: 8px; line-height: 1.45; }
+
 /* ── Tariff pills ── */
 .tariff-pills {
     display: flex; gap: 4px; flex-wrap: wrap;
@@ -951,6 +965,7 @@
 <script>const CSRF_TOKEN = "{{ csrf_token(request) }}";</script>
 
 <div class="students-page-wrap">
+{% include "_curator_nav.html" %}
 <div class="split-wrap">
 
     <!-- ── Sidebar ── -->
@@ -1031,13 +1046,7 @@
                         {% include "_includes/student_tag_pills.html" %}
                     </div>
                 </div>
-                {% if can_score and initial_tab == 'retakes' %}
-                    {% if s.retake_unchecked %}
-                    <span class="pending-badge">{{ s.retake_unchecked }}</span>
-                    {% elif s.retake_count %}
-                    <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверено</span>
-                    {% endif %}
-                {% elif can_score %}
+                {% if can_score %}
                     {% set ss = s.scored_subjects %}
                     {% if ss | length >= 2 %}
                     <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверено</span>
@@ -1077,8 +1086,8 @@
         <div class="tab-bar" id="tab-bar">
             <button class="tab-btn" id="tab-portfolio"  onclick="switchTab('portfolio')">Портфолио</button>
             <button class="tab-btn" id="tab-mock-exams" onclick="switchTab('mock-exams')">Пробники</button>
-            <button class="tab-btn" id="tab-retakes"    onclick="switchTab('retakes')">Отработки</button>
             <button class="tab-btn" id="tab-cycles"     onclick="switchTab('cycles')">Цикл Пробника</button>
+            <button class="tab-btn" id="tab-statistics" onclick="switchTab('statistics')">Статистика</button>
         </div>
 
         <div class="split-main-scroll" id="main-panel">
@@ -1093,6 +1102,9 @@
 </div><!-- /.students-page-wrap -->
 
 {% include "partials/lightbox.html" %}
+
+{# Библиотека дневного календаря (window.CYCCAL) — секция «Пробные экзамены» в портфолио ученика #}
+{% include "partials/cycle_calendar_lib.html" %}
 
 <!-- Toast -->
 <div class="save-toast" id="save-toast">Оценка сохранена</div>
@@ -1192,6 +1204,15 @@ var _mockPeriodOnly = (function() {
         return p === '1' || p === 'true';
     } catch (e) { return false; }
 })();
+// Раздел дашборда из URL (?tab=…) без выбранного ученика: при клике на ученика
+// открывать сразу эту вкладку, а не профиль (используется навбаром «Статистика»).
+var _navDefaultTab = (function() {
+    try {
+        var t = new URLSearchParams(location.search).get('tab');
+        var valid = ['portfolio', 'mock-exams', 'cycles', 'statistics'];
+        return (t && valid.indexOf(t) !== -1) ? t : null;
+    } catch (e) { return null; }
+})();
 
 // ── Student selection ────────────────────────────────────────────────────────
 
@@ -1208,6 +1229,9 @@ function selectStudent(id, forceTab) {
     document.querySelectorAll('.student-row').forEach(function(r) { r.classList.remove('active'); });
     var row = document.getElementById('srow-' + id);
     if (row) { row.classList.add('active'); row.scrollIntoView({block: 'nearest'}); }
+
+    // Навбар-раздел задал вкладку по умолчанию — открываем её сразу, минуя профиль
+    if (!forceTab && _navDefaultTab) forceTab = _navDefaultTab;
 
     // If forceTab specified (e.g. after score redirect), go straight to tab
     if (forceTab) {
@@ -1323,15 +1347,15 @@ function renderProfile(data) {
         +   '<div class="profile-action-label">Пробники</div>'
         +   '<div class="profile-action-count">' + (s.mock_exam_count || 0) + ' работ</div>'
         + '</button>'
-        + '<button class="profile-action-btn" onclick="openTab(\'retakes\')">'
-        +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></div>'
-        +   '<div class="profile-action-label">Отработки</div>'
-        +   '<div class="profile-action-count">' + (s.retake_count || 0) + ' работ</div>'
-        + '</button>'
         + '<button class="profile-action-btn" onclick="openTab(\'cycles\')">'
         +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9"/><polyline points="21 3 21 9 15 9"/></svg></div>'
         +   '<div class="profile-action-label">Цикл Пробника</div>'
         +   '<div class="profile-action-count">' + (s.cycle_count || 0) + ' циклов</div>'
+        + '</button>'
+        + '<button class="profile-action-btn" onclick="openTab(\'statistics\')">'
+        +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><polyline points="19 9 13 15 9 11 5 15"/></svg></div>'
+        +   '<div class="profile-action-label">Статистика</div>'
+        +   '<div class="profile-action-count">динамика баллов</div>'
         + '</button>'
         + '</div>';
 
@@ -1353,7 +1377,7 @@ function switchTab(tabName) {
     if (_currentTab && tabName !== _currentTab && !guardUnsavedScore()) return;
     _currentTab = tabName;
 
-    ['portfolio', 'mock-exams', 'retakes', 'cycles'].forEach(function(t) {
+    ['portfolio', 'mock-exams', 'retakes', 'cycles', 'statistics'].forEach(function(t) {
         var btn = document.getElementById('tab-' + t);
         if (btn) btn.classList.toggle('active', t === tabName);
     });
@@ -1398,27 +1422,107 @@ function renderTab(tabName, data) {
 
     var backBtn = '<button class="back-to-profile" onclick="backToProfile()">← К профилю</button>';
 
-    if (tabName === 'portfolio')  { tc.innerHTML = backBtn + buildPortfolio(data);  }
+    if (tabName === 'portfolio')  {
+        tc.innerHTML = backBtn + buildPortfolio(data);
+        if (window.CYCCAL) {
+            CYCCAL.init({
+                key: 'staff-portfolio-mock',
+                rootId: 'portfolio-mock-cal',
+                subjects: data.mock_subjects || [],
+                worksBySubject: data.mock_works_by_subject || {},
+                months: MONTHS_LIST,
+                currentYear: new Date().getFullYear(),
+                emptyText: 'Пробных экзаменов пока нет.',
+                showFeedback: false,
+                showStages: false
+            });
+        }
+    }
     if (tabName === 'mock-exams') { tc.innerHTML = backBtn + buildMockExams(data);  }
     if (tabName === 'retakes')    { tc.innerHTML = backBtn + buildRetakes(data);    }
     if (tabName === 'cycles')     { tc.innerHTML = backBtn + buildCycles(data);     }
+    if (tabName === 'statistics') { tc.innerHTML = backBtn + buildStatistics(data); }
+}
+
+// ── Statistics: динамика баллов по пробникам (инлайн-SVG) ────────────────────
+function buildStatistics(data) {
+    var pts = data.points || [];
+    var title = '<div class="section-title">Динамика баллов по пробникам</div>';
+
+    var hasData = pts.some(function(p) { return p.drawing != null || p.composition != null; });
+    if (!pts.length || !hasData) {
+        return title + '<div class="no-works">Пока нет оценённых пробников для построения графика.</div>';
+    }
+
+    // Геометрия
+    var W = 720, H = 320;
+    var padL = 38, padR = 16, padT = 16, padB = 56;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var n = pts.length;
+    var xFor = function(i) { return padL + (n === 1 ? plotW / 2 : plotW * i / (n - 1)); };
+    var yFor = function(v) { return padT + plotH * (1 - v / 100); };
+
+    function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    // Сетка + ось Y (0..100 шаг 20)
+    var grid = '';
+    for (var g = 0; g <= 100; g += 20) {
+        var gy = yFor(g);
+        grid += '<line x1="' + padL + '" y1="' + gy + '" x2="' + (W - padR) + '" y2="' + gy + '" stroke="var(--line)" stroke-width="1"/>';
+        grid += '<text x="' + (padL - 8) + '" y="' + (gy + 4) + '" text-anchor="end" font-size="11" fill="var(--dim)">' + g + '</text>';
+    }
+
+    // Подписи месяцев по X (короткий формат: первые 3 буквы месяца)
+    var xLabels = '';
+    pts.forEach(function(p, i) {
+        var short = String(p.label || '').split(' ')[0].slice(0, 3);
+        xLabels += '<text x="' + xFor(i) + '" y="' + (H - padB + 18) + '" text-anchor="middle" font-size="10" fill="var(--dim)">' + esc(short) + '</text>';
+    });
+
+    // Линия по предмету: сегменты только между соседними не-null точками, кружки на точках
+    function series(key, color) {
+        var path = '';
+        var dots = '';
+        var prev = null;
+        pts.forEach(function(p, i) {
+            var v = p[key];
+            if (v == null) { prev = null; return; }
+            var x = xFor(i), y = yFor(v);
+            if (prev) {
+                path += '<line x1="' + prev.x + '" y1="' + prev.y + '" x2="' + x + '" y2="' + y + '" stroke="' + color + '" stroke-width="2.5" stroke-linecap="round"/>';
+            }
+            dots += '<circle cx="' + x + '" cy="' + y + '" r="3.5" fill="' + color + '"/>';
+            dots += '<title>' + esc(p.label) + ': ' + v + '</title>';
+            prev = { x: x, y: y };
+        });
+        return path + dots;
+    }
+
+    var COLOR_DRAW = '#3B5BFF';   // Рисунок
+    var COLOR_COMP = '#F59E0B';   // Композиция
+
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Динамика баллов по пробникам">' +
+        grid + xLabels +
+        series('drawing', COLOR_DRAW) +
+        series('composition', COLOR_COMP) +
+        '</svg>';
+
+    var legend = '<div class="stat-legend">' +
+        '<span class="stat-legend-item"><span class="stat-dot" style="background:' + COLOR_DRAW + '"></span>Рисунок</span>' +
+        '<span class="stat-legend-item"><span class="stat-dot" style="background:' + COLOR_COMP + '"></span>Композиция</span>' +
+        '</div>';
+
+    return title +
+        '<div class="stat-chart-card">' + legend +
+        '<div class="stat-chart-wrap">' + svg + '</div>' +
+        '<div class="stat-note">Средний балл за месяц по оценённым пробникам, последние 12 месяцев.</div>' +
+        '</div>';
 }
 
 function buildCycles(data) {
-    var sid = data.student_id;
     var html = '<div class="section-title">Цикл Пробника</div>';
-    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
-        +   '<a href="/cabinet/staff/cycle/probnik/' + sid + '" '
-        +   'style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;'
-        +   'background:rgba(37,99,235,0.10);color:var(--blue);font-weight:800;font-size:13px;'
-        +   'text-decoration:none;border:1px solid rgba(37,99,235,0.30);">📅 Календарь пробников</a>'
-        +   '<a href="/cabinet/staff/cycle/otrabotka/' + sid + '" '
-        +   'style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;'
-        +   'background:rgba(124,58,237,0.10);color:#7C3AED;font-weight:800;font-size:13px;'
-        +   'text-decoration:none;border:1px solid rgba(124,58,237,0.30);">📅 Календарь отработок</a>'
-        + '</div>';
     if (!data.cycles || data.cycles.length === 0) {
-        return html + '<div class="no-works">У ученика пока нет циклов пробника. Календари выше показывают также архивные работы без цикла.</div>';
+        return html + '<div class="no-works">У ученика пока нет циклов пробника.</div>';
     }
     html += '<div style="display:flex;flex-direction:column;gap:10px">';
     data.cycles.forEach(function(c) {
@@ -1426,14 +1530,14 @@ function buildCycles(data) {
         var fbTotal = c.feedbacks_count || 0;
         var attempts = c.attempts || 0;
         var pillCls = fbTotal > 0 ? 'cycle-pill has-fb' : 'cycle-pill no-fb';
-        var pillTxt = fbTotal > 0 ? ('Обратная связь: ' + fbTotal + '/' + attempts) : 'Нет обратной связи';
+        var pillTxt = fbTotal > 0 ? 'Есть обратная связь' : 'Нет обратной связи';
         html += '<a href="' + esc(c.url) + '" '
             + 'style="display:flex;justify-content:space-between;align-items:center;gap:10px;'
             + 'padding:12px 14px;border:1px solid var(--line);border-radius:10px;'
             + 'text-decoration:none;color:inherit;transition:background .12s">'
             + '<div style="display:flex;flex-direction:column;gap:3px;min-width:0">'
             +   '<span style="font-weight:800;color:var(--ink)">' + esc(c.subject) + '</span>'
-            +   '<span style="font-size:12px;color:var(--muted)">Начат: ' + esc(date) + ' · Попыток: ' + attempts + '</span>'
+            +   '<span style="font-size:12px;color:var(--muted)">Начат: ' + esc(date) + '</span>'
             + '</div>'
             + '<div style="display:flex;gap:8px;align-items:center">'
             +   '<span class="' + pillCls + '" style="font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;'
@@ -1504,19 +1608,14 @@ function buildPortfolio(data) {
 
     var sid = data.student.id;
 
-    // Before works
+    // Before works by month (раскрывающиеся блоки — единый вид с «После» и с портфолио ученика)
     html += '<div class="section-title">До обучения</div>';
-    if (data.before_works && data.before_works.length) {
-        html += '<div class="photo-grid" data-gallery="before-' + sid + '">';
-        data.before_works.forEach(function(w) {
-            if (w.s3_url) {
-                var img = '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)">';
-                html += wrapPhoto(img, sid, w.id);
-            }
+    if (data.before_by_month && data.before_by_month.length) {
+        data.before_by_month.forEach(function(g, idx) {
+            html += buildPortfolioMonthBlock(sid, 'before', g, 'before-' + idx);
         });
-        html += '</div>';
     } else {
-        html += '<div class="no-works" style="margin-bottom:20px">Работы не загружены</div>';
+        html += '<div class="no-works">Работы не загружены</div>';
     }
 
     // After works by month
@@ -1529,6 +1628,11 @@ function buildPortfolio(data) {
         html += '<div class="no-works">Работы не загружены</div>';
     }
 
+    // Пробные экзамены (финалки закрытых циклов) — тот же дневной календарь (CYCCAL),
+    // что и в Портфолио ученика. Инициализируется в renderTab после вставки в DOM.
+    html += '<div class="section-title">Пробные экзамены</div>';
+    html += '<div class="subj-stack" id="portfolio-mock-cal"></div>';
+
     return html;
 }
 
@@ -1538,7 +1642,7 @@ function buildPortfolioMonthBlock(sid, workType, g, blockId) {
     var renameBtn = IS_SUPERADMIN && workType === 'after'
         ? '<button type="button" class="portfolio-rename-btn" onclick="event.stopPropagation();renamePortfolioMonth(' + sid + ',\'' + workType + '\',\'' + esc(g.month) + '\',' + g.year + ')">Переименовать</button>'
         : '';
-    var delBtn = CAN_SCORE
+    var delBtn = (CAN_SCORE && workType !== 'mock')
         ? '<button type="button" class="folder-del-btn" onclick="event.stopPropagation();deleteFolderWorks(' + sid + ',\'' + workType + '\',\'' + esc(g.month) + '\',' + g.year + ',' + g.total + ')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Удалить</button>'
         : '';
     var dropAttrs = IS_SUPERADMIN && workType === 'after'

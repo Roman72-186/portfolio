@@ -349,7 +349,9 @@ def test_mock_exam_truncated_jpeg_still_uploads(auth_client, db):
         resp = _mock_upload(client, [("photos", ("work.jpg", truncated, "image/jpeg"))])
 
     assert resp.status_code == 200
-    assert "не удалось загрузить" not in resp.text.lower()
+    # No server-rendered error banner (the JS bundle contains error-string
+    # literals, so a substring check on resp.text would false-positive).
+    assert 'class="alert alert-error"' not in resp.text
 
     works = db.query(Work).filter(
         Work.user_id == user.id,
@@ -441,13 +443,19 @@ def test_mock_exam_locked_subjects_do_not_disable_form(auth_client, db):
 
 
 def test_mock_exam_current_period_submission_shows_waiting_grade(auth_client, db):
-    """A submitted, unscored mock exam in the active period shows the waiting-grade state."""
+    """Сданный по текущему билету пробник (открытый цикл) блокирует кнопку предмета
+    с подсказкой «работа сдана, ждите ОС» (модель «одна сдача на билет»)."""
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+    from app.models.exam_cycle import ExamCycle
     from datetime import datetime, timezone
 
     client, user = auth_client
     _create_active_period(db, user, "mock_exam")
-    _create_active_ticket(db, user, "Рисунок")
+    ticket = _create_active_ticket(db, user, "Рисунок")
+    cycle = ExamCycle(user_id=user.id, subject="Рисунок", ticket_id=ticket.id,
+                      started_at=datetime.now(timezone.utc))
+    db.add(cycle)
+    db.flush()
     db.add(Work(
         user_id=user.id,
         work_type=WORK_TYPE_MOCK_EXAM,
@@ -458,6 +466,8 @@ def test_mock_exam_current_period_submission_shows_waiting_grade(auth_client, db
         tariff=user.tariff,
         status="success",
         score=None,
+        cycle_id=cycle.id,
+        is_final=True,
         created_at=datetime.now(timezone.utc),
     ))
     db.commit()
@@ -465,8 +475,7 @@ def test_mock_exam_current_period_submission_shows_waiting_grade(auth_client, db
     resp = client.get("/upload/mock-exam")
 
     assert resp.status_code == 200
-    assert "уже сдано" in resp.text
-    assert "ждёт оценки" in resp.text
+    assert "работа сдана, ждите ОС" in resp.text
 
 
 def test_mock_exam_old_period_submission_does_not_show_waiting_grade(auth_client, db):
@@ -497,8 +506,8 @@ def test_mock_exam_old_period_submission_does_not_show_waiting_grade(auth_client
     assert "уже сдано" not in resp.text
 
 
-def test_mock_exam_locked_subject_can_be_submitted(auth_client, db):
-    """POST with a locked subject creates a new Work record."""
+def test_mock_exam_stale_lock_does_not_block_current_ticket(auth_client, db):
+    """Legacy MockExamLock is informational; current ticket cycle is the lock."""
     from app.models.mock_exam_lock import MockExamLock
     from app.models.work import Work
     from datetime import datetime, timezone
@@ -532,31 +541,29 @@ def test_mock_exam_locked_subject_can_be_started(auth_client, db):
     assert resp.json()["resumed"] is False
 
 
-def test_mock_exam_locks_independent_per_subject(auth_client, db):
-    """Existing locks do not block the locked subject or other subjects."""
-    from app.models.mock_exam_lock import MockExamLock
+def test_mock_exam_current_ticket_cycle_blocks_repeat_submit(auth_client, db):
+    """A created cycle for the active ticket blocks repeat submit for that subject."""
     from app.models.work import Work
-    from datetime import datetime, timezone
     client, user = auth_client
     _create_active_period(db, user, "mock_exam")
     _create_active_ticket(db, user, "Рисунок")
     _create_active_ticket(db, user, "Композиция")
-    db.add(MockExamLock(user_id=user.id, subject="Рисунок", is_locked=True,
-                        locked_at=datetime.now(timezone.utc)))
-    db.commit()
-    # Locked subject should also succeed when mock exams are open.
+
+    # First submit creates a cycle for "Рисунок".
     with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
-        resp_locked = _mock_upload(client, [("photos", ("a.jpg", _JPG_BYTES, "image/jpeg"))], subject="Рисунок")
-    assert resp_locked.status_code == 200
-    # Another subject should succeed too.
+        resp_first = _mock_upload(client, [("photos", ("a.jpg", _JPG_BYTES, "image/jpeg"))], subject="Рисунок")
+    assert resp_first.status_code == 200
+
+    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
+        resp_repeat = _mock_upload(client, [("photos", ("a2.jpg", _JPG_BYTES, "image/jpeg"))], subject="Рисунок")
+    assert resp_repeat.status_code == 200
+    assert "уже сдан" in resp_repeat.text
+
+    # A different subject with its own active ticket still goes through.
     with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
         resp_ok = _mock_upload(client, [("photos", ("b.jpg", _JPG_BYTES, "image/jpeg"))], subject="Композиция")
     assert resp_ok.status_code == 200
     assert db.query(Work).filter(Work.user_id == user.id).count() == 2
-    kompozitsiya_lock = db.query(MockExamLock).filter(
-        MockExamLock.user_id == user.id, MockExamLock.subject == "Композиция",
-    ).first()
-    assert kompozitsiya_lock is not None and kompozitsiya_lock.is_locked is True
 
 
 def test_retake_form_available_when_mock_sent_to_retake(auth_client, db):
@@ -865,8 +872,8 @@ def test_move_retake_to_subject_changes_only_selected_photo(admin_client, db, us
     assert second.subject is None
 
 
-def test_students_retake_tab_marks_fully_scored_retake_student_checked(admin_client, db, user_factory):
-    """On the shared students page, the retakes tab uses retake scoring status for the sidebar badge."""
+def test_students_retakes_endpoint_reports_scored_retake(admin_client, db, user_factory):
+    """The staff retakes endpoint exposes the curator score for a scored retake."""
     from app.models.work import Work, WORK_TYPE_RETAKE
     from datetime import datetime, timezone
 
@@ -875,10 +882,10 @@ def test_students_retake_tab_marks_fully_scored_retake_student_checked(admin_cli
     work = Work(
         user_id=student.id,
         work_type=WORK_TYPE_RETAKE,
-        month="СЏРЅРІР°СЂСЊ",
+        month="январь",
         year=2026,
         filename="checked.jpg",
-        subject="Р РёСЃСѓРЅРѕРє",
+        subject="Рисунок",
         tariff=student.tariff,
         status="success",
         score=90,
@@ -887,16 +894,16 @@ def test_students_retake_tab_marks_fully_scored_retake_student_checked(admin_cli
     db.add(work)
     db.commit()
 
-    resp = client.get("/cabinet/students?tab=retakes")
+    resp = client.get(f"/cabinet/students/{student.id}/retakes")
 
     assert resp.status_code == 200
-    row = resp.text.split(f'id="srow-{student.id}"', 1)[1].split("</button>", 1)[0]
-    assert "checked-badge" in row
-    assert "pending-badge" not in row
+    rows = resp.json()["retakes_by_subject"]["Рисунок"]
+    assert len(rows) == 1
+    assert rows[0]["curator_score"] == 90.0
 
 
-def test_students_retake_tab_shows_unchecked_retake_count(admin_client, db, user_factory):
-    """Unscored retakes stay pending in the shared students page sidebar."""
+def test_students_retakes_endpoint_reports_unscored_retake(admin_client, db, user_factory):
+    """An unscored retake is returned with no curator score."""
     from app.models.work import Work, WORK_TYPE_RETAKE
     from datetime import datetime, timezone
 
@@ -905,10 +912,10 @@ def test_students_retake_tab_shows_unchecked_retake_count(admin_client, db, user
     work = Work(
         user_id=student.id,
         work_type=WORK_TYPE_RETAKE,
-        month="СЏРЅРІР°СЂСЊ",
+        month="январь",
         year=2026,
         filename="pending.jpg",
-        subject="Р РёСЃСѓРЅРѕРє",
+        subject="Рисунок",
         tariff=student.tariff,
         status="success",
         created_at=datetime.now(timezone.utc),
@@ -916,12 +923,12 @@ def test_students_retake_tab_shows_unchecked_retake_count(admin_client, db, user
     db.add(work)
     db.commit()
 
-    resp = client.get("/cabinet/students?tab=retakes")
+    resp = client.get(f"/cabinet/students/{student.id}/retakes")
 
     assert resp.status_code == 200
-    row = resp.text.split(f'id="srow-{student.id}"', 1)[1].split("</button>", 1)[0]
-    assert "pending-badge" in row
-    assert "checked-badge" not in row
+    rows = resp.json()["retakes_by_subject"]["Рисунок"]
+    assert len(rows) == 1
+    assert rows[0]["curator_score"] is None
 
 
 def test_revision_opens_mock_exam_upload_again(client, db, user_factory, session_factory):

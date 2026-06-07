@@ -14,10 +14,10 @@ except ImportError:
     pass
 
 # ── credentials ──────────────────────────────────────────────────────────────
-STAFF_LOGIN = "roman.m"
-STAFF_PASSWORD = "Makhm@2026"
-FIRST_NAME = "Роман"
-LAST_NAME = "Махметов"
+STAFF_LOGIN = os.environ.get("SUPERADMIN_STAFF_LOGIN", "roman.m")
+STAFF_PASSWORD = os.environ.get("SUPERADMIN_STAFF_PASSWORD", "")
+FIRST_NAME = os.environ.get("SUPERADMIN_FIRST_NAME", "Роман")
+LAST_NAME = os.environ.get("SUPERADMIN_LAST_NAME", "Махметов")
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -25,6 +25,9 @@ def main() -> None:
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
         print("ERROR: DATABASE_URL env var is not set", file=sys.stderr)
+        sys.exit(1)
+    if not STAFF_PASSWORD:
+        print("ERROR: SUPERADMIN_STAFF_PASSWORD env var is not set", file=sys.stderr)
         sys.exit(1)
 
     import psycopg2
@@ -82,7 +85,7 @@ def main() -> None:
     print(f"Superadmin created  (id={new_id})")
     print(f"  Name   : {full_name}")
     print(f"  Login  : {STAFF_LOGIN}")
-    print(f"  Password: {STAFF_PASSWORD}")
+    print("  Password: <set from SUPERADMIN_STAFF_PASSWORD>")
     print(f"  Role   : суперадмин (rank 5)")
     print(f"  Login URL: https://apparchi.ru/auth/staff/login")
     print("=" * 50)

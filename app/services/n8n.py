@@ -43,6 +43,7 @@ async def send_photo_to_n8n(
     filename: str,
     photo_type: str = "after",
     s3_path: str | None = None,
+    work_id: int | None = None,
 ) -> dict:
     """Send photo to n8n webhook for Google Drive upload.
 
@@ -61,12 +62,17 @@ async def send_photo_to_n8n(
         "photo_base64": photo_b64,
         "photo_type": photo_type,
         "s3_path": s3_path,
+        "work_id": work_id,
+        "idempotency_key": f"work:{work_id}" if work_id is not None else None,
         "source": "web_cabinet",
     }
 
     try:
         client = await _get_client()
-        resp = await client.post(settings.n8n_webhook_upload, json=payload)
+        headers = {}
+        if settings.n8n_webhook_secret:
+            headers["X-Webhook-Secret"] = settings.n8n_webhook_secret
+        resp = await client.post(settings.n8n_webhook_upload, json=payload, headers=headers)
         resp.raise_for_status()
         result = resp.json()
         logger.info("n8n upload OK: %s", result)

@@ -43,6 +43,21 @@
 }
 .cycle-pill.has-fb { background: rgba(34,197,94,0.12); color: #15803D; }
 .cycle-pill.no-fb { background: rgba(245,158,11,0.12); color: #B45309; }
+.cycle-pill.score { background: var(--blue); color: #fff; }
+.cycle-pill.score.score-red { background: #DC2626; }
+.cycle-pill.score.score-orange { background: #F97316; }
+.cycle-pill.score.score-lime { background: #84CC16; }
+.cycle-pill.score.score-green { background: #16A34A; }
+.cycle-pill.closed { background: var(--dim); color: #fff; }
+.cycle-row.is-closed { background: var(--surface-2); opacity: 0.82; }
+.cycle-row.is-closed:hover { background: var(--surface-2); opacity: 1; }
+.cycle-group-title {
+    font-size: 10px; font-weight: 800; color: var(--dim);
+    text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 10px 18px 6px; background: var(--surface);
+    border-top: 1px solid var(--line);
+}
+.cycle-group-title:first-of-type { border-top: none; }
 </style>
 {% endblock %}
 {% block content %}
@@ -65,26 +80,38 @@
             <div class="student-block">
                 <div class="student-block-head">
                     <a href="/cabinet/students?student={{ s.student_id }}" class="student-block-name">{{ s.student_name }}</a>
-                    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-                        <a href="/cabinet/staff/cycle/probnik/{{ s.student_id }}"
-                           style="font-size:11px;font-weight:800;letter-spacing:0.04em;padding:4px 9px;border-radius:999px;background:rgba(37,99,235,0.10);color:var(--blue);text-decoration:none;border:1px solid rgba(37,99,235,0.25);">
-                            📅 Пробники
-                        </a>
-                        <a href="/cabinet/staff/cycle/otrabotka/{{ s.student_id }}"
-                           style="font-size:11px;font-weight:800;letter-spacing:0.04em;padding:4px 9px;border-radius:999px;background:rgba(124,58,237,0.10);color:#7C3AED;text-decoration:none;border:1px solid rgba(124,58,237,0.25);">
-                            📅 Отработки
-                        </a>
-                        <span class="student-block-count">{{ s.cycles|length }} цикл(ов)</span>
-                    </div>
+                    <span class="student-block-count">
+                        {% if s.open_count %}открытых: {{ s.open_count }}{% endif %}
+                        {% if s.open_count and s.closed_count %} · {% endif %}
+                        {% if s.closed_count %}закрытых: {{ s.closed_count }}{% endif %}
+                    </span>
                 </div>
+                {% set ns = namespace(prev_closed=None) %}
                 {% for c in s.cycles %}
-                    <a class="cycle-row" href="{{ detail_prefix }}{{ c.id }}">
+                    {% set is_closed = c.closed_at is not none %}
+                    {% if ns.prev_closed != is_closed %}
+                        <div class="cycle-group-title">
+                            {% if is_closed %}Закрытые{% else %}Открытые{% endif %}
+                        </div>
+                        {% set ns.prev_closed = is_closed %}
+                    {% endif %}
+                    <a class="cycle-row {% if is_closed %}is-closed{% endif %}" href="{{ detail_prefix }}{{ c.id }}">
                         <div class="cycle-row-left">
                             <span class="cycle-row-subject">{{ c.subject }}</span>
-                            <span class="cycle-row-date">Начат: {{ c.started_at[:10] }} · Попыток: {{ c.attempts }}</span>
+                            <span class="cycle-row-date">
+                                Начат: {{ c.started_at[:10] }}
+                                {% if is_closed %} · Закрыт: {{ c.closed_at[:10] }}{% endif %}
+                            </span>
                         </div>
                         <div class="cycle-row-right">
-                            {% if c.feedbacks_count > 0 %}
+                            {% if is_closed %}
+                                {% if c.close_score is not none %}
+                                    {% set score_value = c.close_score|round|int %}
+                                    {% set score_class = "score-red" if score_value < 50 else "score-orange" if score_value < 70 else "score-lime" if score_value < 85 else "score-green" %}
+                                    <span class="cycle-pill score {{ score_class }}">{{ score_value }} / 100</span>
+                                {% endif %}
+                                <span class="cycle-pill closed">ЗАКРЫТО</span>
+                            {% elif c.feedbacks_count > 0 %}
                                 <span class="cycle-pill has-fb">Обратная связь: {{ c.feedbacks_count }}/{{ c.attempts }}</span>
                             {% else %}
                                 <span class="cycle-pill no-fb">Нет обратной связи</span>

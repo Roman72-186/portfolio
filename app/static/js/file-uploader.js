@@ -1,6 +1,6 @@
 /**
  * FileUploader — vanilla JS компонент загрузки файлов.
- * Адаптация file_save.tsx (React) под Jinja2 + vanilla.
+ * Vanilla implementation for Jinja2 upload forms.
  *
  *   const uploader = new FileUploader({
  *     container: '#upload-root',          // CSS selector или HTMLElement

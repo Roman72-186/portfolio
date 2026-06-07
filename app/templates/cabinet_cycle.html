@@ -110,6 +110,12 @@
 }
 .cal-fb-cta:hover { background: var(--blue-soft); }
 
+.fb-group-title {
+    font-size: 11px; font-weight: 800; color: var(--dim);
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin: 18px 0 8px;
+}
+.fb-group-title:first-child { margin-top: 0; }
 .fb-list { display: flex; flex-direction: column; gap: 10px; list-style: none; padding: 0; margin: 0; }
 .fb-list a {
     display: flex; justify-content: space-between; align-items: center;
@@ -118,6 +124,7 @@
     text-decoration: none; color: inherit; background: var(--surface);
 }
 .fb-list a.has-unread { border-color: rgba(245,158,11,0.4); background: rgba(245,158,11,0.05); }
+.fb-list a.is-closed { background: var(--surface-2); opacity: 0.78; }
 .fb-list a:hover { border-color: var(--blue); }
 .fb-list .fb-sub { font-weight: 800; }
 .fb-list .fb-meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
@@ -126,6 +133,28 @@
     font-size: 11px; font-weight: 800; padding: 3px 10px;
     border-radius: 999px; letter-spacing: 0.04em;
 }
+.fb-list .fb-closed-badge {
+    flex-shrink: 0; background: var(--dim); color: #fff;
+    font-size: 11px; font-weight: 800; padding: 3px 10px;
+    border-radius: 999px; letter-spacing: 0.04em;
+}
+.fb-list .fb-cycle-actions {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+.fb-list .fb-score-badge {
+    flex-shrink: 0; background: var(--blue); color: #fff;
+    font-size: 11px; font-weight: 900; padding: 3px 10px;
+    border-radius: 999px; letter-spacing: 0.04em;
+}
+.fb-list .fb-score-badge.score-red { background: #DC2626; }
+.fb-list .fb-score-badge.score-orange { background: #F97316; }
+.fb-list .fb-score-badge.score-lime { background: #84CC16; }
+.fb-list .fb-score-badge.score-green { background: #16A34A; }
 .fb-empty { padding: 30px 18px; text-align: center; color: var(--muted); font-size: 14px; border: 1px dashed var(--line); border-radius: 12px; }
 
 @media (max-width: 768px) {
@@ -138,68 +167,66 @@
 <div class="cyc-page">
     <section class="cyc-hero">
         <h1>Цикл Пробника</h1>
-        <p>Пробник → диалог с куратором по обратной связи → закрытие цикла после оценки.</p>
+        <p>Диалог с куратором по обратной связи · закрытие цикла после оценки.</p>
         <span class="badge">Циклов всего: {{ cycles_count }}</span>
     </section>
 
     <div class="cyc-tabs" role="tablist">
-        <button type="button" class="cyc-tab {% if active_subtab == 'mock' %}active{% endif %}" data-tab="mock" role="tab">
-            Пробник
-        </button>
-        {% if feedback_visible %}
-        <button type="button" class="cyc-tab {% if active_subtab == 'feedback' %}active{% endif %}" data-tab="feedback" role="tab">
+        <button type="button" class="cyc-tab active" data-tab="feedback" role="tab">
             Обратная связь
             {% set total_unread = open_cycles|sum(attribute='unread_count') %}
             {% if total_unread and total_unread > 0 %}<span class="tab-badge">{{ total_unread }}</span>{% endif %}
         </button>
-        {% endif %}
     </div>
 
-    {# ── Вкладка 1: Пробник ── #}
-    <div class="cyc-panel {% if active_subtab == 'mock' %}active{% endif %}" data-panel="mock">
-        <div class="cyc-upload-bar">
-            <div>
-                {% if not mock_open %}<span class="cyc-upload-msg">{{ mock_msg }}</span>{% endif %}
-            </div>
-            {% if mock_open %}
-                <a class="cyc-upload-btn" href="{{ upload_url }}">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    {{ upload_label }}
-                </a>
-            {% else %}
-                <span class="cyc-upload-btn disabled" title="{{ mock_msg }}">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                    {{ upload_label }} (закрыто)
-                </span>
-            {% endif %}
-        </div>
-        <div class="subj-stack" id="subj-root"></div>
-    </div>
-
-    {# ── Вкладка 2: Обратная связь ── #}
-    {% if feedback_visible %}
-    <div class="cyc-panel {% if active_subtab == 'feedback' %}active{% endif %}" data-panel="feedback">
-        {% if not open_cycles %}
-            <div class="fb-empty">Открытых циклов нет.</div>
+    {# ── Обратная связь ── #}
+    <div class="cyc-panel active" data-panel="feedback">
+        {% if not open_cycles and not closed_cycles %}
+            <div class="fb-empty">Циклов пока нет.</div>
         {% else %}
-            <ul class="fb-list">
-                {% for c in open_cycles %}
-                    <li>
-                        <a href="/cabinet/feedback/{{ c.id }}" class="{% if c.unread_count and c.unread_count > 0 %}has-unread{% endif %}">
-                            <div style="min-width:0;">
-                                <div class="fb-sub">{{ c.subject }}</div>
-                                <div class="fb-meta">Начат: {{ c.started_at[:10] }} · Попыток: {{ c.attempts }}</div>
-                            </div>
-                            {% if c.unread_count and c.unread_count > 0 %}
-                                <span class="fb-unread">НОВОЕ · {{ c.unread_count }}</span>
-                            {% endif %}
-                        </a>
-                    </li>
-                {% endfor %}
-            </ul>
+            {% if open_cycles %}
+                <div class="fb-group-title">Открытые · {{ open_cycles|length }}</div>
+                <ul class="fb-list">
+                    {% for c in open_cycles %}
+                        <li>
+                            <a href="/cabinet/feedback/{{ c.id }}" class="{% if c.unread_count and c.unread_count > 0 %}has-unread{% endif %}">
+                                <div style="min-width:0;">
+                                    <div class="fb-sub">{{ c.subject }}</div>
+                                    <div class="fb-meta">Начат: {{ c.started_at[:10] }}</div>
+                                </div>
+                                {% if c.unread_count and c.unread_count > 0 %}
+                                    <span class="fb-unread">НОВОЕ · {{ c.unread_count }}</span>
+                                {% endif %}
+                            </a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+            {% if closed_cycles %}
+                <div class="fb-group-title">Закрытые · {{ closed_cycles|length }}</div>
+                <ul class="fb-list">
+                    {% for c in closed_cycles %}
+                        <li>
+                            <a href="/cabinet/feedback/{{ c.id }}" class="is-closed">
+                                <div style="min-width:0;">
+                                    <div class="fb-sub">{{ c.subject }}</div>
+                                    <div class="fb-meta">Начат: {{ c.started_at[:10] }} · Закрыт: {{ c.closed_at[:10] }}</div>
+                                </div>
+                                <div class="fb-cycle-actions">
+                                    {% if c.close_score is not none %}
+                                        {% set score_value = c.close_score|round|int %}
+                                        {% set score_class = "score-red" if score_value < 50 else "score-orange" if score_value < 70 else "score-lime" if score_value < 85 else "score-green" %}
+                                        <span class="fb-score-badge {{ score_class }}">{{ score_value }} / 100</span>
+                                    {% endif %}
+                                    <span class="fb-closed-badge">ЗАКРЫТО</span>
+                                </div>
+                            </a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
         {% endif %}
     </div>
-    {% endif %}
 </div>
 
 {% set active_tab = "cycle" %}
@@ -322,7 +349,6 @@ function buildHero(w) {
     }
     html += '<div class="cal-hero-info">';
     if (w.subject) html += '<div class="cal-hero-line"><strong>Предмет:</strong> '+esc(w.subject)+'</div>';
-    if (w.attempt_number) html += '<div class="cal-hero-line"><strong>Попытка №'+w.attempt_number+'</strong></div>';
     if (w.cycle_started_at) html += '<div class="cal-hero-line dim">Цикл начат: '+esc(w.cycle_started_at.slice(0,10))+(w.cycle_closed_at ? ' · закрыт '+esc(w.cycle_closed_at.slice(0,10)) : '')+'</div>';
     if (w.comment) html += '<div class="cal-hero-line"><strong>Комментарий:</strong> '+esc(w.comment)+'</div>';
     html += '</div></div>';
@@ -336,10 +362,11 @@ function buildStages(w) {
     return html;
 }
 function buildCta(w) {
-    if (!w.cycle_id || w.cycle_closed_at) return '';
+    if (!w.cycle_id) return '';
+    const label = w.cycle_closed_at ? 'Открыть диалог (цикл закрыт)' : 'Открыть диалог обратной связи';
     return '<a class="cal-fb-cta" href="/cabinet/feedback/'+w.cycle_id+'">'
         + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
-        + 'Открыть диалог обратной связи</a>';
+        + label + '</a>';
 }
 function buildDetail(subject, grouped, state) {
     const selected = state.selectedDate && grouped[state.selectedDate] ? state.selectedDate : '';
@@ -350,7 +377,7 @@ function buildDetail(subject, grouped, state) {
     }
     works.forEach(w => {
         html += '<div class="cal-attempt">';
-        html += '<div class="cal-attempt-head"><div class="cal-attempt-title">'+(w.date_label || selected)+(w.attempt_number ? ' · попытка №'+w.attempt_number : '')+'</div></div>';
+        html += '<div class="cal-attempt-head"><div class="cal-attempt-title">'+(w.date_label || selected)+'</div></div>';
         html += buildHero(w);
         html += buildStages(w);
         html += buildCta(w);
@@ -364,7 +391,7 @@ function renderAll() {
     if (!root) return;
     const total = SUBJECTS.reduce((s, subj) => s + ((WORKS_BY_SUBJECT[subj] || []).length), 0);
     if (!total) {
-        root.innerHTML = '<div class="cal-detail-empty" style="border:1px solid var(--line);border-radius:12px;padding:50px 16px;background:var(--surface);">Работ пока нет. Нажми «{{ upload_label }}», чтобы начать.</div>';
+        root.innerHTML = '<div class="cal-detail-empty" style="border:1px solid var(--line);border-radius:12px;padding:50px 16px;background:var(--surface);">Работ пока нет.</div>';
         return;
     }
     let html = '';

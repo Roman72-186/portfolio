@@ -123,6 +123,150 @@ def test_set_credentials_denied_for_curator(client, db, user_factory, session_fa
     assert resp.status_code == 403
 
 
+def test_superadmin_create_manual_student_issues_credentials(superadmin_client, db, curator_user):
+    client, _ = superadmin_client
+
+    resp = client.post(
+        "/cabinet/superadmin/users/create-student",
+        data={
+            "first_name": "Анна",
+            "last_name": "Иванова",
+            "tg_username": "@anna_arch",
+            "tariff": "УВЕРЕННЫЙ",
+            "curator_id": str(curator_user.id),
+            "csrf_token": "bypass",
+        },
+    )
+
+    assert resp.status_code == 200
+    student = db.query(User).filter(User.first_name == "Анна", User.last_name == "Иванова").first()
+    assert student is not None
+    assert student.vk_id < 0
+    assert student.staff_login is not None
+    assert student.password_hash is not None
+    assert student.tg_username == "anna_arch"
+    assert student.curator_id == curator_user.id
+    assert student.profile_completed is False
+    assert "Доступ создан" in resp.text
+
+
+def test_superadmin_create_manual_student_reuses_existing_profile_by_tg_username(
+    superadmin_client, db, user_factory, curator_user
+):
+    client, _ = superadmin_client
+    existing = user_factory(
+        vk_id=900105,
+        name="Existing Student",
+        role_name="ученик",
+        profile_completed=True,
+    )
+    existing.first_name = "Мария"
+    existing.last_name = "Соколова"
+    existing.tg_username = "maria_arch"
+    db.add(existing)
+    db.commit()
+
+    resp = client.post(
+        "/cabinet/superadmin/users/create-student",
+        data={
+            "first_name": "Мария",
+            "last_name": "Соколова",
+            "tg_username": "@maria_arch",
+            "tariff": "МАКСИМУМ",
+            "curator_id": str(curator_user.id),
+            "csrf_token": "bypass",
+        },
+    )
+
+    assert resp.status_code == 200
+    matches = [
+        u for u in db.query(User).all()
+        if (u.tg_username or "").lower() == "maria_arch"
+    ]
+    assert len(matches) == 1
+    db.refresh(existing)
+    assert existing.staff_login is not None
+    assert existing.password_hash is not None
+    assert existing.curator_id == curator_user.id
+    assert existing.tariff == "МАКСИМУМ"
+    assert existing.profile_completed is True
+
+
+def test_superadmin_set_student_credentials_from_users_page(superadmin_client, db, user_factory):
+    client, _ = superadmin_client
+    student = user_factory(vk_id=900104, name="Manual Existing Student", role_name="ученик")
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{student.id}/set-credentials",
+        data={"csrf_token": "bypass"},
+    )
+
+    assert resp.status_code == 200
+    db.refresh(student)
+    assert student.staff_login is not None
+    assert student.password_hash is not None
+    assert "Доступ создан" in resp.text
+
+
+def test_superadmin_create_staff_from_users_page(superadmin_client, db):
+    from app.models.role import Role
+
+    client, _ = superadmin_client
+    curator_role = db.query(Role).filter(Role.name == "куратор").first()
+
+    resp = client.post(
+        "/cabinet/superadmin/users/create-staff",
+        data={
+            "first_name": "Иван",
+            "last_name": "Сотрудник",
+            "role_id": str(curator_role.id),
+            "csrf_token": "bypass",
+        },
+    )
+
+    assert resp.status_code == 200
+    staff = db.query(User).filter(User.first_name == "Иван", User.last_name == "Сотрудник").first()
+    assert staff is not None
+    assert staff.role_id == curator_role.id
+    assert staff.vk_id < 0
+    assert staff.staff_login is not None
+    assert staff.password_hash is not None
+    assert "Доступ создан" in resp.text
+
+
+def test_superadmin_assign_role_from_users_page(superadmin_client, db, user_factory):
+    from app.models.role import Role
+
+    client, _ = superadmin_client
+    target = user_factory(vk_id=900106, name="Role Change Student", role_name="ученик")
+    curator_role = db.query(Role).filter(Role.name == "куратор").first()
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{target.id}/role",
+        data={"role_id": str(curator_role.id), "csrf_token": "bypass"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    db.refresh(target)
+    assert target.role_id == curator_role.id
+
+
+def test_superadmin_issue_link_from_users_page(superadmin_client, db, user_factory):
+    client, _ = superadmin_client
+    target = user_factory(vk_id=900107, name="Link Student", role_name="ученик", is_active=True)
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{target.id}/issue-link",
+        data={"csrf_token": "bypass"},
+    )
+
+    assert resp.status_code == 200
+    assert "/auth/link?token=" in resp.text
+    token = db.query(LoginToken).filter(LoginToken.user_id == target.id).first()
+    assert token is not None
+
+
 # ---------------------------------------------------------------------------
 # POST /cabinet/superadmin/issue-link
 # ---------------------------------------------------------------------------
@@ -212,3 +356,40 @@ def test_bulk_assign_curator_requires_superadmin(client, db, user_factory, sessi
     )
 
     assert resp.status_code == 403
+
+
+def test_superadmin_toggle_user_ajax_returns_json(superadmin_client, db, user_factory):
+    client, _ = superadmin_client
+    student = user_factory(vk_id=900201, name="Student Toggle")
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{student.id}/toggle-active",
+        data={"csrf_token": "bypass"},
+        headers={"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 200
+    assert "location" not in resp.headers
+    assert resp.json() == {"ok": True, "user_id": student.id, "is_active": False}
+    db.refresh(student)
+    assert student.is_active is False
+
+
+def test_superadmin_delete_user_ajax_returns_json(superadmin_client, db, user_factory):
+    client, _ = superadmin_client
+    student = user_factory(vk_id=900202, name="Student Delete")
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{student.id}/delete",
+        data={"csrf_token": "bypass"},
+        headers={"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 200
+    assert "location" not in resp.headers
+    assert resp.json() == {"ok": True, "user_id": student.id, "deleted": True}
+    db.refresh(student)
+    assert student.deleted_at is not None
+    assert student.is_active is False

@@ -146,7 +146,8 @@
     </div>
 
     <!-- Roles + Works -->
-    <div class="two-col">
+    <div class="{% if user.role_rank >= 5 %}two-col{% endif %}" style="{% if user.role_rank < 5 %}margin-bottom:20px{% endif %}">
+        {% if user.role_rank >= 5 %}
         <div class="panel">
             <div class="panel-header"><span class="panel-title">Пользователи по ролям</span></div>
             {% set role_icons = {1: '🎓', 2: '👤', 3: '🛡', 4: '⚙️', 5: '👑'} %}
@@ -157,6 +158,7 @@
             </div>
             {% endfor %}
         </div>
+        {% endif %}
 
         <div class="panel">
             <div class="panel-header">
@@ -193,6 +195,7 @@
         {% endif %}
     </div>
 
+    {% if user.role_rank < 4 %}
     <!-- Recent uploads -->
     <div class="feed-wrap">
         <div class="feed-header">
@@ -228,6 +231,7 @@
         <div style="padding:32px;text-align:center;color:var(--dim);font-size:13px">Загрузок пока нет</div>
         {% endif %}
     </div>
+    {% endif %}
 
 </div>
 {% endblock %}

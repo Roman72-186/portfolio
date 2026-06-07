@@ -185,8 +185,9 @@ def test_dashboard_shows_upload_button_when_portfolio_after_is_open(auth_client,
     assert "Загрузить фото" in resp.text
 
 
-def test_portfolio_uses_month_picker_for_before_and_after(auth_client, db):
-    """Portfolio works are rendered through year/month picker data."""
+def test_portfolio_renders_before_after_month_blocks(auth_client, db):
+    """До/После рендерятся server-side раскрывающимися блоками по месяцам
+    (единый вид со staff-панелью), а не старым пикером-помесячником."""
     from app.models.work import Work, WORK_TYPE_BEFORE
     from app.models.user import User
 
@@ -200,11 +201,11 @@ def test_portfolio_uses_month_picker_for_before_and_after(auth_client, db):
 
     resp = client.get("/cabinet/portfolio")
     assert resp.status_code == 200
-    assert 'id="portfolio-before-root"' in resp.text
-    assert "PORTFOLIO_BEFORE_GROUPS" in resp.text
+    assert "pf-mblock" in resp.text          # блоки по месяцам
+    assert "pfToggleMonth" in resp.text       # тоггл раскрытия
     assert "before-1.jpg" in resp.text
     assert "before-2.jpg" in resp.text
-    assert 'id="grid-before-flat"' not in resp.text
+    assert 'id="portfolio-before-root"' not in resp.text  # старый пикер убран
 
 
 # ---------------------------------------------------------------------------
@@ -331,16 +332,19 @@ def test_gallery_returns_200(auth_client):
 
 
 def test_gallery_shows_albums_grouped_by_month(auth_client, db):
-    """Albums are grouped by month from UploadLog."""
-    from app.models.upload_log import UploadLog
+    """Albums are grouped by month from the student's Work records."""
+    from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER
+    from datetime import datetime, timezone
     client, user = auth_client
-    for photo_type in ("before", "after"):
-        db.add(UploadLog(user_id=user.id, student_name=user.name, tariff=user.tariff,
-                         month="март", photo_type=photo_type, photo_count=3, status="success"))
+    for work_type in (WORK_TYPE_BEFORE, WORK_TYPE_AFTER):
+        db.add(Work(user_id=user.id, work_type=work_type, month="март", year=2026,
+                    filename=f"{work_type}.jpg", tariff=user.tariff, status="success",
+                    created_at=datetime.now(timezone.utc)))
     db.commit()
     resp = client.get("/cabinet/gallery")
     assert resp.status_code == 200
-    assert "март" in resp.text
+    # Template renders the month label via `capitalize`: "март" -> "Март".
+    assert "Март" in resp.text
 
 
 def test_gallery_thumb_returns_404_for_another_users_file(auth_client, db, user_factory, session_factory):

@@ -8,11 +8,63 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session as DBSession
 
+from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
 from app.models.exam_cycle import ExamCycle
+from app.models.mock_exam_lock import MockExamLock
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.tz import today_msk
+
+
+def get_active_ticket(db: DBSession, user_id: int, subject: str) -> ExamTicket | None:
+    """Единый резолвер активного билета по предмету (source of truth).
+
+    Самый свежий опубликованный билет в окне дат, назначенный всем или этому
+    пользователю. Используется и бэкенд-блоком сдачи, и UI-дизейблом кнопки —
+    оба обязаны видеть ОДИН и тот же билет, иначе кнопка и 409 рассинхронятся.
+    Порядок newest-first важен только при пересекающихся билетах одного предмета.
+    """
+    today = today_msk()
+    return (
+        db.query(ExamTicket)
+        .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
+        .filter(
+            ExamAssignment.status == "published",
+            ExamAssignment.subject == subject,
+            ExamTicket.start_date <= today,
+            ExamTicket.end_date >= today,
+            or_(
+                ExamTicket.assign_to_all.is_(True),
+                ExamTicket.id.in_(
+                    db.query(ExamTicketAssignee.ticket_id)
+                    .filter(ExamTicketAssignee.user_id == user_id)
+                    .scalar_subquery()
+                ),
+            ),
+        )
+        .order_by(ExamTicket.start_date.desc(), ExamTicket.id.desc())
+        .first()
+    )
+
+
+def has_cycle_for_ticket(db: DBSession, user_id: int, subject: str, ticket_id: int) -> bool:
+    """True если по этому билету уже есть цикл Пробника (открытый ИЛИ закрытый).
+
+    Source of truth для правила «одна сдача на билет»: пробник по предмету закрыт
+    с момента первой сдачи и до выдачи СЛЕДУЮЩЕГО билета (нового ticket_id).
+    """
+    return (
+        db.query(ExamCycle.id)
+        .filter(
+            ExamCycle.user_id == user_id,
+            ExamCycle.subject == subject,
+            ExamCycle.ticket_id == ticket_id,
+        )
+        .first()
+        is not None
+    )
 
 
 def find_latest_cycle(db: DBSession, user_id: int, subject: str) -> ExamCycle | None:
@@ -41,10 +93,14 @@ def get_or_create_cycle_for_probnik(
     Returns (cycle, created).
     """
     latest = find_latest_cycle(db, user_id, subject)
-    if latest is not None and ticket_id is not None and latest.ticket_id == ticket_id:
-        return latest, False
-    if latest is not None and ticket_id is None and latest.ticket_id is None:
-        return latest, False
+    # Переиспользуем только ОТКРЫТЫЙ цикл (closed_at IS NULL). Закрытый цикл —
+    # завершённая попытка с обратной связью: новая загрузка должна стартовать
+    # новый цикл, а не доклеивать финалку к закрытому.
+    if latest is not None and latest.closed_at is None:
+        if ticket_id is not None and latest.ticket_id == ticket_id:
+            return latest, False
+        if ticket_id is None and latest.ticket_id is None:
+            return latest, False
     cycle = ExamCycle(
         user_id=user_id,
         subject=subject,
@@ -109,6 +165,21 @@ def close_cycle_if_scored(db: DBSession, work: Work) -> bool:
     cycle = db.query(ExamCycle).filter(ExamCycle.id == work.cycle_id).first()
     if cycle is None or cycle.closed_at is not None:
         return False
-    cycle.closed_at = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    cycle.closed_at = now
+    # Закрытие цикла = пробник по предмету считается закрытым → снимаем блокировку,
+    # чтобы ученик мог загрузить новый пробник, а админ-UI видел актуальный статус.
+    lock = (
+        db.query(MockExamLock)
+        .filter(
+            MockExamLock.user_id == work.user_id,
+            MockExamLock.subject == cycle.subject,
+            MockExamLock.is_locked == True,  # noqa: E712
+        )
+        .first()
+    )
+    if lock:
+        lock.is_locked = False
+        lock.unlocked_at = now
     db.flush()
     return True

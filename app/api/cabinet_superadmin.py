@@ -1,4 +1,5 @@
 import logging
+import re
 import secrets
 import string
 import uuid
@@ -30,6 +31,7 @@ from app.cache import invalidate_session as _invalidate_session_cache
 from app.db.database import get_db
 from app.dependencies import require_superadmin, require_admin_role, require_csrf, get_current_user
 from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
+from app.models.exam_cycle import ExamCycle
 from app.models.feature_period import FeaturePeriod
 from app.services.feature_periods import invalidate_feature_cache, get_active_period
 from app.services.tz import today_msk, msk_midnight
@@ -47,6 +49,7 @@ _TRANSLIT = str.maketrans(
     "abvgdeejzijklmnoprstufhccssxyxeuaABVGDEEJZIJKLMNOPRSTUFHCCSSXYXEUA",
 )
 _PWD_CHARS = "abcdefghjkmnpqrstuvwxyz23456789"
+_TG_USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{4,32}$")
 
 
 def _transliterate(s: str) -> str:
@@ -76,6 +79,31 @@ def _make_login(user: User, db: DBSession) -> str:
         candidate = f"{base}{suffix}"
         suffix += 1
     return candidate
+
+
+def _display_user_name(user: User) -> str:
+    return f"{user.last_name or ''} {user.first_name or user.name}".strip()
+
+
+def _issue_login_password(db: DBSession, target: User) -> dict:
+    """Generate or reset password credentials for manual login via /login."""
+    if not target.staff_login:
+        target.staff_login = _make_login(target, db)
+
+    new_password = _gen_password()
+    target.password_hash = _hash_password(new_password)
+    return {
+        "name": _display_user_name(target),
+        "login": target.staff_login,
+        "password": new_password,
+        "url": f"https://{settings.domain}/login" if settings.domain else "/login",
+    }
+
+
+def _next_manual_vk_id(db: DBSession) -> int:
+    """Manual accounts do not have VK IDs; keep them in the negative range."""
+    min_vk = db.query(func.min(User.vk_id)).scalar() or 0
+    return min(min_vk - 1, -1)
 
 router = APIRouter(prefix="/cabinet")
 
@@ -270,26 +298,15 @@ def superadmin_set_credentials(
     if not target:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
 
-    # Keep existing login or generate new one
-    if not target.staff_login:
-        target.staff_login = _make_login(target, db)
-
-    new_password = _gen_password()
-    target.password_hash = _hash_password(new_password)
+    issued_creds = _issue_login_password(db, target)
     db.commit()
 
     now = datetime.now(timezone.utc)
     ctx = _load_dashboard_data(db, now)
-    staff_url = f"https://{settings.domain}/login" if settings.domain else "/login"
     ctx.update({
         "request": request,
         "user": user,
-        "issued_creds": {
-            "name": f"{target.last_name or ''} {target.first_name or target.name}".strip(),
-            "login": target.staff_login,
-            "password": new_password,
-            "url": staff_url,
-        },
+        "issued_creds": issued_creds,
     })
     return templates.TemplateResponse("cabinet_staff.html", ctx)
 
@@ -676,8 +693,12 @@ async def exam_assignment_edit_submit(
 
     # Full-replace тикетов: удаляем старые assignees + tickets, затем создаём из формы.
     # Notification history (notified_at) теряется — это допустимо при редактировании.
+    # ExamCycle.ticket_id обнуляем вручную — FK без ON DELETE SET NULL, иначе IntegrityError.
     old_ticket_ids = [tid for (tid,) in db.query(ExamTicket.id).filter(ExamTicket.assignment_id == assignment_id).all()]
     if old_ticket_ids:
+        db.query(ExamCycle).filter(ExamCycle.ticket_id.in_(old_ticket_ids)).update(
+            {"ticket_id": None}, synchronize_session=False
+        )
         db.query(ExamTicketAssignee).filter(ExamTicketAssignee.ticket_id.in_(old_ticket_ids)).delete(synchronize_session=False)
         db.query(ExamTicket).filter(ExamTicket.id.in_(old_ticket_ids)).delete(synchronize_session=False)
         db.flush()
@@ -1052,6 +1073,12 @@ _SU_PAGE_SIZE = 50
 COHORT_TAGS = {"may", "june", "july", "august"}
 
 
+def _wants_json_response(request: Request) -> bool:
+    accept = request.headers.get("accept", "")
+    requested_with = request.headers.get("x-requested-with", "").lower()
+    return requested_with == "xmlhttprequest" or "application/json" in accept
+
+
 def _normalize_tg_username(raw: str) -> str:
     return raw.strip().lstrip("@").lower()
 
@@ -1065,6 +1092,30 @@ def _split_tg_usernames(raw: str) -> list[str]:
             usernames.append(username)
             seen.add(username)
     return usernames
+
+
+def _find_student_by_tg_username(db: DBSession, tg_username: str) -> User | None:
+    """Find an existing student profile by Telegram username.
+
+    tg_username is encrypted at rest, so equality filtering in SQL is not
+    reliable. Load student candidates and compare normalized plaintext values
+    after SQLAlchemy decrypts them.
+    """
+    username = _normalize_tg_username(tg_username)
+    if not username:
+        return None
+    candidates = (
+        db.query(User)
+        .join(Role, User.role_id == Role.id)
+        .filter(Role.rank == 1, User.deleted_at.is_(None))
+        .order_by(User.profile_completed.desc(), User.updated_at.desc(), User.id.desc())
+        .limit(5000)
+        .all()
+    )
+    for candidate in candidates:
+        if _normalize_tg_username(candidate.tg_username or "") == username:
+            return candidate
+    return None
 
 
 def _load_superadmin_curators(db: DBSession) -> list[User]:
@@ -1095,6 +1146,12 @@ def _render_superadmin_users(
     exam_subjects: str = "",
     page: int = 1,
     assignment_result: dict | None = None,
+    issued_creds: dict | None = None,
+    issued_link_user_id: int | None = None,
+    issued_link_name: str | None = None,
+    issued_link: str | None = None,
+    issued_link_expires_at=None,
+    page_error: str | None = None,
 ):
     role_rank_int: int | None = int(role_rank) if role_rank.strip() else None
     show_deleted_b: bool = show_deleted.strip() in ("1", "true", "on", "yes")
@@ -1252,10 +1309,17 @@ def _render_superadmin_users(
         "curator_id": curator_id,
         "exam_subjects": exam_subjects_clean,
         "current_user_id": user["user_id"],
+        "current_user_rank": user["role_rank"],
         "page": page,
         "total_pages": total_pages,
         "total": total,
         "assignment_result": assignment_result,
+        "issued_creds": issued_creds,
+        "issued_link_user_id": issued_link_user_id,
+        "issued_link_name": issued_link_name,
+        "issued_link": issued_link,
+        "issued_link_expires_at": issued_link_expires_at,
+        "page_error": page_error,
     })
 
 
@@ -1292,6 +1356,241 @@ def superadmin_users(
         exam_subjects=exam_subjects,
         page=page,
     )
+
+
+@router.post("/superadmin/users/create-student", response_class=HTMLResponse)
+def superadmin_create_student(
+    request: Request,
+    user: Annotated[dict, Depends(require_superadmin)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    first_name: str = Form(...),
+    last_name: str = Form(""),
+    tg_username: str = Form(...),
+    tariff: str = Form("УВЕРЕННЫЙ"),
+    curator_id: str = Form(""),
+):
+    first_name_clean = first_name.strip()
+    last_name_clean = last_name.strip()
+    tg_username_clean = _normalize_tg_username(tg_username)
+    tariff_clean = tariff.strip().upper()
+    if not first_name_clean:
+        raise HTTPException(status_code=400, detail="Имя ученика обязательно")
+    if not tg_username_clean:
+        raise HTTPException(status_code=400, detail="Telegram username обязателен")
+    if not _TG_USERNAME_RE.match(tg_username_clean):
+        raise HTTPException(status_code=400, detail="Telegram username должен содержать 4–32 символа: латиница, цифры или _")
+    if tariff_clean not in TARIFFS:
+        raise HTTPException(status_code=400, detail="Неверный тариф")
+
+    student_role = db.query(Role).filter(Role.rank == 1).first()
+    if not student_role:
+        raise HTTPException(status_code=400, detail="Роль ученика не найдена")
+
+    curator_id_v: int | None = None
+    curator_id_clean = curator_id.strip()
+    if curator_id_clean:
+        try:
+            curator_id_v = int(curator_id_clean)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Неверный id куратора")
+        curator_exists = (
+            db.query(User.id)
+            .join(Role, User.role_id == Role.id)
+            .filter(User.id == curator_id_v, Role.rank == 2, User.deleted_at.is_(None))
+            .first()
+        )
+        if not curator_exists:
+            raise HTTPException(status_code=400, detail="Куратор не найден")
+
+    student = _find_student_by_tg_username(db, tg_username_clean)
+    if student:
+        if not student.first_name:
+            student.first_name = first_name_clean
+        if last_name_clean and not student.last_name:
+            student.last_name = last_name_clean
+        if not student.name:
+            student.name = f"{student.first_name or first_name_clean} {student.last_name or last_name_clean}".strip()
+        if tariff_clean:
+            student.tariff = tariff_clean
+        if curator_id_v is not None:
+            student.curator_id = curator_id_v
+        student.role_id = student_role.id
+        student.is_active = True
+    else:
+        full_name = f"{first_name_clean} {last_name_clean}".strip()
+        student = User(
+            vk_id=_next_manual_vk_id(db),
+            name=full_name,
+            first_name=first_name_clean,
+            last_name=last_name_clean or None,
+            tg_username=tg_username_clean,
+            tariff=tariff_clean,
+            role_id=student_role.id,
+            curator_id=curator_id_v,
+            is_active=True,
+            is_group_member=False,
+            profile_completed=False,
+        )
+        db.add(student)
+    db.flush()
+    issued_creds = _issue_login_password(db, student)
+    db.commit()
+
+    return _render_superadmin_users(request, user, db, issued_creds=issued_creds)
+
+
+@router.post("/superadmin/users/create-staff", response_class=HTMLResponse)
+def superadmin_create_staff(
+    request: Request,
+    user: Annotated[dict, Depends(require_superadmin)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    first_name: str = Form(...),
+    last_name: str = Form(""),
+    role_id: int = Form(...),
+):
+    first_name_clean = first_name.strip()
+    last_name_clean = last_name.strip()
+    if not first_name_clean:
+        return _render_superadmin_users(request, user, db, page_error="Имя сотрудника обязательно.")
+
+    new_role = db.query(Role).filter(Role.id == role_id).first()
+    if not new_role:
+        return _render_superadmin_users(request, user, db, page_error="Роль не найдена.")
+    if new_role.rank < 2:
+        return _render_superadmin_users(request, user, db, page_error="Аккаунт сотрудника требует роль с рангом ≥ 2.")
+    if new_role.rank >= user["role_rank"]:
+        return _render_superadmin_users(request, user, db, page_error="Нельзя создать аккаунт с рангом не ниже вашего.")
+
+    full_name = f"{first_name_clean} {last_name_clean}".strip()
+    staff = User(
+        vk_id=_next_manual_vk_id(db),
+        name=full_name,
+        first_name=first_name_clean,
+        last_name=last_name_clean or None,
+        role_id=new_role.id,
+        is_active=True,
+        is_group_member=False,
+        tariff="УВЕРЕННЫЙ",
+    )
+    db.add(staff)
+    db.flush()
+    issued_creds = _issue_login_password(db, staff)
+    db.commit()
+
+    return _render_superadmin_users(request, user, db, issued_creds=issued_creds)
+
+
+@router.post("/superadmin/users/{target_id}/set-credentials", response_class=HTMLResponse)
+def superadmin_user_set_credentials(
+    target_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(require_superadmin)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    target = db.query(User).filter(
+        User.id == target_id,
+        User.is_active == True,  # noqa: E712
+        User.deleted_at.is_(None),
+    ).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    target_rank = target.role.rank if target.role else 0
+    if target_rank >= user["role_rank"]:
+        raise HTTPException(status_code=403, detail="Нельзя выдать доступ роли равной или выше своей")
+
+    issued_creds = _issue_login_password(db, target)
+    db.commit()
+    return _render_superadmin_users(request, user, db, issued_creds=issued_creds)
+
+
+@router.post("/superadmin/users/{target_id}/issue-link", response_class=HTMLResponse)
+def superadmin_user_issue_link(
+    target_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(require_superadmin)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    target = db.query(User).filter(User.id == target_id).first()
+    if not target:
+        return _render_superadmin_users(request, user, db, page_error="Пользователь не найден.")
+    if not target.is_active:
+        return _render_superadmin_users(
+            request,
+            user,
+            db,
+            page_error="Нельзя выпустить ссылку для неактивного пользователя.",
+        )
+    if not target.role_id and not target.is_group_member and not target.is_admin:
+        return _render_superadmin_users(
+            request,
+            user,
+            db,
+            page_error="Одноразовая ссылка доступна только пользователям с назначенной ролью.",
+        )
+
+    base_url = f"https://{settings.domain}" if settings.domain else str(request.base_url).rstrip("/")
+    issued_link, login_token = issue_one_time_login_link(
+        db,
+        user=target,
+        base_url=base_url,
+        issued_by=f"superadmin:{user['user_id']}",
+    )
+    return _render_superadmin_users(
+        request,
+        user,
+        db,
+        issued_link_user_id=target.id,
+        issued_link_name=_display_user_name(target),
+        issued_link=issued_link,
+        issued_link_expires_at=login_token.expires_at,
+    )
+
+
+@router.post("/superadmin/users/{target_id}/role")
+def superadmin_user_set_role(
+    target_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    role_id: str = Form(...),
+):
+    target = db.query(User).filter(User.id == target_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if target.id == user["user_id"]:
+        return RedirectResponse("/cabinet/superadmin/users", status_code=303)
+
+    acting_rank = user.get("role_rank", 0)
+    target_current_rank = target.role.rank if target.role else 0
+    if target_current_rank >= acting_rank:
+        return RedirectResponse("/cabinet/superadmin/users", status_code=303)
+
+    if role_id == "":
+        target.role_id = None
+        db.commit()
+        _invalidate_user_sessions(db, target.id)
+        return RedirectResponse("/cabinet/superadmin/users", status_code=303)
+
+    try:
+        role_id_int = int(role_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Неверная роль")
+
+    new_role = db.query(Role).filter(Role.id == role_id_int).first()
+    if not new_role:
+        raise HTTPException(status_code=404, detail="Роль не найдена")
+    if new_role.rank >= acting_rank:
+        return RedirectResponse("/cabinet/superadmin/users", status_code=303)
+
+    target.role_id = new_role.id
+    db.commit()
+    _invalidate_user_sessions(db, target.id)
+    return RedirectResponse("/cabinet/superadmin/users", status_code=303)
 
 
 @router.post("/superadmin/users/assign-curator-bulk", response_class=HTMLResponse)
@@ -1540,6 +1839,7 @@ def superadmin_user_set_curator(
 @router.post("/superadmin/users/{target_id}/delete")
 def superadmin_delete_user(
     target_id: int,
+    request: Request,
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
@@ -1547,12 +1847,15 @@ def superadmin_delete_user(
     ok = soft_delete_user(db, target_user_id=target_id, performed_by_id=user["user_id"])
     if not ok:
         raise HTTPException(status_code=400, detail="Невозможно удалить пользователя")
+    if _wants_json_response(request):
+        return JSONResponse({"ok": True, "user_id": target_id, "deleted": True})
     return RedirectResponse("/cabinet/superadmin/users", status_code=303)
 
 
 @router.post("/superadmin/users/{target_id}/toggle-active")
 def superadmin_toggle_active(
     target_id: int,
+    request: Request,
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
@@ -1560,6 +1863,8 @@ def superadmin_toggle_active(
     result = toggle_user_active(db, target_user_id=target_id, performed_by_id=user["user_id"])
     if result is None:
         raise HTTPException(status_code=400, detail="Невозможно изменить статус пользователя")
+    if _wants_json_response(request):
+        return JSONResponse({"ok": True, "user_id": target_id, "is_active": result})
     return RedirectResponse("/cabinet/superadmin/users", status_code=303)
 
 

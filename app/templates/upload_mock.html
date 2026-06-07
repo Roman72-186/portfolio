@@ -143,7 +143,9 @@ label:hover .subject-btn { border-color: #D97706; color: #D97706; }
                 {% for s in subjects %}
                 {% set is_locked = s in locked_subjects %}
                 {% set has_ticket = s in subjects_with_tickets %}
-                {% set is_disabled = is_locked or not has_ticket %}
+                {# Блокирует выбор: нет задания ИЛИ по текущему билету уже есть сдача
+                   (одна сдача на билет — открыто заново только следующим билетом). #}
+                {% set is_disabled = not has_ticket or is_locked %}
                 <label style="flex:1;min-width:120px;cursor:{% if is_disabled %}not-allowed{% else %}pointer{% endif %}">
                     <input type="radio" name="subject" value="{{ s }}" required
                            {% if selected_subject == s %}checked{% endif %}
@@ -153,7 +155,11 @@ label:hover .subject-btn { border-color: #D97706; color: #D97706; }
                         {{ s }}
                     </div>
                     {% if is_locked %}
-                    <span class="subject-locked-hint">уже сдано · ждёт оценки</span>
+                    {% if locked_reasons.get(s) == 'scored' %}
+                    <span class="subject-locked-hint">работа сдана · ждите билет</span>
+                    {% else %}
+                    <span class="subject-locked-hint">работа сдана, ждите ОС</span>
+                    {% endif %}
                     {% elif not has_ticket %}
                     <span class="subject-locked-hint">нет задания</span>
                     {% endif %}
@@ -172,33 +178,55 @@ label:hover .subject-btn { border-color: #D97706; color: #D97706; }
         <!-- Ticket block (shown by JS after Начать) -->
         <div id="ticketBlock" style="display:none"></div>
 
-        <div id="uploadSection" style="display:none">
+        <div id="uploadSection" style="display:none;flex-direction:column;gap:20px">
+            <!-- Финальное фото — ровно одно, обязательно -->
             <div>
                 <label class="form-label" style="margin-bottom:10px">
-                    Фото <span style="color:var(--dim);font-weight:500">до {{ max_files }} штук</span>
+                    Финальное фото <span style="color:#DC2626;font-weight:700">· обязательно</span>
                 </label>
-                <label class="upload-drop" id="dropZone">
-                    <input type="file" name="photos" accept="image/*" required multiple id="photoInput">
+                <label class="upload-drop" id="finalDrop">
+                    <input type="file" accept="image/*" id="finalInput">
                     <div class="upload-circle">★</div>
-                    <div class="upload-drop-title">Нажми или перенеси фото</div>
-                    <div class="upload-drop-hint">Любые фото · до 10 МБ · до {{ max_files }} штук</div>
+                    <div class="upload-drop-title">Загрузи финальную работу</div>
+                    <div class="upload-drop-hint">Одно фото · до 10 МБ</div>
                 </label>
-                <div class="preview-area" id="previewArea">
+                <div class="preview-area" id="finalPreviewArea">
                     <div class="preview-header">
-                        <span class="preview-count" id="fileCount"></span>
-                        <div style="display:flex;gap:8px">
-                            <button type="button" class="btn-add-more" id="addMoreBtn">+ Добавить</button>
-                            <button type="button" class="btn-reselect" id="reselectBtn">✕ Сбросить</button>
-                        </div>
+                        <span class="preview-count">Финальное фото</span>
+                        <button type="button" class="btn-reselect" id="finalReselect">✕ Заменить</button>
                     </div>
-                    <div class="photo-grid" id="previewGrid"></div>
+                    <div class="photo-grid" id="finalGrid" style="grid-template-columns:repeat(2,1fr)"></div>
                 </div>
             </div>
 
-            <button type="submit" id="submitBtn" class="btn-primary" disabled
+            <!-- Этапные фото — до 10, по желанию -->
+            <div>
+                <label class="form-label" style="margin-bottom:10px">
+                    Этапные фото <span style="color:var(--dim);font-weight:500">· по желанию, до {{ max_files }} штук</span>
+                </label>
+                <label class="upload-drop" id="stageDrop">
+                    <input type="file" accept="image/*" multiple id="stageInput">
+                    <div class="upload-circle" style="background:#EEF2FF;border-color:#6366F1;color:#6366F1">☆</div>
+                    <div class="upload-drop-title">Добавь этапы работы</div>
+                    <div class="upload-drop-hint">Промежуточные фото · до 10 МБ · до {{ max_files }} штук</div>
+                </label>
+                <div class="preview-area" id="stagePreviewArea">
+                    <div class="preview-header">
+                        <span class="preview-count" id="stageCount"></span>
+                        <div style="display:flex;gap:8px">
+                            <button type="button" class="btn-add-more" id="stageAddMore">+ Добавить</button>
+                            <button type="button" class="btn-reselect" id="stageReselect">✕ Сбросить</button>
+                        </div>
+                    </div>
+                    <div class="photo-grid" id="stageGrid"></div>
+                </div>
+            </div>
+
+            <button type="button" id="submitBtn" class="btn-primary" disabled
                     style="background:linear-gradient(135deg,#D97706,#F59E0B)">
                 Отправить на проверку
             </button>
+            <div id="uploadMsg" style="display:none"></div>
         </div>
     </form>
 
@@ -216,77 +244,221 @@ label:hover .subject-btn { border-color: #D97706; color: #D97706; }
 {% include "partials/lightbox.html" %}
 
 <script>
-const MAX_FILES = {{ max_files }}, MAX_SIZE = 10*1024*1024;
-const input = document.getElementById('photoInput'), dropZone = document.getElementById('dropZone');
-const previewArea = document.getElementById('previewArea'), grid = document.getElementById('previewGrid');
-const counter = document.getElementById('fileCount'), submitBtn = document.getElementById('submitBtn');
-const reselectBtn = document.getElementById('reselectBtn');
-const addMoreBtn = document.getElementById('addMoreBtn');
+const MAX_STAGE = {{ max_files }}, MAX_SIZE = 10*1024*1024;
+const submitBtn = document.getElementById('submitBtn');
+const uploadMsg = document.getElementById('uploadMsg');
 
-var selectedFiles = [];
+// ── Финальное фото (ровно одно) ──────────────────────────────────────────────
+var finalFile = null;
+var savedFinalWorkId = null;
+const finalInput = document.getElementById('finalInput');
+const finalDrop = document.getElementById('finalDrop');
+const finalPreviewArea = document.getElementById('finalPreviewArea');
+const finalGrid = document.getElementById('finalGrid');
+const finalReselectBtn = document.getElementById('finalReselect');
 
-function syncInputFiles() {
-    var dt = new DataTransfer();
-    selectedFiles.forEach(function(f) { dt.items.add(f); });
-    input.files = dt.files;
+function renderFinal() {
+    finalGrid.innerHTML = '';
+    if (!finalFile) return;
+    var wrap = document.createElement('div');
+    wrap.className = 'preview-cell';
+    var reader = new FileReader();
+    reader.onload = function(e) { var img = document.createElement('img'); img.src = e.target.result; wrap.appendChild(img); };
+    reader.readAsDataURL(finalFile);
+    finalGrid.appendChild(wrap);
 }
 
-function removeFile(idx) {
-    selectedFiles.splice(idx, 1);
-    syncInputFiles();
-    renderPreviews();
-    if (!selectedFiles.length) {
-        previewArea.style.display = 'none';
-        dropZone.style.display = 'flex';
-        submitBtn.disabled = true;
-    }
+function setFinal(file) {
+    if (file.size > MAX_SIZE) { alert(file.name + ' — слишком большой'); return; }
+    finalFile = file;
+    finalDrop.style.display = 'none';
+    finalPreviewArea.style.display = 'block';
+    renderFinal();
+    updateSubmitState();
 }
 
-function renderPreviews() {
-    grid.innerHTML = '';
-    counter.textContent = 'Выбрано: ' + selectedFiles.length + ' из ' + MAX_FILES;
-    selectedFiles.forEach(function(f, i) {
+finalInput.addEventListener('change', function() { if (finalInput.files[0]) setFinal(finalInput.files[0]); });
+finalReselectBtn.addEventListener('click', function() {
+    finalFile = null; finalInput.value = ''; finalGrid.innerHTML = '';
+    finalPreviewArea.style.display = 'none'; finalDrop.style.display = 'flex'; updateSubmitState();
+});
+finalDrop.addEventListener('dragover', function(e){e.preventDefault();finalDrop.classList.add('drag-over');});
+finalDrop.addEventListener('dragleave', function(){finalDrop.classList.remove('drag-over');});
+finalDrop.addEventListener('drop', function(e) {
+    e.preventDefault(); finalDrop.classList.remove('drag-over');
+    if (e.dataTransfer && e.dataTransfer.files[0]) setFinal(e.dataTransfer.files[0]);
+});
+
+
+// ── Этапные фото (до MAX_STAGE) ──────────────────────────────────────────────
+var stageFiles = [];
+const stageInput = document.getElementById('stageInput');
+const stageDrop = document.getElementById('stageDrop');
+const stagePreviewArea = document.getElementById('stagePreviewArea');
+const stageGrid = document.getElementById('stageGrid');
+const stageCount = document.getElementById('stageCount');
+
+function renderStage() {
+    stageGrid.innerHTML = '';
+    stageCount.textContent = 'Выбрано: ' + stageFiles.length + ' из ' + MAX_STAGE;
+    stageFiles.forEach(function(f, i) {
         var wrap = document.createElement('div');
         wrap.className = 'preview-cell';
         var btn = document.createElement('button');
-        btn.type = 'button'; btn.className = 'preview-remove'; btn.textContent = '\u2715';
-        btn.onclick = function() { removeFile(i); };
+        btn.type = 'button'; btn.className = 'preview-remove'; btn.textContent = '✕';
+        btn.onclick = function() {
+            stageFiles.splice(i, 1); renderStage();
+            if (!stageFiles.length) { stagePreviewArea.style.display = 'none'; stageDrop.style.display = 'flex'; }
+        };
         wrap.appendChild(btn);
         var reader = new FileReader();
         reader.onload = function(e) { var img = document.createElement('img'); img.src = e.target.result; wrap.appendChild(img); };
         reader.readAsDataURL(f);
-        grid.appendChild(wrap);
+        stageGrid.appendChild(wrap);
     });
 }
 
-function addFiles(newFiles) {
+function addStage(newFiles) {
     var files = Array.from(newFiles);
     for (var j = 0; j < files.length; j++) {
         if (files[j].size > MAX_SIZE) { alert(files[j].name + ' — слишком большой'); continue; }
-        if (selectedFiles.length >= MAX_FILES) { alert('Максимум ' + MAX_FILES + ' фото'); break; }
-        selectedFiles.push(files[j]);
+        if (stageFiles.length >= MAX_STAGE) { alert('Максимум ' + MAX_STAGE + ' этапных фото'); break; }
+        stageFiles.push(files[j]);
     }
-    syncInputFiles();
-    renderPreviews();
-    if (selectedFiles.length) { dropZone.style.display = 'none'; previewArea.style.display = 'block'; submitBtn.disabled = false; }
+    renderStage();
+    if (stageFiles.length) { stageDrop.style.display = 'none'; stagePreviewArea.style.display = 'block'; }
 }
 
-input.addEventListener('change', function() { addFiles(input.files); });
-reselectBtn.addEventListener('click', function() {
-    selectedFiles = []; input.value = ''; grid.innerHTML = '';
-    previewArea.style.display = 'none'; dropZone.style.display = 'flex'; submitBtn.disabled = true;
+stageInput.addEventListener('change', function() { addStage(stageInput.files); stageInput.value = ''; });
+document.getElementById('stageReselect').addEventListener('click', function() {
+    stageFiles = []; stageGrid.innerHTML = '';
+    stagePreviewArea.style.display = 'none'; stageDrop.style.display = 'flex';
 });
-addMoreBtn.addEventListener('click', function() {
+document.getElementById('stageAddMore').addEventListener('click', function() {
     var tmp = document.createElement('input'); tmp.type = 'file'; tmp.accept = 'image/*'; tmp.multiple = true;
-    tmp.onchange = function() { addFiles(tmp.files); }; tmp.click();
+    tmp.onchange = function() { addStage(tmp.files); }; tmp.click();
 });
-dropZone.addEventListener('dragover', function(e){e.preventDefault();dropZone.classList.add('drag-over');});
-dropZone.addEventListener('dragleave', function(){dropZone.classList.remove('drag-over');});
-dropZone.addEventListener('drop', function(e) {
-    e.preventDefault(); dropZone.classList.remove('drag-over');
-    if(e.dataTransfer&&e.dataTransfer.files.length) { addFiles(e.dataTransfer.files); }
+stageDrop.addEventListener('dragover', function(e){e.preventDefault();stageDrop.classList.add('drag-over');});
+stageDrop.addEventListener('dragleave', function(){stageDrop.classList.remove('drag-over');});
+stageDrop.addEventListener('drop', function(e) {
+    e.preventDefault(); stageDrop.classList.remove('drag-over');
+    if (e.dataTransfer && e.dataTransfer.files.length) addStage(e.dataTransfer.files);
 });
-document.getElementById('mockForm').addEventListener('submit', function(){ syncInputFiles(); submitBtn.disabled=true; submitBtn.innerHTML='<span class="spinner"></span>Загружаем…'; });
+
+// ── Отправка: сначала финальное, затем этапные ───────────────────────────────
+function updateSubmitState() { submitBtn.disabled = !(finalFile || savedFinalWorkId); }
+
+function showUploadMsg(text, isError) {
+    uploadMsg.style.display = 'block';
+    uploadMsg.className = 'alert ' + (isError ? 'alert-error' : 'alert-success');
+    uploadMsg.innerHTML = text;
+}
+
+function parseUploadResponse(response) {
+    return response.json()
+        .then(function(body){ return { status: response.status, body: body }; })
+        .catch(function(){
+            return {
+                status: response.status,
+                body: {
+                    success: false,
+                    error: 'Сервер вернул неверный ответ. Обнови страницу и попробуй снова'
+                }
+            };
+        });
+}
+
+function uploadIntermediate(parentId) {
+    if (!stageFiles.length || !parentId) { finishOk(); return; }
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner"></span>Загружаем этапные…';
+    var fd2 = new FormData();
+    stageFiles.forEach(function(f){ fd2.append('photos', f); });
+    fd2.append('parent_work_id', parentId);
+    fd2.append('csrf_token', CSRF_TOKEN);
+
+    fetch('/upload/probnik/intermediate', {
+        method: 'POST',
+        body: fd2,
+        headers: { 'Accept': 'application/json' }
+    })
+        .then(parseUploadResponse)
+        .then(function(res){
+            var j2 = res.body;
+            if (res.status !== 200 || !j2.success) {
+                stopTimer();
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Повторить загрузку этапных';
+                showUploadMsg('Финальное фото сохранено, но этапные не загрузились: ' +
+                    (j2.error || j2.detail || 'ошибка') +
+                    '. Проверь выбранные этапные фото и нажми повторную загрузку.', true);
+                return;
+            }
+            finishOk();
+        })
+        .catch(function(){
+            stopTimer();
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = 'Повторить загрузку этапных';
+            showUploadMsg('Финальное фото сохранено, но этапные не отправились (нет связи). ' +
+                'Проверь интернет и нажми повторную загрузку.', true);
+        });
+}
+
+function markFinalSaved(parentId) {
+    savedFinalWorkId = parentId;
+    finalInput.disabled = true;
+    finalReselectBtn.disabled = true;
+    finalReselectBtn.textContent = 'Сохранено';
+}
+
+submitBtn.addEventListener('click', function() {
+    if (savedFinalWorkId) {
+        uploadIntermediate(savedFinalWorkId);
+        return;
+    }
+    if (!finalFile || !_currentSubject) return;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner"></span>Загружаем финальное…';
+    uploadMsg.style.display = 'none';
+
+    var fd1 = new FormData();
+    fd1.append('photos', finalFile);
+    fd1.append('subject', _currentSubject);
+    fd1.append('csrf_token', CSRF_TOKEN);
+
+    fetch('/upload/probnik/final', {
+        method: 'POST',
+        body: fd1,
+        headers: { 'Accept': 'application/json' }
+    })
+        .then(parseUploadResponse)
+        .then(function(res){
+            var j1 = res.body;
+            if (res.status !== 200 || !j1.success) {
+                showUploadMsg(j1.error || j1.detail || 'Не удалось загрузить финальное фото', true);
+                submitBtn.disabled = false; submitBtn.innerHTML = 'Отправить на проверку';
+                return;
+            }
+            var parentId = j1.work_ids && j1.work_ids[0];
+            if (parentId) { markFinalSaved(parentId); }
+            uploadIntermediate(parentId);
+        })
+        .catch(function(){
+            showUploadMsg('Не удалось связаться с сервером', true);
+            submitBtn.disabled = false; submitBtn.innerHTML = 'Отправить на проверку';
+        });
+});
+
+function finishOk() {
+    stopTimer();
+    submitBtn.innerHTML = 'Готово ✓';
+    showUploadMsg('Работа отправлена на проверку! Куратор проверит и выставит оценку. ' +
+        '<a href="/cabinet" style="font-weight:700">В кабинет →</a>', false);
+    setTimeout(function(){ window.location.href = '/cabinet'; }, 1200);
+}
+
 
 // ── Server data ──────────────────────────────────────────────────────────────
 var ATTEMPTS = {{ attempts_by_subject | tojson }};  // { "Рисунок": {...}, "Композиция": {...} } | {}

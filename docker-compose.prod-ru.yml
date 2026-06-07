@@ -48,7 +48,19 @@ services:
       - traefik.http.routers.portfolio-apparchi.entrypoints=websecure
       - traefik.http.routers.portfolio-apparchi.tls.certresolver=mytlschallenge
       - traefik.http.routers.portfolio-apparchi.service=portfolio
+      - traefik.http.routers.portfolio-apparchi.middlewares=sec-headers@docker
       - traefik.http.services.portfolio.loadbalancer.server.port=8000
+      - "traefik.http.middlewares.sec-headers.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.sec-headers.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.sec-headers.headers.stsPreload=true"
+      - "traefik.http.middlewares.sec-headers.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.sec-headers.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.sec-headers.headers.frameDeny=true"
+      - "traefik.http.middlewares.sec-headers.headers.referrerPolicy=strict-origin-when-cross-origin"
+      - "traefik.http.middlewares.sec-headers.headers.permissionsPolicy=geolocation=(), microphone=(), camera=()"
+      - "traefik.http.middlewares.sec-headers.headers.contentSecurityPolicy=default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'none'"
+      - "traefik.http.middlewares.sec-headers.headers.customResponseHeaders.Server="
+      - "traefik.http.middlewares.sec-headers.headers.customResponseHeaders.X-Powered-By="
     networks:
       - web
       - default
@@ -66,7 +78,13 @@ services:
 
   redis:
     image: dockerhub.timeweb.cloud/library/redis:7-alpine
-    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    env_file: .env
+    command: >
+      sh -c 'if [ -n "$$REDIS_PASSWORD" ]; then
+        redis-server --requirepass "$$REDIS_PASSWORD" --maxmemory 64mb --maxmemory-policy allkeys-lru;
+      else
+        redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru;
+      fi'
     networks:
       - default
     restart: unless-stopped

@@ -61,17 +61,18 @@ def _add_work(db, user_id, work_type, month="январь", year=2026, score=Non
 # GET /cabinet/curator — dashboard
 # ---------------------------------------------------------------------------
 
-def test_curator_dashboard_loads(curator_client):
+def test_curator_dashboard_redirects_to_students(curator_client):
     client, _ = curator_client
-    resp = client.get("/cabinet/curator")
-    assert resp.status_code == 200
+    resp = client.get("/cabinet/curator", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/cabinet/students"
 
 
-def test_curator_dashboard_shows_student_count(curator_client, student):
+def test_curator_dashboard_lands_on_student_list(curator_client, student):
     client, _ = curator_client
-    resp = client.get("/cabinet/curator")
+    resp = client.get("/cabinet/curator")  # follows redirect → /cabinet/students
     assert resp.status_code == 200
-    assert "1" in resp.text  # один студент
+    assert "Иванова" in resp.text or "Анна" in resp.text
 
 
 def test_curator_dashboard_denied_for_student(client, db, user_factory, session_factory):

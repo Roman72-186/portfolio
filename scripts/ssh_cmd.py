@@ -33,7 +33,14 @@ def run(cmd: str, server: int = 1) -> str:
         )
 
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.load_system_host_keys()
+    known_hosts = os.getenv("PORTFOLIO_SSH_KNOWN_HOSTS")
+    if known_hosts:
+        client.load_host_keys(os.path.expanduser(known_hosts))
+    if os.getenv("PORTFOLIO_SSH_ALLOW_UNKNOWN_HOST") == "1":
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    else:
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
     connect_kwargs = {
         "hostname": host,

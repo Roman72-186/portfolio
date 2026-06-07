@@ -116,13 +116,13 @@ def test_login_post_inactive_user_blocked(client, db, user_factory):
     assert "отключён" in resp.text.lower() or "заблокирован" in resp.text.lower()
 
 
-def test_login_post_student_role_blocked(client, db, user_factory):
-    """Students (rank 1) cannot use staff login."""
+def test_login_post_student_role_allowed(client, db, user_factory):
+    """Students (rank 1) can use manual login/password access."""
     _make_staff_user(db, user_factory, role_name="ученик", password="pw")
     resp = client.post("/login", data={"login": "testcurator", "password": "pw"},
                        follow_redirects=False)
-    assert resp.status_code == 200
-    assert "сотрудник" in resp.text.lower() or "вход" in resp.text.lower()
+    assert resp.status_code == 302
+    assert "session_id" in resp.cookies
 
 
 def test_login_post_very_long_input_no_crash(client):

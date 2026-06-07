@@ -12,6 +12,23 @@ from app.models.session import Session
 from app.models.user import User
 
 
+def _role_rank(user: User) -> int:
+    if user.role:
+        return user.role.rank
+    return 4 if user.is_admin else 0
+
+
+def _can_manage_user(actor: User, target: User) -> bool:
+    """Only higher-ranked admins can manage another user account."""
+    if actor.id == target.id:
+        return False
+    actor_rank = _role_rank(actor)
+    target_rank = _role_rank(target)
+    if actor_rank < 4:
+        return False
+    return actor_rank > target_rank
+
+
 def _log(db: DBSession, action: str, performed_by_id: int, target_user_id: int, details: str) -> None:
     db.add(AuditLog(
         action=action,
@@ -39,11 +56,11 @@ def soft_delete_user(db: DBSession, target_user_id: int, performed_by_id: int) -
     Возвращает False если пользователь не найден или уже удалён.
     Нельзя удалить самого себя.
     """
-    if target_user_id == performed_by_id:
-        return False
-
     user = db.query(User).filter(User.id == target_user_id).first()
     if not user or user.deleted_at is not None:
+        return False
+    actor = db.query(User).filter(User.id == performed_by_id).first()
+    if not actor or not _can_manage_user(actor, user):
         return False
 
     now = datetime.now(timezone.utc)
@@ -63,11 +80,11 @@ def toggle_user_active(db: DBSession, target_user_id: int, performed_by_id: int)
     Нельзя применять к удалённым пользователям и к самому себе.
     Возвращает новое значение is_active или None если операция недопустима.
     """
-    if target_user_id == performed_by_id:
-        return None
-
     user = db.query(User).filter(User.id == target_user_id).first()
     if not user or user.deleted_at is not None:
+        return None
+    actor = db.query(User).filter(User.id == performed_by_id).first()
+    if not actor or not _can_manage_user(actor, user):
         return None
 
     if user.is_active:

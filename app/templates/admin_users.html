@@ -132,12 +132,19 @@ details[open].bulk-card > summary::before { content: '−'; }
     <p style="color:var(--muted);font-size:14px">Показано: {{ users|length }}</p>
 </div>
 
-<form method="get" action="/admin/users" style="margin-bottom:20px;display:flex;gap:8px;align-items:center">
+<form method="get" action="/admin/users" style="margin-bottom:20px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
     <input type="text" name="q" value="{{ q }}" placeholder="Имя, @username..."
         style="flex:1;max-width:360px;padding:9px 14px;font-size:14px;font-family:inherit;border:1.5px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);outline:none"
         autofocus>
+    <select name="role_rank"
+        style="min-width:160px;padding:9px 12px;font-size:14px;font-family:inherit;border:1.5px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);outline:none">
+        <option value="">Все роли</option>
+        {% for r in roles %}
+        <option value="{{ r.rank }}" {% if role_rank == r.rank|string %}selected{% endif %}>{{ r.display_name }}</option>
+        {% endfor %}
+    </select>
     <button type="submit" style="padding:9px 18px;background:var(--blue);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Найти</button>
-    {% if q %}<a href="/admin/users" style="padding:9px 14px;font-size:14px;color:var(--dim);text-decoration:none">✕ Сбросить</a>{% endif %}
+    {% if q or role_rank %}<a href="/admin/users" style="padding:9px 14px;font-size:14px;color:var(--dim);text-decoration:none">✕ Сбросить</a>{% endif %}
 </form>
 
 {% if page_error %}

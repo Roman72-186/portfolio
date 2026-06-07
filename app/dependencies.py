@@ -8,7 +8,7 @@ log = logging.getLogger(__name__)
 from fastapi import Request, Depends, HTTPException, Header, Form
 from sqlalchemy.orm import Session as DBSession, joinedload
 
-from app.cache import get_cached_session, set_cached_session
+from app.cache import set_cached_session
 from app.config import settings
 from app.csrf import validate_csrf_token
 from app.db.database import get_db
@@ -25,12 +25,8 @@ def get_current_user(
     if not session_id:
         raise HTTPException(status_code=401, detail="Нет сессии")
 
-    # ── Cache hit ─────────────────────────────────────────────────────────────
-    cached = get_cached_session(session_id)
-    if cached:
-        return cached
-
-    # ── Cache miss: full DB lookup ────────────────────────────────────────────
+    # Always validate auth-critical state against DB. Cached session payloads can
+    # outlive role changes, account blocks, deletes, or session revocation.
     row = (
         db.query(Session, User)
         .join(User, Session.user_id == User.id)

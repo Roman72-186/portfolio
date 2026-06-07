@@ -43,6 +43,7 @@ from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
 from app.services import feedback as fb_service
 from app.services.exam_cycle import has_open_cycles
+from app.services.student_access import get_student_for_staff_access
 from app.tmpl import templates
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,7 @@ def _dialog_payload(db: DBSession, cycle: ExamCycle) -> dict:
             "filename": w.filename,
             "created_at": w.created_at.isoformat() if w.created_at else None,
             "score": float(w.score) if w.score is not None else None,
+            "comment": w.comment or "",
             "intermediates": [
                 {"id": iw.id, "s3_url": iw.s3_url, "filename": iw.filename}
                 for iw in intermediates_by_parent.get(w.id, [])
@@ -125,7 +127,28 @@ def _dialog_payload(db: DBSession, cycle: ExamCycle) -> dict:
             ),
             "messages": messages,
         })
-    return {"attempts": attempts}
+
+    # Единый диалог на цикл: все сообщения всех финалок в одной хронологической ленте.
+    all_msgs: list[FeedbackMessage] = []
+    for msgs in messages_by_fb.values():
+        all_msgs.extend(msgs)
+    all_msgs.sort(key=lambda m: (m.created_at or datetime.min.replace(tzinfo=timezone.utc), m.id))
+    thread = fb_service.serialize_messages(all_msgs)
+    has_staff_message = any(
+        m["sender_role"] != fb_service.ROLE_STUDENT for m in thread
+    )
+    # Форма сообщений целится в финалку Пробника: POST /message принимает только
+    # mock_exam-финалки (финалка Отработки даст 422). В открытом цикле она одна,
+    # поэтому весь диалог цикла привязан к ней — гейт показа и POST совпадают.
+    target = next(
+        (w for w in finals if w.work_type == WORK_TYPE_MOCK_EXAM), finals[-1]
+    )
+    return {
+        "attempts": attempts,
+        "thread": thread,
+        "target_work_id": target.id,
+        "has_staff_message": has_staff_message,
+    }
 
 
 # ── Студент ──────────────────────────────────────────────────────────────────
@@ -163,8 +186,6 @@ def student_feedback_detail(
     )
     if not cycle:
         raise HTTPException(status_code=404, detail="Цикл не найден")
-    if cycle.closed_at is not None:
-        raise HTTPException(status_code=404, detail="Цикл уже закрыт")
 
     payload = _dialog_payload(db, cycle)
 
@@ -182,6 +203,9 @@ def student_feedback_detail(
         "request": request, "user": user,
         "cycle": _serialize_cycle(cycle, [a for a in payload["attempts"]]),
         "attempts": payload["attempts"],
+        "thread": payload.get("thread", []),
+        "target_work_id": payload.get("target_work_id"),
+        "has_staff_message": payload.get("has_staff_message", False),
         "viewer_role": "student",
         "student": {"id": user["user_id"], "name": user.get("name", "")},
         "back_url": "/cabinet/feedback/",
@@ -199,6 +223,10 @@ async def post_dialog_message(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     text: str = Form(default=""),
+    impression: str = Form(default=""),
+    good: str = Form(default=""),
+    strengthen: str = Form(default=""),
+    recommendations: str = Form(default=""),
     photo: UploadFile | None = File(default=None),
 ):
     work = db.query(Work).filter(Work.id == work_id).first()
@@ -213,9 +241,14 @@ async def post_dialog_message(
     if cycle is None or cycle.closed_at is not None:
         raise HTTPException(status_code=403, detail="Цикл закрыт — отправка сообщений недоступна")
 
-    student = db.query(User).filter(User.id == work.user_id).first()
-    if not student or student.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Студент не найден")
+    student = get_student_for_staff_access(
+        db,
+        user,
+        work.user_id,
+        exclude_deleted=True,
+        not_found_detail="Студент не найден",
+        forbidden_detail="Это не ваш студент",
+    )
 
     role_rank = user["role_rank"]
     sender_role = fb_service.role_from_rank(role_rank)
@@ -240,9 +273,6 @@ async def post_dialog_message(
             raise HTTPException(status_code=403, detail="Жди обратной связи куратора, потом сможешь ответить")
         recipient_id = fb.curator_id
     else:
-        # Куратор — только своим студентам. Админ/SA — кому угодно.
-        if role_rank == 2 and student.curator_id != user["user_id"]:
-            raise HTTPException(status_code=403, detail="Это не ваш студент")
         if "feedback.write" not in user.get("permissions", set()):
             raise HTTPException(status_code=403, detail="Нет прав на запись feedback")
         fb, _created = fb_service.get_or_create_feedback(
@@ -252,6 +282,24 @@ async def post_dialog_message(
 
     # ── Сбор payload
     text_clean = (text or "").strip()
+
+    # Первая обратная связь staff: структурная форма из 4 пунктов
+    # склеивается в одно сообщение с заголовками. Только если свободный
+    # текст не введён и отправитель — не студент.
+    if not text_clean and sender_role != fb_service.ROLE_STUDENT:
+        structured_parts = []
+        for label, value in (
+            ("Общее впечатление", impression),
+            ("Что хорошо", good),
+            ("Что усилить", strengthen),
+            ("Рекомендации", recommendations),
+        ):
+            v = (value or "").strip()
+            if v:
+                structured_parts.append(f"{label}:\n{v}")
+        if structured_parts:
+            text_clean = "\n\n".join(structured_parts)
+
     if len(text_clean) > MAX_TEXT_LEN:
         text_clean = text_clean[:MAX_TEXT_LEN]
 
@@ -335,11 +383,28 @@ def _staff_cycles_data(db: DBSession, user: dict) -> list[dict]:
     items = []
     for cycle, student in rows:
         finals = finals_by_cycle.get(cycle.id, [])
+        scored_finals = [
+            w for w in finals
+            if w.work_type == WORK_TYPE_MOCK_EXAM and w.score is not None
+        ]
+        if not scored_finals:
+            scored_finals = [w for w in finals if w.score is not None]
+        close_score = None
+        if scored_finals:
+            close_work = max(
+                scored_finals,
+                key=lambda w: (
+                    w.scored_at or w.created_at or datetime.min,
+                    w.id or 0,
+                ),
+            )
+            close_score = float(close_work.score)
         items.append({
             "id": cycle.id,
             "subject": cycle.subject,
             "started_at": cycle.started_at.isoformat(),
             "closed_at": cycle.closed_at.isoformat() if cycle.closed_at else None,
+            "close_score": close_score,
             "attempts": len(finals),
             "feedbacks_count": sum(1 for w in finals if w.id in fb_work_ids),
             "student_id": student.id,
@@ -365,6 +430,13 @@ def staff_cycles_list(
                 "cycles": [],
             }
         by_student[sid]["cycles"].append(it)
+    # Внутри студента: открытые сверху, закрытые ниже; в каждой группе свежие → старые.
+    # Стабильная сортировка: сначала по дате DESC, затем по флагу «закрыт» — порядок дат сохранится.
+    for s in by_student.values():
+        s["cycles"].sort(key=lambda c: c["started_at"], reverse=True)
+        s["cycles"].sort(key=lambda c: 1 if c["closed_at"] else 0)
+        s["open_count"] = sum(1 for c in s["cycles"] if not c["closed_at"])
+        s["closed_count"] = sum(1 for c in s["cycles"] if c["closed_at"])
     students_sorted = sorted(by_student.values(), key=lambda s: s["student_name"] or "")
     if user["role_rank"] >= 5:
         detail_prefix = "/cabinet/superadmin/feedback/"
@@ -388,11 +460,14 @@ def student_cycles_json(
     user: Annotated[dict, Depends(require_curator)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    student = db.query(User).filter(User.id == student_id, User.deleted_at.is_(None)).first()
-    if not student:
-        raise HTTPException(status_code=404, detail="Студент не найден")
-    if user["role_rank"] == 2 and student.curator_id != user["user_id"]:
-        raise HTTPException(status_code=403, detail="Не ваш студент")
+    student = get_student_for_staff_access(
+        db,
+        user,
+        student_id,
+        exclude_deleted=True,
+        not_found_detail="Студент не найден",
+        forbidden_detail="Не ваш студент",
+    )
     cycles = (
         db.query(ExamCycle)
         .filter(ExamCycle.user_id == student_id)
@@ -445,11 +520,14 @@ def _staff_dialog_detail(db: DBSession, request: Request, user: dict, cycle_id: 
     cycle = db.query(ExamCycle).filter(ExamCycle.id == cycle_id).first()
     if not cycle:
         raise HTTPException(status_code=404, detail="Цикл не найден")
-    student = db.query(User).filter(User.id == cycle.user_id).first()
-    if not student or student.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Студент не найден")
-    if user["role_rank"] == 2 and student.curator_id != user["user_id"]:
-        raise HTTPException(status_code=403, detail="Это не ваш студент")
+    student = get_student_for_staff_access(
+        db,
+        user,
+        cycle.user_id,
+        exclude_deleted=True,
+        not_found_detail="Студент не найден",
+        forbidden_detail="Это не ваш студент",
+    )
 
     payload = _dialog_payload(db, cycle)
     if user["role_rank"] >= 5:
@@ -465,6 +543,9 @@ def _staff_dialog_detail(db: DBSession, request: Request, user: dict, cycle_id: 
         "request": request, "user": user,
         "cycle": _serialize_cycle(cycle, [a for a in payload["attempts"]]),
         "attempts": payload["attempts"],
+        "thread": payload.get("thread", []),
+        "target_work_id": payload.get("target_work_id"),
+        "has_staff_message": payload.get("has_staff_message", False),
         "viewer_role": viewer_role,
         "student": {"id": student.id, "name": student.name},
         "back_url": back_url,
@@ -507,12 +588,14 @@ def superadmin_feedback_detail(
 # ── Staff: календарь работ конкретного ученика (legacy, для карточки) ────────
 
 def _ensure_staff_can_view_student(db: DBSession, user: dict, student_id: int) -> User:
-    student = db.query(User).filter(User.id == student_id, User.deleted_at.is_(None)).first()
-    if not student:
-        raise HTTPException(status_code=404, detail="Студент не найден")
-    if user["role_rank"] == 2 and student.curator_id != user["user_id"]:
-        raise HTTPException(status_code=403, detail="Не ваш студент")
-    return student
+    return get_student_for_staff_access(
+        db,
+        user,
+        student_id,
+        exclude_deleted=True,
+        not_found_detail="Студент не найден",
+        forbidden_detail="Не ваш студент",
+    )
 
 
 @router.get("/cabinet/staff/cycle/probnik/{student_id}", response_class=HTMLResponse)

@@ -22,22 +22,35 @@ from sqlalchemy import String, TypeDecorator
 logger = logging.getLogger(__name__)
 
 _fernet: Fernet | None = None
+_legacy_fernet: Fernet | None = None
+
+
+def _derive_fernet(secret: str) -> Fernet:
+    dk = hashlib.pbkdf2_hmac(
+        "sha256",
+        secret.encode(),
+        b"portfolio-pii-encryption-salt",
+        iterations=100_000,
+    )
+    return Fernet(base64.urlsafe_b64encode(dk[:32]))
 
 
 def _get_fernet() -> Fernet:
     global _fernet
     if _fernet is None:
         from app.config import settings
-        # Derive a 32-byte key from session_secret via PBKDF2
-        dk = hashlib.pbkdf2_hmac(
-            "sha256",
-            settings.session_secret.encode(),
-            b"portfolio-pii-encryption-salt",
-            iterations=100_000,
-        )
-        key = base64.urlsafe_b64encode(dk[:32])
-        _fernet = Fernet(key)
+        _fernet = _derive_fernet(settings.pii_encryption_secret or settings.session_secret)
     return _fernet
+
+
+def _get_legacy_fernet() -> Fernet | None:
+    global _legacy_fernet
+    from app.config import settings
+    if not settings.pii_encryption_secret:
+        return None
+    if _legacy_fernet is None:
+        _legacy_fernet = _derive_fernet(settings.session_secret)
+    return _legacy_fernet
 
 
 class EncryptedString(TypeDecorator):
@@ -70,10 +83,13 @@ class EncryptedString(TypeDecorator):
         """Decrypt after SELECT."""
         if value is None:
             return None
-        f = _get_fernet()
-        try:
-            return f.decrypt(value.encode("ascii")).decode("utf-8")
-        except (InvalidToken, Exception):
-            # Legacy plaintext row — return as-is, will be encrypted on next save
-            logger.debug("Could not decrypt value, returning as plaintext (legacy row)")
-            return value
+        token = value.encode("ascii")
+        for f in (_get_fernet(), _get_legacy_fernet()):
+            if f is None:
+                continue
+            try:
+                return f.decrypt(token).decode("utf-8")
+            except InvalidToken:
+                continue
+        logger.debug("Could not decrypt value, returning as plaintext (legacy row)")
+        return value

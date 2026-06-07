@@ -92,25 +92,41 @@ def consume_one_time_login_token(
     raw_token: str,
 ) -> tuple[LoginToken | None, User | None, str | None]:
     token_hash = _hash_token(raw_token)
-    record = (
-        db.query(LoginToken, User)
-        .join(User, LoginToken.user_id == User.id)
-        .filter(LoginToken.token_hash == token_hash)
-        .first()
-    )
-    if not record:
+    login_token = db.query(LoginToken).filter(LoginToken.token_hash == token_hash).first()
+    if not login_token:
         return None, None, "invalid"
 
-    login_token, user = record
     now = _now()
+    updated = (
+        db.query(LoginToken)
+        .filter(
+            LoginToken.id == login_token.id,
+            LoginToken.used_at.is_(None),
+            LoginToken.revoked_at.is_(None),
+            LoginToken.expires_at > now,
+        )
+        .update({LoginToken.used_at: now}, synchronize_session=False)
+    )
+    if updated == 1:
+        db.commit()
+        db.expire_all()
+        record = (
+            db.query(LoginToken, User)
+            .join(User, LoginToken.user_id == User.id)
+            .filter(LoginToken.id == login_token.id)
+            .first()
+        )
+        if not record:
+            return None, None, "invalid"
+        return record[0], record[1], None
 
+    db.rollback()
+    db.refresh(login_token)
+    user = db.query(User).filter(User.id == login_token.user_id).first()
     if login_token.revoked_at is not None:
         return login_token, user, "revoked"
     if login_token.used_at is not None:
         return login_token, user, "used"
     if login_token.expires_at <= now:
         return login_token, user, "expired"
-
-    login_token.used_at = now
-    db.commit()
-    return login_token, user, None
+    return login_token, user, "invalid"

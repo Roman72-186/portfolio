@@ -379,14 +379,13 @@ def cabinet_cycle_hub(
     request: Request,
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
-    tab: str = Query(default="mock"),
+    tab: str = Query(default="feedback"),
 ):
-    """Двухвкладочный экран: Пробник (всегда) + Обратная связь (если есть открытые циклы)."""
+    """Экран ученика: только вкладка «Обратная связь» (диалог по циклам)."""
     from app.models.exam_cycle import ExamCycle
     from app.models.feedback import Feedback
     from app.models.notification import Notification
     from app.services.feature_periods import is_feature_available as _is_fa
-    from app.services.exam_cycle import has_open_cycles
     from app.constants import FEATURE_MOCK_EXAM as _F_MOCK, FEATURE_LABELS
 
     mock_open, mock_msg = _is_fa(db, _F_MOCK)
@@ -396,29 +395,26 @@ def cabinet_cycle_hub(
     if "Без предмета" in works_by_subject:
         subjects.append("Без предмета")
 
-    feedback_visible = has_open_cycles(db, user["user_id"])
+    # Все циклы пользователя — открытые (сверху) и закрытые (снизу).
+    cycles_q = (
+        db.query(ExamCycle)
+        .filter(ExamCycle.user_id == user["user_id"])
+        .order_by(ExamCycle.started_at.desc(), ExamCycle.id.desc())
+        .all()
+    )
+    feedback_visible = bool(cycles_q)
 
-    # Сборка списка открытых циклов для вкладки ОС
     open_cycles: list[dict] = []
-    if feedback_visible:
-        cycles_q = (
-            db.query(ExamCycle)
-            .filter(
-                ExamCycle.user_id == user["user_id"],
-                ExamCycle.closed_at.is_(None),
-            )
-            .order_by(ExamCycle.started_at.desc(), ExamCycle.id.desc())
-            .all()
-        )
+    closed_cycles: list[dict] = []
+    if cycles_q:
         cycle_ids = [c.id for c in cycles_q]
         finals_by_cycle: dict[int, list[Work]] = {}
-        if cycle_ids:
-            for w in (
-                db.query(Work)
-                .filter(Work.cycle_id.in_(cycle_ids), Work.is_final == True)  # noqa: E712
-                .all()
-            ):
-                finals_by_cycle.setdefault(w.cycle_id, []).append(w)
+        for w in (
+            db.query(Work)
+            .filter(Work.cycle_id.in_(cycle_ids), Work.is_final == True)  # noqa: E712
+            .all()
+        ):
+            finals_by_cycle.setdefault(w.cycle_id, []).append(w)
         all_work_ids = [w.id for ws in finals_by_cycle.values() for w in ws]
         unread_work_ids: set[int] = set()
         if all_work_ids:
@@ -431,23 +427,41 @@ def cabinet_cycle_hub(
             }
         for c in cycles_q:
             finals = finals_by_cycle.get(c.id, [])
-            open_cycles.append({
+            scored_finals = [
+                w for w in finals
+                if w.work_type == WORK_TYPE_MOCK_EXAM and w.score is not None
+            ]
+            if not scored_finals:
+                scored_finals = [w for w in finals if w.score is not None]
+            close_score = None
+            if scored_finals:
+                close_work = max(
+                    scored_finals,
+                    key=lambda w: (
+                        w.scored_at or w.created_at or datetime.min,
+                        w.id or 0,
+                    ),
+                )
+                close_score = float(close_work.score)
+            item = {
                 "id": c.id,
                 "subject": c.subject,
                 "started_at": c.started_at.isoformat(),
+                "closed_at": c.closed_at.isoformat() if c.closed_at else None,
+                "close_score": close_score,
                 "attempts": len(finals),
                 "unread_count": sum(1 for w in finals if w.id in unread_work_ids),
-            })
+            }
+            if c.closed_at is None:
+                open_cycles.append(item)
+            else:
+                closed_cycles.append(item)
 
-    cycles_count = (
-        db.query(ExamCycle).filter(ExamCycle.user_id == user["user_id"]).count()
-    )
+    cycles_count = len(cycles_q)
     unread = _get_unread_count(user["user_id"], db)
 
-    if tab not in ("mock", "feedback"):
-        tab = "mock"
-    if tab == "feedback" and not feedback_visible:
-        tab = "mock"
+    # Вкладка «Пробник» убрана из кабинета ученика — остаётся только «Обратная связь».
+    tab = "feedback"
 
     return templates.TemplateResponse("cabinet_cycle.html", {
         "request": request,
@@ -460,11 +474,13 @@ def cabinet_cycle_hub(
         "upload_label": "Загрузить пробник",
         "feedback_visible": feedback_visible,
         "open_cycles": open_cycles,
+        "closed_cycles": closed_cycles,
         "cycles_count": cycles_count,
         "unread_count": unread,
         "months": MONTHS,
         "current_year": today_msk().year,
         "active_subtab": tab,
+        "active_tab": "cycle",
     })
 
 
@@ -500,6 +516,16 @@ async def cabinet_portfolio(
         .limit(500)
         .all()
     )
+
+    # Пробные экзамены: финалки ЗАКРЫТЫХ циклов в формате дневного календаря
+    # (по предметам, со score/этапами) — тот же сборщик, что и во вкладке Пробники.
+    mock_works_by_subject = _collect_cycle_works(
+        db, user["user_id"], WORK_TYPE_MOCK_EXAM, closed_only=True
+    )
+    mock_subjects = list(MOCK_SUBJECTS)
+    if "Без предмета" in mock_works_by_subject:
+        mock_subjects.append("Без предмета")
+    has_mock = any(mock_works_by_subject.get(s) for s in mock_subjects)
 
     # Fetch Drive thumbnail URLs for works that came from Drive (no s3_url)
     drive_thumbnails: dict[str, str] = {}
@@ -540,6 +566,9 @@ async def cabinet_portfolio(
         "after_groups": after_groups,
         "portfolio_before_groups": [serialize_portfolio_group(g) for g in before_groups],
         "portfolio_after_groups": [serialize_portfolio_group(g) for g in after_groups],
+        "mock_works_by_subject": mock_works_by_subject,
+        "mock_subjects": mock_subjects,
+        "has_mock": has_mock,
         "months": MONTHS,
         "current_year": today_msk().year,
         "page_size": PAGE_SIZE,
@@ -554,19 +583,43 @@ def _collect_cycle_works(
     db: DBSession,
     user_id: int,
     work_type: str,
+    *,
+    closed_only: bool = False,
 ) -> dict[str, list[dict]]:
-    """Календарь Цикла Пробника: финалки + промежуточные + feedback по предметам."""
-    from app.models.feedback import Feedback, FeedbackPhoto
+    """Календарь Цикла Пробника: финалки + промежуточные + feedback по предметам.
+
+    closed_only=True — только финалы из ЗАКРЫТЫХ циклов (для Портфолио →
+    Пробные экзамены: показываем уже оценённые/завершённые).
+    """
+    from app.models.feedback import Feedback, FeedbackPhoto, FeedbackMessage
     from app.models.exam_cycle import ExamCycle
 
-    finals = (
+    finals_q = (
         db.query(Work)
         .filter(
             Work.user_id == user_id,
             Work.work_type == work_type,
             Work.status == "success",
-            Work.is_final == True,  # noqa: E712
         )
+    )
+    if closed_only:
+        # Портфолио → Пробные экзамены: показываем все ОЦЕНЁННЫЕ пробники
+        # (score проставлен) — это и есть «последняя финальная фотография,
+        # оценённая последней». Условие покрывает оба источника данных:
+        #   • новый flow — финал закрытого цикла (закрытие цикла = простановка
+        #     балла, см. close_cycle_if_scored, поэтому score IS NOT NULL ⟺ closed);
+        #   • легаси /upload/mock-exam — работы с cycle_id IS NULL, is_final=false,
+        #     которые НЕ попали бы под старый фильтр is_final + closed cycle.
+        # parent_work_id IS NULL отсекает этапные (intermediate): они никогда не
+        # оцениваются и не должны попадать в Портфолио.
+        finals_q = finals_q.filter(
+            Work.score.isnot(None),
+            Work.parent_work_id.is_(None),
+        )
+    else:
+        finals_q = finals_q.filter(Work.is_final == True)  # noqa: E712
+    finals = (
+        finals_q
         .order_by(Work.year, Work.month, Work.created_at)
         .limit(300)
         .all()
@@ -600,6 +653,29 @@ def _collect_cycle_works(
             ):
                 fb_photos_by_fb.setdefault(ph.feedback_id, []).append(ph)
 
+    # Портфолио → Пробные экзамены: в качестве фото финалки показываем ПОСЛЕДНЕЕ
+    # фото ученика из диалога ОС (та работа, после которой выставлен балл), а не
+    # исходную загрузку. Цикл закрывается при простановке балла, а в закрытый цикл
+    # писать нельзя (см. feedback.post_dialog_message), поэтому «последнее фото
+    # ученика» ⟺ «фото, после которого проставлена оценка». Фоллбэк — w.s3_url
+    # (закрытый цикл без фото-ответа ученика / легаси-загрузка).
+    last_student_photo_by_work: dict[int, str] = {}
+    if closed_only and feedbacks_by_work:
+        fb_to_work = {f.id: wid for wid, f in feedbacks_by_work.items()}
+        for m in (
+            db.query(FeedbackMessage)
+            .filter(
+                FeedbackMessage.feedback_id.in_(list(fb_to_work.keys())),
+                FeedbackMessage.sender_role == "student",
+                FeedbackMessage.photo_s3_url.isnot(None),
+            )
+            .order_by(FeedbackMessage.created_at, FeedbackMessage.id)
+            .all()
+        ):
+            wid = fb_to_work.get(m.feedback_id)
+            if wid is not None:
+                last_student_photo_by_work[wid] = m.photo_s3_url  # asc → последнее выигрывает
+
     cycles_by_id: dict[int, ExamCycle] = {}
     cycle_ids = {w.cycle_id for w in finals if w.cycle_id}
     if cycle_ids:
@@ -629,10 +705,11 @@ def _collect_cycle_works(
                 ],
             }
         cycle = cycles_by_id.get(w.cycle_id) if w.cycle_id else None
+        display_url = last_student_photo_by_work.get(w.id) or w.s3_url
         return {
             "id": w.id,
             "subject": w.subject or "",
-            "s3_url": w.s3_url,
+            "s3_url": display_url,
             "filename": w.filename,
             "score": float(w.score) if w.score is not None else None,
             "student_score": float(w.student_score) if w.student_score is not None else None,

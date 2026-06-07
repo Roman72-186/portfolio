@@ -10,7 +10,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.db.database import engine, Base, SessionLocal
 from app.api import auth, cabinet, upload, admin, gallery
-from app.api import cabinet_student, cabinet_curator, cabinet_admin, cabinet_superadmin  # cabinet_moderator disabled
+from app.api import cabinet_student, cabinet_curator, cabinet_admin, cabinet_superadmin
 from app.api import cabinet_students_shared
 from app.api import cycle_upload, feedback as feedback_router
 from app.limiter import limiter
@@ -26,7 +26,8 @@ async def lifespan(app: FastAPI):
     from app.config import settings
     if settings.session_secret == "change-me":
         raise RuntimeError("SESSION_SECRET не задан в .env — запуск в продакшене с дефолтным секретом запрещён")
-    Base.metadata.create_all(bind=engine)
+    if settings.database_url.startswith("sqlite"):
+        Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         seed_roles_and_permissions(db)
@@ -155,7 +156,6 @@ app.include_router(auth.router)
 app.include_router(cabinet.router)
 app.include_router(cabinet_student.router)
 app.include_router(cabinet_curator.router)
-# app.include_router(cabinet_moderator.router)  # disabled
 app.include_router(cabinet_admin.router)
 app.include_router(cabinet_superadmin.router)
 app.include_router(cabinet_students_shared.router)

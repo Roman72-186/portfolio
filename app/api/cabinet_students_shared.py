@@ -36,6 +36,7 @@ from app.models.work import (
 from app.services import s3 as s3_service
 from app.services.exam_cycle import close_cycle_if_scored
 from app.services.feature_periods import get_active_period
+from app.services.student_access import get_student_for_staff_access
 from app.services.tz import MSK_TZ, msk_midnight
 from app.services.utils import compress_image, study_duration_text, group_works, has_case_growth
 from app.tmpl import templates
@@ -111,21 +112,20 @@ def _parse_bool(s: str) -> bool:
 
 
 def _check_access(student_id: int, user: dict, db: DBSession) -> User:
-    student = db.query(User).filter(User.id == student_id, User.is_active == True).first()
-    if not student:
-        raise HTTPException(status_code=404, detail="Ученик не найден")
-    rank = user["role_rank"]
-    if rank == 2 and student.curator_id != user["user_id"]:
-        raise HTTPException(status_code=403, detail="Нет доступа к этому ученику")
-    return student
+    return get_student_for_staff_access(
+        db,
+        user,
+        student_id,
+        active_only=True,
+        not_found_detail="Ученик не найден",
+        forbidden_detail="Нет доступа к этому ученику",
+    )
 
 
 def _enrich(s: User, counts_by_user: dict, avg_by_user: dict,
             mock_counts_by_user: dict | None = None,
             unchecked_by_user: dict | None = None,
             scored_subjects_by_user: dict | None = None,
-            retake_counts_by_user: dict | None = None,
-            retake_unchecked_by_user: dict | None = None,
             has_case_by_user: dict | None = None) -> dict:
     return {
         "id": s.id,
@@ -147,8 +147,6 @@ def _enrich(s: User, counts_by_user: dict, avg_by_user: dict,
         "mock_count": mock_counts_by_user.get(s.id, 0) if mock_counts_by_user else 0,
         "unchecked": unchecked_by_user.get(s.id, 0) if unchecked_by_user else 0,
         "scored_subjects": scored_subjects_by_user.get(s.id, []) if scored_subjects_by_user else [],
-        "retake_count": retake_counts_by_user.get(s.id, 0) if retake_counts_by_user else 0,
-        "retake_unchecked": retake_unchecked_by_user.get(s.id, 0) if retake_unchecked_by_user else 0,
     }
 
 
@@ -210,8 +208,6 @@ def students_panel(
     mock_counts_by_user: dict = {}
     unchecked_by_user: dict = {}
     scored_subjects_by_user: dict = defaultdict(list)
-    retake_counts_by_user: dict = {}
-    retake_unchecked_by_user: dict = {}
     has_case_by_user: dict[int, bool] = {}
     if students:
         _ids_all = [s.id for s in students]
@@ -276,31 +272,6 @@ def students_panel(
         for r in scored_subj_rows:
             scored_subjects_by_user[r.user_id].append(r.subject)
 
-        retake_count_rows = (
-            db.query(Work.user_id, func.count(Work.id).label("cnt"))
-            .filter(
-                Work.user_id.in_(_ids),
-                Work.work_type == WORK_TYPE_RETAKE,
-                Work.status == "success",
-            )
-            .group_by(Work.user_id)
-            .all()
-        )
-        retake_counts_by_user = {r.user_id: r.cnt for r in retake_count_rows}
-
-        retake_unchecked_rows = (
-            db.query(Work.user_id, func.count(Work.id).label("cnt"))
-            .filter(
-                Work.user_id.in_(_ids),
-                Work.work_type == WORK_TYPE_RETAKE,
-                Work.status == "success",
-                Work.score.is_(None),
-            )
-            .group_by(Work.user_id)
-            .all()
-        )
-        retake_unchecked_by_user = {r.user_id: r.cnt for r in retake_unchecked_rows}
-
     sidebar_students = [
         _enrich(
             s,
@@ -309,14 +280,12 @@ def students_panel(
             mock_counts_by_user,
             unchecked_by_user,
             scored_subjects_by_user,
-            retake_counts_by_user,
-            retake_unchecked_by_user,
             has_case_by_user,
         )
         for s in students
     ]
     sidebar_title = "Мои ученики" if user["role_rank"] == 2 else "Все ученики"
-    valid_tabs = ("portfolio", "mock-exams", "retakes", "cycles")
+    valid_tabs = ("portfolio", "mock-exams", "cycles", "statistics")
     show_curator_filter = user["role_rank"] >= 4
 
     # Curator list for admin filter
@@ -347,6 +316,7 @@ def students_panel(
         "sidebar_students": sidebar_students,
         "initial_student_id": student,
         "initial_tab": tab if tab in valid_tabs else "portfolio",
+        "nav_active": "statistics" if (tab in valid_tabs and tab == "statistics") else "students",
         "can_score": can_score,
         "sidebar_title": sidebar_title,
         "mock_subjects": MOCK_SUBJECTS,
@@ -455,6 +425,16 @@ def get_portfolio(
     scored = [w for w in mock_works if w.score is not None]
     avg_score = round(sum(float(w.score) for w in scored) / len(scored)) if scored else None
 
+    # Финалки Пробника из ЗАКРЫТЫХ циклов — для секции «Пробные экзамены».
+    # Тот же дневной календарь (CYCCAL), что и в Портфолио ученика: одинаков для всех ролей.
+    from app.api.cabinet_student import _collect_cycle_works  # lazy: избегаем циклического импорта
+    mock_works_by_subject = _collect_cycle_works(
+        db, student_id, WORK_TYPE_MOCK_EXAM, closed_only=True
+    )
+    mock_subjects = list(MOCK_SUBJECTS)
+    if "Без предмета" in mock_works_by_subject:
+        mock_subjects.append("Без предмета")
+
     return JSONResponse({
         "student": {
             "id": student.id,
@@ -465,9 +445,12 @@ def get_portfolio(
             "photo_url": student.photo_url,
             "cohort_tag": student.cohort_tag,
         },
-        "before_works": [
-            {"s3_url": w.s3_url, "filename": w.filename, "id": w.id}
-            for w in before_works
+        "before_by_month": [
+            {
+                "month": g["month"], "year": g["year"], "total": g["total"],
+                "works": [{"s3_url": w.s3_url, "filename": w.filename, "id": w.id} for w in g["works"]],
+            }
+            for g in group_works(before_works)
         ],
         "after_by_month": [
             {
@@ -476,6 +459,8 @@ def get_portfolio(
             }
             for g in group_works(after_works)
         ],
+        "mock_works_by_subject": mock_works_by_subject,
+        "mock_subjects": mock_subjects,
     })
 
 
@@ -570,6 +555,31 @@ def get_mock_exams(
         "avg_score_by_subject": avg_score_by_subject,
         "period_only": period_only_bool,
         "period_active": bool(active_period),
+    })
+
+
+# ── AJAX: statistics (динамика баллов по пробникам) ──────────────────────────
+
+@router.get("/students/{student_id}/statistics")
+def get_statistics(
+    student_id: int,
+    user: Annotated[dict, Depends(_require_student_panel)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    from app.services.stats import student_score_curve
+
+    student = _check_access(student_id, user, db)
+    enrolled_at = student.enrolled_at or student.created_at
+    return JSONResponse({
+        "student": {
+            "id": student.id,
+            "name": f"{student.last_name or ''} {student.first_name or student.name}".strip(),
+            "tariff": student.tariff or "—",
+            "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
+            "photo_url": student.photo_url,
+            "cohort_tag": student.cohort_tag,
+        },
+        "points": student_score_curve(db, student_id),
     })
 
 

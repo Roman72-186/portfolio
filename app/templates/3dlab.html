@@ -781,7 +781,7 @@ body.video-playing .viewer-bottom-nav {
 #videoOverlay {
   position: absolute;
   inset: 0;
-  padding-top: var(--viewer-toolbar-height);
+  padding-top: var(--video-overlay-top, var(--viewer-toolbar-height));
 
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;

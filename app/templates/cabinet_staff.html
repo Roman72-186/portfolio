@@ -271,8 +271,16 @@
             </div>
             <span style="margin-left:auto;font-size:18px;color:var(--dim);">→</span>
         </a>
+        <a href="/cabinet/curator/reports" style="display:inline-flex;align-items:center;gap:10px;background:var(--card);border:1.5px solid var(--border);border-radius:14px;padding:14px 20px;text-decoration:none;color:var(--text);box-shadow:var(--shadow);transition:border-color 0.2s,box-shadow 0.2s;flex:1;min-width:200px;opacity:1;" onmouseover="this.style.borderColor='var(--border-hover)';this.style.boxShadow='var(--shadow-lg)'" onmouseout="this.style.borderColor='var(--border)';this.style.boxShadow='var(--shadow)'">
+            <span style="width:38px;height:38px;border-radius:10px;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🎥</span>
+            <div>
+                <div style="font-size:14px;font-weight:700;">Видео-отчеты</div>
+                <div style="font-size:12px;color:var(--dim);margin-top:2px;">Отчеты кураторов</div>
+            </div>
+            <span style="margin-left:auto;font-size:18px;color:var(--dim);">→</span>
+        </a>
         {% if user.role_rank >= 5 %}
-        <a href="/admin/users" style="display:inline-flex;align-items:center;gap:10px;background:var(--card);border:1.5px solid var(--border);border-radius:14px;padding:14px 20px;text-decoration:none;color:var(--text);box-shadow:var(--shadow);transition:border-color 0.2s,box-shadow 0.2s;flex:1;min-width:200px;opacity:1;" onmouseover="this.style.borderColor='var(--border-hover)';this.style.boxShadow='var(--shadow-lg)'" onmouseout="this.style.borderColor='var(--border)';this.style.boxShadow='var(--shadow)'">
+        <a href="/cabinet/superadmin/users" style="display:inline-flex;align-items:center;gap:10px;background:var(--card);border:1.5px solid var(--border);border-radius:14px;padding:14px 20px;text-decoration:none;color:var(--text);box-shadow:var(--shadow);transition:border-color 0.2s,box-shadow 0.2s;flex:1;min-width:200px;opacity:1;" onmouseover="this.style.borderColor='var(--border-hover)';this.style.boxShadow='var(--shadow-lg)'" onmouseout="this.style.borderColor='var(--border)';this.style.boxShadow='var(--shadow)'">
             <span style="width:38px;height:38px;border-radius:10px;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">👥</span>
             <div>
                 <div style="font-size:14px;font-weight:700;">Пользователи</div>
@@ -291,7 +299,7 @@
             <a href="/cabinet/periods" style="font-size:12px;color:var(--accent);font-weight:700;text-decoration:none;opacity:1">Настроить →</a>
         </div>
         {% set feat_icons = {'portfolio_upload': '🖼', 'mock_exam': '📝', 'retake': '🔄'} %}
-        {% for feat_key, feat in feature_statuses.items() %}
+        {% for feat_key, feat in feature_statuses.items() if feat_key != 'retake' %}
         <div style="display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--border){% if loop.last %};border-bottom:none{% endif %}">
             <span style="font-size:20px;flex-shrink:0">{{ feat_icons.get(feat_key, '📌') }}</span>
             <div style="flex:1;min-width:0">
@@ -322,7 +330,8 @@
     {% endif %}
 
     <!-- Roles + Works by type -->
-    <div class="two-col">
+    <div class="{% if user.role_rank >= 5 %}two-col{% endif %}" style="{% if user.role_rank < 5 %}margin-bottom:20px{% endif %}">
+        {% if user.role_rank >= 5 %}
         <div class="panel">
             <div class="panel-header"><span class="panel-title">Пользователи по ролям</span></div>
             {% set role_icons = {1: '🎓', 2: '👤', 3: '🛡', 4: '⚙️', 5: '👑'} %}
@@ -333,6 +342,7 @@
             </div>
             {% endfor %}
         </div>
+        {% endif %}
         <div class="panel">
             <div class="panel-header">
                 <span class="panel-title">Работы по типам</span>
@@ -342,7 +352,6 @@
                 <div class="type-cell"><div class="type-label">До обучения</div><div class="type-val">{{ works_by_type.get('before', 0) }}</div></div>
                 <div class="type-cell"><div class="type-label">После (синхр.)</div><div class="type-val">{{ works_by_type.get('after', 0) }}</div></div>
                 <div class="type-cell"><div class="type-label">Пробные экзамены</div><div class="type-val">{{ works_by_type.get('mock_exam', 0) }}</div></div>
-                <div class="type-cell"><div class="type-label">Отработки</div><div class="type-val">{{ works_by_type.get('retake', 0) }}</div></div>
             </div>
         </div>
     </div>
@@ -374,6 +383,10 @@
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <input type="hidden" name="target_user_id" value="{{ c.id }}">
                         <button type="submit" class="issue-link-btn">🔗 Ссылка</button>
+                    </form>
+                    <form method="post" action="/cabinet/superadmin/impersonate/{{ c.id }}" style="margin:0">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                        <button type="submit" class="issue-link-btn">🔓 Войти</button>
                     </form>
                 </div>
             </div>
@@ -423,6 +436,10 @@
                 <div class="staff-name">{{ c.name }}</div>
                 <div class="staff-meta">{{ c.student_count }} учеников</div>
             </div>
+            <form method="post" action="/cabinet/superadmin/impersonate/{{ c.id }}" style="margin:0;flex-shrink:0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" class="issue-link-btn">🔓 Войти</button>
+            </form>
         </div>
         {% endfor %}
         {% else %}
@@ -431,6 +448,7 @@
     </div>
     {% endif %}
 
+    {% if user.role_rank < 4 %}
     <!-- Recent uploads feed -->
     <div class="feed-wrap">
         <div class="feed-header">
@@ -466,6 +484,7 @@
         <div style="padding:32px;text-align:center;color:var(--dim);font-size:13px">Загрузок пока нет</div>
         {% endif %}
     </div>
+    {% endif %}
 
     {% if user.role_rank >= 5 %}
     <!-- SA quick-links -->

@@ -379,7 +379,7 @@ async def admin_permanent_access(
     key: str | None = None,
 ):
     """Permanent superadmin login via static secret key from .env."""
-    if not key or not settings.admin_access_token or key != settings.admin_access_token:
+    if not key or not settings.admin_access_token or not secrets.compare_digest(key, settings.admin_access_token):
         raise HTTPException(status_code=404)
 
     user = db.query(User).filter(User.staff_login == settings.admin_staff_login).first()
@@ -628,8 +628,8 @@ def staff_login_submit(
         return _render_staff_login(request, "Аккаунт отключён. Обратитесь к администратору.")
 
     role_rank = user.role.rank if user.role else 0
-    if role_rank < 2:
-        return _render_staff_login(request, "Этот вход только для сотрудников.")
+    if role_rank < 1:
+        return _render_staff_login(request, "Для этого аккаунта не назначена роль.")
 
     return _create_session_response(db, user)
 

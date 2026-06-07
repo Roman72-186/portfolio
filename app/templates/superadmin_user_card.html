@@ -37,6 +37,9 @@
 .uc-btn-primary { background: var(--blue); color: #fff; }
 .uc-btn-primary:hover { opacity: 0.88; }
 .uc-btn-secondary { background: var(--surface-2); color: var(--text); border: 1.5px solid var(--line); }
+.uc-access { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.uc-access-meta { font-size: 13px; color: var(--dim); line-height: 1.45; }
+.uc-access-code { font-family: monospace; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 3px 7px; }
 
 @media (max-width: 640px) {
     .uc-grid { grid-template-columns: 1fr; }
@@ -72,6 +75,27 @@
 
     <form method="post" action="/cabinet/superadmin/users/{{ target.id }}/tags">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+
+        <div class="uc-section">
+            <h3>Доступ в личный кабинет</h3>
+            <div class="uc-access">
+                <div class="uc-access-meta">
+                    {% if target.staff_login %}
+                    Текущий логин: <span class="uc-access-code">{{ target.staff_login }}</span>
+                    {% else %}
+                    Логин и пароль ещё не выдавались.
+                    {% endif %}
+                    <br>Новый пароль будет показан один раз после генерации.
+                </div>
+                {% if user.role_rank >= 5 and target.id != user.user_id and (not target.role or target.role.rank < user.role_rank) and target.is_active and not target.deleted_at %}
+                <button type="submit"
+                        form="studentAccessForm"
+                        class="uc-btn uc-btn-secondary">
+                    {{ 'Сбросить доступ' if target.staff_login else 'Выдать доступ' }}
+                </button>
+                {% endif %}
+            </div>
+        </div>
 
         <div class="uc-section">
             <h3>Метки и сортировка</h3>
@@ -146,6 +170,10 @@
                 <button type="submit" class="uc-btn uc-btn-primary">Сохранить</button>
             </div>
         </div>
+    </form>
+
+    <form id="studentAccessForm" method="post" action="/cabinet/superadmin/users/{{ target.id }}/set-credentials">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     </form>
 </div>
 {% endblock %}

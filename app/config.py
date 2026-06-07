@@ -7,6 +7,7 @@ class Settings(BaseSettings):
 
     # Auth / Sessions
     session_secret: str = "change-me"
+    pii_encryption_secret: str = ""  # separate Fernet key/secret; falls back to session_secret for legacy rows
     session_ttl_hours: int = 24
     one_time_link_ttl_minutes: int = 30
     internal_api_token: str = ""
@@ -22,6 +23,7 @@ class Settings(BaseSettings):
     n8n_base_url: str = "https://n8n-new.twc1.net"
     n8n_webhook_upload: str = "https://n8n-new.twc1.net/webhook/TMEog8ATVv9CW6xh/webhook/portfolio-upload"
     n8n_webhook_download_file: str = ""  # portfolio-download-file webhook URL (for Drive→S3 migration)
+    n8n_webhook_secret: str = ""  # sent as X-Webhook-Secret when configured
 
     # VK OAuth
     vk_app_id: str = ""

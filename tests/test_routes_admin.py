@@ -18,16 +18,29 @@ def test_admin_requires_admin_role(auth_client):
 
 def test_admin_page_accessible_to_admin(admin_client):
     client, _ = admin_client
-    resp = client.get("/admin/users")
-    assert resp.status_code == 200
+    resp = client.get("/admin/users", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["location"].startswith("/cabinet/superadmin/users")
 
 
 def test_admin_page_lists_users(admin_client, db, user_factory):
     client, _ = admin_client
     user_factory(vk_id=111_111, name="Студентка Ольга")
 
-    resp = client.get("/admin/users")
+    resp = client.get("/cabinet/superadmin/users")
     assert "Студентка Ольга" in resp.text
+
+
+def test_admin_page_filters_users_by_role(admin_client, db, user_factory):
+    client, _ = admin_client
+    user_factory(vk_id=111_112, name="Role Filter Student", role_name="ученик")
+    user_factory(vk_id=111_113, name="Role Filter Curator", role_name="куратор")
+
+    resp = client.get("/cabinet/superadmin/users?role_rank=2")
+
+    assert resp.status_code == 200
+    assert "Role Filter Curator" in resp.text
+    assert "Role Filter Student" not in resp.text
 
 
 # ---------------------------------------------------------------------------

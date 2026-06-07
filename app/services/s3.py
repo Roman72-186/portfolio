@@ -90,10 +90,24 @@ def s3_path_feedback(work_id: int, filename: str) -> str:
     return f"feedback/{work_id}/{rnd}.{ext}"
 
 
+def s3_path_curator_report(curator_id: int, filename: str) -> str:
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "mp4"
+    rnd = uuid.uuid4().hex[:12]
+    ym = datetime.now(timezone.utc).strftime("%Y-%m")
+    return f"curator-reports/{curator_id}/{ym}/{rnd}.{ext}"
+
+
 def s3_public_url(s3_path: str) -> str:
     """Construct the public URL for an S3 object."""
     endpoint = settings.s3_endpoint.rstrip("/")
     return f"{endpoint}/{settings.s3_bucket}/{s3_path}"
+
+
+def s3_path_from_public_url(url: str) -> str | None:
+    prefix = s3_public_url("")
+    if url.startswith(prefix):
+        return url[len(prefix):]
+    return None
 
 
 def move_s3_object(old_path: str, new_path: str) -> bool:

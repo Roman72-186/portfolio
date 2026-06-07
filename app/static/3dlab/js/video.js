@@ -369,6 +369,9 @@ const previewImg = document.createElement("img");
 previewImg.src = srcUrl.replace(/\.mp4(\?.*)?$/i, ".jpg$1");
 
 previewImg.alt = `Видео ${idx + 1}`;
+previewImg.addEventListener("error", () => {
+  previewImg.style.display = "none";
+});
 
 previewImg.style.cssText = `
   width: 100%;

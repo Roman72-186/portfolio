@@ -16,7 +16,7 @@ except ImportError as exc:
 
 LOCAL_DIR = Path(__file__).resolve().parent.parent
 REMOTE_DIR = os.getenv("PORTFOLIO_REMOTE_DIR", "/home/portfolio-saas")
-COMPOSE_FILE = os.getenv("PORTFOLIO_COMPOSE_FILE", "docker-compose.yml")
+COMPOSE_FILE = os.getenv("PORTFOLIO_COMPOSE_FILE", "docker-compose.prod-ru.yml")
 
 SKIP = {".git", "__pycache__", ".env", "tests", "venv", ".venv", "node_modules"}
 
@@ -41,7 +41,14 @@ def connect_client() -> "paramiko.SSHClient":
         )
 
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.load_system_host_keys()
+    known_hosts = os.getenv("PORTFOLIO_SSH_KNOWN_HOSTS")
+    if known_hosts:
+        client.load_host_keys(os.path.expanduser(known_hosts))
+    if os.getenv("PORTFOLIO_SSH_ALLOW_UNKNOWN_HOST") == "1":
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    else:
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
     connect_kwargs = {
         "hostname": host,
@@ -173,7 +180,7 @@ def main():
     # Сброс Redis-кэша после деплоя (сессии не трогаем — только app-кэш)
     print("\nFlushing Redis cache...")
     stdin, stdout, stderr = client.exec_command(
-        f"cd {REMOTE_DIR} && docker compose -f {COMPOSE_FILE} exec -T redis redis-cli FLUSHDB 2>&1",
+        f"cd {REMOTE_DIR} && docker compose -f {COMPOSE_FILE} exec -T redis sh -c 'redis-cli -a \"$REDIS_PASSWORD\" FLUSHDB' 2>&1",
         timeout=30,
     )
     redis_out = stdout.read().decode().strip()

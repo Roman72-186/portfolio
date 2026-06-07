@@ -2,8 +2,9 @@ import logging
 import secrets
 from datetime import datetime, timezone
 from typing import Annotated
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Request, Depends, Form
+from fastapi import APIRouter, Request, Depends, Form, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 import bcrypt as _bcrypt_lib
 from sqlalchemy import func
@@ -69,6 +70,7 @@ def _render_admin_users(
     db: DBSession,
     *,
     q: str = "",
+    role_rank: str = "",
     issued_link_user_id: int | None = None,
     issued_link: str | None = None,
     issued_link_expires_at=None,
@@ -76,7 +78,18 @@ def _render_admin_users(
     new_staff_creds: dict | None = None,
     bulk_result: dict | None = None,
 ):
-    all_users = db.query(User).order_by(User.created_at.desc()).limit(1000).all()
+    role_rank_clean = role_rank.strip()
+    role_rank_int: int | None = None
+    if role_rank_clean:
+        try:
+            role_rank_int = int(role_rank_clean)
+        except ValueError:
+            role_rank_clean = ""
+
+    query = db.query(User).outerjoin(Role, User.role_id == Role.id)
+    if role_rank_int is not None:
+        query = query.filter(Role.rank == role_rank_int)
+    all_users = query.order_by(User.created_at.desc()).limit(1000).all()
 
     q_clean = q.strip().lstrip("@").lower()
     if q_clean:
@@ -103,6 +116,7 @@ def _render_admin_users(
         "user": user,
         "users": users,
         "q": q,
+        "role_rank": role_rank_clean,
         "tariffs": TARIFF_LABELS,
         "tariff_display": TARIFF_DISPLAY,
         "roles": roles,
@@ -123,8 +137,15 @@ def admin_users(
     user: Annotated[dict, Depends(require_admin)],
     db: Annotated[DBSession, Depends(get_db)],
     q: str = "",
+    role_rank: str = Query(default=""),
 ):
-    return _render_admin_users(request, user, db, q=q)
+    params = {}
+    if q:
+        params["q"] = q
+    if role_rank:
+        params["role_rank"] = role_rank
+    suffix = f"?{urlencode(params)}" if params else ""
+    return RedirectResponse(f"/cabinet/superadmin/users{suffix}", status_code=302)
 
 
 def _build_migration_path(work: Work, vk_id: int, new_tariff: str) -> str | None:

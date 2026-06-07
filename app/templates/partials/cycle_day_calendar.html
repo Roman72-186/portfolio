@@ -1,0 +1,44 @@
+{#
+  Server-rendered дневной календарь Цикла Пробника/Отработки (auto-init).
+
+  Использует библиотеку partials/cycle_calendar_lib.html (CSS + window.CYCCAL),
+  рендерит корневой <div> и сразу вызывает CYCCAL.init с данными из шаблона.
+
+  Используется во вкладке Пробники (cabinet_cycle_calendar.html) и в
+  Портфолио ученика → Пробные экзамены (cabinet_portfolio.html).
+
+  Ожидает переменные (задать через {% set %} перед include):
+    cal_key            — уникальный ключ инстанса (строка), напр. work_type или "mock-portfolio"
+    cal_root_id        — id корневого <div> для рендера
+    cal_subjects       — список предметов
+    cal_works_by_subject — dict {subject: [work, ...]}
+    cal_months         — список названий месяцев
+    cal_current_year   — текущий год (int)
+    cal_upload_label   — (опц.) подпись для пустого состояния
+    cal_show_feedback  — (опц., bool) показывать legacy-блок ОС куратора (по умолчанию false)
+    cal_show_stages    — (опц., bool) показывать этапы под финалкой (по умолчанию true;
+                         в Портфолио → Пробные экзамены передаётся false)
+    cal_empty_text     — (опц.) текст пустого состояния всего раздела
+#}
+{% set cal_upload_label = cal_upload_label | default("") %}
+{% set cal_show_feedback = cal_show_feedback | default(false) %}
+{% set cal_show_stages = cal_show_stages | default(true) %}
+{% set cal_empty_text = cal_empty_text | default("Работ пока нет.") %}
+
+{% include "partials/cycle_calendar_lib.html" %}
+
+<div class="subj-stack" id="{{ cal_root_id }}"></div>
+
+<script>
+CYCCAL.init({
+    key: {{ cal_key | tojson }},
+    rootId: {{ cal_root_id | tojson }},
+    subjects: {{ cal_subjects | tojson }},
+    worksBySubject: {{ cal_works_by_subject | tojson }},
+    months: {{ cal_months | tojson }},
+    currentYear: {{ cal_current_year }},
+    emptyText: {{ cal_empty_text | tojson }},
+    showFeedback: {{ 'true' if cal_show_feedback else 'false' }},
+    showStages: {{ 'true' if cal_show_stages else 'false' }}
+});
+</script>

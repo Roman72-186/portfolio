@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Видео-отчёты{% endblock %}
+{% block extra_styles %}
+<style>
+.reports-page { max-width: 720px; margin: 0 auto; }
+
+.reports-head { margin: 18px 0 20px; }
+.reports-title { font-size: 22px; font-weight: 900; letter-spacing: -0.4px; color: var(--text); }
+.reports-sub { font-size: 13px; color: var(--dim); margin-top: 4px; line-height: 1.5; }
+
+.report-card {
+    background: var(--surface); border: 1.5px solid var(--line);
+    border-radius: 16px; padding: 22px; margin-bottom: 22px;
+}
+
+.ok-banner {
+    display: flex; align-items: center; gap: 10px;
+    background: #ECFDF5; border: 1.5px solid #A7F3D0; color: #047857;
+    border-radius: 12px; padding: 12px 16px; margin-bottom: 18px;
+    font-size: 14px; font-weight: 700;
+}
+.err-banner {
+    display: flex; align-items: center; gap: 10px;
+    background: #FEF2F2; border: 1.5px solid #FECACA; color: #B91C1C;
+    border-radius: 12px; padding: 12px 16px; margin-bottom: 18px;
+    font-size: 14px; font-weight: 700;
+}
+
+.field-label { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 7px; display: block; }
+.field-hint { font-size: 12px; color: var(--dim); margin-top: 5px; line-height: 1.45; }
+
+.report-input, .report-file, .report-textarea {
+    width: 100%; box-sizing: border-box;
+    background: var(--bg); border: 1.5px solid var(--line);
+    border-radius: var(--r-sm); padding: 11px 14px;
+    font-size: 14px; color: var(--text); font-family: inherit;
+    outline: none; transition: border-color 0.18s;
+}
+.report-input:focus, .report-file:focus, .report-textarea:focus { border-color: var(--blue); }
+.report-file { cursor: pointer; }
+.report-textarea { resize: vertical; min-height: 96px; line-height: 1.5; }
+.report-field + .report-field { margin-top: 16px; }
+
+.report-submit {
+    margin-top: 20px;
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--blue); color: #fff; border: none;
+    border-radius: var(--r-xl); padding: 11px 24px;
+    font-size: 14px; font-weight: 800; cursor: pointer; font-family: inherit;
+    transition: filter 0.18s, transform 0.12s;
+}
+.report-submit:hover { filter: brightness(1.05); }
+.report-submit:active { transform: translateY(1px); }
+
+.history-title { font-size: 15px; font-weight: 800; color: var(--text); margin: 6px 0 14px; }
+.history-item {
+    border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 16px; margin-bottom: 12px; background: var(--surface);
+}
+.history-date { font-size: 12px; color: var(--dim); font-weight: 700; margin-bottom: 6px; }
+.history-text { font-size: 14px; color: var(--text); line-height: 1.5; white-space: pre-wrap; margin-bottom: 8px; }
+.history-video { display: block; width: 100%; max-height: 360px; border-radius: 10px; background: #000; }
+.history-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.delete-report-btn {
+    border: 1.5px solid #FECACA; background: #FEF2F2; color: #B91C1C;
+    border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 800;
+    cursor: pointer; font-family: inherit;
+}
+.delete-report-btn:hover { background: #FEE2E2; }
+.history-empty { font-size: 14px; color: var(--dim); padding: 8px 2px; }
+</style>
+{% endblock %}
+{% block content %}
+{% include "_curator_nav.html" %}
+
+<div class="reports-page">
+
+    <div class="reports-head">
+        <div class="reports-title">🎬 Видео-отчёты{% if is_staff %} кураторов{% endif %}</div>
+        <div class="reports-sub">
+            {% if is_staff %}
+            Все видео-отчёты, присланные кураторами. Новые также приходят вам в уведомлениях.
+            {% else %}
+            Выберите видео с компьютера или телефона либо снимите его сразу через камеру.
+            Отчёт загрузится напрямую и уйдёт уведомлением админам и руководителю.
+            {% endif %}
+        </div>
+    </div>
+
+    {% if ok %}
+    <div class="ok-banner">✓ Отчёт отправлен админам и руководителю.</div>
+    {% endif %}
+    {% if deleted %}
+    <div class="ok-banner">✓ Видео-отчёт удалён.</div>
+    {% endif %}
+    {% if err %}
+    <div class="err-banner">⚠ {{ err }}</div>
+    {% endif %}
+
+    {% if can_submit %}
+    <div class="report-card">
+        <form method="post" action="/cabinet/curator/reports" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+
+            <div class="report-field">
+                <label class="field-label" for="video">Видео-отчёт</label>
+                <input class="report-file" type="file" id="video" name="video" accept="video/*" required>
+                <div class="field-hint">Можно выбрать готовый видео-файл или снять видео сразу с телефона. Ссылки не нужны.</div>
+            </div>
+
+            <div class="report-field">
+                <label class="field-label" for="text">Комментарий (необязательно)</label>
+                <textarea class="report-textarea" id="text" name="text"
+                          maxlength="2000" placeholder="Кратко: о чём отчёт, на что обратить внимание…"></textarea>
+            </div>
+
+            <button type="submit" class="report-submit">Отправить видео-отчёт</button>
+        </form>
+    </div>
+    {% endif %}
+
+    <div class="history-title">{% if is_staff %}Присланные отчёты{% else %}История отправленных отчётов{% endif %}</div>
+    {% if history %}
+        {% for r in history %}
+        <div class="history-item">
+            <div class="history-date">{% if r.curator_name %}{{ r.curator_name }} · {% endif %}{{ r.date_label }}</div>
+            {% if r.text %}<div class="history-text">{{ r.text }}</div>{% endif %}
+            <video class="history-video" controls preload="metadata" src="{{ r.video_url }}"></video>
+            {% if is_staff %}
+            <div class="history-actions">
+                <form method="post" action="/cabinet/curator/reports/{{ r.id }}/delete"
+                      onsubmit="return confirm('Удалить видео-отчёт?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    <button type="submit" class="delete-report-btn">Удалить</button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="history-empty">Пока нет {% if is_staff %}присланных{% else %}отправленных{% endif %} отчётов.</div>
+    {% endif %}
+
+</div>
+{% endblock %}
