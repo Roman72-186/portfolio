@@ -1,4 +1,4 @@
-<style>
+﻿<style>
 .bottom-nav {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
     background: var(--card); border-top: 1px solid var(--border);
@@ -27,6 +27,32 @@
 }
 </style>
 
+{% macro student_nav_icon(icon, size) -%}
+    <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        {% if icon == 'profile' %}
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+        {% elif icon == 'portfolio' %}
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
+        {% elif icon == 'cycle' %}
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        {% elif icon == 'mock' %}
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+        {% elif icon == '3dlab' %}
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
+        {% endif %}
+    </svg>
+{%- endmacro %}
+
+{% set nav_role_rank = user.role_rank|default("") %}
+{% set nav_role_name = user.role_name|default("") %}
+{% if user.role is defined %}
+    {% set nav_role_rank = nav_role_rank|default(user.role.rank|default(""), true) %}
+    {% set nav_role_name = nav_role_name|default(user.role.name|default(""), true) %}
+{% endif %}
+{% set show_scores_nav = false %}
+{% set student_items = student_nav_items() %}
+
 <!-- ── Desktop sidebar (hidden on mobile via .app-sidebar { display:none } in base.html) ── -->
 <aside class="app-sidebar">
     <div class="desk-brand">
@@ -36,63 +62,15 @@
     </div>
 
     <nav class="desk-nav" aria-label="Главное меню">
-        <a href="/cabinet" class="desk-nav-item {% if active_tab == '' %}desk-nav-active{% endif %}"
-           {% if active_tab == '' %}aria-current="page"{% endif %}>
+        {% for item in student_items %}
+        <a href="{{ item.desktop_href }}" class="desk-nav-item {% if active_tab == item.key %}desk-nav-active{% endif %}"
+           {% if active_tab == item.key %}aria-current="page"{% endif %}>
             <span class="desk-nav-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-                </svg>
+                {{ student_nav_icon(item.icon, 20) }}
             </span>
-            <span>Кабинет</span>
+            <span>{{ item.desktop_label }}</span>
         </a>
-        <a href="/cabinet/portfolio" class="desk-nav-item {% if active_tab == 'portfolio' %}desk-nav-active{% endif %}"
-           {% if active_tab == 'portfolio' %}aria-current="page"{% endif %}>
-            <span class="desk-nav-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
-                </svg>
-            </span>
-            <span>Портфолио</span>
-        </a>
-        <a href="/upload/mock-exam" class="desk-nav-item {% if active_tab == 'mock' %}desk-nav-active{% endif %}"
-           {% if active_tab == 'mock' %}aria-current="page"{% endif %}>
-            <span class="desk-nav-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                </svg>
-            </span>
-            <span>Пробник</span>
-        </a>
-        <a href="/upload/retake" class="desk-nav-item {% if active_tab == 'retake' %}desk-nav-active{% endif %}"
-           {% if active_tab == 'retake' %}aria-current="page"{% endif %}>
-            <span class="desk-nav-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                </svg>
-            </span>
-            <span>Отработка</span>
-        </a>
-        <a href="/cabinet/scores" class="desk-nav-item {% if active_tab == 'scores' %}desk-nav-active{% endif %}"
-           {% if active_tab == 'scores' %}aria-current="page"{% endif %}>
-            <span class="desk-nav-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
-                    <line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/>
-                </svg>
-            </span>
-            <span>Баллы</span>
-        </a>
-        <a href="/3dlab" class="desk-nav-item {% if active_tab == '3dlab' %}desk-nav-active{% endif %}"
-           {% if active_tab == '3dlab' %}aria-current="page"{% endif %}>
-            <span class="desk-nav-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
-                </svg>
-            </span>
-            <span>3D Лаб</span>
-        </a>
+        {% endfor %}
     </nav>
 
     <div class="desk-nav-footer">
@@ -111,63 +89,15 @@
 <!-- ── Mobile bottom nav ── -->
 <div id="nav-loader"></div>
 <nav class="bottom-nav" aria-label="Главное меню">
-    <a href="/cabinet/student" class="nav-btn {% if active_tab == '' %}nav-active{% endif %}"
-       {% if active_tab == '' %}aria-current="page"{% endif %} aria-label="Кабинет">
+    {% for item in student_items %}
+    <a href="{{ item.mobile_href }}" class="nav-btn {% if active_tab == item.key %}nav-active{% endif %}"
+       {% if active_tab == item.key %}aria-current="page"{% endif %} aria-label="{{ item.aria_label }}">
         <span class="nav-btn-icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-            </svg>
+            {{ student_nav_icon(item.icon, 22) }}
         </span>
-        <span>Кабинет</span>
+        <span>{{ item.mobile_label }}</span>
     </a>
-    <a href="/cabinet/portfolio" class="nav-btn {% if active_tab == 'portfolio' %}nav-active{% endif %}"
-       {% if active_tab == 'portfolio' %}aria-current="page"{% endif %} aria-label="Портфолио">
-        <span class="nav-btn-icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
-            </svg>
-        </span>
-        <span>Портфолио</span>
-    </a>
-    <a href="/upload/mock-exam" class="nav-btn {% if active_tab == 'mock' %}nav-active{% endif %}"
-       {% if active_tab == 'mock' %}aria-current="page"{% endif %} aria-label="Пробник">
-        <span class="nav-btn-icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-            </svg>
-        </span>
-        <span>Пробник</span>
-    </a>
-    <a href="/upload/retake" class="nav-btn {% if active_tab == 'retake' %}nav-active{% endif %}"
-       {% if active_tab == 'retake' %}aria-current="page"{% endif %} aria-label="Отработка">
-        <span class="nav-btn-icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-            </svg>
-        </span>
-        <span>Отработка</span>
-    </a>
-    <a href="/cabinet/scores" class="nav-btn {% if active_tab == 'scores' %}nav-active{% endif %}"
-       {% if active_tab == 'scores' %}aria-current="page"{% endif %} aria-label="Баллы">
-        <span class="nav-btn-icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
-                <line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/>
-            </svg>
-        </span>
-        <span>Баллы</span>
-    </a>
-    <a href="/3dlab" class="nav-btn {% if active_tab == '3dlab' %}nav-active{% endif %}"
-       {% if active_tab == '3dlab' %}aria-current="page"{% endif %} aria-label="3D Лаб">
-        <span class="nav-btn-icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
-            </svg>
-        </span>
-        <span>3D Лаб</span>
-    </a>
+    {% endfor %}
 </nav>
 <script>
 (function () {

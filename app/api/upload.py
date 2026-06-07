@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import mimetypes
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Request, Depends, UploadFile, File, Form, BackgroundTasks, HTTPException
@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session
 from app.constants import MONTHS, MOCK_SUBJECTS, FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM, FEATURE_RETAKE
-from app.services.feature_periods import get_active_period, is_feature_available
-from app.services.tz import msk_midnight, today_msk
+from app.services.feature_periods import is_feature_available
+from app.services.tz import today_msk
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
 from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
@@ -23,6 +23,11 @@ from app.models.user import User
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.n8n import send_photo_to_n8n
 from app.services import s3 as s3_service
+from app.services.upload_validation import (
+    MAX_UPLOAD_FILE_SIZE,
+    MAX_UPLOAD_FILES,
+    read_image_uploads,
+)
 from app.services.utils import compress_image
 from app.tmpl import templates, format_ticket_description
 
@@ -30,38 +35,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-MAX_SIZE = 10 * 1024 * 1024  # 10 MB per file
-MAX_FILES = 10
-
-
-_IMAGE_EXTENSIONS = {
-    ".jpg", ".jpeg", ".jpe", ".jfif",
-    ".png", ".apng",
-    ".webp",
-    ".heic", ".heif", ".avif",
-    ".gif", ".bmp", ".tif", ".tiff",
-    ".svg",
-}
-
-
-def _is_allowed_image(content_type: str | None, filename: str | None) -> bool:
-    """Broad image acceptance: любой image/*, octet-stream/пустой MIME с
-    image-расширением, либо неизвестный MIME с image-расширением.
-    Отклоняем явные не-картинки (application/pdf, video/*, audio/*, text/*)."""
-    ct = (content_type or "").lower()
-    ext = ("." + filename.rsplit(".", 1)[-1].lower()) if filename and "." in filename else ""
-
-    if ct.startswith("image/"):
-        return True
-    if ct.startswith(("video/", "audio/", "text/", "application/pdf", "application/zip")):
-        return False
-    # octet-stream / binary / пустой / unknown application → принимаем если расширение image-like
-    if ext in _IMAGE_EXTENSIONS:
-        return True
-    # Mobile quirk: некоторые браузеры шлют octet-stream — принимаем только image-расширения
-    if ct in ("application/octet-stream", "binary/octet-stream", "") and ext in _IMAGE_EXTENSIONS:
-        return True
-    return False
+MAX_SIZE = MAX_UPLOAD_FILE_SIZE
+MAX_FILES = MAX_UPLOAD_FILES
 
 
 def _now_year() -> int:
@@ -108,44 +83,39 @@ def _serialize_attempt(a: MockExamAttempt) -> dict:
     }
 
 
-def _submitted_mock_subjects_in_active_period(db: DBSession, user_id: int) -> set[str]:
-    period = get_active_period(db, FEATURE_MOCK_EXAM)
-    if not period:
-        return set()
-    period_start = msk_midnight(period.start_date)
-    period_end = msk_midnight(period.end_date + timedelta(days=1))
-    rows = (
-        db.query(Work.subject)
-        .filter(
-            Work.user_id == user_id,
-            Work.work_type == WORK_TYPE_MOCK_EXAM,
-            Work.status == "success",
-            Work.score.is_(None),
-            Work.created_at >= period_start,
-            Work.created_at < period_end,
-            Work.subject.in_(MOCK_SUBJECTS),
-        )
-        .distinct()
-        .all()
-    )
-    submitted_subjects = {row[0] for row in rows if row[0]}
-    if not submitted_subjects:
-        return set()
+def _locked_mock_subjects(db: DBSession, user_id: int) -> dict[str, str]:
+    """Предметы, по которым сдача Пробника закрыта, → причина блокировки.
 
-    locks = (
-        db.query(MockExamLock)
-        .filter(
-            MockExamLock.user_id == user_id,
-            MockExamLock.subject.in_(submitted_subjects),
+    Правило «одна сдача на билет» (source of truth — `ExamCycle.ticket_id`):
+    пробник по предмету закрыт от первой сдачи и до выдачи СЛЕДУЮЩЕГО билета.
+    Резолвер активного билета общий с бэкенд-блоком (`get_active_ticket`), иначе
+    кнопка и 409 рассинхронятся (см. cycle_upload.upload_probnik_final).
+
+    Возвращает {subject: reason}, reason ∈ {"waiting", "scored"}:
+      waiting — цикл открыт, работа ждёт обратной связи;
+      scored  — цикл закрыт (оценён), ждём следующий билет.
+    """
+    from app.services.exam_cycle import get_active_ticket
+    from app.models.exam_cycle import ExamCycle
+
+    reasons: dict[str, str] = {}
+    for subject in MOCK_SUBJECTS:
+        ticket = get_active_ticket(db, user_id, subject)
+        if not ticket:
+            continue
+        cycle = (
+            db.query(ExamCycle)
+            .filter(
+                ExamCycle.user_id == user_id,
+                ExamCycle.subject == subject,
+                ExamCycle.ticket_id == ticket.id,
+            )
+            .order_by(ExamCycle.id.desc())
+            .first()
         )
-        .all()
-    )
-    lock_by_subject = {lock.subject: lock for lock in locks}
-    return {
-        subject
-        for subject in submitted_subjects
-        if not (subject in lock_by_subject and lock_by_subject[subject].is_locked is False)
-    }
+        if cycle is not None:
+            reasons[subject] = "scored" if cycle.closed_at is not None else "waiting"
+    return reasons
 
 
 def _render_mock(request, user, db, *, error=None, success=False, success_count=0, selected_subject="",
@@ -153,9 +123,11 @@ def _render_mock(request, user, db, *, error=None, success=False, success_count=
     now = datetime.now(timezone.utc)
     month_name = MONTHS[now.month - 1].capitalize()
     current_date = f"{now.day} {month_name} {now.year}"
-    # Old MockExamLock rows are informational for curator/admin review queues.
-    # The student UI should only lock subjects submitted in the current active period.
-    locked_subjects = _submitted_mock_subjects_in_active_period(db, user["user_id"])
+    # Блокировка кнопки предмета — по правилу «одна сдача на билет»: предмет закрыт,
+    # пока по текущему билету уже есть цикл (открытый или закрытый). reason нужен
+    # шаблону, чтобы показать верную подсказку (ждёт ОС / оценено).
+    locked_reasons = _locked_mock_subjects(db, user["user_id"])
+    locked_subjects = set(locked_reasons)
 
     today = today_msk()
     ticket_rows = (
@@ -192,6 +164,7 @@ def _render_mock(request, user, db, *, error=None, success=False, success_count=
         "subjects": MOCK_SUBJECTS,
         "selected_subject": selected_subject,
         "locked_subjects": locked_subjects,
+        "locked_reasons": locked_reasons,
         "subjects_with_tickets": subjects_with_tickets,
         "error": error,
         "success": success,
@@ -285,11 +258,13 @@ async def _send_to_n8n_background(
                     filename=filename,
                     photo_type=work_type,
                     s3_path=s3_path,
+                    work_id=work_id,
                 )
-                if result.get("file_id"):
-                    _update_work(work_id, drive_file_id=result["file_id"], drive_status="synced")
+                drive_file_id = result.get("file_id") or result.get("drive_file_id")
+                if drive_file_id:
+                    _update_work(work_id, drive_file_id=drive_file_id, drive_status="synced")
                     return
-                last_error = result.get("error", "n8n returned no file_id")
+                last_error = result.get("error", "n8n returned no file_id/drive_file_id")
             except Exception as exc:
                 last_error = exc
         # All retries exhausted
@@ -499,19 +474,9 @@ async def upload_photos(
         month = _default_month()
     elif month not in MONTHS:
         return _err("Выберите месяц")
-    if not photos or (len(photos) == 1 and not photos[0].filename):
-        return _err("Выберите хотя бы одно фото")
-    if len(photos) > MAX_FILES:
-        return _err(f"Максимум {MAX_FILES} фото за раз")
-
-    files_data = []
-    for photo in photos:
-        if not _is_allowed_image(photo.content_type, photo.filename):
-            return _err(f"Файл «{photo.filename}» — неподдерживаемый формат. Допустимы: JPG, PNG, WebP")
-        photo_bytes = await photo.read()
-        if len(photo_bytes) > MAX_SIZE:
-            return _err(f"Файл «{photo.filename}» слишком большой (макс. 10 МБ)")
-        files_data.append((photo.filename or "photo.jpg", photo_bytes))
+    files_data, err = await _validate_photos(photos)
+    if err:
+        return _err(err)
 
     success_count, fail_count, last_error = await _process_uploads(
         background_tasks=background_tasks,
@@ -541,19 +506,12 @@ async def upload_photos(
 
 async def _validate_photos(photos: list[UploadFile]) -> tuple[list[tuple[str, bytes]], str | None]:
     """Read & validate uploaded files. Returns (files_data, error_msg or None)."""
-    if not photos or (len(photos) == 1 and not photos[0].filename):
-        return [], "Выберите хотя бы одно фото"
-    if len(photos) > MAX_FILES:
-        return [], f"Максимум {MAX_FILES} фото за раз"
-    files_data: list[tuple[str, bytes]] = []
-    for photo in photos:
-        if not _is_allowed_image(photo.content_type, photo.filename):
-            return [], f"Файл «{photo.filename}» — неподдерживаемый формат. Допустимы: JPG, PNG, WebP"
-        photo_bytes = await photo.read()
-        if len(photo_bytes) > MAX_SIZE:
-            return [], f"Файл «{photo.filename}» слишком большой (макс. 10 МБ)"
-        files_data.append((photo.filename or "photo.jpg", photo_bytes))
-    return files_data, None
+    return await read_image_uploads(
+        photos,
+        max_files=MAX_FILES,
+        max_size=MAX_SIZE,
+        unsupported_format_error="Файл «{filename}» — неподдерживаемый формат. Допустимы: JPG, PNG, WebP",
+    )
 
 
 @router.post("/upload/api")
@@ -925,7 +883,7 @@ async def upload_mock_exam(
 
     now = datetime.now(timezone.utc)
     today = today_msk()
-    has_active_ticket = (
+    active_ticket = (
         db.query(ExamTicket)
         .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
         .filter(
@@ -944,29 +902,24 @@ async def upload_mock_exam(
         )
         .first()
     )
-    if not has_active_ticket:
+    if not active_ticket:
         return _err(f"Нет активного билета по предмету «{subject}»")
+    from app.services.exam_cycle import has_cycle_for_ticket
+    if has_cycle_for_ticket(db, user["user_id"], subject, active_ticket.id):
+        return _err(
+            f"Пробник по «{subject}» уже сдан в текущем цикле. Дождись обратной связи куратора."
+        )
     month = MONTHS[now.month - 1]
 
-    if not photos or (len(photos) == 1 and not photos[0].filename):
-        return _err("Выберите хотя бы одно фото")
-    if len(photos) > MAX_FILES:
-        return _err(f"Максимум {MAX_FILES} фото за раз")
-
-    files_data = []
-    for photo in photos:
-        if not _is_allowed_image(photo.content_type, photo.filename):
-            return _err(f"Файл «{photo.filename}» — неподдерживаемый формат. Допустимы: JPG, PNG, WebP")
-        photo_bytes = await photo.read()
-        if len(photo_bytes) > MAX_SIZE:
-            return _err(f"Файл «{photo.filename}» слишком большой (макс. 10 МБ)")
-        files_data.append((photo.filename or "photo.jpg", photo_bytes))
+    files_data, err = await _validate_photos(photos)
+    if err:
+        return _err(err)
 
     success_count, fail_count, last_error = await _process_uploads(
         background_tasks=background_tasks,
         db=db, user=user, files_data=files_data, month=month, work_type=WORK_TYPE_MOCK_EXAM,
         subject=subject,
-        ticket_id=has_active_ticket.id if has_active_ticket else None,
+        ticket_id=active_ticket.id,
     )
 
     error = None
@@ -1048,19 +1001,9 @@ async def upload_retake(
     now = datetime.now(timezone.utc)
     month = MONTHS[now.month - 1]
 
-    if not photos or (len(photos) == 1 and not photos[0].filename):
-        return _err("Выберите хотя бы одно фото")
-    if len(photos) > MAX_FILES:
-        return _err(f"Максимум {MAX_FILES} фото за раз")
-
-    files_data = []
-    for photo in photos:
-        if not _is_allowed_image(photo.content_type, photo.filename):
-            return _err(f"Файл «{photo.filename}» — неподдерживаемый формат. Допустимы: JPG, PNG, WebP")
-        photo_bytes = await photo.read()
-        if len(photo_bytes) > MAX_SIZE:
-            return _err(f"Файл «{photo.filename}» слишком большой (макс. 10 МБ)")
-        files_data.append((photo.filename or "photo.jpg", photo_bytes))
+    files_data, err = await _validate_photos(photos)
+    if err:
+        return _err(err)
 
     success_count, fail_count, last_error = await _process_uploads(
         background_tasks=background_tasks,

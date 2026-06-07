@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.config import settings
 from app.csrf import generate_csrf_token
+from app.services.navigation import curator_nav_items, staff_nav_items, student_nav_items
 
 templates = Jinja2Templates(directory="app/templates")
 
@@ -18,6 +19,9 @@ def _csrf_token_for_request(request) -> str:
 # Make csrf_token(request) available in every template automatically
 templates.env.globals["csrf_token"] = _csrf_token_for_request
 templates.env.globals["settings"] = settings
+templates.env.globals["curator_nav_items"] = curator_nav_items
+templates.env.globals["staff_nav_items"] = staff_nav_items
+templates.env.globals["student_nav_items"] = student_nav_items
 
 
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)

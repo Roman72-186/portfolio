@@ -1,0 +1,81 @@
+from app.services.navigation import curator_nav_items, staff_nav_items, student_nav_items
+
+
+def test_curator_nav_items_keep_current_contract():
+    items = curator_nav_items()
+
+    assert [(item.key, item.href, item.label) for item in items] == [
+        ("students", "/cabinet/students", "Ученики"),
+        ("reports", "/cabinet/curator/reports", "Отчёты"),
+        ("statistics", "/cabinet/students?tab=statistics", "Статистика"),
+    ]
+
+
+def test_student_nav_items_keep_current_contract():
+    items = student_nav_items()
+
+    assert [
+        (
+            item.key,
+            item.desktop_href,
+            item.mobile_href,
+            item.desktop_label,
+            item.mobile_label,
+            item.aria_label,
+        )
+        for item in items
+    ] == [
+        ("", "/cabinet", "/cabinet/student", "Кабинет", "Кабинет", "Кабинет"),
+        ("portfolio", "/cabinet/portfolio", "/cabinet/portfolio", "Портфолио", "Портфолио", "Портфолио"),
+        ("cycle", "/cabinet/cycle", "/cabinet/cycle", "Цикл Пробника", "Цикл", "Цикл Пробника"),
+        ("mock", "/upload/mock-exam", "/upload/mock-exam", "Пробник", "Пробник", "Пробник"),
+        ("3dlab", "/3dlab", "/3dlab", "3D Лаб", "3D Лаб", "3D Лаб"),
+    ]
+
+
+def test_staff_nav_items_keep_admin_contract():
+    items = staff_nav_items(role_rank=4)
+
+    assert [
+        (
+            item.key,
+            item.href,
+            item.sidebar_label,
+            item.pill_label,
+            item.aria_label,
+            item.tooltip,
+        )
+        for item in items
+    ] == [
+        ("dashboard", "/cabinet", "Кабинет", "Кабинет", "Кабинет", "Кабинет"),
+        ("students", "/cabinet/students", "Ученики", "Ученики", "Ученики", "Ученики"),
+        ("cycles", "/cabinet/staff/cycles", "Цикл Пробника", "Цикл", "Цикл Пробника", "Цикл Пробника"),
+        ("3dlab", "/3dlab", "3D Лаб", "3D Лаб", "3D Лаб", "3D Лаборатория"),
+        (
+            "reports",
+            "/cabinet/curator/reports",
+            "Видео-отчёты",
+            "Отчёты",
+            "Видео-отчёты",
+            "Видео-отчёты кураторов",
+        ),
+    ]
+
+
+def test_staff_nav_items_keep_rank_specific_visibility_contract():
+    rank_3_items = staff_nav_items(role_rank=3)
+    rank_4_items = staff_nav_items(role_rank=4)
+    rank_5_items = staff_nav_items(role_rank=5)
+
+    assert [item.key for item in rank_3_items] == [
+        "dashboard",
+        "students",
+        "mock_check",
+        "cycles",
+        "3dlab",
+    ]
+    assert "mock_check" not in [item.key for item in rank_4_items]
+    assert "mock_check" not in [item.key for item in rank_5_items]
+    assert "reports" not in [item.key for item in rank_3_items]
+    assert "reports" in [item.key for item in rank_4_items]
+    assert "reports" in [item.key for item in rank_5_items]

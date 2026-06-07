@@ -1,0 +1,35 @@
+{% if user.role_rank == 2 %}
+<style>
+.curator-nav {
+    display: flex; align-items: center; gap: 6px;
+    padding: 10px 20px; flex-shrink: 0;
+    background: var(--surface); border-bottom: 1px solid var(--line);
+    overflow-x: auto; scrollbar-width: none;
+}
+.curator-nav::-webkit-scrollbar { display: none; }
+.curator-nav-link {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 16px; border-radius: var(--r-xl);
+    font-size: 13px; font-weight: 700; color: var(--dim);
+    border: 1.5px solid transparent; background: none;
+    transition: background 0.18s, color 0.18s, border-color 0.18s;
+    text-decoration: none; white-space: nowrap;
+}
+.curator-nav-link:hover { background: var(--surface-2); color: var(--text); opacity: 1; }
+.curator-nav-link.active {
+    background: var(--blue-soft); color: var(--blue);
+    border-color: var(--blue);
+}
+.curator-nav-link .nav-ico { font-size: 15px; line-height: 1; }
+@media (max-width: 640px) { .curator-nav { padding: 8px 12px; } }
+</style>
+{% set curator_items = curator_nav_items() %}
+<nav class="curator-nav" aria-label="Разделы куратора">
+    {% for item in curator_items %}
+    <a class="curator-nav-link {% if nav_active == item.key %}active{% endif %}" href="{{ item.href }}">
+        <span class="nav-ico">{{ item.icon }}</span> {{ item.label }}
+    </a>
+    {% endfor %}
+</nav>
+{% endif %}

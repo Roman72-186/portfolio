@@ -1,4 +1,20 @@
 {% set _p = request.url.path %}
+{% set _staff_items = staff_nav_items(user.role_rank) %}
+{% macro staff_nav_icon(icon, size) -%}
+    {%- if icon == "profile" -%}
+        <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    {%- elif icon == "students" -%}
+        <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    {%- elif icon == "mock" -%}
+        <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+    {%- elif icon == "cycle" -%}
+        <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    {%- elif icon == "3dlab" -%}
+        <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+    {%- elif icon == "reports" -%}
+        <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+    {%- endif -%}
+{%- endmacro %}
 <aside class="staff-aside">
     <div class="desk-brand">
         <img src="/static/img/logo.svg" alt="Логотип" width="36" height="36"
@@ -6,72 +22,16 @@
         <span class="desk-brand-name">Портфолио</span>
     </div>
     <nav class="desk-nav" aria-label="Меню персонала">
-        <a href="/cabinet"
-           class="desk-nav-item {% if _p == '/cabinet' or (_p.startswith('/cabinet') and not _p.startswith('/cabinet/students') and not _p.startswith('/cabinet/admin') and not _p.startswith('/cabinet/periods') and not _p.startswith('/cabinet/superadmin')) %}desk-nav-active{% endif %}"
-           {% if _p == '/cabinet' %}aria-current="page"{% endif %}>
+        {% for item in _staff_items %}
+        <a href="{{ item.href }}"
+           class="desk-nav-item {% if (item.key == 'dashboard' and (_p == '/cabinet' or (_p.startswith('/cabinet') and not _p.startswith('/cabinet/students') and not _p.startswith('/cabinet/admin') and not _p.startswith('/cabinet/periods') and not _p.startswith('/cabinet/superadmin')))) or (item.key == 'students' and _p.startswith('/cabinet/students')) or (item.key == 'mock_check' and _p.startswith('/cabinet/admin/mock-check')) or (item.key == 'cycles' and (_p.startswith('/cabinet/staff/cycle') or _p.startswith('/cabinet/curator/feedback') or _p.startswith('/cabinet/admin/feedback') or _p.startswith('/cabinet/superadmin/feedback'))) or (item.key == '3dlab' and _p.startswith('/3dlab')) or (item.key == 'reports' and _p.startswith('/cabinet/curator/reports')) %}desk-nav-active{% endif %}"
+           {% if (item.key == 'dashboard' and _p == '/cabinet') or (item.key == 'students' and _p.startswith('/cabinet/students')) or (item.key == 'mock_check' and _p.startswith('/cabinet/admin/mock-check')) or (item.key == 'cycles' and _p.startswith('/cabinet/staff/cycles')) or (item.key == '3dlab' and _p.startswith('/3dlab')) or (item.key == 'reports' and _p.startswith('/cabinet/curator/reports')) %}aria-current="page"{% endif %}>
             <span class="desk-nav-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                {{ staff_nav_icon(item.icon, 20) }}
             </span>
-            <span>Кабинет</span>
+            <span>{{ item.sidebar_label }}</span>
         </a>
-        <a href="/cabinet/students"
-           class="desk-nav-item {% if _p.startswith('/cabinet/students') %}desk-nav-active{% endif %}"
-           {% if _p.startswith('/cabinet/students') %}aria-current="page"{% endif %}>
-            <span class="desk-nav-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            </span>
-            <span>Ученики</span>
-        </a>
-        <a href="/cabinet/admin/mock-check"
-           class="desk-nav-item {% if _p.startswith('/cabinet/admin/mock-check') %}desk-nav-active{% endif %}"
-           {% if _p.startswith('/cabinet/admin/mock-check') %}aria-current="page"{% endif %}>
-            <span class="desk-nav-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-            </span>
-            <span>Пробники</span>
-        </a>
-        <a href="/cabinet/admin/retake-check"
-           class="desk-nav-item {% if _p.startswith('/cabinet/admin/retake-check') %}desk-nav-active{% endif %}"
-           {% if _p.startswith('/cabinet/admin/retake-check') %}aria-current="page"{% endif %}>
-            <span class="desk-nav-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-            </span>
-            <span>Отработки</span>
-        </a>
-        <a href="/cabinet/staff/cycles"
-           class="desk-nav-item {% if _p.startswith('/cabinet/staff/cycle') or _p.startswith('/cabinet/curator/feedback') or _p.startswith('/cabinet/admin/feedback') or _p.startswith('/cabinet/superadmin/feedback') %}desk-nav-active{% endif %}"
-           {% if _p.startswith('/cabinet/staff/cycles') %}aria-current="page"{% endif %}>
-            <span class="desk-nav-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            </span>
-            <span>Цикл Пробника</span>
-        </a>
-        <a href="/3dlab"
-           class="desk-nav-item {% if _p.startswith('/3dlab') %}desk-nav-active{% endif %}"
-           {% if _p.startswith('/3dlab') %}aria-current="page"{% endif %}>
-            <span class="desk-nav-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-            </span>
-            <span>3D Лаб</span>
-        </a>
-        {% if user.role_rank >= 4 %}
-        <a href="/cabinet/periods"
-           class="desk-nav-item {% if _p.startswith('/cabinet/periods') %}desk-nav-active{% endif %}"
-           {% if _p.startswith('/cabinet/periods') %}aria-current="page"{% endif %}>
-            <span class="desk-nav-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            </span>
-            <span>Периоды</span>
-        </a>
-        <a href="/admin/users"
-           class="desk-nav-item {% if _p.startswith('/admin/users') %}desk-nav-active{% endif %}"
-           {% if _p.startswith('/admin/users') %}aria-current="page"{% endif %}>
-            <span class="desk-nav-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/><line x1="18" y1="6" x2="22" y2="6"/><line x1="22" y1="4" x2="22" y2="8"/></svg>
-            </span>
-            <span>Пользователи</span>
-        </a>
-        {% endif %}
+        {% endfor %}
     </nav>
     <div class="desk-nav-footer">
         <a href="/auth/logout" class="desk-nav-item desk-nav-logout">
@@ -222,116 +182,16 @@
 
 <nav class="staff-pill-nav" aria-label="Меню персонала">
 
-    {# Кабинет #}
-    <a href="/cabinet"
-       class="spn-btn {% if _p == '/cabinet' or _p == '/cabinet/admin-panel' or _p.startswith('/cabinet/superadmin') and not _p.startswith('/cabinet/superadmin/stats') %}spn-active{% endif %}"
-       aria-label="Кабинет"
-       data-tooltip="Кабинет">
+    {% for item in _staff_items %}
+    <a href="{{ item.href }}"
+       class="spn-btn {% if (item.key == 'dashboard' and (_p == '/cabinet' or _p == '/cabinet/admin-panel' or (_p.startswith('/cabinet/superadmin') and not _p.startswith('/cabinet/superadmin/stats')))) or (item.key == 'students' and _p.startswith('/cabinet/students')) or (item.key == 'mock_check' and _p.startswith('/cabinet/admin/mock-check')) or (item.key == 'cycles' and (_p.startswith('/cabinet/staff/cycle') or _p.startswith('/cabinet/curator/feedback') or _p.startswith('/cabinet/admin/feedback') or _p.startswith('/cabinet/superadmin/feedback'))) or (item.key == '3dlab' and _p.startswith('/3dlab')) or (item.key == 'reports' and _p.startswith('/cabinet/curator/reports')) %}spn-active{% endif %}"
+       aria-label="{{ item.aria_label }}"
+       data-tooltip="{{ item.tooltip }}">
         <span class="spn-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-            </svg>
+            {{ staff_nav_icon(item.icon, 20) }}
         </span>
-        <span class="spn-label">Кабинет</span>
+        <span class="spn-label">{{ item.pill_label }}</span>
     </a>
-
-    {# Ученики #}
-    <a href="/cabinet/students"
-       class="spn-btn {% if _p.startswith('/cabinet/students') %}spn-active{% endif %}"
-       aria-label="Ученики"
-       data-tooltip="Ученики">
-        <span class="spn-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-            </svg>
-        </span>
-        <span class="spn-label">Ученики</span>
-    </a>
-
-    {# Проверка пробников #}
-    <a href="/cabinet/admin/mock-check"
-       class="spn-btn {% if _p.startswith('/cabinet/admin/mock-check') %}spn-active{% endif %}"
-       aria-label="Пробники"
-       data-tooltip="Проверка пробников">
-        <span class="spn-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-            </svg>
-        </span>
-        <span class="spn-label">Пробники</span>
-    </a>
-
-    {# Проверка отработок #}
-    <a href="/cabinet/admin/retake-check"
-       class="spn-btn {% if _p.startswith('/cabinet/admin/retake-check') %}spn-active{% endif %}"
-       aria-label="Отработки"
-       data-tooltip="Проверка отработок">
-        <span class="spn-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-            </svg>
-        </span>
-        <span class="spn-label">Отработки</span>
-    </a>
-
-    {# Цикл Пробника #}
-    <a href="/cabinet/staff/cycles"
-       class="spn-btn {% if _p.startswith('/cabinet/staff/cycle') or _p.startswith('/cabinet/curator/feedback') or _p.startswith('/cabinet/admin/feedback') or _p.startswith('/cabinet/superadmin/feedback') %}spn-active{% endif %}"
-       aria-label="Цикл Пробника"
-       data-tooltip="Цикл Пробника">
-        <span class="spn-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-            </svg>
-        </span>
-        <span class="spn-label">Цикл</span>
-    </a>
-
-    {# 3D Lab #}
-    <a href="/3dlab"
-       class="spn-btn {% if _p.startswith('/3dlab') %}spn-active{% endif %}"
-       aria-label="3D Лаб"
-       data-tooltip="3D Лаборатория">
-        <span class="spn-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
-            </svg>
-        </span>
-        <span class="spn-label">3D Лаб</span>
-    </a>
-
-    {% if user.role_rank >= 4 %}
-    {# Периоды (admin+) #}
-    <a href="/cabinet/periods"
-       class="spn-btn {% if _p.startswith('/cabinet/periods') %}spn-active{% endif %}"
-       aria-label="Периоды"
-       data-tooltip="Периоды">
-        <span class="spn-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/>
-                <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-            </svg>
-        </span>
-        <span class="spn-label">Периоды</span>
-    </a>
-
-    {# Пользователи (superadmin only) #}
-    <a href="/admin/users"
-       class="spn-btn {% if _p.startswith('/admin/users') %}spn-active{% endif %}"
-       aria-label="Пользователи"
-       data-tooltip="Пользователи">
-        <span class="spn-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/>
-                <line x1="18" y1="6" x2="22" y2="6"/><line x1="22" y1="4" x2="22" y2="8"/>
-            </svg>
-        </span>
-        <span class="spn-label">Польз.</span>
-    </a>
-
-    {% endif %}
+    {% endfor %}
 
 </nav>

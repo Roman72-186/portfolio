@@ -1,0 +1,4 @@
+{% macro exam_assignment_status_badge(status) -%}
+    {% set status_labels = {'published': 'Опубликовано', 'draft': 'Черновик', 'archived': 'Архив'} %}
+    <span class="status-badge status-{{ status }}">{{ status_labels.get(status, status) }}</span>
+{%- endmacro %}

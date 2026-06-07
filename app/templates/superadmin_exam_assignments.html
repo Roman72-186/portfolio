@@ -29,6 +29,7 @@
 </style>
 {% endblock %}
 {% block content %}
+{% from "partials/exam_assignment_status.html" import exam_assignment_status_badge %}
 <div class="ea-wrap">
     <div class="page-header">
         <div>
@@ -38,7 +39,6 @@
         <a href="/cabinet/exam-assignments/create" class="btn-primary">+ Создать билет</a>
     </div>
 
-    {% set status_labels = {'published': 'Опубликовано', 'draft': 'Черновик', 'archived': 'Архив'} %}
     {% set subject_icons = {'Рисунок': '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 5a2 2 0 0 0-2.83 0L3 19.17V22h2.83L20 7.83A2 2 0 0 0 20 5z"/><path d="M14.5 5.5l4 4"/></svg>', 'Композиция': '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.97 12.64 11.36 3.03a2 2 0 0 0-2.83 0L3.03 8.53a2 2 0 0 0 0 2.83l9.61 9.61a2 2 0 0 0 2.83 0l5.5-5.5a2 2 0 0 0 0-2.83z"/><line x1="5" y1="10" x2="7" y2="12"/><line x1="8" y1="7" x2="10" y2="9"/><line x1="11" y1="4" x2="13" y2="6"/><line x1="12" y1="17" x2="14" y2="15"/></svg>'} %}
 
     {% if assignments %}
@@ -54,7 +54,7 @@
                 </div>
             </div>
             <div class="ac-right">
-                <span class="status-badge status-{{ a.status }}">{{ status_labels.get(a.status, a.status) }}</span>
+                {{ exam_assignment_status_badge(a.status) }}
             </div>
         </a>
         {% endfor %}
