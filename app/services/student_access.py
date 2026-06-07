@@ -13,6 +13,7 @@ def get_student_for_staff_access(
     *,
     active_only: bool = False,
     exclude_deleted: bool = False,
+    not_found_status_code: int = 404,
     not_found_detail: str,
     forbidden_detail: str,
 ) -> User:
@@ -24,7 +25,7 @@ def get_student_for_staff_access(
 
     student = query.first()
     if not student:
-        raise HTTPException(status_code=404, detail=not_found_detail)
+        raise HTTPException(status_code=not_found_status_code, detail=not_found_detail)
 
     if user["role_rank"] == 2 and student.curator_id != user["user_id"]:
         raise HTTPException(status_code=403, detail=forbidden_detail)

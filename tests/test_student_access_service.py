@@ -92,6 +92,23 @@ def test_inactive_student_is_not_found_when_active_only(db, user_factory):
     assert exc.value.detail == "Ученик не найден"
 
 
+def test_missing_student_can_use_route_specific_status_code(db, user_factory):
+    admin = user_factory(vk_id=920013, name="Admin", role_name="админ")
+
+    with pytest.raises(HTTPException) as exc:
+        get_student_for_staff_access(
+            db,
+            _user_dict(admin, 4),
+            999_999,
+            not_found_status_code=403,
+            not_found_detail="Нет доступа к этому студенту",
+            forbidden_detail="Нет доступа к этому студенту",
+        )
+
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "Нет доступа к этому студенту"
+
+
 def test_inactive_student_is_returned_when_active_only_false(db, user_factory):
     admin = user_factory(vk_id=920011, name="Admin", role_name="админ")
     student = user_factory(

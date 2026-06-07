@@ -18,15 +18,22 @@ def _role_rank(user: User) -> int:
     return 4 if user.is_admin else 0
 
 
-def _can_manage_user(actor: User, target: User) -> bool:
+def can_manage_user_by_rank(actor_user_id: int, actor_rank: int, target: User) -> bool:
     """Only higher-ranked admins can manage another user account."""
-    if actor.id == target.id:
+    if actor_user_id == target.id:
         return False
-    actor_rank = _role_rank(actor)
     target_rank = _role_rank(target)
     if actor_rank < 4:
         return False
     return actor_rank > target_rank
+
+
+def can_manage_user(actor: User, target: User) -> bool:
+    return can_manage_user_by_rank(actor.id, _role_rank(actor), target)
+
+
+def can_assign_role_rank(actor_rank: int, new_role_rank: int) -> bool:
+    return actor_rank >= 4 and new_role_rank < actor_rank
 
 
 def _log(db: DBSession, action: str, performed_by_id: int, target_user_id: int, details: str) -> None:
@@ -60,7 +67,7 @@ def soft_delete_user(db: DBSession, target_user_id: int, performed_by_id: int) -
     if not user or user.deleted_at is not None:
         return False
     actor = db.query(User).filter(User.id == performed_by_id).first()
-    if not actor or not _can_manage_user(actor, user):
+    if not actor or not can_manage_user(actor, user):
         return False
 
     now = datetime.now(timezone.utc)
@@ -84,7 +91,7 @@ def toggle_user_active(db: DBSession, target_user_id: int, performed_by_id: int)
     if not user or user.deleted_at is not None:
         return None
     actor = db.query(User).filter(User.id == performed_by_id).first()
-    if not actor or not _can_manage_user(actor, user):
+    if not actor or not can_manage_user(actor, user):
         return None
 
     if user.is_active:

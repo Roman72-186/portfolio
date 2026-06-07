@@ -19,7 +19,11 @@ from app.models.role import Role
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM
 from app.services import s3 as s3_service
 from app.services.auth_links import issue_one_time_login_link
-from app.services.user_management import toggle_user_active
+from app.services.user_management import (
+    can_assign_role_rank,
+    can_manage_user_by_rank,
+    toggle_user_active,
+)
 from app.tmpl import templates
 
 logger = logging.getLogger(__name__)
@@ -224,13 +228,7 @@ def assign_role(
     if not target_user:
         return RedirectResponse("/admin/users", status_code=302)
 
-    # Cannot modify yourself
-    if target_user.id == user["user_id"]:
-        return RedirectResponse("/admin/users", status_code=302)
-
-    # Cannot modify users whose current rank >= your own rank
-    target_current_rank = target_user.role.rank if target_user.role else 0
-    if target_current_rank >= acting_rank:
+    if not can_manage_user_by_rank(user["user_id"], acting_rank, target_user):
         return RedirectResponse("/admin/users", status_code=302)
 
     if role_id == "":
@@ -242,8 +240,7 @@ def assign_role(
     if not new_role:
         return RedirectResponse("/admin/users", status_code=302)
 
-    # Cannot assign a role equal to or higher than your own rank
-    if new_role.rank >= acting_rank:
+    if not can_assign_role_rank(acting_rank, new_role.rank):
         return RedirectResponse("/admin/users", status_code=302)
 
     target_user.role_id = new_role.id

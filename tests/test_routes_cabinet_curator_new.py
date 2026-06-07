@@ -1,6 +1,9 @@
 """Tests for new split-panel curator routes added in 2026-04-13."""
+from datetime import datetime, timezone
+
 import pytest
 
+from app.models.mock_exam_lock import MockExamLock
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM
 from app.models.user import User
 
@@ -228,3 +231,80 @@ def test_mock_exams_not_found_404(curator_client):
     client, _ = curator_client
     resp = client.get("/cabinet/curator/mock-exams/student/99999")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# POST /cabinet/mock-exam/unlock
+# ---------------------------------------------------------------------------
+
+def test_curator_unlock_missing_student_keeps_403_contract(curator_client):
+    client, _ = curator_client
+
+    resp = client.post(
+        "/cabinet/mock-exam/unlock",
+        data={"student_id": 999999, "subject": "Рисунок"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 403
+    assert "Нет доступа к этому студенту" in resp.text
+
+
+def test_curator_unlock_foreign_student_keeps_403_contract(
+    client, db, user_factory, session_factory
+):
+    owner = user_factory(vk_id=820004, name="Owner", role_name="куратор")
+    other = user_factory(vk_id=820005, name="Other", role_name="куратор")
+    student = user_factory(vk_id=820006, name="Student", role_name="ученик")
+    student.curator_id = owner.id
+    db.add(student)
+    db.commit()
+
+    sess = session_factory(other)
+    client.cookies.set("session_id", sess.id)
+
+    resp = client.post(
+        "/cabinet/mock-exam/unlock",
+        data={"student_id": student.id, "subject": "Рисунок"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 403
+    assert "Нет доступа к этому студенту" in resp.text
+
+
+def test_curator_unlock_invalid_subject_still_returns_400(curator_client, student):
+    client, _ = curator_client
+
+    resp = client.post(
+        "/cabinet/mock-exam/unlock",
+        data={"student_id": student.id, "subject": "Скульптура"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 400
+    assert "Неверный предмет" in resp.text
+
+
+def test_curator_unlock_own_student_clears_lock(curator_client, db, student):
+    client, curator = curator_client
+    lock = MockExamLock(
+        user_id=student.id,
+        subject="Рисунок",
+        is_locked=True,
+        locked_at=datetime.now(timezone.utc),
+    )
+    db.add(lock)
+    db.commit()
+    db.refresh(lock)
+
+    resp = client.post(
+        "/cabinet/mock-exam/unlock",
+        data={"student_id": student.id, "subject": "Рисунок"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 302
+    db.refresh(lock)
+    assert lock.is_locked is False
+    assert lock.unlocked_by_id == curator.id

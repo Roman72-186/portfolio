@@ -9,7 +9,7 @@
 - Статус: phase_3_in_progress
 - Последнее обновление: 2026-06-07
 - Текущая фаза: 3. Выполнение refactor slices
-- Следующий шаг: P2-02d разобрать `cabinet_curator.unlock_mock_exam` отдельно; там текущий not-found contract возвращает 403 `Нет доступа к этому студенту`, а не 404.
+- Следующий шаг: P2-03c продолжить user management service alignment только после route-contract tests для выбранного endpoint. Кандидат: `set-credentials`/`create-staff` rank predicates; impersonation не трогать.
 - Важное уточнение пользователя: burger menu у каждой роли свое по составу и смыслу. Нельзя делать одинаковое меню для всех ролей. Допустимо централизовать механизм/конфиг/рендеринг, только если сохраняется разный набор пунктов и текущее поведение каждой роли.
 
 ## Контекст проекта
@@ -316,7 +316,13 @@ Storage/upload scenarios that must not change:
 - [x] P2-02b сохранил `feedback.py` contracts: `exclude_deleted=True`, 404 `Студент не найден`, 403 `Не ваш студент` для staff calendar/cycles JSON и 403 `Это не ваш студент` для feedback detail/message. GET error responses остаются HTML error pages, JSON POST response остается JSON.
 - [x] P2-02c: `cabinet_curator._check_student_access` переведен на `get_student_for_staff_access()` без `active_only` и без `exclude_deleted`, как было в текущем коде.
 - [x] P2-02c сохранил `cabinet_curator.py` contracts для split-panel JSON routes: 404 `Ученик не найден`, 403 `Нет доступа к этому ученику`, curator видит только своих, rank >= 3 при прямом вызове helper не блокируется.
-- [ ] P2-02 не закрыт полностью: `cabinet_curator.unlock_mock_exam` пока оставлен inline, потому что там текущий contract для отсутствующего student и чужого student объединен в 403 `Нет доступа к этому студенту`.
+- [x] P2-02d: `cabinet_curator.unlock_mock_exam` переведен на `get_student_for_staff_access()` через route-specific `not_found_status_code=403`.
+- [x] P2-02d сохранил особый contract unlock route: invalid subject остается 400 `Неверный предмет`, отсутствующий student и чужой student оба остаются 403 `Нет доступа к этому студенту`, own student unlock очищает lock и пишет `unlocked_by_id`.
+- [x] P2-02 закрыт: `cabinet_students_shared.py`, `feedback.py` и `cabinet_curator.py` используют owner-layer helper там, где contracts совпадают или явно параметризованы.
+- [x] P2-03a: добавлены service guard-rail tests для user management: self/superadmin/peer-admin/curator denial, lower-rank success, session invalidation, audit log и deleted-user behavior.
+- [x] P2-03b: вынесены rank predicates `can_manage_user_by_rank()`, `can_manage_user()`, `can_assign_role_rank()` в `app/services/user_management.py`.
+- [x] P2-03b подключен только к `admin.assign_role` и `superadmin_user_set_role`; разные response contracts сохранены: `/admin/users` возвращает 302, `/cabinet/superadmin/users` возвращает 303/HTTPException как раньше.
+- [ ] P2-03 не закрыт полностью: `set-credentials`, `create-staff`, curator assignment и impersonation остаются отдельными slices/анализом.
 
 ### Фаза 4. Role-specific burger/menu без дублей механики
 
@@ -637,6 +643,16 @@ Storage/upload scenarios that must not change:
 | 3 / P2-02c | `app/api/cabinet_curator.py` | `_check_student_access` переведен на `get_student_for_staff_access()` без `active_only`/`exclude_deleted`; `unlock_mock_exam` оставлен inline из-за отдельного 403 contract. | Codex / 2026-06-07 |
 | 3 / P2-02c | `tests/test_student_access_service.py` | Добавлен contract test, что inactive student возвращается, если `active_only=False`, для сохранения поведения `cabinet_curator.py`. | Codex / 2026-06-07 |
 | 3 / P2-02c | `AUDIT_REFACTOR_HANDOFF.md` | Зафиксирован P2-02c и следующий отдельный анализ для `unlock_mock_exam`. | Codex / 2026-06-07 |
+| 3 / P2-02d | `app/services/student_access.py` | Добавлен параметр `not_found_status_code` с default 404, чтобы routes с legacy masked-not-found contract могли сохранить свой статус без inline ownership logic. | Codex / 2026-06-07 |
+| 3 / P2-02d | `app/api/cabinet_curator.py` | `unlock_mock_exam` переведен на `get_student_for_staff_access()` с прежним 403 для missing/foreign student; subject validation, redirect и lock update не менялись. | Codex / 2026-06-07 |
+| 3 / P2-02d | `tests/test_student_access_service.py` | Добавлен service contract test для route-specific missing-student status code. | Codex / 2026-06-07 |
+| 3 / P2-02d | `tests/test_routes_cabinet_curator_new.py` | Добавлены route-contract tests для `POST /cabinet/mock-exam/unlock`: missing student 403, foreign student 403, invalid subject 400, own student clears lock. | Codex / 2026-06-07 |
+| 3 / P2-02d | `AUDIT_REFACTOR_HANDOFF.md` | Зафиксировано закрытие P2-02 и следующий кандидат P2-03. | Codex / 2026-06-07 |
+| 3 / P2-03a | `tests/test_services_user_management.py` | Расширены service contract tests для rank guard rails, session invalidation, audit log и deleted-user behavior без изменения приложения. | Codex / 2026-06-07 |
+| 3 / P2-03b | `app/services/user_management.py` | Вынесены публичные rank predicates `can_manage_user_by_rank()`, `can_manage_user()`, `can_assign_role_rank()`; `soft_delete_user()` и `toggle_user_active()` используют тот же predicate. | Codex / 2026-06-07 |
+| 3 / P2-03b | `app/api/admin.py` | `assign_role` делегирует current-target и new-role rank checks в `user_management` helpers; redirect/status contract сохранен. | Codex / 2026-06-07 |
+| 3 / P2-03b | `app/api/cabinet_superadmin.py` | `superadmin_user_set_role` делегирует current-target и new-role rank checks в `user_management` helpers; 303/404/400 contracts и session invalidation сохранены. | Codex / 2026-06-07 |
+| 3 / P2-03b | `AUDIT_REFACTOR_HANDOFF.md` | Зафиксированы P2-03a/b и следующий ограниченный кандидат P2-03c. | Codex / 2026-06-07 |
 
 ## Проверки
 
@@ -678,6 +694,13 @@ Storage/upload scenarios that must not change:
 | 2026-06-07 | `pytest tests/test_student_access_service.py tests/test_routes_cabinet_curator_new.py tests/test_feedback_dialog.py tests/test_routes_cabinet_superadmin.py` | 77 passed | P2-02c: curator split-panel access helper и affected route contracts. Есть только существующие deprecation warnings. |
 | 2026-06-07 | `pytest tests/test_navigation_contracts.py tests/test_routes_cabinet.py tests/test_routes_login.py` | 28 passed, 2 skipped | Защитный baseline после curator access helper. Есть только существующие deprecation warnings. |
 | 2026-06-07 | `python -m compileall app tests` | ok | Синтаксическая проверка после P2-02c. |
+| 2026-06-07 | `pytest tests/test_student_access_service.py tests/test_routes_cabinet_curator_new.py` | 26 passed | P2-02d: route-specific missing 403 для `unlock_mock_exam` и helper status-code option. Есть только существующие deprecation warnings. |
+| 2026-06-07 | `pytest tests/test_student_access_service.py tests/test_routes_cabinet_curator_new.py tests/test_feedback_dialog.py tests/test_routes_cabinet_superadmin.py tests/test_navigation_contracts.py tests/test_routes_cabinet.py tests/test_routes_login.py` | 110 passed, 2 skipped | Расширенный baseline после закрытия P2-02. Есть только существующие deprecation warnings. |
+| 2026-06-07 | `python -m compileall app tests` | ok | Синтаксическая проверка после P2-02d. |
+| 2026-06-07 | `pytest tests/test_services_user_management.py tests/test_routes_cabinet_superadmin.py tests/test_routes_admin.py tests/test_routes_superadmin_impersonate.py` | 54 passed | P2-03a: service guard-rail tests и route baseline; production-код не менялся. Есть только существующие deprecation warnings. |
+| 2026-06-07 | `pytest tests/test_services_user_management.py tests/test_routes_cabinet_superadmin.py tests/test_routes_admin.py tests/test_routes_superadmin_impersonate.py` | 55 passed | P2-03b: user-management rank predicates подключены к admin/superadmin role assignment routes. Есть только существующие deprecation warnings. |
+| 2026-06-07 | `pytest tests/test_student_access_service.py tests/test_routes_cabinet_curator_new.py tests/test_feedback_dialog.py tests/test_routes_cabinet_superadmin.py tests/test_routes_admin.py tests/test_routes_superadmin_impersonate.py tests/test_navigation_contracts.py tests/test_routes_cabinet.py tests/test_routes_login.py` | 133 passed, 2 skipped | Общий затронутый baseline после P2-02d и P2-03b. Есть только существующие deprecation warnings. |
+| 2026-06-07 | `python -m compileall app tests` | ok | Синтаксическая проверка после P2-03b. |
 
 ## Ошибки и блокеры
 
@@ -688,9 +711,9 @@ Storage/upload scenarios that must not change:
 
 1. Прочитать `../CLAUDE.md`, `CLAUDE.md` и этот файл.
 2. Не трогать незнакомые незакоммиченные изменения; текущий worktree dirty до этой фазы.
-3. P1-01, P1-02, P1-03, P2-01a/b/c и P2-02a/b/c выполнены и проверены. Перед любым следующим refactor запускать релевантный baseline из `План проверки`.
-4. Следующий кандидат: P2-02d отдельный анализ `cabinet_curator.unlock_mock_exam`. Сначала добавить/уточнить tests на текущий contract: отсутствующий student и чужой student оба дают 403 `Нет доступа к этому студенту`; только после этого решать, стоит ли расширять helper параметром `not_found_status_code`.
-5. В P2-02 нельзя менять, какие роли получают доступ, redirect/status code при отказе, тексты ошибок, feedback closed-cycle rules и IDOR semantics. Helper уже есть, но каждый следующий route переводить отдельно с явными параметрами `active_only`/`exclude_deleted` и прежними деталями ошибок.
+3. P1-01, P1-02, P1-03, P2-01a/b/c, P2-02a/b/c/d и P2-03a/b выполнены и проверены. Перед любым следующим refactor запускать релевантный baseline из `План проверки`.
+4. Следующий кандидат: P2-03c user management service alignment для одного endpoint family, например `set-credentials` или `create-staff`. Сначала добавить/проверить route-contract tests на текущие status codes/messages/redirects, потом выносить только совпадающий rank predicate.
+5. В P2-03 нельзя менять superadmin-only mutations, impersonation, session invalidation, target rank protection, redirects/JSON response contracts и cache invalidation behavior. `impersonate_start/stop` оставить отдельным анализом.
 6. Файлы, которые нельзя трогать без дополнительного анализа: `.env`, `.env.deploy`, `docker-compose*.yml`, `scripts/deploy.py`, `app/services/rbac.py`, `app/dependencies.py`, `app/services/n8n.py`, `app/services/drive.py`, `app/services/s3.py`, migrations, storage save pipeline и upload side effects.
 7. Не начинать с массового объединения шаблонов. Legacy templates без прямого `TemplateResponse` не удалять без отдельной проверки ссылок, tests и истории.
 8. Для меню сохранить role-specific состав: student `bottom_nav`, curator `_curator_nav`, admin/superadmin `staff_nav`; не превращать их в один одинаковый список. P2-01 уже вынес данные меню в отдельные configs, но общий renderer для всех ролей не вводился.

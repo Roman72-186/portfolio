@@ -486,9 +486,14 @@ def unlock_mock_exam(
     if subject not in MOCK_SUBJECTS:
         raise HTTPException(status_code=400, detail="Неверный предмет")
 
-    student = db.query(User).filter(User.id == student_id).first()
-    if not student or (student.curator_id != user["user_id"] and user.get("role_rank", 0) < 3):
-        raise HTTPException(status_code=403, detail="Нет доступа к этому студенту")
+    get_student_for_staff_access(
+        db,
+        user,
+        student_id,
+        not_found_status_code=403,
+        not_found_detail="Нет доступа к этому студенту",
+        forbidden_detail="Нет доступа к этому студенту",
+    )
 
     lock = db.query(MockExamLock).filter(
         MockExamLock.user_id == student_id,

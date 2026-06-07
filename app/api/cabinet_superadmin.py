@@ -1066,7 +1066,12 @@ def superadmin_stats_export(
 # Управление пользователями
 # ═══════════════════════════════════════════════════════════════════════════════
 
-from app.services.user_management import soft_delete_user, toggle_user_active
+from app.services.user_management import (
+    can_assign_role_rank,
+    can_manage_user_by_rank,
+    soft_delete_user,
+    toggle_user_active,
+)
 
 
 _SU_PAGE_SIZE = 50
@@ -1562,12 +1567,9 @@ def superadmin_user_set_role(
     target = db.query(User).filter(User.id == target_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
-    if target.id == user["user_id"]:
-        return RedirectResponse("/cabinet/superadmin/users", status_code=303)
 
     acting_rank = user.get("role_rank", 0)
-    target_current_rank = target.role.rank if target.role else 0
-    if target_current_rank >= acting_rank:
+    if not can_manage_user_by_rank(user["user_id"], acting_rank, target):
         return RedirectResponse("/cabinet/superadmin/users", status_code=303)
 
     if role_id == "":
@@ -1584,7 +1586,7 @@ def superadmin_user_set_role(
     new_role = db.query(Role).filter(Role.id == role_id_int).first()
     if not new_role:
         raise HTTPException(status_code=404, detail="Роль не найдена")
-    if new_role.rank >= acting_rank:
+    if not can_assign_role_rank(acting_rank, new_role.rank):
         return RedirectResponse("/cabinet/superadmin/users", status_code=303)
 
     target.role_id = new_role.id
