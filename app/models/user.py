@@ -34,6 +34,8 @@ class User(Base):
     exam_subjects: Mapped[str | None] = mapped_column(String(20), nullable=True)
     study_mode: Mapped[str | None] = mapped_column(String(10), nullable=True)
     is_publishable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    course_periods: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    lessons_count: Mapped[str | None] = mapped_column(String(5), nullable=True)
     enrolled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_vk_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # New fields (spec v1.0)

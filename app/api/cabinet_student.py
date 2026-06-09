@@ -25,6 +25,8 @@ from app.constants import (
     MONTH_TO_NUM,
     FEATURE_PORTFOLIO_UPLOAD,
     MOCK_SUBJECTS,
+    COURSE_PERIODS,
+    LESSON_COUNTS,
 )
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
@@ -176,6 +178,8 @@ def _profile_template_ctx(request, user, errors=None, form=None):
         "months": MONTHS,
         "enrollment_years": ENROLLMENT_YEARS,
         "university_years": list(range(2015, 2032)),
+        "course_periods": COURSE_PERIODS,
+        "lesson_counts": LESSON_COUNTS,
         **({"errors": errors} if errors else {}),
         **({"form": form} if form else {}),
     }
@@ -208,6 +212,8 @@ def profile_post(
     university_year: Annotated[str, Form()] = "",
     about: Annotated[str, Form()] = "",
     past_tariffs: Annotated[list[str], Form()] = [],
+    course_periods: Annotated[list[str], Form()] = [],
+    lessons_count: Annotated[str, Form()] = "",
 ):
     if user["profile_completed"]:
         return RedirectResponse("/cabinet/student", status_code=302)
@@ -289,6 +295,13 @@ def profile_post(
 
     past_tariffs = [t.upper() for t in past_tariffs if t.upper() in TARIFFS and t.upper() != tariff]
 
+    course_periods = [p for p in course_periods if p in COURSE_PERIODS]
+    if not course_periods:
+        errors.append("Выберите хотя бы один период занятий")
+    lessons_count = lessons_count.strip()
+    if lessons_count not in LESSON_COUNTS:
+        errors.append("Выберите количество занятий")
+
     if errors:
         form = {
             "first_name": first_name,
@@ -301,6 +314,8 @@ def profile_post(
             "enrollment_year": parsed_year,
             "university_year": parsed_university_year,
             "past_tariffs": past_tariffs,
+            "course_periods": course_periods,
+            "lessons_count": lessons_count,
         }
         return templates.TemplateResponse("profile.html",
             _profile_template_ctx(request, user, errors=errors, form=form))
@@ -317,6 +332,8 @@ def profile_post(
     db_user.enrolled_at = parsed_enrolled_at
     db_user.university_year = parsed_university_year
     db_user.past_tariffs = ",".join(past_tariffs) if past_tariffs else None
+    db_user.course_periods = ",".join(course_periods) if course_periods else None
+    db_user.lessons_count = lessons_count or None
     db_user.profile_completed = True
     db.commit()
     invalidate_session(user["session_id"])

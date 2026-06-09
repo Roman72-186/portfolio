@@ -156,6 +156,47 @@
                 </select>
             </div>
 
+            <!-- Периоды занятий -->
+            <div style="margin-bottom:16px">
+                <label class="form-label">Периоды занятий *</label>
+                <div style="display:flex;flex-direction:column;gap:10px;padding:16px;
+                            background:var(--surface-2);border:1.5px solid var(--line);border-radius:10px">
+                    {% set sel_periods = form.course_periods if form and form.course_periods is defined else [] %}
+                    {% for p in course_periods %}
+                    <label class="period-item"
+                           style="display:flex;align-items:center;gap:10px;cursor:pointer;
+                                  padding:10px 14px;border-radius:8px;
+                                  border:1.5px solid var(--line);background:var(--surface);
+                                  transition:border-color .2s,background .2s">
+                        <input type="checkbox" name="course_periods" value="{{ p }}"
+                               {% if p in sel_periods %}checked{% endif %}
+                               style="width:17px;height:17px;accent-color:var(--blue);cursor:pointer">
+                        <span style="font-size:14px;font-weight:500">{{ p }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Количество занятий -->
+            <div style="margin-bottom:28px">
+                <label class="form-label">Количество занятий *</label>
+                <div style="display:flex;gap:12px;flex-wrap:wrap">
+                    {% set sel_lc = form.lessons_count if form and form.lessons_count is defined else '' %}
+                    {% for lc in lesson_counts %}
+                    <label class="lessons-item"
+                           style="display:flex;align-items:center;gap:8px;cursor:pointer;
+                                  padding:10px 20px;border-radius:8px;
+                                  border:1.5px solid var(--line);background:var(--surface);
+                                  transition:border-color .2s,background .2s">
+                        <input type="radio" name="lessons_count" value="{{ lc }}"
+                               {% if lc == sel_lc %}checked{% endif %}
+                               style="width:17px;height:17px;accent-color:var(--blue);cursor:pointer">
+                        <span style="font-size:15px;font-weight:600">{{ lc }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
             <button type="submit" id="profile-submit-btn" class="btn-primary">Сохранить и продолжить →</button>
         </form>
     </div>
@@ -204,6 +245,26 @@ document.querySelector('form').addEventListener('submit', function() {
     var btn = document.getElementById('profile-submit-btn');
     btn.disabled = true;
     btn.textContent = 'Сохраняем…';
+});
+
+document.addEventListener('change', function(e) {
+    if (e.target.name === 'course_periods') {
+        var lbl = e.target.closest('label');
+        lbl.style.borderColor = e.target.checked ? 'var(--blue)' : 'var(--line)';
+        lbl.style.background  = e.target.checked ? 'var(--blue-soft)' : 'var(--surface)';
+    }
+    if (e.target.name === 'lessons_count') {
+        document.querySelectorAll('.lessons-item').forEach(function(l) {
+            var r = l.querySelector('input');
+            l.style.borderColor = r.checked ? 'var(--blue)' : 'var(--line)';
+            l.style.background  = r.checked ? 'var(--blue-soft)' : 'var(--surface)';
+        });
+    }
+});
+document.querySelectorAll('.period-item input:checked, .lessons-item input:checked').forEach(function(r) {
+    var l = r.closest('label');
+    l.style.borderColor = 'var(--blue)';
+    l.style.background  = 'var(--blue-soft)';
 });
 </script>
 {% endblock %}

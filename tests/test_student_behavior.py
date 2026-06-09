@@ -65,6 +65,8 @@ def test_profile_post_valid_data_sets_profile_completed(client, db, user_factory
         "enrollment_year": "2024",
         "university_year": "2025",
         "about": "Хочу поступить в Строгановку",
+        "course_periods": "10-14 июня",
+        "lessons_count": "8",
     }, follow_redirects=False)
     assert resp.status_code == 302
     db.expire_all()

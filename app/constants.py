@@ -50,3 +50,5 @@ ENROLLMENT_YEARS = list(range(2020, 2031))  # 2020–2030
 STUDY_MODES = ("offline", "online")
 STUDY_MODE_LABELS = {"offline": "ОЧНО", "online": "ОНЛАЙН"}
 EXAM_SUBJECT_HINTS = ("Р+К", "Р+Ч", "Р+К+Ч", "К+Ч")
+COURSE_PERIODS = ["10-14 июня", "15-20 июня", "22-27 июня"]
+LESSON_COUNTS = ["6", "8", "10"]
