@@ -1038,13 +1038,11 @@
                 </span>
                 <div class="student-row-info">
                     <div class="student-row-name">{{ s.name }}</div>
-                    <div class="student-row-meta">
-                        {{ s.tariff or '—' }}
-                        {% if s.avg_score is not none %} · {{ s.avg_score }} ср.{% endif %}
-                    </div>
-                    <div class="student-tag-pills" style="margin-top:4px">
+                    <div class="student-tag-pills" style="margin-top:3px">
+                        {% if s.tariff and s.tariff != '—' %}<span class="tag-pill tag-pill--tariff">{{ s.tariff }}</span>{% endif %}
                         {% include "_includes/student_tag_pills.html" %}
                     </div>
+                    {% if s.avg_score is not none %}<div class="student-row-meta" style="margin-top:2px">{{ s.avg_score }} ср.</div>{% endif %}
                 </div>
                 {% if can_score %}
                     {% set ss = s.scored_subjects %}
@@ -1587,12 +1585,24 @@ function buildHero(s, bySubj) {
             + '<button class="admin-upload-btn" onclick="openUploadModal()">+ Загрузить</button>'
             + '</div>';
     }
+    var periodPills = '';
+    if (s.course_periods) {
+        s.course_periods.split(',').forEach(function(p) {
+            var abbrev = p.trim().split(' ')[0];
+            if (abbrev) periodPills += '<span class="student-hero-pill">' + esc(abbrev) + '</span>';
+        });
+    }
     return '<div class="student-hero">'
         + avatar
         + '<div class="student-hero-info">'
         +   '<div class="student-hero-name">' + esc(s.name) + '</div>'
         +   '<div class="student-hero-pills">'
         +     (s.tariff && s.tariff !== '—' ? '<span class="student-hero-pill">' + esc(s.tariff) + '</span>' : '')
+        +     periodPills
+        +     (s.lessons_count ? '<span class="student-hero-pill">/ ' + esc(s.lessons_count) + '</span>' : '')
+        +     (s.has_case ? '<span class="student-hero-pill">КЕЙС</span>' : '')
+        +     (s.study_mode === 'offline' ? '<span class="student-hero-pill">ОЧНО</span>' : '')
+        +     (s.study_mode === 'online' ? '<span class="student-hero-pill">ОНЛАЙН</span>' : '')
         +     (s.study_duration ? '<span class="student-hero-pill">' + esc(s.study_duration) + '</span>' : '')
         +   '</div>'
         + '</div>'

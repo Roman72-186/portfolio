@@ -735,5 +735,6 @@ a:hover { color: var(--blue-deep); }
 .tag-pill--curator      { background: rgba(107,114,128,0.10);      color: var(--dim); }
 .tag-pill--period       { background: rgba(234,179,8,0.12);        color: #92400e; }
 .tag-pill--lessons      { background: rgba(168,85,247,0.12);       color: #6b21a8; }
+.tag-pill--tariff       { background: rgba(100,116,139,0.10);      color: var(--dim); border: 1px solid var(--line); }
 
-.student-tag-pills { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.student-tag-pills { display: inline-flex; flex-wrap: wrap; gap: 4px; }

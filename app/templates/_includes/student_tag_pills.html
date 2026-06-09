@@ -14,7 +14,7 @@
 
 {% if _course_periods %}
   {% for p in _course_periods.split(',') %}
-  <span class="tag-pill tag-pill--period">{{ p }}</span>
+  <span class="tag-pill tag-pill--period">{{ p.split(' ')[0] }}</span>
   {% endfor %}
 {% endif %}
 {% if _lessons_count %}
