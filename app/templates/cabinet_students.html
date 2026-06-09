@@ -1000,6 +1000,7 @@
                 <div class="hard-filter-options">
                     <a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}has_unchecked_mocks=1">Непроверенные пробники</a>
                     <a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}mock_period_submitted=1">Сдавал в текущий период</a>
+                    {% if is_superadmin %}<a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}show_hidden=1">Все (без периодов)</a>{% endif %}
                 </div>
             </details>
         </div>

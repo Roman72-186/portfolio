@@ -1069,6 +1069,7 @@ def superadmin_stats_export(
 from app.services.user_management import (
     can_assign_role_rank,
     can_manage_user_by_rank,
+    get_curator_for_assignment,
     soft_delete_user,
     toggle_user_active,
 )
@@ -1144,6 +1145,7 @@ def _render_superadmin_users(
     tariff: str = "",
     show_deleted: str = "",
     show_blocked: str = "",
+    show_hidden: str = "",
     study_mode: str = "",
     is_publishable: str = "",
     has_case: str = "",
@@ -1161,6 +1163,7 @@ def _render_superadmin_users(
     role_rank_int: int | None = int(role_rank) if role_rank.strip() else None
     show_deleted_b: bool = show_deleted.strip() in ("1", "true", "on", "yes")
     show_blocked_b: bool = show_blocked.strip() in ("1", "true", "on", "yes")
+    show_hidden_b: bool = show_hidden.strip() in ("1", "true", "on", "yes")
     is_publishable_b: bool = is_publishable.strip() in ("1", "true", "on", "yes")
     has_case_b: bool = has_case.strip() in ("1", "true", "on", "yes")
 
@@ -1183,6 +1186,15 @@ def _render_superadmin_users(
         query = query.filter(User.is_active == False, User.deleted_at.is_(None))  # noqa: E712
     elif not show_deleted_b:
         query = query.filter(User.deleted_at.is_(None))
+    if not show_hidden_b:
+        from sqlalchemy import or_ as _or, and_ as _and
+        query = query.filter(
+            _or(
+                Role.rank.is_(None),
+                Role.rank != 1,
+                _and(User.course_periods.isnot(None), User.lessons_count.isnot(None)),
+            )
+        )
     if role_rank_int is not None:
         query = query.filter(Role.rank == role_rank_int)
     if tariff.strip():
@@ -1308,6 +1320,7 @@ def _render_superadmin_users(
         "tariff": tariff,
         "show_deleted": show_deleted,
         "show_blocked": show_blocked,
+        "show_hidden": "1" if show_hidden_b else "",
         "study_mode": study_mode_clean,
         "is_publishable": "1" if is_publishable_b else "",
         "has_case": "1" if has_case_b else "",
@@ -1338,6 +1351,7 @@ def superadmin_users(
     tariff: str = "",
     show_deleted: str = "",
     show_blocked: str = "",
+    show_hidden: str = "",
     study_mode: str = "",
     is_publishable: str = "",
     has_case: str = "",
@@ -1354,6 +1368,7 @@ def superadmin_users(
         tariff=tariff,
         show_deleted=show_deleted,
         show_blocked=show_blocked,
+        show_hidden=show_hidden,
         study_mode=study_mode,
         is_publishable=is_publishable,
         has_case=has_case,
@@ -1399,13 +1414,7 @@ def superadmin_create_student(
             curator_id_v = int(curator_id_clean)
         except ValueError:
             raise HTTPException(status_code=400, detail="Неверный id куратора")
-        curator_exists = (
-            db.query(User.id)
-            .join(Role, User.role_id == Role.id)
-            .filter(User.id == curator_id_v, Role.rank == 2, User.deleted_at.is_(None))
-            .first()
-        )
-        if not curator_exists:
+        if not get_curator_for_assignment(db, curator_id_v):
             raise HTTPException(status_code=400, detail="Куратор не найден")
 
     student = _find_student_by_tg_username(db, tg_username_clean)
@@ -1465,7 +1474,7 @@ def superadmin_create_staff(
         return _render_superadmin_users(request, user, db, page_error="Роль не найдена.")
     if new_role.rank < 2:
         return _render_superadmin_users(request, user, db, page_error="Аккаунт сотрудника требует роль с рангом ≥ 2.")
-    if new_role.rank >= user["role_rank"]:
+    if not can_assign_role_rank(user["role_rank"], new_role.rank):
         return _render_superadmin_users(request, user, db, page_error="Нельзя создать аккаунт с рангом не ниже вашего.")
 
     full_name = f"{first_name_clean} {last_name_clean}".strip()
@@ -1503,8 +1512,7 @@ def superadmin_user_set_credentials(
     if not target:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
 
-    target_rank = target.role.rank if target.role else 0
-    if target_rank >= user["role_rank"]:
+    if not can_manage_user_by_rank(user["user_id"], user["role_rank"], target):
         raise HTTPException(status_code=403, detail="Нельзя выдать доступ роли равной или выше своей")
 
     issued_creds = _issue_login_password(db, target)
@@ -1604,23 +1612,25 @@ def superadmin_assign_curator_bulk(
     curator_id: int = Form(...),
     student_usernames: str = Form(""),
     cohort_tag: str = Form(""),
+    exam_subjects: str = Form(""),
 ):
     cohort_tag = cohort_tag.strip().lower()
     if cohort_tag and cohort_tag not in COHORT_TAGS:
         raise HTTPException(status_code=400, detail="Неверная метка группы")
 
-    curator = (
-        db.query(User)
-        .join(Role, User.role_id == Role.id)
-        .filter(User.id == curator_id, Role.rank == 2, User.is_active == True, User.deleted_at.is_(None))  # noqa: E712
-        .first()
-    )
+    exam_subjects_v = exam_subjects.strip() or None
+    if exam_subjects_v and exam_subjects_v not in EXAM_SUBJECT_HINTS:
+        raise HTTPException(status_code=400, detail="Неверный предмет")
+
+    curator = get_curator_for_assignment(db, curator_id, active_only=True)
     if not curator:
         raise HTTPException(status_code=404, detail="Куратор не найден")
 
+    curator_tag_v = f"{curator.last_name or ''} {curator.first_name or curator.name}".strip() or None
+
     usernames = _split_tg_usernames(student_usernames)
     result = {
-        "curator_name": f"{curator.last_name or ''} {curator.first_name or curator.name}".strip(),
+        "curator_name": curator_tag_v,
         "requested": len(usernames),
         "matched": 0,
         "assigned": 0,
@@ -1658,8 +1668,14 @@ def superadmin_assign_curator_bulk(
             result["assigned"] += 1
         if cohort_tag:
             student.cohort_tag = cohort_tag
+        if curator_tag_v:
+            student.curator_tag = curator_tag_v
+        if exam_subjects_v:
+            student.exam_subjects = exam_subjects_v
 
-    if result["assigned"] or cohort_tag and result["matched"]:
+    if result["assigned"] or (cohort_tag and result["matched"]) \
+            or (curator_tag_v and result["matched"]) \
+            or (exam_subjects_v and result["matched"]):
         db.commit()
     else:
         db.rollback()
@@ -1730,6 +1746,7 @@ def superadmin_user_save_tags(
     study_mode: str = Form(""),
     is_publishable: str = Form(""),
     curator_id: str = Form(""),
+    curator_tag: str = Form(""),
     tariff: str = Form(""),
     about: str = Form(""),
     cohort_tag: str = Form(""),
@@ -1752,16 +1769,12 @@ def superadmin_user_save_tags(
             curator_id_v = int(curator_id_clean)
         except ValueError:
             raise HTTPException(status_code=400, detail="Неверный id куратора")
-        curator_exists = (
-            db.query(User.id)
-            .join(Role, User.role_id == Role.id)
-            .filter(User.id == curator_id_v, Role.rank == 2, User.deleted_at.is_(None))
-            .first()
-        )
-        if not curator_exists:
+        if not get_curator_for_assignment(db, curator_id_v):
             raise HTTPException(status_code=400, detail="Куратор не найден")
     else:
         curator_id_v = None
+
+    curator_tag_v = curator_tag.strip()[:100] or None
 
     tariff_v = tariff.strip()
     if tariff_v and tariff_v not in TARIFFS:
@@ -1779,6 +1792,7 @@ def superadmin_user_save_tags(
     target.study_mode = study_mode_v
     target.is_publishable = is_publishable_v
     target.curator_id = curator_id_v
+    target.curator_tag = curator_tag_v
     if tariff_v:
         target.tariff = tariff_v
     target.about = about_v
@@ -1814,12 +1828,7 @@ def superadmin_user_set_curator(
             new_curator_id = int(curator_id_clean)
         except ValueError:
             raise HTTPException(status_code=400, detail="Неверный id куратора")
-        curator_obj = (
-            db.query(User)
-            .join(Role, User.role_id == Role.id)
-            .filter(User.id == new_curator_id, Role.rank == 2, User.deleted_at.is_(None))
-            .first()
-        )
+        curator_obj = get_curator_for_assignment(db, new_curator_id)
         if not curator_obj:
             raise HTTPException(status_code=400, detail="Куратор не найден")
         new_curator_name = f"{curator_obj.last_name or ''} {curator_obj.first_name or curator_obj.name}".strip()
@@ -2092,8 +2101,7 @@ def superadmin_impersonate_start(
     if not target:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
 
-    target_rank = target.role.rank if target.role else 0
-    if target_rank >= user["role_rank"]:
+    if not can_manage_user_by_rank(user["user_id"], user["role_rank"], target):
         raise HTTPException(status_code=403, detail="Нельзя имперсонировать роль равную или выше своей")
 
     original_session_id = user["session_id"]

@@ -74,7 +74,12 @@ def _current_academic_period() -> tuple[str, str]:
 def _get_curator_students(curator_id: int, db: DBSession) -> list[User]:
     return (
         db.query(User)
-        .filter(User.curator_id == curator_id, User.is_active == True)
+        .filter(
+            User.curator_id == curator_id,
+            User.is_active == True,
+            User.course_periods.isnot(None),
+            User.lessons_count.isnot(None),
+        )
         .order_by(User.created_at.desc())
         .all()
     )

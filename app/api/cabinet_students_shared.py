@@ -65,26 +65,33 @@ def _get_accessible_students(
     *,
     has_unchecked_mocks: bool = False,
     mock_period_submitted: bool = False,
+    show_hidden: bool = False,
 ) -> list:
     """Возвращает список студентов доступных текущему пользователю.
 
     Жёсткие фильтры (`has_unchecked_mocks`, `mock_period_submitted`)
     применяются только для admin/superadmin (rank>=4). Для куратора
     игнорируются.
+
+    По умолчанию скрыты студенты без выбранных периодов/занятий.
+    Суперадмин может раскрыть их через show_hidden=True.
     """
+    hide_pre_cohort = not (show_hidden and user["role_rank"] >= 5)
+
     if user["role_rank"] == 2:
-        return (
-            db.query(User)
-            .filter(User.curator_id == user["user_id"], User.is_active == True)
-            .order_by(User.last_name, User.first_name)
-            .all()
-        )
+        q = db.query(User).filter(User.curator_id == user["user_id"], User.is_active == True)
+        if hide_pre_cohort:
+            q = q.filter(User.course_periods.isnot(None), User.lessons_count.isnot(None))
+        return q.order_by(User.last_name, User.first_name).all()
+
     # rank >= 4: все активные ученики
     student_role = db.query(Role).filter(Role.rank == 1).first()
     if not student_role:
         return []
 
     q = db.query(User).filter(User.role_id == student_role.id, User.is_active == True)
+    if hide_pre_cohort:
+        q = q.filter(User.course_periods.isnot(None), User.lessons_count.isnot(None))
 
     if has_unchecked_mocks or mock_period_submitted:
         active_period = get_active_period(db, FEATURE_MOCK_EXAM)
@@ -163,15 +170,18 @@ def students_panel(
     tab: str = Query("portfolio"),
     has_unchecked_mocks: str = Query(""),
     mock_period_submitted: str = Query(""),
+    show_hidden: str = Query(""),
 ):
     is_admin_panel = user["role_rank"] >= 4
     has_unchecked = is_admin_panel and _parse_bool(has_unchecked_mocks)
     mock_submitted = is_admin_panel and _parse_bool(mock_period_submitted)
+    show_hidden_b = user["role_rank"] >= 5 and _parse_bool(show_hidden)
 
     students = _get_accessible_students(
         user, db,
         has_unchecked_mocks=has_unchecked,
         mock_period_submitted=mock_submitted,
+        show_hidden=show_hidden_b,
     )
 
     active_hard_filters: list[dict] = []
@@ -179,6 +189,8 @@ def students_panel(
         active_hard_filters.append({"key": "has_unchecked_mocks", "label": "Непроверенные пробники"})
     if mock_submitted:
         active_hard_filters.append({"key": "mock_period_submitted", "label": "Сдавал в текущий период"})
+    if show_hidden_b:
+        active_hard_filters.append({"key": "show_hidden", "label": "Показаны без периодов"})
 
     counts_by_user: dict = {}
     avg_by_user: dict = {}

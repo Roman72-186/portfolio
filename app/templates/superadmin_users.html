@@ -185,6 +185,10 @@
             <input type="checkbox" name="show_blocked" value="1" {% if show_blocked %}checked{% endif %} style="width:auto;padding:0">
             <span style="font-size:12px;font-weight:700;color:#DC2626">Только заблокированные</span>
         </label>
+        <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" name="show_hidden" value="1" {% if show_hidden %}checked{% endif %} style="width:auto;padding:0">
+            <span style="font-size:12px;font-weight:700;color:#D97706">Без периодов</span>
+        </label>
         <button type="submit">Найти</button>
     </form>
 
@@ -316,12 +320,15 @@
         <div class="bulk-grid">
             <label>
                 Куратор
-                <select name="curator_id" required>
+                <select id="sa-bulk-curator" name="curator_id" required>
                     <option value="">Выберите куратора</option>
                     {% for c in curators %}
-                    <option value="{{ c.id }}">{{ c.last_name or '' }} {{ c.first_name or c.name }}</option>
+                    <option value="{{ c.id }}" data-curator-tag="{{ ((c.last_name or '') ~ ' ' ~ (c.first_name or c.name))|trim }}">{{ c.last_name or '' }} {{ c.first_name or c.name }}</option>
                     {% endfor %}
                 </select>
+                <span id="sa-curator-tag-preview" style="display:none;margin-top:6px;font-size:12px;color:var(--dim)">
+                    Тег: <span id="sa-curator-tag-badge" class="tag-pill tag-pill--curator-tag" style="font-size:11px"></span>
+                </span>
             </label>
             <label>
                 Баннер на аватарке
@@ -334,12 +341,34 @@
                 </select>
             </label>
             <label>
+                Предмет экзамена
+                <select name="exam_subjects">
+                    <option value="">Не ставить</option>
+                    <option value="Р">Р</option>
+                    <option value="К">К</option>
+                    <option value="Р + К">Р + К</option>
+                </select>
+            </label>
+            <label>
                 Username учеников
                 <textarea name="student_usernames" placeholder="@student_one&#10;student_two&#10;@student_three" required></textarea>
             </label>
             <button type="submit">Привязать списком</button>
         </div>
     </form>
+    <script>
+    (function(){
+        var sel = document.getElementById('sa-bulk-curator');
+        var preview = document.getElementById('sa-curator-tag-preview');
+        var badge = document.getElementById('sa-curator-tag-badge');
+        if (!sel) return;
+        sel.addEventListener('change', function(){
+            var tag = (this.options[this.selectedIndex].dataset.curatorTag || '').trim();
+            if (tag) { badge.textContent = tag; preview.style.display = 'block'; }
+            else { preview.style.display = 'none'; }
+        });
+    })();
+    </script>
 
     <!-- Table -->
     <div class="su-table-wrap">
@@ -370,6 +399,7 @@
                         'has_case': s_has_case,
                         'course_periods': u.course_periods,
                         'lessons_count': u.lessons_count,
+                        'curator_tag': u.curator_tag,
                     } %}
                     <div class="student-tag-pills" style="margin-top:5px">
                         {% include "_includes/student_tag_pills.html" %}
@@ -459,7 +489,7 @@
         </div>
         <div style="display:flex;gap:8px">
             {% if page > 1 %}
-            <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&study_mode={{ study_mode }}&curator_id={{ curator_id }}&exam_subjects={{ exam_subjects }}&has_case={{ has_case }}&is_publishable={{ is_publishable }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&page={{ page - 1 }}"
+            <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&study_mode={{ study_mode }}&curator_id={{ curator_id }}&exam_subjects={{ exam_subjects }}&has_case={{ has_case }}&is_publishable={{ is_publishable }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&show_hidden={{ '1' if show_hidden else '' }}&page={{ page - 1 }}"
                style="padding:7px 14px;border-radius:9px;background:var(--surface-2);border:1.5px solid var(--line);font-size:13px;font-weight:700;color:var(--text);text-decoration:none">
                 ‹ Назад
             </a>
@@ -468,7 +498,7 @@
                 {{ page }} / {{ total_pages }}
             </span>
             {% if page < total_pages %}
-            <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&study_mode={{ study_mode }}&curator_id={{ curator_id }}&exam_subjects={{ exam_subjects }}&has_case={{ has_case }}&is_publishable={{ is_publishable }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&page={{ page + 1 }}"
+            <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&study_mode={{ study_mode }}&curator_id={{ curator_id }}&exam_subjects={{ exam_subjects }}&has_case={{ has_case }}&is_publishable={{ is_publishable }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&show_hidden={{ '1' if show_hidden else '' }}&page={{ page + 1 }}"
                style="padding:7px 14px;border-radius:9px;background:var(--surface-2);border:1.5px solid var(--line);font-size:13px;font-weight:700;color:var(--text);text-decoration:none">
                 Вперёд ›
             </a>
