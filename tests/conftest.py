@@ -160,6 +160,8 @@ def user_factory(db, role_factory):
         is_group_member: bool = True,
         profile_completed: bool = True,
         portfolio_do_completed: bool = True,
+        course_periods: str | None = "10-14 июня",
+        lessons_count: str | None = "8",
         role_name: str | None = "ученик",
     ) -> User:
         role_id = None
@@ -181,6 +183,8 @@ def user_factory(db, role_factory):
             is_group_member=is_group_member,
             profile_completed=profile_completed,
             portfolio_do_completed=portfolio_do_completed,
+            course_periods=course_periods if profile_completed else None,
+            lessons_count=lessons_count if profile_completed else None,
             role_id=role_id,
         )
         db.add(user)

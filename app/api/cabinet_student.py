@@ -66,7 +66,7 @@ def cabinet_student(
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    if not user["profile_completed"]:
+    if not user["profile_completed"] or not user.get("course_periods") or not user.get("lessons_count"):
         return RedirectResponse("/cabinet/profile", status_code=302)
 
     # History of tariffs: distinct tariffs ordered by first upload date
@@ -190,9 +190,30 @@ def profile_get(
     request: Request,
     user: Annotated[dict, Depends(require_student)],
 ):
-    if user["profile_completed"]:
+    has_periods = bool(user.get("course_periods")) and bool(user.get("lessons_count"))
+    if user["profile_completed"] and has_periods:
         return RedirectResponse("/cabinet/student", status_code=302)
-    return templates.TemplateResponse("profile.html", _profile_template_ctx(request, user))
+    form = None
+    if user["profile_completed"]:
+        enrolled_at = user.get("enrolled_at")
+        tariff = user.get("tariff") or ""
+        past_tariffs_raw = user.get("past_tariffs") or ""
+        course_periods_raw = user.get("course_periods") or ""
+        form = {
+            "first_name": user.get("first_name") or "",
+            "last_name": user.get("last_name") or "",
+            "phone": user.get("phone") or "",
+            "parent_phone": user.get("parent_phone") or "",
+            "tariff": TARIFF_DISPLAY.get(tariff, tariff),
+            "tg_username": user.get("tg_username") or "",
+            "enrollment_month": enrolled_at.month if enrolled_at else user.get("enrollment_year") and None,
+            "enrollment_year": enrolled_at.year if enrolled_at else user.get("enrollment_year"),
+            "university_year": user.get("university_year"),
+            "past_tariffs": [t for t in past_tariffs_raw.split(",") if t],
+            "course_periods": [p for p in course_periods_raw.split(",") if p],
+            "lessons_count": user.get("lessons_count") or "",
+        }
+    return templates.TemplateResponse("profile.html", _profile_template_ctx(request, user, form=form))
 
 
 @router.post("/profile", response_class=HTMLResponse)
@@ -215,9 +236,6 @@ def profile_post(
     course_periods: Annotated[list[str], Form()] = [],
     lessons_count: Annotated[str, Form()] = "",
 ):
-    if user["profile_completed"]:
-        return RedirectResponse("/cabinet/student", status_code=302)
-
     errors = []
     first_name = first_name.strip()
     last_name = last_name.strip()

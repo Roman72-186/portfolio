@@ -84,6 +84,8 @@ def get_current_user(
         "enrollment_year": user.enrollment_year,
         "university_year": user.university_year,
         "past_tariffs": user.past_tariffs,
+        "course_periods": user.course_periods,
+        "lessons_count": user.lessons_count,
         "enrolled_at": user.enrolled_at,
         "created_at": user.created_at,
         "role_name": role_name,
