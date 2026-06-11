@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+{% block title %}Проставить теги{% endblock %}
+{% block extra_styles %}
+<style>
+.su-wrap { max-width: 960px; margin: 0 auto; }
+
+.su-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
+.su-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
+.su-back { font-size: 13px; color: var(--dim); text-decoration: none; font-weight: 600; }
+.su-back:hover { color: var(--blue); }
+
+.su-filters { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.su-filters input { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; }
+.su-filters input:focus { border-color: var(--blue); }
+.su-filters label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
+.su-filters button { padding: 8px 16px; background: var(--blue); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.su-filters button:hover { opacity: 0.88; }
+
+.tags-table-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--sh-sm); }
+.tags-table { width: 100%; border-collapse: collapse; }
+.tags-table th { text-align: left; padding: 11px 14px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); border-bottom: 1px solid var(--line); background: var(--bg); }
+.tags-table td { padding: 10px 14px; font-size: 13px; color: var(--text); border-bottom: 1px solid var(--line); vertical-align: top; }
+.tags-table tr:last-child td { border-bottom: none; }
+.tags-table tr:hover td { background: var(--bg); }
+
+.u-name { font-weight: 700; }
+.u-meta { font-size: 11px; color: var(--dim); margin-top: 2px; }
+
+.tags-cell { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; position: relative; }
+
+.tag-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 10px; border-radius: var(--r-pill); font-size: 11px; font-weight: 800; background: rgba(37,99,235,0.08); color: var(--blue); white-space: nowrap; }
+.tag-chip__remove { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; border: none; background: rgba(37,99,235,0.15); color: inherit; cursor: pointer; font-size: 11px; line-height: 1; padding: 0; font-family: inherit; }
+.tag-chip__remove:hover { background: rgba(220,38,38,0.18); color: #DC2626; }
+
+.tag-add-btn { width: 22px; height: 22px; border-radius: 50%; border: 1.5px dashed var(--line); background: transparent; color: var(--dim); font-size: 14px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; line-height: 1; font-family: inherit; }
+.tag-add-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+.tag-add-popover { display: none; position: absolute; top: 100%; left: 0; margin-top: 6px; z-index: 250; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: 0 10px 30px rgba(0,0,0,0.14); padding: 10px; min-width: 220px; max-width: 280px; }
+.tag-add-popover.open { display: block; }
+.tag-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.tag-suggestion-btn { padding: 3px 10px; border-radius: var(--r-pill); font-size: 11px; font-weight: 700; background: var(--bg); border: 1px solid var(--line); color: var(--text); cursor: pointer; font-family: inherit; }
+.tag-suggestion-btn:hover { border-color: var(--blue); color: var(--blue); }
+.tag-suggestion-btn.tag-hidden { display: none; }
+.tag-custom-row { display: flex; gap: 6px; }
+.tag-custom-row input { flex: 1; font-family: inherit; font-size: 12px; padding: 6px 8px; border: 1.5px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); outline: none; min-width: 0; }
+.tag-custom-row input:focus { border-color: var(--blue); }
+.tag-custom-row button { padding: 6px 10px; background: var(--blue); color: #fff; border: none; border-radius: 8px; font-size: 12px; font-weight: 800; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.tag-custom-row button:hover { opacity: 0.88; }
+
+.tags-empty { padding: 40px; text-align: center; color: var(--dim); font-size: 14px; }
+
+@media (max-width: 640px) {
+    .tags-table thead { display: none; }
+    .tags-table, .tags-table tbody, .tags-table tr, .tags-table td { display: block; width: 100%; }
+    .tags-table tr { padding: 12px 14px; }
+    .tags-table td { padding: 4px 0; border-bottom: none; }
+    .tags-table tr:not(:last-child) { border-bottom: 1px solid var(--line); }
+    .tags-table td:first-child { padding-bottom: 10px; }
+    .tags-table td:last-child::before { content: "Теги"; display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); margin-bottom: 6px; }
+
+    .tag-chip { padding: 6px 8px 6px 12px; font-size: 12px; }
+    .tag-chip__remove { width: 28px; height: 28px; font-size: 16px; }
+    .tag-add-btn { width: 32px; height: 32px; font-size: 18px; }
+    .tag-add-popover { left: auto; right: 0; max-width: calc(100vw - 56px); }
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="su-wrap">
+
+    <div class="su-header">
+        <a href="/cabinet/superadmin/users" class="su-back">← Управление пользователями</a>
+        <div class="su-title">Проставить теги</div>
+    </div>
+
+    <form method="get" action="/cabinet/superadmin/tags" class="su-filters">
+        <label>
+            Поиск
+            <input type="text" name="q" value="{{ q }}" placeholder="Имя, фамилия..." style="min-width:200px">
+        </label>
+        {% if is_superadmin %}
+        <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" name="show_hidden" value="1" {% if show_hidden %}checked{% endif %} style="width:auto;padding:0">
+            <span style="font-size:12px;font-weight:700;color:#D97706">Без периодов</span>
+        </label>
+        {% endif %}
+        <button type="submit">Найти</button>
+    </form>
+
+    <div class="tags-table-wrap">
+        {% if students %}
+        <table class="tags-table">
+            <thead>
+                <tr>
+                    <th>Ученик</th>
+                    <th>Теги</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for s in students %}
+            {% set student_tags = tags_by_user.get(s.id, []) %}
+            {% set existing_names = student_tags|map(attribute='name')|list %}
+            <tr>
+                <td>
+                    <div class="u-name">{{ s.last_name or '' }} {{ s.first_name or s.name }}</div>
+                    <div class="u-meta">
+                        id={{ s.id }}
+                        {%- if s.course_periods %}
+                          {%- for p in s.course_periods.split(',') %}
+                          {%- set _pfx = p.split(' ')[0]|trim %}
+                          {%- set _pcls = 'pink' if _pfx == '10-14' else ('blue' if _pfx == '15-20' else 'purple') %}
+                          · <span class="tag-pill tag-pill--{{ _pcls }}">{{ _pfx }}</span>
+                          {%- endfor %}
+                        {%- endif -%}
+                        {%- if s.lessons_count %}
+                          {%- set _lcls = 'pink' if s.lessons_count|string == '6' else ('blue' if s.lessons_count|string == '8' else 'purple') %}
+                          · <span class="tag-pill tag-pill--{{ _lcls }}">{{ s.lessons_count }} занятий</span>
+                        {%- endif -%}
+                    </div>
+                </td>
+                <td>
+                    <div class="tags-cell" data-user-id="{{ s.id }}">
+                        {% for tag in student_tags %}
+                        <span class="tag-chip" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name }}">
+                            {{ tag.name }}
+                            <button type="button" class="tag-chip__remove" aria-label="Удалить тег" onclick="removeTag(this)">×</button>
+                        </span>
+                        {% endfor %}
+                        <button type="button" class="tag-add-btn" aria-label="Добавить тег" onclick="toggleTagPopover(this)">+</button>
+                        <div class="tag-add-popover">
+                            <div class="tag-suggestions">
+                                {% for sug in suggested_tags %}
+                                <button type="button" class="tag-suggestion-btn{% if sug in existing_names %} tag-hidden{% endif %}" data-tag-name="{{ sug }}" onclick="addSuggestedTag(this)">{{ sug }}</button>
+                                {% endfor %}
+                            </div>
+                            <div class="tag-custom-row">
+                                <input type="text" maxlength="50" placeholder="Свой тег" onkeydown="if(event.key==='Enter'){event.preventDefault();addCustomTag(this)}">
+                                <button type="button" onclick="addCustomTag(this)">Добавить</button>
+                            </div>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="tags-empty">Ученики не найдены</div>
+        {% endif %}
+    </div>
+
+</div>
+
+<form id="csrfForm" style="display:none">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+</form>
+
+<script>
+function csrfToken() {
+    return document.querySelector('#csrfForm input[name="csrf_token"]').value;
+}
+
+document.addEventListener('click', function(e) {
+    document.querySelectorAll('.tag-add-popover.open').forEach(function(pop) {
+        if (!pop.contains(e.target) && !(e.target.closest('.tags-cell') === pop.closest('.tags-cell') && e.target.classList.contains('tag-add-btn'))) {
+            pop.classList.remove('open');
+        }
+    });
+});
+
+function toggleTagPopover(btn) {
+    const cell = btn.closest('.tags-cell');
+    const pop = cell.querySelector('.tag-add-popover');
+    const wasOpen = pop.classList.contains('open');
+    document.querySelectorAll('.tag-add-popover.open').forEach(function(p) { p.classList.remove('open'); });
+    if (!wasOpen) pop.classList.add('open');
+}
+
+function createChip(cell, tagId, tagName) {
+    const chip = document.createElement('span');
+    chip.className = 'tag-chip';
+    chip.dataset.tagId = tagId;
+    chip.dataset.tagName = tagName;
+    chip.textContent = tagName + ' ';
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'tag-chip__remove';
+    removeBtn.setAttribute('aria-label', 'Удалить тег');
+    removeBtn.textContent = '×';
+    removeBtn.onclick = function() { removeTag(removeBtn); };
+    chip.appendChild(removeBtn);
+
+    const addBtn = cell.querySelector('.tag-add-btn');
+    cell.insertBefore(chip, addBtn);
+}
+
+function addToAllSuggestions(tagName) {
+    document.querySelectorAll('.tags-cell').forEach(function(cell) {
+        const suggestions = cell.querySelector('.tag-suggestions');
+        const existing = Array.from(suggestions.querySelectorAll('.tag-suggestion-btn'))
+            .find(function(b) { return b.dataset.tagName === tagName; });
+        if (!existing) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'tag-suggestion-btn';
+            btn.dataset.tagName = tagName;
+            btn.textContent = tagName;
+            btn.onclick = function() { addSuggestedTag(btn); };
+            suggestions.appendChild(btn);
+        }
+    });
+}
+
+function postAddTag(cell, tagName, onSuccess) {
+    const userId = cell.dataset.userId;
+    const fd = new FormData();
+    fd.append('csrf_token', csrfToken());
+    fd.append('name', tagName);
+
+    return fetch(`/cabinet/superadmin/tags/${userId}`, {
+        method: 'POST',
+        body: fd,
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    })
+        .then(function(response) {
+            return response.json()
+                .catch(function() { return {}; })
+                .then(function(data) { return { ok: response.ok, data: data }; });
+        })
+        .then(function(result) {
+            if (!result.ok || !result.data.ok) {
+                throw new Error(result.data.detail || 'Не удалось добавить тег');
+            }
+            onSuccess(result.data.tag);
+        })
+        .catch(function(err) {
+            alert(err.message || 'Ошибка сети');
+        });
+}
+
+function addSuggestedTag(btn) {
+    const cell = btn.closest('.tags-cell');
+    const tagName = btn.dataset.tagName;
+    postAddTag(cell, tagName, function(tag) {
+        btn.classList.add('tag-hidden');
+        createChip(cell, tag.id, tag.name);
+    });
+}
+
+function addCustomTag(btn) {
+    const cell = btn.closest('.tags-cell');
+    const input = cell.querySelector('.tag-custom-row input');
+    const tagName = input.value.trim();
+    if (!tagName) return;
+    postAddTag(cell, tagName, function(tag) {
+        input.value = '';
+        createChip(cell, tag.id, tag.name);
+        addToAllSuggestions(tag.name);
+        const ownSuggestion = cell.querySelector('.tag-suggestion-btn[data-tag-name="' + CSS.escape(tag.name) + '"]');
+        if (ownSuggestion) ownSuggestion.classList.add('tag-hidden');
+    });
+}
+
+function removeTag(removeBtn) {
+    const chip = removeBtn.closest('.tag-chip');
+    const cell = chip.closest('.tags-cell');
+    const userId = cell.dataset.userId;
+    const tagId = chip.dataset.tagId;
+    const tagName = chip.dataset.tagName;
+
+    fetch(`/cabinet/superadmin/tags/${userId}/${tagId}`, {
+        method: 'DELETE',
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': csrfToken() },
+    })
+        .then(function(response) {
+            return response.json()
+                .catch(function() { return {}; })
+                .then(function(data) { return { ok: response.ok, data: data }; });
+        })
+        .then(function(result) {
+            if (!result.ok || !result.data.ok) {
+                throw new Error(result.data.detail || 'Не удалось удалить тег');
+            }
+            chip.remove();
+            const suggestion = cell.querySelector('.tag-suggestion-btn[data-tag-name="' + CSS.escape(tagName) + '"]');
+            if (suggestion) suggestion.classList.remove('tag-hidden');
+        })
+        .catch(function(err) {
+            alert(err.message || 'Ошибка сети');
+        });
+}
+</script>
+{% endblock %}
