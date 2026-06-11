@@ -732,9 +732,12 @@ a:hover { color: var(--blue-deep); }
 .tag-pill--mode-online  { background: rgba(59,91,255,0.12);        color: var(--blue); }
 .tag-pill--case         { background: rgba(252,211,77,0.22);       color: #92590A; }
 .tag-pill--publish      { background: rgba(124,58,237,0.12);       color: #7C3AED; }
-.tag-pill--curator      { background: rgba(107,114,128,0.10);      color: var(--dim); }
-.tag-pill--period       { background: rgba(234,179,8,0.12);        color: #92400e; }
-.tag-pill--lessons      { background: rgba(168,85,247,0.12);       color: #6b21a8; }
+.tag-pill--curator,
+.tag-pill--curator-tag,
+.tag-pill--orange       { background: rgba(249,115,22,0.12);       color: #c2410c; }
 .tag-pill--tariff       { background: rgba(100,116,139,0.10);      color: var(--dim); border: 1px solid var(--line); }
+.tag-pill--pink         { background: rgba(236,72,153,0.12);       color: #be185d; }
+.tag-pill--blue         { background: rgba(59,91,255,0.12);        color: var(--blue); }
+.tag-pill--purple       { background: rgba(168,85,247,0.12);       color: #6b21a8; }
 
 .student-tag-pills { display: inline-flex; flex-wrap: wrap; gap: 4px; }

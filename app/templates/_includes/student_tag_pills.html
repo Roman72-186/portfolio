@@ -11,18 +11,31 @@
 {% set _curator_name = s.curator_name if s.curator_name is defined else None %}
 {% set _course_periods = s.course_periods if s.course_periods is defined else None %}
 {% set _lessons_count = s.lessons_count if s.lessons_count is defined else None %}
+{% set _curator_tag = s.curator_tag if s.curator_tag is defined else None %}
 
 {% if _course_periods %}
   {% for p in _course_periods.split(',') %}
-  <span class="tag-pill tag-pill--period">{{ p.split(' ')[0] }}</span>
+  {% set _pfx = p.split(' ')[0]|trim %}
+  {% set _pcls = 'pink' if _pfx == '10-14' else ('blue' if _pfx == '15-20' else 'purple') %}
+  <span class="tag-pill tag-pill--{{ _pcls }}">{{ _pfx }}</span>
   {% endfor %}
 {% endif %}
 {% if _lessons_count %}
-<span class="tag-pill tag-pill--lessons">{{ _lessons_count }}</span>
+  {% set _lcls = 'pink' if _lessons_count|string == '6' else ('blue' if _lessons_count|string == '8' else 'purple') %}
+<span class="tag-pill tag-pill--{{ _lcls }}">{{ _lessons_count }}</span>
 {% endif %}
 
-{% if _exam_dates or _exam_subjects %}
-<span class="tag-pill tag-pill--exam">{{ _exam_dates or '' }}{% if _exam_dates and _exam_subjects %} {% endif %}{{ _exam_subjects or '' }}</span>
+{% if _exam_dates %}
+<span class="tag-pill tag-pill--exam">{{ _exam_dates }}</span>
+{% endif %}
+{% if _exam_subjects %}
+  {% for subj in _exam_subjects.split('+') %}
+    {% set _s = subj|trim %}
+    {% if _s %}
+    {% set _scls = 'blue' if _s == 'Р' else ('purple' if _s == 'К' else 'exam') %}
+    <span class="tag-pill tag-pill--{{ _scls }}">{{ _s }}</span>
+    {% endif %}
+  {% endfor %}
 {% endif %}
 
 {% if _study_mode == 'offline' %}
@@ -41,4 +54,8 @@
 
 {% if show_curator|default(false) and _curator_name %}
 <span class="tag-pill tag-pill--curator">👤 {{ _curator_name }}</span>
+{% endif %}
+
+{% if _curator_tag %}
+<span class="tag-pill tag-pill--curator-tag">{{ _curator_tag }}</span>
 {% endif %}
