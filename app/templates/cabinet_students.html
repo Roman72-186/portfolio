@@ -1048,8 +1048,8 @@
                     <div class="student-row-name">{{ s.name }}</div>
                     <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px">
                         {% if s.tariff and s.tariff != '—' %}<span class="student-info-pill">{{ s.tariff }}</span>{% endif %}
-                        {% if s.course_periods %}{% for p in s.course_periods.split(',') %}<span class="student-info-pill">{{ p.split(' ')[0] }}</span>{% endfor %}{% endif %}
-                        {% if s.lessons_count %}<span class="student-info-pill">{{ s.lessons_count }}</span>{% endif %}
+                        {% if s.course_periods %}{% for p in s.course_periods.split(',') %}{% set _pfx = p.split(' ')[0]|trim %}{% set _pcls = 'pink' if _pfx == '10-14' else ('blue' if _pfx == '15-20' else 'purple') %}<span class="student-info-pill student-info-pill--{{ _pcls }}">{{ _pfx }}</span>{% endfor %}{% endif %}
+                        {% if s.lessons_count %}{% set _lcls = 'pink' if s.lessons_count|string == '6' else ('blue' if s.lessons_count|string == '8' else 'purple') %}<span class="student-info-pill student-info-pill--{{ _lcls }}">{{ s.lessons_count }}</span>{% endif %}
                         {% if s.has_case %}<span class="student-info-pill">КЕЙС</span>{% endif %}
                         {% if s.study_mode == 'offline' %}<span class="student-info-pill">ОЧНО</span>{% elif s.study_mode == 'online' %}<span class="student-info-pill">ОНЛАЙН</span>{% endif %}
                     </div>
@@ -1599,9 +1599,13 @@ function buildHero(s, bySubj) {
     if (s.course_periods) {
         s.course_periods.split(',').forEach(function(p) {
             var abbrev = p.trim().split(' ')[0];
-            if (abbrev) periodPills += '<span class="student-hero-pill">' + esc(abbrev) + '</span>';
+            if (abbrev) {
+                var pcls = abbrev === '10-14' ? 'pink' : (abbrev === '15-20' ? 'blue' : 'purple');
+                periodPills += '<span class="student-hero-pill student-hero-pill--' + pcls + '">' + esc(abbrev) + '</span>';
+            }
         });
     }
+    var lessonsCls = String(s.lessons_count) === '6' ? 'pink' : (String(s.lessons_count) === '8' ? 'blue' : 'purple');
     return '<div class="student-hero">'
         + avatar
         + '<div class="student-hero-info">'
@@ -1609,7 +1613,7 @@ function buildHero(s, bySubj) {
         +   '<div class="student-hero-pills">'
         +     (s.tariff && s.tariff !== '—' ? '<span class="student-hero-pill">' + esc(s.tariff) + '</span>' : '')
         +     periodPills
-        +     (s.lessons_count ? '<span class="student-hero-pill">' + esc(s.lessons_count) + '</span>' : '')
+        +     (s.lessons_count ? '<span class="student-hero-pill student-hero-pill--' + lessonsCls + '">' + esc(s.lessons_count) + '</span>' : '')
         +     (s.has_case ? '<span class="student-hero-pill">КЕЙС</span>' : '')
         +     (s.study_mode === 'offline' ? '<span class="student-hero-pill">ОЧНО</span>' : '')
         +     (s.study_mode === 'online' ? '<span class="student-hero-pill">ОНЛАЙН</span>' : '')

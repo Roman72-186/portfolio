@@ -740,4 +740,12 @@ a:hover { color: var(--blue-deep); }
 .tag-pill--blue         { background: rgba(59,91,255,0.12);        color: var(--blue); }
 .tag-pill--purple       { background: rgba(168,85,247,0.12);       color: #6b21a8; }
 
+.student-info-pill--pink   { background: rgba(236,72,153,0.12); border-color: transparent; color: #be185d; }
+.student-info-pill--blue   { background: rgba(59,91,255,0.12);  border-color: transparent; color: var(--blue); }
+.student-info-pill--purple { background: rgba(168,85,247,0.12); border-color: transparent; color: #6b21a8; }
+
+.student-hero-pill--pink   { background: rgba(236,72,153,0.35); border-color: rgba(236,72,153,0.5); color: #fff; }
+.student-hero-pill--blue   { background: rgba(99,126,255,0.35); border-color: rgba(99,126,255,0.5); color: #fff; }
+.student-hero-pill--purple { background: rgba(168,85,247,0.35); border-color: rgba(168,85,247,0.5); color: #fff; }
+
 .student-tag-pills { display: inline-flex; flex-wrap: wrap; gap: 4px; }
