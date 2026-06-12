@@ -24,6 +24,8 @@
 .tags-table tr:hover td { background: var(--bg); }
 
 .u-name { font-weight: 700; }
+.u-username { font-size: 12px; font-weight: 600; color: var(--blue); margin-top: 1px; }
+.u-username--empty { color: var(--dim); font-weight: 500; font-style: italic; }
 .u-meta { font-size: 11px; color: var(--dim); margin-top: 2px; }
 
 .tags-cell { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; position: relative; }
@@ -35,9 +37,11 @@
 .tag-chip.tag-pill--pink   { background: rgba(236,72,153,0.12); color: #be185d; }
 .tag-chip.tag-pill--blue   { background: rgba(59,91,255,0.12);  color: var(--blue); }
 .tag-chip.tag-pill--purple { background: rgba(168,85,247,0.12); color: #6b21a8; }
+.tag-chip.tag-pill--orange { background: rgba(249,115,22,0.14); color: #c2410c; }
 .tag-chip.tag-pill--pink .tag-chip__remove   { background: rgba(190,24,93,0.15); }
 .tag-chip.tag-pill--blue .tag-chip__remove   { background: rgba(59,91,255,0.15); }
 .tag-chip.tag-pill--purple .tag-chip__remove { background: rgba(107,33,168,0.15); }
+.tag-chip.tag-pill--orange .tag-chip__remove { background: rgba(194,65,12,0.15); }
 
 .tag-add-btn { width: 22px; height: 22px; border-radius: 50%; border: 1.5px dashed var(--line); background: transparent; color: var(--dim); font-size: 14px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; line-height: 1; font-family: inherit; }
 .tag-add-btn:hover { border-color: var(--blue); color: var(--blue); }
@@ -52,6 +56,7 @@
 .tag-suggestion-btn.tag-pill--pink   { background: rgba(236,72,153,0.12); color: #be185d; border-color: transparent; }
 .tag-suggestion-btn.tag-pill--blue   { background: rgba(59,91,255,0.12);  color: var(--blue); border-color: transparent; }
 .tag-suggestion-btn.tag-pill--purple { background: rgba(168,85,247,0.12); color: #6b21a8; border-color: transparent; }
+.tag-suggestion-btn.tag-pill--orange { background: rgba(249,115,22,0.14); color: #c2410c; border-color: transparent; }
 .tag-custom-row { display: flex; gap: 6px; }
 .tag-custom-row input { flex: 1; font-family: inherit; font-size: 12px; padding: 6px 8px; border: 1.5px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); outline: none; min-width: 0; }
 .tag-custom-row input:focus { border-color: var(--blue); }
@@ -76,10 +81,11 @@
 }
 </style>
 {% endblock %}
-{% macro tag_color_cls(name) -%}
+{% macro tag_color_cls(name, curator_names=[]) -%}
 {%- if name in ('10-14', '6') -%}tag-pill--pink
 {%- elif name in ('15-20', '8') -%}tag-pill--blue
 {%- elif name in ('22-27', '10') -%}tag-pill--purple
+{%- elif name in curator_names -%}tag-pill--orange
 {%- endif -%}
 {%- endmacro %}
 {% block content %}
@@ -120,14 +126,17 @@
             <tr>
                 <td>
                     <div class="u-name">{{ s.last_name or '' }} {{ s.first_name or s.name }}</div>
-                    <div class="u-meta">
-                        id={{ s.id }}
-                    </div>
+                    {% if s.tg_username %}
+                    <div class="u-username">@{{ s.tg_username }}</div>
+                    {% else %}
+                    <div class="u-username u-username--empty">username не указан</div>
+                    {% endif %}
+                    <div class="u-meta">id={{ s.id }}</div>
                 </td>
                 <td>
                     <div class="tags-cell" data-user-id="{{ s.id }}">
                         {% for tag in student_tags %}
-                        {% set _cls = tag_color_cls(tag.name) %}
+                        {% set _cls = tag_color_cls(tag.name, curator_names) %}
                         <span class="tag-chip{% if _cls %} {{ _cls }}{% endif %}" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name }}">
                             {{ tag.name }}
                             <button type="button" class="tag-chip__remove" aria-label="Удалить тег" onclick="removeTag(this)">×</button>
@@ -137,7 +146,7 @@
                         <div class="tag-add-popover">
                             <div class="tag-suggestions">
                                 {% for sug in suggested_tags %}
-                                {% set _cls = tag_color_cls(sug) %}
+                                {% set _cls = tag_color_cls(sug, curator_names) %}
                                 <button type="button" class="tag-suggestion-btn{% if _cls %} {{ _cls }}{% endif %}{% if sug in existing_names %} tag-hidden{% endif %}" data-tag-name="{{ sug }}" onclick="addSuggestedTag(this)">{{ sug }}</button>
                                 {% endfor %}
                             </div>
@@ -184,10 +193,13 @@ function toggleTagPopover(btn) {
     if (!wasOpen) pop.classList.add('open');
 }
 
+const curatorNames = {{ curator_names|tojson }};
+
 function tagColorClass(name) {
     if (name === '10-14' || name === '6') return 'tag-pill--pink';
     if (name === '15-20' || name === '8') return 'tag-pill--blue';
     if (name === '22-27' || name === '10') return 'tag-pill--purple';
+    if (curatorNames.indexOf(name) !== -1) return 'tag-pill--orange';
     return '';
 }
 
