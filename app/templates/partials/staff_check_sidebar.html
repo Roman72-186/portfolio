@@ -1,0 +1,41 @@
+{#
+  Общий sidebar для staff check-экранов (проверка пробников / отработок).
+
+  Идентичная часть: back-link, заголовок+счётчик, подзаголовок, поиск, tariff-filter,
+  контейнер списка. Различается только тело элемента списка — оно передаётся через
+  {% call check_sidebar(...) %} ... {% endcall %} (caller).
+
+  JS-хуки, которые должны быть на странице: applyFilters(), selectTariff(), selectStudent().
+  CSS-классы (.sidebar*, .tariff-*, .student-row*) определяются в <style> страницы.
+
+  Используется в: cabinet_admin_mock_check.html, cabinet_admin_retake_check.html
+#}
+{% macro check_sidebar(title, search_placeholder, total_unchecked, total_students, tariffs) %}
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <a href="/cabinet/admin-panel" class="sidebar-back">← Кабинет</a>
+            <div class="sidebar-title">
+                {{ title }}
+                {% if total_unchecked %}
+                <span class="sidebar-counter" title="Непроверенных работ">{{ total_unchecked }}</span>
+                {% endif %}
+            </div>
+            <div class="sidebar-subtitle">
+                {{ total_students }} учен{{ 'иков' if total_students != 1 else 'ик' }} · на проверке {{ total_unchecked }} работ
+            </div>
+            <input type="text" class="sidebar-search" placeholder="{{ search_placeholder }}"
+                   oninput="applyFilters()" id="student-search">
+            {% if tariffs %}
+            <div class="tariff-filter" id="tariff-filter">
+                <button type="button" class="tariff-chip active" data-tariff="" onclick="selectTariff(this, '')">Все</button>
+                {% for t in tariffs %}
+                <button type="button" class="tariff-chip" data-tariff="{{ t }}" onclick="selectTariff(this, '{{ t }}')">{{ t }}</button>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        <div class="sidebar-list" id="student-list">
+            {{ caller() }}
+        </div>
+    </div>
+{% endmacro %}

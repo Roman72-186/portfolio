@@ -474,30 +474,8 @@ const CSRF_TOKEN = "{{ csrf_token(request) }}";
 const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
 </script>
 <div class="split-wrap">
-    <div class="sidebar">
-        <div class="sidebar-header">
-            <a href="/cabinet/admin-panel" class="sidebar-back">← Кабинет</a>
-            <div class="sidebar-title">
-                Проверка пробников
-                {% if total_unchecked %}
-                <span class="sidebar-counter" title="Непроверенных работ">{{ total_unchecked }}</span>
-                {% endif %}
-            </div>
-            <div class="sidebar-subtitle">
-                {{ total_students }} учен{{ 'иков' if total_students != 1 else 'ик' }} · на проверке {{ total_unchecked }} работ
-            </div>
-            <input type="text" class="sidebar-search" placeholder="Поиск ученика…"
-                   oninput="applyFilters()" id="student-search">
-            {% if tariffs %}
-            <div class="tariff-filter" id="tariff-filter">
-                <button type="button" class="tariff-chip active" data-tariff="" onclick="selectTariff(this, '')">Все</button>
-                {% for t in tariffs %}
-                <button type="button" class="tariff-chip" data-tariff="{{ t }}" onclick="selectTariff(this, '{{ t }}')">{{ t }}</button>
-                {% endfor %}
-            </div>
-            {% endif %}
-        </div>
-        <div class="sidebar-list" id="student-list">
+    {% from "partials/staff_check_sidebar.html" import check_sidebar %}
+    {% call check_sidebar("Проверка пробников", "Поиск ученика…", total_unchecked, total_students, tariffs) %}
             {% for s in sidebar_students %}
             <button type="button" class="student-row" id="srow-{{ s.id }}" data-tariff="{{ s.tariff or '' }}" onclick="selectStudent({{ s.id }})" aria-label="{{ s.name }}">
                 {% if s.photo_url %}
@@ -527,8 +505,7 @@ const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
                 Нет пробников для проверки
             </div>
             {% endfor %}
-        </div>
-    </div>
+    {% endcall %}
 
     <div class="split-main">
         <div class="split-main-scroll" id="main-panel">
