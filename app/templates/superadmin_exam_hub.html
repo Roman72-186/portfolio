@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Билеты для пробников{% endblock %}
+{% block extra_styles %}
+<style>
+.ea-wrap { max-width: 760px; margin: 0 auto; }
+.page-header { margin-bottom: 28px; }
+.page-back { font-size: 13px; color: var(--muted); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+.page-back:hover { color: var(--blue); opacity: 1; }
+.page-title { font-size: 24px; font-weight: 900; color: var(--text); margin-top: 6px; }
+.page-sub { font-size: 14px; color: var(--dim); margin-top: 4px; }
+
+.hub-grid { display: flex; flex-direction: column; gap: 14px; }
+.hub-card { background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-lg); padding: 22px 24px; display: flex; align-items: center; gap: 18px; text-decoration: none; color: inherit; transition: border-color 0.2s, box-shadow 0.2s, transform 0.12s; box-shadow: var(--sh-sm); }
+.hub-card:hover { border-color: rgba(59,91,255,0.30); box-shadow: var(--sh-md); transform: translateY(-1px); color: inherit; }
+.hub-icon { width: 52px; height: 52px; border-radius: var(--r-md); background: var(--blue-soft); color: var(--blue); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.hub-icon .svg-icon { width: 26px; height: 26px; }
+.hub-icon.create { background: rgba(37,99,235,0.10); color: var(--blue); }
+.hub-icon.active  { background: rgba(5,150,105,0.10); color: var(--ok); }
+.hub-icon.archive { background: rgba(156,163,175,0.12); color: #6B7280; }
+.hub-info { flex: 1; min-width: 0; }
+.hub-name { font-size: 16px; font-weight: 800; color: var(--text); }
+.hub-desc { font-size: 13px; color: var(--dim); margin-top: 3px; }
+.hub-count { flex-shrink: 0; font-size: 13px; font-weight: 700; color: var(--muted); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-xl); padding: 4px 12px; }
+.hub-arrow { flex-shrink: 0; color: var(--dim); }
+</style>
+{% endblock %}
+{% block content %}
+<div class="ea-wrap">
+    <div class="page-header">
+        <a href="/cabinet" class="page-back">← Кабинет</a>
+        <div class="page-title">Билеты для пробников</div>
+        <div class="page-sub">Создание билетов и управление активными пробниками</div>
+    </div>
+
+    <div class="hub-grid">
+        <a href="/cabinet/exam-assignments/create" class="hub-card">
+            <div class="hub-icon create">
+                <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </div>
+            <div class="hub-info">
+                <div class="hub-name">Создать билет</div>
+                <div class="hub-desc">Новое задание с билетами, датами и доступом ученикам</div>
+            </div>
+            <div class="hub-arrow"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg></div>
+        </a>
+
+        <a href="/cabinet/exam-assignments/active" class="hub-card">
+            <div class="hub-icon active">
+                <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            </div>
+            <div class="hub-info">
+                <div class="hub-name">Активные пробники</div>
+                <div class="hub-desc">Включить/выключить, настроить расписание и доступ</div>
+            </div>
+            {% if active_count %}<div class="hub-count">{{ active_count }}</div>{% endif %}
+            <div class="hub-arrow"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg></div>
+        </a>
+
+        <a href="/cabinet/exam-assignments/archive" class="hub-card">
+            <div class="hub-icon archive">
+                <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="5"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+            </div>
+            <div class="hub-info">
+                <div class="hub-name">Архив пробников</div>
+                <div class="hub-desc">Вернуть пробник в активные и настроить заново</div>
+            </div>
+            {% if archived_count %}<div class="hub-count">{{ archived_count }}</div>{% endif %}
+            <div class="hub-arrow"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg></div>
+        </a>
+    </div>
+</div>
+{% endblock %}

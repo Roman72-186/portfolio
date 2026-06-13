@@ -3,7 +3,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from sqlalchemy import or_
 from sqlalchemy.orm import Session as DBSession
 
 from app.db.database import get_db
@@ -49,14 +48,22 @@ def superadmin_tags_page(
         if not show_hidden_b:
             query = query.filter(User.course_periods.isnot(None), User.lessons_count.isnot(None))
 
-        q_clean = q.strip()
+        # @username — это Telegram-логин; tg_username зашифрован (EncryptedString),
+        # поэтому ищем по нему в Python, а не через SQL ilike. Имя/фамилию матчим тоже
+        # в памяти для единообразия.
+        q_clean = q.strip().lstrip("@")
+        all_students = query.order_by(User.last_name, User.first_name).all()
         if q_clean:
-            like = f"%{q_clean}%"
-            query = query.filter(
-                or_(User.first_name.ilike(like), User.last_name.ilike(like), User.name.ilike(like))
-            )
-
-        students = query.order_by(User.last_name, User.first_name).all()
+            ql = q_clean.lower()
+            students = [
+                s for s in all_students
+                if (s.first_name and ql in s.first_name.lower())
+                or (s.last_name and ql in s.last_name.lower())
+                or (s.name and ql in s.name.lower())
+                or (s.tg_username and ql in s.tg_username.lower())
+            ]
+        else:
+            students = all_students
 
     ensure_profile_tags(db, students)
     tags_by_user = get_tags_for_users(db, [s.id for s in students])

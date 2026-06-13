@@ -1199,6 +1199,7 @@ const INITIAL_STUDENT_ID = {{ initial_student_id }};
 const INITIAL_TAB    = "{{ initial_tab }}";
 const IS_SUPERADMIN  = {{ is_superadmin | tojson }};
 const USER_ROLE_RANK = {{ user.role_rank | tojson }};
+const COHORT_TAG_LABELS = {{ cohort_tag_labels | tojson }};
 
 var _currentStudentId = null;
 var _currentTab = 'portfolio';
@@ -1487,32 +1488,95 @@ function buildStatistics(data) {
         xLabels += '<text x="' + xFor(i) + '" y="' + (H - padB + 18) + '" text-anchor="middle" font-size="10" fill="var(--dim)">' + esc(short) + '</text>';
     });
 
-    // Линия по предмету: сегменты только между соседними не-null точками, кружки на точках
-    function series(key, color) {
-        var path = '';
-        var dots = '';
-        var prev = null;
+    // Сегменты: разрываем линию на соседних не-null точках (null = разрыв графика)
+    function buildSegments(key) {
+        var segs = [];
+        var current = [];
         pts.forEach(function(p, i) {
             var v = p[key];
-            if (v == null) { prev = null; return; }
-            var x = xFor(i), y = yFor(v);
-            if (prev) {
-                path += '<line x1="' + prev.x + '" y1="' + prev.y + '" x2="' + x + '" y2="' + y + '" stroke="' + color + '" stroke-width="2.5" stroke-linecap="round"/>';
+            if (v == null) {
+                if (current.length) segs.push(current);
+                current = [];
+                return;
             }
-            dots += '<circle cx="' + x + '" cy="' + y + '" r="3.5" fill="' + color + '"/>';
-            dots += '<title>' + esc(p.label) + ': ' + v + '</title>';
-            prev = { x: x, y: y };
+            current.push({ x: xFor(i), y: yFor(v), label: p.label, value: v });
         });
-        return path + dots;
+        if (current.length) segs.push(current);
+        return segs;
+    }
+
+    // Плавная кривая через точки сегмента (Catmull-Rom → кубический Безье),
+    // как в линейных графиках биржевых котировок.
+    function smoothPath(points) {
+        var d = 'M' + points[0].x.toFixed(2) + ',' + points[0].y.toFixed(2);
+        for (var i = 0; i < points.length - 1; i++) {
+            var p0 = points[i === 0 ? 0 : i - 1];
+            var p1 = points[i];
+            var p2 = points[i + 1];
+            var p3 = points[i + 2 < points.length ? i + 2 : i + 1];
+            var c1x = p1.x + (p2.x - p0.x) / 6;
+            var c1y = p1.y + (p2.y - p0.y) / 6;
+            var c2x = p2.x - (p3.x - p1.x) / 6;
+            var c2y = p2.y - (p3.y - p1.y) / 6;
+            d += ' C' + c1x.toFixed(2) + ',' + c1y.toFixed(2) + ' ' + c2x.toFixed(2) + ',' + c2y.toFixed(2) + ' ' + p2.x.toFixed(2) + ',' + p2.y.toFixed(2);
+        }
+        return d;
+    }
+
+    var baseY = padT + plotH;
+
+    function renderArea(segs, fillId) {
+        var out = '';
+        segs.forEach(function(seg) {
+            if (seg.length < 2) return;
+            var first = seg[0], last = seg[seg.length - 1];
+            out += '<path d="' + smoothPath(seg) + ' L' + last.x.toFixed(2) + ',' + baseY + ' L' + first.x.toFixed(2) + ',' + baseY + ' Z" fill="url(#' + fillId + ')" stroke="none"/>';
+        });
+        return out;
+    }
+
+    function renderLine(segs, color) {
+        var out = '';
+        segs.forEach(function(seg) {
+            if (seg.length < 2) return;
+            out += '<path d="' + smoothPath(seg) + '" fill="none" stroke="' + color + '" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
+        });
+        return out;
+    }
+
+    function renderDots(segs, color) {
+        var out = '';
+        segs.forEach(function(seg) {
+            seg.forEach(function(p) {
+                out += '<circle cx="' + p.x.toFixed(2) + '" cy="' + p.y.toFixed(2) + '" r="3.5" fill="' + color + '"/>';
+                out += '<title>' + esc(p.label) + ': ' + p.value + '</title>';
+            });
+        });
+        return out;
     }
 
     var COLOR_DRAW = '#3B5BFF';   // Рисунок
     var COLOR_COMP = '#F59E0B';   // Композиция
 
+    var drawSegs = buildSegments('drawing');
+    var compSegs = buildSegments('composition');
+
+    var defs = '<defs>' +
+        '<linearGradient id="statGradDraw" x1="0" y1="0" x2="0" y2="1">' +
+            '<stop offset="0%" stop-color="' + COLOR_DRAW + '" stop-opacity="0.22"/>' +
+            '<stop offset="100%" stop-color="' + COLOR_DRAW + '" stop-opacity="0"/>' +
+        '</linearGradient>' +
+        '<linearGradient id="statGradComp" x1="0" y1="0" x2="0" y2="1">' +
+            '<stop offset="0%" stop-color="' + COLOR_COMP + '" stop-opacity="0.22"/>' +
+            '<stop offset="100%" stop-color="' + COLOR_COMP + '" stop-opacity="0"/>' +
+        '</linearGradient>' +
+        '</defs>';
+
     var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Динамика баллов по пробникам">' +
-        grid + xLabels +
-        series('drawing', COLOR_DRAW) +
-        series('composition', COLOR_COMP) +
+        defs + grid + xLabels +
+        renderArea(drawSegs, 'statGradDraw') + renderArea(compSegs, 'statGradComp') +
+        renderLine(drawSegs, COLOR_DRAW) + renderLine(compSegs, COLOR_COMP) +
+        renderDots(drawSegs, COLOR_DRAW) + renderDots(compSegs, COLOR_COMP) +
         '</svg>';
 
     var legend = '<div class="stat-legend">' +
@@ -1523,7 +1587,7 @@ function buildStatistics(data) {
     return title +
         '<div class="stat-chart-card">' + legend +
         '<div class="stat-chart-wrap">' + svg + '</div>' +
-        '<div class="stat-note">Средний балл за месяц по оценённым пробникам, последние 12 месяцев.</div>' +
+        '<div class="stat-note">Средний балл за месяц по оценённым пробникам, с начала сдачи пробников.</div>' +
         '</div>';
 }
 
@@ -2391,7 +2455,7 @@ function buildScoreForm(sid, workId, tab, currentScore, currentComment) {
         + '<button type="submit" class="score-submit-btn" onclick="this.form.closest(\'.score-form\').dataset.saving=\'1\';this.disabled=true;this.textContent=\'Сохраняем…\';this.form.submit()"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> ' + saveLabel + '</button>'
         + (tab === 'mock-exams'
             ? '<button type="button" class="score-retake-btn" onclick="submitMockRetake(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> На отработку</button>'
-                + (IS_SUPERADMIN ? '<button type="button" class="score-revision-btn" onclick="submitMockRevision(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> На доработку</button>' : '')
+                + (IS_SUPERADMIN && currentScore == null ? '<button type="button" class="score-revision-btn" onclick="submitMockRevision(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> На доработку</button>' : '')
             : '')
         + '</div>'
         + '</form>'
@@ -2585,6 +2649,13 @@ function startEditProfile() {
         + '</select></div>';
     html += editField('Год поступления', 'enrollment_year', s.enrollment_year || '');
     html += editField('Год ВУЗ', 'university_year', s.university_year || '');
+    html += '<div class="profile-field"><div class="profile-field-label">Метка набора</div>'
+        + '<select class="profile-edit-select" id="edit-cohort_tag">'
+        + '<option value="">— нет —</option>'
+        + Object.keys(COHORT_TAG_LABELS).map(function(key) {
+            return '<option value="' + key + '"' + (s.cohort_tag === key ? ' selected' : '') + '>' + COHORT_TAG_LABELS[key] + '</option>';
+        }).join('')
+        + '</select></div>';
     html += '<div class="profile-edit-actions">'
         + '<button class="profile-save-btn" onclick="saveProfile()">Сохранить</button>'
         + '<button class="profile-cancel-btn" onclick="cancelEditProfile()">Отмена</button>'
@@ -2619,6 +2690,7 @@ function saveProfile() {
     body.append('tariff', document.getElementById('edit-tariff').value);
     body.append('enrollment_year', document.getElementById('edit-enrollment_year').value);
     body.append('university_year', document.getElementById('edit-university_year').value);
+    body.append('cohort_tag', document.getElementById('edit-cohort_tag').value);
 
     fetch('/cabinet/students/' + _currentStudentId + '/profile', { method: 'POST', body: body })
         .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })

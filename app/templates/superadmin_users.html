@@ -16,22 +16,6 @@
 .su-filters button { padding: 8px 16px; background: var(--blue); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
 .su-filters button:hover { opacity: 0.88; }
 
-.bulk-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px 18px; margin-bottom: 18px; box-shadow: var(--sh-sm); }
-.bulk-title { font-size: 14px; font-weight: 900; color: var(--text); margin-bottom: 4px; }
-.bulk-sub { font-size: 12px; color: var(--dim); margin-bottom: 12px; line-height: 1.45; }
-.bulk-grid { display: grid; grid-template-columns: minmax(180px, 240px) minmax(150px, 210px) 1fr auto; gap: 10px; align-items: flex-end; }
-.bulk-panel label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
-.bulk-panel select, .bulk-panel textarea { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; }
-.bulk-panel textarea { min-height: 78px; resize: vertical; }
-.bulk-panel select:focus, .bulk-panel textarea:focus { border-color: var(--blue); }
-.bulk-panel button { padding: 10px 16px; background: var(--blue); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 800; cursor: pointer; font-family: inherit; white-space: nowrap; }
-.bulk-panel button:hover { opacity: 0.88; }
-.bulk-result { border-radius: 10px; padding: 12px 14px; margin-bottom: 18px; font-size: 13px; line-height: 1.45; }
-.bulk-result.ok { background: rgba(5,150,105,0.08); border: 1px solid rgba(5,150,105,0.24); color: var(--ok); }
-.bulk-result.warn { background: rgba(217,119,6,0.08); border: 1px solid rgba(217,119,6,0.24); color: var(--warning); }
-.bulk-result strong { color: inherit; }
-.bulk-missing { margin-top: 6px; color: var(--dim); word-break: break-word; }
-
 .creds-panel { background: rgba(37,99,235,0.06); border: 1px solid rgba(37,99,235,0.2); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; }
 .creds-title { font-size: 14px; font-weight: 900; color: var(--blue); margin-bottom: 10px; }
 .creds-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
@@ -47,16 +31,6 @@
 .access-link-copy { padding: 7px 12px; border: 1px solid rgba(5,150,105,0.24); border-radius: 8px; background: transparent; color: var(--ok); font-size: 11px; font-weight: 800; cursor: pointer; font-family: inherit; }
 .access-link-note { font-size: 12px; color: var(--dim); margin-top: 8px; }
 
-.create-student-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px 18px; margin-bottom: 18px; box-shadow: var(--sh-sm); }
-.create-student-title { font-size: 14px; font-weight: 900; color: var(--text); margin-bottom: 4px; }
-.create-student-sub { font-size: 12px; color: var(--dim); margin-bottom: 12px; line-height: 1.45; }
-.create-student-grid { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)) auto; gap: 10px; align-items: flex-end; }
-.create-student-panel label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
-.create-student-panel input, .create-student-panel select { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; }
-.create-student-panel input:focus, .create-student-panel select:focus { border-color: var(--blue); }
-.create-student-panel button { padding: 10px 16px; background: var(--blue); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 800; cursor: pointer; font-family: inherit; white-space: nowrap; }
-.create-student-panel button:hover { opacity: 0.88; }
-.create-staff-grid { display: grid; grid-template-columns: repeat(3, minmax(140px, 1fr)) auto; gap: 10px; align-items: flex-end; }
 .role-form select { font-family: inherit; font-size: 12px; padding: 5px 8px; border: 1.5px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); outline: none; max-width: 150px; }
 
 .su-table-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; box-shadow: var(--sh-sm); }
@@ -87,6 +61,9 @@
 .btn-delete:hover { background: rgba(220,38,38,0.07); color: var(--error); border-color: rgba(220,38,38,0.2); }
 .actions-cell { display: flex; gap: 6px; flex-wrap: wrap; }
 
+.btn-tags { background: rgba(37,99,235,0.08); color: var(--blue); border-color: rgba(37,99,235,0.2); padding: 7px 14px; font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; }
+.btn-tags:hover { opacity: 0.75; }
+
 /* Confirm modal */
 .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1000; align-items:center; justify-content:center; }
 .modal-overlay.open { display:flex; }
@@ -100,14 +77,6 @@
 .modal-confirm.green { background: #059669; }
 
 .su-empty { padding: 40px; text-align: center; color: var(--dim); font-size: 14px; }
-
-@media (max-width: 760px) {
-    .bulk-grid { grid-template-columns: 1fr; }
-    .bulk-panel button { width: 100%; }
-    .create-student-grid { grid-template-columns: 1fr; }
-    .create-staff-grid { grid-template-columns: 1fr; }
-    .create-student-panel button { width: 100%; }
-}
 </style>
 {% endblock %}
 {% block content %}
@@ -116,6 +85,11 @@
     <div class="su-header">
         <a href="/cabinet" class="su-back">← Дашборд</a>
         <div class="su-title">Управление пользователями</div>
+        {% if user.role_rank >= 5 %}
+        <a href="/cabinet/superadmin/create-staff" class="action-btn btn-tags">👤 Создать сотрудника</a>
+        {% endif %}
+        <a href="/cabinet/superadmin/assign-curator" class="action-btn btn-tags">🔗 Привязка к куратору</a>
+        <a href="/cabinet/superadmin/tags" class="action-btn btn-tags">🏷️ Проставить теги</a>
     </div>
 
     <!-- Filters -->
@@ -196,25 +170,6 @@
     <div class="alert-panel">{{ page_error }}</div>
     {% endif %}
 
-    {% if assignment_result %}
-    <div class="bulk-result {% if assignment_result.error or assignment_result.not_found %}warn{% else %}ok{% endif %}">
-        {% if assignment_result.error %}
-            <strong>{{ assignment_result.error }}</strong>
-        {% else %}
-            <strong>{{ assignment_result.curator_name }}:</strong>
-            привязано {{ assignment_result.assigned }} из {{ assignment_result.requested }},
-            уже были у этого куратора {{ assignment_result.unchanged }},
-            не найдено {{ assignment_result.not_found|length }}.
-            {% if assignment_result.cohort_tag %}
-            Метка группы обновлена.
-            {% endif %}
-            {% if assignment_result.not_found %}
-            <div class="bulk-missing">Не найдены: @{{ assignment_result.not_found|join(', @') }}</div>
-            {% endif %}
-        {% endif %}
-    </div>
-    {% endif %}
-
     {% if issued_creds %}
     <div class="creds-panel">
         <div class="creds-title">Доступ создан — {{ issued_creds.name }}</div>
@@ -245,130 +200,11 @@
     </div>
     {% endif %}
 
-    {% if user.role_rank >= 5 %}
-    <form method="post" action="/cabinet/superadmin/users/create-staff" class="create-student-panel">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-        <div class="create-student-title">Создать аккаунт сотрудника</div>
-        <div class="create-student-sub">Для кураторов, админов и других сотрудников. Логин и пароль будут сгенерированы автоматически и показаны один раз.</div>
-        <div class="create-staff-grid">
-            <label>
-                Имя
-                <input type="text" name="first_name" placeholder="Иван" required maxlength="50">
-            </label>
-            <label>
-                Фамилия
-                <input type="text" name="last_name" placeholder="Петров" maxlength="50">
-            </label>
-            <label>
-                Роль
-                <select name="role_id" required>
-                    <option value="" disabled selected>Выберите роль</option>
-                    {% for r in roles %}
-                    {% if r.rank >= 2 and r.rank < current_user_rank %}
-                    <option value="{{ r.id }}">{{ r.display_name }}</option>
-                    {% endif %}
-                    {% endfor %}
-                </select>
-            </label>
-            <button type="submit">Создать сотрудника</button>
-        </div>
-    </form>
+    <div style="margin-bottom:14px">
+        <button type="button" id="usersToggleBtn" class="action-btn btn-tags" onclick="toggleUsersList()">Показать пользователей</button>
+    </div>
 
-    <form method="post" action="/cabinet/superadmin/users/create-student" class="create-student-panel">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-        <div class="create-student-title">Создать доступ ученика вручную</div>
-        <div class="create-student-sub">Система сначала ищет анкету по Telegram username. Если анкета уже есть, доступ будет выдан к ней; если нет — создастся новый аккаунт ученика.</div>
-        <div class="create-student-grid">
-            <label>
-                Имя
-                <input type="text" name="first_name" placeholder="Анна" required maxlength="50">
-            </label>
-            <label>
-                Фамилия
-                <input type="text" name="last_name" placeholder="Иванова" maxlength="50">
-            </label>
-            <label>
-                Telegram username
-                <input type="text" name="tg_username" placeholder="@anna_arch" required maxlength="33">
-            </label>
-            <label>
-                Тариф
-                <select name="tariff" required>
-                    {% for t in tariffs %}
-                    <option value="{{ t }}">{{ t }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-            <label>
-                Куратор
-                <select name="curator_id">
-                    <option value="">Без куратора</option>
-                    {% for c in curators %}
-                    <option value="{{ c.id }}">{{ c.last_name or '' }} {{ c.first_name or c.name }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-            <button type="submit">Создать доступ</button>
-        </div>
-    </form>
-    {% endif %}
-
-    <form method="post" action="/cabinet/superadmin/users/assign-curator-bulk" class="bulk-panel">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-        <div class="bulk-title">Массовая привязка учеников к куратору</div>
-        <div class="bulk-sub">Выберите куратора и вставьте Telegram username учеников списком: по одному в строке, через запятую или точку с запятой.</div>
-        <div class="bulk-grid">
-            <label>
-                Куратор
-                <select id="sa-bulk-curator" name="curator_id" required>
-                    <option value="">Выберите куратора</option>
-                    {% for c in curators %}
-                    <option value="{{ c.id }}" data-curator-tag="{{ ((c.last_name or '') ~ ' ' ~ (c.first_name or c.name))|trim }}">{{ c.last_name or '' }} {{ c.first_name or c.name }}</option>
-                    {% endfor %}
-                </select>
-                <span id="sa-curator-tag-preview" style="display:none;margin-top:6px;font-size:12px;color:var(--dim)">
-                    Тег: <span id="sa-curator-tag-badge" class="tag-pill tag-pill--curator-tag" style="font-size:11px"></span>
-                </span>
-            </label>
-            <label>
-                Баннер на аватарке
-                <select name="cohort_tag">
-                    <option value="">Не ставить</option>
-                    <option value="may">МАЙСКАЯ · цветок М</option>
-                    <option value="june">ИЮНЬ · пух И</option>
-                    <option value="july">ИЮЛЬ · подсолнух И</option>
-                    <option value="august">АВГУСТ · колос А</option>
-                </select>
-            </label>
-            <label>
-                Предмет экзамена
-                <select name="exam_subjects">
-                    <option value="">Не ставить</option>
-                    <option value="Р">Р</option>
-                    <option value="К">К</option>
-                    <option value="Р + К">Р + К</option>
-                </select>
-            </label>
-            <label>
-                Username учеников
-                <textarea name="student_usernames" placeholder="@student_one&#10;student_two&#10;@student_three" required></textarea>
-            </label>
-            <button type="submit">Привязать списком</button>
-        </div>
-    </form>
-    <script>
-    (function(){
-        var sel = document.getElementById('sa-bulk-curator');
-        var preview = document.getElementById('sa-curator-tag-preview');
-        var badge = document.getElementById('sa-curator-tag-badge');
-        if (!sel) return;
-        sel.addEventListener('change', function(){
-            var tag = (this.options[this.selectedIndex].dataset.curatorTag || '').trim();
-            if (tag) { badge.textContent = tag; preview.style.display = 'block'; }
-            else { preview.style.display = 'none'; }
-        });
-    })();
-    </script>
+    <div id="usersListSection" style="display:none">
 
     <!-- Table -->
     <div class="su-table-wrap">
@@ -439,7 +275,7 @@
                     {% if u.id != current_user_id and not u.deleted_at %}
                     <div class="actions-cell"
                          data-user-actions="{{ u.id }}"
-                         data-can-access="{% if user.role_rank >= 5 and u_rank < user.role_rank %}1{% else %}0{% endif %}"
+                         data-can-access="{% if user.role_rank >= 4 and u_rank < user.role_rank %}1{% else %}0{% endif %}"
                          data-has-login="{% if u.staff_login %}1{% else %}0{% endif %}">
                         {% if u.is_active %}
                         <button type="button" class="action-btn btn-block"
@@ -456,7 +292,7 @@
                             onclick="openConfirm('delete', {{ u.id }}, userNameFromRow({{ u.id }}), false)">
                             Удалить
                         </button>
-                        {% if user.role_rank >= 5 and u.is_active and u_rank < user.role_rank %}
+                        {% if user.role_rank >= 4 and u.is_active and u_rank < user.role_rank %}
                         <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/set-credentials" style="margin:0">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                             <button type="submit" class="action-btn">
@@ -507,6 +343,8 @@
     </div>
     {% endif %}
 
+    </div>
+
 </div>
 
 <!-- Confirm modal -->
@@ -528,6 +366,22 @@
 <script>
 let _action = null, _userId = null;
 let _triggerEl = null;
+
+const USERS_LIST_EXPANDED_KEY = 'superadminUsersListExpanded';
+
+function toggleUsersList() {
+    const section = document.getElementById('usersListSection');
+    const btn = document.getElementById('usersToggleBtn');
+    const expand = section.style.display === 'none';
+    section.style.display = expand ? '' : 'none';
+    btn.textContent = expand ? 'Скрыть пользователей' : 'Показать пользователей';
+    sessionStorage.setItem(USERS_LIST_EXPANDED_KEY, expand ? '1' : '');
+}
+
+if (sessionStorage.getItem(USERS_LIST_EXPANDED_KEY) === '1') {
+    document.getElementById('usersListSection').style.display = '';
+    document.getElementById('usersToggleBtn').textContent = 'Скрыть пользователей';
+}
 
 function copyText(elemId, btn) {
     const el = document.getElementById(elemId);

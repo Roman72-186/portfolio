@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Создать сотрудника{% endblock %}
+{% block extra_styles %}
+<style>
+.su-wrap { max-width: 720px; margin: 0 auto; }
+
+.su-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
+.su-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
+.su-back { font-size: 13px; color: var(--dim); text-decoration: none; font-weight: 600; }
+.su-back:hover { color: var(--blue); }
+
+.creds-panel { background: rgba(37,99,235,0.06); border: 1px solid rgba(37,99,235,0.2); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; }
+.creds-title { font-size: 14px; font-weight: 900; color: var(--blue); margin-bottom: 10px; }
+.creds-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.creds-label { font-size: 11px; font-weight: 800; color: var(--dim); width: 54px; flex-shrink: 0; }
+.creds-value { font-family: monospace; font-size: 13px; font-weight: 800; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; word-break: break-all; }
+.creds-copy { padding: 6px 10px; border: 1px solid rgba(37,99,235,0.24); border-radius: 8px; background: transparent; color: var(--blue); font-size: 11px; font-weight: 800; cursor: pointer; font-family: inherit; }
+.creds-note { font-size: 12px; color: var(--dim); line-height: 1.45; }
+.alert-panel { border-radius: 10px; padding: 12px 14px; margin-bottom: 18px; font-size: 13px; line-height: 1.45; background: rgba(220,38,38,0.07); border: 1px solid rgba(220,38,38,0.2); color: var(--error); }
+
+.create-student-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px 18px; margin-bottom: 18px; box-shadow: var(--sh-sm); }
+.create-student-title { font-size: 14px; font-weight: 900; color: var(--text); margin-bottom: 4px; }
+.create-student-sub { font-size: 12px; color: var(--dim); margin-bottom: 12px; line-height: 1.45; }
+.create-student-panel label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
+.create-student-panel input, .create-student-panel select { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; }
+.create-student-panel input:focus, .create-student-panel select:focus { border-color: var(--blue); }
+.create-student-panel button { padding: 10px 16px; background: var(--blue); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 800; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.create-student-panel button:hover { opacity: 0.88; }
+.create-staff-grid { display: grid; grid-template-columns: repeat(3, minmax(140px, 1fr)) auto; gap: 10px; align-items: flex-end; }
+
+@media (max-width: 760px) {
+    .create-staff-grid { grid-template-columns: 1fr; }
+    .create-student-panel button { width: 100%; }
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="su-wrap">
+
+    <div class="su-header">
+        <a href="/cabinet/superadmin/users" class="su-back">← Управление пользователями</a>
+        <div class="su-title">Создать аккаунт сотрудника</div>
+    </div>
+
+    {% if page_error %}
+    <div class="alert-panel">{{ page_error }}</div>
+    {% endif %}
+
+    {% if issued_creds %}
+    <div class="creds-panel">
+        <div class="creds-title">Доступ создан — {{ issued_creds.name }}</div>
+        <div class="creds-row">
+            <span class="creds-label">Логин</span>
+            <span class="creds-value" id="cred-login">{{ issued_creds.login }}</span>
+            <button type="button" class="creds-copy" onclick="copyText('cred-login', this)">Копировать</button>
+        </div>
+        <div class="creds-row">
+            <span class="creds-label">Пароль</span>
+            <span class="creds-value" id="cred-password">{{ issued_creds.password }}</span>
+            <button type="button" class="creds-copy" onclick="copyText('cred-password', this)">Копировать</button>
+        </div>
+        <div class="creds-note">Страница входа: <a href="{{ issued_creds.url }}" target="_blank" style="color:var(--blue)">{{ issued_creds.url }}</a>. Пароль показывается только сейчас.</div>
+    </div>
+    {% endif %}
+
+    <form method="post" action="/cabinet/superadmin/users/create-staff" class="create-student-panel">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <div class="create-student-title">Создать аккаунт сотрудника</div>
+        <div class="create-student-sub">Для кураторов, админов и других сотрудников. Логин и пароль будут сгенерированы автоматически и показаны один раз.</div>
+        <div class="create-staff-grid">
+            <label>
+                Имя
+                <input type="text" name="first_name" placeholder="Иван" required maxlength="50">
+            </label>
+            <label>
+                Фамилия
+                <input type="text" name="last_name" placeholder="Петров" maxlength="50">
+            </label>
+            <label>
+                Роль
+                <select name="role_id" required>
+                    <option value="" disabled selected>Выберите роль</option>
+                    {% for r in roles %}
+                    {% if r.rank >= 2 and r.rank < current_user_rank %}
+                    <option value="{{ r.id }}">{{ r.display_name }}</option>
+                    {% endif %}
+                    {% endfor %}
+                </select>
+            </label>
+            <button type="submit">Создать сотрудника</button>
+        </div>
+    </form>
+
+</div>
+
+<script>
+function copyText(elemId, btn) {
+    const el = document.getElementById(elemId);
+    if (!el) return;
+    const text = el.textContent.trim();
+    navigator.clipboard.writeText(text).then(function() {
+        const prev = btn.textContent;
+        btn.textContent = 'Скопировано';
+        setTimeout(function() { btn.textContent = prev; }, 1800);
+    }).catch(function() {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        window.getSelection().removeAllRanges();
+        window.getSelection().addRange(range);
+    });
+}
+</script>
+{% endblock %}

@@ -1,7 +1,10 @@
+import asyncio
 import logging
 import re
 import secrets
 import string
+import time
+import urllib.parse
 import uuid
 from datetime import datetime, timedelta, timezone, date
 from typing import Annotated
@@ -11,7 +14,7 @@ logger = logging.getLogger(__name__)
 import bcrypt as _bcrypt_lib
 from fastapi import APIRouter, BackgroundTasks, Request, Depends, Form, HTTPException, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from sqlalchemy import func
+from sqlalchemy import func, case
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session as DBSession, aliased
 
@@ -26,6 +29,7 @@ from app.constants import (
     STUDY_MODES,
     STUDY_MODE_LABELS,
     EXAM_SUBJECT_HINTS,
+    COHORT_TAGS,
 )
 from app.cache import invalidate_session as _invalidate_session_cache
 from app.db.database import get_db
@@ -41,7 +45,7 @@ from app.models.work import Work, WORK_TYPE_MOCK_EXAM
 from app.services import s3 as s3_service
 from app.services.auth_links import issue_one_time_login_link
 from app.services.n8n import send_photo_to_n8n
-from app.services.utils import compress_image
+from app.services.utils import compress_image, rotate_image_bytes
 from app.tmpl import templates
 
 _TRANSLIT = str.maketrans(
@@ -106,6 +110,57 @@ def _next_manual_vk_id(db: DBSession) -> int:
     return min(min_vk - 1, -1)
 
 router = APIRouter(prefix="/cabinet")
+
+
+# ── Поворот фото в S3 (только суперадмин) ────────────────────────────────────
+#
+# Суперадмин при просмотре в лайтбоксе может повернуть любое фото на 90°. Поворот
+# деструктивный: скачиваем объект из S3, крутим на полном разрешении и
+# перезаписываем тот же ключ (s3_url/s3_path не меняются → запись Work не трогаем).
+# Авторизация на конкретный файл — через s3_path_from_public_url: он вернёт None
+# для любой ссылки вне нашего бакета. Видео (отчёты кураторов) отсекаются тем, что
+# PIL не сможет открыть их как изображение.
+@router.post("/rotate-photo")
+async def rotate_photo(
+    user: Annotated[dict, Depends(require_superadmin)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    src: Annotated[str, Form()],
+    direction: Annotated[str, Form()],
+):
+    if direction not in ("left", "right"):
+        return JSONResponse({"success": False, "error": "Неверное направление"}, status_code=422)
+    if not s3_service.is_configured():
+        return JSONResponse({"success": False, "error": "S3 не настроен"}, status_code=503)
+
+    # Срезаем cache-busting ?v=… (повторный поворот шлёт уже изменённый URL).
+    clean_url = src.split("?", 1)[0]
+    s3_path = s3_service.s3_path_from_public_url(clean_url)
+    if not s3_path:
+        return JSONResponse({"success": False, "error": "Неизвестный файл"}, status_code=400)
+    # Браузер отдаёт img.src percent-encoded (пути пробников/портфолио содержат
+    # кириллицу: тариф, папки «До»/«После»). Ключ в S3 — сырой, поэтому декодируем.
+    s3_path = urllib.parse.unquote(s3_path)
+
+    def _do() -> tuple[str | None, str | None]:
+        data = s3_service.download_from_s3(s3_path)
+        if data is None:
+            return None, "Не удалось загрузить файл из хранилища"
+        try:
+            rotated = rotate_image_bytes(data, clockwise=(direction == "right"))
+        except Exception:  # noqa: BLE001 — PIL не открыл (видео/битый файл)
+            return None, "Это не изображение — поворот недоступен"
+        new_url = s3_service.upload_to_s3(s3_path, rotated, "image/jpeg")
+        if not new_url:
+            return None, "Не удалось сохранить повёрнутое фото"
+        return new_url, None
+
+    loop = asyncio.get_running_loop()
+    new_url, err = await loop.run_in_executor(None, _do)
+    if err:
+        return JSONResponse({"success": False, "error": err}, status_code=422)
+
+    logger.info("rotate-photo by %s: %s (%s)", user.get("user_id"), s3_path, direction)
+    return JSONResponse({"success": True, "src": f"{new_url}?v={int(time.time())}"})
 
 
 def _month_name_prep(month: int) -> str:
@@ -289,7 +344,7 @@ def cabinet_superadmin(
 @router.post("/superadmin/set-credentials", response_class=HTMLResponse)
 def superadmin_set_credentials(
     request: Request,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     target_user_id: int = Form(...),
@@ -297,6 +352,8 @@ def superadmin_set_credentials(
     target = db.query(User).filter(User.id == target_user_id, User.is_active == True).first()
     if not target:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if not can_manage_user_by_rank(user["user_id"], user["role_rank"], target):
+        raise HTTPException(status_code=403, detail="Нельзя выдать доступ роли равной или выше своей")
 
     issued_creds = _issue_login_password(db, target)
     db.commit()
@@ -314,7 +371,7 @@ def superadmin_set_credentials(
 @router.post("/superadmin/issue-link", response_class=HTMLResponse)
 def superadmin_issue_link(
     request: Request,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     target_user_id: int = Form(...),
@@ -322,6 +379,8 @@ def superadmin_issue_link(
     target = db.query(User).filter(User.id == target_user_id, User.is_active == True).first()
     if not target:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if not can_manage_user_by_rank(user["user_id"], user["role_rank"], target):
+        raise HTTPException(status_code=403, detail="Нельзя выдать доступ роли равной или выше своей")
 
     base_url = f"https://{settings.domain}" if settings.domain else str(request.base_url).rstrip("/")
     issued_link, login_token = issue_one_time_login_link(
@@ -368,36 +427,81 @@ def _exam_assignment_detail_compat(assignment_id: int, _user: Annotated[dict, De
     return RedirectResponse(f"/cabinet/exam-assignments/{assignment_id}", status_code=301)
 
 
-# ── Список заданий ───────────────────────────────────────────────────────────
+# ── Хаб «Билеты для пробников» ───────────────────────────────────────────────
 
 @router.get("/exam-assignments", response_class=HTMLResponse)
-def exam_assignments_list(
+def exam_assignments_hub(
     request: Request,
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
+    counts = dict(
+        db.query(ExamAssignment.status, func.count(ExamAssignment.id))
+        .group_by(ExamAssignment.status)
+        .all()
+    )
+    return templates.TemplateResponse("superadmin_exam_hub.html", {
+        "request": request,
+        "user": user,
+        "active_count": counts.get("published", 0) + counts.get("draft", 0),
+        "archived_count": counts.get("archived", 0),
+    })
+
+
+def _render_assignment_list(request, user, db: DBSession, statuses: list[str], mode: str):
+    """Общий рендер списка заданий для вкладок «Активные» (published+draft) и «Архив»."""
     assignments = (
         db.query(ExamAssignment)
-        .order_by(ExamAssignment.created_at.desc())
+        .filter(ExamAssignment.status.in_(statuses))
+        # published сверху, остальные — по дате создания (свежие выше)
+        .order_by((ExamAssignment.status != "published").asc(), ExamAssignment.created_at.desc())
         .limit(200)
         .all()
     )
     ticket_counts: dict[int, int] = {}
+    period_by_assignment: dict[int, tuple] = {}
     if assignments:
         rows = (
-            db.query(ExamTicket.assignment_id, func.count(ExamTicket.id))
+            db.query(
+                ExamTicket.assignment_id,
+                func.count(ExamTicket.id),
+                func.min(ExamTicket.start_date),
+                func.max(ExamTicket.end_date),
+            )
             .filter(ExamTicket.assignment_id.in_([a.id for a in assignments]))
             .group_by(ExamTicket.assignment_id)
             .all()
         )
-        ticket_counts = {aid: cnt for aid, cnt in rows}
+        for aid, cnt, start_min, end_max in rows:
+            ticket_counts[aid] = cnt
+            period_by_assignment[aid] = (start_min, end_max)
 
     return templates.TemplateResponse("superadmin_exam_assignments.html", {
         "request": request,
         "user": user,
         "assignments": assignments,
         "ticket_counts": ticket_counts,
+        "period_by_assignment": period_by_assignment,
+        "mode": mode,
     })
+
+
+@router.get("/exam-assignments/active", response_class=HTMLResponse)
+def exam_assignments_active(
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    return _render_assignment_list(request, user, db, ["published", "draft"], "active")
+
+
+@router.get("/exam-assignments/archive", response_class=HTMLResponse)
+def exam_assignments_archive_list(
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    return _render_assignment_list(request, user, db, ["archived"], "archive")
 
 
 # ── Форма создания ───────────────────────────────────────────────────────────
@@ -775,7 +879,120 @@ def exam_assignment_archive(
         raise HTTPException(status_code=404, detail="Задание не найдено")
     assignment.status = "archived"
     db.commit()
-    return RedirectResponse("/cabinet/exam-assignments", status_code=303)
+    return RedirectResponse("/cabinet/exam-assignments/active", status_code=303)
+
+
+# ── Вкл/Выкл и возврат из архива ─────────────────────────────────────────────
+
+@router.post("/exam-assignments/{assignment_id}/toggle")
+def exam_assignment_toggle(
+    assignment_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    """Переключает пробник Вкл↔Выкл. published = принимаем сдачу, draft = пауза
+    (get_active_ticket вернёт None → сдача отклоняется). Архивные не трогаем."""
+    assignment = db.query(ExamAssignment).filter(ExamAssignment.id == assignment_id).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Задание не найдено")
+    if assignment.status == "published":
+        assignment.status = "draft"
+    elif assignment.status == "draft":
+        assignment.status = "published"
+    db.commit()
+    return RedirectResponse("/cabinet/exam-assignments/active", status_code=303)
+
+
+@router.post("/exam-assignments/{assignment_id}/activate")
+def exam_assignment_activate(
+    assignment_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    """Возвращает пробник из архива в активные (включённым)."""
+    assignment = db.query(ExamAssignment).filter(ExamAssignment.id == assignment_id).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Задание не найдено")
+    assignment.status = "published"
+    db.commit()
+    return RedirectResponse("/cabinet/exam-assignments/active", status_code=303)
+
+
+# ── Дублирование задания ─────────────────────────────────────────────────────
+
+@router.post("/exam-assignments/{assignment_id}/duplicate")
+def exam_assignment_duplicate(
+    assignment_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    """Создаёт копию задания (как черновик) со всеми билетами и назначениями,
+    чтобы переиспользовать пробник под новые даты/учеников.
+
+    Копия всегда draft (Выключен), чтобы не уйти в эфир со старыми датами.
+    Редиректим на форму редактирования копии — там админ правит настройки и
+    включает вручную. Работает и для активных, и для архивных заданий.
+    """
+    source = db.query(ExamAssignment).filter(ExamAssignment.id == assignment_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Задание не найдено")
+
+    # " (копия)" с защитой от переполнения String(200)
+    suffix = " (копия)"
+    copy = ExamAssignment(
+        title=source.title[: 200 - len(suffix)] + suffix,
+        subject=source.subject,
+        created_by_id=user["user_id"],
+        status="draft",
+    )
+    db.add(copy)
+    db.flush()
+
+    src_tickets = (
+        db.query(ExamTicket)
+        .filter(ExamTicket.assignment_id == assignment_id)
+        .order_by(ExamTicket.ticket_number)
+        .all()
+    )
+
+    # Назначения грузим одним запросом и группируем (без N+1)
+    assignees_by_ticket: dict[int, list[int]] = {}
+    non_all_ids = [t.id for t in src_tickets if not t.assign_to_all]
+    if non_all_ids:
+        for tid, uid in (
+            db.query(ExamTicketAssignee.ticket_id, ExamTicketAssignee.user_id)
+            .filter(ExamTicketAssignee.ticket_id.in_(non_all_ids))
+            .all()
+        ):
+            assignees_by_ticket.setdefault(tid, []).append(uid)
+
+    for st in src_tickets:
+        new_ticket = ExamTicket(
+            assignment_id=copy.id,
+            ticket_number=st.ticket_number,
+            title=st.title,
+            description=st.description,
+            image_s3_url=st.image_s3_url,
+            image_s3_path=st.image_s3_path,
+            start_date=st.start_date,
+            end_date=st.end_date,
+            assign_to_all=st.assign_to_all,
+        )
+        db.add(new_ticket)
+        db.flush()
+        # notified_at не копируем — у копии ещё никто не уведомлён
+        db.add_all([
+            ExamTicketAssignee(ticket_id=new_ticket.id, user_id=uid)
+            for uid in assignees_by_ticket.get(st.id, [])
+        ])
+
+    db.commit()
+    return RedirectResponse(
+        f"/cabinet/exam-assignments/{copy.id}/edit", status_code=303
+    )
 
 
 # ── Feature periods ───────────────────────────────────────────────────────────
@@ -1075,8 +1292,23 @@ from app.services.user_management import (
 )
 
 
-_SU_PAGE_SIZE = 50
-COHORT_TAGS = {"may", "june", "july", "august"}
+_SU_PAGE_SIZE = 10
+
+# Order users in /cabinet/superadmin/users: students first, then curators, then everyone else
+_SU_ROLE_GROUP_ORDER = case(
+    (Role.rank == 1, 0),
+    (Role.rank == 2, 1),
+    else_=2,
+)
+
+
+def _su_role_group_rank(u: User) -> int:
+    rank = u.role.rank if u.role else None
+    if rank == 1:
+        return 0
+    if rank == 2:
+        return 1
+    return 2
 
 
 def _wants_json_response(request: Request) -> bool:
@@ -1135,6 +1367,41 @@ def _load_superadmin_curators(db: DBSession) -> list[User]:
     )
 
 
+def _render_superadmin_create_staff(
+    request: Request,
+    user: dict,
+    db: DBSession,
+    *,
+    issued_creds: dict | None = None,
+    page_error: str | None = None,
+):
+    roles = db.query(Role).order_by(Role.rank).all()
+    return templates.TemplateResponse("superadmin_create_staff.html", {
+        "request": request,
+        "user": user,
+        "roles": roles,
+        "current_user_rank": user["role_rank"],
+        "issued_creds": issued_creds,
+        "page_error": page_error,
+    })
+
+
+def _render_superadmin_assign_curator(
+    request: Request,
+    user: dict,
+    db: DBSession,
+    *,
+    assignment_result: dict | None = None,
+):
+    curators = _load_superadmin_curators(db)
+    return templates.TemplateResponse("superadmin_assign_curator.html", {
+        "request": request,
+        "user": user,
+        "curators": curators,
+        "assignment_result": assignment_result,
+    })
+
+
 def _render_superadmin_users(
     request: Request,
     user: dict,
@@ -1152,7 +1419,6 @@ def _render_superadmin_users(
     curator_id: str = "",
     exam_subjects: str = "",
     page: int = 1,
-    assignment_result: dict | None = None,
     issued_creds: dict | None = None,
     issued_link_user_id: int | None = None,
     issued_link_name: str | None = None,
@@ -1263,6 +1529,7 @@ def _render_superadmin_users(
         all_filtered = [u for u in all_filtered if u.id in case_ids]
 
     if all_filtered is not None:
+        all_filtered.sort(key=_su_role_group_rank)
         total = len(all_filtered)
         total_pages = max(1, (total + _SU_PAGE_SIZE - 1) // _SU_PAGE_SIZE)
         page = min(max(1, page), total_pages)
@@ -1272,7 +1539,7 @@ def _render_superadmin_users(
         total_pages = max(1, (total + _SU_PAGE_SIZE - 1) // _SU_PAGE_SIZE)
         page = min(max(1, page), total_pages)
         users = (
-            query.order_by(User.created_at.desc())
+            query.order_by(_SU_ROLE_GROUP_ORDER, User.created_at.desc())
             .offset((page - 1) * _SU_PAGE_SIZE)
             .limit(_SU_PAGE_SIZE)
             .all()
@@ -1331,7 +1598,6 @@ def _render_superadmin_users(
         "page": page,
         "total_pages": total_pages,
         "total": total,
-        "assignment_result": assignment_result,
         "issued_creds": issued_creds,
         "issued_link_user_id": issued_link_user_id,
         "issued_link_name": issued_link_name,
@@ -1339,6 +1605,24 @@ def _render_superadmin_users(
         "issued_link_expires_at": issued_link_expires_at,
         "page_error": page_error,
     })
+
+
+@router.get("/superadmin/create-staff", response_class=HTMLResponse)
+def superadmin_create_staff_page(
+    request: Request,
+    user: Annotated[dict, Depends(require_superadmin)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    return _render_superadmin_create_staff(request, user, db)
+
+
+@router.get("/superadmin/assign-curator", response_class=HTMLResponse)
+def superadmin_assign_curator_page(
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    return _render_superadmin_assign_curator(request, user, db)
 
 
 @router.get("/superadmin/users", response_class=HTMLResponse)
@@ -1467,15 +1751,15 @@ def superadmin_create_staff(
     first_name_clean = first_name.strip()
     last_name_clean = last_name.strip()
     if not first_name_clean:
-        return _render_superadmin_users(request, user, db, page_error="Имя сотрудника обязательно.")
+        return _render_superadmin_create_staff(request, user, db, page_error="Имя сотрудника обязательно.")
 
     new_role = db.query(Role).filter(Role.id == role_id).first()
     if not new_role:
-        return _render_superadmin_users(request, user, db, page_error="Роль не найдена.")
+        return _render_superadmin_create_staff(request, user, db, page_error="Роль не найдена.")
     if new_role.rank < 2:
-        return _render_superadmin_users(request, user, db, page_error="Аккаунт сотрудника требует роль с рангом ≥ 2.")
+        return _render_superadmin_create_staff(request, user, db, page_error="Аккаунт сотрудника требует роль с рангом ≥ 2.")
     if not can_assign_role_rank(user["role_rank"], new_role.rank):
-        return _render_superadmin_users(request, user, db, page_error="Нельзя создать аккаунт с рангом не ниже вашего.")
+        return _render_superadmin_create_staff(request, user, db, page_error="Нельзя создать аккаунт с рангом не ниже вашего.")
 
     full_name = f"{first_name_clean} {last_name_clean}".strip()
     staff = User(
@@ -1493,14 +1777,14 @@ def superadmin_create_staff(
     issued_creds = _issue_login_password(db, staff)
     db.commit()
 
-    return _render_superadmin_users(request, user, db, issued_creds=issued_creds)
+    return _render_superadmin_create_staff(request, user, db, issued_creds=issued_creds)
 
 
 @router.post("/superadmin/users/{target_id}/set-credentials", response_class=HTMLResponse)
 def superadmin_user_set_credentials(
     target_id: int,
     request: Request,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
@@ -1524,13 +1808,20 @@ def superadmin_user_set_credentials(
 def superadmin_user_issue_link(
     target_id: int,
     request: Request,
-    user: Annotated[dict, Depends(require_superadmin)],
+    user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
     target = db.query(User).filter(User.id == target_id).first()
     if not target:
         return _render_superadmin_users(request, user, db, page_error="Пользователь не найден.")
+    if not can_manage_user_by_rank(user["user_id"], user["role_rank"], target):
+        return _render_superadmin_users(
+            request,
+            user,
+            db,
+            page_error="Нельзя выпустить ссылку для роли равной или выше своей.",
+        )
     if not target.is_active:
         return _render_superadmin_users(
             request,
@@ -1640,7 +1931,7 @@ def superadmin_assign_curator_bulk(
     }
     if not usernames:
         result["error"] = "Добавьте хотя бы один Telegram username."
-        return _render_superadmin_users(request, user, db, assignment_result=result)
+        return _render_superadmin_assign_curator(request, user, db, assignment_result=result)
 
     wanted = set(usernames)
     students = (
@@ -1680,7 +1971,7 @@ def superadmin_assign_curator_bulk(
     else:
         db.rollback()
 
-    return _render_superadmin_users(request, user, db, assignment_result=result)
+    return _render_superadmin_assign_curator(request, user, db, assignment_result=result)
 
 
 def _invalidate_user_sessions(db: DBSession, user_id: int) -> None:
@@ -1844,6 +2135,34 @@ def superadmin_user_set_curator(
         "user_id": target.id,
         "curator_id": new_curator_id,
         "curator_name": new_curator_name,
+    })
+
+
+@router.post("/superadmin/users/{target_id}/cohort-tag")
+def superadmin_user_set_cohort_tag(
+    target_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    cohort_tag: str = Form(""),
+):
+    """Quick endpoint for changing the avatar banner (cohort_tag) from the users list (JSON response)."""
+    target = db.query(User).filter(User.id == target_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    cohort_tag_v = cohort_tag.strip().lower()
+    if cohort_tag_v and cohort_tag_v not in COHORT_TAGS:
+        raise HTTPException(status_code=400, detail="Неверная метка группы")
+
+    target.cohort_tag = cohort_tag_v or None
+    db.commit()
+    _invalidate_user_sessions(db, target.id)
+
+    return JSONResponse({
+        "ok": True,
+        "user_id": target.id,
+        "cohort_tag": target.cohort_tag,
     })
 
 

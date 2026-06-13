@@ -27,6 +27,7 @@ from app.constants import (
     MOCK_SUBJECTS,
     COURSE_PERIODS,
     LESSON_COUNTS,
+    MANDATORY_COURSE_PERIOD,
 )
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
@@ -180,6 +181,7 @@ def _profile_template_ctx(request, user, errors=None, form=None):
         "university_years": list(range(2015, 2032)),
         "course_periods": COURSE_PERIODS,
         "lesson_counts": LESSON_COUNTS,
+        "mandatory_course_period": MANDATORY_COURSE_PERIOD,
         **({"errors": errors} if errors else {}),
         **({"form": form} if form else {}),
     }
@@ -193,6 +195,7 @@ def profile_get(
     has_periods = bool(user.get("course_periods")) and bool(user.get("lessons_count"))
     if user["profile_completed"] and has_periods:
         return RedirectResponse("/cabinet/student", status_code=302)
+
     form = None
     if user["profile_completed"]:
         enrolled_at = user.get("enrolled_at")
@@ -209,7 +212,7 @@ def profile_get(
             "enrollment_month": enrolled_at.month if enrolled_at else user.get("enrollment_year") and None,
             "enrollment_year": enrolled_at.year if enrolled_at else user.get("enrollment_year"),
             "university_year": user.get("university_year"),
-            "past_tariffs": [t for t in past_tariffs_raw.split(",") if t],
+            "past_tariffs": [TARIFF_DISPLAY.get(t, t) for t in past_tariffs_raw.split(",") if t],
             "course_periods": [p for p in course_periods_raw.split(",") if p],
             "lessons_count": user.get("lessons_count") or "",
         }
@@ -314,8 +317,8 @@ def profile_post(
     past_tariffs = [t.upper() for t in past_tariffs if t.upper() in TARIFFS and t.upper() != tariff]
 
     course_periods = [p for p in course_periods if p in COURSE_PERIODS]
-    if not course_periods:
-        errors.append("Выберите хотя бы один период занятий")
+    if MANDATORY_COURSE_PERIOD not in course_periods:
+        course_periods.insert(0, MANDATORY_COURSE_PERIOD)
     lessons_count = lessons_count.strip()
     if lessons_count not in LESSON_COUNTS:
         errors.append("Выберите количество занятий")
@@ -641,8 +644,9 @@ def _collect_cycle_works(
         # Портфолио → Пробные экзамены: показываем все ОЦЕНЁННЫЕ пробники
         # (score проставлен) — это и есть «последняя финальная фотография,
         # оценённая последней». Условие покрывает оба источника данных:
-        #   • новый flow — финал закрытого цикла (закрытие цикла = простановка
-        #     балла, см. close_cycle_if_scored, поэтому score IS NOT NULL ⟺ closed);
+        #   • новый flow — финал Пробника с выставленным баллом (балл ставится
+        #     раньше закрытия цикла, см. close_cycle — закрытие отдельное и
+        #     ручное, но появление в Портфолио привязано к самому баллу);
         #   • легаси /upload/mock-exam — работы с cycle_id IS NULL, is_final=false,
         #     которые НЕ попали бы под старый фильтр is_final + closed cycle.
         # parent_work_id IS NULL отсекает этапные (intermediate): они никогда не

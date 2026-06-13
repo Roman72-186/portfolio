@@ -229,9 +229,12 @@ details[open].bulk-card > summary::before { content: '−'; }
                 <select id="bulk-curator" name="curator_id" required>
                     <option value="" disabled selected>Выберите куратора</option>
                     {% for c in curators %}
-                    <option value="{{ c.id }}">{{ c.first_name or c.name }}{% if c.last_name %} {{ c.last_name }}{% endif %}{% if c.tg_username %} · @{{ c.tg_username }}{% endif %}</option>
+                    <option value="{{ c.id }}" data-curator-tag="{{ ((c.last_name or '') ~ ' ' ~ (c.first_name or c.name))|trim }}">{{ c.first_name or c.name }}{% if c.last_name %} {{ c.last_name }}{% endif %}{% if c.tg_username %} · @{{ c.tg_username }}{% endif %}</option>
                     {% endfor %}
                 </select>
+                <div id="admin-curator-tag-preview" style="display:none;margin-top:6px;font-size:12px;color:var(--dim)">
+                    Тег: <span id="admin-curator-tag-badge" class="tag-pill tag-pill--curator-tag" style="font-size:11px"></span>
+                </div>
             </div>
             <div>
                 <label for="bulk-cohort" style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--dim);margin-bottom:5px">Бейдж на аватарке</label>
@@ -241,6 +244,15 @@ details[open].bulk-card > summary::before { content: '−'; }
                     <option value="june">ИЮНЬ · пух И</option>
                     <option value="july">ИЮЛЬ · подсолнух И</option>
                     <option value="august">АВГУСТ · колос А</option>
+                </select>
+            </div>
+            <div>
+                <label for="bulk-exam-subjects" style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--dim);margin-bottom:5px">Предмет экзамена</label>
+                <select id="bulk-exam-subjects" name="exam_subjects">
+                    <option value="">Не ставить</option>
+                    <option value="Р">Р</option>
+                    <option value="К">К</option>
+                    <option value="Р + К">Р + К</option>
                 </select>
             </div>
             <div class="bulk-field-full">
@@ -253,6 +265,19 @@ details[open].bulk-card > summary::before { content: '−'; }
             </div>
         </div>
     </form>
+    <script>
+    (function(){
+        var sel = document.getElementById('bulk-curator');
+        var preview = document.getElementById('admin-curator-tag-preview');
+        var badge = document.getElementById('admin-curator-tag-badge');
+        if (!sel) return;
+        sel.addEventListener('change', function(){
+            var tag = (this.options[this.selectedIndex].dataset.curatorTag || '').trim();
+            if (tag) { badge.textContent = tag; preview.style.display = 'block'; }
+            else { preview.style.display = 'none'; }
+        });
+    })();
+    </script>
 </details>
 {% endif %}
 

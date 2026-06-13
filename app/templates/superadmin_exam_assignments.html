@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Задания для пробников{% endblock %}
+{% block title %}{{ 'Активные пробники' if mode == 'active' else 'Архив пробников' }}{% endblock %}
 {% block extra_styles %}
 <style>
 .ea-wrap { max-width: 860px; margin: 0 auto; }
@@ -11,17 +11,33 @@
 .btn-primary:hover { opacity: 0.85; color: #fff; }
 
 .assignments-list { display: flex; flex-direction: column; gap: 12px; }
-.assignment-card { background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-lg); padding: 18px 20px; display: flex; align-items: center; gap: 16px; text-decoration: none; color: inherit; transition: border-color 0.2s, box-shadow 0.2s; box-shadow: var(--sh-sm); }
-.assignment-card:hover { border-color: rgba(59,91,255,0.30); box-shadow: var(--sh-md); }
+.assignment-card { background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-lg); padding: 18px 20px; box-shadow: var(--sh-sm); }
+.ac-top { display: flex; align-items: center; gap: 16px; }
 .ac-icon { width: 44px; height: 44px; border-radius: var(--r-md); background: var(--blue-soft); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
 .ac-info { flex: 1; min-width: 0; }
 .ac-title { font-size: 15px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ac-meta { font-size: 12px; color: var(--dim); margin-top: 3px; }
 .ac-right { flex-shrink: 0; text-align: right; }
+
 .status-badge { display: inline-flex; padding: 3px 10px; border-radius: var(--r-sm); font-size: 11px; font-weight: 700; }
-.status-published { background: rgba(5,150,105,0.08); color: var(--ok); }
-.status-draft { background: rgba(107,114,128,0.08); color: #6B7280; }
-.status-archived { background: rgba(156,163,175,0.06); color: #9CA3AF; }
+.status-on  { background: rgba(5,150,105,0.08); color: var(--ok); }
+.status-off { background: rgba(234,88,12,0.08); color: #C2410C; }
+.status-archived { background: rgba(156,163,175,0.10); color: #6B7280; }
+
+.ac-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.ac-actions form { display: inline; margin: 0; }
+.btn-sm { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: var(--r-sm); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; text-decoration: none; border: 1.5px solid var(--line); background: var(--surface); color: var(--text); transition: border-color 0.15s, background 0.15s; }
+.btn-sm:hover { border-color: rgba(59,91,255,0.30); color: var(--text); opacity: 1; }
+.btn-sm .svg-icon { width: 15px; height: 15px; }
+.btn-on  { background: rgba(5,150,105,0.08); color: var(--ok); border-color: rgba(5,150,105,0.25); }
+.btn-on:hover  { background: rgba(5,150,105,0.15); color: var(--ok); border-color: rgba(5,150,105,0.45); }
+.btn-off { background: rgba(234,88,12,0.08); color: #C2410C; border-color: rgba(234,88,12,0.22); }
+.btn-off:hover { background: rgba(234,88,12,0.15); color: #C2410C; border-color: rgba(234,88,12,0.42); }
+.btn-edit { background: var(--blue-soft); color: var(--blue); border-color: rgba(37,99,235,0.25); }
+.btn-edit:hover { background: rgba(37,99,235,0.14); color: var(--blue); border-color: rgba(37,99,235,0.45); }
+.btn-arch { background: rgba(156,163,175,0.10); color: #6B7280; border-color: rgba(156,163,175,0.25); }
+.btn-arch:hover { background: rgba(156,163,175,0.18); color: #6B7280; }
+.ac-actions .spacer { flex: 1; }
 
 .empty-state { text-align: center; padding: 64px 20px; color: var(--dim); }
 .empty-icon { font-size: 48px; margin-bottom: 14px; }
@@ -29,40 +45,113 @@
 </style>
 {% endblock %}
 {% block content %}
-{% from "partials/exam_assignment_status.html" import exam_assignment_status_badge %}
 <div class="ea-wrap">
     <div class="page-header">
         <div>
-            <a href="/cabinet" class="page-back">← Кабинет</a>
-            <div class="page-title">Задания для пробников</div>
+            <a href="/cabinet/exam-assignments" class="page-back">← Билеты для пробников</a>
+            <div class="page-title">{{ 'Активные пробники' if mode == 'active' else 'Архив пробников' }}</div>
         </div>
+        {% if mode == 'active' %}
         <a href="/cabinet/exam-assignments/create" class="btn-primary">+ Создать билет</a>
+        {% endif %}
     </div>
 
     {% set subject_icons = {'Рисунок': '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 5a2 2 0 0 0-2.83 0L3 19.17V22h2.83L20 7.83A2 2 0 0 0 20 5z"/><path d="M14.5 5.5l4 4"/></svg>', 'Композиция': '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.97 12.64 11.36 3.03a2 2 0 0 0-2.83 0L3.03 8.53a2 2 0 0 0 0 2.83l9.61 9.61a2 2 0 0 0 2.83 0l5.5-5.5a2 2 0 0 0 0-2.83z"/><line x1="5" y1="10" x2="7" y2="12"/><line x1="8" y1="7" x2="10" y2="9"/><line x1="11" y1="4" x2="13" y2="6"/><line x1="12" y1="17" x2="14" y2="15"/></svg>'} %}
+    {% set default_icon = '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/></svg>' %}
 
     {% if assignments %}
     <div class="assignments-list">
         {% for a in assignments %}
-        <a href="/cabinet/exam-assignments/{{ a.id }}" class="assignment-card">
-            <div class="ac-icon">{{ subject_icons.get(a.subject, '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/></svg>')|safe }}</div>
-            <div class="ac-info">
-                <div class="ac-title">{{ a.title }}</div>
-                <div class="ac-meta">
-                    {{ a.subject }} · {{ ticket_counts.get(a.id, 0) }} билет{{ 'ов' if ticket_counts.get(a.id, 0) > 4 else ('а' if ticket_counts.get(a.id, 0) > 1 else '') }}
-                    · создано {{ a.created_at.strftime('%d.%m.%Y') if a.created_at else '—' }}
+        {% set count = ticket_counts.get(a.id, 0) %}
+        {% set period = period_by_assignment.get(a.id) %}
+        <div class="assignment-card">
+            <div class="ac-top">
+                <div class="ac-icon">{{ subject_icons.get(a.subject, default_icon)|safe }}</div>
+                <div class="ac-info">
+                    <div class="ac-title">{{ a.title }}</div>
+                    <div class="ac-meta">
+                        {{ a.subject }} · {{ count }} билет{{ 'ов' if count > 4 else ('а' if count > 1 else '') }}
+                        {% if period and period[0] and period[1] %}
+                        · {{ period[0].strftime('%d.%m.%Y') }} — {{ period[1].strftime('%d.%m.%Y') }}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="ac-right">
+                    {% if mode == 'archive' %}
+                    <span class="status-badge status-archived">В архиве</span>
+                    {% elif a.status == 'published' %}
+                    <span class="status-badge status-on">Включён</span>
+                    {% else %}
+                    <span class="status-badge status-off">Выключен</span>
+                    {% endif %}
                 </div>
             </div>
-            <div class="ac-right">
-                {{ exam_assignment_status_badge(a.status) }}
+
+            <div class="ac-actions">
+                <a href="/cabinet/exam-assignments/{{ a.id }}" class="btn-sm">
+                    <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    Открыть
+                </a>
+
+                <form method="post" action="/cabinet/exam-assignments/{{ a.id }}/duplicate">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    <button type="submit" class="btn-sm" title="Создать копию для новых настроек">
+                        <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        Дублировать
+                    </button>
+                </form>
+
+                {% if mode == 'active' %}
+                <form method="post" action="/cabinet/exam-assignments/{{ a.id }}/toggle">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    {% if a.status == 'published' %}
+                    <button type="submit" class="btn-sm btn-off">
+                        <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+                        Выключить
+                    </button>
+                    {% else %}
+                    <button type="submit" class="btn-sm btn-on">
+                        <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                        Включить
+                    </button>
+                    {% endif %}
+                </form>
+
+                <a href="/cabinet/exam-assignments/{{ a.id }}/edit" class="btn-sm btn-edit">
+                    <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    Расписание и доступ
+                </a>
+
+                <span class="spacer"></span>
+                <form method="post" action="/cabinet/exam-assignments/{{ a.id }}/archive">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    <button type="submit" class="btn-sm btn-arch">
+                        <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="5"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+                        В архив
+                    </button>
+                </form>
+                {% else %}
+                <span class="spacer"></span>
+                <form method="post" action="/cabinet/exam-assignments/{{ a.id }}/activate">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    <button type="submit" class="btn-sm btn-on">
+                        <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                        Сделать активным
+                    </button>
+                </form>
+                {% endif %}
             </div>
-        </a>
+        </div>
         {% endfor %}
     </div>
     {% else %}
     <div class="empty-state">
         <div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/></svg></div>
-        <div class="empty-text">Заданий пока нет. Нажмите «+ Создать билет» выше.</div>
+        {% if mode == 'active' %}
+        <div class="empty-text">Активных пробников пока нет. Нажмите «+ Создать билет» выше.</div>
+        {% else %}
+        <div class="empty-text">Архив пуст.</div>
+        {% endif %}
     </div>
     {% endif %}
 </div>

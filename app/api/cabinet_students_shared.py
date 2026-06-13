@@ -19,7 +19,7 @@ from sqlalchemy import func, or_, and_
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session, invalidate_unread
-from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, MONTHS, TARIFFS
+from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, MONTHS, TARIFFS, COHORT_TAGS, COHORT_TAG_LABELS
 from app.db.database import get_db
 from app.dependencies import get_current_user, require_admin_role, require_csrf
 from app.models.session import Session
@@ -34,7 +34,6 @@ from app.models.work import (
     WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE,
 )
 from app.services import s3 as s3_service
-from app.services.exam_cycle import close_cycle_if_scored
 from app.services.feature_periods import get_active_period
 from app.services.student_access import get_student_for_staff_access
 from app.services.tz import MSK_TZ, msk_midnight
@@ -342,6 +341,7 @@ def students_panel(
         "active_hard_filters": active_hard_filters,
         "is_admin_panel": is_admin_panel,
         "is_superadmin": user["role_rank"] >= 5,
+        "cohort_tag_labels": COHORT_TAG_LABELS,
     })
 
 
@@ -744,8 +744,6 @@ def score_work(
         text=work.comment if work.comment else None,
         work_id=work.id,
     ))
-    # Закрытие цикла Пробника после оценки финальной попытки
-    close_cycle_if_scored(db, work)
     db.commit()
     invalidate_unread(work.user_id)
     return RedirectResponse(
@@ -792,7 +790,6 @@ def send_mock_exam_to_retake(
         text=f"{comment_clean}\n\nМожно загрузить отработку в разделе «Отработка».",
         work_id=work.id,
     ))
-    close_cycle_if_scored(db, work)
     db.commit()
     invalidate_unread(work.user_id)
 
@@ -816,9 +813,23 @@ def send_mock_exam_to_revision(
         Work.id == work_id,
         Work.user_id == student_id,
         Work.work_type == WORK_TYPE_MOCK_EXAM,
+        Work.is_final == True,  # noqa: E712
     ).first()
     if not work:
         raise HTTPException(status_code=404, detail="Работа не найдена")
+
+    if work.cycle_id is not None:
+        cycle = db.query(ExamCycle).filter(ExamCycle.id == work.cycle_id).first()
+        if cycle is not None and cycle.closed_at is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Цикл уже закрыт с оценкой — отправка на доработку недоступна",
+            )
+
+    # Снимаем реальную блокировку пересдачи: has_submitted_for_ticket больше не
+    # видит этот финал как сдачу по билету → /upload/probnik/final пройдёт через
+    # _overwrite_final и перезапишет это же фото (см. exam_cycle.has_submitted_for_ticket).
+    work.needs_revision = True
 
     subject = work.subject
     if subject and subject in MOCK_SUBJECTS:
@@ -885,6 +896,7 @@ def edit_student_profile(
     tariff: str = Form(""),
     enrollment_year: str = Form(""),
     university_year: str = Form(""),
+    cohort_tag: str = Form(""),
 ):
     student = _check_access(student_id, user, db)
 
@@ -895,6 +907,7 @@ def edit_student_profile(
     parent_phone = parent_phone.strip()
     tg_username = tg_username.strip().lstrip("@")
     tariff = tariff.strip().upper()
+    cohort_tag = cohort_tag.strip().lower()
 
     if not first_name:
         errors.append("Имя обязательно")
@@ -904,6 +917,8 @@ def edit_student_profile(
         errors.append("Телефон обязателен")
     if tariff and tariff not in TARIFFS:
         errors.append("Неверный тариф")
+    if cohort_tag and cohort_tag not in COHORT_TAGS:
+        errors.append("Неверная метка набора")
 
     parsed_enrollment_year = None
     if enrollment_year.strip():
@@ -941,6 +956,7 @@ def edit_student_profile(
         student.enrollment_year = parsed_enrollment_year
     if parsed_university_year is not None:
         student.university_year = parsed_university_year
+    student.cohort_tag = cohort_tag or None
     db.commit()
 
     # Invalidate all cached sessions for this student

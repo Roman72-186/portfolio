@@ -13,13 +13,13 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Callable
 
 from fastapi import APIRouter, Depends, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session as DBSession
 
-from app.constants import MONTHS, MOCK_SUBJECTS, FEATURE_MOCK_EXAM, FEATURE_RETAKE
+from app.constants import MONTHS, MOCK_SUBJECTS, FEATURE_RETAKE
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
 from app.models.exam_cycle import ExamCycle
@@ -36,7 +36,7 @@ from app.services.exam_cycle import (
     find_latest_cycle,
     get_active_ticket,
     get_or_create_cycle_for_probnik,
-    has_cycle_for_ticket,
+    has_submitted_for_ticket,
     next_attempt_number,
 )
 from app.services.feature_periods import is_feature_available
@@ -64,6 +64,23 @@ async def _read_photos(photos: list[UploadFile], *, max_files: int) -> tuple[lis
     )
 
 
+async def _upload_cycle_file_to_s3(
+    filename: str,
+    data: bytes,
+    s3_path_builder: Callable[[str], str],
+) -> tuple[str, str | None]:
+    """Compress and upload one cycle file; Work/UploadLog contracts stay in callers."""
+    loop = asyncio.get_running_loop()
+    path = s3_path_builder(filename)
+
+    def _do() -> tuple[str, str | None]:
+        compressed = compress_image(data)
+        url = s3_service.upload_to_s3(path, compressed, "image/jpeg")
+        return path, url
+
+    return await loop.run_in_executor(None, _do)
+
+
 async def _upload_and_save(
     *,
     db: DBSession,
@@ -81,24 +98,13 @@ async def _upload_and_save(
     year: int,
 ) -> tuple[int, int, str, list[int]]:
     """Сжать → S3 → Work. Возвращает (success, fail, last_error, created_ids)."""
-    loop = asyncio.get_running_loop()
     success = 0
     fail = 0
     last_error = ""
     created_ids: list[int] = []
 
-    async def _upload_one(fn: str, data: bytes):
-        path = s3_path_builder(fn)
-
-        def _do():
-            compressed = compress_image(data)
-            url = s3_service.upload_to_s3(path, compressed, "image/jpeg")
-            return path, url
-
-        return await loop.run_in_executor(None, _do)
-
     results = await asyncio.gather(
-        *[_upload_one(fn, d) for fn, d in files],
+        *[_upload_cycle_file_to_s3(fn, d, s3_path_builder) for fn, d in files],
         return_exceptions=True,
     )
 
@@ -185,17 +191,10 @@ async def _overwrite_final(
     (parent_work_id) — перезапись касается только самого финала. Сбрасываем
     оценку: новое фото ещё не проверено.
     """
-    loop = asyncio.get_running_loop()
     fn, data = file
-    path = s3_path_builder(fn)
-
-    def _do():
-        compressed = compress_image(data)
-        url = s3_service.upload_to_s3(path, compressed, "image/jpeg")
-        return path, url
 
     try:
-        s3_path, s3_url = await loop.run_in_executor(None, _do)
+        s3_path, s3_url = await _upload_cycle_file_to_s3(fn, data, s3_path_builder)
     except Exception as exc:  # noqa: BLE001
         return 0, 1, str(exc), []
     if s3_service.is_configured() and not s3_url:
@@ -215,6 +214,7 @@ async def _overwrite_final(
     final.scored_at = None
     final.scored_by_id = None
     final.comment = None
+    final.needs_revision = False
     final.created_at = datetime.now(timezone.utc)
     db.add(UploadLog(
         user_id=user["user_id"],
@@ -239,21 +239,18 @@ async def upload_probnik_final(
     photos: list[UploadFile] = File(...),
     subject: str = Form(...),
 ):
-    fa, fm = is_feature_available(db, FEATURE_MOCK_EXAM)
-    if not fa:
-        return JSONResponse({"success": False, "error": fm or "Пробники закрыты"}, status_code=403)
     if subject not in MOCK_SUBJECTS:
         return JSONResponse({"success": False, "error": "Выберите предмет"}, status_code=422)
 
     ticket = get_active_ticket(db, user["user_id"], subject)
     if not ticket:
-        return JSONResponse({"success": False, "error": f"Нет активного билета по предмету «{subject}»"}, status_code=404)
+        return JSONResponse({"success": False, "error": "Сдача пробника сейчас недоступна"}, status_code=404)
 
     # Одна сдача на билет: пробник по предмету закрыт от первой сдачи и до выдачи
     # СЛЕДУЮЩЕГО билета. Если по текущему билету уже есть цикл — открытый (работа
     # ждёт ОС) или закрытый (уже оценён) — повторная сдача запрещена. Новый билет
     # (новый ticket_id) → цикла ещё нет → сдача открывается заново.
-    if has_cycle_for_ticket(db, user["user_id"], subject, ticket.id):
+    if has_submitted_for_ticket(db, user["user_id"], subject, ticket.id):
         return JSONResponse(
             {"success": False, "error": "работа сдана, ждите ОС"},
             status_code=409,
@@ -297,6 +294,16 @@ async def upload_probnik_final(
         )
 
     if success > 0:
+        # Привязать этапные, загруженные до финального (parent_work_id=None)
+        final_id = created_ids[0] if created_ids else (existing_final.id if existing_final else None)
+        if final_id:
+            db.query(Work).filter(
+                Work.cycle_id == cycle.id,
+                Work.work_type == WORK_TYPE_MOCK_EXAM,
+                Work.is_final == False,  # noqa: E712
+                Work.parent_work_id.is_(None),
+            ).update({"parent_work_id": final_id}, synchronize_session=False)
+
         # Lock: блокируем повторную загрузку до закрытия цикла куратором
         lock = db.query(MockExamLock).filter(
             MockExamLock.user_id == user["user_id"],
@@ -340,24 +347,27 @@ async def upload_probnik_intermediate(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     photos: list[UploadFile] = File(...),
-    parent_work_id: int = Form(...),
+    subject: str = Form(...),
 ):
-    parent = (
-        db.query(Work)
-        .filter(
-            Work.id == parent_work_id,
-            Work.user_id == user["user_id"],
-            Work.work_type == WORK_TYPE_MOCK_EXAM,
-            Work.is_final == True,  # noqa: E712
-        )
-        .first()
+    if subject not in MOCK_SUBJECTS:
+        return JSONResponse({"success": False, "error": "Выберите предмет"}, status_code=422)
+
+    ticket = get_active_ticket(db, user["user_id"], subject)
+    if not ticket:
+        return JSONResponse({"success": False, "error": "Сдача пробника сейчас недоступна"}, status_code=404)
+
+    cycle, _ = get_or_create_cycle_for_probnik(
+        db, user_id=user["user_id"], subject=subject, ticket_id=ticket.id,
     )
-    if not parent or not parent.cycle_id or parent.attempt_number is None:
-        return JSONResponse({"success": False, "error": "Сначала загрузи финальную Пробника"}, status_code=400)
+    attempt_number = next_attempt_number(db, cycle_id=cycle.id, work_type=WORK_TYPE_MOCK_EXAM)
 
     existing = (
         db.query(Work)
-        .filter(Work.parent_work_id == parent.id, Work.is_final == False)  # noqa: E712
+        .filter(
+            Work.cycle_id == cycle.id,
+            Work.work_type == WORK_TYPE_MOCK_EXAM,
+            Work.is_final == False,  # noqa: E712
+        )
         .count()
     )
     if existing >= MAX_INTERMEDIATE_PER_FINAL:
@@ -373,15 +383,15 @@ async def upload_probnik_intermediate(
 
     def _path(fn: str) -> str:
         return s3_service.s3_path_probnik_cycle(
-            user["vk_id"], parent.cycle_id, parent.attempt_number,
+            user["vk_id"], cycle.id, attempt_number,
             "intermediate", fn, user.get("tariff") or "",
         )
 
     success, fail, last_error, created_ids = await _upload_and_save(
         db=db, user=user, files=files,
         work_type=WORK_TYPE_MOCK_EXAM,
-        cycle_id=parent.cycle_id, attempt_number=None, is_final=False,
-        parent_work_id=parent.id, subject=parent.subject, student_score=None,
+        cycle_id=cycle.id, attempt_number=None, is_final=False,
+        parent_work_id=None, subject=subject, student_score=None,
         s3_path_builder=_path, month=month, year=now.year,
     )
 

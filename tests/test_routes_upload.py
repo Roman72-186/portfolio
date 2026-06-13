@@ -1,5 +1,4 @@
 """Tests for /upload route — form GET and photo POST."""
-from io import BytesIO
 from datetime import date, timedelta
 from unittest.mock import AsyncMock, patch, MagicMock
 
@@ -17,15 +16,6 @@ def _upload(client, files, month="январь", section=None, **kwargs):
     if section:
         data["section"] = section
     return client.post("/upload", data=data, files=files, **kwargs)
-
-
-def _truncated_jpg_bytes(cut: int = 1) -> bytes:
-    from PIL import Image
-
-    buf = BytesIO()
-    Image.new("RGB", (120, 120), "red").save(buf, format="JPEG")
-    data = buf.getvalue()
-    return data[:-cut]
 
 
 def _create_active_period(db, user, feature="mock_exam"):
@@ -281,152 +271,6 @@ def test_mock_exam_form_with_auth_returns_200(auth_client, db):
     assert "Композиция" in resp.text
 
 
-# ---------------------------------------------------------------------------
-# POST /upload/mock-exam — validation
-# ---------------------------------------------------------------------------
-
-def _mock_upload(client, files, subject="Рисунок", **kwargs):
-    return client.post("/upload/mock-exam", data={"subject": subject}, files=files, **kwargs)
-
-
-def test_mock_exam_invalid_subject_shows_error(auth_client, db):
-    client, user = auth_client
-    _create_active_period(db, user, "mock_exam")
-    resp = _mock_upload(client, [("photos", ("p.jpg", _JPG_BYTES, "image/jpeg"))], subject="Физика")
-    assert resp.status_code == 200
-    assert "предмет" in resp.text.lower()
-
-
-def test_mock_exam_no_photos_rejected(auth_client):
-    # FastAPI returns 422 when required `photos` field has no valid file.
-    # The form's `required` attribute prevents this on the client side.
-    client, _ = auth_client
-    resp = client.post("/upload/mock-exam", data={"subject": "Рисунок"},
-                       files=[("photos", ("", b"", "image/jpeg"))])
-    assert resp.status_code in (200, 422)
-
-
-def test_mock_exam_unsupported_format_shows_error(auth_client, db):
-    client, user = auth_client
-    _create_active_period(db, user, "mock_exam")
-    _create_active_ticket(db, user, "Рисунок")
-    resp = _mock_upload(client, [("photos", ("doc.pdf", b"data", "application/pdf"))])
-    assert resp.status_code == 200
-    assert "формат" in resp.text.lower() or "неподдерживаемый" in resp.text
-
-
-def test_mock_exam_too_large_shows_error(auth_client):
-    client, _ = auth_client
-    huge = b"\xff\xd8\xff" + b"X" * (11 * 1024 * 1024)
-    resp = _mock_upload(client, [("photos", ("big.jpg", huge, "image/jpeg"))])
-    assert resp.status_code == 200
-    assert "большой" in resp.text or "10" in resp.text
-
-
-# ---------------------------------------------------------------------------
-# POST /upload/mock-exam — success path
-# ---------------------------------------------------------------------------
-
-def test_mock_exam_success(auth_client, db):
-    client, user = auth_client
-    _create_active_period(db, user, "mock_exam")
-    _create_active_ticket(db, user, "Рисунок")
-    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
-        resp = _mock_upload(client, [("photos", ("work.jpg", _JPG_BYTES, "image/jpeg"))])
-    assert resp.status_code == 200
-    assert "1" in resp.text  # success_count shown
-
-
-def test_mock_exam_truncated_jpeg_still_uploads(auth_client, db):
-    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
-
-    client, user = auth_client
-    _create_active_period(db, user, "mock_exam")
-    _create_active_ticket(db, user, "Рисунок")
-    truncated = _truncated_jpg_bytes(1)
-
-    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
-        resp = _mock_upload(client, [("photos", ("work.jpg", truncated, "image/jpeg"))])
-
-    assert resp.status_code == 200
-    # No server-rendered error banner (the JS bundle contains error-string
-    # literals, so a substring check on resp.text would false-positive).
-    assert 'class="alert alert-error"' not in resp.text
-
-    works = db.query(Work).filter(
-        Work.user_id == user.id,
-        Work.work_type == WORK_TYPE_MOCK_EXAM,
-    ).all()
-    assert len(works) == 1
-
-
-def test_mock_exam_writes_work_record(auth_client, db):
-    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
-
-    client, user = auth_client
-    _create_active_period(db, user, "mock_exam")
-    _create_active_ticket(db, user, "Композиция")
-    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
-        _mock_upload(client, [("photos", ("w.jpg", _JPG_BYTES, "image/jpeg"))], subject="Композиция")
-
-    works = db.query(Work).filter(Work.user_id == user.id).all()
-    assert len(works) == 1
-    assert works[0].work_type == WORK_TYPE_MOCK_EXAM
-    assert works[0].subject == "Композиция"
-    assert works[0].status == "success"
-
-
-def test_mock_exam_s3_failure_shows_retry_error(auth_client, db):
-    """When S3 is configured but upload fails, mock exam shows retry error, no Work record."""
-    from app.models.work import Work
-
-    client, user = auth_client
-    _create_active_period(db, user, "mock_exam")
-    _create_active_ticket(db, user, "Рисунок")
-    with patch(_MOCK_S3_CONFIGURED, return_value=True), \
-         patch(_MOCK_S3_UPLOAD, return_value=None), \
-         patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
-        resp = _mock_upload(client, [("photos", ("w.jpg", _JPG_BYTES, "image/jpeg"))])
-
-    assert resp.status_code == 200
-    assert "попробуйте" in resp.text.lower() or "хранилище" in resp.text.lower()
-    assert db.query(Work).filter(Work.user_id == user.id).count() == 0
-
-
-def test_mock_exam_n8n_failure_still_shows_success(auth_client, db):
-    """n8n runs in background — user sees success even if Drive fails."""
-    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
-    client, user = auth_client
-    _create_active_period(db, user, "mock_exam")
-    _create_active_ticket(db, user, "Рисунок")
-    fail = {"success": False, "error": "Drive quota exceeded"}
-    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=fail):
-        resp = _mock_upload(client, [("photos", ("p.jpg", _JPG_BYTES, "image/jpeg"))])
-    assert resp.status_code == 200
-    works = db.query(Work).filter(Work.user_id == user.id, Work.work_type == WORK_TYPE_MOCK_EXAM).all()
-    assert len(works) >= 1
-
-
-# ---------------------------------------------------------------------------
-# Mock exam locks
-# ---------------------------------------------------------------------------
-
-def test_mock_exam_locks_subject_after_submission(auth_client, db):
-    """After successful upload MockExamLock is created with is_locked=True."""
-    from app.models.mock_exam_lock import MockExamLock
-    client, user = auth_client
-    _create_active_period(db, user, "mock_exam")
-    _create_active_ticket(db, user, "Рисунок")
-    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
-        _mock_upload(client, [("photos", ("w.jpg", _JPG_BYTES, "image/jpeg"))], subject="Рисунок")
-    lock = db.query(MockExamLock).filter(
-        MockExamLock.user_id == user.id,
-        MockExamLock.subject == "Рисунок",
-    ).first()
-    assert lock is not None
-    assert lock.is_locked is True
-
-
 def test_mock_exam_locked_subjects_do_not_disable_form(auth_client, db):
     """GET /upload/mock-exam keeps locked subjects available for a new period."""
     from app.models.mock_exam_lock import MockExamLock
@@ -478,6 +322,44 @@ def test_mock_exam_current_period_submission_shows_waiting_grade(auth_client, db
     assert "работа сдана, ждите ОС" in resp.text
 
 
+def test_mock_exam_revision_unblocks_subject_in_form(auth_client, db):
+    """Финал с needs_revision=True (отправлен «на доработку») не считается
+    блокировкой в _locked_mock_subjects — кнопка предмета доступна для пересдачи,
+    синхронно с has_submitted_for_ticket (реальный гейт в upload_probnik_final)."""
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+    from app.models.exam_cycle import ExamCycle
+    from datetime import datetime, timezone
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    ticket = _create_active_ticket(db, user, "Рисунок")
+    cycle = ExamCycle(user_id=user.id, subject="Рисунок", ticket_id=ticket.id,
+                      started_at=datetime.now(timezone.utc))
+    db.add(cycle)
+    db.flush()
+    db.add(Work(
+        user_id=user.id,
+        work_type=WORK_TYPE_MOCK_EXAM,
+        month="январь",
+        year=2026,
+        filename="mock.jpg",
+        subject="Рисунок",
+        tariff=user.tariff,
+        status="success",
+        score=None,
+        cycle_id=cycle.id,
+        is_final=True,
+        needs_revision=True,
+        created_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+
+    resp = client.get("/upload/mock-exam")
+
+    assert resp.status_code == 200
+    assert "работа сдана, ждите ОС" not in resp.text
+
+
 def test_mock_exam_old_period_submission_does_not_show_waiting_grade(auth_client, db):
     """Old unchecked submissions should not block a new active period."""
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
@@ -506,23 +388,6 @@ def test_mock_exam_old_period_submission_does_not_show_waiting_grade(auth_client
     assert "уже сдано" not in resp.text
 
 
-def test_mock_exam_stale_lock_does_not_block_current_ticket(auth_client, db):
-    """Legacy MockExamLock is informational; current ticket cycle is the lock."""
-    from app.models.mock_exam_lock import MockExamLock
-    from app.models.work import Work
-    from datetime import datetime, timezone
-    client, user = auth_client
-    _create_active_period(db, user, "mock_exam")
-    _create_active_ticket(db, user, "Рисунок")
-    db.add(MockExamLock(user_id=user.id, subject="Рисунок", is_locked=True,
-                        locked_at=datetime.now(timezone.utc)))
-    db.commit()
-    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
-        resp = _mock_upload(client, [("photos", ("w.jpg", _JPG_BYTES, "image/jpeg"))], subject="Рисунок")
-    assert resp.status_code == 200
-    assert db.query(Work).filter(Work.user_id == user.id).count() == 1
-
-
 def test_mock_exam_locked_subject_can_be_started(auth_client, db):
     """POST /upload/mock-exam/start ignores old review locks when the period is open."""
     from app.models.mock_exam_lock import MockExamLock
@@ -539,31 +404,6 @@ def test_mock_exam_locked_subject_can_be_started(auth_client, db):
     assert resp.status_code == 200
     assert resp.json()["subject"] == "Рисунок"
     assert resp.json()["resumed"] is False
-
-
-def test_mock_exam_current_ticket_cycle_blocks_repeat_submit(auth_client, db):
-    """A created cycle for the active ticket blocks repeat submit for that subject."""
-    from app.models.work import Work
-    client, user = auth_client
-    _create_active_period(db, user, "mock_exam")
-    _create_active_ticket(db, user, "Рисунок")
-    _create_active_ticket(db, user, "Композиция")
-
-    # First submit creates a cycle for "Рисунок".
-    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
-        resp_first = _mock_upload(client, [("photos", ("a.jpg", _JPG_BYTES, "image/jpeg"))], subject="Рисунок")
-    assert resp_first.status_code == 200
-
-    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
-        resp_repeat = _mock_upload(client, [("photos", ("a2.jpg", _JPG_BYTES, "image/jpeg"))], subject="Рисунок")
-    assert resp_repeat.status_code == 200
-    assert "уже сдан" in resp_repeat.text
-
-    # A different subject with its own active ticket still goes through.
-    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
-        resp_ok = _mock_upload(client, [("photos", ("b.jpg", _JPG_BYTES, "image/jpeg"))], subject="Композиция")
-    assert resp_ok.status_code == 200
-    assert db.query(Work).filter(Work.user_id == user.id).count() == 2
 
 
 def test_retake_form_available_when_mock_sent_to_retake(auth_client, db):
@@ -1011,27 +851,3 @@ def test_curator_can_unlock_subject(client, db, user_factory, session_factory):
     updated = db.query(MockExamLock).filter(MockExamLock.id == lock_id).first()
     assert updated.is_locked is False
     assert updated.unlocked_by_id == curator.id
-
-
-def test_student_can_submit_after_unlock(auth_client, db):
-    """After a lock is cleared, the student can submit that subject again."""
-    from app.models.mock_exam_lock import MockExamLock
-    from app.models.work import Work
-    from datetime import datetime, timezone
-    client, user = auth_client
-    _create_active_period(db, user, "mock_exam")
-    _create_active_ticket(db, user, "Рисунок")
-    # Create an already-unlocked lock record (curator previously unlocked it)
-    db.add(MockExamLock(user_id=user.id, subject="Рисунок", is_locked=False,
-                        locked_at=datetime.now(timezone.utc),
-                        unlocked_at=datetime.now(timezone.utc)))
-    db.commit()
-    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
-        resp = _mock_upload(client, [("photos", ("w.jpg", _JPG_BYTES, "image/jpeg"))], subject="Рисунок")
-    assert resp.status_code == 200
-    assert db.query(Work).filter(Work.user_id == user.id).count() == 1
-    # Lock should be re-engaged after re-submission
-    lock = db.query(MockExamLock).filter(
-        MockExamLock.user_id == user.id, MockExamLock.subject == "Рисунок",
-    ).first()
-    assert lock.is_locked is True

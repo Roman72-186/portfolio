@@ -161,10 +161,21 @@ label:hover .subject-btn { border-color: #D97706; color: #D97706; }
                     <span class="subject-locked-hint">работа сдана, ждите ОС</span>
                     {% endif %}
                     {% elif not has_ticket %}
-                    <span class="subject-locked-hint">нет задания</span>
+                    <span class="subject-locked-hint">сдача недоступна</span>
                     {% endif %}
                 </label>
                 {% endfor %}
+            </div>
+        </div>
+
+        <!-- Подготовительное сообщение (показывается после выбора предмета) -->
+        <div id="prepBlock" style="display:none">
+            <div style="background:#FFFBEB;border:1.5px solid rgba(217,119,6,0.35);border-radius:14px;padding:18px 20px">
+                <div style="font-size:16px;font-weight:800;color:#92400E;margin-bottom:8px">📝 Подготовьтесь</div>
+                <p style="font-size:14px;color:#78350F;line-height:1.6;margin:0">
+                    Приготовьте карандаш и всё необходимое для выполнения пробного экзамена.<br>
+                    После нажатия кнопки «Начать» вам будет выдан билет и запущен таймер на 4 часа.
+                </p>
             </div>
         </div>
 
@@ -179,26 +190,6 @@ label:hover .subject-btn { border-color: #D97706; color: #D97706; }
         <div id="ticketBlock" style="display:none"></div>
 
         <div id="uploadSection" style="display:none;flex-direction:column;gap:20px">
-            <!-- Финальное фото — ровно одно, обязательно -->
-            <div>
-                <label class="form-label" style="margin-bottom:10px">
-                    Финальное фото <span style="color:#DC2626;font-weight:700">· обязательно</span>
-                </label>
-                <label class="upload-drop" id="finalDrop">
-                    <input type="file" accept="image/*" id="finalInput">
-                    <div class="upload-circle">★</div>
-                    <div class="upload-drop-title">Загрузи финальную работу</div>
-                    <div class="upload-drop-hint">Одно фото · до 10 МБ</div>
-                </label>
-                <div class="preview-area" id="finalPreviewArea">
-                    <div class="preview-header">
-                        <span class="preview-count">Финальное фото</span>
-                        <button type="button" class="btn-reselect" id="finalReselect">✕ Заменить</button>
-                    </div>
-                    <div class="photo-grid" id="finalGrid" style="grid-template-columns:repeat(2,1fr)"></div>
-                </div>
-            </div>
-
             <!-- Этапные фото — до 10, по желанию -->
             <div>
                 <label class="form-label" style="margin-bottom:10px">
@@ -219,6 +210,26 @@ label:hover .subject-btn { border-color: #D97706; color: #D97706; }
                         </div>
                     </div>
                     <div class="photo-grid" id="stageGrid"></div>
+                </div>
+            </div>
+
+            <!-- Финальное фото — ровно одно, обязательно -->
+            <div>
+                <label class="form-label" style="margin-bottom:10px">
+                    Финальное фото <span style="color:#DC2626;font-weight:700">· обязательно</span>
+                </label>
+                <label class="upload-drop" id="finalDrop">
+                    <input type="file" accept="image/*" id="finalInput">
+                    <div class="upload-circle">★</div>
+                    <div class="upload-drop-title">Загрузи финальную работу</div>
+                    <div class="upload-drop-hint">Одно фото · до 10 МБ</div>
+                </label>
+                <div class="preview-area" id="finalPreviewArea">
+                    <div class="preview-header">
+                        <span class="preview-count">Финальное фото</span>
+                        <button type="button" class="btn-reselect" id="finalReselect">✕ Заменить</button>
+                    </div>
+                    <div class="photo-grid" id="finalGrid" style="grid-template-columns:repeat(2,1fr)"></div>
                 </div>
             </div>
 
@@ -250,7 +261,6 @@ const uploadMsg = document.getElementById('uploadMsg');
 
 // ── Финальное фото (ровно одно) ──────────────────────────────────────────────
 var finalFile = null;
-var savedFinalWorkId = null;
 const finalInput = document.getElementById('finalInput');
 const finalDrop = document.getElementById('finalDrop');
 const finalPreviewArea = document.getElementById('finalPreviewArea');
@@ -345,8 +355,10 @@ stageDrop.addEventListener('drop', function(e) {
     if (e.dataTransfer && e.dataTransfer.files.length) addStage(e.dataTransfer.files);
 });
 
-// ── Отправка: сначала финальное, затем этапные ───────────────────────────────
-function updateSubmitState() { submitBtn.disabled = !(finalFile || savedFinalWorkId); }
+// ── Отправка: сначала этапные, затем финальное ───────────────────────────────
+var stageUploaded = false;
+
+function updateSubmitState() { submitBtn.disabled = !finalFile; }
 
 function showUploadMsg(text, isError) {
     uploadMsg.style.display = 'block';
@@ -368,87 +380,74 @@ function parseUploadResponse(response) {
         });
 }
 
-function uploadIntermediate(parentId) {
-    if (!stageFiles.length || !parentId) { finishOk(); return; }
-
+function doUploadIntermediate() {
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner"></span>Загружаем этапные…';
-    var fd2 = new FormData();
-    stageFiles.forEach(function(f){ fd2.append('photos', f); });
-    fd2.append('parent_work_id', parentId);
-    fd2.append('csrf_token', CSRF_TOKEN);
-
+    uploadMsg.style.display = 'none';
+    var fd = new FormData();
+    stageFiles.forEach(function(f){ fd.append('photos', f); });
+    fd.append('subject', _currentSubject);
+    fd.append('csrf_token', CSRF_TOKEN);
     fetch('/upload/probnik/intermediate', {
-        method: 'POST',
-        body: fd2,
-        headers: { 'Accept': 'application/json' }
+        method: 'POST', body: fd, headers: { 'Accept': 'application/json' }
     })
         .then(parseUploadResponse)
-        .then(function(res){
-            var j2 = res.body;
-            if (res.status !== 200 || !j2.success) {
-                stopTimer();
+        .then(function(res) {
+            var j = res.body;
+            if (res.status !== 200 || !j.success) {
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = 'Повторить загрузку этапных';
-                showUploadMsg('Финальное фото сохранено, но этапные не загрузились: ' +
-                    (j2.error || j2.detail || 'ошибка') +
-                    '. Проверь выбранные этапные фото и нажми повторную загрузку.', true);
+                showUploadMsg('Не удалось загрузить этапные: ' +
+                    (j.error || j.detail || 'ошибка') +
+                    '. Проверь фото и нажми повторную загрузку.', true);
                 return;
             }
-            finishOk();
+            stageUploaded = true;
+            doUploadFinal();
         })
-        .catch(function(){
-            stopTimer();
+        .catch(function() {
             submitBtn.disabled = false;
             submitBtn.innerHTML = 'Повторить загрузку этапных';
-            showUploadMsg('Финальное фото сохранено, но этапные не отправились (нет связи). ' +
-                'Проверь интернет и нажми повторную загрузку.', true);
+            showUploadMsg('Этапные не отправились (нет связи). Проверь интернет и попробуй снова.', true);
         });
 }
 
-function markFinalSaved(parentId) {
-    savedFinalWorkId = parentId;
-    finalInput.disabled = true;
-    finalReselectBtn.disabled = true;
-    finalReselectBtn.textContent = 'Сохранено';
-}
-
-submitBtn.addEventListener('click', function() {
-    if (savedFinalWorkId) {
-        uploadIntermediate(savedFinalWorkId);
-        return;
-    }
+function doUploadFinal() {
     if (!finalFile || !_currentSubject) return;
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner"></span>Загружаем финальное…';
     uploadMsg.style.display = 'none';
-
-    var fd1 = new FormData();
-    fd1.append('photos', finalFile);
-    fd1.append('subject', _currentSubject);
-    fd1.append('csrf_token', CSRF_TOKEN);
-
+    var fd = new FormData();
+    fd.append('photos', finalFile);
+    fd.append('subject', _currentSubject);
+    fd.append('csrf_token', CSRF_TOKEN);
     fetch('/upload/probnik/final', {
-        method: 'POST',
-        body: fd1,
-        headers: { 'Accept': 'application/json' }
+        method: 'POST', body: fd, headers: { 'Accept': 'application/json' }
     })
         .then(parseUploadResponse)
-        .then(function(res){
-            var j1 = res.body;
-            if (res.status !== 200 || !j1.success) {
-                showUploadMsg(j1.error || j1.detail || 'Не удалось загрузить финальное фото', true);
-                submitBtn.disabled = false; submitBtn.innerHTML = 'Отправить на проверку';
+        .then(function(res) {
+            var j = res.body;
+            if (res.status !== 200 || !j.success) {
+                showUploadMsg(j.error || j.detail || 'Не удалось загрузить финальное фото', true);
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = stageUploaded ? 'Повторить загрузку финального' : 'Отправить на проверку';
                 return;
             }
-            var parentId = j1.work_ids && j1.work_ids[0];
-            if (parentId) { markFinalSaved(parentId); }
-            uploadIntermediate(parentId);
+            finishOk();
         })
-        .catch(function(){
+        .catch(function() {
             showUploadMsg('Не удалось связаться с сервером', true);
-            submitBtn.disabled = false; submitBtn.innerHTML = 'Отправить на проверку';
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = stageUploaded ? 'Повторить загрузку финального' : 'Отправить на проверку';
         });
+}
+
+submitBtn.addEventListener('click', function() {
+    if (!stageUploaded && stageFiles.length > 0) {
+        doUploadIntermediate();
+    } else {
+        doUploadFinal();
+    }
 });
 
 function finishOk() {
@@ -498,6 +497,7 @@ function onSubjectSelected(subject) {
     document.getElementById('ticketBlock').innerHTML = '';
     document.getElementById('uploadSection').style.display = 'none';
     document.getElementById('startBtn').style.display = 'none';
+    document.getElementById('prepBlock').style.display = 'none';
     stopTimer();
 
     if (ATTEMPTS[subject]) {
@@ -506,7 +506,8 @@ function onSubjectSelected(subject) {
         startTimerFromServer(ATTEMPTS[subject].started_at);
         document.getElementById('uploadSection').style.display = 'block';
     } else {
-        // Показать кнопку «Начать пробник»
+        // Показать подготовительное сообщение и кнопку «Начать пробник»
+        document.getElementById('prepBlock').style.display = 'block';
         document.getElementById('startBtn').style.display = 'inline-block';
     }
 }
@@ -528,7 +529,7 @@ document.getElementById('startBtn').addEventListener('click', function(){
             btn.innerHTML = '▶ Начать пробник';
             if (res.status !== 200) {
                 var msg = {
-                    'no_active_ticket': 'Нет активного билета по этому предмету',
+                    'no_active_ticket': 'Сдача пробника сейчас недоступна',
                     'already_submitted': 'Пробник уже сдан и ожидает проверки',
                     'feature_closed': 'Раздел пробников сейчас закрыт',
                     'invalid_subject': 'Выберите корректный предмет',
@@ -547,6 +548,7 @@ document.getElementById('startBtn').addEventListener('click', function(){
             };
             ATTEMPTS[_currentSubject] = attempt;
             document.getElementById('startBtn').style.display = 'none';
+            document.getElementById('prepBlock').style.display = 'none';
             renderTicket(attempt);
             startTimerFromServer(attempt.started_at);
             document.getElementById('uploadSection').style.display = 'block';

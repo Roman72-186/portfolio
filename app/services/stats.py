@@ -161,17 +161,31 @@ def score_curve_12m(db: DBSession) -> list[CurvePoint]:
 
 def student_score_curve(db: DBSession, student_id: int) -> list[CurvePoint]:
     """
-    Динамика среднего балла одного ученика по mock_exam за последние 12 месяцев,
-    разрез по предмету (Рисунок / Композиция). Группировка по году+месяцу `Work.created_at`.
-    Возвращает 12 точек от старого к новому; нет данных в месяце по предмету → None (разрыв).
+    Динамика среднего балла одного ученика по mock_exam — от месяца его первой
+    оценённой работы (начало сдачи пробников) до текущего месяца, разрез по
+    предмету (Рисунок / Композиция). Группировка по году+месяцу `Work.created_at`.
+    Если у ученика ещё нет ни одной оценённой работы — возвращает пустой список.
     """
+    first_scored = (
+        db.query(func.min(Work.created_at))
+        .filter(
+            Work.user_id == student_id,
+            Work.work_type == WORK_TYPE_MOCK_EXAM,
+            Work.score.isnot(None),
+            Work.subject.in_(MOCK_SUBJECTS),
+        )
+        .scalar()
+    )
+    if first_scored is None:
+        return []
+
+    if first_scored.tzinfo is None:
+        first_scored = first_scored.replace(tzinfo=timezone.utc)
+
     now = datetime.now(timezone.utc)
-    year = now.year
-    month = now.month - 11
-    while month <= 0:
-        month += 12
-        year -= 1
+    year, month = first_scored.year, first_scored.month
     window_start = datetime(year, month, 1, tzinfo=timezone.utc)
+    n_months = (now.year - year) * 12 + (now.month - month) + 1
 
     year_col = extract("year", Work.created_at)
     month_col = extract("month", Work.created_at)
@@ -203,7 +217,7 @@ def student_score_curve(db: DBSession, student_id: int) -> list[CurvePoint]:
 
     points: list[CurvePoint] = []
     cy, cm = year, month
-    for _ in range(12):
+    for _ in range(n_months):
         slot = bucket.get((cy, cm), {})
         points.append({
             "label": f"{_MONTH_LABELS_RU[cm]} {cy}",

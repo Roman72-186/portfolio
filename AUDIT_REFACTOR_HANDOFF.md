@@ -7,9 +7,30 @@
 ## Текущий статус
 
 - Статус: phase_3_in_progress
-- Последнее обновление: 2026-06-07
+- Последнее обновление: 2026-06-12
 - Текущая фаза: 3. Выполнение refactor slices
-- Следующий шаг: P2-03c продолжить user management service alignment только после route-contract tests для выбранного endpoint. Кандидат: `set-credentials`/`create-staff` rank predicates; impersonation не трогать.
+- Следующий шаг: продолжить P2-04 только маленькими cycle-upload slices; следующий безопасный кандидат - вынести создание `Work`/`UploadLog` для cycle upload в локальный helper после route-contract tests. Legacy upload/n8n/Drive не трогать.
+
+### 2026-06-12: Архивация мёртвых шаблонов (по запросу владельца «код мёртвый в архив»)
+
+Проверка: для каждого шаблона посчитаны ссылки в `app/**/*.py`, `tests/**/*.py`, `app/templates/**/*.html` (включая dirty worktree с активной фичей tags). Динамической сборки имён шаблонов нет. Все 13 роутеров подключены в `main.py` — мёртвых роутеров нет. Все модули `app/services/*.py` импортируются ≥1 раз — мёртвых сервис-модулей нет.
+
+Подтверждённо мёртвые (0 live + 0 dead-only ссылок) вынесены `git mv` в `portfolio-saas/_legacy_templates/` (вне `app/templates/`, Jinja их не сканирует; см. `_legacy_templates/README.md`):
+- 11 листовых страниц: `cabinet.html`, `cabinet_admin.html`, `cabinet_admin_students.html`, `cabinet_admin_student_works.html`, `cabinet_curator.html`, `cabinet_curator_dashboard.html`, `cabinet_curator_mockexams.html`, `cabinet_curator_portfolio.html`, `cabinet_curator_retakes.html`, `cabinet_superadmin.html`, `scores.html`.
+- 1 партиал без ссылок: `partials/cycle_back.html`.
+
+Ни один живой партиал не держался только мёртвыми шаблонами (`lightbox`/`bottom_nav` используются и живыми страницами). Изменений в `app/` коде нет — только перемещение файлов. Не закоммичено (worktree dirty с чужой работой). Проверка: `pytest tests/test_navigation_contracts.py tests/test_routes_cabinet.py tests/test_routes_cabinet_superadmin.py tests/test_routes_cabinet_curator_new.py tests/test_curator_reports_stats.py` → 87 passed.
+
+### 2026-06-12: P-UI-01 — общий sidebar staff check-экранов (один безопасный slice)
+
+Owner layer: новый `app/templates/partials/staff_check_sidebar.html` — макрос `check_sidebar(title, search_placeholder, total_unchecked, total_students, tariffs)` с caller-телом для элементов списка.
+
+Подключён в `cabinet_admin_mock_check.html` и `cabinet_admin_retake_check.html` через `{% call check_sidebar(...) %}{% for s in sidebar_students %}…{% endfor %}{% endcall %}`. Идентичная часть (back-link `/cabinet/admin-panel`, заголовок+counter, subtitle, поиск `id="student-search"`/`applyFilters()`, tariff-filter, контейнер `sidebar-list`) теперь в одном месте; различающееся тело строки (`mock_count`/scored_subjects badges vs `retake_count`/`tg_username`) и тексты пустого состояния остались в каждом шаблоне.
+
+`cabinet_students.html` НЕ включён в этот slice осознанно: его sidebar-header — другой контракт (нет back-link, нет counter/subtitle/tariff-filter, JS-хук `filterSidebar()` вместо `applyFilters()`). Объединять его = скрыть разное поведение → отдельный кандидат.
+
+CSS/JS/классы/hrefs/form-поля не менялись. Тесты: новый `tests/test_staff_check_sidebar.py` (render-contract обоих маршрутов) + `pytest tests/test_navigation_contracts.py tests/test_navigation_service.py tests/test_routes_cabinet.py` → 22 passed; `python -m compileall app tests` → ok. Не закоммичено.
+- Production: 2026-06-08 P2-03c/d/e/f + P2-04a runtime-файлы задеплоены на VPS через `scripts/deploy.py`; локальный worktree остается dirty и не закоммичен.
 - Важное уточнение пользователя: burger menu у каждой роли свое по составу и смыслу. Нельзя делать одинаковое меню для всех ролей. Допустимо централизовать механизм/конфиг/рендеринг, только если сохраняется разный набор пунктов и текущее поведение каждой роли.
 
 ## Контекст проекта
@@ -322,7 +343,19 @@ Storage/upload scenarios that must not change:
 - [x] P2-03a: добавлены service guard-rail tests для user management: self/superadmin/peer-admin/curator denial, lower-rank success, session invalidation, audit log и deleted-user behavior.
 - [x] P2-03b: вынесены rank predicates `can_manage_user_by_rank()`, `can_manage_user()`, `can_assign_role_rank()` в `app/services/user_management.py`.
 - [x] P2-03b подключен только к `admin.assign_role` и `superadmin_user_set_role`; разные response contracts сохранены: `/admin/users` возвращает 302, `/cabinet/superadmin/users` возвращает 303/HTTPException как раньше.
-- [ ] P2-03 не закрыт полностью: `set-credentials`, `create-staff`, curator assignment и impersonation остаются отдельными slices/анализом.
+- [x] P2-03c: users-page `superadmin_user_set_credentials` переведен на `can_manage_user_by_rank()`; legacy dashboard `superadmin_set_credentials` не менялся.
+- [x] P2-03c сохранил contract: inactive/deleted/missing target 404 `Пользователь не найден`, равный/старший rank 403 `Нельзя выдать доступ роли равной или выше своей`, success HTML 200 с выданными credentials.
+- [x] P2-03d: `admin.create_staff_account` и `superadmin_create_staff` используют `can_assign_role_rank()` для запрета создать сотрудника с рангом не ниже текущего.
+- [x] P2-03d сохранил отдельный route-level contract для `new_role.rank < 2`: сообщение `Аккаунт сотрудника требует роль с рангом ≥ 2.` не объединялось с rank-protection helper.
+- [x] P2-03e: вынесен helper `get_curator_for_assignment(db, curator_id, active_only=...)` для exact-rank curator lookup.
+- [x] P2-03e подключен к bulk curator assignment (`active_only=True`) и к user-card/quick curator assignment (`active_only=False`), чтобы сохранить различие текущих contracts.
+- [x] P2-03e не менял legacy `/admin/users/{user_id}/curator`, потому что там текущая проверка шире exact rank=2 и требует отдельного product/security анализа.
+- [x] P2-03f: `superadmin_impersonate_start` переведен на `can_manage_user_by_rank()`; `impersonate_stop` не менялся, потому что это отдельный emergency-exit route без role/CSRF gate.
+- [x] P2-03f сохранил contracts: inactive/deleted/missing target 404 `Пользователь не найден`, peer/higher rank 403 `Нельзя имперсонировать роль равную или выше своей`, already impersonating 400 `Уже в режиме имперсонации`, успешная имперсонация 303/cookies/audit session behavior.
+- [x] P2-03 основной закрыт для совпадающих rank predicates; legacy direct admin curator endpoint и storage/upload вынесены в отдельный анализ.
+- [x] P2-04a: в `cycle_upload.py` вынесен локальный helper `_upload_cycle_file_to_s3()` для одного шага `compress_image -> s3_service.upload_to_s3`.
+- [x] P2-04a сохранил contracts: `Work`/`UploadLog` creation остаются в caller helpers, `drive_status="s3_only"` не менялся, JSON shape/status codes не менялись, n8n/Drive imports/calls не добавлялись.
+- [x] P2-04a добавил route-contract test для S3 configured failure: `success=false`, `created=0`, `failed=1`, `error="Ошибка S3"`, Work не создается.
 
 ### Фаза 4. Role-specific burger/menu без дублей механики
 
@@ -653,6 +686,25 @@ Storage/upload scenarios that must not change:
 | 3 / P2-03b | `app/api/admin.py` | `assign_role` делегирует current-target и new-role rank checks в `user_management` helpers; redirect/status contract сохранен. | Codex / 2026-06-07 |
 | 3 / P2-03b | `app/api/cabinet_superadmin.py` | `superadmin_user_set_role` делегирует current-target и new-role rank checks в `user_management` helpers; 303/404/400 contracts и session invalidation сохранены. | Codex / 2026-06-07 |
 | 3 / P2-03b | `AUDIT_REFACTOR_HANDOFF.md` | Зафиксированы P2-03a/b и следующий ограниченный кандидат P2-03c. | Codex / 2026-06-07 |
+| 3 / P2-03c | `app/api/cabinet_superadmin.py` | Users-page `superadmin_user_set_credentials` делегирует target-rank protection в `can_manage_user_by_rank()`; legacy dashboard set-credentials не менялся. | Codex / 2026-06-08 |
+| 3 / P2-03c | `tests/test_routes_cabinet_superadmin.py` | Добавлен route-contract test: нельзя выдать credentials peer-rank superadmin, статус 403 и credentials не создаются. | Codex / 2026-06-08 |
+| 3 / P2-03d | `app/api/admin.py` | `create_staff_account` использует `can_assign_role_rank()` для запрета создать сотрудника равного/старшего ранга; route-level validation rank < 2 сохранена. | Codex / 2026-06-08 |
+| 3 / P2-03d | `app/api/cabinet_superadmin.py` | `superadmin_create_staff` использует `can_assign_role_rank()` для запрета создать сотрудника равного/старшего ранга; page-error contract сохранен. | Codex / 2026-06-08 |
+| 3 / P2-03d | `tests/test_routes_cabinet_superadmin.py` | Добавлен route-contract test: нельзя создать staff account с peer-rank superadmin role, пользователь не создается. | Codex / 2026-06-08 |
+| 3 / P2-03c/d | `AUDIT_REFACTOR_HANDOFF.md` | Зафиксированы P2-03c/d и следующий отдельный кандидат P2-03e. | Codex / 2026-06-08 |
+| 3 / P2-03e | `app/services/user_management.py` | Добавлен `get_curator_for_assignment(db, curator_id, active_only=False)` для exact rank=2 curator lookup с опциональной active проверкой. | Codex / 2026-06-08 |
+| 3 / P2-03e | `app/api/admin.py` | Bulk curator assignment использует helper с `active_only=True`; HTML page-error contract сохранен. | Codex / 2026-06-08 |
+| 3 / P2-03e | `app/api/cabinet_superadmin.py` | Bulk curator assignment использует `active_only=True`, user-card/quick curator assignment используют `active_only=False`; JSON/redirect/status contracts сохранены. | Codex / 2026-06-08 |
+| 3 / P2-03e | `tests/test_routes_cabinet_superadmin.py` | Добавлены tests для quick curator JSON shape и запрета inactive curator в bulk assignment. | Codex / 2026-06-08 |
+| 3 / P2-03e | `AUDIT_REFACTOR_HANDOFF.md` | Зафиксирован P2-03e и граница: impersonation только отдельным анализом, storage/n8n/Drive не трогать без контрактного плана. | Codex / 2026-06-08 |
+| 3 / P2-03f | `app/api/cabinet_superadmin.py` | `superadmin_impersonate_start` делегирует target-rank/active/deleted protection в `can_manage_user_by_rank()`; `impersonate_stop` не менялся. | Codex / 2026-06-08 |
+| 3 / P2-03f | `tests/test_routes_superadmin_impersonate.py` | Добавлены route-contract tests для inactive target 404 и запрета nested impersonation 400. | Codex / 2026-06-08 |
+| 3 / P2-03f | `AUDIT_REFACTOR_HANDOFF.md` | Зафиксирован P2-03f, закрытие P2-03 для совпадающих rank predicates и следующий кандидат P2-04 только после storage/n8n/Drive контрактного плана. | Codex / 2026-06-08 |
+| 3 / P2-04a | `app/api/cycle_upload.py` | Добавлен локальный `_upload_cycle_file_to_s3()`; общий шаг compress/upload используется в create и overwrite final flows, без изменения Work/UploadLog/JSON contracts. | Codex / 2026-06-08 |
+| 3 / P2-04a | `tests/test_routes_cycle_upload.py` | Добавлен route-contract test для S3 configured failure: JSON error и отсутствие Work record. | Codex / 2026-06-08 |
+| 3 / P2-04a | `AUDIT_REFACTOR_HANDOFF.md` | Зафиксирован P2-04a и граница следующего slice: только cycle Work/UploadLog helper после tests, legacy upload/n8n/Drive не трогать. | Codex / 2026-06-08 |
+| 3 / deploy | `app/api/admin.py`, `app/api/cabinet_superadmin.py`, `app/api/cycle_upload.py`, `app/services/user_management.py` | Runtime-файлы текущего набора P2-03c/d/e/f + P2-04a задеплоены на VPS; tests/handoff не копировались как runtime. | Codex / 2026-06-08 |
+| 3 / deploy | `AUDIT_REFACTOR_HANDOFF.md` | Зафиксирован факт деплоя, healthcheck и инструкции для следующего агента; коммит/push не выполнялись. | Codex / 2026-06-08 |
 
 ## Проверки
 
@@ -701,6 +753,21 @@ Storage/upload scenarios that must not change:
 | 2026-06-07 | `pytest tests/test_services_user_management.py tests/test_routes_cabinet_superadmin.py tests/test_routes_admin.py tests/test_routes_superadmin_impersonate.py` | 55 passed | P2-03b: user-management rank predicates подключены к admin/superadmin role assignment routes. Есть только существующие deprecation warnings. |
 | 2026-06-07 | `pytest tests/test_student_access_service.py tests/test_routes_cabinet_curator_new.py tests/test_feedback_dialog.py tests/test_routes_cabinet_superadmin.py tests/test_routes_admin.py tests/test_routes_superadmin_impersonate.py tests/test_navigation_contracts.py tests/test_routes_cabinet.py tests/test_routes_login.py` | 133 passed, 2 skipped | Общий затронутый baseline после P2-02d и P2-03b. Есть только существующие deprecation warnings. |
 | 2026-06-07 | `python -m compileall app tests` | ok | Синтаксическая проверка после P2-03b. |
+| 2026-06-08 | `pytest tests/test_services_user_management.py tests/test_routes_cabinet_superadmin.py tests/test_routes_admin.py tests/test_routes_superadmin_impersonate.py` | 56 passed | P2-03c: users-page set-credentials rank guard переведен на service predicate. Есть только существующие deprecation warnings. |
+| 2026-06-08 | `pytest tests/test_services_user_management.py tests/test_routes_cabinet_superadmin.py tests/test_routes_admin.py tests/test_routes_superadmin_impersonate.py` | 57 passed | P2-03d: create-staff rank guard переведен на service predicate. Есть только существующие deprecation warnings. |
+| 2026-06-08 | `python -m compileall app tests` | ok | Синтаксическая проверка после P2-03d. |
+| 2026-06-08 | `pytest tests/test_services_user_management.py tests/test_routes_cabinet_superadmin.py tests/test_routes_admin.py tests/test_routes_superadmin_impersonate.py` | 59 passed | P2-03e: curator assignment lookup helper и route contracts. Есть только существующие deprecation warnings. |
+| 2026-06-08 | `python -m compileall app tests` | ok | Синтаксическая проверка после P2-03e. |
+| 2026-06-08 | `pytest tests/test_services_user_management.py tests/test_routes_cabinet_superadmin.py tests/test_routes_admin.py tests/test_routes_superadmin_impersonate.py` | 61 passed | P2-03f: impersonate_start rank guard переведен на service predicate; inactive target и nested impersonation contracts покрыты. Есть только существующие deprecation warnings. |
+| 2026-06-08 | `python -m compileall app tests` | ok | Синтаксическая проверка после P2-03f. |
+| 2026-06-08 | `pytest tests/test_routes_cycle_upload.py tests/test_routes_upload.py` | 59 passed | P2-04a: cycle upload S3 helper и legacy upload baseline. Есть только существующие deprecation warnings. |
+| 2026-06-08 | `pytest tests/test_services_user_management.py tests/test_routes_cabinet_superadmin.py tests/test_routes_admin.py tests/test_routes_superadmin_impersonate.py tests/test_routes_cycle_upload.py tests/test_routes_upload.py` | 120 passed | Объединенный baseline для текущего незакоммиченного набора P2-03c/d/e/f + P2-04a. Есть только существующие deprecation warnings. |
+| 2026-06-08 | `python -m compileall app tests` | ok | Синтаксическая проверка после P2-04a. |
+| 2026-06-08 | `git diff --check` | ok | Whitespace/errors не найдены; есть только CRLF warnings Git на Windows. |
+| 2026-06-08 | `python scripts/deploy.py app/api/admin.py app/api/cabinet_superadmin.py app/api/cycle_upload.py app/services/user_management.py` | ok | Задеплоены только runtime-файлы текущего набора. Скрипт пересобрал app-контейнер и сделал Redis `FLUSHDB`; предупреждения прежние: `SSL_EMAIL` unset, compose `version` obsolete, Redis AUTH warning with final `OK`. |
+| 2026-06-08 | `Invoke-WebRequest https://apparchi.ru/health` | 200 `{"status":"ok"}` | Production health после деплоя. |
+| 2026-06-08 | `docker compose -f docker-compose.prod-ru.yml ps` на VPS | app `Up ... (healthy)`, db healthy, redis up, traefik up | Контейнеры после деплоя стабильны. |
+| 2026-06-08 | `docker compose -f docker-compose.prod-ru.yml logs --tail=80 app` на VPS | ok | В свежих логах startup complete и health 200; новых ошибок старта не видно. |
 
 ## Ошибки и блокеры
 
@@ -710,11 +777,14 @@ Storage/upload scenarios that must not change:
 ## Следующий агент: что делать дальше
 
 1. Прочитать `../CLAUDE.md`, `CLAUDE.md` и этот файл.
-2. Не трогать незнакомые незакоммиченные изменения; текущий worktree dirty до этой фазы.
-3. P1-01, P1-02, P1-03, P2-01a/b/c, P2-02a/b/c/d и P2-03a/b выполнены и проверены. Перед любым следующим refactor запускать релевантный baseline из `План проверки`.
-4. Следующий кандидат: P2-03c user management service alignment для одного endpoint family, например `set-credentials` или `create-staff`. Сначала добавить/проверить route-contract tests на текущие status codes/messages/redirects, потом выносить только совпадающий rank predicate.
-5. В P2-03 нельзя менять superadmin-only mutations, impersonation, session invalidation, target rank protection, redirects/JSON response contracts и cache invalidation behavior. `impersonate_start/stop` оставить отдельным анализом.
-6. Файлы, которые нельзя трогать без дополнительного анализа: `.env`, `.env.deploy`, `docker-compose*.yml`, `scripts/deploy.py`, `app/services/rbac.py`, `app/dependencies.py`, `app/services/n8n.py`, `app/services/drive.py`, `app/services/s3.py`, migrations, storage save pipeline и upload side effects.
-7. Не начинать с массового объединения шаблонов. Legacy templates без прямого `TemplateResponse` не удалять без отдельной проверки ссылок, tests и истории.
-8. Для меню сохранить role-specific состав: student `bottom_nav`, curator `_curator_nav`, admin/superadmin `staff_nav`; не превращать их в один одинаковый список. P2-01 уже вынес данные меню в отдельные configs, но общий renderer для всех ролей не вводился.
-9. Перед любым code change выбрать owner layer, affected routes/templates/tests и минимальный набор проверок из раздела `План проверки`.
+2. Не трогать незнакомые незакоммиченные изменения; текущий worktree dirty. `deploy_known_hosts` untracked, не включать в commit/deploy без отдельной причины.
+3. P1-01, P1-02, P1-03, P2-01a/b/c, P2-02a/b/c/d, P2-03a/b/c/d/e/f и P2-04a выполнены и проверены. Перед любым следующим refactor запускать релевантный baseline из `План проверки`.
+4. Production уже обновлен runtime-файлами `app/api/admin.py`, `app/api/cabinet_superadmin.py`, `app/api/cycle_upload.py`, `app/services/user_management.py`; commit/push не выполнялись. Если пользователь попросит commit, включить только tracked changes текущего набора и не включать `deploy_known_hosts`.
+5. Следующий кандидат: P2-04b для cycle upload - вынести создание `Work` + `UploadLog` в локальный helper, не меняя transaction boundaries, response JSON, `drive_status="s3_only"`, S3 path builders и parent/final semantics.
+6. Для P2-04b сначала добавить/проверить route-contract tests на final/intermediate Work fields и UploadLog fields; затем менять только `app/api/cycle_upload.py` и `tests/test_routes_cycle_upload.py`.
+7. Альтернативный отдельный анализ: legacy direct admin curator endpoint `/admin/users/{user_id}/curator`, потому что его текущий guard шире exact rank=2 и не был объединен с P2-03e helper.
+8. Нельзя менять storage/n8n/Drive side effects, JSON payload shape, webhook flows, filenames/keys, redirects/status codes, RBAC/permissions, session invalidation, target rank protection и cache invalidation behavior без отдельного плана.
+9. Файлы, которые нельзя трогать без дополнительного анализа: `.env`, `.env.deploy`, `docker-compose*.yml`, `scripts/deploy.py`, `app/services/rbac.py`, `app/dependencies.py`, `app/services/n8n.py`, `app/services/drive.py`, `app/services/s3.py`, migrations, legacy storage save pipeline и upload side effects.
+10. Не начинать с массового объединения шаблонов. Legacy templates без прямого `TemplateResponse` не удалять без отдельной проверки ссылок, tests и истории.
+11. Для меню сохранить role-specific состав: student `bottom_nav`, curator `_curator_nav`, admin/superadmin `staff_nav`; не превращать их в один одинаковый список. P2-01 уже вынес данные меню в отдельные configs, но общий renderer для всех ролей не вводился.
+12. Перед любым code change выбрать owner layer, affected routes/templates/tests и минимальный набор проверок из раздела `План проверки`.

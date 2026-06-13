@@ -94,6 +94,10 @@ def _locked_mock_subjects(db: DBSession, user_id: int) -> dict[str, str]:
     Возвращает {subject: reason}, reason ∈ {"waiting", "scored"}:
       waiting — цикл открыт, работа ждёт обратной связи;
       scored  — цикл закрыт (оценён), ждём следующий билет.
+
+    Финал, отправленный «на доработку» (Work.needs_revision=True), не считается
+    блокировкой — иначе кнопка осталась бы задизейблена, хотя
+    has_submitted_for_ticket уже разрешил пересдачу (см. cycle_upload._overwrite_final).
     """
     from app.services.exam_cycle import get_active_ticket
     from app.models.exam_cycle import ExamCycle
@@ -113,8 +117,22 @@ def _locked_mock_subjects(db: DBSession, user_id: int) -> dict[str, str]:
             .order_by(ExamCycle.id.desc())
             .first()
         )
-        if cycle is not None:
-            reasons[subject] = "scored" if cycle.closed_at is not None else "waiting"
+        if cycle is None:
+            continue
+        final_needs_revision = (
+            db.query(Work.id)
+            .filter(
+                Work.cycle_id == cycle.id,
+                Work.work_type == WORK_TYPE_MOCK_EXAM,
+                Work.is_final == True,  # noqa: E712
+                Work.needs_revision == True,  # noqa: E712
+            )
+            .first()
+            is not None
+        )
+        if final_needs_revision:
+            continue
+        reasons[subject] = "scored" if cycle.closed_at is not None else "waiting"
     return reasons
 
 
@@ -780,8 +798,7 @@ def mock_exam_form(
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    fa, fm = is_feature_available(db, FEATURE_MOCK_EXAM)
-    return _render_mock(request, user, db, feature_available=fa, feature_message=fm)
+    return _render_mock(request, user, db)
 
 
 # ── POST /upload/mock-exam/start ─────────────────────────────────────────────
@@ -796,10 +813,6 @@ def mock_exam_start(
     """Фиксирует начало пробника: выбирает случайный билет и создаёт MockExamAttempt.
     Возвращает JSON с данными билета и started_at для старта клиентского таймера.
     """
-    fa, _ = is_feature_available(db, FEATURE_MOCK_EXAM)
-    if not fa:
-        return JSONResponse({"error": "feature_closed"}, status_code=403)
-
     if subject not in MOCK_SUBJECTS:
         return JSONResponse({"error": "invalid_subject"}, status_code=422)
 

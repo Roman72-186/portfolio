@@ -16,6 +16,8 @@ Staff (куратор / админ / суперадмин):
   GET  /cabinet/curator/feedback/{cycle_id}     — диалог цикла (куратор)
   GET  /cabinet/admin/feedback/{cycle_id}       — диалог цикла (админ)
   GET  /cabinet/superadmin/feedback/{cycle_id}  — диалог цикла (суперадмин)
+  POST /cabinet/feedback/{cycle_id}/close       — закрыть цикл вручную после ОС
+                                                   (куратор/админ/SA, требует выставленного балла)
 
 JSON:
   GET  /cabinet/students/{student_id}/cycles    — список циклов ученика для staff
@@ -28,6 +30,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from sqlalchemy import or_ as sa_or
 from sqlalchemy.orm import Session as DBSession
 
 from app.db.database import get_db
@@ -42,9 +45,19 @@ from app.models.feedback import Feedback, FeedbackMessage
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
 from app.services import feedback as fb_service
-from app.services.exam_cycle import has_open_cycles
+from app.services.exam_cycle import (
+    close_cycle,
+    delete_open_cycle,
+    finish_curator_revision,
+    has_open_cycles,
+    reopen_cycle,
+    request_curator_revision,
+)
 from app.services.student_access import get_student_for_staff_access
+from app.services.utils import has_case_growth
 from app.tmpl import templates
+
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +73,9 @@ def _serialize_cycle(cycle: ExamCycle, finals: list[Work], unread_count: int = 0
         "subject": cycle.subject,
         "started_at": cycle.started_at.isoformat(),
         "closed_at": cycle.closed_at.isoformat() if cycle.closed_at else None,
+        "revision_requested_at": (
+            cycle.revision_requested_at.isoformat() if cycle.revision_requested_at else None
+        ),
         "ticket_id": cycle.ticket_id,
         "attempts": len(finals),
         "unread_count": unread_count,
@@ -238,8 +254,8 @@ async def post_dialog_message(
     if work.cycle_id is None:
         raise HTTPException(status_code=422, detail="Работа не привязана к циклу")
     cycle = db.query(ExamCycle).filter(ExamCycle.id == work.cycle_id).first()
-    if cycle is None or cycle.closed_at is not None:
-        raise HTTPException(status_code=403, detail="Цикл закрыт — отправка сообщений недоступна")
+    if cycle is None:
+        raise HTTPException(status_code=404, detail="Цикл не найден")
 
     student = get_student_for_staff_access(
         db,
@@ -252,6 +268,12 @@ async def post_dialog_message(
 
     role_rank = user["role_rank"]
     sender_role = fb_service.role_from_rank(role_rank)
+
+    # Закрытый цикл запрещает запись только ученику. Staff (куратор/админ/SA)
+    # может дать обратную связь и после закрытия — балл, ОС и закрытие — три
+    # разных шага (см. close_cycle: закрытие — ручное, требует выставленного балла).
+    if cycle.closed_at is not None and sender_role == fb_service.ROLE_STUDENT:
+        raise HTTPException(status_code=403, detail="Цикл закрыт — отправка сообщений недоступна")
 
     # ── Авторизация
     if sender_role == fb_service.ROLE_STUDENT:
@@ -356,15 +378,39 @@ async def post_dialog_message(
 
 # ── Staff: список циклов (куратор/админ/SA) ──────────────────────────────────
 
-def _staff_cycles_data(db: DBSession, user: dict) -> list[dict]:
+def _staff_cycles_data(db: DBSession, user: dict, archived: bool = False) -> list[dict]:
+    """Плоский список циклов Пробника для staff.
+
+    archived=False — открытые циклы (closed_at IS NULL), сортировка по дате старта.
+    archived=True — архив закрытых циклов (closed_at IS NOT NULL), сортировка по
+    дате закрытия (свежезакрытые первыми) — limit 500 берёт самые недавние.
+
+    Каждый элемент несёт идентификацию ученика (имя + @username) и все теги
+    как в списке учеников (тариф, период, кол-во занятий, очно/онлайн, КЕЙС,
+    когорта) — строка самодостаточна, группировка по ученику не нужна.
+    """
     q = (
         db.query(ExamCycle, User)
         .join(User, ExamCycle.user_id == User.id)
         .filter(User.deleted_at.is_(None))
     )
+    if archived:
+        q = q.filter(ExamCycle.closed_at.isnot(None))
+        q = q.order_by(ExamCycle.closed_at.desc(), ExamCycle.id.desc())
+    else:
+        # Открытые + закрытые, возвращённые куратору на правку ОС (флаг
+        # revision_requested_at): такой цикл должен висеть в рабочем списке
+        # куратора, пока правка не завершена. Curator-фильтр ниже отдаёт
+        # ему только его учеников (автор ОС = назначенный куратор).
+        q = q.filter(
+            sa_or(
+                ExamCycle.closed_at.is_(None),
+                ExamCycle.revision_requested_at.isnot(None),
+            )
+        )
+        q = q.order_by(ExamCycle.started_at.desc(), ExamCycle.id.desc())
     if user["role_rank"] == 2:
         q = q.filter(User.curator_id == user["user_id"])
-    q = q.order_by(ExamCycle.started_at.desc(), ExamCycle.id.desc())
     rows = q.limit(500).all()
     if not rows:
         return []
@@ -380,35 +426,50 @@ def _staff_cycles_data(db: DBSession, user: dict) -> list[dict]:
         row[0] for row in db.query(Feedback.work_id).join(Work, Feedback.work_id == Work.id)
         .filter(Work.cycle_id.in_(cycle_ids)).all()
     }
+    # Тег КЕЙС: рост score между пробниками одного предмета (как в списке учеников).
+    student_ids = {s.id for _, s in rows}
+    case_works = (
+        db.query(Work.user_id, Work.subject, Work.score, Work.month, Work.year,
+                 Work.scored_at, Work.created_at, Work.work_type)
+        .filter(
+            Work.user_id.in_(student_ids),
+            Work.work_type == WORK_TYPE_MOCK_EXAM,
+            Work.status == "success",
+            Work.score.isnot(None),
+            Work.subject.isnot(None),
+        )
+        .all()
+    )
+    works_by_uid: dict[int, list] = defaultdict(list)
+    for w in case_works:
+        works_by_uid[w.user_id].append(w)
+    has_case_by_user = {uid: has_case_growth(ws) for uid, ws in works_by_uid.items()}
     items = []
     for cycle, student in rows:
         finals = finals_by_cycle.get(cycle.id, [])
-        scored_finals = [
-            w for w in finals
-            if w.work_type == WORK_TYPE_MOCK_EXAM and w.score is not None
-        ]
-        if not scored_finals:
-            scored_finals = [w for w in finals if w.score is not None]
-        close_score = None
-        if scored_finals:
-            close_work = max(
-                scored_finals,
-                key=lambda w: (
-                    w.scored_at or w.created_at or datetime.min,
-                    w.id or 0,
-                ),
-            )
-            close_score = float(close_work.score)
+        graded = [w for w in finals if w.score is not None]
+        final_score = (
+            max(graded, key=lambda w: (w.attempt_number or 0, w.id)).score
+            if graded else None
+        )
         items.append({
             "id": cycle.id,
             "subject": cycle.subject,
             "started_at": cycle.started_at.isoformat(),
             "closed_at": cycle.closed_at.isoformat() if cycle.closed_at else None,
-            "close_score": close_score,
+            "revision_requested": cycle.revision_requested_at is not None,
+            "score": final_score,
             "attempts": len(finals),
             "feedbacks_count": sum(1 for w in finals if w.id in fb_work_ids),
             "student_id": student.id,
             "student_name": student.name,
+            "tg_username": (student.tg_username or "").lstrip("@"),
+            "tariff": student.tariff,
+            "cohort_tag": student.cohort_tag,
+            "course_periods": student.course_periods,
+            "lessons_count": student.lessons_count,
+            "study_mode": student.study_mode,
+            "has_case": has_case_by_user.get(student.id, False),
         })
     return items
 
@@ -418,26 +479,17 @@ def staff_cycles_list(
     request: Request,
     user: Annotated[dict, Depends(require_curator)],
     db: Annotated[DBSession, Depends(get_db)],
+    status: str = "open",
 ):
-    items = _staff_cycles_data(db, user)
-    by_student: dict[int, dict] = {}
-    for it in items:
-        sid = it["student_id"]
-        if sid not in by_student:
-            by_student[sid] = {
-                "student_id": sid,
-                "student_name": it["student_name"],
-                "cycles": [],
-            }
-        by_student[sid]["cycles"].append(it)
-    # Внутри студента: открытые сверху, закрытые ниже; в каждой группе свежие → старые.
-    # Стабильная сортировка: сначала по дате DESC, затем по флагу «закрыт» — порядок дат сохранится.
-    for s in by_student.values():
-        s["cycles"].sort(key=lambda c: c["started_at"], reverse=True)
-        s["cycles"].sort(key=lambda c: 1 if c["closed_at"] else 0)
-        s["open_count"] = sum(1 for c in s["cycles"] if not c["closed_at"])
-        s["closed_count"] = sum(1 for c in s["cycles"] if c["closed_at"])
-    students_sorted = sorted(by_student.values(), key=lambda s: s["student_name"] or "")
+    # Архив (закрытые циклы) — только админ/SA (role_rank >= 4). Куратору отдаём
+    # открытый список даже при ?status=archive (тихо, без 403).
+    can_archive = user["role_rank"] >= 4
+    archived = status == "archive" and can_archive
+    cycles = _staff_cycles_data(db, user, archived=archived)
+    if not archived:
+        # Открытые: строки одного ученика рядом (стабильная сортировка сохраняет
+        # порядок «свежие → старые» из запроса). Архив остаётся в порядке закрытия.
+        cycles.sort(key=lambda c: (c["student_name"] or "",))
     if user["role_rank"] >= 5:
         detail_prefix = "/cabinet/superadmin/feedback/"
     elif user["role_rank"] >= 4:
@@ -446,9 +498,11 @@ def staff_cycles_list(
         detail_prefix = "/cabinet/curator/feedback/"
     return templates.TemplateResponse("cabinet_staff_cycles.html", {
         "request": request, "user": user,
-        "students": students_sorted,
-        "total_cycles": len(items),
+        "cycles": cycles,
+        "total_cycles": len(cycles),
         "detail_prefix": detail_prefix,
+        "status": "archive" if archived else "open",
+        "can_archive": can_archive,
     })
 
 
@@ -583,6 +637,228 @@ def superadmin_feedback_detail(
     db: Annotated[DBSession, Depends(get_db)],
 ):
     return _staff_dialog_detail(db, request, user, cycle_id)
+
+
+@router.post("/cabinet/feedback/{cycle_id}/close")
+def close_cycle_route(
+    cycle_id: int,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    """Куратор/админ/SA закрывает цикл вручную после того, как дана обратная связь.
+
+    Балл ставится раньше отдельным шагом (score_work) и не закрывает цикл сам.
+    close_cycle проверяет, что финалке Пробника уже выставлен балл — иначе 409.
+    """
+    cycle = db.query(ExamCycle).filter(ExamCycle.id == cycle_id).first()
+    if not cycle:
+        raise HTTPException(status_code=404, detail="Цикл не найден")
+    get_student_for_staff_access(
+        db,
+        user,
+        cycle.user_id,
+        exclude_deleted=True,
+        not_found_detail="Студент не найден",
+        forbidden_detail="Это не ваш студент",
+    )
+    if cycle.closed_at is not None:
+        raise HTTPException(status_code=400, detail="Цикл уже закрыт")
+    if not close_cycle(db, cycle):
+        raise HTTPException(status_code=409, detail="Сначала нужно выставить балл финальной работе")
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/cabinet/superadmin/feedback/{cycle_id}/delete")
+def superadmin_delete_cycle(
+    cycle_id: int,
+    user: Annotated[dict, Depends(require_superadmin)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    """Суперадмин удаляет ОТКРЫТЫЙ цикл Пробника (ученик ошибся при отправке).
+
+    Закрытый цикл удалять нельзя — это оценённая история, влияющая на статистику.
+    """
+    cycle = db.query(ExamCycle).filter(ExamCycle.id == cycle_id).first()
+    if not cycle:
+        raise HTTPException(status_code=404, detail="Цикл не найден")
+    if cycle.closed_at is not None:
+        raise HTTPException(status_code=400, detail="Закрытый цикл удалить нельзя")
+    s3_paths = delete_open_cycle(db, cycle)
+    db.commit()
+    # S3 — best-effort после коммита: БД уже source of truth, сбой хранилища не откатывает удаление.
+    from app.services.s3 import delete_from_s3
+    for path in s3_paths:
+        try:
+            delete_from_s3(path)
+        except Exception:
+            logger.warning("S3 cleanup failed during cycle delete: %s", path)
+    return JSONResponse({"ok": True})
+
+
+@router.post("/cabinet/superadmin/feedback/{cycle_id}/reopen")
+def superadmin_reopen_cycle(
+    cycle_id: int,
+    user: Annotated[dict, Depends(require_superadmin)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    """Суперадмин переоткрывает ЗАКРЫТЫЙ цикл Пробника (закрыли по ошибке).
+
+    Зеркало close: сбрасывает closed_at и возвращает блокировку предмета. Балл и
+    наличие работы в Портфолио не трогаются (Портфолио гейтится баллом, не закрытием).
+    Запрещено, если у ученика уже есть другой открытый цикл по этому предмету —
+    иначе получим два открытых цикла одного предмета.
+    """
+    cycle = db.query(ExamCycle).filter(ExamCycle.id == cycle_id).first()
+    if not cycle:
+        raise HTTPException(status_code=404, detail="Цикл не найден")
+    get_student_for_staff_access(
+        db,
+        user,
+        cycle.user_id,
+        exclude_deleted=True,
+        not_found_detail="Студент не найден",
+        forbidden_detail="Это не ваш студент",
+    )
+    if cycle.closed_at is None:
+        raise HTTPException(status_code=400, detail="Цикл не закрыт")
+    other_open = (
+        db.query(ExamCycle.id)
+        .filter(
+            ExamCycle.user_id == cycle.user_id,
+            ExamCycle.subject == cycle.subject,
+            ExamCycle.closed_at.is_(None),
+            ExamCycle.id != cycle.id,
+        )
+        .first()
+    )
+    if other_open is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="У ученика уже есть открытый цикл по этому предмету",
+        )
+    reopen_cycle(db, cycle)
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/cabinet/superadmin/feedback/{cycle_id}/return-to-curator")
+def superadmin_return_to_curator(
+    cycle_id: int,
+    user: Annotated[dict, Depends(require_superadmin)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    """Суперадмин возвращает цикл (любой — открытый или закрытый) автору ОС на
+    правку сообщения.
+
+    Статус цикла не меняем (балл/портфолио/блокировка/closed_at не трогаются).
+    Ставим флаг revision_requested_at — он подсвечивает цикл в списке куратора и
+    открывает куратору правку своих сообщений (см. edit_feedback_message).
+    Снимается, когда куратор нажимает «Завершить правку» (revision-done).
+    Требует, чтобы в цикле была обратная связь (есть автор, чьё сообщение править).
+    """
+    cycle = db.query(ExamCycle).filter(ExamCycle.id == cycle_id).first()
+    if not cycle:
+        raise HTTPException(status_code=404, detail="Цикл не найден")
+    get_student_for_staff_access(
+        db,
+        user,
+        cycle.user_id,
+        exclude_deleted=True,
+        not_found_detail="Студент не найден",
+        forbidden_detail="Это не ваш студент",
+    )
+    if cycle.revision_requested_at is not None:
+        raise HTTPException(status_code=400, detail="Цикл уже возвращён куратору на изменение")
+    author_id = request_curator_revision(db, cycle)
+    if author_id is None:
+        raise HTTPException(status_code=400, detail="В цикле нет обратной связи для правки")
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/cabinet/feedback/message/{message_id}/edit")
+def edit_feedback_message(
+    message_id: int,
+    user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    text: str = Form(default=""),
+):
+    """Автор сообщения ОС правит ТЕКСТ своего сообщения, пока цикл «на изменении».
+
+    Право: можно править только своё сообщение (sender_id == текущий) и только
+    когда SA вернул цикл (revision_requested_at установлен). Студента не пускаем.
+    Правка текстовая; фото не трогаем. Ученику шлём уведомление перечитать ОС.
+    """
+    from app.models.notification import Notification
+
+    msg = db.query(FeedbackMessage).filter(FeedbackMessage.id == message_id).first()
+    if not msg:
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+    if msg.sender_role == fb_service.ROLE_STUDENT:
+        raise HTTPException(status_code=403, detail="Сообщения ученика не редактируются")
+    if msg.sender_id != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Можно править только своё сообщение")
+
+    fb = db.query(Feedback).filter(Feedback.id == msg.feedback_id).first()
+    work = db.query(Work).filter(Work.id == fb.work_id).first() if fb else None
+    cycle = (
+        db.query(ExamCycle).filter(ExamCycle.id == work.cycle_id).first()
+        if work and work.cycle_id else None
+    )
+    if cycle is None:
+        raise HTTPException(status_code=404, detail="Цикл не найден")
+    if cycle.revision_requested_at is None:
+        raise HTTPException(
+            status_code=403,
+            detail="Правка доступна только когда суперадмин вернул цикл на изменение",
+        )
+
+    text_clean = (text or "").strip()
+    if not text_clean:
+        raise HTTPException(status_code=400, detail="Текст сообщения не может быть пустым")
+    if len(text_clean) > MAX_TEXT_LEN:
+        text_clean = text_clean[:MAX_TEXT_LEN]
+    msg.text = text_clean
+
+    db.add(Notification(
+        user_id=work.user_id,
+        title="Куратор обновил обратную связь",
+        text=f"По работе #{work.id} ({work.subject or ''}) обратная связь была изменена.",
+        work_id=work.id,
+    ))
+    db.commit()
+    return JSONResponse({"ok": True, "text": msg.text})
+
+
+@router.post("/cabinet/feedback/{cycle_id}/revision-done")
+def finish_revision_route(
+    cycle_id: int,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    """Куратор завершает правку — снимает флаг «на изменении» (цикл остаётся закрыт)."""
+    cycle = db.query(ExamCycle).filter(ExamCycle.id == cycle_id).first()
+    if not cycle:
+        raise HTTPException(status_code=404, detail="Цикл не найден")
+    get_student_for_staff_access(
+        db,
+        user,
+        cycle.user_id,
+        exclude_deleted=True,
+        not_found_detail="Студент не найден",
+        forbidden_detail="Это не ваш студент",
+    )
+    if not finish_curator_revision(db, cycle):
+        raise HTTPException(status_code=400, detail="Цикл не на изменении")
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 # ── Staff: календарь работ конкретного ученика (legacy, для карточки) ────────

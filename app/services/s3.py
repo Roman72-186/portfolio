@@ -142,6 +142,19 @@ def delete_from_s3(s3_path: str) -> bool:
         return False
 
 
+def download_from_s3(s3_path: str) -> bytes | None:
+    """Download an object's bytes from S3. Returns None on failure / unconfigured."""
+    if not is_configured():
+        return None
+    try:
+        client = _get_client()
+        resp = client.get_object(Bucket=settings.s3_bucket, Key=s3_path)
+        return resp["Body"].read()
+    except Exception as exc:
+        logger.error("S3 download failed %s: %s", s3_path, exc)
+        return None
+
+
 def upload_to_s3(s3_path: str, data: bytes, content_type: str = "image/jpeg") -> str | None:
     """Upload bytes to S3. Returns public URL or None on failure / unconfigured."""
     if not is_configured():

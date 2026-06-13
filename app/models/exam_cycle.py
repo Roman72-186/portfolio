@@ -17,6 +17,12 @@ class ExamCycle(Base):
     closed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # SA вернул закрытый цикл автору ОС на правку сообщения. Цикл остаётся закрытым
+    # (балл/портфолио/блокировка не трогаются); флаг даёт куратору доступ к правке
+    # своих сообщений и подсвечивает цикл в его списке. Снимается «Завершить правку».
+    revision_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )

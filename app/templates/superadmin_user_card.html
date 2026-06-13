@@ -87,7 +87,7 @@
                     {% endif %}
                     <br>Новый пароль будет показан один раз после генерации.
                 </div>
-                {% if user.role_rank >= 5 and target.id != user.user_id and (not target.role or target.role.rank < user.role_rank) and target.is_active and not target.deleted_at %}
+                {% if user.role_rank >= 4 and target.id != user.user_id and (not target.role or target.role.rank < user.role_rank) and target.is_active and not target.deleted_at %}
                 <button type="submit"
                         form="studentAccessForm"
                         class="uc-btn uc-btn-secondary">
@@ -142,6 +142,12 @@
                         <option value="{{ c.id }}" {% if target.curator_id == c.id %}selected{% endif %}>{{ c.last_name or '' }} {{ c.first_name or c.name }}</option>
                         {% endfor %}
                     </select>
+                </label>
+                <label>
+                    Тег куратора
+                    <input type="text" name="curator_tag"
+                           value="{{ target.curator_tag or '' }}"
+                           maxlength="100" placeholder="Имя куратора (тег)">
                 </label>
                 <label>
                     Баннер на аватарке

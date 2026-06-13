@@ -308,3 +308,72 @@ def test_curator_unlock_own_student_clears_lock(curator_client, db, student):
     db.refresh(lock)
     assert lock.is_locked is False
     assert lock.unlocked_by_id == curator.id
+
+
+# ---------------------------------------------------------------------------
+# POST /cabinet/students/{id}/profile — admin edits student tags
+# ---------------------------------------------------------------------------
+
+def _as_admin(client, user_factory, session_factory, vk_id=820100):
+    admin = user_factory(vk_id=vk_id, name="Admin", role_name="админ")
+    sess = session_factory(admin)
+    client.cookies.set("session_id", sess.id)
+    return admin
+
+
+def test_admin_sets_cohort_tag_on_student_profile(client, db, user_factory, session_factory, student):
+    _as_admin(client, user_factory, session_factory)
+
+    resp = client.post(
+        f"/cabinet/students/{student.id}/profile",
+        data={
+            "first_name": student.first_name,
+            "last_name": student.last_name,
+            "phone": "+79990001122",
+            "cohort_tag": "june",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    db.refresh(student)
+    assert student.cohort_tag == "june"
+
+
+def test_admin_clears_cohort_tag_on_student_profile(client, db, user_factory, session_factory, student):
+    _as_admin(client, user_factory, session_factory, vk_id=820101)
+    student.cohort_tag = "may"
+    db.add(student)
+    db.commit()
+
+    resp = client.post(
+        f"/cabinet/students/{student.id}/profile",
+        data={
+            "first_name": student.first_name,
+            "last_name": student.last_name,
+            "phone": "+79990001122",
+            "cohort_tag": "",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    db.refresh(student)
+    assert student.cohort_tag is None
+
+
+def test_admin_sets_invalid_cohort_tag_returns_error(client, user_factory, session_factory, student):
+    _as_admin(client, user_factory, session_factory, vk_id=820102)
+
+    resp = client.post(
+        f"/cabinet/students/{student.id}/profile",
+        data={
+            "first_name": student.first_name,
+            "last_name": student.last_name,
+            "phone": "+79990001122",
+            "cohort_tag": "winter",
+        },
+    )
+
+    assert resp.status_code == 400
+    assert "Неверная метка набора" in resp.json()["errors"]

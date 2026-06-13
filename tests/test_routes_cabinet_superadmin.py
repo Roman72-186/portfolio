@@ -123,6 +123,35 @@ def test_set_credentials_denied_for_curator(client, db, user_factory, session_fa
     assert resp.status_code == 403
 
 
+def test_set_credentials_succeeds_for_admin(client, db, user_factory, session_factory, curator_user):
+    admin = user_factory(vk_id=900021, name="Admin Actor", role_name="админ", is_admin=True)
+    sess = session_factory(admin)
+    client.cookies.set("session_id", sess.id)
+    resp = client.post("/cabinet/superadmin/set-credentials",
+                       data={"target_user_id": curator_user.id, "csrf_token": "bypass"},
+                       follow_redirects=False)
+    assert resp.status_code == 200
+
+    db.refresh(curator_user)
+    assert curator_user.staff_login is not None
+    assert curator_user.password_hash is not None
+
+
+def test_set_credentials_denies_peer_rank_for_admin(client, db, user_factory, session_factory):
+    admin = user_factory(vk_id=900022, name="Admin Actor", role_name="админ", is_admin=True)
+    peer = user_factory(vk_id=900023, name="Admin Peer", role_name="админ")
+    sess = session_factory(admin)
+    client.cookies.set("session_id", sess.id)
+    resp = client.post("/cabinet/superadmin/set-credentials",
+                       data={"target_user_id": peer.id, "csrf_token": "bypass"},
+                       follow_redirects=False)
+    assert resp.status_code == 403
+
+    db.refresh(peer)
+    assert peer.staff_login is None
+    assert peer.password_hash is None
+
+
 def test_superadmin_create_manual_student_issues_credentials(superadmin_client, db, curator_user):
     client, _ = superadmin_client
 
@@ -208,6 +237,44 @@ def test_superadmin_set_student_credentials_from_users_page(superadmin_client, d
     assert "Доступ создан" in resp.text
 
 
+def test_superadmin_set_credentials_succeeds_for_admin_from_users_page(
+    client, db, user_factory, session_factory
+):
+    admin = user_factory(vk_id=900109, name="Admin Actor", role_name="админ", is_admin=True)
+    student = user_factory(vk_id=900110, name="Manual Existing Student 2", role_name="ученик")
+    sess = session_factory(admin)
+    client.cookies.set("session_id", sess.id)
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{student.id}/set-credentials",
+        data={"csrf_token": "bypass"},
+    )
+
+    assert resp.status_code == 200
+    db.refresh(student)
+    assert student.staff_login is not None
+    assert student.password_hash is not None
+    assert "Доступ создан" in resp.text
+
+
+def test_superadmin_set_credentials_denies_peer_rank_from_users_page(
+    superadmin_client, db, user_factory
+):
+    client, _ = superadmin_client
+    peer = user_factory(vk_id=900108, name="Peer Superadmin", role_name="суперадмин")
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{peer.id}/set-credentials",
+        data={"csrf_token": "bypass"},
+    )
+
+    db.refresh(peer)
+    assert resp.status_code == 403
+    assert "Нельзя выдать доступ роли равной или выше своей" in resp.text
+    assert peer.staff_login is None
+    assert peer.password_hash is None
+
+
 def test_superadmin_create_staff_from_users_page(superadmin_client, db):
     from app.models.role import Role
 
@@ -232,6 +299,59 @@ def test_superadmin_create_staff_from_users_page(superadmin_client, db):
     assert staff.staff_login is not None
     assert staff.password_hash is not None
     assert "Доступ создан" in resp.text
+
+
+def test_superadmin_create_staff_denies_peer_rank_from_users_page(superadmin_client, db):
+    from app.models.role import Role
+
+    client, _ = superadmin_client
+    superadmin_role = db.query(Role).filter(Role.name == "суперадмин").first()
+
+    resp = client.post(
+        "/cabinet/superadmin/users/create-staff",
+        data={
+            "first_name": "Пётр",
+            "last_name": "Равный",
+            "role_id": str(superadmin_role.id),
+            "csrf_token": "bypass",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert "Нельзя создать аккаунт с рангом не ниже вашего." in resp.text
+    assert db.query(User).filter(User.first_name == "Пётр", User.last_name == "Равный").first() is None
+
+
+def test_create_staff_page_denied_for_admin(client, db, user_factory, session_factory):
+    """Создание сотрудника — единственное оставшееся отличие admin от superadmin."""
+    admin = user_factory(vk_id=900111, name="Admin Actor", role_name="админ", is_admin=True)
+    sess = session_factory(admin)
+    client.cookies.set("session_id", sess.id)
+
+    resp = client.get("/cabinet/superadmin/create-staff", follow_redirects=False)
+    assert resp.status_code == 403
+
+
+def test_create_staff_post_denied_for_admin(client, db, user_factory, session_factory):
+    from app.models.role import Role
+
+    admin = user_factory(vk_id=900112, name="Admin Actor", role_name="админ", is_admin=True)
+    sess = session_factory(admin)
+    client.cookies.set("session_id", sess.id)
+    curator_role = db.query(Role).filter(Role.name == "куратор").first()
+
+    resp = client.post(
+        "/cabinet/superadmin/users/create-staff",
+        data={
+            "first_name": "Запрещено",
+            "last_name": "Админу",
+            "role_id": str(curator_role.id),
+            "csrf_token": "bypass",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 403
+    assert db.query(User).filter(User.first_name == "Запрещено").first() is None
 
 
 def test_superadmin_assign_role_from_users_page(superadmin_client, db, user_factory):
@@ -267,6 +387,41 @@ def test_superadmin_issue_link_from_users_page(superadmin_client, db, user_facto
     assert token is not None
 
 
+def test_superadmin_issue_link_succeeds_for_admin_from_users_page(client, db, user_factory, session_factory):
+    admin = user_factory(vk_id=900113, name="Admin Actor", role_name="админ", is_admin=True)
+    target = user_factory(vk_id=900114, name="Link Student 2", role_name="ученик", is_active=True)
+    sess = session_factory(admin)
+    client.cookies.set("session_id", sess.id)
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{target.id}/issue-link",
+        data={"csrf_token": "bypass"},
+    )
+
+    assert resp.status_code == 200
+    assert "/auth/link?token=" in resp.text
+    token = db.query(LoginToken).filter(LoginToken.user_id == target.id).first()
+    assert token is not None
+
+
+def test_superadmin_issue_link_denies_peer_rank_from_users_page(client, db, user_factory, session_factory):
+    admin = user_factory(vk_id=900115, name="Admin Actor", role_name="админ", is_admin=True)
+    peer = user_factory(vk_id=900116, name="Admin Peer", role_name="админ", is_active=True)
+    sess = session_factory(admin)
+    client.cookies.set("session_id", sess.id)
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{peer.id}/issue-link",
+        data={"csrf_token": "bypass"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 200
+    assert "Нельзя выпустить ссылку для роли равной или выше своей." in resp.text
+    token = db.query(LoginToken).filter(LoginToken.user_id == peer.id).first()
+    assert token is None
+
+
 # ---------------------------------------------------------------------------
 # POST /cabinet/superadmin/issue-link
 # ---------------------------------------------------------------------------
@@ -297,14 +452,29 @@ def test_issue_link_nonexistent_user_404(superadmin_client):
     assert resp.status_code == 404
 
 
-def test_issue_link_denied_for_admin(client, db, user_factory, session_factory, curator_user):
+def test_issue_link_succeeds_for_admin(client, db, user_factory, session_factory, curator_user):
     admin = user_factory(vk_id=900030, name="Admin", role_name="админ", is_admin=True)
     sess = session_factory(admin)
     client.cookies.set("session_id", sess.id)
     resp = client.post("/cabinet/superadmin/issue-link",
                        data={"target_user_id": curator_user.id, "csrf_token": "bypass"},
                        follow_redirects=False)
+    assert resp.status_code == 200
+    token = db.query(LoginToken).filter(LoginToken.user_id == curator_user.id).first()
+    assert token is not None
+
+
+def test_issue_link_denies_peer_rank_for_admin(client, db, user_factory, session_factory):
+    admin = user_factory(vk_id=900031, name="Admin Actor", role_name="админ", is_admin=True)
+    peer = user_factory(vk_id=900032, name="Admin Peer", role_name="админ")
+    sess = session_factory(admin)
+    client.cookies.set("session_id", sess.id)
+    resp = client.post("/cabinet/superadmin/issue-link",
+                       data={"target_user_id": peer.id, "csrf_token": "bypass"},
+                       follow_redirects=False)
     assert resp.status_code == 403
+    token = db.query(LoginToken).filter(LoginToken.user_id == peer.id).first()
+    assert token is None
 
 
 # ---------------------------------------------------------------------------
@@ -356,6 +526,93 @@ def test_bulk_assign_curator_requires_superadmin(client, db, user_factory, sessi
     )
 
     assert resp.status_code == 403
+
+
+def test_superadmin_set_curator_ajax_returns_json(superadmin_client, db, user_factory, curator_user):
+    client, _ = superadmin_client
+    student = user_factory(vk_id=900203, name="Student Set Curator", role_name="ученик")
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{student.id}/curator",
+        data={"curator_id": str(curator_user.id), "csrf_token": "bypass"},
+    )
+
+    db.refresh(student)
+    data = resp.json()
+    assert resp.status_code == 200
+    assert data["ok"] is True
+    assert data["user_id"] == student.id
+    assert data["curator_id"] == curator_user.id
+    assert data["curator_name"]
+    assert student.curator_id == curator_user.id
+
+
+def test_superadmin_set_cohort_tag_ajax_returns_json(superadmin_client, db, user_factory):
+    client, _ = superadmin_client
+    student = user_factory(vk_id=900210, name="Student Cohort Tag", role_name="ученик")
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{student.id}/cohort-tag",
+        data={"cohort_tag": "june", "csrf_token": "bypass"},
+    )
+
+    db.refresh(student)
+    data = resp.json()
+    assert resp.status_code == 200
+    assert data["ok"] is True
+    assert data["user_id"] == student.id
+    assert data["cohort_tag"] == "june"
+    assert student.cohort_tag == "june"
+
+    # Clearing the tag (empty value) resets it to None
+    resp = client.post(
+        f"/cabinet/superadmin/users/{student.id}/cohort-tag",
+        data={"cohort_tag": "", "csrf_token": "bypass"},
+    )
+    db.refresh(student)
+    data = resp.json()
+    assert data["cohort_tag"] is None
+    assert student.cohort_tag is None
+
+
+def test_superadmin_set_cohort_tag_rejects_invalid_value(superadmin_client, db, user_factory):
+    client, _ = superadmin_client
+    student = user_factory(vk_id=900211, name="Student Bad Tag", role_name="ученик")
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{student.id}/cohort-tag",
+        data={"cohort_tag": "winter", "csrf_token": "bypass"},
+    )
+
+    assert resp.status_code == 400
+
+
+def test_bulk_assign_curator_rejects_inactive_curator(
+    superadmin_client, db, user_factory
+):
+    client, _ = superadmin_client
+    curator = user_factory(
+        vk_id=900204,
+        name="Inactive Curator",
+        role_name="куратор",
+        is_active=False,
+    )
+    student = user_factory(vk_id=900205, name="Student No Curator", role_name="ученик")
+    student.tg_username = "student_no_curator"
+    db.commit()
+
+    resp = client.post(
+        "/cabinet/superadmin/users/assign-curator-bulk",
+        data={
+            "curator_id": str(curator.id),
+            "student_usernames": "student_no_curator",
+            "csrf_token": "bypass",
+        },
+    )
+
+    db.refresh(student)
+    assert resp.status_code == 404
+    assert student.curator_id is None
 
 
 def test_superadmin_toggle_user_ajax_returns_json(superadmin_client, db, user_factory):

@@ -13,3 +13,4 @@ from app.models.audit_log import AuditLog
 from app.models.exam_cycle import ExamCycle
 from app.models.feedback import Feedback, FeedbackPhoto, FeedbackMessage
 from app.models.curator_report import CuratorReport
+from app.models.tag import Tag, UserTag

@@ -3,10 +3,13 @@ from datetime import date, datetime, timezone
 
 import pytest
 
+from unittest.mock import patch
+
 from app.models.exam_cycle import ExamCycle
 from app.models.feedback import Feedback, FeedbackMessage
+from app.models.mock_exam_lock import MockExamLock
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
-from app.services.exam_cycle import close_cycle_if_scored, has_open_cycles
+from app.services.exam_cycle import close_cycle, has_open_cycles, reopen_cycle
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -58,20 +61,20 @@ def test_has_open_cycles_false_when_all_closed(db, regular_user):
     assert has_open_cycles(db, regular_user.id) is False
 
 
-# ── Service layer: close_cycle_if_scored ─────────────────────────────────────
+# ── Service layer: close_cycle ────────────────────────────────────────────────
 
 def test_close_cycle_scored_final_mock_closes_cycle(db, regular_user):
     cycle = _mk_cycle(db, regular_user.id)
-    work = _mk_final_work(db, regular_user.id, cycle.id, score=82)
-    assert close_cycle_if_scored(db, work) is True
+    _mk_final_work(db, regular_user.id, cycle.id, score=82)
+    assert close_cycle(db, cycle) is True
     db.refresh(cycle)
     assert cycle.closed_at is not None
 
 
 def test_close_cycle_unscored_does_nothing(db, regular_user):
     cycle = _mk_cycle(db, regular_user.id)
-    work = _mk_final_work(db, regular_user.id, cycle.id, score=None)
-    assert close_cycle_if_scored(db, work) is False
+    _mk_final_work(db, regular_user.id, cycle.id, score=None)
+    assert close_cycle(db, cycle) is False
     db.refresh(cycle)
     assert cycle.closed_at is None
 
@@ -79,8 +82,8 @@ def test_close_cycle_unscored_does_nothing(db, regular_user):
 def test_close_cycle_already_closed_idempotent(db, regular_user):
     cycle = _mk_cycle(db, regular_user.id, closed=True)
     original_closed_at = cycle.closed_at
-    work = _mk_final_work(db, regular_user.id, cycle.id, score=70)
-    assert close_cycle_if_scored(db, work) is False
+    _mk_final_work(db, regular_user.id, cycle.id, score=70)
+    assert close_cycle(db, cycle) is False
     db.refresh(cycle)
     assert cycle.closed_at == original_closed_at
 
@@ -93,7 +96,7 @@ def test_close_cycle_non_final_does_nothing(db, regular_user):
         status="success", is_final=False, cycle_id=cycle.id, score=80,
     )
     db.add(w); db.commit(); db.refresh(w)
-    assert close_cycle_if_scored(db, w) is False
+    assert close_cycle(db, cycle) is False
     db.refresh(cycle)
     assert cycle.closed_at is None
 
@@ -279,19 +282,69 @@ def test_message_without_text_or_photo_400(
     assert resp.status_code == 400
 
 
-def test_message_in_closed_cycle_forbidden(
+def test_student_cannot_message_in_closed_cycle(
     client, admin_user, regular_user, session_factory, db
 ):
+    """Ученику запись в закрытый цикл (балл уже выставлен) недоступна."""
     cycle = _mk_cycle(db, regular_user.id, closed=True)
     work = _mk_final_work(db, regular_user.id, cycle.id, score=80)
-    admin_sess = session_factory(admin_user)
-    client.cookies.set("session_id", admin_sess.id)
+    student_sess = session_factory(regular_user)
+    client.cookies.set("session_id", student_sess.id)
     resp = client.post(
         f"/cabinet/feedback/{work.id}/message",
         data={"text": "should fail"},
         headers={"Accept": "application/json"},
     )
     assert resp.status_code == 403
+
+
+def test_staff_can_message_in_closed_cycle(
+    client, admin_user, regular_user, session_factory, db
+):
+    """Staff (админ/SA) может оставить обратную связь и после простановки балла —
+    закрытый цикл больше не блокирует запись для staff."""
+    cycle = _mk_cycle(db, regular_user.id, closed=True)
+    work = _mk_final_work(db, regular_user.id, cycle.id, score=80)
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+    resp = client.post(
+        f"/cabinet/feedback/{work.id}/message",
+        data={"text": "Разбор после балла"},
+        headers={"Accept": "application/json"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
+def test_curator_can_give_feedback_on_closed_cycle(
+    client, db, user_factory, session_factory
+):
+    """Куратор даёт обратную связь даже когда цикл закрыт (балл выставил админ).
+    Балл и обратная связь — разные функции: по правам куратор не ставит балл,
+    но обязан мочь дать ОС."""
+    curator = user_factory(vk_id=940001, name="Curator", role_name="куратор")
+    student = user_factory(vk_id=940002, name="Student", role_name="ученик")
+    student.curator_id = curator.id
+    db.add(student)
+    db.commit()
+    cycle = _mk_cycle(db, student.id, closed=True)
+    work = _mk_final_work(db, student.id, cycle.id, score=80)
+
+    sess = session_factory(curator)
+    client.cookies.set("session_id", sess.id)
+    resp = client.post(
+        f"/cabinet/feedback/{work.id}/message",
+        data={"text": "Разбор работы куратором"},
+        headers={"Accept": "application/json"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+    fb = db.query(Feedback).filter(Feedback.work_id == work.id).first()
+    assert fb is not None
+    msgs = db.query(FeedbackMessage).filter(FeedbackMessage.feedback_id == fb.id).all()
+    assert len(msgs) == 1
+    assert msgs[0].sender_role == "curator"
+    assert msgs[0].text == "Разбор работы куратором"
 
 
 def test_curator_cannot_post_feedback_for_foreign_student(
@@ -434,6 +487,134 @@ def test_curator_cannot_open_foreign_student_probnik_calendar(
     assert "Не ваш студент" in resp.text
 
 
+# ── POST /cabinet/feedback/{cycle_id}/close (ручное закрытие цикла) ──────────
+
+def test_close_cycle_requires_score(client, admin_user, regular_user, session_factory, db):
+    """Закрыть цикл без выставленного балла финалке нельзя — 409."""
+    cycle = _mk_cycle(db, regular_user.id)
+    _mk_final_work(db, regular_user.id, cycle.id, score=None)
+
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+    resp = client.post(f"/cabinet/feedback/{cycle.id}/close", headers={"Accept": "application/json"})
+    assert resp.status_code == 409
+    db.refresh(cycle)
+    assert cycle.closed_at is None
+
+
+def test_close_cycle_closes_and_releases_lock(client, admin_user, regular_user, session_factory, db):
+    """Балл выставлен → закрытие цикла ставит closed_at и снимает MockExamLock."""
+    cycle = _mk_cycle(db, regular_user.id)
+    _mk_final_work(db, regular_user.id, cycle.id, score=82)
+    db.add(MockExamLock(
+        user_id=regular_user.id, subject="Drawing", is_locked=True,
+    ))
+    db.commit()
+
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+    resp = client.post(f"/cabinet/feedback/{cycle.id}/close", headers={"Accept": "application/json"})
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+    db.refresh(cycle)
+    assert cycle.closed_at is not None
+
+    lock = db.query(MockExamLock).filter(
+        MockExamLock.user_id == regular_user.id, MockExamLock.subject == "Drawing"
+    ).first()
+    assert lock.is_locked is False
+
+
+def test_close_cycle_curator_can_close_own_student(client, db, user_factory, session_factory):
+    """Куратор (не только админ/SA) может закрыть цикл своего ученика."""
+    curator = user_factory(vk_id=941001, name="Curator", role_name="куратор")
+    student = user_factory(vk_id=941002, name="Student", role_name="ученик")
+    student.curator_id = curator.id
+    db.add(student)
+    db.commit()
+    cycle = _mk_cycle(db, student.id)
+    _mk_final_work(db, student.id, cycle.id, score=75)
+
+    sess = session_factory(curator)
+    client.cookies.set("session_id", sess.id)
+    resp = client.post(f"/cabinet/feedback/{cycle.id}/close", headers={"Accept": "application/json"})
+    assert resp.status_code == 200
+    db.refresh(cycle)
+    assert cycle.closed_at is not None
+
+
+def test_close_cycle_curator_cannot_close_foreign_student(client, db, user_factory, session_factory):
+    owner = user_factory(vk_id=941003, name="Owner", role_name="куратор")
+    other = user_factory(vk_id=941004, name="Other", role_name="куратор")
+    student = user_factory(vk_id=941005, name="Student", role_name="ученик")
+    student.curator_id = owner.id
+    db.add(student)
+    db.commit()
+    cycle = _mk_cycle(db, student.id)
+    _mk_final_work(db, student.id, cycle.id, score=75)
+
+    sess = session_factory(other)
+    client.cookies.set("session_id", sess.id)
+    resp = client.post(f"/cabinet/feedback/{cycle.id}/close", headers={"Accept": "application/json"})
+    assert resp.status_code == 403
+    db.refresh(cycle)
+    assert cycle.closed_at is None
+
+
+def test_close_cycle_already_closed_400(client, admin_user, regular_user, session_factory, db):
+    cycle = _mk_cycle(db, regular_user.id, closed=True)
+    _mk_final_work(db, regular_user.id, cycle.id, score=80)
+
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+    resp = client.post(f"/cabinet/feedback/{cycle.id}/close", headers={"Accept": "application/json"})
+    assert resp.status_code == 400
+
+
+def test_student_cannot_close_cycle(auth_client, db):
+    client, user = auth_client
+    cycle = _mk_cycle(db, user.id)
+    _mk_final_work(db, user.id, cycle.id, score=80)
+
+    resp = client.post(f"/cabinet/feedback/{cycle.id}/close", headers={"Accept": "application/json"})
+    assert resp.status_code == 403
+    db.refresh(cycle)
+    assert cycle.closed_at is None
+
+
+# ── Scoring no longer auto-closes the cycle ──────────────────────────────────
+
+def test_scoring_work_does_not_close_cycle(client, admin_user, regular_user, session_factory, db):
+    """POST .../works/{id}/score выставляет балл, но НЕ закрывает цикл —
+    закрытие теперь отдельный ручной шаг (POST /cabinet/feedback/{cycle_id}/close)."""
+    cycle = _mk_cycle(db, regular_user.id)
+    work = _mk_final_work(db, regular_user.id, cycle.id, score=None)
+    db.add(MockExamLock(
+        user_id=regular_user.id, subject="Drawing", is_locked=True,
+    ))
+    db.commit()
+
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+    resp = client.post(
+        f"/cabinet/students/{regular_user.id}/works/{work.id}/score",
+        data={"score": "80", "comment": "", "tab": "mock-exams"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+
+    db.refresh(cycle)
+    assert cycle.closed_at is None
+    db.refresh(work)
+    assert work.score == 80
+
+    lock = db.query(MockExamLock).filter(
+        MockExamLock.user_id == regular_user.id, MockExamLock.subject == "Drawing"
+    ).first()
+    assert lock.is_locked is True
+
+
 def test_curator_cannot_load_foreign_student_cycles_json(
     client, db, user_factory, session_factory
 ):
@@ -567,19 +748,143 @@ def test_staff_students_page_wires_mock_calendar(
     assert "staff-portfolio-mock" in resp.text
 
 
-def test_staff_cycles_page_shows_close_score_badge(
+def test_staff_cycles_page_lists_only_open_with_identity(
     client, admin_user, regular_user, session_factory, db
 ):
-    cycle = _mk_cycle(db, regular_user.id, closed=True)
-    _mk_final_work(db, regular_user.id, cycle.id, score=88)
+    # Закрытый цикл не должен попадать в список открытых.
+    closed = _mk_cycle(db, regular_user.id, subject="Композиция", closed=True)
+    _mk_final_work(db, regular_user.id, closed.id, score=88)
+    # Открытый цикл — отображается с именем, @username и тегами.
+    regular_user.tg_username = "ivanp"
+    db.commit()
+    _mk_cycle(db, regular_user.id, subject="Рисунок", closed=False)
 
     admin_sess = session_factory(admin_user)
     client.cookies.set("session_id", admin_sess.id)
     resp = client.get("/cabinet/staff/cycles")
 
     assert resp.status_code == 200
+    # Закрытый цикл скрыт: ровно одна строка-цикл, без бейджа балла.
+    assert resp.text.count('class="cyc-row"') == 1
+    assert "88 / 100" not in resp.text
+    # Открытый цикл виден с идентификацией и тегами (имя, @username, тариф, период).
+    assert "Рисунок" in resp.text
+    assert "@ivanp" in resp.text
+    assert "Test Student" in resp.text
+    assert "УВЕРЕННЫЙ" in resp.text
+    assert "10-14" in resp.text
+
+
+@pytest.mark.parametrize("role_name", ["куратор", "админ", "суперадмин"])
+def test_staff_cycles_page_has_subject_and_search_filters(
+    client, regular_user, user_factory, session_factory, db, role_name
+):
+    """Фильтр по предмету + поиск доступны всем staff-ролям (curator/admin/SA)."""
+    regular_user.tg_username = "ivanp"
+    _mk_cycle(db, regular_user.id, subject="Рисунок", closed=False)
+    staff = user_factory(vk_id=770_001, name="Staff", is_admin=(role_name != "куратор"),
+                         role_name=role_name)
+    if role_name == "куратор":
+        # Куратор видит только своих учеников — привязываем.
+        regular_user.curator_id = staff.id
+    db.commit()
+
+    sess = session_factory(staff)
+    client.cookies.set("session_id", sess.id)
+    resp = client.get("/cabinet/staff/cycles")
+
+    assert resp.status_code == 200
+    # Фильтр по типу пробника.
+    assert 'class="cyc-subj-pill"' in resp.text or "cyc-subj-pill" in resp.text
+    assert 'data-subject="Рисунок"' in resp.text
+    assert 'data-subject="Композиция"' in resp.text
+    # Поиск по имени/username.
+    assert 'id="cyc-search"' in resp.text
+    # Строка несёт data-атрибуты для клиентской фильтрации.
+    assert 'data-name="' in resp.text
+    assert 'data-username="ivanp"' in resp.text
+    assert "function filterCycles" in resp.text
+
+
+def test_staff_cycles_archive_shows_closed_for_admin(
+    client, admin_user, regular_user, session_factory, db
+):
+    """?status=archive: админ/SA видят закрытые циклы с баллом финалки."""
+    closed = _mk_cycle(db, regular_user.id, subject="Композиция", closed=True)
+    _mk_final_work(db, regular_user.id, closed.id, score=88)
+    # Открытый цикл в архив не попадает.
+    _mk_cycle(db, regular_user.id, subject="Рисунок", closed=False)
+
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+    resp = client.get("/cabinet/staff/cycles?status=archive")
+
+    assert resp.status_code == 200
+    # Ровно один закрытый цикл (открытый исключён), с баллом финалки.
+    # Балл «88 / 100» рендерится только в строке архива → open-цикл сюда не попал.
+    assert resp.text.count('class="cyc-row"') == 1
     assert "88 / 100" in resp.text
-    assert "cycle-pill score score-green" in resp.text
+    # Вкладка «Архив» доступна админу.
+    assert 'href="/cabinet/staff/cycles?status=archive"' in resp.text
+
+
+def test_staff_cycles_archive_hidden_from_curator(
+    client, regular_user, user_factory, session_factory, db
+):
+    """Куратор не видит вкладку «Архив»; ?status=archive отдаёт открытый список."""
+    closed = _mk_cycle(db, regular_user.id, subject="Композиция", closed=True)
+    _mk_final_work(db, regular_user.id, closed.id, score=88)
+    _mk_cycle(db, regular_user.id, subject="Рисунок", closed=False)
+    curator = user_factory(vk_id=770_002, name="Curator", role_name="куратор")
+    regular_user.curator_id = curator.id
+    db.commit()
+
+    sess = session_factory(curator)
+    client.cookies.set("session_id", sess.id)
+    resp = client.get("/cabinet/staff/cycles?status=archive")
+
+    assert resp.status_code == 200
+    # Нет вкладки архива и нет закрытого цикла — куратору отдан открытый список.
+    assert 'href="/cabinet/staff/cycles?status=archive"' not in resp.text
+    assert "88 / 100" not in resp.text
+    assert "Рисунок" in resp.text
+
+
+def test_staff_cycles_open_has_fb_filter_for_admin(
+    client, admin_user, regular_user, session_factory, db
+):
+    """Открытые циклы: админ/SA видят фильтр ОС (Нет ОС / Есть ОС), строки несут data-fb."""
+    _mk_cycle(db, regular_user.id, subject="Рисунок", closed=False)
+
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+    resp = client.get("/cabinet/staff/cycles")
+
+    assert resp.status_code == 200
+    assert 'data-fb="none"' in resp.text  # пилюля «Нет ОС»
+    assert 'data-fb="has"' in resp.text   # пилюля «Есть ОС»
+    assert "function selectFb" in resp.text
+    # Строка несёт счётчик ОС для клиентской фильтрации.
+    assert 'data-fb="0"' in resp.text
+
+
+def test_staff_cycles_open_fb_filter_hidden_from_curator(
+    client, regular_user, user_factory, session_factory, db
+):
+    """Куратор не видит фильтр ОС в открытых циклах."""
+    _mk_cycle(db, regular_user.id, subject="Рисунок", closed=False)
+    curator = user_factory(vk_id=770_003, name="Curator", role_name="куратор")
+    regular_user.curator_id = curator.id
+    db.commit()
+
+    sess = session_factory(curator)
+    client.cookies.set("session_id", sess.id)
+    resp = client.get("/cabinet/staff/cycles")
+
+    assert resp.status_code == 200
+    # Кнопки фильтра ОС не рендерятся куратору (JS-функция в <script> присутствует всегда).
+    assert 'data-fb="none"' not in resp.text
+    assert 'onclick="selectFb(this)"' not in resp.text
 
 
 def test_cycle_page_shows_close_score_badge_for_closed_cycle(auth_client, db):
@@ -592,3 +897,411 @@ def test_cycle_page_shows_close_score_badge_for_closed_cycle(auth_client, db):
     assert resp.status_code == 200
     assert "88 / 100" in resp.text
     assert "fb-score-badge score-green" in resp.text
+
+
+# ── Superadmin: удаление открытого цикла (ученик ошибся при отправке) ─────────
+
+def test_superadmin_deletes_open_cycle_cascades(
+    client, admin_user, regular_user, session_factory, db
+):
+    cycle = _mk_cycle(db, regular_user.id, subject="Drawing", closed=False)
+    work = _mk_final_work(db, regular_user.id, cycle.id)
+    work.s3_path = "probniki/1/1/attempt-1/final/x.jpg"
+    fb = Feedback(work_id=work.id, curator_id=admin_user.id)
+    db.add(fb)
+    db.commit()
+    db.refresh(fb)
+    db.add(FeedbackMessage(
+        feedback_id=fb.id, sender_id=admin_user.id, sender_role="superadmin",
+        text="разбор", photo_s3_path="probniki/1/1/attempt-1/msg.jpg",
+    ))
+    db.add(MockExamLock(
+        user_id=regular_user.id, subject="Drawing", is_locked=True,
+        locked_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+    with patch("app.services.s3.delete_from_s3") as s3_del:
+        resp = client.post(f"/cabinet/superadmin/feedback/{cycle.id}/delete",
+                           headers={"Accept": "application/json"})
+
+    assert resp.status_code == 200
+    # Цикл и все дочерние строки удалены (FK в SQLite выключены — проверка вместо них).
+    assert db.query(ExamCycle).filter(ExamCycle.id == cycle.id).first() is None
+    assert db.query(Work).filter(Work.cycle_id == cycle.id).count() == 0
+    assert db.query(Feedback).filter(Feedback.id == fb.id).first() is None
+    assert db.query(FeedbackMessage).filter(FeedbackMessage.feedback_id == fb.id).count() == 0
+    # Блокировка пробника снята → ученик может пересдать.
+    lock = db.query(MockExamLock).filter(MockExamLock.user_id == regular_user.id).first()
+    assert lock is not None and lock.is_locked is False
+    # S3-файлы (работа + фото сообщения) ушли на очистку.
+    deleted_paths = {c.args[0] for c in s3_del.call_args_list}
+    assert "probniki/1/1/attempt-1/final/x.jpg" in deleted_paths
+    assert "probniki/1/1/attempt-1/msg.jpg" in deleted_paths
+
+
+def test_superadmin_cannot_delete_closed_cycle(
+    client, admin_user, regular_user, session_factory, db
+):
+    cycle = _mk_cycle(db, regular_user.id, closed=True)
+
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+    resp = client.post(f"/cabinet/superadmin/feedback/{cycle.id}/delete",
+                       headers={"Accept": "application/json"})
+
+    assert resp.status_code == 400
+    assert db.query(ExamCycle).filter(ExamCycle.id == cycle.id).first() is not None
+
+
+def test_non_superadmin_cannot_delete_cycle(
+    client, regular_user, user_factory, session_factory, db
+):
+    cycle = _mk_cycle(db, regular_user.id, closed=False)
+    admin = user_factory(vk_id=888_001, name="Admin Rank4", is_admin=True, role_name="админ")
+
+    admin_sess = session_factory(admin)
+    client.cookies.set("session_id", admin_sess.id)
+    resp = client.post(f"/cabinet/superadmin/feedback/{cycle.id}/delete",
+                       headers={"Accept": "application/json"})
+
+    assert resp.status_code == 403
+    assert db.query(ExamCycle).filter(ExamCycle.id == cycle.id).first() is not None
+
+
+def test_superadmin_delete_missing_cycle_404(
+    client, admin_user, session_factory, db
+):
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+    resp = client.post("/cabinet/superadmin/feedback/999999/delete",
+                       headers={"Accept": "application/json"})
+    assert resp.status_code == 404
+
+
+# ── Service layer: reopen_cycle (зеркало close_cycle) ────────────────────────
+
+def test_reopen_cycle_closed_reopens_and_relocks(db, regular_user):
+    """Закрытый цикл → reopen сбрасывает closed_at и возвращает блокировку."""
+    cycle = _mk_cycle(db, regular_user.id, closed=True)
+    db.add(MockExamLock(
+        user_id=regular_user.id, subject="Drawing", is_locked=False,
+        unlocked_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+    assert reopen_cycle(db, cycle) is True
+    db.refresh(cycle)
+    assert cycle.closed_at is None
+    lock = db.query(MockExamLock).filter(
+        MockExamLock.user_id == regular_user.id, MockExamLock.subject == "Drawing"
+    ).first()
+    assert lock.is_locked is True
+    assert lock.unlocked_at is None
+
+
+def test_reopen_cycle_open_does_nothing(db, regular_user):
+    cycle = _mk_cycle(db, regular_user.id, closed=False)
+    assert reopen_cycle(db, cycle) is False
+    db.refresh(cycle)
+    assert cycle.closed_at is None
+
+
+def test_reopen_cycle_no_lock_row_does_not_create(db, regular_user):
+    """Зеркало close: переоткрытие не создаёт lock-строку, если её нет."""
+    cycle = _mk_cycle(db, regular_user.id, closed=True)
+    assert reopen_cycle(db, cycle) is True
+    db.refresh(cycle)
+    assert cycle.closed_at is None
+    assert db.query(MockExamLock).filter(
+        MockExamLock.user_id == regular_user.id
+    ).first() is None
+
+
+# ── Route: POST /cabinet/superadmin/feedback/{cycle_id}/reopen ───────────────
+
+def test_superadmin_reopen_closed_cycle(client, admin_user, regular_user, session_factory, db):
+    cycle = _mk_cycle(db, regular_user.id, closed=True)
+    db.add(MockExamLock(
+        user_id=regular_user.id, subject="Drawing", is_locked=False,
+        unlocked_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+    resp = client.post(f"/cabinet/superadmin/feedback/{cycle.id}/reopen",
+                       headers={"Accept": "application/json"})
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+    db.refresh(cycle)
+    assert cycle.closed_at is None
+    lock = db.query(MockExamLock).filter(
+        MockExamLock.user_id == regular_user.id, MockExamLock.subject == "Drawing"
+    ).first()
+    assert lock.is_locked is True
+
+
+def test_reopen_open_cycle_400(client, admin_user, regular_user, session_factory, db):
+    cycle = _mk_cycle(db, regular_user.id, closed=False)
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+    resp = client.post(f"/cabinet/superadmin/feedback/{cycle.id}/reopen",
+                       headers={"Accept": "application/json"})
+    assert resp.status_code == 400
+    db.refresh(cycle)
+    assert cycle.closed_at is None  # остался открытым, без побочных эффектов
+
+
+def test_reopen_blocked_when_other_open_cycle_409(
+    client, admin_user, regular_user, session_factory, db
+):
+    """Если у ученика уже есть другой открытый цикл по тому же предмету — 409."""
+    closed = _mk_cycle(db, regular_user.id, subject="Drawing", closed=True)
+    _mk_cycle(db, regular_user.id, subject="Drawing", closed=False)
+
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+    resp = client.post(f"/cabinet/superadmin/feedback/{closed.id}/reopen",
+                       headers={"Accept": "application/json"})
+    assert resp.status_code == 409
+    db.refresh(closed)
+    assert closed.closed_at is not None  # остался закрытым
+
+
+def test_non_superadmin_cannot_reopen_cycle(
+    client, regular_user, user_factory, session_factory, db
+):
+    cycle = _mk_cycle(db, regular_user.id, closed=True)
+    admin = user_factory(vk_id=889_001, name="Admin Rank4", is_admin=True, role_name="админ")
+
+    admin_sess = session_factory(admin)
+    client.cookies.set("session_id", admin_sess.id)
+    resp = client.post(f"/cabinet/superadmin/feedback/{cycle.id}/reopen",
+                       headers={"Accept": "application/json"})
+    assert resp.status_code == 403
+    db.refresh(cycle)
+    assert cycle.closed_at is not None
+
+
+def test_reopen_missing_cycle_404(client, admin_user, session_factory, db):
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+    resp = client.post("/cabinet/superadmin/feedback/999999/reopen",
+                       headers={"Accept": "application/json"})
+    assert resp.status_code == 404
+
+
+# ── Возврат закрытого цикла куратору на изменение ОС ─────────────────────────
+
+def _last_msg(db, feedback_id):
+    return (
+        db.query(FeedbackMessage)
+        .filter(FeedbackMessage.feedback_id == feedback_id)
+        .order_by(FeedbackMessage.id.desc())
+        .first()
+    )
+
+
+def test_return_to_curator_sets_flag(client, admin_user, db, user_factory, session_factory):
+    """SA возвращает закрытый цикл с ОС → revision_requested_at установлен, цикл остаётся закрыт."""
+    curator = user_factory(vk_id=960001, name="Curator", role_name="куратор")
+    student = user_factory(vk_id=960002, name="Student", role_name="ученик")
+    student.curator_id = curator.id
+    db.commit()
+    cycle = _mk_cycle(db, student.id, closed=True)
+    final = _mk_final_work(db, student.id, cycle.id, score=80)
+    _mk_staff_message(db, final.id, curator_id=curator.id, sender_role="curator", text="ОС")
+
+    sess = session_factory(admin_user)
+    client.cookies.set("session_id", sess.id)
+    resp = client.post(f"/cabinet/superadmin/feedback/{cycle.id}/return-to-curator",
+                       headers={"Accept": "application/json"})
+    assert resp.status_code == 200
+    db.refresh(cycle)
+    assert cycle.revision_requested_at is not None
+    assert cycle.closed_at is not None  # цикл остаётся закрытым
+
+
+def test_return_to_curator_open_cycle_allowed(client, admin_user, regular_user, session_factory, db):
+    """Возврат доступен на любом цикле — в т.ч. открытом (если есть ОС для правки)."""
+    cycle = _mk_cycle(db, regular_user.id, closed=False)
+    final = _mk_final_work(db, regular_user.id, cycle.id, score=80)
+    _mk_staff_message(db, final.id, curator_id=admin_user.id, sender_role="superadmin", text="ОС")
+    sess = session_factory(admin_user)
+    client.cookies.set("session_id", sess.id)
+    resp = client.post(f"/cabinet/superadmin/feedback/{cycle.id}/return-to-curator",
+                       headers={"Accept": "application/json"})
+    assert resp.status_code == 200
+    db.refresh(cycle)
+    assert cycle.revision_requested_at is not None
+    assert cycle.closed_at is None  # статус не изменился — остался открытым
+
+
+def test_return_to_curator_no_feedback_rejected(client, admin_user, regular_user, session_factory, db):
+    cycle = _mk_cycle(db, regular_user.id, closed=True)
+    _mk_final_work(db, regular_user.id, cycle.id, score=80)  # без Feedback
+    sess = session_factory(admin_user)
+    client.cookies.set("session_id", sess.id)
+    resp = client.post(f"/cabinet/superadmin/feedback/{cycle.id}/return-to-curator",
+                       headers={"Accept": "application/json"})
+    assert resp.status_code == 400
+    db.refresh(cycle)
+    assert cycle.revision_requested_at is None
+
+
+def test_curator_edits_own_message_during_revision(client, admin_user, db, user_factory, session_factory):
+    """После возврата куратор-автор правит текст своего сообщения; ученику падает уведомление."""
+    from app.models.notification import Notification
+    curator = user_factory(vk_id=960011, name="Curator", role_name="куратор")
+    student = user_factory(vk_id=960012, name="Student", role_name="ученик")
+    student.curator_id = curator.id
+    db.commit()
+    cycle = _mk_cycle(db, student.id, closed=True)
+    final = _mk_final_work(db, student.id, cycle.id, score=80)
+    fb = _mk_staff_message(db, final.id, curator_id=curator.id, sender_role="curator", text="Старый текст")
+    msg = _last_msg(db, fb.id)
+
+    # SA возвращает на изменение.
+    sa_sess = session_factory(admin_user)
+    client.cookies.set("session_id", sa_sess.id)
+    client.post(f"/cabinet/superadmin/feedback/{cycle.id}/return-to-curator",
+                headers={"Accept": "application/json"})
+
+    # Куратор правит своё сообщение.
+    cur_sess = session_factory(curator)
+    client.cookies.set("session_id", cur_sess.id)
+    resp = client.post(f"/cabinet/feedback/message/{msg.id}/edit",
+                       data={"text": "Исправленный текст"},
+                       headers={"Accept": "application/json"})
+    assert resp.status_code == 200
+    db.refresh(msg)
+    assert msg.text == "Исправленный текст"
+    # Ученику ушло уведомление об обновлении ОС.
+    notif = db.query(Notification).filter(Notification.user_id == student.id).first()
+    assert notif is not None
+
+
+def test_edit_message_blocked_without_revision_flag(client, db, user_factory, session_factory):
+    """Без флага «на изменении» куратор не может править закрытую ОС — 403."""
+    curator = user_factory(vk_id=960021, name="Curator", role_name="куратор")
+    student = user_factory(vk_id=960022, name="Student", role_name="ученик")
+    student.curator_id = curator.id
+    db.commit()
+    cycle = _mk_cycle(db, student.id, closed=True)
+    final = _mk_final_work(db, student.id, cycle.id, score=80)
+    fb = _mk_staff_message(db, final.id, curator_id=curator.id, sender_role="curator", text="ОС")
+    msg = _last_msg(db, fb.id)
+
+    sess = session_factory(curator)
+    client.cookies.set("session_id", sess.id)
+    resp = client.post(f"/cabinet/feedback/message/{msg.id}/edit",
+                       data={"text": "Правка"}, headers={"Accept": "application/json"})
+    assert resp.status_code == 403
+
+
+def test_edit_message_only_own(client, admin_user, db, user_factory, session_factory):
+    """Чужое сообщение править нельзя даже при активном флаге — 403."""
+    author = user_factory(vk_id=960031, name="Author", role_name="куратор")
+    other = user_factory(vk_id=960032, name="Other", role_name="куратор")
+    student = user_factory(vk_id=960033, name="Student", role_name="ученик")
+    student.curator_id = author.id
+    db.commit()
+    cycle = _mk_cycle(db, student.id, closed=True)
+    final = _mk_final_work(db, student.id, cycle.id, score=80)
+    fb = _mk_staff_message(db, final.id, curator_id=author.id, sender_role="curator", text="ОС")
+    msg = _last_msg(db, fb.id)
+    sa_sess = session_factory(admin_user)
+    client.cookies.set("session_id", sa_sess.id)
+    client.post(f"/cabinet/superadmin/feedback/{cycle.id}/return-to-curator",
+                headers={"Accept": "application/json"})
+
+    sess = session_factory(other)
+    client.cookies.set("session_id", sess.id)
+    resp = client.post(f"/cabinet/feedback/message/{msg.id}/edit",
+                       data={"text": "Чужая правка"}, headers={"Accept": "application/json"})
+    assert resp.status_code == 403
+    db.refresh(msg)
+    assert msg.text == "ОС"
+
+
+def test_finish_revision_clears_flag(client, admin_user, db, user_factory, session_factory):
+    curator = user_factory(vk_id=960041, name="Curator", role_name="куратор")
+    student = user_factory(vk_id=960042, name="Student", role_name="ученик")
+    student.curator_id = curator.id
+    db.commit()
+    cycle = _mk_cycle(db, student.id, closed=True)
+    final = _mk_final_work(db, student.id, cycle.id, score=80)
+    _mk_staff_message(db, final.id, curator_id=curator.id, sender_role="curator", text="ОС")
+    cycle.revision_requested_at = datetime.now(timezone.utc)
+    db.commit()
+
+    sess = session_factory(curator)
+    client.cookies.set("session_id", sess.id)
+    resp = client.post(f"/cabinet/feedback/{cycle.id}/revision-done",
+                       headers={"Accept": "application/json"})
+    assert resp.status_code == 200
+    db.refresh(cycle)
+    assert cycle.revision_requested_at is None
+    assert cycle.closed_at is not None  # остаётся закрытым
+
+
+def test_returned_cycle_appears_in_curator_open_list(client, db, user_factory, session_factory):
+    """Возвращённый (закрытый+флаг) цикл виден в рабочем списке куратора с бейджем."""
+    curator = user_factory(vk_id=960051, name="Curator", role_name="куратор")
+    student = user_factory(vk_id=960052, name="Student", role_name="ученик")
+    student.curator_id = curator.id
+    db.commit()
+    cycle = _mk_cycle(db, student.id, subject="Рисунок", closed=True)
+    final = _mk_final_work(db, student.id, cycle.id, score=80)
+    _mk_staff_message(db, final.id, curator_id=curator.id, sender_role="curator", text="ОС")
+    cycle.revision_requested_at = datetime.now(timezone.utc)
+    db.commit()
+
+    sess = session_factory(curator)
+    client.cookies.set("session_id", sess.id)
+    resp = client.get("/cabinet/staff/cycles")
+    assert resp.status_code == 200
+    assert resp.text.count('class="cyc-row"') == 1
+    assert "На изменении" in resp.text
+
+
+def test_dialog_renders_revision_ui_for_curator(client, admin_user, db, user_factory, session_factory):
+    """Страница диалога флагнутого цикла рендерится: бейдж, баннер, inline-правка своего сообщения."""
+    curator = user_factory(vk_id=960061, name="Curator", role_name="куратор")
+    student = user_factory(vk_id=960062, name="Student", role_name="ученик")
+    student.curator_id = curator.id
+    db.commit()
+    cycle = _mk_cycle(db, student.id, closed=True)
+    final = _mk_final_work(db, student.id, cycle.id, score=80)
+    _mk_staff_message(db, final.id, curator_id=curator.id, sender_role="curator", text="ОС")
+    cycle.revision_requested_at = datetime.now(timezone.utc)
+    db.commit()
+
+    sess = session_factory(curator)
+    client.cookies.set("session_id", sess.id)
+    resp = client.get(f"/cabinet/curator/feedback/{cycle.id}")
+    assert resp.status_code == 200
+    assert "НА ИЗМЕНЕНИИ" in resp.text
+    assert "✎ Изменить" in resp.text
+    assert "Завершить правку" in resp.text
+
+
+@pytest.mark.parametrize("closed", [True, False])
+def test_dialog_renders_return_button_for_superadmin(client, admin_user, db, user_factory, session_factory, closed):
+    """SA видит кнопку «Вернуть куратору» на любом цикле с ОС — открытом и закрытом."""
+    curator = user_factory(vk_id=960071 + (1 if closed else 0), name="Curator", role_name="куратор")
+    student = user_factory(vk_id=960073 + (1 if closed else 0), name="Student", role_name="ученик")
+    student.curator_id = curator.id
+    db.commit()
+    cycle = _mk_cycle(db, student.id, closed=closed)
+    final = _mk_final_work(db, student.id, cycle.id, score=80)
+    _mk_staff_message(db, final.id, curator_id=curator.id, sender_role="curator", text="ОС")
+
+    sess = session_factory(admin_user)
+    client.cookies.set("session_id", sess.id)
+    resp = client.get(f"/cabinet/superadmin/feedback/{cycle.id}")
+    assert resp.status_code == 200
+    assert "Вернуть куратору на изменение" in resp.text

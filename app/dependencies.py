@@ -1,11 +1,11 @@
 import logging
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Callable
 
 log = logging.getLogger(__name__)
 
-from fastapi import Request, Depends, HTTPException, Header, Form
+from fastapi import Request, Response, Depends, HTTPException, Header, Form
 from sqlalchemy.orm import Session as DBSession, joinedload
 
 from app.cache import set_cached_session
@@ -18,6 +18,7 @@ from app.models.user import User
 
 def get_current_user(
     request: Request,
+    response: Response,
     db: Annotated[DBSession, Depends(get_db)],
 ) -> dict:
     """Extract and validate session from cookie, join with User and Role."""
@@ -40,10 +41,29 @@ def get_current_user(
 
     session, user = row
 
-    if session.expires_at < datetime.now(timezone.utc):
+    now = datetime.now(timezone.utc)
+    if session.expires_at < now:
         session.is_active = False
         db.commit()
         raise HTTPException(status_code=401, detail="Сессия истекла")
+
+    # Sliding session: once the session is past the halfway point of its TTL,
+    # extend it and refresh the cookie's max-age. Without this, a long-lived
+    # but actively-used tab (e.g. the 4h mock exam) can outlive a fixed
+    # session_id cookie expiry and the browser drops the cookie mid-session.
+    ttl = timedelta(hours=settings.session_ttl_hours)
+    if session.expires_at - now < ttl / 2:
+        session.expires_at = now + ttl
+        db.commit()
+        response.set_cookie(
+            key="session_id",
+            value=session.id,
+            httponly=True,
+            samesite="lax",
+            max_age=settings.session_ttl_hours * 3600,
+            secure=True,
+            path="/",
+        )
 
     if user.deleted_at is not None:
         raise HTTPException(status_code=403, detail="Аккаунт удалён")

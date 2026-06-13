@@ -163,23 +163,31 @@
                             background:var(--surface-2);border:1.5px solid var(--line);border-radius:10px">
                     {% set sel_periods = form.course_periods if form and form.course_periods is defined else [] %}
                     {% for p in course_periods %}
+                    {% set is_mandatory = (p == mandatory_course_period) %}
                     <label class="period-item"
-                           style="display:flex;align-items:center;gap:10px;cursor:pointer;
+                           style="display:flex;align-items:center;gap:10px;cursor:{{ 'default' if is_mandatory else 'pointer' }};
                                   padding:10px 14px;border-radius:8px;
                                   border:1.5px solid var(--line);background:var(--surface);
                                   transition:border-color .2s,background .2s">
                         <input type="checkbox" name="course_periods" value="{{ p }}"
-                               {% if p in sel_periods %}checked{% endif %}
-                               style="width:17px;height:17px;accent-color:var(--blue);cursor:pointer">
+                               {% if p in sel_periods or is_mandatory %}checked{% endif %}
+                               {% if is_mandatory %}disabled{% endif %}
+                               style="width:17px;height:17px;accent-color:var(--blue);cursor:{{ 'default' if is_mandatory else 'pointer' }}">
+                        {% if is_mandatory %}
+                        <input type="hidden" name="course_periods" value="{{ p }}">
+                        {% endif %}
                         <span style="font-size:14px;font-weight:500">{{ p }}</span>
+                        {% if is_mandatory %}
+                        <span style="font-size:12px;color:var(--muted);margin-left:auto">обязательно</span>
+                        {% endif %}
                     </label>
                     {% endfor %}
                 </div>
             </div>
 
-            <!-- Количество занятий -->
+            <!-- Количество регулярных занятий -->
             <div style="margin-bottom:28px">
-                <label class="form-label">Количество занятий *</label>
+                <label class="form-label">Количество регулярных занятий *</label>
                 <div style="display:flex;gap:12px;flex-wrap:wrap">
                     {% set sel_lc = form.lessons_count if form and form.lessons_count is defined else '' %}
                     {% for lc in lesson_counts %}

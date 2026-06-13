@@ -125,6 +125,59 @@ def test_admin_cannot_impersonate_another_admin(
     assert r.status_code == 403
 
 
+def test_superadmin_cannot_impersonate_inactive_user(
+    client, session_factory, user_factory
+):
+    sa = user_factory(vk_id=900_032, name="SA Active", role_name="суперадмин")
+    target = user_factory(
+        vk_id=900_033,
+        name="Inactive Curator",
+        role_name="куратор",
+        is_active=False,
+    )
+    sess = session_factory(sa)
+    client.cookies.set("session_id", sess.id)
+    csrf = _csrf_for(client, sess.id)
+
+    r = client.post(
+        f"/cabinet/superadmin/impersonate/{target.id}",
+        data={"csrf_token": csrf},
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 404
+
+
+def test_already_impersonating_session_cannot_start_nested_impersonation(
+    client, session_factory, user_factory
+):
+    sa = user_factory(vk_id=900_034, name="SA Original", role_name="суперадмин")
+    admin = user_factory(vk_id=900_035, name="Admin First", role_name="админ")
+    student = user_factory(vk_id=900_036, name="Student Second", role_name="ученик")
+    sa_sess = session_factory(sa)
+    client.cookies.set("session_id", sa_sess.id)
+
+    csrf = _csrf_for(client, sa_sess.id)
+    first = client.post(
+        f"/cabinet/superadmin/impersonate/{admin.id}",
+        data={"csrf_token": csrf},
+        follow_redirects=False,
+    )
+    assert first.status_code == 303
+
+    impersonation_session_id = first.cookies["session_id"]
+    client.cookies.set("session_id", impersonation_session_id)
+    nested_csrf = _csrf_for(client, impersonation_session_id)
+    nested = client.post(
+        f"/cabinet/superadmin/impersonate/{student.id}",
+        data={"csrf_token": nested_csrf},
+        follow_redirects=False,
+    )
+
+    assert nested.status_code == 400
+    assert "Уже в режиме имперсонации" in nested.text
+
+
 def test_curator_cannot_impersonate(
     client, session_factory, user_factory
 ):

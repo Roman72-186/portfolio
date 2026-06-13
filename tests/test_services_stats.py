@@ -10,6 +10,7 @@ from app.models.work import Work, WORK_TYPE_MOCK_EXAM
 from app.services.stats import (
     mock_period_subject_stats,
     score_curve_12m,
+    student_score_curve,
     curator_avg_scores,
 )
 
@@ -193,6 +194,58 @@ def test_score_curve_excludes_old_data(db, user_factory):
     points = score_curve_12m(db)
     # ни одна точка не должна содержать 90.0
     assert all(p["drawing"] != 90.0 for p in points)
+
+
+# ─── student_score_curve ─────────────────────────────────────────────────────
+
+def test_student_score_curve_no_scored_works(db, user_factory):
+    """Без оценённых пробников — пустой список (не 12 точек с None)."""
+    s1 = user_factory(vk_id=1, role_name="ученик")
+    points = student_score_curve(db, s1.id)
+    assert points == []
+
+
+def test_student_score_curve_starts_from_first_scored_work(db, user_factory):
+    """Окно начинается с месяца первой оценённой работы, а не 12 месяцев назад."""
+    s1 = user_factory(vk_id=1, role_name="ученик")
+    now = datetime.now(timezone.utc)
+    first = now - timedelta(days=60)  # 2 месяца назад
+    _make_work(db, user_id=s1.id, subject="Рисунок", score=70, created_at=first)
+    _make_work(db, user_id=s1.id, subject="Рисунок", score=90, created_at=now)
+
+    points = student_score_curve(db, s1.id)
+    expected_n = (now.year - first.year) * 12 + (now.month - first.month) + 1
+    assert len(points) == expected_n
+    assert points[0]["year"] == first.year
+    assert points[0]["month"] == first.month
+    assert points[-1]["year"] == now.year
+    assert points[-1]["month"] == now.month
+    assert points[-1]["drawing"] == 90.0
+
+
+def test_student_score_curve_ignores_unscored_for_window_start(db, user_factory):
+    """Неоценённые работы не сдвигают начало окна."""
+    s1 = user_factory(vk_id=1, role_name="ученик")
+    now = datetime.now(timezone.utc)
+    long_ago = now - timedelta(days=400)
+    _make_work(db, user_id=s1.id, subject="Рисунок", score=None, created_at=long_ago)
+    _make_work(db, user_id=s1.id, subject="Рисунок", score=85, created_at=now)
+
+    points = student_score_curve(db, s1.id)
+    assert len(points) == 1
+    assert points[0]["year"] == now.year
+    assert points[0]["month"] == now.month
+    assert points[0]["drawing"] == 85.0
+
+
+def test_student_score_curve_other_students_excluded(db, user_factory):
+    s1 = user_factory(vk_id=1, role_name="ученик")
+    s2 = user_factory(vk_id=2, role_name="ученик")
+    now = datetime.now(timezone.utc)
+    _make_work(db, user_id=s2.id, subject="Рисунок", score=70, created_at=now)
+
+    points = student_score_curve(db, s1.id)
+    assert points == []
 
 
 # ─── curator_avg_scores ──────────────────────────────────────────────────────

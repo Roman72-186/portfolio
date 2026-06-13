@@ -38,6 +38,10 @@ class Work(Base):
     # Цикл Пробника (план 2026-05-14): cycle_id+is_final+parent_work_id+attempt_number
     cycle_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("exam_cycles.id"), nullable=True)
     is_final: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
+    # «На доработку»: финал отправлен обратно студенту, has_submitted_for_ticket
+    # его не считает сдачей → пересдача по тому же билету разрешена.
+    # Сбрасывается в _overwrite_final при загрузке нового фото.
+    needs_revision: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     parent_work_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("works.id"), nullable=True)
     attempt_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

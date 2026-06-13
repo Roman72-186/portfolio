@@ -11,7 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from app.db.database import engine, Base, SessionLocal
 from app.api import auth, cabinet, upload, admin, gallery
 from app.api import cabinet_student, cabinet_curator, cabinet_admin, cabinet_superadmin
-from app.api import cabinet_students_shared
+from app.api import cabinet_students_shared, cabinet_tags
 from app.api import cycle_upload, feedback as feedback_router
 from app.limiter import limiter
 from app.services.rbac import seed_roles_and_permissions
@@ -158,6 +158,7 @@ app.include_router(cabinet_student.router)
 app.include_router(cabinet_curator.router)
 app.include_router(cabinet_admin.router)
 app.include_router(cabinet_superadmin.router)
+app.include_router(cabinet_tags.router)
 app.include_router(cabinet_students_shared.router)
 app.include_router(upload.router)
 app.include_router(cycle_upload.router)

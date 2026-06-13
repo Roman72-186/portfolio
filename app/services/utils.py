@@ -16,7 +16,7 @@ def compress_image(data: bytes, max_px: int = 1600, quality: int = 82) -> bytes:
     - Returns original bytes untouched if PIL is unavailable or image is already small.
     """
     try:
-        from PIL import Image, ImageFile
+        from PIL import Image, ImageFile, ImageOps
     except ImportError:
         return data
 
@@ -33,6 +33,13 @@ def compress_image(data: bytes, max_px: int = 1600, quality: int = 82) -> bytes:
         ImageFile.LOAD_TRUNCATED_IMAGES = True
         img = Image.open(io.BytesIO(data))
         img.load()
+
+        # Apply EXIF orientation: phone photos (especially portrait) store pixels
+        # landscape + an Orientation tag telling the viewer to rotate. Re-saving as
+        # JPEG below drops that tag, so without this the pixels would stay rotated
+        # and a vertical photo would show up sideways/horizontal. exif_transpose
+        # physically rotates the pixels and strips the now-redundant tag.
+        img = ImageOps.exif_transpose(img)
 
         # Convert to RGB (handles RGBA PNG, CMYK, palette mode, etc.)
         if img.mode not in ("RGB", "L"):
@@ -52,6 +59,38 @@ def compress_image(data: bytes, max_px: int = 1600, quality: int = 82) -> bytes:
 
     # Only use compressed version if it's actually smaller
     return compressed if len(compressed) < len(data) else data
+
+
+def rotate_image_bytes(data: bytes, *, clockwise: bool = True) -> bytes:
+    """Rotate an image 90° and return JPEG bytes. Raises if `data` is not an image.
+
+    Used by the superadmin "rotate photo" tool. Unlike compress_image this does NOT
+    downscale — it rotates at full resolution and re-encodes at high quality, because
+    the result overwrites the only copy in S3 (destructive, no undo). A non-image
+    payload (e.g. a curator-report MP4) makes PIL.Image.open raise, which the caller
+    turns into a clean "это не изображение" error.
+    """
+    from PIL import Image, ImageFile, ImageOps
+
+    # Register HEIC/HEIF decoder if available (iPhone default format).
+    try:
+        from pillow_heif import register_heif_opener
+        register_heif_opener()
+    except ImportError:
+        pass
+
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
+    img = Image.open(io.BytesIO(data))
+    img.load()
+    # Normalize any residual EXIF orientation first, then rotate by the requested step.
+    img = ImageOps.exif_transpose(img)
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+    # PIL rotates counter-clockwise for positive angles → negate for clockwise.
+    img = img.rotate(-90 if clockwise else 90, expand=True)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=90)
+    return buf.getvalue()
 
 
 def study_duration_text(enrolled_at: datetime) -> str:

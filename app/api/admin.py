@@ -11,7 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.config import settings
-from app.constants import TARIFFS, TARIFF_DISPLAY
+from app.constants import TARIFFS, TARIFF_DISPLAY, EXAM_SUBJECT_HINTS, COHORT_TAGS
 from app.db.database import get_db
 from app.dependencies import require_admin, require_csrf
 from app.models.user import User
@@ -22,6 +22,7 @@ from app.services.auth_links import issue_one_time_login_link
 from app.services.user_management import (
     can_assign_role_rank,
     can_manage_user_by_rank,
+    get_curator_for_assignment,
     toggle_user_active,
 )
 from app.tmpl import templates
@@ -48,9 +49,6 @@ def _gen_token(length: int = 8) -> str:
 
 def _get_user_by_id(db: DBSession, user_id: int) -> User | None:
     return db.query(User).filter(User.id == user_id).first()
-
-
-COHORT_TAGS = {"may", "june", "july", "august"}
 
 
 def _normalize_tg_username(raw: str) -> str:
@@ -368,7 +366,7 @@ def create_staff_account(
         return _render_admin_users(request, user, db, page_error="Роль не найдена.")
     if new_role.rank < 2:
         return _render_admin_users(request, user, db, page_error="Аккаунт сотрудника требует роль с рангом ≥ 2.")
-    if new_role.rank >= acting_rank:
+    if not can_assign_role_rank(acting_rank, new_role.rank):
         return _render_admin_users(request, user, db, page_error="Нельзя создать аккаунт с рангом не ниже вашего.")
 
     login = _gen_token(8)
@@ -440,6 +438,7 @@ def assign_curator_bulk(
     curator_id: int = Form(...),
     student_usernames: str = Form(""),
     cohort_tag: str = Form(""),
+    exam_subjects: str = Form(""),
 ):
     if user.get("role_rank", 0) < 5:
         return _render_admin_users(
@@ -453,14 +452,15 @@ def assign_curator_bulk(
     if cohort_tag and cohort_tag not in COHORT_TAGS:
         return _render_admin_users(request, user, db, page_error="Неверная метка группы.")
 
-    curator = (
-        db.query(User)
-        .join(Role, User.role_id == Role.id)
-        .filter(User.id == curator_id, Role.rank == 2, User.is_active == True, User.deleted_at.is_(None))  # noqa: E712
-        .first()
-    )
+    exam_subjects_v = exam_subjects.strip() or None
+    if exam_subjects_v and exam_subjects_v not in EXAM_SUBJECT_HINTS:
+        return _render_admin_users(request, user, db, page_error="Неверный предмет.")
+
+    curator = get_curator_for_assignment(db, curator_id, active_only=True)
     if not curator:
         return _render_admin_users(request, user, db, page_error="Куратор не найден.")
+
+    curator_tag_v = f"{curator.last_name or ''} {curator.first_name or curator.name}".strip() or None
 
     usernames = _split_tg_usernames(student_usernames)
     result = {
@@ -502,8 +502,14 @@ def assign_curator_bulk(
             result["assigned"] += 1
         if cohort_tag:
             student.cohort_tag = cohort_tag
+        if curator_tag_v:
+            student.curator_tag = curator_tag_v
+        if exam_subjects_v:
+            student.exam_subjects = exam_subjects_v
 
-    if result["assigned"] or (cohort_tag and result["matched"]):
+    if result["assigned"] or (cohort_tag and result["matched"]) \
+            or (curator_tag_v and result["matched"]) \
+            or (exam_subjects_v and result["matched"]):
         db.commit()
     else:
         db.rollback()

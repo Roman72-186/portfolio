@@ -284,12 +284,25 @@ async def vk_callback(
     is_member = await check_group_membership(access_token, vk_user_id, settings.vk_group_id)
 
     # VK ID tokens may lack groups scope for closed communities — fall back to community token.
-    if not is_member and settings.vk_community_token:
-        is_member = await check_group_membership(
+    if is_member is not True and settings.vk_community_token:
+        fallback = await check_group_membership(
             settings.vk_community_token, vk_user_id, settings.vk_group_id
         )
-        if is_member:
+        if fallback is True:
+            is_member = True
             logger.info("vk_callback: user %s confirmed via community token fallback", vk_user_id)
+        elif is_member is None and fallback is False:
+            is_member = False
+
+    if is_member is None:
+        # VK API didn't give a definite answer (timeout/error) — don't treat this
+        # as a confirmed non-membership, ask the user to retry instead.
+        logger.warning("vk_callback: membership check inconclusive for user %s", vk_user_id)
+        return templates.TemplateResponse("denied.html", {
+            "request": request,
+            "reason": "Не удалось проверить участие в сообществе ВК. Попробуйте войти ещё раз через минуту.",
+            "vk_group_id": settings.vk_group_id,
+        })
 
     if not is_member:
         existing_user = db.query(User).filter(User.vk_id == vk_user_id).first()

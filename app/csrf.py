@@ -1,13 +1,15 @@
 """CSRF protection via itsdangerous signed tokens.
 
 Token = URLSafeTimedSerializer.dumps(session_id) signed with session_secret.
-Valid for 1 hour. Tied to the user's session — invalidated on logout.
+Tied to the user's session — invalidated on logout.
 """
 from itsdangerous import URLSafeTimedSerializer, BadData
 
 from app.config import settings
 
-_MAX_AGE = 3600  # 1 hour
+# Must outlast the longest single-page flow that reuses a page-load token,
+# i.e. the 4h mock exam upload (MOCK_EXAM_DURATION_SEC in app/api/upload.py) plus margin.
+_MAX_AGE = 6 * 3600
 
 
 def _serializer() -> URLSafeTimedSerializer:

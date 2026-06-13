@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Привязка учеников к куратору{% endblock %}
+{% block extra_styles %}
+<style>
+.su-wrap { max-width: 960px; margin: 0 auto; }
+
+.su-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
+.su-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
+.su-back { font-size: 13px; color: var(--dim); text-decoration: none; font-weight: 600; }
+.su-back:hover { color: var(--blue); }
+
+.bulk-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px 18px; margin-bottom: 18px; box-shadow: var(--sh-sm); }
+.bulk-title { font-size: 14px; font-weight: 900; color: var(--text); margin-bottom: 4px; }
+.bulk-sub { font-size: 12px; color: var(--dim); margin-bottom: 12px; line-height: 1.45; }
+.bulk-grid { display: grid; grid-template-columns: minmax(180px, 240px) minmax(150px, 210px) 1fr auto; gap: 10px; align-items: flex-end; }
+.bulk-panel label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
+.bulk-panel select, .bulk-panel textarea { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; }
+.bulk-panel textarea { min-height: 78px; resize: vertical; }
+.bulk-panel select:focus, .bulk-panel textarea:focus { border-color: var(--blue); }
+.bulk-panel button { padding: 10px 16px; background: var(--blue); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 800; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.bulk-panel button:hover { opacity: 0.88; }
+.bulk-result { border-radius: 10px; padding: 12px 14px; margin-bottom: 18px; font-size: 13px; line-height: 1.45; }
+.bulk-result.ok { background: rgba(5,150,105,0.08); border: 1px solid rgba(5,150,105,0.24); color: var(--ok); }
+.bulk-result.warn { background: rgba(217,119,6,0.08); border: 1px solid rgba(217,119,6,0.24); color: var(--warning); }
+.bulk-result strong { color: inherit; }
+.bulk-missing { margin-top: 6px; color: var(--dim); word-break: break-word; }
+
+@media (max-width: 760px) {
+    .bulk-grid { grid-template-columns: 1fr; }
+    .bulk-panel button { width: 100%; }
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="su-wrap">
+
+    <div class="su-header">
+        <a href="/cabinet/superadmin/users" class="su-back">← Управление пользователями</a>
+        <div class="su-title">Массовая привязка учеников к куратору</div>
+    </div>
+
+    {% if assignment_result %}
+    <div class="bulk-result {% if assignment_result.error or assignment_result.not_found %}warn{% else %}ok{% endif %}">
+        {% if assignment_result.error %}
+            <strong>{{ assignment_result.error }}</strong>
+        {% else %}
+            <strong>{{ assignment_result.curator_name }}:</strong>
+            привязано {{ assignment_result.assigned }} из {{ assignment_result.requested }},
+            уже были у этого куратора {{ assignment_result.unchanged }},
+            не найдено {{ assignment_result.not_found|length }}.
+            {% if assignment_result.cohort_tag %}
+            Метка группы обновлена.
+            {% endif %}
+            {% if assignment_result.not_found %}
+            <div class="bulk-missing">Не найдены: @{{ assignment_result.not_found|join(', @') }}</div>
+            {% endif %}
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <form method="post" action="/cabinet/superadmin/users/assign-curator-bulk" class="bulk-panel">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <div class="bulk-title">Массовая привязка учеников к куратору</div>
+        <div class="bulk-sub">Выберите куратора и вставьте Telegram username учеников списком: по одному в строке, через запятую или точку с запятой.</div>
+        <div class="bulk-grid">
+            <label>
+                Куратор
+                <select id="sa-bulk-curator" name="curator_id" required>
+                    <option value="">Выберите куратора</option>
+                    {% for c in curators %}
+                    <option value="{{ c.id }}" data-curator-tag="{{ ((c.last_name or '') ~ ' ' ~ (c.first_name or c.name))|trim }}">{{ c.last_name or '' }} {{ c.first_name or c.name }}</option>
+                    {% endfor %}
+                </select>
+                <span id="sa-curator-tag-preview" style="display:none;margin-top:6px;font-size:12px;color:var(--dim)">
+                    Тег: <span id="sa-curator-tag-badge" class="tag-pill tag-pill--curator-tag" style="font-size:11px"></span>
+                </span>
+            </label>
+            <label>
+                Баннер на аватарке
+                <select name="cohort_tag">
+                    <option value="">Не ставить</option>
+                    <option value="may">МАЙСКАЯ · цветок М</option>
+                    <option value="june">ИЮНЬ · пух И</option>
+                    <option value="july">ИЮЛЬ · подсолнух И</option>
+                    <option value="august">АВГУСТ · колос А</option>
+                </select>
+            </label>
+            <label>
+                Предмет экзамена
+                <select name="exam_subjects">
+                    <option value="">Не ставить</option>
+                    <option value="Р">Р</option>
+                    <option value="К">К</option>
+                    <option value="Р + К">Р + К</option>
+                </select>
+            </label>
+            <label>
+                Username учеников
+                <textarea name="student_usernames" placeholder="@student_one&#10;student_two&#10;@student_three" required></textarea>
+            </label>
+            <button type="submit">Привязать списком</button>
+        </div>
+    </form>
+    <script>
+    (function(){
+        var sel = document.getElementById('sa-bulk-curator');
+        var preview = document.getElementById('sa-curator-tag-preview');
+        var badge = document.getElementById('sa-curator-tag-badge');
+        if (!sel) return;
+        sel.addEventListener('change', function(){
+            var tag = (this.options[this.selectedIndex].dataset.curatorTag || '').trim();
+            if (tag) { badge.textContent = tag; preview.style.display = 'block'; }
+            else { preview.style.display = 'none'; }
+        });
+    })();
+    </script>
+
+</div>
+{% endblock %}

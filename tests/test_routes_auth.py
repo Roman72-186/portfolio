@@ -262,6 +262,74 @@ def test_vk_callback_legacy_cookie_fallback_still_works(client, monkeypatch):
     assert "session_id" in resp.cookies
 
 
+def test_vk_callback_inconclusive_membership_shows_retry_message(client, db, user_factory, monkeypatch):
+    """check_group_membership returning None (timeout/VK error) must not be
+    treated as a confirmed non-membership: existing user's is_group_member
+    stays unchanged and the user sees a retry message, not "Доступ запрещён"."""
+    existing = user_factory(vk_id=658607006, is_group_member=True)
+    old_check_at = existing.last_vk_check_at
+
+    async def fake_exchange_code(*_args, **_kwargs) -> dict:
+        return {"access_token": "token-123", "user_id": 658607006}
+
+    async def fake_check_group_membership(*_args, **_kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(auth_module, "pop_vk_pkce", lambda state: {
+        "code_verifier": "redis-verifier",
+        "created_at": "2026-04-19T00:00:00+00:00",
+    } if state == "redis-state" else None)
+    monkeypatch.setattr(auth_module, "exchange_code", fake_exchange_code)
+    monkeypatch.setattr(auth_module, "check_group_membership", fake_check_group_membership)
+    monkeypatch.setattr(_app_settings, "vk_community_token", "")
+
+    resp = client.get(
+        "/auth/vk/callback?code=good-code&state=redis-state&device_id=device-123",
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 200
+    assert "session_id" not in resp.cookies
+    assert "Не удалось проверить" in resp.text
+
+    db.refresh(existing)
+    assert existing.is_group_member is True
+    assert existing.last_vk_check_at == old_check_at
+
+
+def test_vk_callback_confirmed_non_member_shows_denied(client, db, user_factory, monkeypatch):
+    """check_group_membership returning False (VK confirmed: not a member)
+    keeps the existing hard-denial behavior and persists is_group_member=False."""
+    existing = user_factory(vk_id=658607006, is_group_member=True)
+
+    async def fake_exchange_code(*_args, **_kwargs) -> dict:
+        return {"access_token": "token-123", "user_id": 658607006}
+
+    async def fake_check_group_membership(*_args, **_kwargs) -> bool:
+        return False
+
+    monkeypatch.setattr(auth_module, "pop_vk_pkce", lambda state: {
+        "code_verifier": "redis-verifier",
+        "created_at": "2026-04-19T00:00:00+00:00",
+    } if state == "redis-state" else None)
+    monkeypatch.setattr(auth_module, "exchange_code", fake_exchange_code)
+    monkeypatch.setattr(auth_module, "check_group_membership", fake_check_group_membership)
+    monkeypatch.setattr(_app_settings, "vk_community_token", "")
+
+    resp = client.get(
+        "/auth/vk/callback?code=good-code&state=redis-state&device_id=device-123",
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 200
+    assert "session_id" not in resp.cookies
+    assert "Доступ запрещён" in resp.text
+
+    db.refresh(existing)
+    assert existing.is_group_member is False
+    assert existing.last_vk_check_at is not None
+
+
 # ---------------------------------------------------------------------------
 # GET /auth/link — one-time magic link login
 # ---------------------------------------------------------------------------

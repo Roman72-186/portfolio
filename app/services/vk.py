@@ -83,7 +83,10 @@ async def exchange_code(code: str, code_verifier: str, device_id: str) -> dict:
     )
     resp.raise_for_status()
     data = resp.json()
-    logger.info("VK ID token exchange OK, user_id=%s", data.get("user_id"))
+    logger.info(
+        "VK ID token exchange OK, user_id=%s, scope=%s",
+        data.get("user_id"), data.get("scope"),
+    )
     return data
 
 
@@ -115,8 +118,13 @@ async def get_user_info(access_token: str, user_id: int) -> dict:
     }
 
 
-async def check_group_membership(access_token: str, user_id: int, group_id: int) -> bool:
-    """Check if user is a member of the specified VK group."""
+async def check_group_membership(access_token: str, user_id: int, group_id: int) -> bool | None:
+    """Check if user is a member of the specified VK group.
+
+    Returns True/False for a definite VK answer, or None if the check could
+    not be completed (network error, HTTP error, VK API error). Callers must
+    not treat None as a confirmed non-membership.
+    """
     try:
         data = await _vk_api_get("groups.isMember", {
             "group_id": group_id,
@@ -126,10 +134,18 @@ async def check_group_membership(access_token: str, user_id: int, group_id: int)
         })
     except Exception as exc:
         logger.warning("VK groups.isMember request failed: %s", exc)
-        return False
+        return None
+
+    logger.info(
+        "VK groups.isMember user_id=%s group_id=%s -> %s",
+        user_id, group_id, data,
+    )
 
     if "error" in data:
         logger.warning("VK groups.isMember error: %s", data["error"])
-        return False
+        return None
 
-    return data.get("response") == 1
+    response = data.get("response")
+    if isinstance(response, dict):
+        return response.get("member") == 1
+    return response == 1

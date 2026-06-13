@@ -9,6 +9,43 @@
 .dlg-head h1 { font-family: var(--font-display); font-size: 22px; font-weight: 900; margin: 0; }
 .dlg-head .dlg-meta { color: var(--muted); font-size: 13px; font-weight: 700; }
 .dlg-head .dlg-closed { background: rgba(22,163,74,0.12); color: #16A34A; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
+.dlg-delete-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid #DC2626; color: #DC2626; background: transparent; border-radius: 10px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background .12s, color .12s; }
+.dlg-delete-btn:hover { background: #DC2626; color: #fff; }
+.dlg-delete-btn:disabled { opacity: 0.5; cursor: default; }
+.dlg-reopen-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--blue); color: var(--blue); background: transparent; border-radius: 10px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background .12s, color .12s; }
+.dlg-reopen-btn:hover { background: var(--blue); color: #fff; }
+.dlg-reopen-btn:disabled { opacity: 0.5; cursor: default; }
+.dlg-revision-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid #B45309; color: #B45309; background: transparent; border-radius: 10px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background .12s, color .12s; }
+.dlg-revision-btn:hover { background: #B45309; color: #fff; }
+.dlg-revision-btn:disabled { opacity: 0.5; cursor: default; }
+.dlg-revision-badge { background: rgba(245,158,11,0.16); color: #B45309; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
+
+/* Баннер «на изменении» + действие «Завершить правку» */
+.dlg-revision-banner {
+    display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center;
+    padding: 12px 16px; margin-bottom: 16px;
+    border: 1px solid rgba(245,158,11,0.4); border-radius: 12px;
+    background: rgba(245,158,11,0.08); color: #92400E; font-size: 13px; font-weight: 600;
+}
+.dlg-revision-banner .dlg-revision-done {
+    margin-left: auto; padding: 8px 14px; border: none; border-radius: 8px;
+    background: #B45309; color: #fff; font-size: 13px; font-weight: 800; cursor: pointer;
+}
+.dlg-revision-banner .dlg-revision-done:hover { opacity: 0.92; }
+.dlg-revision-banner .dlg-revision-done:disabled { opacity: 0.5; cursor: default; }
+
+/* Inline-правка своего сообщения ОС */
+.dlg-msg-edit { align-self: flex-end; background: none; border: none; cursor: pointer; color: var(--blue); font-size: 11px; font-weight: 800; padding: 2px 4px; }
+.dlg-msg-edit:hover { text-decoration: underline; }
+.dlg-msg.from-me .dlg-msg-edit { color: var(--blue); }
+.dlg-msg-edit-form { width: 100%; margin-top: 4px; }
+.dlg-msg-edit-form textarea {
+    width: 100%; min-height: 72px; max-height: 240px; padding: 10px 12px; box-sizing: border-box;
+    border: 1px solid var(--line); border-radius: 10px; font-family: inherit; font-size: 14px;
+    resize: vertical; background: var(--surface); color: var(--text);
+}
+.dlg-msg-edit-form textarea:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: var(--blue); }
+.dlg-msg-edit-actions { display: flex; gap: 8px; margin-top: 6px; }
 
 .dlg-attempt {
     background: var(--surface); border: 1px solid var(--line);
@@ -158,7 +195,50 @@
         {% if cycle.closed_at %}
             <span class="dlg-closed">ЦИКЛ ЗАКРЫТ</span>
         {% endif %}
+        {% if cycle.revision_requested_at and viewer_role != 'student' %}
+            <span class="dlg-revision-badge">НА ИЗМЕНЕНИИ</span>
+        {% endif %}
+        {% if viewer_role == 'superadmin' and has_staff_message and not cycle.revision_requested_at %}
+            <button type="button" class="dlg-revision-btn" id="dlg-revision-btn"
+                    data-cycle-id="{{ cycle.id }}"
+                    data-csrf="{{ csrf_token(request) }}"
+                    onclick="returnToCurator(this)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+                Вернуть куратору на изменение
+            </button>
+        {% endif %}
+        {% if viewer_role == 'superadmin' and cycle.closed_at %}
+            <button type="button" class="dlg-reopen-btn" id="dlg-reopen-btn"
+                    data-cycle-id="{{ cycle.id }}"
+                    data-csrf="{{ csrf_token(request) }}"
+                    onclick="reopenCycle(this)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                Переоткрыть цикл
+            </button>
+        {% endif %}
+        {% if viewer_role == 'superadmin' and not cycle.closed_at %}
+            <button type="button" class="dlg-delete-btn" id="dlg-delete-btn"
+                    data-cycle-id="{{ cycle.id }}"
+                    data-works="{{ attempts | length }}"
+                    data-csrf="{{ csrf_token(request) }}"
+                    onclick="deleteCycle(this)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                Удалить цикл
+            </button>
+        {% endif %}
     </div>
+
+    {% if cycle.revision_requested_at and viewer_role != 'student' %}
+        <div class="dlg-revision-banner">
+            <span>Цикл возвращён на изменение. Поправьте свои сообщения обратной связи (кнопка «✎ Изменить» под сообщением), затем завершите правку.</span>
+            <button type="button" class="dlg-revision-done" id="dlg-revision-done"
+                    data-cycle-id="{{ cycle.id }}"
+                    data-csrf="{{ csrf_token(request) }}"
+                    onclick="finishRevision(this)">
+                Завершить правку
+            </button>
+        </div>
+    {% endif %}
 
     {% if not attempts %}
         <div class="dlg-empty-thread" style="border:1px solid var(--line);border-radius:12px;">
@@ -229,11 +309,22 @@
                         <div class="dlg-msg-meta">
                             <span class="dlg-msg-role">{{ m.sender_role }}</span> · {{ m.created_at[:16].replace('T', ' ') if m.created_at else '' }}
                         </div>
+                        {% if cycle.revision_requested_at and viewer_role != 'student' and m.sender_role != 'student' and m.sender_id == user.user_id and m.text %}
+                            <button type="button" class="dlg-msg-edit" onclick="startEditMsg({{ m.id }})">✎ Изменить</button>
+                            <form class="dlg-msg-edit-form" id="edit-form-{{ m.id }}" style="display:none" onsubmit="return submitEditMsg(event, {{ m.id }})">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                                <textarea maxlength="4000">{{ m.text }}</textarea>
+                                <div class="dlg-msg-edit-actions">
+                                    <button type="submit" class="dlg-send">Сохранить</button>
+                                    <button type="button" class="dlg-score-edit" onclick="cancelEditMsg({{ m.id }})">Отмена</button>
+                                </div>
+                            </form>
+                        {% endif %}
                     </div>
                 {% endfor %}
             </div>
 
-            {% if cycle.closed_at %}
+            {% if cycle.closed_at and viewer_role == 'student' %}
                 <div class="dlg-form">
                     <div class="dlg-waiting">Цикл закрыт. Отправка сообщений недоступна.</div>
                 </div>
@@ -326,7 +417,7 @@
                     <textarea name="comment" placeholder="Комментарий (необязательно)" maxlength="500">{{ a.comment or '' }}</textarea>
                     <div class="dlg-score-actions">
                         <button type="button" class="dlg-score-btn" onclick="submitDlgScore({{ a.work_id }}, {{ student.id }})">
-                            Сохранить балл · закрыть цикл
+                            Сохранить балл
                         </button>
                         {% if a.score is not none %}
                             <button type="button" class="dlg-score-edit" onclick="toggleScoreEdit({{ a.work_id }}, false)">
@@ -338,6 +429,27 @@
                 </div>
             </div>
         </section>
+    {% endif %}
+
+    {% if viewer_role in ('curator', 'admin', 'superadmin') and not cycle.closed_at and attempts %}
+        {% set last_attempt = attempts|last %}
+        {% if last_attempt.score is not none %}
+        <section class="dlg-close-zone">
+            <div class="dlg-score">
+                <div class="dlg-score-label">Готово к закрытию</div>
+                <div class="dlg-score-hint">Балл выставлен — {{ last_attempt.score|int }} / 100. После обратной связи закройте цикл: он попадёт в Портфолио ученика, а предмет разблокируется для нового пробника.</div>
+                <div class="dlg-score-actions" style="margin-top:10px;">
+                    <button type="button" class="dlg-score-btn" id="dlg-close-btn"
+                            data-cycle-id="{{ cycle.id }}"
+                            data-csrf="{{ csrf_token(request) }}"
+                            onclick="closeCycle(this)">
+                        Закрыть цикл
+                    </button>
+                </div>
+                <div class="dlg-score-msg" id="dlg-close-msg" style="display:none"></div>
+            </div>
+        </section>
+        {% endif %}
     {% endif %}
 </div>
 
@@ -403,7 +515,7 @@ async function submitDlgScore(workId, studentId) {
             method: 'POST', body: fd, redirect: 'manual',
         });
         if (r.ok || r.type === 'opaqueredirect' || r.status === 0 || r.status === 302) {
-            showMsg('Сохранено. Цикл будет закрыт.', false);
+            showMsg('Балл сохранён.', false);
             setTimeout(() => window.location.reload(), 700);
         } else {
             const data = await r.json().catch(() => ({}));
@@ -412,6 +524,102 @@ async function submitDlgScore(workId, studentId) {
         }
     } catch (e) {
         showMsg('Сетевая ошибка', true);
+        btn.disabled = false; btn.textContent = orig;
+    }
+}
+
+async function closeCycle(btn) {
+    if (!confirm('Закрыть цикл? Работа появится в Портфолио ученика, а предмет разблокируется для нового пробника.')) {
+        return;
+    }
+    const cycleId = btn.dataset.cycleId;
+    const msg = document.getElementById('dlg-close-msg');
+    function showMsg(text, isErr) {
+        msg.style.display = 'block';
+        msg.className = 'dlg-score-msg ' + (isErr ? 'err' : 'ok');
+        msg.textContent = text;
+    }
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Закрываем…';
+    try {
+        const fd = new FormData();
+        fd.append('csrf_token', btn.dataset.csrf);
+        const r = await fetch('/cabinet/feedback/' + cycleId + '/close', {
+            method: 'POST',
+            body: fd,
+            headers: { 'Accept': 'application/json', 'X-CSRF-Token': btn.dataset.csrf },
+        });
+        if (r.ok) {
+            showMsg('Цикл закрыт.', false);
+            setTimeout(() => window.location.reload(), 700);
+        } else {
+            const data = await r.json().catch(() => ({}));
+            showMsg(data.detail || 'Ошибка при закрытии', true);
+            btn.disabled = false; btn.textContent = orig;
+        }
+    } catch (e) {
+        showMsg('Сетевая ошибка', true);
+        btn.disabled = false; btn.textContent = orig;
+    }
+}
+
+async function deleteCycle(btn) {
+    const cycleId = btn.dataset.cycleId;
+    const works = parseInt(btn.dataset.works || '0', 10);
+    const worksTxt = works === 1 ? '1 работу' : works + ' работ(ы)';
+    if (!confirm('Удалить этот цикл Пробника без возможности восстановления?\n\nБудут удалены: ' + worksTxt + ', весь диалог обратной связи и загруженные файлы. Блокировка пробника по предмету снимется — ученик сможет пересдать.')) {
+        return;
+    }
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Удаляем…';
+    try {
+        const fd = new FormData();
+        fd.append('csrf_token', btn.dataset.csrf);
+        const r = await fetch('/cabinet/superadmin/feedback/' + cycleId + '/delete', {
+            method: 'POST',
+            body: fd,
+            headers: { 'Accept': 'application/json', 'X-CSRF-Token': btn.dataset.csrf },
+        });
+        if (r.ok) {
+            window.location.href = '{{ back_url }}';
+        } else {
+            const data = await r.json().catch(() => ({}));
+            alert(data.detail || 'Ошибка при удалении');
+            btn.disabled = false; btn.textContent = orig;
+        }
+    } catch (e) {
+        alert('Сетевая ошибка');
+        btn.disabled = false; btn.textContent = orig;
+    }
+}
+
+async function reopenCycle(btn) {
+    if (!confirm('Переоткрыть цикл? Он снова станет активным: ученик сможет отвечать в диалоге, а предмет заблокируется для нового пробника. Балл и работа в Портфолио сохранятся.')) {
+        return;
+    }
+    const cycleId = btn.dataset.cycleId;
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Открываем…';
+    try {
+        const fd = new FormData();
+        fd.append('csrf_token', btn.dataset.csrf);
+        const r = await fetch('/cabinet/superadmin/feedback/' + cycleId + '/reopen', {
+            method: 'POST',
+            body: fd,
+            headers: { 'Accept': 'application/json', 'X-CSRF-Token': btn.dataset.csrf },
+        });
+        if (r.ok) {
+            window.location.reload();
+        } else {
+            const data = await r.json().catch(() => ({}));
+            alert(data.detail || 'Ошибка при переоткрытии');
+            btn.disabled = false; btn.textContent = orig;
+        }
+    } catch (e) {
+        alert('Сетевая ошибка');
         btn.disabled = false; btn.textContent = orig;
     }
 }
@@ -449,5 +657,108 @@ document.querySelectorAll('form.dlg-form').forEach(form => {
         }
     });
 });
+
+async function returnToCurator(btn) {
+    if (!confirm('Вернуть цикл куратору на изменение обратной связи? Цикл останется закрытым; куратор сможет поправить свои сообщения.')) {
+        return;
+    }
+    const cycleId = btn.dataset.cycleId;
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Возвращаем…';
+    try {
+        const fd = new FormData();
+        fd.append('csrf_token', btn.dataset.csrf);
+        const r = await fetch('/cabinet/superadmin/feedback/' + cycleId + '/return-to-curator', {
+            method: 'POST', body: fd,
+            headers: { 'Accept': 'application/json', 'X-CSRF-Token': btn.dataset.csrf },
+        });
+        if (r.ok) {
+            window.location.reload();
+        } else {
+            const data = await r.json().catch(() => ({}));
+            alert(data.detail || 'Ошибка при возврате');
+            btn.disabled = false; btn.textContent = orig;
+        }
+    } catch (e) {
+        alert('Сетевая ошибка');
+        btn.disabled = false; btn.textContent = orig;
+    }
+}
+
+async function finishRevision(btn) {
+    const cycleId = btn.dataset.cycleId;
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Завершаем…';
+    try {
+        const fd = new FormData();
+        fd.append('csrf_token', btn.dataset.csrf);
+        const r = await fetch('/cabinet/feedback/' + cycleId + '/revision-done', {
+            method: 'POST', body: fd,
+            headers: { 'Accept': 'application/json', 'X-CSRF-Token': btn.dataset.csrf },
+        });
+        if (r.ok) {
+            window.location.reload();
+        } else {
+            const data = await r.json().catch(() => ({}));
+            alert(data.detail || 'Ошибка');
+            btn.disabled = false; btn.textContent = orig;
+        }
+    } catch (e) {
+        alert('Сетевая ошибка');
+        btn.disabled = false; btn.textContent = orig;
+    }
+}
+
+function startEditMsg(msgId) {
+    const form = document.getElementById('edit-form-' + msgId);
+    const bubble = document.querySelector('#m-' + msgId + ' .dlg-msg-bubble');
+    if (form) {
+        form.style.display = 'block';
+        const ta = form.querySelector('textarea');
+        if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    }
+    if (bubble) bubble.style.opacity = '0.5';
+}
+
+function cancelEditMsg(msgId) {
+    const form = document.getElementById('edit-form-' + msgId);
+    const bubble = document.querySelector('#m-' + msgId + ' .dlg-msg-bubble');
+    if (form) form.style.display = 'none';
+    if (bubble) bubble.style.opacity = '';
+}
+
+async function submitEditMsg(ev, msgId) {
+    ev.preventDefault();
+    const form = document.getElementById('edit-form-' + msgId);
+    const ta = form.querySelector('textarea');
+    const text = (ta.value || '').trim();
+    if (!text) { alert('Текст не может быть пустым'); return false; }
+    const btn = form.querySelector('.dlg-send');
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Сохраняем…';
+    try {
+        const fd = new FormData();
+        fd.append('csrf_token', form.querySelector('input[name="csrf_token"]').value);
+        fd.append('text', text);
+        const r = await fetch('/cabinet/feedback/message/' + msgId + '/edit', {
+            method: 'POST', body: fd,
+            headers: { 'Accept': 'application/json', 'X-CSRF-Token': form.querySelector('input[name="csrf_token"]').value },
+        });
+        if (r.ok) {
+            window.location.reload();
+        } else {
+            const data = await r.json().catch(() => ({}));
+            alert(data.detail || 'Ошибка при сохранении');
+            btn.disabled = false; btn.textContent = orig;
+        }
+    } catch (e) {
+        alert('Сетевая ошибка');
+        btn.disabled = false; btn.textContent = orig;
+    }
+    return false;
+}
 </script>
 {% endblock %}

@@ -1,7 +1,31 @@
+{% set lightbox_can_rotate = (user is defined and user and user.role_rank is defined and (user.role_rank|int) >= 5) %}
+{% if lightbox_can_rotate %}
+<style>
+.lightbox-tools {
+    position: absolute; top: 16px; left: 16px; z-index: 3;
+    display: flex; gap: 8px;
+}
+.lightbox-tool {
+    background: rgba(255,255,255,.15); border: none; color: #fff;
+    width: 40px; height: 40px; border-radius: 50%; font-size: 20px; line-height: 1;
+    cursor: pointer; transition: background 0.2s;
+    display: flex; align-items: center; justify-content: center;
+}
+.lightbox-tool:hover { background: rgba(255,255,255,.28); }
+.lightbox-tools.is-busy { opacity: .5; pointer-events: none; }
+</style>
+{% endif %}
 <div id="lightbox" class="lightbox" onclick="closeLightbox(event)">
     <button class="lightbox-close" type="button" onclick="closeLightbox(event)" aria-label="Закрыть">&times;</button>
 
     <div class="lightbox-stage" onclick="event.stopPropagation()">
+        {% if lightbox_can_rotate %}
+        <div class="lightbox-tools" id="lightbox-tools">
+            <button class="lightbox-tool" type="button" onclick="lightboxRotate('left')" title="Повернуть влево" aria-label="Повернуть влево">⟲</button>
+            <button class="lightbox-tool" type="button" onclick="lightboxRotate('right')" title="Повернуть вправо" aria-label="Повернуть вправо">⟳</button>
+        </div>
+        <script>window.LIGHTBOX_CSRF = "{{ csrf_token(request) }}";</script>
+        {% endif %}
         <button class="lightbox-nav lightbox-prev" type="button" onclick="lightboxStep(-1)" aria-label="Предыдущее фото">‹</button>
         <img id="lightbox-img" src="" alt="">
         <button class="lightbox-nav lightbox-next" type="button" onclick="lightboxStep(1)" aria-label="Следующее фото">›</button>
@@ -60,6 +84,43 @@
         if (!slides.length) return;
         idx += delta;
         render();
+    };
+
+    // Superadmin: поворот текущего фото на 90° (перезаписывает файл в S3).
+    window.lightboxRotate = function(direction){
+        if (!slides.length) return;
+        var s = slides[idx];
+        var base = (s.full || '').split('?')[0];
+        if (!base) return;
+        var tools = document.getElementById('lightbox-tools');
+        if (tools) tools.classList.add('is-busy');
+        var fd = new FormData();
+        fd.append('src', base);
+        fd.append('direction', direction);
+        fetch('/cabinet/rotate-photo', {
+            method: 'POST',
+            headers: {'X-CSRF-Token': window.LIGHTBOX_CSRF || ''},
+            body: fd
+        }).then(function(r){ return r.json(); }).then(function(d){
+            if (tools) tools.classList.remove('is-busy');
+            if (!d || !d.success) { alert((d && d.error) || 'Не удалось повернуть фото'); return; }
+            var newUrl = d.src;
+            // Обновляем все <img> на странице, указывающие на старый объект.
+            document.querySelectorAll('img').forEach(function(im){
+                if ((im.getAttribute('src') || '').split('?')[0] === base) im.src = newUrl;
+                if ((im.getAttribute('data-full') || '').split('?')[0] === base) im.setAttribute('data-full', newUrl);
+                if ((im.getAttribute('data-thumb') || '').split('?')[0] === base) im.setAttribute('data-thumb', newUrl);
+            });
+            // Обновляем слайд и его миниатюру, перерисовываем.
+            s.full = newUrl;
+            s.thumb = newUrl;
+            var thumbImg = thumbs.querySelectorAll('.lightbox-thumb img')[idx];
+            if (thumbImg) thumbImg.src = newUrl;
+            render();
+        }).catch(function(){
+            if (tools) tools.classList.remove('is-busy');
+            alert('Ошибка сети при повороте фото');
+        });
     };
 
     window.openLightbox = function(src, alt){

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session
 from app.models.audit_log import AuditLog
+from app.models.role import Role
 from app.models.session import Session
 from app.models.user import User
 
@@ -34,6 +35,22 @@ def can_manage_user(actor: User, target: User) -> bool:
 
 def can_assign_role_rank(actor_rank: int, new_role_rank: int) -> bool:
     return actor_rank >= 4 and new_role_rank < actor_rank
+
+
+def get_curator_for_assignment(
+    db: DBSession,
+    curator_id: int,
+    *,
+    active_only: bool = False,
+) -> User | None:
+    query = (
+        db.query(User)
+        .join(Role, User.role_id == Role.id)
+        .filter(User.id == curator_id, Role.rank == 2, User.deleted_at.is_(None))
+    )
+    if active_only:
+        query = query.filter(User.is_active == True)  # noqa: E712
+    return query.first()
 
 
 def _log(db: DBSession, action: str, performed_by_id: int, target_user_id: int, details: str) -> None:
