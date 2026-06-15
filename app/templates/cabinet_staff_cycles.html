@@ -36,6 +36,13 @@
     border-radius: 10px; font-size: 14px; background: var(--surface); font-family: inherit;
 }
 .cyc-search:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: var(--blue); }
+.cyc-copy-btn {
+    padding: 8px 14px; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--surface); color: var(--ink); font-size: 13px; font-weight: 800;
+    cursor: pointer; transition: all .12s; font-family: inherit; white-space: nowrap;
+}
+.cyc-copy-btn:hover { border-color: var(--blue); color: var(--blue); }
+.cyc-copy-btn.copied { background: rgba(34,197,94,0.14); color: #15803D; border-color: transparent; }
 .cyc-noresults { padding: 24px; text-align: center; color: var(--muted); font-size: 13px; display: none; }
 .cycles-empty {
     padding: 28px 22px; border: 1px dashed var(--line);
@@ -119,9 +126,17 @@
                 <button type="button" class="cyc-subj-pill" data-fb="none" onclick="selectFb(this)">Нет ОС</button>
                 <button type="button" class="cyc-subj-pill" data-fb="has" onclick="selectFb(this)">Есть ОС</button>
             </div>
+            <div class="cyc-subj-pills cyc-fb-pills">
+                <button type="button" class="cyc-subj-pill active" data-score="" onclick="selectScore(this)">Оценка: все</button>
+                <button type="button" class="cyc-subj-pill" data-score="none" onclick="selectScore(this)">Без оценки</button>
+                <button type="button" class="cyc-subj-pill" data-score="has" onclick="selectScore(this)">С оценкой</button>
+            </div>
             {% endif %}
             <input type="text" class="cyc-search" id="cyc-search" placeholder="Имя или @username…"
                    autocomplete="off" oninput="filterCycles()">
+            {% if status != 'archive' and user.role_rank >= 4 %}
+            <button type="button" class="cyc-copy-btn" id="cyc-copy-btn" onclick="copyCycleList()">Скопировать список</button>
+            {% endif %}
         </div>
         <div class="cycles-list">
             {% for c in cycles %}
@@ -129,7 +144,9 @@
                    data-subject="{{ c.subject }}"
                    data-name="{{ c.student_name|lower }}"
                    data-username="{{ (c.tg_username or '')|lower }}"
-                   data-fb="{{ c.feedbacks_count }}">
+                   data-fb="{{ c.feedbacks_count }}"
+                   data-score="{{ '1' if c.score is not none else '0' }}"
+                   data-revision="{{ '1' if c.revision_requested else '0' }}">
                     <div class="cyc-row-main">
                         <div class="cyc-ident">
                             <span class="cyc-name">{{ c.student_name }}</span>
@@ -178,8 +195,9 @@
 <script>
 var _cycSubject = '';
 var _cycFb = '';
+var _cycScore = '';
 function selectSubject(btn) {
-    // Сбрасываем active только внутри своей группы — пилюли ОС используют тот же класс.
+    // Сбрасываем active только внутри своей группы — пилюли ОС/оценки используют тот же класс.
     btn.parentNode.querySelectorAll('.cyc-subj-pill').forEach(function (p) { p.classList.remove('active'); });
     btn.classList.add('active');
     _cycSubject = btn.dataset.subject || '';
@@ -191,6 +209,12 @@ function selectFb(btn) {
     _cycFb = btn.dataset.fb || '';
     filterCycles();
 }
+function selectScore(btn) {
+    btn.parentNode.querySelectorAll('.cyc-subj-pill').forEach(function (p) { p.classList.remove('active'); });
+    btn.classList.add('active');
+    _cycScore = btn.dataset.score || '';
+    filterCycles();
+}
 function filterCycles() {
     var q = (document.getElementById('cyc-search').value || '').toLowerCase().trim();
     var qClean = q.replace(/^@/, '');
@@ -200,10 +224,12 @@ function filterCycles() {
         var user = row.dataset.username || '';
         var subj = row.dataset.subject || '';
         var fb = parseInt(row.dataset.fb || '0', 10);
+        var score = row.dataset.score || '0';
         var matchQ = !q || name.indexOf(q) !== -1 || (qClean && user.indexOf(qClean) !== -1);
         var matchS = !_cycSubject || subj === _cycSubject;
         var matchF = !_cycFb || (_cycFb === 'none' ? fb === 0 : fb > 0);
-        var ok = matchQ && matchS && matchF;
+        var matchSc = !_cycScore || (_cycScore === 'none' ? score === '0' : score === '1');
+        var ok = matchQ && matchS && matchF && matchSc;
         row.style.display = ok ? '' : 'none';
         if (ok) shown++;
     });
@@ -211,6 +237,35 @@ function filterCycles() {
     if (count) count.textContent = shown;
     var nores = document.getElementById('cyc-noresults');
     if (nores) nores.style.display = shown ? 'none' : 'block';
+}
+// Копирует видимые (после фильтров) циклы: имя, @username, предмет и чего не хватает.
+function copyCycleList() {
+    var lines = [];
+    document.querySelectorAll('.cyc-row').forEach(function (row) {
+        if (row.style.display === 'none') return;
+        var nameEl = row.querySelector('.cyc-name');
+        var name = nameEl ? nameEl.textContent.trim() : '';
+        var userEl = row.querySelector('.cyc-user');
+        var username = userEl ? ' (' + userEl.textContent.trim() + ')' : '';
+        var subject = row.dataset.subject || '';
+        var missing = [];
+        if (row.dataset.score === '0') missing.push('нет оценки');
+        if (row.dataset.fb === '0') missing.push('нет ОС');
+        if (row.dataset.revision === '1') missing.push('на изменении');
+        var desc = missing.length ? missing.join(', ') : 'всё готово';
+        lines.push(name + username + ' — ' + subject + ': ' + desc);
+    });
+    var btn = document.getElementById('cyc-copy-btn');
+    navigator.clipboard.writeText(lines.join('\n')).then(function () {
+        if (!btn) return;
+        var original = btn.textContent;
+        btn.textContent = 'Скопировано (' + lines.length + ')';
+        btn.classList.add('copied');
+        setTimeout(function () {
+            btn.textContent = original;
+            btn.classList.remove('copied');
+        }, 1500);
+    });
 }
 </script>
 {% endif %}
