@@ -23,7 +23,6 @@ from app.constants import MONTHS, MOCK_SUBJECTS, FEATURE_RETAKE
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
 from app.models.exam_cycle import ExamCycle
-from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.upload_log import UploadLog
 from app.models.work import (
@@ -33,6 +32,7 @@ from app.models.work import (
 )
 from app.services import s3 as s3_service
 from app.services.exam_cycle import (
+    close_or_expire_mock_exam_attempts,
     find_latest_cycle,
     get_active_ticket,
     get_or_create_cycle_for_probnik,
@@ -319,12 +319,11 @@ async def upload_probnik_final(
                 is_locked=True,
                 locked_at=datetime.now(timezone.utc),
             ))
-        # Закрываем активную попытку этого предмета (старый MockExamAttempt flow)
-        db.query(MockExamAttempt).filter(
-            MockExamAttempt.user_id == user["user_id"],
-            MockExamAttempt.subject == subject,
-            MockExamAttempt.completed_at.is_(None),
-        ).update({"completed_at": datetime.now(timezone.utc)}, synchronize_session=False)
+        # MockExamAttempt — снимок билета на момент «Начать пробник» (legacy flow).
+        # Закрываем попытку ТЕКУЩЕГО билета как «сдано» (safety-net для legacy
+        # /upload/mock-exam/start по тому же билету); открытые попытки ДРУГИХ
+        # (старых) билетов этого предмета — устаревшие снимки, помечаем expired_at.
+        close_or_expire_mock_exam_attempts(db, user["user_id"], subject, ticket.id)
         db.commit()
 
     return JSONResponse({

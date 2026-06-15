@@ -23,6 +23,7 @@ from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, MONTHS, TARIFFS, COH
 from app.db.database import get_db
 from app.dependencies import get_current_user, require_admin_role, require_csrf
 from app.models.session import Session
+from app.models.exam_assignment import ExamAssignment, ExamTicket
 from app.models.exam_cycle import ExamCycle
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
@@ -34,9 +35,10 @@ from app.models.work import (
     WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE,
 )
 from app.services import s3 as s3_service
+from app.services.exam_cycle import get_active_ticket, has_submitted_for_ticket
 from app.services.feature_periods import get_active_period
 from app.services.student_access import get_student_for_staff_access
-from app.services.tz import MSK_TZ, msk_midnight
+from app.services.tz import MSK_TZ, msk_midnight, today_msk
 from app.services.utils import compress_image, study_duration_text, group_works, has_case_growth
 from app.tmpl import templates
 
@@ -297,6 +299,45 @@ def students_panel(
         )
         for s in students
     ]
+    # ── Mock exam submission status by active ticket (per subject) ───────────
+    # Оба предмета (Рисунок, Композиция) могут иметь активный билет одновременно —
+    # «сдал» означает сдачу финала по КАЖДОМУ предмету, у которого сейчас есть
+    # активный билет, назначенный этому ученику (резолвер — get_active_ticket).
+    mock_status_available = False
+    submitted_students: list[dict] = []
+    not_submitted_students: list[dict] = []
+    if user["role_rank"] == 2 and students:
+        _today = today_msk()
+        any_ticket_active = db.query(ExamTicket.id).join(
+            ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id
+        ).filter(
+            ExamAssignment.status == "published",
+            ExamAssignment.subject.in_(MOCK_SUBJECTS),
+            ExamTicket.start_date <= _today,
+            ExamTicket.end_date >= _today,
+        ).first() is not None
+
+        if any_ticket_active:
+            mock_status_available = True
+            for s in sidebar_students:
+                pending_subjects = []
+                has_active_ticket = False
+                for subject in MOCK_SUBJECTS:
+                    ticket = get_active_ticket(db, s["id"], subject)
+                    if ticket:
+                        has_active_ticket = True
+                        if not has_submitted_for_ticket(db, s["id"], subject, ticket.id):
+                            pending_subjects.append(subject)
+                if not has_active_ticket:
+                    # У ученика сейчас нет назначенного активного билета —
+                    # не считать «сдал» и не показывать в чейс-листе «не сдали».
+                    continue
+                entry = {
+                    "id": s["id"], "name": s["name"], "tg_username": s["tg_username"],
+                    "pending_subjects": pending_subjects,
+                }
+                (not_submitted_students if pending_subjects else submitted_students).append(entry)
+
     sidebar_title = "Мои ученики" if user["role_rank"] == 2 else "Все ученики"
     valid_tabs = ("portfolio", "mock-exams", "cycles", "statistics")
     show_curator_filter = user["role_rank"] >= 4
@@ -342,6 +383,9 @@ def students_panel(
         "is_admin_panel": is_admin_panel,
         "is_superadmin": user["role_rank"] >= 5,
         "cohort_tag_labels": COHORT_TAG_LABELS,
+        "mock_status_available": mock_status_available,
+        "submitted_students": submitted_students,
+        "not_submitted_students": not_submitted_students,
     })
 
 

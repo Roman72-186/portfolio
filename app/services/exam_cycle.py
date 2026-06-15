@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
 from app.models.exam_cycle import ExamCycle
 from app.models.feedback import Feedback, FeedbackMessage, FeedbackPhoto
+from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.tz import today_msk
@@ -354,3 +355,36 @@ def finish_curator_revision(db: DBSession, cycle: ExamCycle) -> bool:
     cycle.revision_requested_at = None
     db.flush()
     return True
+
+
+def close_or_expire_mock_exam_attempts(
+    db: DBSession, user_id: int, subject: str, ticket_id: int, now: datetime | None = None
+) -> None:
+    """После успешной сдачи Пробника закрывает снимки MockExamAttempt этого предмета.
+
+    Открытая попытка ТЕКУЩЕГО билета (ticket_id) — это и есть данная сдача,
+    помечается completed_at. Открытые попытки ДРУГИХ (старых/архивных) билетов
+    того же предмета — устаревшие снимки от mock_exam_start, не относящиеся к
+    этой сдаче; помечаются expired_at, а не completed_at, чтобы не выглядело
+    так, будто они «сданы» вместе с текущей (см. _is_ticket_still_active в
+    upload.py и exam_scheduler._run_mock_exam_expiry_check).
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    db.query(MockExamAttempt).filter(
+        MockExamAttempt.user_id == user_id,
+        MockExamAttempt.subject == subject,
+        MockExamAttempt.completed_at.is_(None),
+        MockExamAttempt.expired_at.is_(None),
+        MockExamAttempt.ticket_id == ticket_id,
+    ).update({"completed_at": now}, synchronize_session=False)
+    db.query(MockExamAttempt).filter(
+        MockExamAttempt.user_id == user_id,
+        MockExamAttempt.subject == subject,
+        MockExamAttempt.completed_at.is_(None),
+        MockExamAttempt.expired_at.is_(None),
+        or_(
+            MockExamAttempt.ticket_id != ticket_id,
+            MockExamAttempt.ticket_id.is_(None),
+        ),
+    ).update({"expired_at": now}, synchronize_session=False)

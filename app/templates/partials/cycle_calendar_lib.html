@@ -190,6 +190,7 @@ window.CYCCAL = window.CYCCAL || (function () {
         }
         html += '<div class="cal-hero-info">';
         if (w.subject) html += '<div class="cal-hero-line"><strong>Предмет:</strong> '+esc(w.subject)+'</div>';
+        if (w.ticket_title) html += '<div class="cal-hero-line"><strong>Билет:</strong> '+esc(w.ticket_title)+'</div>';
         if (w.cycle_started_at) html += '<div class="cal-hero-line dim">Цикл начат: '+esc(w.cycle_started_at.slice(0,10))+(w.cycle_closed_at ? ' · закрыт '+esc(w.cycle_closed_at.slice(0,10)) : '')+'</div>';
         if (w.comment) html += '<div class="cal-hero-line"><strong>Комментарий:</strong> '+esc(w.comment)+'</div>';
         html += '</div></div>';

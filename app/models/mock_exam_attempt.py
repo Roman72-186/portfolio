@@ -37,6 +37,13 @@ class MockExamAttempt(Base):
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Билет попытки вышел из активного периода (или появился новый билет) до
+    # того, как ученик сдал работу. В отличие от completed_at (реальная сдача),
+    # expired_at — «протухло само», попытка не должна резюмироваться и не
+    # должна получать прогресс-уведомления.
+    expired_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Флаги отправленных уведомлений о прогрессе
     notif_2h_sent: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

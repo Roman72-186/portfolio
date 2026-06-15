@@ -694,6 +694,53 @@
 }
 .hard-filter-options a:hover { color: var(--blue); text-decoration: underline; }
 
+/* ── Mock exam submission status panel ── */
+.mock-status-panel {
+    margin: 8px 16px 0; border: 1.5px solid var(--line);
+    border-radius: var(--r-md); background: var(--surface);
+}
+.mock-status-panel summary {
+    cursor: pointer; user-select: none; list-style: none;
+    padding: 8px 10px; font-size: 12px; font-weight: 700; color: var(--text);
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.mock-status-panel summary::-webkit-details-marker { display: none; }
+.mock-status-panel summary .mock-status-counts { display: flex; gap: 6px; flex-wrap: wrap; }
+.mock-status-count { font-size: 11px; font-weight: 700; border-radius: var(--r-md); padding: 2px 8px; }
+.mock-status-count--ok { background: rgba(34,197,94,0.12); color: #16a34a; }
+.mock-status-count--bad { background: rgba(239,68,68,0.12); color: #dc2626; }
+.mock-status-body { padding: 0 10px 10px; border-top: 1px solid var(--line); }
+.mock-status-cols { display: flex; flex-direction: column; gap: 10px; padding-top: 8px; }
+.mock-status-col-title {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    font-size: 11px; font-weight: 700; color: var(--dim);
+    text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px;
+}
+.mock-status-list {
+    list-style: none; margin: 0; padding: 0;
+    max-height: 160px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 2px;
+}
+.mock-status-list li {
+    font-size: 12px; padding: 3px 0; display: flex; gap: 6px; flex-wrap: wrap;
+}
+.mock-status-username { color: var(--dim); }
+.mock-status-pending {
+    font-size: 11px; font-weight: 700; color: #dc2626;
+    background: rgba(239,68,68,0.10); border-radius: var(--r-md); padding: 1px 6px;
+}
+.mock-status-empty { color: var(--dim); font-style: italic; }
+.mock-status-copy-btn {
+    border: 1px solid var(--blue); background: var(--blue-soft); color: var(--blue);
+    border-radius: var(--r-md); padding: 2px 8px; font-size: 11px; font-weight: 700;
+    cursor: pointer; font-family: inherit;
+}
+.mock-status-copy-btn:hover { background: var(--blue); color: #fff; }
+.mock-status-inactive {
+    margin: 8px 16px 0; padding: 8px 10px; font-size: 12px; color: var(--dim);
+    border: 1.5px solid var(--line); border-radius: var(--r-md); background: var(--surface);
+}
+
 /* ── Profile details ── */
 .profile-details {
     background: var(--surface); border: 1.5px solid var(--line);
@@ -982,6 +1029,46 @@
             <input type="text" class="sidebar-search" placeholder="Имя, @username или VK ID…"
                    oninput="filterSidebar()" id="student-search">
         </div>
+        {% if mock_status_available %}
+        <details class="mock-status-panel">
+            <summary>
+                <span>Пробник: статус сдачи</span>
+                <span class="mock-status-counts">
+                    <span class="mock-status-count mock-status-count--ok">Сдали {{ submitted_students|length }}</span>
+                    <span class="mock-status-count mock-status-count--bad">Не сдали {{ not_submitted_students|length }}</span>
+                </span>
+            </summary>
+            <div class="mock-status-body">
+                <div class="mock-status-cols">
+                    <div>
+                        <div class="mock-status-col-title">Сдали ({{ submitted_students|length }})</div>
+                        <ul class="mock-status-list">
+                            {% for s in submitted_students %}
+                            <li>{{ s.name }}{% if s.tg_username %}<span class="mock-status-username">@{{ s.tg_username }}</span>{% endif %}</li>
+                            {% else %}
+                            <li class="mock-status-empty">Никто не сдал</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    <div>
+                        <div class="mock-status-col-title">
+                            <span>Не сдали ({{ not_submitted_students|length }})</span>
+                            {% if not_submitted_students %}
+                            <button type="button" class="mock-status-copy-btn" onclick="copyNotSubmittedUsernames(this)">Копировать username</button>
+                            {% endif %}
+                        </div>
+                        <ul class="mock-status-list" id="not-submitted-list">
+                            {% for s in not_submitted_students %}
+                            <li data-username="{{ s.tg_username }}">{{ s.name }}{% if s.tg_username %}<span class="mock-status-username">@{{ s.tg_username }}</span>{% endif %}<span class="mock-status-pending">{{ s.pending_subjects|join(', ') }}</span></li>
+                            {% else %}
+                            <li class="mock-status-empty">Все сдали</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </details>
+        {% endif %}
         {% if active_hard_filters %}
         <div class="sidebar-hard-filters">
             {% for f in active_hard_filters %}
@@ -2586,6 +2673,21 @@ function removeServerFilter(btn) {
         u.searchParams.delete(btn.dataset.param);
         location.href = u.toString();
     } catch (e) {}
+}
+
+function copyNotSubmittedUsernames(btn) {
+    var items = document.querySelectorAll('#not-submitted-list li[data-username]');
+    var usernames = [];
+    items.forEach(function(li) {
+        var u = li.getAttribute('data-username');
+        if (u) usernames.push('@' + u);
+    });
+    if (!usernames.length) return;
+    navigator.clipboard.writeText(usernames.join('\n')).then(function() {
+        var orig = btn.textContent;
+        btn.textContent = 'Скопировано!';
+        setTimeout(function() { btn.textContent = orig; }, 2000);
+    });
 }
 
 var _activeTariff = '';

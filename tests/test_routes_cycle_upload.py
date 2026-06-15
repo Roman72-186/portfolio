@@ -91,6 +91,67 @@ def test_probnik_final_creates_single_final_work_and_cycle(auth_client, db):
     assert lock is not None and lock.is_locked is True
 
 
+def test_probnik_final_closes_current_ticket_attempt_and_expires_stale_ones(auth_client, db):
+    """Сдача финала закрывает (completed_at) MockExamAttempt ТЕКУЩЕГО билета, а
+    открытые попытки ДРУГИХ (старых) билетов помечает expired_at — не "сдано".
+
+    Регрессия инцидента user_id=134: blanket completed_at=now() для ЛЮБЫХ
+    открытых попыток маскировал месячную "зависшую" попытку под архивный билет
+    так, будто она была сдана вместе с текущим финалом.
+    """
+    from app.models.exam_assignment import ExamAssignment, ExamTicket
+    from app.models.mock_exam_attempt import MockExamAttempt
+    from datetime import date, timedelta as _td
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    ticket = _create_active_ticket(db, user, "Рисунок")
+
+    # Архивный билет того же предмета — снимок месячной "зависшей" попытки.
+    today = date.today()
+    old_assignment = ExamAssignment(
+        title="Старое задание", subject="Рисунок",
+        created_by_id=user.id, status="archived",
+    )
+    db.add(old_assignment)
+    db.flush()
+    old_ticket = ExamTicket(
+        assignment_id=old_assignment.id, ticket_number=3,
+        title="Билет №3 (архивный)",
+        start_date=today - _td(days=40),
+        end_date=today - _td(days=30),
+        assign_to_all=True,
+    )
+    db.add(old_ticket)
+    db.flush()
+
+    current_attempt = MockExamAttempt(
+        user_id=user.id, subject="Рисунок",
+        ticket_id=ticket.id, ticket_title=ticket.title,
+    )
+    stale_attempt = MockExamAttempt(
+        user_id=user.id, subject="Рисунок",
+        ticket_id=old_ticket.id, ticket_title=old_ticket.title,
+    )
+    db.add_all([current_attempt, stale_attempt])
+    db.commit()
+    current_id, stale_id = current_attempt.id, stale_attempt.id
+
+    resp = _final(client, "Рисунок")
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+
+    db.expire_all()
+    current = db.query(MockExamAttempt).filter(MockExamAttempt.id == current_id).first()
+    stale = db.query(MockExamAttempt).filter(MockExamAttempt.id == stale_id).first()
+
+    assert current.completed_at is not None
+    assert current.expired_at is None
+
+    assert stale.completed_at is None
+    assert stale.expired_at is not None
+
+
 def test_probnik_final_s3_configured_failure_does_not_create_work(auth_client, db):
     from app.models.work import Work
 
@@ -480,3 +541,5 @@ def test_closed_cycle_final_appears_in_portfolio(auth_client, db):
     assert "portfolio-mock-root" in resp.text
     assert '"mock-portfolio"' in resp.text
     assert "final.jpg" in resp.text
+    # ticket_title пробрасывается из ExamCycle.ticket_id -> ExamTicket.title
+    assert '"ticket_title"' in resp.text

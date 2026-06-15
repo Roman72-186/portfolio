@@ -4,29 +4,29 @@
 <style>
 .upload-wrap { max-width: 480px; margin: 0 auto; }
 .upload-drop {
-    border: 2px dashed var(--border); border-radius: 20px; padding: 44px 32px;
-    text-align: center; cursor: pointer; background: var(--card);
+    border: 2px dashed var(--line); border-radius: 20px; padding: 44px 32px;
+    text-align: center; cursor: pointer; background: var(--surface);
     transition: border-color 0.2s, background 0.2s;
     display: flex; flex-direction: column; align-items: center; gap: 12px;
 }
-.upload-drop:hover, .upload-drop.drag-over { border-color: var(--accent); background: var(--accent-soft); }
+.upload-drop:hover, .upload-drop.drag-over { border-color: var(--blue); background: var(--blue-soft); }
 .upload-drop input[type="file"] { display: none; }
 .upload-circle {
     width: 96px; height: 96px; border-radius: 50%;
-    background: #FEF9C3; border: 2px dashed #D97706;
+    background: rgba(217,119,6,0.12); border: 2px dashed var(--warning);
     display: flex; align-items: center; justify-content: center;
-    font-size: 42px; color: #D97706; line-height: 1;
+    font-size: 42px; color: var(--warning); line-height: 1;
     transition: background 0.2s, color 0.2s, transform 0.2s;
 }
-.upload-drop:hover .upload-circle { background: #D97706; color: #fff; transform: scale(1.07); }
-.upload-drop-title { font-size: 15px; font-weight: 700; color: var(--text); }
+.upload-drop:hover .upload-circle { background: var(--warning); color: #fff; transform: scale(1.07); }
+.upload-drop-title { font-size: 15px; font-weight: 700; color: var(--ink); }
 .upload-drop-hint  { font-size: 12px; color: var(--dim); line-height: 1.5; }
 .preview-area { display: none; }
 .preview-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.preview-count { font-size: 14px; font-weight: 700; color: #D97706; }
-.btn-reselect { font-size: 12px; font-weight: 500; color: var(--dim); background: none; border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; cursor: pointer; font-family: 'Montserrat', sans-serif; transition: all 0.2s; }
+.preview-count { font-size: 14px; font-weight: 700; color: var(--warning); }
+.btn-reselect { font-size: 12px; font-weight: 500; color: var(--dim); background: none; border: 1px solid var(--line); border-radius: 20px; padding: 4px 12px; cursor: pointer; transition: all 0.2s; }
 .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.photo-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); }
+.photo-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
 .preview-cell { position: relative; }
 .preview-remove {
     position: absolute; top: 4px; right: 4px;
@@ -39,23 +39,22 @@
 .preview-remove:hover { background: rgba(220,38,38,0.85); }
 .btn-add-more {
     font-size: 12px; font-weight: 500; color: var(--dim);
-    background: none; border: 1px dashed var(--border);
+    background: none; border: 1px dashed var(--line);
     border-radius: 20px; padding: 4px 12px; cursor: pointer;
-    font-family: 'Montserrat', sans-serif;
     transition: border-color 0.2s, color 0.2s;
 }
-.btn-add-more:hover { border-color: #D97706; color: #D97706; }
+.btn-add-more:hover { border-color: var(--warning); color: var(--warning); }
 .subject-btn {
     text-align: center; padding: 12px 16px; border-radius: 12px;
-    border: 2px solid var(--border); background: var(--card);
+    border: 2px solid var(--line); background: var(--surface);
     font-size: 15px; font-weight: 700; color: var(--dim);
     transition: all 0.15s;
 }
 .subject-radio:checked + .subject-btn,
 .subject-btn.subject-active {
-    border-color: #D97706; background: #FEF9C3; color: #D97706;
+    border-color: var(--warning); background: rgba(217,119,6,0.12); color: var(--warning);
 }
-label:hover .subject-btn { border-color: #D97706; color: #D97706; }
+label:hover .subject-btn { border-color: var(--warning); color: var(--warning); }
 .subject-btn.subject-locked {
     opacity: 0.45; cursor: not-allowed; pointer-events: none;
     border-style: dashed;
@@ -64,19 +63,19 @@ label:hover .subject-btn { border-color: #D97706; color: #D97706; }
 
 /* ── Ticket widget ── */
 .ticket-card {
-    border-radius: 14px; border: 1.5px solid rgba(217,119,6,0.35);
-    background: #FFFBEB; padding: 16px 18px; margin-top: 16px;
+    border-radius: 14px; border: 1.5px solid rgba(217,119,6,0.25);
+    background: rgba(217,119,6,0.06); padding: 16px 18px; margin-top: 16px;
     animation: fadeIn 0.3s ease;
 }
 @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
-.ticket-title { font-size: 15px; font-weight: 700; color: #92400E; margin-bottom: 6px; }
-.ticket-desc { font-size: 13px; color: #78350F; line-height: 1.55; white-space: pre-wrap; }
+.ticket-title { font-size: 15px; font-weight: 700; color: var(--warning); margin-bottom: 6px; }
+.ticket-desc { font-size: 13px; color: var(--muted); line-height: 1.55; white-space: pre-wrap; }
 .ticket-img { width: 100%; border-radius: 10px; margin-top: 12px; border: 1px solid rgba(217,119,6,0.2); display: block; }
 
 /* ── Timer widget ── */
 .exam-timer {
     position: fixed; bottom: 80px; right: 16px; z-index: 90;
-    background: #1E293B; color: #fff;
+    background: var(--ink); color: #fff;
     border-radius: 14px; padding: 10px 16px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.25);
     display: none; flex-direction: column; align-items: center; gap: 2px;
@@ -85,7 +84,7 @@ label:hover .subject-btn { border-color: #D97706; color: #D97706; }
 .exam-timer.visible { display: flex; }
 .timer-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.5); }
 .timer-value { font-size: 22px; font-weight: 900; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
-.timer-value.expired { color: #EF4444; font-size: 14px; }
+.timer-value.expired { color: var(--error); font-size: 14px; }
 @media (max-width: 480px) {
     .upload-drop { padding: 28px 20px; }
     .upload-circle { width: 76px; height: 76px; font-size: 34px; }
@@ -133,7 +132,7 @@ label:hover .subject-btn { border-color: #D97706; color: #D97706; }
             <span style="font-size:20px">📅</span>
             <div>
                 <div style="font-size:11px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--dim)">Дата сдачи</div>
-                <div style="font-size:15px;font-weight:700;color:var(--text)">{{ current_date }}</div>
+                <div style="font-size:15px;font-weight:700;color:var(--ink)">{{ current_date }}</div>
             </div>
         </div>
 
@@ -170,9 +169,9 @@ label:hover .subject-btn { border-color: #D97706; color: #D97706; }
 
         <!-- Подготовительное сообщение (показывается после выбора предмета) -->
         <div id="prepBlock" style="display:none">
-            <div style="background:#FFFBEB;border:1.5px solid rgba(217,119,6,0.35);border-radius:14px;padding:18px 20px">
-                <div style="font-size:16px;font-weight:800;color:#92400E;margin-bottom:8px">📝 Подготовьтесь</div>
-                <p style="font-size:14px;color:#78350F;line-height:1.6;margin:0">
+            <div style="background:rgba(217,119,6,0.06);border:1.5px solid rgba(217,119,6,0.25);border-radius:14px;padding:18px 20px">
+                <div style="font-size:16px;font-weight:800;color:var(--warning);margin-bottom:8px">📝 Подготовьтесь</div>
+                <p style="font-size:14px;color:var(--muted);line-height:1.6;margin:0">
                     Приготовьте карандаш и всё необходимое для выполнения пробного экзамена.<br>
                     После нажатия кнопки «Начать» вам будет выдан билет и запущен таймер на 4 часа.
                 </p>
@@ -181,8 +180,8 @@ label:hover .subject-btn { border-color: #D97706; color: #D97706; }
 
         <!-- Start button (shown after subject chosen, when no active attempt yet) -->
         <button type="button" id="startBtn" style="display:none; padding:14px 28px; font-size:15px; font-weight:700;
-                background:linear-gradient(135deg,#D97706,#F59E0B); color:#fff; border:none; border-radius:12px;
-                cursor:pointer; font-family:'Montserrat',sans-serif; transition:opacity 0.15s">
+                background:linear-gradient(135deg,var(--warning),#F59E0B); color:#fff; border:none; border-radius:12px;
+                cursor:pointer; transition:opacity 0.15s">
             ▶ Начать пробник
         </button>
 
@@ -197,7 +196,7 @@ label:hover .subject-btn { border-color: #D97706; color: #D97706; }
                 </label>
                 <label class="upload-drop" id="stageDrop">
                     <input type="file" accept="image/*" multiple id="stageInput">
-                    <div class="upload-circle" style="background:#EEF2FF;border-color:#6366F1;color:#6366F1">☆</div>
+                    <div class="upload-circle" style="background:var(--blue-soft);border-color:var(--blue);color:var(--blue)">☆</div>
                     <div class="upload-drop-title">Добавь этапы работы</div>
                     <div class="upload-drop-hint">Промежуточные фото · до 10 МБ · до {{ max_files }} штук</div>
                 </label>
@@ -234,7 +233,7 @@ label:hover .subject-btn { border-color: #D97706; color: #D97706; }
             </div>
 
             <button type="button" id="submitBtn" class="btn-primary" disabled
-                    style="background:linear-gradient(135deg,#D97706,#F59E0B)">
+                    style="background:linear-gradient(135deg,var(--warning),#F59E0B)">
                 Отправить на проверку
             </button>
             <div id="uploadMsg" style="display:none"></div>
@@ -357,6 +356,7 @@ stageDrop.addEventListener('drop', function(e) {
 
 // ── Отправка: сначала этапные, затем финальное ───────────────────────────────
 var stageUploaded = false;
+var stageCreatedCount = 0;
 
 function updateSubmitState() { submitBtn.disabled = !finalFile; }
 
@@ -364,6 +364,14 @@ function showUploadMsg(text, isError) {
     uploadMsg.style.display = 'block';
     uploadMsg.className = 'alert ' + (isError ? 'alert-error' : 'alert-success');
     uploadMsg.innerHTML = text;
+}
+
+function showUploadError(text) {
+    showUploadMsg(text + ' Если ошибка повторится — обновите страницу (это обновит сессию) и попробуйте снова.', true);
+}
+
+function stageWord(n) {
+    return (n % 10 === 1 && n % 100 !== 11) ? 'этапное фото' : 'этапных фото';
 }
 
 function parseUploadResponse(response) {
@@ -397,18 +405,17 @@ function doUploadIntermediate() {
             if (res.status !== 200 || !j.success) {
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = 'Повторить загрузку этапных';
-                showUploadMsg('Не удалось загрузить этапные: ' +
-                    (j.error || j.detail || 'ошибка') +
-                    '. Проверь фото и нажми повторную загрузку.', true);
+                showUploadError('Не удалось загрузить этапные: ' + (j.error || j.detail || 'ошибка') + '.');
                 return;
             }
             stageUploaded = true;
+            stageCreatedCount = j.created || 0;
             doUploadFinal();
         })
         .catch(function() {
             submitBtn.disabled = false;
             submitBtn.innerHTML = 'Повторить загрузку этапных';
-            showUploadMsg('Этапные не отправились (нет связи). Проверь интернет и попробуй снова.', true);
+            showUploadError('Этапные не отправились (нет связи).');
         });
 }
 
@@ -428,7 +435,7 @@ function doUploadFinal() {
         .then(function(res) {
             var j = res.body;
             if (res.status !== 200 || !j.success) {
-                showUploadMsg(j.error || j.detail || 'Не удалось загрузить финальное фото', true);
+                showUploadError(j.error || j.detail || 'Не удалось загрузить финальное фото.');
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = stageUploaded ? 'Повторить загрузку финального' : 'Отправить на проверку';
                 return;
@@ -436,7 +443,7 @@ function doUploadFinal() {
             finishOk();
         })
         .catch(function() {
-            showUploadMsg('Не удалось связаться с сервером', true);
+            showUploadError('Не удалось связаться с сервером.');
             submitBtn.disabled = false;
             submitBtn.innerHTML = stageUploaded ? 'Повторить загрузку финального' : 'Отправить на проверку';
         });
@@ -453,8 +460,13 @@ submitBtn.addEventListener('click', function() {
 function finishOk() {
     stopTimer();
     submitBtn.innerHTML = 'Готово ✓';
-    showUploadMsg('Работа отправлена на проверку! Куратор проверит и выставит оценку. ' +
-        '<a href="/cabinet" style="font-weight:700">В кабинет →</a>', false);
+    var msg = 'Сдано одно финальное фото';
+    if (stageCreatedCount > 0) {
+        msg += ' и ' + stageCreatedCount + ' ' + stageWord(stageCreatedCount);
+    }
+    msg += '. Ожидайте обратной связи от куратора. ' +
+        '<a href="/cabinet" style="font-weight:700">В кабинет →</a>';
+    showUploadMsg(msg, false);
     setTimeout(function(){ window.location.href = '/cabinet'; }, 1200);
 }
 
@@ -475,7 +487,7 @@ Object.keys(ATTEMPTS).forEach(function(subj){
             // Добавляем хинт «в процессе»
             var hint = document.createElement('span');
             hint.className = 'subject-locked-hint';
-            hint.style.color = '#D97706';
+            hint.style.color = 'var(--warning)';
             hint.textContent = '⏱ в процессе';
             btn.parentNode.appendChild(hint);
         }

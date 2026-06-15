@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Статистика периодов{% endblock %}
+{% block title %}Статистика пробников{% endblock %}
 {% block extra_styles %}
 <style>
 .ss-wrap { max-width: 960px; margin: 0 auto; }
@@ -9,27 +9,30 @@
 .ss-back:hover { color: var(--blue); }
 
 .ss-filters { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
-.ss-filters select { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; min-width: 200px; }
+.ss-filters select { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; min-width: 220px; }
 .ss-filters select:focus { border-color: var(--blue); }
 .ss-filters label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
 .ss-filters button { padding: 8px 16px; background: var(--blue); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
 .ss-filters button:hover { opacity: 0.88; }
+.ss-since { font-size: 12px; color: var(--dim); margin-left: auto; align-self: center; }
 
-.ss-stats-strip { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; margin-bottom: 18px; box-shadow: var(--sh-sm); }
-.ss-stat { padding: 18px 20px; border-right: 1px solid var(--line); }
+/* Поиск по ученику (имя / telegram) — клиентский, по всем секциям */
+.ss-search { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 18px; margin-bottom: 18px; display: flex; align-items: center; gap: 10px; }
+.ss-search-icon { color: var(--dim); font-size: 15px; flex-shrink: 0; }
+.ss-search input { flex: 1; font-family: inherit; font-size: 14px; padding: 9px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; }
+.ss-search input:focus { border-color: var(--blue); }
+.ss-search-clear { background: none; border: none; color: var(--dim); font-size: 18px; cursor: pointer; padding: 0 6px; line-height: 1; display: none; }
+.ss-search-clear:hover { color: var(--text); }
+.ss-search.has-query .ss-search-clear { display: inline-block; }
+.ss-noresults { display: none; padding: 28px; text-align: center; color: var(--dim); font-size: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 14px; }
+
+.ss-stats-strip { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; margin: 0 0 14px; }
+.ss-stat { padding: 16px 18px; border-right: 1px solid var(--line); }
 .ss-stat:last-child { border-right: none; }
-.ss-stat-val { font-size: 32px; font-weight: 900; color: var(--text); line-height: 1; margin-bottom: 4px; }
+.ss-stat-val { font-size: 28px; font-weight: 900; color: var(--text); line-height: 1; margin-bottom: 4px; }
 .ss-stat-lbl { font-size: 12px; color: var(--dim); font-weight: 500; }
 
-.ss-two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
-.ss-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; box-shadow: var(--sh-sm); }
-.ss-panel-header { padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; }
-.ss-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 13px; }
-.ss-row:last-child { border-bottom: none; }
-.ss-row-lbl { color: var(--text); }
-.ss-row-val { font-weight: 900; color: var(--blue); }
-
-.ss-table-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; box-shadow: var(--sh-sm); margin-bottom: 18px; }
+.ss-table-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; margin-bottom: 14px; }
 .ss-table { width: 100%; border-collapse: collapse; }
 .ss-table th { text-align: left; padding: 11px 14px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); border-bottom: 1px solid var(--line); background: var(--bg); }
 .ss-table td { padding: 9px 14px; font-size: 13px; color: var(--text); border-bottom: 1px solid var(--line); }
@@ -37,273 +40,382 @@
 .ss-table tr:hover td { background: var(--bg); }
 
 .type-badge { display: inline-flex; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
-.tb-before { background: rgba(220,38,38,0.08);  color: var(--error); }
-.tb-after  { background: rgba(5,150,105,0.08);  color: var(--ok); }
-.tb-mock   { background: rgba(217,119,6,0.1);   color: var(--warning); }
-.tb-retake { background: rgba(124,58,237,0.08); color: #7C3AED; }
-
-.ss-period-info { background: rgba(37,99,235,0.05); border: 1.5px solid rgba(37,99,235,0.15); border-radius: var(--r-md); padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: var(--text); }
-.ss-period-info strong { color: var(--blue); }
-
-.ss-empty { padding: 40px; text-align: center; color: var(--dim); font-size: 14px; }
+.tb-mock { background: rgba(217,119,6,0.1); color: var(--warning); }
 
 .ss-export-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: #059669; color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; text-decoration: none; }
 .ss-export-btn:hover { opacity: 0.88; }
 
-.ss-tariff-section { margin-bottom: 14px; }
-.ss-tariff-header { padding: 12px 16px; display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md) 14px 0 0; border-bottom: none; cursor: pointer; }
-.ss-tariff-header-name { font-size: 14px; font-weight: 800; color: var(--text); flex: 1; }
-.ss-tariff-header-count { font-size: 12px; color: var(--dim); }
-.ss-tariff-badge { display: inline-block; padding: 2px 10px; border-radius: var(--r-xl); font-size: 11px; font-weight: 700; background: rgba(37,99,235,0.1); color: var(--blue); }
-.ss-tariff-body { background: var(--surface); border: 1px solid var(--line); border-radius: 0 0 14px 14px; overflow: hidden; }
+.ss-empty { padding: 28px; text-align: center; color: var(--dim); font-size: 14px; }
+
+/* Нативные сворачиваемые секции (<details>) — раскрытие только по клику */
+.ss-acc { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 14px; overflow: hidden; box-shadow: var(--sh-sm); }
+.ss-acc > summary { list-style: none; cursor: pointer; padding: 15px 18px; display: flex; align-items: center; gap: 11px; font-size: 14px; font-weight: 800; color: var(--text); user-select: none; }
+.ss-acc > summary::-webkit-details-marker { display: none; }
+.ss-acc > summary::before { content: "▸"; color: var(--dim); font-size: 11px; transition: transform 0.15s; }
+.ss-acc[open] > summary::before { transform: rotate(90deg); }
+.ss-acc > summary:hover { color: var(--blue); }
+.ss-acc-badge { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--dim); }
+.ss-acc-body { border-top: 1px solid var(--line); padding: 14px; }
+.ss-acc-body > .ss-table-wrap:last-child,
+.ss-acc-body > .ss-sub:last-child { margin-bottom: 0; }
+
+.ss-sub { margin-bottom: 14px; }
+.ss-sub-head { padding: 10px 14px; font-size: 12px; font-weight: 800; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-bottom: none; border-radius: var(--r-md) var(--r-md) 0 0; display: flex; align-items: center; justify-content: space-between; }
+.ss-sub-head .ss-sub-count { font-size: 11px; font-weight: 700; color: var(--dim); }
+.ss-sub .ss-table { border: 1px solid var(--line); border-radius: 0 0 var(--r-md) var(--r-md); }
 
 @media (max-width: 768px) {
     .ss-stats-strip { grid-template-columns: 1fr 1fr; }
     .ss-stat:nth-child(2) { border-right: none; }
     .ss-stat:nth-child(1), .ss-stat:nth-child(2) { border-bottom: 1px solid var(--line); }
-    .ss-two { grid-template-columns: 1fr; }
 }
 </style>
 {% endblock %}
 {% block content %}
+{% set tariff_keys = (tariffs if tariffs else []) %}
+{% set status_total = status.by_tariff_mock_status.values() | map('length') | sum %}
+{% set ns_total = status.not_submitted_by_tariff.values() | map('length') | sum %}
 <div class="ss-wrap">
 
     <div class="ss-header">
         <a href="/cabinet" class="ss-back">← Дашборд</a>
-        <div class="ss-title">Статистика периодов</div>
+        <div class="ss-title">Статистика пробников</div>
     </div>
 
-    <!-- Filters -->
+    <!-- Фильтры -->
     <form method="get" action="/cabinet/superadmin/stats" class="ss-filters">
         <label>
             Период
-            <select name="period_id">
-                <option value="">— Все работы —</option>
+            <select name="period_id" onchange="this.form.submit()">
+                <option value="">— Все пробники —</option>
                 {% for p in periods %}
                 <option value="{{ p.id }}" {% if selected_period_id == p.id %}selected{% endif %}>
-                    {{ feature_labels.get(p.feature, p.feature) }}
-                    {% if p.title %} · {{ p.title }}{% endif %}
-                    ({{ p.start_date.strftime('%d.%m.%Y') }} – {{ p.end_date.strftime('%d.%m.%Y') }})
-                    {% if not p.is_active %} [закрыт]{% endif %}
+                    {% if p.title %}{{ p.title }} · {% endif %}{{ p.start_date.strftime('%d.%m.%Y') }} – {{ p.end_date.strftime('%d.%m.%Y') }}{% if not p.is_active %} [закрыт]{% endif %}
                 </option>
                 {% endfor %}
             </select>
         </label>
-        <label>
-            Тип фичи
-            <select name="feature">
-                <option value="">— Все типы —</option>
-                {% for feat, lbl in feature_labels.items() %}
-                <option value="{{ feat }}" {% if selected_feature == feat %}selected{% endif %}>{{ lbl }}</option>
-                {% endfor %}
-            </select>
-        </label>
         <button type="submit">Показать</button>
-        <a class="ss-export-btn" href="/cabinet/superadmin/stats/export{% if selected_period_id or selected_feature %}?{% endif %}{% if selected_period_id %}period_id={{ selected_period_id }}{% endif %}{% if selected_period_id and selected_feature %}&{% endif %}{% if selected_feature %}feature={{ selected_feature }}{% endif %}">⬇ Excel</a>
+        <a class="ss-export-btn" href="/cabinet/superadmin/stats/export{% if selected_period_id %}?period_id={{ selected_period_id }}{% endif %}">⬇ Excel</a>
+        <span class="ss-since">Данные с 13.06.2026</span>
     </form>
 
-    {% if stats.period %}
-    <div class="ss-period-info">
-        Период: <strong>{{ feature_labels.get(stats.period.feature, stats.period.feature) }}</strong>
-        {% if stats.period.title %} · {{ stats.period.title }}{% endif %}
-        · {{ stats.period.start_date.strftime('%d.%m.%Y') }} – {{ stats.period.end_date.strftime('%d.%m.%Y') }}
+    <!-- Поиск по ученику (имя или Telegram) — фильтрует все секции -->
+    <div class="ss-search" id="ss-search">
+        <span class="ss-search-icon">🔍</span>
+        <input type="text" id="ss-search-input" placeholder="Поиск по имени или Telegram — по всем вкладкам…" autocomplete="off">
+        <button type="button" class="ss-search-clear" id="ss-search-clear" title="Очистить">×</button>
     </div>
-    {% endif %}
+    <div class="ss-noresults" id="ss-noresults">Никого не нашли по запросу</div>
 
-    <!-- Summary -->
-    <div class="ss-stats-strip">
-        <div class="ss-stat">
-            <div class="ss-stat-val">{{ stats.total }}</div>
-            <div class="ss-stat-lbl">Всего работ</div>
-        </div>
-        <div class="ss-stat">
-            <div class="ss-stat-val">{{ stats.submissions | map(attribute='student_id') | list | unique | list | length }}</div>
-            <div class="ss-stat-lbl">Уникальных учеников</div>
-        </div>
-        <div class="ss-stat">
-            {% set scored = stats.submissions | selectattr('score') | list %}
-            <div class="ss-stat-val">
-                {% if scored %}{{ (scored | map(attribute='score') | sum / scored | length) | round(1) }}{% else %}—{% endif %}
+    <!-- 1. Статус пробников по тарифам -->
+    <details class="ss-acc">
+        <summary>Статус пробников по тарифам</summary>
+        <div class="ss-acc-body">
+            {% set status_keys = tariff_keys + (['—'] if status.by_tariff_mock_status.get('—') else []) %}
+            {% if status_total > 0 %}
+            {% for tariff in status_keys %}
+            {% set students = status.by_tariff_mock_status.get(tariff, []) %}
+            {% if students %}
+            <div class="ss-sub">
+                <div class="ss-sub-head">{{ tariff }} <span class="ss-sub-count">{{ students | length }} уч.</span></div>
+                <table class="ss-table">
+                    <thead>
+                        <tr>
+                            <th>Ученик</th>
+                            <th>VK ID</th>
+                            <th>Telegram</th>
+                            <th style="text-align:center">Рисунок</th>
+                            <th style="text-align:center">Композиция</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for s in students %}
+                    <tr data-search="{{ (s.student_name ~ ' ' ~ (s.tg_username | default('') | replace('@', ''))) | lower }}">
+                        <td><a href="/cabinet/superadmin/users?q={{ s.student_name }}" style="color:var(--blue);text-decoration:none;font-weight:700">{{ s.student_name }}</a></td>
+                        <td style="color:var(--dim);font-size:12px;font-family:monospace">{{ s.vk_id }}</td>
+                        <td style="color:var(--dim);font-size:12px">{% if s.tg_username %}{% if not s.tg_username.startswith('@') %}@{% endif %}{{ s.tg_username }}{% else %}—{% endif %}</td>
+                        <td style="text-align:center">{% if s.risunok %}<span style="color:#059669;font-weight:700;font-size:15px">✓</span>{% else %}<span style="color:#DC2626;font-weight:700;font-size:15px">✗</span>{% endif %}</td>
+                        <td style="text-align:center">{% if s.kompoziciya %}<span style="color:#059669;font-weight:700;font-size:15px">✓</span>{% else %}<span style="color:#DC2626;font-weight:700;font-size:15px">✗</span>{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
             </div>
-            <div class="ss-stat-lbl">Средний балл</div>
-        </div>
-    </div>
-
-    {% if stats.total > 0 %}
-    <div class="ss-two">
-        <!-- By type -->
-        <div class="ss-panel">
-            <div class="ss-panel-header">По типу работ</div>
-            {% for wtype, cnt in stats.by_type.items() %}
-            <div class="ss-row">
-                <span class="ss-row-lbl">
-                    {% if wtype == 'before' %}<span class="type-badge tb-before">До</span>
-                    {% elif wtype == 'after' %}<span class="type-badge tb-after">После</span>
-                    {% elif wtype == 'mock_exam' %}<span class="type-badge tb-mock">Пробник</span>
-                    {% elif wtype == 'retake' %}<span class="type-badge tb-retake">Пересдача</span>
-                    {% else %}{{ wtype }}{% endif %}
-                </span>
-                <span class="ss-row-val">{{ cnt }}</span>
-            </div>
+            {% endif %}
             {% endfor %}
-            {% if stats.by_mock_subject %}
-            <div style="padding:8px 16px 4px;font-size:11px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.06em;border-top:1px solid var(--line)">Пробники по предмету</div>
-            {% for subj, cnt in stats.by_mock_subject.items() %}
-            <div class="ss-row" style="padding-left:28px">
-                <span class="ss-row-lbl" style="font-size:12px">{{ subj }}</span>
-                <span class="ss-row-val">{{ cnt }}</span>
-            </div>
-            {% endfor %}
+            {% else %}
+            <div class="ss-empty">Пока нет активных учеников</div>
             {% endif %}
         </div>
-        <!-- By tariff -->
-        <div class="ss-panel">
-            <div class="ss-panel-header">По тарифу</div>
-            {% for tariff, cnt in stats.by_tariff.items() %}
-            <div class="ss-row">
-                <span class="ss-row-lbl">{{ tariff }}</span>
-                <span class="ss-row-val">{{ cnt }}</span>
+    </details>
+
+    <!-- 2. Не сдали хотя бы один предмет -->
+    <details class="ss-acc">
+        <summary>Не сдали хотя бы один предмет</summary>
+        <div class="ss-acc-body">
+            {% set ns_keys = tariff_keys + (['—'] if status.not_submitted_by_tariff.get('—') else []) %}
+            {% if ns_total > 0 %}
+            {% for tariff in ns_keys %}
+            {% set ns_students = status.not_submitted_by_tariff.get(tariff, []) %}
+            {% if ns_students %}
+            <div class="ss-sub">
+                <div class="ss-sub-head">{{ tariff }} <span class="ss-sub-count">{{ ns_students | length }} уч.</span></div>
+                <table class="ss-table">
+                    <thead>
+                        <tr>
+                            <th>Ученик</th>
+                            <th>VK ID</th>
+                            <th>Telegram</th>
+                            <th style="text-align:center">Рисунок</th>
+                            <th style="text-align:center">Композиция</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for s in ns_students %}
+                    <tr data-search="{{ (s.student_name ~ ' ' ~ (s.tg_username | default('') | replace('@', ''))) | lower }}">
+                        <td><a href="/cabinet/superadmin/users?q={{ s.student_name }}" style="color:var(--blue);text-decoration:none;font-weight:700">{{ s.student_name }}</a></td>
+                        <td style="color:var(--dim);font-size:12px;font-family:monospace">{{ s.vk_id }}</td>
+                        <td style="color:var(--dim);font-size:12px">{% if s.tg_username %}{% if not s.tg_username.startswith('@') %}@{% endif %}{{ s.tg_username }}{% else %}—{% endif %}</td>
+                        <td style="text-align:center">{% if s.risunok %}<span style="color:#059669;font-weight:700;font-size:15px">✓</span>{% else %}<span style="color:#DC2626;font-weight:700;font-size:15px">✗</span>{% endif %}</td>
+                        <td style="text-align:center">{% if s.kompoziciya %}<span style="color:#059669;font-weight:700;font-size:15px">✓</span>{% else %}<span style="color:#DC2626;font-weight:700;font-size:15px">✗</span>{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+            {% endfor %}
+            {% else %}
+            <div class="ss-empty">Все сдали оба предмета 🎉</div>
+            {% endif %}
+        </div>
+    </details>
+
+    <!-- 3. Полученные билеты -->
+    <details class="ss-acc">
+        <summary>Полученные билеты</summary>
+        <div class="ss-acc-body">
+            {% if ticket_stats and ticket_stats.applicable and ticket_stats.total_receipts > 0 %}
+            <!-- Агрегат: сколько учеников получили каждый билет -->
+            <div class="ss-table-wrap ss-hide-on-search">
+                <div style="padding:11px 14px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.06em">Сколько учеников получили каждый билет</div>
+                <table class="ss-table">
+                    <thead>
+                        <tr>
+                            <th>Билет</th>
+                            <th>Предмет</th>
+                            <th style="text-align:center">Учеников</th>
+                            <th style="text-align:center">Выдач</th>
+                            <th>Последняя выдача</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for t in ticket_stats.by_ticket %}
+                    <tr>
+                        <td style="font-weight:700">{{ t.ticket_title }}{% if t.deleted %} <span style="color:var(--dim);font-weight:500;font-size:11px">(удалён)</span>{% endif %}</td>
+                        <td>{% if t.subject %}<span class="type-badge tb-mock">{{ t.subject }}</span>{% else %}<span style="color:var(--dim)">—</span>{% endif %}</td>
+                        <td style="text-align:center;font-weight:900;color:var(--blue)">{{ t.student_count }}</td>
+                        <td style="text-align:center;color:var(--dim)">{{ t.attempt_count }}</td>
+                        <td style="color:var(--dim);font-size:12px">{{ t.last_at.strftime('%d.%m.%Y %H:%M') if t.last_at else '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <!-- Детально: кто, какой билет и когда получил -->
+            <div class="ss-table-wrap">
+                <div style="padding:11px 14px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.06em;display:flex;justify-content:space-between;align-items:center">
+                    Кто и когда получил билет
+                    <span style="font-weight:500;text-transform:none;font-size:12px">первые {{ ticket_stats.receipts | length }} записей · время МСК</span>
+                </div>
+                <table class="ss-table">
+                    <thead>
+                        <tr><th>Ученик</th><th>Билет</th><th>Предмет</th><th>Дата и время</th></tr>
+                    </thead>
+                    <tbody>
+                    {% for r in ticket_stats.receipts %}
+                    <tr data-search="{{ r.student_name | lower }}">
+                        <td><a href="/cabinet/superadmin/users?q={{ r.student_name }}" style="color:var(--blue);text-decoration:none;font-weight:700">{{ r.student_name }}</a></td>
+                        <td>{{ r.ticket_title }}</td>
+                        <td>{% if r.subject %}<span class="type-badge tb-mock">{{ r.subject }}</span>{% else %}<span style="color:var(--dim)">—</span>{% endif %}</td>
+                        <td style="color:var(--dim);font-size:12px">{{ r.started_at.strftime('%d.%m.%Y %H:%M') if r.started_at else '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="ss-empty">Пока никто не получал билеты</div>
+            {% endif %}
+        </div>
+    </details>
+
+    <!-- 4. Пробники и обратная связь -->
+    <details class="ss-acc">
+        <summary>Пробники и обратная связь</summary>
+        <div class="ss-acc-body">
+            {% if feedback_table and feedback_table.applicable and feedback_table.total > 0 %}
+            <div class="ss-stats-strip ss-hide-on-search">
+                <div class="ss-stat">
+                    <div class="ss-stat-val">{{ feedback_table.total }}</div>
+                    <div class="ss-stat-lbl">Сдач пробников</div>
+                </div>
+                <div class="ss-stat">
+                    <div class="ss-stat-val">{{ feedback_table.with_feedback }}</div>
+                    <div class="ss-stat-lbl">С обратной связью</div>
+                </div>
+                <div class="ss-stat">
+                    <div class="ss-stat-val">{% if feedback_table.avg_score is not none %}{{ feedback_table.avg_score }}{% else %}—{% endif %}</div>
+                    <div class="ss-stat-lbl">Средний балл</div>
+                </div>
+            </div>
+            <div class="ss-table-wrap">
+                <div style="padding:11px 14px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.06em;display:flex;justify-content:space-between;align-items:center">
+                    Таблица сдач и ОС
+                    <span style="font-weight:500;text-transform:none;font-size:12px">первые {{ feedback_table.rows | length }} из {{ feedback_table.total }} · время МСК · полная таблица и текст ОС — в Excel</span>
+                </div>
+                <table class="ss-table">
+                    <thead>
+                        <tr>
+                            <th>Ученик</th>
+                            <th>Предмет</th>
+                            <th>Билет</th>
+                            <th style="text-align:center">Балл</th>
+                            <th>Куратор</th>
+                            <th>Сдача</th>
+                            <th>ОС</th>
+                            <th>Обратная связь</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for r in feedback_table.rows %}
+                    <tr data-search="{{ r.student_name | lower }}">
+                        <td><a href="/cabinet/superadmin/users?q={{ r.student_name }}" style="color:var(--blue);text-decoration:none;font-weight:700">{{ r.student_name }}</a></td>
+                        <td>{% if r.subject %}<span class="type-badge tb-mock">{{ r.subject }}</span>{% else %}<span style="color:var(--dim)">—</span>{% endif %}</td>
+                        <td>{{ r.ticket_title or '—' }}</td>
+                        <td style="text-align:center">{% if r.score is not none %}<span style="font-weight:700;color:#D97706">{{ r.score | int }}</span>{% else %}<span style="color:var(--dim)">—</span>{% endif %}</td>
+                        <td style="color:var(--dim);font-size:12px">{{ r.curator_name or '—' }}</td>
+                        <td style="color:var(--dim);font-size:12px">{{ r.submitted_at.strftime('%d.%m.%Y %H:%M') if r.submitted_at else '—' }}</td>
+                        <td style="color:var(--dim);font-size:12px">{{ r.feedback_at.strftime('%d.%m.%Y %H:%M') if r.feedback_at else '—' }}</td>
+                        <td style="max-width:280px">
+                            {% if r.feedback_text %}
+                            <span title="{{ r.feedback_text }}" style="display:block;max-height:3.2em;overflow:hidden;color:var(--text);font-size:12px;white-space:pre-line">{{ r.feedback_text }}</span>
+                            {% else %}<span style="color:var(--dim)">—</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="ss-empty">Пока нет сданных пробников</div>
+            {% endif %}
+        </div>
+    </details>
+
+    <!-- 5. Статистика по баллам -->
+    <details class="ss-acc">
+        <summary>Статистика по баллам</summary>
+        <div class="ss-acc-body">
+            {% if score_stats and score_stats.applicable %}
+            {% for subject, data in score_stats.by_subject.items() %}
+            <div class="ss-sub">
+                <div class="ss-sub-head">{{ subject }} <span class="ss-sub-count">Сдали всего: {{ data.total }}</span></div>
+                <table class="ss-table">
+                    <thead>
+                        <tr>
+                            {% for r in data.ranges %}<th style="text-align:center">{{ r.label }}</th>{% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            {% for r in data.ranges %}<td style="text-align:center;font-weight:900;color:var(--blue)">{{ r.count }}</td>{% endfor %}
+                        </tr>
+                    </tbody>
+                </table>
             </div>
             {% endfor %}
+            {% else %}
+            <div class="ss-empty">Статистика по баллам недоступна для выбранного периода</div>
+            {% endif %}
         </div>
-    </div>
-
-    <!-- Per-tariff: mock exam status per student -->
-    {% set all_tariff_keys = (tariffs if tariffs else []) + (['—'] if stats.by_tariff_mock_status.get('—') else []) %}
-    {% if stats.by_tariff_mock_status %}
-    <div style="margin-bottom:8px;font-size:12px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.06em;">Ученики по тарифам — статус пробников</div>
-    {% for tariff in all_tariff_keys %}
-    {% set students = stats.by_tariff_mock_status.get(tariff, []) %}
-    {% if students %}
-    <div class="ss-tariff-section">
-        <div class="ss-tariff-header">
-            <span class="ss-tariff-header-name">{{ tariff }}</span>
-            <span class="ss-tariff-badge">{{ students | length }} уч.</span>
-        </div>
-        <div class="ss-tariff-body">
-            <table class="ss-table">
-                <thead>
-                    <tr>
-                        <th>Ученик</th>
-                        <th>VK ID</th>
-                        <th>Telegram</th>
-                        <th style="text-align:center">Рисунок</th>
-                        <th style="text-align:center">Композиция</th>
-                    </tr>
-                </thead>
-                <tbody>
-                {% for s in students %}
-                <tr>
-                    <td><a href="/cabinet/superadmin/users?q={{ s.student_name }}" style="color:var(--blue);text-decoration:none;font-weight:700">{{ s.student_name }}</a></td>
-                    <td style="color:var(--dim);font-size:12px;font-family:monospace">{{ s.vk_id }}</td>
-                    <td style="color:var(--dim);font-size:12px">{% if s.tg_username %}{% if not s.tg_username.startswith('@') %}@{% endif %}{{ s.tg_username }}{% else %}—{% endif %}</td>
-                    <td style="text-align:center">
-                        {% if s.risunok %}<span style="color:#059669;font-weight:700;font-size:15px">✓</span>{% else %}<span style="color:#DC2626;font-weight:700;font-size:15px">✗</span>{% endif %}
-                    </td>
-                    <td style="text-align:center">
-                        {% if s.kompoziciya %}<span style="color:#059669;font-weight:700;font-size:15px">✓</span>{% else %}<span style="color:#DC2626;font-weight:700;font-size:15px">✗</span>{% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    {% endif %}
-    {% endfor %}
-    {% endif %}
-
-    <!-- Not submitted at least one mock subject -->
-    {% set ns_total = stats.not_submitted_by_tariff.values() | map('length') | sum %}
-    {% if ns_total > 0 %}
-    <div style="margin-bottom:8px;font-size:12px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.06em;">Не сдали хотя бы один предмет — {{ ns_total }} уч.</div>
-    {% for tariff in (tariffs if tariffs else []) + (['—'] if stats.not_submitted_by_tariff.get('—') else []) %}
-    {% set ns_students = stats.not_submitted_by_tariff.get(tariff, []) %}
-    {% if ns_students %}
-    <div class="ss-tariff-section">
-        <div class="ss-tariff-header" style="background:rgba(220,38,38,0.04)">
-            <span class="ss-tariff-header-name">{{ tariff }}</span>
-            <span class="ss-tariff-badge" style="background:rgba(220,38,38,0.1);color:#DC2626">{{ ns_students | length }} уч.</span>
-        </div>
-        <div class="ss-tariff-body">
-            <table class="ss-table">
-                <thead>
-                    <tr>
-                        <th>Ученик</th>
-                        <th>VK ID</th>
-                        <th>Telegram</th>
-                        <th style="text-align:center">Рисунок</th>
-                        <th style="text-align:center">Композиция</th>
-                    </tr>
-                </thead>
-                <tbody>
-                {% for s in ns_students %}
-                <tr>
-                    <td><a href="/cabinet/superadmin/users?q={{ s.student_name }}" style="color:var(--blue);text-decoration:none;font-weight:700">{{ s.student_name }}</a></td>
-                    <td style="color:var(--dim);font-size:12px;font-family:monospace">{{ s.vk_id }}</td>
-                    <td style="color:var(--dim);font-size:12px">{% if s.tg_username %}{% if not s.tg_username.startswith('@') %}@{% endif %}{{ s.tg_username }}{% else %}—{% endif %}</td>
-                    <td style="text-align:center">
-                        {% if s.risunok %}<span style="color:#059669;font-weight:700;font-size:15px">✓</span>{% else %}<span style="color:#DC2626;font-weight:700;font-size:15px">✗</span>{% endif %}
-                    </td>
-                    <td style="text-align:center">
-                        {% if s.kompoziciya %}<span style="color:#059669;font-weight:700;font-size:15px">✓</span>{% else %}<span style="color:#DC2626;font-weight:700;font-size:15px">✗</span>{% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-    {% endif %}
-    {% endfor %}
-    {% endif %}
-
-    <!-- Submissions table -->
-    <div class="ss-table-wrap">
-        <div style="padding:12px 16px;border-bottom:1px solid var(--line);font-size:12px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.06em;display:flex;justify-content:space-between;align-items:center">
-            Список сдач
-            <span style="font-weight:500;text-transform:none;font-size:12px">первые {{ stats.submissions | length }} записей</span>
-        </div>
-        <table class="ss-table">
-            <thead>
-                <tr>
-                    <th>Ученик</th>
-                    <th>Тип</th>
-                    <th>Тариф</th>
-                    <th>Дата сдачи</th>
-                    <th>Балл</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for s in stats.submissions %}
-            <tr>
-                <td><a href="/cabinet/superadmin/users?q={{ s.student_name }}" style="color:var(--blue);text-decoration:none;font-weight:700">{{ s.student_name }}</a></td>
-                <td>
-                    {% if s.work_type == 'before' %}<span class="type-badge tb-before">До</span>
-                    {% elif s.work_type == 'after' %}<span class="type-badge tb-after">После</span>
-                    {% elif s.work_type == 'mock_exam' %}<span class="type-badge tb-mock">Пробник</span>
-                    {% elif s.work_type == 'retake' %}<span class="type-badge tb-retake">Пересдача</span>
-                    {% else %}{{ s.work_type }}{% endif %}
-                </td>
-                <td style="color:var(--dim);font-size:12px">{{ s.tariff }}</td>
-                <td style="color:var(--dim);font-size:12px">{{ s.created_at.strftime('%d.%m.%Y %H:%M') if s.created_at else '—' }}</td>
-                <td>
-                    {% if s.score is not none %}
-                    <span style="font-weight:700;color:#D97706">{{ s.score | int }}</span>
-                    {% else %}
-                    <span style="color:var(--dim)">—</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% else %}
-    <div class="ss-table-wrap">
-        <div class="ss-empty">Работ за выбранный период нет</div>
-    </div>
-    {% endif %}
+    </details>
 
 </div>
+
+<script>
+(function () {
+    var box = document.getElementById('ss-search');
+    var input = document.getElementById('ss-search-input');
+    var clearBtn = document.getElementById('ss-search-clear');
+    var noResults = document.getElementById('ss-noresults');
+    if (!input) return;
+
+    var accs = Array.prototype.slice.call(document.querySelectorAll('.ss-acc'));
+    // Запомнить исходное состояние раскрытия секций, чтобы вернуть его при очистке
+    var defaultOpen = accs.map(function (a) { return a.open; });
+
+    function applyFilter() {
+        var q = input.value.trim().toLowerCase().replace(/^@+/, '');
+        var active = q.length > 0;
+        box.classList.toggle('has-query', active);
+
+        var anyMatch = false;
+
+        accs.forEach(function (acc, idx) {
+            var accHasMatch = false;
+
+            // Строки с учениками
+            acc.querySelectorAll('tr[data-search]').forEach(function (tr) {
+                var match = !active || tr.getAttribute('data-search').indexOf(q) !== -1;
+                tr.style.display = match ? '' : 'none';
+                if (match && active) accHasMatch = true;
+            });
+
+            // Под-блоки по тарифам (.ss-sub) — прячем, если в них нет совпадений
+            acc.querySelectorAll('.ss-sub').forEach(function (sub) {
+                if (!active) { sub.style.display = ''; return; }
+                var visible = Array.prototype.some.call(
+                    sub.querySelectorAll('tr[data-search]'),
+                    function (tr) { return tr.style.display !== 'none'; }
+                );
+                sub.style.display = visible ? '' : 'none';
+            });
+
+            // Таблицы с учениками (билеты/ОС) — прячем заголовок, если строк не осталось
+            acc.querySelectorAll('.ss-table-wrap').forEach(function (wrap) {
+                var rows = wrap.querySelectorAll('tr[data-search]');
+                if (!rows.length) return; // агрегатные таблицы обрабатываются ниже
+                if (!active) { wrap.style.display = ''; return; }
+                var visible = Array.prototype.some.call(rows, function (tr) {
+                    return tr.style.display !== 'none';
+                });
+                wrap.style.display = visible ? '' : 'none';
+            });
+
+            // Агрегатные блоки (итоги, таблица по билетам) — нерелевантны при поиске
+            acc.querySelectorAll('.ss-hide-on-search').forEach(function (el) {
+                el.style.display = active ? 'none' : '';
+            });
+
+            if (active) {
+                acc.open = accHasMatch;
+                if (accHasMatch) anyMatch = true;
+            } else {
+                acc.open = defaultOpen[idx];
+            }
+        });
+
+        if (noResults) noResults.style.display = (active && !anyMatch) ? 'block' : 'none';
+    }
+
+    input.addEventListener('input', applyFilter);
+    if (clearBtn) clearBtn.addEventListener('click', function () {
+        input.value = '';
+        applyFilter();
+        input.focus();
+    });
+})();
+</script>
 {% endblock %}

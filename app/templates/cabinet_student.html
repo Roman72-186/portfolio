@@ -320,6 +320,81 @@
 @media (max-width: 400px) {
     .mock-continue-btn { padding: 8px 12px; font-size: 12px; }
 }
+
+/* ── Что дальше (hero next-action) ── */
+.next-card {
+    border-radius: var(--r-lg);
+    padding: 22px 24px;
+    margin-bottom: 20px;
+}
+.next-card--blue {
+    background: linear-gradient(165deg, #6F8BFF 0%, var(--blue) 100%);
+    box-shadow: var(--sh-blue);
+    color: #fff;
+}
+.next-card--neutral {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: var(--sh-sm);
+}
+.next-card-title {
+    font-family: var(--font-display);
+    font-size: 17px; font-weight: 700;
+    letter-spacing: -0.015em;
+    margin-bottom: 10px;
+}
+.next-card--neutral .next-card-title { color: var(--ink); }
+.next-card-chips {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-bottom: 14px;
+}
+.next-card-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 12px; border-radius: var(--r-pill);
+    font-size: 12px; font-weight: 700;
+    background: rgba(255,255,255,0.16);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.28);
+}
+.next-card-note {
+    font-size: 13px; line-height: 1.55;
+    color: rgba(255,255,255,0.85);
+    margin-bottom: 14px;
+}
+.next-card-cta {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 20px; border-radius: var(--r-pill);
+    font-size: 13px; font-weight: 700; text-decoration: none;
+    transition: background var(--duration-fast) var(--ease-out), filter var(--duration-fast) var(--ease-out);
+}
+.next-card--blue .next-card-cta {
+    background: rgba(255,255,255,0.16);
+    border: 1px solid rgba(255,255,255,0.28);
+    color: #fff;
+}
+.next-card--blue .next-card-cta:hover { background: rgba(255,255,255,0.26); opacity: 1; }
+.next-card--neutral .next-card-cta {
+    background: var(--blue); color: #fff; box-shadow: var(--sh-blue);
+}
+.next-card--neutral .next-card-cta:hover { filter: brightness(1.05); opacity: 1; }
+
+/* Subject progress rows */
+.subject-progress { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
+.subject-progress-row { display: flex; flex-direction: column; gap: 6px; }
+.subject-progress-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 13px; font-weight: 600; color: var(--ink);
+}
+.subject-progress-score { font-weight: 800; color: var(--blue); }
+.subject-progress-empty { font-size: 12px; color: var(--dim); }
+.subject-progress-track {
+    height: 6px; border-radius: var(--r-pill);
+    background: var(--surface-2); overflow: hidden;
+}
+.subject-progress-fill {
+    height: 100%; border-radius: var(--r-pill);
+    background: var(--blue);
+}
 </style>
 {% endblock %}
 {% block content %}
@@ -452,6 +527,49 @@
             </span>
         </div>
     </div>
+
+    <!-- ── ЧТО ДАЛЬШЕ ── -->
+    {% if active_cycle %}
+    <div class="next-card next-card--blue">
+        <div class="next-card-title">Текущий цикл — {{ active_cycle.subject }}</div>
+        <div class="next-card-chips">
+            {% if active_cycle.pending_review_count > 0 %}
+            <span class="next-card-chip">На проверке: {{ active_cycle.pending_review_count }} {{ 'работа' if active_cycle.pending_review_count == 1 else 'работы' }}</span>
+            {% endif %}
+            {% if unread_count > 0 %}
+            <span class="next-card-chip">Новых сообщений ОС: {{ unread_count }}</span>
+            {% endif %}
+        </div>
+        {% if active_cycle.pending_review_count == 0 and unread_count == 0 %}
+        <div class="next-card-note">Куратор проверил все работы цикла — ждём новых материалов.</div>
+        {% endif %}
+        <a href="/cabinet/cycle" class="next-card-cta">Перейти к циклу →</a>
+    </div>
+    {% elif avg_score_by_subject %}
+    <div class="next-card next-card--neutral">
+        <div class="next-card-title">Прогресс по предметам</div>
+        <div class="subject-progress">
+            {% for subj in ['Рисунок', 'Композиция'] %}
+            <div class="subject-progress-row">
+                <div class="subject-progress-head">
+                    <span>{{ subj }}</span>
+                    {% if subj in avg_score_by_subject %}
+                    <span class="subject-progress-score">{{ avg_score_by_subject[subj] }}</span>
+                    {% else %}
+                    <span class="subject-progress-empty">Нет результатов</span>
+                    {% endif %}
+                </div>
+                {% if subj in avg_score_by_subject %}
+                <div class="subject-progress-track">
+                    <div class="subject-progress-fill" style="width: {{ avg_score_by_subject[subj] }}%"></div>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        <a href="/upload/mock-exam" class="next-card-cta">Загрузить пробник →</a>
+    </div>
+    {% endif %}
 
     <!-- ── STATS (год, дата, статус, длительность) ── -->
     <div class="stats-strip">

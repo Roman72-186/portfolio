@@ -377,3 +377,155 @@ def test_admin_sets_invalid_cohort_tag_returns_error(client, user_factory, sessi
 
     assert resp.status_code == 400
     assert "Неверная метка набора" in resp.json()["errors"]
+
+
+# ---------------------------------------------------------------------------
+# Mock exam submission status panel — /cabinet/students
+# ---------------------------------------------------------------------------
+
+def _create_active_ticket(db, user, subject="Рисунок"):
+    from datetime import date, timedelta
+    from app.models.exam_assignment import ExamAssignment, ExamTicket
+
+    today = date.today()
+    assignment = ExamAssignment(
+        title=f"Тест {subject}", subject=subject,
+        created_by_id=user.id, status="published",
+    )
+    db.add(assignment)
+    db.flush()
+    ticket = ExamTicket(
+        assignment_id=assignment.id, ticket_number=1,
+        title=f"Билет {subject}",
+        start_date=today - timedelta(days=1),
+        end_date=today + timedelta(days=30),
+        assign_to_all=True,
+    )
+    db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
+    return ticket
+
+
+def test_mock_status_panel_splits_submitted_and_not_submitted(curator_client, db, student, user_factory):
+    from datetime import date
+    from app.models.exam_cycle import ExamCycle
+
+    client, curator = curator_client
+    # Активный билет только по «Рисунок» — «Композиция» сейчас не сдаётся.
+    ticket = _create_active_ticket(db, curator, subject="Рисунок")
+
+    student.tg_username = "@anna_ivanova"
+    db.add(student)
+
+    second = user_factory(vk_id=800003, name="Student Two", role_name="ученик")
+    second.curator_id = curator.id
+    second.first_name = "Petr"
+    second.last_name = "Petrov"
+    second.tg_username = "petrov_p"
+    db.add(second)
+    db.commit()
+    db.refresh(second)
+
+    # Пётр уже сдал финал по активному билету «Рисунок»
+    cycle = ExamCycle(user_id=second.id, subject="Рисунок", ticket_id=ticket.id, started_at=date.today())
+    db.add(cycle)
+    db.flush()
+    db.refresh(cycle)
+    w = _add_work(db, second.id, WORK_TYPE_MOCK_EXAM, subject="Рисунок", status="success")
+    w.cycle_id = cycle.id
+    w.is_final = True
+    w.needs_revision = False
+    db.add(w)
+    db.commit()
+
+    resp = client.get("/cabinet/students")
+    assert resp.status_code == 200
+    text = resp.text
+    assert "Сдали 1" in text
+    assert "Не сдали 1" in text
+    # tg_username normalized: no "@", lowercase
+    assert "anna_ivanova" in text
+    assert "petrov_p" in text
+    # Анна — в списке "не сдали" с пометкой предмета, по которому есть билет
+    assert 'mock-status-pending">Рисунок<' in text
+
+
+def test_mock_status_panel_hidden_without_active_ticket(curator_client, student):
+    client, _ = curator_client
+    resp = client.get("/cabinet/students")
+    assert resp.status_code == 200
+    assert "Пробник: статус сдачи" not in resp.text
+
+
+def test_mock_status_panel_both_subjects_active_partial_submission(curator_client, db, student, user_factory):
+    """Оба предмета активны одновременно — ученик сдал только один из них."""
+    from datetime import date
+    from app.models.exam_cycle import ExamCycle
+
+    client, curator = curator_client
+    ticket_drawing = _create_active_ticket(db, curator, subject="Рисунок")
+    _create_active_ticket(db, curator, subject="Композиция")
+
+    student.tg_username = "anna_ivanova"
+    db.add(student)
+    db.commit()
+
+    # Анна сдала финал по «Рисунок», но не по «Композиция»
+    cycle = ExamCycle(user_id=student.id, subject="Рисунок", ticket_id=ticket_drawing.id, started_at=date.today())
+    db.add(cycle)
+    db.flush()
+    db.refresh(cycle)
+    w = _add_work(db, student.id, WORK_TYPE_MOCK_EXAM, subject="Рисунок", status="success")
+    w.cycle_id = cycle.id
+    w.is_final = True
+    w.needs_revision = False
+    db.add(w)
+    db.commit()
+
+    resp = client.get("/cabinet/students")
+    assert resp.status_code == 200
+    text = resp.text
+    assert "Сдали 0" in text
+    assert "Не сдали 1" in text
+    # Анна — в «не сдали» только из-за «Композиция», «Рисунок» уже сдан
+    assert 'mock-status-pending">Композиция<' in text
+    assert 'mock-status-pending">Рисунок' not in text
+
+
+def test_mock_status_panel_excludes_student_without_assigned_ticket(curator_client, db, student, user_factory):
+    """У ученика без назначенного активного билета — не «сдал» и не «не сдал», просто не учитывается."""
+    from datetime import date, timedelta
+    from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
+
+    client, curator = curator_client
+
+    second = user_factory(vk_id=800005, name="Student Four", role_name="ученик")
+    second.curator_id = curator.id
+    db.add(second)
+    db.commit()
+    db.refresh(second)
+
+    today = date.today()
+    assignment = ExamAssignment(
+        title="Тест Рисунок", subject="Рисунок",
+        created_by_id=curator.id, status="published",
+    )
+    db.add(assignment)
+    db.flush()
+    ticket = ExamTicket(
+        assignment_id=assignment.id, ticket_number=1, title="Билет Рисунок",
+        start_date=today - timedelta(days=1), end_date=today + timedelta(days=30),
+        assign_to_all=False,
+    )
+    db.add(ticket)
+    db.flush()
+    db.add(ExamTicketAssignee(ticket_id=ticket.id, user_id=second.id))
+    db.commit()
+
+    resp = client.get("/cabinet/students")
+    assert resp.status_code == 200
+    text = resp.text
+    # У student (Анны) нет активного билета — она не считается ни «сдала», ни «не сдала»
+    assert "Сдали 0" in text
+    assert "Не сдали 1" in text

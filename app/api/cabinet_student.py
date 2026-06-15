@@ -108,6 +108,41 @@ def cabinet_student(
         if mock_scored else None
     )
 
+    avg_score_by_subject: dict = {}
+    for subj in MOCK_SUBJECTS:
+        subj_scored = [w for w in mock_scored if w.subject == subj]
+        if subj_scored:
+            avg_score_by_subject[subj] = round(
+                sum(float(w.score) for w in subj_scored) / len(subj_scored)
+            )
+
+    # Текущий незакрытый цикл (если есть) + сколько финалов ждут оценки
+    from app.models.exam_cycle import ExamCycle
+
+    active_cycle_row = (
+        db.query(ExamCycle)
+        .filter(ExamCycle.user_id == user["user_id"], ExamCycle.closed_at.is_(None))
+        .order_by(ExamCycle.started_at.desc(), ExamCycle.id.desc())
+        .first()
+    )
+    active_cycle = None
+    if active_cycle_row:
+        pending_review_count = (
+            db.query(Work)
+            .filter(
+                Work.cycle_id == active_cycle_row.id,
+                Work.is_final == True,
+                Work.score.is_(None),
+                Work.status == "success",
+            )
+            .count()
+        )
+        active_cycle = {
+            "subject": active_cycle_row.subject,
+            "started_at": active_cycle_row.started_at,
+            "pending_review_count": pending_review_count,
+        }
+
     # Limit: max 100 recent retakes (защита от медленных выборок)
     retake_works = (
         db.query(Work)
@@ -140,6 +175,7 @@ def cabinet_student(
         .filter(
             MockExamAttempt.user_id == user["user_id"],
             MockExamAttempt.completed_at.is_(None),
+            MockExamAttempt.expired_at.is_(None),
         )
         .order_by(MockExamAttempt.started_at)
         .all()
@@ -160,6 +196,8 @@ def cabinet_student(
         "study_duration": study_duration,
         "mock_count": len(mock_works),
         "mock_avg": mock_avg,
+        "avg_score_by_subject": avg_score_by_subject,
+        "active_cycle": active_cycle,
         "mock_recent": mock_works[:MOCK_EXAM_PREVIEW],
         "retake_count": len(retake_works),
         "retake_recent": retake_works[:MOCK_EXAM_PREVIEW],
@@ -631,6 +669,7 @@ def _collect_cycle_works(
     """
     from app.models.feedback import Feedback, FeedbackPhoto, FeedbackMessage
     from app.models.exam_cycle import ExamCycle
+    from app.models.exam_assignment import ExamTicket
 
     finals_q = (
         db.query(Work)
@@ -723,6 +762,17 @@ def _collect_cycle_works(
             for c in db.query(ExamCycle).filter(ExamCycle.id.in_(list(cycle_ids))).all()
         }
 
+    ticket_title_by_cycle: dict[int, str] = {}
+    if cycle_ids:
+        for cid, title in (
+            db.query(ExamCycle.id, ExamTicket.title)
+            .outerjoin(ExamTicket, ExamCycle.ticket_id == ExamTicket.id)
+            .filter(ExamCycle.id.in_(list(cycle_ids)))
+            .all()
+        ):
+            if title:
+                ticket_title_by_cycle[cid] = title
+
     def _serialize(w: Work) -> dict:
         created = w.created_at
         if created and created.tzinfo is None:
@@ -760,6 +810,7 @@ def _collect_cycle_works(
             "cycle_id": w.cycle_id,
             "cycle_started_at": cycle.started_at.isoformat() if cycle and cycle.started_at else None,
             "cycle_closed_at": cycle.closed_at.isoformat() if cycle and cycle.closed_at else None,
+            "ticket_title": ticket_title_by_cycle.get(w.cycle_id) if w.cycle_id else None,
             "intermediates": [
                 {"id": i.id, "s3_url": i.s3_url, "filename": i.filename}
                 for i in intermediates_by_parent.get(w.id, [])

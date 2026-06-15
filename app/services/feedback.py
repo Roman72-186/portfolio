@@ -27,6 +27,18 @@ ROLE_ADMIN = "admin"
 ROLE_SUPERADMIN = "superadmin"
 STAFF_ROLES = {ROLE_CURATOR, ROLE_ADMIN, ROLE_SUPERADMIN}
 
+ROLE_LABELS_RU = {
+    ROLE_STUDENT: "Ученик",
+    ROLE_CURATOR: "Куратор",
+    ROLE_ADMIN: "Админ",
+    ROLE_SUPERADMIN: "Суперадмин",
+}
+
+
+def role_label_ru(sender_role: str) -> str:
+    """Человекочитаемая русская подпись роли отправителя сообщения ОС."""
+    return ROLE_LABELS_RU.get(sender_role, sender_role)
+
 
 def role_from_rank(role_rank: int) -> str:
     """Map numeric role_rank → sender_role string for FeedbackMessage."""
@@ -135,12 +147,18 @@ def notify_counterpart(
     return n
 
 
-def serialize_messages(messages: list[FeedbackMessage]) -> list[dict]:
+def serialize_messages(
+    messages: list[FeedbackMessage],
+    names: dict[int, str] | None = None,
+) -> list[dict]:
+    names = names or {}
     return [
         {
             "id": m.id,
             "sender_id": m.sender_id,
             "sender_role": m.sender_role,
+            "sender_name": names.get(m.sender_id),
+            "sender_role_label": role_label_ru(m.sender_role),
             "text": m.text,
             "photo_s3_url": m.photo_s3_url,
             "created_at": m.created_at.isoformat() if m.created_at else None,

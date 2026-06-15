@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session
 from app.constants import MONTHS, MOCK_SUBJECTS, FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM, FEATURE_RETAKE
+from app.services.exam_cycle import close_or_expire_mock_exam_attempts
 from app.services.feature_periods import is_feature_available
 from app.services.tz import today_msk
 from app.db.database import get_db
@@ -92,14 +93,16 @@ def _locked_mock_subjects(db: DBSession, user_id: int) -> dict[str, str]:
     кнопка и 409 рассинхронятся (см. cycle_upload.upload_probnik_final).
 
     Возвращает {subject: reason}, reason ∈ {"waiting", "scored"}:
-      waiting — цикл открыт, работа ждёт обратной связи;
+      waiting — финал сдан (см. has_submitted_for_ticket), ждёт обратной связи;
       scored  — цикл закрыт (оценён), ждём следующий билет.
 
-    Финал, отправленный «на доработку» (Work.needs_revision=True), не считается
-    блокировкой — иначе кнопка осталась бы задизейблена, хотя
-    has_submitted_for_ticket уже разрешил пересдачу (см. cycle_upload._overwrite_final).
+    Блокировка считается по тому же source of truth, что и 409 в
+    upload_probnik_final — has_submitted_for_ticket (Work.is_final=True,
+    needs_revision=False). Цикл без такой работы (например, только этапные
+    фото — финал не дошёл из-за обрыва сессии) предмет не блокирует, ученик
+    может попробовать сдать финал снова.
     """
-    from app.services.exam_cycle import get_active_ticket
+    from app.services.exam_cycle import get_active_ticket, has_submitted_for_ticket
     from app.models.exam_cycle import ExamCycle
 
     reasons: dict[str, str] = {}
@@ -119,20 +122,10 @@ def _locked_mock_subjects(db: DBSession, user_id: int) -> dict[str, str]:
         )
         if cycle is None:
             continue
-        final_needs_revision = (
-            db.query(Work.id)
-            .filter(
-                Work.cycle_id == cycle.id,
-                Work.work_type == WORK_TYPE_MOCK_EXAM,
-                Work.is_final == True,  # noqa: E712
-                Work.needs_revision == True,  # noqa: E712
-            )
-            .first()
-            is not None
-        )
-        if final_needs_revision:
-            continue
-        reasons[subject] = "scored" if cycle.closed_at is not None else "waiting"
+        if cycle.closed_at is not None:
+            reasons[subject] = "scored"
+        elif has_submitted_for_ticket(db, user_id, subject, ticket.id):
+            reasons[subject] = "waiting"
     return reasons
 
 
@@ -653,14 +646,7 @@ async def upload_mock_exam_api(
                 is_locked=True,
                 locked_at=datetime.now(timezone.utc),
             ))
-        db.query(MockExamAttempt).filter(
-            MockExamAttempt.user_id == user["user_id"],
-            MockExamAttempt.subject == subject,
-            MockExamAttempt.completed_at.is_(None),
-        ).update(
-            {"completed_at": datetime.now(timezone.utc)},
-            synchronize_session=False,
-        )
+        close_or_expire_mock_exam_attempts(db, user["user_id"], subject, has_active_ticket.id)
         db.commit()
 
     return JSONResponse({
@@ -755,12 +741,13 @@ MOCK_EXAM_DURATION_SEC = 4 * 3600  # 4 часа
 
 
 def _get_active_attempts(db: DBSession, user_id: int) -> list[MockExamAttempt]:
-    """Все активные (незавершённые) попытки пользователя."""
+    """Все активные (незавершённые, неистёкшие) попытки пользователя."""
     return (
         db.query(MockExamAttempt)
         .filter(
             MockExamAttempt.user_id == user_id,
             MockExamAttempt.completed_at.is_(None),
+            MockExamAttempt.expired_at.is_(None),
         )
         .all()
     )
@@ -788,6 +775,39 @@ def _pick_random_active_ticket(db: DBSession, user_id: int, subject: str) -> Exa
         .all()
     )
     return _random.choice(tickets) if tickets else None
+
+
+def _is_ticket_still_active(db: DBSession, ticket_id: int | None, user_id: int, subject: str) -> bool:
+    """True если билет попытки до сих пор входит в набор активных билетов
+    предмета для этого ученика (опубликован, в окне дат, назначен).
+
+    Используется, чтобы не резюмировать «зависшую» попытку со снимком билета
+    из уже архивного/истёкшего задания.
+    """
+    if ticket_id is None:
+        return False
+    today = today_msk()
+    return (
+        db.query(ExamTicket.id)
+        .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
+        .filter(
+            ExamTicket.id == ticket_id,
+            ExamAssignment.status == "published",
+            ExamAssignment.subject == subject,
+            ExamTicket.start_date <= today,
+            ExamTicket.end_date >= today,
+            or_(
+                ExamTicket.assign_to_all.is_(True),
+                ExamTicket.id.in_(
+                    db.query(ExamTicketAssignee.ticket_id)
+                    .filter(ExamTicketAssignee.user_id == user_id)
+                    .scalar_subquery()
+                ),
+            ),
+        )
+        .first()
+        is not None
+    )
 
 
 # ── GET /upload/mock-exam ────────────────────────────────────────────────────
@@ -822,24 +842,31 @@ def mock_exam_start(
             MockExamAttempt.user_id == user["user_id"],
             MockExamAttempt.subject == subject,
             MockExamAttempt.completed_at.is_(None),
+            MockExamAttempt.expired_at.is_(None),
         )
         .order_by(MockExamAttempt.started_at.desc())
         .first()
     )
     if existing:
-        return JSONResponse({
-            "attempt_id": existing.id,
-            "subject": existing.subject,
-            "ticket": {
-                "id": existing.ticket_id,
-                "title": existing.ticket_title,
-                "description": format_ticket_description(existing.ticket_description),
-                "image_url": existing.ticket_image_url or "",
-            },
-            "started_at": existing.started_at.isoformat(),
-            "duration_sec": MOCK_EXAM_DURATION_SEC,
-            "resumed": True,
-        })
+        if _is_ticket_still_active(db, existing.ticket_id, user["user_id"], subject):
+            return JSONResponse({
+                "attempt_id": existing.id,
+                "subject": existing.subject,
+                "ticket": {
+                    "id": existing.ticket_id,
+                    "title": existing.ticket_title,
+                    "description": format_ticket_description(existing.ticket_description),
+                    "image_url": existing.ticket_image_url or "",
+                },
+                "started_at": existing.started_at.isoformat(),
+                "duration_sec": MOCK_EXAM_DURATION_SEC,
+                "resumed": True,
+            })
+        # Билет этой попытки больше не активен (период истёк / задание архивно) —
+        # попытка протухла сама, без сдачи. Помечаем отдельно от completed_at,
+        # чтобы не путать со «сдано», и начинаем новую попытку с актуальным билетом.
+        existing.expired_at = datetime.now(timezone.utc)
+        db.commit()
 
     ticket = _pick_random_active_ticket(db, user["user_id"], subject)
     if not ticket:
@@ -956,14 +983,7 @@ async def upload_mock_exam(
                 is_locked=True,
                 locked_at=datetime.now(timezone.utc),
             ))
-        db.query(MockExamAttempt).filter(
-            MockExamAttempt.user_id == user["user_id"],
-            MockExamAttempt.subject == subject,
-            MockExamAttempt.completed_at.is_(None),
-        ).update(
-            {"completed_at": datetime.now(timezone.utc)},
-            synchronize_session=False,
-        )
+        close_or_expire_mock_exam_attempts(db, user["user_id"], subject, active_ticket.id)
         db.commit()
 
     return _render_mock(request, user, db, error=error,

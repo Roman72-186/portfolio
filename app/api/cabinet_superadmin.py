@@ -40,11 +40,13 @@ from app.models.feature_period import FeaturePeriod
 from app.services.feature_periods import invalidate_feature_cache, get_active_period
 from app.services.tz import today_msk, msk_midnight
 from app.models.role import Role
+from app.models.tag import Tag, UserTag
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
 from app.services import s3 as s3_service
 from app.services.auth_links import issue_one_time_login_link
 from app.services.n8n import send_photo_to_n8n
+from app.services.tags import get_all_tags
 from app.services.utils import compress_image, rotate_image_bytes
 from app.tmpl import templates
 
@@ -1140,7 +1142,13 @@ def period_quick_toggle(
 # Статистика периодов сдачи
 # ═══════════════════════════════════════════════════════════════════════════════
 
-from app.services.period_stats import get_submission_stats, get_all_periods as _get_all_periods
+from app.services.period_stats import (
+    get_mock_subject_status,
+    get_ticket_receipt_stats,
+    get_mock_feedback_rows,
+    get_mock_score_stats,
+    get_all_periods as _get_all_periods,
+)
 
 
 @router.get("/superadmin/stats", response_class=HTMLResponse)
@@ -1149,18 +1157,22 @@ def superadmin_stats(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     period_id: int | None = None,
-    feature: str | None = None,
 ):
-    periods = _get_all_periods(db)
-    stats = get_submission_stats(db, feature=feature, period_id=period_id)
+    # Страница только про пробники → периоды фильтруем до mock_exam.
+    periods = [p for p in _get_all_periods(db) if p.feature == "mock_exam"]
+    status = get_mock_subject_status(db, period_id=period_id)
+    ticket_stats = get_ticket_receipt_stats(db, period_id=period_id)
+    feedback_table = get_mock_feedback_rows(db, period_id=period_id)
+    score_stats = get_mock_score_stats(db, period_id=period_id)
     return templates.TemplateResponse("superadmin_stats.html", {
         "request": request,
         "user": user,
         "periods": periods,
-        "stats": stats,
+        "status": status,
+        "ticket_stats": ticket_stats,
+        "feedback_table": feedback_table,
+        "score_stats": score_stats,
         "selected_period_id": period_id,
-        "selected_feature": feature,
-        "feature_labels": FEATURE_LABELS,
         "tariffs": TARIFFS,
     })
 
@@ -1170,16 +1182,18 @@ def superadmin_stats_export(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     period_id: int | None = None,
-    feature: str | None = None,
 ):
     import io
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment
     from fastapi.responses import StreamingResponse
 
-    stats = get_submission_stats(db, feature=feature, period_id=period_id)
-    by_tariff_mock: dict = stats["by_tariff_mock_status"]
-    not_submitted_by_tariff: dict = stats["not_submitted_by_tariff"]
+    status = get_mock_subject_status(db, period_id=period_id)
+    ticket_stats = get_ticket_receipt_stats(db, period_id=period_id)
+    # limit=None: в Excel выгружаем всю таблицу ОС (страница капается 500-ю).
+    feedback_table = get_mock_feedback_rows(db, period_id=period_id, limit=None)
+    by_tariff_mock: dict = status["by_tariff_mock_status"]
+    not_submitted_by_tariff: dict = status["not_submitted_by_tariff"]
 
     HEADER_FONT = Font(bold=True, color="FFFFFF")
     HEADER_FILL = PatternFill(fill_type="solid", fgColor="2563EB")
@@ -1209,14 +1223,17 @@ def superadmin_stats_export(
     ws_summary = wb.active
     ws_summary.title = "Сводка"
 
-    period = stats.get("period")
-    if period:
-        label = FEATURE_LABELS.get(period.feature, period.feature)
-        ws_summary.append([f"Период: {label}  {period.start_date.strftime('%d.%m.%Y')} – {period.end_date.strftime('%d.%m.%Y')}"])
-        ws_summary.append([])
-    elif feature:
-        ws_summary.append([f"Фича: {FEATURE_LABELS.get(feature, feature)}"])
-        ws_summary.append([])
+    selected_period = (
+        db.query(FeaturePeriod).filter(FeaturePeriod.id == period_id).first()
+        if period_id else None
+    )
+    if selected_period:
+        ws_summary.append([f"Период: {selected_period.title or ''}  "
+                           f"{selected_period.start_date.strftime('%d.%m.%Y')} – "
+                           f"{selected_period.end_date.strftime('%d.%m.%Y')}"])
+    else:
+        ws_summary.append(["Статистика пробников · данные с 13.06.2026"])
+    ws_summary.append([])
 
     _style_header_row(ws_summary, ["Тариф", "Всего учеников", "Сдали оба предмета", "Не сдали хотя бы один"])
     for tariff in TARIFFS:
@@ -1225,12 +1242,14 @@ def superadmin_stats_export(
         submitted_both = len(all_students) - len(ns)
         ws_summary.append([tariff, len(all_students), submitted_both, len(ns)])
 
-    by_mock_subject: dict = stats.get("by_mock_subject", {})
-    if by_mock_subject:
+    # Пробники по предмету: сколько учеников сдали Рисунок / Композицию.
+    risunok_cnt = sum(1 for students in by_tariff_mock.values() for s in students if s["risunok"])
+    kompoziciya_cnt = sum(1 for students in by_tariff_mock.values() for s in students if s["kompoziciya"])
+    if risunok_cnt or kompoziciya_cnt:
         ws_summary.append([])
-        _style_header_row(ws_summary, ["Пробники по предмету", "Кол-во работ", "", ""])
-        for subj, cnt in by_mock_subject.items():
-            ws_summary.append([subj, cnt, "", ""])
+        _style_header_row(ws_summary, ["Сдали по предмету", "Кол-во учеников", "", ""])
+        ws_summary.append(["Рисунок", risunok_cnt, "", ""])
+        ws_summary.append(["Композиция", kompoziciya_cnt, "", ""])
 
     _set_col_widths(ws_summary, [22, 18, 22, 26])
 
@@ -1265,6 +1284,46 @@ def superadmin_stats_export(
             ws_ns.cell(r_idx, 4).fill = FILL_YES if s["risunok"] else FILL_NO
             ws_ns.cell(r_idx, 5).fill = FILL_YES if s["kompoziciya"] else FILL_NO
         _set_col_widths(ws_ns, [30, 14, 22, 12, 14])
+
+    # ── Листы: Полученные билеты (только для mock_exam / всех работ) ──────────
+    if ticket_stats.get("applicable") and ticket_stats.get("total_receipts"):
+        ws_tickets = wb.create_sheet(title="Билеты — сводка")
+        _style_header_row(ws_tickets, ["Билет", "Предмет", "Учеников", "Выдач", "Последняя выдача"])
+        for t in ticket_stats["by_ticket"]:
+            title = t["ticket_title"] + (" (удалён)" if t["deleted"] else "")
+            last_at = t["last_at"].strftime("%d.%m.%Y %H:%M") if t["last_at"] else "—"
+            ws_tickets.append([title, t["subject"] or "—", t["student_count"], t["attempt_count"], last_at])
+        _set_col_widths(ws_tickets, [40, 16, 12, 10, 20])
+
+        ws_receipts = wb.create_sheet(title="Билеты — кто и когда")
+        _style_header_row(ws_receipts, ["Ученик", "Билет", "Предмет", "Дата и время (МСК)"])
+        for r in ticket_stats["receipts"]:
+            started = r["started_at"].strftime("%d.%m.%Y %H:%M") if r["started_at"] else "—"
+            ws_receipts.append([r["student_name"], r["ticket_title"], r["subject"] or "—", started])
+        _set_col_widths(ws_receipts, [30, 40, 16, 20])
+
+    # ── Лист: Пробники + обратная связь ──────────────────────────────────────
+    if feedback_table.get("applicable") and feedback_table.get("total"):
+        ws_fb = wb.create_sheet(title="Пробники + ОС")
+        _style_header_row(ws_fb, [
+            "Ученик", "Предмет", "Билет", "Балл", "Куратор",
+            "Время сдачи (МСК)", "Время ОС (МСК)", "Обратная связь",
+        ])
+        for r in feedback_table["rows"]:
+            submitted = r["submitted_at"].strftime("%d.%m.%Y %H:%M") if r["submitted_at"] else "—"
+            fb_at = r["feedback_at"].strftime("%d.%m.%Y %H:%M") if r["feedback_at"] else "—"
+            ws_fb.append([
+                r["student_name"],
+                r["subject"] or "—",
+                r["ticket_title"] or "—",
+                int(r["score"]) if r["score"] is not None else "—",
+                r["curator_name"] or "—",
+                submitted,
+                fb_at,
+                r["feedback_text"] or "—",
+            ])
+            ws_fb.cell(ws_fb.max_row, 8).alignment = Alignment(wrap_text=True, vertical="top")
+        _set_col_widths(ws_fb, [28, 14, 32, 8, 26, 18, 18, 80])
 
     output = io.BytesIO()
     wb.save(output)
@@ -1418,6 +1477,7 @@ def _render_superadmin_users(
     has_case: str = "",
     curator_id: str = "",
     exam_subjects: str = "",
+    tag: str = "",
     page: int = 1,
     issued_creds: dict | None = None,
     issued_link_user_id: int | None = None,
@@ -1439,6 +1499,13 @@ def _render_superadmin_users(
             curator_id_int = int(curator_id.strip())
         except ValueError:
             curator_id_int = None
+
+    tag_id_int: int | None = None
+    if tag.strip():
+        try:
+            tag_id_int = int(tag.strip())
+        except ValueError:
+            tag_id_int = None
 
     study_mode_clean = study_mode.strip().lower()
     if study_mode_clean and study_mode_clean not in STUDY_MODES:
@@ -1473,6 +1540,8 @@ def _render_superadmin_users(
         query = query.filter(User.curator_id == curator_id_int)
     if exam_subjects_clean:
         query = query.filter(User.exam_subjects == exam_subjects_clean)
+    if tag_id_int is not None:
+        query = query.join(UserTag, UserTag.user_id == User.id).filter(UserTag.tag_id == tag_id_int)
 
     q_clean = q.strip().lstrip("@").lower()
     if q_clean:
@@ -1546,6 +1615,7 @@ def _render_superadmin_users(
         )
     roles = db.query(Role).order_by(Role.rank).all()
     curators = _load_superadmin_curators(db)
+    all_tags = get_all_tags(db)
 
     # has_case для отображения значка в строках (только для тех, кто на текущей странице)
     has_case_by_user: dict[int, bool] = {}
@@ -1593,6 +1663,8 @@ def _render_superadmin_users(
         "has_case": "1" if has_case_b else "",
         "curator_id": curator_id,
         "exam_subjects": exam_subjects_clean,
+        "tag": tag,
+        "all_tags": all_tags,
         "current_user_id": user["user_id"],
         "current_user_rank": user["role_rank"],
         "page": page,
@@ -1641,6 +1713,7 @@ def superadmin_users(
     has_case: str = "",
     curator_id: str = "",
     exam_subjects: str = "",
+    tag: str = "",
     page: int = 1,
 ):
     return _render_superadmin_users(
@@ -1658,6 +1731,7 @@ def superadmin_users(
         has_case=has_case,
         curator_id=curator_id,
         exam_subjects=exam_subjects,
+        tag=tag,
         page=page,
     )
 

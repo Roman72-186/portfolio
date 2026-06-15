@@ -360,6 +360,42 @@ def test_mock_exam_revision_unblocks_subject_in_form(auth_client, db):
     assert "работа сдана, ждите ОС" not in resp.text
 
 
+def test_mock_exam_intermediate_only_cycle_does_not_lock_subject(auth_client, db):
+    """Цикл с этапными фото, но без финала (например, финал не дошёл из-за обрыва
+    сессии) не должен блокировать предмет — ученик может попробовать сдать снова."""
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+    from app.models.exam_cycle import ExamCycle
+    from datetime import datetime, timezone
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    ticket = _create_active_ticket(db, user, "Рисунок")
+    cycle = ExamCycle(user_id=user.id, subject="Рисунок", ticket_id=ticket.id,
+                      started_at=datetime.now(timezone.utc))
+    db.add(cycle)
+    db.flush()
+    db.add(Work(
+        user_id=user.id,
+        work_type=WORK_TYPE_MOCK_EXAM,
+        month="январь",
+        year=2026,
+        filename="stage1.jpg",
+        subject="Рисунок",
+        tariff=user.tariff,
+        status="success",
+        score=None,
+        cycle_id=cycle.id,
+        is_final=False,
+        created_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+
+    resp = client.get("/upload/mock-exam")
+
+    assert resp.status_code == 200
+    assert "работа сдана, ждите ОС" not in resp.text
+
+
 def test_mock_exam_old_period_submission_does_not_show_waiting_grade(auth_client, db):
     """Old unchecked submissions should not block a new active period."""
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
@@ -404,6 +440,80 @@ def test_mock_exam_locked_subject_can_be_started(auth_client, db):
     assert resp.status_code == 200
     assert resp.json()["subject"] == "Рисунок"
     assert resp.json()["resumed"] is False
+
+
+def test_mock_exam_start_resumes_when_ticket_still_active(auth_client, db):
+    """Повторный POST /upload/mock-exam/start резюмирует попытку, если её
+    билет всё ещё активен (период не истёк, задание опубликовано)."""
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Рисунок")
+
+    resp1 = client.post("/upload/mock-exam/start", data={"subject": "Рисунок"})
+    assert resp1.status_code == 200
+    body1 = resp1.json()
+    assert body1["resumed"] is False
+    attempt_id = body1["attempt_id"]
+
+    resp2 = client.post("/upload/mock-exam/start", data={"subject": "Рисунок"})
+    assert resp2.status_code == 200
+    body2 = resp2.json()
+    assert body2["resumed"] is True
+    assert body2["attempt_id"] == attempt_id
+
+
+def test_mock_exam_start_does_not_resume_expired_ticket_attempt(auth_client, db):
+    """Открытая попытка со снимком билета из АРХИВНОГО задания не резюмируется:
+    помечается expired_at (не completed_at), и стартует новая попытка с
+    актуальным билетом. Регрессия инцидента user_id=134 (билет №3 архивного
+    задания возвращался вместо актуального билета №1)."""
+    from app.models.exam_assignment import ExamAssignment, ExamTicket
+    from app.models.mock_exam_attempt import MockExamAttempt
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+
+    today = date.today()
+    old_assignment = ExamAssignment(
+        title="Старое задание", subject="Композиция",
+        created_by_id=user.id, status="archived",
+    )
+    db.add(old_assignment)
+    db.flush()
+    old_ticket = ExamTicket(
+        assignment_id=old_assignment.id, ticket_number=3,
+        title="Билет №3 (архивный)",
+        start_date=today - timedelta(days=40),
+        end_date=today - timedelta(days=30),
+        assign_to_all=True,
+    )
+    db.add(old_ticket)
+    db.flush()
+
+    stale_attempt = MockExamAttempt(
+        user_id=user.id,
+        subject="Композиция",
+        ticket_id=old_ticket.id,
+        ticket_title=old_ticket.title,
+        ticket_description="старое описание",
+    )
+    db.add(stale_attempt)
+    db.commit()
+    stale_id = stale_attempt.id
+
+    new_ticket = _create_active_ticket(db, user, "Композиция")
+
+    resp = client.post("/upload/mock-exam/start", data={"subject": "Композиция"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["resumed"] is False
+    assert body["ticket"]["id"] == new_ticket.id
+    assert body["attempt_id"] != stale_id
+
+    db.expire_all()
+    stale = db.query(MockExamAttempt).filter(MockExamAttempt.id == stale_id).first()
+    assert stale.expired_at is not None
+    assert stale.completed_at is None
 
 
 def test_retake_form_available_when_mock_sent_to_retake(auth_client, db):

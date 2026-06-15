@@ -35,7 +35,7 @@
 .cyc-tab.active { background: var(--surface); color: var(--blue); box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
 .cyc-tab .tab-badge {
     display: inline-block; margin-left: 6px;
-    background: #D97706; color: #fff; font-size: 10px; font-weight: 800;
+    background: var(--warning); color: #fff; font-size: 10px; font-weight: 800;
     padding: 1px 7px; border-radius: 999px; letter-spacing: 0.04em;
 }
 
@@ -129,7 +129,7 @@
 .fb-list .fb-sub { font-weight: 800; }
 .fb-list .fb-meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
 .fb-list .fb-unread {
-    flex-shrink: 0; background: #D97706; color: #fff;
+    flex-shrink: 0; background: var(--warning); color: #fff;
     font-size: 11px; font-weight: 800; padding: 3px 10px;
     border-radius: 999px; letter-spacing: 0.04em;
 }
@@ -171,8 +171,8 @@
         <span class="badge">Циклов всего: {{ cycles_count }}</span>
     </section>
 
-    <div class="cyc-tabs" role="tablist">
-        <button type="button" class="cyc-tab active" data-tab="feedback" role="tab">
+    <div class="cyc-tabs">
+        <button type="button" class="cyc-tab active" data-tab="feedback">
             Обратная связь
             {% set total_unread = open_cycles|sum(attribute='unread_count') %}
             {% if total_unread and total_unread > 0 %}<span class="tab-badge">{{ total_unread }}</span>{% endif %}

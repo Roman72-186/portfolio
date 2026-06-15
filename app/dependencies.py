@@ -24,6 +24,10 @@ def get_current_user(
     """Extract and validate session from cookie, join with User and Role."""
     session_id = request.cookies.get("session_id")
     if not session_id:
+        log.warning(
+            "Auth 401 'Нет сессии' | path=%s | ua=%s",
+            request.url.path, request.headers.get("user-agent", "")[:120],
+        )
         raise HTTPException(status_code=401, detail="Нет сессии")
 
     # Always validate auth-critical state against DB. Cached session payloads can
@@ -37,12 +41,23 @@ def get_current_user(
     )
 
     if not row:
+        log.warning(
+            "Auth 401 'Сессия не найдена' | path=%s | session_id_prefix=%s | ua=%s",
+            request.url.path, session_id[:8], request.headers.get("user-agent", "")[:120],
+        )
         raise HTTPException(status_code=401, detail="Сессия не найдена")
 
     session, user = row
 
     now = datetime.now(timezone.utc)
     if session.expires_at < now:
+        log.warning(
+            "Auth 401 'Сессия истекла' | path=%s | session_id_prefix=%s | user_id=%s | "
+            "expires_at=%s | now=%s | overdue_sec=%.1f",
+            request.url.path, session_id[:8], user.id,
+            session.expires_at.isoformat(), now.isoformat(),
+            (now - session.expires_at).total_seconds(),
+        )
         session.is_active = False
         db.commit()
         raise HTTPException(status_code=401, detail="Сессия истекла")

@@ -11,6 +11,7 @@ import logging
 from datetime import datetime, timezone, timedelta, date
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from sqlalchemy import or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db.database import SessionLocal
@@ -159,6 +160,49 @@ def _run_notification_check() -> None:
         db.close()
 
 
+def _run_mock_exam_expiry_check() -> None:
+    """Каждые несколько минут помечает expired_at у открытых MockExamAttempt,
+    чей билет вышел из периода сдачи (end_date < today) или чьё задание стало
+    неопубликованным/архивным (status != "published").
+
+    Без этого «зависшая» попытка (ученик не сдал работу до конца периода
+    билета) осталась бы completed_at IS NULL навечно: mock_exam_start
+    резюмировал бы её со снимком архивного билета, а progress-check слал бы
+    уведомления о мёртвой попытке.
+    """
+    db = SessionLocal()
+    try:
+        today = today_msk()
+        now = datetime.now(timezone.utc)
+
+        expired = (
+            db.query(MockExamAttempt)
+            .join(ExamTicket, MockExamAttempt.ticket_id == ExamTicket.id)
+            .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
+            .filter(
+                MockExamAttempt.completed_at.is_(None),
+                MockExamAttempt.expired_at.is_(None),
+                or_(
+                    ExamTicket.end_date < today,
+                    ExamAssignment.status != "published",
+                ),
+            )
+            .all()
+        )
+        for attempt in expired:
+            attempt.expired_at = now
+
+        if expired:
+            db.commit()
+            logger.info("Mock-exam expiry: помечено %d истёкших попыток", len(expired))
+
+    except Exception:
+        logger.exception("Ошибка в mock-exam expiry check")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def _run_mock_exam_progress_check() -> None:
     """Каждую минуту проверяет активные MockExamAttempt и отправляет уведомления
     о прогрессе: 2ч прошло, 3ч прошло, 10 мин до окончания. Флаги защищают от
@@ -173,7 +217,10 @@ def _run_mock_exam_progress_check() -> None:
 
         active = (
             db.query(MockExamAttempt)
-            .filter(MockExamAttempt.completed_at.is_(None))
+            .filter(
+                MockExamAttempt.completed_at.is_(None),
+                MockExamAttempt.expired_at.is_(None),
+            )
             .all()
         )
 
@@ -273,6 +320,16 @@ def start_scheduler() -> None:
         misfire_grace_time=60,
     )
     _scheduler.add_job(
+        _run_mock_exam_expiry_check,
+        trigger="interval",
+        minutes=5,
+        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=15),
+        id="mock_exam_expiry",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=300,
+    )
+    _scheduler.add_job(
         _run_cleanup,
         trigger="interval",
         hours=6,
@@ -283,7 +340,10 @@ def start_scheduler() -> None:
         misfire_grace_time=600,
     )
     _scheduler.start()
-    logger.info("Exam scheduler started (exam_notifications=1h, mock_exam_progress=1min, cleanup=6h)")
+    logger.info(
+        "Exam scheduler started (exam_notifications=1h, mock_exam_progress=1min, "
+        "mock_exam_expiry=5min, cleanup=6h)"
+    )
 
 
 def stop_scheduler() -> None:

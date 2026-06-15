@@ -43,6 +43,29 @@ def test_admin_page_filters_users_by_role(admin_client, db, user_factory):
     assert "Role Filter Student" not in resp.text
 
 
+def test_admin_page_filters_users_by_tag(admin_client, db, user_factory):
+    from app.services.tags import add_tag_to_user, get_or_create_tag
+
+    client, _ = admin_client
+    tagged = user_factory(vk_id=111_114, name="Tag Filter Tagged", role_name="ученик")
+    other = user_factory(vk_id=111_115, name="Tag Filter Other", role_name="ученик")
+
+    tag = get_or_create_tag(db, "ОСОБЫЙ")
+    add_tag_to_user(db, tagged.id, tag.id)
+    db.commit()
+
+    resp = client.get("/cabinet/superadmin/users")
+    assert resp.status_code == 200
+    assert f'value="{tag.id}"' in resp.text
+    assert "ОСОБЫЙ" in resp.text
+
+    resp = client.get(f"/cabinet/superadmin/users?tag={tag.id}")
+
+    assert resp.status_code == 200
+    assert "Tag Filter Tagged" in resp.text
+    assert "Tag Filter Other" not in resp.text
+
+
 # ---------------------------------------------------------------------------
 # Tariff update
 # ---------------------------------------------------------------------------

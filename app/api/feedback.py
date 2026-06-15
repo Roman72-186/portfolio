@@ -119,10 +119,23 @@ def _dialog_payload(db: DBSession, cycle: ExamCycle) -> dict:
         ):
             messages_by_fb.setdefault(m.feedback_id, []).append(m)
 
+    # Имена авторов сообщений: показываем «Имя · Роль» вместо одной роли.
+    sender_ids = {
+        m.sender_id for msgs in messages_by_fb.values() for m in msgs
+    }
+    names: dict[int, str] = {}
+    if sender_ids:
+        names = {
+            uid: name
+            for uid, name in db.query(User.id, User.name)
+            .filter(User.id.in_(sender_ids))
+            .all()
+        }
+
     attempts: list[dict] = []
     for w in finals:
         fb = feedbacks_by_work.get(w.id)
-        messages = fb_service.serialize_messages(messages_by_fb.get(fb.id, [])) if fb else []
+        messages = fb_service.serialize_messages(messages_by_fb.get(fb.id, []), names) if fb else []
         attempts.append({
             "work_id": w.id,
             "work_type": w.work_type,
@@ -149,7 +162,7 @@ def _dialog_payload(db: DBSession, cycle: ExamCycle) -> dict:
     for msgs in messages_by_fb.values():
         all_msgs.extend(msgs)
     all_msgs.sort(key=lambda m: (m.created_at or datetime.min.replace(tzinfo=timezone.utc), m.id))
-    thread = fb_service.serialize_messages(all_msgs)
+    thread = fb_service.serialize_messages(all_msgs, names)
     has_staff_message = any(
         m["sender_role"] != fb_service.ROLE_STUDENT for m in thread
     )
@@ -361,6 +374,8 @@ async def post_dialog_message(
             "message": {
                 "id": msg.id,
                 "sender_role": msg.sender_role,
+                "sender_name": user.get("name"),
+                "sender_role_label": fb_service.role_label_ru(msg.sender_role),
                 "text": msg.text,
                 "photo_s3_url": msg.photo_s3_url,
                 "created_at": msg.created_at.isoformat() if msg.created_at else None,

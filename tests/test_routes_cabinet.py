@@ -35,6 +35,29 @@ def test_cabinet_student_shows_mock_exam_empty_state(auth_client):
     assert "/upload/mock-exam" in resp.text
 
 
+def test_cabinet_student_hides_expired_mock_exam_attempt(auth_client, db):
+    """Попытка с проставленным expired_at не должна показываться в виджете
+    «Идёт пробник» — иначе зависшая попытка маячила бы на дашборде вечно
+    (см. exam_scheduler._run_mock_exam_expiry_check)."""
+    from datetime import datetime, timezone
+    from app.models.mock_exam_attempt import MockExamAttempt
+
+    client, user = auth_client
+    attempt = MockExamAttempt(
+        user_id=user.id,
+        subject="Рисунок",
+        ticket_title="Билет №3 (архивный)",
+        expired_at=datetime.now(timezone.utc),
+    )
+    db.add(attempt)
+    db.commit()
+
+    resp = client.get("/cabinet/student")
+    assert resp.status_code == 200
+    assert "Идёт пробник" not in resp.text
+    assert "Билет №3 (архивный)" not in resp.text
+
+
 def test_cabinet_blocked_user_gets_403(client, db, user_factory, session_factory):
     user = user_factory(is_active=False)
     sess = session_factory(user)

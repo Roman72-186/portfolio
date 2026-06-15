@@ -143,6 +143,15 @@
                 {% endfor %}
             </datalist>
         </label>
+        <label>
+            Тег
+            <select name="tag">
+                <option value="">Все теги</option>
+                {% for t in all_tags %}
+                <option value="{{ t.id }}" {% if tag == t.id|string %}selected{% endif %}>{{ t.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
         <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
             <input type="checkbox" name="has_case" value="1" {% if has_case %}checked{% endif %} style="width:auto;padding:0">
             <span style="font-size:12px;font-weight:700;color:#92590A">КЕЙС</span>
@@ -325,7 +334,7 @@
         </div>
         <div style="display:flex;gap:8px">
             {% if page > 1 %}
-            <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&study_mode={{ study_mode }}&curator_id={{ curator_id }}&exam_subjects={{ exam_subjects }}&has_case={{ has_case }}&is_publishable={{ is_publishable }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&show_hidden={{ '1' if show_hidden else '' }}&page={{ page - 1 }}"
+            <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&study_mode={{ study_mode }}&curator_id={{ curator_id }}&exam_subjects={{ exam_subjects }}&tag={{ tag }}&has_case={{ has_case }}&is_publishable={{ is_publishable }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&show_hidden={{ '1' if show_hidden else '' }}&page={{ page - 1 }}"
                style="padding:7px 14px;border-radius:9px;background:var(--surface-2);border:1.5px solid var(--line);font-size:13px;font-weight:700;color:var(--text);text-decoration:none">
                 ‹ Назад
             </a>

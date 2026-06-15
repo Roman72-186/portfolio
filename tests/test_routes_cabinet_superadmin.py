@@ -1,8 +1,14 @@
 """Tests for /cabinet/superadmin — dashboard, set-credentials, issue-link."""
+from datetime import datetime, timezone
+
 import pytest
 
+from app.models.feedback import Feedback, FeedbackMessage
 from app.models.login_token import LoginToken
+from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.user import User
+from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+from app.services.feedback import ROLE_CURATOR
 
 
 # ---------------------------------------------------------------------------
@@ -650,3 +656,124 @@ def test_superadmin_delete_user_ajax_returns_json(superadmin_client, db, user_fa
     db.refresh(student)
     assert student.deleted_at is not None
     assert student.is_active is False
+
+
+# ---------------------------------------------------------------------------
+# GET /cabinet/superadmin/stats — раздел «Полученные билеты»
+# ---------------------------------------------------------------------------
+
+def test_stats_page_shows_received_tickets(superadmin_client, db, user_factory):
+    client, _ = superadmin_client
+    student = user_factory(vk_id=900300, name="Тикет Ученик", role_name="ученик")
+    db.add(MockExamAttempt(
+        user_id=student.id,
+        subject="Рисунок",
+        ticket_id=1,
+        ticket_title="Натюрморт с черепом",
+        started_at=datetime(2026, 6, 14, 9, 0, tzinfo=timezone.utc),  # 12:00 MSK
+    ))
+    db.commit()
+
+    resp = client.get("/cabinet/superadmin/stats")
+    assert resp.status_code == 200
+    assert "Полученные билеты" in resp.text
+    assert "Натюрморт с черепом" in resp.text
+    assert "14.06.2026 12:00" in resp.text   # MSK, не UTC 09:00
+
+
+def test_stats_export_includes_ticket_sheets(superadmin_client, db, user_factory):
+    client, _ = superadmin_client
+    student = user_factory(vk_id=900301, name="Экспорт Ученик", role_name="ученик")
+    db.add(MockExamAttempt(
+        user_id=student.id,
+        subject="Композиция",
+        ticket_id=2,
+        ticket_title="Билет для экспорта",
+        started_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+
+    resp = client.get("/cabinet/superadmin/stats/export")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    import io
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(resp.content))
+    assert "Билеты — сводка" in wb.sheetnames
+    assert "Билеты — кто и когда" in wb.sheetnames
+    titles = [row[1] for row in wb["Билеты — кто и когда"].iter_rows(min_row=2, values_only=True)]
+    assert "Билет для экспорта" in titles
+
+
+def _make_mock_with_feedback(db, student, curator):
+    w = Work(
+        user_id=student.id, work_type=WORK_TYPE_MOCK_EXAM, month="июнь", year=2026,
+        filename="m.jpg", subject="Рисунок", score=77, scored_by_id=curator.id,
+        status="success", is_final=True,
+    )
+    db.add(w)
+    db.commit()
+    db.refresh(w)
+    fb = Feedback(work_id=w.id, curator_id=curator.id)
+    db.add(fb)
+    db.commit()
+    db.refresh(fb)
+    db.add(FeedbackMessage(
+        feedback_id=fb.id, sender_id=curator.id, sender_role=ROLE_CURATOR,
+        text="Композиция уравновешена, тон доработай",
+    ))
+    db.commit()
+    return w
+
+
+def test_stats_page_shows_feedback_table(superadmin_client, db, user_factory):
+    client, _ = superadmin_client
+    curator = user_factory(vk_id=900400, name="Куратор ОС", role_name="куратор")
+    student = user_factory(vk_id=900401, name="ОС Ученик", role_name="ученик")
+    _make_mock_with_feedback(db, student, curator)
+
+    resp = client.get("/cabinet/superadmin/stats")
+    assert resp.status_code == 200
+    assert "Пробники и обратная связь" in resp.text
+    assert "Композиция уравновешена" in resp.text
+
+
+def test_stats_page_redesign_structure(superadmin_client, db, user_factory):
+    """Редизайн: заголовок «Статистика пробников», секции в <details>,
+    «Список сдач» удалён."""
+    client, _ = superadmin_client
+    resp = client.get("/cabinet/superadmin/stats")
+    assert resp.status_code == 200
+    assert "Статистика пробников" in resp.text
+    assert "<details" in resp.text           # нативное сворачивание
+    assert "<details open" not in resp.text  # все секции свёрнуты по умолчанию
+    assert "Список сдач" not in resp.text     # убран полностью
+    assert "Данные с 13.06.2026" in resp.text
+    # все 5 секций присутствуют
+    assert "Статус пробников по тарифам" in resp.text
+    assert "Не сдали хотя бы один предмет" in resp.text
+    assert "Полученные билеты" in resp.text
+    assert "Пробники и обратная связь" in resp.text
+    assert "Статистика по баллам" in resp.text
+
+
+def test_stats_export_includes_feedback_sheet(superadmin_client, db, user_factory):
+    client, _ = superadmin_client
+    curator = user_factory(vk_id=900410, name="Куратор Эксп", role_name="куратор")
+    student = user_factory(vk_id=900411, name="Эксп Ученик", role_name="ученик")
+    _make_mock_with_feedback(db, student, curator)
+
+    resp = client.get("/cabinet/superadmin/stats/export")
+    assert resp.status_code == 200
+
+    import io
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(resp.content))
+    assert "Пробники + ОС" in wb.sheetnames
+    rows = list(wb["Пробники + ОС"].iter_rows(min_row=2, values_only=True))
+    assert any(r[0] and "Ученик" in str(r[0]) for r in rows)
+    # столбец «Обратная связь» содержит текст ОС
+    assert any(r[7] and "Композиция уравновешена" in str(r[7]) for r in rows)

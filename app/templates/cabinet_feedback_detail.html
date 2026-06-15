@@ -85,7 +85,8 @@
 .dlg-msg-bubble img { display: block; max-width: 320px; width: 100%; border-radius: 8px; margin-top: 4px; cursor: zoom-in; }
 .dlg-msg.from-me .dlg-msg-bubble img { background: rgba(255,255,255,0.1); }
 .dlg-msg-meta { font-size: 11px; color: var(--dim); padding: 0 4px; }
-.dlg-msg-role { font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+.dlg-msg-author { font-weight: 800; }
+.dlg-msg-role { text-transform: uppercase; letter-spacing: 0.04em; }
 
 .dlg-empty-thread { text-align: center; color: var(--muted); font-size: 13px; padding: 30px 12px; }
 
@@ -307,7 +308,7 @@
                             {% endif %}
                         </div>
                         <div class="dlg-msg-meta">
-                            <span class="dlg-msg-role">{{ m.sender_role }}</span> · {{ m.created_at[:16].replace('T', ' ') if m.created_at else '' }}
+                            <span class="dlg-msg-author">{{ m.sender_name or m.sender_role_label }}</span> · <span class="dlg-msg-role">{{ m.sender_role_label }}</span> · {{ m.created_at[:16].replace('T', ' ') if m.created_at else '' }}
                         </div>
                         {% if cycle.revision_requested_at and viewer_role != 'student' and m.sender_role != 'student' and m.sender_id == user.user_id and m.text %}
                             <button type="button" class="dlg-msg-edit" onclick="startEditMsg({{ m.id }})">✎ Изменить</button>

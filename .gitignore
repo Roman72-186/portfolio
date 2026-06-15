@@ -8,3 +8,4 @@ credentials/google.json
 .venv/
 venv/
 .env.deploy
+.codegraph/
