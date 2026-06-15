@@ -65,6 +65,23 @@
 
 .tags-empty { padding: 40px; text-align: center; color: var(--dim); font-size: 14px; }
 
+.bulk-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; }
+.bulk-title { font-size: 14px; font-weight: 800; color: var(--text); margin-bottom: 10px; }
+.bulk-input-row { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+.bulk-input-row textarea { flex: 1; min-width: 220px; font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; resize: vertical; }
+.bulk-input-row textarea:focus { border-color: var(--blue); }
+.bulk-input-row button { padding: 8px 16px; background: var(--blue); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.bulk-input-row button:hover { opacity: 0.88; }
+.bulk-result { margin-top: 14px; }
+.bulk-table { width: 100%; border-collapse: collapse; }
+.bulk-table th { text-align: left; padding: 9px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); border-bottom: 1px solid var(--line); background: var(--bg); }
+.bulk-table td { padding: 8px 12px; font-size: 13px; color: var(--text); border-bottom: 1px solid var(--line); vertical-align: middle; }
+.bulk-table th:not(:first-child), .bulk-table td:not(:first-child) { text-align: center; }
+.bulk-table tr:last-child td { border-bottom: none; }
+.bulk-table tr:hover td { background: var(--bg); }
+.bulk-table input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+.bulk-not-found { margin-top: 10px; font-size: 12px; color: var(--dim); }
+
 @media (max-width: 640px) {
     .tags-table thead { display: none; }
     .tags-table, .tags-table tbody, .tags-table tr, .tags-table td { display: block; width: 100%; }
@@ -109,6 +126,15 @@
         {% endif %}
         <button type="submit">Найти</button>
     </form>
+
+    <div class="bulk-wrap">
+        <div class="bulk-title">Массовая проставка тегов Р / К</div>
+        <div class="bulk-input-row">
+            <textarea id="bulkUsernames" rows="4" placeholder="Вставьте список @username, каждый на новой строке"></textarea>
+            <button type="button" onclick="bulkLookup()">Показать</button>
+        </div>
+        <div class="bulk-result" id="bulkResult"></div>
+    </div>
 
     <div class="tags-table-wrap">
         {% if students %}
@@ -320,6 +346,147 @@ function removeTag(removeBtn) {
         .catch(function(err) {
             alert(err.message || 'Ошибка сети');
         });
+}
+
+const BULK_TAG_NAMES = ['Р', 'К', 'Р+К'];
+
+function bulkLookup() {
+    const raw = document.getElementById('bulkUsernames').value;
+    const fd = new FormData();
+    fd.append('csrf_token', csrfToken());
+    fd.append('usernames', raw);
+
+    fetch('/cabinet/superadmin/tags/bulk-lookup', {
+        method: 'POST',
+        body: fd,
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    })
+        .then(function(response) {
+            return response.json()
+                .catch(function() { return {}; })
+                .then(function(data) { return { ok: response.ok, data: data }; });
+        })
+        .then(function(result) {
+            if (!result.ok || !result.data.ok) {
+                throw new Error(result.data.detail || 'Не удалось загрузить список');
+            }
+            renderBulkResult(result.data);
+        })
+        .catch(function(err) {
+            alert(err.message || 'Ошибка сети');
+        });
+}
+
+function renderBulkResult(data) {
+    const container = document.getElementById('bulkResult');
+    container.innerHTML = '';
+
+    if (data.matched.length) {
+        const table = document.createElement('table');
+        table.className = 'bulk-table';
+        table.innerHTML = '<thead><tr><th>Ученик</th><th>Р</th><th>К</th><th>Р + К</th></tr></thead>';
+        const tbody = document.createElement('tbody');
+
+        data.matched.forEach(function(item) {
+            const tr = document.createElement('tr');
+
+            const nameTd = document.createElement('td');
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'u-name';
+            nameDiv.textContent = item.display_name || '—';
+            const usernameDiv = document.createElement('div');
+            usernameDiv.className = 'u-username';
+            usernameDiv.textContent = '@' + item.username;
+            nameTd.appendChild(nameDiv);
+            nameTd.appendChild(usernameDiv);
+            tr.appendChild(nameTd);
+
+            BULK_TAG_NAMES.forEach(function(tagName) {
+                const td = document.createElement('td');
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                const tagId = item.tags[tagName];
+                cb.checked = !!tagId;
+                cb.dataset.tagId = tagId || '';
+                cb.dataset.tagName = tagName;
+                cb.dataset.userId = item.user_id;
+                cb.addEventListener('change', function() { onBulkCheckboxChange(cb); });
+                td.appendChild(cb);
+                tr.appendChild(td);
+            });
+
+            tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        container.appendChild(table);
+    }
+
+    if (data.not_found.length) {
+        const notFoundDiv = document.createElement('div');
+        notFoundDiv.className = 'bulk-not-found';
+        notFoundDiv.textContent = 'Не найдены: ' + data.not_found.map(function(u) { return '@' + u; }).join(', ');
+        container.appendChild(notFoundDiv);
+    }
+
+    if (!data.matched.length && !data.not_found.length) {
+        container.textContent = 'Список пуст';
+    }
+}
+
+function onBulkCheckboxChange(cb) {
+    const userId = cb.dataset.userId;
+    const tagName = cb.dataset.tagName;
+
+    if (cb.checked) {
+        const fd = new FormData();
+        fd.append('csrf_token', csrfToken());
+        fd.append('name', tagName);
+
+        fetch('/cabinet/superadmin/tags/' + userId, {
+            method: 'POST',
+            body: fd,
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        })
+            .then(function(response) {
+                return response.json()
+                    .catch(function() { return {}; })
+                    .then(function(data) { return { ok: response.ok, data: data }; });
+            })
+            .then(function(result) {
+                if (!result.ok || !result.data.ok) {
+                    throw new Error(result.data.detail || 'Не удалось добавить тег');
+                }
+                cb.dataset.tagId = result.data.tag.id;
+            })
+            .catch(function(err) {
+                cb.checked = false;
+                alert(err.message || 'Ошибка сети');
+            });
+    } else {
+        const tagId = cb.dataset.tagId;
+        if (!tagId) return;
+
+        fetch('/cabinet/superadmin/tags/' + userId + '/' + tagId, {
+            method: 'DELETE',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': csrfToken() },
+        })
+            .then(function(response) {
+                return response.json()
+                    .catch(function() { return {}; })
+                    .then(function(data) { return { ok: response.ok, data: data }; });
+            })
+            .then(function(result) {
+                if (!result.ok || !result.data.ok) {
+                    throw new Error(result.data.detail || 'Не удалось удалить тег');
+                }
+                cb.dataset.tagId = '';
+            })
+            .catch(function(err) {
+                cb.checked = true;
+                alert(err.message || 'Ошибка сети');
+            });
+    }
 }
 </script>
 {% endblock %}

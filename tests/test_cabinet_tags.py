@@ -323,6 +323,71 @@ def test_profile_tag_removal_does_not_change_user_fields(admin_rank4_client, db,
     assert student_user.tariff == "УВЕРЕННЫЙ"
 
 
+# ---------------------------------------------------------------------------
+# POST /cabinet/superadmin/tags/bulk-lookup — bulk Р/К/Р+К checkbox table
+# ---------------------------------------------------------------------------
+
+def test_bulk_lookup_matches_and_reports_not_found(admin_rank4_client, student_user):
+    client, _ = admin_rank4_client
+    student_user.tg_username = "bebebe5208"
+
+    resp = client.post(
+        "/cabinet/superadmin/tags/bulk-lookup",
+        data={"usernames": "@bebebe5208\n@nosuchuser", "csrf_token": "bypass"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert len(body["matched"]) == 1
+    matched = body["matched"][0]
+    assert matched["user_id"] == student_user.id
+    assert matched["username"] == "bebebe5208"
+    assert matched["tags"] == {"Р": None, "К": None, "Р+К": None}
+    assert body["not_found"] == ["nosuchuser"]
+
+
+def test_bulk_lookup_reflects_existing_tags(admin_rank4_client, db, student_user):
+    client, _ = admin_rank4_client
+    student_user.tg_username = "bebebe5208"
+
+    add_resp = client.post(
+        f"/cabinet/superadmin/tags/{student_user.id}",
+        data={"name": "Р", "csrf_token": "bypass"},
+    )
+    tag_id = add_resp.json()["tag"]["id"]
+
+    resp = client.post(
+        "/cabinet/superadmin/tags/bulk-lookup",
+        data={"usernames": "bebebe5208", "csrf_token": "bypass"},
+    )
+    assert resp.status_code == 200
+    matched = resp.json()["matched"][0]
+    assert matched["tags"]["Р"] == tag_id
+    assert matched["tags"]["К"] is None
+
+
+def test_bulk_lookup_empty_input(admin_rank4_client):
+    client, _ = admin_rank4_client
+    resp = client.post(
+        "/cabinet/superadmin/tags/bulk-lookup",
+        data={"usernames": "   ", "csrf_token": "bypass"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body == {"ok": True, "matched": [], "not_found": []}
+
+
+def test_bulk_lookup_denied_for_curator(client, db, user_factory, session_factory, student_user):
+    user = user_factory(vk_id=910031, name="Curator", role_name="куратор")
+    sess = session_factory(user)
+    client.cookies.set("session_id", sess.id)
+    resp = client.post(
+        "/cabinet/superadmin/tags/bulk-lookup",
+        data={"usernames": "bebebe5208", "csrf_token": "bypass"},
+    )
+    assert resp.status_code == 403
+
+
 def test_profile_tags_include_kejs_on_score_growth(admin_rank4_client, db, student_user):
     db.add_all([
         Work(

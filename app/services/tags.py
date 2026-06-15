@@ -120,6 +120,21 @@ def ensure_profile_tags(db: DBSession, students: list[User]) -> None:
     db.commit()
 
 
+def parse_usernames(raw: str) -> list[str]:
+    """Parse a pasted list of @usernames (newline/comma/semicolon separated).
+
+    Strips '@', lowercases, dedupes while preserving order.
+    """
+    seen: set[str] = set()
+    usernames: list[str] = []
+    for item in raw.replace(",", "\n").replace(";", "\n").splitlines():
+        username = item.strip().lstrip("@").lower()
+        if username and username not in seen:
+            usernames.append(username)
+            seen.add(username)
+    return usernames
+
+
 def get_curator_names(db: DBSession) -> list[str]:
     """Full names of active curators (role rank 2), used both as suggested
     tags and to colour curator-name chips distinctly."""
@@ -135,6 +150,11 @@ def get_curator_names(db: DBSession) -> list[str]:
         if full_name:
             names.add(full_name)
     return sorted(names)
+
+
+def get_all_tags(db: DBSession) -> list[Tag]:
+    """All tags that exist, sorted by name — used to populate filter dropdowns."""
+    return db.query(Tag).order_by(Tag.name).all()
 
 
 def get_suggested_tags(db: DBSession) -> list[str]:

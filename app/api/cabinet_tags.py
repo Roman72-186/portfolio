@@ -16,6 +16,7 @@ from app.services.tags import (
     get_or_create_tag,
     get_suggested_tags,
     get_tags_for_users,
+    parse_usernames,
     remove_tag_from_user,
 )
 from app.tmpl import templates
@@ -81,6 +82,59 @@ def superadmin_tags_page(
         "show_hidden": "1" if (user["role_rank"] >= 5 and _parse_bool(show_hidden)) else "",
         "is_superadmin": user["role_rank"] >= 5,
     })
+
+
+@router.post("/tags/bulk-lookup")
+def superadmin_bulk_lookup(
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    usernames: str = Form(""),
+):
+    requested = parse_usernames(usernames)
+    if not requested:
+        return JSONResponse({"ok": True, "matched": [], "not_found": []})
+
+    requested_set = set(requested)
+    student_role = db.query(Role).filter(Role.rank == 1).first()
+    matched_users: dict[str, User] = {}
+    if student_role:
+        query = db.query(User).filter(
+            User.role_id == student_role.id,
+            User.is_active == True,  # noqa: E712
+            User.deleted_at.is_(None),
+        )
+        if user["role_rank"] < 5:
+            query = query.filter(User.course_periods.isnot(None), User.lessons_count.isnot(None))
+        candidates = query.all()
+        # tg_username зашифрован (EncryptedString) — сравниваем в Python после расшифровки
+        for candidate in candidates:
+            uname = (candidate.tg_username or "").strip().lstrip("@").lower()
+            if uname in requested_set and uname not in matched_users:
+                matched_users[uname] = candidate
+
+    tags_by_user = get_tags_for_users(db, [u.id for u in matched_users.values()])
+
+    matched = []
+    not_found = []
+    for uname in requested:
+        target = matched_users.get(uname)
+        if not target:
+            not_found.append(uname)
+            continue
+        tag_ids_by_name = {t.name: t.id for t in tags_by_user.get(target.id, [])}
+        matched.append({
+            "user_id": target.id,
+            "username": uname,
+            "display_name": f"{target.last_name or ''} {target.first_name or target.name}".strip(),
+            "tags": {
+                "Р": tag_ids_by_name.get("Р"),
+                "К": tag_ids_by_name.get("К"),
+                "Р+К": tag_ids_by_name.get("Р+К"),
+            },
+        })
+
+    return JSONResponse({"ok": True, "matched": matched, "not_found": not_found})
 
 
 @router.post("/tags/{user_id}")
