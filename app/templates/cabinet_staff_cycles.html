@@ -126,6 +126,8 @@
                 <button type="button" class="cyc-subj-pill" data-fb="none" onclick="selectFb(this)">Нет ОС</button>
                 <button type="button" class="cyc-subj-pill" data-fb="has" onclick="selectFb(this)">Есть ОС</button>
             </div>
+            {% endif %}
+            {% if user.role_rank >= 4 %}
             <div class="cyc-subj-pills cyc-fb-pills">
                 <button type="button" class="cyc-subj-pill active" data-score="" onclick="selectScore(this)">Оценка: все</button>
                 <button type="button" class="cyc-subj-pill" data-score="none" onclick="selectScore(this)">Без оценки</button>
@@ -134,7 +136,7 @@
             {% endif %}
             <input type="text" class="cyc-search" id="cyc-search" placeholder="Имя или @username…"
                    autocomplete="off" oninput="filterCycles()">
-            {% if status != 'archive' and user.role_rank >= 4 %}
+            {% if user.role_rank >= 4 %}
             <button type="button" class="cyc-copy-btn" id="cyc-copy-btn" onclick="copyCycleList()">Скопировать список</button>
             {% endif %}
         </div>
