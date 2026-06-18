@@ -4,7 +4,7 @@
   POST /upload/probnik/final         — ровно одно финальное фото (создаёт цикл + lock)
   POST /upload/probnik/intermediate  — до 10 этапных на финальную (parent_work_id)
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
 
 _JPG_BYTES = b"\xff\xd8\xff\xe0" + b"\x00" * 16  # minimal JPEG header
@@ -25,7 +25,7 @@ def _create_active_period(db, user, feature="mock_exam"):
     invalidate_feature_cache(feature)
 
 
-def _create_active_ticket(db, user, subject="Рисунок"):
+def _create_active_ticket(db, user, subject="Рисунок", *, opens_at=None, closes_at=None):
     from app.models.exam_assignment import ExamAssignment, ExamTicket
     today = date.today()
     assignment = ExamAssignment(
@@ -39,6 +39,8 @@ def _create_active_ticket(db, user, subject="Рисунок"):
         title=f"Билет {subject}",
         start_date=today - timedelta(days=1),
         end_date=today + timedelta(days=30),
+        opens_at=opens_at,
+        closes_at=closes_at,
         assign_to_all=True,
     )
     db.add(ticket)
@@ -46,13 +48,19 @@ def _create_active_ticket(db, user, subject="Рисунок"):
     return ticket
 
 
+def _start(client, subject="Рисунок"):
+    return client.post("/upload/mock-exam/start", data={"subject": subject})
+
+
 def _final(client, subject="Рисунок", photos=None):
     photos = photos or [("photos", ("final.jpg", _JPG_BYTES, "image/jpeg"))]
+    _start(client, subject)
     return client.post("/upload/probnik/final", data={"subject": subject}, files=photos)
 
 
 def _intermediate(client, subject="Рисунок", n=1):
     files = [("photos", (f"stage{i}.jpg", _JPG_BYTES, "image/jpeg")) for i in range(n)]
+    _start(client, subject)
     return client.post("/upload/probnik/intermediate",
                        data={"subject": subject}, files=files)
 
@@ -195,6 +203,115 @@ def test_probnik_final_requires_active_ticket(auth_client, db):
     resp = _final(client, "Рисунок")
     assert resp.status_code == 404
     assert resp.json()["success"] is False
+
+
+def test_probnik_final_requires_started_attempt(auth_client, db):
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Рисунок")
+
+    resp = client.post(
+        "/upload/probnik/final",
+        data={"subject": "Рисунок"},
+        files=[("photos", ("final.jpg", _JPG_BYTES, "image/jpeg"))],
+    )
+
+    assert resp.status_code == 403
+    assert resp.json()["success"] is False
+    assert "Начать пробник" in resp.json()["error"]
+
+
+def test_probnik_final_accepts_submission_after_timer_elapsed(auth_client, db):
+    """«Время на выполнение» визуальное: финал принимается спустя часы после «Начать»,
+    пока сдача в пределах периода доступа билета.
+
+    Раньше попытка протухала через 90 мин (is_mock_exam_attempt_open) и сдача
+    давала 403 — это и есть баг «ученики не могут сдать в отведённый период».
+    """
+    from datetime import datetime, timezone, timedelta
+    from app.models.mock_exam_attempt import MockExamAttempt
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Рисунок")  # период доступа охватывает «сейчас»
+    _start(client, "Рисунок")
+    attempt = db.query(MockExamAttempt).filter(
+        MockExamAttempt.user_id == user.id,
+        MockExamAttempt.subject == "Рисунок",
+    ).first()
+    # Старт «давно» — далеко за пределами duration; таймер визуальный, сдачу не блокирует.
+    attempt.started_at = datetime.now(timezone.utc) - timedelta(hours=6)
+    db.commit()
+
+    resp = client.post(
+        "/upload/probnik/final",
+        data={"subject": "Рисунок"},
+        files=[("photos", ("final.jpg", _JPG_BYTES, "image/jpeg"))],
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+    db.refresh(attempt)
+    # Таймер не «протухил» попытку — она закрыта как сданная, а не expired.
+    assert attempt.expired_at is None
+    assert attempt.completed_at is not None
+
+
+def test_probnik_final_blocked_after_window_closes_without_attempt(auth_client, db):
+    """Билет, выданный куратором с уже истёкшим окном (opens_at..closes_at в прошлом),
+    остаётся «активным» для сдачи (get_active_ticket больше не фильтрует по периоду —
+    см. is_mock_exam_ticket_submission_open), но получить его («Начать пробник») всё
+    ещё нельзя вне периода (is_mock_exam_ticket_start_open). Без открытой попытки
+    сдача блокируется тем же 403 «Сначала нажмите «Начать пробник»»."""
+    from app.services.tz import now_msk
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    _now = now_msk()
+    _create_active_ticket(
+        db, user, "Рисунок",
+        opens_at=_now - timedelta(days=20),
+        closes_at=_now - timedelta(days=10),  # окно закрылось ~10 дней назад
+    )
+
+    resp = client.post(
+        "/upload/probnik/final",
+        data={"subject": "Рисунок"},
+        files=[("photos", ("final.jpg", _JPG_BYTES, "image/jpeg"))],
+    )
+
+    assert resp.status_code == 403
+    assert resp.json()["success"] is False
+
+
+def test_probnik_final_allowed_after_window_closes_with_open_attempt(auth_client, db):
+    """Сдача больше НЕ ограничена периодом доступа билета: если ученик успел нажать
+    «Начать пробник» до closes_at, финал принимается даже после того, как период
+    закрылся (см. is_mock_exam_ticket_submission_open — теперь всегда True). Раньше
+    после closes_at билет «пропадал» из get_active_ticket и доделанная работа не
+    принималась без возможности досдать."""
+    from app.models.exam_assignment import ExamTicket as ExamTicketModel
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    ticket = _create_active_ticket(db, user, "Рисунок")  # период открыт на момент старта
+
+    start_resp = _start(client, "Рисунок")
+    assert start_resp.status_code == 200
+
+    # Период доступа истёк, пока ученик ещё работал над заданием.
+    ticket = db.query(ExamTicketModel).filter(ExamTicketModel.id == ticket.id).first()
+    ticket.closes_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    db.commit()
+
+    resp = client.post(
+        "/upload/probnik/final",
+        data={"subject": "Рисунок"},
+        files=[("photos", ("final.jpg", _JPG_BYTES, "image/jpeg"))],
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
 
 
 def test_probnik_final_resubmit_blocked_in_open_cycle(auth_client, db):

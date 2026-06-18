@@ -11,7 +11,6 @@ import logging
 from datetime import datetime, timezone, timedelta, date
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from sqlalchemy import or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db.database import SessionLocal
@@ -22,7 +21,13 @@ from app.models.notification import Notification
 from app.models.role import Role
 from app.models.session import Session
 from app.models.user import User
-from app.services.tz import today_msk
+from app.services.mock_exam_access import (
+    get_student_ids_for_target_tag,
+    is_target_tag_allowed_for_student,
+    ticket_closes_at,
+    ticket_opens_at,
+)
+from app.services.tz import MSK_TZ, today_msk
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +41,8 @@ def _run_notification_check() -> None:
     db = SessionLocal()
     try:
         today = today_msk()
-        notify_threshold = today + timedelta(days=NOTIFY_DAYS_BEFORE)
+        now = datetime.now(timezone.utc)
+        notify_threshold = now + timedelta(days=NOTIFY_DAYS_BEFORE)
 
         # Билеты, у которых начало сдачи через 3 дня или раньше, задание опубликовано
         tickets = (
@@ -44,11 +50,15 @@ def _run_notification_check() -> None:
             .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
             .filter(
                 ExamAssignment.status == "published",
-                ExamTicket.start_date <= notify_threshold,
-                ExamTicket.end_date >= today,   # ещё не закончился
+                ExamTicket.end_date >= today,   # legacy prefilter: ещё не закончился
             )
             .all()
         )
+        tickets = [
+            t for t in tickets
+            if ticket_opens_at(t).astimezone(timezone.utc) <= notify_threshold
+            and ticket_closes_at(t).astimezone(timezone.utc) > now
+        ]
 
         if not tickets:
             return
@@ -66,7 +76,42 @@ def _run_notification_check() -> None:
             .all()
         )
 
-        # Для билетов с assign_to_all=True — найти всех активных учеников
+        # Для теговых билетов — найти всех активных учеников с подходящим тегом.
+        tag_tickets = [t for t in tickets if t.target_tag_id is not None]
+        if tag_tickets:
+            student_role = db.query(Role).filter(Role.rank == 1).first()
+            for ticket in tag_tickets:
+                if not student_role:
+                    continue
+                tagged_ids = get_student_ids_for_target_tag(
+                    db,
+                    ticket.target_tag_id,
+                    role_id=student_role.id,
+                )
+                existing_all = (
+                    db.query(ExamTicketAssignee.user_id)
+                    .filter(ExamTicketAssignee.ticket_id == ticket.id)
+                    .all()
+                )
+                existing_assigned = {row.user_id for row in existing_all}
+                missing = tagged_ids - existing_assigned
+                if missing:
+                    stmt = pg_insert(ExamTicketAssignee).values(
+                        [{"ticket_id": ticket.id, "user_id": uid} for uid in missing]
+                    ).on_conflict_do_nothing(index_elements=["ticket_id", "user_id"])
+                    db.execute(stmt)
+                    db.flush()
+                    pending.extend(
+                        db.query(ExamTicketAssignee)
+                        .filter(
+                            ExamTicketAssignee.ticket_id == ticket.id,
+                            ExamTicketAssignee.user_id.in_(missing),
+                            ExamTicketAssignee.notified_at.is_(None),
+                        )
+                        .all()
+                    )
+
+        # Для legacy-билетов с assign_to_all=True — найти всех активных учеников
         all_tickets_ids = [t.id for t in tickets if t.assign_to_all]
         if all_tickets_ids:
             # Получаем ID всех активных учеников (rank=1)
@@ -111,7 +156,6 @@ def _run_notification_check() -> None:
                         pending.extend(new_assignees)
 
         # Отправляем уведомления
-        now = datetime.now(timezone.utc)
         sent = 0
         for assignee in pending:
             if assignee.notified_at is not None:
@@ -119,13 +163,19 @@ def _run_notification_check() -> None:
             ticket = ticket_map.get(assignee.ticket_id)
             if not ticket:
                 continue
+            if not is_target_tag_allowed_for_student(
+                db, assignee.user_id, ticket.target_tag_id
+            ):
+                continue
             assignment = db.query(ExamAssignment).filter(
                 ExamAssignment.id == ticket.assignment_id
             ).first()
             if not assignment:
                 continue
 
-            days_left = (ticket.start_date - today).days
+            opens_msk = ticket_opens_at(ticket).astimezone(MSK_TZ)
+            closes_msk = ticket_closes_at(ticket).astimezone(MSK_TZ)
+            days_left = (opens_msk.date() - today).days
             if days_left > NOTIFY_DAYS_BEFORE:
                 continue
 
@@ -141,8 +191,8 @@ def _run_notification_check() -> None:
                 title=f"Пробник по {assignment.subject} — {when_text}",
                 text=(
                     f"Билет {ticket.ticket_number}: {ticket.title}\n"
-                    f"Период сдачи: {ticket.start_date.strftime('%d.%m.%Y')} — "
-                    f"{ticket.end_date.strftime('%d.%m.%Y')}"
+                    f"Период сдачи: {opens_msk.strftime('%d.%m.%Y %H:%M')} — "
+                    f"{closes_msk.strftime('%d.%m.%Y %H:%M')} МСК"
                 ),
             )
             db.add(notif)
@@ -162,39 +212,43 @@ def _run_notification_check() -> None:
 
 def _run_mock_exam_expiry_check() -> None:
     """Каждые несколько минут помечает expired_at у открытых MockExamAttempt,
-    чей билет вышел из периода сдачи (end_date < today) или чьё задание стало
-    неопубликованным/архивным (status != "published").
+    чьё задание стало неопубликованным/архивным (status != "published").
 
-    Без этого «зависшая» попытка (ученик не сдал работу до конца периода
-    билета) осталась бы completed_at IS NULL навечно: mock_exam_start
-    резюмировал бы её со снимком архивного билета, а progress-check слал бы
-    уведомления о мёртвой попытке.
+    closes_at билета больше НЕ протухает попытку: сдача теперь разрешена в
+    любой момент после получения билета (is_mock_exam_ticket_submission_open
+    всегда True — см. mock_exam_access), иначе эта проверка молча вернула бы
+    старое поведение «после периода доступа сдать нельзя» через expired_at у
+    попытки. Протухание оставлено только для архивного/неопубликованного
+    задания — это и есть единственный source of truth ротации билетов
+    (get_active_ticket фильтрует по ExamAssignment.status == "published").
+
+    Без этого «зависшая» попытка архивного задания осталась бы
+    completed_at IS NULL навечно: mock_exam_start резюмировал бы её со
+    снимком неактивного билета.
     """
     db = SessionLocal()
     try:
-        today = today_msk()
         now = datetime.now(timezone.utc)
 
-        expired = (
-            db.query(MockExamAttempt)
+        candidates = (
+            db.query(MockExamAttempt, ExamTicket, ExamAssignment)
             .join(ExamTicket, MockExamAttempt.ticket_id == ExamTicket.id)
             .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
             .filter(
                 MockExamAttempt.completed_at.is_(None),
                 MockExamAttempt.expired_at.is_(None),
-                or_(
-                    ExamTicket.end_date < today,
-                    ExamAssignment.status != "published",
-                ),
             )
             .all()
         )
-        for attempt in expired:
-            attempt.expired_at = now
+        expired_count = 0
+        for attempt, ticket, assignment in candidates:
+            if assignment.status != "published":
+                attempt.expired_at = now
+                expired_count += 1
 
-        if expired:
+        if expired_count:
             db.commit()
-            logger.info("Mock-exam expiry: помечено %d истёкших попыток", len(expired))
+            logger.info("Mock-exam expiry: помечено %d истёкших попыток", expired_count)
 
     except Exception:
         logger.exception("Ошибка в mock-exam expiry check")
@@ -204,67 +258,16 @@ def _run_mock_exam_expiry_check() -> None:
 
 
 def _run_mock_exam_progress_check() -> None:
-    """Каждую минуту проверяет активные MockExamAttempt и отправляет уведомления
-    о прогрессе: 2ч прошло, 3ч прошло, 10 мин до окончания. Флаги защищают от
-    дубликатов.
+    """ОТКЛЮЧЕНО. Раньше каждую минуту слала уведомления «прошло 2ч / остался 1ч /
+    осталось 10 минут до окончания времени» по таймеру попытки.
+
+    Таймер 1:30 и дневное окно сняты (см. mock_exam_access и
+    _run_mock_exam_expiry_check): внутри периода билета у сдачи больше нет
+    дедлайна, поэтому эти уведомления были бы ложной срочностью. Job в
+    start_scheduler не регистрируется; функция оставлена как точка для будущих,
+    корректных по смыслу уведомлений (флаги notif_*_sent в модели не трогаем).
     """
-    db = SessionLocal()
-    try:
-        now = datetime.now(timezone.utc)
-        TWO_H = timedelta(hours=2)
-        THREE_H = timedelta(hours=3)
-        FIFTY_M = timedelta(minutes=50)  # 4ч - 10 мин = 3ч50м → точка «осталось 10 мин»
-
-        active = (
-            db.query(MockExamAttempt)
-            .filter(
-                MockExamAttempt.completed_at.is_(None),
-                MockExamAttempt.expired_at.is_(None),
-            )
-            .all()
-        )
-
-        sent = 0
-        for a in active:
-            elapsed = now - a.started_at
-
-            if elapsed >= TWO_H and not a.notif_2h_sent:
-                db.add(Notification(
-                    user_id=a.user_id,
-                    title=f"Пробник «{a.subject}»: прошло 2 часа",
-                    text="Осталось 2 часа. Продолжайте работу.",
-                ))
-                a.notif_2h_sent = True
-                sent += 1
-
-            if elapsed >= THREE_H and not a.notif_3h_sent:
-                db.add(Notification(
-                    user_id=a.user_id,
-                    title=f"Пробник «{a.subject}»: остался 1 час",
-                    text="Остался 1 час до окончания времени.",
-                ))
-                a.notif_3h_sent = True
-                sent += 1
-
-            if elapsed >= FIFTY_M + timedelta(hours=3) and not a.notif_10min_sent:
-                # 3ч + 50м = 3ч50м elapsed → осталось 10 мин
-                db.add(Notification(
-                    user_id=a.user_id,
-                    title=f"Пробник «{a.subject}»: осталось 10 минут",
-                    text="До окончания времени — 10 минут. Загрузите фото работы.",
-                ))
-                a.notif_10min_sent = True
-                sent += 1
-
-        db.commit()
-        if sent:
-            logger.info("Mock-exam progress: отправлено %d уведомлений", sent)
-
-    except Exception:
-        logger.exception("Ошибка в mock-exam progress check")
-        db.rollback()
-    finally:
-        db.close()
+    return
 
 
 def _run_cleanup() -> None:
@@ -309,16 +312,8 @@ def start_scheduler() -> None:
         max_instances=1,
         misfire_grace_time=300,
     )
-    _scheduler.add_job(
-        _run_mock_exam_progress_check,
-        trigger="interval",
-        minutes=1,
-        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=30),
-        id="mock_exam_progress",
-        replace_existing=True,
-        max_instances=1,
-        misfire_grace_time=60,
-    )
+    # mock_exam_progress job снят: таймер 1:30 убран, уведомления о «остатке
+    # времени» стали бы ложной срочностью (см. _run_mock_exam_progress_check).
     _scheduler.add_job(
         _run_mock_exam_expiry_check,
         trigger="interval",

@@ -41,8 +41,10 @@ def _create_attempt(db, user, ticket, *, subject="Рисунок"):
     return attempt
 
 
-def test_expiry_check_expires_attempt_past_ticket_end_date(db, regular_user):
-    """Билет вышел из периода сдачи (end_date < today) → открытая попытка expired_at."""
+def test_expiry_check_keeps_attempt_past_ticket_end_date(db, regular_user):
+    """Билет вышел из периода доступа (end_date < today), но задание опубликовано →
+    попытка больше НЕ протухает: closes_at больше не enforced (сдача разрешена
+    в любой момент после получения билета, см. mock_exam_access)."""
     ticket = _create_ticket(db, regular_user, end_offset=-1)
     attempt = _create_attempt(db, regular_user, ticket)
 
@@ -50,7 +52,7 @@ def test_expiry_check_expires_attempt_past_ticket_end_date(db, regular_user):
 
     db.refresh(attempt)
     assert attempt.completed_at is None
-    assert attempt.expired_at is not None
+    assert attempt.expired_at is None
 
 
 def test_expiry_check_expires_attempt_with_archived_assignment(db, regular_user):
