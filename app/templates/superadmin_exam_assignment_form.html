@@ -13,7 +13,8 @@
 
 .field { margin-bottom: 16px; }
 .field label { display: block; font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
-.field input[type=text], .field input[type=date], .field select, .field textarea {
+.field input[type=text], .field input[type=date], .field input[type=datetime-local],
+.field input[type=number], .field select, .field textarea {
     width: 100%; padding: 10px 14px; border: 1.5px solid var(--line); border-radius: var(--r-sm);
     font-size: 14px; color: var(--text); background: var(--bg); font-family: inherit;
     outline: none; transition: border-color 0.2s; box-sizing: border-box;
@@ -168,7 +169,9 @@
 
 <script>
 var ALL_STUDENTS = {{ student_list | tojson }};
+var ALL_TAGS = {{ tag_list | tojson }};
 var EXISTING_TICKETS = {{ existing_tickets_json | safe if existing_tickets_json else '[]' }};
+var DEFAULT_SCHEDULE = {{ default_schedule | tojson }};
 var IS_EDIT = {{ 'true' if is_edit else 'false' }};
 var ticketCount = 0;
 var MAX_TICKETS = 10;
@@ -186,7 +189,6 @@ function addTicket() {
     container.appendChild(div);
 
     updateAddBtn();
-    initStudentSearch(ticketCount);
     initImageUpload(ticketCount);
     attachPreviewListeners(ticketCount);
 }
@@ -300,44 +302,34 @@ function buildTicketHTML(n) {
         + '<input type="hidden" name="ticket_' + n + '_image_url" data-ticket="image_url" id="img-url-' + n + '">'
         + '<input type="hidden" name="ticket_' + n + '_image_path" data-ticket="image_path" id="img-path-' + n + '"></div>'
 
-        // Activation mode toggle
-        + '<div class="field"><label>Когда включить билет</label>'
-        + '<div class="activate-toggle" id="activate-toggle-' + n + '">'
-        + '<label class="activate-opt" data-mode="now">'
-        + '<input type="radio" name="ticket_' + n + '_activate_mode" value="now" onchange="onActivateModeChange(' + n + ')">'
-        + '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Включить сейчас</label>'
-        + '<label class="activate-opt active" data-mode="scheduled">'
-        + '<input type="radio" name="ticket_' + n + '_activate_mode" value="scheduled" checked onchange="onActivateModeChange(' + n + ')">'
-        + '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> По дате</label>'
-        + '</div>'
-        + '<div class="activate-hint">Включается в 00:00 по Москве в указанную дату.</div>'
-        + '</div>'
-
-        // Dates
+        // Schedule and access
         + '<div class="field-row">'
-        + '<div class="field scheduled-date-wrap visible" id="start-wrap-' + n + '"><label>Дата начала <span style="color:#DC2626">*</span></label>'
-        + '<input type="date" id="ticket-start-' + n + '" name="ticket_' + n + '_start_date" data-ticket="start_date" value="' + today + '" required>'
-        + '<div class="field-error-msg" id="err-start-' + n + '">Укажите дату начала</div></div>'
-        + '<div class="field"><label>Дата окончания <span style="color:#DC2626">*</span></label>'
-        + '<input type="date" id="ticket-end-' + n + '" name="ticket_' + n + '_end_date" data-ticket="end_date" min="' + today + '">'
-        + '<div class="field-error-msg" id="err-end-' + n + '">Укажите дату окончания</div></div>'
+        + '<div class="field"><label>Открывается по Москве <span style="color:#DC2626">*</span></label>'
+        + '<input type="datetime-local" id="ticket-opens-' + n + '" name="ticket_' + n + '_opens_at" data-ticket="opens_at" value="' + esc(DEFAULT_SCHEDULE.opens_at) + '" required>'
+        + '<div class="field-error-msg" id="err-opens-' + n + '">Укажите дату и время открытия</div></div>'
+        + '<div class="field"><label>Закрывается по Москве <span style="color:#DC2626">*</span></label>'
+        + '<input type="datetime-local" id="ticket-closes-' + n + '" name="ticket_' + n + '_closes_at" data-ticket="closes_at" value="' + esc(DEFAULT_SCHEDULE.closes_at) + '" required>'
+        + '<div class="field-error-msg" id="err-closes-' + n + '">Укажите дату и время закрытия</div></div>'
         + '</div>'
-
-        // Students
-        + '<div class="field"><label>Кому выдать <span style="color:#DC2626">*</span></label>'
-        + '<div class="students-selector">'
-        + '<div class="assign-all-row" onclick="toggleAll(' + n + ')">'
-        + '<input type="checkbox" name="ticket_' + n + '_assign_all" data-ticket="assign_all" id="all-' + n + '" onchange="toggleAll(' + n + ')" onclick="event.stopPropagation()">'
-        + '<span class="assign-all-label">Всем ученикам</span>'
+        + '<div class="field-row">'
+        + '<div class="field"><label>Время на выполнение, минут <span style="color:#DC2626">*</span></label>'
+        + '<input type="number" id="ticket-duration-' + n + '" name="ticket_' + n + '_duration_minutes" data-ticket="duration_minutes" min="1" max="720" step="1" value="' + esc(DEFAULT_SCHEDULE.duration_minutes) + '" required>'
+        + '<div class="field-hint">Только визуальный счётчик для ученика — сдачу НЕ блокирует. Сдать можно в любой момент периода доступа (Открывается…Закрывается).</div>'
+        + '<div class="field-error-msg" id="err-duration-' + n + '">Укажите таймер от 1 до 720 минут</div></div>'
+        + '<div class="field"><label>Выдать по тегу <span style="color:var(--dim);font-weight:400">(необязательно)</span></label>'
+        + '<select id="ticket-tag-' + n + '" name="ticket_' + n + '_target_tag_id" data-ticket="target_tag_id">'
+        + buildTagOptions('')
+        + '</select>'
+        + '<div class="field-hint">Если выбран тег — билет получат только ученики с этим тегом. Если тег не выбран — билет получат все ученики (по предмету).</div>'
+        + '<div class="field-error-msg" id="err-tag-' + n + '"></div></div>'
         + '</div>'
-        + '<div id="students-panel-' + n + '">'
-        + '<input type="text" class="students-search" placeholder="Поиск по имени…" oninput="filterStudents(this,' + n + ')">'
-        + '<div class="students-list" id="students-list-' + n + '"></div>'
-        + '<div class="students-selected-count" id="students-count-' + n + '">0 выбрано</div>'
+        + '<div class="field-row">'
+        + '<div class="field"><label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer">'
+        + '<input type="checkbox" id="ticket-restrict-start-' + n + '" name="ticket_' + n + '_restrict_start_by_duration" data-ticket="restrict_start_by_duration" style="width:auto"> '
+        + 'Запретить получение билета, если до конца периода осталось ≤ времени на выполнение</label>'
+        + '<div class="field-hint">Включено — получить билет нельзя, если до конца периода осталось меньше времени на выполнение (напр., период до 14:00 и 90 мин → получить можно до 12:30). Выключено (по умолчанию) — получить билет можно до самого конца периода; время на выполнение всё равно показывается ученику как счётчик.</div>'
         + '</div>'
         + '</div>'
-        + '<input type="hidden" name="ticket_' + n + '_student_ids" data-ticket="student_ids" id="student-ids-' + n + '">'
-        + '<div class="field-error-msg" id="err-students-' + n + '">Выберите хотя бы одного ученика или «Всем ученикам»</div></div>'
 
         // Live preview (как увидит ученик)
         + '<div class="ea-preview-wrap">'
@@ -502,6 +494,15 @@ function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+function buildTagOptions(selectedId) {
+    var html = '<option value="">— Всем ученикам (без тега) —</option>';
+    ALL_TAGS.forEach(function(tag) {
+        var id = String(tag.id);
+        html += '<option value="' + esc(id) + '"' + (String(selectedId || '') === id ? ' selected' : '') + '>' + esc(tag.name) + '</option>';
+    });
+    return html;
+}
+
 // ── Pre-fill в режиме редактирования ─────────────────────────────────────────
 
 function populateTicket(n, t) {
@@ -527,26 +528,16 @@ function populateTicket(n, t) {
         var prev = document.getElementById('prev-img-' + n);
         if (prev) { prev.src = t.image_url; prev.style.display = 'block'; }
     }
-    // dates — режим всегда «по дате» при редактировании (start_date уже есть)
-    var startInput = document.querySelector('[name="ticket_' + n + '_start_date"]');
-    var endInput = document.querySelector('[name="ticket_' + n + '_end_date"]');
-    if (startInput && t.start_date) startInput.value = t.start_date;
-    if (endInput && t.end_date) endInput.value = t.end_date;
-    // assign_to_all
-    if (t.assign_to_all) {
-        var allCb = document.getElementById('all-' + n);
-        if (allCb) {
-            allCb.checked = true;
-            toggleAll(n);
-        }
-    } else if (t.student_ids && t.student_ids.length) {
-        // Pre-check student checkboxes
-        var ids = new Set(t.student_ids.map(String));
-        document.querySelectorAll('#students-list-' + n + ' input[type=checkbox]').forEach(function(cb) {
-            if (ids.has(cb.value)) cb.checked = true;
-        });
-        updateStudentIds(n);
-    }
+    var opensInput = document.querySelector('[name="ticket_' + n + '_opens_at"]');
+    var closesInput = document.querySelector('[name="ticket_' + n + '_closes_at"]');
+    var durationInput = document.querySelector('[name="ticket_' + n + '_duration_minutes"]');
+    var tagSelect = document.querySelector('[name="ticket_' + n + '_target_tag_id"]');
+    var restrictInput = document.querySelector('[name="ticket_' + n + '_restrict_start_by_duration"]');
+    if (opensInput && t.opens_at) opensInput.value = t.opens_at;
+    if (closesInput && t.closes_at) closesInput.value = t.closes_at;
+    if (durationInput && t.duration_minutes) durationInput.value = t.duration_minutes;
+    if (tagSelect && t.target_tag_id) tagSelect.value = String(t.target_tag_id);
+    if (restrictInput) restrictInput.checked = !!t.restrict_start_by_duration;
 }
 
 if (IS_EDIT && EXISTING_TICKETS.length > 0) {
@@ -597,7 +588,6 @@ function validateForm(event) {
     if (titleEmpty) ok = false;
 
     // ── Билеты ──
-    var today = new Date(); today.setHours(0, 0, 0, 0);
     var blocks = document.querySelectorAll('.ticket-block');
     blocks.forEach(function(block, idx) {
         var n = idx + 1;
@@ -609,49 +599,50 @@ function validateForm(event) {
         setFieldError(tTitle, tTitleErr, tTitleEmpty);
         if (tTitleEmpty) { ok = false; if (!firstError) firstError = tTitle; }
 
-        // Дата окончания
-        var tEnd = block.querySelector('[name="ticket_' + n + '_end_date"]');
-        var tEndErr = document.getElementById('err-end-' + n);
-        var tEndEmpty = !tEnd || !tEnd.value;
-        var tEndPast = false;
-        if (!tEndEmpty) {
-            var endDate = new Date(tEnd.value); endDate.setHours(0, 0, 0, 0);
-            tEndPast = endDate < today;
-        }
-        setFieldError(tEnd, tEndErr, tEndEmpty || tEndPast);
-        if (tEndEmpty) { if (tEndErr) tEndErr.textContent = 'Укажите дату окончания'; ok = false; if (!firstError) firstError = tEnd; }
-        else if (tEndPast) { if (tEndErr) tEndErr.textContent = 'Дата окончания не может быть в прошлом'; ok = false; if (!firstError) firstError = tEnd; }
-        else { if (tEndErr) tEndErr.textContent = 'Укажите дату окончания'; }
+        var opensInput = block.querySelector('[name="ticket_' + n + '_opens_at"]');
+        var closesInput = block.querySelector('[name="ticket_' + n + '_closes_at"]');
+        var durationInput = block.querySelector('[name="ticket_' + n + '_duration_minutes"]');
+        var restrictInput = block.querySelector('[name="ticket_' + n + '_restrict_start_by_duration"]');
+        var tagSelect = block.querySelector('[name="ticket_' + n + '_target_tag_id"]');
+        var opensErr = document.getElementById('err-opens-' + n);
+        var closesErr = document.getElementById('err-closes-' + n);
+        var durationErr = document.getElementById('err-duration-' + n);
+        var tagErr = document.getElementById('err-tag-' + n);
 
-        // Дата начала (только в режиме «по дате»)
-        var mode = (block.querySelector('[name="ticket_' + n + '_activate_mode"]:checked') || {}).value || 'scheduled';
-        if (mode === 'scheduled') {
-            var tStart = block.querySelector('[name="ticket_' + n + '_start_date"]');
-            var tStartErr = document.getElementById('err-start-' + n);
-            var tStartEmpty = !tStart || !tStart.value;
-            setFieldError(tStart, tStartErr, tStartEmpty);
-            if (tStartEmpty) { ok = false; if (!firstError) firstError = tStart; }
-        }
+        var opensEmpty = !opensInput || !opensInput.value;
+        var closesEmpty = !closesInput || !closesInput.value;
+        setFieldError(opensInput, opensErr, opensEmpty);
+        setFieldError(closesInput, closesErr, closesEmpty);
+        if (opensEmpty) { ok = false; if (!firstError) firstError = opensInput; }
+        if (closesEmpty) { ok = false; if (!firstError) firstError = closesInput; }
 
-        // Кому выдать
-        var allCb = document.getElementById('all-' + n);
-        var allChecked = allCb && allCb.checked;
-        if (!allChecked) {
-            var studentIds = (document.getElementById('student-ids-' + n) || {}).value || '';
-            var noStudents = !studentIds.trim();
-            var studErr = document.getElementById('err-students-' + n);
-            // Отображаем ошибку через студенческий selector
-            var selector = block.querySelector('.students-selector');
-            if (noStudents) {
-                ok = false;
-                if (selector) selector.style.outline = '1.5px solid #DC2626';
-                if (studErr) studErr.classList.add('visible');
-                if (!firstError) firstError = selector || studErr;
+        if (!opensEmpty && !closesEmpty) {
+            var opensAt = new Date(opensInput.value);
+            var closesAt = new Date(closesInput.value);
+            var durMin = durationInput ? Number(durationInput.value) : 0;
+            var closeBad = closesAt <= opensAt;
+            // Период должен вмещать «время на выполнение» — но только если включено
+            // ограничение получения по этому времени (иначе получить можно до closes_at).
+            var restrictOn = !!(restrictInput && restrictInput.checked);
+            var periodTooShort = !closeBad && restrictOn && durMin > 0 &&
+                (closesAt.getTime() - opensAt.getTime()) < (durMin * 60 * 1000);
+            if (closeBad) {
+                closesErr.textContent = 'Закрытие должно быть позже открытия';
+            } else if (periodTooShort) {
+                closesErr.textContent = 'Период короче времени на выполнение';
             } else {
-                if (selector) selector.style.outline = '';
-                if (studErr) studErr.classList.remove('visible');
+                closesErr.textContent = 'Укажите дату и время закрытия';
             }
+            setFieldError(closesInput, closesErr, closeBad || periodTooShort);
+            if (closeBad || periodTooShort) { ok = false; if (!firstError) firstError = closesInput; }
         }
+
+        var durationValue = durationInput ? Number(durationInput.value) : 0;
+        var durationBad = !Number.isInteger(durationValue) || durationValue < 1 || durationValue > 720;
+        setFieldError(durationInput, durationErr, durationBad);
+        if (durationBad) { ok = false; if (!firstError) firstError = durationInput; }
+
+        // Тег необязателен: пустое значение = «всем ученикам», не блокирует отправку.
     });
 
     if (!ok) {

@@ -115,7 +115,7 @@ def test_mock_exam_deadline_is_90_minutes_but_not_after_day_close():
     )
 
 
-def _inmemory_ticket(*, opens_at, closes_at, duration_minutes=90):
+def _inmemory_ticket(*, opens_at, closes_at, duration_minutes=90, restrict_start_by_duration=True):
     """ExamTicket БЕЗ записи в БД — чтобы проверять точные границы окна без
     tz-артефакта SQLite (DateTime(timezone=True) при round-trip сдвигает время)."""
     return ExamTicket(
@@ -127,6 +127,7 @@ def _inmemory_ticket(*, opens_at, closes_at, duration_minutes=90):
         opens_at=opens_at,
         closes_at=closes_at,
         duration_minutes=duration_minutes,
+        restrict_start_by_duration=restrict_start_by_duration,
         assign_to_all=True,
     )
 
@@ -238,6 +239,23 @@ def test_start_cutoff_is_close_minus_duration():
     assert is_mock_exam_ticket_submission_open(
         ticket, value=datetime(2026, 6, 1, 13, 30, tzinfo=MSK_TZ)
     ) is True
+
+
+def test_start_cutoff_disabled_allows_start_until_closes_at():
+    """restrict_start_by_duration=False — получить билет можно до самого closes_at,
+    отсечка closes_at-duration больше не применяется (только визуальный счётчик)."""
+    ticket = _inmemory_ticket(
+        opens_at=datetime(2026, 6, 1, 10, 0, tzinfo=MSK_TZ),
+        closes_at=datetime(2026, 6, 1, 14, 0, tzinfo=MSK_TZ),
+        duration_minutes=90,
+        restrict_start_by_duration=False,
+    )
+
+    f = is_mock_exam_ticket_start_open
+    assert f(ticket, value=datetime(2026, 6, 1, 12, 31, tzinfo=MSK_TZ)) is True   # за отсечкой duration, но до closes_at
+    assert f(ticket, value=datetime(2026, 6, 1, 14, 0, tzinfo=MSK_TZ)) is True    # ровно closes_at
+    assert f(ticket, value=datetime(2026, 6, 1, 14, 1, tzinfo=MSK_TZ)) is False   # после closes_at
+    assert f(ticket, value=datetime(2026, 6, 1, 9, 59, tzinfo=MSK_TZ)) is False   # до открытия
 
 
 def test_ticket_duration_sets_attempt_deadline_but_not_after_close():

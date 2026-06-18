@@ -3,6 +3,8 @@
 from datetime import date, timedelta
 
 from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
+from app.models.tag import Tag
+from app.services.tz import MSK_TZ
 
 
 def _login_as(client, session_factory, user):
@@ -121,6 +123,111 @@ def test_exam_assignment_activate_from_archive(
     assert resp.headers["location"] == "/cabinet/exam-assignments/active"
     db.refresh(assignment)
     assert assignment.status == "published"
+
+
+def test_exam_assignment_create_saves_exact_time_timer_and_target_tag(
+    client,
+    db,
+    user_factory,
+    session_factory,
+):
+    admin = user_factory(vk_id=303011, role_name="суперадмин")
+    _login_as(client, session_factory, admin)
+    tag = Tag(name="Пробник Р")
+    db.add(tag)
+    db.commit()
+    db.refresh(tag)
+
+    resp = client.post(
+        "/cabinet/exam-assignments/create",
+        data={
+            "csrf_token": "bypass",
+            "title": "Пробник с расписанием",
+            "subject": "Рисунок",
+            "ticket_count": "1",
+            "ticket_1_title": "Билет 1",
+            "ticket_1_description": "Описание",
+            "ticket_1_opens_at": "2026-06-18T11:45",
+            "ticket_1_closes_at": "2026-06-18T18:00",
+            "ticket_1_duration_minutes": "75",
+            "ticket_1_target_tag_id": str(tag.id),
+        },
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    ticket = db.query(ExamTicket).filter(ExamTicket.title == "Билет 1").one()
+    assert ticket.target_tag_id == tag.id
+    assert ticket.duration_minutes == 75
+    assert ticket.assign_to_all is False
+    assert ticket.opens_at.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M") == "2026-06-18T11:45"
+    assert ticket.closes_at.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M") == "2026-06-18T18:00"
+
+
+def test_exam_assignment_create_without_tag_assigns_to_all(
+    client,
+    db,
+    user_factory,
+    session_factory,
+):
+    """Тег необязателен: билет без тега и без конкретных учеников → выдаётся всем."""
+    admin = user_factory(vk_id=303012, role_name="суперадмин")
+    _login_as(client, session_factory, admin)
+
+    resp = client.post(
+        "/cabinet/exam-assignments/create",
+        data={
+            "csrf_token": "bypass",
+            "title": "Пробник без тега",
+            "subject": "Рисунок",
+            "ticket_count": "1",
+            "ticket_1_title": "Билет без тега",
+            "ticket_1_opens_at": "2026-06-18T11:45",
+            "ticket_1_closes_at": "2026-06-18T18:00",
+            "ticket_1_duration_minutes": "90",
+            "ticket_1_target_tag_id": "",  # тег не выбран
+        },
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    ticket = db.query(ExamTicket).filter(ExamTicket.title == "Билет без тега").one()
+    assert ticket.target_tag_id is None
+    assert ticket.assign_to_all is True
+    # Чекбокс не передан (как обычный неотмеченный HTML-чекбокс) — по умолчанию
+    # получение билета НЕ ограничивается «временем на выполнение».
+    assert ticket.restrict_start_by_duration is False
+
+
+def test_exam_assignment_create_restrict_start_by_duration_checkbox(
+    client,
+    db,
+    user_factory,
+    session_factory,
+):
+    """Чекбокс "Запретить получение билета..." включает отсечку closes_at-duration."""
+    admin = user_factory(vk_id=303013, role_name="суперадмин")
+    _login_as(client, session_factory, admin)
+
+    resp = client.post(
+        "/cabinet/exam-assignments/create",
+        data={
+            "csrf_token": "bypass",
+            "title": "Пробник с отсечкой получения",
+            "subject": "Рисунок",
+            "ticket_count": "1",
+            "ticket_1_title": "Билет с отсечкой",
+            "ticket_1_opens_at": "2026-06-18T11:45",
+            "ticket_1_closes_at": "2026-06-18T18:00",
+            "ticket_1_duration_minutes": "90",
+            "ticket_1_restrict_start_by_duration": "on",
+        },
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    ticket = db.query(ExamTicket).filter(ExamTicket.title == "Билет с отсечкой").one()
+    assert ticket.restrict_start_by_duration is True
 
 
 def test_exam_assignment_duplicate_copies_tickets_and_assignees(

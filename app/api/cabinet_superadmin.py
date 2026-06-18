@@ -38,7 +38,7 @@ from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAss
 from app.models.exam_cycle import ExamCycle
 from app.models.feature_period import FeaturePeriod
 from app.services.feature_periods import invalidate_feature_cache, get_active_period
-from app.services.tz import today_msk, msk_midnight
+from app.services.tz import MSK_TZ, now_msk, today_msk, msk_midnight
 from app.models.role import Role
 from app.models.tag import Tag, UserTag
 from app.models.user import User
@@ -47,6 +47,13 @@ from app.services import s3 as s3_service
 from app.services.auth_links import issue_one_time_login_link
 from app.services.n8n import send_photo_to_n8n
 from app.services.tags import get_all_tags
+from app.services.mock_exam_access import (
+    MOCK_EXAM_DEFAULT_DURATION_MINUTES,
+    ticket_closes_at,
+    ticket_duration_sec,
+    ticket_opens_at,
+    ticket_start_cutoff_at,
+)
 from app.services.utils import compress_image, rotate_image_bytes
 from app.tmpl import templates
 
@@ -524,6 +531,50 @@ def _load_student_list(db: DBSession) -> list[dict]:
     ]
 
 
+def _load_tag_list(db: DBSession) -> list[dict]:
+    return [{"id": tag.id, "name": tag.name} for tag in get_all_tags(db)]
+
+
+def _default_ticket_schedule() -> dict:
+    base = now_msk()
+    if base.time() >= datetime.strptime("18:30", "%H:%M").time():
+        base = base + timedelta(days=1)
+    open_at = base.replace(hour=11, minute=45, second=0, microsecond=0)
+    close_at = base.replace(hour=18, minute=30, second=0, microsecond=0)
+    return {
+        "opens_at": open_at.strftime("%Y-%m-%dT%H:%M"),
+        "closes_at": close_at.strftime("%Y-%m-%dT%H:%M"),
+        "duration_minutes": MOCK_EXAM_DEFAULT_DURATION_MINUTES,
+    }
+
+
+def _parse_msk_datetime_local(raw: str, *, ticket_number: int, field_label: str) -> datetime:
+    try:
+        value = datetime.fromisoformat(raw)
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Билет {ticket_number}: неверное время «{field_label}»",
+        )
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=MSK_TZ)
+    else:
+        value = value.astimezone(MSK_TZ)
+    return value.astimezone(timezone.utc)
+
+
+def _format_msk_datetime_local(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M")
+
+
+def _format_msk_display(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(MSK_TZ).strftime("%d.%m.%Y %H:%M")
+
+
 @router.get("/exam-assignments/create", response_class=HTMLResponse)
 def exam_assignment_create_form(
     request: Request,
@@ -535,6 +586,8 @@ def exam_assignment_create_form(
         "user": user,
         "subjects": MOCK_SUBJECTS,
         "student_list": _load_student_list(db),
+        "tag_list": _load_tag_list(db),
+        "default_schedule": _default_ticket_schedule(),
         "is_edit": False,
     })
 
@@ -576,6 +629,11 @@ def exam_assignment_edit_form(
             "image_path": t.image_s3_path or "",
             "start_date": t.start_date.isoformat() if t.start_date else "",
             "end_date": t.end_date.isoformat() if t.end_date else "",
+            "opens_at": _format_msk_datetime_local(ticket_opens_at(t)),
+            "closes_at": _format_msk_datetime_local(ticket_closes_at(t)),
+            "duration_minutes": ticket_duration_sec(t) // 60,
+            "restrict_start_by_duration": bool(t.restrict_start_by_duration),
+            "target_tag_id": t.target_tag_id,
             "assign_to_all": bool(t.assign_to_all),
             "student_ids": assignees_by_ticket.get(t.id, []),
         }
@@ -588,6 +646,8 @@ def exam_assignment_edit_form(
         "user": user,
         "subjects": MOCK_SUBJECTS,
         "student_list": _load_student_list(db),
+        "tag_list": _load_tag_list(db),
+        "default_schedule": _default_ticket_schedule(),
         "is_edit": True,
         "assignment": assignment,
         "existing_tickets_json": _json.dumps(existing_tickets, ensure_ascii=False),
@@ -720,6 +780,11 @@ def _build_tickets_from_form(db: DBSession, assignment, form, ticket_count: int)
         t_desc = str(form.get(f"ticket_{i}_description", "")).strip() or None
         t_img_url = str(form.get(f"ticket_{i}_image_url", "")).strip() or None
         t_img_path = str(form.get(f"ticket_{i}_image_path", "")).strip() or None
+        t_opens_raw = str(form.get(f"ticket_{i}_opens_at", "")).strip()
+        t_closes_raw = str(form.get(f"ticket_{i}_closes_at", "")).strip()
+        t_duration_raw = str(form.get(f"ticket_{i}_duration_minutes", "")).strip()
+        restrict_start_by_duration = form.get(f"ticket_{i}_restrict_start_by_duration") == "on"
+        t_target_tag_raw = str(form.get(f"ticket_{i}_target_tag_id", "")).strip()
         t_activate_mode = str(form.get(f"ticket_{i}_activate_mode", "scheduled")).strip()
         t_start_raw = str(form.get(f"ticket_{i}_start_date", "")).strip()
         t_end_raw = str(form.get(f"ticket_{i}_end_date", "")).strip()
@@ -729,23 +794,80 @@ def _build_tickets_from_form(db: DBSession, assignment, form, ticket_count: int)
         if not t_title:
             raise HTTPException(status_code=422, detail=f"Название билета {i} обязательно")
 
-        try:
-            t_end = date.fromisoformat(t_end_raw)
-        except ValueError:
-            raise HTTPException(status_code=422, detail=f"Неверная дата окончания в билете {i}")
-
-        if t_activate_mode == "now":
-            t_start = today_msk()
-        else:
+        if t_duration_raw:
             try:
-                t_start = date.fromisoformat(t_start_raw)
+                duration_minutes = int(t_duration_raw)
             except ValueError:
-                raise HTTPException(status_code=422, detail=f"Неверная дата начала в билете {i}")
+                raise HTTPException(status_code=422, detail=f"Билет {i}: неверный таймер сдачи")
+        else:
+            duration_minutes = MOCK_EXAM_DEFAULT_DURATION_MINUTES
+        if duration_minutes < 1 or duration_minutes > 720:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Билет {i}: таймер сдачи должен быть от 1 до 720 минут",
+            )
 
-        if t_end < t_start:
-            raise HTTPException(status_code=422, detail=f"Дата окончания раньше начала в билете {i}")
-        if t_end < today_msk():
-            raise HTTPException(status_code=422, detail=f"Билет {i}: дата окончания уже в прошлом")
+        target_tag_id = int(t_target_tag_raw) if t_target_tag_raw.isdigit() else None
+        if target_tag_id is not None and not db.query(Tag.id).filter(Tag.id == target_tag_id).first():
+            raise HTTPException(status_code=422, detail=f"Билет {i}: выбранный тег не найден")
+
+        if t_opens_raw or t_closes_raw:
+            if not t_opens_raw:
+                raise HTTPException(status_code=422, detail=f"Билет {i}: укажите время открытия")
+            if not t_closes_raw:
+                raise HTTPException(status_code=422, detail=f"Билет {i}: укажите время закрытия")
+            opens_at = _parse_msk_datetime_local(
+                t_opens_raw, ticket_number=i, field_label="открывается"
+            )
+            closes_at = _parse_msk_datetime_local(
+                t_closes_raw, ticket_number=i, field_label="закрывается"
+            )
+            opens_msk = opens_at.astimezone(MSK_TZ)
+            closes_msk = closes_at.astimezone(MSK_TZ)
+            if closes_at <= opens_at:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Билет {i}: время закрытия должно быть позже открытия",
+                )
+            if (
+                restrict_start_by_duration
+                and closes_msk - timedelta(minutes=duration_minutes) < opens_msk
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"Билет {i}: период должен быть не короче времени на "
+                        f"выполнение ({duration_minutes} мин) — иначе билет нельзя "
+                        f"будет получить"
+                    ),
+                )
+            if closes_at < datetime.now(timezone.utc):
+                raise HTTPException(status_code=422, detail=f"Билет {i}: время закрытия уже в прошлом")
+            t_start = opens_msk.date()
+            t_end = closes_msk.date()
+        else:
+            opens_at = None
+            closes_at = None
+            try:
+                t_end = date.fromisoformat(t_end_raw)
+            except ValueError:
+                raise HTTPException(status_code=422, detail=f"Неверная дата окончания в билете {i}")
+            if t_activate_mode == "now":
+                t_start = today_msk()
+            else:
+                try:
+                    t_start = date.fromisoformat(t_start_raw)
+                except ValueError:
+                    raise HTTPException(status_code=422, detail=f"Неверная дата начала в билете {i}")
+            if t_end < t_start:
+                raise HTTPException(status_code=422, detail=f"Дата окончания раньше начала в билете {i}")
+            if t_end < today_msk():
+                raise HTTPException(status_code=422, detail=f"Билет {i}: дата окончания уже в прошлом")
+
+        student_ids = list({int(x) for x in t_students_raw.split(",") if x.strip().isdigit()})
+        # Тег необязателен: если тег не выбран и не указаны конкретные ученики —
+        # билет выдаётся всем (assign_to_all). Тег только сужает выдачу.
+        assign_all = target_tag_id is None and (t_all or not student_ids)
 
         ticket = ExamTicket(
             assignment_id=assignment.id,
@@ -756,13 +878,17 @@ def _build_tickets_from_form(db: DBSession, assignment, form, ticket_count: int)
             image_s3_path=t_img_path,
             start_date=t_start,
             end_date=t_end,
-            assign_to_all=t_all,
+            opens_at=opens_at,
+            closes_at=closes_at,
+            duration_minutes=duration_minutes,
+            restrict_start_by_duration=restrict_start_by_duration,
+            target_tag_id=target_tag_id,
+            assign_to_all=assign_all,
         )
         db.add(ticket)
         db.flush()
 
-        if not t_all:
-            student_ids = list({int(x) for x in t_students_raw.split(",") if x.strip().isdigit()})
+        if target_tag_id is None and not t_all:
             if student_ids:
                 stmt = pg_insert(ExamTicketAssignee.__table__).values(
                     [{"ticket_id": ticket.id, "user_id": uid} for uid in student_ids]
@@ -856,12 +982,28 @@ def exam_assignment_detail(
             })
 
     creator = db.query(User).filter(User.id == assignment.created_by_id).first()
+    target_tag_ids = [t.target_tag_id for t in tickets if t.target_tag_id is not None]
+    tags_by_id = {
+        tag.id: tag.name
+        for tag in db.query(Tag).filter(Tag.id.in_(target_tag_ids)).all()
+    } if target_tag_ids else {}
+    ticket_meta = {
+        t.id: {
+            "opens_at": _format_msk_display(ticket_opens_at(t)),
+            "closes_at": _format_msk_display(ticket_closes_at(t)),
+            "latest_start_at": _format_msk_display(ticket_start_cutoff_at(t)),
+            "duration_minutes": ticket_duration_sec(t) // 60,
+            "target_tag_name": tags_by_id.get(t.target_tag_id),
+        }
+        for t in tickets
+    }
 
     return templates.TemplateResponse("superadmin_exam_assignment_detail.html", {
         "request": request,
         "user": user,
         "assignment": assignment,
         "tickets": tickets,
+        "ticket_meta": ticket_meta,
         "assignees_by_ticket": assignees_by_ticket,
         "creator": creator,
     })
@@ -981,6 +1123,10 @@ def exam_assignment_duplicate(
             image_s3_path=st.image_s3_path,
             start_date=st.start_date,
             end_date=st.end_date,
+            opens_at=st.opens_at,
+            closes_at=st.closes_at,
+            duration_minutes=st.duration_minutes,
+            target_tag_id=st.target_tag_id,
             assign_to_all=st.assign_to_all,
         )
         db.add(new_ticket)

@@ -56,7 +56,7 @@ def ticket_duration_sec(ticket: "ExamTicket") -> int:
 
 
 def ticket_latest_start_at(ticket: "ExamTicket") -> datetime:
-    """Последний момент, когда можно ПОЛУЧИТЬ билет («Начать пробник»).
+    """Последний момент, когда можно ПОЛУЧИТЬ билет, если включён restrict_start_by_duration.
 
     = конец периода доступа (closes_at) минус «время на выполнение» (duration),
     чтобы у ученика оставалось полное время на работу внутри периода. Пример:
@@ -64,6 +64,16 @@ def ticket_latest_start_at(ticket: "ExamTicket") -> datetime:
     можно до самого closes_at (таймер визуальный, см. is_mock_exam_attempt_open).
     """
     return ticket_closes_at(ticket) - timedelta(seconds=ticket_duration_sec(ticket))
+
+
+def ticket_start_cutoff_at(ticket: "ExamTicket") -> datetime:
+    """Фактический последний момент получения билета с учётом флага
+    restrict_start_by_duration: включён (по умолчанию для старых билетов, None
+    трактуется как включён) — cutoff = latest_start_at; выключен — cutoff =
+    closes_at (получить билет можно до самого конца периода)."""
+    if ticket.restrict_start_by_duration is False:
+        return ticket_closes_at(ticket)
+    return ticket_latest_start_at(ticket)
 
 
 def is_mock_exam_ticket_submission_open(
@@ -85,11 +95,14 @@ def is_mock_exam_ticket_submission_open(
 
 
 def is_mock_exam_ticket_start_open(ticket: "ExamTicket", value: datetime | None = None) -> bool:
-    """Получение билета («Начать пробник») открыто от opens_at до latest_start
-    (= closes_at − duration): нельзя начинать, если до конца периода осталось
-    меньше «времени на выполнение». Сдача при этом открыта до closes_at отдельно
-    (см. is_mock_exam_ticket_submission_open)."""
-    return ticket_opens_at(ticket) <= _as_msk(value) <= ticket_latest_start_at(ticket)
+    """Получение билета («Начать пробник») открыто от opens_at до cutoff.
+
+    Если restrict_start_by_duration включён (по умолчанию) — cutoff = latest_start
+    (closes_at − duration): нельзя начинать, если до конца периода осталось
+    меньше «времени на выполнение». Если выключен — cutoff = closes_at, получение
+    не ограничено временем на выполнение (оно остаётся только визуальным счётчиком).
+    Сдача при этом открыта до closes_at отдельно (см. is_mock_exam_ticket_submission_open)."""
+    return ticket_opens_at(ticket) <= _as_msk(value) <= ticket_start_cutoff_at(ticket)
 
 
 def mock_exam_deadline_for_started_at(
@@ -132,10 +145,15 @@ def mock_exam_window_error(*, for_start: bool, ticket: "ExamTicket | None" = Non
         return f"{action} можно в период доступа, назначенный куратором"
     opens = ticket_opens_at(ticket)
     if for_start:
-        latest = ticket_latest_start_at(ticket)
+        cutoff = ticket_start_cutoff_at(ticket)
+        if ticket.restrict_start_by_duration is False:
+            return (
+                f"Получить билет можно с {opens.strftime('%d.%m.%Y %H:%M')} по "
+                f"{cutoff.strftime('%d.%m.%Y %H:%M')} МСК"
+            )
         return (
             f"Получить билет можно с {opens.strftime('%d.%m.%Y %H:%M')} по "
-            f"{latest.strftime('%d.%m.%Y %H:%M')} МСК (не позже чем за "
+            f"{cutoff.strftime('%d.%m.%Y %H:%M')} МСК (не позже чем за "
             f"{ticket_duration_sec(ticket) // 60} мин до конца периода)"
         )
     closes = ticket_closes_at(ticket)

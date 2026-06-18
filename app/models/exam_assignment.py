@@ -52,6 +52,17 @@ class ExamTicket(Base):
     image_s3_path: Mapped[str | None] = mapped_column(String(300), nullable=True)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    opens_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Если True — получить билет нельзя позже (closes_at - duration_minutes), т.е.
+    # когда до конца периода остаётся меньше «времени на выполнение». Если False —
+    # получить билет можно до самого closes_at, время на выполнение при этом всё
+    # равно показывается ученику (визуальный счётчик), см. mock_exam_access.py.
+    restrict_start_by_duration: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    target_tag_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("tags.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     assign_to_all: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -60,6 +71,7 @@ class ExamTicket(Base):
     __table_args__ = (
         Index("ix_exam_tickets_assignment", "assignment_id", "ticket_number"),
         Index("ix_exam_tickets_start_date", "start_date"),
+        Index("ix_exam_tickets_time_window", "opens_at", "closes_at"),
     )
 
 
