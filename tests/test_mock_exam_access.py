@@ -297,6 +297,10 @@ def test_combined_subject_tag_grants_both_single_subject_target_tickets(db, regu
 
 
 def test_combined_target_tag_does_not_match_single_subject_student_tag(db, regular_user):
+    """Тег ученика больше не сужает список предметов (см.
+    test_tag_no_longer_restricts_allowed_subjects) — здесь проверяется только
+    ticket-level matching: билет с target_tag_id="Р+К" не достаётся ученику с
+    более узким тегом "Р"."""
     tag_r = Tag(name="Р")
     tag_rk = Tag(name="Р+К")
     db.add_all([tag_r, tag_rk])
@@ -305,7 +309,6 @@ def test_combined_target_tag_does_not_match_single_subject_student_tag(db, regul
     db.commit()
     _create_tagged_exact_ticket(db, regular_user, tag_rk, subject="Рисунок")
 
-    assert get_allowed_mock_subjects(db, regular_user.id) == ["Рисунок"]
     assert get_active_ticket(db, regular_user.id, "Рисунок") is None
     assert regular_user.id not in get_student_ids_for_target_tag(db, tag_rk.id)
 
@@ -321,7 +324,13 @@ def test_profile_exam_subjects_limit_active_ticket(db, regular_user):
     assert get_active_ticket(db, regular_user.id, "Композиция") is None
 
 
-def test_free_text_subject_tags_limit_active_ticket(db, regular_user):
+def test_free_text_subject_tags_no_longer_restrict_active_ticket(db, regular_user):
+    """Произвольный тег ученика (даже совпадающий по названию с предметом)
+    больше не сужает доступные предметы — иначе служебные теги вроде "Р"
+    (группа/уровень куратора, не предмет) случайно прятали бы билеты другого
+    предмета, как это произошло в проде. Фильтрация теперь только через
+    target_tag_id самого билета (см. test_profile_exam_subjects_limit_active_ticket
+    для единственного оставшегося способа сузить предметы — явное поле профиля)."""
     tag = Tag(name="Композиция")
     db.add(tag)
     db.flush()
@@ -330,8 +339,8 @@ def test_free_text_subject_tags_limit_active_ticket(db, regular_user):
     _create_ticket(db, regular_user, "Рисунок")
     _create_ticket(db, regular_user, "Композиция")
 
-    assert get_allowed_mock_subjects(db, regular_user.id) == ["Композиция"]
-    assert get_active_ticket(db, regular_user.id, "Рисунок") is None
+    assert get_allowed_mock_subjects(db, regular_user.id) == ["Рисунок", "Композиция"]
+    assert get_active_ticket(db, regular_user.id, "Рисунок") is not None
     assert get_active_ticket(db, regular_user.id, "Композиция") is not None
 
 

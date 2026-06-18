@@ -171,19 +171,6 @@ def _profile_subjects(student: User) -> set[str]:
     return _subjects_from_marker(student.exam_subjects)
 
 
-def _tag_subjects(db: DBSession, user_id: int) -> set[str]:
-    rows = (
-        db.query(Tag.name)
-        .join(UserTag, UserTag.tag_id == Tag.id)
-        .filter(UserTag.user_id == user_id)
-        .all()
-    )
-    subjects: set[str] = set()
-    for (name,) in rows:
-        subjects.update(_subjects_from_marker(name))
-    return subjects
-
-
 def _user_tag_rows(db: DBSession, user_id: int) -> list[tuple[int, str]]:
     return (
         db.query(Tag.id, Tag.name)
@@ -255,16 +242,20 @@ def get_student_ids_for_target_tag(
 def get_allowed_mock_subjects(db: DBSession, user_id: int) -> list[str]:
     """Return subjects available to the student.
 
-    Backward compatibility: if neither profile field nor tags specify mock
-    subjects, the old behavior remains and both subjects are available.
+    Только явное поле профиля (exam_subjects) может сузить список — теги
+    ученика больше не используются для угадывания предмета. Раньше тег вида
+    «Р»/«К» трактовался как маркер предмета (см. _subjects_from_marker), но в
+    проде такие однобуквенные теги массово используются для другого (группа/
+    уровень куратора) и не имеют отношения к предмету — это случайно прятало
+    билеты по другому предмету от учеников. Доступ к конкретному билету и так
+    отдельно фильтруется его собственным target_tag_id в get_active_ticket:
+    если у билета тег не задан, он открыт всем без исключения.
     """
     student = db.query(User).filter(User.id == user_id).first()
     if not student:
         return []
 
     allowed = _profile_subjects(student)
-    if not allowed:
-        allowed = _tag_subjects(db, user_id)
     if not allowed:
         allowed = set(MOCK_SUBJECTS)
 
