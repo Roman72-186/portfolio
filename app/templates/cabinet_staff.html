@@ -23,7 +23,7 @@
     font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
     color: rgba(255,255,255,0.85); margin-bottom: 10px;
 }
-.staff-hero-name { font-size: 26px; font-weight: 900; color: #fff; letter-spacing: -0.5px; margin-bottom: 6px; }
+.staff-hero-name { font-size: 26px; font-weight: 900; color: #fff; letter-spacing: -0.5px; margin-bottom: 0; }
 .staff-hero-sub  { font-size: 13px; color: rgba(255,255,255,0.5); font-weight: 500; }
 
 /* ── Banners ── */
@@ -152,11 +152,17 @@
         <div class="staff-hero-info">
             {% if user.role_rank >= 5 %}
             <div class="staff-role-tag">👑 Суперадминистратор</div>
-            <div class="staff-hero-name">{{ user.last_name or '' }} {{ user.first_name or user.name }}</div>
+            <div class="dashboard-name-row">
+                <div class="staff-hero-name">{{ user.last_name or '' }} {{ user.first_name or user.name }}</div>
+                {% include "partials/mobile_dashboard_logout.html" %}
+            </div>
             <div class="staff-hero-sub">Полный доступ · все системные функции</div>
             {% else %}
             <div class="staff-role-tag">⚙️ Администратор</div>
-            <div class="staff-hero-name">{{ user.last_name or '' }} {{ user.first_name or user.name }}</div>
+            <div class="dashboard-name-row">
+                <div class="staff-hero-name">{{ user.last_name or '' }} {{ user.first_name or user.name }}</div>
+                {% include "partials/mobile_dashboard_logout.html" %}
+            </div>
             <div class="staff-hero-sub">Проверка работ · аналитика · портфолио учеников</div>
             {% endif %}
         </div>

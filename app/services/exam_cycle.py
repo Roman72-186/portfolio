@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session as DBSession
 
 from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
@@ -18,6 +18,11 @@ from app.models.feedback import Feedback, FeedbackMessage, FeedbackPhoto
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
+from app.services.mock_exam_access import (
+    get_matching_target_tag_ids_for_student,
+    is_mock_exam_ticket_submission_open,
+    is_subject_allowed_for_student,
+)
 from app.services.tz import today_msk
 
 
@@ -29,27 +34,39 @@ def get_active_ticket(db: DBSession, user_id: int, subject: str) -> ExamTicket |
     оба обязаны видеть ОДИН и тот же билет, иначе кнопка и 409 рассинхронятся.
     Порядок newest-first важен только при пересекающихся билетах одного предмета.
     """
-    today = today_msk()
-    return (
+    if not is_subject_allowed_for_student(db, user_id, subject):
+        return None
+
+    assignee_ticket_ids = (
+        db.query(ExamTicketAssignee.ticket_id)
+        .filter(ExamTicketAssignee.user_id == user_id)
+        .scalar_subquery()
+    )
+    matching_target_tag_ids = get_matching_target_tag_ids_for_student(db, user_id)
+    tickets = (
         db.query(ExamTicket)
         .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
         .filter(
             ExamAssignment.status == "published",
             ExamAssignment.subject == subject,
-            ExamTicket.start_date <= today,
-            ExamTicket.end_date >= today,
             or_(
-                ExamTicket.assign_to_all.is_(True),
-                ExamTicket.id.in_(
-                    db.query(ExamTicketAssignee.ticket_id)
-                    .filter(ExamTicketAssignee.user_id == user_id)
-                    .scalar_subquery()
+                ExamTicket.target_tag_id.in_(matching_target_tag_ids),
+                and_(
+                    ExamTicket.target_tag_id.is_(None),
+                    or_(
+                        ExamTicket.assign_to_all.is_(True),
+                        ExamTicket.id.in_(assignee_ticket_ids),
+                    ),
                 ),
             ),
         )
         .order_by(ExamTicket.start_date.desc(), ExamTicket.id.desc())
-        .first()
+        .all()
     )
+    for ticket in tickets:
+        if is_mock_exam_ticket_submission_open(ticket):
+            return ticket
+    return None
 
 
 def has_cycle_for_ticket(db: DBSession, user_id: int, subject: str, ticket_id: int) -> bool:
@@ -90,6 +107,27 @@ def has_submitted_for_ticket(db: DBSession, user_id: int, subject: str, ticket_i
             Work.work_type == WORK_TYPE_MOCK_EXAM,
             Work.is_final == True,  # noqa: E712
             Work.needs_revision == False,  # noqa: E712
+        )
+        .first()
+        is not None
+    )
+
+
+def has_closed_cycle_for_ticket(db: DBSession, user_id: int, subject: str, ticket_id: int) -> bool:
+    """True если по этому билету уже есть ЗАКРЫТЫЙ цикл Пробника (closed_at IS NOT NULL).
+
+    Source of truth для блокировки повторной загрузки: пока цикл открыт, ученик
+    может перезаливать работу свободно (итеративно: загрузка → балл → перезагрузка →
+    ОС → ...). Блокировка наступает только когда админ/SA закрыл цикл — тогда сдача
+    по этому билету закрыта до выдачи СЛЕДУЮЩЕГО билета (нового ticket_id).
+    """
+    return (
+        db.query(ExamCycle.id)
+        .filter(
+            ExamCycle.user_id == user_id,
+            ExamCycle.subject == subject,
+            ExamCycle.ticket_id == ticket_id,
+            ExamCycle.closed_at.isnot(None),
         )
         .first()
         is not None

@@ -63,7 +63,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-MAX_SIZE = 10 * 1024 * 1024
 MAX_TEXT_LEN = 4000
 
 
@@ -340,9 +339,11 @@ async def post_dialog_message(
 
     photo_payload: tuple[str, bytes] | None = None
     if photo and photo.filename:
-        data = await photo.read()
-        if len(data) > MAX_SIZE:
-            raise HTTPException(status_code=413, detail="Фото больше 10 МБ")
+        # Читаем только до лимита + 1 байт: заведомо большой файл не должен
+        # целиком попадать в память worker-процесса.
+        data = await photo.read(fb_service.MAX_FEEDBACK_PHOTO_INPUT_SIZE + 1)
+        if len(data) > fb_service.MAX_FEEDBACK_PHOTO_INPUT_SIZE:
+            raise HTTPException(status_code=413, detail="Фото больше 25 МБ")
         if data:
             photo_payload = (photo.filename, data)
 
@@ -518,6 +519,7 @@ def staff_cycles_list(
         "detail_prefix": detail_prefix,
         "status": "archive" if archived else "open",
         "can_archive": can_archive,
+        "nav_active": "cycles",  # подсветка пункта в _curator_nav (куратор)
     })
 
 

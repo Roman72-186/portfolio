@@ -361,7 +361,7 @@
                         </label>
                         <button type="submit" class="dlg-send">Отправить обратную связь</button>
                     </div>
-                    <div class="dlg-form-hint">Заполни хотя бы один пункт или прикрепи фото.</div>
+                    <div class="dlg-form-hint">Заполни хотя бы один пункт или прикрепи фото до 25 МБ. Фото будет сжато автоматически.</div>
                 </form>
             {% else %}
                 <form class="dlg-form" method="post" action="/cabinet/feedback/{{ target_work_id }}/message" enctype="multipart/form-data" data-work-id="{{ target_work_id }}">
@@ -377,7 +377,7 @@
                             <button type="submit" class="dlg-send">Отправить</button>
                         </div>
                     </div>
-                    <div class="dlg-form-hint">Текст или фото — хотя бы одно из двух.</div>
+                    <div class="dlg-form-hint">Текст или фото до 25 МБ — хотя бы одно из двух. Фото будет сжато автоматически.</div>
                 </form>
             {% endif %}
         </section>
@@ -466,11 +466,19 @@
 // AJAX submit, name preview, и автоскролл к низу ленты.
 document.querySelectorAll('.dlg-messages').forEach(el => { el.scrollTop = el.scrollHeight; });
 
+const MAX_FEEDBACK_PHOTO_SIZE = 25 * 1024 * 1024;
+
 document.querySelectorAll('.dlg-attach input[type="file"]').forEach(input => {
     input.addEventListener('change', () => {
         const wrap = input.closest('.dlg-attach');
         const label = wrap.querySelector('.dlg-attach-text');
         const f = input.files[0];
+        if (f && f.size > MAX_FEEDBACK_PHOTO_SIZE) {
+            alert('Фото больше 25 МБ. Выберите файл меньшего размера.');
+            input.value = '';
+            if (label) label.textContent = 'Фото';
+            return;
+        }
         if (label) label.textContent = f ? f.name.length > 24 ? f.name.slice(0, 24) + '…' : f.name : 'Фото';
     });
 });

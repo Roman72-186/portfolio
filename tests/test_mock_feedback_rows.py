@@ -262,7 +262,7 @@ def test_score_stats_buckets_by_range_and_subject(db, user_factory):
     s3 = user_factory(vk_id=3, role_name="ученик")
     s4 = user_factory(vk_id=4, role_name="ученик")
 
-    # Рисунок: один балл в каждом из диапазонов 0-50, 55-60, 70-75, 80-85
+    # Рисунок: один балл в каждом из диапазонов 0-50, 55-65, 70-75, 80-85
     _make_final_mock(db, user_id=s1.id, subject="Рисунок", score=50)
     _make_final_mock(db, user_id=s2.id, subject="Рисунок", score=58)
     _make_final_mock(db, user_id=s3.id, subject="Рисунок", score=72)
@@ -270,7 +270,7 @@ def test_score_stats_buckets_by_range_and_subject(db, user_factory):
     # Композиция: только один балл, попадающий в 70-75
     _make_final_mock(db, user_id=s1.id, subject="Композиция", score=74)
     # Балл вне всех диапазонов — учтён в total, но не в ranges
-    _make_final_mock(db, user_id=s2.id, subject="Композиция", score=65)
+    _make_final_mock(db, user_id=s2.id, subject="Композиция", score=67)
 
     res = get_mock_score_stats(db)
     risunok = res["by_subject"]["Рисунок"]

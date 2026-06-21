@@ -90,6 +90,7 @@
 </style>
 {% endblock %}
 {% block content %}
+{% include "_curator_nav.html" %}
 <div class="cycles-page">
     <div class="cycles-head">
         <h1 class="cycles-title">Цикл Пробника</h1>
@@ -120,14 +121,14 @@
                 <button type="button" class="cyc-subj-pill" data-subject="Рисунок" onclick="selectSubject(this)">Рисунок</button>
                 <button type="button" class="cyc-subj-pill" data-subject="Композиция" onclick="selectSubject(this)">Композиция</button>
             </div>
-            {% if status != 'archive' and user.role_rank >= 4 %}
+            {% if status != 'archive' and user.role_rank >= 2 %}
             <div class="cyc-subj-pills cyc-fb-pills">
                 <button type="button" class="cyc-subj-pill active" data-fb="" onclick="selectFb(this)">ОС: все</button>
                 <button type="button" class="cyc-subj-pill" data-fb="none" onclick="selectFb(this)">Нет ОС</button>
                 <button type="button" class="cyc-subj-pill" data-fb="has" onclick="selectFb(this)">Есть ОС</button>
             </div>
             {% endif %}
-            {% if user.role_rank >= 4 %}
+            {% if user.role_rank >= 2 %}
             <div class="cyc-subj-pills cyc-fb-pills">
                 <button type="button" class="cyc-subj-pill active" data-score="" onclick="selectScore(this)">Оценка: все</button>
                 <button type="button" class="cyc-subj-pill" data-score="none" onclick="selectScore(this)">Без оценки</button>
@@ -136,7 +137,7 @@
             {% endif %}
             <input type="text" class="cyc-search" id="cyc-search" placeholder="Имя или @username…"
                    autocomplete="off" oninput="filterCycles()">
-            {% if user.role_rank >= 4 %}
+            {% if user.role_rank >= 2 %}
             <button type="button" class="cyc-copy-btn" id="cyc-copy-btn" onclick="copyCycleList()">Скопировать список</button>
             {% endif %}
         </div>
@@ -272,5 +273,10 @@ function copyCycleList() {
 </script>
 {% endif %}
 
+{# Куратор (rank 2) видит свою навигацию через _curator_nav сверху; админ/SA (rank >= 4)
+   получают staff_nav из base.html. Модератор (rank 3) не покрыт ни тем, ни другим —
+   отдаём ему staff_nav здесь, чтобы страница не осталась без навигации. #}
+{% if user.role_rank == 3 %}
 {% include "partials/staff_nav.html" %}
+{% endif %}
 {% endblock %}

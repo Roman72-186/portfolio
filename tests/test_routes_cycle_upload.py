@@ -314,9 +314,10 @@ def test_probnik_final_allowed_after_window_closes_with_open_attempt(auth_client
     assert resp.json()["success"] is True
 
 
-def test_probnik_final_resubmit_blocked_in_open_cycle(auth_client, db):
-    """Повторная сдача в открытом цикле блокируется 409 «работа сдана, ждите ОС»:
-    работа уже сдана и ждёт обратной связи — финал не перезаписывается."""
+def test_probnik_final_resubmit_overwrites_in_open_cycle(auth_client, db):
+    """Повторная сдача в ОТКРЫТОМ цикле разрешена и перезаписывает финал in-place:
+    ученик может свободно загружать заново, пока цикл не закрыт (балл/ОС между
+    загрузками — отдельные шаги). Work.id и цикл сохраняются, фото обновляется."""
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
     from app.models.exam_cycle import ExamCycle
 
@@ -329,22 +330,62 @@ def test_probnik_final_resubmit_blocked_in_open_cycle(auth_client, db):
     assert r1.json()["success"] is True
     first_id = r1.json()["work_ids"][0]
 
+    # Админ ставит балл — затем ученик перезаливает (балл сбросится).
+    work = db.query(Work).filter(Work.id == first_id).first()
+    work.score = 80
+    db.commit()
+
     r2 = _final(client, "Рисунок",
                 photos=[("photos", ("second.jpg", _JPG_BYTES, "image/jpeg"))])
-    assert r2.status_code == 409
-    assert r2.json()["success"] is False
-    assert r2.json()["error"] == "работа сдана, ждите ОС"
+    assert r2.status_code == 200
+    assert r2.json()["success"] is True
+    # In-place перезапись: тот же Work.id, тот же цикл — диалог ОС не теряется.
+    assert r2.json()["work_ids"] == [first_id]
 
+    db.expire_all()
     finals = db.query(Work).filter(
         Work.user_id == user.id,
         Work.work_type == WORK_TYPE_MOCK_EXAM,
         Work.is_final == True,  # noqa: E712
     ).all()
     assert len(finals) == 1
-    assert finals[0].id == first_id           # тот же Work, не перезаписан
-    assert finals[0].filename == "first.jpg"  # исходным фото
+    assert finals[0].id == first_id            # тот же Work, перезаписан
+    assert finals[0].filename == "second.jpg"  # новым фото
+    assert finals[0].score is None             # балл сброшен (новое фото не проверено)
     # цикл не размножился
     assert db.query(ExamCycle).filter(ExamCycle.user_id == user.id).count() == 1
+
+
+def test_probnik_resubmit_notifies_scorer(auth_client, db):
+    """Перезалив в открытом цикле шлёт уведомление уже вовлечённому staff: тому, кто
+    выставлял балл (scored_by_id) — балл молча сбрасывается, проверяющий должен узнать
+    о новом фото. На ПЕРВОЙ сдаче (никто не оценивал) уведомление не создаётся."""
+    from app.models.work import Work
+    from app.models.notification import Notification
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Рисунок")
+
+    first_id = _final(client, "Рисунок").json()["work_ids"][0]
+    # Первая сдача — staff ещё не вовлечён → уведомлений нет.
+    assert db.query(Notification).count() == 0
+
+    # Админ (id=777) выставил балл.
+    work = db.query(Work).filter(Work.id == first_id).first()
+    work.score = 80
+    work.scored_by_id = 777
+    db.commit()
+
+    r2 = _final(client, "Рисунок",
+                photos=[("photos", ("redo.jpg", _JPG_BYTES, "image/jpeg"))])
+    assert r2.status_code == 200
+
+    notes = db.query(Notification).filter(Notification.user_id == 777).all()
+    assert len(notes) == 1
+    assert notes[0].work_id == first_id
+    # ученику уведомление о собственном перезаливе не шлётся
+    assert db.query(Notification).filter(Notification.user_id == user.id).count() == 0
 
 
 # ── Этапные фото ──────────────────────────────────────────────────────────────
@@ -466,7 +507,7 @@ def test_probnik_blocked_after_close_same_ticket(auth_client, db):
     # Цикл закрыт, билет тот же → сдача всё ещё закрыта.
     resp = _final(client, "Рисунок")
     assert resp.status_code == 409
-    assert resp.json()["error"] == "работа сдана, ждите ОС"
+    assert resp.json()["error"] == "пробник по этому билету уже оценён и закрыт"
     # Новый цикл не создан.
     assert db.query(ExamCycle).filter(ExamCycle.user_id == user.id).count() == 1
 
@@ -521,12 +562,11 @@ def test_revision_reopens_submission_for_same_ticket(
     загрузить новые фото пробника.») и шлёт уведомление «Загрузи новые фото
     выполненного задания».
 
-    revision выставляет Work.needs_revision=True на финале — has_submitted_for_ticket
-    перестаёт считать его сдачей по текущему билету, и повторная загрузка
-    проходит через _overwrite_final: то же Work.id, тот же cycle_id и
+    revision выставляет Work.needs_revision=True на финале и снимает лок; повторная
+    загрузка проходит через _overwrite_final: то же Work.id, тот же cycle_id и
     attempt_number, score/comment/needs_revision сброшены, диалог ОС не теряется.
-    После перезаписи лок снова взводится (is_locked=True) — следующая
-    пересдача без новой revision опять даёт 409.
+    Цикл остаётся ОТКРЫТЫМ, поэтому дальнейшие пересдачи разрешены свободно (без
+    новой revision) — блокировка наступает только при закрытии цикла.
     """
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
     from app.models.exam_cycle import ExamCycle
@@ -579,15 +619,16 @@ def test_revision_reopens_submission_for_same_ticket(
     assert final.score is None
     assert final.filename == "redo.jpg"
 
-    # Лок снова взведён — следующая попытка без revision снова 409.
-    lock = db.query(MockExamLock).filter(
-        MockExamLock.user_id == regular_user.id, MockExamLock.subject == "Рисунок"
-    ).first()
-    assert lock.is_locked is True
-
-    resp3 = _final(client, "Рисунок")
-    assert resp3.status_code == 409
-    assert resp3.json()["error"] == "работа сдана, ждите ОС"
+    # Цикл всё ещё открыт → следующая пересдача без новой revision разрешена и
+    # снова перезаписывает финал in-place (тот же Work.id).
+    resp3 = _final(client, "Рисунок",
+                   photos=[("photos", ("redo2.jpg", _JPG_BYTES, "image/jpeg"))])
+    assert resp3.status_code == 200
+    assert resp3.json()["success"] is True
+    assert resp3.json()["work_ids"] == [work_id]
+    db.expire_all()
+    final = db.query(Work).filter(Work.id == work_id).first()
+    assert final.filename == "redo2.jpg"
 
 
 def test_revision_rejected_for_closed_scored_cycle(

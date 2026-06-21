@@ -23,8 +23,6 @@
 //
 // Прогрев IDB: cachedFetch() вызываем отдельно, не блокирует playback.
 
-import { cachedFetch } from "./cache/cachedFetch.js";
-
 let overlayEl = null;
 let listEl = null;
 let emptyEl = null;
@@ -37,6 +35,8 @@ let tabPhotoBtn = null;
 let tabVideoBtn = null;
 let tabsRowEl = null;
 let tabsWrapEl = null;
+let universalBlocksRowEl = null;
+let universalSubblocksRowEl = null;
 
 let active = false;
 let onPlayCb = null;
@@ -54,9 +54,6 @@ let playerVideo = null;
 let playerLoading = null;
 
 // Blob fallback (iOS / Telegram)
-let currentBlobUrl = null;
-let blobLoading = false;
-
 // Panel DOM (вместо табов)
 let navPanel = null;
 let btnBack = null;
@@ -85,9 +82,7 @@ function withInitData(url) {
 }
 
 function warmCache(url) {
-  try {
-    cachedFetch(url).catch(() => {});
-  } catch (e) {}
+  // Direct video playback does not need CORS. Fetching S3 mp4 files does.
 }
 
 function modIndex(i) {
@@ -103,6 +98,9 @@ function setLoading(on) {
 function showListMode() {
   isPlayerOpen = false;
 
+  document.body.classList.remove("video-player-open");
+  document.body.classList.remove("video-playing");
+
   if (playerWrap) playerWrap.style.display = "none";
   if (listEl) listEl.style.display = "";
   showTabs();
@@ -112,19 +110,39 @@ function showListMode() {
 function showPlayerMode() {
   isPlayerOpen = true;
 
+  document.body.classList.add("video-player-open");
+
   if (listEl) listEl.style.display = "none";
   if (playerWrap) playerWrap.style.display = "flex";
 
-  // табы скрыты всегда в режиме плеера
   hideTabs();
 }
 
 function hideTabs() {
   if (tabsRowEl) tabsRowEl.style.display = "none";
+
+  if (universalBlocksRowEl) {
+    universalBlocksRowEl.style.display = "none";
+  }
+
+  if (universalSubblocksRowEl) {
+    universalSubblocksRowEl.style.display = "none";
+  }
 }
 
 function showTabs() {
   if (tabsRowEl) tabsRowEl.style.display = "";
+
+  if (universalBlocksRowEl) {
+    universalBlocksRowEl.style.display = "";
+  }
+
+  if (universalSubblocksRowEl) {
+    universalSubblocksRowEl.style.display = "";
+  }
+   requestAnimationFrame(() => {
+  window.updateAllSegmentedControls?.();
+});
 }
 
 function showNavPanel() {
@@ -157,9 +175,10 @@ function ensurePlayerDom() {
 
   playerWrap = document.createElement("div");
   playerWrap.id = "videoPlayerWrap";
-  playerWrap.style.cssText = `
+playerWrap.style.cssText = `
     position: absolute;
     inset: 0;
+    z-index: 20;
     display: none;
     align-items: center;
     justify-content: center;
@@ -220,8 +239,12 @@ playerVideo.addEventListener("play", () => {
 
 playerVideo.addEventListener("pause", () => {
   setLoading(false);
-  showTabs();
+
+  // В режиме открытого плеера обычные табы не возвращаем.
+  // Показываем только видео-панель.
+  hideTabs();
   showNavPanel();
+
   if (onPauseCb) onPauseCb();
   document.body.classList.remove("video-playing");
 });
@@ -288,13 +311,18 @@ function ensureNavPanel() {
 
   btnBack = document.createElement("button");
   btnBack.type = "button";
-  btnBack.className = "video-nav-btn back";
-  btnBack.innerHTML = `
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M15 18l-6-6 6-6"></path>
-    </svg>
-    <span class="video-nav-btn-label">К карточкам</span>
-  `;
+  btnBack.className = "video-nav-btn icon";
+btnBack.innerHTML = `
+  <svg viewBox="0 0 24 24"
+       aria-hidden="true"
+       fill="none"
+       stroke="currentColor"
+       stroke-width="2.4"
+       stroke-linecap="round">
+    <path d="M6 6L18 18"></path>
+    <path d="M18 6L6 18"></path>
+  </svg>
+`;
 
   btnPrev = document.createElement("button");
   btnPrev.type = "button";
@@ -329,16 +357,22 @@ function ensureNavPanel() {
   toolbarEl.appendChild(navPanel);
 
   // Handlers
-  btnBack.addEventListener("click", () => {
+  btnBack.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
     closePlayerToCards();
   });
 
-  btnPrev.addEventListener("click", () => {
+  btnPrev.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
     if (!isPlayerOpen) return;
     openVideoByIndex(modIndex(currentIndex - 1));
   });
 
-  btnNext.addEventListener("click", () => {
+  btnNext.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
     if (!isPlayerOpen) return;
     openVideoByIndex(modIndex(currentIndex + 1));
   });
@@ -369,9 +403,6 @@ const previewImg = document.createElement("img");
 previewImg.src = srcUrl.replace(/\.mp4(\?.*)?$/i, ".jpg$1");
 
 previewImg.alt = `Видео ${idx + 1}`;
-previewImg.addEventListener("error", () => {
-  previewImg.style.display = "none";
-});
 
 previewImg.style.cssText = `
   width: 100%;
@@ -481,9 +512,10 @@ playerVideo.muted = true;      // autoplay policy
 const playPromise = playerVideo.play();
 
 if (playPromise && typeof playPromise.catch === "function") {
-  playPromise.catch(() => {
+  playPromise.catch((e) => {
     // 🔥 iOS / Telegram отказал обычному play → fallback на blob
-    loadBlobAndPlay(srcUrl);
+    setLoading(false);
+    console.warn("[video] direct play deferred", e);
   });
 }
 
@@ -503,7 +535,7 @@ playerVideo.muted = true;
       playerVideo.muted = false;
     } catch (e) {}
   };
-  playerVideo.addEventListener("playing", unmuteOnce);
+playerVideo.addEventListener("playing", unmuteOnce);
 }
 
 function closePlayerToCards() {
@@ -531,32 +563,6 @@ function closePlayerToCards() {
   if (onPauseCb) onPauseCb();
 }
 
-async function loadBlobAndPlay(srcUrl) {
-  if (blobLoading) return;
-  blobLoading = true;
-
-  try {
-    const resp = await fetch(srcUrl);
-    const blob = await resp.blob();
-
-    if (currentBlobUrl) {
-      URL.revokeObjectURL(currentBlobUrl);
-    }
-
-    currentBlobUrl = URL.createObjectURL(blob);
-
-    playerVideo.src = currentBlobUrl;
-    playerVideo.load();
-
-    await playerVideo.play();
-  } catch (e) {
-    console.warn("[video] blob fallback failed", e);
-  } finally {
-    blobLoading = false;
-    setLoading(false);
-  }
-}
-
 /* =========================
    Public API
    ========================= */
@@ -578,6 +584,9 @@ tabsRowEl =
   tabPhotoBtn?.closest(".viewer-tabs-row") ||
   tabVideoBtn?.closest(".viewer-tabs-row") ||
   null;
+
+universalBlocksRowEl = document.getElementById("universalBlocksRow");
+universalSubblocksRowEl = document.getElementById("universalSubblocksRow");
 
 tabsWrapEl =
   tab3dBtn?.closest(".viewer-tabs") ||

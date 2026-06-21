@@ -11,6 +11,14 @@ let camera = null;
 let renderer = null;
 
 let currentModel = null;
+// ===== Rooms flat mode =====
+let roomsFlatMode = false;
+let sceneLights = [];
+let roomsMaterialRestore = [];
+let roomCollisionBoxes = [];
+let roomTexturesDir = "";
+let roomTextureCache = new Map();
+let roomDrapObject = null;
 // ===== CAD overlay (точки/линии для врезок) =====
 let cadGroup = null;
 let cadScene = null;
@@ -59,6 +67,8 @@ const state = {
   rotY: 0.00,
   targetRotX: 0.10,
   targetRotY: 0.00,
+
+  target: new THREE.Vector3(0, 0, 0),
 };
 
 export function initThree(canvas) {
@@ -167,8 +177,14 @@ export function setModel(root) {
 
   state.targetRotX = 0.10;
   state.targetRotY = 0.00;
+  state.target.set(0, 0, 0);
 
-  fitCameraToModel(root);
+  if (roomsFlatMode) {
+    setupRoomCameraHelpers(root);
+    applyRoomsFlatMaterials(root);
+  } else {
+    fitCameraToModel(root);
+  }
 }
 
 export function clearModel(options = {}) {
@@ -179,6 +195,9 @@ export function clearModel(options = {}) {
   if (currentModel) {
     scene.remove(currentModel);
     currentModel = null;
+  }
+    if (roomsFlatMode) {
+    setRoomsFlatMode(false, null);
   }
 
   clearOutlines();
@@ -245,6 +264,158 @@ function fitCameraToModel(root) {
   state.maxRadius = dist * 6.0;
 }
 
+function findHelperObject(root, name) {
+  if (!root) return null;
+
+  const wanted = String(name).trim().toLowerCase();
+  let found = null;
+
+  root.traverse((obj) => {
+    if (found) return;
+
+    const objName = String(obj.name || "").trim().toLowerCase();
+    if (objName === wanted) {
+      found = obj;
+    }
+  });
+
+  return found;
+}
+
+function isRoomHelperObjectName(name) {
+  const n = String(name || "").trim().toLowerCase();
+
+  return (
+    n === "point" ||
+    n === "cam" ||
+    n === "box" ||
+    n.startsWith("box_")
+  );
+}
+
+function hideRoomHelpers(root) {
+  if (!root) return;
+
+  root.traverse((obj) => {
+    if (isRoomHelperObjectName(obj.name)) {
+      obj.visible = false;
+    }
+  });
+}
+
+function collectRoomCollisionBoxes(root) {
+  roomCollisionBoxes = [];
+  if (!root) return;
+
+  root.updateWorldMatrix(true, true);
+
+  root.traverse((obj) => {
+    const name = String(obj.name || "").trim().toLowerCase();
+
+    if (name === "box" || name.startsWith("box_")) {
+      obj.updateWorldMatrix(true, false);
+
+      const box = new THREE.Box3().setFromObject(obj);
+
+      if (!box.isEmpty()) {
+        roomCollisionBoxes.push(box);
+      }
+    }
+  });
+}
+
+function constrainCameraToRoomBoxes(position) {
+  if (!roomsFlatMode) return;
+  if (!roomCollisionBoxes.length) return;
+
+  for (const box of roomCollisionBoxes) {
+    if (box.containsPoint(position)) {
+      return;
+    }
+  }
+
+  let bestPoint = null;
+  let bestDist = Infinity;
+
+  for (const box of roomCollisionBoxes) {
+    const p = new THREE.Vector3();
+    box.clampPoint(position, p);
+
+    const d = p.distanceToSquared(position);
+
+    if (d < bestDist) {
+      bestDist = d;
+      bestPoint = p;
+    }
+  }
+
+  if (bestPoint) {
+    position.copy(bestPoint);
+  }
+}
+
+function syncRoomOrbitFromCameraPosition() {
+  if (!roomsFlatMode) return;
+
+  const offset = camera.position.clone().sub(state.target);
+  const radius = Math.max(offset.length(), 0.1);
+
+  state.radius = THREE.MathUtils.clamp(
+    radius,
+    state.minRadius,
+    state.maxRadius
+  );
+
+  state.rotX = Math.asin(
+    THREE.MathUtils.clamp(offset.y / state.radius, -1, 1)
+  );
+
+  state.rotY = Math.atan2(offset.x, offset.z);
+
+  state.targetRotX = state.rotX;
+  state.targetRotY = state.rotY;
+}
+
+function setupRoomCameraHelpers(root) {
+  hideRoomHelpers(root);
+  collectRoomCollisionBoxes(root);
+
+  const point = findHelperObject(root, "point");
+  const cam = findHelperObject(root, "cam");
+
+  if (point) {
+    point.updateWorldMatrix(true, false);
+    point.getWorldPosition(state.target);
+  } else {
+    state.target.set(0, 0, 0);
+  }
+
+  if (cam) {
+    cam.updateWorldMatrix(true, false);
+
+    const camWorldPos = new THREE.Vector3();
+    cam.getWorldPosition(camWorldPos);
+
+    const offset = camWorldPos.clone().sub(state.target);
+    const radius = Math.max(offset.length(), 0.1);
+
+    state.radius = radius;
+state.minRadius = radius * 0.45;
+state.maxRadius = radius * 2.5;
+
+    state.targetRotX = Math.asin(
+      THREE.MathUtils.clamp(offset.y / radius, -1, 1)
+    );
+
+    state.targetRotY = Math.atan2(offset.x, offset.z);
+
+    state.rotX = state.targetRotX;
+    state.rotY = state.targetRotY;
+  } else {
+    fitCameraToModel(root);
+  }
+}
+
 function updateCameraPosition() {
   const r = state.radius;
 
@@ -252,8 +423,23 @@ function updateCameraPosition() {
   const z = r * Math.cos(state.rotY) * Math.cos(state.rotX);
   const y = r * Math.sin(state.rotX);
 
-  camera.position.set(x, y, z);
-  camera.lookAt(0, 0, 0);
+  const tx = roomsFlatMode ? state.target.x : 0;
+  const ty = roomsFlatMode ? state.target.y : 0;
+  const tz = roomsFlatMode ? state.target.z : 0;
+
+camera.position.set(tx + x, ty + y, tz + z);
+
+if (roomsFlatMode) {
+  const before = camera.position.clone();
+
+  constrainCameraToRoomBoxes(camera.position);
+
+  if (!camera.position.equals(before)) {
+    syncRoomOrbitFromCameraPosition();
+  }
+}
+
+camera.lookAt(tx, ty, tz);
 }
 
 export function resize() {
@@ -968,28 +1154,40 @@ postQuad.material.uniforms.uTexel.value.set(k / rtN.width, k / rtN.height);
   renderer.render(postScene, postCam);
 }
 function setupLights() {
+  sceneLights = [];
+
   const zenith = new THREE.DirectionalLight(0xf5f8ff, 0.0);
   zenith.position.set(0, 11, 2);
   scene.add(zenith);
+  sceneLights.push(zenith);
 
   const key = new THREE.DirectionalLight(0xffc4a0, 1.85);
   key.position.set(5.5, 6.0, 3.5);
   scene.add(key);
+  sceneLights.push(key);
 
   const fill = new THREE.DirectionalLight(0xcad8ff, 0.35);
   fill.position.set(-7, 3.5, 2);
   scene.add(fill);
+  sceneLights.push(fill);
 
   const rim = new THREE.DirectionalLight(0xffffff, 0.5);
   rim.position.set(-3.5, 5, -7.5);
   scene.add(rim);
+  sceneLights.push(rim);
 
   const coldRim = new THREE.DirectionalLight(0xd8e4ff, 0.1);
   coldRim.position.set(2.5, 3.5, -5);
   scene.add(coldRim);
+  sceneLights.push(coldRim);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.04));
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x0a0a0a, 0.07));
+  const ambient = new THREE.AmbientLight(0xffffff, 0.04);
+  scene.add(ambient);
+  sceneLights.push(ambient);
+
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x0a0a0a, 0.07);
+  scene.add(hemi);
+  sceneLights.push(hemi);
 }
 
 export function setInsetNeutralLighting(enabled) {
@@ -1037,6 +1235,206 @@ export function setInsetNeutralLighting(enabled) {
   });
 }
 
+function clearRoomsMaterialOverrides() {
+  if (!roomsMaterialRestore.length) return;
+
+  for (const entry of roomsMaterialRestore) {
+    if (!entry?.mesh) continue;
+    entry.mesh.material = entry.material;
+  }
+
+  roomsMaterialRestore = [];
+}
+
+function normalizeRoomTextureUrl(url) {
+  if (!url) return "";
+
+  const s = String(url);
+
+  const isAbsolute =
+    /^https?:\/\//i.test(s) ||
+    s.startsWith("/") ||
+    s.startsWith("data:");
+
+  return isAbsolute
+    ? s
+    : `https://api.apparchi.ru/?path=${encodeURIComponent(s)}`;
+}
+
+function getRoomObjectKey(obj) {
+  let cur = obj;
+
+  while (cur) {
+    const name = String(cur.name || "").trim();
+    const lower = name.toLowerCase();
+
+    if (/^\d+$/.test(name)) {
+      return name;
+    }
+
+    if (lower === "drap") {
+      return "drap";
+    }
+
+    cur = cur.parent;
+  }
+
+  return "";
+}
+
+function isRoomDrapObject(obj) {
+  let cur = obj;
+
+  while (cur) {
+    const name = String(cur.name || "").trim().toLowerCase();
+
+    if (name === "drap") {
+      return true;
+    }
+
+    cur = cur.parent;
+  }
+
+  return false;
+}
+
+function getRoomTextureForKey(key) {
+  if (!roomTexturesDir || !key) return null;
+
+  if (roomTextureCache.has(key)) {
+    return roomTextureCache.get(key);
+  }
+
+  const cleanDir = roomTexturesDir.endsWith("/")
+    ? roomTexturesDir
+    : `${roomTexturesDir}/`;
+
+  const url = normalizeRoomTextureUrl(`${cleanDir}${key}.jpg`);
+
+console.log("[rooms texture] loading:", key, url);
+
+const tex = new THREE.TextureLoader().load(
+  url,
+  () => {
+    console.log("[rooms texture] loaded:", key, url);
+  },
+  undefined,
+  (err) => {
+    console.warn("[rooms texture] failed:", key, url, err);
+  }
+);
+
+  tex.flipY = false;
+  tex.colorSpace = THREE.SRGBColorSpace;
+
+  roomTextureCache.set(key, tex);
+
+  return tex;
+}
+
+function isRoomBlackObject(obj) {
+  let cur = obj;
+
+  while (cur) {
+    const name = String(cur.name || "").trim().toLowerCase();
+    if (name === "black") return true;
+    cur = cur.parent;
+  }
+
+  return false;
+}
+
+function applyRoomsFlatMaterials(root) {
+  clearRoomsMaterialOverrides();
+  roomDrapObject = null;
+
+  if (!root) return;
+
+  root.traverse((obj) => {
+    if (!obj.isMesh) return;
+
+    const originalMat = obj.material;
+    if (!originalMat) return;
+
+    roomsMaterialRestore.push({ mesh: obj, material: originalMat });
+
+    if (isRoomDrapObject(obj)) {
+      roomDrapObject = obj;
+    }
+
+    if (isRoomBlackObject(obj)) {
+      obj.material = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(0x151515),
+        side: THREE.DoubleSide
+      });
+      return;
+    }
+
+    const key = getRoomObjectKey(obj);
+    const roomMap = getRoomTextureForKey(key);
+
+    const makeFlat = (srcMat) => {
+      const flatMat = new THREE.MeshBasicMaterial({
+        map: roomMap || srcMat.map || null,
+        color: new THREE.Color(0xffffff),
+        transparent: !!srcMat.transparent,
+        opacity: typeof srcMat.opacity === "number" ? srcMat.opacity : 1,
+        alphaTest: typeof srcMat.alphaTest === "number" ? srcMat.alphaTest : 0,
+        side: srcMat.side ?? THREE.FrontSide
+      });
+
+      if (flatMat.map) {
+        flatMat.map.flipY = false;
+        flatMat.map.colorSpace = THREE.SRGBColorSpace;
+      }
+
+      return flatMat;
+    };
+
+    if (Array.isArray(originalMat)) {
+      obj.material = originalMat.map(makeFlat);
+    } else {
+      obj.material = makeFlat(originalMat);
+    }
+  });
+}
+
+export function setRoomDrapVisible(visible) {
+  if (!roomDrapObject) return;
+  roomDrapObject.visible = !!visible;
+}
+
+export function setRoomTexturesDir(dir = "") {
+  roomTexturesDir = String(dir || "");
+  roomTextureCache.clear();
+}
+
+export function setRoomsFlatMode(enabled, root = currentModel) {
+  roomsFlatMode = !!enabled;
+
+  if (roomsFlatMode) {
+    for (const light of sceneLights) {
+      if (!light) continue;
+      light.visible = false;
+    }
+
+    if (root) {
+      setupRoomCameraHelpers(root);
+      applyRoomsFlatMaterials(root);
+    }
+} else {
+  roomCollisionBoxes = [];
+
+  for (const light of sceneLights) {
+      if (!light) continue;
+      light.visible = true;
+    }
+
+    state.target.set(0, 0, 0);
+    clearRoomsMaterialOverrides();
+  }
+}
+
 function initControls(canvas) {
   let dragging = false;
   let lastX = 0, lastY = 0;
@@ -1061,8 +1459,10 @@ function initControls(canvas) {
     lastX = e.clientX;
     lastY = e.clientY;
 
-    state.targetRotY += dx * -0.005;
-    state.targetRotX += dy * 0.005;
+const rotSpeed = 0.005;
+
+state.targetRotY += dx * -rotSpeed;
+state.targetRotX += dy * rotSpeed;
 
     state.targetRotX = Math.max(
       -Math.PI / 2 + 0.2,
@@ -1070,17 +1470,17 @@ function initControls(canvas) {
     );
   });
 
-  canvas.addEventListener("wheel", (e) => {
-    e.preventDefault();
+canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
 
-    const delta = e.deltaY * 0.002;
+  const delta = e.deltaY * (roomsFlatMode ? 0.00025 : 0.002);
 
-    state.radius = THREE.MathUtils.clamp(
-      state.radius + delta,
-      state.minRadius,
-      state.maxRadius
-    );
-  }, { passive: false });
+  state.radius = THREE.MathUtils.clamp(
+    state.radius + delta,
+    state.minRadius,
+    state.maxRadius
+  );
+}, { passive: false });
 
   canvas.addEventListener("touchstart", (e) => {
     e.preventDefault();
@@ -1107,8 +1507,10 @@ function initControls(canvas) {
       lastX = t.clientX;
       lastY = t.clientY;
 
-      state.targetRotY += dx * -0.008;
-      state.targetRotX += dy * 0.008;
+const rotSpeed = 0.008;
+
+state.targetRotY += dx * -rotSpeed;
+state.targetRotX += dy * rotSpeed;
 
       state.targetRotX = Math.max(
         -Math.PI / 2 + 0.2,
@@ -1116,18 +1518,18 @@ function initControls(canvas) {
       );
     }
 
-    if (touchMode === "zoom" && e.touches.length === 2) {
-      const dist = pinch(e.touches[0], e.touches[1]);
-      const delta = (lastPinch - dist) * 0.01;
+if (touchMode === "zoom" && e.touches.length === 2) {
+  const dist = pinch(e.touches[0], e.touches[1]);
+  const delta = (lastPinch - dist) * (roomsFlatMode ? 0.0015 : 0.01);
 
-      lastPinch = dist;
+  lastPinch = dist;
 
-      state.radius = THREE.MathUtils.clamp(
-        state.radius + delta,
-        state.minRadius,
-               state.maxRadius
-      );
-    }
+  state.radius = THREE.MathUtils.clamp(
+    state.radius + delta,
+    state.minRadius,
+    state.maxRadius
+  );
+}
   }, { passive: false });
 
   window.addEventListener("touchend", () => {

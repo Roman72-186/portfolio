@@ -37,8 +37,12 @@ def _create_active_period(db, user, feature="mock_exam"):
     return period
 
 
-def _create_active_ticket(db, user, subject="Рисунок"):
-    """Create an ExamAssignment + ExamTicket (assign_to_all=True) valid today."""
+def _create_active_ticket(db, user, subject="Рисунок", *, opens_at=None, closes_at=None):
+    """Create an ExamAssignment + ExamTicket (assign_to_all=True) valid today.
+
+    opens_at/closes_at — точный период доступа (datetime, МСК). Если не заданы,
+    билет хранит только даты, и окно непрерывно тянется start-1д 11:45..end+30д 18:30.
+    """
     from app.models.exam_assignment import ExamAssignment, ExamTicket
     today = date.today()
     assignment = ExamAssignment(
@@ -52,6 +56,8 @@ def _create_active_ticket(db, user, subject="Рисунок"):
         title=f"Билет {subject}",
         start_date=today - timedelta(days=1),
         end_date=today + timedelta(days=30),
+        opens_at=opens_at,
+        closes_at=closes_at,
         assign_to_all=True,
     )
     db.add(ticket)
@@ -271,6 +277,29 @@ def test_mock_exam_form_with_auth_returns_200(auth_client, db):
     assert "Композиция" in resp.text
 
 
+def test_mock_exam_csrf_requires_auth(client):
+    # Фронт шлёт Accept: application/json → хендлер 401 отдаёт JSON (не редирект),
+    # чтобы refreshCsrf() увидел статус 401 и показал «сессия истекла».
+    resp = client.get("/upload/mock-exam/csrf", headers={"Accept": "application/json"})
+    assert resp.status_code == 401
+
+
+def test_mock_exam_csrf_returns_valid_token(auth_client):
+    """Эндпоинт отдаёт свежий CSRF-токен, валидный для текущей сессии.
+
+    Фронт дёргает его перед каждой отправкой/heartbeat, чтобы долгая страница
+    пробника не словила «Неверный CSRF-токен»/«Сессия истекла».
+    """
+    from app.csrf import validate_csrf_token
+    client, _ = auth_client
+    resp = client.get("/upload/mock-exam/csrf")
+    assert resp.status_code == 200
+    token = resp.json()["csrf_token"]
+    assert token
+    session_id = client.cookies.get("session_id")
+    assert validate_csrf_token(session_id, token)
+
+
 def test_mock_exam_locked_subjects_do_not_disable_form(auth_client, db):
     """GET /upload/mock-exam keeps locked subjects available for a new period."""
     from app.models.mock_exam_lock import MockExamLock
@@ -286,9 +315,10 @@ def test_mock_exam_locked_subjects_do_not_disable_form(auth_client, db):
     assert "уже сдано" not in resp.text
 
 
-def test_mock_exam_current_period_submission_shows_waiting_grade(auth_client, db):
-    """Сданный по текущему билету пробник (открытый цикл) блокирует кнопку предмета
-    с подсказкой «работа сдана, ждите ОС» (модель «одна сдача на билет»)."""
+def test_mock_exam_current_period_submission_shows_resubmit(auth_client, db):
+    """Сданный по текущему билету пробник в ОТКРЫТОМ цикле НЕ блокирует предмет:
+    подсказка «работа сдана · можно перезалить», кнопка доступна (режим перезалива
+    — ученик может загружать заново, пока цикл не закрыт админом/SA)."""
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
     from app.models.exam_cycle import ExamCycle
     from datetime import datetime, timezone
@@ -319,7 +349,9 @@ def test_mock_exam_current_period_submission_shows_waiting_grade(auth_client, db
     resp = client.get("/upload/mock-exam")
 
     assert resp.status_code == 200
-    assert "работа сдана, ждите ОС" in resp.text
+    assert "работа сдана · можно перезалить" in resp.text
+    # открытый цикл больше не показывает блокирующую подсказку «ждите ОС»
+    assert "работа сдана, ждите ОС" not in resp.text
 
 
 def test_mock_exam_revision_unblocks_subject_in_form(auth_client, db):
@@ -514,6 +546,97 @@ def test_mock_exam_start_does_not_resume_expired_ticket_attempt(auth_client, db)
     stale = db.query(MockExamAttempt).filter(MockExamAttempt.id == stale_id).first()
     assert stale.expired_at is not None
     assert stale.completed_at is None
+
+
+def test_mock_exam_start_open_any_time_of_day_within_window(auth_client, db, monkeypatch):
+    """Внутри непрерывного периода доступа старт открыт в любое время суток —
+    «время на выполнение» больше не запирает выдачу билета по часам."""
+    from app.services import mock_exam_access
+    from app.services.tz import now_msk
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Рисунок")  # date-only → непрерывное многодневное окно
+    # 22:00 сегодня внутри окна start-1д 11:45..end+30д 18:30.
+    late = now_msk().replace(hour=22, minute=0, second=0, microsecond=0)
+    monkeypatch.setattr(mock_exam_access, "now_msk", lambda: late)
+
+    resp = client.post("/upload/mock-exam/start", data={"subject": "Рисунок"})
+
+    assert resp.status_code == 200
+    assert resp.json()["subject"] == "Рисунок"
+    assert resp.json()["ticket"]["id"] is not None
+
+
+def test_mock_exam_start_blocked_after_window_closes(auth_client, db):
+    """Период доступа: после closes_at выдача билета закрыта."""
+    from app.services.tz import now_msk
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    _now = now_msk()
+    _create_active_ticket(
+        db, user, "Рисунок",
+        opens_at=_now - timedelta(days=20),
+        closes_at=_now - timedelta(days=10),  # окно закрылось ~10 дней назад
+    )
+
+    resp = client.post("/upload/mock-exam/start", data={"subject": "Рисунок"})
+
+    assert resp.status_code in (403, 404)
+
+
+def test_mock_exam_start_blocked_within_duration_before_close(auth_client, db, monkeypatch):
+    """Нельзя получить билет в последние «время на выполнение» минут периода.
+
+    Период (date-only) 11:45–18:30, выполнение 90 мин → последний старт 17:00.
+    В 17:30 старт закрыт (403 start_window_closed), хотя сдача ещё открыта.
+    Билет date-only (Date-колонки) — без tz-сдвига SQLite, тест детерминирован.
+    """
+    from datetime import datetime, date as _date
+    from app.models.exam_assignment import ExamAssignment, ExamTicket
+    from app.services import mock_exam_access
+    from app.services.tz import MSK_TZ
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    assignment = ExamAssignment(
+        title="t", subject="Рисунок", created_by_id=user.id, status="published",
+    )
+    db.add(assignment)
+    db.flush()
+    day = _date(2026, 6, 1)
+    db.add(ExamTicket(
+        assignment_id=assignment.id, ticket_number=1, title="Билет Рисунок",
+        start_date=day, end_date=day,  # окно по fallback 11:45..18:30
+        duration_minutes=90, assign_to_all=True,
+    ))
+    db.commit()
+    # 17:30 — после отсечки старта (18:30 − 90 мин = 17:00), но до закрытия 18:30.
+    monkeypatch.setattr(
+        mock_exam_access, "now_msk",
+        lambda: datetime(2026, 6, 1, 17, 30, tzinfo=MSK_TZ),
+    )
+
+    resp = client.post("/upload/mock-exam/start", data={"subject": "Рисунок"})
+
+    assert resp.status_code == 403
+    assert resp.json()["error"] == "start_window_closed"
+
+
+def test_mock_exam_start_rejects_subject_not_allowed_by_profile(auth_client, db):
+    from app.models.user import User
+
+    client, user = auth_client
+    db.query(User).filter(User.id == user.id).update({"exam_subjects": "Р"})
+    db.commit()
+    _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Композиция")
+
+    resp = client.post("/upload/mock-exam/start", data={"subject": "Композиция"})
+
+    assert resp.status_code == 403
+    assert resp.json()["error"] == "subject_forbidden"
 
 
 def test_retake_form_available_when_mock_sent_to_retake(auth_client, db):

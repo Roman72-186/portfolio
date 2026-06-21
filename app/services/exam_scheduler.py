@@ -212,7 +212,8 @@ def _run_notification_check() -> None:
 
 def _run_mock_exam_expiry_check() -> None:
     """Каждые несколько минут помечает expired_at у открытых MockExamAttempt,
-    чьё задание стало неопубликованным/архивным (status != "published").
+    чьё задание стало неопубликованным/архивным (status != "published"), а также
+    у осиротевших попыток (ticket_id IS NULL).
 
     closes_at билета больше НЕ протухает попытку: сдача теперь разрешена в
     любой момент после получения билета (is_mock_exam_ticket_submission_open
@@ -225,6 +226,14 @@ def _run_mock_exam_expiry_check() -> None:
     Без этого «зависшая» попытка архивного задания осталась бы
     completed_at IS NULL навечно: mock_exam_start резюмировал бы её со
     снимком неактивного билета.
+
+    Осиротевшие попытки (ticket_id IS NULL): билет удалён, FK
+    `MockExamAttempt.ticket_id` (ondelete=SET NULL) обнулил ссылку у уже
+    начатых попыток. INNER JOIN ниже их НЕ видит, а UI их не резюмирует (нет
+    билета — `_active_ticket_for_attempt` возвращает None), поэтому без явного
+    протухания они висели бы completed_at/expired_at IS NULL вечно. mock_exam_start
+    всегда пишет реальный ticket_id, так что NULL ⇒ только удалённый билет ⇒
+    сдать против такой попытки нельзя ⇒ её безопасно протухать.
     """
     db = SessionLocal()
     try:
@@ -246,9 +255,22 @@ def _run_mock_exam_expiry_check() -> None:
                 attempt.expired_at = now
                 expired_count += 1
 
-        if expired_count:
+        orphan_count = (
+            db.query(MockExamAttempt)
+            .filter(
+                MockExamAttempt.completed_at.is_(None),
+                MockExamAttempt.expired_at.is_(None),
+                MockExamAttempt.ticket_id.is_(None),
+            )
+            .update({"expired_at": now}, synchronize_session=False)
+        )
+
+        if expired_count or orphan_count:
             db.commit()
-            logger.info("Mock-exam expiry: помечено %d истёкших попыток", expired_count)
+            logger.info(
+                "Mock-exam expiry: помечено %d истёкших + %d осиротевших попыток",
+                expired_count, orphan_count,
+            )
 
     except Exception:
         logger.exception("Ошибка в mock-exam expiry check")

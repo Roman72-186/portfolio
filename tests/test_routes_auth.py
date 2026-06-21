@@ -394,6 +394,39 @@ def test_auth_link_non_member_shows_denied(client, db, user_factory):
 
 
 # ---------------------------------------------------------------------------
+# GET /auth/handoff — fresh login link for in-app→external browser handoff
+# ---------------------------------------------------------------------------
+
+def test_auth_handoff_requires_auth(client):
+    # Same Accept header the base.html escape script sends → JSON 401 (no redirect).
+    resp = client.get("/auth/handoff", headers={"Accept": "application/json"})
+    assert resp.status_code == 401
+
+
+def test_auth_handoff_issues_working_fresh_login_link(client, db, user_factory):
+    user = user_factory()
+    url, _ = issue_one_time_login_link(db, user=user, base_url="https://testserver")
+    token = url.split("token=")[-1]
+
+    # Log in inside the "in-app browser" (sets session cookie on client)
+    login = client.get(f"/auth/link?token={token}", follow_redirects=False)
+    assert "session_id" in login.cookies
+
+    resp = client.get("/auth/handoff")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert "/auth/link?token=" in body["login_url"]
+
+    # The fresh token logs a cookie-less ("external") browser in.
+    fresh_token = body["login_url"].split("token=")[-1]
+    client.cookies.clear()
+    fresh = client.get(f"/auth/link?token={fresh_token}", follow_redirects=False)
+    assert fresh.status_code == 302
+    assert "/cabinet" in fresh.headers["location"]
+
+
+# ---------------------------------------------------------------------------
 # POST /logout
 # ---------------------------------------------------------------------------
 
@@ -451,12 +484,15 @@ def test_3dlab_enter_redirects_with_token(auth_client, db):
     assert "token=" in location
 
 
-def test_3dlab_enter_admin_redirects_without_sso_token(admin_client):
+def test_3dlab_enter_admin_group_member_redirects_with_token(admin_client):
     client, _ = admin_client
-    with patch.object(_app_settings, "lab3d_url", "https://3dlab.example.com"):
+    with patch.object(_app_settings, "lab3d_url", "https://3dlab.example.com"), \
+         patch.object(_app_settings, "sso_token_ttl_minutes", 2):
         resp = client.get("/cabinet/3dlab/enter", follow_redirects=False)
     assert resp.status_code == 302
-    assert resp.headers["location"] == "https://3dlab.example.com"
+    location = resp.headers["location"]
+    assert "3dlab.example.com/auth/sso" in location
+    assert "token=" in location
 
 
 def test_embedded_3dlab_available_for_student(auth_client):
@@ -471,6 +507,31 @@ def test_embedded_3dlab_available_for_admin(admin_client):
     resp = client.get("/3dlab", follow_redirects=False)
     assert resp.status_code == 200
     assert b"/static/3dlab/js/app.js" in resp.content
+
+
+def test_embedded_3dlab_not_group_member_redirects_denied(client, db, user_factory, session_factory):
+    user = user_factory(is_group_member=False)
+    sess = session_factory(user)
+    client.cookies.set("session_id", sess.id)
+    resp = client.get("/3dlab", follow_redirects=False)
+    assert resp.status_code == 302
+    assert "denied" in resp.headers["location"]
+
+
+def test_embedded_3dlab_not_group_member_denied_page_not_404(client, db, user_factory, session_factory):
+    user = user_factory(is_group_member=False)
+    sess = session_factory(user)
+    client.cookies.set("session_id", sess.id)
+    resp = client.get("/3dlab", follow_redirects=True)
+    assert resp.status_code == 403
+    assert resp.url.path == "/denied"
+    assert "404" not in resp.text
+
+
+def test_denied_page_exists(client):
+    resp = client.get("/denied", follow_redirects=False)
+    assert resp.status_code == 403
+    assert "404" not in resp.text
 
 
 def test_3dlab_enter_not_group_member_redirects_denied(client, db, user_factory, session_factory):

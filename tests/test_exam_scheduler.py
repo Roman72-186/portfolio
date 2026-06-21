@@ -79,3 +79,25 @@ def test_expiry_check_keeps_attempt_for_active_ticket(db, regular_user):
     db.refresh(attempt)
     assert attempt.completed_at is None
     assert attempt.expired_at is None
+
+
+def test_expiry_check_expires_orphaned_attempt_with_null_ticket(db, regular_user):
+    """Билет начатой попытки удалён → FK (ondelete=SET NULL) обнулил ticket_id.
+    INNER JOIN такую попытку не видит, поэтому шедулер обязан протухать её
+    отдельной веткой, иначе она висит completed_at/expired_at IS NULL вечно."""
+    attempt = MockExamAttempt(
+        user_id=regular_user.id,
+        subject="Рисунок",
+        ticket_id=None,
+        ticket_title="Рисунок",
+        started_at=datetime.now(timezone.utc) - timedelta(hours=1),
+    )
+    db.add(attempt)
+    db.commit()
+    db.refresh(attempt)
+
+    _run_mock_exam_expiry_check()
+
+    db.refresh(attempt)
+    assert attempt.completed_at is None
+    assert attempt.expired_at is not None

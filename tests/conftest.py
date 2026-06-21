@@ -108,6 +108,23 @@ def clear_feature_period_cache():
     invalidate_feature_cache()
 
 
+@pytest.fixture(autouse=True)
+def mock_exam_access_default_time(monkeypatch):
+    """Заморозить «сейчас» mock-exam доступа на сегодня 13:00 МСК.
+
+    Доступ к пробнику гейтится по периоду opens_at..closes_at (точные дата+время),
+    а билеты в фикстурах строятся относительно реального «сегодня»
+    (start_date=today-1..end_date=today+30). Поэтому замораживаем now_msk на
+    сегодняшнюю дату в середине дня — иначе now (фикс. дата из прошлого) выпал бы
+    из периода доступа билета. Тест может переопределить это своим monkeypatch.
+    """
+    from app.services import mock_exam_access
+    from app.services.tz import now_msk
+
+    frozen = now_msk().replace(hour=13, minute=0, second=0, microsecond=0)
+    monkeypatch.setattr(mock_exam_access, "now_msk", lambda: frozen)
+
+
 # ---------------------------------------------------------------------------
 # HTTP client fixtures
 # ---------------------------------------------------------------------------

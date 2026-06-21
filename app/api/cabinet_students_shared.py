@@ -23,7 +23,6 @@ from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, MONTHS, TARIFFS, COH
 from app.db.database import get_db
 from app.dependencies import get_current_user, require_admin_role, require_csrf
 from app.models.session import Session
-from app.models.exam_assignment import ExamAssignment, ExamTicket
 from app.models.exam_cycle import ExamCycle
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
@@ -38,7 +37,7 @@ from app.services import s3 as s3_service
 from app.services.exam_cycle import get_active_ticket, has_submitted_for_ticket
 from app.services.feature_periods import get_active_period
 from app.services.student_access import get_student_for_staff_access
-from app.services.tz import MSK_TZ, msk_midnight, today_msk
+from app.services.tz import MSK_TZ, msk_midnight
 from app.services.utils import compress_image, study_duration_text, group_works, has_case_growth
 from app.tmpl import templates
 
@@ -307,15 +306,11 @@ def students_panel(
     submitted_students: list[dict] = []
     not_submitted_students: list[dict] = []
     if user["role_rank"] == 2 and students:
-        _today = today_msk()
-        any_ticket_active = db.query(ExamTicket.id).join(
-            ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id
-        ).filter(
-            ExamAssignment.status == "published",
-            ExamAssignment.subject.in_(MOCK_SUBJECTS),
-            ExamTicket.start_date <= _today,
-            ExamTicket.end_date >= _today,
-        ).first() is not None
+        any_ticket_active = any(
+            get_active_ticket(db, s["id"], subject) is not None
+            for s in sidebar_students
+            for subject in MOCK_SUBJECTS
+        )
 
         if any_ticket_active:
             mock_status_available = True

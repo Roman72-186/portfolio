@@ -8,7 +8,7 @@ from itsdangerous import URLSafeTimedSerializer, BadData
 from app.config import settings
 
 # Must outlast the longest single-page flow that reuses a page-load token,
-# i.e. the 4h mock exam upload (MOCK_EXAM_DURATION_SEC in app/api/upload.py) plus margin.
+# including the mock exam upload timer plus margin.
 _MAX_AGE = 6 * 3600
 
 

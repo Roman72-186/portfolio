@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import logging
@@ -44,10 +45,50 @@ def generate_code_challenge(verifier: str) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
 
+# VK API edge intermittently returns 502/503/504 and recovers within seconds.
+# Retry transient gateway errors and network timeouts so a brief VK blip during
+# a login does not surface as a failed membership check (denied.html). See log
+# incident 2026-06-19: groups.isMember 502/504 burst, VK healthy seconds later.
+_VK_RETRY_STATUSES = {502, 503, 504}
+_VK_MAX_ATTEMPTS = 3
+_VK_RETRY_BACKOFF = 0.5  # seconds, multiplied by attempt number
+
+
 async def _vk_api_get(method: str, params: dict) -> dict:
-    """Make a VK API GET request using the shared persistent client."""
+    """Make a VK API GET request using the shared persistent client.
+
+    Retries transient gateway errors (502/503/504) and network timeouts with a
+    short linear backoff. Non-transient HTTP errors and VK API-level errors
+    (returned as 200 with an ``error`` body) are not retried here.
+    """
     client = await _get_client()
-    resp = await client.get(f"https://api.vk.com/method/{method}", params=params)
+    url = f"https://api.vk.com/method/{method}"
+    last_exc: Exception | None = None
+    for attempt in range(1, _VK_MAX_ATTEMPTS + 1):
+        try:
+            resp = await client.get(url, params=params)
+            if resp.status_code in _VK_RETRY_STATUSES and attempt < _VK_MAX_ATTEMPTS:
+                logger.warning(
+                    "VK %s transient HTTP %s (attempt %s/%s), retrying",
+                    method, resp.status_code, attempt, _VK_MAX_ATTEMPTS,
+                )
+                await asyncio.sleep(_VK_RETRY_BACKOFF * attempt)
+                continue
+            resp.raise_for_status()
+            return resp.json()
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            last_exc = exc
+            if attempt < _VK_MAX_ATTEMPTS:
+                logger.warning(
+                    "VK %s network error %s (attempt %s/%s), retrying",
+                    method, type(exc).__name__, attempt, _VK_MAX_ATTEMPTS,
+                )
+                await asyncio.sleep(_VK_RETRY_BACKOFF * attempt)
+                continue
+            raise
+    # Loop only falls through when the last attempt was a retryable status code.
+    if last_exc is not None:
+        raise last_exc
     resp.raise_for_status()
     return resp.json()
 

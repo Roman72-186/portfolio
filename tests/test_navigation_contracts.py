@@ -81,13 +81,16 @@ def test_curator_reports_use_curator_nav_not_admin_staff_nav(
     resp = client.get("/cabinet/curator/reports")
 
     assert resp.status_code == 200
-    assert 'class="curator-nav"' in resp.text
+    # Куратор использует staff-стиль навигации (сайдбар + нижний pill), но со СВОИМ
+    # набором пунктов из curator_nav_items() — это не admin staff_nav.
+    assert 'class="staff-aside"' in resp.text
     assert 'href="/cabinet/students"' in resp.text
+    assert 'href="/cabinet/staff/cycles"' in resp.text
     assert 'href="/cabinet/curator/reports"' in resp.text
     assert 'href="/cabinet/students?tab=statistics"' in resp.text
 
-    assert 'class="staff-aside"' not in resp.text
-    assert 'href="/cabinet/staff/cycles"' not in resp.text
+    # Куратор НЕ получает admin-only / student-only пункты.
+    assert 'href="/cabinet/admin/mock-check"' not in resp.text
     assert 'href="/cabinet/portfolio"' not in resp.text
     assert 'href="/upload/mock-exam"' not in resp.text
 
@@ -113,6 +116,8 @@ def test_admin_and_superadmin_keep_staff_nav_contract(
     resp = client.get(dashboard_path)
 
     assert resp.status_code == 200
+    assert 'class="mobile-dashboard-logout"' in resp.text
+    assert 'method="post" action="/logout"' in resp.text
     staff_nav = _html_between(resp.text, '<aside class="staff-aside">', "</aside>")
 
     assert 'class="staff-aside"' in staff_nav

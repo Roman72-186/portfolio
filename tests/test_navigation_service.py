@@ -6,6 +6,7 @@ def test_curator_nav_items_keep_current_contract():
 
     assert [(item.key, item.href, item.label) for item in items] == [
         ("students", "/cabinet/students", "Ученики"),
+        ("cycles", "/cabinet/staff/cycles", "Цикл Пробника"),
         ("reports", "/cabinet/curator/reports", "Отчёты"),
         ("statistics", "/cabinet/students?tab=statistics", "Статистика"),
     ]

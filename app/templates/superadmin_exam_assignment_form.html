@@ -64,6 +64,7 @@
 .student-option:hover { background: var(--bg); }
 .student-option input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--blue); flex-shrink: 0; }
 .student-option-name { font-size: 13px; color: var(--text); }
+.student-option-uname { font-size: 11px; color: var(--dim); font-weight: 600; }
 .students-selected-count { font-size: 11px; color: var(--blue); font-weight: 700; padding: 6px 12px; border-top: 1px solid var(--line); background: var(--bg); }
 .assign-all-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--blue-soft); cursor: pointer; }
 .assign-all-row input { accent-color: var(--blue); }
@@ -191,6 +192,8 @@ function addTicket() {
     updateAddBtn();
     initImageUpload(ticketCount);
     attachPreviewListeners(ticketCount);
+    initStudentSearch(ticketCount);
+    onAssignModeChange(ticketCount);
 }
 
 // ── Activation mode toggle ───────────────────────────────────────────────────
@@ -311,24 +314,43 @@ function buildTicketHTML(n) {
         + '<input type="datetime-local" id="ticket-closes-' + n + '" name="ticket_' + n + '_closes_at" data-ticket="closes_at" value="' + esc(DEFAULT_SCHEDULE.closes_at) + '" required>'
         + '<div class="field-error-msg" id="err-closes-' + n + '">Укажите дату и время закрытия</div></div>'
         + '</div>'
-        + '<div class="field-row">'
         + '<div class="field"><label>Время на выполнение, минут <span style="color:#DC2626">*</span></label>'
         + '<input type="number" id="ticket-duration-' + n + '" name="ticket_' + n + '_duration_minutes" data-ticket="duration_minutes" min="1" max="720" step="1" value="' + esc(DEFAULT_SCHEDULE.duration_minutes) + '" required>'
         + '<div class="field-hint">Только визуальный счётчик для ученика — сдачу НЕ блокирует. Сдать можно в любой момент периода доступа (Открывается…Закрывается).</div>'
         + '<div class="field-error-msg" id="err-duration-' + n + '">Укажите таймер от 1 до 720 минут</div></div>'
-        + '<div class="field"><label>Выдать по тегу <span style="color:var(--dim);font-weight:400">(необязательно)</span></label>'
-        + '<select id="ticket-tag-' + n + '" name="ticket_' + n + '_target_tag_id" data-ticket="target_tag_id">'
-        + buildTagOptions('')
-        + '</select>'
-        + '<div class="field-hint">Если выбран тег — билет получат только ученики с этим тегом. Если тег не выбран — билет получат все ученики (по предмету).</div>'
-        + '<div class="field-error-msg" id="err-tag-' + n + '"></div></div>'
-        + '</div>'
-        + '<div class="field-row">'
         + '<div class="field"><label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer">'
         + '<input type="checkbox" id="ticket-restrict-start-' + n + '" name="ticket_' + n + '_restrict_start_by_duration" data-ticket="restrict_start_by_duration" style="width:auto"> '
         + 'Запретить получение билета, если до конца периода осталось ≤ времени на выполнение</label>'
         + '<div class="field-hint">Включено — получить билет нельзя, если до конца периода осталось меньше времени на выполнение (напр., период до 14:00 и 90 мин → получить можно до 12:30). Выключено (по умолчанию) — получить билет можно до самого конца периода; время на выполнение всё равно показывается ученику как счётчик.</div>'
         + '</div>'
+
+        // ── Кому выдать билет ──
+        + '<div class="field"><label>Кому выдать билет</label>'
+        + '<div class="activate-toggle" id="assign-toggle-' + n + '">'
+        + '<label class="activate-opt active"><input type="radio" name="ticket_' + n + '_assign_mode" value="all" checked onchange="onAssignModeChange(' + n + ')"> Всем</label>'
+        + '<label class="activate-opt"><input type="radio" name="ticket_' + n + '_assign_mode" value="tag" onchange="onAssignModeChange(' + n + ')"> По тегу</label>'
+        + '<label class="activate-opt"><input type="radio" name="ticket_' + n + '_assign_mode" value="students" onchange="onAssignModeChange(' + n + ')"> Конкретным</label>'
+        + '</div>'
+        // Скрытый чекбокс assign_all: backend читает его как «выдать всем»
+        + '<input type="checkbox" id="assign-all-' + n + '" name="ticket_' + n + '_assign_all" data-ticket="assign_all" checked style="display:none">'
+        // Режим «По тегу»
+        + '<div id="assign-tag-wrap-' + n + '" style="display:none">'
+        + '<select id="ticket-tag-' + n + '" name="ticket_' + n + '_target_tag_id" data-ticket="target_tag_id">'
+        + buildTagOptions('')
+        + '</select>'
+        + '<div class="field-hint">Билет получат только ученики с этим тегом.</div>'
+        + '</div>'
+        // Режим «Конкретным ученикам»
+        + '<div id="assign-students-wrap-' + n + '" style="display:none">'
+        + '<div class="students-selector">'
+        + '<input type="text" class="students-search" placeholder="Поиск по фамилии, имени или username…" oninput="filterStudents(this,' + n + ')">'
+        + '<div class="students-list" id="students-list-' + n + '"></div>'
+        + '<div class="students-selected-count" id="students-count-' + n + '">0 выбрано</div>'
+        + '</div>'
+        + '<input type="hidden" name="ticket_' + n + '_student_ids" data-ticket="student_ids" id="student-ids-' + n + '">'
+        + '<div class="field-error-msg" id="err-students-' + n + '">Выберите хотя бы одного ученика</div>'
+        + '</div>'
+        + '<div class="field-hint">«Всем» — все ученики по предмету. «По тегу» — только с выбранным тегом. «Конкретным» — точечная выдача выбранным ученикам.</div>'
         + '</div>'
 
         // Live preview (как увидит ученик)
@@ -347,17 +369,22 @@ function initStudentSearch(n) {
     ALL_STUDENTS.forEach(function(s) {
         var row = document.createElement('div');
         row.className = 'student-option';
-        row.setAttribute('data-name', s.name.toLowerCase());
+        var uname = s.username ? '@' + s.username : '';
+        // В поиск входит и ФИО, и username — фильтр по подстроке (первые буквы тоже матчатся)
+        row.setAttribute('data-search', (s.name + ' ' + uname).toLowerCase());
         row.innerHTML = '<input type="checkbox" value="' + s.id + '" onchange="updateStudentIds(' + n + ')">'
-            + '<span class="student-option-name">' + esc(s.name) + '</span>';
+            + '<span class="student-option-name">' + esc(s.name)
+            + (uname ? ' <span class="student-option-uname">' + esc(uname) + '</span>' : '')
+            + '</span>';
         list.appendChild(row);
     });
 }
 
 function filterStudents(input, n) {
-    var q = input.value.toLowerCase();
+    // Ведущий @ в запросе игнорируем, чтобы «@ivan» и «ivan» искали одинаково
+    var q = input.value.toLowerCase().replace(/^@+/, '');
     document.querySelectorAll('#students-list-' + n + ' .student-option').forEach(function(row) {
-        row.style.display = row.getAttribute('data-name').includes(q) ? '' : 'none';
+        row.style.display = row.getAttribute('data-search').includes(q) ? '' : 'none';
     });
 }
 
@@ -368,12 +395,34 @@ function updateStudentIds(n) {
     });
     document.getElementById('student-ids-' + n).value = ids.join(',');
     document.getElementById('students-count-' + n).textContent = ids.length + ' выбрано';
+    var stuErr = document.getElementById('err-students-' + n);
+    if (stuErr && ids.length) stuErr.classList.remove('visible');
 }
 
-function toggleAll(n) {
-    var cb = document.getElementById('all-' + n);
-    var panel = document.getElementById('students-panel-' + n);
-    panel.style.display = cb.checked ? 'none' : '';
+// ── Режим выдачи билета (Всем / По тегу / Конкретным) ─────────────────────────
+function onAssignModeChange(n) {
+    var toggle = document.getElementById('assign-toggle-' + n);
+    if (!toggle) return;
+    var mode = 'all';
+    toggle.querySelectorAll('.activate-opt').forEach(function(opt) {
+        var radio = opt.querySelector('input[type=radio]');
+        if (radio && radio.checked) { opt.classList.add('active'); mode = radio.value; }
+        else opt.classList.remove('active');
+    });
+
+    var allCb = document.getElementById('assign-all-' + n);
+    var tagWrap = document.getElementById('assign-tag-wrap-' + n);
+    var studentsWrap = document.getElementById('assign-students-wrap-' + n);
+    var tagSelect = document.getElementById('ticket-tag-' + n);
+
+    if (tagWrap) tagWrap.style.display = (mode === 'tag') ? 'block' : 'none';
+    if (studentsWrap) studentsWrap.style.display = (mode === 'students') ? 'block' : 'none';
+
+    // Синхронизируем поля, которые читает backend, чтобы режимы не пересекались:
+    // assign_all=on только в режиме «Всем»; тег очищаем вне режима «По тегу»
+    // (иначе остаточный тег перебьёт точечную выдачу — assignees не создадутся).
+    if (allCb) allCb.checked = (mode === 'all');
+    if (mode !== 'tag' && tagSelect) tagSelect.value = '';
 }
 
 // ── Image upload ─────────────────────────────────────────────────────────────
@@ -538,6 +587,21 @@ function populateTicket(n, t) {
     if (durationInput && t.duration_minutes) durationInput.value = t.duration_minutes;
     if (tagSelect && t.target_tag_id) tagSelect.value = String(t.target_tag_id);
     if (restrictInput) restrictInput.checked = !!t.restrict_start_by_duration;
+
+    // Режим выдачи: тег → «По тегу», есть ученики → «Конкретным», иначе «Всем».
+    var mode = 'all';
+    if (t.target_tag_id) mode = 'tag';
+    else if (t.student_ids && t.student_ids.length) mode = 'students';
+    var modeRadio = document.querySelector('input[name="ticket_' + n + '_assign_mode"][value="' + mode + '"]');
+    if (modeRadio) modeRadio.checked = true;
+    if (mode === 'students' && t.student_ids) {
+        t.student_ids.forEach(function(uid) {
+            var cb = document.querySelector('#students-list-' + n + ' input[type=checkbox][value="' + uid + '"]');
+            if (cb) cb.checked = true;
+        });
+        updateStudentIds(n);
+    }
+    onAssignModeChange(n);
 }
 
 if (IS_EDIT && EXISTING_TICKETS.length > 0) {
@@ -643,6 +707,20 @@ function validateForm(event) {
         if (durationBad) { ok = false; if (!firstError) firstError = durationInput; }
 
         // Тег необязателен: пустое значение = «всем ученикам», не блокирует отправку.
+        // Режим «Конкретным ученикам» требует минимум одного выбранного ученика —
+        // иначе backend-фолбэк (пустой список) молча превратит билет в «выдать всем».
+        var assignMode = (block.querySelector('input[name="ticket_' + n + '_assign_mode"]:checked') || {}).value;
+        var stuErr = document.getElementById('err-students-' + n);
+        if (assignMode === 'students') {
+            var anyChecked = block.querySelectorAll('#students-list-' + n + ' input[type=checkbox]:checked').length > 0;
+            if (stuErr) stuErr.classList.toggle('visible', !anyChecked);
+            if (!anyChecked) {
+                ok = false;
+                if (!firstError) firstError = block.querySelector('#assign-students-wrap-' + n);
+            }
+        } else if (stuErr) {
+            stuErr.classList.remove('visible');
+        }
     });
 
     if (!ok) {

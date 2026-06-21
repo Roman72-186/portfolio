@@ -74,6 +74,9 @@ export function renderGallery(containerEl, items, { onSelect }) {
   items.forEach((m) => {
     const card = document.createElement("div");
     card.className = "model-card";
+    if (m.isBaseCard) {
+  card.classList.add("model-card-base");
+}
     card.dataset.model = m.id;
 
     const thumb = document.createElement("div");

@@ -58,7 +58,7 @@ services:
       - "traefik.http.middlewares.sec-headers.headers.frameDeny=true"
       - "traefik.http.middlewares.sec-headers.headers.referrerPolicy=strict-origin-when-cross-origin"
       - "traefik.http.middlewares.sec-headers.headers.permissionsPolicy=geolocation=(), microphone=(), camera=()"
-      - "traefik.http.middlewares.sec-headers.headers.contentSecurityPolicy=default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'unsafe-inline' https://unpkg.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https:; frame-ancestors 'none'"
+      - "traefik.http.middlewares.sec-headers.headers.contentSecurityPolicy=default-src 'self'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'unsafe-inline' https://unpkg.com https://telegram.org; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' blob: https:; frame-ancestors 'none'"
       - "traefik.http.middlewares.sec-headers.headers.customResponseHeaders.Server="
       - "traefik.http.middlewares.sec-headers.headers.customResponseHeaders.X-Powered-By="
     networks:

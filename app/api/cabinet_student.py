@@ -5,7 +5,6 @@ from typing import Annotated
 
 logger = logging.getLogger(__name__)
 
-import random
 from datetime import date
 
 _PHONE_RE = re.compile(r'^[\d\s\+\-\(\)]{7,20}$')
@@ -13,7 +12,7 @@ _TG_RE = re.compile(r'^[A-Za-z0-9_]{4,32}$')
 
 from fastapi import APIRouter, Request, Depends, Form, Query
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session, get_cached_unread, set_cached_unread, invalidate_unread
@@ -34,9 +33,15 @@ from app.dependencies import require_student, require_csrf
 from app.models.notification import Notification
 from app.models.upload_log import UploadLog
 from app.models.user import User
-from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
+from app.services.exam_cycle import get_active_ticket
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.feature_periods import is_feature_available
+from app.services.mock_exam_access import (
+    MOCK_EXAM_DURATION_SEC,
+    is_mock_exam_attempt_open,
+    is_subject_allowed_for_student,
+    mock_exam_deadline_for_started_at,
+)
 from app.services.tz import MSK_TZ, today_msk
 from app.services.utils import study_duration_text, group_works
 from app.tmpl import templates, format_ticket_description
@@ -185,8 +190,11 @@ def cabinet_student(
             "subject": a.subject,
             "ticket_title": a.ticket_title,
             "started_at": a.started_at.isoformat(),
+            "expires_at": mock_exam_deadline_for_started_at(a.started_at).isoformat(),
         }
         for a in active_attempts_q
+        if is_mock_exam_attempt_open(a.started_at)
+        and is_subject_allowed_for_student(db, user["user_id"], a.subject)
     ]
 
     return templates.TemplateResponse("cabinet_student.html", {
@@ -204,7 +212,7 @@ def cabinet_student(
         "notifications": notifications,
         "unread_count": unread_count,
         "active_attempts": active_attempts,
-        "mock_exam_duration_sec": 4 * 3600,
+        "mock_exam_duration_sec": MOCK_EXAM_DURATION_SEC,
     })
 
 
@@ -901,30 +909,10 @@ def get_exam_ticket(
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    """Return a random active exam ticket for given subject, if any."""
-    today = today_msk()
-    tickets = (
-        db.query(ExamTicket)
-        .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
-        .filter(
-            ExamAssignment.status == "published",
-            ExamAssignment.subject == subject,
-            ExamTicket.start_date <= today,
-            ExamTicket.end_date >= today,
-            or_(
-                ExamTicket.assign_to_all.is_(True),
-                ExamTicket.id.in_(
-                    db.query(ExamTicketAssignee.ticket_id)
-                    .filter(ExamTicketAssignee.user_id == user["user_id"])
-                    .scalar_subquery()
-                ),
-            ),
-        )
-        .all()
-    )
-    if not tickets:
+    """Return the active exam ticket for given subject, if any."""
+    ticket = get_active_ticket(db, user["user_id"], subject)
+    if not ticket:
         return JSONResponse({"found": False})
-    ticket = random.choice(tickets)
     return JSONResponse({
         "found": True,
         "ticket": {

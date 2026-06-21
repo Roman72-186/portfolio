@@ -21,6 +21,9 @@ from app.services.utils import compress_image
 
 logger = logging.getLogger(__name__)
 
+MAX_FEEDBACK_PHOTO_INPUT_SIZE = 25 * 1024 * 1024
+MAX_FEEDBACK_PHOTO_STORED_SIZE = 10 * 1024 * 1024
+
 ROLE_STUDENT = "student"
 ROLE_CURATOR = "curator"
 ROLE_ADMIN = "admin"
@@ -74,10 +77,14 @@ async def _upload_photo(work_id: int, filename: str, data: bytes) -> tuple[str, 
 
     def _do() -> tuple[bytes, str | None]:
         compressed = compress_image(data)
+        if len(compressed) > MAX_FEEDBACK_PHOTO_STORED_SIZE:
+            raise ValueError("Фото после сжатия превышает 10 МБ")
         return compressed, s3_service.upload_to_s3(s3_path, compressed, "image/jpeg")
 
     try:
         _, s3_url = await loop.run_in_executor(None, _do)
+    except ValueError:
+        raise
     except Exception as exc:
         logger.warning("feedback photo upload exception for work_id=%s: %s", work_id, exc)
         return None

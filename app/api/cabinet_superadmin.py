@@ -520,13 +520,17 @@ def _load_student_list(db: DBSession) -> list[dict]:
     if not student_role:
         return []
     students = (
-        db.query(User.id, User.first_name, User.last_name, User.name)
+        db.query(User.id, User.first_name, User.last_name, User.name, User.tg_username)
         .filter(User.role_id == student_role.id, User.is_active == True)
         .order_by(User.last_name, User.first_name)
         .all()
     )
     return [
-        {"id": s.id, "name": f"{s.last_name or ''} {s.first_name or s.name}".strip()}
+        {
+            "id": s.id,
+            "name": f"{s.last_name or ''} {s.first_name or s.name}".strip(),
+            "username": (s.tg_username or "").strip().lstrip("@"),
+        }
         for s in students
     ]
 

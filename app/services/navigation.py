@@ -44,6 +44,7 @@ class StaffNavItem:
 
 CURATOR_NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem(key="students", href="/cabinet/students", label="Ученики", icon="👥"),
+    NavItem(key="cycles", href="/cabinet/staff/cycles", label="Цикл Пробника", icon="🔁"),
     NavItem(key="reports", href="/cabinet/curator/reports", label="Отчёты", icon="🎬"),
     NavItem(key="statistics", href="/cabinet/students?tab=statistics", label="Статистика", icon="📈"),
 )

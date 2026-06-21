@@ -65,7 +65,7 @@
     font-size: 26px; font-weight: 900;
     color: #fff;
     letter-spacing: -0.5px;
-    margin-bottom: 6px;
+    margin-bottom: 0;
     line-height: 1.1;
 }
 .profile-tariff {
@@ -212,6 +212,7 @@
         text-align: center;
         padding: 24px 20px;
     }
+    .profile-hero .dashboard-name-row { justify-content: center; }
     .profile-name { font-size: 22px; }
     .profile-hero-edit { width: 100%; justify-content: center; }
     .stat-item { padding: 12px 16px; }
@@ -410,7 +411,7 @@
             <span class="mock-widget-title">Идёт пробник</span>
         </div>
         {% for a in active_attempts %}
-        <div class="mock-attempt-row" data-started="{{ a.started_at }}">
+        <div class="mock-attempt-row" data-started="{{ a.started_at }}" data-expires="{{ a.expires_at }}">
             <div class="mock-attempt-info">
                 <div class="mock-attempt-subject">{{ a.subject }}</div>
                 <div class="mock-attempt-ticket">{{ a.ticket_title }}</div>
@@ -436,8 +437,10 @@
         function update() {
             document.querySelectorAll('.mock-attempt-row').forEach(function(row){
                 var started = Date.parse(row.getAttribute('data-started'));
-                var elapsed = Math.floor((Date.now() - started) / 1000);
-                var remaining = DUR - elapsed;
+                var expires = Date.parse(row.getAttribute('data-expires'));
+                var remaining = Number.isNaN(expires)
+                    ? DUR - Math.floor((Date.now() - started) / 1000)
+                    : Math.floor((expires - Date.now()) / 1000);
                 var el = row.querySelector('.mock-remaining');
                 if (remaining <= 0) {
                     el.textContent = 'Время вышло';
@@ -518,8 +521,11 @@
 
         <div class="profile-hero-info">
             <div class="profile-role-tag">◉ Ученик</div>
-            <div class="profile-name">
-                {{ user.last_name or '' }} {{ user.first_name or user.name }}
+            <div class="dashboard-name-row">
+                <div class="profile-name">
+                    {{ user.last_name or '' }} {{ user.first_name or user.name }}
+                </div>
+                {% include "partials/mobile_dashboard_logout.html" %}
             </div>
             <span class="profile-tariff">
                 <span class="profile-tariff-dot"></span>

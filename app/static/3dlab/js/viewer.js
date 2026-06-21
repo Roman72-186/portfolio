@@ -11,10 +11,14 @@ import { initVideo, setVideoList, activateVideo, deactivateVideo } from "./video
 
 let dom = null;
 let currentModelId = null;
+let currentMeta = null;
 let activeView = "3d"; // "3d" | "scheme" | "video"
 // ✅ если открыты "Врезки" — архитектурный viewer должен молчать
 function isInsetModeActive() {
   return document.body.classList.contains("inset-mode");
+}
+function isRoomsModeActive() {
+  return document.body.classList.contains("rooms-mode");
 }
 
 // ✅ защита от гонок: если быстро переключили модель/раздел — старый промис игнорируем
@@ -108,11 +112,14 @@ requestAnimationFrame(() => {
 
   showGallery();
 
-  return {
-    openModelById,
-    showGallery,
-    handleResize
-  };
+return {
+  openModelById,
+  openUniversalArch,
+  openContentCard,
+  showGallery,
+  handleResize,
+  setViewMode
+};
 }
 
 function handleResize() {
@@ -168,29 +175,47 @@ const {
   tabVideoBtn } = dom;
 
 backBtn.addEventListener("click", () => {
-  if (isInsetModeActive()) return; // ✅ во Врезках не трогаем арх-режим
+  if (isInsetModeActive() || isRoomsModeActive()) return;
+
+  if (typeof dom.onBackToTreeGallery === "function") {
+    dom.onBackToTreeGallery();
+    return;
+  }
+
   showGallery();
 });
 
 nextBtn.addEventListener("click", () => {
-  if (isInsetModeActive()) return; // ✅ во Врезках не трогаем арх-режим
+  if (isInsetModeActive() || isRoomsModeActive()) return;
+
+  if (typeof dom.onOpenNextTreeCard === "function") {
+    dom.onOpenNextTreeCard();
+    return;
+  }
 
   if (!currentModelId) {
     openModelById(MODELS[0].id);
     return;
   }
+
   let idx = getModelIndex(currentModelId);
   idx = (idx + 1) % MODELS.length;
   openModelById(MODELS[idx].id);
 });
 
 prevBtn.addEventListener("click", () => {
-  if (isInsetModeActive()) return; // ✅ во Врезках не трогаем арх-режим
+  if (isInsetModeActive() || isRoomsModeActive()) return;
+
+  if (typeof dom.onOpenPrevTreeCard === "function") {
+    dom.onOpenPrevTreeCard();
+    return;
+  }
 
   if (!currentModelId) {
     openModelById(MODELS[0].id);
     return;
   }
+
   let idx = getModelIndex(currentModelId);
   idx = (idx - 1 + MODELS.length) % MODELS.length;
   openModelById(MODELS[idx].id);
@@ -199,50 +224,54 @@ prevBtn.addEventListener("click", () => {
 bottomBackBtn?.addEventListener("click", () => backBtn.click());
 bottomPrevBtn?.addEventListener("click", () => prevBtn.click());
 bottomNextBtn?.addEventListener("click", () => nextBtn.click());
-  tab3dBtn.addEventListener("click", () => {
-    const meta = getCurrentModelMeta();
-    if (!meta || !getModelCapabilities(meta).has3d) return;
-    setViewMode("3d");
-  });
+tab3dBtn.addEventListener("click", () => {
+  if (isInsetModeActive() || isRoomsModeActive()) return;
+  const meta = getCurrentModelMeta();
+  if (!meta || !getModelCapabilities(meta).has3d) return;
+  setViewMode("3d");
+});
 
-  tabSchemeBtn.addEventListener("click", () => {
-    const meta = getCurrentModelMeta();
-    if (!meta || !meta.schemes || meta.schemes.length === 0) return;
-    setViewMode("scheme");
-  });
+tabSchemeBtn.addEventListener("click", () => {
+  if (isInsetModeActive() || isRoomsModeActive()) return;
+  const meta = getCurrentModelMeta();
+  if (!meta || !meta.schemes || meta.schemes.length === 0) return;
+  setViewMode("scheme");
+});
 
-    tabPhotoBtn?.addEventListener("click", () => {
-    const meta = getCurrentModelMeta();
-    if (!meta || !meta.photos || meta.photos.length === 0) return;
-    setViewMode("photo");
-  });
+tabPhotoBtn?.addEventListener("click", () => {
+  if (isInsetModeActive() || isRoomsModeActive()) return;
+  const meta = getCurrentModelMeta();
+  if (!meta || !meta.photos || meta.photos.length === 0) return;
+  setViewMode("photo");
+});
 
-  tabVideoBtn.addEventListener("click", () => {
-    const meta = getCurrentModelMeta();
-    if (!meta || !meta.video || meta.video.length === 0) return;
-    setViewMode("video");
-  });
+tabVideoBtn.addEventListener("click", () => {
+  if (isInsetModeActive() || isRoomsModeActive()) return;
+  const meta = getCurrentModelMeta();
+  if (!meta || !meta.video || meta.video.length === 0) return;
+  setViewMode("video");
+});
 }
 
 function setupGlobalTouchBlock() {
   const { viewerWrapperEl } = dom;
 
-  document.addEventListener(
-    "touchmove",
-    (e) => {
-      if (!viewerWrapperEl || !viewerWrapperEl.classList.contains("visible")) return;
-      if (document.body.classList.contains("inset-mode")) return;
+document.addEventListener(
+  "touchmove",
+  (e) => {
+    if (!viewerWrapperEl || !viewerWrapperEl.classList.contains("visible")) return;
+    if (document.body.classList.contains("inset-mode")) return;
+    if (document.body.classList.contains("rooms-mode")) return;
 
-      // В режиме Видео и когда не playing — даём скролл списка
-      if (activeView === "video" && !document.body.classList.contains("video-playing")) {
-        const inVideoOverlay = e.target && e.target.closest && e.target.closest("#videoOverlay");
-        if (inVideoOverlay) return;
-      }
+    if (activeView === "video" && !document.body.classList.contains("video-playing")) {
+      const inVideoOverlay = e.target && e.target.closest && e.target.closest("#videoOverlay");
+      if (inVideoOverlay) return;
+    }
 
-      e.preventDefault();
-    },
-    { passive: false }
-  );
+    e.preventDefault();
+  },
+  { passive: false }
+);
 }
 
 function getModelIndex(id) {
@@ -250,6 +279,7 @@ function getModelIndex(id) {
 }
 
 function getCurrentModelMeta() {
+  if (currentMeta) return currentMeta;
   if (!currentModelId) return null;
   return getModelMeta(currentModelId);
 }
@@ -277,10 +307,98 @@ function chooseStartView(meta) {
   return "3d";
 }
 
+function openUniversalArch(modelItem, card) {
+  if (!modelItem || isInsetModeActive() || isRoomsModeActive()) return;
+
+  const meta = {
+    id: modelItem.id || modelItem.sourcePath || card.id,
+    name: card?.title || modelItem.name || "Model",
+    desc: card?.desc || "",
+    preview: card?.preview || "",
+
+    schemes: [],
+    photos: [],
+    video: [],
+
+    modelItem
+  };
+
+  currentModelId = meta.id;
+
+  dom.modelLabelEl.textContent = meta.name;
+
+  hideGallery();
+  showViewer();
+  setUiHidden(false);
+
+  configureViewTabsForModel(meta);
+
+  setCanvasInteractionEnabled(true);
+
+  startModelLoading(meta);
+}
+
+function normalizeContentAssetUrl(url) {
+  if (!url) return url;
+
+  const s = String(url);
+
+  const isAbsolute =
+    /^https?:\/\//i.test(s) ||
+    s.startsWith("/") ||
+    s.startsWith("data:");
+
+  return isAbsolute
+    ? s
+    : `https://api.apparchi.ru/?path=${encodeURIComponent(s)}`;
+}
+
+function openContentCard(card) {
+  if (!card || isInsetModeActive() || isRoomsModeActive()) return;
+
+  const meta = {
+    id: card.id,
+    name: card.title,
+    desc: card.desc,
+    preview: card.preview,
+
+schemes:
+  (card?.blocks?.schemes?.subblocks?.schemes?.items || [])
+    .map(normalizeContentAssetUrl),
+
+photos:
+  (card?.blocks?.drawing?.subblocks?.photos?.items || [])
+    .map(normalizeContentAssetUrl),
+
+    video:
+      card?.blocks?.video?.subblocks?.videos?.items || []
+  };
+
+  currentModelId = meta.id;
+  currentMeta = meta;
+
+  if (dom.modelLabelEl) dom.modelLabelEl.textContent = meta.name;
+
+  hideGallery();
+  showViewer();
+  setUiHidden(false);
+
+  configureViewTabsForModel(meta);
+
+  threeClearModel();
+  setCanvasInteractionEnabled(false);
+
+  hideLoading();
+  setStatus("");
+
+  setViewMode(chooseStartView(meta));
+}
+
 function openModelById(modelId) {
-  if (isInsetModeActive()) return; // ✅ во Врезках не открываем арх-модели
+  if (isInsetModeActive() || isRoomsModeActive()) return;
   const meta = getModelMeta(modelId);
   if (!meta) return;
+  currentMeta = meta;
 
   currentModelId = modelId;
 
@@ -306,14 +424,13 @@ if (!has3d) {
 }
 
 function startModelLoading(meta) {
-  if (isInsetModeActive()) return; // ✅ если уже в "Врезках" — не грузим арх
-
+  if (isInsetModeActive() || isRoomsModeActive()) return;
 const mySeq = ++archLoadSeq; // ✅ номер этой загрузки
 threeClearModel();
 showLoading("Загрузка…", 0);
 setStatus("Загрузка: " + meta.name);
 
-  loadModel(meta.id, {
+  loadModel(meta.modelItem || meta.id, {
     onProgress: (percent) => {
       if (typeof percent === "number") {
         showLoading("Загрузка: " + percent.toFixed(0) + "%", percent);
@@ -451,6 +568,7 @@ function showGallery() {
   threeClearModel();
 
   currentModelId = null;
+  currentMeta = null;
   activeView = "3d";
   setCanvasInteractionEnabled(true);
   setUiHidden(false);

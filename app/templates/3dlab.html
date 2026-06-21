@@ -5,6 +5,8 @@
   <title>КОД архитектора</title>
   <meta name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <link rel="icon" href="data:," />
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
     <style>
     * {
@@ -48,18 +50,19 @@ body {
     }
 
     /* ---------- TOP BAR --------- */
-    .app-header {
-      padding: 10px 16px;
-      display: flex;
-      align-items: center;
-      justify-content: flex-start;
-      gap: 10px;
-      background: #050506;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-      z-index: 20;
-      flex-shrink: 0;
-      position: relative;
-    }
+.app-header {
+  padding: 10px 16px;
+  min-height: 82px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  background: #050506;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  z-index: 20;
+  flex-shrink: 0;
+  position: relative;
+}
 
     .app-title {
       font-size: 12px;
@@ -129,6 +132,12 @@ body {
   }
 }
 
+@media (max-width: 599px) {
+  .gallery.locations-gallery {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+}
+
     .gallery.hidden {
       opacity: 0;
       pointer-events: none;
@@ -154,9 +163,50 @@ body {
       border-color: rgba(255, 255, 255, 0.16);
     }
 
+.model-card-base {
+  position: relative;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(82, 62, 132, 0.98) 0%,
+      rgba(46, 40, 78, 0.98) 52%,
+      rgba(28, 30, 48, 0.99) 100%
+    );
+
+  border-color: rgba(185, 150, 255, 0.42);
+
+  box-shadow:
+    0 0 0 1px rgba(165, 125, 255, 0.10),
+    0 14px 42px rgba(88, 52, 165, 0.34),
+    0 0 28px rgba(120, 70, 255, 0.12);
+}
+
+.model-card-base .model-thumb {
+  position: relative;
+  overflow: hidden;
+}
+
+.model-card-base .model-thumb::after {
+  content: "";
+
+  position: absolute;
+  inset: 0;
+
+  pointer-events: none;
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(155, 105, 255, 0.32) 0%,
+      rgba(105, 65, 220, 0.20) 40%,
+      rgba(0, 0, 0, 0.04) 100%
+    );
+}
+
     .model-thumb {
       width: 100%;
-      aspect-ratio: 4 / 3;
+      aspect-ratio: 1 / 1;
       border-radius: 10px;
       background: radial-gradient(circle at 30% 0%, #2c2c38 0%, #14141f 35%, #050506 100%);
       display: flex;
@@ -169,9 +219,10 @@ body {
       text-transform: uppercase;
     }
 
-    .model-caption {
-      font-size: 15px;
-      font-weight: 700;
+.model-caption {
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.12;
       color: #f3f3f3;
     }
 
@@ -208,7 +259,7 @@ body {
   z-index: 30;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   pointer-events: auto;
   transition: opacity 0.25s ease, transform 0.25s ease;
 }
@@ -221,6 +272,10 @@ body {
 
 .viewer-model-row {
   justify-content: center;
+}
+
+.viewer-model-row {
+  margin-bottom: -2px;
 }
 
 .viewer-tabs-row {
@@ -263,6 +318,38 @@ body {
 
   overflow: hidden;
   isolation: isolate;
+}
+
+.legacy-tabs-row {
+  display: none !important;
+}
+
+.viewer-tabs.universal-subblocks::before {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.97),
+    rgba(255,140,220,0.92)
+  ) !important;
+
+  box-shadow:
+    0 6px 14px rgba(255,120,220,0.18),
+    inset 0 1px 0 rgba(255,255,255,0.42);
+}
+
+.viewer-tabs.universal-subblocks {
+  width: max-content !important;
+  max-width: min(72vw, 520px) !important;
+  grid-auto-columns: max-content !important;
+  padding: 3px;
+  background: rgba(0,0,0,0.34);
+  border-color: rgba(255,255,255,0.06);
+}
+
+.viewer-tabs.universal-subblocks .tab-btn {
+  min-width: 78px !important;
+  height: 36px;
+  padding: 0 14px !important;
+  font-size: 12px;
 }
 
 .viewer-tabs::before {
@@ -432,12 +519,16 @@ body {
     font-size: 17px;
   }
 }
-      .video-nav-panel {
+.video-nav-panel {
   display: none;
   width: 100%;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+
+  box-sizing: border-box;
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
 }
 
 .video-nav-left,
@@ -488,10 +579,10 @@ body {
 }
 
 .video-nav-btn.back {
+  width: 46px;
   height: 46px;
-  padding: 0 16px;
-  font-size: 14px;
-  font-weight: 700;
+  padding: 0;
+  flex: 0 0 auto;
 }
 
 .video-nav-btn svg {
@@ -506,10 +597,6 @@ body {
   height: 17px;
 }
 
-.video-nav-btn-label {
-  display: inline-block;
-  transform: translateY(-0.5px);
-}
 
 @media (max-width: 768px) {
   .video-nav-panel {
@@ -756,7 +843,8 @@ body {
 }
 
 /* ===== VIDEO PLAY MODE ===== */
-body.video-playing .app-header {
+body.video-playing .app-header,
+body.video-player-open .app-header {
   display: none;
 }
 
@@ -770,7 +858,8 @@ body.video-playing .viewer-wrapper {
   inset: 0;
 }
 
-body.video-playing .viewer-bottom-nav {
+body.video-playing .viewer-bottom-nav,
+body.video-player-open .viewer-bottom-nav {
   opacity: 0;
   pointer-events: none;
   transform: translateX(-50%) translateY(8px);
@@ -781,7 +870,7 @@ body.video-playing .viewer-bottom-nav {
 #videoOverlay {
   position: absolute;
   inset: 0;
-  padding-top: var(--video-overlay-top, var(--viewer-toolbar-height));
+  padding-top: var(--viewer-toolbar-height);
 
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -855,7 +944,8 @@ body.video-playing .viewer-bottom-nav {
 }
 
 /* ===== VIDEO PLAY MODE (fullscreen only for active card) ===== */ /* CHANGED */
-body.video-playing #videoOverlay {
+body.video-playing #videoOverlay,
+body.video-player-open #videoOverlay {
   padding: 0;
 }
 
@@ -898,6 +988,12 @@ body.inset-mode.inset-no-tabs .viewer-tabs-row {
   flex: 0 0 auto;
   margin-right: 10px;
 }
+      #breadcrumbBar .btn {
+  position: relative;
+  z-index: 60;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
 
 /* Если header режет содержимое — убираем обрезку */
 .app-header {
@@ -909,18 +1005,25 @@ body.inset-mode.inset-no-tabs .viewer-tabs-row {
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
+  z-index: 30;
 
-  z-index: 30;           /* важно: поверх */
-  font-size: 15px;
+  width: calc(100% - 220px);
+  max-width: 520px;
+
+  font-size: 14px;
+  line-height: 1.1;
   font-weight: 700;
   color: #f5f5f5;
-  white-space: nowrap;
-  pointer-events: none;
-
-  max-width: calc(100% - 160px);
-  overflow: hidden;
-  text-overflow: ellipsis;
   text-align: center;
+
+  white-space: normal;
+
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+
+  overflow: hidden;
+  pointer-events: none;
 }
 
 /* Ползунок виден только во Врезках, только если у карточки есть 3D,
@@ -971,15 +1074,18 @@ body.inset-mode #insetOpacityRow {
 <body>
 <div class="app-root">
   <header class="app-header">
-    <!-- <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Breadcrumb (слева). В стиле ваших .btn -->
+    <!-- ✅ Breadcrumb (слева). В стиле ваших .btn -->
 <div id="breadcrumbBar" style="align-items:center; gap:8px;">
   <button class="btn" id="breadcrumbBackBtn">←</button>
-  <span id="breadcrumbSectionLabel" style="font-weight:700;"></span>
+
+  <button class="btn" id="breadcrumbHomeBtn">☰</button>
+
+  <span id="breadcrumbSectionLabel" style="display:none;"></span>
 </div>
     
 <div id="headerCenterTitle"></div>
     
-<a href="/cabinet" class="btn" style="margin-left:auto; text-decoration:none;">В кабинет</a>
+<a href="/cabinet" id="cabinetBtn" class="btn" style="margin-left:auto; text-decoration:none;">В кабинет</a>
 
 <div id="brandBlock">
   <div class="app-title">КОД архитектора</div>
@@ -999,7 +1105,7 @@ body.inset-mode #insetOpacityRow {
   <div class="model-label" id="modelLabel"></div>
 </div>
 
-<div class="viewer-toolbar-row viewer-tabs-row">
+<div class="viewer-toolbar-row viewer-tabs-row legacy-tabs-row">
   <div class="viewer-tabs">
     <button class="btn tab-btn active" id="tab3d">3D</button>
     <button class="btn tab-btn" id="tabScheme">Схема</button>
@@ -1008,11 +1114,19 @@ body.inset-mode #insetOpacityRow {
   </div>
 </div>
 
+<div class="viewer-toolbar-row universal-blocks-row" id="universalBlocksRow" style="display:none;">
+  <div class="viewer-tabs universal-blocks" id="universalBlocks"></div>
+</div>
+
+<div class="viewer-toolbar-row universal-subblocks-row" id="universalSubblocksRow" style="display:none;">
+  <div class="viewer-tabs universal-subblocks" id="universalSubblocks"></div>
+</div>
+
 <!-- Старая nav-строка остаётся в DOM, но скрыта CSS.
      Пока не удаляем, чтобы не сломать JS на этом шаге. -->
 <div class="viewer-toolbar-row viewer-nav-row">
   <button class="btn nav-btn" id="prevBtn">Предыдущая</button>
-  <button class="btn nav-btn" id="backBtn">Галерея</button>
+  <button class="btn nav-btn" id="backBtn" style="display:none">Галерея</button>
   <button class="btn nav-btn" id="nextBtn">Следующая</button>
 </div>
         <div class="viewer-toolbar-row" id="insetOpacityRow" style="display:none; gap:10px; align-items:center;">
@@ -1040,10 +1154,12 @@ body.inset-mode #insetOpacityRow {
 </div>
       </div>
 
-      <div class="viewer-bottom-nav" id="viewerBottomNav">
-  <button class="viewer-bottom-nav-btn arrow" id="bottomPrevBtn" type="button" aria-label="Предыдущая">‹</button>
-  <button class="viewer-bottom-nav-btn" id="bottomBackBtn" type="button">Галерея</button>
-  <button class="viewer-bottom-nav-btn arrow" id="bottomNextBtn" type="button" aria-label="Следующая">›</button>
+<div class="viewer-bottom-nav" id="viewerBottomNav">
+
+<button class="viewer-bottom-nav-btn arrow" id="bottomPrevBtn" type="button" aria-label="Предыдущая">‹</button>
+<button class="viewer-bottom-nav-btn" id="bottomBackBtn" type="button" style="display:none">Галерея</button>
+<button class="viewer-bottom-nav-btn arrow" id="bottomNextBtn" type="button" aria-label="Следующая">›</button>
+
 </div>
 
       <!-- LOADING OVERLAY -->
@@ -1063,8 +1179,18 @@ body.inset-mode #insetOpacityRow {
 <!-- ============================
      ПОДКЛЮЧЕНИЕ ПРИЛОЖЕНИЯ
      ============================ -->
-<script>window.LAB_USER = {{ lab_user | tojson }};</script>
-<script type="module" src="/static/3dlab/js/app.js"></script>
+<script id="lab-user-json" type="application/json">{{ lab_user | tojson }}</script>
+<script>
+(function () {
+  try {
+    const raw = document.getElementById("lab-user-json")?.textContent?.trim() || "";
+    window.LAB_USER = JSON.parse(raw);
+  } catch (e) {
+    window.LAB_USER = null;
+  }
+})();
+</script>
+<script type="module" src="/static/3dlab/js/app.js?v=20260617-simple-insets"></script>
   <script>
 (function () {
   function isVisibleButton(el) {

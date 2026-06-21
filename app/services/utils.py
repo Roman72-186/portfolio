@@ -51,7 +51,10 @@ def compress_image(data: bytes, max_px: int = 1600, quality: int = 82) -> bytes:
             img = img.resize((int(w * ratio), int(h * ratio)), Image.BILINEAR)
 
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=quality)
+        # progressive=True: на медленном интернете картинка проявляется грубой и
+        # резчает, а не висит пустой до полной загрузки. optimize=True ужимает
+        # размер (доп. проход Хаффмана) без потери качества.
+        img.save(buf, format="JPEG", quality=quality, progressive=True, optimize=True)
         compressed = buf.getvalue()
     except Exception as exc:
         logger.warning("Image compression skipped: %s", exc)

@@ -26,6 +26,17 @@ def test_cabinet_shows_tariff(auth_client):
     assert user.tariff in resp.text
 
 
+def test_student_dashboard_has_mobile_logout_action(auth_client):
+    client, _ = auth_client
+
+    resp = client.get("/cabinet/student")
+
+    assert resp.status_code == 200
+    assert 'class="mobile-dashboard-logout"' in resp.text
+    assert 'method="post" action="/logout"' in resp.text
+    assert 'aria-label="Выйти из аккаунта"' in resp.text
+
+
 def test_cabinet_student_shows_mock_exam_empty_state(auth_client):
     """With no mock exams, cabinet/student shows empty-state CTA link."""
     client, _ = auth_client

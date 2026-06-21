@@ -453,6 +453,34 @@ def issue_one_time_link_internal(
     }
 
 
+# ── GET /auth/handoff ─────────────────────────────────────────────────────────
+
+@router.get("/auth/handoff")
+def auth_handoff(
+    request: Request,
+    user: Annotated[dict, Depends(get_current_user)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Свежая одноразовая ссылка входа для УЖЕ залогиненного пользователя —
+    чтобы in-app браузер Telegram «передал» сессию во внешний браузер.
+
+    Используется escape-скриптом в base.html: внутри Telegram пользователь уже
+    авторизован (одноразовый токен из ссылки куратора тут уже потреблён), мы
+    выпускаем новый короткоживущий токен, и внешний браузер, открыв эту ссылку,
+    оказывается залогинен. Ответ — same-origin JSON; токен покидает устройство
+    только через собственный браузерный «прыжок» пользователя.
+    """
+    db_user = db.query(User).filter(User.id == user["user_id"]).first()
+    if not db_user or not db_user.is_active:
+        return JSONResponse({"ok": False}, status_code=403)
+    login_url, _token = issue_one_time_login_link(
+        db,
+        user=db_user,
+        base_url=_public_base_url(request),
+        issued_by="handoff",
+    )
+    return JSONResponse({"ok": True, "login_url": login_url})
+
 
 # ── 3D Лаборатория ──────────────────────────────────────────────────────────
 
@@ -462,7 +490,9 @@ def lab3d_page(
     request: Request,
     user: Annotated[dict, Depends(get_current_user)],
 ):
-    """Serve the embedded 3D Lab app for any authenticated user."""
+    """Serve the 3D Lab app for VK group members."""
+    if not user.get("is_group_member"):
+        return RedirectResponse("/denied", status_code=302)
     return templates.TemplateResponse("3dlab.html", {
         "request": request,
         "lab_user": {"id": user["vk_id"], "name": user["name"]},
@@ -475,27 +505,14 @@ def enter_3dlab(
     user: Annotated[dict, Depends(get_current_user)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    """Redirect to 3D Lab.
-
-    Students enter via SSO token. Staff/admin roles can open the lab without
-    issuing a student SSO token.
-    """
-    if user.get("role_rank") == 1 and not user.get("is_group_member"):
+    """Issue a short-lived SSO token and redirect the user to 3D Lab."""
+    if not user.get("is_group_member"):
         return RedirectResponse("/denied", status_code=302)
 
     if not settings.lab3d_url:
         raise HTTPException(status_code=503, detail="3D Lab не настроена")
 
     lab3d_url = settings.lab3d_url.rstrip("/")
-
-    if user.get("role_rank") != 1:
-        return RedirectResponse(lab3d_url, status_code=302)
-
-    if not user.get("is_group_member"):
-        return RedirectResponse("/denied", status_code=302)
-
-    if not settings.lab3d_url:
-        raise HTTPException(status_code=503, detail="3D Lab не настроена")
 
     db_user = db.query(User).filter(User.id == user["user_id"]).first()
     raw_token, _ = issue_sso_token(
@@ -505,6 +522,16 @@ def enter_3dlab(
     )
     redirect_url = f"{lab3d_url}/auth/sso?token={raw_token}"
     return RedirectResponse(redirect_url, status_code=302)
+
+
+@router.get("/denied", response_class=HTMLResponse)
+def denied_page(request: Request):
+    """Show the VK group access denial page used by redirects."""
+    return templates.TemplateResponse("denied.html", {
+        "request": request,
+        "reason": "Доступ к 3D лаборатории открыт только участникам сообщества ВКонтакте.",
+        "vk_group_id": settings.vk_group_id,
+    }, status_code=403)
 
 
 class SSOVerifyRequest(BaseModel):

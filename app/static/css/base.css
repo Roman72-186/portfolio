@@ -689,6 +689,43 @@ a:hover { color: var(--blue-deep); }
 .desk-nav-logout { color: var(--dim) !important; }
 .desk-nav-logout:hover { color: var(--error) !important; background: rgba(220,38,38,.06) !important; }
 
+/* Мобильный выход рядом с именем в синей hero-карточке дашборда. */
+.dashboard-name-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+.mobile-dashboard-logout {
+    display: none;
+    margin: 0;
+    flex-shrink: 0;
+}
+.mobile-dashboard-logout__button {
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border: 1px solid rgba(255,255,255,.35);
+    border-radius: var(--r-pill);
+    background: #0878ff;
+    color: #fff;
+    box-shadow: 0 5px 14px rgba(0,65,180,.28);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+    transition: background .15s, transform .15s, box-shadow .15s;
+}
+.mobile-dashboard-logout__button:hover {
+    background: #006be6;
+    box-shadow: 0 7px 18px rgba(0,65,180,.34);
+    transform: translateY(-1px);
+}
+
 /* ═══════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════ */
@@ -698,6 +735,8 @@ a:hover { color: var(--blue-deep); }
     .grid-2 { grid-template-columns: 1fr; }
     .grid-3 { grid-template-columns: repeat(2, 1fr); }
     .main { padding: 16px 16px calc(80px + env(safe-area-inset-bottom, 0px)); }
+    .dashboard-name-row { flex-wrap: wrap; }
+    .mobile-dashboard-logout { display: inline-flex; }
 }
 @media (max-width: 640px) {
     .lightbox-prev { left: 4px; }
@@ -720,6 +759,8 @@ a:hover { color: var(--blue-deep); }
     .desk-nav-item:hover { background: none; color: var(--muted); }
     .btn-primary:active { filter: brightness(0.95); }
     .card:active { border-color: rgba(59,91,255,.18); }
+    .mobile-dashboard-logout__button:hover { transform: none; }
+    .mobile-dashboard-logout__button:active { background: #0064d8; }
 }
 
 /* ── focus-visible ── */

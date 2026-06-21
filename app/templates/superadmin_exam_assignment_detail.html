@@ -128,6 +128,7 @@
     {% if tickets %}
     <div class="tickets-section" data-gallery="tickets">
         {% for ticket in tickets %}
+        {% set meta = ticket_meta.get(ticket.id, {}) %}
         <div class="ticket-card">
             <!-- Ticket header -->
             <div class="ticket-header">
@@ -135,7 +136,7 @@
                 <div class="ticket-htitle">{{ ticket.title }}</div>
                 <div class="ticket-dates">
                     <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                    <span>{{ ticket.start_date.strftime('%d.%m.%Y') }} — {{ ticket.end_date.strftime('%d.%m.%Y') }}</span>
+                    <span>{{ meta.opens_at }} — {{ meta.closes_at }} МСК</span>
                 </div>
             </div>
 
@@ -160,7 +161,15 @@
 
             <!-- Assignees -->
             <div class="ticket-assignees">
-                {% if ticket.assign_to_all %}
+                {% if meta.target_tag_name %}
+                <div class="assignees-label">
+                    Доступ
+                    <span class="assign-all-chip"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.59 13.41 11 3.83V3H3v8h.83l9.58 9.59a2 2 0 0 0 2.83 0l4.35-4.35a2 2 0 0 0 0-2.83z"/><line x1="7.5" y1="7.5" x2="7.51" y2="7.5"/></svg> {{ meta.target_tag_name }}</span>
+                </div>
+                <div class="assignees-count">
+                    Получить билет можно до {{ meta.latest_start_at }} МСК · таймер {{ meta.duration_minutes }} мин.
+                </div>
+                {% elif ticket.assign_to_all %}
                 <div class="assignees-label">
                     Назначено
                     <span class="assign-all-chip"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Всем ученикам</span>

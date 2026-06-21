@@ -138,6 +138,7 @@ def test_exam_assignment_create_saves_exact_time_timer_and_target_tag(
     db.commit()
     db.refresh(tag)
 
+    day = (date.today() + timedelta(days=3)).isoformat()
     resp = client.post(
         "/cabinet/exam-assignments/create",
         data={
@@ -147,8 +148,8 @@ def test_exam_assignment_create_saves_exact_time_timer_and_target_tag(
             "ticket_count": "1",
             "ticket_1_title": "Билет 1",
             "ticket_1_description": "Описание",
-            "ticket_1_opens_at": "2026-06-18T11:45",
-            "ticket_1_closes_at": "2026-06-18T18:00",
+            "ticket_1_opens_at": f"{day}T11:45",
+            "ticket_1_closes_at": f"{day}T18:00",
             "ticket_1_duration_minutes": "75",
             "ticket_1_target_tag_id": str(tag.id),
         },
@@ -160,8 +161,8 @@ def test_exam_assignment_create_saves_exact_time_timer_and_target_tag(
     assert ticket.target_tag_id == tag.id
     assert ticket.duration_minutes == 75
     assert ticket.assign_to_all is False
-    assert ticket.opens_at.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M") == "2026-06-18T11:45"
-    assert ticket.closes_at.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M") == "2026-06-18T18:00"
+    assert ticket.opens_at.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M") == f"{day}T11:45"
+    assert ticket.closes_at.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M") == f"{day}T18:00"
 
 
 def test_exam_assignment_create_without_tag_assigns_to_all(
@@ -182,8 +183,8 @@ def test_exam_assignment_create_without_tag_assigns_to_all(
             "subject": "Рисунок",
             "ticket_count": "1",
             "ticket_1_title": "Билет без тега",
-            "ticket_1_opens_at": "2026-06-18T11:45",
-            "ticket_1_closes_at": "2026-06-18T18:00",
+            "ticket_1_opens_at": f"{(date.today() + timedelta(days=3)).isoformat()}T11:45",
+            "ticket_1_closes_at": f"{(date.today() + timedelta(days=3)).isoformat()}T18:00",
             "ticket_1_duration_minutes": "90",
             "ticket_1_target_tag_id": "",  # тег не выбран
         },
@@ -217,8 +218,8 @@ def test_exam_assignment_create_restrict_start_by_duration_checkbox(
             "subject": "Рисунок",
             "ticket_count": "1",
             "ticket_1_title": "Билет с отсечкой",
-            "ticket_1_opens_at": "2026-06-18T11:45",
-            "ticket_1_closes_at": "2026-06-18T18:00",
+            "ticket_1_opens_at": f"{(date.today() + timedelta(days=3)).isoformat()}T11:45",
+            "ticket_1_closes_at": f"{(date.today() + timedelta(days=3)).isoformat()}T18:00",
             "ticket_1_duration_minutes": "90",
             "ticket_1_restrict_start_by_duration": "on",
         },
@@ -228,6 +229,90 @@ def test_exam_assignment_create_restrict_start_by_duration_checkbox(
     assert resp.status_code == 303
     ticket = db.query(ExamTicket).filter(ExamTicket.title == "Билет с отсечкой").one()
     assert ticket.restrict_start_by_duration is True
+
+
+def test_exam_assignment_create_form_renders_student_selector(
+    client,
+    db,
+    user_factory,
+    session_factory,
+):
+    """Форма создания должна давать выбор «кому выдать» с режимом точечной выдачи."""
+    admin = user_factory(vk_id=303014, role_name="суперадмин")
+    _login_as(client, session_factory, admin)
+
+    resp = client.get("/cabinet/exam-assignments/create")
+
+    assert resp.status_code == 200
+    assert "_assign_mode" in resp.text          # радио «Кому выдать билет»
+    assert "Конкретным" in resp.text            # режим точечной выдачи
+    assert "initStudentSearch" in resp.text     # рендер чекбоксов учеников
+
+
+def test_exam_assignment_form_student_list_includes_username(
+    client,
+    db,
+    user_factory,
+    session_factory,
+):
+    """Список учеников для точечной выдачи отдаёт username (для поиска по нему);
+    проверяет и расшифровку EncryptedString в колонночном запросе."""
+    admin = user_factory(vk_id=303020, role_name="суперадмин")
+    student = user_factory(vk_id=303021, role_name="ученик")
+    student.last_name = "Иванов"
+    student.first_name = "Пётр"
+    student.tg_username = "petya_art"
+    db.commit()
+    _login_as(client, session_factory, admin)
+
+    resp = client.get("/cabinet/exam-assignments/create")
+
+    assert resp.status_code == 200
+    # username (ASCII) виден буквально в student_list | tojson; ФИО — кириллица,
+    # экранируется в \uXXXX, поэтому проверяем именно username.
+    assert "petya_art" in resp.text          # username доступен фронту для поиска
+
+
+def test_exam_assignment_create_assigns_to_specific_students(
+    client,
+    db,
+    user_factory,
+    session_factory,
+):
+    """Режим «Конкретным ученикам»: билет выдаётся только выбранным (ExamTicketAssignee)."""
+    admin = user_factory(vk_id=303015, role_name="суперадмин")
+    s1 = user_factory(vk_id=303016, role_name="ученик")
+    s2 = user_factory(vk_id=303017, role_name="ученик")
+    _login_as(client, session_factory, admin)
+
+    # Окно в будущем относительно сегодня, чтобы не упереться в «время уже в прошлом».
+    future = date.today() + timedelta(days=3)
+    resp = client.post(
+        "/cabinet/exam-assignments/create",
+        data={
+            "csrf_token": "bypass",
+            "title": "Точечный пробник",
+            "subject": "Рисунок",
+            "ticket_count": "1",
+            "ticket_1_title": "Билет для двоих",
+            "ticket_1_opens_at": f"{future.isoformat()}T11:45",
+            "ticket_1_closes_at": f"{future.isoformat()}T18:00",
+            "ticket_1_duration_minutes": "90",
+            "ticket_1_target_tag_id": "",          # без тега
+            "ticket_1_student_ids": f"{s1.id},{s2.id}",
+        },
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    ticket = db.query(ExamTicket).filter(ExamTicket.title == "Билет для двоих").one()
+    assert ticket.target_tag_id is None
+    assert ticket.assign_to_all is False        # НЕ выдан всем
+    assignee_ids = {
+        uid for (uid,) in db.query(ExamTicketAssignee.user_id)
+        .filter(ExamTicketAssignee.ticket_id == ticket.id).all()
+    }
+    assert assignee_ids == {s1.id, s2.id}
 
 
 def test_exam_assignment_duplicate_copies_tickets_and_assignees(

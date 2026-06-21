@@ -71,6 +71,26 @@ label:hover .subject-btn { border-color: var(--warning); color: var(--warning); 
 .ticket-title { font-size: 15px; font-weight: 700; color: var(--warning); margin-bottom: 6px; }
 .ticket-desc { font-size: 13px; color: var(--muted); line-height: 1.55; white-space: pre-wrap; }
 .ticket-img { width: 100%; border-radius: 10px; margin-top: 12px; border: 1px solid rgba(217,119,6,0.2); display: block; }
+/* ── Ticket image: loading / error states (slow internet resilience) ── */
+.ticket-img-holder { margin-top: 12px; }
+.ticket-img-loading {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 120px; border-radius: 10px; border: 1px dashed rgba(217,119,6,0.3);
+    background: rgba(217,119,6,0.04); color: var(--muted); font-size: 13px;
+}
+.ticket-img-error {
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    padding: 18px 16px; border-radius: 10px;
+    border: 1px solid rgba(239,68,68,0.25); background: rgba(239,68,68,0.05); text-align: center;
+}
+.ticket-img-error-text { font-size: 13px; color: #DC2626; line-height: 1.5; }
+.ticket-img-retry {
+    font-size: 13px; font-weight: 700; color: #fff;
+    background: var(--warning); border: none; border-radius: 10px;
+    padding: 9px 18px; cursor: pointer; transition: opacity 0.15s;
+}
+.ticket-img-retry:hover { opacity: 0.88; }
+.ticket-img-retry:disabled { opacity: 0.6; cursor: default; }
 
 /* ── Timer widget ── */
 .exam-timer {
@@ -84,7 +104,7 @@ label:hover .subject-btn { border-color: var(--warning); color: var(--warning); 
 .exam-timer.visible { display: flex; }
 .timer-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.5); }
 .timer-value { font-size: 22px; font-weight: 900; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
-.timer-value.expired { color: var(--error); font-size: 14px; }
+.timer-value.expired { color: var(--success, #16A34A); font-size: 14px; }
 @media (max-width: 480px) {
     .upload-drop { padding: 28px 20px; }
     .upload-circle { width: 76px; height: 76px; font-size: 34px; }
@@ -138,12 +158,19 @@ label:hover .subject-btn { border-color: var(--warning); color: var(--warning); 
 
         <div class="card" style="padding:20px">
             <label class="form-label" style="margin-bottom:12px">Предмет</label>
+            {% if not subjects %}
+            <div class="alert alert-error" style="margin:0">Для вас пока не открыт ни один предмет пробника.</div>
+            {% endif %}
             <div style="display:flex;gap:10px;flex-wrap:wrap">
                 {% for s in subjects %}
                 {% set is_locked = s in locked_subjects %}
+                {% set is_resubmit = s in resubmit_subjects %}
                 {% set has_ticket = s in subjects_with_tickets %}
-                {# Блокирует выбор: нет задания ИЛИ по текущему билету уже есть сдача
-                   (одна сдача на билет — открыто заново только следующим билетом). #}
+                {% set can_start_subject = subject_start_open.get(s, false) %}
+                {# Блокирует выбор: нет задания ИЛИ цикл по текущему билету ЗАКРЫТ
+                   (оценён → открыто заново только следующим билетом). Открытый цикл
+                   с уже сданной работой (is_resubmit) предмет НЕ блокирует — ученик
+                   может перезалить работу. #}
                 {% set is_disabled = not has_ticket or is_locked %}
                 <label style="flex:1;min-width:120px;cursor:{% if is_disabled %}not-allowed{% else %}pointer{% endif %}">
                     <input type="radio" name="subject" value="{{ s }}" required
@@ -154,13 +181,13 @@ label:hover .subject-btn { border-color: var(--warning); color: var(--warning); 
                         {{ s }}
                     </div>
                     {% if is_locked %}
-                    {% if locked_reasons.get(s) == 'scored' %}
                     <span class="subject-locked-hint">работа сдана · ждите билет</span>
-                    {% else %}
-                    <span class="subject-locked-hint">работа сдана, ждите ОС</span>
-                    {% endif %}
+                    {% elif is_resubmit %}
+                    <span class="subject-locked-hint">работа сдана · можно перезалить</span>
                     {% elif not has_ticket %}
                     <span class="subject-locked-hint">сдача недоступна</span>
+                    {% elif not can_start_subject %}
+                    <span class="subject-locked-hint">получение билета закрыто</span>
                     {% endif %}
                 </label>
                 {% endfor %}
@@ -173,8 +200,9 @@ label:hover .subject-btn { border-color: var(--warning); color: var(--warning); 
                 <div style="font-size:16px;font-weight:800;color:var(--warning);margin-bottom:8px">📝 Подготовьтесь</div>
                 <p style="font-size:14px;color:var(--muted);line-height:1.6;margin:0">
                     Приготовьте карандаш и всё необходимое для выполнения пробного экзамена.<br>
-                    После нажатия кнопки «Начать» вам будет выдан билет и запущен таймер на 4 часа.
+                    После нажатия кнопки «Начать» вам будет выдан билет и запущен таймер сдачи.
                 </p>
+                <div id="startWindowMsg" class="alert alert-error" style="display:none;margin-top:12px"></div>
             </div>
         </div>
 
@@ -246,7 +274,7 @@ label:hover .subject-btn { border-color: var(--warning); color: var(--warning); 
 <!-- Timer widget -->
 <div class="exam-timer" id="examTimer">
     <span class="timer-label">Время на сдачу</span>
-    <span class="timer-value" id="timerValue">4:00:00</span>
+    <span class="timer-value" id="timerValue">—</span>
 </div>
 
 {% set active_tab = "mock" %}
@@ -392,12 +420,14 @@ function doUploadIntermediate() {
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner"></span>Загружаем этапные…';
     uploadMsg.style.display = 'none';
-    var fd = new FormData();
-    stageFiles.forEach(function(f){ fd.append('photos', f); });
-    fd.append('subject', _currentSubject);
-    fd.append('csrf_token', CSRF_TOKEN);
-    fetch('/upload/probnik/intermediate', {
-        method: 'POST', body: fd, headers: { 'Accept': 'application/json' }
+    refreshCsrf().then(function(){
+        var fd = new FormData();
+        stageFiles.forEach(function(f){ fd.append('photos', f); });
+        fd.append('subject', _currentSubject);
+        fd.append('csrf_token', CSRF_TOKEN);
+        return fetch('/upload/probnik/intermediate', {
+            method: 'POST', body: fd, headers: { 'Accept': 'application/json' }
+        });
     })
         .then(parseUploadResponse)
         .then(function(res) {
@@ -412,10 +442,11 @@ function doUploadIntermediate() {
             stageCreatedCount = j.created || 0;
             doUploadFinal();
         })
-        .catch(function() {
+        .catch(function(err) {
             submitBtn.disabled = false;
             submitBtn.innerHTML = 'Повторить загрузку этапных';
-            showUploadError('Этапные не отправились (нет связи).');
+            if (err && err.message === 'auth') { showSessionExpired(); }
+            else { showUploadError('Этапные не отправились (нет связи).'); }
         });
 }
 
@@ -424,12 +455,14 @@ function doUploadFinal() {
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner"></span>Загружаем финальное…';
     uploadMsg.style.display = 'none';
-    var fd = new FormData();
-    fd.append('photos', finalFile);
-    fd.append('subject', _currentSubject);
-    fd.append('csrf_token', CSRF_TOKEN);
-    fetch('/upload/probnik/final', {
-        method: 'POST', body: fd, headers: { 'Accept': 'application/json' }
+    refreshCsrf().then(function(){
+        var fd = new FormData();
+        fd.append('photos', finalFile);
+        fd.append('subject', _currentSubject);
+        fd.append('csrf_token', CSRF_TOKEN);
+        return fetch('/upload/probnik/final', {
+            method: 'POST', body: fd, headers: { 'Accept': 'application/json' }
+        });
     })
         .then(parseUploadResponse)
         .then(function(res) {
@@ -442,10 +475,11 @@ function doUploadFinal() {
             }
             finishOk();
         })
-        .catch(function() {
-            showUploadError('Не удалось связаться с сервером.');
+        .catch(function(err) {
             submitBtn.disabled = false;
             submitBtn.innerHTML = stageUploaded ? 'Повторить загрузку финального' : 'Отправить на проверку';
+            if (err && err.message === 'auth') { showSessionExpired(); }
+            else { showUploadError('Не удалось связаться с сервером.'); }
         });
 }
 
@@ -473,10 +507,49 @@ function finishOk() {
 
 // ── Server data ──────────────────────────────────────────────────────────────
 var ATTEMPTS = {{ attempts_by_subject | tojson }};  // { "Рисунок": {...}, "Композиция": {...} } | {}
+var START_OPEN_BY_SUBJECT = {{ subject_start_open | tojson }};
+var WINDOW_MESSAGE_BY_SUBJECT = {{ subject_window_messages | tojson }};
+// Предметы в режиме перезалива: финал сдан, цикл ещё открыт → форма загрузки
+// доступна сразу, без «Начать пробник» и без таймера.
+var RESUBMIT_SUBJECTS = {{ resubmit_subjects | list | tojson }};
 var TIMER_DURATION = {{ mock_exam_duration_sec }};
 var CSRF_TOKEN = document.querySelector('input[name="csrf_token"]').value;
 var _timerInterval = null;
 var _currentSubject = null;
+
+// ── Свежий CSRF-токен ─────────────────────────────────────────────────────────
+// Окно сдачи не ограничено по времени, страница может жить дольше срока page-load
+// токена (6ч) и cookie сессии. Перед каждой отправкой берём свежий токен; сам
+// запрос продлевает сессию и переустанавливает cookie на сервере (get_current_user).
+// reject('auth') → сессия реально мертва (нужен повторный вход).
+function refreshCsrf() {
+    return fetch('/upload/mock-exam/csrf', { headers: { 'Accept': 'application/json' }, cache: 'no-store' })
+        .then(function(r){ if (r.status !== 200) throw new Error('auth'); return r.json(); })
+        .then(function(j){
+            if (j && j.csrf_token) {
+                CSRF_TOKEN = j.csrf_token;
+                var inp = document.querySelector('input[name="csrf_token"]');
+                if (inp) inp.value = j.csrf_token;
+            }
+            return CSRF_TOKEN;
+        });
+}
+
+// Heartbeat: пока активна попытка — раз в 10 мин обновляем токен и продлеваем
+// сессию/cookie, чтобы долго открытая вкладка не словила «Сессия истекла».
+var _csrfHeartbeat = null;
+function startCsrfHeartbeat() {
+    if (_csrfHeartbeat) return;
+    _csrfHeartbeat = setInterval(function(){ refreshCsrf().catch(function(){}); }, 10 * 60 * 1000);
+}
+function stopCsrfHeartbeat() {
+    if (_csrfHeartbeat) { clearInterval(_csrfHeartbeat); _csrfHeartbeat = null; }
+}
+
+function showSessionExpired() {
+    showUploadMsg('Сессия истекла. Откройте сайт в новой вкладке и войдите снова, ' +
+        'затем вернитесь сюда и нажмите кнопку ещё раз — выбранные фото не потеряются.', true);
+}
 
 // Помечаем subject-кнопки «в процессе» если есть активная попытка
 Object.keys(ATTEMPTS).forEach(function(subj){
@@ -510,17 +583,31 @@ function onSubjectSelected(subject) {
     document.getElementById('uploadSection').style.display = 'none';
     document.getElementById('startBtn').style.display = 'none';
     document.getElementById('prepBlock').style.display = 'none';
+    document.getElementById('startWindowMsg').style.display = 'none';
     stopTimer();
 
     if (ATTEMPTS[subject]) {
         // Уже есть активная попытка → сразу показать билет + таймер + форму загрузки
         renderTicket(ATTEMPTS[subject]);
-        startTimerFromServer(ATTEMPTS[subject].started_at);
+        startTimerFromServer(ATTEMPTS[subject].started_at, ATTEMPTS[subject].expires_at);
+        document.getElementById('uploadSection').style.display = 'block';
+    } else if (RESUBMIT_SUBJECTS.indexOf(subject) !== -1) {
+        // Режим перезалива: финал уже сдан, цикл открыт. Таймерной попытки нет —
+        // показываем форму загрузки сразу, без «Начать пробник» и без таймера.
         document.getElementById('uploadSection').style.display = 'block';
     } else {
         // Показать подготовительное сообщение и кнопку «Начать пробник»
         document.getElementById('prepBlock').style.display = 'block';
-        document.getElementById('startBtn').style.display = 'inline-block';
+        var startBtn = document.getElementById('startBtn');
+        var canStart = START_OPEN_BY_SUBJECT[subject] !== false;
+        startBtn.style.display = 'inline-block';
+        startBtn.disabled = !canStart;
+        startBtn.innerHTML = canStart ? '▶ Начать пробник' : 'Получение билета закрыто';
+        if (!canStart && WINDOW_MESSAGE_BY_SUBJECT[subject]) {
+            var startWindowMsg = document.getElementById('startWindowMsg');
+            startWindowMsg.textContent = WINDOW_MESSAGE_BY_SUBJECT[subject];
+            startWindowMsg.style.display = 'block';
+        }
     }
 }
 
@@ -530,11 +617,12 @@ document.getElementById('startBtn').addEventListener('click', function(){
     btn.disabled = true;
     btn.textContent = 'Выдаём билет…';
 
-    var fd = new FormData();
-    fd.append('subject', _currentSubject);
-    fd.append('csrf_token', CSRF_TOKEN);
-
-    fetch('/upload/mock-exam/start', { method: 'POST', body: fd })
+    refreshCsrf().then(function(){
+        var fd = new FormData();
+        fd.append('subject', _currentSubject);
+        fd.append('csrf_token', CSRF_TOKEN);
+        return fetch('/upload/mock-exam/start', { method: 'POST', body: fd });
+    })
         .then(function(r){ return r.json().then(function(j){ return {status: r.status, body: j}; }); })
         .then(function(res){
             btn.disabled = false;
@@ -545,8 +633,10 @@ document.getElementById('startBtn').addEventListener('click', function(){
                     'already_submitted': 'Пробник уже сдан и ожидает проверки',
                     'feature_closed': 'Раздел пробников сейчас закрыт',
                     'invalid_subject': 'Выберите корректный предмет',
+                    'subject_forbidden': 'Этот предмет недоступен для вашей группы',
+                    'start_window_closed': res.body.message || 'Получение билета сейчас закрыто',
                     'portfolio_not_completed': 'Сначала загрузите портфолио «До»',
-                }[res.body.error] || 'Не удалось начать пробник';
+                }[res.body.error] || res.body.message || 'Не удалось начать пробник';
                 alert(msg);
                 return;
             }
@@ -557,60 +647,141 @@ document.getElementById('startBtn').addEventListener('click', function(){
                 ticket_description: res.body.ticket.description,
                 ticket_image_url: res.body.ticket.image_url,
                 started_at: res.body.started_at,
+                expires_at: res.body.expires_at,
+                duration_sec: res.body.duration_sec,
             };
             ATTEMPTS[_currentSubject] = attempt;
             document.getElementById('startBtn').style.display = 'none';
             document.getElementById('prepBlock').style.display = 'none';
             renderTicket(attempt);
-            startTimerFromServer(attempt.started_at);
+            startTimerFromServer(attempt.started_at, attempt.expires_at);
             document.getElementById('uploadSection').style.display = 'block';
         })
-        .catch(function(){
+        .catch(function(err){
             btn.disabled = false;
             btn.innerHTML = '▶ Начать пробник';
-            alert('Не удалось связаться с сервером');
+            if (err && err.message === 'auth') {
+                alert('Сессия истекла. Откройте сайт в новой вкладке, войдите снова и вернитесь сюда.');
+            } else {
+                alert('Не удалось связаться с сервером');
+            }
         });
 });
 
 function renderTicket(attempt) {
     var block = document.getElementById('ticketBlock');
-    var html = '<div class="ticket-card">';
-    html += '<div class="ticket-title">📋 ' + escHtml(attempt.ticket_title) + '</div>';
+    block.innerHTML = '';
+
+    var card = document.createElement('div');
+    card.className = 'ticket-card';
+
+    var title = document.createElement('div');
+    title.className = 'ticket-title';
+    title.textContent = '📋 ' + attempt.ticket_title;
+    card.appendChild(title);
+
     if (attempt.ticket_description) {
-        html += '<div class="ticket-desc">' + attempt.ticket_description + '</div>';
+        var desc = document.createElement('div');
+        desc.className = 'ticket-desc';
+        desc.innerHTML = attempt.ticket_description;  // сервер уже форматирует (format_ticket_description)
+        card.appendChild(desc);
     }
+
     if (attempt.ticket_image_url) {
-        html += '<img src="' + escHtml(attempt.ticket_image_url) + '" class="ticket-img" alt="Билет" loading="lazy" style="cursor:zoom-in" onclick="openLightbox(this.src, this.alt)">';
+        card.appendChild(buildTicketImage(attempt.ticket_image_url));
     }
-    html += '</div>';
-    block.innerHTML = html;
+
+    block.appendChild(card);
     block.style.display = 'block';
 }
 
-function escHtml(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+// Билет — критичный above-the-fold контент, а таймер уже идёт. На медленном
+// интернете загрузка картинки может зависнуть или сорваться: показываем спиннер,
+// при ошибке — кнопку «Повторить» (ретрай без перезагрузки страницы, чтобы не
+// потерять попытку/таймер; cache-buster форсирует ре-фетч мимо «битого» кэша).
+function buildTicketImage(url) {
+    var holder = document.createElement('div');
+    holder.className = 'ticket-img-holder';
+
+    var loading = document.createElement('div');
+    loading.className = 'ticket-img-loading';
+    loading.innerHTML = '<span class="spinner"></span> Загружаем изображение билета…';
+
+    var img = document.createElement('img');
+    img.className = 'ticket-img';
+    img.alt = 'Билет';
+    img.style.display = 'none';
+    img.style.cursor = 'zoom-in';
+    img.style.marginTop = '0';
+    img.setAttribute('fetchpriority', 'high');  // грузить раньше прочего, без loading="lazy"
+    img.onclick = function() { openLightbox(img.src, img.alt); };
+
+    var errBox = document.createElement('div');
+    errBox.className = 'ticket-img-error';
+    errBox.style.display = 'none';
+    var errText = document.createElement('div');
+    errText.className = 'ticket-img-error-text';
+    errText.textContent = 'Не удалось загрузить изображение билета — проверьте интернет и попробуйте снова.';
+    var retryBtn = document.createElement('button');
+    retryBtn.type = 'button';
+    retryBtn.className = 'ticket-img-retry';
+    retryBtn.textContent = '↻ Повторить загрузку';
+    errBox.appendChild(errText);
+    errBox.appendChild(retryBtn);
+
+    var attempts = 0;
+    function load() {
+        attempts++;
+        loading.style.display = 'flex';
+        errBox.style.display = 'none';
+        img.style.display = 'none';
+        retryBtn.disabled = false;
+        // На ретрае добавляем cache-buster, чтобы перепрыгнуть частично закэшированный/битый ответ.
+        img.src = url + (attempts > 1 ? (url.indexOf('?') === -1 ? '?' : '&') + 'r=' + Date.now() : '');
+    }
+    img.onload = function() {
+        loading.style.display = 'none';
+        errBox.style.display = 'none';
+        img.style.display = 'block';
+    };
+    img.onerror = function() {
+        loading.style.display = 'none';
+        img.style.display = 'none';
+        errBox.style.display = 'flex';
+    };
+    retryBtn.onclick = function() { retryBtn.disabled = true; load(); };
+
+    holder.appendChild(loading);
+    holder.appendChild(img);
+    holder.appendChild(errBox);
+    load();
+    return holder;
 }
 
 function stopTimer() {
     if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
+    stopCsrfHeartbeat();
     var el = document.getElementById('examTimer');
     el.classList.remove('visible');
     el.classList.remove('expired');
 }
 
-function startTimerFromServer(startedAtIso) {
+function startTimerFromServer(startedAtIso, expiresAtIso) {
     if (_timerInterval) clearInterval(_timerInterval);
+    startCsrfHeartbeat();
     var startedAtMs = Date.parse(startedAtIso);
+    var expiresAtMs = expiresAtIso ? Date.parse(expiresAtIso) : null;
     var timerEl = document.getElementById('examTimer');
     var valEl = document.getElementById('timerValue');
     timerEl.classList.remove('expired');
     timerEl.classList.add('visible');
 
     function tick() {
-        var elapsed = Math.floor((Date.now() - startedAtMs) / 1000);
-        var remaining = TIMER_DURATION - elapsed;
+        var remaining = expiresAtMs
+            ? Math.floor((expiresAtMs - Date.now()) / 1000)
+            : TIMER_DURATION - Math.floor((Date.now() - startedAtMs) / 1000);
         if (remaining <= 0) {
-            valEl.textContent = 'Время вышло ⏰';
+            valEl.textContent = 'Можно сдавать';
             valEl.classList.add('expired');
             clearInterval(_timerInterval);
             return;

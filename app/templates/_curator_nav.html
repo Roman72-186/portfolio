@@ -1,34 +1,180 @@
 {% if user.role_rank == 2 %}
-<style>
-.curator-nav {
-    display: flex; align-items: center; gap: 6px;
-    padding: 10px 20px; flex-shrink: 0;
-    background: var(--surface); border-bottom: 1px solid var(--line);
-    overflow-x: auto; scrollbar-width: none;
-}
-.curator-nav::-webkit-scrollbar { display: none; }
-.curator-nav-link {
-    flex-shrink: 0;
-    display: inline-flex; align-items: center; gap: 7px;
-    padding: 8px 16px; border-radius: var(--r-xl);
-    font-size: 13px; font-weight: 700; color: var(--dim);
-    border: 1.5px solid transparent; background: none;
-    transition: background 0.18s, color 0.18s, border-color 0.18s;
-    text-decoration: none; white-space: nowrap;
-}
-.curator-nav-link:hover { background: var(--surface-2); color: var(--text); opacity: 1; }
-.curator-nav-link.active {
-    background: var(--blue-soft); color: var(--blue);
-    border-color: var(--blue);
-}
-.curator-nav-link .nav-ico { font-size: 15px; line-height: 1; }
-@media (max-width: 640px) { .curator-nav { padding: 8px 12px; } }
-</style>
+{# Навигация куратора (rank 2). Раньше — горизонтальный бар сверху; теперь зеркалит
+   staff_nav.html: десктоп-сайдбар (.staff-aside) + нижний pill (.staff-pill-nav), но по
+   curator_nav_items(). Куратор и staff_nav взаимоисключающи по рангу (rank==2 vs rank>=4),
+   поэтому переиспользование тех же классов и локальная копия pill-стилей безопасны:
+   на странице куратора staff_nav никогда не подключается, конфликта определений нет. #}
+{% set _p = request.url.path %}
 {% set curator_items = curator_nav_items() %}
-<nav class="curator-nav" aria-label="Разделы куратора">
+{% macro curator_nav_icon(key, size) -%}
+    {%- if key == "students" -%}
+        <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    {%- elif key == "cycles" -%}
+        <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    {%- elif key == "reports" -%}
+        <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+    {%- elif key == "statistics" -%}
+        <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+    {%- endif -%}
+{%- endmacro %}
+<aside class="staff-aside">
+    <div class="desk-brand">
+        <img src="/static/img/logo.svg" alt="Логотип" width="36" height="36"
+             style="border-radius:50%;flex-shrink:0;object-fit:cover">
+        <span class="desk-brand-name">Портфолио</span>
+    </div>
+    <nav class="desk-nav" aria-label="Меню куратора">
+        {% for item in curator_items %}
+        <a href="{{ item.href }}"
+           class="desk-nav-item {% if nav_active == item.key %}desk-nav-active{% endif %}"
+           {% if nav_active == item.key %}aria-current="page"{% endif %}>
+            <span class="desk-nav-icon" aria-hidden="true">
+                {{ curator_nav_icon(item.key, 20) }}
+            </span>
+            <span>{{ item.label }}</span>
+        </a>
+        {% endfor %}
+    </nav>
+    <div class="desk-nav-footer">
+        <a href="/auth/logout" class="desk-nav-item desk-nav-logout">
+            <span class="desk-nav-icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            </span>
+            <span>Выйти</span>
+        </a>
+    </div>
+</aside>
+<style>
+/* ── Pill nav (копия стиля staff_nav.html — куратор и staff не сосуществуют на странице) ── */
+.staff-pill-nav {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 200;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    box-shadow: 0 8px 32px rgba(30,45,107,0.14), 0 2px 8px rgba(30,45,107,0.08);
+    min-width: 320px;
+    max-width: 95vw;
+    height: 52px;
+}
+.staff-pill-nav::-webkit-scrollbar { display: none; }
+
+/* Desktop: hide pill nav — sidebar takes over */
+@media (min-width: 1024px) {
+    .staff-pill-nav { display: none; }
+}
+
+.spn-btn {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 6px 12px;
+    height: 40px;
+    min-width: 40px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--muted);
+    font-family: inherit;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.18s, color 0.18s;
+    white-space: nowrap;
+    overflow: hidden;
+    flex-shrink: 0;
+    position: relative;
+}
+.spn-btn:hover { background: var(--surface-2); color: var(--text); opacity: 1; }
+.spn-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.spn-btn.spn-active {
+    background: var(--blue-soft);
+    color: var(--blue);
+}
+.spn-icon {
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+}
+.spn-label {
+    font-size: 12px;
+    font-weight: 700;
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    margin-left: 0;
+    transition:
+        max-width 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
+        opacity   0.19s ease,
+        margin-left 0.19s ease;
+}
+.spn-btn.spn-active .spn-label {
+    max-width: 110px;
+    opacity: 1;
+    margin-left: 8px;
+}
+
+/* ── Tooltip ── */
+.spn-btn[data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(15, 23, 42, 0.88);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: inherit;
+    white-space: nowrap;
+    padding: 4px 10px;
+    border-radius: 8px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    z-index: 300;
+    bottom: calc(100% + 8px);
+    top: auto;
+    transform: translateX(-50%) translateY(4px);
+}
+.spn-btn[data-tooltip]:hover::after {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* Mobile: content isn't hidden behind the pill nav at bottom */
+@media (max-width: 1023px) {
+    body.staff-page .main {
+        padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+    }
+}
+
+/* Desktop: staff-aside sidebar handles layout */
+@media (min-width: 1024px) {
+    body.staff-page .main { padding-bottom: 0; }
+    body.staff-page .students-page-wrap { height: 100vh; }
+}
+</style>
+
+<script>document.body.classList.add('staff-page');</script>
+
+<nav class="staff-pill-nav" aria-label="Меню куратора">
     {% for item in curator_items %}
-    <a class="curator-nav-link {% if nav_active == item.key %}active{% endif %}" href="{{ item.href }}">
-        <span class="nav-ico">{{ item.icon }}</span> {{ item.label }}
+    <a href="{{ item.href }}"
+       class="spn-btn {% if nav_active == item.key %}spn-active{% endif %}"
+       aria-label="{{ item.label }}"
+       data-tooltip="{{ item.label }}">
+        <span class="spn-icon" aria-hidden="true">
+            {{ curator_nav_icon(item.key, 20) }}
+        </span>
+        <span class="spn-label">{{ "Цикл" if item.key == "cycles" else item.label }}</span>
     </a>
     {% endfor %}
 </nav>

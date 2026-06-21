@@ -16,10 +16,136 @@
     <link rel="preload" as="image" href="/static/img/bg-desktop.webp?v=1" type="image/webp" media="(min-width: 769px)" fetchpriority="high">
     <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
     <!-- Base styles: versioned for cache-busting -->
-    <link rel="stylesheet" href="/static/css/base.css?v=19">
+    <link rel="stylesheet" href="/static/css/base.css?v=20">
     {% block extra_styles %}{% endblock %}
 </head>
 <body>
+    <!-- Telegram in-app browser escape: открываем сайт во внешнем браузере.
+         Встроенный браузер Telegram ломает сессию/CSRF и медленно грузит фото.
+         Детект: window.TelegramWebviewProxy (инжектится Telegram и на Android, и
+         на iOS; iOS UA «не помечает» Telegram — баг Telegram-iOS #736) + UA. -->
+    <script>
+    (function(){
+        try {
+            var IS_AUTHED = {{ 'true' if (user is defined and user) else 'false' }};
+            function isTelegram(){
+                try {
+                    if (window.TelegramWebviewProxy || window.TelegramWebviewProxyProto) return true;
+                    if (/Telegram/i.test(navigator.userAgent || '')) return true;
+                } catch (e) {}
+                return false;
+            }
+            function isAndroid(){ return /Android/i.test(navigator.userAgent || ''); }
+            function isIOS(){ return /iPhone|iPad|iPod/i.test(navigator.userAgent || ''); }
+
+            // targetUrl — полный https-URL. Android: intent:// открывает системный
+            // браузер по умолчанию. iOS: x-safari- открывает Safari (Apple не даёт
+            // форсить браузер иначе; для Telegram это работает).
+            function externalUrl(targetUrl){
+                try {
+                    if (isAndroid()) {
+                        var u = new URL(targetUrl);
+                        // hash не добавляем: '#' начинает блок #Intent;… (наши ссылки hash не используют)
+                        return 'intent://' + u.host + u.pathname + u.search + '#Intent;scheme=https;end';
+                    }
+                    if (isIOS()) return 'x-safari-' + targetUrl;
+                } catch (e) {}
+                return targetUrl;
+            }
+            function doEscape(targetUrl){
+                try { window.location.href = externalUrl(targetUrl); } catch (e) {}
+            }
+
+            function buildOverlay(targetUrl){
+                if (document.getElementById('tgEscapeOverlay')) return;
+                var ov = document.createElement('div');
+                ov.id = 'tgEscapeOverlay';
+                ov.setAttribute('style',
+                    'position:fixed;inset:0;z-index:2147483647;background:rgba(15,18,28,0.92);' +
+                    'display:flex;align-items:center;justify-content:center;padding:24px;' +
+                    'font-family:Figtree,system-ui,-apple-system,sans-serif;');
+                var card = document.createElement('div');
+                card.setAttribute('style',
+                    'max-width:360px;width:100%;background:#fff;border-radius:18px;padding:26px 22px;' +
+                    'text-align:center;box-shadow:0 16px 48px rgba(0,0,0,0.35);');
+                card.innerHTML =
+                    '<div style="font-size:40px;line-height:1;margin-bottom:12px">🌐</div>' +
+                    '<div style="font-size:18px;font-weight:800;color:#0F121C;margin-bottom:8px">Откройте во внешнем браузере</div>' +
+                    '<div style="font-size:13px;color:#5B6172;line-height:1.55;margin-bottom:18px">' +
+                    'Встроенный браузер Telegram мешает входу и загрузке фото. ' +
+                    'Нажмите кнопку — сайт откроется в обычном браузере и вы останетесь в системе.</div>';
+                var openBtn = document.createElement('button');
+                openBtn.type = 'button';
+                openBtn.textContent = 'Открыть в браузере';
+                openBtn.setAttribute('style',
+                    'width:100%;padding:14px;font-size:15px;font-weight:700;color:#fff;border:none;' +
+                    'border-radius:12px;background:linear-gradient(135deg,#2563EB,#3B82F6);cursor:pointer');
+                openBtn.onclick = function(){ doEscape(targetUrl); };
+                var copyBtn = document.createElement('button');
+                copyBtn.type = 'button';
+                copyBtn.textContent = 'Скопировать ссылку';
+                copyBtn.setAttribute('style',
+                    'width:100%;padding:12px;margin-top:10px;font-size:13px;font-weight:600;color:#2563EB;' +
+                    'background:none;border:1px solid #DCE0EA;border-radius:12px;cursor:pointer');
+                copyBtn.onclick = function(){
+                    function done(){ copyBtn.textContent = 'Ссылка скопирована ✓'; }
+                    try {
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            navigator.clipboard.writeText(targetUrl).then(done, fallbackCopy);
+                        } else { fallbackCopy(); }
+                    } catch (e) { fallbackCopy(); }
+                    function fallbackCopy(){
+                        try {
+                            var ta = document.createElement('textarea');
+                            ta.value = targetUrl; ta.setAttribute('readonly','');
+                            ta.style.position = 'fixed'; ta.style.opacity = '0';
+                            document.body.appendChild(ta); ta.select();
+                            document.execCommand('copy'); document.body.removeChild(ta); done();
+                        } catch (e2) {}
+                    }
+                };
+                var stay = document.createElement('div');
+                stay.textContent = 'Остаться здесь';
+                stay.setAttribute('style',
+                    'margin-top:14px;font-size:12px;color:#9AA0AE;cursor:pointer;text-decoration:underline');
+                stay.onclick = function(){ ov.remove(); };
+                card.appendChild(openBtn);
+                card.appendChild(copyBtn);
+                card.appendChild(stay);
+                ov.appendChild(card);
+                (document.body || document.documentElement).appendChild(ov);
+            }
+
+            var handled = false;
+            function onTelegram(){
+                if (handled) return; handled = true;
+                function present(targetUrl){
+                    // Android: intent надёжен — пробуем автоматически + оставляем оверлей как fallback.
+                    if (isAndroid()) doEscape(targetUrl);
+                    buildOverlay(targetUrl);
+                }
+                if (IS_AUTHED) {
+                    // Уже залогинены внутри Telegram → выписываем свежий токен,
+                    // чтобы внешний браузер открылся тоже залогиненным.
+                    fetch('/auth/handoff', { headers: { 'Accept': 'application/json' }, cache: 'no-store' })
+                        .then(function(r){ return r.ok ? r.json() : null; })
+                        .then(function(j){ present((j && j.ok && j.login_url) ? j.login_url : window.location.href); })
+                        .catch(function(){ present(window.location.href); });
+                } else {
+                    present(window.location.href);
+                }
+            }
+
+            // iOS инжектит TelegramWebviewProxy чуть позже парсинга — короткий ретрай ~2с.
+            var tries = 0;
+            (function check(){
+                tries++;
+                if (isTelegram()) { onTelegram(); return; }
+                if (tries < 8) setTimeout(check, 250);
+            })();
+        } catch (e) { /* никогда не ломаем страницу */ }
+    })();
+    </script>
     {% include "_includes/impersonation_banner.html" %}
     {% if user is defined and user %}
     <div class="floating-widget-tray" id="floatingWidgetTray" aria-label="Быстрые виджеты">

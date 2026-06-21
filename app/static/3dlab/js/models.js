@@ -7,6 +7,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 // IndexedDB cache
 import { cachedFetch } from "./cache/cachedFetch.js";
 import { INSET_SOURCE_DEFS } from "./insetsModels.js";
+import { ROOM_SOURCE_DEFS } from "./roomsModels.js";
 
 // БАЗОВЫЙ URL для защищённого доступа
 const BASE = "https://api.apparchi.ru/?path=";
@@ -18,6 +19,16 @@ const INSET_SOURCE_MODELS = (INSET_SOURCE_DEFS || []).map((d) => ({
   url: `${BASE}${d.path}`,
   textures: null
 }));
+
+// ✅ Source-модели для комнаток (генерятся из roomsModels.js)
+const ROOM_SOURCE_MODELS = (ROOM_SOURCE_DEFS || []).map((d) => ({
+  id: d.id,
+  name: d.name,
+  desc: d.desc,
+  url: `${BASE}${d.path}`,
+  textures: d.textures || null
+}));
+
 export const MODELS = [
 
     {
@@ -329,10 +340,10 @@ export function getModelMeta(id) {
   return (
     MODELS.find((m) => m.id === id) ||
     INSET_SOURCE_MODELS.find((m) => m.id === id) ||
+    ROOM_SOURCE_MODELS.find((m) => m.id === id) ||
     null
   );
 }
-
 // ===================
 // Кэш моделей в памяти
 // ===================
@@ -391,7 +402,60 @@ async function createMaterialFromTextures(textures) {
 // LOAD MODEL (GLTF + BIN CACHE)
 // ================================
 export function loadModel(modelId, { onProgress, onStatus } = {}) {
-  const meta = getModelMeta(modelId);
+  const isDirectModelObject =
+    modelId &&
+    typeof modelId === "object" &&
+    modelId.sourcePath;
+
+  const normalizeAssetUrl = (url) => {
+    if (!url || typeof url !== "string") return url;
+
+    const isAbsolute =
+      /^https?:\/\//i.test(url) ||
+      url.startsWith("/") ||
+      url.startsWith("data:");
+
+    return isAbsolute ? url : `${BASE}${url}`;
+  };
+
+  const normalizeTextures = (textures) => {
+    if (!textures) return null;
+
+    return Object.fromEntries(
+      Object.entries(textures).map(([key, value]) => [
+        key,
+        typeof value === "string" ? normalizeAssetUrl(value) : value
+      ])
+    );
+  };
+
+const normalizeMaterials = (materials) => {
+  if (!materials) return null;
+
+  return Object.fromEntries(
+    Object.entries(materials).map(([materialName, desc]) => [
+      materialName,
+      Object.fromEntries(
+        Object.entries(desc).map(([key, value]) => [
+          key,
+          typeof value === "string" ? normalizeAssetUrl(value) : value
+        ])
+      )
+    ])
+  );
+};
+
+  const meta = isDirectModelObject
+    ? {
+        id: modelId.id || modelId.sourcePath,
+        name: modelId.name || modelId.id || "Direct model",
+        desc: modelId.desc || "",
+        url: normalizeAssetUrl(modelId.sourcePath),
+        textures: normalizeTextures(modelId.textures),
+        materials: normalizeMaterials(modelId.materials)
+      }
+    : getModelMeta(modelId);
+
   if (!meta) return Promise.reject("No model: " + modelId);
 
   // instant switching cache
@@ -412,23 +476,134 @@ if (window.TG_INIT_DATA) {
   url = u.toString();
 }
 
-  const binUrl = url.replace(".gltf", ".bin");
+  const isGltfUrl = /\.gltf(\?|$)/i.test(url);
+
+  const resolveSiblingAssetUrl = (sourceUrl, assetUri) => {
+    if (!assetUri || /^data:/i.test(assetUri)) return null;
+    if (/^https?:\/\//i.test(assetUri)) return assetUri;
+
+    const source = new URL(sourceUrl);
+    const sourcePath = source.searchParams.get("path");
+
+    if (sourcePath) {
+      const basePath = sourcePath.slice(0, sourcePath.lastIndexOf("/") + 1);
+      source.searchParams.set("path", basePath + assetUri);
+      return source.toString();
+    }
+
+    return new URL(assetUri, sourceUrl).toString();
+  };
+
+  const getExternalBufferRefs = async (gltfBlob) => {
+    if (!isGltfUrl || !gltfBlob?.text) return [];
+
+    try {
+      const gltfJson = JSON.parse(await gltfBlob.text());
+      return (gltfJson.buffers || [])
+        .map((buffer) => ({
+          uri: buffer?.uri,
+          byteLength: Number(buffer?.byteLength) || null
+        }))
+        .filter((buffer) => buffer.uri && !/^data:/i.test(buffer.uri));
+    } catch (err) {
+      console.warn("[models] Failed to inspect glTF buffers:", err);
+      return [];
+    }
+  };
+
+  const resolveModelNamedBinUrl = (sourceUrl) => {
+    if (!isGltfUrl) return null;
+
+    const source = new URL(sourceUrl);
+    const sourcePath = source.searchParams.get("path");
+
+    if (sourcePath) {
+      source.searchParams.set("path", sourcePath.replace(/\.gltf$/i, ".bin"));
+      return source.toString();
+    }
+
+    source.pathname = source.pathname.replace(/\.gltf$/i, ".bin");
+    return source.toString();
+  };
+
+  const fetchBufferWithFallback = async (sourceUrl, bufferRef) => {
+    const candidates = [
+      resolveSiblingAssetUrl(sourceUrl, bufferRef.uri),
+      resolveModelNamedBinUrl(sourceUrl)
+    ].filter(Boolean);
+
+    const uniqueCandidates = [...new Set(candidates)];
+    let lastError = null;
+
+    for (const candidateUrl of uniqueCandidates) {
+      try {
+        const blob = await cachedFetch(candidateUrl);
+
+        if (
+          bufferRef.byteLength &&
+          blob.size &&
+          blob.size !== bufferRef.byteLength
+        ) {
+          lastError = new Error(
+            `Buffer size mismatch for ${candidateUrl}: expected ${bufferRef.byteLength}, got ${blob.size}`
+          );
+          continue;
+        }
+
+        return { blob, url: candidateUrl };
+      } catch (err) {
+        lastError = err;
+      }
+    }
+
+    throw lastError || new Error(`Failed to load buffer ${bufferRef.uri}`);
+  };
 
   return new Promise(async (resolve, reject) => {
+    let gltfObjectURL = null;
+    const binObjectURLs = [];
+
+    const revokeObjectURLs = () => {
+      if (gltfObjectURL) {
+        URL.revokeObjectURL(gltfObjectURL);
+        gltfObjectURL = null;
+      }
+
+      for (const objectUrl of binObjectURLs.splice(0)) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+
     try {
-      // persistent cache for gltf/bin
+      // persistent cache for gltf/glb + real external buffers declared inside glTF
       const gltfBlob = await cachedFetch(url);
-      const binBlob  = await cachedFetch(binUrl);
+      gltfObjectURL = URL.createObjectURL(gltfBlob);
 
-      const gltfObjectURL = URL.createObjectURL(gltfBlob);
-      const binObjectURL  = URL.createObjectURL(binBlob);
+      const binObjectURLByKey = new Map();
+      const bufferRefs = await getExternalBufferRefs(gltfBlob);
 
-      // override bin file
+      for (const bufferRef of bufferRefs) {
+        const { blob: binBlob, url: bufferUrl } = await fetchBufferWithFallback(url, bufferRef);
+        const binObjectURL = URL.createObjectURL(binBlob);
+        binObjectURLs.push(binObjectURL);
+
+        const fileName = bufferRef.uri.split("/").pop();
+        binObjectURLByKey.set(bufferRef.uri, binObjectURL);
+        if (fileName) binObjectURLByKey.set(fileName, binObjectURL);
+        binObjectURLByKey.set(bufferUrl, binObjectURL);
+      }
+
+      // override external bin files with their cached blob URLs
       const manager = new THREE.LoadingManager();
 manager.setURLModifier((u) => {
   // ловим .bin даже с ?query, blob:, и т.п.
   if (/\.bin(\?|$)/i.test(u)) {
-    return binObjectURL;
+    const fileName = String(u).split("/").pop();
+    return (
+      binObjectURLByKey.get(u) ||
+      binObjectURLByKey.get(fileName) ||
+      (binObjectURLs.length === 1 ? binObjectURLs[0] : u)
+    );
   }
   return u;
 });
@@ -440,8 +615,7 @@ manager.setURLModifier((u) => {
 
         async (gltf) => {
 
-URL.revokeObjectURL(gltfObjectURL);
-URL.revokeObjectURL(binObjectURL);
+revokeObjectURLs();
 
           const scene = gltf.scene;
 
@@ -539,14 +713,14 @@ await Promise.all(materialTasks);
           console.error(err);
           onStatus?.("Ошибка загрузки");
 
-URL.revokeObjectURL(gltfObjectURL);
-URL.revokeObjectURL(binObjectURL);
+revokeObjectURLs();
 
           reject(err);
         }
       );
     } catch (err) {
       console.error("cachedFetch error:", err);
+      revokeObjectURLs();
       onStatus?.("Ошибка загрузки");
       reject(err);
     }

@@ -71,8 +71,9 @@ let swipeAnimating = false;
 let uiHidden = false;
 let uiShowTimer = null;
 
-// Callback в viewer.js
+// Callback в viewer.js / roomsViewer.js / insetsViewer.js
 let onUiVisibilityArch = null;
+let onUiVisibilityRooms = null;
 let onUiVisibilityInset = null;
 
 // Текущий режим вкладки: активирована схема или нет
@@ -94,11 +95,13 @@ export function initScheme({
   overlay = overlayEl;
   img = imgEl;
 
-  if (context === "inset") {
-    onUiVisibilityInset = onUiVisibility || null;
-  } else {
-    onUiVisibilityArch = onUiVisibility || null;
-  }
+if (context === "inset") {
+  onUiVisibilityInset = onUiVisibility || null;
+} else if (context === "rooms") {
+  onUiVisibilityRooms = onUiVisibility || null;
+} else {
+  onUiVisibilityArch = onUiVisibility || null;
+}
 
   if (prevBtnEl) prevBtn = prevBtnEl;
   if (nextBtnEl) nextBtn = nextBtnEl;
@@ -429,13 +432,18 @@ perform();
 /* ============================================================
    UI AUTO HIDE
    ============================================================ */
-
 function hideUi(hidden) {
   uiHidden = hidden;
 
-  const cb = document.body.classList.contains("inset-mode")
-    ? onUiVisibilityInset
-    : onUiVisibilityArch;
+  let cb = null;
+
+  if (document.body.classList.contains("inset-mode")) {
+    cb = onUiVisibilityInset;
+  } else if (document.body.classList.contains("rooms-mode")) {
+    cb = onUiVisibilityRooms;
+  } else {
+    cb = onUiVisibilityArch;
+  }
 
   if (cb) cb(hidden);
 }

@@ -9,6 +9,7 @@ from app.models.exam_cycle import ExamCycle
 from app.models.feedback import Feedback, FeedbackMessage
 from app.models.mock_exam_lock import MockExamLock
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+from app.services import feedback as feedback_service
 from app.services.exam_cycle import close_cycle, has_open_cycles, reopen_cycle
 
 
@@ -280,6 +281,99 @@ def test_message_without_text_or_photo_400(
         headers={"Accept": "application/json"},
     )
     assert resp.status_code == 400
+
+
+def test_feedback_photo_input_limit_is_25_mb(
+    client, admin_user, regular_user, session_factory, db
+):
+    cycle = _mk_cycle(db, regular_user.id)
+    work = _mk_final_work(db, regular_user.id, cycle.id)
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+
+    assert feedback_service.MAX_FEEDBACK_PHOTO_INPUT_SIZE == 25 * 1024 * 1024
+    with patch.object(feedback_service, "MAX_FEEDBACK_PHOTO_INPUT_SIZE", 10):
+        resp = client.post(
+            f"/cabinet/feedback/{work.id}/message",
+            files={"photo": ("large.jpg", b"x" * 11, "image/jpeg")},
+            headers={"Accept": "application/json"},
+        )
+
+    assert resp.status_code == 413
+    assert resp.json()["detail"] == "Фото больше 25 МБ"
+
+
+def test_feedback_form_explains_photo_limit_and_compression(
+    client, admin_user, regular_user, session_factory, db
+):
+    cycle = _mk_cycle(db, regular_user.id)
+    _mk_final_work(db, regular_user.id, cycle.id)
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+
+    resp = client.get(f"/cabinet/superadmin/feedback/{cycle.id}")
+
+    assert resp.status_code == 200
+    assert "фото до 25 МБ" in resp.text
+    assert "будет сжато автоматически" in resp.text
+    assert "MAX_FEEDBACK_PHOTO_SIZE = 25 * 1024 * 1024" in resp.text
+
+
+def test_feedback_photo_above_old_10_mb_limit_is_compressed_and_uploaded(
+    client, db, user_factory, session_factory
+):
+    curator = user_factory(vk_id=950001, name="Curator", role_name="куратор")
+    student = user_factory(vk_id=950002, name="Student", role_name="ученик")
+    student.curator_id = curator.id
+    db.add(student)
+    db.commit()
+    cycle = _mk_cycle(db, student.id)
+    work = _mk_final_work(db, student.id, cycle.id)
+    session = session_factory(curator)
+    client.cookies.set("session_id", session.id)
+
+    source = b"x" * (10 * 1024 * 1024 + 1)
+    with (
+        patch.object(feedback_service, "compress_image", return_value=b"compressed-jpeg") as compress,
+        patch.object(
+            feedback_service.s3_service,
+            "upload_to_s3",
+            return_value="https://s3.example.com/feedback/photo.jpg",
+        ),
+    ):
+        resp = client.post(
+            f"/cabinet/feedback/{work.id}/message",
+            files={"photo": ("phone-photo.jpg", source, "image/jpeg")},
+            headers={"Accept": "application/json"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["message"]["photo_s3_url"] == "https://s3.example.com/feedback/photo.jpg"
+    assert len(compress.call_args.args[0]) == len(source)
+
+
+def test_feedback_photo_must_fit_stored_limit_after_compression(
+    client, admin_user, regular_user, session_factory, db
+):
+    cycle = _mk_cycle(db, regular_user.id)
+    work = _mk_final_work(db, regular_user.id, cycle.id)
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+
+    with (
+        patch.object(feedback_service, "MAX_FEEDBACK_PHOTO_STORED_SIZE", 10),
+        patch.object(feedback_service, "compress_image", return_value=b"x" * 11),
+        patch.object(feedback_service.s3_service, "upload_to_s3") as upload,
+    ):
+        resp = client.post(
+            f"/cabinet/feedback/{work.id}/message",
+            files={"photo": ("photo.jpg", b"source", "image/jpeg")},
+            headers={"Accept": "application/json"},
+        )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Фото после сжатия превышает 10 МБ"
+    upload.assert_not_called()
 
 
 def test_student_cannot_message_in_closed_cycle(
@@ -868,10 +962,10 @@ def test_staff_cycles_open_has_fb_filter_for_admin(
     assert 'data-fb="0"' in resp.text
 
 
-def test_staff_cycles_open_fb_filter_hidden_from_curator(
+def test_staff_cycles_open_fb_filter_shown_to_curator(
     client, regular_user, user_factory, session_factory, db
 ):
-    """Куратор не видит фильтр ОС в открытых циклах."""
+    """Куратор видит фильтр ОС в открытых циклах — как админ/SA (фильтры «как у всех»)."""
     _mk_cycle(db, regular_user.id, subject="Рисунок", closed=False)
     curator = user_factory(vk_id=770_003, name="Curator", role_name="куратор")
     regular_user.curator_id = curator.id
@@ -882,9 +976,9 @@ def test_staff_cycles_open_fb_filter_hidden_from_curator(
     resp = client.get("/cabinet/staff/cycles")
 
     assert resp.status_code == 200
-    # Кнопки фильтра ОС не рендерятся куратору (JS-функция в <script> присутствует всегда).
-    assert 'data-fb="none"' not in resp.text
-    assert 'onclick="selectFb(this)"' not in resp.text
+    # Кнопки фильтра ОС теперь рендерятся куратору в открытых циклах.
+    assert 'data-fb="none"' in resp.text
+    assert 'onclick="selectFb(this)"' in resp.text
 
 
 def test_cycle_page_shows_close_score_badge_for_closed_cycle(auth_client, db):
