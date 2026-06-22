@@ -1134,6 +1134,7 @@
                 <div class="student-row-info">
                     <div class="student-row-name">{{ s.name }}</div>
                     <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px">
+                        {% if s.needs_setup %}<span class="student-info-pill" style="background:#fde68a;color:#92400e;font-weight:600" title="Ученик не завершил онбординг: не выбран период обучения и кол-во занятий. Попросите его дозаполнить профиль.">Не заполнил профиль</span>{% endif %}
                         {% if s.tariff and s.tariff != '—' %}<span class="student-info-pill">{{ s.tariff }}</span>{% endif %}
                         {% if s.course_periods %}{% for p in s.course_periods.split(',') %}{% set _pfx = p.split(' ')[0]|trim %}{% set _pcls = 'pink' if _pfx == '10-14' else ('blue' if _pfx == '15-20' else 'purple') %}<span class="student-info-pill student-info-pill--{{ _pcls }}">{{ _pfx }}</span>{% endfor %}{% endif %}
                         {% if s.lessons_count %}{% set _lcls = 'pink' if s.lessons_count|string == '6' else ('blue' if s.lessons_count|string == '8' else 'purple') %}<span class="student-info-pill student-info-pill--{{ _lcls }}">{{ s.lessons_count }}</span>{% endif %}

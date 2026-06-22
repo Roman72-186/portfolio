@@ -64,18 +64,14 @@ def _add_work(db, user_id, work_type, month="январь", year=2026, score=Non
 # GET /cabinet/curator — dashboard
 # ---------------------------------------------------------------------------
 
-def test_curator_dashboard_redirects_to_students(curator_client):
+def test_curator_dashboard_renders(curator_client):
     client, _ = curator_client
     resp = client.get("/cabinet/curator", follow_redirects=False)
-    assert resp.status_code == 302
-    assert resp.headers["location"] == "/cabinet/students"
-
-
-def test_curator_dashboard_lands_on_student_list(curator_client, student):
-    client, _ = curator_client
-    resp = client.get("/cabinet/curator")  # follows redirect → /cabinet/students
     assert resp.status_code == 200
-    assert "Иванова" in resp.text or "Анна" in resp.text
+    # Синяя плашка + блоки навигации по разделам куратора.
+    assert "curator-nav-block" in resp.text
+    assert "/cabinet/students" in resp.text
+    assert "/cabinet/curator/reports" in resp.text
 
 
 def test_curator_dashboard_denied_for_student(client, db, user_factory, session_factory):
@@ -529,3 +525,49 @@ def test_mock_status_panel_excludes_student_without_assigned_ticket(curator_clie
     # У student (Анны) нет активного билета — она не считается ни «сдала», ни «не сдала»
     assert "Сдали 0" in text
     assert "Не сдали 1" in text
+
+
+# ---------------------------------------------------------------------------
+# Видимость учеников с незавершённым онбордингом (needs_setup)
+# ---------------------------------------------------------------------------
+
+def test_curator_sees_student_with_incomplete_onboarding(curator_client, db, user_factory):
+    """Куратор видит своего активного ученика, даже если тот не завершил профиль
+    (пустые course_periods/lessons_count), с бейджем «Не заполнил профиль».
+
+    Регресс: раньше такой ученик скрывался → куратор не мог его найти.
+    """
+    client, curator = curator_client
+    incomplete = user_factory(
+        vk_id=800077, name="Incomplete", role_name="ученик", profile_completed=False,
+    )
+    incomplete.curator_id = curator.id
+    incomplete.first_name = "Настя"
+    incomplete.last_name = "Безпрофиля"
+    db.add(incomplete)
+    db.commit()
+
+    resp = client.get("/cabinet/students")
+    assert resp.status_code == 200
+    text = resp.text
+    assert "Безпрофиля Настя" in text
+    assert "Не заполнил профиль" in text
+
+
+def test_curator_does_not_see_other_curator_incomplete_student(curator_client, db, user_factory):
+    """Изоляция: ученик с незавершённым профилем, привязанный к ДРУГОМУ куратору,
+    не появляется (видимость не должна протечь при снятии pre-cohort фильтра)."""
+    client, curator = curator_client
+    other = user_factory(vk_id=800088, name="Other Curator2", role_name="куратор")
+    foreign = user_factory(
+        vk_id=800089, name="Foreign", role_name="ученик", profile_completed=False,
+    )
+    foreign.curator_id = other.id
+    foreign.first_name = "Чужой"
+    foreign.last_name = "Ученик"
+    db.add_all([foreign])
+    db.commit()
+
+    resp = client.get("/cabinet/students")
+    assert resp.status_code == 200
+    assert "Ученик Чужой" not in resp.text
