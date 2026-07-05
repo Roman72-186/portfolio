@@ -48,6 +48,22 @@
 .cal-hero { display: flex; gap: 14px; flex-wrap: wrap; }
 .cal-hero-photo { flex: 0 0 280px; max-width: 100%; position: relative; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
 .cal-hero-photo img { display: block; width: 100%; aspect-ratio: 4/3; object-fit: cover; cursor: zoom-in; }
+.cal-hero-photo .cal-img-wrap { display: block; width: 100%; }
+
+.cal-img-wrap { position: relative; display: inline-block; }
+.cal-stages .cal-img-wrap,
+.cal-fb-photos .cal-img-wrap { border-radius: 8px; overflow: hidden; }
+.cal-img-wrap.is-loading img,
+.cal-img-wrap.is-error img { opacity: 0; pointer-events: none; }
+.cal-img-overlay { display: none; position: absolute; inset: 0; z-index: 1; align-items: center; justify-content: center; flex-direction: column; gap: 4px; background: var(--surface-2); padding: 4px; text-align: center; }
+.cal-img-wrap.is-loading .cal-img-overlay,
+.cal-img-wrap.is-error .cal-img-overlay { display: flex; }
+.cal-img-overlay .spinner { display: none; border-color: var(--line); border-top-color: var(--blue); margin-right: 0; }
+.cal-img-wrap.is-loading .cal-img-overlay .spinner { display: inline-block; }
+.cal-img-error-text { display: none; font-size: 10px; color: var(--dim); line-height: 1.25; }
+.cal-img-retry { display: none; border: 1px solid var(--line); background: var(--surface); color: var(--blue); border-radius: 6px; padding: 3px 7px; font-size: 10px; font-weight: 800; cursor: pointer; }
+.cal-img-wrap.is-error .cal-img-error-text,
+.cal-img-wrap.is-error .cal-img-retry { display: block; }
 .cal-hero-score { position: absolute; top: 8px; right: 8px; background: var(--blue); color: #fff; font-size: 13px; font-weight: 900; padding: 4px 10px; border-radius: var(--r-pill); box-shadow: 0 6px 14px rgba(0,0,0,0.18); }
 .cal-hero-score.no-score { background: var(--dim); }
 .cal-hero-score.score-red { background: #DC2626; }
@@ -145,6 +161,38 @@ window.CYCCAL = window.CYCCAL || (function () {
         return works.length > 0 && works.every(function(w) { return !w.cycle_id; });
     }
 
+    let imgSeq = 0;
+    function renderImg(url, alt) {
+        if (!url) return '';
+        const id = 'calimg' + (++imgSeq);
+        return '<span class="cal-img-wrap is-loading" id="' + id + '">'
+            + '<img src="' + esc(url) + '" data-src="' + esc(url) + '" alt="' + esc(alt || '') + '" loading="lazy" '
+            + 'onclick="openGallery(this)" onload="CYCCAL._imgOk(\'' + id + '\')" onerror="CYCCAL._imgFail(\'' + id + '\')">'
+            + '<span class="cal-img-overlay"><span class="spinner"></span>'
+            + '<span class="cal-img-error-text">Не удалось загрузить</span>'
+            + '<button type="button" class="cal-img-retry" onclick="CYCCAL._imgRetry(event,\'' + id + '\')">↻ Повторить</button>'
+            + '</span></span>';
+    }
+    function imgOk(id) {
+        const w = document.getElementById(id);
+        if (w) w.classList.remove('is-loading', 'is-error');
+    }
+    function imgFail(id) {
+        const w = document.getElementById(id);
+        if (w) { w.classList.remove('is-loading'); w.classList.add('is-error'); }
+    }
+    function imgRetry(ev, id) {
+        ev.stopPropagation();
+        const w = document.getElementById(id);
+        if (!w) return;
+        const img = w.querySelector('img');
+        const base = img && img.getAttribute('data-src');
+        if (!base) return;
+        w.classList.remove('is-error');
+        w.classList.add('is-loading');
+        img.src = base + (base.indexOf('?') === -1 ? '?' : '&') + 'r=' + Date.now();
+    }
+
     function buildSide(inst, idx, grouped, state) {
         const k = "'" + inst.key + "'";
         let html = '<div class="cal-side">';
@@ -184,7 +232,7 @@ window.CYCCAL = window.CYCCAL || (function () {
         let html = '<div class="cal-hero">';
         if (w.s3_url) {
             html += '<div class="cal-hero-photo">'
-                + '<img src="'+esc(w.s3_url)+'" alt="'+esc(w.filename || '')+'" loading="lazy" onclick="openGallery(this)">'
+                + renderImg(w.s3_url, w.filename || '')
                 + '<span class="cal-hero-score '+cls+'">'+esc(badge)+'</span>'
                 + '</div>';
         }
@@ -200,7 +248,7 @@ window.CYCCAL = window.CYCCAL || (function () {
     function buildStages(w) {
         if (!w.intermediates || !w.intermediates.length) return '';
         let html = '<div class="cal-stages-title">Этапы ('+w.intermediates.length+')</div><div class="cal-stages">';
-        w.intermediates.forEach(function(s) { if (s.s3_url) html += '<img src="'+esc(s.s3_url)+'" alt="'+esc(s.filename||'')+'" loading="lazy" onclick="openGallery(this)">'; });
+        w.intermediates.forEach(function(s) { if (s.s3_url) html += renderImg(s.s3_url, s.filename || ''); });
         html += '</div>';
         return html;
     }
@@ -219,7 +267,7 @@ window.CYCCAL = window.CYCCAL || (function () {
         if (f.recommendations) html += '<p><strong>Рекомендации.</strong> '+nl2br(f.recommendations)+'</p>';
         if (f.photos && f.photos.length) {
             html += '<div class="cal-fb-photos">';
-            f.photos.forEach(function(ph) { html += '<img src="'+esc(ph.s3_url)+'" alt="" loading="lazy" onclick="openGallery(this)">'; });
+            f.photos.forEach(function(ph) { html += renderImg(ph.s3_url, ''); });
             html += '</div>';
         }
         if (!f.greeting && !f.strengths && !f.weaknesses && !f.recommendations && !(f.photos && f.photos.length)) {
@@ -311,7 +359,10 @@ window.CYCCAL = window.CYCCAL || (function () {
             const p = dateStr.split('-');
             inst.state[idx] = { year: parseInt(p[0],10), month: parseInt(p[1],10)-1, selectedDate: dateStr };
             renderAll(key);
-        }
+        },
+        _imgOk: imgOk,
+        _imgFail: imgFail,
+        _imgRetry: imgRetry
     };
 })();
 </script>

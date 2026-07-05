@@ -29,14 +29,14 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
                 <div>
-                    <label class="form-label">Имя *</label>
-                    <input class="form-input" type="text" name="first_name" required
+                    <label class="form-label" for="profile-first-name">Имя *</label>
+                    <input class="form-input" type="text" id="profile-first-name" name="first_name" required
                            value="{{ form.first_name if form else (user.first_name or '') }}"
                            placeholder="Имя" maxlength="50">
                 </div>
                 <div>
-                    <label class="form-label">Фамилия *</label>
-                    <input class="form-input" type="text" name="last_name" required
+                    <label class="form-label" for="profile-last-name">Фамилия *</label>
+                    <input class="form-input" type="text" id="profile-last-name" name="last_name" required
                            value="{{ form.last_name if form else (user.last_name or '') }}"
                            placeholder="Фамилия" maxlength="50">
                 </div>
@@ -45,7 +45,7 @@
             <div style="margin-bottom:16px">
                 <label class="form-label">Месяц и год присоединения к курсу *</label>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-                    <select class="form-select" name="enrollment_month" required>
+                    <select class="form-select" name="enrollment_month" aria-label="Месяц присоединения" required>
                         <option value="" disabled {% if not (form and form.enrollment_month) and not user.enrolled_at %}selected{% endif %}>Месяц</option>
                         {% for m in months %}
                         <option value="{{ loop.index }}"
@@ -55,7 +55,7 @@
                         </option>
                         {% endfor %}
                     </select>
-                    <select class="form-select" name="enrollment_year" required>
+                    <select class="form-select" name="enrollment_year" aria-label="Год присоединения" required>
                         <option value="" disabled {% if not (form and form.enrollment_year) and not user.enrollment_year %}selected{% endif %}>Год</option>
                         {% for y in enrollment_years %}
                         <option value="{{ y }}"
@@ -95,7 +95,7 @@
 
             <!-- Текущий тариф -->
             <div style="margin-bottom:16px">
-                <label class="form-label">Текущий тариф *</label>
+                <label class="form-label" for="tariff-select">Текущий тариф *</label>
                 <select class="form-select" name="tariff" id="tariff-select" required
                         onchange="updatePastTariffs()">
                     <option value="" disabled {% if not (form and form.tariff) and not user.tariff %}selected{% endif %}>Выберите тариф</option>
@@ -143,8 +143,8 @@
             </div>
 
             <div style="margin-bottom:28px">
-                <label class="form-label">Год поступления в вуз *</label>
-                <select class="form-select" name="university_year" required>
+                <label class="form-label" for="university-year-select">Год поступления в вуз *</label>
+                <select class="form-select" name="university_year" id="university-year-select" required>
                     <option value="" disabled {% if not (form and form.university_year) and not user.university_year %}selected{% endif %}>Выберите год</option>
                     {% for y in university_years %}
                     <option value="{{ y }}"

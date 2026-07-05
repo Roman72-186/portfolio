@@ -2,6 +2,9 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    # Runtime environment ("production" hides /docs, /redoc, /openapi.json)
+    env: str = "production"
+
     # Database
     database_url: str = "postgresql://portfolio:secret@db:5432/portfolio"
 

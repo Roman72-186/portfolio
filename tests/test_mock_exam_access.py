@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta
 
-from app.models.exam_assignment import ExamAssignment, ExamTicket
+from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
 from app.models.tag import Tag, UserTag
 from app.models.user import User
-from app.services.exam_cycle import get_active_ticket
+from app.services.exam_cycle import get_active_ticket, get_active_tickets
 from app.services.mock_exam_access import (
     get_student_ids_for_target_tag,
     mock_exam_deadline_for_started_at,
@@ -84,6 +84,61 @@ def _create_tagged_exact_ticket(
     db.add(ticket)
     db.commit()
     return ticket
+
+
+def test_active_tickets_prefer_newer_assignment_over_later_start_date(db, regular_user):
+    """Свежевыданное задание должно перекрывать старое, даже если у старого start_date позже."""
+    from app.services.tz import today_msk
+
+    today = today_msk()
+    old_assignment = ExamAssignment(
+        title="Старое общее задание",
+        subject="Рисунок",
+        created_by_id=regular_user.id,
+        status="published",
+    )
+    db.add(old_assignment)
+    db.flush()
+    old_ticket = ExamTicket(
+        assignment_id=old_assignment.id,
+        ticket_number=1,
+        title="Старый общий билет",
+        start_date=today - timedelta(days=2),
+        end_date=today + timedelta(days=3),
+        assign_to_all=True,
+    )
+    db.add(old_ticket)
+    db.flush()
+
+    new_assignment = ExamAssignment(
+        title="Новое персональное задание",
+        subject="Рисунок",
+        created_by_id=regular_user.id,
+        status="published",
+    )
+    db.add(new_assignment)
+    db.flush()
+    new_tickets = []
+    for n in (1, 2):
+        ticket = ExamTicket(
+            assignment_id=new_assignment.id,
+            ticket_number=n,
+            title=f"Новый билет {n}",
+            start_date=today - timedelta(days=9),
+            end_date=today + timedelta(days=16),
+            assign_to_all=False,
+        )
+        db.add(ticket)
+        db.flush()
+        db.add(ExamTicketAssignee(ticket_id=ticket.id, user_id=regular_user.id))
+        new_tickets.append(ticket)
+    db.commit()
+
+    active_ids = [ticket.id for ticket in get_active_tickets(db, regular_user.id, "Рисунок")]
+
+    assert active_ids == [new_tickets[1].id, new_tickets[0].id]
+    assert old_ticket.id not in active_ids
+    assert get_active_ticket(db, regular_user.id, "Рисунок").id == new_tickets[1].id
 
 
 def test_attempt_open_ignores_90_minute_timer():

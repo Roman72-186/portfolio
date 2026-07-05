@@ -3,7 +3,7 @@ from app.models.session import Session
 from app.models.upload_log import UploadLog
 from app.models.login_token import LoginToken
 from app.models.work import Work
-from app.models.role import Role, Permission, RolePermission
+from app.models.role import Role
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
 from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee

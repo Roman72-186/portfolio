@@ -40,12 +40,19 @@ def is_configured() -> bool:
 def _get_client():
     """Build and cache a boto3 S3 client."""
     import boto3
+    from botocore.config import Config
+
     return boto3.client(
         "s3",
         endpoint_url=settings.s3_endpoint,
         aws_access_key_id=settings.s3_access_key,
         aws_secret_access_key=settings.s3_secret_key,
         region_name=settings.s3_region,
+        config=Config(
+            connect_timeout=10,
+            read_timeout=120,
+            retries={"max_attempts": 2, "mode": "standard"},
+        ),
     )
 
 

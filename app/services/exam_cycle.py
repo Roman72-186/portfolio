@@ -25,17 +25,28 @@ from app.services.mock_exam_access import (
 )
 from app.services.tz import today_msk
 
+MAX_INTERMEDIATE_PER_FINAL = 10
 
-def get_active_ticket(db: DBSession, user_id: int, subject: str) -> ExamTicket | None:
-    """Единый резолвер активного билета по предмету (source of truth).
 
-    Самый свежий опубликованный билет в окне дат, назначенный всем или этому
-    пользователю. Используется и бэкенд-блоком сдачи, и UI-дизейблом кнопки —
-    оба обязаны видеть ОДИН и тот же билет, иначе кнопка и 409 рассинхронятся.
-    Порядок newest-first важен только при пересекающихся билетах одного предмета.
+def _stored_work_file_filter():
+    """A Work row counts for upload quotas only when it points to a saved file."""
+    return or_(
+        Work.s3_path.isnot(None),
+        Work.s3_url.isnot(None),
+        Work.drive_file_id.isnot(None),
+    )
+
+
+def get_active_tickets(db: DBSession, user_id: int, subject: str) -> list[ExamTicket]:
+    """Единый резолвер активных билетов текущего задания по предмету.
+
+    Если в текущем опубликованном задании несколько билетов, возвращает их все:
+    старт пробника выберет один случайно. Если есть пересекающиеся старые задания,
+    берём только самое свежее подходящее задание, чтобы старый билет не открывал
+    лишнюю попытку после выдачи нового.
     """
     if not is_subject_allowed_for_student(db, user_id, subject):
-        return None
+        return []
 
     assignee_ticket_ids = (
         db.query(ExamTicketAssignee.ticket_id)
@@ -60,13 +71,32 @@ def get_active_ticket(db: DBSession, user_id: int, subject: str) -> ExamTicket |
                 ),
             ),
         )
-        .order_by(ExamTicket.start_date.desc(), ExamTicket.id.desc())
+        .order_by(
+            ExamTicket.assignment_id.desc(),
+            ExamTicket.start_date.desc(),
+            ExamTicket.id.desc(),
+        )
         .all()
     )
+    active: list[ExamTicket] = []
     for ticket in tickets:
         if is_mock_exam_ticket_submission_open(ticket):
-            return ticket
-    return None
+            active.append(ticket)
+    if not active:
+        return []
+
+    current_assignment_id = active[0].assignment_id
+    return [
+        ticket
+        for ticket in active
+        if ticket.assignment_id == current_assignment_id
+    ]
+
+
+def get_active_ticket(db: DBSession, user_id: int, subject: str) -> ExamTicket | None:
+    """Совместимый одиночный резолвер: первый билет текущего активного задания."""
+    tickets = get_active_tickets(db, user_id, subject)
+    return tickets[0] if tickets else None
 
 
 def has_cycle_for_ticket(db: DBSession, user_id: int, subject: str, ticket_id: int) -> bool:
@@ -106,6 +136,7 @@ def has_submitted_for_ticket(db: DBSession, user_id: int, subject: str, ticket_i
             ExamCycle.ticket_id == ticket_id,
             Work.work_type == WORK_TYPE_MOCK_EXAM,
             Work.is_final == True,  # noqa: E712
+            Work.status == "success",
             Work.needs_revision == False,  # noqa: E712
         )
         .first()
@@ -113,13 +144,27 @@ def has_submitted_for_ticket(db: DBSession, user_id: int, subject: str, ticket_i
     )
 
 
+def get_unsubmitted_active_tickets(db: DBSession, user_id: int, subject: str) -> list[ExamTicket]:
+    """Active tickets that still can receive the first final submission.
+
+    An open cycle for another ticket must not block a newer/parallel ticket. The
+    blocker is ticket-specific: only the ticket that already has a successful
+    final photo is closed for voluntary resubmission.
+    """
+    return [
+        ticket
+        for ticket in get_active_tickets(db, user_id, subject)
+        if not has_submitted_for_ticket(db, user_id, subject, ticket.id)
+    ]
+
+
 def has_closed_cycle_for_ticket(db: DBSession, user_id: int, subject: str, ticket_id: int) -> bool:
     """True если по этому билету уже есть ЗАКРЫТЫЙ цикл Пробника (closed_at IS NOT NULL).
 
-    Source of truth для блокировки повторной загрузки: пока цикл открыт, ученик
-    может перезаливать работу свободно (итеративно: загрузка → балл → перезагрузка →
-    ОС → ...). Блокировка наступает только когда админ/SA закрыл цикл — тогда сдача
-    по этому билету закрыта до выдачи СЛЕДУЮЩЕГО билета (нового ticket_id).
+    Блокировку повторной сдачи даёт has_submitted_for_ticket (как только сдан финал).
+    Этот предикат используется только чтобы РАЗЛИЧИТЬ причину блокировки: закрытый
+    цикл (оценён, ждём следующий билет) vs открытый (финал сдан, ждём ОС) — влияет на
+    текст 409 и подсказку кнопки предмета (см. upload_probnik_final, _locked_mock_subjects).
     """
     return (
         db.query(ExamCycle.id)
@@ -142,6 +187,84 @@ def find_latest_cycle(db: DBSession, user_id: int, subject: str) -> ExamCycle | 
         .order_by(ExamCycle.started_at.desc(), ExamCycle.id.desc())
         .first()
     )
+
+
+def find_open_cycle_for_ticket(
+    db: DBSession,
+    *,
+    user_id: int,
+    subject: str,
+    ticket_id: int | None,
+) -> ExamCycle | None:
+    """Open cycle for the current ticket, if stage photos already created it."""
+    return (
+        db.query(ExamCycle)
+        .filter(
+            ExamCycle.user_id == user_id,
+            ExamCycle.subject == subject,
+            ExamCycle.ticket_id == ticket_id,
+            ExamCycle.closed_at.is_(None),
+        )
+        .order_by(ExamCycle.started_at.desc(), ExamCycle.id.desc())
+        .first()
+    )
+
+
+def count_cycle_intermediates(
+    db: DBSession,
+    *,
+    cycle_id: int,
+    work_type: str = WORK_TYPE_MOCK_EXAM,
+) -> int:
+    """Number of successfully saved non-final photos in a cycle."""
+    return (
+        db.query(Work)
+        .filter(
+            Work.cycle_id == cycle_id,
+            Work.work_type == work_type,
+            Work.is_final == False,  # noqa: E712
+            Work.status == "success",
+            _stored_work_file_filter(),
+        )
+        .count()
+    )
+
+
+def intermediate_upload_state(existing: int) -> dict[str, int]:
+    """UI/API contract for the stage-photo quota."""
+    remaining = max(MAX_INTERMEDIATE_PER_FINAL - existing, 0)
+    return {
+        "existing": existing,
+        "remaining": remaining,
+        "limit": MAX_INTERMEDIATE_PER_FINAL,
+    }
+
+
+def cycle_submission_state(
+    db: DBSession,
+    *,
+    cycle_id: int,
+    work_type: str = WORK_TYPE_MOCK_EXAM,
+) -> dict[str, int | bool | None]:
+    """Post-upload source of truth for the student's submitted cycle state."""
+    final = (
+        db.query(Work)
+        .filter(
+            Work.cycle_id == cycle_id,
+            Work.work_type == work_type,
+            Work.is_final == True,  # noqa: E712
+            Work.status == "success",
+            _stored_work_file_filter(),
+        )
+        .order_by(Work.id.desc())
+        .first()
+    )
+    existing = count_cycle_intermediates(db, cycle_id=cycle_id, work_type=work_type)
+    return {
+        "verified": final is not None,
+        "final_work_id": final.id if final else None,
+        **intermediate_upload_state(existing),
+    }
 
 
 def get_or_create_cycle_for_probnik(
@@ -247,6 +370,13 @@ def delete_open_cycle(db: DBSession, cycle: ExamCycle) -> list[str]:
             ).all()
         ]
         s3_paths += [
+            p for (p,) in db.query(FeedbackMessage.video_s3_path)
+            .filter(
+                FeedbackMessage.feedback_id.in_(feedback_ids),
+                FeedbackMessage.video_s3_path.isnot(None),
+            ).all()
+        ]
+        s3_paths += [
             p for (p,) in db.query(FeedbackPhoto.s3_path)
             .filter(FeedbackPhoto.feedback_id.in_(feedback_ids)).all()
         ]
@@ -296,6 +426,9 @@ def close_cycle(db: DBSession, cycle: ExamCycle) -> bool:
             Work.cycle_id == cycle.id,
             Work.work_type == WORK_TYPE_MOCK_EXAM,
             Work.is_final == True,  # noqa: E712
+            Work.status == "success",
+            Work.needs_revision == False,  # noqa: E712
+            _stored_work_file_filter(),
         )
         .order_by(Work.attempt_number.desc(), Work.id.desc())
         .first()

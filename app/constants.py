@@ -31,6 +31,11 @@ TARIFF_CODES = {
 
 MOCK_SUBJECTS = ["Рисунок", "Композиция"]
 
+# Тип экзаменационного задания. Метка-only: механика (цикл/локи/попытки/доступ)
+# не зависит от kind — она ключуется по subject. См. ExamAssignment.kind.
+ASSIGNMENT_KINDS = ("mock", "control")
+ASSIGNMENT_KIND_LABELS = {"mock": "Пробник", "control": "Контрольная"}
+
 # ── Feature periods ───────────────────────────────────────────────────────────
 
 FEATURE_PORTFOLIO_UPLOAD = "portfolio_upload"

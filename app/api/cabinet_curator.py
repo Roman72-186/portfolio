@@ -18,6 +18,7 @@ from app.models.notification import Notification
 from app.models.role import Role
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
+from app.services import feedback as fb_service
 from app.services import s3 as s3_service
 from app.services.student_access import get_student_for_staff_access
 from app.services.tz import MSK_TZ
@@ -28,28 +29,10 @@ router = APIRouter(prefix="/cabinet")
 
 PAGE_SIZE = 10
 TARIFF_LABELS = list(TARIFF_DISPLAY.values())
-MAX_CURATOR_REPORT_VIDEO_SIZE = 500 * 1024 * 1024
-ALLOWED_CURATOR_REPORT_VIDEO_TYPES = {
-    "video/mp4",
-    "video/quicktime",
-    "video/webm",
-    "video/x-msvideo",
-    "video/x-matroska",
-    "video/x-ms-wmv",
-    "video/3gpp",
-    "video/3gpp2",
-}
-ALLOWED_CURATOR_REPORT_VIDEO_EXTENSIONS = {
-    ".mp4",
-    ".mov",
-    ".webm",
-    ".avi",
-    ".mkv",
-    ".wmv",
-    ".3gp",
-    ".3gpp",
-    ".m4v",
-}
+# Видео-параметры общие с диалогом ОС — единый источник в services/feedback.
+MAX_CURATOR_REPORT_VIDEO_SIZE = fb_service.MAX_FEEDBACK_VIDEO_SIZE
+ALLOWED_CURATOR_REPORT_VIDEO_TYPES = fb_service.ALLOWED_FEEDBACK_VIDEO_TYPES
+ALLOWED_CURATOR_REPORT_VIDEO_EXTENSIONS = fb_service.ALLOWED_FEEDBACK_VIDEO_EXTENSIONS
 
 
 def _report_redirect_err(message: str) -> RedirectResponse:
@@ -136,10 +119,15 @@ def _check_student_access(student_id: int, user: dict, db: DBSession) -> User:
 
 @router.get("/curator", response_class=HTMLResponse)
 def cabinet_curator_dashboard(
-    _user: Annotated[dict, Depends(require_curator)],
+    request: Request,
+    user: Annotated[dict, Depends(require_curator)],
 ):
-    """Вход куратора — раздел «Ученики» (список учеников) показывается сразу."""
-    return RedirectResponse("/cabinet/students", status_code=302)
+    """Дашборд куратора: синяя плашка с именем + блоки навигации по разделам."""
+    return templates.TemplateResponse("cabinet_curator_dashboard.html", {
+        "request": request,
+        "user": user,
+        "nav_active": "dashboard",
+    })
 
 
 # ── Reports (видео-отчёты куратора) ───────────────────────────────────────────

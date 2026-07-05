@@ -54,4 +54,6 @@ class Work(Base):
         Index("ix_works_user_status_created", "user_id", "status", "created_at"),
         Index("ix_works_status_created", "status", "created_at"),
         Index("ix_works_type_status", "work_type", "status"),
+        Index("ix_works_cycle_id", "cycle_id"),
+        Index("ix_works_parent_work_id", "parent_work_id"),
     )

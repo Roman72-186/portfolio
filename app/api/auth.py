@@ -490,8 +490,8 @@ def lab3d_page(
     request: Request,
     user: Annotated[dict, Depends(get_current_user)],
 ):
-    """Serve the 3D Lab app for VK group members."""
-    if not user.get("is_group_member"):
+    """Serve the 3D Lab app for VK group members, students, and staff."""
+    if not user.get("is_group_member") and not user.get("is_admin") and user.get("role_rank", 0) < 1:
         return RedirectResponse("/denied", status_code=302)
     return templates.TemplateResponse("3dlab.html", {
         "request": request,
@@ -506,7 +506,7 @@ def enter_3dlab(
     db: Annotated[DBSession, Depends(get_db)],
 ):
     """Issue a short-lived SSO token and redirect the user to 3D Lab."""
-    if not user.get("is_group_member"):
+    if not user.get("is_group_member") and not user.get("is_admin") and user.get("role_rank", 0) < 1:
         return RedirectResponse("/denied", status_code=302)
 
     if not settings.lab3d_url:
@@ -693,6 +693,6 @@ def logout(
             session.is_active = False
             db.commit()
 
-    response = RedirectResponse("/", status_code=302)
+    response = RedirectResponse("/login", status_code=302)
     response.delete_cookie("session_id")
     return response

@@ -5,6 +5,7 @@ def test_curator_nav_items_keep_current_contract():
     items = curator_nav_items()
 
     assert [(item.key, item.href, item.label) for item in items] == [
+        ("dashboard", "/cabinet/curator", "Кабинет"),
         ("students", "/cabinet/students", "Ученики"),
         ("cycles", "/cabinet/staff/cycles", "Цикл Пробника"),
         ("reports", "/cabinet/curator/reports", "Отчёты"),
@@ -51,6 +52,7 @@ def test_staff_nav_items_keep_admin_contract():
         ("dashboard", "/cabinet", "Кабинет", "Кабинет", "Кабинет", "Кабинет"),
         ("students", "/cabinet/students", "Ученики", "Ученики", "Ученики", "Ученики"),
         ("cycles", "/cabinet/staff/cycles", "Цикл Пробника", "Цикл", "Цикл Пробника", "Цикл Пробника"),
+        ("cases", "/cabinet/cases", "Кейсы", "Кейсы", "Кейсы", "Кейсы по пробникам"),
         ("3dlab", "/3dlab", "3D Лаб", "3D Лаб", "3D Лаб", "3D Лаборатория"),
         (
             "reports",
@@ -77,6 +79,9 @@ def test_staff_nav_items_keep_rank_specific_visibility_contract():
     ]
     assert "mock_check" not in [item.key for item in rank_4_items]
     assert "mock_check" not in [item.key for item in rank_5_items]
+    assert "cases" not in [item.key for item in rank_3_items]
+    assert "cases" in [item.key for item in rank_4_items]
+    assert "cases" in [item.key for item in rank_5_items]
     assert "reports" not in [item.key for item in rank_3_items]
     assert "reports" in [item.key for item in rank_4_items]
     assert "reports" in [item.key for item in rank_5_items]

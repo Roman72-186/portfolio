@@ -204,12 +204,7 @@
 .score-form input[type=number]:focus, .score-form textarea:focus { border-color: var(--blue); }
 .score-form input[type=number] { width: 80px; }
 .score-form textarea { width: 100%; min-height: 50px; resize: vertical; }
-.btn-save {
-    padding: 8px 14px; background: var(--blue); color: #fff;
-    border: none; border-radius: 8px; font-size: 13px; font-weight: 700;
-    cursor: pointer; font-family: inherit;
-}
-.btn-save:hover { opacity: 0.9; }
+.btn-save { padding: 8px 14px; border-radius: 8px; font-size: 13px; }
 .edit-score-wrap { margin-top: 10px; }
 .btn-edit-score {
     display: inline-flex; align-items: center; gap: 6px;
@@ -726,7 +721,7 @@ function buildScoreForm(sid, workId, currentScore, currentComment) {
         + '</div>'
         + '<textarea name="comment" placeholder="Комментарий (необязательно)" maxlength="500">' + commentVal + '</textarea>'
         + '<div style="margin-top:8px">'
-        +   '<button type="button" class="btn-save" onclick="submitScore(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Сохранить балл</button>'
+        +   '<button type="button" class="btn-blue btn-save" onclick="submitScore(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Сохранить балл</button>'
         + '</div>'
         + '<div class="score-msg" style="display:none"></div>'
         + '</div>';

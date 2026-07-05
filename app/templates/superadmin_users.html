@@ -314,6 +314,12 @@
                                 Ссылка входа
                             </button>
                         </form>
+                        <form method="post" action="/cabinet/superadmin/impersonate/{{ u.id }}" style="margin:0">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                            <button type="submit" class="action-btn">
+                                🔓 Войти в кабинет
+                            </button>
+                        </form>
                         {% endif %}
                     </div>
                     {% endif %}

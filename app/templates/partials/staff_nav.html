@@ -9,6 +9,8 @@
         <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
     {%- elif icon == "cycle" -%}
         <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    {%- elif icon == "cases" -%}
+        <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-7"/><path d="M18 7h1v1"/></svg>
     {%- elif icon == "3dlab" -%}
         <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
     {%- elif icon == "reports" -%}
@@ -24,8 +26,8 @@
     <nav class="desk-nav" aria-label="Меню персонала">
         {% for item in _staff_items %}
         <a href="{{ item.href }}"
-           class="desk-nav-item {% if (item.key == 'dashboard' and (_p == '/cabinet' or (_p.startswith('/cabinet') and not _p.startswith('/cabinet/students') and not _p.startswith('/cabinet/admin') and not _p.startswith('/cabinet/periods') and not _p.startswith('/cabinet/superadmin')))) or (item.key == 'students' and _p.startswith('/cabinet/students')) or (item.key == 'mock_check' and _p.startswith('/cabinet/admin/mock-check')) or (item.key == 'cycles' and (_p.startswith('/cabinet/staff/cycle') or _p.startswith('/cabinet/curator/feedback') or _p.startswith('/cabinet/admin/feedback') or _p.startswith('/cabinet/superadmin/feedback'))) or (item.key == '3dlab' and _p.startswith('/3dlab')) or (item.key == 'reports' and _p.startswith('/cabinet/curator/reports')) %}desk-nav-active{% endif %}"
-           {% if (item.key == 'dashboard' and _p == '/cabinet') or (item.key == 'students' and _p.startswith('/cabinet/students')) or (item.key == 'mock_check' and _p.startswith('/cabinet/admin/mock-check')) or (item.key == 'cycles' and _p.startswith('/cabinet/staff/cycles')) or (item.key == '3dlab' and _p.startswith('/3dlab')) or (item.key == 'reports' and _p.startswith('/cabinet/curator/reports')) %}aria-current="page"{% endif %}>
+           class="desk-nav-item {% if (item.key == 'dashboard' and (_p == '/cabinet' or (_p.startswith('/cabinet') and not _p.startswith('/cabinet/students') and not _p.startswith('/cabinet/admin') and not _p.startswith('/cabinet/periods') and not _p.startswith('/cabinet/superadmin') and not _p.startswith('/cabinet/cases')))) or (item.key == 'students' and _p.startswith('/cabinet/students')) or (item.key == 'mock_check' and _p.startswith('/cabinet/admin/mock-check')) or (item.key == 'cycles' and (_p.startswith('/cabinet/staff/cycle') or _p.startswith('/cabinet/curator/feedback') or _p.startswith('/cabinet/admin/feedback') or _p.startswith('/cabinet/superadmin/feedback'))) or (item.key == 'cases' and _p.startswith('/cabinet/cases')) or (item.key == '3dlab' and _p.startswith('/3dlab')) or (item.key == 'reports' and _p.startswith('/cabinet/curator/reports')) %}desk-nav-active{% endif %}"
+           {% if (item.key == 'dashboard' and _p == '/cabinet') or (item.key == 'students' and _p.startswith('/cabinet/students')) or (item.key == 'mock_check' and _p.startswith('/cabinet/admin/mock-check')) or (item.key == 'cycles' and _p.startswith('/cabinet/staff/cycles')) or (item.key == 'cases' and _p.startswith('/cabinet/cases')) or (item.key == '3dlab' and _p.startswith('/3dlab')) or (item.key == 'reports' and _p.startswith('/cabinet/curator/reports')) %}aria-current="page"{% endif %}>
             <span class="desk-nav-icon" aria-hidden="true">
                 {{ staff_nav_icon(item.icon, 20) }}
             </span>
@@ -34,12 +36,7 @@
         {% endfor %}
     </nav>
     <div class="desk-nav-footer">
-        <a href="/auth/logout" class="desk-nav-item desk-nav-logout">
-            <span class="desk-nav-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-            </span>
-            <span>Выйти</span>
-        </a>
+        {% include "partials/desk_nav_logout.html" %}
     </div>
 </aside>
 <style>
@@ -184,7 +181,7 @@
 
     {% for item in _staff_items %}
     <a href="{{ item.href }}"
-       class="spn-btn {% if (item.key == 'dashboard' and (_p == '/cabinet' or _p == '/cabinet/admin-panel' or (_p.startswith('/cabinet/superadmin') and not _p.startswith('/cabinet/superadmin/stats')))) or (item.key == 'students' and _p.startswith('/cabinet/students')) or (item.key == 'mock_check' and _p.startswith('/cabinet/admin/mock-check')) or (item.key == 'cycles' and (_p.startswith('/cabinet/staff/cycle') or _p.startswith('/cabinet/curator/feedback') or _p.startswith('/cabinet/admin/feedback') or _p.startswith('/cabinet/superadmin/feedback'))) or (item.key == '3dlab' and _p.startswith('/3dlab')) or (item.key == 'reports' and _p.startswith('/cabinet/curator/reports')) %}spn-active{% endif %}"
+       class="spn-btn {% if (item.key == 'dashboard' and (_p == '/cabinet' or _p == '/cabinet/admin-panel' or (_p.startswith('/cabinet/superadmin') and not _p.startswith('/cabinet/superadmin/stats')))) or (item.key == 'students' and _p.startswith('/cabinet/students')) or (item.key == 'mock_check' and _p.startswith('/cabinet/admin/mock-check')) or (item.key == 'cycles' and (_p.startswith('/cabinet/staff/cycle') or _p.startswith('/cabinet/curator/feedback') or _p.startswith('/cabinet/admin/feedback') or _p.startswith('/cabinet/superadmin/feedback'))) or (item.key == 'cases' and _p.startswith('/cabinet/cases')) or (item.key == '3dlab' and _p.startswith('/3dlab')) or (item.key == 'reports' and _p.startswith('/cabinet/curator/reports')) %}spn-active{% endif %}"
        aria-label="{{ item.aria_label }}"
        data-tooltip="{{ item.tooltip }}">
         <span class="spn-icon" aria-hidden="true">

@@ -16,9 +16,41 @@ def _csrf_token_for_request(request) -> str:
     return generate_csrf_token(session_id)
 
 
+def _unread_count_for(user) -> int:
+    """Непрочитанные уведомления для бейджа колокольчика — на любой странице.
+
+    Бейдж рендерится глобально из base.html, а контекст-переменную unread_count
+    прокидывают только отдельные роуты. Считаем здесь через Redis-кэш
+    (get_cached_unread), чтобы число было корректным везде без доп. запросов.
+    """
+    if not user:
+        return 0
+    try:
+        from app.cache import get_cached_unread, set_cached_unread
+        cached = get_cached_unread(user["user_id"])
+        if cached is not None:
+            return cached
+        from sqlalchemy import func
+        from app.db.database import SessionLocal
+        from app.models.notification import Notification
+        db = SessionLocal()
+        try:
+            count = db.query(func.count(Notification.id)).filter(
+                Notification.user_id == user["user_id"],
+                Notification.is_read.is_(False),
+            ).scalar() or 0
+        finally:
+            db.close()
+        set_cached_unread(user["user_id"], count)
+        return count
+    except Exception:
+        return 0
+
+
 # Make csrf_token(request) available in every template automatically
 templates.env.globals["csrf_token"] = _csrf_token_for_request
 templates.env.globals["settings"] = settings
+templates.env.globals["unread_count_for"] = _unread_count_for
 templates.env.globals["curator_nav_items"] = curator_nav_items
 templates.env.globals["staff_nav_items"] = staff_nav_items
 templates.env.globals["student_nav_items"] = student_nav_items

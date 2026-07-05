@@ -360,6 +360,40 @@ def test_create_staff_post_denied_for_admin(client, db, user_factory, session_fa
     assert db.query(User).filter(User.first_name == "Запрещено").first() is None
 
 
+# ---------------------------------------------------------------------------
+# GET /cabinet/superadmin/users — filters (migrated from test_routes_admin.py)
+# ---------------------------------------------------------------------------
+
+def test_superadmin_users_filter_by_role_rank(superadmin_client, db, user_factory):
+    client, _ = superadmin_client
+    user_factory(vk_id=900130, name="Role Filter Student", role_name="ученик")
+    user_factory(vk_id=900131, name="Role Filter Curator", role_name="куратор")
+
+    resp = client.get("/cabinet/superadmin/users?role_rank=2")
+
+    assert resp.status_code == 200
+    assert "Role Filter Curator" in resp.text
+    assert "Role Filter Student" not in resp.text
+
+
+def test_superadmin_users_filter_by_tag(superadmin_client, db, user_factory):
+    from app.services.tags import add_tag_to_user, get_or_create_tag
+
+    client, _ = superadmin_client
+    tagged = user_factory(vk_id=900132, name="Tag Filter Tagged", role_name="ученик")
+    other = user_factory(vk_id=900133, name="Tag Filter Other", role_name="ученик")
+
+    tag = get_or_create_tag(db, "ОСОБЫЙ")
+    add_tag_to_user(db, tagged.id, tag.id)
+    db.commit()
+
+    resp = client.get(f"/cabinet/superadmin/users?tag={tag.id}")
+
+    assert resp.status_code == 200
+    assert "Tag Filter Tagged" in resp.text
+    assert "Tag Filter Other" not in resp.text
+
+
 def test_superadmin_assign_role_from_users_page(superadmin_client, db, user_factory):
     from app.models.role import Role
 
@@ -376,6 +410,24 @@ def test_superadmin_assign_role_from_users_page(superadmin_client, db, user_fact
     assert resp.status_code == 303
     db.refresh(target)
     assert target.role_id == curator_role.id
+
+
+def test_superadmin_role_cannot_change_own_role(superadmin_client, db):
+    from app.models.role import Role
+
+    client, admin = superadmin_client
+    original_role_id = admin.role_id
+    other_role = db.query(Role).filter(Role.id != admin.role_id).first()
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{admin.id}/role",
+        data={"role_id": str(other_role.id), "csrf_token": "bypass"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303  # redirected, no-op (can_manage_user_by_rank rejects self)
+    db.refresh(admin)
+    assert admin.role_id == original_role_id
 
 
 def test_superadmin_issue_link_from_users_page(superadmin_client, db, user_factory):
@@ -593,6 +645,40 @@ def test_superadmin_set_cohort_tag_rejects_invalid_value(superadmin_client, db, 
     assert resp.status_code == 400
 
 
+# ---------------------------------------------------------------------------
+# POST /cabinet/superadmin/users/{id}/tags — tariff (migrated from test_routes_admin.py)
+# ---------------------------------------------------------------------------
+
+def test_superadmin_tags_update_changes_tariff(superadmin_client, db, user_factory):
+    client, _ = superadmin_client
+    target = user_factory(vk_id=900220, name="Tariff Student", tariff="УВЕРЕННЫЙ")
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{target.id}/tags",
+        data={"tariff": "МАКСИМУМ", "csrf_token": "bypass"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    db.refresh(target)
+    assert target.tariff == "МАКСИМУМ"
+
+
+def test_superadmin_tags_update_invalid_tariff_rejected(superadmin_client, db, user_factory):
+    client, _ = superadmin_client
+    target = user_factory(vk_id=900221, name="Tariff Student Invalid", tariff="УВЕРЕННЫЙ")
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{target.id}/tags",
+        data={"tariff": "INVALID_TARIFF", "csrf_token": "bypass"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 400
+    db.refresh(target)
+    assert target.tariff == "УВЕРЕННЫЙ"  # unchanged
+
+
 def test_bulk_assign_curator_rejects_inactive_curator(
     superadmin_client, db, user_factory
 ):
@@ -637,6 +723,23 @@ def test_superadmin_toggle_user_ajax_returns_json(superadmin_client, db, user_fa
     assert resp.json() == {"ok": True, "user_id": student.id, "is_active": False}
     db.refresh(student)
     assert student.is_active is False
+
+
+def test_superadmin_toggle_user_re_enables(superadmin_client, db, user_factory):
+    client, _ = superadmin_client
+    student = user_factory(vk_id=900202, name="Student Re-enable", is_active=False)
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{student.id}/toggle-active",
+        data={"csrf_token": "bypass"},
+        headers={"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "user_id": student.id, "is_active": True}
+    db.refresh(student)
+    assert student.is_active is True
 
 
 def test_superadmin_delete_user_ajax_returns_json(superadmin_client, db, user_factory):

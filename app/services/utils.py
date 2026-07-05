@@ -4,6 +4,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 from app.constants import MONTH_TO_NUM
+from app.services.cases import has_case_growth as _has_case_growth
 
 logger = logging.getLogger(__name__)
 
@@ -123,34 +124,7 @@ def study_duration_text(enrolled_at: datetime) -> str:
 
 
 def has_case_growth(works: list) -> bool:
-    """True если по любому subject есть рост score между двумя пробниками одного ученика.
-
-    Использует in-memory список Work — никаких SQL. Игнорирует работы без score,
-    работы не типа mock_exam, и группы из одного пробника.
-    """
-    by_subject: dict[str, list] = defaultdict(list)
-    for w in works:
-        if getattr(w, "work_type", None) != "mock_exam":
-            continue
-        if w.score is None or not w.subject:
-            continue
-        by_subject[w.subject].append(w)
-
-    for items in by_subject.values():
-        if len(items) < 2:
-            continue
-        def _key(w):
-            mnum = MONTH_TO_NUM.get(w.month, 0)
-            ts = w.scored_at or w.created_at or datetime.min.replace(tzinfo=timezone.utc)
-            return (w.year or 0, mnum, ts)
-
-        ordered = sorted(items, key=_key)
-        prev = ordered[0].score
-        for w in ordered[1:]:
-            if w.score is not None and prev is not None and float(w.score) > float(prev):
-                return True
-            prev = w.score
-    return False
+    return _has_case_growth(works)
 
 
 def group_works(works: list) -> list[dict]:

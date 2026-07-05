@@ -438,6 +438,35 @@ def cabinet_notifications(
     })
 
 
+@router.get("/notifications/feed")
+def notifications_feed(
+    request: Request,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """JSON-лента уведомлений для попапа колокольчика. Только чтение —
+    отметка о прочтении идёт отдельным POST /notifications/mark-read."""
+    notifications = (
+        db.query(Notification)
+        .filter(Notification.user_id == user["user_id"])
+        .order_by(Notification.is_read.asc(), Notification.created_at.desc())
+        .limit(30)
+        .all()
+    )
+    items = [
+        {
+            "title": n.title,
+            "text": n.text or "",
+            "is_read": n.is_read,
+            "work_id": n.work_id,
+            "created_at": n.created_at.strftime("%d.%m.%Y %H:%M") if n.created_at else "",
+        }
+        for n in notifications
+    ]
+    unread_count = sum(1 for n in notifications if not n.is_read)
+    return JSONResponse({"notifications": items, "unread_count": unread_count})
+
+
 @router.post("/notifications/mark-read")
 def mark_notifications_read(
     request: Request,
@@ -450,7 +479,8 @@ def mark_notifications_read(
         Notification.is_read.is_(False),
     ).update({"is_read": True})
     db.commit()
-    return RedirectResponse("/cabinet/student", status_code=302)
+    invalidate_unread(user["user_id"])
+    return JSONResponse({"ok": True})
 
 
 # ── GET /cabinet/portfolio ────────────────────────────────────────────────────

@@ -66,7 +66,7 @@ class FeedbackPhoto(Base):
 
 
 class FeedbackMessage(Base):
-    """Сообщение в диалоге обратной связи. Текст ИЛИ фото (одно из двух обязательно)."""
+    """Сообщение в диалоге обратной связи. Текст, фото ИЛИ видео (хотя бы одно)."""
 
     __tablename__ = "feedback_messages"
 
@@ -79,6 +79,8 @@ class FeedbackMessage(Base):
     text: Mapped[str | None] = mapped_column(Text, nullable=True)
     photo_s3_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     photo_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    video_s3_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    video_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -90,7 +92,8 @@ class FeedbackMessage(Base):
     __table_args__ = (
         Index("ix_feedback_messages_feedback_created", "feedback_id", "created_at"),
         CheckConstraint(
-            "(text IS NOT NULL AND length(text) > 0) OR (photo_s3_url IS NOT NULL)",
+            "(text IS NOT NULL AND length(text) > 0) "
+            "OR (photo_s3_url IS NOT NULL) OR (video_s3_url IS NOT NULL)",
             name="ck_feedback_messages_text_or_photo",
         ),
     )

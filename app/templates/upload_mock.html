@@ -164,13 +164,11 @@ label:hover .subject-btn { border-color: var(--warning); color: var(--warning); 
             <div style="display:flex;gap:10px;flex-wrap:wrap">
                 {% for s in subjects %}
                 {% set is_locked = s in locked_subjects %}
-                {% set is_resubmit = s in resubmit_subjects %}
                 {% set has_ticket = s in subjects_with_tickets %}
                 {% set can_start_subject = subject_start_open.get(s, false) %}
-                {# Блокирует выбор: нет задания ИЛИ цикл по текущему билету ЗАКРЫТ
-                   (оценён → открыто заново только следующим билетом). Открытый цикл
-                   с уже сданной работой (is_resubmit) предмет НЕ блокирует — ученик
-                   может перезалить работу. #}
+                {# Блокирует выбор: нет задания ИЛИ по текущему билету уже сдан финал
+                   (is_locked). Перезалив запрещён — после сдачи предмет открывается
+                   заново только следующим билетом (или явной отправкой «на доработку»). #}
                 {% set is_disabled = not has_ticket or is_locked %}
                 <label style="flex:1;min-width:120px;cursor:{% if is_disabled %}not-allowed{% else %}pointer{% endif %}">
                     <input type="radio" name="subject" value="{{ s }}" required
@@ -181,9 +179,11 @@ label:hover .subject-btn { border-color: var(--warning); color: var(--warning); 
                         {{ s }}
                     </div>
                     {% if is_locked %}
+                        {% if locked_reasons.get(s) == 'waiting' %}
+                    <span class="subject-locked-hint">работа сдана · ждите ОС</span>
+                        {% else %}
                     <span class="subject-locked-hint">работа сдана · ждите билет</span>
-                    {% elif is_resubmit %}
-                    <span class="subject-locked-hint">работа сдана · можно перезалить</span>
+                        {% endif %}
                     {% elif not has_ticket %}
                     <span class="subject-locked-hint">сдача недоступна</span>
                     {% elif not can_start_subject %}
@@ -228,6 +228,7 @@ label:hover .subject-btn { border-color: var(--warning); color: var(--warning); 
                     <div class="upload-drop-title">Добавь этапы работы</div>
                     <div class="upload-drop-hint">Промежуточные фото · до 10 МБ · до {{ max_files }} штук</div>
                 </label>
+                <div class="upload-drop-hint" id="stageExistingHint" style="display:none;margin-top:8px"></div>
                 <div class="preview-area" id="stagePreviewArea">
                     <div class="preview-header">
                         <span class="preview-count" id="stageCount"></span>
@@ -282,7 +283,7 @@ label:hover .subject-btn { border-color: var(--warning); color: var(--warning); 
 {% include "partials/lightbox.html" %}
 
 <script>
-const MAX_STAGE = {{ max_files }}, MAX_SIZE = 10*1024*1024;
+const MAX_STAGE_LIMIT = {{ max_stage_files | default(max_files) }}, MAX_SIZE = 10*1024*1024;
 const submitBtn = document.getElementById('submitBtn');
 const uploadMsg = document.getElementById('uploadMsg');
 
@@ -327,17 +328,59 @@ finalDrop.addEventListener('drop', function(e) {
 });
 
 
-// ── Этапные фото (до MAX_STAGE) ──────────────────────────────────────────────
+// ── Этапные фото (до MAX_STAGE_LIMIT) ────────────────────────────────────────
 var stageFiles = [];
 const stageInput = document.getElementById('stageInput');
 const stageDrop = document.getElementById('stageDrop');
 const stagePreviewArea = document.getElementById('stagePreviewArea');
 const stageGrid = document.getElementById('stageGrid');
 const stageCount = document.getElementById('stageCount');
+const stageExistingHint = document.getElementById('stageExistingHint');
+
+function getStageState() {
+    var state = (_currentSubject && STAGE_STATE_BY_SUBJECT[_currentSubject]) || {};
+    var existing = Number(state.existing || 0);
+    var limit = Number(state.limit || MAX_STAGE_LIMIT);
+    var remaining = Number(state.remaining);
+    if (!Number.isFinite(remaining)) remaining = Math.max(limit - existing, 0);
+    return { existing: existing, remaining: Math.max(remaining, 0), limit: limit };
+}
+
+function updateStageExistingHint() {
+    var state = getStageState();
+    var afterSelected = Math.max(state.remaining - stageFiles.length, 0);
+    if (state.existing > 0) {
+        stageExistingHint.textContent = state.remaining <= 0
+            ? 'Этапные уже загружены: ' + state.existing + ' из ' + state.limit + '. Теперь загрузите финальное фото.'
+            : 'Уже загружено этапных: ' + state.existing +
+                ' из ' + state.limit + '. Можно добавить ещё ' + afterSelected + '.';
+        stageExistingHint.style.display = 'block';
+    } else {
+        stageExistingHint.style.display = 'none';
+    }
+}
+
+function syncStageStateFromResponse(body) {
+    if (!_currentSubject || !body) return getStageState();
+    var hasLimitState = body.existing !== undefined || body.remaining !== undefined || body.limit !== undefined;
+    if (!hasLimitState) return getStageState();
+    var current = getStageState();
+    STAGE_STATE_BY_SUBJECT[_currentSubject] = {
+        existing: Number.isFinite(Number(body.existing)) ? Number(body.existing) : current.existing,
+        remaining: Number.isFinite(Number(body.remaining)) ? Number(body.remaining) : current.remaining,
+        limit: Number.isFinite(Number(body.limit)) ? Number(body.limit) : current.limit,
+    };
+    updateStageExistingHint();
+    return getStageState();
+}
 
 function renderStage() {
     stageGrid.innerHTML = '';
-    stageCount.textContent = 'Выбрано: ' + stageFiles.length + ' из ' + MAX_STAGE;
+    var state = getStageState();
+    stageCount.textContent = state.existing > 0
+        ? 'Уже загружено: ' + state.existing + ' · выбрано: ' + stageFiles.length + ' · лимит ' + state.limit
+        : 'Выбрано: ' + stageFiles.length + ' из ' + state.limit;
+    updateStageExistingHint();
     stageFiles.forEach(function(f, i) {
         var wrap = document.createElement('div');
         wrap.className = 'preview-cell';
@@ -359,7 +402,12 @@ function addStage(newFiles) {
     var files = Array.from(newFiles);
     for (var j = 0; j < files.length; j++) {
         if (files[j].size > MAX_SIZE) { alert(files[j].name + ' — слишком большой'); continue; }
-        if (stageFiles.length >= MAX_STAGE) { alert('Максимум ' + MAX_STAGE + ' этапных фото'); break; }
+        var state = getStageState();
+        var remainingForSelection = state.remaining - stageFiles.length;
+        if (remainingForSelection <= 0) {
+            alert('Лимит этапных фото исчерпан: уже загружено ' + state.existing + ' из ' + state.limit + '.');
+            break;
+        }
         stageFiles.push(files[j]);
     }
     renderStage();
@@ -369,6 +417,7 @@ function addStage(newFiles) {
 stageInput.addEventListener('change', function() { addStage(stageInput.files); stageInput.value = ''; });
 document.getElementById('stageReselect').addEventListener('click', function() {
     stageFiles = []; stageGrid.innerHTML = '';
+    updateStageExistingHint();
     stagePreviewArea.style.display = 'none'; stageDrop.style.display = 'flex';
 });
 document.getElementById('stageAddMore').addEventListener('click', function() {
@@ -403,6 +452,9 @@ function stageWord(n) {
 }
 
 function parseUploadResponse(response) {
+    if (isSessionResponse(response)) {
+        throw new Error('auth');
+    }
     return response.json()
         .then(function(body){ return { status: response.status, body: body }; })
         .catch(function(){
@@ -416,6 +468,22 @@ function parseUploadResponse(response) {
         });
 }
 
+function isSessionResponse(response) {
+    return response.status === 401 ||
+        (response.redirected && response.url && response.url.indexOf('error=session_expired') !== -1);
+}
+
+function ensureJsonResponse(response) {
+    if (isSessionResponse(response)) {
+        throw new Error('auth');
+    }
+    var contentType = response.headers.get('content-type') || '';
+    if (contentType.indexOf('application/json') === -1) {
+        throw new Error('auth');
+    }
+    return response;
+}
+
 function doUploadIntermediate() {
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner"></span>Загружаем этапные…';
@@ -425,14 +493,37 @@ function doUploadIntermediate() {
         stageFiles.forEach(function(f){ fd.append('photos', f); });
         fd.append('subject', _currentSubject);
         fd.append('csrf_token', CSRF_TOKEN);
+        // Без fetchWithTimeout: это большой multipart-запрос с фото, у которого нет
+        // способа отличить "медленная загрузка" от "зависшее соединение" — фиксированный
+        // таймаут абортил бы легитимную медленную загрузку на плохом интернете.
         return fetch('/upload/probnik/intermediate', {
-            method: 'POST', body: fd, headers: { 'Accept': 'application/json' }
+            method: 'POST', body: fd, credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
         });
     })
         .then(parseUploadResponse)
         .then(function(res) {
             var j = res.body;
             if (res.status !== 200 || !j.success) {
+                var syncedState = syncStageStateFromResponse(j);
+                if (finalFile && Number.isFinite(Number(j.remaining))) {
+                    if (syncedState.remaining <= 0) {
+                        stageFiles = [];
+                        stageUploaded = true;
+                        stageCreatedCount = 0;
+                        renderStage();
+                        showUploadMsg('Лимит этапных фото уже заполнен. Загружаем финальную работу.', false);
+                        doUploadFinal();
+                        return;
+                    }
+                    if (stageFiles.length > syncedState.remaining) {
+                        stageFiles = stageFiles.slice(0, syncedState.remaining);
+                        renderStage();
+                        showUploadMsg('Часть этапных уже загружена ранее. Отправляем только оставшиеся ' + syncedState.remaining + '.', false);
+                        doUploadIntermediate();
+                        return;
+                    }
+                }
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = 'Повторить загрузку этапных';
                 showUploadError('Не удалось загрузить этапные: ' + (j.error || j.detail || 'ошибка') + '.');
@@ -440,6 +531,7 @@ function doUploadIntermediate() {
             }
             stageUploaded = true;
             stageCreatedCount = j.created || 0;
+            syncStageStateFromResponse(j);
             doUploadFinal();
         })
         .catch(function(err) {
@@ -461,7 +553,8 @@ function doUploadFinal() {
         fd.append('subject', _currentSubject);
         fd.append('csrf_token', CSRF_TOKEN);
         return fetch('/upload/probnik/final', {
-            method: 'POST', body: fd, headers: { 'Accept': 'application/json' }
+            method: 'POST', body: fd, credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
         });
     })
         .then(parseUploadResponse)
@@ -471,6 +564,13 @@ function doUploadFinal() {
                 showUploadError(j.error || j.detail || 'Не удалось загрузить финальное фото.');
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = stageUploaded ? 'Повторить загрузку финального' : 'Отправить на проверку';
+                return;
+            }
+            syncStageStateFromResponse(j);
+            if (!j.verified || !j.final_work_id) {
+                showUploadError(j.error || 'Сервер не подтвердил финальную работу. Проверьте соединение и повторите отправку финального фото.');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Повторить загрузку финального';
                 return;
             }
             finishOk();
@@ -495,8 +595,9 @@ function finishOk() {
     stopTimer();
     submitBtn.innerHTML = 'Готово ✓';
     var msg = 'Сдано одно финальное фото';
-    if (stageCreatedCount > 0) {
-        msg += ' и ' + stageCreatedCount + ' ' + stageWord(stageCreatedCount);
+    var totalStageCount = getStageState().existing;
+    if (totalStageCount > 0) {
+        msg += ' и ' + totalStageCount + ' ' + stageWord(totalStageCount);
     }
     msg += '. Ожидайте обратной связи от куратора. ' +
         '<a href="/cabinet" style="font-weight:700">В кабинет →</a>';
@@ -507,11 +608,9 @@ function finishOk() {
 
 // ── Server data ──────────────────────────────────────────────────────────────
 var ATTEMPTS = {{ attempts_by_subject | tojson }};  // { "Рисунок": {...}, "Композиция": {...} } | {}
+var STAGE_STATE_BY_SUBJECT = {{ stage_upload_state_by_subject | tojson }};
 var START_OPEN_BY_SUBJECT = {{ subject_start_open | tojson }};
 var WINDOW_MESSAGE_BY_SUBJECT = {{ subject_window_messages | tojson }};
-// Предметы в режиме перезалива: финал сдан, цикл ещё открыт → форма загрузки
-// доступна сразу, без «Начать пробник» и без таймера.
-var RESUBMIT_SUBJECTS = {{ resubmit_subjects | list | tojson }};
 var TIMER_DURATION = {{ mock_exam_duration_sec }};
 var CSRF_TOKEN = document.querySelector('input[name="csrf_token"]').value;
 var _timerInterval = null;
@@ -523,8 +622,16 @@ var _currentSubject = null;
 // запрос продлевает сессию и переустанавливает cookie на сервере (get_current_user).
 // reject('auth') → сессия реально мертва (нужен повторный вход).
 function refreshCsrf() {
-    return fetch('/upload/mock-exam/csrf', { headers: { 'Accept': 'application/json' }, cache: 'no-store' })
-        .then(function(r){ if (r.status !== 200) throw new Error('auth'); return r.json(); })
+    return window.fetchWithTimeout('/upload/mock-exam/csrf', {
+        headers: { 'Accept': 'application/json' },
+        cache: 'no-store',
+        credentials: 'same-origin'
+    })
+        .then(function(r){
+            ensureJsonResponse(r);
+            if (r.status !== 200) throw new Error('auth');
+            return r.json();
+        })
         .then(function(j){
             if (j && j.csrf_token) {
                 CSRF_TOKEN = j.csrf_token;
@@ -585,16 +692,14 @@ function onSubjectSelected(subject) {
     document.getElementById('prepBlock').style.display = 'none';
     document.getElementById('startWindowMsg').style.display = 'none';
     stopTimer();
+    updateStageExistingHint();
 
     if (ATTEMPTS[subject]) {
         // Уже есть активная попытка → сразу показать билет + таймер + форму загрузки
         renderTicket(ATTEMPTS[subject]);
         startTimerFromServer(ATTEMPTS[subject].started_at, ATTEMPTS[subject].expires_at);
         document.getElementById('uploadSection').style.display = 'block';
-    } else if (RESUBMIT_SUBJECTS.indexOf(subject) !== -1) {
-        // Режим перезалива: финал уже сдан, цикл открыт. Таймерной попытки нет —
-        // показываем форму загрузки сразу, без «Начать пробник» и без таймера.
-        document.getElementById('uploadSection').style.display = 'block';
+        updateStageExistingHint();
     } else {
         // Показать подготовительное сообщение и кнопку «Начать пробник»
         document.getElementById('prepBlock').style.display = 'block';
@@ -621,9 +726,17 @@ document.getElementById('startBtn').addEventListener('click', function(){
         var fd = new FormData();
         fd.append('subject', _currentSubject);
         fd.append('csrf_token', CSRF_TOKEN);
-        return fetch('/upload/mock-exam/start', { method: 'POST', body: fd });
+        return window.fetchWithTimeout('/upload/mock-exam/start', {
+            method: 'POST',
+            body: fd,
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
+        });
     })
-        .then(function(r){ return r.json().then(function(j){ return {status: r.status, body: j}; }); })
+        .then(function(r){
+            ensureJsonResponse(r);
+            return r.json().then(function(j){ return {status: r.status, body: j}; });
+        })
         .then(function(res){
             btn.disabled = false;
             btn.innerHTML = '▶ Начать пробник';
@@ -656,6 +769,10 @@ document.getElementById('startBtn').addEventListener('click', function(){
             renderTicket(attempt);
             startTimerFromServer(attempt.started_at, attempt.expires_at);
             document.getElementById('uploadSection').style.display = 'block';
+            if (!STAGE_STATE_BY_SUBJECT[_currentSubject]) {
+                STAGE_STATE_BY_SUBJECT[_currentSubject] = { existing: 0, remaining: MAX_STAGE_LIMIT, limit: MAX_STAGE_LIMIT };
+            }
+            updateStageExistingHint();
         })
         .catch(function(err){
             btn.disabled = false;

@@ -13,6 +13,7 @@ from datetime import datetime, timezone, timedelta, date
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from app.cache import invalidate_unread
 from app.db.database import SessionLocal
 from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
 from app.models.login_token import LoginToken
@@ -196,6 +197,7 @@ def _run_notification_check() -> None:
                 ),
             )
             db.add(notif)
+            invalidate_unread(assignee.user_id)
             assignee.notified_at = now
             sent += 1
 

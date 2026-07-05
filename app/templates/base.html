@@ -16,7 +16,7 @@
     <link rel="preload" as="image" href="/static/img/bg-desktop.webp?v=1" type="image/webp" media="(min-width: 769px)" fetchpriority="high">
     <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
     <!-- Base styles: versioned for cache-busting -->
-    <link rel="stylesheet" href="/static/css/base.css?v=20">
+    <link rel="stylesheet" href="/static/css/base.css?v=22">
     {% block extra_styles %}{% endblock %}
 </head>
 <body>
@@ -146,25 +146,127 @@
         } catch (e) { /* никогда не ломаем страницу */ }
     })();
     </script>
+    <script>
+    // Общий wrapper для fetch() с таймаутом через AbortController — иначе на плохом
+    // интернете запрос виснет бесконечно без обратной связи пользователю.
+    window.fetchWithTimeout = function(url, options, timeoutMs) {
+        options = options || {};
+        timeoutMs = timeoutMs || 15000;
+        var controller = new AbortController();
+        var timer = setTimeout(function() { controller.abort(); }, timeoutMs);
+        var opts = Object.assign({}, options, { signal: controller.signal });
+        return fetch(url, opts).finally(function() { clearTimeout(timer); });
+    };
+    </script>
     {% include "_includes/impersonation_banner.html" %}
     {% if user is defined and user %}
     <div class="floating-widget-tray" id="floatingWidgetTray" aria-label="Быстрые виджеты">
-        {% set _unread = unread_count|default(0) %}
-        <a href="/cabinet/notifications" class="notif-bell"
-       aria-label="Уведомления{% if _unread %} ({{ _unread }} непрочитанных){% endif %}">
+        {% set _unread = unread_count_for(user) %}
+        <button type="button" class="notif-bell" id="notifBell" aria-haspopup="dialog"
+            aria-expanded="false"
+            aria-label="Уведомления{% if _unread %} ({{ _unread }} непрочитанных){% endif %}">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
             <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
         </svg>
-        {% if _unread > 0 %}
-        <span class="notif-bell-badge" aria-hidden="true">{{ _unread }}</span>
-        {% endif %}
-        </a>
+        <span class="notif-bell-badge" id="notifBellBadge" aria-hidden="true"
+              {% if not _unread %}hidden{% endif %}>{{ _unread }}</span>
+        </button>
         {% if user.role_rank >= 4 or settings.course_calculator_all_roles or user.role_rank == 1 %}
         {% include "partials/course_calculator_widget.html" %}
         {% endif %}
     </div>
+
+    <div class="notif-pop" id="notifPop" role="dialog" aria-label="Уведомления" aria-modal="false" hidden>
+        <div class="notif-pop-head">
+            <span class="notif-pop-title">Уведомления</span>
+            <button type="button" class="notif-pop-close" id="notifPopClose" aria-label="Закрыть">&times;</button>
+        </div>
+        <div class="notif-pop-body" id="notifPopBody"></div>
+    </div>
+
+    <script>
+    (function(){
+        var bell = document.getElementById('notifBell');
+        var pop = document.getElementById('notifPop');
+        var body = document.getElementById('notifPopBody');
+        var badge = document.getElementById('notifBellBadge');
+        var closeBtn = document.getElementById('notifPopClose');
+        if (!bell || !pop || !body) return;
+        var CSRF = '{{ csrf_token(request) }}';
+
+        function esc(s){
+            var d = document.createElement('div');
+            d.textContent = (s == null ? '' : String(s));
+            return d.innerHTML;
+        }
+        function clearBadge(){
+            if (badge){ badge.hidden = true; badge.textContent = '0'; }
+            bell.setAttribute('aria-label', 'Уведомления');
+        }
+        function render(items){
+            if (!items || !items.length){
+                body.innerHTML = '<div class="notif-pop-empty">Уведомлений пока нет</div>';
+                return;
+            }
+            var html = '';
+            items.forEach(function(n){
+                var cls = 'notif-pop-item' + (n.is_read ? '' : ' unread');
+                var inner =
+                    '<div class="notif-pop-item-title">' + esc(n.title) + '</div>' +
+                    (n.text ? '<div class="notif-pop-item-text">' + esc(n.text) + '</div>' : '') +
+                    '<div class="notif-pop-item-meta">' + esc(n.created_at) + '</div>';
+                if (n.work_id){
+                    html += '<a href="/cabinet/cycle" class="' + cls + '">' + inner + '</a>';
+                } else {
+                    html += '<div class="' + cls + '">' + inner + '</div>';
+                }
+            });
+            body.innerHTML = html;
+        }
+        function markRead(){
+            fetch('/cabinet/notifications/mark-read', {
+                method: 'POST',
+                headers: {'X-CSRF-Token': CSRF, 'Content-Type': 'application/x-www-form-urlencoded'},
+                body: 'csrf_token=' + encodeURIComponent(CSRF),
+                cache: 'no-store'
+            }).then(clearBadge).catch(function(){});
+        }
+        function load(){
+            body.innerHTML = '<div class="notif-pop-empty">Загрузка…</div>';
+            fetch('/cabinet/notifications/feed', {headers:{'Accept':'application/json'}, cache:'no-store'})
+                .then(function(r){ return r.ok ? r.json() : null; })
+                .then(function(j){
+                    if (!j){ body.innerHTML = '<div class="notif-pop-empty">Уведомлений пока нет</div>'; return; }
+                    render(j.notifications);
+                    if (j.unread_count > 0) markRead(); else clearBadge();
+                })
+                .catch(function(){ body.innerHTML = '<div class="notif-pop-empty">Не удалось загрузить</div>'; });
+        }
+        function open(){
+            pop.hidden = false;
+            bell.setAttribute('aria-expanded', 'true');
+            load();
+        }
+        function close(){
+            pop.hidden = true;
+            bell.setAttribute('aria-expanded', 'false');
+        }
+        bell.addEventListener('click', function(e){
+            e.preventDefault();
+            if (pop.hidden) open(); else close();
+        });
+        if (closeBtn) closeBtn.addEventListener('click', close);
+        document.addEventListener('click', function(e){
+            if (pop.hidden) return;
+            if (!pop.contains(e.target) && !bell.contains(e.target)) close();
+        });
+        document.addEventListener('keydown', function(e){
+            if (e.key === 'Escape' && !pop.hidden) close();
+        });
+    })();
+    </script>
     {% endif %}
 
     {% if user is defined and user and user.role_rank >= 4 %}

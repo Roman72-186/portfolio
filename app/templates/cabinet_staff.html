@@ -416,11 +416,17 @@
                     <div class="staff-meta">Администратор</div>
                 </div>
                 {% if user.role_rank >= 5 %}
-                <form method="post" action="/cabinet/superadmin/issue-link" style="margin:0">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                    <input type="hidden" name="target_user_id" value="{{ a.id }}">
-                    <button type="submit" class="issue-link-btn">🔗 Ссылка</button>
-                </form>
+                <div style="display:flex;gap:6px;flex-shrink:0">
+                    <form method="post" action="/cabinet/superadmin/issue-link" style="margin:0">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                        <input type="hidden" name="target_user_id" value="{{ a.id }}">
+                        <button type="submit" class="issue-link-btn">🔗 Ссылка</button>
+                    </form>
+                    <form method="post" action="/cabinet/superadmin/impersonate/{{ a.id }}" style="margin:0">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                        <button type="submit" class="issue-link-btn">🔓 Войти</button>
+                    </form>
+                </div>
                 {% endif %}
             </div>
             {% endfor %}

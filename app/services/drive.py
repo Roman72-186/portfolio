@@ -19,6 +19,7 @@ import httpx
 
 from app.config import settings
 from app.constants import MONTHS
+from app.services._http import request_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,28 @@ _photos_cache: dict[int, tuple[float, list[dict]]] = {}
 
 # file_id → photo dict (populated when list_student_photos runs)
 _file_index: dict[str, dict] = {}
+
+# Shared persistent client — initialised/closed through app lifespan (see main.py).
+_client: httpx.AsyncClient | None = None
+
+
+async def init_client() -> None:
+    global _client
+    _client = httpx.AsyncClient(timeout=20.0)
+
+
+async def close_client() -> None:
+    global _client
+    if _client and not _client.is_closed:
+        await _client.aclose()
+    _client = None
+
+
+async def _get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(timeout=20.0)
+    return _client
 
 
 def _photo_created_dt(photo: dict) -> datetime:
@@ -64,10 +87,13 @@ async def list_student_photos(vk_id: int, tg_username: str, **_kwargs) -> list[d
     }
 
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.post(_list_photos_url(), json=payload)
-            resp.raise_for_status()
-            data = resp.json()
+        client = await _get_client()
+        resp = await request_with_retry(
+            lambda: client.post(_list_photos_url(), json=payload),
+            label="drive list-photos",
+        )
+        resp.raise_for_status()
+        data = resp.json()
     except Exception as exc:
         logger.warning("list_student_photos n8n call failed (vk_id=%s): %s", vk_id, exc)
         return []

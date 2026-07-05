@@ -1,5 +1,5 @@
 """Tests for /upload route — form GET and photo POST."""
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch, MagicMock
 
 
@@ -63,6 +63,31 @@ def _create_active_ticket(db, user, subject="Рисунок", *, opens_at=None, 
     db.add(ticket)
     db.commit()
     return ticket
+
+
+def _create_active_ticket_set(db, user, subject="Рисунок", count=2):
+    """Create one active assignment with several tickets for random distribution."""
+    from app.models.exam_assignment import ExamAssignment, ExamTicket
+    today = date.today()
+    assignment = ExamAssignment(
+        title=f"Тест {subject}", subject=subject,
+        created_by_id=user.id, status="published",
+    )
+    db.add(assignment)
+    db.flush()
+    tickets = []
+    for n in range(1, count + 1):
+        ticket = ExamTicket(
+            assignment_id=assignment.id, ticket_number=n,
+            title=f"Билет {n}",
+            start_date=today - timedelta(days=1),
+            end_date=today + timedelta(days=30),
+            assign_to_all=True,
+        )
+        db.add(ticket)
+        tickets.append(ticket)
+    db.commit()
+    return tickets
 
 
 # ---------------------------------------------------------------------------
@@ -192,17 +217,67 @@ def test_upload_s3_failure_shows_retry_error(auth_client, db):
 
 
 def test_upload_n8n_failure_still_shows_success(auth_client, db):
-    """n8n runs in background — user sees success even if Drive fails."""
+    """An n8n exception cannot roll back S3 or change the upload API result."""
     from app.models.work import Work
+
     client, user = auth_client
     _create_active_period(db, user, "portfolio_upload")
-    fail_result = {"success": False, "error": "Google Drive quota exceeded"}
-    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=fail_result):
-        resp = _upload(client, [("photos", ("p.jpg", _JPG_BYTES, "image/jpeg"))])
+
+    with patch(_MOCK_S3_CONFIGURED, return_value=True), \
+         patch(_MOCK_S3_UPLOAD, return_value="https://s3.example/work.jpg"), \
+         patch(_MOCK_N8N, new_callable=AsyncMock, side_effect=RuntimeError("n8n unavailable")), \
+         patch("app.api.upload._N8N_RETRY_DELAYS", [0, 0]):
+        resp = client.post(
+            "/upload/api",
+            data={"month": "январь", "section": "after"},
+            files=[("photos", ("p.jpg", _JPG_BYTES, "image/jpeg"))],
+        )
+
     assert resp.status_code == 200
-    # Work record must still be created (S3 succeeded)
-    works = db.query(Work).filter(Work.user_id == user.id).all()
-    assert len(works) >= 1
+    assert resp.json() == {
+        "success": True,
+        "created": 1,
+        "failed": 0,
+        "error": None,
+        "mode_changed": False,
+    }
+
+    db.expire_all()
+    work = db.query(Work).filter(Work.user_id == user.id).one()
+    assert work.status == "success"
+    assert work.s3_url == "https://s3.example/work.jpg"
+    assert work.drive_status == "failed"
+
+
+def test_upload_background_scheduling_failure_keeps_s3_success(auth_client, db):
+    """Even failure to register the n8n task is secondary to committed S3 data."""
+    from app.models.work import Work
+
+    client, user = auth_client
+    _create_active_period(db, user, "portfolio_upload")
+
+    with patch(_MOCK_S3_CONFIGURED, return_value=True), \
+         patch(_MOCK_S3_UPLOAD, return_value="https://s3.example/work.jpg"), \
+         patch(
+             "app.api.upload.BackgroundTasks.add_task",
+             side_effect=RuntimeError("background queue unavailable"),
+         ):
+        resp = client.post(
+            "/upload/api",
+            data={"month": "январь", "section": "after"},
+            files=[("photos", ("p.jpg", _JPG_BYTES, "image/jpeg"))],
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+    assert resp.json()["created"] == 1
+    assert resp.json()["failed"] == 0
+
+    db.expire_all()
+    work = db.query(Work).filter(Work.user_id == user.id).one()
+    assert work.status == "success"
+    assert work.s3_url == "https://s3.example/work.jpg"
+    assert work.drive_status == "failed"
 
 
 def test_upload_writes_to_upload_log(auth_client, db):
@@ -296,8 +371,29 @@ def test_mock_exam_csrf_returns_valid_token(auth_client):
     assert resp.status_code == 200
     token = resp.json()["csrf_token"]
     assert token
-    session_id = client.cookies.get("session_id")
+    session_values = [cookie.value for cookie in client.cookies.jar if cookie.name == "session_id"]
+    assert len(set(session_values)) == 1
+    session_id = session_values[0]
     assert validate_csrf_token(session_id, token)
+
+
+def test_mock_exam_form_force_refreshes_session_cookie(client, db, regular_user, session_factory):
+    sess = session_factory(regular_user, hours=24)
+    before = sess.expires_at
+    client.cookies.set("session_id", sess.id)
+
+    resp = client.get("/upload/mock-exam")
+
+    assert resp.status_code == 200
+    assert "session_id=" in resp.headers.get("set-cookie", "")
+    db.refresh(sess)
+    refreshed_at = sess.expires_at
+    if refreshed_at.tzinfo is None:
+        refreshed_at = refreshed_at.replace(tzinfo=timezone.utc)
+    if before.tzinfo is None:
+        before = before.replace(tzinfo=timezone.utc)
+    assert refreshed_at > before
+    assert refreshed_at > datetime.now(timezone.utc) + timedelta(hours=23)
 
 
 def test_mock_exam_locked_subjects_do_not_disable_form(auth_client, db):
@@ -315,10 +411,10 @@ def test_mock_exam_locked_subjects_do_not_disable_form(auth_client, db):
     assert "уже сдано" not in resp.text
 
 
-def test_mock_exam_current_period_submission_shows_resubmit(auth_client, db):
-    """Сданный по текущему билету пробник в ОТКРЫТОМ цикле НЕ блокирует предмет:
-    подсказка «работа сдана · можно перезалить», кнопка доступна (режим перезалива
-    — ученик может загружать заново, пока цикл не закрыт админом/SA)."""
+def test_mock_exam_current_period_submission_locks_subject(auth_client, db):
+    """Сданный по текущему билету пробник в ОТКРЫТОМ цикле БЛОКИРУЕТ предмет:
+    подсказка «работа сдана · ждите ОС», кнопка недоступна (перезалив по своей воле
+    запрещён — открыть заново можно только следующим билетом/новой revision)."""
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
     from app.models.exam_cycle import ExamCycle
     from datetime import datetime, timezone
@@ -336,6 +432,7 @@ def test_mock_exam_current_period_submission_shows_resubmit(auth_client, db):
         month="январь",
         year=2026,
         filename="mock.jpg",
+        s3_url="https://example.test/mock.jpg",
         subject="Рисунок",
         tariff=user.tariff,
         status="success",
@@ -349,9 +446,56 @@ def test_mock_exam_current_period_submission_shows_resubmit(auth_client, db):
     resp = client.get("/upload/mock-exam")
 
     assert resp.status_code == 200
-    assert "работа сдана · можно перезалить" in resp.text
-    # открытый цикл больше не показывает блокирующую подсказку «ждите ОС»
-    assert "работа сдана, ждите ОС" not in resp.text
+    # открытый сданный цикл → предмет заблокирован с подсказкой «ждите ОС»
+    assert "работа сдана · ждите ОС" in resp.text
+    assert "subject-locked" in resp.text
+    # режима свободного перезалива больше нет
+    assert "можно перезалить" not in resp.text
+
+
+def test_mock_exam_start_skips_submitted_ticket_when_another_ticket_is_active(auth_client, db):
+    """Если один билет уже сдан в открытом цикле, другой активный билет всё равно выдаётся."""
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+    from app.models.exam_cycle import ExamCycle
+    from app.models.mock_exam_attempt import MockExamAttempt
+    from datetime import datetime, timezone
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    submitted_ticket, next_ticket = _create_active_ticket_set(db, user, "Рисунок", count=2)
+    cycle = ExamCycle(
+        user_id=user.id,
+        subject="Рисунок",
+        ticket_id=submitted_ticket.id,
+        started_at=datetime.now(timezone.utc),
+    )
+    db.add(cycle)
+    db.flush()
+    db.add(Work(
+        user_id=user.id,
+        work_type=WORK_TYPE_MOCK_EXAM,
+        month="январь",
+        year=2026,
+        filename="mock.jpg",
+        s3_url="https://example.test/mock.jpg",
+        subject="Рисунок",
+        tariff=user.tariff,
+        status="success",
+        score=None,
+        cycle_id=cycle.id,
+        is_final=True,
+        created_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+
+    resp = client.post("/upload/mock-exam/start", data={"subject": "Рисунок"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ticket"]["id"] == next_ticket.id
+    assert body["resumed"] is False
+    attempt = db.query(MockExamAttempt).filter(MockExamAttempt.user_id == user.id).one()
+    assert attempt.ticket_id == next_ticket.id
 
 
 def test_mock_exam_revision_unblocks_subject_in_form(auth_client, db):
@@ -492,6 +636,26 @@ def test_mock_exam_start_resumes_when_ticket_still_active(auth_client, db):
     body2 = resp2.json()
     assert body2["resumed"] is True
     assert body2["attempt_id"] == attempt_id
+
+
+def test_mock_exam_start_randomizes_between_current_assignment_tickets(auth_client, db):
+    from app.models.mock_exam_attempt import MockExamAttempt
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    tickets = _create_active_ticket_set(db, user, "Рисунок", count=2)
+    chosen = tickets[0]
+
+    with patch("app.api.upload.random.choice", return_value=chosen) as choice:
+        resp = client.post("/upload/mock-exam/start", data={"subject": "Рисунок"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert choice.called
+    assert body["ticket"]["id"] == chosen.id
+
+    attempt = db.query(MockExamAttempt).filter(MockExamAttempt.user_id == user.id).one()
+    assert attempt.ticket_id == chosen.id
 
 
 def test_mock_exam_start_does_not_resume_expired_ticket_attempt(auth_client, db):

@@ -34,8 +34,6 @@
 
 .uc-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
 .uc-btn { padding: 10px 18px; border-radius: 9px; font-size: 13px; font-weight: 800; cursor: pointer; font-family: inherit; border: none; }
-.uc-btn-primary { background: var(--blue); color: #fff; }
-.uc-btn-primary:hover { opacity: 0.88; }
 .uc-btn-secondary { background: var(--surface-2); color: var(--text); border: 1.5px solid var(--line); }
 .uc-access { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .uc-access-meta { font-size: 13px; color: var(--dim); line-height: 1.45; }
@@ -88,11 +86,18 @@
                     <br>Новый пароль будет показан один раз после генерации.
                 </div>
                 {% if user.role_rank >= 4 and target.id != user.user_id and (not target.role or target.role.rank < user.role_rank) and target.is_active and not target.deleted_at %}
-                <button type="submit"
-                        form="studentAccessForm"
-                        class="uc-btn uc-btn-secondary">
-                    {{ 'Сбросить доступ' if target.staff_login else 'Выдать доступ' }}
-                </button>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <button type="submit"
+                            form="studentAccessForm"
+                            class="uc-btn uc-btn-secondary">
+                        {{ 'Сбросить доступ' if target.staff_login else 'Выдать доступ' }}
+                    </button>
+                    <button type="submit"
+                            form="impersonateForm"
+                            class="uc-btn btn-blue uc-btn-primary">
+                        🔓 Войти в кабинет
+                    </button>
+                </div>
                 {% endif %}
             </div>
         </div>
@@ -173,12 +178,16 @@
 
             <div class="uc-actions">
                 <a href="/cabinet/superadmin/users" class="uc-btn uc-btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center">Отмена</a>
-                <button type="submit" class="uc-btn uc-btn-primary">Сохранить</button>
+                <button type="submit" class="uc-btn btn-blue uc-btn-primary">Сохранить</button>
             </div>
         </div>
     </form>
 
     <form id="studentAccessForm" method="post" action="/cabinet/superadmin/users/{{ target.id }}/set-credentials">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    </form>
+
+    <form id="impersonateForm" method="post" action="/cabinet/superadmin/impersonate/{{ target.id }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     </form>
 </div>

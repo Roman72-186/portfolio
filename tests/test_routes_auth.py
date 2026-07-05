@@ -443,13 +443,13 @@ def test_logout_invalidates_session(client, db, user_factory, session_factory):
     assert sess.is_active is False
 
 
-def test_logout_redirects_to_root(client, db, user_factory, session_factory):
+def test_logout_redirects_to_login(client, db, user_factory, session_factory):
     user = user_factory()
     sess = session_factory(user)
     client.cookies.set("session_id", sess.id)
 
     resp = client.post("/logout", follow_redirects=False)
-    assert "/" in resp.headers["location"]
+    assert resp.headers["location"] == "/login"
 
 
 def test_logout_without_session_still_redirects(client):

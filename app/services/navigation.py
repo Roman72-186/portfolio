@@ -43,6 +43,7 @@ class StaffNavItem:
 
 
 CURATOR_NAV_ITEMS: tuple[NavItem, ...] = (
+    NavItem(key="dashboard", href="/cabinet/curator", label="Кабинет", icon="🏠"),
     NavItem(key="students", href="/cabinet/students", label="Ученики", icon="👥"),
     NavItem(key="cycles", href="/cabinet/staff/cycles", label="Цикл Пробника", icon="🔁"),
     NavItem(key="reports", href="/cabinet/curator/reports", label="Отчёты", icon="🎬"),
@@ -136,6 +137,16 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         aria_label="Цикл Пробника",
         tooltip="Цикл Пробника",
         icon="cycle",
+    ),
+    StaffNavItem(
+        key="cases",
+        href="/cabinet/cases",
+        sidebar_label="Кейсы",
+        pill_label="Кейсы",
+        aria_label="Кейсы",
+        tooltip="Кейсы по пробникам",
+        icon="cases",
+        min_rank=4,
     ),
     StaffNavItem(
         key="3dlab",

@@ -21,6 +21,8 @@ from sqlalchemy.orm import Session as DBSession, aliased
 from app.config import settings
 from app.constants import (
     MOCK_SUBJECTS,
+    ASSIGNMENT_KINDS,
+    ASSIGNMENT_KIND_LABELS,
     FEATURE_LABELS,
     FEATURE_PORTFOLIO_UPLOAD,
     FEATURE_MOCK_EXAM,
@@ -30,6 +32,7 @@ from app.constants import (
     STUDY_MODE_LABELS,
     EXAM_SUBJECT_HINTS,
     COHORT_TAGS,
+    COHORT_TAG_LABELS,
 )
 from app.cache import invalidate_session as _invalidate_session_cache
 from app.db.database import get_db
@@ -520,23 +523,83 @@ def _load_student_list(db: DBSession) -> list[dict]:
     if not student_role:
         return []
     students = (
-        db.query(User.id, User.first_name, User.last_name, User.name, User.tg_username)
+        db.query(
+            User.id, User.first_name, User.last_name, User.name, User.tg_username,
+            User.curator_id, User.tariff, User.cohort_tag, User.study_mode,
+        )
         .filter(User.role_id == student_role.id, User.is_active == True)
         .order_by(User.last_name, User.first_name)
         .all()
     )
+    # Теги учеников (M2M) одним запросом — для конструктора подбора получателей.
+    tags_by_user: dict[int, list[int]] = {}
+    student_ids = [s.id for s in students]
+    if student_ids:
+        for uid, tid in (
+            db.query(UserTag.user_id, UserTag.tag_id)
+            .filter(UserTag.user_id.in_(student_ids))
+            .all()
+        ):
+            tags_by_user.setdefault(uid, []).append(tid)
     return [
         {
             "id": s.id,
             "name": f"{s.last_name or ''} {s.first_name or s.name}".strip(),
             "username": (s.tg_username or "").strip().lstrip("@"),
+            "curator_id": s.curator_id,
+            "tariff": s.tariff or "",
+            "cohort_tag": s.cohort_tag or "",
+            "study_mode": s.study_mode or "",
+            "tag_ids": tags_by_user.get(s.id, []),
         }
         for s in students
     ]
 
 
+def _load_curator_list(db: DBSession) -> list[dict]:
+    """Активные кураторы (rank=2) для фильтра подбора получателей."""
+    curator_role = db.query(Role).filter(Role.rank == 2).first()
+    if not curator_role:
+        return []
+    curators = (
+        db.query(User.id, User.first_name, User.last_name, User.name)
+        .filter(User.role_id == curator_role.id, User.is_active == True)
+        .order_by(User.last_name, User.first_name)
+        .all()
+    )
+    return [
+        {"id": c.id, "name": f"{c.last_name or ''} {c.first_name or c.name}".strip()}
+        for c in curators
+    ]
+
+
 def _load_tag_list(db: DBSession) -> list[dict]:
     return [{"id": tag.id, "name": tag.name} for tag in get_all_tags(db)]
+
+
+def _next_seq_number(db: DBSession, kind: str, subject: str) -> int:
+    """Сквозной порядковый номер задания в пределах (kind, subject): MAX+1.
+
+    Монотонный: удалённые номера не переиспользуются. Считается только при create.
+    """
+    current = (
+        db.query(func.max(ExamAssignment.seq_number))
+        .filter(ExamAssignment.kind == kind, ExamAssignment.subject == subject)
+        .scalar()
+    )
+    return (current or 0) + 1
+
+
+def _compose_assignment_title(
+    kind: str, seq: int | None, subject: str, created: date, note: str | None
+) -> str:
+    """Авто-название: «Пробник №5 · Рисунок · 22.06.2026 · примечание»."""
+    label = ASSIGNMENT_KIND_LABELS.get(kind, ASSIGNMENT_KIND_LABELS["mock"])
+    head = f"{label} №{seq}" if seq else label
+    parts = [head, subject, created.strftime("%d.%m.%Y")]
+    if note:
+        parts.append(note)
+    return " · ".join(parts)
 
 
 def _default_ticket_schedule() -> dict:
@@ -589,8 +652,13 @@ def exam_assignment_create_form(
         "request": request,
         "user": user,
         "subjects": MOCK_SUBJECTS,
+        "kind_labels": ASSIGNMENT_KIND_LABELS,
         "student_list": _load_student_list(db),
         "tag_list": _load_tag_list(db),
+        "curator_list": _load_curator_list(db),
+        "tariffs": TARIFFS,
+        "cohort_labels": COHORT_TAG_LABELS,
+        "study_mode_labels": STUDY_MODE_LABELS,
         "default_schedule": _default_ticket_schedule(),
         "is_edit": False,
     })
@@ -644,16 +712,27 @@ def exam_assignment_edit_form(
         for t in tickets
     ]
 
+    assignment_date = (
+        assignment.created_at.astimezone(MSK_TZ).date()
+        if assignment.created_at else today_msk()
+    )
+
     import json as _json
     return templates.TemplateResponse("superadmin_exam_assignment_form.html", {
         "request": request,
         "user": user,
         "subjects": MOCK_SUBJECTS,
+        "kind_labels": ASSIGNMENT_KIND_LABELS,
         "student_list": _load_student_list(db),
         "tag_list": _load_tag_list(db),
+        "curator_list": _load_curator_list(db),
+        "tariffs": TARIFFS,
+        "cohort_labels": COHORT_TAG_LABELS,
+        "study_mode_labels": STUDY_MODE_LABELS,
         "default_schedule": _default_ticket_schedule(),
         "is_edit": True,
         "assignment": assignment,
+        "assignment_date_str": assignment_date.strftime("%d.%m.%Y"),
         "existing_tickets_json": _json.dumps(existing_tickets, ensure_ascii=False),
     })
 
@@ -698,19 +777,27 @@ async def exam_assignment_create_submit(
 ):
     form = await request.form()
 
-    title = str(form.get("title", "")).strip()
+    kind = str(form.get("kind", "mock")).strip()
     subject = str(form.get("subject", "")).strip()
+    note = str(form.get("note", "")).strip() or None
     ticket_count = int(form.get("ticket_count", 1) or 1)
     ticket_count = max(1, min(10, ticket_count))
 
-    if not title:
-        raise HTTPException(status_code=422, detail="Название задания обязательно")
+    if kind not in ASSIGNMENT_KINDS:
+        raise HTTPException(status_code=422, detail="Неверный тип задания")
     if subject not in MOCK_SUBJECTS:
         raise HTTPException(status_code=422, detail="Неверный предмет")
+
+    # Авто-номер (сквозной по kind+subject) и авто-название с датой создания.
+    seq_number = _next_seq_number(db, kind, subject)
+    title = _compose_assignment_title(kind, seq_number, subject, today_msk(), note)
 
     assignment = ExamAssignment(
         title=title,
         subject=subject,
+        kind=kind,
+        seq_number=seq_number,
+        note=note,
         created_by_id=user["user_id"],
         status="published",
     )
@@ -913,19 +1000,29 @@ async def exam_assignment_edit_submit(
         raise HTTPException(status_code=404, detail="Задание не найдено")
 
     form = await request.form()
-    title = str(form.get("title", "")).strip()
+    kind = str(form.get("kind", "mock")).strip()
     subject = str(form.get("subject", "")).strip()
+    note = str(form.get("note", "")).strip() or None
     ticket_count = int(form.get("ticket_count", 1) or 1)
     ticket_count = max(1, min(10, ticket_count))
 
-    if not title:
-        raise HTTPException(status_code=422, detail="Название задания обязательно")
+    if kind not in ASSIGNMENT_KINDS:
+        raise HTTPException(status_code=422, detail="Неверный тип задания")
     if subject not in MOCK_SUBJECTS:
         raise HTTPException(status_code=422, detail="Неверный предмет")
 
-    # Обновляем метаданные задания
-    assignment.title = title
+    # Обновляем метаданные задания. seq_number НЕ пересчитываем (монотонный, присвоен
+    # при создании); название пересобираем с исходной датой создания.
+    created_date = (
+        assignment.created_at.astimezone(MSK_TZ).date()
+        if assignment.created_at else today_msk()
+    )
+    assignment.kind = kind
     assignment.subject = subject
+    assignment.note = note
+    assignment.title = _compose_assignment_title(
+        kind, assignment.seq_number, subject, created_date, note
+    )
 
     # Full-replace тикетов: удаляем старые assignees + tickets, затем создаём из формы.
     # Notification history (notified_at) теряется — это допустимо при редактировании.

@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session as DBSession
 
+from app.cache import invalidate_unread
 from app.constants import MONTHS, MOCK_SUBJECTS, FEATURE_RETAKE
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
@@ -36,12 +37,17 @@ from app.models.work import (
 )
 from app.services import s3 as s3_service
 from app.services.exam_cycle import (
+    MAX_INTERMEDIATE_PER_FINAL,
     close_or_expire_mock_exam_attempts,
+    count_cycle_intermediates,
+    cycle_submission_state,
     find_latest_cycle,
-    get_active_ticket,
+    get_active_tickets,
+    get_unsubmitted_active_tickets,
     get_or_create_cycle_for_probnik,
     has_closed_cycle_for_ticket,
     has_submitted_for_ticket,
+    intermediate_upload_state,
     next_attempt_number,
 )
 from app.services.feature_periods import is_feature_available
@@ -63,7 +69,6 @@ router = APIRouter()
 
 MAX_SIZE = MAX_UPLOAD_FILE_SIZE
 MAX_FILES = MAX_UPLOAD_FILES
-MAX_INTERMEDIATE_PER_FINAL = 10
 
 
 async def _read_photos(photos: list[UploadFile], *, max_files: int) -> tuple[list[tuple[str, bytes]], str | None]:
@@ -267,6 +272,27 @@ def _get_open_mock_attempt(
     return None
 
 
+def _get_ticket_with_open_mock_attempt(
+    db: DBSession, *, user_id: int, subject: str
+) -> tuple[ExamTicket | None, MockExamAttempt | None]:
+    for ticket in get_unsubmitted_active_tickets(db, user_id, subject):
+        attempt = _get_open_mock_attempt(
+            db, user_id=user_id, subject=subject, ticket=ticket
+        )
+        if attempt is not None:
+            return ticket, attempt
+    return None, None
+
+
+def _submitted_current_ticket(
+    db: DBSession, *, user_id: int, subject: str
+) -> ExamTicket | None:
+    for ticket in get_active_tickets(db, user_id, subject):
+        if has_submitted_for_ticket(db, user_id, subject, ticket.id):
+            return ticket
+    return None
+
+
 # ── POST /upload/probnik/final ───────────────────────────────────────────────
 
 @router.post("/upload/probnik/final")
@@ -280,25 +306,40 @@ async def upload_probnik_final(
     if subject not in MOCK_SUBJECTS:
         return JSONResponse({"success": False, "error": "Выберите предмет"}, status_code=422)
 
-    ticket = get_active_ticket(db, user["user_id"], subject)
-    if not ticket:
+    active_tickets = get_active_tickets(db, user["user_id"], subject)
+    if not active_tickets:
         return JSONResponse({"success": False, "error": "Сдача пробника сейчас недоступна"}, status_code=404)
+    available_tickets = get_unsubmitted_active_tickets(db, user["user_id"], subject)
 
-    # Блок повторной сдачи только когда цикл по этому билету ЗАКРЫТ (оценён). Пока
-    # цикл открыт — ученик может свободно перезаливать работу (итеративно: загрузка
-    # → балл → перезагрузка → ОС → ...); существующий финал перезаписывается ниже
-    # (_overwrite_final). Новый билет (новый ticket_id) → цикла ещё нет → сдача с нуля.
-    if has_closed_cycle_for_ticket(db, user["user_id"], subject, ticket.id):
+    # Блок повторной сдачи: как только по этому билету сдан финал — пробник закрыт и
+    # ученик НЕ может перезаливать работу по своей воле (по запросу владельца,
+    # 2026-06-21). Закрыто до выдачи СЛЕДУЮЩЕГО билета (нового ticket_id). Единственное
+    # исключение — staff явно вернул работу «на доработку» (needs_revision=True):
+    # has_submitted_for_ticket такой финал за сдачу НЕ считает, поэтому redo-загрузка
+    # проходит и перезаписывает финал ниже (_overwrite_final). Сообщение различает
+    # закрытый цикл (оценён) и открытый (ждёт ОС).
+    if not available_tickets:
+        submitted_ticket = _submitted_current_ticket(
+            db, user_id=user["user_id"], subject=subject
+        )
+        if submitted_ticket is None:
+            submitted_ticket = active_tickets[0]
+        ticket = submitted_ticket
+        closed = has_closed_cycle_for_ticket(db, user["user_id"], subject, ticket.id)
         return JSONResponse(
-            {"success": False, "error": "пробник по этому билету уже оценён и закрыт"},
+            {
+                "success": False,
+                "error": "пробник по этому билету уже оценён и закрыт" if closed
+                else "работа сдана, ждите обратной связи",
+            },
             status_code=409,
         )
-    # Таймер «Начать пробник» гейтит только ПЕРВУЮ сдачу. Перезалив в открытый цикл
-    # (финал уже сдан) — свободный, без требования открытой таймерной попытки.
-    is_resubmit = has_submitted_for_ticket(db, user["user_id"], subject, ticket.id)
-    if not is_resubmit and not _get_open_mock_attempt(
-        db, user_id=user["user_id"], subject=subject, ticket=ticket
-    ):
+    # Таймер «Начать пробник» гейтит сдачу: без открытой попытки финал не принимается
+    # (перезалив без revision больше не разрешён, поэтому исключений нет).
+    ticket, open_attempt = _get_ticket_with_open_mock_attempt(
+        db, user_id=user["user_id"], subject=subject
+    )
+    if ticket is None or open_attempt is None:
         return JSONResponse(
             {
                 "success": False,
@@ -372,6 +413,25 @@ async def upload_probnik_final(
                 Work.parent_work_id.is_(None),
             ).update({"parent_work_id": final_id}, synchronize_session=False)
 
+        submission_state = cycle_submission_state(
+            db,
+            cycle_id=cycle.id,
+            work_type=WORK_TYPE_MOCK_EXAM,
+        )
+        if not submission_state["verified"]:
+            db.commit()
+            return JSONResponse({
+                "success": False,
+                "created": success,
+                "failed": fail,
+                "cycle_id": cycle.id,
+                "cycle_created": created,
+                "attempt_number": attempt,
+                "work_ids": created_ids,
+                "error": "Финальное фото не подтверждено в базе. Проверьте соединение и попробуйте отправить ещё раз.",
+                **submission_state,
+            }, status_code=500)
+
         # Перезалив: оповестить вовлечённый staff о новом фото (балл сброшен →
         # нужна повторная проверка). На первой сдаче recipients пуст → тихо.
         if resubmit_recipients and final_id:
@@ -382,6 +442,7 @@ async def upload_probnik_final(
                     text=f"{user['name']} загрузил новое фото пробника по «{subject}» — нужна повторная проверка.",
                     work_id=final_id,
                 ))
+                invalidate_unread(rid)
 
         # Lock: блокируем повторную загрузку до закрытия цикла куратором
         lock = db.query(MockExamLock).filter(
@@ -404,9 +465,15 @@ async def upload_probnik_final(
         # (старых) билетов этого предмета — устаревшие снимки, помечаем expired_at.
         close_or_expire_mock_exam_attempts(db, user["user_id"], subject, ticket.id)
         db.commit()
+    else:
+        submission_state = cycle_submission_state(
+            db,
+            cycle_id=cycle.id,
+            work_type=WORK_TYPE_MOCK_EXAM,
+        )
 
     return JSONResponse({
-        "success": success > 0,
+        "success": success > 0 and bool(submission_state["verified"]),
         "created": success,
         "failed": fail,
         "cycle_id": cycle.id,
@@ -414,6 +481,7 @@ async def upload_probnik_final(
         "attempt_number": attempt,
         "work_ids": created_ids,
         "error": last_error if fail and not success else None,
+        **submission_state,
     })
 
 
@@ -430,20 +498,34 @@ async def upload_probnik_intermediate(
     if subject not in MOCK_SUBJECTS:
         return JSONResponse({"success": False, "error": "Выберите предмет"}, status_code=422)
 
-    ticket = get_active_ticket(db, user["user_id"], subject)
-    if not ticket:
+    active_tickets = get_active_tickets(db, user["user_id"], subject)
+    if not active_tickets:
         return JSONResponse({"success": False, "error": "Сдача пробника сейчас недоступна"}, status_code=404)
-    # Блок только при закрытом цикле; пока открыт — этапные можно докидывать (в т.ч.
-    # к перезаливаемому финалу). Таймер гейтит лишь первую сдачу (см. final-роут).
-    if has_closed_cycle_for_ticket(db, user["user_id"], subject, ticket.id):
+    available_tickets = get_unsubmitted_active_tickets(db, user["user_id"], subject)
+    # Этапные привязаны к той же сдаче, что и финал: как только по билету сдан финал,
+    # докидывать фото нельзя (перезалив закрыт — см. final-роут). В нормальном потоке
+    # этапные грузятся ДО финального (has_submitted_for_ticket ещё False), поэтому
+    # первая сдача не страдает; исключение — redo после «на доработку» (needs_revision).
+    if not available_tickets:
+        submitted_ticket = _submitted_current_ticket(
+            db, user_id=user["user_id"], subject=subject
+        )
+        if submitted_ticket is None:
+            submitted_ticket = active_tickets[0]
+        ticket = submitted_ticket
+        closed = has_closed_cycle_for_ticket(db, user["user_id"], subject, ticket.id)
         return JSONResponse(
-            {"success": False, "error": "пробник по этому билету уже оценён и закрыт"},
+            {
+                "success": False,
+                "error": "пробник по этому билету уже оценён и закрыт" if closed
+                else "работа сдана, ждите обратной связи",
+            },
             status_code=409,
         )
-    is_resubmit = has_submitted_for_ticket(db, user["user_id"], subject, ticket.id)
-    if not is_resubmit and not _get_open_mock_attempt(
-        db, user_id=user["user_id"], subject=subject, ticket=ticket
-    ):
+    ticket, open_attempt = _get_ticket_with_open_mock_attempt(
+        db, user_id=user["user_id"], subject=subject
+    )
+    if ticket is None or open_attempt is None:
         return JSONResponse(
             {
                 "success": False,
@@ -458,21 +540,33 @@ async def upload_probnik_intermediate(
     attempt_number = next_attempt_number(db, cycle_id=cycle.id, work_type=WORK_TYPE_MOCK_EXAM)
 
     existing = (
-        db.query(Work)
-        .filter(
-            Work.cycle_id == cycle.id,
-            Work.work_type == WORK_TYPE_MOCK_EXAM,
-            Work.is_final == False,  # noqa: E712
+        count_cycle_intermediates(
+            db,
+            cycle_id=cycle.id,
+            work_type=WORK_TYPE_MOCK_EXAM,
         )
-        .count()
     )
+    upload_state = intermediate_upload_state(existing)
     if existing >= MAX_INTERMEDIATE_PER_FINAL:
-        return JSONResponse({"success": False, "error": f"Максимум {MAX_INTERMEDIATE_PER_FINAL} промежуточных на финальную"}, status_code=422)
+        return JSONResponse({
+            "success": False,
+            "error": f"Лимит этапных фото исчерпан: уже загружено {existing} из {MAX_INTERMEDIATE_PER_FINAL}",
+            **upload_state,
+        }, status_code=422)
 
-    max_files = MAX_INTERMEDIATE_PER_FINAL - existing
+    max_files = upload_state["remaining"]
+    if len(photos) > max_files:
+        return JSONResponse({
+            "success": False,
+            "error": (
+                f"Можно добавить ещё {max_files} этапных фото: "
+                f"уже загружено {existing} из {MAX_INTERMEDIATE_PER_FINAL}"
+            ),
+            **upload_state,
+        }, status_code=422)
     files, err = await _read_photos(photos, max_files=max_files)
     if err:
-        return JSONResponse({"success": False, "error": err}, status_code=422)
+        return JSONResponse({"success": False, "error": err, **upload_state}, status_code=422)
 
     now = datetime.now(timezone.utc)
     month = MONTHS[now.month - 1]
@@ -490,6 +584,13 @@ async def upload_probnik_intermediate(
         parent_work_id=None, subject=subject, student_score=None,
         s3_path_builder=_path, month=month, year=now.year,
     )
+    upload_state = intermediate_upload_state(
+        count_cycle_intermediates(
+            db,
+            cycle_id=cycle.id,
+            work_type=WORK_TYPE_MOCK_EXAM,
+        )
+    )
 
     return JSONResponse({
         "success": success > 0,
@@ -497,6 +598,7 @@ async def upload_probnik_intermediate(
         "failed": fail,
         "work_ids": created_ids,
         "error": last_error if fail and not success else None,
+        **upload_state,
     })
 
 

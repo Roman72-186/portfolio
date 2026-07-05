@@ -1,6 +1,6 @@
 from datetime import datetime, date, timezone
 
-from sqlalchemy import Integer, String, Date, DateTime, ForeignKey, Index
+from sqlalchemy import Integer, String, Date, DateTime, ForeignKey, Index, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -28,5 +28,5 @@ class ExamCycle(Base):
     )
 
     __table_args__ = (
-        Index("ix_exam_cycles_user_subject_started", "user_id", "subject", "started_at"),
+        Index("ix_exam_cycles_user_subject_started", "user_id", "subject", text("started_at DESC")),
     )

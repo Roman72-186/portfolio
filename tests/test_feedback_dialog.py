@@ -27,7 +27,7 @@ def _mk_cycle(db, user_id, subject="Drawing", closed=False):
     return c
 
 
-def _mk_final_work(db, user_id, cycle_id, *, score=None, attempt=1):
+def _mk_final_work(db, user_id, cycle_id, *, score=None, attempt=1, needs_revision=False):
     w = Work(
         user_id=user_id,
         work_type=WORK_TYPE_MOCK_EXAM,
@@ -35,10 +35,12 @@ def _mk_final_work(db, user_id, cycle_id, *, score=None, attempt=1):
         filename=f"final-{attempt}.jpg",
         subject="Drawing",
         status="success",
+        s3_url=f"https://example.test/final-{attempt}.jpg",
         is_final=True,
         cycle_id=cycle_id,
         attempt_number=attempt,
         score=score,
+        needs_revision=needs_revision,
     )
     db.add(w)
     db.commit()
@@ -75,6 +77,14 @@ def test_close_cycle_scored_final_mock_closes_cycle(db, regular_user):
 def test_close_cycle_unscored_does_nothing(db, regular_user):
     cycle = _mk_cycle(db, regular_user.id)
     _mk_final_work(db, regular_user.id, cycle.id, score=None)
+    assert close_cycle(db, cycle) is False
+    db.refresh(cycle)
+    assert cycle.closed_at is None
+
+
+def test_close_cycle_revision_final_does_not_close(db, regular_user):
+    cycle = _mk_cycle(db, regular_user.id)
+    _mk_final_work(db, regular_user.id, cycle.id, score=82, needs_revision=True)
     assert close_cycle(db, cycle) is False
     db.refresh(cycle)
     assert cycle.closed_at is None
@@ -376,6 +386,60 @@ def test_feedback_photo_must_fit_stored_limit_after_compression(
     upload.assert_not_called()
 
 
+def test_feedback_video_uploaded_without_compression(
+    client, db, user_factory, session_factory
+):
+    curator = user_factory(vk_id=951001, name="Curator", role_name="куратор")
+    student = user_factory(vk_id=951002, name="Student", role_name="ученик")
+    student.curator_id = curator.id
+    db.add(student)
+    db.commit()
+    cycle = _mk_cycle(db, student.id)
+    work = _mk_final_work(db, student.id, cycle.id)
+    session = session_factory(curator)
+    client.cookies.set("session_id", session.id)
+
+    source = b"\x00\x01\x02" * 1000
+    with (
+        patch.object(feedback_service, "compress_image") as compress,
+        patch.object(
+            feedback_service.s3_service,
+            "upload_to_s3",
+            return_value="https://s3.example.com/feedback/clip.mp4",
+        ) as upload,
+    ):
+        resp = client.post(
+            f"/cabinet/feedback/{work.id}/message",
+            files={"video": ("razbor.mp4", source, "video/mp4")},
+            headers={"Accept": "application/json"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["message"]["video_s3_url"] == "https://s3.example.com/feedback/clip.mp4"
+    # видео не сжимается и уходит как есть
+    compress.assert_not_called()
+    assert upload.call_args.args[1] == source
+
+
+def test_feedback_video_bad_format_rejected(
+    client, admin_user, regular_user, session_factory, db
+):
+    cycle = _mk_cycle(db, regular_user.id)
+    work = _mk_final_work(db, regular_user.id, cycle.id)
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+
+    with patch.object(feedback_service.s3_service, "upload_to_s3") as upload:
+        resp = client.post(
+            f"/cabinet/feedback/{work.id}/message",
+            files={"video": ("notes.txt", b"hello", "text/plain")},
+            headers={"Accept": "application/json"},
+        )
+
+    assert resp.status_code == 422
+    upload.assert_not_called()
+
+
 def test_student_cannot_message_in_closed_cycle(
     client, admin_user, regular_user, session_factory, db
 ):
@@ -463,6 +527,46 @@ def test_curator_cannot_post_feedback_for_foreign_student(
 
     assert resp.status_code == 403
     assert resp.json()["detail"] == "Это не ваш студент"
+
+
+@pytest.mark.parametrize(
+    "role_name,should_allow",
+    [
+        ("куратор", True),
+        ("модератор", False),
+        ("админ", True),
+        ("суперадмин", True),
+    ],
+)
+def test_feedback_write_gate_matches_permission_table_by_rank(
+    client, db, user_factory, session_factory, role_name, should_allow
+):
+    """Locks in current feedback.py:313 allow/deny per role before migrating the
+    permission check to a rank-equivalent (моderator must stay denied — it has
+    no `feedback.write` in ROLE_PERMISSIONS despite role_from_rank mapping it
+    to the same sender_role as curator)."""
+    actor = user_factory(vk_id=940001, name="Actor", role_name=role_name)
+    student = user_factory(vk_id=940002, name="Student", role_name="ученик")
+    if role_name == "куратор":
+        student.curator_id = actor.id
+        db.add(student)
+        db.commit()
+    cycle = _mk_cycle(db, student.id)
+    work = _mk_final_work(db, student.id, cycle.id)
+
+    sess = session_factory(actor)
+    client.cookies.set("session_id", sess.id)
+    resp = client.post(
+        f"/cabinet/feedback/{work.id}/message",
+        data={"text": "test message"},
+        headers={"Accept": "application/json"},
+    )
+
+    if should_allow:
+        assert resp.status_code == 200, resp.text
+    else:
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "Нет прав на запись feedback"
 
 
 # ── Единое окно диалога на цикл (редизайн 2026-06-02) ─────────────────────────

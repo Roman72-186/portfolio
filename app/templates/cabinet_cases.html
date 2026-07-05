@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Кейсы по пробникам{% endblock %}
+{% block extra_styles %}
+<style>
+.cases-wrap { max-width: 1100px; margin: 0 auto; padding: 24px 18px 110px; }
+.cases-head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; margin-bottom: 16px; }
+.cases-title { font-family: var(--font-display); font-size: 24px; font-weight: 900; color: var(--text); margin: 0; }
+.cases-meta { font-size: 13px; color: var(--muted); font-weight: 700; }
+.cases-filters {
+    display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-md); padding: 14px 16px; margin-bottom: 14px;
+}
+.cases-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 800; color: var(--dim); }
+.cases-filters input, .cases-filters select {
+    height: 38px; min-width: 160px; box-sizing: border-box;
+    border: 1.5px solid var(--line); border-radius: 9px;
+    background: var(--bg); color: var(--text); font: inherit; font-size: 13px;
+    padding: 8px 10px; outline: none;
+}
+.cases-filters input:focus, .cases-filters select:focus { border-color: var(--blue); }
+.cases-btn {
+    height: 38px; padding: 0 16px; border: none; border-radius: 9px;
+    background: var(--blue); color: #fff; font: inherit; font-size: 13px;
+    font-weight: 800; cursor: pointer;
+}
+.cases-clear { height: 38px; display: inline-flex; align-items: center; color: var(--muted); font-size: 13px; font-weight: 700; text-decoration: none; }
+.cases-clear:hover { color: var(--blue); }
+.cases-note { font-size: 12px; color: var(--muted); margin: -4px 0 14px; }
+.cases-alert {
+    padding: 12px 14px; border-radius: var(--r-md);
+    background: rgba(220,38,38,0.08); color: #B91C1C;
+    font-size: 13px; font-weight: 700; margin-bottom: 14px;
+}
+.cases-empty {
+    padding: 28px 22px; border: 1px dashed var(--line);
+    border-radius: var(--r-md); color: var(--muted); text-align: center;
+    background: var(--surface);
+}
+.cases-table-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+.cases-table { width: 100%; border-collapse: collapse; }
+.cases-table th {
+    text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line);
+    background: var(--bg); color: var(--dim); font-size: 11px;
+    font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.cases-table td { padding: 12px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--text); vertical-align: middle; }
+.cases-table tr:last-child td { border-bottom: none; }
+.case-student { color: var(--blue); font-weight: 800; text-decoration: none; }
+.case-student:hover { text-decoration: underline; }
+.case-muted { color: var(--muted); font-size: 12px; }
+.case-subject { display: inline-flex; padding: 3px 9px; border-radius: var(--r-pill); background: rgba(59,130,246,0.12); color: var(--blue); font-weight: 800; }
+.case-score { font-size: 18px; font-weight: 900; color: var(--text); white-space: nowrap; }
+.case-growth { display: inline-flex; padding: 4px 10px; border-radius: var(--r-pill); background: rgba(34,197,94,0.14); color: #15803D; font-weight: 900; white-space: nowrap; }
+.case-work-links { display: flex; gap: 8px; flex-wrap: wrap; }
+.case-work-link {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 52px; height: 30px; padding: 0 10px; border: 1px solid var(--line);
+    border-radius: 8px; color: var(--text); text-decoration: none; font-weight: 800; font-size: 12px;
+}
+.case-work-link:hover { border-color: var(--blue); color: var(--blue); }
+@media (max-width: 820px) {
+    .cases-head { flex-direction: column; align-items: flex-start; }
+    .cases-table-wrap { border: none; background: transparent; }
+    .cases-table, .cases-table tbody, .cases-table tr, .cases-table td { display: block; width: 100%; }
+    .cases-table thead { display: none; }
+    .cases-table tr { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 10px; overflow: hidden; }
+    .cases-table td { display: flex; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--line); box-sizing: border-box; }
+    .cases-table td::before { content: attr(data-label); color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="cases-wrap">
+    <div class="cases-head">
+        <h1 class="cases-title">Кейсы по пробникам</h1>
+        <span class="cases-meta">Найдено: {{ total_cases }}</span>
+    </div>
+
+    <form method="get" action="/cabinet/cases" class="cases-filters">
+        <label>
+            С даты
+            <input type="date" name="start_date" value="{{ start_date }}">
+        </label>
+        <label>
+            По дату
+            <input type="date" name="end_date" value="{{ end_date }}">
+        </label>
+        <label>
+            Предмет
+            <select name="subject">
+                <option value="">Все предметы</option>
+                {% for item in mock_subjects %}
+                <option value="{{ item }}" {% if subject == item %}selected{% endif %}>{{ item }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <button type="submit" class="cases-btn">Показать</button>
+        <a href="/cabinet/cases" class="cases-clear">Сбросить</a>
+    </form>
+
+    <div class="cases-note">
+        Кейс считается автоматически: новый проверенный пробник вырос на {{ threshold }}+ баллов относительно предыдущего проверенного пробника по тому же предмету. Период применяется к новой работе в паре.
+    </div>
+
+    {% if page_error %}
+    <div class="cases-alert">{{ page_error }}</div>
+    {% endif %}
+
+    {% if not cases %}
+        <div class="cases-empty">Кейсов по выбранным фильтрам пока нет.</div>
+    {% else %}
+        <div class="cases-table-wrap">
+            <table class="cases-table">
+                <thead>
+                    <tr>
+                        <th>Ученик</th>
+                        <th>Предмет</th>
+                        <th>Было</th>
+                        <th>Стало</th>
+                        <th>Рост</th>
+                        <th>Работы</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for c in cases %}
+                    <tr>
+                        <td data-label="Ученик">
+                            <div>
+                                <a class="case-student" href="/cabinet/students?student={{ c.student_id }}&tab=mock-exams">{{ c.student_name }}</a>
+                                <div class="case-muted">
+                                    {% if c.tg_username %}@{{ c.tg_username }} · {% endif %}{{ c.tariff or '—' }}
+                                </div>
+                            </div>
+                        </td>
+                        <td data-label="Предмет"><span class="case-subject">{{ c.subject }}</span></td>
+                        <td data-label="Было">
+                            <div>
+                                <div class="case-score">{{ c.previous_score|round|int }}</div>
+                                <div class="case-muted">{{ c.previous_date.strftime('%d.%m.%Y') if c.previous_date else '—' }}</div>
+                            </div>
+                        </td>
+                        <td data-label="Стало">
+                            <div>
+                                <div class="case-score">{{ c.current_score|round|int }}</div>
+                                <div class="case-muted">{{ c.current_date.strftime('%d.%m.%Y') if c.current_date else '—' }}</div>
+                            </div>
+                        </td>
+                        <td data-label="Рост"><span class="case-growth">+{{ c.growth|round|int }}</span></td>
+                        <td data-label="Работы">
+                            <div class="case-work-links">
+                                {% if c.previous_s3_url %}
+                                <a class="case-work-link" href="{{ c.previous_s3_url }}" target="_blank" rel="noopener">До</a>
+                                {% else %}
+                                <span class="case-muted">{{ c.previous_filename }}</span>
+                                {% endif %}
+                                {% if c.current_s3_url %}
+                                <a class="case-work-link" href="{{ c.current_s3_url }}" target="_blank" rel="noopener">После</a>
+                                {% else %}
+                                <span class="case-muted">{{ c.current_filename }}</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -842,13 +842,7 @@
 .profile-edit-actions {
     display: flex; gap: 10px; margin-top: 16px; grid-column: 1 / -1;
 }
-.profile-save-btn {
-    padding: 9px 24px; border: none; border-radius: var(--r-sm);
-    background: var(--blue); color: #fff;
-    font-size: 14px; font-weight: 700; cursor: pointer;
-    font-family: inherit;
-}
-.profile-save-btn:hover { opacity: 0.85; }
+.profile-save-btn { padding: 9px 24px; border-radius: var(--r-sm); font-size: 14px; }
 .profile-cancel-btn {
     padding: 9px 24px; border: 1.5px solid var(--line); border-radius: var(--r-sm);
     background: none; color: var(--muted);
@@ -2693,6 +2687,14 @@ function copyNotSubmittedUsernames(btn) {
 
 var _activeTariff = '';
 
+function normalizeStudentSearch(value) {
+    var normalized = String(value || '');
+    // NFKC сглаживает различия между визуально одинаковыми символами,
+    // а схлопывание пробелов защищает поиск от автоподстановки мобильной клавиатуры.
+    if (typeof normalized.normalize === 'function') normalized = normalized.normalize('NFKC');
+    return normalized.toLowerCase().replace(/ё/g, 'е').trim().replace(/\s+/g, ' ');
+}
+
 function selectTariff(btn) {
     document.querySelectorAll('.tariff-pill').forEach(function(p) { p.classList.remove('active'); });
     btn.classList.add('active');
@@ -2701,16 +2703,22 @@ function selectTariff(btn) {
 }
 
 function filterSidebar() {
-    var q = (document.getElementById('student-search').value || '').toLowerCase();
+    var q = normalizeStudentSearch(document.getElementById('student-search').value);
     var curator = (document.getElementById('filter-curator') || {}).value || '';
     var year = (document.getElementById('filter-year') || {}).value || '';
-    var qClean = q.replace(/^@/, '');
+    var queryTokens = q.split(' ').map(function(token) {
+        return token.replace(/^@/, '');
+    }).filter(Boolean);
 
     document.querySelectorAll('.student-row').forEach(function(row) {
-        var name   = row.querySelector('.student-row-name').textContent.toLowerCase();
-        var tgUser = (row.dataset.tgUsername || '').toLowerCase();
-        var vkId   = (row.dataset.vkId || '').toLowerCase();
-        var matchQ = !q || name.includes(q) || (qClean && tgUser.includes(qClean)) || vkId.includes(qClean);
+        var searchable = normalizeStudentSearch([
+            row.querySelector('.student-row-name').textContent,
+            row.dataset.tgUsername || '',
+            row.dataset.vkId || ''
+        ].join(' '));
+        var matchQ = queryTokens.every(function(token) {
+            return searchable.includes(token);
+        });
         var matchT = !_activeTariff || row.dataset.tariff === _activeTariff;
         var matchC = !curator || row.dataset.curator === curator;
         var matchY = !year    || row.dataset.year === year;
@@ -2760,7 +2768,7 @@ function startEditProfile() {
         }).join('')
         + '</select></div>';
     html += '<div class="profile-edit-actions">'
-        + '<button class="profile-save-btn" onclick="saveProfile()">Сохранить</button>'
+        + '<button class="btn-blue profile-save-btn" onclick="saveProfile()">Сохранить</button>'
         + '<button class="profile-cancel-btn" onclick="cancelEditProfile()">Отмена</button>'
         + '</div>';
     html += '</div></div>';

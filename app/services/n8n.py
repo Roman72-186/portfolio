@@ -72,6 +72,9 @@ async def send_photo_to_n8n(
         headers = {}
         if settings.n8n_webhook_secret:
             headers["X-Webhook-Secret"] = settings.n8n_webhook_secret
+        # Без request_with_retry: caller (_send_to_n8n_background в upload.py) уже
+        # оборачивает этот вызов в свой retry (3 попытки, 5с/15с бэкофф) —
+        # дублирование ретраев на двух слоях только копит задержку при сбое n8n.
         resp = await client.post(settings.n8n_webhook_upload, json=payload, headers=headers)
         resp.raise_for_status()
         result = resp.json()

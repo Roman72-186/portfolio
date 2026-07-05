@@ -10,7 +10,6 @@ from app.config import settings
 
 log = logging.getLogger(__name__)
 
-SESSION_TTL = 300  # 5 minutes
 VK_PKCE_TTL = 300  # 5 minutes
 
 
@@ -37,48 +36,6 @@ try:
 except Exception:
     log.warning("Redis unavailable — session caching disabled")
     _client = None
-
-
-def _serialize(user: dict) -> str:
-    data = {**user}
-    data["permissions"] = list(data.get("permissions") or [])
-    for key in ("last_vk_check_at", "enrolled_at", "created_at"):
-        v = data.get(key)
-        if isinstance(v, datetime):
-            data[key] = v.isoformat()
-    return json.dumps(data)
-
-
-def _deserialize(raw: str) -> dict:
-    data = json.loads(raw)
-    data["permissions"] = set(data.get("permissions") or [])
-    for key in ("last_vk_check_at", "enrolled_at", "created_at"):
-        v = data.get(key)
-        if isinstance(v, str):
-            try:
-                data[key] = datetime.fromisoformat(v)
-            except ValueError:
-                data[key] = None
-    return data
-
-
-def get_cached_session(session_id: str) -> dict | None:
-    if not _client:
-        return None
-    try:
-        raw = _client.get(f"session:{session_id}")
-        return _deserialize(raw) if raw else None
-    except Exception:
-        return None
-
-
-def set_cached_session(session_id: str, user: dict) -> None:
-    if not _client:
-        return
-    try:
-        _client.setex(f"session:{session_id}", SESSION_TTL, _serialize(user))
-    except Exception:
-        pass
 
 
 def invalidate_session(session_id: str) -> None:

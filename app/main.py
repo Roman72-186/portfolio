@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 import mimetypes
 import os
 
@@ -9,16 +10,29 @@ from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 
 from app.db.database import engine, Base, SessionLocal
-from app.api import auth, cabinet, upload, admin, gallery
+from app.config import settings
+from app.api import auth, cabinet, upload, gallery
 from app.api import cabinet_student, cabinet_curator, cabinet_admin, cabinet_superadmin
-from app.api import cabinet_students_shared, cabinet_tags
+from app.api import cabinet_students_shared, cabinet_tags, cases
 from app.api import cycle_upload, feedback as feedback_router
 from app.limiter import limiter
 from app.services.rbac import seed_roles_and_permissions
 from app.services import n8n as n8n_service
 from app.services import vk as vk_service
+from app.services import drive as drive_service
 from app.services import exam_scheduler
 import app.models  # noqa: F401 — ensures all models are registered with Base.metadata
+from app.models.session import Session as DbSession
+
+
+_FORCE_SESSION_REFRESH_PATHS = {
+    "/upload/mock-exam",
+    "/upload/mock-exam/csrf",
+}
+
+
+def _should_force_session_refresh(request: Request) -> bool:
+    return request.method == "GET" and request.url.path in _FORCE_SESSION_REFRESH_PATHS
 
 
 @asynccontextmanager
@@ -35,6 +49,7 @@ async def lifespan(app: FastAPI):
         db.close()
     await n8n_service.init_client()
     await vk_service.init_client()
+    await drive_service.init_client()
     should_start_scheduler = (
         not os.environ.get("PYTEST_CURRENT_TEST")
         and settings.database_url != "sqlite:///:memory:"
@@ -44,11 +59,19 @@ async def lifespan(app: FastAPI):
     yield
     await n8n_service.close_client()
     await vk_service.close_client()
+    await drive_service.close_client()
     if should_start_scheduler:
         exam_scheduler.stop_scheduler()
 
 
-app = FastAPI(title="Портфолио", lifespan=lifespan)
+_docs_enabled = settings.env != "production"
+app = FastAPI(
+    title="Портфолио",
+    lifespan=lifespan,
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
+)
 
 # Rate limiting
 app.state.limiter = limiter
@@ -151,6 +174,49 @@ async def cache_control(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def force_mock_exam_session_refresh(request: Request, call_next):
+    response: Response = await call_next(request)
+    if not _should_force_session_refresh(request):
+        return response
+
+    session_id = request.cookies.get("session_id")
+    if not session_id:
+        return response
+
+    db = SessionLocal()
+    try:
+        session = (
+            db.query(DbSession)
+            .filter(DbSession.id == session_id, DbSession.is_active == True)  # noqa: E712
+            .first()
+        )
+        if session is None:
+            return response
+        now = datetime.now(timezone.utc)
+        expires_at = session.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at < now:
+            return response
+
+        ttl = timedelta(hours=settings.session_ttl_hours)
+        session.expires_at = now + ttl
+        db.commit()
+        response.set_cookie(
+            key="session_id",
+            value=session.id,
+            httponly=True,
+            samesite="lax",
+            max_age=settings.session_ttl_hours * 3600,
+            secure=True,
+            path="/",
+        )
+    finally:
+        db.close()
+    return response
+
+
 # Routers
 app.include_router(auth.router)
 app.include_router(cabinet.router)
@@ -159,12 +225,12 @@ app.include_router(cabinet_curator.router)
 app.include_router(cabinet_admin.router)
 app.include_router(cabinet_superadmin.router)
 app.include_router(cabinet_tags.router)
+app.include_router(cases.router)
 app.include_router(cabinet_students_shared.router)
 app.include_router(upload.router)
 app.include_router(cycle_upload.router)
 app.include_router(feedback_router.router)
 app.include_router(gallery.router)
-app.include_router(admin.router)
 
 
 @app.get("/health")

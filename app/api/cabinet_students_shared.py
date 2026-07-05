@@ -46,6 +46,26 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/cabinet")
 
 
+def _delete_work_rows_with_dependents(db: DBSession, works: list[Work]) -> int:
+    """Delete selected works and direct stage-photo dependents in FK-safe order."""
+    by_id = {w.id: w for w in works}
+    final_ids = [w.id for w in works if w.is_final]
+    if final_ids:
+        for child in (
+            db.query(Work)
+            .filter(Work.parent_work_id.in_(final_ids))
+            .all()
+        ):
+            by_id[child.id] = child
+
+    ordered = sorted(by_id.values(), key=lambda w: 1 if w.is_final else 0)
+    for work in ordered:
+        if work.s3_path:
+            s3_service.delete_from_s3(work.s3_path)
+        db.delete(work)
+    return len(ordered)
+
+
 # ── Access control ────────────────────────────────────────────────────────────
 
 def _require_student_panel(
@@ -1240,13 +1260,10 @@ async def bulk_delete_works(
     if not works:
         return JSONResponse({"ok": True, "deleted_count": 0})
 
-    for w in works:
-        if w.s3_path:
-            s3_service.delete_from_s3(w.s3_path)
-        db.delete(w)
+    deleted_count = _delete_work_rows_with_dependents(db, works)
 
     db.commit()
-    return JSONResponse({"ok": True, "deleted_count": len(works)})
+    return JSONResponse({"ok": True, "deleted_count": deleted_count})
 
 
 # ── DELETE: удалить работу (фото) ученика ────────────────────────────────────
@@ -1357,10 +1374,6 @@ def delete_work(
     if not work:
         raise HTTPException(status_code=404, detail="Работа не найдена")
 
-    if work.s3_path:
-        from app.services.s3 import delete_from_s3
-        delete_from_s3(work.s3_path)
-
-    db.delete(work)
+    _delete_work_rows_with_dependents(db, [work])
     db.commit()
     return JSONResponse({"ok": True})

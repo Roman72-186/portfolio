@@ -82,8 +82,7 @@
 
 /* Submit */
 .form-actions { display: flex; gap: 12px; align-items: center; }
-.btn-save { padding: 12px 32px; background: var(--blue); color: #fff; border: none; border-radius: var(--r-md); font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; transition: opacity 0.15s; }
-.btn-save:hover { opacity: 0.85; }
+.btn-save { padding: 12px 32px; border-radius: var(--r-md); font-size: 15px; }
 .btn-cancel { padding: 12px 20px; background: none; border: 1.5px solid var(--line); border-radius: var(--r-md); font-size: 14px; font-weight: 700; color: var(--muted); cursor: pointer; font-family: inherit; text-decoration: none; }
 .btn-cancel:hover { border-color: rgba(59,91,255,0.30); color: var(--text); }
 
@@ -120,6 +119,38 @@
 .activate-hint { font-size: 11px; color: var(--dim); margin-top: -4px; margin-bottom: 8px; }
 .scheduled-date-wrap { display: none; }
 .scheduled-date-wrap.visible { display: block; }
+
+/* ── Авто-название ── */
+.auto-title-preview {
+    padding: 10px 14px; border: 1.5px dashed var(--line); border-radius: var(--r-sm);
+    background: var(--bg); font-size: 14px; font-weight: 700; color: var(--text);
+}
+
+/* ── Конструктор подбора получателей ── */
+.recipient-filter {
+    border: 1.5px solid var(--line); border-radius: var(--r-sm);
+    background: var(--surface); padding: 14px; margin-bottom: 12px;
+}
+.rf-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--dim); margin-bottom: 12px; }
+.rf-dim { margin-bottom: 12px; }
+.rf-dim-label { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.rf-chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 124px; overflow-y: auto; }
+.rf-chip {
+    display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+    padding: 5px 10px; border: 1.5px solid var(--line); border-radius: 999px;
+    font-size: 12px; font-weight: 600; color: var(--muted); background: var(--bg);
+    transition: all 0.15s;
+}
+.rf-chip:hover { border-color: var(--blue); color: var(--blue); }
+.rf-chip input { display: none; }
+.rf-chip.on { border-color: var(--blue); background: var(--blue-soft); color: var(--blue); }
+.rf-empty { font-size: 12px; color: var(--dim); font-style: italic; }
+.rf-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.rf-count { font-size: 13px; font-weight: 700; color: var(--blue); margin-right: auto; }
+.rf-btn { font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 8px; border: 1.5px solid var(--line); background: var(--bg); color: var(--text); cursor: pointer; font-family: inherit; transition: border-color 0.15s; }
+.rf-btn:hover { border-color: var(--blue); color: var(--blue); }
+.rf-btn-primary { border-color: var(--blue); background: var(--blue); color: #fff; }
+.rf-btn-primary:hover { opacity: 0.88; color: #fff; }
 </style>
 {% endblock %}
 {% block content %}
@@ -140,17 +171,27 @@
         <div class="form-card">
             <div class="form-card-title">Основная информация</div>
             <div class="field">
-                <label for="title">Название задания <span style="color:#DC2626">*</span></label>
-                <input type="text" id="title" name="title" value="{{ assignment.title if is_edit else '' }}" placeholder="Пробник по рисунку — апрель 2026" maxlength="200">
-                <div class="field-error-msg" id="err-main-title">Заполните название задания</div>
+                <label>Тип задания <span style="color:#DC2626">*</span></label>
+                <div class="activate-toggle" id="kind-toggle">
+                    <label class="activate-opt"><input type="radio" name="kind" value="mock" {% if not is_edit or assignment.kind == 'mock' %}checked{% endif %} onchange="onKindChange()"> Пробник</label>
+                    <label class="activate-opt"><input type="radio" name="kind" value="control" {% if is_edit and assignment.kind == 'control' %}checked{% endif %} onchange="onKindChange()"> Контрольная</label>
+                </div>
             </div>
             <div class="field">
                 <label for="subject">Предмет <span style="color:#DC2626">*</span></label>
-                <select id="subject" name="subject">
+                <select id="subject" name="subject" onchange="updateAutoTitle()">
                     {% for s in subjects %}
                     <option value="{{ s }}" {% if is_edit and assignment.subject == s %}selected{% endif %}>{{ s }}</option>
                     {% endfor %}
                 </select>
+            </div>
+            <div class="field">
+                <label for="note">Примечание <span style="color:var(--dim);font-weight:400">(необязательно)</span></label>
+                <input type="text" id="note" name="note" value="{{ (assignment.note or '') if is_edit else '' }}" placeholder="напр. выпускной · тема: портрет" maxlength="200" oninput="updateAutoTitle()">
+            </div>
+            <div class="field" style="margin-bottom:0">
+                <label>Название (формируется автоматически)</label>
+                <div class="auto-title-preview" id="auto-title-preview">…</div>
             </div>
         </div>
 
@@ -162,7 +203,7 @@
         </button>
 
         <div class="form-actions">
-            <button type="submit" class="btn-save">{% if is_edit %}Сохранить изменения{% else %}Сохранить задание{% endif %}</button>
+            <button type="submit" class="btn-blue btn-save">{% if is_edit %}Сохранить изменения{% else %}Сохранить задание{% endif %}</button>
             <a href="{% if is_edit %}/cabinet/exam-assignments/{{ assignment.id }}{% else %}/cabinet/exam-assignments{% endif %}" class="btn-cancel">Отмена</a>
         </div>
     </form>
@@ -171,11 +212,50 @@
 <script>
 var ALL_STUDENTS = {{ student_list | tojson }};
 var ALL_TAGS = {{ tag_list | tojson }};
+var ALL_CURATORS = {{ curator_list | tojson }};
+var FILTER_TARIFFS = {{ tariffs | tojson }};
+var COHORT_LABELS = {{ cohort_labels | tojson }};
+var STUDY_LABELS = {{ study_mode_labels | tojson }};
+var KIND_LABELS = {{ kind_labels | tojson }};
 var EXISTING_TICKETS = {{ existing_tickets_json | safe if existing_tickets_json else '[]' }};
 var DEFAULT_SCHEDULE = {{ default_schedule | tojson }};
 var IS_EDIT = {{ 'true' if is_edit else 'false' }};
+var ASSIGNMENT_SEQ = {% if is_edit %}{{ assignment.seq_number | tojson }}{% else %}null{% endif %};
+var ASSIGNMENT_DATE_EDIT = {% if is_edit %}{{ assignment_date_str | tojson }}{% else %}null{% endif %};
+var ASSIGNMENT_DATE = ASSIGNMENT_DATE_EDIT || (function() {
+    var d = new Date();
+    function p(x) { return String(x).padStart(2, '0'); }
+    return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear();
+})();
 var ticketCount = 0;
 var MAX_TICKETS = 10;
+
+// ── Авто-название задания ─────────────────────────────────────────────────────
+function onKindChange() {
+    var toggle = document.getElementById('kind-toggle');
+    if (toggle) {
+        toggle.querySelectorAll('.activate-opt').forEach(function(opt) {
+            var radio = opt.querySelector('input[type=radio]');
+            opt.classList.toggle('active', !!(radio && radio.checked));
+        });
+    }
+    updateAutoTitle();
+}
+
+function updateAutoTitle() {
+    var el = document.getElementById('auto-title-preview');
+    if (!el) return;
+    var kindEl = document.querySelector('input[name="kind"]:checked');
+    var kind = kindEl ? kindEl.value : 'mock';
+    var label = KIND_LABELS[kind] || 'Пробник';
+    var subject = (document.getElementById('subject') || {}).value || '';
+    var note = ((document.getElementById('note') || {}).value || '').trim();
+    var numPart = IS_EDIT ? ('№' + (ASSIGNMENT_SEQ != null ? ASSIGNMENT_SEQ : '—'))
+                          : '№… (присвоится автоматически)';
+    var parts = [label + ' ' + numPart, subject, ASSIGNMENT_DATE];
+    if (note) parts.push(note);
+    el.textContent = parts.join(' · ');
+}
 
 function addTicket() {
     if (ticketCount >= MAX_TICKETS) return;
@@ -342,6 +422,7 @@ function buildTicketHTML(n) {
         + '</div>'
         // Режим «Конкретным ученикам»
         + '<div id="assign-students-wrap-' + n + '" style="display:none">'
+        + buildRecipientFilter(n)
         + '<div class="students-selector">'
         + '<input type="text" class="students-search" placeholder="Поиск по фамилии, имени или username…" oninput="filterStudents(this,' + n + ')">'
         + '<div class="students-list" id="students-list-' + n + '"></div>'
@@ -552,6 +633,101 @@ function buildTagOptions(selectedId) {
     return html;
 }
 
+// ── Конструктор подбора получателей (фильтр → конкретные ученики) ─────────────
+// Внутри измерения — ИЛИ (любой из выбранных), между измерениями — И.
+// Фильтр лишь заполняет существующий список «Конкретным ученикам» (snapshot →
+// ExamTicketAssignee); backend-путь назначения не меняется. Инпуты без name —
+// в форму не отправляются.
+function buildRecipientFilter(n) {
+    function chips(dim, items) {
+        if (!items.length) return '<div class="rf-empty">нет данных</div>';
+        return items.map(function(it) {
+            return '<label class="rf-chip"><input type="checkbox" data-dim="' + dim + '" value="'
+                + esc(it.value) + '" onchange="onFilterChange(' + n + ')"> ' + esc(it.label) + '</label>';
+        }).join('');
+    }
+    var curatorItems = ALL_CURATORS.map(function(c) { return { value: String(c.id), label: c.name }; });
+    var tagItems = ALL_TAGS.map(function(t) { return { value: String(t.id), label: t.name }; });
+    var tariffItems = FILTER_TARIFFS.map(function(t) { return { value: t, label: t }; });
+    var cohortItems = Object.keys(COHORT_LABELS).map(function(k) { return { value: k, label: COHORT_LABELS[k] }; });
+    var studyItems = Object.keys(STUDY_LABELS).map(function(k) { return { value: k, label: STUDY_LABELS[k] }; });
+
+    return '<div class="recipient-filter" id="recipient-filter-' + n + '">'
+        + '<div class="rf-title">Подобрать по фильтру</div>'
+        + '<div class="rf-dim"><div class="rf-dim-label">Куратор</div><div class="rf-chips">' + chips('curator', curatorItems) + '</div></div>'
+        + '<div class="rf-dim"><div class="rf-dim-label">Теги</div><div class="rf-chips">' + chips('tags', tagItems) + '</div></div>'
+        + '<div class="rf-dim"><div class="rf-dim-label">Тариф</div><div class="rf-chips">' + chips('tariff', tariffItems) + '</div></div>'
+        + '<div class="rf-dim"><div class="rf-dim-label">Поток</div><div class="rf-chips">' + chips('cohort', cohortItems) + '</div></div>'
+        + '<div class="rf-dim" style="margin-bottom:0"><div class="rf-dim-label">Режим занятий</div><div class="rf-chips">' + chips('study', studyItems) + '</div></div>'
+        + '<div class="rf-actions">'
+        + '<span class="rf-count" id="rf-count-' + n + '">Фильтр не задан</span>'
+        + '<button type="button" class="rf-btn rf-btn-primary" onclick="applyFilter(' + n + ', false)">Выбрать совпавших</button>'
+        + '<button type="button" class="rf-btn" onclick="applyFilter(' + n + ', true)">Добавить к выбранным</button>'
+        + '<button type="button" class="rf-btn" onclick="clearFilter(' + n + ')">Сбросить фильтр</button>'
+        + '</div>'
+        + '</div>';
+}
+
+function readFilter(n) {
+    function vals(dim) {
+        return Array.prototype.map.call(
+            document.querySelectorAll('#recipient-filter-' + n + ' input[data-dim="' + dim + '"]:checked'),
+            function(cb) { return cb.value; }
+        );
+    }
+    return { curator: vals('curator'), tags: vals('tags'), tariff: vals('tariff'), cohort: vals('cohort'), study: vals('study') };
+}
+
+function filterHasAny(f) {
+    return !!(f.curator.length || f.tags.length || f.tariff.length || f.cohort.length || f.study.length);
+}
+
+function matchStudent(s, f) {
+    if (f.curator.length && f.curator.indexOf(String(s.curator_id)) === -1) return false;
+    if (f.tariff.length && f.tariff.indexOf(s.tariff) === -1) return false;
+    if (f.cohort.length && f.cohort.indexOf(s.cohort_tag) === -1) return false;
+    if (f.study.length && f.study.indexOf(s.study_mode) === -1) return false;
+    if (f.tags.length) {
+        var ids = s.tag_ids || [];
+        var has = f.tags.some(function(t) { return ids.indexOf(Number(t)) !== -1; });
+        if (!has) return false;
+    }
+    return true;
+}
+
+function matchedStudents(n) {
+    var f = readFilter(n);
+    if (!filterHasAny(f)) return [];
+    return ALL_STUDENTS.filter(function(s) { return matchStudent(s, f); });
+}
+
+function onFilterChange(n) {
+    document.querySelectorAll('#recipient-filter-' + n + ' .rf-chip').forEach(function(chip) {
+        var cb = chip.querySelector('input');
+        chip.classList.toggle('on', !!(cb && cb.checked));
+    });
+    var f = readFilter(n);
+    var countEl = document.getElementById('rf-count-' + n);
+    if (countEl) countEl.textContent = filterHasAny(f) ? ('Подойдёт: ' + matchedStudents(n).length) : 'Фильтр не задан';
+}
+
+function applyFilter(n, additive) {
+    var matched = matchedStudents(n);
+    if (!matched.length) return;
+    var ids = {};
+    matched.forEach(function(s) { ids[String(s.id)] = true; });
+    document.querySelectorAll('#students-list-' + n + ' input[type=checkbox]').forEach(function(cb) {
+        if (ids[cb.value]) cb.checked = true;
+        else if (!additive) cb.checked = false;
+    });
+    updateStudentIds(n);
+}
+
+function clearFilter(n) {
+    document.querySelectorAll('#recipient-filter-' + n + ' input[data-dim]:checked').forEach(function(cb) { cb.checked = false; });
+    onFilterChange(n);
+}
+
 // ── Pre-fill в режиме редактирования ─────────────────────────────────────────
 
 function populateTicket(n, t) {
@@ -614,6 +790,9 @@ if (IS_EDIT && EXISTING_TICKETS.length > 0) {
     addTicket();
 }
 
+// Инициализация типа/авто-названия
+onKindChange();
+
 // ── Inline form validation ────────────────────────────────────────────────────
 
 function setFieldError(inputEl, msgEl, hasError) {
@@ -642,14 +821,6 @@ document.addEventListener('change', function(e) {
 function validateForm(event) {
     var ok = true;
     var firstError = null;
-
-    // ── Основная информация ──
-    var titleInput = document.getElementById('title');
-    var titleErr = document.getElementById('err-main-title');
-    var titleEmpty = !titleInput || !titleInput.value.trim();
-    setFieldError(titleInput, titleErr, titleEmpty);
-    if (titleEmpty && !firstError) firstError = titleInput;
-    if (titleEmpty) ok = false;
 
     // ── Билеты ──
     var blocks = document.querySelectorAll('.ticket-block');

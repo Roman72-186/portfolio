@@ -48,6 +48,30 @@ def _create_active_ticket(db, user, subject="Рисунок", *, opens_at=None, 
     return ticket
 
 
+def _create_active_ticket_set(db, user, subject="Рисунок", count=2):
+    from app.models.exam_assignment import ExamAssignment, ExamTicket
+    today = date.today()
+    assignment = ExamAssignment(
+        title=f"Тест {subject}", subject=subject,
+        created_by_id=user.id, status="published",
+    )
+    db.add(assignment)
+    db.flush()
+    tickets = []
+    for n in range(1, count + 1):
+        ticket = ExamTicket(
+            assignment_id=assignment.id, ticket_number=n,
+            title=f"Билет {n}",
+            start_date=today - timedelta(days=1),
+            end_date=today + timedelta(days=30),
+            assign_to_all=True,
+        )
+        db.add(ticket)
+        tickets.append(ticket)
+    db.commit()
+    return tickets
+
+
 def _start(client, subject="Рисунок"):
     return client.post("/upload/mock-exam/start", data={"subject": subject})
 
@@ -83,6 +107,10 @@ def test_probnik_final_creates_single_final_work_and_cycle(auth_client, db):
     assert body["created"] == 1
     assert body["attempt_number"] == 1
     assert len(body["work_ids"]) == 1
+    assert body["verified"] is True
+    assert body["final_work_id"] == body["work_ids"][0]
+    assert body["existing"] == 0
+    assert body["remaining"] == 10
 
     works = db.query(Work).filter(Work.user_id == user.id).all()
     assert len(works) == 1
@@ -97,6 +125,40 @@ def test_probnik_final_creates_single_final_work_and_cycle(auth_client, db):
         MockExamLock.user_id == user.id, MockExamLock.subject == "Рисунок"
     ).first()
     assert lock is not None and lock.is_locked is True
+
+
+def test_probnik_final_uses_randomly_started_ticket(auth_client, db):
+    from app.models.exam_cycle import ExamCycle
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    tickets = _create_active_ticket_set(db, user, "Рисунок", count=2)
+    chosen = tickets[0]
+    deterministic_latest = tickets[1]
+    assert chosen.id != deterministic_latest.id
+
+    with patch("app.api.upload.random.choice", return_value=chosen):
+        start_resp = _start(client, "Рисунок")
+    assert start_resp.status_code == 200
+    assert start_resp.json()["ticket"]["id"] == chosen.id
+
+    resp = client.post(
+        "/upload/probnik/final",
+        data={"subject": "Рисунок"},
+        files=[("photos", ("final.jpg", _JPG_BYTES, "image/jpeg"))],
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+    cycle = db.query(ExamCycle).filter(ExamCycle.user_id == user.id).one()
+    assert cycle.ticket_id == chosen.id
+    work = db.query(Work).filter(
+        Work.user_id == user.id,
+        Work.work_type == WORK_TYPE_MOCK_EXAM,
+        Work.is_final == True,  # noqa: E712
+    ).one()
+    assert work.cycle_id == cycle.id
 
 
 def test_probnik_final_closes_current_ticket_attempt_and_expires_stale_ones(auth_client, db):
@@ -314,10 +376,10 @@ def test_probnik_final_allowed_after_window_closes_with_open_attempt(auth_client
     assert resp.json()["success"] is True
 
 
-def test_probnik_final_resubmit_overwrites_in_open_cycle(auth_client, db):
-    """Повторная сдача в ОТКРЫТОМ цикле разрешена и перезаписывает финал in-place:
-    ученик может свободно загружать заново, пока цикл не закрыт (балл/ОС между
-    загрузками — отдельные шаги). Work.id и цикл сохраняются, фото обновляется."""
+def test_probnik_final_resubmit_blocked_in_open_cycle(auth_client, db):
+    """После сдачи финала перезалив запрещён даже в ОТКРЫТОМ цикле (по запросу
+    владельца): ученик НЕ может перезагрузить работу по своей воле. Повторный POST →
+    409 «работа сдана, ждите обратной связи». Финал остаётся прежним, цикл один."""
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
     from app.models.exam_cycle import ExamCycle
 
@@ -330,17 +392,15 @@ def test_probnik_final_resubmit_overwrites_in_open_cycle(auth_client, db):
     assert r1.json()["success"] is True
     first_id = r1.json()["work_ids"][0]
 
-    # Админ ставит балл — затем ученик перезаливает (балл сбросится).
+    # Админ ставит балл — но цикл ещё открыт. Перезалив всё равно запрещён.
     work = db.query(Work).filter(Work.id == first_id).first()
     work.score = 80
     db.commit()
 
     r2 = _final(client, "Рисунок",
                 photos=[("photos", ("second.jpg", _JPG_BYTES, "image/jpeg"))])
-    assert r2.status_code == 200
-    assert r2.json()["success"] is True
-    # In-place перезапись: тот же Work.id, тот же цикл — диалог ОС не теряется.
-    assert r2.json()["work_ids"] == [first_id]
+    assert r2.status_code == 409
+    assert r2.json()["error"] == "работа сдана, ждите обратной связи"
 
     db.expire_all()
     finals = db.query(Work).filter(
@@ -349,18 +409,31 @@ def test_probnik_final_resubmit_overwrites_in_open_cycle(auth_client, db):
         Work.is_final == True,  # noqa: E712
     ).all()
     assert len(finals) == 1
-    assert finals[0].id == first_id            # тот же Work, перезаписан
-    assert finals[0].filename == "second.jpg"  # новым фото
-    assert finals[0].score is None             # балл сброшен (новое фото не проверено)
+    assert finals[0].id == first_id            # финал не тронут
+    assert finals[0].filename == "first.jpg"   # фото осталось прежним
     # цикл не размножился
     assert db.query(ExamCycle).filter(ExamCycle.user_id == user.id).count() == 1
 
 
-def test_probnik_resubmit_notifies_scorer(auth_client, db):
-    """Перезалив в открытом цикле шлёт уведомление уже вовлечённому staff: тому, кто
-    выставлял балл (scored_by_id) — балл молча сбрасывается, проверяющий должен узнать
-    о новом фото. На ПЕРВОЙ сдаче (никто не оценивал) уведомление не создаётся."""
-    from app.models.work import Work
+def test_probnik_intermediate_blocked_after_final_submitted(auth_client, db):
+    """Этапные тоже нельзя докидывать после сдачи финала: 409 (в нормальном потоке
+    этапные грузятся ДО финала, поэтому первая сдача не страдает)."""
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Рисунок")
+
+    assert _final(client, "Рисунок").json()["success"] is True
+
+    resp = _intermediate(client, "Рисунок", n=1)
+    assert resp.status_code == 409
+    assert resp.json()["error"] == "работа сдана, ждите обратной связи"
+
+
+def test_probnik_redo_after_revision_notifies_scorer(auth_client, db):
+    """Redo после «на доработку» (needs_revision=True) перезаписывает финал in-place и
+    шлёт уведомление уже вовлечённому staff (scored_by_id) — балл молча сбрасывается,
+    проверяющий должен узнать о новом фото. needs_revision снят redo-загрузкой."""
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
     from app.models.notification import Notification
 
     client, user = auth_client
@@ -371,21 +444,33 @@ def test_probnik_resubmit_notifies_scorer(auth_client, db):
     # Первая сдача — staff ещё не вовлечён → уведомлений нет.
     assert db.query(Notification).count() == 0
 
-    # Админ (id=777) выставил балл.
+    # Админ (id=777) выставил балл и вернул работу «на доработку» (needs_revision).
+    # has_submitted_for_ticket такой финал за сдачу не считает → redo-загрузка пройдёт.
     work = db.query(Work).filter(Work.id == first_id).first()
     work.score = 80
     work.scored_by_id = 777
+    work.needs_revision = True
     db.commit()
 
     r2 = _final(client, "Рисунок",
                 photos=[("photos", ("redo.jpg", _JPG_BYTES, "image/jpeg"))])
     assert r2.status_code == 200
+    assert r2.json()["success"] is True
+    assert r2.json()["work_ids"] == [first_id]  # in-place перезапись
 
     notes = db.query(Notification).filter(Notification.user_id == 777).all()
     assert len(notes) == 1
     assert notes[0].work_id == first_id
-    # ученику уведомление о собственном перезаливе не шлётся
+    # ученику уведомление о собственном redo не шлётся
     assert db.query(Notification).filter(Notification.user_id == user.id).count() == 0
+
+    db.expire_all()
+    final = db.query(Work).filter(
+        Work.id == first_id, Work.work_type == WORK_TYPE_MOCK_EXAM
+    ).first()
+    assert final.needs_revision is False        # снят redo-загрузкой
+    assert final.filename == "redo.jpg"
+    assert final.score is None                  # балл сброшен
 
 
 # ── Этапные фото ──────────────────────────────────────────────────────────────
@@ -438,6 +523,92 @@ def test_probnik_intermediate_caps_at_ten(auth_client, db):
         Work.cycle_id == cycle.id, Work.is_final == False  # noqa: E712
     ).count()
     assert stages == 10
+
+
+def test_probnik_intermediate_reports_remaining_slots(auth_client, db):
+    from app.models.work import Work
+    from app.models.exam_cycle import ExamCycle
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Рисунок")
+
+    assert _intermediate(client, "Рисунок", n=6).json()["created"] == 6
+
+    files = [("photos", (f"extra{i}.jpg", _JPG_BYTES, "image/jpeg")) for i in range(5)]
+    resp = client.post(
+        "/upload/probnik/intermediate",
+        data={"subject": "Рисунок"},
+        files=files,
+    )
+
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["success"] is False
+    assert body["existing"] == 6
+    assert body["remaining"] == 4
+    assert body["limit"] == 10
+    assert "Можно добавить ещё 4" in body["error"]
+
+    cycle = db.query(ExamCycle).filter(ExamCycle.user_id == user.id).first()
+    assert db.query(Work).filter(
+        Work.cycle_id == cycle.id,
+        Work.is_final == False,  # noqa: E712
+    ).count() == 6
+
+
+def test_deleting_probnik_final_removes_stage_dependents_and_quota_recounts(
+    client, session_factory, regular_user, admin_user, db
+):
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+    from app.models.exam_cycle import ExamCycle
+
+    student_sess = session_factory(regular_user)
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", student_sess.id)
+    _create_active_period(db, regular_user, "mock_exam")
+    _create_active_ticket(db, regular_user, "Рисунок")
+
+    assert _intermediate(client, "Рисунок", n=10).json()["created"] == 10
+    final_id = _final(client, "Рисунок").json()["work_ids"][0]
+    cycle = db.query(ExamCycle).filter(ExamCycle.user_id == regular_user.id).first()
+    assert db.query(Work).filter(
+        Work.cycle_id == cycle.id,
+        Work.work_type == WORK_TYPE_MOCK_EXAM,
+    ).count() == 11
+
+    client.cookies.set("session_id", admin_sess.id)
+    resp_delete = client.delete(f"/cabinet/students/{regular_user.id}/works/{final_id}")
+    assert resp_delete.status_code == 200
+    assert resp_delete.json()["ok"] is True
+
+    db.expire_all()
+    assert db.query(Work).filter(Work.cycle_id == cycle.id).count() == 0
+
+    client.cookies.set("session_id", student_sess.id)
+    assert _intermediate(client, "Рисунок", n=6).json()["created"] == 6
+    resp = client.get("/upload/mock-exam")
+
+    assert resp.status_code == 200
+    assert '"existing": 6' in resp.text
+    assert '"remaining": 4' in resp.text
+    assert '"limit": 10' in resp.text
+
+
+def test_mock_exam_page_exposes_existing_stage_slots(auth_client, db):
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Рисунок")
+
+    assert _intermediate(client, "Рисунок", n=6).json()["created"] == 6
+
+    resp = client.get("/upload/mock-exam")
+
+    assert resp.status_code == 200
+    assert "STAGE_STATE_BY_SUBJECT" in resp.text
+    assert '"existing": 6' in resp.text
+    assert '"remaining": 4' in resp.text
+    assert '"limit": 10' in resp.text
 
 
 def test_probnik_intermediate_requires_active_ticket(auth_client, db):
@@ -551,6 +722,44 @@ def test_probnik_reopens_with_new_ticket(auth_client, db):
     assert cycles[1].ticket_id == ticket2.id    # новый цикл привязан к новому билету
 
 
+def test_probnik_reopens_with_another_active_ticket_while_previous_cycle_open(auth_client, db):
+    """Открытый цикл по уже сданному билету не блокирует другой активный билет."""
+    from app.models.exam_cycle import ExamCycle
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    tickets = _create_active_ticket_set(db, user, "Рисунок", count=2)
+    first_ticket, second_ticket = tickets
+
+    with patch("app.api.upload.random.choice", return_value=first_ticket):
+        first_resp = _final(client, "Рисунок")
+    assert first_resp.status_code == 200
+    first_cycle_id = first_resp.json()["cycle_id"]
+
+    # Цикл по first_ticket остаётся открытым: балл/ОС ещё не закрывали.
+    first_cycle = db.query(ExamCycle).filter(ExamCycle.id == first_cycle_id).one()
+    assert first_cycle.closed_at is None
+    assert first_cycle.ticket_id == first_ticket.id
+
+    second_resp = _final(client, "Рисунок")
+
+    assert second_resp.status_code == 200
+    body = second_resp.json()
+    assert body["success"] is True
+    assert body["cycle_created"] is True
+    assert body["cycle_id"] != first_cycle_id
+
+    cycles = (
+        db.query(ExamCycle)
+        .filter(ExamCycle.user_id == user.id)
+        .order_by(ExamCycle.id)
+        .all()
+    )
+    assert len(cycles) == 2
+    assert cycles[0].ticket_id == first_ticket.id
+    assert cycles[1].ticket_id == second_ticket.id
+
+
 # ── «На доработку» (revision) не снимает реальную блокировку пересдачи ───────
 
 def test_revision_reopens_submission_for_same_ticket(
@@ -565,8 +774,8 @@ def test_revision_reopens_submission_for_same_ticket(
     revision выставляет Work.needs_revision=True на финале и снимает лок; повторная
     загрузка проходит через _overwrite_final: то же Work.id, тот же cycle_id и
     attempt_number, score/comment/needs_revision сброшены, диалог ОС не теряется.
-    Цикл остаётся ОТКРЫТЫМ, поэтому дальнейшие пересдачи разрешены свободно (без
-    новой revision) — блокировка наступает только при закрытии цикла.
+    После redo финал снова «сдан» → СЛЕДУЮЩИЙ перезалив без новой revision блокируется
+    (перезалив по своей воле запрещён). Открыть заново — только новой revision/билетом.
     """
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
     from app.models.exam_cycle import ExamCycle
@@ -602,7 +811,8 @@ def test_revision_reopens_submission_for_same_ticket(
     assert final.cycle_id == cycle.id
     assert final.needs_revision is True
 
-    # ...и реальный гейт (has_submitted_for_ticket) теперь пропускает пересдачу.
+    # ...и реальный гейт (has_submitted_for_ticket) пропускает redo-загрузку, т.к.
+    # needs_revision финал за сдачу не считает.
     client.cookies.set("session_id", student_sess.id)
     resp2 = _final(client, "Рисунок",
                     photos=[("photos", ("redo.jpg", _JPG_BYTES, "image/jpeg"))])
@@ -619,16 +829,15 @@ def test_revision_reopens_submission_for_same_ticket(
     assert final.score is None
     assert final.filename == "redo.jpg"
 
-    # Цикл всё ещё открыт → следующая пересдача без новой revision разрешена и
-    # снова перезаписывает финал in-place (тот же Work.id).
+    # После redo финал снова «сдан» (needs_revision снят) → СЛЕДУЮЩИЙ перезалив без
+    # новой revision запрещён: 409. Открыть заново можно только новой revision/билетом.
     resp3 = _final(client, "Рисунок",
                    photos=[("photos", ("redo2.jpg", _JPG_BYTES, "image/jpeg"))])
-    assert resp3.status_code == 200
-    assert resp3.json()["success"] is True
-    assert resp3.json()["work_ids"] == [work_id]
+    assert resp3.status_code == 409
+    assert resp3.json()["error"] == "работа сдана, ждите обратной связи"
     db.expire_all()
     final = db.query(Work).filter(Work.id == work_id).first()
-    assert final.filename == "redo2.jpg"
+    assert final.filename == "redo.jpg"  # не перезаписан повторно
 
 
 def test_revision_rejected_for_closed_scored_cycle(

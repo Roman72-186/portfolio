@@ -17,6 +17,12 @@ class ExamAssignment(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     subject: Mapped[str] = mapped_column(String(50), nullable=False)    # "Рисунок" | "Композиция"
+    kind: Mapped[str] = mapped_column(
+        String(20), default="mock", server_default="mock", nullable=False
+    )    # "mock" (Пробник) | "control" (Контрольная)
+    # Сквозной порядковый номер в пределах (kind, subject). NULL у legacy-заданий.
+    seq_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    note: Mapped[str | None] = mapped_column(String(200), nullable=True)    # необязательный подзаголовок
     created_by_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id"), nullable=False, index=True
     )

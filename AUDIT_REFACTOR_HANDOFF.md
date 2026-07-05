@@ -294,7 +294,11 @@ Storage/upload scenarios that must not change:
 
 ### Фаза 3. RBAC и permissions
 
-Статус: in_progress
+Статус: superseded (2026-07-05) — владелец решил **убрать** гранулярную permission-таблицу
+(`Permission`/`RolePermission`/`require_permission`), а не усиливать её. Единственный живой
+потребитель (`feedback.py:313`) смигрирован на rank-проверку; RBAC остаётся rank-only
+(`Role.rank` + `require_role`/aliases). Чек-лист ниже (`has_permission`/`require_permission`
+helpers) — отменённое направление, не выполнять. Детали — `.claude/plans/peppy-chasing-micali.md` Фаза 2.
 
 Цель: централизовать проверки прав без изменения смысла ролей.
 

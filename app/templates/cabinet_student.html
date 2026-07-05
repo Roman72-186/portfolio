@@ -224,57 +224,6 @@
     .info-grid { grid-template-columns: repeat(4, 1fr); }
     .profile-hero { padding: 36px 40px; }
     .profile-name { font-size: 30px; }
-    .notif-stack { display: grid; grid-template-columns: repeat(2, 1fr); }
-}
-
-/* ── Уведомления ── */
-.notif-header {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 12px; gap: 10px; flex-wrap: wrap;
-}
-.notif-header-left {
-    display: flex; align-items: center; gap: 10px;
-}
-.notif-badge {
-    background: #DC2626; color: #fff; font-size: 11px; font-weight: 700;
-    padding: 2px 8px; border-radius: 10px; white-space: nowrap;
-}
-.notif-mark-btn {
-    background: none; border: 1px solid var(--border); border-radius: 8px;
-    padding: 5px 12px; font-size: 12px; font-weight: 700; color: var(--muted);
-    cursor: pointer; font-family: inherit; transition: border-color 0.15s, color 0.15s;
-    white-space: nowrap;
-}
-.notif-mark-btn:hover { border-color: var(--accent); color: var(--accent); }
-.notif-stack { display: flex; flex-direction: column; gap: 12px; }
-.notif-item {
-    display: flex; align-items: flex-start; gap: 14px;
-    padding: 16px 18px; border-radius: 14px;
-    border: 1px solid var(--border); background: var(--card);
-    transition: background 0.2s;
-}
-.notif-item.unread {
-    background: rgba(37,99,235,0.06);
-    border-color: rgba(37,99,235,0.2);
-}
-.notif-item-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
-.notif-item-body { flex: 1; min-width: 0; }
-.notif-item-title {
-    font-size: 14px; font-weight: 500; color: var(--text);
-    line-height: 1.45; margin-bottom: 0;
-}
-.notif-item.unread .notif-item-title { font-weight: 700; }
-.notif-item-text {
-    font-size: 13px; color: var(--muted); line-height: 1.6;
-    white-space: pre-wrap; margin-top: 8px;
-}
-.notif-item-meta {
-    font-size: 11px; color: var(--dim); margin-top: 8px;
-}
-@media (max-width: 480px) {
-    .notif-item { padding: 14px 14px; gap: 10px; }
-    .notif-item-title { font-size: 13px; }
-    .notif-item-text { font-size: 12px; margin-top: 6px; }
 }
 
 /* ── Активный пробник ── */
@@ -456,56 +405,7 @@
     </script>
     {% endif %}
 
-    <!-- ── УВЕДОМЛЕНИЯ (только непрочитанные) ── -->
-    {% if unread_count > 0 %}
-    <div id="notifications" style="margin-bottom:20px">
-        <div class="notif-header">
-            <div class="notif-header-left">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-                </svg>
-                <span style="font-size:16px;font-weight:700;color:var(--text)">Уведомления</span>
-                {% if unread_count > 0 %}
-                <span class="notif-badge">{{ unread_count }} новых</span>
-                {% endif %}
-            </div>
-            {% if unread_count > 0 %}
-            <form method="post" action="/cabinet/notifications/mark-read" style="margin:0">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                <button type="submit" class="notif-mark-btn">Отметить всё прочитанным</button>
-            </form>
-            {% endif %}
-        </div>
-        <div class="notif-stack">
-            {% for n in notifications %}
-            <div class="notif-item {% if not n.is_read %}unread{% endif %}">
-                <span class="notif-item-icon" aria-hidden="true">
-                    {% if not n.is_read %}
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-                    </svg>
-                    {% else %}
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="20 6 9 17 4 12"/>
-                    </svg>
-                    {% endif %}
-                </span>
-                <div class="notif-item-body">
-                    <div class="notif-item-title">{{ n.title }}</div>
-                    {% if n.text %}
-                    <div class="notif-item-text">{{ n.text }}</div>
-                    {% endif %}
-                    <div class="notif-item-meta">
-                        {{ n.created_at.strftime('%d.%m.%Y %H:%M') if n.created_at else '' }}
-                    </div>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
+    <!-- Уведомления показываются в попапе колокольчика (см. base.html). -->
 
     <!-- ── HERO профиля ── -->
     <div class="profile-hero">

@@ -84,6 +84,7 @@
 .dlg-msg.from-me .dlg-msg-bubble { background: var(--blue); border-color: var(--blue); color: #fff; }
 .dlg-msg-bubble img { display: block; max-width: 320px; width: 100%; border-radius: 8px; margin-top: 4px; cursor: zoom-in; }
 .dlg-msg.from-me .dlg-msg-bubble img { background: rgba(255,255,255,0.1); }
+.dlg-msg-bubble video { display: block; max-width: 320px; width: 100%; border-radius: 8px; margin-top: 4px; background: #000; }
 .dlg-msg-meta { font-size: 11px; color: var(--dim); padding: 0 4px; }
 .dlg-msg-author { font-weight: 800; }
 .dlg-msg-role { text-transform: uppercase; letter-spacing: 0.04em; }
@@ -99,12 +100,7 @@
 .dlg-attach:hover { color: var(--blue); border-color: var(--blue); }
 .dlg-attach input { display: none; }
 .dlg-attach-name { font-size: 12px; color: var(--blue); font-weight: 700; }
-.dlg-send {
-    padding: 10px 18px; border: none; border-radius: 10px;
-    background: var(--blue); color: #fff; font-weight: 800; font-size: 14px;
-    cursor: pointer;
-}
-.dlg-send:disabled { opacity: 0.5; cursor: default; }
+.dlg-send { padding: 10px 18px; border-radius: 10px; font-weight: 800; font-size: 14px; }
 .dlg-form-hint { font-size: 11px; color: var(--dim); margin-top: 6px; }
 .dlg-waiting { padding: 16px; background: var(--surface-2); border-radius: 10px; color: var(--muted); font-size: 13px; text-align: center; }
 
@@ -138,13 +134,7 @@
 }
 .dlg-score textarea:focus { border-color: var(--blue); }
 .dlg-score-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-.dlg-score-btn {
-    padding: 8px 14px; background: var(--blue); color: #fff;
-    border: none; border-radius: 8px; font-size: 13px; font-weight: 700;
-    cursor: pointer; font-family: inherit; transition: opacity 0.15s;
-}
-.dlg-score-btn:hover { opacity: 0.9; }
-.dlg-score-btn:disabled { opacity: 0.5; cursor: default; }
+.dlg-score-btn { padding: 8px 14px; border-radius: 8px; font-size: 13px; }
 .dlg-score-msg { font-size: 12px; margin-top: 6px; }
 .dlg-score-msg.err { color: var(--error); }
 .dlg-score-msg.ok  { color: var(--ok); }
@@ -306,6 +296,9 @@
                             {% if m.photo_s3_url %}
                                 <img src="{{ m.photo_s3_url }}" alt="" loading="lazy" onclick="openGallery(this)">
                             {% endif %}
+                            {% if m.video_s3_url %}
+                                <video class="dlg-msg-video" controls preload="metadata" src="{{ m.video_s3_url }}"></video>
+                            {% endif %}
                         </div>
                         <div class="dlg-msg-meta">
                             <span class="dlg-msg-author">{{ m.sender_name or m.sender_role_label }}</span> · <span class="dlg-msg-role">{{ m.sender_role_label }}</span> · {{ m.created_at[:16].replace('T', ' ') if m.created_at else '' }}
@@ -316,7 +309,7 @@
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                                 <textarea maxlength="4000">{{ m.text }}</textarea>
                                 <div class="dlg-msg-edit-actions">
-                                    <button type="submit" class="dlg-send">Сохранить</button>
+                                    <button type="submit" class="btn-blue dlg-send">Сохранить</button>
                                     <button type="button" class="dlg-score-edit" onclick="cancelEditMsg({{ m.id }})">Отмена</button>
                                 </div>
                             </form>
@@ -359,9 +352,14 @@
                             <span class="dlg-attach-text">Фото</span>
                             <input type="file" name="photo" accept="image/*">
                         </label>
-                        <button type="submit" class="dlg-send">Отправить обратную связь</button>
+                        <label class="dlg-attach">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                            <span class="dlg-attach-text">Видео</span>
+                            <input type="file" name="video" accept="video/*">
+                        </label>
+                        <button type="submit" class="btn-blue dlg-send">Отправить обратную связь</button>
                     </div>
-                    <div class="dlg-form-hint">Заполни хотя бы один пункт или прикрепи фото до 25 МБ. Фото будет сжато автоматически.</div>
+                    <div class="dlg-form-hint">Заполни хотя бы один пункт или прикрепи фото до 25 МБ / видео до 500 МБ. Фото будет сжато автоматически.</div>
                 </form>
             {% else %}
                 <form class="dlg-form" method="post" action="/cabinet/feedback/{{ target_work_id }}/message" enctype="multipart/form-data" data-work-id="{{ target_work_id }}">
@@ -374,10 +372,15 @@
                                 <span class="dlg-attach-text">Фото</span>
                                 <input type="file" name="photo" accept="image/*">
                             </label>
-                            <button type="submit" class="dlg-send">Отправить</button>
+                            <label class="dlg-attach">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                                <span class="dlg-attach-text">Видео</span>
+                                <input type="file" name="video" accept="video/*">
+                            </label>
+                            <button type="submit" class="btn-blue dlg-send">Отправить</button>
                         </div>
                     </div>
-                    <div class="dlg-form-hint">Текст или фото до 25 МБ — хотя бы одно из двух. Фото будет сжато автоматически.</div>
+                    <div class="dlg-form-hint">Текст, фото до 25 МБ или видео до 500 МБ — хотя бы одно. Фото будет сжато автоматически.</div>
                 </form>
             {% endif %}
         </section>
@@ -417,7 +420,7 @@
                     </div>
                     <textarea name="comment" placeholder="Комментарий (необязательно)" maxlength="500">{{ a.comment or '' }}</textarea>
                     <div class="dlg-score-actions">
-                        <button type="button" class="dlg-score-btn" onclick="submitDlgScore({{ a.work_id }}, {{ student.id }})">
+                        <button type="button" class="btn-blue dlg-score-btn" onclick="submitDlgScore({{ a.work_id }}, {{ student.id }})">
                             Сохранить балл
                         </button>
                         {% if a.score is not none %}
@@ -440,7 +443,7 @@
                 <div class="dlg-score-label">Готово к закрытию</div>
                 <div class="dlg-score-hint">Балл выставлен — {{ last_attempt.score|int }} / 100. После обратной связи закройте цикл: он попадёт в Портфолио ученика, а предмет разблокируется для нового пробника.</div>
                 <div class="dlg-score-actions" style="margin-top:10px;">
-                    <button type="button" class="dlg-score-btn" id="dlg-close-btn"
+                    <button type="button" class="btn-blue dlg-score-btn" id="dlg-close-btn"
                             data-cycle-id="{{ cycle.id }}"
                             data-csrf="{{ csrf_token(request) }}"
                             onclick="closeCycle(this)">
@@ -458,7 +461,13 @@
     {% set active_tab = "cycle" %}
     {% include "partials/bottom_nav.html" %}
 {% else %}
+    {# Куратор (rank 2) — через _curator_nav (self-guarded); админ/SA (rank >= 4) —
+       staff_nav уже подключён из base.html. Модератор (rank 3) не покрыт ни тем,
+       ни другим — отдаём ему staff_nav здесь (см. cabinet_staff_cycles.html). #}
+    {% include "_curator_nav.html" %}
+    {% if user.role_rank == 3 %}
     {% include "partials/staff_nav.html" %}
+    {% endif %}
 {% endif %}
 {% include "partials/lightbox.html" %}
 
@@ -467,19 +476,27 @@
 document.querySelectorAll('.dlg-messages').forEach(el => { el.scrollTop = el.scrollHeight; });
 
 const MAX_FEEDBACK_PHOTO_SIZE = 25 * 1024 * 1024;
+const MAX_FEEDBACK_VIDEO_SIZE = 500 * 1024 * 1024;
+const FEEDBACK_TEXT_TIMEOUT_MS = 45 * 1000;
+const FEEDBACK_FILE_TIMEOUT_MS = 10 * 60 * 1000;
 
 document.querySelectorAll('.dlg-attach input[type="file"]').forEach(input => {
+    const isVideo = input.name === 'video';
+    const defaultLabel = isVideo ? 'Видео' : 'Фото';
+    const maxSize = isVideo ? MAX_FEEDBACK_VIDEO_SIZE : MAX_FEEDBACK_PHOTO_SIZE;
     input.addEventListener('change', () => {
         const wrap = input.closest('.dlg-attach');
         const label = wrap.querySelector('.dlg-attach-text');
         const f = input.files[0];
-        if (f && f.size > MAX_FEEDBACK_PHOTO_SIZE) {
-            alert('Фото больше 25 МБ. Выберите файл меньшего размера.');
+        if (f && f.size > maxSize) {
+            alert(isVideo
+                ? 'Видео больше 500 МБ. Выберите файл меньшего размера.'
+                : 'Фото больше 25 МБ. Выберите файл меньшего размера.');
             input.value = '';
-            if (label) label.textContent = 'Фото';
+            if (label) label.textContent = defaultLabel;
             return;
         }
-        if (label) label.textContent = f ? f.name.length > 24 ? f.name.slice(0, 24) + '…' : f.name : 'Фото';
+        if (label) label.textContent = f ? f.name.length > 24 ? f.name.slice(0, 24) + '…' : f.name : defaultLabel;
     });
 });
 
@@ -520,7 +537,7 @@ async function submitDlgScore(workId, studentId) {
     const orig = btn.textContent;
     btn.textContent = 'Сохраняем…';
     try {
-        const r = await fetch('/cabinet/students/' + studentId + '/works/' + workId + '/score', {
+        const r = await window.fetchWithTimeout('/cabinet/students/' + studentId + '/works/' + workId + '/score', {
             method: 'POST', body: fd, redirect: 'manual',
         });
         if (r.ok || r.type === 'opaqueredirect' || r.status === 0 || r.status === 302) {
@@ -554,7 +571,7 @@ async function closeCycle(btn) {
     try {
         const fd = new FormData();
         fd.append('csrf_token', btn.dataset.csrf);
-        const r = await fetch('/cabinet/feedback/' + cycleId + '/close', {
+        const r = await window.fetchWithTimeout('/cabinet/feedback/' + cycleId + '/close', {
             method: 'POST',
             body: fd,
             headers: { 'Accept': 'application/json', 'X-CSRF-Token': btn.dataset.csrf },
@@ -586,7 +603,7 @@ async function deleteCycle(btn) {
     try {
         const fd = new FormData();
         fd.append('csrf_token', btn.dataset.csrf);
-        const r = await fetch('/cabinet/superadmin/feedback/' + cycleId + '/delete', {
+        const r = await window.fetchWithTimeout('/cabinet/superadmin/feedback/' + cycleId + '/delete', {
             method: 'POST',
             body: fd,
             headers: { 'Accept': 'application/json', 'X-CSRF-Token': btn.dataset.csrf },
@@ -615,7 +632,7 @@ async function reopenCycle(btn) {
     try {
         const fd = new FormData();
         fd.append('csrf_token', btn.dataset.csrf);
-        const r = await fetch('/cabinet/superadmin/feedback/' + cycleId + '/reopen', {
+        const r = await window.fetchWithTimeout('/cabinet/superadmin/feedback/' + cycleId + '/reopen', {
             method: 'POST',
             body: fd,
             headers: { 'Accept': 'application/json', 'X-CSRF-Token': btn.dataset.csrf },
@@ -638,18 +655,21 @@ document.querySelectorAll('form.dlg-form').forEach(form => {
         ev.preventDefault();
         const btn = form.querySelector('.dlg-send');
         const anyText = Array.from(form.querySelectorAll('textarea')).some(t => (t.value || '').trim());
-        const fileInput = form.querySelector('input[name="photo"]');
-        const hasFile = fileInput && fileInput.files && fileInput.files.length > 0;
-        if (!anyText && !hasFile) { alert('Заполни хотя бы один пункт или прикрепи фото'); return; }
+        const hasFile = Array.from(form.querySelectorAll('input[type="file"]')).some(i => i.files && i.files.length > 0);
+        if (!anyText && !hasFile) { alert('Заполни хотя бы один пункт или прикрепи фото/видео'); return; }
         btn.disabled = true;
         const origText = btn.textContent;
         btn.textContent = 'Отправка…';
+        const controller = new AbortController();
+        const timeoutMs = hasFile ? FEEDBACK_FILE_TIMEOUT_MS : FEEDBACK_TEXT_TIMEOUT_MS;
+        const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
         try {
             const fd = new FormData(form);
             const r = await fetch(form.action, {
                 method: 'POST',
                 body: fd,
                 headers: { 'Accept': 'application/json', 'X-CSRF-Token': fd.get('csrf_token') },
+                signal: controller.signal,
             });
             if (!r.ok) {
                 const data = await r.json().catch(() => ({}));
@@ -660,9 +680,17 @@ document.querySelectorAll('form.dlg-form').forEach(form => {
             }
             window.location.reload();
         } catch (e) {
-            alert('Сетевая ошибка');
+            if (e && e.name === 'AbortError') {
+                alert(hasFile
+                    ? 'Отправка заняла слишком много времени. Проверьте размер файла и интернет, затем попробуйте ещё раз.'
+                    : 'Сервер долго не отвечает. Обновите страницу и попробуйте отправить ещё раз.');
+            } else {
+                alert('Сетевая ошибка');
+            }
             btn.disabled = false;
             btn.textContent = origText;
+        } finally {
+            window.clearTimeout(timeoutId);
         }
     });
 });
@@ -678,7 +706,7 @@ async function returnToCurator(btn) {
     try {
         const fd = new FormData();
         fd.append('csrf_token', btn.dataset.csrf);
-        const r = await fetch('/cabinet/superadmin/feedback/' + cycleId + '/return-to-curator', {
+        const r = await window.fetchWithTimeout('/cabinet/superadmin/feedback/' + cycleId + '/return-to-curator', {
             method: 'POST', body: fd,
             headers: { 'Accept': 'application/json', 'X-CSRF-Token': btn.dataset.csrf },
         });
@@ -703,7 +731,7 @@ async function finishRevision(btn) {
     try {
         const fd = new FormData();
         fd.append('csrf_token', btn.dataset.csrf);
-        const r = await fetch('/cabinet/feedback/' + cycleId + '/revision-done', {
+        const r = await window.fetchWithTimeout('/cabinet/feedback/' + cycleId + '/revision-done', {
             method: 'POST', body: fd,
             headers: { 'Accept': 'application/json', 'X-CSRF-Token': btn.dataset.csrf },
         });
@@ -752,7 +780,7 @@ async function submitEditMsg(ev, msgId) {
         const fd = new FormData();
         fd.append('csrf_token', form.querySelector('input[name="csrf_token"]').value);
         fd.append('text', text);
-        const r = await fetch('/cabinet/feedback/message/' + msgId + '/edit', {
+        const r = await window.fetchWithTimeout('/cabinet/feedback/message/' + msgId + '/edit', {
             method: 'POST', body: fd,
             headers: { 'Accept': 'application/json', 'X-CSRF-Token': form.querySelector('input[name="csrf_token"]').value },
         });

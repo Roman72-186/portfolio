@@ -8,7 +8,6 @@ log = logging.getLogger(__name__)
 from fastapi import Request, Response, Depends, HTTPException, Header, Form
 from sqlalchemy.orm import Session as DBSession, joinedload
 
-from app.cache import set_cached_session
 from app.config import settings
 from app.csrf import validate_csrf_token
 from app.db.database import get_db
@@ -89,7 +88,6 @@ def get_current_user(
     role = user.role
     role_rank = role.rank if role else 0
     role_name = role.name if role else None
-    permissions: set[str] = {p.codename for p in role.permissions} if role else set()
     is_admin = role_rank >= 4 if role else user.is_admin
 
     if role_rank == 0 and not user.is_admin and not user.is_group_member:
@@ -125,10 +123,8 @@ def get_current_user(
         "created_at": user.created_at,
         "role_name": role_name,
         "role_rank": role_rank,
-        "permissions": permissions,
     }
 
-    set_cached_session(session_id, result)
     return result
 
 
@@ -136,15 +132,6 @@ def require_role(minimum_rank: int) -> Callable:
     """Factory: returns a FastAPI dependency that requires role rank >= minimum_rank."""
     def _dep(user: Annotated[dict, Depends(get_current_user)]) -> dict:
         if user["role_rank"] < minimum_rank:
-            raise HTTPException(status_code=403, detail="Недостаточно прав")
-        return user
-    return _dep
-
-
-def require_permission(codename: str) -> Callable:
-    """Factory: returns a FastAPI dependency that requires a specific permission."""
-    def _dep(user: Annotated[dict, Depends(get_current_user)]) -> dict:
-        if codename not in user["permissions"]:
             raise HTTPException(status_code=403, detail="Недостаточно прав")
         return user
     return _dep

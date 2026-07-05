@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, File
@@ -33,6 +34,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import or_ as sa_or
 from sqlalchemy.orm import Session as DBSession
 
+from app.cache import invalidate_unread
 from app.db.database import get_db
 from app.dependencies import (
     get_current_user,
@@ -256,6 +258,7 @@ async def post_dialog_message(
     strengthen: str = Form(default=""),
     recommendations: str = Form(default=""),
     photo: UploadFile | None = File(default=None),
+    video: UploadFile | None = File(default=None),
 ):
     work = db.query(Work).filter(Work.id == work_id).first()
     if not work:
@@ -307,7 +310,9 @@ async def post_dialog_message(
             raise HTTPException(status_code=403, detail="Жди обратной связи куратора, потом сможешь ответить")
         recipient_id = fb.curator_id
     else:
-        if "feedback.write" not in user.get("permissions", set()):
+        # feedback.write: куратор/админ/суперадмин, но не модератор (rank 3
+        # роль по факту без реальных прав — см. app/services/rbac.py ROLE_PERMISSIONS)
+        if role_rank < 2 or role_rank == 3:
             raise HTTPException(status_code=403, detail="Нет прав на запись feedback")
         fb, _created = fb_service.get_or_create_feedback(
             db, work_id=work_id, initiator_id=user["user_id"]
@@ -347,8 +352,26 @@ async def post_dialog_message(
         if data:
             photo_payload = (photo.filename, data)
 
-    if not text_clean and photo_payload is None:
-        raise HTTPException(status_code=400, detail="Введи текст или прикрепи фото")
+    video_payload: tuple[str, bytes, str] | None = None
+    if video and video.filename:
+        ext = Path(video.filename).suffix.lower()
+        content_type = (video.content_type or "").lower()
+        if (
+            content_type not in fb_service.ALLOWED_FEEDBACK_VIDEO_TYPES
+            and ext not in fb_service.ALLOWED_FEEDBACK_VIDEO_EXTENSIONS
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Видео должно быть в формате mp4, mov, webm, avi, mkv, wmv или 3gp",
+            )
+        vdata = await video.read(fb_service.MAX_FEEDBACK_VIDEO_SIZE + 1)
+        if len(vdata) > fb_service.MAX_FEEDBACK_VIDEO_SIZE:
+            raise HTTPException(status_code=413, detail="Видео больше 500 МБ")
+        if vdata:
+            video_payload = (video.filename, vdata, content_type or "video/mp4")
+
+    if not text_clean and photo_payload is None and video_payload is None:
+        raise HTTPException(status_code=400, detail="Введи текст, прикрепи фото или видео")
 
     try:
         msg = await fb_service.send_message(
@@ -358,6 +381,7 @@ async def post_dialog_message(
             sender_role=sender_role,
             text=text_clean or None,
             photo=photo_payload,
+            video=video_payload,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -379,6 +403,7 @@ async def post_dialog_message(
                 "sender_role_label": fb_service.role_label_ru(msg.sender_role),
                 "text": msg.text,
                 "photo_s3_url": msg.photo_s3_url,
+                "video_s3_url": msg.video_s3_url,
                 "created_at": msg.created_at.isoformat() if msg.created_at else None,
             },
         })
@@ -850,6 +875,7 @@ def edit_feedback_message(
         work_id=work.id,
     ))
     db.commit()
+    invalidate_unread(work.user_id)
     return JSONResponse({"ok": True, "text": msg.text})
 
 

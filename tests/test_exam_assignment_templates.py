@@ -399,6 +399,112 @@ def test_exam_assignment_duplicate_copies_tickets_and_assignees(
     )
 
 
+def _create_form_data(**overrides) -> dict:
+    future = date.today() + timedelta(days=3)
+    data = {
+        "csrf_token": "bypass",
+        "subject": "Рисунок",
+        "ticket_count": "1",
+        "ticket_1_title": "Билет 1",
+        "ticket_1_opens_at": f"{future.isoformat()}T11:45",
+        "ticket_1_closes_at": f"{future.isoformat()}T18:00",
+        "ticket_1_duration_minutes": "90",
+    }
+    data.update(overrides)
+    return data
+
+
+def test_exam_assignment_create_auto_title_and_seq_for_kind(
+    client, db, user_factory, session_factory,
+):
+    """Тип «Контрольная» → kind/seq_number сохранены, title собран автоматически."""
+    from datetime import datetime, timezone
+    admin = user_factory(vk_id=303030, role_name="суперадмин")
+    _login_as(client, session_factory, admin)
+
+    resp = client.post(
+        "/cabinet/exam-assignments/create",
+        data=_create_form_data(kind="control", note="выпускной", ticket_1_title="К-Билет"),
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    a = db.query(ExamAssignment).order_by(ExamAssignment.id.desc()).first()
+    assert a.kind == "control"
+    assert a.seq_number == 1
+    assert a.note == "выпускной"
+    today = datetime.now(timezone.utc).astimezone(MSK_TZ).strftime("%d.%m.%Y")
+    assert a.title == f"Контрольная №1 · Рисунок · {today} · выпускной"
+
+
+def test_exam_assignment_seq_number_per_kind_and_subject(
+    client, db, user_factory, session_factory,
+):
+    """Нумерация сквозная в пределах (kind, subject); другой предмет/тип — своя серия."""
+    admin = user_factory(vk_id=303031, role_name="суперадмин")
+    _login_as(client, session_factory, admin)
+
+    def _create(kind, subject, t):
+        return client.post(
+            "/cabinet/exam-assignments/create",
+            data=_create_form_data(kind=kind, subject=subject, ticket_1_title=t),
+            follow_redirects=False,
+        )
+
+    _create("mock", "Рисунок", "a")
+    _create("mock", "Рисунок", "b")
+    _create("control", "Рисунок", "c")
+    _create("mock", "Композиция", "d")
+
+    seqs = {
+        (a.kind, a.subject): a.seq_number
+        for a in db.query(ExamAssignment).all()
+    }
+    # Пробник Рисунок дошёл до 2, остальные серии — со своей единицы.
+    assert max(
+        a.seq_number for a in db.query(ExamAssignment)
+        .filter(ExamAssignment.kind == "mock", ExamAssignment.subject == "Рисунок").all()
+    ) == 2
+    assert seqs[("control", "Рисунок")] == 1
+    assert seqs[("mock", "Композиция")] == 1
+
+
+def test_exam_assignment_edit_form_renders(
+    client, db, user_factory, session_factory,
+):
+    """Edit-форма рендерится с типом/номером существующего задания."""
+    admin = user_factory(vk_id=303040, role_name="суперадмин")
+    _login_as(client, session_factory, admin)
+    a = _create_assignment(db, admin, status="published")
+    a.kind = "control"
+    a.seq_number = 7
+    a.note = "повтор"
+    db.commit()
+
+    resp = client.get(f"/cabinet/exam-assignments/{a.id}/edit")
+    assert resp.status_code == 200
+    assert 'value="control"' in resp.text and "checked" in resp.text
+    assert "auto-title-preview" in resp.text
+
+
+def test_exam_assignment_form_renders_recipient_filter(
+    client, db, user_factory, session_factory,
+):
+    """Форма отдаёт конструктор подбора получателей и данные кураторов."""
+    admin = user_factory(vk_id=303032, role_name="суперадмин")
+    curator = user_factory(vk_id=303033, role_name="куратор")
+    curator.last_name = "Кураторов"
+    curator.first_name = "Иван"
+    db.commit()
+    _login_as(client, session_factory, admin)
+
+    resp = client.get("/cabinet/exam-assignments/create")
+    assert resp.status_code == 200
+    assert "Подобрать по фильтру" in resp.text       # панель конструктора
+    assert "buildRecipientFilter" in resp.text       # JS рендер фильтра
+    assert 'name="kind"' in resp.text                # сегментный выбор типа
+    assert "auto-title-preview" in resp.text         # превью авто-названия
+
+
 def test_exam_assignment_duplicate_404_for_missing(
     client,
     db,
