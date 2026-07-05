@@ -9,7 +9,7 @@ intentionally allow several historical finals with different attempt_number in
 one cycle. Verified against prod data before writing this migration: no
 existing duplicate (cycle_id, work_type, attempt_number) rows with is_final=true.
 
-Revision ID: c3d4e5f6a7b8
+Revision ID: f7a8b9c0d1e2
 Revises: 375d357fbd05
 Create Date: 2026-07-05
 """
@@ -19,7 +19,7 @@ from alembic import op
 from sqlalchemy import text
 
 
-revision: str = 'c3d4e5f6a7b8'
+revision: str = 'f7a8b9c0d1e2'
 down_revision: Union[str, None] = '375d357fbd05'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
