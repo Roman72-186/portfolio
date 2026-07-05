@@ -1,8 +1,9 @@
-# Фаза 6 — находки для отдельного узкого аудита (2026-07-05)
+# Фаза 6 — находки и реализация (2026-07-05)
 
-Материал собран по плану `peppy-chasing-micali.md`, Фаза 6. **Код не менялся** — это
-входной материал для отдельной задачи с явным решением владельца по каждому пункту,
-не готовая к исполнению задача.
+Материал собран по плану `peppy-chasing-micali.md`, Фаза 6. Изначально собирался
+как чистый список находок без кода; по решению владельца пункты 1, 2 и 4
+впоследствии реализованы в этом же чате (см. «Статус реализации» в каждом
+разделе). Пункт 3 закрыт как «проверено, без находок» ещё на этапе сбора.
 
 ---
 
@@ -55,6 +56,15 @@ if any_ticket_active:
 cache по `(user_id, subject)`) или один раз посчитать активные билеты по всем
 ученикам куратора одним batched-запросом.
 
+**Статус реализации:** сделан безопасный, контейнерный фикс — устранён именно
+дубль вызова (`any()` + основной цикл считали `get_active_ticket` дважды на
+каждую пару). Теперь строится `active_ticket_by_key` один раз, `any()` и цикл
+переиспользуют готовый результат — вдвое меньше вызовов резолвера. Глубже (кэш
+внутри `get_active_tickets`/`is_subject_allowed_for_student` в
+`services/exam_cycle.py`) сознательно не трогал — этот файл активно меняется
+параллельным WIP (staged-загрузка, kind-фильтр), рисковать чужими правками не
+стал. См. [cabinet_students_shared.py:338-364](app/api/cabinet_students_shared.py#L338-L364).
+
 ---
 
 ## 2. Race condition в потоке «финал + до 10 этапных» (`cycle_upload.py`)
@@ -89,6 +99,26 @@ check-then-act без блокировки:
 (`cycle_id + is_final=True` через partial unique index, т.к. `is_final` не всегда
 True) с обработкой `IntegrityError`, либо блокировка по образцу `MockExamLock`
 до записи.
+
+**Статус реализации:** добавлен partial unique index
+`uq_works_cycle_final_attempt` на `(cycle_id, work_type, attempt_number)` WHERE
+`is_final` ([app/models/work.py](app/models/work.py), миграция
+`c3d4e5f6a7b8_works_unique_final_per_cycle.py`) + `_upload_and_save()` в
+`cycle_upload.py` теперь оборачивает вставку `Work`/`UploadLog` в
+`db.begin_nested()` и ловит `IntegrityError`, превращая гонку в штатный
+`success=0`/`last_error` вместо 500 или тихого дубликата.
+
+Важное уточнение по scope: constraint изначально делался на `(cycle_id,
+work_type)` без `attempt_number`, но это сломало 2 pre-existing теста
+(`tests/test_exam_cycle.py::test_attempt_number_increment_for_mock_exam` и
+`test_attempt_number_separate_for_retake`) — они намеренно проверяют, что
+`next_attempt_number()` считает НЕСКОЛЬКО исторических финалов с разными
+`attempt_number` в одном цикле. Сузил constraint до
+`(cycle_id, work_type, attempt_number)` — этого достаточно, чтобы поймать
+именно гонку (два параллельных запроса вычисляют один и тот же
+`next_attempt_number` ДО того, как другой закоммитил), не покушаясь на
+существующий (протестированный) инвариант нумерации попыток. Перед миграцией
+проверено на проде: дублей по обоим вариантам ключа не было.
 
 ---
 
@@ -135,6 +165,15 @@ True) с обработкой `IntegrityError`, либо блокировка п
 `_load_dashboard_data` (например: N успешных работ → правильный total; N
 непроверенных → правильный `total_unchecked`) — с учётом принципа проекта
 «тестировать поведение, не реализацию».
+
+**Статус реализации:** добавлены `tests/test_cabinet_admin_dashboard.py` (3
+теста: активные/неактивные пользователи считаются раздельно, works_by_type +
+total_works + works_this_month корректны по типу/месяцу/статусу, avg_score
+считает только оценённые работы, unscored_mocks корректно равен 0 без
+активного периода мок-экзамена — фиксирует именно ветку `else: unscored_mocks
+= 0`) и `tests/test_gallery_aggregations.py` (3 теста: счётчики по типам работ
+через группировку по месяцам, исключение status≠success и чужих Work,
+раздельный подсчёт total_success/total_failed/total_photos в `/cabinet/history`).
 
 ---
 

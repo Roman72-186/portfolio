@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Integer, String, Boolean, DateTime, ForeignKey, Numeric, Index
+from sqlalchemy import Integer, String, Boolean, DateTime, ForeignKey, Numeric, Index, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -56,4 +56,19 @@ class Work(Base):
         Index("ix_works_type_status", "work_type", "status"),
         Index("ix_works_cycle_id", "cycle_id"),
         Index("ix_works_parent_work_id", "parent_work_id"),
+        # Не может быть двух финалов с одинаковым attempt_number в одном цикле —
+        # закрывает гонку двух параллельных сдач финала (Фаза 6, п.2): без него
+        # check-then-act в upload_probnik_final/upload_otrabotka_final мог создать
+        # два Work с одинаковым (cycle_id, work_type, attempt_number), т.к. оба
+        # параллельных запроса считают next_attempt_number ДО того, как другой
+        # закоммитил свою вставку. Намеренно НЕ ограничиваем (cycle_id, work_type)
+        # без attempt_number — next_attempt_number() и tests/test_exam_cycle.py
+        # рассчитаны на несколько исторических финалов с разными attempt_number
+        # в одном цикле.
+        Index(
+            "uq_works_cycle_final_attempt", "cycle_id", "work_type", "attempt_number",
+            unique=True,
+            postgresql_where=text("is_final"),
+            sqlite_where=text("is_final"),
+        ),
     )

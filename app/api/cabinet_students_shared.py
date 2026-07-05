@@ -336,11 +336,14 @@ def students_panel(
     submitted_students: list[dict] = []
     not_submitted_students: list[dict] = []
     if user["role_rank"] == 2 and students:
-        any_ticket_active = any(
-            get_active_ticket(db, s["id"], subject) is not None
+        # Резолвер вызывает несколько запросов на пару (ученик × предмет) —
+        # считаем каждую пару ровно один раз, а не дважды (any() + основной цикл).
+        active_ticket_by_key = {
+            (s["id"], subject): get_active_ticket(db, s["id"], subject)
             for s in sidebar_students
             for subject in MOCK_SUBJECTS
-        )
+        }
+        any_ticket_active = any(t is not None for t in active_ticket_by_key.values())
 
         if any_ticket_active:
             mock_status_available = True
@@ -348,7 +351,7 @@ def students_panel(
                 pending_subjects = []
                 has_active_ticket = False
                 for subject in MOCK_SUBJECTS:
-                    ticket = get_active_ticket(db, s["id"], subject)
+                    ticket = active_ticket_by_key[(s["id"], subject)]
                     if ticket:
                         has_active_ticket = True
                         if not has_submitted_for_ticket(db, s["id"], subject, ticket.id):

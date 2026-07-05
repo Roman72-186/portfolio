@@ -17,6 +17,7 @@ from typing import Annotated, Callable
 
 from fastapi import APIRouter, Depends, UploadFile, File, Form
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
@@ -151,17 +152,27 @@ async def _upload_and_save(
             parent_work_id=parent_work_id,
             attempt_number=attempt_number if is_final else None,
         )
-        db.add(work)
-        db.add(UploadLog(
-            user_id=user["user_id"],
-            student_name=user["name"],
-            tariff=user.get("tariff"),
-            month=month,
-            photo_type=work_type,
-            photo_count=1,
-            status="success",
-        ))
-        db.flush()
+        try:
+            with db.begin_nested():
+                db.add(work)
+                db.add(UploadLog(
+                    user_id=user["user_id"],
+                    student_name=user["name"],
+                    tariff=user.get("tariff"),
+                    month=month,
+                    photo_type=work_type,
+                    photo_count=1,
+                    status="success",
+                ))
+                db.flush()
+        except IntegrityError:
+            # Гонка: два параллельных запроса одновременно сдавали финал одного
+            # и того же цикла — uq_works_cycle_final (БД) пропустил только
+            # первого. Второй проигрывает гонку и должен сообщить об этом, а не
+            # упасть 500м или молча создать дубликат.
+            fail += 1
+            last_error = "работа уже сдана (параллельная отправка)"
+            continue
         created_ids.append(work.id)
         success += 1
 
