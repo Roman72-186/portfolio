@@ -143,8 +143,8 @@
     margin-bottom: 10px;
 }
 .portfolio-year-btn {
-    width: 34px;
-    height: 34px;
+    width: 44px;
+    height: 44px;
     border-radius: 9px;
     border: 1px solid var(--line);
     background: var(--surface);
@@ -175,14 +175,14 @@
 }
 .portfolio-month-btn.has-works {
     color: var(--blue);
-    border-color: rgba(37,99,235,0.24);
+    border-color: rgba(59,91,255,0.24);
     cursor: pointer;
 }
 .portfolio-month-btn.active {
-    background: rgba(37,99,235,0.09);
+    background: rgba(59,91,255,0.09);
     color: var(--blue);
-    border-color: rgba(37,99,235,0.45);
-    box-shadow: 0 6px 14px rgba(37,99,235,0.14);
+    border-color: rgba(59,91,255,0.45);
+    box-shadow: 0 6px 14px rgba(59,91,255,0.14);
 }
 .portfolio-month-panel {
     border: 1px solid var(--line);
@@ -277,7 +277,7 @@
         <div class="pf-mgrid" data-gallery="pf-{{ key }}-{{ g.year }}-{{ g.month }}">
             {% for w in g.works %}
             {% set src = w.thumb or w.s3_url or "" %}
-            {% if src %}<img src="{{ src }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)">{% endif %}
+            {% if src %}<img src="{{ src }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">{% endif %}
             {% endfor %}
         </div>
     </div>
@@ -294,7 +294,7 @@
 
     <div class="portfolio-head">
         <div class="portfolio-head-copy">
-        <h1 style="font-size:26px;font-weight:900;letter-spacing:-0.5px" class="text-gradient">
+        <h1 style="font-size:26px;font-weight:900;letter-spacing:-0.5px" class="text-accent">
             Моё портфолио
         </h1>
         <p style="color:var(--muted);font-size:14px;margin-top:6px">
@@ -451,7 +451,7 @@ function buildPortfolioMonthPanel(key, groups, state) {
     group.works.forEach(function(w) {
         html += '<div class="portfolio-photo-cell">';
         if (w.thumb) {
-            html += '<img src="' + esc(w.thumb) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">';
+            html += '<img src="' + esc(w.thumb) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">';
         }
         html += '<div class="portfolio-photo-placeholder" style="display:' + (w.thumb ? 'none' : 'flex') + '">фото</div>';
         html += '</div>';

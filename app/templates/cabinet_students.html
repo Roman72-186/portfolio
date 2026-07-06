@@ -78,7 +78,7 @@
 .cohort-badge {
     position: absolute; right: -4px; bottom: -3px;
     min-width: 17px; height: 17px; padding: 0 4px;
-    border-radius: 999px; border: 2px solid var(--surface);
+    border-radius: var(--r-pill); border: 2px solid var(--surface);
     display: inline-flex; align-items: center; justify-content: center; gap: 1px;
     font-size: 9px; line-height: 1; font-weight: 900;
     color: #fff; box-shadow: 0 2px 6px rgba(15,23,42,0.22);
@@ -254,7 +254,7 @@
 .portfolio-month .month-header { border: 0; }
 .portfolio-month.open .month-header { border-bottom: 1px solid var(--line); }
 .portfolio-month:not(.open) .month-grid { display: none; }
-.portfolio-month.is-drop-target { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }
+.portfolio-month.is-drop-target { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(59,91,255,0.12); }
 .portfolio-toggle {
     display: inline-flex; align-items: center; gap: 10px;
     background: transparent; border: 0; padding: 0;
@@ -345,7 +345,7 @@
 }
 .mock-year-label { font-size: 16px; font-weight: 900; color: var(--text); }
 .mock-year-btn {
-    width: 34px; height: 34px; border-radius: 9px;
+    width: 44px; height: 44px; border-radius: 9px;
     border: 1px solid var(--line); background: var(--surface);
     color: var(--text); cursor: pointer; font-size: 18px; line-height: 1;
 }
@@ -403,7 +403,7 @@
 .mock-work-card {
     border: 1px solid var(--line);
     background: var(--surface-2);
-    border-radius: 10px;
+    border-radius: var(--r-sm);
     padding: 10px;
 }
 .mock-work-card img {
@@ -433,7 +433,7 @@
 .mock-hero-photo { flex: 1; min-width: 0; }
 .mock-hero-photo img {
     width: 100%; aspect-ratio: 4/3; object-fit: cover;
-    border-radius: 10px; border: 1px solid var(--line);
+    border-radius: var(--r-sm); border: 1px solid var(--line);
     cursor: zoom-in; display: block;
 }
 .mock-thumbnails { display: flex; flex-direction: column; gap: 6px; width: 88px; flex-shrink: 0; }
@@ -491,14 +491,14 @@
 .checked-badge {
     display: inline-flex; align-items: center; gap: 3px;
     font-size: 10px; font-weight: 700; padding: 2px 7px;
-    border-radius: 10px;
+    border-radius: var(--r-sm);
     background: rgba(5,150,105,0.12); color: var(--ok);
     margin-left: auto; flex-shrink: 0;
 }
 .pending-badge {
     display: inline-flex; align-items: center; justify-content: center;
     min-width: 20px; height: 20px; padding: 0 6px;
-    font-size: 11px; font-weight: 700; border-radius: 10px;
+    font-size: 11px; font-weight: 700; border-radius: var(--r-sm);
     background: rgba(217,119,6,0.15); color: var(--warning);
     margin-left: auto; flex-shrink: 0;
 }
@@ -623,7 +623,7 @@
     margin-bottom: 4px; flex-shrink: 0;
 }
 .retake-type-badge.is-retake {
-    background: rgba(37,99,235,0.10); color: var(--blue);
+    background: rgba(59,91,255,0.10); color: var(--blue);
 }
 .retake-type-badge.is-mock {
     background: rgba(245,158,11,0.12); color: #b45309;
@@ -639,7 +639,7 @@
 .retake-move-btn:hover { border-color: var(--blue); background: var(--blue-soft); }
 .subject-card.drop-target .subject-card-body {
     border-color: var(--blue) !important;
-    background: rgba(59,79,200,0.04) !important;
+    background: rgba(59,91,255,0.04) !important;
 }
 
 /* ── Sidebar filters ── */
@@ -662,7 +662,7 @@
 }
 .filter-pill {
     display: inline-flex; align-items: center; gap: 4px;
-    background: rgba(37, 99, 235, 0.12);
+    background: rgba(59, 91, 255, 0.12);
     border: 1px solid var(--blue);
     border-radius: var(--r-md); padding: 3px 4px 3px 10px;
     font-size: 11px; font-weight: 600; color: var(--blue);
@@ -671,11 +671,11 @@
 .filter-pill-remove {
     background: none; border: none; color: var(--blue);
     font-size: 16px; line-height: 1; cursor: pointer;
-    width: 18px; height: 18px; border-radius: 50%;
+    width: 44px; height: 44px; border-radius: 50%;
     display: inline-flex; align-items: center; justify-content: center;
     padding: 0;
 }
-.filter-pill-remove:hover { background: rgba(37, 99, 235, 0.2); }
+.filter-pill-remove:hover { background: rgba(59, 91, 255, 0.2); }
 .sidebar-hard-filters-add {
     padding: 6px 16px 0; font-size: 12px;
 }
@@ -805,9 +805,9 @@
 }
 .photo-wrap .photo-del {
     position: absolute; top: 4px; right: 4px;
-    width: 22px; height: 22px; border-radius: 50%;
+    width: 44px; height: 44px; border-radius: 50%;
     background: rgba(220,38,38,0.85); color: #fff; border: none;
-    font-size: 14px; line-height: 22px; text-align: center;
+    font-size: 14px; line-height: 44px; text-align: center;
     cursor: pointer; opacity: 0; transition: opacity 0.15s;
     z-index: 2;
 }
@@ -864,14 +864,15 @@
 }
 .upload-modal-title { font-size: 18px; font-weight: 900; color: var(--text); margin-bottom: 20px; }
 .upload-modal-close {
-    position: absolute; top: 14px; right: 14px;
+    position: absolute; top: 8px; right: 8px;
     background: none; border: none; font-size: 22px; color: var(--muted);
-    cursor: pointer; width: 36px; height: 36px; border-radius: 50%;
+    cursor: pointer; width: 44px; height: 44px; border-radius: 50%;
     transition: background 0.15s;
 }
 .upload-modal-close:hover { background: var(--surface-2); }
 .upload-field { margin-bottom: 16px; }
 .upload-field-label {
+    display: block;
     font-size: 12px; font-weight: 700; color: var(--dim);
     text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px;
 }
@@ -906,7 +907,7 @@
 .upload-preview-cell { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
 .upload-preview-cell img { width: 100%; height: 100%; object-fit: cover; }
 .upload-preview-del {
-    position: absolute; top: 3px; right: 3px; width: 20px; height: 20px;
+    position: absolute; top: 3px; right: 3px; width: 44px; height: 44px;
     border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff;
     border: none; cursor: pointer; font-size: 12px; line-height: 1;
     display: flex; align-items: center; justify-content: center;
@@ -1019,7 +1020,7 @@
     <!-- ── Sidebar ── -->
     <div class="sidebar">
         <div class="sidebar-header">
-            <div class="sidebar-title">{{ sidebar_title }}</div>
+            <h1 class="sidebar-title">{{ sidebar_title }}</h1>
             <input type="text" class="sidebar-search" placeholder="Имя, @username или VK ID…"
                    oninput="filterSidebar()" id="student-search">
         </div>
@@ -1201,13 +1202,13 @@
 
 <!-- Upload modal -->
 <div class="upload-modal-overlay" id="upload-modal" onclick="if(event.target===this)closeUploadModal()">
-    <div class="upload-modal">
-        <button class="upload-modal-close" onclick="closeUploadModal()">&times;</button>
-        <div class="upload-modal-title">Загрузить работы</div>
+    <div class="upload-modal" role="dialog" aria-modal="true" aria-labelledby="upload-modal-title">
+        <button class="upload-modal-close" type="button" onclick="closeUploadModal()" aria-label="Закрыть">&times;</button>
+        <div class="upload-modal-title" id="upload-modal-title">Загрузить работы</div>
         <form id="upload-form" onsubmit="return submitUpload(event)">
             <input type="hidden" name="csrf_token" value="">
             <div class="upload-field">
-                <div class="upload-field-label">Тип работы</div>
+                <label class="upload-field-label" for="upload-work-type">Тип работы</label>
                 <select class="upload-select" name="work_type" id="upload-work-type" onchange="toggleSubjectField()" required>
                     <option value="before">До обучения</option>
                     <option value="after" selected>После обучения</option>
@@ -1216,7 +1217,7 @@
                 </select>
             </div>
             <div class="upload-field" id="upload-subject-field" style="display:none">
-                <div class="upload-field-label">Предмет</div>
+                <label class="upload-field-label" for="upload-subject">Предмет</label>
                 <select class="upload-select" name="subject" id="upload-subject">
                     {% for subj in mock_subjects %}
                     <option value="{{ subj }}">{{ subj }}</option>
@@ -1224,7 +1225,7 @@
                 </select>
             </div>
             <div class="upload-field" id="upload-month-field">
-                <div class="upload-field-label">Месяц</div>
+                <label class="upload-field-label" for="upload-month">Месяц</label>
                 <select class="upload-select" name="month" id="upload-month" required>
                     {% for m in months %}
                     <option value="{{ m }}">{{ m | capitalize }}</option>
@@ -1232,7 +1233,7 @@
                 </select>
             </div>
             <div class="upload-field" id="upload-year-field">
-                <div class="upload-field-label">Год</div>
+                <label class="upload-field-label" for="upload-year">Год</label>
                 <select class="upload-select" name="year" id="upload-year" required>
                     <option value="{{ current_year - 1 }}">{{ current_year - 1 }}</option>
                     <option value="{{ current_year }}" selected>{{ current_year }}</option>
@@ -1240,15 +1241,15 @@
                 </select>
             </div>
             <div class="upload-field" id="upload-mock-date-field" style="display:none">
-                <div class="upload-field-label">Дата пробника</div>
+                <label class="upload-field-label" for="upload-mock-date">Дата пробника</label>
                 <input type="date" class="upload-select" name="mock_date" id="upload-mock-date" disabled>
             </div>
             <div class="upload-field" id="upload-score-field" style="display:none">
-                <div class="upload-field-label">Балл за пробник</div>
+                <label class="upload-field-label" for="upload-score">Балл за пробник</label>
                 <input type="number" class="upload-select" name="score" id="upload-score" min="0" max="100" step="1" placeholder="0–100" disabled>
             </div>
             <div class="upload-field">
-                <div class="upload-field-label" id="upload-photo-label">Фотографии (до 10)</div>
+                <label class="upload-field-label" id="upload-photo-label" for="upload-photo-input">Фотографии (до 10)</label>
                 <label class="upload-dropzone" id="upload-dropzone">
                     <input type="file" name="photos" id="upload-photo-input" multiple accept="image/*" required>
                     <div class="upload-dz-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
@@ -1687,14 +1688,14 @@ function buildCycles(data) {
         var pillTxt = fbTotal > 0 ? 'Есть обратная связь' : 'Нет обратной связи';
         html += '<a href="' + esc(c.url) + '" '
             + 'style="display:flex;justify-content:space-between;align-items:center;gap:10px;'
-            + 'padding:12px 14px;border:1px solid var(--line);border-radius:10px;'
+            + 'padding:12px 14px;border:1px solid var(--line);border-radius:var(--r-sm);'
             + 'text-decoration:none;color:inherit;transition:background .12s">'
             + '<div style="display:flex;flex-direction:column;gap:3px;min-width:0">'
             +   '<span style="font-weight:800;color:var(--ink)">' + esc(c.subject) + '</span>'
             +   '<span style="font-size:12px;color:var(--muted)">Начат: ' + esc(date) + '</span>'
             + '</div>'
             + '<div style="display:flex;gap:8px;align-items:center">'
-            +   '<span class="' + pillCls + '" style="font-size:11px;font-weight:800;padding:3px 9px;border-radius:999px;'
+            +   '<span class="' + pillCls + '" style="font-size:11px;font-weight:800;padding:3px 9px;border-radius:var(--r-pill);'
             +   (fbTotal > 0 ? 'background:rgba(34,197,94,0.12);color:#15803D' : 'background:rgba(245,158,11,0.12);color:#B45309')
             +   '">' + esc(pillTxt) + '</span>'
             +   '<span aria-hidden="true" style="color:var(--muted)">›</span>'
@@ -1755,7 +1756,7 @@ function buildHero(s, bySubj) {
     return '<div class="student-hero">'
         + avatar
         + '<div class="student-hero-info">'
-        +   '<div class="student-hero-name">' + esc(s.name) + '</div>'
+        +   '<h2 class="student-hero-name">' + esc(s.name) + '</h2>'
         +   '<div class="student-hero-pills">'
         +     (s.tariff && s.tariff !== '—' ? '<span class="student-hero-pill">' + esc(s.tariff) + '</span>' : '')
         +     periodPills
@@ -1832,7 +1833,7 @@ function buildPortfolioMonthBlock(sid, workType, g, blockId) {
     html += '<div class="month-grid" style="display:none" data-gallery="' + workType + '-' + sid + '-' + esc(g.year) + '-' + esc(g.month) + '">';
     g.works.forEach(function(w) {
         if (w.s3_url) {
-            var img = '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)">';
+            var img = '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">';
             html += wrapPortfolioPhoto(img, sid, w.id, workType);
         }
     });
@@ -1969,7 +1970,7 @@ function buildMockExams(data) {
         var banner = data.period_active
             ? 'Показаны только пробники, сданные в текущий период'
             : 'Сейчас нет активного периода сдачи — работ не найдено';
-        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;margin-bottom:12px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;font-size:13px;color:var(--muted)">'
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;margin-bottom:12px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);font-size:13px;color:var(--muted)">'
             + '<span>⏱ ' + banner + '</span>'
             + '<button type="button" class="back-to-profile" style="margin:0" onclick="showAllMocks()">Показать все</button>'
             + '</div>';
@@ -2198,9 +2199,9 @@ function buildMockDayPanel(sid, subject, grouped, state) {
         var bc = scoreBadgeClass(w.score);
         var bt = w.score != null ? Math.round(w.score) + '/100' : '—';
         var imgStyle = hero
-            ? 'style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:10px;border:1px solid var(--line);cursor:zoom-in;display:block"'
+            ? 'style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--line);cursor:zoom-in;display:block"'
             : 'style="width:88px;height:88px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:zoom-in;display:block"';
-        var img = '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)" ' + imgStyle + '>';
+        var img = '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото" ' + imgStyle + '>';
         var badge = '<span class="work-score-badge ' + bc + '">' + bt + '</span>';
         var delBtn = CAN_SCORE
             ? '<button class="photo-del" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)" title="Удалить">&times;</button>'
@@ -2431,7 +2432,7 @@ function buildRetakeWorkCard(sid, w, subject, allSubjects, gallery) {
         var bt = w.curator_score != null ? Math.round(w.curator_score) + '/100' : '—';
         html += '<div style="padding:0 0 8px">'
             + '<div class="photo-wrap" data-gallery="' + esc(gallery) + '" style="display:inline-block">'
-            + '<img src="' + esc(w.s3_url) + '" loading="lazy" onclick="openGallery(this)" alt="" style="width:100%;max-width:320px;aspect-ratio:1;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--line);cursor:zoom-in;display:block">'
+            + '<img src="' + esc(w.s3_url) + '" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото" alt="" style="width:100%;max-width:320px;aspect-ratio:1;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--line);cursor:zoom-in;display:block">'
             + '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
             + '</div>'
             + '</div>';

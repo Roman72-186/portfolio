@@ -103,7 +103,7 @@
 <div class="gallery-wrap">
 
     <div style="margin-bottom:20px">
-        <h1 style="font-size:26px;font-weight:900;letter-spacing:-0.5px" class="text-gradient">
+        <h1 style="font-size:26px;font-weight:900;letter-spacing:-0.5px" class="text-accent">
             Галерея работ
         </h1>
         <p style="color:var(--muted);font-size:14px;margin-top:6px">
@@ -179,7 +179,7 @@
                         {% set thumb = w.s3_url or (drive_thumbs.get(w.drive_file_id, '') if w.drive_file_id else '') %}
                         <div class="work-cell" data-page-index="{{ loop.index0 }}">
                             {% if thumb %}
-                            <img src="{{ thumb }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)"
+                            <img src="{{ thumb }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото"
                                  onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
                             {% endif %}
                             <div class="work-no-photo" style="display:{% if not thumb %}flex{% else %}none{% endif %}">фото</div>
@@ -226,7 +226,7 @@
                         {% set thumb = w.s3_url or (drive_thumbs.get(w.drive_file_id, '') if w.drive_file_id else '') %}
                         <div class="work-cell" data-page-index="{{ loop.index0 }}">
                             {% if thumb %}
-                            <img src="{{ thumb }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)"
+                            <img src="{{ thumb }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото"
                                  onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
                             {% endif %}
                             <div class="work-no-photo" style="display:{% if not thumb %}flex{% else %}none{% endif %}">фото</div>
@@ -273,7 +273,7 @@
                         {% set thumb = w.s3_url or '' %}
                         <div class="work-cell" data-page-index="{{ loop.index0 }}">
                             {% if thumb %}
-                            <img src="{{ thumb }}" alt="{{ w.subject or w.filename }}" loading="lazy" onclick="openGallery(this)"
+                            <img src="{{ thumb }}" alt="{{ w.subject or w.filename }}" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото"
                                  onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
                             {% endif %}
                             <div class="work-no-photo" style="display:{% if not thumb %}flex{% else %}none{% endif %}">фото</div>
@@ -320,7 +320,7 @@
                         {% set thumb = w.s3_url or '' %}
                         <div class="work-cell" data-page-index="{{ loop.index0 }}">
                             {% if thumb %}
-                            <img src="{{ thumb }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)"
+                            <img src="{{ thumb }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото"
                                  onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
                             {% endif %}
                             <div class="work-no-photo" style="display:{% if not thumb %}flex{% else %}none{% endif %}">фото</div>

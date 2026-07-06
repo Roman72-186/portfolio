@@ -14,12 +14,12 @@
     <div class="sidebar">
         <div class="sidebar-header">
             <a href="/cabinet/admin-panel" class="sidebar-back">← Кабинет</a>
-            <div class="sidebar-title">
+            <h1 class="sidebar-title">
                 {{ title }}
                 {% if total_unchecked %}
                 <span class="sidebar-counter" title="Непроверенных работ">{{ total_unchecked }}</span>
                 {% endif %}
-            </div>
+            </h1>
             <div class="sidebar-subtitle">
                 {{ total_students }} учен{{ 'иков' if total_students != 1 else 'ик' }} · на проверке {{ total_unchecked }} работ
             </div>

@@ -12,8 +12,9 @@ from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_M
 
 
 def _stat_pair(text: str, value, label: str) -> bool:
+    """Дашборд рендерит .stat-tile: сначала label в .stat-tile-head, потом value в .stat-tile-value."""
     pattern = re.compile(
-        r'stat-val">' + re.escape(str(value)) + r'</div>\s*<div class="stat-lbl">' + re.escape(label)
+        re.escape(label) + r'[^<]*</div>\s*<div class="stat-tile-value">' + re.escape(str(value)) + r'</div>'
     )
     return pattern.search(text) is not None
 

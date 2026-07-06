@@ -90,7 +90,7 @@
 }
 .checked-badge {
     display: inline-flex; align-items: center; gap: 4px;
-    background: var(--success); color: #fff;
+    background: rgba(5,150,105,0.12); color: var(--ok);
     border-radius: var(--r-sm); padding: 2px 8px;
     font-size: 11px; font-weight: 800;
     flex-shrink: 0;
@@ -165,7 +165,7 @@
 .retake-info { flex: 1; min-width: 0; }
 .retake-del-btn {
     flex-shrink: 0; background: none; border: 1px solid var(--line);
-    color: var(--error); border-radius: 8px;
+    color: var(--error); border-radius: var(--r-sm);
     width: 36px; height: 36px; cursor: pointer;
     font-size: 16px; line-height: 1;
     display: flex; align-items: center; justify-content: center;
@@ -179,13 +179,13 @@
 }
 .chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 .score-blue-chip {
-    background: rgba(59,79,200,0.1); color: #3B4FC8;
-    border-radius: 8px; padding: 4px 10px;
+    background: rgba(59,91,255,0.1); color: var(--blue);
+    border-radius: var(--r-sm); padding: 4px 10px;
     font-size: 12px; font-weight: 800;
 }
 .scored-chip {
     background: rgba(217,119,6,0.1); color: var(--warning);
-    border-radius: 8px; padding: 4px 10px;
+    border-radius: var(--r-sm); padding: 4px 10px;
     font-size: 12px; font-weight: 800;
 }
 
@@ -197,18 +197,18 @@
 .score-form-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .score-form input[type=number], .score-form textarea {
     background: var(--surface); border: 1.5px solid var(--line);
-    border-radius: 8px; padding: 7px 10px;
+    border-radius: var(--r-sm); padding: 7px 10px;
     font-size: 13px; color: var(--text);
     font-family: inherit; outline: none;
 }
 .score-form input[type=number]:focus, .score-form textarea:focus { border-color: var(--blue); }
 .score-form input[type=number] { width: 80px; }
 .score-form textarea { width: 100%; min-height: 50px; resize: vertical; }
-.btn-save { padding: 8px 14px; border-radius: 8px; font-size: 13px; }
+.btn-save { padding: 8px 14px; border-radius: var(--r-sm); font-size: 13px; }
 .edit-score-wrap { margin-top: 10px; }
 .btn-edit-score {
     display: inline-flex; align-items: center; gap: 6px;
-    padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line);
+    padding: 7px 14px; border-radius: var(--r-sm); border: 1px solid var(--line);
     background: var(--surface-2); color: var(--text); font-size: 13px;
     font-weight: 600; cursor: pointer; font-family: inherit;
     transition: border-color 0.15s, color 0.15s;
@@ -219,16 +219,16 @@
 .retake-move-row { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 16px 10px; }
 .retake-move-btn {
     border: 1px solid var(--line); background: var(--surface);
-    color: var(--blue); border-radius: 8px; padding: 6px 10px;
+    color: var(--blue); border-radius: var(--r-sm); padding: 6px 10px;
     font-size: 12px; font-weight: 800; cursor: pointer; font-family: inherit;
 }
 .retake-move-btn:hover { border-color: var(--blue); background: var(--blue-soft); }
 .retake-work[draggable="true"] { cursor: grab; }
-.subject-block.drop-target .subject-block-body { border-color: var(--blue) !important; background: rgba(59,79,200,0.04) !important; }
+.subject-block.drop-target .subject-block-body { border-color: var(--blue) !important; background: rgba(59,91,255,0.04) !important; }
 .student-comment {
     font-size: 12px; color: var(--muted);
-    background: rgba(59,79,200,0.06);
-    border: 1px solid rgba(59,79,200,0.18);
+    background: rgba(59,91,255,0.06);
+    border: 1px solid rgba(59,91,255,0.18);
     padding: 6px 10px; border-radius: 6px;
     margin-top: 6px; white-space: pre-wrap;
 }
@@ -246,7 +246,7 @@
 .work-score-badge.score-red { background: rgba(220,38,38,0.85); }
 .photo-del {
     position: absolute; top: 4px; right: 4px;
-    width: 22px; height: 22px;
+    width: 44px; height: 44px;
     background: rgba(220,38,38,0.75); color: #fff;
     border: none; border-radius: 4px; cursor: pointer;
     font-size: 14px; line-height: 1;
@@ -272,18 +272,6 @@
 .empty-state { text-align: center; padding: 48px 20px; color: var(--dim); }
 .empty-icon { font-size: 40px; margin-bottom: 12px; }
 .empty-text { font-size: 14px; }
-
-.lb {
-    position: fixed; inset: 0; background: rgba(10,10,30,0.88);
-    z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px;
-}
-.lb.open { display: flex; }
-.lb img { max-width: 100%; max-height: 88vh; border-radius: var(--r-md); }
-.lb-close {
-    position: absolute; top: 16px; right: 16px;
-    background: rgba(255,255,255,0.15); border: none; color: #fff;
-    width: 44px; height: 44px; border-radius: 50%; font-size: 22px; cursor: pointer;
-}
 
 .mobile-back-btn { display: none; }
 
@@ -424,7 +412,7 @@ function renderRetakes(data) {
         + '<div class="student-hero">'
         + avatar
         + '<div class="student-hero-info">'
-        +   '<div class="student-hero-name">' + esc(s.name) + '</div>'
+        +   '<h2 class="student-hero-name">' + esc(s.name) + '</h2>'
         +   '<div class="student-hero-pills">'
         +     (s.tariff ? '<span class="student-hero-pill">' + esc(s.tariff) + '</span>' : '')
         +     (s.study_duration ? '<span class="student-hero-pill">' + esc(s.study_duration) + '</span>' : '')
@@ -459,7 +447,7 @@ function buildSubjectRetakeBlock(sid, subject, works, isUnassigned, subjects) {
         : '';
     var html = '<div class="subject-block" style="margin-bottom:24px"' + dropAttrs + '>'
         + '<div class="subject-block-header" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:var(--surface-2);border:1.5px solid var(--line);border-radius:var(--r-md) var(--r-md) 0 0;border-bottom:none">'
-        +   '<span style="font-family:var(--font-display);font-size:16px;font-weight:800;color:var(--ink)">' + esc(subject) + '</span>'
+        +   '<h3 style="margin:0;font-family:var(--font-display);font-size:16px;font-weight:800;color:var(--ink)">' + esc(subject) + '</h3>'
         +   '<span style="font-size:12px;color:var(--muted)">' + works.length + ' работ</span>'
         + '</div>'
         + '<div class="subject-block-body" style="border:1.5px solid var(--line);border-top:none;border-radius:0 0 var(--r-md) var(--r-md);padding:12px;background:var(--surface)">';
@@ -484,7 +472,7 @@ function buildSubjectRetakeBlock(sid, subject, works, isUnassigned, subjects) {
         var label = cap(monthName) + ' ' + year;
         html += '<div class="month-block">'
             + '<div class="month-header">'
-            +   '<span class="month-label">' + esc(label) + '</span>'
+            +   '<h4 class="month-label">' + esc(label) + '</h4>'
             +   '<span class="month-count">' + monthWorks.length + ' работ</span>'
             + '</div>';
         html += buildMonthWorks(sid, monthWorks, year + '-' + monthName + '-' + esc(subject), subject, isUnassigned, subjects || []);
@@ -537,70 +525,6 @@ function buildChipsAndComment(w) {
         ? '<div class="student-comment" style="margin:6px 16px 0">' + esc(w.comment) + '</div>'
         : '';
     return (chips ? '<div class="retake-chips-row">' + chips + '</div>' : '') + commentBlock;
-}
-
-function buildMonthWorks(sid, works, galleryKey, subject, isUnassigned, subjects) {
-    if (!works.length) return '';
-    var primary = works.find(function(w) { return w.curator_score != null; }) || works[0];
-    var rest = works.filter(function(w) { return w !== primary; });
-    var gallery = 'retake-' + galleryKey;
-    var workIds = works.map(function(w) { return w.id; }).join(',');
-    var dragAttrs = CAN_MOVE_RETAKES
-        ? ' draggable="true" data-work-ids="' + esc(workIds) + '" ondragstart="startRetakeDrag(event)"'
-        : '';
-    var html = '<div class="retake-work" data-work-id="' + primary.id + '"' + dragAttrs + '>';
-
-    if (rest.length === 0) {
-        // Одна работа — компактная карточка с фото + скор-бейдж
-        if (primary.s3_url) {
-            var bc = scoreBadgeClass(primary.curator_score);
-            var bt = primary.curator_score != null ? Math.round(primary.curator_score) + '/100' : '—';
-            html += '<div style="padding:12px 16px 8px">'
-                + '<div class="photo-wrap" data-gallery="' + esc(gallery) + '" style="display:inline-block">'
-                + '<img src="' + esc(primary.s3_url) + '" loading="lazy" onclick="openGallery(this)" alt="" style="width:100%;max-width:320px;aspect-ratio:1;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--line);cursor:zoom-in;display:block">'
-                + '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
-                + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + primary.id + ',this)">&times;</button>'
-                + '</div>'
-                + '</div>';
-        }
-        html += buildChipsAndComment(primary);
-        html += '<div class="retake-form-wrap">' + buildScoreFormOrEditButton(sid, primary.id, primary.curator_score, primary.comment) + '</div>';
-    } else {
-        // Несколько работ — крупное фото + миниатюры
-        html += '<div class="mock-hero-layout" data-gallery="' + esc(gallery) + '">';
-        html += '<div class="mock-hero-photo">';
-        if (primary.s3_url) {
-            var bc = scoreBadgeClass(primary.curator_score);
-            var bt = primary.curator_score != null ? Math.round(primary.curator_score) + '/100' : '—';
-            html += '<div class="photo-wrap">'
-                + '<img src="' + esc(primary.s3_url) + '" loading="lazy" onclick="openGallery(this)" alt="">'
-                + '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
-                + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + primary.id + ',this)">&times;</button>'
-                + '</div>';
-        }
-        html += '</div>';
-        html += '<div class="mock-thumbnails">';
-        rest.forEach(function(w) {
-            if (w.s3_url) {
-                var wbc = scoreBadgeClass(w.curator_score);
-                html += '<div class="photo-wrap">'
-                    + '<img src="' + esc(w.s3_url) + '" loading="lazy" onclick="openGallery(this)" alt="">'
-                    + (w.curator_score != null ? '<span class="work-score-badge ' + wbc + '">' + Math.round(w.curator_score) + '/100</span>' : '')
-                    + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)">&times;</button>'
-                    + '</div>';
-            }
-        });
-        html += '</div>';
-        html += '</div>'; // .mock-hero-layout
-        html += buildChipsAndComment(primary);
-        html += '<div class="retake-form-wrap">' + buildScoreFormOrEditButton(sid, primary.id, primary.curator_score, primary.comment) + '</div>';
-    }
-
-    if (CAN_MOVE_RETAKES) {
-        html += buildRetakeMoveButtons(sid, workIds, subject, subjects || []);
-    }
-    html += '</div>'; // .retake-work
-    return html;
 }
 
 function buildRetakeMoveButtons(sid, workIds, currentSubject, subjects) {
@@ -676,7 +600,7 @@ function buildMonthWorks(sid, works, galleryKey, subject, isUnassigned, subjects
             var bt = w.curator_score != null ? Math.round(w.curator_score) + '/100' : '—';
             html += '<div style="padding:12px 16px 8px">'
                 + '<div class="photo-wrap" data-gallery="' + esc(gallery) + '" style="display:inline-block">'
-                + '<img src="' + esc(w.s3_url) + '" loading="lazy" onclick="openGallery(this)" alt="" style="width:100%;max-width:320px;aspect-ratio:1;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--line);cursor:zoom-in;display:block">'
+                + '<img src="' + esc(w.s3_url) + '" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото" alt="" style="width:100%;max-width:320px;aspect-ratio:1;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--line);cursor:zoom-in;display:block">'
                 + '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
                 + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)">&times;</button>'
                 + '</div>'

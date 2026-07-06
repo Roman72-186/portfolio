@@ -48,7 +48,7 @@
 /* ── Assignees ── */
 .ticket-assignees { padding: 16px 22px; border-top: 1px solid var(--line); }
 .assignees-label { font-size: 11px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
-.assign-all-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: rgba(37,99,235,0.08); color: var(--blue); border-radius: 8px; font-size: 11px; font-weight: 700; }
+.assign-all-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: rgba(59,91,255,0.08); color: var(--blue); border-radius: 8px; font-size: 11px; font-weight: 700; }
 .assignees-grid { display: flex; flex-wrap: wrap; gap: 6px; }
 .assignee-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: var(--r-xl); font-size: 12px; font-weight: 500; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); }
 .assignee-chip.notified { background: rgba(5,150,105,0.07); border-color: rgba(5,150,105,0.2); color: var(--ok); }
@@ -152,7 +152,7 @@
                 </div>
                 <div class="ticket-img-col">
                     {% if ticket.image_s3_url %}
-                    <img src="{{ ticket.image_s3_url }}" alt="Фото билета {{ ticket.ticket_number }}" class="ticket-img" style="cursor:zoom-in" onclick="openGallery(this)">
+                    <img src="{{ ticket.image_s3_url }}" alt="Фото билета {{ ticket.ticket_number }}" class="ticket-img" style="cursor:zoom-in" onclick="openGallery(this)" tabindex="0" role="button">
                     {% else %}
                     <div class="ticket-no-img"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
                     {% endif %}

@@ -229,8 +229,8 @@ a:hover { color: var(--blue-deep); }
 }
 a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 .notif-pop-item.unread {
-    background: rgba(37,99,235,0.06);
-    border-color: rgba(37,99,235,0.2);
+    background: rgba(59,91,255,0.06);
+    border-color: rgba(59,91,255,0.2);
 }
 .notif-pop-item-title {
     font-size: 13px; font-weight: 600; color: var(--ink); line-height: 1.4;
@@ -281,7 +281,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 .card-dark:hover { box-shadow: 0 8px 32px rgba(20,30,80,.22); transform: translateY(-2px); }
 
 .card-blue {
-    background: linear-gradient(165deg, #6F8BFF 0%, var(--blue) 100%);
+    background: linear-gradient(165deg, var(--blue-deep) 0%, var(--blue) 100%);
     border: none;
     border-radius: var(--r-lg);
     box-shadow: var(--sh-blue);
@@ -298,6 +298,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 .card .card-desc { color: var(--muted); }
 .card-dark .card-title, .card-blue .card-title { color: #fff; }
 .card-dark .card-desc, .card-blue .card-desc { color: rgba(255,255,255,.72); }
+.card-blue .card-desc { color: rgba(255,255,255,.93); }
 
 /* Card icon variants */
 .card-icon-wrap {
@@ -445,7 +446,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 }
 .stat-tile-head {
     display: flex; align-items: center; gap: 8px;
-    color: var(--muted);
+    color: var(--dim);
     font-size: 13px; font-weight: 500;
 }
 .stat-tile-head .ico {
@@ -570,7 +571,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 /* ═══════════════════════════════════════
    TEXT UTILITIES
    ═══════════════════════════════════════ */
-.text-gradient { font-weight: 800; color: var(--blue); }
+.text-accent { font-weight: 800; color: var(--blue); }
 .text-muted { color: var(--muted); }
 .footer { text-align: center; padding: 20px; font-size: 12px; color: var(--dim); }
 
@@ -608,7 +609,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 .lightbox-close {
     position: absolute; top: 16px; right: 16px;
     background: rgba(255,255,255,.15); border: none; color: #fff;
-    width: 40px; height: 40px; border-radius: 50%; font-size: 20px; cursor: pointer;
+    width: 44px; height: 44px; border-radius: 50%; font-size: 20px; cursor: pointer;
     transition: background 0.2s; z-index: 2;
 }
 .lightbox-close:hover { background: rgba(255,255,255,.28); }
@@ -834,7 +835,7 @@ button.desk-nav-item {
 @media (max-width: 640px) {
     .lightbox-prev { left: 4px; }
     .lightbox-next { right: 4px; }
-    .lightbox-nav { width: 38px; height: 38px; font-size: 22px; }
+    .lightbox-nav { width: 44px; height: 44px; font-size: 22px; }
     .lightbox-thumb img { width: 56px; height: 42px; }
     #lightbox-img { max-height: 65vh; }
 }

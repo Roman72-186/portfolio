@@ -10,28 +10,27 @@
 .su-back:hover { color: var(--blue); }
 
 .su-filters { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
-.su-filters input, .su-filters select { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; }
+.su-filters input, .su-filters select { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: var(--r-sm); background: var(--bg); color: var(--text); outline: none; }
 .su-filters input:focus, .su-filters select:focus { border-color: var(--blue); }
 .su-filters label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
-.su-filters button { padding: 8px 16px; background: var(--blue); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.su-filters button { padding: 8px 16px; background: var(--blue); color: #fff; border: none; border-radius: var(--r-sm); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
 .su-filters button:hover { opacity: 0.88; }
 
-.creds-panel { background: rgba(37,99,235,0.06); border: 1px solid rgba(37,99,235,0.2); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; }
+.creds-panel { background: rgba(59,91,255,0.06); border: 1px solid rgba(59,91,255,0.2); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; }
 .creds-title { font-size: 14px; font-weight: 900; color: var(--blue); margin-bottom: 10px; }
 .creds-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .creds-label { font-size: 11px; font-weight: 800; color: var(--dim); width: 54px; flex-shrink: 0; }
-.creds-value { font-family: monospace; font-size: 13px; font-weight: 800; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; word-break: break-all; }
-.creds-copy { padding: 6px 10px; border: 1px solid rgba(37,99,235,0.24); border-radius: 8px; background: transparent; color: var(--blue); font-size: 11px; font-weight: 800; cursor: pointer; font-family: inherit; }
+.creds-value { font-family: monospace; font-size: 13px; font-weight: 800; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 9px; word-break: break-all; }
+.creds-copy { padding: 6px 10px; border: 1px solid rgba(59,91,255,0.24); border-radius: var(--r-sm); background: transparent; color: var(--blue); font-size: 11px; font-weight: 800; cursor: pointer; font-family: inherit; }
 .creds-note { font-size: 12px; color: var(--dim); line-height: 1.45; }
-.alert-panel { border-radius: 10px; padding: 12px 14px; margin-bottom: 18px; font-size: 13px; line-height: 1.45; background: rgba(220,38,38,0.07); border: 1px solid rgba(220,38,38,0.2); color: var(--error); }
 .access-link-panel { background: rgba(5,150,105,0.06); border: 1px solid rgba(5,150,105,0.22); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; }
 .access-link-title { font-size: 14px; font-weight: 900; color: var(--ok); margin-bottom: 10px; }
 .access-link-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.access-link-value { flex: 1; min-width: 240px; font-size: 12px; font-family: monospace; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; word-break: break-all; }
-.access-link-copy { padding: 7px 12px; border: 1px solid rgba(5,150,105,0.24); border-radius: 8px; background: transparent; color: var(--ok); font-size: 11px; font-weight: 800; cursor: pointer; font-family: inherit; }
+.access-link-value { flex: 1; min-width: 240px; font-size: 12px; font-family: monospace; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 10px; word-break: break-all; }
+.access-link-copy { padding: 7px 12px; border: 1px solid rgba(5,150,105,0.24); border-radius: var(--r-sm); background: transparent; color: var(--ok); font-size: 11px; font-weight: 800; cursor: pointer; font-family: inherit; }
 .access-link-note { font-size: 12px; color: var(--dim); margin-top: 8px; }
 
-.role-form select { font-family: inherit; font-size: 12px; padding: 5px 8px; border: 1.5px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); outline: none; max-width: 150px; }
+.role-form select { font-family: inherit; font-size: 12px; padding: 5px 8px; border: 1.5px solid var(--line); border-radius: var(--r-sm); background: var(--bg); color: var(--text); outline: none; max-width: 150px; }
 
 .su-table-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; box-shadow: var(--sh-sm); }
 .su-table { width: 100%; border-collapse: collapse; }
@@ -52,7 +51,7 @@
 .u-deleted { background: rgba(107,114,128,0.05); }
 .u-deleted td { color: var(--dim); }
 
-.action-btn { padding: 5px 12px; border-radius: 8px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; border: 1.5px solid transparent; transition: opacity 0.15s; }
+.action-btn { padding: 5px 12px; border-radius: var(--r-sm); font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; border: 1.5px solid transparent; transition: opacity 0.15s; }
 .btn-block { background: rgba(220,38,38,0.07); color: var(--error); border-color: rgba(220,38,38,0.2); }
 .btn-block:hover { opacity: 0.75; }
 .btn-unblock { background: rgba(5,150,105,0.07); color: var(--ok); border-color: rgba(5,150,105,0.2); }
@@ -61,7 +60,7 @@
 .btn-delete:hover { background: rgba(220,38,38,0.07); color: var(--error); border-color: rgba(220,38,38,0.2); }
 .actions-cell { display: flex; gap: 6px; flex-wrap: wrap; }
 
-.btn-tags { background: rgba(37,99,235,0.08); color: var(--blue); border-color: rgba(37,99,235,0.2); padding: 7px 14px; font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; }
+.btn-tags { background: rgba(59,91,255,0.08); color: var(--blue); border-color: rgba(59,91,255,0.2); padding: 7px 14px; font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; }
 .btn-tags:hover { opacity: 0.75; }
 
 /* Confirm modal */
@@ -84,7 +83,7 @@
 
     <div class="su-header">
         <a href="/cabinet" class="su-back">← Дашборд</a>
-        <div class="su-title">Управление пользователями</div>
+        <h1 class="su-title">Управление пользователями</h1>
         {% if user.role_rank >= 5 %}
         <a href="/cabinet/superadmin/create-staff" class="action-btn btn-tags">👤 Создать сотрудника</a>
         {% endif %}
@@ -176,12 +175,12 @@
     </form>
 
     {% if page_error %}
-    <div class="alert-panel">{{ page_error }}</div>
+    <div class="alert alert-error" style="margin-bottom:18px">{{ page_error }}</div>
     {% endif %}
 
     {% if issued_creds %}
     <div class="creds-panel">
-        <div class="creds-title">Доступ создан — {{ issued_creds.name }}</div>
+        <h2 class="creds-title">Доступ создан — {{ issued_creds.name }}</h2>
         <div class="creds-row">
             <span class="creds-label">Логин</span>
             <span class="creds-value" id="cred-login">{{ issued_creds.login }}</span>
@@ -198,7 +197,7 @@
 
     {% if issued_link %}
     <div class="access-link-panel">
-        <div class="access-link-title">Одноразовая ссылка — {{ issued_link_name }}</div>
+        <h2 class="access-link-title">Одноразовая ссылка — {{ issued_link_name }}</h2>
         <div class="access-link-row">
             <span class="access-link-value" id="issued-link-text">{{ issued_link }}</span>
             <button type="button" class="access-link-copy" onclick="copyText('issued-link-text', this)">Копировать</button>
@@ -341,16 +340,16 @@
         <div style="display:flex;gap:8px">
             {% if page > 1 %}
             <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&study_mode={{ study_mode }}&curator_id={{ curator_id }}&exam_subjects={{ exam_subjects }}&tag={{ tag }}&has_case={{ has_case }}&is_publishable={{ is_publishable }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&show_hidden={{ '1' if show_hidden else '' }}&page={{ page - 1 }}"
-               style="padding:7px 14px;border-radius:9px;background:var(--surface-2);border:1.5px solid var(--line);font-size:13px;font-weight:700;color:var(--text);text-decoration:none">
+               style="padding:7px 14px;border-radius:var(--r-sm);background:var(--surface-2);border:1.5px solid var(--line);font-size:13px;font-weight:700;color:var(--text);text-decoration:none">
                 ‹ Назад
             </a>
             {% endif %}
-            <span style="padding:7px 14px;border-radius:9px;background:var(--blue-soft);color:var(--blue);font-size:13px;font-weight:700">
+            <span style="padding:7px 14px;border-radius:var(--r-sm);background:var(--blue-soft);color:var(--blue);font-size:13px;font-weight:700">
                 {{ page }} / {{ total_pages }}
             </span>
             {% if page < total_pages %}
             <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&study_mode={{ study_mode }}&curator_id={{ curator_id }}&exam_subjects={{ exam_subjects }}&has_case={{ has_case }}&is_publishable={{ is_publishable }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&show_hidden={{ '1' if show_hidden else '' }}&page={{ page + 1 }}"
-               style="padding:7px 14px;border-radius:9px;background:var(--surface-2);border:1.5px solid var(--line);font-size:13px;font-weight:700;color:var(--text);text-decoration:none">
+               style="padding:7px 14px;border-radius:var(--r-sm);background:var(--surface-2);border:1.5px solid var(--line);font-size:13px;font-weight:700;color:var(--text);text-decoration:none">
                 Вперёд ›
             </a>
             {% endif %}
@@ -365,7 +364,7 @@
 <!-- Confirm modal -->
 <div class="modal-overlay" id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
     <div class="modal">
-        <div class="modal-title" id="modalTitle">Подтверждение</div>
+        <h2 class="modal-title" id="modalTitle">Подтверждение</h2>
         <div class="modal-text" id="modalText"></div>
         <div class="modal-actions">
             <button class="modal-cancel" id="modalCancelBtn" onclick="closeModal()">Отмена</button>

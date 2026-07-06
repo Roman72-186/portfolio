@@ -170,9 +170,9 @@
         <div class="profile-hero-info">
             <div class="profile-role-tag">◉ Куратор</div>
             <div class="dashboard-name-row">
-                <div class="profile-name">
+                <h1 class="profile-name">
                     {{ user.last_name or '' }} {{ user.first_name or user.name }}
-                </div>
+                </h1>
                 {% include "partials/mobile_dashboard_logout.html" %}
             </div>
             <div class="profile-hero-sub">Рабочий кабинет — выберите раздел ниже</div>
@@ -184,10 +184,10 @@
         {% for item in curator_nav_items() if item.key != "dashboard" %}
         <a href="{{ item.href }}" class="curator-nav-block">
             <span class="curator-nav-block-icon" aria-hidden="true">{{ nav_block_icon(item.key) }}</span>
-            <span class="curator-nav-block-body">
-                <span class="curator-nav-block-title">{{ item.label }}</span>
+            <div class="curator-nav-block-body">
+                <h2 class="curator-nav-block-title">{{ item.label }}</h2>
                 <span class="curator-nav-block-desc">{{ block_desc.get(item.key, '') }}</span>
-            </span>
+            </div>
         </a>
         {% endfor %}
     </div>

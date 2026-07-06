@@ -54,6 +54,7 @@
 .ss-acc > summary::before { content: "▸"; color: var(--dim); font-size: 11px; transition: transform 0.15s; }
 .ss-acc[open] > summary::before { transform: rotate(90deg); }
 .ss-acc > summary:hover { color: var(--blue); }
+.ss-acc-title { font: inherit; color: inherit; letter-spacing: inherit; }
 .ss-acc-badge { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--dim); }
 .ss-acc-body { border-top: 1px solid var(--line); padding: 14px; }
 .ss-acc-body > .ss-table-wrap:last-child,
@@ -79,7 +80,7 @@
 
     <div class="ss-header">
         <a href="/cabinet" class="ss-back">← Дашборд</a>
-        <div class="ss-title">Статистика пробников</div>
+        <h1 class="ss-title">Статистика пробников</h1>
     </div>
 
     <!-- Фильтры -->
@@ -110,7 +111,7 @@
 
     <!-- 1. Статус пробников по тарифам -->
     <details class="ss-acc">
-        <summary>Статус пробников по тарифам</summary>
+        <summary><h2 class="ss-acc-title">Статус пробников по тарифам</h2></summary>
         <div class="ss-acc-body">
             {% set status_keys = tariff_keys + (['—'] if status.by_tariff_mock_status.get('—') else []) %}
             {% if status_total > 0 %}
@@ -118,7 +119,7 @@
             {% set students = status.by_tariff_mock_status.get(tariff, []) %}
             {% if students %}
             <div class="ss-sub">
-                <div class="ss-sub-head">{{ tariff }} <span class="ss-sub-count">{{ students | length }} уч.</span></div>
+                <h3 class="ss-sub-head">{{ tariff }} <span class="ss-sub-count">{{ students | length }} уч.</span></h3>
                 <table class="ss-table">
                     <thead>
                         <tr>
@@ -152,7 +153,7 @@
 
     <!-- 2. Не сдали хотя бы один предмет -->
     <details class="ss-acc">
-        <summary>Не сдали хотя бы один предмет</summary>
+        <summary><h2 class="ss-acc-title">Не сдали хотя бы один предмет</h2></summary>
         <div class="ss-acc-body">
             {% set ns_keys = tariff_keys + (['—'] if status.not_submitted_by_tariff.get('—') else []) %}
             {% if ns_total > 0 %}
@@ -160,7 +161,7 @@
             {% set ns_students = status.not_submitted_by_tariff.get(tariff, []) %}
             {% if ns_students %}
             <div class="ss-sub">
-                <div class="ss-sub-head">{{ tariff }} <span class="ss-sub-count">{{ ns_students | length }} уч.</span></div>
+                <h3 class="ss-sub-head">{{ tariff }} <span class="ss-sub-count">{{ ns_students | length }} уч.</span></h3>
                 <table class="ss-table">
                     <thead>
                         <tr>
@@ -194,12 +195,12 @@
 
     <!-- 3. Полученные билеты -->
     <details class="ss-acc">
-        <summary>Полученные билеты</summary>
+        <summary><h2 class="ss-acc-title">Полученные билеты</h2></summary>
         <div class="ss-acc-body">
             {% if ticket_stats and ticket_stats.applicable and ticket_stats.total_receipts > 0 %}
             <!-- Агрегат: сколько учеников получили каждый билет -->
             <div class="ss-table-wrap ss-hide-on-search">
-                <div style="padding:11px 14px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.06em">Сколько учеников получили каждый билет</div>
+                <h3 style="margin:0;padding:11px 14px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.06em">Сколько учеников получили каждый билет</h3>
                 <table class="ss-table">
                     <thead>
                         <tr>
@@ -225,10 +226,10 @@
             </div>
             <!-- Детально: кто, какой билет и когда получил -->
             <div class="ss-table-wrap">
-                <div style="padding:11px 14px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.06em;display:flex;justify-content:space-between;align-items:center">
+                <h3 style="margin:0;padding:11px 14px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.06em;display:flex;justify-content:space-between;align-items:center">
                     Кто и когда получил билет
                     <span style="font-weight:500;text-transform:none;font-size:12px">первые {{ ticket_stats.receipts | length }} записей · время МСК</span>
-                </div>
+                </h3>
                 <table class="ss-table">
                     <thead>
                         <tr><th>Ученик</th><th>Билет</th><th>Предмет</th><th>Дата и время</th></tr>
@@ -253,7 +254,7 @@
 
     <!-- 4. Пробники и обратная связь -->
     <details class="ss-acc">
-        <summary>Пробники и обратная связь</summary>
+        <summary><h2 class="ss-acc-title">Пробники и обратная связь</h2></summary>
         <div class="ss-acc-body">
             {% if feedback_table and feedback_table.applicable and feedback_table.total > 0 %}
             <div class="ss-stats-strip ss-hide-on-search">
@@ -271,10 +272,10 @@
                 </div>
             </div>
             <div class="ss-table-wrap">
-                <div style="padding:11px 14px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.06em;display:flex;justify-content:space-between;align-items:center">
+                <h3 style="margin:0;padding:11px 14px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.06em;display:flex;justify-content:space-between;align-items:center">
                     Таблица сдач и ОС
                     <span style="font-weight:500;text-transform:none;font-size:12px">первые {{ feedback_table.rows | length }} из {{ feedback_table.total }} · время МСК · полная таблица и текст ОС — в Excel</span>
-                </div>
+                </h3>
                 <table class="ss-table">
                     <thead>
                         <tr>
@@ -316,12 +317,12 @@
 
     <!-- 5. Статистика по баллам -->
     <details class="ss-acc">
-        <summary>Статистика по баллам</summary>
+        <summary><h2 class="ss-acc-title">Статистика по баллам</h2></summary>
         <div class="ss-acc-body">
             {% if score_stats and score_stats.applicable %}
             {% for subject, data in score_stats.by_subject.items() %}
             <div class="ss-sub">
-                <div class="ss-sub-head">{{ subject }} <span class="ss-sub-count">Сдали всего: {{ data.total }}</span></div>
+                <h3 class="ss-sub-head">{{ subject }} <span class="ss-sub-count">Сдали всего: {{ data.total }}</span></h3>
                 <table class="ss-table">
                     <thead>
                         <tr>

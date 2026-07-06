@@ -16,10 +16,11 @@
     <link rel="preload" as="image" href="/static/img/bg-desktop.webp?v=1" type="image/webp" media="(min-width: 769px)" fetchpriority="high">
     <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
     <!-- Base styles: versioned for cache-busting -->
-    <link rel="stylesheet" href="/static/css/base.css?v=25">
+    <link rel="stylesheet" href="/static/css/base.css?v=30">
     {% block extra_styles %}{% endblock %}
 </head>
 <body{% if user is defined and user and user.impersonated_by_id %} class="is-impersonating"{% endif %}>
+    <a class="skip-link" href="#main-content">Перейти к содержимому</a>
     <!-- Telegram in-app browser escape: открываем сайт во внешнем браузере.
          Встроенный браузер Telegram ломает сессию/CSRF и медленно грузит фото.
          Детект: window.TelegramWebviewProxy (инжектится Telegram и на Android, и

@@ -66,7 +66,7 @@
 .preview-cell { position: relative; }
 .preview-remove {
     position: absolute; top: 4px; right: 4px;
-    width: 24px; height: 24px; border-radius: 50%;
+    width: 44px; height: 44px; border-radius: 50%;
     background: rgba(0,0,0,0.6); color: #fff;
     border: none; cursor: pointer; font-size: 14px;
     display: flex; align-items: center; justify-content: center;
@@ -124,7 +124,7 @@
         {% else %}
         <div class="mode-badge mode-after">● Раздел ПОСЛЕ</div>
         {% endif %}
-        <h1 style="font-size:26px;font-weight:900;letter-spacing:-0.5px" class="text-gradient">
+        <h1 style="font-size:26px;font-weight:900;letter-spacing:-0.5px" class="text-accent">
             {% if mode == "before" %}Загрузка фото «До»{% else %}Загрузка фото «После»{% endif %}
         </h1>
         {% if mode == "before" %}

@@ -194,26 +194,26 @@
 }
 .photo-strip img {
     width: 100%; aspect-ratio: 1; object-fit: cover;
-    border-radius: 8px; border: 1px solid var(--line);
+    border-radius: var(--r-sm); border: 1px solid var(--line);
     cursor: zoom-in; transition: opacity 0.15s;
 }
 .photo-strip img:hover { opacity: 0.85; }
 .photo-wrap { position: relative; }
 .photo-del {
     position: absolute; top: -4px; right: -4px;
-    width: 28px; height: 28px; border-radius: 50%;
+    width: 44px; height: 44px; border-radius: 50%;
     background: rgba(0,0,0,0.6); color: #fff; border: none;
     cursor: pointer; font-size: 14px; line-height: 1;
     display: flex; align-items: center; justify-content: center;
     opacity: 0; transition: opacity 0.15s, background 0.15s;
     z-index: 2;
     padding: 0;
-    min-width: 28px;
+    min-width: 44px;
 }
 .photo-wrap:hover .photo-del { opacity: 1; }
 .photo-del:hover { background: var(--error); }
 .photo-strip-more {
-    aspect-ratio: 1; background: var(--surface-2); border-radius: 8px;
+    aspect-ratio: 1; background: var(--surface-2); border-radius: var(--r-sm);
     border: 1px solid var(--line);
     display: flex; align-items: center; justify-content: center;
     font-size: 12px; font-weight: 700; color: var(--muted);
@@ -237,7 +237,7 @@
 }
 .mock-year-label { font-size: 16px; font-weight: 900; color: var(--text); }
 .mock-year-btn {
-    width: 34px; height: 34px; border-radius: 9px;
+    width: 44px; height: 44px; border-radius: var(--r-sm);
     border: 1px solid var(--line); background: var(--surface);
     color: var(--text); cursor: pointer; font-size: 18px; line-height: 1;
 }
@@ -247,7 +247,7 @@
 }
 .mock-month-btn {
     border: 1px solid var(--line); background: var(--surface);
-    color: var(--muted); border-radius: 8px; padding: 7px 6px;
+    color: var(--muted); border-radius: var(--r-sm); padding: 7px 6px;
     font-size: 12px; font-weight: 800; cursor: pointer;
 }
 .mock-month-btn.active {
@@ -262,7 +262,7 @@
     font-weight: 800; text-transform: uppercase;
 }
 .mock-day {
-    aspect-ratio: 1; border-radius: 8px; border: 1px solid transparent;
+    aspect-ratio: 1; border-radius: var(--r-sm); border: 1px solid transparent;
     background: transparent; color: var(--dim); font-size: 12px; font-weight: 800;
     display: flex; align-items: center; justify-content: center;
     cursor: default;
@@ -298,7 +298,7 @@
 }
 .mock-work-card img {
     width: 100%; aspect-ratio: 1; object-fit: cover;
-    border-radius: 8px; border: 1px solid var(--line);
+    border-radius: var(--r-sm); border: 1px solid var(--line);
     cursor: zoom-in; margin-bottom: 8px;
 }
 .mock-work-name {
@@ -314,7 +314,7 @@
 
 .scored-chip {
     background: rgba(217,119,6,0.1); color: var(--warning);
-    border-radius: 8px; padding: 5px 14px; font-size: 15px; font-weight: 900;
+    border-radius: var(--r-sm); padding: 5px 14px; font-size: 15px; font-weight: 900;
 }
 .scored-state {
     display: flex; align-items: center; gap: 8px;
@@ -334,7 +334,7 @@
 .score-form-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .score-form input[type=number], .score-form textarea {
     background: var(--surface); border: 1.5px solid var(--line);
-    border-radius: 8px; padding: 7px 10px;
+    border-radius: var(--r-sm); padding: 7px 10px;
     font-size: 13px; color: var(--text);
     font-family: inherit; outline: none;
     transition: border-color 0.15s;
@@ -343,10 +343,10 @@
 .score-form input[type=number] { width: 80px; }
 .score-form textarea { width: 100%; min-height: 60px; resize: vertical; }
 .score-form-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-.btn-save { padding: 8px 14px; border-radius: 8px; font-size: 13px; }
+.btn-save { padding: 8px 14px; border-radius: var(--r-sm); font-size: 13px; }
 .btn-retake {
     padding: 8px 14px; background: #fff; color: var(--error);
-    border: 1.5px solid rgba(220,38,38,0.4); border-radius: 8px;
+    border: 1.5px solid rgba(220,38,38,0.4); border-radius: var(--r-sm);
     font-size: 13px; font-weight: 700; cursor: pointer;
     font-family: inherit;
     transition: background 0.15s, border-color 0.15s;
@@ -355,20 +355,20 @@
 .edit-score-wrap { margin-top: 10px; }
 .btn-edit-score {
     display: inline-flex; align-items: center; gap: 6px;
-    padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line);
+    padding: 7px 14px; border-radius: var(--r-sm); border: 1px solid var(--line);
     background: var(--surface-2); color: var(--text); font-size: 13px;
     font-weight: 600; cursor: pointer; font-family: inherit;
     transition: border-color 0.15s, color 0.15s;
 }
 .btn-edit-score:hover { border-color: var(--blue); color: var(--blue); }
 .btn-revision {
-    padding: 8px 14px; background: rgba(245,158,11,0.08); color: #b45309;
-    border: 1.5px solid rgba(245,158,11,0.35); border-radius: 8px;
+    padding: 8px 14px; background: rgba(217,119,6,0.08); color: var(--warning);
+    border: 1.5px solid rgba(217,119,6,0.35); border-radius: var(--r-sm);
     font-size: 13px; font-weight: 700; cursor: pointer;
     font-family: inherit;
     transition: background 0.15s, border-color 0.15s;
 }
-.btn-revision:hover { background: rgba(245,158,11,0.14); border-color: var(--warning); }
+.btn-revision:hover { background: rgba(217,119,6,0.14); border-color: var(--warning); }
 .score-err { color: var(--error); font-size: 12px; margin-top: 6px; }
 .score-ok  { color: var(--ok); font-size: 12px; margin-top: 6px; }
 
@@ -377,19 +377,6 @@
 .empty-state { text-align: center; padding: 48px 20px; color: var(--dim); }
 .empty-icon { font-size: 40px; margin-bottom: 12px; }
 .empty-text { font-size: 14px; }
-
-.lb {
-    position: fixed; inset: 0; background: rgba(10,10,30,0.88);
-    z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px;
-}
-.lb.open { display: flex; }
-.lb img { max-width: 100%; max-height: 88vh; border-radius: var(--r-md); box-shadow: 0 24px 80px rgba(0,0,0,0.5); }
-.lb-close {
-    position: absolute; top: 16px; right: 16px;
-    background: rgba(255,255,255,0.15); border: none; color: #fff;
-    width: 44px; height: 44px; border-radius: 50%; font-size: 22px; cursor: pointer;
-}
-.lb-close:hover { background: rgba(255,255,255,0.28); }
 
 .mobile-back-btn { display: none; }
 
@@ -424,7 +411,7 @@
 }
 .mock-thumbnails .photo-wrap img {
     width: 88px; height: 88px; object-fit: cover;
-    border-radius: 8px; border: 1px solid var(--line);
+    border-radius: var(--r-sm); border: 1px solid var(--line);
     cursor: zoom-in; display: block;
 }
 
@@ -575,7 +562,7 @@ function renderMockExams(data) {
         + '<div class="student-hero">'
         + avatar
         + '<div class="student-hero-info">'
-        +   '<div class="student-hero-name">' + esc(s.name) + '</div>'
+        +   '<h2 class="student-hero-name">' + esc(s.name) + '</h2>'
         +   '<div class="student-hero-pills">'
         +     (s.tariff ? '<span class="student-hero-pill">' + esc(s.tariff) + '</span>' : '')
         +     (s.study_duration ? '<span class="student-hero-pill">' + esc(s.study_duration) + '</span>' : '')
@@ -609,7 +596,7 @@ function buildSubjectCard(subject, data, subjectIndex) {
 
     var html = '<div class="subject-card' + (isScored ? ' is-scored' : '') + '">'
         + '<div class="subject-card-header">'
-        +   '<span class="subject-title">' + esc(subject) + '</span>'
+        +   '<h3 class="subject-title">' + esc(subject) + '</h3>'
         +   lockBadge
         + '</div>'
         + '<div class="subject-card-body">';
@@ -628,7 +615,7 @@ function buildSubjectCard(subject, data, subjectIndex) {
         works.slice(0, 6).forEach(function(w) {
             if (w.s3_url) {
                 html += '<div class="photo-wrap">'
-                    +   '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)">'
+                    +   '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">'
                     +   '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)">&times;</button>'
                     + '</div>';
             }
@@ -642,7 +629,7 @@ function buildSubjectCard(subject, data, subjectIndex) {
                 + '<span class="scored-state-label">Проверено</span>'
                 + '</div>';
             if (latest.comment) {
-                html += '<div style="font-size:13px;color:var(--muted);background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:8px 12px;margin-bottom:10px;white-space:pre-wrap">'
+                html += '<div style="font-size:13px;color:var(--muted);background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 12px;margin-bottom:10px;white-space:pre-wrap">'
                     + esc(latest.comment) + '</div>';
             }
         }
@@ -797,7 +784,7 @@ function buildMockDayPanel(sid, subject, grouped, state) {
         return html + '<div class="mock-calendar-empty">В этом месяце пока нет загруженных работ</div></div>';
     }
     html += '<div class="mock-day-head">'
-        + '<div class="mock-day-title">' + formatMockDate(selected) + '</div>'
+        + '<h4 class="mock-day-title">' + formatMockDate(selected) + '</h4>'
         + '<div class="mock-day-count">' + works.length + ' работ</div>'
         + '</div>';
     // Primary = оцененная работа (если есть), иначе первая
@@ -814,7 +801,7 @@ function buildMockDayPanel(sid, subject, grouped, state) {
             var bc = scoreBadgeClass(primary.score);
             var bt = primary.score != null ? Math.round(primary.score) + '/100' : '—';
             html += '<div class="photo-wrap" style="position:relative">'
-                + '<img src="' + esc(primary.s3_url) + '" alt="' + esc(primary.filename) + '" loading="lazy" onclick="openGallery(this)">'
+                + '<img src="' + esc(primary.s3_url) + '" alt="' + esc(primary.filename) + '" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">'
                 + '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
                 + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + primary.id + ',this)">&times;</button>'
                 + '</div>';
@@ -834,7 +821,7 @@ function buildMockDayPanel(sid, subject, grouped, state) {
             var bc = scoreBadgeClass(primary.score);
             var bt = primary.score != null ? Math.round(primary.score) + '/100' : '—';
             html += '<div class="photo-wrap" style="position:relative">'
-                + '<img src="' + esc(primary.s3_url) + '" alt="' + esc(primary.filename) + '" loading="lazy" onclick="openGallery(this)">'
+                + '<img src="' + esc(primary.s3_url) + '" alt="' + esc(primary.filename) + '" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">'
                 + '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
                 + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + primary.id + ',this)">&times;</button>'
                 + '</div>';
@@ -847,7 +834,7 @@ function buildMockDayPanel(sid, subject, grouped, state) {
             if (w.s3_url) {
                 var wbc = scoreBadgeClass(w.score);
                 html += '<div class="photo-wrap" style="position:relative">'
-                    + '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)">'
+                    + '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">'
                     + (w.score != null ? '<span class="work-score-badge ' + wbc + '">' + Math.round(w.score) + '/100</span>' : '')
                     + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)">&times;</button>'
                     + '</div>';

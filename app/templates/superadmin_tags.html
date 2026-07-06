@@ -30,8 +30,8 @@
 
 .tags-cell { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; position: relative; }
 
-.tag-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 10px; border-radius: var(--r-pill); font-size: 11px; font-weight: 800; background: rgba(37,99,235,0.08); color: var(--blue); white-space: nowrap; }
-.tag-chip__remove { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; border: none; background: rgba(37,99,235,0.15); color: inherit; cursor: pointer; font-size: 11px; line-height: 1; padding: 0; font-family: inherit; }
+.tag-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 10px; border-radius: var(--r-pill); font-size: 11px; font-weight: 800; background: rgba(59,91,255,0.08); color: var(--blue); white-space: nowrap; }
+.tag-chip__remove { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; border: none; background: rgba(59,91,255,0.15); color: inherit; cursor: pointer; font-size: 16px; line-height: 1; padding: 0; font-family: inherit; flex-shrink: 0; }
 .tag-chip__remove:hover { background: rgba(220,38,38,0.18); color: var(--error); }
 
 .tag-chip.tag-pill--pink   { background: rgba(236,72,153,0.12); color: #be185d; }
@@ -43,7 +43,7 @@
 .tag-chip.tag-pill--purple .tag-chip__remove { background: rgba(107,33,168,0.15); }
 .tag-chip.tag-pill--orange .tag-chip__remove { background: rgba(194,65,12,0.15); }
 
-.tag-add-btn { width: 22px; height: 22px; border-radius: 50%; border: 1.5px dashed var(--line); background: transparent; color: var(--dim); font-size: 14px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; line-height: 1; font-family: inherit; }
+.tag-add-btn { width: 44px; height: 44px; border-radius: 50%; border: 1.5px dashed var(--line); background: transparent; color: var(--dim); font-size: 14px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; line-height: 1; font-family: inherit; }
 .tag-add-btn:hover { border-color: var(--blue); color: var(--blue); }
 
 .tag-add-popover { display: none; position: absolute; top: 100%; left: 0; margin-top: 6px; z-index: 250; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: 0 10px 30px rgba(0,0,0,0.14); padding: 10px; min-width: 220px; max-width: 280px; }
@@ -92,8 +92,7 @@
     .tags-table td:last-child::before { content: "Теги"; display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); margin-bottom: 6px; }
 
     .tag-chip { padding: 6px 8px 6px 12px; font-size: 12px; }
-    .tag-chip__remove { width: 28px; height: 28px; font-size: 16px; }
-    .tag-add-btn { width: 32px; height: 32px; font-size: 18px; }
+    .tag-add-btn { font-size: 18px; }
     .tag-add-popover { left: auto; right: 0; max-width: calc(100vw - 56px); }
 }
 </style>
@@ -110,7 +109,7 @@
 
     <div class="su-header">
         <a href="/cabinet/superadmin/users" class="su-back">← Управление пользователями</a>
-        <div class="su-title">Проставить теги</div>
+        <h1 class="su-title">Проставить теги</h1>
     </div>
 
     <form method="get" action="/cabinet/superadmin/tags" class="su-filters">
@@ -128,7 +127,7 @@
     </form>
 
     <div class="bulk-wrap">
-        <div class="bulk-title">Массовая проставка тегов Р / К</div>
+        <h2 class="bulk-title">Массовая проставка тегов Р / К</h2>
         <div class="bulk-input-row">
             <textarea id="bulkUsernames" rows="4" placeholder="Вставьте список @username, каждый на новой строке"></textarea>
             <button type="button" onclick="bulkLookup()">Показать</button>
