@@ -14,7 +14,7 @@
 /* ── Status badge ── */
 .status-badge { display: inline-flex; padding: 3px 10px; border-radius: var(--r-sm); font-size: 11px; font-weight: 700; }
 .status-published { background: rgba(5,150,105,0.08); color: var(--ok); }
-.status-draft     { background: rgba(107,114,128,0.08); color: #6B7280; }
+.status-draft     { background: rgba(107,114,128,0.08); color: var(--muted); }
 .status-archived  { background: rgba(156,163,175,0.06); color: #9CA3AF; }
 
 /* ── Actions ── */
@@ -52,7 +52,7 @@
 .assignees-grid { display: flex; flex-wrap: wrap; gap: 6px; }
 .assignee-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: var(--r-xl); font-size: 12px; font-weight: 500; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); }
 .assignee-chip.notified { background: rgba(5,150,105,0.07); border-color: rgba(5,150,105,0.2); color: var(--ok); }
-.notif-dot { width: 6px; height: 6px; border-radius: 50%; background: #059669; flex-shrink: 0; }
+.notif-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
 .notif-dot-pending { background: var(--dim); }
 .assignees-empty { font-size: 13px; color: var(--dim); font-style: italic; }
 .assignees-count { font-size: 12px; color: var(--dim); margin-top: 8px; }

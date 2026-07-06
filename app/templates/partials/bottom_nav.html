@@ -1,7 +1,7 @@
 ﻿<style>
 .bottom-nav {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
-    background: var(--card); border-top: 1px solid var(--border);
+    background: var(--surface); border-top: 1px solid var(--line);
     display: flex; align-items: stretch;
     box-shadow: 0 -4px 24px rgba(0,0,0,0.08);
     padding-bottom: env(safe-area-inset-bottom, 0);
@@ -15,14 +15,14 @@
     background: none; border: none; font-family: var(--font-body);
     cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
-.nav-btn:hover { color: var(--accent); background: var(--accent-soft); opacity: 1; }
-.nav-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; border-radius: 8px; }
-.nav-btn.nav-active { color: var(--accent); }
+.nav-btn:hover { color: var(--blue); background: var(--blue-soft); opacity: 1; }
+.nav-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: -3px; border-radius: 8px; }
+.nav-btn.nav-active { color: var(--blue); }
 .nav-btn-icon { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }
 .nav-btn.nav-disabled { opacity: 0.35; cursor: default; pointer-events: none; }
 .nav-soon-badge {
     font-size: 8px; font-weight: 700; letter-spacing: 0.05em;
-    background: var(--bg2); color: var(--dim);
+    background: var(--surface-2); color: var(--dim);
     border-radius: 6px; padding: 1px 5px; text-transform: uppercase;
 }
 </style>

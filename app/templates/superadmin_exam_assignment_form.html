@@ -171,14 +171,14 @@
         <div class="form-card">
             <div class="form-card-title">Основная информация</div>
             <div class="field">
-                <label>Тип задания <span style="color:#DC2626">*</span></label>
+                <label>Тип задания <span style="color:var(--error)">*</span></label>
                 <div class="activate-toggle" id="kind-toggle">
                     <label class="activate-opt"><input type="radio" name="kind" value="mock" {% if not is_edit or assignment.kind == 'mock' %}checked{% endif %} onchange="onKindChange()"> Пробник</label>
                     <label class="activate-opt"><input type="radio" name="kind" value="control" {% if is_edit and assignment.kind == 'control' %}checked{% endif %} onchange="onKindChange()"> Контрольная</label>
                 </div>
             </div>
             <div class="field">
-                <label for="subject">Предмет <span style="color:#DC2626">*</span></label>
+                <label for="subject">Предмет <span style="color:var(--error)">*</span></label>
                 <select id="subject" name="subject" onchange="updateAutoTitle()">
                     {% for s in subjects %}
                     <option value="{{ s }}" {% if is_edit and assignment.subject == s %}selected{% endif %}>{{ s }}</option>
@@ -365,7 +365,7 @@ function buildTicketHTML(n) {
         + '</div>'
 
         // Title
-        + '<div class="field"><label>Название билета <span style="color:#DC2626">*</span></label>'
+        + '<div class="field"><label>Название билета <span style="color:var(--error)">*</span></label>'
         + '<input type="text" id="ticket-title-' + n + '" name="ticket_' + n + '_title" data-ticket="title" placeholder="Натюрморт с фруктами" maxlength="200">'
         + '<div class="field-error-msg" id="err-title-' + n + '">Заполните название билета</div></div>'
 
@@ -387,14 +387,14 @@ function buildTicketHTML(n) {
 
         // Schedule and access
         + '<div class="field-row">'
-        + '<div class="field"><label>Открывается по Москве <span style="color:#DC2626">*</span></label>'
+        + '<div class="field"><label>Открывается по Москве <span style="color:var(--error)">*</span></label>'
         + '<input type="datetime-local" id="ticket-opens-' + n + '" name="ticket_' + n + '_opens_at" data-ticket="opens_at" value="' + esc(DEFAULT_SCHEDULE.opens_at) + '" required>'
         + '<div class="field-error-msg" id="err-opens-' + n + '">Укажите дату и время открытия</div></div>'
-        + '<div class="field"><label>Закрывается по Москве <span style="color:#DC2626">*</span></label>'
+        + '<div class="field"><label>Закрывается по Москве <span style="color:var(--error)">*</span></label>'
         + '<input type="datetime-local" id="ticket-closes-' + n + '" name="ticket_' + n + '_closes_at" data-ticket="closes_at" value="' + esc(DEFAULT_SCHEDULE.closes_at) + '" required>'
         + '<div class="field-error-msg" id="err-closes-' + n + '">Укажите дату и время закрытия</div></div>'
         + '</div>'
-        + '<div class="field"><label>Время на выполнение, минут <span style="color:#DC2626">*</span></label>'
+        + '<div class="field"><label>Время на выполнение, минут <span style="color:var(--error)">*</span></label>'
         + '<input type="number" id="ticket-duration-' + n + '" name="ticket_' + n + '_duration_minutes" data-ticket="duration_minutes" min="1" max="720" step="1" value="' + esc(DEFAULT_SCHEDULE.duration_minutes) + '" required>'
         + '<div class="field-hint">Только визуальный счётчик для ученика — сдачу НЕ блокирует. Сдать можно в любой момент периода доступа (Открывается…Закрывается).</div>'
         + '<div class="field-error-msg" id="err-duration-' + n + '">Укажите таймер от 1 до 720 минут</div></div>'

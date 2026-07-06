@@ -35,7 +35,7 @@
     display: flex; align-items: center; gap: 8px;
 }
 .sidebar-counter {
-    background: #D97706; color: #fff;
+    background: var(--warning); color: #fff;
     font-size: 11px; font-weight: 800;
     padding: 2px 8px; border-radius: var(--r-sm);
 }
@@ -103,7 +103,7 @@
 }
 .student-row-meta { font-size: 11px; color: var(--dim); margin-top: 1px; }
 .pending-badge {
-    background: #D97706; color: #fff;
+    background: var(--warning); color: #fff;
     border-radius: var(--r-sm); padding: 2px 8px;
     font-size: 11px; font-weight: 800;
     flex-shrink: 0;
@@ -156,7 +156,7 @@
     font-size: 12px; color: rgba(255,255,255,0.85); font-weight: 700;
 }
 .student-hero-score { text-align: right; flex-shrink: 0; }
-.score-big { font-size: 34px; font-weight: 900; color: #FCD34D; line-height: 1; }
+.score-big { font-size: 34px; font-weight: 900; color: var(--gold); line-height: 1; }
 .score-label { font-size: 11px; color: rgba(255,255,255,0.6); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
 
 .subjects-grid {
@@ -368,7 +368,7 @@
     font-family: inherit;
     transition: background 0.15s, border-color 0.15s;
 }
-.btn-revision:hover { background: rgba(245,158,11,0.14); border-color: #d97706; }
+.btn-revision:hover { background: rgba(245,158,11,0.14); border-color: var(--warning); }
 .score-err { color: var(--error); font-size: 12px; margin-top: 6px; }
 .score-ok  { color: var(--ok); font-size: 12px; margin-top: 6px; }
 

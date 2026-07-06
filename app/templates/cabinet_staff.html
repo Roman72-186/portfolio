@@ -31,8 +31,8 @@
 .info-banner.green { background: rgba(5,150,105,0.07); border: 1.5px solid rgba(5,150,105,0.25); }
 .info-banner.blue  { background: rgba(37,99,235,0.06); border: 1.5px solid rgba(37,99,235,0.2); }
 .banner-title { font-size: 13px; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
-.info-banner.green .banner-title { color: #059669; }
-.info-banner.blue  .banner-title { color: var(--accent); }
+.info-banner.green .banner-title { color: var(--ok); }
+.info-banner.blue  .banner-title { color: var(--blue); }
 .banner-row {
     display: flex; align-items: center; gap: 10px;
     background: #fff; border: 1px solid rgba(0,0,0,0.07);
@@ -41,93 +41,93 @@
 .banner-row:last-of-type { margin-bottom: 0; }
 .banner-row-text { flex: 1; font-size: 12px; color: var(--text); word-break: break-all; font-family: monospace; line-height: 1.4; }
 .banner-row-label { font-size: 11px; font-weight: 700; color: var(--dim); width: 60px; flex-shrink: 0; }
-.copy-btn { flex-shrink: 0; padding: 6px 14px; border: none; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: 'Montserrat', sans-serif; transition: opacity 0.15s; }
-.copy-btn.green { background: #059669; color: #fff; }
-.copy-btn.blue  { background: var(--accent); color: #fff; }
+.copy-btn { flex-shrink: 0; padding: 6px 14px; border: none; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: var(--font-body); transition: opacity 0.15s; }
+.copy-btn.green { background: var(--ok); color: #fff; }
+.copy-btn.blue  { background: var(--blue); color: #fff; }
 .copy-btn:hover { opacity: 0.85; }
 .banner-meta { font-size: 11px; margin-top: 8px; opacity: 0.7; }
-.info-banner.green .banner-meta { color: #059669; }
-.info-banner.blue  .banner-meta { color: var(--accent); }
+.info-banner.green .banner-meta { color: var(--ok); }
+.info-banner.blue  .banner-meta { color: var(--blue); }
 
 /* ── Stats strip ── */
 .stats-strip {
     display: grid; grid-template-columns: repeat(4, 1fr);
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; margin-bottom: 20px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 16px; box-shadow: var(--sh-sm); overflow: hidden; margin-bottom: 20px;
 }
-.stat-cell { padding: 18px 20px; border-right: 1px solid var(--border); }
+.stat-cell { padding: 18px 20px; border-right: 1px solid var(--line); }
 .stat-cell:last-child { border-right: none; }
-.stat-icon-wrap { width: 34px; height: 34px; border-radius: 10px; background: var(--accent-soft); display: flex; align-items: center; justify-content: center; font-size: 15px; margin-bottom: 10px; }
+.stat-icon-wrap { width: 34px; height: 34px; border-radius: 10px; background: var(--blue-soft); display: flex; align-items: center; justify-content: center; font-size: 15px; margin-bottom: 10px; }
 .stat-val { font-size: 26px; font-weight: 900; color: var(--text); line-height: 1; margin-bottom: 3px; }
 .stat-lbl { font-size: 12px; color: var(--dim); font-weight: 500; line-height: 1.3; }
-.stat-sub { font-size: 11px; color: var(--accent); font-weight: 700; margin-top: 3px; }
+.stat-sub { font-size: 11px; color: var(--blue); font-weight: 700; margin-top: 3px; }
 
 /* ── Two-col grid ── */
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
 
 /* ── Panel card ── */
-.panel { background: var(--card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
-.panel-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--sh-sm); overflow: hidden; }
+.panel-header { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
 .panel-title { font-size: 13px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.07em; }
 
 /* Roles list */
-.role-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 18px; border-bottom: 1px solid var(--border); }
+.role-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 18px; border-bottom: 1px solid var(--line); }
 .role-row:last-child { border-bottom: none; }
 .role-name { font-size: 14px; color: var(--text); display: flex; align-items: center; gap: 8px; }
-.role-count { font-size: 15px; font-weight: 900; color: var(--accent); background: var(--accent-soft); border-radius: 8px; padding: 2px 10px; }
+.role-count { font-size: 15px; font-weight: 900; color: var(--blue); background: var(--blue-soft); border-radius: 8px; padding: 2px 10px; }
 
 /* Staff rows (curators, admins) */
-.staff-row { display: flex; align-items: center; gap: 12px; padding: 9px 18px; border-bottom: 1px solid var(--border); }
+.staff-row { display: flex; align-items: center; gap: 12px; padding: 9px 18px; border-bottom: 1px solid var(--line); }
 .staff-row:last-child { border-bottom: none; }
-.staff-ava { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); flex-shrink: 0; }
-.staff-ava-ph { width: 32px; height: 32px; border-radius: 50%; background: var(--bg2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+.staff-ava { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line); flex-shrink: 0; }
+.staff-ava-ph { width: 32px; height: 32px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
 .staff-info { flex: 1; min-width: 0; }
 .staff-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .staff-meta { font-size: 11px; color: var(--dim); margin-top: 1px; }
 .issue-link-btn {
-    flex-shrink: 0; background: none; border: 1.5px solid var(--border);
+    flex-shrink: 0; background: none; border: 1.5px solid var(--line);
     border-radius: 8px; padding: 5px 11px;
     font-size: 11px; font-weight: 700; color: var(--muted); cursor: pointer;
-    font-family: 'Montserrat', sans-serif; transition: border-color 0.15s, color 0.15s; white-space: nowrap;
+    font-family: var(--font-body); transition: border-color 0.15s, color 0.15s; white-space: nowrap;
 }
-.issue-link-btn:hover { border-color: var(--accent); color: var(--accent); }
+.issue-link-btn:hover { border-color: var(--blue); color: var(--blue); }
 
 /* Works by type */
 .type-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; }
-.type-cell { padding: 14px 18px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.type-cell { padding: 14px 18px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .type-cell:nth-child(2n) { border-right: none; }
 .type-cell:nth-last-child(-n+2) { border-bottom: none; }
 .type-label { font-size: 11px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
 .type-val { font-size: 22px; font-weight: 900; color: var(--text); }
 
 /* ── Recent feed ── */
-.feed-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); margin-bottom: 20px; overflow: hidden; }
-.feed-header { padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.07em; display: flex; align-items: center; justify-content: space-between; }
-.feed-item { display: flex; align-items: center; gap: 14px; padding: 11px 18px; border-bottom: 1px solid var(--border); transition: background 0.15s; }
+.feed-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--sh-sm); margin-bottom: 20px; overflow: hidden; }
+.feed-header { padding: 14px 18px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.07em; display: flex; align-items: center; justify-content: space-between; }
+.feed-item { display: flex; align-items: center; gap: 14px; padding: 11px 18px; border-bottom: 1px solid var(--line); transition: background 0.15s; }
 .feed-item:last-child { border-bottom: none; }
 .feed-item:hover { background: var(--bg); }
-.feed-thumb { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; border: 1px solid var(--border); flex-shrink: 0; }
-.feed-thumb-ph { width: 40px; height: 40px; border-radius: 8px; background: var(--bg2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
+.feed-thumb { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; border: 1px solid var(--line); flex-shrink: 0; }
+.feed-thumb-ph { width: 40px; height: 40px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
 .feed-info { flex: 1; min-width: 0; }
 .feed-student { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .feed-meta { font-size: 11px; color: var(--dim); margin-top: 2px; }
 .feed-right { flex-shrink: 0; text-align: right; }
 .feed-date { font-size: 11px; color: var(--dim); }
-.feed-score { font-size: 12px; font-weight: 700; color: #D97706; background: rgba(217,119,6,0.1); border-radius: 6px; padding: 2px 8px; margin-top: 3px; }
+.feed-score { font-size: 12px; font-weight: 700; color: var(--warning); background: rgba(217,119,6,0.1); border-radius: 6px; padding: 2px 8px; margin-top: 3px; }
 .feed-pending { font-size: 11px; color: var(--dim); margin-top: 3px; }
 
 .type-badge { display: inline-flex; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
-.tb-before { background: rgba(220,38,38,0.08);  color: #DC2626; }
-.tb-after  { background: rgba(5,150,105,0.08);  color: #059669; }
-.tb-mock   { background: rgba(217,119,6,0.1);   color: #D97706; }
+.tb-before { background: rgba(220,38,38,0.08);  color: var(--error); }
+.tb-after  { background: rgba(5,150,105,0.08);  color: var(--ok); }
+.tb-mock   { background: rgba(217,119,6,0.1);   color: var(--warning); }
 .tb-retake { background: rgba(124,58,237,0.08); color: #7C3AED; }
 
-.unscored-alert { display: flex; align-items: center; gap: 12px; background: rgba(217,119,6,0.08); border: 1px solid rgba(217,119,6,0.2); border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: #D97706; font-weight: 700; flex-wrap: wrap; }
+.unscored-alert { display: flex; align-items: center; gap: 12px; background: rgba(217,119,6,0.08); border: 1px solid rgba(217,119,6,0.2); border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: var(--warning); font-weight: 700; flex-wrap: wrap; }
 
 @media (max-width: 768px) {
     .stats-strip { grid-template-columns: repeat(2, 1fr); }
     .stat-cell:nth-child(2) { border-right: none; }
-    .stat-cell:nth-child(1), .stat-cell:nth-child(2) { border-bottom: 1px solid var(--border); }
+    .stat-cell:nth-child(1), .stat-cell:nth-child(2) { border-bottom: 1px solid var(--line); }
     .two-col { grid-template-columns: 1fr; }
     .staff-hero { flex-direction: column; align-items: flex-start; }
     .staff-hero-name { font-size: 22px; }
@@ -192,7 +192,7 @@
             <span class="banner-row-text" id="cred-pwd">{{ issued_creds.password }}</span>
             <button class="copy-btn blue" onclick="copyText('cred-pwd', this)">Копировать</button>
         </div>
-        <div class="banner-meta">Страница входа: <a href="{{ issued_creds.url }}" target="_blank" style="color:var(--accent)">{{ issued_creds.url }}</a></div>
+        <div class="banner-meta">Страница входа: <a href="{{ issued_creds.url }}" target="_blank" style="color:var(--blue)">{{ issued_creds.url }}</a></div>
     </div>
     {% endif %}
 
@@ -227,7 +227,7 @@
     <div class="unscored-alert">
         <span style="font-size:20px">⚠️</span>
         <span>{{ unscored_mocks }} пробных экзамен{{ 'ов' if unscored_mocks > 4 else ('а' if unscored_mocks > 1 else '') }} ожидают проверки</span>
-        <a href="/cabinet/admin/mock-check" style="margin-left:auto;font-size:12px;color:#D97706;text-decoration:underline;opacity:1">Проверить →</a>
+        <a href="/cabinet/admin/mock-check" style="margin-left:auto;font-size:12px;color:var(--warning);text-decoration:underline;opacity:1">Проверить →</a>
     </div>
     {% endif %}
 
@@ -261,32 +261,32 @@
 
     <!-- Quick Tools -->
     <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
-        <a href="/cabinet/students" style="display:inline-flex;align-items:center;gap:10px;background:var(--card);border:1.5px solid var(--border);border-radius:14px;padding:14px 20px;text-decoration:none;color:var(--text);box-shadow:var(--shadow);transition:border-color 0.2s,box-shadow 0.2s;flex:1;min-width:200px;opacity:1;" onmouseover="this.style.borderColor='var(--border-hover)';this.style.boxShadow='var(--shadow-lg)'" onmouseout="this.style.borderColor='var(--border)';this.style.boxShadow='var(--shadow)'">
-            <span style="width:38px;height:38px;border-radius:10px;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🎓</span>
+        <a href="/cabinet/students" style="display:inline-flex;align-items:center;gap:10px;background:var(--surface);border:1.5px solid var(--line);border-radius:14px;padding:14px 20px;text-decoration:none;color:var(--text);box-shadow:var(--sh-sm);transition:border-color 0.2s,box-shadow 0.2s;flex:1;min-width:200px;opacity:1;" onmouseover="this.style.borderColor='rgba(59,91,255,0.30)';this.style.boxShadow='var(--sh-md)'" onmouseout="this.style.borderColor='var(--line)';this.style.boxShadow='var(--sh-sm)'">
+            <span style="width:38px;height:38px;border-radius:10px;background:var(--blue-soft);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🎓</span>
             <div>
                 <div style="font-size:14px;font-weight:700;">Ученики</div>
                 <div style="font-size:12px;color:var(--dim);margin-top:2px;">Портфолио и пробники</div>
             </div>
             <span style="margin-left:auto;font-size:18px;color:var(--dim);">→</span>
         </a>
-        <a href="/cabinet/admin/mock-check" style="display:inline-flex;align-items:center;gap:10px;background:var(--card);border:1.5px solid var(--border);border-radius:14px;padding:14px 20px;text-decoration:none;color:var(--text);box-shadow:var(--shadow);transition:border-color 0.2s,box-shadow 0.2s;flex:1;min-width:200px;opacity:1;" onmouseover="this.style.borderColor='var(--border-hover)';this.style.boxShadow='var(--shadow-lg)'" onmouseout="this.style.borderColor='var(--border)';this.style.boxShadow='var(--shadow)'">
-            <span style="width:38px;height:38px;border-radius:10px;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">✅</span>
+        <a href="/cabinet/admin/mock-check" style="display:inline-flex;align-items:center;gap:10px;background:var(--surface);border:1.5px solid var(--line);border-radius:14px;padding:14px 20px;text-decoration:none;color:var(--text);box-shadow:var(--sh-sm);transition:border-color 0.2s,box-shadow 0.2s;flex:1;min-width:200px;opacity:1;" onmouseover="this.style.borderColor='rgba(59,91,255,0.30)';this.style.boxShadow='var(--sh-md)'" onmouseout="this.style.borderColor='var(--line)';this.style.boxShadow='var(--sh-sm)'">
+            <span style="width:38px;height:38px;border-radius:10px;background:var(--blue-soft);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">✅</span>
             <div>
                 <div style="font-size:14px;font-weight:700;">Проверка пробников</div>
                 <div style="font-size:12px;color:var(--dim);margin-top:2px;">Оценка и отправка на отработку</div>
             </div>
             <span style="margin-left:auto;font-size:18px;color:var(--dim);">→</span>
         </a>
-        <a href="/cabinet/exam-assignments" style="display:inline-flex;align-items:center;gap:10px;background:var(--card);border:1.5px solid var(--border);border-radius:14px;padding:14px 20px;text-decoration:none;color:var(--text);box-shadow:var(--shadow);transition:border-color 0.2s,box-shadow 0.2s;flex:1;min-width:200px;opacity:1;" onmouseover="this.style.borderColor='var(--border-hover)';this.style.boxShadow='var(--shadow-lg)'" onmouseout="this.style.borderColor='var(--border)';this.style.boxShadow='var(--shadow)'">
-            <span style="width:38px;height:38px;border-radius:10px;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">📋</span>
+        <a href="/cabinet/exam-assignments" style="display:inline-flex;align-items:center;gap:10px;background:var(--surface);border:1.5px solid var(--line);border-radius:14px;padding:14px 20px;text-decoration:none;color:var(--text);box-shadow:var(--sh-sm);transition:border-color 0.2s,box-shadow 0.2s;flex:1;min-width:200px;opacity:1;" onmouseover="this.style.borderColor='rgba(59,91,255,0.30)';this.style.boxShadow='var(--sh-md)'" onmouseout="this.style.borderColor='var(--line)';this.style.boxShadow='var(--sh-sm)'">
+            <span style="width:38px;height:38px;border-radius:10px;background:var(--blue-soft);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">📋</span>
             <div>
                 <div style="font-size:14px;font-weight:700;">Билеты для пробников</div>
                 <div style="font-size:12px;color:var(--dim);margin-top:2px;">Создание и управление билетами</div>
             </div>
             <span style="margin-left:auto;font-size:18px;color:var(--dim);">→</span>
         </a>
-        <a href="/cabinet/curator/reports" style="display:inline-flex;align-items:center;gap:10px;background:var(--card);border:1.5px solid var(--border);border-radius:14px;padding:14px 20px;text-decoration:none;color:var(--text);box-shadow:var(--shadow);transition:border-color 0.2s,box-shadow 0.2s;flex:1;min-width:200px;opacity:1;" onmouseover="this.style.borderColor='var(--border-hover)';this.style.boxShadow='var(--shadow-lg)'" onmouseout="this.style.borderColor='var(--border)';this.style.boxShadow='var(--shadow)'">
-            <span style="width:38px;height:38px;border-radius:10px;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🎥</span>
+        <a href="/cabinet/curator/reports" style="display:inline-flex;align-items:center;gap:10px;background:var(--surface);border:1.5px solid var(--line);border-radius:14px;padding:14px 20px;text-decoration:none;color:var(--text);box-shadow:var(--sh-sm);transition:border-color 0.2s,box-shadow 0.2s;flex:1;min-width:200px;opacity:1;" onmouseover="this.style.borderColor='rgba(59,91,255,0.30)';this.style.boxShadow='var(--sh-md)'" onmouseout="this.style.borderColor='var(--line)';this.style.boxShadow='var(--sh-sm)'">
+            <span style="width:38px;height:38px;border-radius:10px;background:var(--blue-soft);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🎥</span>
             <div>
                 <div style="font-size:14px;font-weight:700;">Видео-отчеты</div>
                 <div style="font-size:12px;color:var(--dim);margin-top:2px;">Отчеты кураторов</div>
@@ -294,8 +294,8 @@
             <span style="margin-left:auto;font-size:18px;color:var(--dim);">→</span>
         </a>
         {% if user.role_rank >= 4 %}
-        <a href="/cabinet/superadmin/users" style="display:inline-flex;align-items:center;gap:10px;background:var(--card);border:1.5px solid var(--border);border-radius:14px;padding:14px 20px;text-decoration:none;color:var(--text);box-shadow:var(--shadow);transition:border-color 0.2s,box-shadow 0.2s;flex:1;min-width:200px;opacity:1;" onmouseover="this.style.borderColor='var(--border-hover)';this.style.boxShadow='var(--shadow-lg)'" onmouseout="this.style.borderColor='var(--border)';this.style.boxShadow='var(--shadow)'">
-            <span style="width:38px;height:38px;border-radius:10px;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">👥</span>
+        <a href="/cabinet/superadmin/users" style="display:inline-flex;align-items:center;gap:10px;background:var(--surface);border:1.5px solid var(--line);border-radius:14px;padding:14px 20px;text-decoration:none;color:var(--text);box-shadow:var(--sh-sm);transition:border-color 0.2s,box-shadow 0.2s;flex:1;min-width:200px;opacity:1;" onmouseover="this.style.borderColor='rgba(59,91,255,0.30)';this.style.boxShadow='var(--sh-md)'" onmouseout="this.style.borderColor='var(--line)';this.style.boxShadow='var(--sh-sm)'">
+            <span style="width:38px;height:38px;border-radius:10px;background:var(--blue-soft);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">👥</span>
             <div>
                 <div style="font-size:14px;font-weight:700;">Пользователи</div>
                 <div style="font-size:12px;color:var(--dim);margin-top:2px;">Управление всеми аккаунтами</div>
@@ -310,15 +310,15 @@
     <div class="panel" style="margin-bottom:20px">
         <div class="panel-header">
             <span class="panel-title">Периоды сдачи</span>
-            <a href="/cabinet/periods" style="font-size:12px;color:var(--accent);font-weight:700;text-decoration:none;opacity:1">Настроить →</a>
+            <a href="/cabinet/periods" style="font-size:12px;color:var(--blue);font-weight:700;text-decoration:none;opacity:1">Настроить →</a>
         </div>
         {% set feat_icons = {'portfolio_upload': '🖼', 'mock_exam': '📝', 'retake': '🔄'} %}
         {% for feat_key, feat in feature_statuses.items() if feat_key == 'portfolio_upload' %}
-        <div style="display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--border){% if loop.last %};border-bottom:none{% endif %}">
+        <div style="display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--line){% if loop.last %};border-bottom:none{% endif %}">
             <span style="font-size:20px;flex-shrink:0">{{ feat_icons.get(feat_key, '📌') }}</span>
             <div style="flex:1;min-width:0">
                 <div style="font-size:14px;font-weight:700;color:var(--text)">{{ feat.label }}</div>
-                <div style="font-size:12px;margin-top:2px;{% if feat.open %}color:#059669;{% else %}color:var(--dim);{% endif %}">
+                <div style="font-size:12px;margin-top:2px;{% if feat.open %}color:var(--ok);{% else %}color:var(--dim);{% endif %}">
                     {% if feat.open %}Открыто{% else %}Закрыто{% endif %}
                 </div>
             </div>
@@ -328,7 +328,7 @@
                 <input type="hidden" name="redirect_to" value="/cabinet">
                 <button type="submit" style="
                     font-size:12px;font-weight:700;padding:6px 16px;border-radius:20px;
-                    border:none;cursor:pointer;font-family:'Montserrat',sans-serif;transition:opacity 0.15s;
+                    border:none;cursor:pointer;font-family:var(--font-body);transition:opacity 0.15s;
                     {% if feat.open %}
                     background:rgba(220,38,38,0.1);color:var(--error);
                     {% else %}
@@ -482,7 +482,7 @@
     <div class="feed-wrap">
         <div class="feed-header">
             <span>Последние загрузки</span>
-            <a href="/cabinet/students" style="font-size:12px;color:var(--accent);font-weight:700;text-decoration:none;opacity:1">Все ученики →</a>
+            <a href="/cabinet/students" style="font-size:12px;color:var(--blue);font-weight:700;text-decoration:none;opacity:1">Все ученики →</a>
         </div>
         {% if recent_works %}
         {% set type_labels = {'before': 'До', 'after': 'После', 'mock_exam': 'Пробник', 'retake': 'Отработка'} %}
@@ -518,10 +518,10 @@
     {% if user.role_rank >= 4 %}
     <!-- SA quick-links -->
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
-        <a href="/cabinet/superadmin/users" style="display:inline-flex;align-items:center;gap:7px;background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:10px 18px;font-size:13px;font-weight:700;color:var(--text);text-decoration:none;box-shadow:var(--shadow);transition:border-color 0.15s">
+        <a href="/cabinet/superadmin/users" style="display:inline-flex;align-items:center;gap:7px;background:var(--surface);border:1.5px solid var(--line);border-radius:12px;padding:10px 18px;font-size:13px;font-weight:700;color:var(--text);text-decoration:none;box-shadow:var(--sh-sm);transition:border-color 0.15s">
             👤 Управление пользователями
         </a>
-        <a href="/cabinet/superadmin/stats" style="display:inline-flex;align-items:center;gap:7px;background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:10px 18px;font-size:13px;font-weight:700;color:var(--text);text-decoration:none;box-shadow:var(--shadow);transition:border-color 0.15s">
+        <a href="/cabinet/superadmin/stats" style="display:inline-flex;align-items:center;gap:7px;background:var(--surface);border:1.5px solid var(--line);border-radius:12px;padding:10px 18px;font-size:13px;font-weight:700;color:var(--text);text-decoration:none;box-shadow:var(--sh-sm);transition:border-color 0.15s">
             📊 Статистика пробников
         </a>
     </div>

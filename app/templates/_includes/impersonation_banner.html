@@ -1,10 +1,10 @@
 {# Жёлтый банер — виден когда сессия имперсонирована. Ожидает user.impersonated_by_id. #}
 {% if user is defined and user and user.impersonated_by_id %}
-<div style="position:sticky;top:0;z-index:998;background:#FEF3C7;border-bottom:2px solid #D97706;padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center;font-size:13px;color:#92400E;font-weight:700">
+<div style="position:sticky;top:0;z-index:998;background:#FEF3C7;border-bottom:2px solid var(--warning);padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center;font-size:13px;color:#92400E;font-weight:700">
     <span>⚠️ Вы вошли как <strong>{{ user.last_name or '' }} {{ user.first_name or user.name }}</strong>{% if user.role_name %} ({{ user.role_name }}){% endif %}</span>
     <form method="post" action="/cabinet/superadmin/impersonate/stop" style="margin:0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-        <button type="submit" style="padding:6px 14px;border-radius:7px;background:#D97706;color:#fff;border:none;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">Выйти обратно</button>
+        <button type="submit" style="padding:6px 14px;border-radius:7px;background:var(--warning);color:#fff;border:none;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">Выйти обратно</button>
     </form>
 </div>
 {% endif %}

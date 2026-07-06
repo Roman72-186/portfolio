@@ -73,8 +73,8 @@
 .modal-actions { display: flex; gap: 10px; }
 .modal-actions button { flex: 1; padding: 10px; border-radius: var(--r-sm); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; border: none; }
 .modal-cancel { background: var(--surface-2); color: var(--text); }
-.modal-confirm { background: #DC2626; color: #fff; }
-.modal-confirm.green { background: #059669; }
+.modal-confirm { background: var(--error); color: #fff; }
+.modal-confirm.green { background: var(--ok); }
 
 .su-empty { padding: 40px; text-align: center; color: var(--dim); font-size: 14px; }
 </style>
@@ -166,11 +166,11 @@
         </label>
         <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
             <input type="checkbox" name="show_blocked" value="1" {% if show_blocked %}checked{% endif %} style="width:auto;padding:0">
-            <span style="font-size:12px;font-weight:700;color:#DC2626">Только заблокированные</span>
+            <span style="font-size:12px;font-weight:700;color:var(--error)">Только заблокированные</span>
         </label>
         <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
             <input type="checkbox" name="show_hidden" value="1" {% if show_hidden %}checked{% endif %} style="width:auto;padding:0">
-            <span style="font-size:12px;font-weight:700;color:#D97706">Без периодов</span>
+            <span style="font-size:12px;font-weight:700;color:var(--warning)">Без периодов</span>
         </label>
         <button type="submit">Найти</button>
     </form>
@@ -275,9 +275,9 @@
                     {% if u.deleted_at %}
                     <span style="font-size:12px;color:var(--dim)">Удалён</span>
                     {% elif not u.is_active %}
-                    <span style="font-size:12px;color:#DC2626;font-weight:700">Заблокирован</span>
+                    <span style="font-size:12px;color:var(--error);font-weight:700">Заблокирован</span>
                     {% else %}
-                    <span style="font-size:12px;color:#059669;font-weight:700">Активен</span>
+                    <span style="font-size:12px;color:var(--ok);font-weight:700">Активен</span>
                     {% endif %}
                 </td>
                 <td>
@@ -528,8 +528,8 @@ function applyUserStatus(userId, isActive) {
     row.classList.remove('u-deleted');
     row.classList.toggle('u-inactive', !isActive);
     status.innerHTML = isActive
-        ? '<span style="font-size:12px;color:#059669;font-weight:700">Активен</span>'
-        : '<span style="font-size:12px;color:#DC2626;font-weight:700">Заблокирован</span>';
+        ? '<span style="font-size:12px;color:var(--ok);font-weight:700">Активен</span>'
+        : '<span style="font-size:12px;color:var(--error);font-weight:700">Заблокирован</span>';
     renderUserActions(userId, isActive);
 
     const nextFocus = row.querySelector('.action-btn');

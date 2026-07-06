@@ -8,9 +8,9 @@
 .dlg-head { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; margin-bottom: 14px; }
 .dlg-head h1 { font-family: var(--font-display); font-size: 22px; font-weight: 900; margin: 0; }
 .dlg-head .dlg-meta { color: var(--muted); font-size: 13px; font-weight: 700; }
-.dlg-head .dlg-closed { background: rgba(22,163,74,0.12); color: #16A34A; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
-.dlg-delete-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid #DC2626; color: #DC2626; background: transparent; border-radius: 10px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background .12s, color .12s; }
-.dlg-delete-btn:hover { background: #DC2626; color: #fff; }
+.dlg-head .dlg-closed { background: rgba(22,163,74,0.12); color: var(--success); padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
+.dlg-delete-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--error); color: var(--error); background: transparent; border-radius: 10px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background .12s, color .12s; }
+.dlg-delete-btn:hover { background: var(--error); color: #fff; }
 .dlg-delete-btn:disabled { opacity: 0.5; cursor: default; }
 .dlg-reopen-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--blue); color: var(--blue); background: transparent; border-radius: 10px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background .12s, color .12s; }
 .dlg-reopen-btn:hover { background: var(--blue); color: #fff; }
@@ -58,10 +58,10 @@
 .dlg-attempt-title { font-size: 16px; font-weight: 800; margin: 0; }
 .dlg-attempt-score { background: var(--blue); color: #fff; font-size: 13px; font-weight: 900; padding: 3px 10px; border-radius: 999px; }
 .dlg-attempt-score.no-score { background: var(--dim); }
-.dlg-attempt-score.red { background: #DC2626; }
+.dlg-attempt-score.red { background: var(--error); }
 .dlg-attempt-score.orange { background: #F97316; }
 .dlg-attempt-score.lime { background: #84CC16; }
-.dlg-attempt-score.green { background: #16A34A; }
+.dlg-attempt-score.green { background: var(--success); }
 
 .dlg-context { padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
 .dlg-context-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }

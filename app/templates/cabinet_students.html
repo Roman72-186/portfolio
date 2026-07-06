@@ -216,7 +216,7 @@
 .student-hero-score {
     position: relative; z-index: 1; text-align: right; flex-shrink: 0;
 }
-.score-big { font-size: 34px; font-weight: 900; color: #FCD34D; line-height: 1; }
+.score-big { font-size: 34px; font-weight: 900; color: var(--gold); line-height: 1; }
 .score-label {
     font-size: 11px; color: rgba(255,255,255,0.6); font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.06em;
@@ -510,7 +510,7 @@
 /* ── Toast ── */
 .save-toast {
     position: fixed; bottom: 24px; right: 24px;
-    background: #059669; color: #fff;
+    background: var(--ok); color: #fff;
     padding: 12px 20px; border-radius: var(--r-md);
     font-size: 14px; font-weight: 700;
     box-shadow: 0 4px 20px rgba(5,150,105,0.3);
@@ -707,8 +707,8 @@
 .mock-status-panel summary::-webkit-details-marker { display: none; }
 .mock-status-panel summary .mock-status-counts { display: flex; gap: 6px; flex-wrap: wrap; }
 .mock-status-count { font-size: 11px; font-weight: 700; border-radius: var(--r-md); padding: 2px 8px; }
-.mock-status-count--ok { background: rgba(34,197,94,0.12); color: #16a34a; }
-.mock-status-count--bad { background: rgba(239,68,68,0.12); color: #dc2626; }
+.mock-status-count--ok { background: rgba(34,197,94,0.12); color: var(--success); }
+.mock-status-count--bad { background: rgba(239,68,68,0.12); color: var(--error); }
 .mock-status-body { padding: 0 10px 10px; border-top: 1px solid var(--line); }
 .mock-status-cols { display: flex; flex-direction: column; gap: 10px; padding-top: 8px; }
 .mock-status-col-title {
@@ -726,7 +726,7 @@
 }
 .mock-status-username { color: var(--dim); }
 .mock-status-pending {
-    font-size: 11px; font-weight: 700; color: #dc2626;
+    font-size: 11px; font-weight: 700; color: var(--error);
     background: rgba(239,68,68,0.10); border-radius: var(--r-md); padding: 1px 6px;
 }
 .mock-status-empty { color: var(--dim); font-style: italic; }
