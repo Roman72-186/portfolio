@@ -133,14 +133,22 @@
     .staff-hero-name { font-size: 22px; }
 }
 @media (max-width: 480px) {
-    .stats-strip { grid-template-columns: 1fr; }
-    .stat-cell { border-right: none; border-bottom: 1px solid var(--border); }
-    .stat-cell:last-child { border-bottom: none; }
+    /* No .stats-strip override here — the 2-column grid + border rules from the
+       768px breakpoint above already apply and give a correct 2×2 layout. The
+       old `grid-template-columns: 1fr` here collapsed it to 1-per-row, which is
+       the bug the design audit flagged (most real phones are <=480px wide). */
     .staff-hero { padding: 20px; }
     .staff-hero-name { font-size: 20px; }
     .banner-row { flex-direction: column; gap: 6px; align-items: stretch; }
     .banner-row-label { width: auto; }
     .staff-row { flex-wrap: wrap; }
+    /* min-width:0 (base rule) lets flexbox crush this column to near-zero
+       instead of wrapping the fixed-width action buttons to a new line —
+       that's what made curator/admin names invisible on mobile. Scoped to
+       this breakpoint only: at desktop panel widths, 130px pushes the
+       buttons past the panel's right edge (.two-col panels are narrower
+       than the row's natural content width). */
+    .staff-info { min-width: 130px; }
 }
 </style>
 {% endblock %}
@@ -322,9 +330,9 @@
                     font-size:12px;font-weight:700;padding:6px 16px;border-radius:20px;
                     border:none;cursor:pointer;font-family:'Montserrat',sans-serif;transition:opacity 0.15s;
                     {% if feat.open %}
-                    background:rgba(239,68,68,0.1);color:#EF4444;
+                    background:rgba(220,38,38,0.1);color:var(--error);
                     {% else %}
-                    background:rgba(5,150,105,0.1);color:#059669;
+                    background:rgba(5,150,105,0.1);color:var(--ok);
                     {% endif %}
                 ">
                     {% if feat.open %}Закрыть{% else %}Открыть{% endif %}
@@ -369,8 +377,12 @@
         <div class="panel">
             <div class="panel-header">
                 <span class="panel-title">Кураторы</span>
-                <span style="font-size:12px;color:var(--dim)">{{ curators | length }} чел.</span>
+                <div style="display:flex;align-items:center;gap:10px">
+                    <span style="font-size:12px;color:var(--dim)">{{ curators | length }} чел.</span>
+                    <button type="button" id="staffToggleBtn-curators" class="issue-link-btn" onclick="toggleStaffList('curators')">Показать</button>
+                </div>
             </div>
+            <div id="staffListBody-curators" style="display:none">
             {% if curators %}
             {% for c in curators %}
             <div class="staff-row">
@@ -400,13 +412,18 @@
             {% else %}
             <div style="padding:20px 18px;font-size:13px;color:var(--dim)">Кураторы не назначены</div>
             {% endif %}
+            </div>
         </div>
 
         <div class="panel">
             <div class="panel-header">
                 <span class="panel-title">Администраторы</span>
-                <span style="font-size:12px;color:var(--dim)">{{ admins | length }} чел.</span>
+                <div style="display:flex;align-items:center;gap:10px">
+                    <span style="font-size:12px;color:var(--dim)">{{ admins | length }} чел.</span>
+                    <button type="button" id="staffToggleBtn-admins" class="issue-link-btn" onclick="toggleStaffList('admins')">Показать</button>
+                </div>
             </div>
+            <div id="staffListBody-admins" style="display:none">
             {% if admins %}
             {% for a in admins %}
             <div class="staff-row">
@@ -433,9 +450,31 @@
             {% else %}
             <div style="padding:20px 18px;font-size:13px;color:var(--dim)">Администраторы не найдены</div>
             {% endif %}
+            </div>
         </div>
 
     </div>
+    <script>
+    (function(){
+        var KEY_PREFIX = 'staffDashboardListExpanded_';
+        ['curators', 'admins'].forEach(function(kind){
+            if (sessionStorage.getItem(KEY_PREFIX + kind) === '1') {
+                var body = document.getElementById('staffListBody-' + kind);
+                var btn = document.getElementById('staffToggleBtn-' + kind);
+                if (body) body.style.display = '';
+                if (btn) btn.textContent = 'Скрыть';
+            }
+        });
+    })();
+    function toggleStaffList(kind) {
+        var body = document.getElementById('staffListBody-' + kind);
+        var btn = document.getElementById('staffToggleBtn-' + kind);
+        var expand = body.style.display === 'none';
+        body.style.display = expand ? '' : 'none';
+        btn.textContent = expand ? 'Скрыть' : 'Показать';
+        sessionStorage.setItem('staffDashboardListExpanded_' + kind, expand ? '1' : '');
+    }
+    </script>
     {% endif %}
 
     {% if user.role_rank < 4 %}

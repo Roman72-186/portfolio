@@ -672,7 +672,12 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 .app-sidebar, .staff-aside { display: none; }
 
 @media (min-width: 1024px) {
-    body { flex-direction: row; align-items: stretch; }
+    /* Sidebars are position:fixed (out of flow) — .main is normally body's only
+       in-flow flex child, so flex-direction has no visible effect on it. But the
+       impersonation banner (position:sticky, stays in-flow) becomes a 2nd flex
+       item when present; row + align-items:stretch stretched it to full viewport
+       height. Column direction keeps both stacking correctly in both cases. */
+    body { flex-direction: column; }
 
     .app-sidebar, .staff-aside {
         display: flex;
@@ -687,6 +692,16 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
         z-index: 50;
         overflow-y: auto;
         padding: 0;
+    }
+
+    /* Impersonation banner is in-flow (position:sticky) above the fixed sidebar;
+       push the sidebar down by the banner's single-line height so its logo isn't
+       covered. Approximate — if the banner wraps to 2 lines (long name), a small
+       overlap can reappear, but the sidebar itself stays fully usable either way. */
+    body.is-impersonating .app-sidebar,
+    body.is-impersonating .staff-aside {
+        top: 50px;
+        height: calc(100vh - 50px);
     }
 
     .main {

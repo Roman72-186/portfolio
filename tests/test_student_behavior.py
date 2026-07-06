@@ -49,6 +49,16 @@ def test_profile_form_redirects_when_already_complete(auth_client):
     assert "/cabinet/student" in resp.headers["location"]
 
 
+def test_profile_form_shows_step_indicator(client, user_factory, session_factory):
+    """GET /cabinet/profile shows a 5-step visual indicator on the long form."""
+    client, _ = _auth(client, user_factory, session_factory,
+                      vk_id=100_107, profile_completed=False)
+    resp = client.get("/cabinet/profile")
+    assert resp.status_code == 200
+    assert resp.text.count('class="form-step-header"') == 5
+    assert "Шаг 5 из 5" in resp.text
+
+
 def test_profile_post_valid_data_sets_profile_completed(client, db, user_factory, session_factory):
     """Valid POST /cabinet/profile → profile_completed=True, name/tariff saved."""
     from app.models.user import User
@@ -130,6 +140,24 @@ def test_dashboard_returns_200(auth_client):
     client, _ = auth_client
     resp = client.get("/cabinet/student")
     assert resp.status_code == 200
+
+
+def test_dashboard_shows_portfolio_cta_when_not_completed(client, user_factory, session_factory):
+    """New student (portfolio_do_completed=False) sees the 'upload before photo' CTA."""
+    client, _ = _auth(client, user_factory, session_factory,
+                      vk_id=100_108, portfolio_do_completed=False)
+    resp = client.get("/cabinet/student")
+    assert resp.status_code == 200
+    assert "Загрузите портфолио" in resp.text
+    assert 'href="/upload"' in resp.text
+
+
+def test_dashboard_hides_portfolio_cta_when_completed(auth_client):
+    """Student with portfolio_do_completed=True (the fixture default) doesn't see the CTA."""
+    client, _ = auth_client
+    resp = client.get("/cabinet/student")
+    assert resp.status_code == 200
+    assert "Загрузите портфолио" not in resp.text
 
 
 def test_dashboard_shows_mock_count_and_avg(auth_client, db):

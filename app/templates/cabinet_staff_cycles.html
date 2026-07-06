@@ -87,6 +87,13 @@
 .cyc-pill.no-score { background: var(--surface-2); color: var(--muted); }
 .cyc-pill.revision { background: rgba(245,158,11,0.16); color: #B45309; }
 .cyc-chev { color: var(--dim); }
+.cyc-load-more-wrap { padding: 16px; text-align: center; }
+.cyc-load-more-btn {
+    padding: 10px 22px; border: 1px solid var(--line); border-radius: var(--r-pill);
+    background: var(--surface); color: var(--blue); font-size: 13px; font-weight: 800;
+    cursor: pointer; transition: all .12s; font-family: inherit;
+}
+.cyc-load-more-btn:hover { border-color: var(--blue); background: var(--blue-soft); }
 </style>
 {% endblock %}
 {% block content %}
@@ -190,6 +197,9 @@
                 </a>
             {% endfor %}
         </div>
+        <div class="cyc-load-more-wrap" id="cyc-load-more-wrap" style="display:none">
+            <button type="button" class="cyc-load-more-btn" id="cyc-load-more-btn" onclick="expandCycles()"></button>
+        </div>
         <div class="cyc-noresults" id="cyc-noresults">Ничего не найдено по фильтрам.</div>
     {% endif %}
 </div>
@@ -199,6 +209,20 @@
 var _cycSubject = '';
 var _cycFb = '';
 var _cycScore = '';
+// Страница может нести сотни строк (348 открытых циклов на проде = ~22000px).
+// Рендерим все сразу (одним запросом, дёшево), но по умолчанию показываем
+// только первые CYC_INITIAL_LIMIT — пока не начат поиск/фильтр (тогда ищем
+// по всему набору) или не нажата «Показать ещё».
+var CYC_INITIAL_LIMIT = 40;
+var _cycExpanded = false;
+function isCycFilterActive() {
+    var q = (document.getElementById('cyc-search').value || '').trim();
+    return !!(q || _cycSubject || _cycFb || _cycScore);
+}
+function expandCycles() {
+    _cycExpanded = true;
+    filterCycles();
+}
 function selectSubject(btn) {
     // Сбрасываем active только внутри своей группы — пилюли ОС/оценки используют тот же класс.
     btn.parentNode.querySelectorAll('.cyc-subj-pill').forEach(function (p) { p.classList.remove('active'); });
@@ -221,6 +245,8 @@ function selectScore(btn) {
 function filterCycles() {
     var q = (document.getElementById('cyc-search').value || '').toLowerCase().trim();
     var qClean = q.replace(/^@/, '');
+    var filterActive = isCycFilterActive();
+    var matchedCount = 0;
     var shown = 0;
     document.querySelectorAll('.cyc-row').forEach(function (row) {
         var name = row.dataset.name || '';
@@ -233,13 +259,32 @@ function filterCycles() {
         var matchF = !_cycFb || (_cycFb === 'none' ? fb === 0 : fb > 0);
         var matchSc = !_cycScore || (_cycScore === 'none' ? score === '0' : score === '1');
         var ok = matchQ && matchS && matchF && matchSc;
-        row.style.display = ok ? '' : 'none';
-        if (ok) shown++;
+        var visible = false;
+        if (ok) {
+            matchedCount++;
+            // Without an active filter and not yet expanded, only the first
+            // CYC_INITIAL_LIMIT matches render — this is what keeps the page
+            // short by default without ever hiding anything from a search/filter.
+            visible = filterActive || _cycExpanded || matchedCount <= CYC_INITIAL_LIMIT;
+        }
+        row.style.display = visible ? '' : 'none';
+        if (visible) shown++;
     });
+    var remaining = matchedCount - shown;
+    var loadMoreWrap = document.getElementById('cyc-load-more-wrap');
+    var loadMoreBtn = document.getElementById('cyc-load-more-btn');
+    if (loadMoreWrap && loadMoreBtn) {
+        if (remaining > 0) {
+            loadMoreBtn.textContent = 'Показать ещё ' + remaining;
+            loadMoreWrap.style.display = '';
+        } else {
+            loadMoreWrap.style.display = 'none';
+        }
+    }
     var count = document.getElementById('cyc-count');
     if (count) count.textContent = shown;
     var nores = document.getElementById('cyc-noresults');
-    if (nores) nores.style.display = shown ? 'none' : 'block';
+    nores && (nores.style.display = matchedCount ? 'none' : 'block');
 }
 // Копирует видимые (после фильтров) циклы: имя, @username, предмет и чего не хватает.
 function copyCycleList() {
@@ -270,6 +315,7 @@ function copyCycleList() {
         }, 1500);
     });
 }
+filterCycles();
 </script>
 {% endif %}
 

@@ -1,6 +1,29 @@
 {% extends "base.html" %}
 {% block title %}Профиль{% endblock %}
-{% block extra_styles %}{% endblock %}
+{% block extra_styles %}
+<style>
+/* Visual-only step markers — form stays one flat POST, no JS gating
+   (hiding required fields via JS steps trips native browser validation:
+   "An invalid form control is not focusable"). Just orients the user. */
+.form-step-header {
+    display: flex; align-items: center; gap: 10px;
+    margin: 28px 0 14px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+}
+.form-step-header:first-of-type { margin-top: 0; padding-top: 0; border-top: none; }
+.form-step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--blue-soft); color: var(--blue);
+    font-size: 12px; font-weight: 800; flex-shrink: 0;
+}
+.form-step-label {
+    font-size: 12px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.05em;
+}
+</style>
+{% endblock %}
 {% block content %}
 <div style="max-width:520px;margin:0 auto">
     <div style="margin-bottom:28px">
@@ -27,6 +50,11 @@
 
         <form method="post" action="/cabinet/profile">
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+
+            <div class="form-step-header">
+                <span class="form-step-num">1</span>
+                <span class="form-step-label">Шаг 1 из 5 · Основные данные</span>
+            </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
                 <div>
                     <label class="form-label" for="profile-first-name">Имя *</label>
@@ -42,6 +70,10 @@
                 </div>
             </div>
 
+            <div class="form-step-header">
+                <span class="form-step-num">2</span>
+                <span class="form-step-label">Шаг 2 из 5 · Начало обучения</span>
+            </div>
             <div style="margin-bottom:16px">
                 <label class="form-label">Месяц и год присоединения к курсу *</label>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -68,6 +100,10 @@
                 </div>
             </div>
 
+            <div class="form-step-header">
+                <span class="form-step-num">3</span>
+                <span class="form-step-label">Шаг 3 из 5 · Контакты</span>
+            </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
                 <div>
                     <label class="form-label" for="profile-phone">Номер телефона *</label>
@@ -93,6 +129,10 @@
                        pattern="@?[A-Za-z0-9_]{4,31}">
             </div>
 
+            <div class="form-step-header">
+                <span class="form-step-num">4</span>
+                <span class="form-step-label">Шаг 4 из 5 · Тариф обучения</span>
+            </div>
             <!-- Текущий тариф -->
             <div style="margin-bottom:16px">
                 <label class="form-label" for="tariff-select">Текущий тариф *</label>
@@ -142,6 +182,10 @@
                 </div>
             </div>
 
+            <div class="form-step-header">
+                <span class="form-step-num">5</span>
+                <span class="form-step-label">Шаг 5 из 5 · Учёба</span>
+            </div>
             <div style="margin-bottom:28px">
                 <label class="form-label" for="university-year-select">Год поступления в вуз *</label>
                 <select class="form-select" name="university_year" id="university-year-select" required>

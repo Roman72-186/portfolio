@@ -16,10 +16,10 @@
     <link rel="preload" as="image" href="/static/img/bg-desktop.webp?v=1" type="image/webp" media="(min-width: 769px)" fetchpriority="high">
     <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
     <!-- Base styles: versioned for cache-busting -->
-    <link rel="stylesheet" href="/static/css/base.css?v=22">
+    <link rel="stylesheet" href="/static/css/base.css?v=25">
     {% block extra_styles %}{% endblock %}
 </head>
-<body>
+<body{% if user is defined and user and user.impersonated_by_id %} class="is-impersonating"{% endif %}>
     <!-- Telegram in-app browser escape: открываем сайт во внешнем браузере.
          Встроенный браузер Telegram ломает сессию/CSRF и медленно грузит фото.
          Детект: window.TelegramWebviewProxy (инжектится Telegram и на Android, и
@@ -79,13 +79,13 @@
                 openBtn.textContent = 'Открыть в браузере';
                 openBtn.setAttribute('style',
                     'width:100%;padding:14px;font-size:15px;font-weight:700;color:#fff;border:none;' +
-                    'border-radius:12px;background:linear-gradient(135deg,#2563EB,#3B82F6);cursor:pointer');
+                    'border-radius:12px;background:linear-gradient(135deg,var(--blue),var(--blue-mid));cursor:pointer');
                 openBtn.onclick = function(){ doEscape(targetUrl); };
                 var copyBtn = document.createElement('button');
                 copyBtn.type = 'button';
                 copyBtn.textContent = 'Скопировать ссылку';
                 copyBtn.setAttribute('style',
-                    'width:100%;padding:12px;margin-top:10px;font-size:13px;font-weight:600;color:#2563EB;' +
+                    'width:100%;padding:12px;margin-top:10px;font-size:13px;font-weight:600;color:var(--blue);' +
                     'background:none;border:1px solid #DCE0EA;border-radius:12px;cursor:pointer');
                 copyBtn.onclick = function(){
                     function done(){ copyBtn.textContent = 'Ссылка скопирована ✓'; }

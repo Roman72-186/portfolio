@@ -435,6 +435,13 @@
     </div>
 
     <!-- ── ЧТО ДАЛЬШЕ ── -->
+    {% if not user.portfolio_do_completed %}
+    <div class="next-card next-card--blue">
+        <div class="next-card-title">Загрузите портфолио «До»</div>
+        <div class="next-card-note">Первый шаг — покажите свои работы до обучения у нас. Это займёт пару минут.</div>
+        <a href="/upload" class="next-card-cta">Загрузить фото →</a>
+    </div>
+    {% endif %}
     {% if active_cycle %}
     <div class="next-card next-card--blue">
         <div class="next-card-title">Текущий цикл — {{ active_cycle.subject }}</div>

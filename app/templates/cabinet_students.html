@@ -359,7 +359,7 @@
     font-size: 12px; font-weight: 800; cursor: pointer;
 }
 .mock-month-btn.active {
-    background: rgba(37,99,235,0.09); color: #2563EB; border-color: rgba(37,99,235,0.35);
+    background: rgba(59,91,255,0.09); color: var(--blue); border-color: rgba(59,91,255,0.35);
 }
 .mock-calendar-grid {
     display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -376,11 +376,11 @@
     cursor: default;
 }
 .mock-day.has-works {
-    background: #2563EB; color: #fff; cursor: pointer;
-    border-color: rgba(37,99,235,0.75); box-shadow: 0 6px 14px rgba(37,99,235,0.18);
+    background: var(--blue); color: #fff; cursor: pointer;
+    border-color: rgba(59,91,255,0.75); box-shadow: 0 6px 14px rgba(59,91,255,0.18);
 }
 .mock-day.has-works:hover, .mock-day.has-works.is-selected {
-    background: #1D4ED8;
+    background: var(--blue-deep);
 }
 .mock-day.is-empty { visibility: hidden; }
 .mock-day-card {
@@ -416,7 +416,7 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .mock-work-meta { margin-top: 6px; font-size: 12px; color: var(--muted); }
-.mock-work-score { color: #2563EB; font-weight: 900; }
+.mock-work-score { color: var(--blue); font-weight: 900; }
 /* Score badge + hero layout для пробников */
 .work-score-badge {
     position: absolute; top: 6px; right: 6px;
@@ -454,7 +454,7 @@
     font-size: 14px; font-weight: 900; display: inline-block;
 }
 .score-blue-chip {
-    background: rgba(37,99,235,0.08); color: #2563EB;
+    background: rgba(59,91,255,0.08); color: var(--blue);
     border-radius: 8px; padding: 4px 12px;
     font-size: 14px; font-weight: 900; display: inline-block;
 }
