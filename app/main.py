@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from slowapi.errors import RateLimitExceeded
 
 from app.db.database import engine, Base, SessionLocal
@@ -75,6 +76,9 @@ app = FastAPI(
 
 # Rate limiting
 app.state.limiter = limiter
+
+# Compress responses (large static JS bundles like vendored three.js benefit most)
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 @app.exception_handler(RateLimitExceeded)

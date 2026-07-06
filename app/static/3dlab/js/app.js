@@ -208,6 +208,8 @@ function initApp() {
     return; // останемся на lockScreen
   }
 
+  document.getElementById("bootLoader")?.remove();
+
   // 🔥 2. Собираем элементы интерфейса (как было)
   const galleryEl = document.getElementById("gallery");
   const viewerWrapperEl = document.getElementById("viewerWrapper");

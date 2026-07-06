@@ -1064,14 +1064,19 @@ body.inset-mode #insetOpacityRow {
   <script type="importmap">
   {
     "imports": {
-      "three": "https://unpkg.com/three@0.153.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.153.0/examples/jsm/"
+      "three": "/static/3dlab/vendor/three/build/three.module.js",
+      "three/addons/": "/static/3dlab/vendor/three/addons/"
     }
   }
   </script>
 
 </head>
 <body>
+<div id="bootLoader" style="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;background:#050506;color:#e0e0e0;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;">
+  <div style="width:40px;height:40px;border-radius:999px;border:3px solid rgba(255,255,255,0.12);border-top-color:#fff;animation:bootspin 0.8s linear infinite;"></div>
+  <div style="font-size:13px;opacity:.75;">Загрузка приложения…</div>
+  <style>@keyframes bootspin{to{transform:rotate(360deg)}}</style>
+</div>
 <div class="app-root">
   <header class="app-header">
     <!-- ✅ Breadcrumb (слева). В стиле ваших .btn -->
