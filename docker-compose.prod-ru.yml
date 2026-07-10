@@ -15,10 +15,14 @@ services:
       - "--entrypoints.web.forwardedHeaders.trustedIPs=103.134.155.0/24,160.25.253.0/24,160.79.120.0/24,185.121.240.0/22,188.0.150.0/24,193.104.120.0/24,193.84.78.0/24,193.84.90.0/24"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.websecure.forwardedHeaders.trustedIPs=103.134.155.0/24,160.25.253.0/24,160.79.120.0/24,185.121.240.0/22,188.0.150.0/24,193.104.120.0/24,193.84.78.0/24,193.84.90.0/24"
-      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=300s"
-      - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=300s"
-      - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=300s"
-      - "--entrypoints.web.transport.respondingTimeouts.readTimeout=300s"
+      # A 10-photo intermediate submission is one multipart request (up to
+      # ~100 MB). Keep the proxy open while a slow client uploads and while
+      # the app compresses/uploads the batch to S3; otherwise Traefik returns
+      # a 504 that the browser can misreport as an expired session.
+      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=900s"
+      - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=900s"
+      - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=900s"
+      - "--entrypoints.web.transport.respondingTimeouts.readTimeout=900s"
       - "--certificatesresolvers.mytlschallenge.acme.tlschallenge=true"
       - "--certificatesresolvers.mytlschallenge.acme.email=${SSL_EMAIL}"
       - "--certificatesresolvers.mytlschallenge.acme.storage=/letsencrypt/acme.json"

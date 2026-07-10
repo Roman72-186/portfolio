@@ -525,6 +525,103 @@ def test_probnik_intermediate_caps_at_ten(auth_client, db):
     assert stages == 10
 
 
+def test_probnik_ten_stage_and_final_refresh_near_expired_session(auth_client, db):
+    """Real CSRF + auth contract for the browser's 10+1 upload flow.
+
+    The usual test client disables ``require_csrf`` for concise route tests.
+    Here it is deliberately restored: after a student has started the exam,
+    the UI refreshes its token before uploading.  That request must also renew
+    an almost-expired auth session before the 10 intermediate files and final
+    work are accepted.
+    """
+    from app.dependencies import require_csrf
+    from app.main import app
+    from app.models.session import Session
+    from app.config import settings
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+
+    client, user = auth_client
+    csrf_override = app.dependency_overrides.pop(require_csrf)
+    try:
+        _create_active_period(db, user, "mock_exam")
+        _create_active_ticket(db, user, "Рисунок")
+
+        def fresh_csrf_token() -> tuple[str, object]:
+            response = client.get(
+                "/upload/mock-exam/csrf",
+                headers={"Accept": "application/json"},
+            )
+            assert response.status_code == 200
+            return response.json()["csrf_token"], response
+
+        start_token, _ = fresh_csrf_token()
+
+        start = client.post(
+            "/upload/mock-exam/start",
+            data={"subject": "Рисунок", "csrf_token": start_token},
+            headers={"Accept": "application/json"},
+        )
+        assert start.status_code == 200
+
+        # TestClient keeps the fixture cookie and the refreshed response cookie
+        # under different test domains.  They must still carry one session id.
+        session_ids = {
+            cookie.value for cookie in client.cookies.jar
+            if cookie.name == "session_id"
+        }
+        assert len(session_ids) == 1
+        session_id = session_ids.pop()
+        session = db.query(Session).filter(Session.id == session_id).first()
+        session.expires_at = datetime.now(timezone.utc) + timedelta(seconds=30)
+        db.commit()
+
+        token, refresh_response = fresh_csrf_token()
+        assert "session_id=" in refresh_response.headers.get("set-cookie", "")
+        db.refresh(session)
+        refreshed_at = session.expires_at
+        if refreshed_at.tzinfo is None:
+            refreshed_at = refreshed_at.replace(tzinfo=timezone.utc)
+        assert refreshed_at > datetime.now(timezone.utc) + timedelta(
+            hours=settings.session_ttl_hours, seconds=-5
+        )
+
+        stage_files = [
+            ("photos", (f"stage{i}.jpg", _JPG_BYTES, "image/jpeg"))
+            for i in range(10)
+        ]
+        stages = client.post(
+            "/upload/probnik/intermediate",
+            data={"subject": "Рисунок", "csrf_token": token},
+            files=stage_files,
+            headers={"Accept": "application/json"},
+        )
+        assert stages.status_code == 200
+        assert stages.json()["created"] == 10
+        assert stages.json()["remaining"] == 0
+
+        final = client.post(
+            "/upload/probnik/final",
+            data={"subject": "Рисунок", "csrf_token": fresh_csrf_token()[0]},
+            files=[("photos", ("final.jpg", _JPG_BYTES, "image/jpeg"))],
+            headers={"Accept": "application/json"},
+        )
+        assert final.status_code == 200
+        final_body = final.json()
+        assert final_body["success"] is True
+        assert final_body["verified"] is True
+        assert final_body["created"] == 1
+        assert len(final_body["work_ids"]) == 1
+        works = db.query(Work).filter(
+            Work.cycle_id == final_body["cycle_id"],
+            Work.work_type == WORK_TYPE_MOCK_EXAM,
+        ).all()
+        assert len(works) == 11
+        assert sum(not work.is_final for work in works) == 10
+        assert sum(work.is_final for work in works) == 1
+    finally:
+        app.dependency_overrides[require_csrf] = csrf_override
+
+
 def test_probnik_intermediate_reports_remaining_slots(auth_client, db):
     from app.models.work import Work
     from app.models.exam_cycle import ExamCycle
