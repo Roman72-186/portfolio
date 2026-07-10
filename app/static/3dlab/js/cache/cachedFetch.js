@@ -5,16 +5,19 @@ function log(msg) {
   console.log(msg);
 }
 
+// Версия IndexedDB-кэша ассетов (модели/текстуры/видео с S3).
+// Раньше ключ кэша был только "path" из URL — обновление файла на S3 в тот же
+// путь никогда не доходило до уже открывавших модель пользователей, потому что
+// старый blob в IndexedDB оставался достижим по тому же ключу бессрочно.
+// Теперь ключ = версия + полный URL. Чтобы форсировать переcкачивание всех
+// закэшированных ассетов после обновления контента на S3 — поднять эту цифру.
+const ASSET_CACHE_VERSION = 1;
+
 // Дедупликация одновременных запросов одного и того же ресурса
 const inflight = new Map();
 
 export async function cachedFetch(url) {
-  // ❗ Выделяем objectPath из URL (как у тебя и было)
-  const u = new URL(url);
-  const objectPath = u.searchParams.get("path");
-
-  // Ключ кеша
-  const cacheKey = objectPath || url;
+  const cacheKey = `${ASSET_CACHE_VERSION}:${url}`;
 
   // Если этот же ресурс уже качается/пишется — ждём тот же промис
   if (inflight.has(cacheKey)) {

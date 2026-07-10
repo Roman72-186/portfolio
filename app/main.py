@@ -166,9 +166,20 @@ async def security_headers(request: Request, call_next):
 # при навигации, но НЕ блокирует bfcache (back-forward cache) — это даёт мгновенный
 # back/forward без перезагрузки. `no-store` ломает bfcache, поэтому мы его не ставим.
 # Static assets (/static/) получают долгосрочный кэш — при обновлении меняй ?v= в URL.
+#
+# Исключение: /static/3dlab/js/ — несобираемый (без хэшей в именах файлов),
+# часто меняющийся исходный код 3D-лаборатории. immutable-кэш на год означал, что
+# правки логики (не самих 3D-моделей — тех отдельный IndexedDB-кэш в cachedFetch.js)
+# не доходили до уже открывавших /3dlab пользователей без ручного докручивания ?v=
+# по всей цепочке ES-импортов — процесс уже расходился (models.js грузится по двум
+# разным URL). Тут — no-cache + ревалидация по ETag/Last-Modified (StaticFiles отдаёт
+# их из коробки), браузер получает дешёвый 304 при отсутствии изменений.
 @app.middleware("http")
 async def cache_control(request: Request, call_next):
     response: Response = await call_next(request)
+    if request.url.path.startswith("/static/3dlab/js/"):
+        response.headers["Cache-Control"] = "no-cache"
+        return response
     if request.url.path.startswith("/static/"):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
