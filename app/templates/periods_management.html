@@ -58,6 +58,14 @@
     border: 1px dashed var(--line); border-radius: var(--r-sm);
     margin-bottom: 8px;
 }
+.period-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.period-card-right { display: flex; align-items: center; gap: 12px; }
+
+@media (max-width: 480px) {
+    .period-card { flex-direction: column; align-items: stretch; }
+    .period-card-right { justify-content: space-between; }
+    .period-form-grid { grid-template-columns: 1fr; }
+}
 </style>
 {% endblock %}
 {% block content %}
@@ -88,7 +96,7 @@
             <form method="post" action="/cabinet/periods/create">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                 <input type="hidden" name="feature" value="{{ feature }}">
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+                <div class="period-form-grid">
                     <div>
                         <label class="form-label" for="start-{{ feature }}">Дата начала *</label>
                         <input id="start-{{ feature }}" class="form-input" type="date" name="start_date" required
@@ -141,7 +149,7 @@
                 <div class="period-title">{{ p.title }}</div>
                 {% endif %}
             </div>
-            <div style="display:flex;align-items:center;gap:12px">
+            <div class="period-card-right">
                 <span class="period-status status-{{ status }}">{{ status_label }}</span>
                 <div class="period-actions">
                     {% if p.is_active %}

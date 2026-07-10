@@ -29,6 +29,13 @@
     .dlg-head-actions .dlg-delete-btn { grid-column: 1 / -1; }
 }
 
+/* Touch target ≥44px for the row layout too — tablet/touch users between 640-1024px
+   still see the inline row (not the stacked grid above), so the buttons themselves
+   need the taller hit area rather than relying on the grid override. */
+@media (min-width: 641px) and (max-width: 1024px), (hover: none) and (pointer: coarse) {
+    .dlg-delete-btn, .dlg-reopen-btn, .dlg-revision-btn { min-height: 44px; }
+}
+
 /* Баннер «на изменении» + действие «Завершить правку» */
 .dlg-revision-banner {
     display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center;

@@ -9,9 +9,15 @@
 .sc-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
 
 .sc-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--sh-sm); overflow: hidden; }
-.sc-row { display: grid; grid-template-columns: 48px 1fr auto auto; gap: 14px; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+.sc-row { display: grid; grid-template-columns: 48px 1fr auto; gap: 14px; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--line); }
 .sc-row:last-child { border-bottom: none; }
 .sc-row:hover { background: var(--bg); }
+.sc-row-actions { display: flex; align-items: center; gap: 14px; }
+
+@media (max-width: 480px) {
+    .sc-row { grid-template-columns: 40px 1fr; row-gap: 10px; }
+    .sc-row-actions { grid-column: 1 / -1; justify-content: space-between; }
+}
 .sc-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line); }
 .sc-avatar-placeholder { width: 40px; height: 40px; border-radius: 50%; background: var(--surface-2); display: flex; align-items: center; justify-content: center; color: var(--dim); }
 .sc-name { font-weight: 700; font-size: 14px; color: var(--text); }
@@ -50,15 +56,17 @@
                     <div class="sc-name">{{ c.name }}</div>
                     <div class="sc-sub">id={{ c.id }}{% if c.staff_login %} · {{ c.staff_login }}{% endif %}{% if not c.is_active %} · заблокирован{% endif %}</div>
                 </div>
-                <div class="sc-count">{{ c.student_count }} учеников</div>
-                <form method="post" action="/cabinet/superadmin/impersonate/{{ c.id }}" style="margin:0">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                    {% if c.is_active %}
-                    <button type="submit" class="sc-btn">Войти как куратор</button>
-                    {% else %}
-                    <button type="button" class="sc-btn sc-btn-disabled" disabled>Заблокирован</button>
-                    {% endif %}
-                </form>
+                <div class="sc-row-actions">
+                    <div class="sc-count">{{ c.student_count }} учеников</div>
+                    <form method="post" action="/cabinet/superadmin/impersonate/{{ c.id }}" style="margin:0">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                        {% if c.is_active %}
+                        <button type="submit" class="sc-btn">Войти как куратор</button>
+                        {% else %}
+                        <button type="button" class="sc-btn sc-btn-disabled" disabled>Заблокирован</button>
+                        {% endif %}
+                    </form>
+                </div>
             </div>
             {% endfor %}
         {% else %}
