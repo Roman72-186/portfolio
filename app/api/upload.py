@@ -113,16 +113,14 @@ def _serialize_attempt(a: MockExamAttempt, ticket: ExamTicket | None = None) -> 
 def _locked_mock_subjects(db: DBSession, user_id: int) -> dict[str, str]:
     """Предметы, по которым сдача Пробника закрыта, → причина блокировки.
 
-    Правило «одна сдача на билет»: как только по активному билету сдан финал
-    (has_submitted_for_ticket), предмет закрыт — ученик НЕ может перезаливать работу
-    по своей воле. Закрыто до выдачи СЛЕДУЮЩЕГО билета. Условие блокировки байт-в-байт
-    совпадает с бэкенд-гейтом 409 (cycle_upload.upload_probnik_final), иначе кнопка и
-    409 рассинхронятся. Финал «на доработку» (needs_revision) за сдачу НЕ считается —
-    has_submitted_for_ticket его пропускает, предмет остаётся открыт для redo.
+    Правило «одна сдача на пробник»: финал по любому билету текущего задания
+    закрывает предмет, чтобы остальные варианты этого пробника не стали второй
+    сдачей. Условие совпадает с бэкенд-гейтом 409 в cycle_upload. Финал «на
+    доработку» (needs_revision) за сдачу НЕ считается и оставляет доступным redo.
 
     Возвращает {subject: reason}:
       waiting — финал сдан, цикл ещё открыт (ждём оценку/ОС).
-      scored  — цикл по текущему билету ЗАКРЫТ (оценён), ждём следующий билет.
+      scored  — текущий пробник оценён и закрыт, ждём следующий пробник.
     """
     from app.services.exam_cycle import (
         get_active_tickets,
@@ -159,8 +157,8 @@ def _render_mock(request, user, db, *, error=None, success=False, success_count=
     now = datetime.now(timezone.utc)
     month_name = MONTHS[now.month - 1].capitalize()
     current_date = f"{now.day} {month_name} {now.year}"
-    # Блокировка кнопки предмета — по правилу «одна сдача на билет»: предмет закрыт,
-    # как только по текущему билету сдан финал (перезалив без revision запрещён).
+    # Блокировка кнопки предмета — по правилу «одна сдача на пробник»: предмет
+    # закрыт после финала по любому билету текущего задания.
     # reason нужен шаблону, чтобы показать верную подсказку (ждёт ОС / оценено).
     locked_reasons = _locked_mock_subjects(db, user["user_id"])
     locked_subjects = set(locked_reasons)
@@ -993,9 +991,8 @@ def mock_exam_start(
         has_submitted_for_ticket,
     )
 
-    # «Начать пробник» закрыт только для конкретных уже сданных билетов. Если по
-    # предмету есть другой активный ticket_id, выдаём его даже при открытом цикле
-    # по прошлому билету.
+    # Финал по любому билету текущего задания закрывает весь пробник. Другой
+    # ticket_id этого же задания не является новой попыткой.
     active_tickets = get_active_tickets(db, user["user_id"], subject)
     available_tickets = get_unsubmitted_active_tickets(db, user["user_id"], subject)
     if active_tickets and not available_tickets:

@@ -154,6 +154,87 @@ def test_cycle_page_only_feedback_tab_no_mock_tab(auth_client):
     assert 'data-tab="mock"' not in resp.text
 
 
+def test_feedback_cycle_shows_submitted_ticket_image(auth_client, db):
+    """В диалоге цикла видна фотография билета, по которому сдана работа."""
+    from app.models.exam_assignment import ExamAssignment, ExamTicket
+
+    client, user = auth_client
+    assignment = ExamAssignment(
+        title="Пробник по рисунку", subject="Рисунок",
+        created_by_id=user.id, status="published",
+    )
+    db.add(assignment)
+    db.flush()
+    ticket = ExamTicket(
+        assignment_id=assignment.id, ticket_number=1, title="Натюрморт",
+        image_s3_url="https://example.test/ticket.jpg",
+        start_date=date.today(), end_date=date.today(), assign_to_all=True,
+    )
+    db.add(ticket)
+    db.flush()
+    cycle = ExamCycle(
+        user_id=user.id, subject="Рисунок", ticket_id=ticket.id,
+        started_at=date.today(),
+    )
+    db.add(cycle)
+    db.flush()
+    _mk_final_work(db, user.id, cycle.id)
+
+    resp = client.get(f"/cabinet/feedback/{cycle.id}")
+
+    assert resp.status_code == 200
+    assert "Билет пробника" in resp.text
+    assert ticket.image_s3_url in resp.text
+
+
+def test_superadmin_feedback_cycle_shows_return_for_stages_button(
+    client, admin_user, regular_user, session_factory, db
+):
+    cycle = _mk_cycle(db, regular_user.id, closed=False)
+    _mk_final_work(db, regular_user.id, cycle.id)
+    admin_session = session_factory(admin_user)
+    client.cookies.set("session_id", admin_session.id)
+
+    resp = client.get(f"/cabinet/superadmin/feedback/{cycle.id}")
+
+    assert resp.status_code == 200
+    assert 'id="dlg-student-revision-btn"' in resp.text
+    assert "Вернуть ученику для этапов" in resp.text
+
+
+def test_admin_feedback_cycle_shows_return_for_stages_button(
+    client, regular_user, user_factory, session_factory, db
+):
+    admin = user_factory(vk_id=702_001, name="Admin", role_name="админ")
+    cycle = _mk_cycle(db, regular_user.id, closed=False)
+    _mk_final_work(db, regular_user.id, cycle.id)
+    admin_session = session_factory(admin)
+    client.cookies.set("session_id", admin_session.id)
+
+    resp = client.get(f"/cabinet/admin/feedback/{cycle.id}")
+
+    assert resp.status_code == 200
+    assert 'id="dlg-student-revision-btn"' in resp.text
+    assert 'class="dlg-head-actions"' in resp.text
+
+
+def test_superadmin_feedback_cycle_shows_returned_to_student_status(
+    client, admin_user, regular_user, session_factory, db
+):
+    cycle = _mk_cycle(db, regular_user.id, closed=False)
+    final = _mk_final_work(db, regular_user.id, cycle.id)
+    final.needs_revision = True
+    db.commit()
+    admin_session = session_factory(admin_user)
+    client.cookies.set("session_id", admin_session.id)
+
+    resp = client.get(f"/cabinet/superadmin/feedback/{cycle.id}")
+
+    assert resp.status_code == 200
+    assert "УЧЕНИК МОЖЕТ ДОГРУЗИТЬ ЭТАПЫ" in resp.text
+    assert 'id="dlg-student-revision-btn"' not in resp.text
+
+
 def test_cycle_page_feedback_tab_visible_with_open_cycle(auth_client, db):
     client, user = auth_client
     _mk_cycle(db, user.id, closed=False)
@@ -241,6 +322,68 @@ def test_staff_structured_first_feedback_composed_into_one_message(
     assert "Что хорошо:\nКомпозиция сильная" in text
     assert "Что усилить:\nТон в тенях" in text
     assert "Рекомендации:\nПоработать над краями" in text
+
+
+def test_first_feedback_saves_intermediate_score_separately_from_final(
+    client, admin_user, regular_user, session_factory, db
+):
+    """Балл для отработки хранится на цикле и не заменяет финальный балл работы."""
+    cycle = _mk_cycle(db, regular_user.id)
+    work = _mk_final_work(db, regular_user.id, cycle.id, score=82)
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+
+    resp = client.post(
+        f"/cabinet/feedback/{work.id}/message",
+        data={
+            "impression": "Есть что доработать",
+            "intermediate_score": "64",
+        },
+        headers={"Accept": "application/json"},
+    )
+
+    assert resp.status_code == 200
+    db.refresh(cycle)
+    db.refresh(work)
+    assert float(cycle.intermediate_score) == 64
+    assert float(work.score) == 82
+
+
+def test_feedback_dialog_shows_intermediate_score_for_work_on(
+    client, admin_user, regular_user, session_factory, db
+):
+    cycle = _mk_cycle(db, regular_user.id)
+    cycle.intermediate_score = 67
+    _mk_final_work(db, regular_user.id, cycle.id)
+    db.commit()
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+
+    resp = client.get(f"/cabinet/superadmin/feedback/{cycle.id}")
+
+    assert resp.status_code == 200
+    assert "Промежуточный балл для отработки" in resp.text
+    assert "67 / 100" in resp.text
+
+
+def test_intermediate_score_must_be_between_zero_and_hundred(
+    client, admin_user, regular_user, session_factory, db
+):
+    cycle = _mk_cycle(db, regular_user.id)
+    work = _mk_final_work(db, regular_user.id, cycle.id)
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+
+    resp = client.post(
+        f"/cabinet/feedback/{work.id}/message",
+        data={"impression": "Проверка", "intermediate_score": "101"},
+        headers={"Accept": "application/json"},
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "Промежуточный балл должен быть от 0 до 100"
+    db.refresh(cycle)
+    assert cycle.intermediate_score is None
 
 
 def test_staff_structured_partial_only_filled_sections(

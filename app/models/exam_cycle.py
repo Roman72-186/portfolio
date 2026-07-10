@@ -1,6 +1,6 @@
 from datetime import datetime, date, timezone
 
-from sqlalchemy import Integer, String, Date, DateTime, ForeignKey, Index, text
+from sqlalchemy import Integer, String, Date, DateTime, ForeignKey, Index, Numeric, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -17,6 +17,9 @@ class ExamCycle(Base):
     closed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Оценка для отработки из обратной связи. В отличие от Work.score,
+    # не участвует в закрытии цикла и не попадает в итоговую статистику пробников.
+    intermediate_score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
     # SA вернул закрытый цикл автору ОС на правку сообщения. Цикл остаётся закрытым
     # (балл/портфолио/блокировка не трогаются); флаг даёт куратору доступ к правке
     # своих сообщений и подсвечивает цикл в его списке. Снимается «Завершить правку».

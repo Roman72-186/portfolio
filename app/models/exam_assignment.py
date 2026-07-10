@@ -10,7 +10,7 @@ from app.db.database import Base
 
 
 class ExamAssignment(Base):
-    """Экзаменационное задание — набор из 1–5 билетов по одному предмету."""
+    """Экзаменационное задание — набор из 1–10 билетов по одному предмету."""
 
     __tablename__ = "exam_assignments"
 

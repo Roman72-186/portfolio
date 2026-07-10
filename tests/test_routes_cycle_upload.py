@@ -755,7 +755,7 @@ def test_closing_cycle_releases_lock(auth_client, db):
 
 def test_probnik_blocked_after_close_same_ticket(auth_client, db):
     """После закрытия цикла (балл проставлен) пробник по ТОМУ ЖЕ билету остаётся
-    закрытым — повторная сдача 409. Открывается только следующим билетом."""
+    закрытым — повторная сдача 409. Открывается только следующим пробником."""
     from app.models.work import Work
     from app.models.exam_cycle import ExamCycle
     from app.services.exam_cycle import close_cycle
@@ -775,13 +775,13 @@ def test_probnik_blocked_after_close_same_ticket(auth_client, db):
     # Цикл закрыт, билет тот же → сдача всё ещё закрыта.
     resp = _final(client, "Рисунок")
     assert resp.status_code == 409
-    assert resp.json()["error"] == "пробник по этому билету уже оценён и закрыт"
+    assert resp.json()["error"] == "пробник уже оценён и закрыт"
     # Новый цикл не создан.
     assert db.query(ExamCycle).filter(ExamCycle.user_id == user.id).count() == 1
 
 
-def test_probnik_reopens_with_new_ticket(auth_client, db):
-    """Главный кейс задачи: новый билет открывает сдачу заново → новый цикл."""
+def test_probnik_reopens_with_new_assignment(auth_client, db):
+    """Новый пробник открывает сдачу заново → создаётся новый цикл."""
     from app.models.work import Work
     from app.models.exam_cycle import ExamCycle
     from app.services.exam_cycle import close_cycle
@@ -799,7 +799,7 @@ def test_probnik_reopens_with_new_ticket(auth_client, db):
     db.commit()
     cycle1_id = cycle1.id
 
-    # Куратор/админ выдаёт НОВЫЙ билет по тому же предмету.
+    # Куратор/админ публикует НОВЫЙ пробник по тому же предмету.
     ticket2 = _create_active_ticket(db, user, "Рисунок")
     assert ticket2.id != ticket1.id
 
@@ -819,14 +819,14 @@ def test_probnik_reopens_with_new_ticket(auth_client, db):
     assert cycles[1].ticket_id == ticket2.id    # новый цикл привязан к новому билету
 
 
-def test_probnik_reopens_with_another_active_ticket_while_previous_cycle_open(auth_client, db):
-    """Открытый цикл по уже сданному билету не блокирует другой активный билет."""
+def test_probnik_blocks_other_ticket_in_same_assignment_while_cycle_open(auth_client, db):
+    """Финал по одному варианту закрывает остальные билеты текущего пробника."""
     from app.models.exam_cycle import ExamCycle
 
     client, user = auth_client
     _create_active_period(db, user, "mock_exam")
     tickets = _create_active_ticket_set(db, user, "Рисунок", count=2)
-    first_ticket, second_ticket = tickets
+    first_ticket, _second_ticket = tickets
 
     with patch("app.api.upload.random.choice", return_value=first_ticket):
         first_resp = _final(client, "Рисунок")
@@ -840,11 +840,8 @@ def test_probnik_reopens_with_another_active_ticket_while_previous_cycle_open(au
 
     second_resp = _final(client, "Рисунок")
 
-    assert second_resp.status_code == 200
-    body = second_resp.json()
-    assert body["success"] is True
-    assert body["cycle_created"] is True
-    assert body["cycle_id"] != first_cycle_id
+    assert second_resp.status_code == 409
+    assert second_resp.json()["error"] == "работа сдана, ждите обратной связи"
 
     cycles = (
         db.query(ExamCycle)
@@ -852,12 +849,55 @@ def test_probnik_reopens_with_another_active_ticket_while_previous_cycle_open(au
         .order_by(ExamCycle.id)
         .all()
     )
-    assert len(cycles) == 2
+    assert len(cycles) == 1
     assert cycles[0].ticket_id == first_ticket.id
-    assert cycles[1].ticket_id == second_ticket.id
 
 
 # ── «На доработку» (revision) не снимает реальную блокировку пересдачи ───────
+
+def test_revision_reopens_original_ticket_for_intermediate_photos(
+    client, session_factory, regular_user, admin_user, db
+):
+    """После возврата этапные фото попадают в исходный цикл, не в другой билет."""
+    from app.models.exam_cycle import ExamCycle
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+
+    student_sess = session_factory(regular_user)
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", student_sess.id)
+    _create_active_period(db, regular_user, "mock_exam")
+    first_ticket, second_ticket = _create_active_ticket_set(
+        db, regular_user, "Рисунок", count=2
+    )
+
+    with patch("app.api.upload.random.choice", return_value=first_ticket):
+        first_final = _final(client, "Рисунок")
+    assert first_final.status_code == 200
+    work_id = first_final.json()["work_ids"][0]
+    original_cycle_id = first_final.json()["cycle_id"]
+
+    client.cookies.set("session_id", admin_sess.id)
+    returned = client.post(
+        f"/cabinet/students/{regular_user.id}/mock-exams/{work_id}/revision"
+    )
+    assert returned.status_code == 200
+
+    client.cookies.set("session_id", student_sess.id)
+    # Даже если выбор следующего билета вернул бы другой вариант, должна
+    # возобновиться исходная попытка по first_ticket.
+    with patch("app.api.upload.random.choice", return_value=second_ticket):
+        stage_upload = _intermediate(client, "Рисунок", n=1)
+
+    assert stage_upload.status_code == 200
+    assert stage_upload.json()["success"] is True
+    assert db.query(ExamCycle).filter(ExamCycle.user_id == regular_user.id).count() == 1
+    stage = db.query(Work).filter(
+        Work.user_id == regular_user.id,
+        Work.work_type == WORK_TYPE_MOCK_EXAM,
+        Work.is_final == False,  # noqa: E712
+    ).one()
+    assert stage.cycle_id == original_cycle_id
+
 
 def test_revision_reopens_submission_for_same_ticket(
     client, session_factory, regular_user, admin_user, db

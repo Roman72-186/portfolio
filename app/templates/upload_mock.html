@@ -166,9 +166,9 @@ label:hover .subject-btn { border-color: var(--warning); color: var(--warning); 
                 {% set is_locked = s in locked_subjects %}
                 {% set has_ticket = s in subjects_with_tickets %}
                 {% set can_start_subject = subject_start_open.get(s, false) %}
-                {# Блокирует выбор: нет задания ИЛИ по текущему билету уже сдан финал
+                {# Блокирует выбор: нет задания ИЛИ по текущему пробнику уже сдан финал
                    (is_locked). Перезалив запрещён — после сдачи предмет открывается
-                   заново только следующим билетом (или явной отправкой «на доработку»). #}
+                   заново только следующим пробником (или явной отправкой «на доработку»). #}
                 {% set is_disabled = not has_ticket or is_locked %}
                 <label style="flex:1;min-width:120px;cursor:{% if is_disabled %}not-allowed{% else %}pointer{% endif %}">
                     <input type="radio" name="subject" value="{{ s }}" required
@@ -182,7 +182,7 @@ label:hover .subject-btn { border-color: var(--warning); color: var(--warning); 
                         {% if locked_reasons.get(s) == 'waiting' %}
                     <span class="subject-locked-hint">работа сдана · ждите ОС</span>
                         {% else %}
-                    <span class="subject-locked-hint">работа сдана · ждите билет</span>
+                    <span class="subject-locked-hint">работа сдана · ждите следующий пробник</span>
                         {% endif %}
                     {% elif not has_ticket %}
                     <span class="subject-locked-hint">сдача недоступна</span>
@@ -743,7 +743,7 @@ document.getElementById('startBtn').addEventListener('click', function(){
             if (res.status !== 200) {
                 var msg = {
                     'no_active_ticket': 'Сдача пробника сейчас недоступна',
-                    'already_submitted': 'Пробник уже сдан и ожидает проверки',
+                    'already_submitted': 'Пробник уже сдан. Дождитесь следующего пробника.',
                     'feature_closed': 'Раздел пробников сейчас закрыт',
                     'invalid_subject': 'Выберите корректный предмет',
                     'subject_forbidden': 'Этот предмет недоступен для вашей группы',

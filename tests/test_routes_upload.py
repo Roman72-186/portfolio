@@ -414,7 +414,7 @@ def test_mock_exam_locked_subjects_do_not_disable_form(auth_client, db):
 def test_mock_exam_current_period_submission_locks_subject(auth_client, db):
     """Сданный по текущему билету пробник в ОТКРЫТОМ цикле БЛОКИРУЕТ предмет:
     подсказка «работа сдана · ждите ОС», кнопка недоступна (перезалив по своей воле
-    запрещён — открыть заново можно только следующим билетом/новой revision)."""
+    запрещён — открыть заново можно только следующим пробником/новой revision)."""
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
     from app.models.exam_cycle import ExamCycle
     from datetime import datetime, timezone
@@ -453,8 +453,8 @@ def test_mock_exam_current_period_submission_locks_subject(auth_client, db):
     assert "можно перезалить" not in resp.text
 
 
-def test_mock_exam_start_skips_submitted_ticket_when_another_ticket_is_active(auth_client, db):
-    """Если один билет уже сдан в открытом цикле, другой активный билет всё равно выдаётся."""
+def test_mock_exam_start_blocks_other_tickets_after_final_in_same_assignment(auth_client, db):
+    """Финал по одному билету закрывает остальные варианты этого пробника."""
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
     from app.models.exam_cycle import ExamCycle
     from app.models.mock_exam_attempt import MockExamAttempt
@@ -462,7 +462,7 @@ def test_mock_exam_start_skips_submitted_ticket_when_another_ticket_is_active(au
 
     client, user = auth_client
     _create_active_period(db, user, "mock_exam")
-    submitted_ticket, next_ticket = _create_active_ticket_set(db, user, "Рисунок", count=2)
+    submitted_ticket, _other_ticket = _create_active_ticket_set(db, user, "Рисунок", count=2)
     cycle = ExamCycle(
         user_id=user.id,
         subject="Рисунок",
@@ -490,12 +490,9 @@ def test_mock_exam_start_skips_submitted_ticket_when_another_ticket_is_active(au
 
     resp = client.post("/upload/mock-exam/start", data={"subject": "Рисунок"})
 
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["ticket"]["id"] == next_ticket.id
-    assert body["resumed"] is False
-    attempt = db.query(MockExamAttempt).filter(MockExamAttempt.user_id == user.id).one()
-    assert attempt.ticket_id == next_ticket.id
+    assert resp.status_code == 409
+    assert resp.json()["error"] == "already_submitted"
+    assert db.query(MockExamAttempt).filter(MockExamAttempt.user_id == user.id).count() == 0
 
 
 def test_mock_exam_revision_unblocks_subject_in_form(auth_client, db):
@@ -643,7 +640,7 @@ def test_mock_exam_start_randomizes_between_current_assignment_tickets(auth_clie
 
     client, user = auth_client
     _create_active_period(db, user, "mock_exam")
-    tickets = _create_active_ticket_set(db, user, "Рисунок", count=2)
+    tickets = _create_active_ticket_set(db, user, "Рисунок", count=10)
     chosen = tickets[0]
 
     with patch("app.api.upload.random.choice", return_value=chosen) as choice:
@@ -652,6 +649,9 @@ def test_mock_exam_start_randomizes_between_current_assignment_tickets(auth_clie
     assert resp.status_code == 200
     body = resp.json()
     assert choice.called
+    choice_ticket_ids = [ticket.id for ticket in choice.call_args.args[0]]
+    assert len(choice_ticket_ids) == 10
+    assert set(choice_ticket_ids) == {ticket.id for ticket in tickets}
     assert body["ticket"]["id"] == chosen.id
 
     attempt = db.query(MockExamAttempt).filter(MockExamAttempt.user_id == user.id).one()
@@ -958,8 +958,8 @@ def test_send_mock_to_revision_unlocks_subject_without_score(admin_client, db, u
     assert lock.unlocked_by_id == admin.id
 
 
-def test_regular_admin_cannot_send_mock_to_revision(client, db, user_factory, session_factory):
-    """Only superadmin can use 'На доработку'."""
+def test_regular_admin_can_send_mock_to_revision(client, db, user_factory, session_factory):
+    """Админ может вернуть пробник ученику для догрузки этапов."""
     from app.models.mock_exam_lock import MockExamLock
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
     from datetime import datetime, timezone
@@ -994,7 +994,15 @@ def test_regular_admin_cannot_send_mock_to_revision(client, db, user_factory, se
         data={},
     )
 
-    assert resp.status_code == 403
+    assert resp.status_code == 200
+    db.refresh(work)
+    lock = db.query(MockExamLock).filter(
+        MockExamLock.user_id == student.id,
+        MockExamLock.subject == "Рисунок",
+    ).first()
+    assert work.needs_revision is True
+    assert lock.is_locked is False
+    assert lock.unlocked_by_id == admin.id
 
 
 def test_superadmin_can_move_unassigned_retake_to_subject(admin_client, db, user_factory):

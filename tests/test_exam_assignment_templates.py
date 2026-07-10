@@ -200,6 +200,47 @@ def test_exam_assignment_create_without_tag_assigns_to_all(
     assert ticket.restrict_start_by_duration is False
 
 
+def test_exam_assignment_create_saves_ten_tickets(
+    client,
+    db,
+    user_factory,
+    session_factory,
+):
+    admin = user_factory(vk_id=303014, role_name="суперадмин")
+    _login_as(client, session_factory, admin)
+
+    day = (date.today() + timedelta(days=3)).isoformat()
+    data = {
+        "csrf_token": "bypass",
+        "subject": "Рисунок",
+        "ticket_count": "10",
+    }
+    for n in range(1, 11):
+        data.update({
+            f"ticket_{n}_title": f"Билет {n}",
+            f"ticket_{n}_opens_at": f"{day}T11:45",
+            f"ticket_{n}_closes_at": f"{day}T18:00",
+            f"ticket_{n}_duration_minutes": "90",
+        })
+
+    resp = client.post(
+        "/cabinet/exam-assignments/create",
+        data=data,
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 303
+    assignment = db.query(ExamAssignment).order_by(ExamAssignment.id.desc()).first()
+    tickets = (
+        db.query(ExamTicket)
+        .filter(ExamTicket.assignment_id == assignment.id)
+        .order_by(ExamTicket.ticket_number)
+        .all()
+    )
+    assert [ticket.ticket_number for ticket in tickets] == list(range(1, 11))
+    assert [ticket.title for ticket in tickets] == [f"Билет {n}" for n in range(1, 11)]
+
+
 def test_exam_assignment_create_restrict_start_by_duration_checkbox(
     client,
     db,

@@ -322,13 +322,10 @@ async def upload_probnik_final(
         return JSONResponse({"success": False, "error": "Сдача пробника сейчас недоступна"}, status_code=404)
     available_tickets = get_unsubmitted_active_tickets(db, user["user_id"], subject)
 
-    # Блок повторной сдачи: как только по этому билету сдан финал — пробник закрыт и
-    # ученик НЕ может перезаливать работу по своей воле (по запросу владельца,
-    # 2026-06-21). Закрыто до выдачи СЛЕДУЮЩЕГО билета (нового ticket_id). Единственное
-    # исключение — staff явно вернул работу «на доработку» (needs_revision=True):
-    # has_submitted_for_ticket такой финал за сдачу НЕ считает, поэтому redo-загрузка
-    # проходит и перезаписывает финал ниже (_overwrite_final). Сообщение различает
-    # закрытый цикл (оценён) и открытый (ждёт ОС).
+    # Блок повторной сдачи: финал по любому билету текущего задания закрывает весь
+    # пробник. Исключение — staff явно вернул работу «на доработку»
+    # (needs_revision=True): такой финал не считается сдачей, поэтому redo проходит.
+    # Сообщение различает закрытый цикл (оценён) и открытый (ждёт ОС).
     if not available_tickets:
         submitted_ticket = _submitted_current_ticket(
             db, user_id=user["user_id"], subject=subject
@@ -340,7 +337,7 @@ async def upload_probnik_final(
         return JSONResponse(
             {
                 "success": False,
-                "error": "пробник по этому билету уже оценён и закрыт" if closed
+                "error": "пробник уже оценён и закрыт" if closed
                 else "работа сдана, ждите обратной связи",
             },
             status_code=409,
@@ -528,7 +525,7 @@ async def upload_probnik_intermediate(
         return JSONResponse(
             {
                 "success": False,
-                "error": "пробник по этому билету уже оценён и закрыт" if closed
+                "error": "пробник уже оценён и закрыт" if closed
                 else "работа сдана, ждите обратной связи",
             },
             status_code=409,

@@ -23,7 +23,9 @@ from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, MONTHS, TARIFFS, COH
 from app.db.database import get_db
 from app.dependencies import get_current_user, require_admin_role, require_csrf
 from app.models.session import Session
+from app.models.exam_assignment import ExamTicket
 from app.models.exam_cycle import ExamCycle
+from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
 from app.models.role import Role
@@ -878,8 +880,8 @@ def send_mock_exam_to_revision(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
-    if user["role_rank"] < 5:
-        raise HTTPException(status_code=403, detail="Доступно только суперадмину")
+    if user["role_rank"] < 4:
+        raise HTTPException(status_code=403, detail="Доступно только админу и суперадмину")
 
     work = db.query(Work).filter(
         Work.id == work_id,
@@ -904,6 +906,39 @@ def send_mock_exam_to_revision(
     work.needs_revision = True
 
     subject = work.subject
+    # Возвращаем именно попытку исходного билета. Без этого при нескольких
+    # вариантах в пробнике «Начать пробник» мог случайно выдать другой билет,
+    # а догруженные этапы попадали в новый цикл.
+    if work.cycle_id is not None:
+        cycle = db.query(ExamCycle).filter(ExamCycle.id == work.cycle_id).first()
+        if cycle is not None and cycle.ticket_id is not None:
+            subject = cycle.subject or subject
+            attempt = (
+                db.query(MockExamAttempt)
+                .filter(
+                    MockExamAttempt.user_id == student_id,
+                    MockExamAttempt.subject == subject,
+                    MockExamAttempt.ticket_id == cycle.ticket_id,
+                )
+                .order_by(MockExamAttempt.started_at.desc(), MockExamAttempt.id.desc())
+                .first()
+            )
+            if attempt is not None:
+                attempt.completed_at = None
+                attempt.expired_at = None
+                attempt.started_at = datetime.now(timezone.utc)
+            else:
+                ticket = db.get(ExamTicket, cycle.ticket_id)
+                if ticket is not None:
+                    db.add(MockExamAttempt(
+                        user_id=student_id,
+                        subject=subject,
+                        ticket_id=ticket.id,
+                        ticket_title=ticket.title,
+                        ticket_description=ticket.description,
+                        ticket_image_url=ticket.image_s3_url,
+                    ))
+
     if subject and subject in MOCK_SUBJECTS:
         lock = db.query(MockExamLock).filter(
             MockExamLock.user_id == student_id,
@@ -917,7 +952,7 @@ def send_mock_exam_to_revision(
     db.add(Notification(
         user_id=student_id,
         title="Пробник возвращён на доработку",
-        text="Загрузи новые фото выполненного задания.",
+        text="Догрузи этапные фото выполненного задания и при необходимости обнови финальное фото.",
     ))
     db.commit()
     return JSONResponse({"ok": True})

@@ -9,27 +9,36 @@
 .dlg-head h1 { font-family: var(--font-display); font-size: 22px; font-weight: 900; margin: 0; }
 .dlg-head .dlg-meta { color: var(--muted); font-size: 13px; font-weight: 700; }
 .dlg-head .dlg-closed { background: rgba(22,163,74,0.12); color: var(--success); padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
-.dlg-delete-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--error); color: var(--error); background: transparent; border-radius: 10px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background .12s, color .12s; }
+.dlg-head-actions { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.dlg-delete-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 6px 12px; border: 1px solid var(--error); color: var(--error); background: transparent; border-radius: 10px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background .12s, color .12s; }
 .dlg-delete-btn:hover { background: var(--error); color: #fff; }
 .dlg-delete-btn:disabled { opacity: 0.5; cursor: default; }
-.dlg-reopen-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--blue); color: var(--blue); background: transparent; border-radius: 10px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background .12s, color .12s; }
+.dlg-reopen-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 6px 12px; border: 1px solid var(--blue); color: var(--blue); background: transparent; border-radius: 10px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background .12s, color .12s; }
 .dlg-reopen-btn:hover { background: var(--blue); color: #fff; }
 .dlg-reopen-btn:disabled { opacity: 0.5; cursor: default; }
-.dlg-revision-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid #B45309; color: #B45309; background: transparent; border-radius: 10px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background .12s, color .12s; }
-.dlg-revision-btn:hover { background: #B45309; color: #fff; }
+.dlg-revision-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 6px 12px; border: 1px solid var(--warning-deep); color: var(--warning-deep); background: transparent; border-radius: 10px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background .12s, color .12s; }
+.dlg-revision-btn:hover { background: var(--warning-deep); color: #fff; }
 .dlg-revision-btn:disabled { opacity: 0.5; cursor: default; }
-.dlg-revision-badge { background: rgba(245,158,11,0.16); color: #B45309; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
+.dlg-revision-badge { background: rgba(245,158,11,0.16); color: var(--warning-deep); padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
+.dlg-student-return-badge { background: rgba(22,163,74,0.14); color: var(--success); padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
+
+@media (max-width: 640px) {
+    .dlg-head { align-items: center; gap: 8px 10px; }
+    .dlg-head-actions { flex: 1 0 100%; width: 100%; margin-left: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .dlg-head-actions button { width: 100%; min-height: 44px; }
+    .dlg-head-actions .dlg-delete-btn { grid-column: 1 / -1; }
+}
 
 /* Баннер «на изменении» + действие «Завершить правку» */
 .dlg-revision-banner {
     display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center;
     padding: 12px 16px; margin-bottom: 16px;
     border: 1px solid rgba(245,158,11,0.4); border-radius: 12px;
-    background: rgba(245,158,11,0.08); color: #92400E; font-size: 13px; font-weight: 600;
+    background: rgba(245,158,11,0.08); color: var(--warning-text); font-size: 13px; font-weight: 600;
 }
 .dlg-revision-banner .dlg-revision-done {
     margin-left: auto; padding: 8px 14px; border: none; border-radius: 8px;
-    background: #B45309; color: #fff; font-size: 13px; font-weight: 800; cursor: pointer;
+    background: var(--warning-deep); color: #fff; font-size: 13px; font-weight: 800; cursor: pointer;
 }
 .dlg-revision-banner .dlg-revision-done:hover { opacity: 0.92; }
 .dlg-revision-banner .dlg-revision-done:disabled { opacity: 0.5; cursor: default; }
@@ -65,6 +74,16 @@
 
 .dlg-context { padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
 .dlg-context-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.dlg-ticket {
+    display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px;
+    padding: 14px 16px; margin-bottom: 14px; border: 1px solid var(--line);
+    border-radius: 12px; background: var(--surface-2);
+}
+.dlg-ticket-meta { flex: 1 1 180px; font-size: 13px; color: var(--muted); }
+.dlg-ticket-label { display: block; margin-bottom: 4px; font-size: 11px; font-weight: 800; color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em; }
+.dlg-ticket-title { color: var(--text); font-weight: 800; }
+.dlg-ticket-image { flex: 0 0 180px; max-width: 100%; }
+.dlg-ticket-image img { display: block; width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); cursor: zoom-in; }
 .dlg-final-img { flex: 0 0 180px; max-width: 100%; }
 .dlg-final-img img { display: block; width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); cursor: zoom-in; }
 .dlg-stages { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -108,6 +127,15 @@
 .dlg-form-structured .dlg-sf-title { font-size: 14px; font-weight: 800; color: var(--text); margin-bottom: 12px; }
 .dlg-sf-field { margin-bottom: 10px; }
 .dlg-sf-label { display: block; font-size: 11px; font-weight: 800; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+.dlg-sf-score { margin: 4px 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.dlg-sf-score-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dlg-sf-score input { width: 88px; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 8px; font: inherit; font-weight: 700; color: var(--text); background: var(--surface); }
+.dlg-sf-score input:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: var(--blue); }
+.dlg-sf-score-hint { font-size: 12px; color: var(--dim); }
+.dlg-intermediate-score { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 12px 16px; border: 1px solid rgba(59,91,255,.25); border-radius: 12px; background: rgba(59,91,255,.06); }
+.dlg-intermediate-score-label { font-size: 12px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.dlg-intermediate-score-hint { margin-top: 3px; font-size: 12px; color: var(--dim); }
+.dlg-intermediate-score-value { flex: 0 0 auto; font-size: 20px; font-weight: 900; color: var(--blue); white-space: nowrap; }
 .dlg-form-structured textarea {
     width: 100%; min-height: 48px; max-height: 200px; padding: 9px 12px;
     border: 1px solid var(--line); border-radius: 10px; font-family: inherit;
@@ -189,34 +217,49 @@
         {% if cycle.revision_requested_at and viewer_role != 'student' %}
             <span class="dlg-revision-badge">НА ИЗМЕНЕНИИ</span>
         {% endif %}
-        {% if viewer_role == 'superadmin' and has_staff_message and not cycle.revision_requested_at %}
-            <button type="button" class="dlg-revision-btn" id="dlg-revision-btn"
-                    data-cycle-id="{{ cycle.id }}"
-                    data-csrf="{{ csrf_token(request) }}"
-                    onclick="returnToCurator(this)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
-                Вернуть куратору на изменение
-            </button>
+        {% if viewer_role in ('admin', 'superadmin') and student_upload_open %}
+            <span class="dlg-student-return-badge">УЧЕНИК МОЖЕТ ДОГРУЗИТЬ ЭТАПЫ</span>
         {% endif %}
-        {% if viewer_role == 'superadmin' and cycle.closed_at %}
-            <button type="button" class="dlg-reopen-btn" id="dlg-reopen-btn"
-                    data-cycle-id="{{ cycle.id }}"
-                    data-csrf="{{ csrf_token(request) }}"
-                    onclick="reopenCycle(this)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-                Переоткрыть цикл
-            </button>
-        {% endif %}
-        {% if viewer_role == 'superadmin' and not cycle.closed_at %}
-            <button type="button" class="dlg-delete-btn" id="dlg-delete-btn"
-                    data-cycle-id="{{ cycle.id }}"
-                    data-works="{{ attempts | length }}"
-                    data-csrf="{{ csrf_token(request) }}"
-                    onclick="deleteCycle(this)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                Удалить цикл
-            </button>
-        {% endif %}
+        <div class="dlg-head-actions">
+            {% if viewer_role == 'superadmin' and has_staff_message and not cycle.revision_requested_at %}
+                <button type="button" class="dlg-revision-btn" id="dlg-revision-btn"
+                        data-cycle-id="{{ cycle.id }}"
+                        data-csrf="{{ csrf_token(request) }}"
+                        onclick="returnToCurator(this)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+                    Вернуть куратору на изменение
+                </button>
+            {% endif %}
+            {% if viewer_role in ('admin', 'superadmin') and target_work_id and not cycle.closed_at and not student_upload_open %}
+                <button type="button" class="dlg-revision-btn" id="dlg-student-revision-btn"
+                        data-student-id="{{ student.id }}"
+                        data-work-id="{{ target_work_id }}"
+                        data-csrf="{{ csrf_token(request) }}"
+                        onclick="returnToStudentForStages(this)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+                    Вернуть ученику для этапов
+                </button>
+            {% endif %}
+            {% if viewer_role == 'superadmin' and cycle.closed_at %}
+                <button type="button" class="dlg-reopen-btn" id="dlg-reopen-btn"
+                        data-cycle-id="{{ cycle.id }}"
+                        data-csrf="{{ csrf_token(request) }}"
+                        onclick="reopenCycle(this)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                    Переоткрыть цикл
+                </button>
+            {% endif %}
+            {% if viewer_role == 'superadmin' and not cycle.closed_at %}
+                <button type="button" class="dlg-delete-btn" id="dlg-delete-btn"
+                        data-cycle-id="{{ cycle.id }}"
+                        data-works="{{ attempts | length }}"
+                        data-csrf="{{ csrf_token(request) }}"
+                        onclick="deleteCycle(this)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                    Удалить цикл
+                </button>
+            {% endif %}
+        </div>
     </div>
 
     {% if cycle.revision_requested_at and viewer_role != 'student' %}
@@ -238,6 +281,26 @@
     {% endif %}
 
     {% if attempts %}
+        {% if cycle.intermediate_score is not none %}
+            <section class="dlg-intermediate-score">
+                <div>
+                    <div class="dlg-intermediate-score-label">Промежуточный балл для отработки</div>
+                    <div class="dlg-intermediate-score-hint">Не закрывает цикл — итоговый балл выставляется отдельно.</div>
+                </div>
+                <div class="dlg-intermediate-score-value">{{ cycle.intermediate_score|int }} / 100</div>
+            </section>
+        {% endif %}
+        {% if ticket and ticket.image_url %}
+            <section class="dlg-ticket">
+                <div class="dlg-ticket-meta">
+                    <span class="dlg-ticket-label">Билет пробника</span>
+                    {% if ticket.title %}<div class="dlg-ticket-title">{{ ticket.title }}</div>{% endif %}
+                </div>
+                <div class="dlg-ticket-image">
+                    <img src="{{ ticket.image_url }}" alt="Билет{% if ticket.title %}: {{ ticket.title }}{% endif %}" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото билета">
+                </div>
+            </section>
+        {% endif %}
         <section class="dlg-attempt">
             <div class="dlg-context">
                 {% for a in attempts %}
@@ -345,6 +408,13 @@
                     <div class="dlg-sf-field">
                         <label class="dlg-sf-label">Рекомендации</label>
                         <textarea name="recommendations" rows="2" placeholder="Что доработать, на что обратить внимание"></textarea>
+                    </div>
+                    <div class="dlg-sf-score">
+                        <label class="dlg-sf-label" for="dlg-intermediate-score">Промежуточный балл для отработки</label>
+                        <div class="dlg-sf-score-row">
+                            <input id="dlg-intermediate-score" name="intermediate_score" type="number" min="0" max="100" step="1" inputmode="numeric" placeholder="0–100">
+                            <span class="dlg-sf-score-hint">Сохраняется отдельно и не закрывает цикл</span>
+                        </div>
                     </div>
                     <div class="dlg-sf-bottom">
                         <label class="dlg-attach">
@@ -720,6 +790,41 @@ async function returnToCurator(btn) {
     } catch (e) {
         alert('Сетевая ошибка');
         btn.disabled = false; btn.textContent = orig;
+    }
+}
+
+async function returnToStudentForStages(btn) {
+    if (!confirm('Вернуть пробник ученику? Он сможет догрузить этапные фото по этому билету и при необходимости обновить финальное фото.')) {
+        return;
+    }
+    const studentId = btn.dataset.studentId;
+    const workId = btn.dataset.workId;
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Возвращаем…';
+    try {
+        const fd = new FormData();
+        fd.append('csrf_token', btn.dataset.csrf);
+        const r = await window.fetchWithTimeout(
+            '/cabinet/students/' + studentId + '/mock-exams/' + workId + '/revision',
+            {
+                method: 'POST', body: fd,
+                headers: { 'Accept': 'application/json', 'X-CSRF-Token': btn.dataset.csrf },
+            },
+        );
+        if (r.ok) {
+            alert('Готово: ученик может догрузить этапные фото по исходному билету.');
+            window.location.reload();
+        } else {
+            const data = await r.json().catch(() => ({}));
+            alert(data.detail || 'Ошибка при возврате работы');
+            btn.disabled = false;
+            btn.textContent = orig;
+        }
+    } catch (e) {
+        alert('Сетевая ошибка');
+        btn.disabled = false;
+        btn.textContent = orig;
     }
 }
 

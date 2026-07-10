@@ -102,8 +102,9 @@ def get_active_ticket(db: DBSession, user_id: int, subject: str) -> ExamTicket |
 def has_cycle_for_ticket(db: DBSession, user_id: int, subject: str, ticket_id: int) -> bool:
     """True если по этому билету уже есть цикл Пробника (открытый ИЛИ закрытый).
 
-    Source of truth для правила «одна сдача на билет»: пробник по предмету закрыт
-    с момента первой сдачи и до выдачи СЛЕДУЮЩЕГО билета (нового ticket_id).
+    Source of truth для правила «одна сдача на билет». Используется для истории
+    конкретного варианта; доступ к следующей сдаче открывает новый пробник
+    (ExamAssignment), а не другой билет внутри текущего задания.
     """
     return (
         db.query(ExamCycle.id)
@@ -144,18 +145,46 @@ def has_submitted_for_ticket(db: DBSession, user_id: int, subject: str, ticket_i
     )
 
 
-def get_unsubmitted_active_tickets(db: DBSession, user_id: int, subject: str) -> list[ExamTicket]:
-    """Active tickets that still can receive the first final submission.
+def has_submitted_for_assignment(
+    db: DBSession, user_id: int, subject: str, assignment_id: int
+) -> bool:
+    """True, если ученик сдал финал по любому билету текущего пробника.
 
-    An open cycle for another ticket must not block a newer/parallel ticket. The
-    blocker is ticket-specific: only the ticket that already has a successful
-    final photo is closed for voluntary resubmission.
+    Билеты внутри одного ExamAssignment — варианты одного пробника, а не
+    независимые попытки. Поэтому успешная финальная работа по одному варианту
+    закрывает выдачу остальных билетов этого задания.
     """
-    return [
-        ticket
-        for ticket in get_active_tickets(db, user_id, subject)
-        if not has_submitted_for_ticket(db, user_id, subject, ticket.id)
-    ]
+    return (
+        db.query(ExamCycle.id)
+        .join(ExamTicket, ExamCycle.ticket_id == ExamTicket.id)
+        .join(Work, Work.cycle_id == ExamCycle.id)
+        .filter(
+            ExamCycle.user_id == user_id,
+            ExamCycle.subject == subject,
+            ExamTicket.assignment_id == assignment_id,
+            Work.work_type == WORK_TYPE_MOCK_EXAM,
+            Work.is_final == True,  # noqa: E712
+            Work.status == "success",
+            Work.needs_revision == False,  # noqa: E712
+        )
+        .first()
+        is not None
+    )
+
+
+def get_unsubmitted_active_tickets(db: DBSession, user_id: int, subject: str) -> list[ExamTicket]:
+    """Активные билеты пробника, доступные до первой успешной финальной сдачи.
+
+    Все возвращённые билеты принадлежат одному текущему ExamAssignment. После
+    финала по любому из них доступ закрывается для всего задания; новый
+    опубликованный ExamAssignment снова откроет пробник.
+    """
+    tickets = get_active_tickets(db, user_id, subject)
+    if not tickets:
+        return []
+    if has_submitted_for_assignment(db, user_id, subject, tickets[0].assignment_id):
+        return []
+    return tickets
 
 
 def has_closed_cycle_for_ticket(db: DBSession, user_id: int, subject: str, ticket_id: int) -> bool:
@@ -163,7 +192,7 @@ def has_closed_cycle_for_ticket(db: DBSession, user_id: int, subject: str, ticke
 
     Блокировку повторной сдачи даёт has_submitted_for_ticket (как только сдан финал).
     Этот предикат используется только чтобы РАЗЛИЧИТЬ причину блокировки: закрытый
-    цикл (оценён, ждём следующий билет) vs открытый (финал сдан, ждём ОС) — влияет на
+    цикл (оценён, ждём следующий пробник) vs открытый (финал сдан, ждём ОС) — влияет на
     текст 409 и подсказку кнопки предмета (см. upload_probnik_final, _locked_mock_subjects).
     """
     return (

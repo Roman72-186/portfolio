@@ -43,6 +43,7 @@ from app.dependencies import (
     require_csrf,
 )
 from app.models.exam_cycle import ExamCycle
+from app.models.exam_assignment import ExamTicket
 from app.models.feedback import Feedback, FeedbackMessage
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
@@ -74,6 +75,9 @@ def _serialize_cycle(cycle: ExamCycle, finals: list[Work], unread_count: int = 0
         "subject": cycle.subject,
         "started_at": cycle.started_at.isoformat(),
         "closed_at": cycle.closed_at.isoformat() if cycle.closed_at else None,
+        "intermediate_score": (
+            float(cycle.intermediate_score) if cycle.intermediate_score is not None else None
+        ),
         "revision_requested_at": (
             cycle.revision_requested_at.isoformat() if cycle.revision_requested_at else None
         ),
@@ -85,6 +89,14 @@ def _serialize_cycle(cycle: ExamCycle, finals: list[Work], unread_count: int = 0
 
 def _dialog_payload(db: DBSession, cycle: ExamCycle) -> dict:
     """Контекст для диалога: финальные попытки цикла + промежуточные + сообщения."""
+    ticket = db.get(ExamTicket, cycle.ticket_id) if cycle.ticket_id else None
+    ticket_payload = (
+        {
+            "title": ticket.title,
+            "image_url": ticket.image_s3_url or "",
+        }
+        if ticket else None
+    )
     finals = (
         db.query(Work)
         .filter(Work.cycle_id == cycle.id, Work.is_final == True)  # noqa: E712
@@ -92,7 +104,10 @@ def _dialog_payload(db: DBSession, cycle: ExamCycle) -> dict:
         .all()
     )
     if not finals:
-        return {"attempts": [], "feedbacks": {}}
+        return {
+            "attempts": [], "feedbacks": {}, "ticket": ticket_payload,
+            "student_upload_open": False,
+        }
 
     final_ids = [w.id for w in finals]
 
@@ -178,6 +193,11 @@ def _dialog_payload(db: DBSession, cycle: ExamCycle) -> dict:
         "thread": thread,
         "target_work_id": target.id,
         "has_staff_message": has_staff_message,
+        "ticket": ticket_payload,
+        "student_upload_open": any(
+            w.work_type == WORK_TYPE_MOCK_EXAM and w.needs_revision
+            for w in finals
+        ),
     }
 
 
@@ -234,6 +254,8 @@ def student_feedback_detail(
         "cycle": _serialize_cycle(cycle, [a for a in payload["attempts"]]),
         "attempts": payload["attempts"],
         "thread": payload.get("thread", []),
+        "ticket": payload.get("ticket"),
+        "student_upload_open": payload.get("student_upload_open", False),
         "target_work_id": payload.get("target_work_id"),
         "has_staff_message": payload.get("has_staff_message", False),
         "viewer_role": "student",
@@ -257,6 +279,7 @@ async def post_dialog_message(
     good: str = Form(default=""),
     strengthen: str = Form(default=""),
     recommendations: str = Form(default=""),
+    intermediate_score: str = Form(default=""),
     photo: UploadFile | None = File(default=None),
     video: UploadFile | None = File(default=None),
 ):
@@ -321,6 +344,20 @@ async def post_dialog_message(
 
     # ── Сбор payload
     text_clean = (text or "").strip()
+    intermediate_score_value: int | None = None
+    if sender_role != fb_service.ROLE_STUDENT and (intermediate_score or "").strip():
+        try:
+            intermediate_score_value = int(round(float(intermediate_score)))
+        except (ValueError, OverflowError):
+            raise HTTPException(
+                status_code=422,
+                detail="Промежуточный балл должен быть числом от 0 до 100",
+            )
+        if not 0 <= intermediate_score_value <= 100:
+            raise HTTPException(
+                status_code=422,
+                detail="Промежуточный балл должен быть от 0 до 100",
+            )
 
     # Первая обратная связь staff: структурная форма из 4 пунктов
     # склеивается в одно сообщение с заголовками. Только если свободный
@@ -389,6 +426,8 @@ async def post_dialog_message(
     fb_service.notify_counterpart(
         db, work=work, recipient_id=recipient_id, sender_role=sender_role
     )
+    if intermediate_score_value is not None:
+        cycle.intermediate_score = intermediate_score_value
 
     db.commit()
 
@@ -396,6 +435,9 @@ async def post_dialog_message(
     if "application/json" in accept:
         return JSONResponse({
             "ok": True,
+            "intermediate_score": (
+                float(cycle.intermediate_score) if cycle.intermediate_score is not None else None
+            ),
             "message": {
                 "id": msg.id,
                 "sender_role": msg.sender_role,
@@ -640,6 +682,8 @@ def _staff_dialog_detail(db: DBSession, request: Request, user: dict, cycle_id: 
         "cycle": _serialize_cycle(cycle, [a for a in payload["attempts"]]),
         "attempts": payload["attempts"],
         "thread": payload.get("thread", []),
+        "ticket": payload.get("ticket"),
+        "student_upload_open": payload.get("student_upload_open", False),
         "target_work_id": payload.get("target_work_id"),
         "has_staff_message": payload.get("has_staff_message", False),
         "viewer_role": viewer_role,
