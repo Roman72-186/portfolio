@@ -23,8 +23,12 @@ import app.models  # noqa: F401 - register every model in Base.metadata
 
 target_metadata = Base.metadata
 
-# Подставляем DATABASE_URL из .env (переопределяет alembic.ini)
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Подставляем DATABASE_URL из .env (переопределяет alembic.ini).
+# ALEMBIC_DATABASE_URL — отдельная (superuser) роль для миграций, когда
+# основной DATABASE_URL указывает на урезанную runtime-роль приложения.
+config.set_main_option(
+    "sqlalchemy.url", os.environ.get("ALEMBIC_DATABASE_URL") or settings.database_url
+)
 # ──────────────────────────────────────────────────────────────────────────────
 
 
