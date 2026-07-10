@@ -392,7 +392,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
             {% if curators %}
             {% for c in curators %}
             <div class="staff-row">
-                {% if c.photo_url %}<img src="{{ c.photo_url }}" class="staff-ava" alt="">{% else %}<div class="staff-ava-ph">👤</div>{% endif %}
+                {% if c.photo_url %}<img src="{{ c.photo_url }}" class="staff-ava" alt="" width="32" height="32" loading="lazy">{% else %}<div class="staff-ava-ph">👤</div>{% endif %}
                 <div class="staff-info">
                     <div class="staff-name">{{ c.name }}</div>
                     <div class="staff-meta">{{ c.student_count }} учеников</div>
@@ -433,7 +433,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
             {% if admins %}
             {% for a in admins %}
             <div class="staff-row">
-                {% if a.photo_url %}<img src="{{ a.photo_url }}" class="staff-ava" alt="">{% else %}<div class="staff-ava-ph">⚙️</div>{% endif %}
+                {% if a.photo_url %}<img src="{{ a.photo_url }}" class="staff-ava" alt="" width="32" height="32" loading="lazy">{% else %}<div class="staff-ava-ph">⚙️</div>{% endif %}
                 <div class="staff-info">
                     <div class="staff-name">{{ a.name }}</div>
                     <div class="staff-meta">Администратор</div>
@@ -495,7 +495,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
         {% set type_classes = {'before': 'tb-before', 'after': 'tb-after', 'mock_exam': 'tb-mock', 'retake': 'tb-retake'} %}
         {% for w in recent_works %}
         <div class="feed-item">
-            {% if w.s3_url %}<img src="{{ w.s3_url }}" class="feed-thumb" alt="" loading="lazy">{% else %}<div class="feed-thumb-ph">🖼</div>{% endif %}
+            {% if w.s3_url %}<img src="{{ w.s3_url }}" class="feed-thumb" alt="" loading="lazy" width="40" height="40">{% else %}<div class="feed-thumb-ph">🖼</div>{% endif %}
             <div class="feed-info">
                 <div class="feed-student">
                     <a href="/cabinet/students?student={{ w.student_id }}&tab=mock-exams" style="color:var(--text);text-decoration:none;opacity:1">{{ w.student_name }}</a>

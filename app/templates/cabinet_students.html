@@ -707,7 +707,7 @@
 .mock-status-panel summary::-webkit-details-marker { display: none; }
 .mock-status-panel summary .mock-status-counts { display: flex; gap: 6px; flex-wrap: wrap; }
 .mock-status-count { font-size: 11px; font-weight: 700; border-radius: var(--r-md); padding: 2px 8px; }
-.mock-status-count--ok { background: rgba(34,197,94,0.12); color: var(--success); }
+.mock-status-count--ok { background: rgba(22,163,74,0.12); color: var(--success); }
 .mock-status-count--bad { background: rgba(239,68,68,0.12); color: var(--error); }
 .mock-status-body { padding: 0 10px 10px; border-top: 1px solid var(--line); }
 .mock-status-cols { display: flex; flex-direction: column; gap: 10px; padding-top: 8px; }
@@ -1118,7 +1118,7 @@
                  data-tg-username="{{ s.tg_username }}" data-vk-id="{{ s.vk_id or '' }}" aria-label="{{ s.name }}">
                 <span class="avatar-wrap">
                     {% if s.photo_url %}
-                    <img src="{{ s.photo_url }}" class="student-avatar" alt="">
+                    <img src="{{ s.photo_url }}" class="student-avatar" alt="" width="38" height="38" loading="lazy">
                     {% else %}
                     <div class="student-avatar-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg></div>
                     {% endif %}
@@ -1696,7 +1696,7 @@ function buildCycles(data) {
             + '</div>'
             + '<div style="display:flex;gap:8px;align-items:center">'
             +   '<span class="' + pillCls + '" style="font-size:11px;font-weight:800;padding:3px 9px;border-radius:var(--r-pill);'
-            +   (fbTotal > 0 ? 'background:rgba(34,197,94,0.12);color:#15803D' : 'background:rgba(245,158,11,0.12);color:#B45309')
+            +   (fbTotal > 0 ? 'background:rgba(22,163,74,0.12);color:var(--success)' : 'background:rgba(245,158,11,0.12);color:var(--warning-deep)')
             +   '">' + esc(pillTxt) + '</span>'
             +   '<span aria-hidden="true" style="color:var(--muted)">›</span>'
             + '</div>'
@@ -1716,7 +1716,7 @@ function cohortBadgeHtml(tag) {
 
 function buildHero(s, bySubj) {
     var avatar = s.photo_url
-        ? '<img src="' + esc(s.photo_url) + '" class="student-hero-avatar" alt="">'
+        ? '<img src="' + esc(s.photo_url) + '" class="student-hero-avatar" alt="" width="56" height="56">'
         : '<div class="student-hero-avatar-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg></div>';
     avatar = '<span class="avatar-wrap">' + avatar + cohortBadgeHtml(s.cohort_tag) + '</span>';
     var scoreHtml = '';
@@ -2248,8 +2248,8 @@ function buildFeedbackButton(w) {
               : '/cabinet/curator/feedback/';
     var hasFb = !!w.has_feedback;
     var lbl = hasFb ? 'Открыть обратную связь' : 'Дать обратную связь';
-    var bg = hasFb ? 'rgba(34,197,94,0.12)' : 'var(--blue-soft)';
-    var col = hasFb ? '#15803D' : 'var(--blue)';
+    var bg = hasFb ? 'rgba(22,163,74,0.12)' : 'var(--blue-soft)';
+    var col = hasFb ? 'var(--success)' : 'var(--blue)';
     return '<a href="' + prefix + w.cycle_id + '#work-' + w.id + '" '
          + 'style="display:inline-flex;align-items:center;gap:6px;margin-top:10px;padding:7px 12px;border-radius:8px;'
          + 'background:' + bg + ';color:' + col + ';font-size:13px;font-weight:700;text-decoration:none;border:1px solid transparent;transition:opacity .15s">'

@@ -27,6 +27,11 @@
     --success:      #16A34A;
     --error:        #DC2626;
     --warning:      #D97706;
+    --warning-deep: #B45309;
+    --warning-ink:  #78350F;
+    --warning-text: #92400E;
+    --warning-soft: #FEF3C7;
+    --warning-tint: #FDE68A;
     --ok:           #059669;
     --gold:         #FCD34D;
 
@@ -121,7 +126,7 @@ h1, h2, h3, h4, .display {
     letter-spacing: -0.025em;
 }
 
-a { color: var(--blue); text-decoration: none; transition: color 0.15s; }
+a { color: var(--blue); text-decoration: none; transition: color var(--duration-fast); }
 a:hover { color: var(--blue-deep); }
 
 /* ── Skip link (accessibility) ── */
@@ -130,7 +135,7 @@ a:hover { color: var(--blue-deep); }
     background: var(--blue); color: #fff;
     padding: 8px 16px; border-radius: 0 0 8px 8px;
     font-size: 14px; font-weight: 700; z-index: 10000;
-    transition: top 0.1s;
+    transition: top var(--duration-fast);
 }
 .skip-link:focus { top: 0; color: #fff; opacity: 1; }
 
@@ -169,7 +174,7 @@ a:hover { color: var(--blue-deep); }
     display: flex; align-items: center; justify-content: center;
     font-size: 22px;
     text-decoration: none;
-    transition: box-shadow 0.2s, transform 0.15s;
+    transition: box-shadow var(--duration-base), transform var(--duration-fast);
     color: var(--blue);
     pointer-events: auto;
 }
@@ -225,7 +230,7 @@ a:hover { color: var(--blue-deep); }
     display: block; text-decoration: none; color: inherit;
     padding: 12px 12px; border-radius: 12px;
     border: 1px solid var(--line); background: var(--surface);
-    transition: border-color .15s, background .15s;
+    transition: border-color var(--duration-fast), background var(--duration-fast);
 }
 a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 .notif-pop-item.unread {
@@ -265,9 +270,15 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     border-radius: var(--r-lg);
     box-shadow: var(--sh-sm);
     padding: 22px;
-    transition: box-shadow .2s, transform .2s, border-color .2s;
+    transition: box-shadow var(--duration-base), transform var(--duration-base), border-color var(--duration-base);
 }
 .card:hover { box-shadow: var(--sh-md); transform: translateY(-2px); border-color: rgba(59,91,255,.18); }
+
+/* Full-screen status card (blocked/denied): own padding scale so it still shrinks under the 480px card override */
+.status-card { max-width: 420px; padding: 48px 32px; }
+@media (max-width: 480px) {
+    .status-card { padding: 32px 20px; }
+}
 
 .card-dark {
     background: var(--blue-deep);
@@ -276,7 +287,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     box-shadow: var(--sh-sm);
     padding: 22px;
     color: #fff;
-    transition: box-shadow .2s, transform .2s;
+    transition: box-shadow var(--duration-base), transform var(--duration-base);
 }
 .card-dark:hover { box-shadow: 0 8px 32px rgba(20,30,80,.22); transform: translateY(-2px); }
 
@@ -287,7 +298,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     box-shadow: var(--sh-blue);
     padding: 22px;
     color: #fff;
-    transition: box-shadow .2s, transform .2s;
+    transition: box-shadow var(--duration-base), transform var(--duration-base);
 }
 .card-blue:hover { box-shadow: 0 12px 36px rgba(59,91,255,.38); transform: translateY(-2px); }
 
@@ -324,7 +335,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     padding: 13px 22px; border-radius: var(--r-pill);
     border: none; cursor: pointer; font-family: inherit;
     text-decoration: none;
-    transition: background .15s, transform .15s;
+    transition: background var(--duration-fast), transform var(--duration-fast);
 }
 .btn-dark:hover { background: #000; transform: translateY(-1px); color: #fff; opacity: 1; }
 .btn-dark .arrow {
@@ -344,7 +355,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     border: none; cursor: pointer; font-family: inherit;
     box-shadow: var(--sh-blue);
     text-decoration: none;
-    transition: filter .15s, transform .15s;
+    transition: filter var(--duration-fast), transform var(--duration-fast);
 }
 .btn-blue:hover { filter: brightness(1.05); transform: translateY(-1px); color: #fff; opacity: 1; }
 .btn-blue:disabled { opacity: 0.38; cursor: not-allowed; filter: none; transform: none; }
@@ -359,7 +370,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     border: 1.5px solid var(--line);
     cursor: pointer; font-family: inherit;
     text-decoration: none;
-    transition: border-color .15s, color .15s;
+    transition: border-color var(--duration-fast), color var(--duration-fast);
 }
 .btn-outline:hover { border-color: var(--blue); color: var(--blue); opacity: 1; }
 
@@ -371,7 +382,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     font-size: 14px; font-weight: 700; cursor: pointer;
     font-family: inherit; border: none;
     width: 100%; text-align: center;
-    transition: filter .15s, box-shadow .2s, transform .15s;
+    transition: filter var(--duration-fast), box-shadow var(--duration-base), transform var(--duration-fast);
     box-shadow: var(--sh-blue);
 }
 .btn-primary:hover { filter: brightness(1.05); box-shadow: 0 12px 32px rgba(59,91,255,.38); transform: translateY(-1px); color: #fff; opacity: 1; }
@@ -393,7 +404,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     color: var(--muted);
     text-decoration: none;
     padding: 8px 16px; border-radius: var(--r-pill);
-    transition: color .15s, background .15s;
+    transition: color var(--duration-fast), background var(--duration-fast);
     border: none; cursor: pointer; font-family: inherit; background: transparent;
 }
 .nav-pill-item:hover { color: var(--ink); opacity: 1; }
@@ -480,7 +491,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     font-size: 13px; font-weight: 500;
     padding: 8px 18px;
     border-radius: var(--r-pill);
-    transition: background .15s, color .15s;
+    transition: background var(--duration-fast), color var(--duration-fast);
 }
 .seg-btn.active {
     background: var(--blue);
@@ -509,7 +520,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     font-family: inherit;
     color: var(--ink);
     outline: none;
-    transition: border-color .15s, background .15s, box-shadow .15s;
+    transition: border-color var(--duration-fast), background var(--duration-fast), box-shadow var(--duration-fast);
 }
 .form-select::placeholder, .form-input::placeholder,
 .field-input::placeholder { color: var(--dim); }
@@ -535,7 +546,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 .radio-group { display: flex; gap: 10px; }
 .radio-btn {
     flex: 1; padding: 11px; border: 1.5px solid var(--line); border-radius: var(--r-sm);
-    text-align: center; cursor: pointer; transition: border-color 0.2s, color 0.2s, background 0.2s;
+    text-align: center; cursor: pointer; transition: border-color var(--duration-base), color var(--duration-base), background var(--duration-base);
     font-size: 14px; font-weight: 500; color: var(--muted);
 }
 .radio-btn:hover { border-color: rgba(59,91,255,.30); color: var(--blue); }
@@ -549,7 +560,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 .file-input-wrap {
     border: 2px dashed var(--line); border-radius: var(--r-md);
     padding: 32px; text-align: center; cursor: pointer;
-    background: var(--surface-2); transition: border-color 0.25s, background 0.25s;
+    background: var(--surface-2); transition: border-color var(--duration-base), background var(--duration-base);
 }
 .file-input-wrap:hover { border-color: var(--blue); background: var(--blue-soft); }
 .file-input-wrap input[type="file"] { display: none; }
@@ -610,7 +621,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     position: absolute; top: 16px; right: 16px;
     background: rgba(255,255,255,.15); border: none; color: #fff;
     width: 44px; height: 44px; border-radius: 50%; font-size: 20px; cursor: pointer;
-    transition: background 0.2s; z-index: 2;
+    transition: background var(--duration-base); z-index: 2;
 }
 .lightbox-close:hover { background: rgba(255,255,255,.28); }
 .lightbox-nav {
@@ -618,7 +629,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     background: rgba(255,255,255,.15); border: none; color: #fff;
     width: 44px; height: 44px; border-radius: 50%; font-size: 28px; line-height: 1; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
-    transition: background 0.2s;
+    transition: background var(--duration-base);
 }
 .lightbox-nav:hover { background: rgba(255,255,255,.32); }
 .lightbox-prev { left: -8px; }
@@ -636,9 +647,9 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 .lightbox-thumb {
     flex: 0 0 auto; padding: 0; background: none; cursor: pointer;
     border: 2px solid transparent; border-radius: 8px; overflow: hidden;
-    transition: border-color .15s, transform .15s;
+    transition: border-color var(--duration-fast), transform var(--duration-fast);
 }
-.lightbox-thumb img { width: 72px; height: 54px; object-fit: cover; display: block; opacity: 0.7; transition: opacity .15s; }
+.lightbox-thumb img { width: 72px; height: 54px; object-fit: cover; display: block; opacity: 0.7; transition: opacity var(--duration-fast); }
 .lightbox-thumb:hover { border-color: rgba(255,255,255,.4); }
 .lightbox-thumb:hover img { opacity: 0.9; }
 .lightbox-thumb.is-current { border-color: var(--blue); }
@@ -758,7 +769,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     padding: 10px 12px; border-radius: var(--r-sm);
     font-size: 14px; font-weight: 600;
     color: var(--muted); text-decoration: none;
-    transition: background .15s, color .15s;
+    transition: background var(--duration-fast), color var(--duration-fast);
 }
 .desk-nav-item:hover { background: var(--surface-2); color: var(--ink); opacity: 1; }
 .desk-nav-item:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: var(--r-sm); }
@@ -804,7 +815,7 @@ button.desk-nav-item {
     padding: 8px 12px;
     border: 1px solid rgba(255,255,255,.35);
     border-radius: var(--r-pill);
-    background: #0878ff;
+    background: var(--blue);
     color: #fff;
     box-shadow: 0 5px 14px rgba(0,65,180,.28);
     font: inherit;
@@ -812,10 +823,10 @@ button.desk-nav-item {
     font-weight: 800;
     line-height: 1;
     cursor: pointer;
-    transition: background .15s, transform .15s, box-shadow .15s;
+    transition: background var(--duration-fast), transform var(--duration-fast), box-shadow var(--duration-fast);
 }
 .mobile-dashboard-logout__button:hover {
-    background: #006be6;
+    background: var(--blue-deep);
     box-shadow: 0 7px 18px rgba(0,65,180,.34);
     transform: translateY(-1px);
 }
@@ -854,7 +865,7 @@ button.desk-nav-item {
     .btn-primary:active { filter: brightness(0.95); }
     .card:active { border-color: rgba(59,91,255,.18); }
     .mobile-dashboard-logout__button:hover { transform: none; }
-    .mobile-dashboard-logout__button:active { background: #0064d8; }
+    .mobile-dashboard-logout__button:active { background: var(--blue-deep); }
 }
 
 /* ── focus-visible ── */

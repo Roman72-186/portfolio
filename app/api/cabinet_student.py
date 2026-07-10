@@ -499,15 +499,6 @@ def cabinet_cycle_hub(
     from app.models.exam_cycle import ExamCycle
     from app.models.feedback import Feedback
     from app.models.notification import Notification
-    from app.services.feature_periods import is_feature_available as _is_fa
-    from app.constants import FEATURE_MOCK_EXAM as _F_MOCK, FEATURE_LABELS
-
-    mock_open, mock_msg = _is_fa(db, _F_MOCK)
-
-    works_by_subject = _collect_cycle_works(db, user["user_id"], WORK_TYPE_MOCK_EXAM)
-    subjects = list(MOCK_SUBJECTS)
-    if "Без предмета" in works_by_subject:
-        subjects.append("Без предмета")
 
     # Все циклы пользователя — открытые (сверху) и закрытые (снизу).
     cycles_q = (
@@ -516,7 +507,6 @@ def cabinet_cycle_hub(
         .order_by(ExamCycle.started_at.desc(), ExamCycle.id.desc())
         .all()
     )
-    feedback_visible = bool(cycles_q)
 
     open_cycles: list[dict] = []
     closed_cycles: list[dict] = []
@@ -574,26 +564,13 @@ def cabinet_cycle_hub(
     cycles_count = len(cycles_q)
     unread = _get_unread_count(user["user_id"], db)
 
-    # Вкладка «Пробник» убрана из кабинета ученика — остаётся только «Обратная связь».
-    tab = "feedback"
-
     return templates.TemplateResponse("cabinet_cycle.html", {
         "request": request,
         "user": user,
-        "subjects": subjects,
-        "works_by_subject": works_by_subject,
-        "mock_open": mock_open,
-        "mock_msg": mock_msg or FEATURE_LABELS.get(_F_MOCK, ""),
-        "upload_url": "/upload/mock-exam",
-        "upload_label": "Загрузить пробник",
-        "feedback_visible": feedback_visible,
         "open_cycles": open_cycles,
         "closed_cycles": closed_cycles,
         "cycles_count": cycles_count,
         "unread_count": unread,
-        "months": MONTHS,
-        "current_year": today_msk().year,
-        "active_subtab": tab,
         "active_tab": "cycle",
     })
 

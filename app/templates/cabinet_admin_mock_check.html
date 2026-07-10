@@ -460,7 +460,7 @@ const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
             {% for s in sidebar_students %}
             <button type="button" class="student-row" id="srow-{{ s.id }}" data-tariff="{{ s.tariff or '' }}" onclick="selectStudent({{ s.id }})" aria-label="{{ s.name }}">
                 {% if s.photo_url %}
-                <img src="{{ s.photo_url }}" class="student-avatar" alt="">
+                <img src="{{ s.photo_url }}" class="student-avatar" alt="" width="38" height="38" loading="lazy">
                 {% else %}
                 <div class="student-avatar-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg></div>
                 {% endif %}
@@ -538,7 +538,7 @@ function selectStudent(id) {
 function renderMockExams(data) {
     var s = data.student;
     var avatar = s.photo_url
-        ? '<img src="' + esc(s.photo_url) + '" class="student-hero-avatar" alt="">'
+        ? '<img src="' + esc(s.photo_url) + '" class="student-hero-avatar" alt="" width="56" height="56">'
         : '<div class="student-hero-avatar-ph"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg></div>';
     var bySubj = data.avg_score_by_subject || {};
     var hasSubjScores = MOCK_SUBJECTS.some(function(subj) { return bySubj[subj] != null; });

@@ -22,6 +22,10 @@
     font-size: 12px; font-weight: 700; color: var(--muted);
     text-transform: uppercase; letter-spacing: 0.05em;
 }
+.profile-card { padding: 32px; }
+@media (max-width: 480px) {
+    .profile-card { padding: 18px; }
+}
 </style>
 {% endblock %}
 {% block content %}
@@ -38,11 +42,11 @@
     </div>
     {% endif %}
 
-    <div class="card" style="padding:32px">
+    <div class="card profile-card">
         <!-- Avatar from VK -->
         {% if user.photo_url %}
         <div style="text-align:center;margin-bottom:28px">
-            <img src="{{ user.photo_url }}" alt="Фото"
+            <img src="{{ user.photo_url }}" alt="Фото" width="88" height="88"
                  style="width:88px;height:88px;border-radius:50%;object-fit:cover;border:3px solid var(--line)">
             <p style="color:var(--dim);font-size:12px;margin-top:8px">Фото из ВКонтакте</p>
         </div>
@@ -168,7 +172,7 @@
                                   align-items:center;gap:10px;cursor:pointer;
                                   padding:10px 14px;border-radius:8px;
                                   border:1.5px solid var(--line);background:var(--surface);
-                                  transition:border-color 0.2s,background 0.2s">
+                                  transition:border-color var(--duration-base),background var(--duration-base)">
                         <input type="checkbox" name="past_tariffs" value="{{ t }}"
                                {% if t in checked %}checked{% endif %}
                                style="width:17px;height:17px;accent-color:var(--blue);cursor:pointer">
@@ -212,7 +216,7 @@
                            style="display:flex;align-items:center;gap:10px;cursor:{{ 'default' if is_mandatory else 'pointer' }};
                                   padding:10px 14px;border-radius:8px;
                                   border:1.5px solid var(--line);background:var(--surface);
-                                  transition:border-color .2s,background .2s">
+                                  transition:border-color var(--duration-base),background var(--duration-base)">
                         <input type="checkbox" name="course_periods" value="{{ p }}"
                                {% if p in sel_periods or is_mandatory %}checked{% endif %}
                                {% if is_mandatory %}disabled{% endif %}
@@ -239,7 +243,7 @@
                            style="display:flex;align-items:center;gap:8px;cursor:pointer;
                                   padding:10px 20px;border-radius:8px;
                                   border:1.5px solid var(--line);background:var(--surface);
-                                  transition:border-color .2s,background .2s">
+                                  transition:border-color var(--duration-base),background var(--duration-base)">
                         <input type="radio" name="lessons_count" value="{{ lc }}"
                                {% if lc == sel_lc %}checked{% endif %}
                                style="width:17px;height:17px;accent-color:var(--blue);cursor:pointer">
