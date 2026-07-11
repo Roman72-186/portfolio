@@ -1398,6 +1398,37 @@ from app.services.period_stats import (
 )
 
 
+@router.get("/superadmin/activity", response_class=HTMLResponse)
+def superadmin_activity(
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Статистика активности: логины, скорость проверки, реакция на уведомления,
+    возвраты на правку, онбординг, просмотры видео-отчётов, журнал изменений."""
+    from app.services.activity_stats import (
+        get_audit_feed,
+        get_curator_review_speed,
+        get_login_stats,
+        get_notification_reaction,
+        get_onboarding_funnel,
+        get_report_view_stats,
+        get_revision_stats,
+    )
+
+    return templates.TemplateResponse("superadmin_activity.html", {
+        "request": request,
+        "user": user,
+        "logins": get_login_stats(db),
+        "review_speed": get_curator_review_speed(db),
+        "notifications": get_notification_reaction(db),
+        "revisions": get_revision_stats(db),
+        "onboarding": get_onboarding_funnel(db),
+        "report_views": get_report_view_stats(db),
+        "audit_feed": get_audit_feed(db),
+    })
+
+
 @router.get("/superadmin/stats", response_class=HTMLResponse)
 def superadmin_stats(
     request: Request,

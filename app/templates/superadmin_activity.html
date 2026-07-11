@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}Статистика активности{% endblock %}
+{% block extra_styles %}
+<style>
+.ss-wrap { max-width: 960px; margin: 0 auto; }
+.ss-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
+.ss-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
+.ss-back { font-size: 13px; color: var(--dim); text-decoration: none; font-weight: 600; }
+.ss-back:hover { color: var(--blue); }
+.ss-since { font-size: 12px; color: var(--dim); }
+
+.ss-stats-strip { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; margin: 0 0 14px; }
+.ss-stat { padding: 16px 18px; border-right: 1px solid var(--line); }
+.ss-stat:last-child { border-right: none; }
+.ss-stat-val { font-size: 28px; font-weight: 900; color: var(--text); line-height: 1; margin-bottom: 4px; }
+.ss-stat-lbl { font-size: 12px; color: var(--dim); font-weight: 500; }
+
+.ss-table-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; margin-bottom: 14px; }
+.ss-table { width: 100%; border-collapse: collapse; }
+.ss-table th { text-align: left; padding: 11px 14px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); border-bottom: 1px solid var(--line); background: var(--bg); }
+.ss-table td { padding: 9px 14px; font-size: 13px; color: var(--text); border-bottom: 1px solid var(--line); }
+.ss-table tr:last-child td { border-bottom: none; }
+.ss-table tr:hover td { background: var(--bg); }
+.ss-empty { padding: 28px; text-align: center; color: var(--dim); font-size: 14px; }
+
+.ss-acc { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 14px; overflow: hidden; box-shadow: var(--sh-sm); }
+.ss-acc > summary { list-style: none; cursor: pointer; padding: 15px 18px; display: flex; align-items: center; gap: 11px; font-size: 14px; font-weight: 800; color: var(--text); user-select: none; }
+.ss-acc > summary::-webkit-details-marker { display: none; }
+.ss-acc > summary::before { content: "▸"; color: var(--dim); font-size: 11px; transition: transform 0.15s; }
+.ss-acc[open] > summary::before { transform: rotate(90deg); }
+.ss-acc > summary:hover { color: var(--blue); }
+.ss-acc-title { font: inherit; color: inherit; letter-spacing: inherit; }
+.ss-acc-badge { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--dim); }
+.ss-acc-body { border-top: 1px solid var(--line); padding: 14px; }
+.ss-acc-body > .ss-table-wrap:last-child { margin-bottom: 0; }
+
+.act-badge { display: inline-flex; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+.ab-curator { background: rgba(37,99,235,0.1); color: var(--blue); }
+.ab-tariff { background: rgba(217,119,6,0.1); color: var(--warning); }
+.ab-danger { background: rgba(220,38,38,0.1); color: var(--error); }
+.ab-ok { background: rgba(5,150,105,0.1); color: var(--ok); }
+
+@media (max-width: 768px) {
+    .ss-stats-strip { grid-template-columns: 1fr 1fr; }
+    .ss-stat:nth-child(2), .ss-stat:nth-child(4) { border-right: none; }
+    .ss-stat:nth-child(1), .ss-stat:nth-child(2) { border-bottom: 1px solid var(--line); }
+}
+
+@media (max-width: 820px) {
+    .ss-table-wrap { border: none; background: transparent; overflow: visible; }
+    .ss-table, .ss-table tbody, .ss-table tr, .ss-table td { display: block; width: 100%; }
+    .ss-table thead { display: none; }
+    .ss-table tr { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 10px; overflow: hidden; }
+    .ss-table tr:last-child { margin-bottom: 0; }
+    .ss-table td { padding: 8px 14px !important; border-bottom: 1px solid var(--line); box-sizing: border-box; text-align: left !important; }
+    .ss-table tr td:last-child { border-bottom: none; }
+    .ss-table td::before { content: attr(data-label); display: block; margin-bottom: 4px; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="ss-wrap">
+
+    <div class="ss-header">
+        <a href="/cabinet" class="ss-back">← Дашборд</a>
+        <h1 class="ss-title">Статистика активности</h1>
+        <span class="ss-since">Входы, реакции и правки копятся с 11.07.2026</span>
+    </div>
+
+    <!-- Плитки: входы + онбординг -->
+    <div class="ss-stats-strip">
+        <div class="ss-stat">
+            <div class="ss-stat-val">{{ logins.d7 }}<span style="font-size:15px;color:var(--dim)"> / {{ logins.total }}</span></div>
+            <div class="ss-stat-lbl">Заходили за 7 дней</div>
+        </div>
+        <div class="ss-stat">
+            <div class="ss-stat-val">{{ logins.d30 }}<span style="font-size:15px;color:var(--dim)"> / {{ logins.total }}</span></div>
+            <div class="ss-stat-lbl">Заходили за 30 дней</div>
+        </div>
+        <div class="ss-stat">
+            <div class="ss-stat-val">{{ onboarding.profile_done }}<span style="font-size:15px;color:var(--dim)"> / {{ onboarding.total }}</span></div>
+            <div class="ss-stat-lbl">Профиль заполнен{% if onboarding.avg_profile_text %} · в среднем за {{ onboarding.avg_profile_text }}{% endif %}</div>
+        </div>
+        <div class="ss-stat">
+            <div class="ss-stat-val">{{ onboarding.portfolio_done }}<span style="font-size:15px;color:var(--dim)"> / {{ onboarding.total }}</span></div>
+            <div class="ss-stat-lbl">Фото «до» загружены{% if onboarding.avg_portfolio_text %} · в среднем за {{ onboarding.avg_portfolio_text }}{% endif %}</div>
+        </div>
+    </div>
+
+    <!-- 1. Скорость проверки работ -->
+    <details class="ss-acc" open>
+        <summary><h2 class="ss-acc-title">Скорость проверки работ</h2><span class="ss-acc-badge">{{ review_speed | length }} проверяющих</span></summary>
+        <div class="ss-acc-body">
+            {% if review_speed %}
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>Проверяющий</th><th style="text-align:right">Оценено работ</th><th style="text-align:right">Среднее время проверки</th><th style="text-align:right">Средний балл</th></tr></thead>
+                    <tbody>
+                    {% for r in review_speed %}
+                    <tr>
+                        <td data-label="Проверяющий" style="font-weight:700">{{ r.curator_name }}{% if r.role_rank >= 4 %} <span class="act-badge ab-tariff">админ</span>{% endif %}</td>
+                        <td data-label="Оценено работ" style="text-align:right">{{ r.scored_count }}</td>
+                        <td data-label="Среднее время" style="text-align:right">{{ r.avg_review_text or "—" }}</td>
+                        <td data-label="Средний балл" style="text-align:right">{{ r.avg_score if r.avg_score is not none else "—" }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}<div class="ss-empty">Оценённых работ пока нет</div>{% endif %}
+        </div>
+    </details>
+
+    <!-- 2. Возвраты на правку ОС -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Возвраты ОС на правку</h2><span class="ss-acc-badge">{{ revisions.pending | length }} на правке · {{ revisions.done_count }} завершено{% if revisions.avg_fix_text %} · среднее {{ revisions.avg_fix_text }}{% endif %}</span></summary>
+        <div class="ss-acc-body">
+            {% if revisions.pending %}
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>Цикл</th><th>Ученик</th><th>Предмет</th><th>Возвращён</th></tr></thead>
+                    <tbody>
+                    {% for p in revisions.pending %}
+                    <tr>
+                        <td data-label="Цикл"><a href="/cabinet/curator/feedback/{{ p.cycle_id }}" style="color:var(--blue);text-decoration:none;font-weight:700">#{{ p.cycle_id }}</a></td>
+                        <td data-label="Ученик">{{ p.student_name }}</td>
+                        <td data-label="Предмет">{{ p.subject }}</td>
+                        <td data-label="Возвращён" style="color:var(--dim)">{{ p.requested_at.strftime('%d.%m.%Y %H:%M') if p.requested_at else "—" }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}<div class="ss-empty">Сейчас ни один цикл не висит на правке</div>{% endif %}
+        </div>
+    </details>
+
+    <!-- 3. Уведомления -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Реакция на уведомления</h2><span class="ss-acc-badge">{{ notifications.read_count }} прочитано · {{ notifications.unread_count }} непрочитано</span></summary>
+        <div class="ss-acc-body">
+            <div class="ss-stats-strip" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 0">
+                <div class="ss-stat"><div class="ss-stat-val">{{ notifications.avg_reaction_text or "—" }}</div><div class="ss-stat-lbl">Среднее время до прочтения</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ notifications.read_count }}</div><div class="ss-stat-lbl">Прочитано (с 11.07)</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ notifications.unread_count }}</div><div class="ss-stat-lbl">Непрочитано сейчас</div></div>
+            </div>
+        </div>
+    </details>
+
+    <!-- 4. Видео-отчёты -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Видео-отчёты кураторов</h2><span class="ss-acc-badge">{{ report_views.viewed_count }} / {{ report_views.total }} просмотрено</span></summary>
+        <div class="ss-acc-body">
+            <div class="ss-stats-strip" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 0">
+                <div class="ss-stat"><div class="ss-stat-val">{{ report_views.total }}</div><div class="ss-stat-lbl">Всего отчётов</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ report_views.viewed_count }}</div><div class="ss-stat-lbl">Просмотрено staff</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ report_views.avg_view_text or "—" }}</div><div class="ss-stat-lbl">Среднее время до просмотра</div></div>
+            </div>
+        </div>
+    </details>
+
+    <!-- 5. Давно не заходили -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Давно не заходили</h2><span class="ss-acc-badge">{{ logins.inactive | length }} уч.</span></summary>
+        <div class="ss-acc-body">
+            {% if logins.inactive %}
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>Ученик</th><th>Telegram</th><th>Тариф</th><th>Последний вход</th></tr></thead>
+                    <tbody>
+                    {% for s in logins.inactive %}
+                    <tr>
+                        <td data-label="Ученик"><a href="/cabinet/superadmin/users?q={{ s.student_name }}" style="color:var(--blue);text-decoration:none;font-weight:700">{{ s.student_name }}</a></td>
+                        <td data-label="Telegram" style="color:var(--dim);font-size:12px">{% if s.tg_username %}@{{ s.tg_username }}{% else %}—{% endif %}</td>
+                        <td data-label="Тариф">{{ s.tariff }}</td>
+                        <td data-label="Последний вход" style="color:var(--dim)">{{ s.last_login_at.strftime('%d.%m.%Y %H:%M') if s.last_login_at else "не заходил с 11.07" }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}<div class="ss-empty">Все активные ученики заходили за последние 14 дней</div>{% endif %}
+        </div>
+    </details>
+
+    <!-- 6. Журнал изменений -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Журнал изменений</h2><span class="ss-acc-badge">{{ audit_feed | length }} записей</span></summary>
+        <div class="ss-acc-body">
+            {% if audit_feed %}
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>Когда</th><th>Действие</th><th>Кто</th><th>Кого</th><th>Детали</th></tr></thead>
+                    <tbody>
+                    {% for a in audit_feed %}
+                    <tr>
+                        <td data-label="Когда" style="color:var(--dim);white-space:nowrap">{{ a.created_at.strftime('%d.%m %H:%M') if a.created_at else "—" }}</td>
+                        <td data-label="Действие">
+                            {% if a.action == 'curator_assign' %}<span class="act-badge ab-curator">{{ a.action_label }}</span>
+                            {% elif a.action == 'tariff_change' %}<span class="act-badge ab-tariff">{{ a.action_label }}</span>
+                            {% elif a.action == 'user_unblock' %}<span class="act-badge ab-ok">{{ a.action_label }}</span>
+                            {% else %}<span class="act-badge ab-danger">{{ a.action_label }}</span>{% endif %}
+                        </td>
+                        <td data-label="Кто" style="font-weight:700">{{ a.performed_by }}</td>
+                        <td data-label="Кого">{{ a.target or "—" }}</td>
+                        <td data-label="Детали" style="color:var(--dim);font-size:12px">{{ a.details or "—" }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}<div class="ss-empty">Записей аудита пока нет</div>{% endif %}
+        </div>
+    </details>
+
+</div>
+{% endblock %}
