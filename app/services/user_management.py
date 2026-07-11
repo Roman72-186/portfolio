@@ -1,5 +1,6 @@
 """
-Управление пользователями суперадмином: soft-delete, блокировка/разблокировка.
+Управление пользователями: soft-delete, блокировка/разблокировка (суперадмин),
+а также аудит-лог смены куратора и тарифа.
 """
 from datetime import datetime, timezone
 
@@ -60,6 +61,42 @@ def _log(db: DBSession, action: str, performed_by_id: int, target_user_id: int, 
         target_user_id=target_user_id,
         details=details,
     ))
+
+
+def log_curator_change(
+    db: DBSession,
+    performed_by_id: int,
+    target_user_id: int,
+    old_curator_id: int | None,
+    new_curator_id: int | None,
+) -> None:
+    """Пишет AuditLog(action=curator_assign) при фактической смене куратора.
+
+    Не коммитит — запись уходит вместе с транзакцией вызывающего кода.
+    """
+    if old_curator_id == new_curator_id:
+        return
+    _log(db, "curator_assign", performed_by_id, target_user_id,
+         f"curator: {old_curator_id if old_curator_id is not None else '—'}"
+         f" → {new_curator_id if new_curator_id is not None else '—'}")
+
+
+def log_tariff_change(
+    db: DBSession,
+    performed_by_id: int,
+    target_user_id: int,
+    old_tariff: str | None,
+    new_tariff: str | None,
+) -> None:
+    """Пишет AuditLog(action=tariff_change) при фактической смене тарифа.
+
+    performed_by_id может совпадать с target_user_id (ученик меняет тариф сам).
+    Не коммитит — запись уходит вместе с транзакцией вызывающего кода.
+    """
+    if old_tariff == new_tariff:
+        return
+    _log(db, "tariff_change", performed_by_id, target_user_id,
+         f"tariff: {old_tariff or '—'} → {new_tariff or '—'}")
 
 
 def _invalidate_user_sessions(db: DBSession, user_id: int) -> None:

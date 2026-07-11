@@ -147,6 +147,9 @@ def _create_session_response(db: DBSession, user: User) -> RedirectResponse:
         expires_at=_now() + timedelta(hours=settings.session_ttl_hours),
     )
     db.add(session)
+    # Все настоящие логины (VK, magic link, staff) проходят здесь; сессия
+    # имперсонации создаётся отдельно и last_login_at цели не трогает.
+    user.last_login_at = _now()
     db.commit()
 
     response = RedirectResponse("/cabinet", status_code=302)

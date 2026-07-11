@@ -857,6 +857,7 @@ def send_mock_exam_to_retake(
     work.scored_at = datetime.now(timezone.utc)
     work.scored_by_id = user["user_id"]
     work.sent_to_retake = True
+    work.sent_to_retake_at = datetime.now(timezone.utc)
 
     db.add(Notification(
         user_id=work.user_id,
@@ -904,6 +905,7 @@ def send_mock_exam_to_revision(
     # видит этот финал как сдачу по билету → /upload/probnik/final пройдёт через
     # _overwrite_final и перезапишет это же фото (см. exam_cycle.has_submitted_for_ticket).
     work.needs_revision = True
+    work.needs_revision_at = datetime.now(timezone.utc)
 
     subject = work.subject
     # Возвращаем именно попытку исходного билета. Без этого при нескольких

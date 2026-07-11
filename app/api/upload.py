@@ -597,6 +597,8 @@ async def upload_photos(
         db_user = db.query(User).filter(User.id == user["user_id"]).first()
         if db_user:
             db_user.portfolio_do_completed = True
+            if db_user.portfolio_do_completed_at is None:
+                db_user.portfolio_do_completed_at = datetime.now(timezone.utc)
             db.commit()
             invalidate_session(user["session_id"])
 
@@ -656,6 +658,8 @@ async def upload_photos_api(
         db_user = db.query(User).filter(User.id == user["user_id"]).first()
         if db_user:
             db_user.portfolio_do_completed = True
+            if db_user.portfolio_do_completed_at is None:
+                db_user.portfolio_do_completed_at = datetime.now(timezone.utc)
             db.commit()
             invalidate_session(user["session_id"])
             mode_changed = True
@@ -837,6 +841,8 @@ async def finish_before(
 
     db_user = db.query(User).filter(User.id == user["user_id"]).first()
     db_user.portfolio_do_completed = True
+    if db_user.portfolio_do_completed_at is None:
+        db_user.portfolio_do_completed_at = datetime.now(timezone.utc)
     db.commit()
     invalidate_session(user["session_id"])
     return RedirectResponse("/upload", status_code=302)

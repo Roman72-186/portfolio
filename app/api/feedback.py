@@ -31,7 +31,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from sqlalchemy import or_ as sa_or
+from sqlalchemy import and_ as sa_and, or_ as sa_or
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
@@ -78,8 +78,10 @@ def _serialize_cycle(cycle: ExamCycle, finals: list[Work], unread_count: int = 0
         "intermediate_score": (
             float(cycle.intermediate_score) if cycle.intermediate_score is not None else None
         ),
+        # Ключ читают шаблоны как признак «на правке»: после завершения правки
+        # (revision_done_at) отдаём None, хотя requested_at в БД сохраняется.
         "revision_requested_at": (
-            cycle.revision_requested_at.isoformat() if cycle.revision_requested_at else None
+            cycle.revision_requested_at.isoformat() if cycle.is_on_revision else None
         ),
         "ticket_id": cycle.ticket_id,
         "attempts": len(finals),
@@ -246,7 +248,10 @@ def student_feedback_detail(
             Notification.user_id == user["user_id"],
             Notification.work_id.in_(work_ids),
             Notification.is_read == False,  # noqa: E712
-        ).update({"is_read": True}, synchronize_session=False)
+        ).update(
+            {"is_read": True, "read_at": datetime.now(timezone.utc)},
+            synchronize_session=False,
+        )
         db.commit()
 
     return templates.TemplateResponse("cabinet_feedback_detail.html", {
@@ -481,14 +486,17 @@ def _staff_cycles_data(db: DBSession, user: dict, archived: bool = False) -> lis
         q = q.filter(ExamCycle.closed_at.isnot(None))
         q = q.order_by(ExamCycle.closed_at.desc(), ExamCycle.id.desc())
     else:
-        # Открытые + закрытые, возвращённые куратору на правку ОС (флаг
-        # revision_requested_at): такой цикл должен висеть в рабочем списке
-        # куратора, пока правка не завершена. Curator-фильтр ниже отдаёт
-        # ему только его учеников (автор ОС = назначенный куратор).
+        # Открытые + закрытые, возвращённые куратору на правку ОС: такой цикл
+        # должен висеть в рабочем списке куратора, пока правка не завершена
+        # (revision_done_at пуст). Curator-фильтр ниже отдаёт ему только его
+        # учеников (автор ОС = назначенный куратор).
         q = q.filter(
             sa_or(
                 ExamCycle.closed_at.is_(None),
-                ExamCycle.revision_requested_at.isnot(None),
+                sa_and(
+                    ExamCycle.revision_requested_at.isnot(None),
+                    ExamCycle.revision_done_at.is_(None),
+                ),
             )
         )
         q = q.order_by(ExamCycle.started_at.desc(), ExamCycle.id.desc())
@@ -540,7 +548,7 @@ def _staff_cycles_data(db: DBSession, user: dict, archived: bool = False) -> lis
             "subject": cycle.subject,
             "started_at": cycle.started_at.isoformat(),
             "closed_at": cycle.closed_at.isoformat() if cycle.closed_at else None,
-            "revision_requested": cycle.revision_requested_at is not None,
+            "revision_requested": cycle.is_on_revision,
             "score": final_score,
             "attempts": len(finals),
             "feedbacks_count": sum(1 for w in finals if w.id in fb_work_ids),
@@ -858,7 +866,7 @@ def superadmin_return_to_curator(
         not_found_detail="Студент не найден",
         forbidden_detail="Это не ваш студент",
     )
-    if cycle.revision_requested_at is not None:
+    if cycle.is_on_revision:
         raise HTTPException(status_code=400, detail="Цикл уже возвращён куратору на изменение")
     author_id = request_curator_revision(db, cycle)
     if author_id is None:
@@ -899,7 +907,7 @@ def edit_feedback_message(
     )
     if cycle is None:
         raise HTTPException(status_code=404, detail="Цикл не найден")
-    if cycle.revision_requested_at is None:
+    if not cycle.is_on_revision:
         raise HTTPException(
             status_code=403,
             detail="Правка доступна только когда суперадмин вернул цикл на изменение",

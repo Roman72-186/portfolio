@@ -17,6 +17,9 @@ class CuratorReport(Base):
     )
     video_url: Mapped[str] = mapped_column(String(500), nullable=False)
     text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Первый просмотр отчёта админом/SA (для метрики «время до просмотра»)
+    viewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    viewed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

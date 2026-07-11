@@ -1593,6 +1593,8 @@ from app.services.user_management import (
     can_assign_role_rank,
     can_manage_user_by_rank,
     get_curator_for_assignment,
+    log_curator_change,
+    log_tariff_change,
     soft_delete_user,
     toggle_user_active,
 )
@@ -2031,8 +2033,10 @@ def superadmin_create_student(
         if not student.name:
             student.name = f"{student.first_name or first_name_clean} {student.last_name or last_name_clean}".strip()
         if tariff_clean:
+            log_tariff_change(db, user["user_id"], student.id, student.tariff, tariff_clean)
             student.tariff = tariff_clean
         if curator_id_v is not None:
+            log_curator_change(db, user["user_id"], student.id, student.curator_id, curator_id_v)
             student.curator_id = curator_id_v
         student.role_id = student_role.id
         student.is_active = True
@@ -2052,6 +2056,9 @@ def superadmin_create_student(
             profile_completed=False,
         )
         db.add(student)
+        db.flush()
+        if curator_id_v is not None:
+            log_curator_change(db, user["user_id"], student.id, None, curator_id_v)
     db.flush()
     issued_creds = _issue_login_password(db, student)
     db.commit()
@@ -2276,6 +2283,7 @@ def superadmin_assign_curator_bulk(
         if student.curator_id == curator.id:
             result["unchanged"] += 1
         else:
+            log_curator_change(db, user["user_id"], student.id, student.curator_id, curator.id)
             student.curator_id = curator.id
             result["assigned"] += 1
         if cohort_tag:
@@ -2399,6 +2407,10 @@ def superadmin_user_save_tags(
         raise HTTPException(status_code=400, detail="Неверная метка группы")
     cohort_tag_v = cohort_tag_v or None
 
+    log_curator_change(db, user["user_id"], target.id, target.curator_id, curator_id_v)
+    if tariff_v:
+        log_tariff_change(db, user["user_id"], target.id, target.tariff, tariff_v)
+
     target.exam_dates = exam_dates_v
     target.exam_subjects = exam_subjects_v
     target.study_mode = study_mode_v
@@ -2447,6 +2459,7 @@ def superadmin_user_set_curator(
     else:
         new_curator_id = None
 
+    log_curator_change(db, user["user_id"], target.id, target.curator_id, new_curator_id)
     target.curator_id = new_curator_id
     db.commit()
     _invalidate_user_sessions(db, target.id)

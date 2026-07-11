@@ -43,6 +43,7 @@ from app.services.mock_exam_access import (
     mock_exam_deadline_for_started_at,
 )
 from app.services.tz import MSK_TZ, today_msk
+from app.services.user_management import log_tariff_change
 from app.services.utils import study_duration_text, group_works
 from app.tmpl import templates, format_ticket_description
 
@@ -388,6 +389,7 @@ def profile_post(
             _profile_template_ctx(request, user, errors=errors, form=form))
 
     db_user = db.query(User).filter(User.id == user["user_id"]).first()
+    log_tariff_change(db, db_user.id, db_user.id, db_user.tariff, tariff)
     db_user.first_name = first_name
     db_user.last_name = last_name
     db_user.name = f"{first_name} {last_name}"
@@ -402,6 +404,8 @@ def profile_post(
     db_user.course_periods = ",".join(course_periods) if course_periods else None
     db_user.lessons_count = lessons_count or None
     db_user.profile_completed = True
+    if db_user.profile_completed_at is None:
+        db_user.profile_completed_at = datetime.now(timezone.utc)
     db.commit()
     invalidate_session(user["session_id"])
 
@@ -427,7 +431,7 @@ def cabinet_notifications(
         db.query(Notification).filter(
             Notification.user_id == user["user_id"],
             Notification.is_read.is_(False),
-        ).update({"is_read": True})
+        ).update({"is_read": True, "read_at": datetime.now(timezone.utc)})
         db.commit()
         invalidate_unread(user["user_id"])
     return templates.TemplateResponse("cabinet_notifications.html", {
@@ -477,7 +481,7 @@ def mark_notifications_read(
     db.query(Notification).filter(
         Notification.user_id == user["user_id"],
         Notification.is_read.is_(False),
-    ).update({"is_read": True})
+    ).update({"is_read": True, "read_at": datetime.now(timezone.utc)})
     db.commit()
     invalidate_unread(user["user_id"])
     return JSONResponse({"ok": True})

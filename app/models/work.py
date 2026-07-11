@@ -29,6 +29,9 @@ class Work(Base):
     score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)   # 0.00–100.00 (curator's score)
     student_score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)  # student self-reported score (retake)
     sent_to_retake: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    # Когда работу последний раз отправили на пересдачу; не зануляется вместе с
+    # флагом — остаётся историей для статистики.
+    sent_to_retake_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     scored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     scored_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     comment: Mapped[str | None] = mapped_column(String(1000), nullable=True)  # curator comment on the work
@@ -42,10 +45,19 @@ class Work(Base):
     # его не считает сдачей → пересдача по тому же билету разрешена.
     # Сбрасывается в _overwrite_final при загрузке нового фото.
     needs_revision: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    # Когда работу последний раз отправили на доработку; при сбросе needs_revision
+    # НЕ зануляется — длительность доработки = created_at новой работы − needs_revision_at.
+    needs_revision_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     parent_work_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("works.id"), nullable=True)
     attempt_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=True,
     )
 
     __table_args__ = (

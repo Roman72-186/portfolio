@@ -7,13 +7,13 @@ from app.db.database import Base
 
 
 class AuditLog(Base):
-    """Журнал административных действий суперадмина."""
+    """Журнал изменений пользователей: действия staff и смены тарифа учеником."""
 
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     action: Mapped[str] = mapped_column(String(50), nullable=False)
-    # user_delete | user_block | user_unblock
+    # user_delete | user_block | user_unblock | curator_assign | tariff_change
     performed_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     target_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     details: Mapped[str | None] = mapped_column(String(1000), nullable=True)

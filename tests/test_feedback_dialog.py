@@ -1585,7 +1585,10 @@ def test_finish_revision_clears_flag(client, admin_user, db, user_factory, sessi
                        headers={"Accept": "application/json"})
     assert resp.status_code == 200
     db.refresh(cycle)
-    assert cycle.revision_requested_at is None
+    # requested_at сохраняется как история; «правка завершена» = revision_done_at
+    assert cycle.revision_requested_at is not None
+    assert cycle.revision_done_at is not None
+    assert not cycle.is_on_revision
     assert cycle.closed_at is not None  # остаётся закрытым
 
 

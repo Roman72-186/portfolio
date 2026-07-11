@@ -504,8 +504,10 @@ def reopen_cycle(db: DBSession, cycle: ExamCycle) -> bool:
     now = datetime.now(timezone.utc)
     cycle.closed_at = None
     # Переоткрытие отменяет любой висящий возврат на правку: иначе флаг держал бы
-    # уже открытый цикл в списке как «на изменении».
+    # уже открытый цикл в списке как «на изменении». Это отмена, а не завершение —
+    # чистим оба поля, чтобы цикл не выглядел «правка завершена».
     cycle.revision_requested_at = None
+    cycle.revision_done_at = None
     lock = (
         db.query(MockExamLock)
         .filter(
@@ -527,8 +529,9 @@ def request_curator_revision(db: DBSession, cycle: ExamCycle) -> int | None:
     """SA возвращает цикл (любой — открытый или закрытый) автору ОС на правку.
 
     Статус цикла не меняем (closed_at/балл/портфолио/блокировка не трогаются) —
-    ставим только revision_requested_at. Возвращает id куратора-автора последней
-    ОС (для адресной видимости/доступа) или None, если в цикле нет обратной связи
+    ставим только revision_requested_at (и сбрасываем revision_done_at прошлого
+    раунда). Возвращает id куратора-автора последней ОС (для адресной
+    видимости/доступа) или None, если в цикле нет обратной связи
     (нечего править — вызывающий отдаёт 400).
     """
     fb = (
@@ -541,18 +544,21 @@ def request_curator_revision(db: DBSession, cycle: ExamCycle) -> int | None:
     if fb is None:
         return None
     cycle.revision_requested_at = datetime.now(timezone.utc)
+    cycle.revision_done_at = None
     db.flush()
     return fb.curator_id
 
 
 def finish_curator_revision(db: DBSession, cycle: ExamCycle) -> bool:
-    """Куратор завершил правку — снимаем флаг «на изменении». Цикл уже закрыт.
+    """Куратор завершил правку — ставим revision_done_at. Цикл уже закрыт.
 
-    Returns True если флаг был снят этим вызовом.
+    revision_requested_at сохраняется: пара requested/done даёт метрику
+    «время реакции куратора на возврат». Состояние «на правке» — is_on_revision.
+    Returns True если правка была завершена этим вызовом.
     """
-    if cycle.revision_requested_at is None:
+    if not cycle.is_on_revision:
         return False
-    cycle.revision_requested_at = None
+    cycle.revision_done_at = datetime.now(timezone.utc)
     db.flush()
     return True
 

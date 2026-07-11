@@ -152,6 +152,16 @@ def curator_reports(
         q = q.filter(CuratorReport.curator_id == user["user_id"])
     reports = q.order_by(CuratorReport.created_at.desc()).limit(100 if is_staff else 50).all()
 
+    # Первый просмотр staff'ом фиксируем для статистики «время до просмотра отчёта»
+    if is_staff:
+        unseen_ids = [r.id for r in reports if r.viewed_at is None]
+        if unseen_ids:
+            db.query(CuratorReport).filter(CuratorReport.id.in_(unseen_ids)).update(
+                {"viewed_at": datetime.now(timezone.utc), "viewed_by_id": user["user_id"]},
+                synchronize_session=False,
+            )
+            db.commit()
+
     # Имена кураторов нужны только для staff-вида
     curator_names: dict[int, str] = {}
     if is_staff and reports:
