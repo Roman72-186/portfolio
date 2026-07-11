@@ -636,9 +636,9 @@ function showLoading(text, percent) {
   loadingTextEl.textContent = text;
 
   if (typeof percent === "number") {
-    progressBarEl.style.width = percent.toFixed(0) + "%";
+    progressBarEl.style.transform = "scaleX(" + (Math.max(0, Math.min(100, percent)) / 100).toFixed(2) + ")";
   } else {
-    progressBarEl.style.width = "15%";
+    progressBarEl.style.transform = "scaleX(0.15)";
   }
 }
 

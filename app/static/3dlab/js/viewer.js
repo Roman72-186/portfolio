@@ -596,8 +596,8 @@ function showLoading(text, percent) {
   loadingEl.style.display = "flex";
   loadingTextEl.textContent = text;
 
-  if (typeof percent === "number") progressBarEl.style.width = percent.toFixed(0) + "%";
-  else progressBarEl.style.width = "15%";
+  if (typeof percent === "number") progressBarEl.style.transform = "scaleX(" + (Math.max(0, Math.min(100, percent)) / 100).toFixed(2) + ")";
+  else progressBarEl.style.transform = "scaleX(0.15)";
 }
 
 function hideLoading() {

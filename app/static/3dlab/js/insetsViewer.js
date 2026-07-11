@@ -930,7 +930,7 @@ function hideLoading() {
 function setProgress(p) {
   if (!dom.progressBarEl) return;
   const v = Math.max(0, Math.min(100, Number(p) || 0));
-  dom.progressBarEl.style.width = `${v}%`;
+  dom.progressBarEl.style.transform = `scaleX(${v / 100})`;
 }
 
 function setStatus(text) {
