@@ -733,9 +733,9 @@ function selectMockDay(sid, subjectIndex, dateStr) {
 function buildMockCalendarSide(sid, subjectIndex, grouped, state) {
     var html = '<div class="mock-calendar-side">';
     html += '<div class="mock-year-row">'
-        + '<button type="button" class="mock-year-btn" onclick="setMockCalendarYear(' + sid + ',' + subjectIndex + ',-1)">‹</button>'
+        + '<button type="button" class="mock-year-btn" aria-label="Предыдущий год" onclick="setMockCalendarYear(' + sid + ',' + subjectIndex + ',-1)">‹</button>'
         + '<div class="mock-year-label">' + state.year + '</div>'
-        + '<button type="button" class="mock-year-btn" onclick="setMockCalendarYear(' + sid + ',' + subjectIndex + ',1)">›</button>'
+        + '<button type="button" class="mock-year-btn" aria-label="Следующий год" onclick="setMockCalendarYear(' + sid + ',' + subjectIndex + ',1)">›</button>'
         + '</div>';
     html += '<div class="mock-month-list">';
     MONTHS_LIST.forEach(function(monthName, idx) {

@@ -117,7 +117,7 @@
                 </button>
             </form>
             {% if assignment.status != 'archived' %}
-            <button class="btn-danger" onclick="document.getElementById('archiveModal').classList.add('open')">
+            <button class="btn-danger" id="archiveOpenBtn" onclick="openArchiveModal()">
                 <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="5"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><line x1="10" y1="12" x2="14" y2="12"/></svg> Архивировать
             </button>
             {% endif %}
@@ -213,15 +213,15 @@
 
 <!-- Archive confirm modal -->
 <div class="modal-overlay" id="archiveModal">
-    <div class="modal-box">
-        <div class="modal-title">Архивировать задание?</div>
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="archiveModalTitle">
+        <div class="modal-title" id="archiveModalTitle">Архивировать задание?</div>
         <div class="modal-text">
             Задание «{{ assignment.title }}» будет перемещено в архив.
             Ученики перестанут получать уведомления по этому заданию.
             Действие можно отменить вручную.
         </div>
         <div class="modal-actions">
-            <button class="btn-secondary" onclick="document.getElementById('archiveModal').classList.remove('open')">
+            <button class="btn-secondary" id="archiveCancelBtn" onclick="closeArchiveModal()">
                 Отмена
             </button>
             <form method="post" action="/cabinet/exam-assignments/{{ assignment.id }}/archive" style="display:inline;">
@@ -233,9 +233,23 @@
 </div>
 
 <script>
+function openArchiveModal() {
+    document.getElementById('archiveModal').classList.add('open');
+    document.getElementById('archiveCancelBtn').focus();
+}
+function closeArchiveModal() {
+    document.getElementById('archiveModal').classList.remove('open');
+    var opener = document.getElementById('archiveOpenBtn');
+    if (opener) opener.focus();
+}
 // Close modal on overlay click
 document.getElementById('archiveModal').addEventListener('click', function(e) {
-    if (e.target === this) this.classList.remove('open');
+    if (e.target === this) closeArchiveModal();
+});
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && document.getElementById('archiveModal').classList.contains('open')) {
+        closeArchiveModal();
+    }
 });
 </script>
 {% include "partials/lightbox.html" %}

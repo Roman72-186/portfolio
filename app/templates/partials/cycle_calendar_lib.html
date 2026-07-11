@@ -197,9 +197,9 @@ window.CYCCAL = window.CYCCAL || (function () {
         const k = "'" + inst.key + "'";
         let html = '<div class="cal-side">';
         html += '<div class="cal-year-row">'
-            + '<button type="button" class="cal-year-btn" onclick="CYCCAL.setYear('+k+','+idx+',-1)">‹</button>'
+            + '<button type="button" class="cal-year-btn" aria-label="Предыдущий год" onclick="CYCCAL.setYear('+k+','+idx+',-1)">‹</button>'
             + '<div class="cal-year-label">' + state.year + '</div>'
-            + '<button type="button" class="cal-year-btn" onclick="CYCCAL.setYear('+k+','+idx+',1)">›</button>'
+            + '<button type="button" class="cal-year-btn" aria-label="Следующий год" onclick="CYCCAL.setYear('+k+','+idx+',1)">›</button>'
             + '</div>';
         html += '<div class="cal-month-list">';
         inst.months.forEach(function(m, i) {
