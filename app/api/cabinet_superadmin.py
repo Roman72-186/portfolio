@@ -1409,11 +1409,17 @@ def superadmin_activity(
     from app.services.activity_stats import (
         get_audit_feed,
         get_curator_review_speed,
+        get_cycle_duration_stats,
+        get_feedback_curator_stats,
+        get_login_link_stats,
         get_login_stats,
+        get_mock_attempt_stats,
         get_notification_reaction,
         get_onboarding_funnel,
         get_report_view_stats,
+        get_retake_stats,
         get_revision_stats,
+        get_self_score_stats,
     )
 
     return templates.TemplateResponse("superadmin_activity.html", {
@@ -1421,10 +1427,16 @@ def superadmin_activity(
         "user": user,
         "logins": get_login_stats(db),
         "review_speed": get_curator_review_speed(db),
+        "feedback_curators": get_feedback_curator_stats(db),
         "notifications": get_notification_reaction(db),
         "revisions": get_revision_stats(db),
         "onboarding": get_onboarding_funnel(db),
         "report_views": get_report_view_stats(db),
+        "mock_attempts": get_mock_attempt_stats(db),
+        "cycles": get_cycle_duration_stats(db),
+        "retakes": get_retake_stats(db),
+        "login_links": get_login_link_stats(db),
+        "self_scores": get_self_score_stats(db),
         "audit_feed": get_audit_feed(db),
     })
 

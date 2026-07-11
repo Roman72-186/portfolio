@@ -111,6 +111,30 @@
         </div>
     </details>
 
+    <!-- 1а. ОС-метрики кураторов -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Обратная связь кураторов</h2><span class="ss-acc-badge">{{ feedback_curators | length }} авторов ОС</span></summary>
+        <div class="ss-acc-body">
+            {% if feedback_curators %}
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>Куратор</th><th style="text-align:right">Диалогов ОС</th><th style="text-align:right">Сообщений на диалог</th><th style="text-align:right">Скорость первой ОС</th></tr></thead>
+                    <tbody>
+                    {% for r in feedback_curators %}
+                    <tr>
+                        <td data-label="Куратор" style="font-weight:700">{{ r.curator_name }}</td>
+                        <td data-label="Диалогов" style="text-align:right">{{ r.dialogs }}</td>
+                        <td data-label="Сообщений на диалог" style="text-align:right">{{ r.avg_messages if r.avg_messages is not none else "—" }}</td>
+                        <td data-label="Первая ОС" style="text-align:right">{{ r.avg_first_response_text or "—" }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}<div class="ss-empty">Диалогов обратной связи пока нет</div>{% endif %}
+        </div>
+    </details>
+
     <!-- 2. Возвраты на правку ОС -->
     <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Возвраты ОС на правку</h2><span class="ss-acc-badge">{{ revisions.pending | length }} на правке · {{ revisions.done_count }} завершено{% if revisions.avg_fix_text %} · среднее {{ revisions.avg_fix_text }}{% endif %}</span></summary>
@@ -135,6 +159,76 @@
         </div>
     </details>
 
+    <!-- 2а. Поведение на пробнике -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Поведение на пробнике</h2><span class="ss-acc-badge">{{ mock_attempts.completed_count }} / {{ mock_attempts.total }} сдано{% if mock_attempts.avg_text %} · среднее {{ mock_attempts.avg_text }}{% endif %}</span></summary>
+        <div class="ss-acc-body">
+            <div class="ss-stats-strip" style="grid-template-columns: repeat(4, 1fr)">
+                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.total }}</div><div class="ss-stat-lbl">Билетов получено</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.completed_count }}</div><div class="ss-stat-lbl">Сдано</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.expired_count }}</div><div class="ss-stat-lbl">Сгорело (не сдано за 4 ч.)</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.avg_text or "—" }}</div><div class="ss-stat-lbl">Среднее время до сдачи</div></div>
+            </div>
+            {% if mock_attempts.by_subject %}
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>Предмет</th><th style="text-align:right">Получено</th><th style="text-align:right">Сдано</th><th style="text-align:right">Среднее время</th></tr></thead>
+                    <tbody>
+                    {% for subj, s in mock_attempts.by_subject.items() %}
+                    <tr>
+                        <td data-label="Предмет" style="font-weight:700">{{ subj }}</td>
+                        <td data-label="Получено" style="text-align:right">{{ s.total }}</td>
+                        <td data-label="Сдано" style="text-align:right">{{ s.completed }}</td>
+                        <td data-label="Среднее время" style="text-align:right">{{ s.avg_text or "—" }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </details>
+
+    <!-- 2б. Циклы пробника -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Циклы Пробника</h2><span class="ss-acc-badge">{{ cycles.open_count }} открыто · {{ cycles.closed_count }} закрыто{% if cycles.avg_text %} · длится {{ cycles.avg_text }}{% endif %}</span></summary>
+        <div class="ss-acc-body">
+            <div class="ss-stats-strip" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 0">
+                <div class="ss-stat"><div class="ss-stat-val">{{ cycles.open_count }}</div><div class="ss-stat-lbl">Открыто сейчас</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ cycles.closed_count }}</div><div class="ss-stat-lbl">Закрыто (оценено)</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ cycles.avg_text or "—" }}</div><div class="ss-stat-lbl">Средняя длительность цикла</div></div>
+            </div>
+        </div>
+    </details>
+
+    <!-- 2в. Пересдачи и доработки -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Пересдачи и доработки</h2><span class="ss-acc-badge">{{ retakes.sent_to_retake }} на отработке{% if retakes.sent_to_retake_pct is not none %} ({{ retakes.sent_to_retake_pct }}%){% endif %}</span></summary>
+        <div class="ss-acc-body">
+            <div class="ss-stats-strip" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 0">
+                <div class="ss-stat"><div class="ss-stat-val">{{ retakes.sent_to_retake }}{% if retakes.sent_to_retake_pct is not none %}<span style="font-size:15px;color:var(--dim)"> ({{ retakes.sent_to_retake_pct }}%)</span>{% endif %}</div><div class="ss-stat-lbl">Пробников отправлено на отработку</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ retakes.retake_total }}</div><div class="ss-stat-lbl">Отработок загружено</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ retakes.needs_revision }}</div><div class="ss-stat-lbl">Работ на доработке сейчас</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ retakes.avg_attempts if retakes.avg_attempts is not none else "—" }}{% if retakes.max_attempts %}<span style="font-size:15px;color:var(--dim)"> (макс {{ retakes.max_attempts }})</span>{% endif %}</div><div class="ss-stat-lbl">Среднее число попыток</div></div>
+            </div>
+        </div>
+    </details>
+
+    <!-- 2г. Самооценка vs оценка куратора -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Самооценка vs оценка куратора</h2><span class="ss-acc-badge">{{ self_scores.count }} работ с обеими оценками</span></summary>
+        <div class="ss-acc-body">
+            {% if self_scores.count %}
+            <div class="ss-stats-strip" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 0">
+                <div class="ss-stat"><div class="ss-stat-val">{{ self_scores.avg_student }}</div><div class="ss-stat-lbl">Средняя самооценка ученика</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ self_scores.avg_curator }}</div><div class="ss-stat-lbl">Средняя оценка куратора</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{% if self_scores.avg_diff > 0 %}+{% endif %}{{ self_scores.avg_diff }}</div><div class="ss-stat-lbl">Средняя разница (ученик − куратор)</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ self_scores.student_higher_pct }}%</div><div class="ss-stat-lbl">Ученик оценил себя выше</div></div>
+            </div>
+            {% else %}<div class="ss-empty">Работ с самооценкой и оценкой куратора пока нет</div>{% endif %}
+        </div>
+    </details>
+
     <!-- 3. Уведомления -->
     <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Реакция на уведомления</h2><span class="ss-acc-badge">{{ notifications.read_count }} прочитано · {{ notifications.unread_count }} непрочитано</span></summary>
@@ -143,6 +237,19 @@
                 <div class="ss-stat"><div class="ss-stat-val">{{ notifications.avg_reaction_text or "—" }}</div><div class="ss-stat-lbl">Среднее время до прочтения</div></div>
                 <div class="ss-stat"><div class="ss-stat-val">{{ notifications.read_count }}</div><div class="ss-stat-lbl">Прочитано (с 11.07)</div></div>
                 <div class="ss-stat"><div class="ss-stat-val">{{ notifications.unread_count }}</div><div class="ss-stat-lbl">Непрочитано сейчас</div></div>
+            </div>
+        </div>
+    </details>
+
+    <!-- 3а. Login-ссылки -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Одноразовые login-ссылки</h2><span class="ss-acc-badge">{{ login_links.used_count }} / {{ login_links.total }} использовано{% if login_links.conversion_pct is not none %} ({{ login_links.conversion_pct }}%){% endif %}</span></summary>
+        <div class="ss-acc-body">
+            <div class="ss-stats-strip" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 0">
+                <div class="ss-stat"><div class="ss-stat-val">{{ login_links.total }}</div><div class="ss-stat-lbl">Выдано ссылок</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ login_links.used_count }}{% if login_links.conversion_pct is not none %}<span style="font-size:15px;color:var(--dim)"> ({{ login_links.conversion_pct }}%)</span>{% endif %}</div><div class="ss-stat-lbl">Использовано для входа</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ login_links.revoked_count }}</div><div class="ss-stat-lbl">Отозвано (авто при повторной выдаче)</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ login_links.avg_text or "—" }}</div><div class="ss-stat-lbl">Среднее время до входа</div></div>
             </div>
         </div>
     </details>
