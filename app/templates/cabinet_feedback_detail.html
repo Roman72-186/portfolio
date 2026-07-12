@@ -388,14 +388,16 @@
                             <div class="dlg-msg-avatar" aria-hidden="true" title="{{ sender_label }}">{{ initials }}</div>
                         {% endif %}
                         <div class="dlg-msg-body">
+                            {# Бабл — white-space: pre-wrap: держать разметку без отступов
+                               вокруг текста, иначе индентация шаблона рендерится пробелами. #}
                             <div class="dlg-msg-bubble">
-                                {% if m.text %}{{ m.text }}{% endif %}
-                                {% if m.photo_s3_url %}
+                                {%- if m.text %}{{ m.text }}{% endif -%}
+                                {%- if m.photo_s3_url -%}
                                     <img src="{{ m.photo_s3_url }}" alt="" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">
-                                {% endif %}
-                                {% if m.video_s3_url %}
+                                {%- endif -%}
+                                {%- if m.video_s3_url -%}
                                     <video class="dlg-msg-video" controls preload="metadata" src="{{ m.video_s3_url }}"></video>
-                                {% endif %}
+                                {%- endif -%}
                             </div>
                             <div class="dlg-msg-meta">
                                 {% if anon_staff %}
