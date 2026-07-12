@@ -4,11 +4,7 @@
 <style>
 .ea-wrap { max-width: 860px; margin: 0 auto; }
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; gap: 16px; }
-.page-back { font-size: 13px; color: var(--muted); text-decoration: none; display: flex; align-items: center; gap: 6px; opacity: 1; }
-.page-back:hover { color: var(--blue); opacity: 1; }
 .page-title { font-size: 24px; font-weight: 900; color: var(--text); }
-.btn-primary { display: inline-flex; align-items: center; gap: 8px; padding: 10px 22px; background: var(--blue); color: #fff; border: none; border-radius: var(--r-md); font-size: 14px; font-weight: 700; text-decoration: none; cursor: pointer; transition: opacity 0.15s; font-family: inherit; }
-.btn-primary:hover { opacity: 0.85; color: #fff; }
 
 .assignments-list { display: flex; flex-direction: column; gap: 12px; }
 .assignment-card { background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-lg); padding: 18px 20px; box-shadow: var(--sh-sm); }
@@ -48,11 +44,11 @@
 <div class="ea-wrap">
     <div class="page-header">
         <div>
-            <a href="/cabinet/exam-assignments" class="page-back">← Билеты для пробников</a>
+            <a href="/cabinet/exam-assignments" class="back-link" style="margin-bottom:0">← Билеты для пробников</a>
             <div class="page-title">{{ 'Активные пробники' if mode == 'active' else 'Архив пробников' }}</div>
         </div>
         {% if mode == 'active' %}
-        <a href="/cabinet/exam-assignments/create" class="btn-primary">+ Создать билет</a>
+        <a href="/cabinet/exam-assignments/create" class="btn-blue">+ Создать билет</a>
         {% endif %}
     </div>
 

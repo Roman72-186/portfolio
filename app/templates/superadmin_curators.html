@@ -4,8 +4,6 @@
 <style>
 .sc-wrap { max-width: 880px; margin: 0 auto; }
 .sc-head { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; flex-wrap: wrap; }
-.sc-back { font-size: 13px; color: var(--dim); text-decoration: none; font-weight: 600; }
-.sc-back:hover { color: var(--blue); }
 .sc-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
 
 .sc-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--sh-sm); overflow: hidden; }
@@ -23,9 +21,9 @@
 .sc-name { font-weight: 700; font-size: 14px; color: var(--text); }
 .sc-sub { font-size: 12px; color: var(--dim); margin-top: 2px; }
 .sc-count { font-size: 13px; font-weight: 700; color: var(--blue); }
-.sc-btn { padding: 8px 14px; border-radius: 9px; font-size: 12px; font-weight: 800; background: var(--blue); color: #fff; border: none; cursor: pointer; font-family: inherit; }
-.sc-btn:hover { opacity: 0.88; }
-.sc-btn-disabled { background: var(--surface-2); color: var(--dim); cursor: not-allowed; }
+/* Кнопка входа — канонический .btn-blue.btn-save; для заблокированных —
+   локальный серый disabled-вид поверх него */
+.sc-btn-disabled:disabled { background: var(--surface-2); color: var(--dim); cursor: not-allowed; box-shadow: none; opacity: 1; }
 .sc-empty { padding: 40px; text-align: center; color: var(--dim); font-size: 14px; }
 .sc-warn { background: rgba(252,211,77,0.18); border: 1px solid rgba(202,138,4,0.32); color: #92590A; padding: 12px 16px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; line-height: 1.45; }
 </style>
@@ -33,7 +31,7 @@
 {% block content %}
 <div class="sc-wrap">
     <div class="sc-head">
-        <a href="/cabinet" class="sc-back">← Дашборд</a>
+        <a href="/cabinet" class="back-link" style="margin-bottom:0">← Дашборд</a>
         <div class="sc-title">Кураторы</div>
     </div>
 
@@ -61,9 +59,9 @@
                     <form method="post" action="/cabinet/superadmin/impersonate/{{ c.id }}" style="margin:0">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         {% if c.is_active %}
-                        <button type="submit" class="sc-btn">Войти как куратор</button>
+                        <button type="submit" class="btn-blue btn-save">Войти как куратор</button>
                         {% else %}
-                        <button type="button" class="sc-btn sc-btn-disabled" disabled>Заблокирован</button>
+                        <button type="button" class="btn-blue btn-save sc-btn-disabled" disabled>Заблокирован</button>
                         {% endif %}
                     </form>
                 </div>

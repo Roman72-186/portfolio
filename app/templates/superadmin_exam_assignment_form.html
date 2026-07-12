@@ -3,8 +3,6 @@
 {% block extra_styles %}
 <style>
 .ea-form-wrap { max-width: 820px; margin: 0 auto; }
-.page-back { font-size: 13px; color: var(--muted); text-decoration: none; display: flex; align-items: center; gap: 6px; opacity: 1; margin-bottom: 16px; }
-.page-back:hover { color: var(--blue); opacity: 1; }
 .page-title { font-size: 24px; font-weight: 900; margin-bottom: 24px; color: var(--text); }
 
 /* Form card */
@@ -80,15 +78,8 @@
 .add-ticket-btn:hover { border-color: var(--blue); color: var(--blue); }
 .add-ticket-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* Submit */
-.form-actions { display: flex; gap: 12px; align-items: center; }
-/* НЕ дубль глобального .btn-save из base.css: здесь намеренно КРУПНЫЙ
-   primary-размер (глобальный — компактный 8px/14px для форм проверки).
-   Локальное правило выигрывает каскадом (extra_styles после base.css).
-   Унификация/переименование — Фаза 3 (SA-экраны). */
-.btn-save { padding: 12px 32px; border-radius: var(--r-md); font-size: 15px; }
-.btn-cancel { padding: 12px 20px; background: none; border: 1.5px solid var(--line); border-radius: var(--r-md); font-size: 14px; font-weight: 700; color: var(--muted); cursor: pointer; font-family: inherit; text-decoration: none; }
-.btn-cancel:hover { border-color: rgba(59,91,255,0.30); color: var(--text); }
+/* Submit: канонический .form-actions из base.css (Cancel слева → primary справа),
+   кнопки — канонические .btn-outline / .btn-blue */
 
 @media (max-width: 768px) { .field-row { grid-template-columns: 1fr; } }
 
@@ -160,10 +151,10 @@
 {% block content %}
 <div class="ea-form-wrap">
     {% if is_edit %}
-    <a href="/cabinet/exam-assignments/{{ assignment.id }}" class="page-back">← К заданию</a>
+    <a href="/cabinet/exam-assignments/{{ assignment.id }}" class="back-link">← К заданию</a>
     <div class="page-title">Редактировать задание</div>
     {% else %}
-    <a href="/cabinet/exam-assignments" class="page-back">← Все задания</a>
+    <a href="/cabinet/exam-assignments" class="back-link">← Все задания</a>
     <div class="page-title">Создать билет для пробника</div>
     {% endif %}
 
@@ -207,8 +198,8 @@
         </button>
 
         <div class="form-actions">
-            <button type="submit" class="btn-blue btn-save">{% if is_edit %}Сохранить изменения{% else %}Сохранить задание{% endif %}</button>
-            <a href="{% if is_edit %}/cabinet/exam-assignments/{{ assignment.id }}{% else %}/cabinet/exam-assignments{% endif %}" class="btn-cancel">Отмена</a>
+            <a href="{% if is_edit %}/cabinet/exam-assignments/{{ assignment.id }}{% else %}/cabinet/exam-assignments{% endif %}" class="btn-outline">Отмена</a>
+            <button type="submit" class="btn-blue">{% if is_edit %}Сохранить изменения{% else %}Сохранить задание{% endif %}</button>
         </div>
     </form>
 </div>
@@ -907,7 +898,7 @@ function validateForm(event) {
         return false;
     }
     // Prevent double-submit
-    var saveBtn = document.querySelector('.btn-save');
+    var saveBtn = document.querySelector('#main-form button[type="submit"]');
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Сохраняем…'; }
     return true;
 }

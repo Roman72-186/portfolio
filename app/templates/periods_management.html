@@ -38,7 +38,8 @@
     color: var(--text);
 }
 .btn-sm:hover { border-color: var(--blue); color: var(--blue); }
-.btn-sm.danger:hover { border-color: var(--error); color: var(--error); }
+/* Канонический .btn-danger (base.css) в компактном размере строчных действий */
+.period-actions .btn-danger { padding: 5px 12px; font-size: 12px; font-weight: 700; border-radius: 8px; }
 .create-form {
     background: var(--surface); border: 1.5px solid var(--line);
     border-radius: var(--r-md); padding: 20px; margin-top: 8px;
@@ -72,8 +73,8 @@
 <div class="periods-wrap">
 
     <div style="margin-bottom:28px">
-        <a href="/cabinet" style="font-size:13px;color:var(--dim);text-decoration:none">← Кабинет</a>
-        <h1 style="font-size:26px;font-weight:900;letter-spacing:-0.5px;margin-top:8px" class="text-accent">
+        <a href="/cabinet" class="back-link">← Кабинет</a>
+        <h1 style="font-size:26px;font-weight:900;letter-spacing:-0.5px;margin-top:0" class="text-accent">
             Управление периодами
         </h1>
         <p style="color:var(--muted);font-size:14px;margin-top:6px">
@@ -113,12 +114,12 @@
                     <input id="title-{{ feature }}" class="form-input" type="text" name="title"
                            placeholder="Например: Январский поток">
                 </div>
-                <div style="display:flex;gap:8px">
-                    <button type="submit" class="btn-primary" style="padding:8px 20px;font-size:13px">
-                        Создать период
-                    </button>
+                <div class="form-actions" style="margin-top:0">
                     <button type="button" class="btn-sm"
                             onclick="toggleForm('{{ feature }}')">Отмена</button>
+                    <button type="submit" class="btn-blue btn-save">
+                        Создать период
+                    </button>
                 </div>
             </form>
         </div>
@@ -155,7 +156,7 @@
                     {% if p.is_active %}
                     <form method="post" action="/cabinet/periods/{{ p.id }}/deactivate" style="display:inline">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                        <button type="submit" class="btn-sm danger">Отключить</button>
+                        <button type="submit" class="btn-danger">Отключить</button>
                     </form>
                     {% else %}
                     <form method="post" action="/cabinet/periods/{{ p.id }}/activate" style="display:inline">

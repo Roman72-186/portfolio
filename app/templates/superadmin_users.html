@@ -6,15 +6,10 @@
 
 .su-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
 .su-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
-.su-back { font-size: 13px; color: var(--dim); text-decoration: none; font-weight: 600; }
-.su-back:hover { color: var(--blue); }
-
 .su-filters { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 .su-filters input, .su-filters select { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: var(--r-sm); background: var(--bg); color: var(--text); outline: none; }
 .su-filters input:focus, .su-filters select:focus { border-color: var(--blue); }
 .su-filters label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
-.su-filters button { padding: 8px 16px; background: var(--blue); color: #fff; border: none; border-radius: var(--r-sm); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
-.su-filters button:hover { opacity: 0.88; }
 
 .creds-panel { background: rgba(59,91,255,0.06); border: 1px solid rgba(59,91,255,0.2); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; }
 .creds-title { font-size: 14px; font-weight: 900; color: var(--blue); margin-bottom: 10px; }
@@ -56,9 +51,10 @@
 .btn-block:hover { opacity: 0.75; }
 .btn-unblock { background: rgba(5,150,105,0.07); color: var(--ok); border-color: rgba(5,150,105,0.2); }
 .btn-unblock:hover { opacity: 0.75; }
-.btn-delete { background: rgba(107,114,128,0.07); color: var(--dim); border-color: var(--line); }
-.btn-delete:hover { background: rgba(220,38,38,0.07); color: var(--error); border-color: rgba(220,38,38,0.2); }
 .actions-cell { display: flex; gap: 6px; flex-wrap: wrap; }
+/* Канонический .btn-danger (base.css) в размере строчных действий таблицы;
+   доп. отступ отделяет деструктивное действие от нейтральных в строке */
+.actions-cell .btn-danger { padding: 5px 12px; font-size: 11px; font-weight: 700; border-radius: var(--r-sm); margin-left: 6px; }
 
 .btn-tags { background: rgba(59,91,255,0.08); color: var(--blue); border-color: rgba(59,91,255,0.2); padding: 7px 14px; font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; }
 .btn-tags:hover { opacity: 0.75; }
@@ -68,9 +64,9 @@
 .modal-overlay.open { display:flex; }
 .modal { background: var(--surface); border-radius: var(--r-lg); padding: 28px 30px; max-width: 380px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
 .modal-title { font-size: 17px; font-weight: 900; color: var(--text); margin-bottom: 10px; }
-.modal-text { font-size: 13px; color: var(--dim); margin-bottom: 22px; line-height: 1.5; }
-.modal-actions { display: flex; gap: 10px; }
-.modal-actions button { flex: 1; padding: 10px; border-radius: var(--r-sm); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; border: none; }
+.modal-text { font-size: 13px; color: var(--dim); line-height: 1.5; }
+/* Раскладка кнопок — канонический .modal-actions из base.css (Cancel слева → Confirm справа) */
+.modal-cancel, .modal-confirm { padding: 10px 18px; border-radius: var(--r-sm); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; border: none; }
 .modal-cancel { background: var(--surface-2); color: var(--text); }
 .modal-confirm { background: var(--error); color: #fff; }
 .modal-confirm.green { background: var(--ok); }
@@ -93,7 +89,7 @@
 <div class="su-wrap">
 
     <div class="su-header">
-        <a href="/cabinet" class="su-back">← Дашборд</a>
+        <a href="/cabinet" class="back-link" style="margin-bottom:0">← Дашборд</a>
         <h1 class="su-title">Управление пользователями</h1>
         {% if user.role_rank >= 5 %}
         <a href="/cabinet/superadmin/create-staff" class="action-btn btn-tags">👤 Создать сотрудника</a>
@@ -182,7 +178,7 @@
             <input type="checkbox" name="show_hidden" value="1" {% if show_hidden %}checked{% endif %} style="width:auto;padding:0">
             <span style="font-size:12px;font-weight:700;color:var(--warning)">Без периодов</span>
         </label>
-        <button type="submit">Найти</button>
+        <button type="submit" class="btn-blue btn-save">Найти</button>
     </form>
 
     {% if page_error %}
@@ -307,7 +303,7 @@
                             Разблокировать
                         </button>
                         {% endif %}
-                        <button type="button" class="action-btn btn-delete"
+                        <button type="button" class="btn-danger"
                             onclick="openConfirm('delete', {{ u.id }}, userNameFromRow({{ u.id }}), false)">
                             Удалить
                         </button>
@@ -498,7 +494,7 @@ function renderUserActions(userId, isActive) {
 
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
-    deleteBtn.className = 'action-btn btn-delete';
+    deleteBtn.className = 'btn-danger';
     deleteBtn.textContent = 'Удалить';
     deleteBtn.addEventListener('click', function() {
         openConfirm('delete', userId, userNameFromRow(userId), false);

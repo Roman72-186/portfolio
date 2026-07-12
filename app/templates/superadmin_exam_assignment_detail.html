@@ -6,8 +6,6 @@
 
 /* ── Header ── */
 .page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 28px; gap: 16px; }
-.page-back { font-size: 13px; color: var(--muted); text-decoration: none; display: flex; align-items: center; gap: 6px; }
-.page-back:hover { color: var(--blue); opacity: 1; }
 .page-title { font-size: 24px; font-weight: 900; color: var(--text); margin-top: 6px; line-height: 1.25; }
 .page-meta { font-size: 13px; color: var(--dim); margin-top: 6px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
@@ -18,13 +16,10 @@
 .status-archived  { background: rgba(156,163,175,0.06); color: #9CA3AF; }
 
 /* ── Actions ── */
+/* Кнопки — канонические .btn-blue/.btn-outline/.btn-danger из base.css;
+   деструктивная отделена дополнительным отступом от остальных (конвенция №3) */
 .header-actions { display: flex; gap: 10px; flex-shrink: 0; flex-wrap: wrap; }
-.btn-danger { display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; background: rgba(220,38,38,0.08); color: var(--error); border: 1.5px solid rgba(220,38,38,0.2); border-radius: var(--r-sm); font-size: 13px; font-weight: 700; cursor: pointer; transition: background 0.15s, border-color 0.15s; font-family: inherit; text-decoration: none; }
-.btn-danger:hover { background: rgba(220,38,38,0.14); border-color: rgba(220,38,38,0.4); color: var(--error); opacity: 1; }
-.btn-secondary { display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; background: var(--surface); color: var(--text); border: 1.5px solid var(--line); border-radius: var(--r-sm); font-size: 13px; font-weight: 700; cursor: pointer; transition: border-color 0.15s; font-family: inherit; text-decoration: none; }
-.btn-secondary:hover { border-color: rgba(59,91,255,0.30); color: var(--text); opacity: 1; }
-.btn-edit { display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; background: var(--blue-soft); color: var(--blue); border: 1.5px solid rgba(59,91,255,0.25); border-radius: var(--r-sm); font-size: 13px; font-weight: 700; cursor: pointer; transition: background 0.15s, border-color 0.15s; font-family: inherit; text-decoration: none; }
-.btn-edit:hover { background: rgba(59,91,255,0.14); border-color: rgba(59,91,255,0.45); color: var(--blue); opacity: 1; }
+.header-actions .btn-danger { margin-left: 10px; }
 
 /* ── Ticket card ── */
 .tickets-section { display: flex; flex-direction: column; gap: 20px; }
@@ -65,8 +60,8 @@
 .modal-overlay.open { display: flex; }
 .modal-box { background: var(--surface); border-radius: var(--r-xl); padding: 30px 28px; max-width: 400px; width: 90%; box-shadow: var(--sh-md); }
 .modal-title { font-size: 18px; font-weight: 900; color: var(--text); margin-bottom: 10px; }
-.modal-text { font-size: 14px; color: var(--muted); margin-bottom: 24px; line-height: 1.55; }
-.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.modal-text { font-size: 14px; color: var(--muted); line-height: 1.55; }
+/* Раскладка кнопок модалки — канонический .modal-actions из base.css */
 
 @media (max-width: 768px) {
     .page-header { flex-direction: column; }
@@ -87,7 +82,7 @@
     <!-- Header -->
     <div class="page-header">
         <div style="flex:1; min-width:0;">
-            <a href="/cabinet/exam-assignments/{{ 'archive' if assignment.status == 'archived' else 'active' }}" class="page-back">← {{ 'Архив пробников' if assignment.status == 'archived' else 'Активные пробники' }}</a>
+            <a href="/cabinet/exam-assignments/{{ 'archive' if assignment.status == 'archived' else 'active' }}" class="back-link" style="margin-bottom:0">← {{ 'Архив пробников' if assignment.status == 'archived' else 'Активные пробники' }}</a>
             <div class="page-title">{{ assignment.title }}</div>
             <div class="page-meta">
                 {{ exam_assignment_status_badge(assignment.status) }}
@@ -106,13 +101,13 @@
         </div>
         <div class="header-actions">
             {% if assignment.status != 'archived' %}
-            <a href="/cabinet/exam-assignments/{{ assignment.id }}/edit" class="btn-edit">
+            <a href="/cabinet/exam-assignments/{{ assignment.id }}/edit" class="btn-blue">
                 <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg> Редактировать
             </a>
             {% endif %}
             <form method="post" action="/cabinet/exam-assignments/{{ assignment.id }}/duplicate" style="display:inline;">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                <button type="submit" class="btn-secondary" title="Создать копию для новых настроек">
+                <button type="submit" class="btn-outline" title="Создать копию для новых настроек">
                     <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Дублировать
                 </button>
             </form>
@@ -221,7 +216,7 @@
             Действие можно отменить вручную.
         </div>
         <div class="modal-actions">
-            <button class="btn-secondary" id="archiveCancelBtn" onclick="closeArchiveModal()">
+            <button class="btn-outline" id="archiveCancelBtn" onclick="closeArchiveModal()">
                 Отмена
             </button>
             <form method="post" action="/cabinet/exam-assignments/{{ assignment.id }}/archive" style="display:inline;">

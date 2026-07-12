@@ -5,15 +5,10 @@
 .ss-wrap { max-width: 960px; margin: 0 auto; }
 .ss-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
 .ss-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
-.ss-back { font-size: 13px; color: var(--dim); text-decoration: none; font-weight: 600; }
-.ss-back:hover { color: var(--blue); }
-
 .ss-filters { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 .ss-filters select { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; min-width: 220px; }
 .ss-filters select:focus { border-color: var(--blue); }
 .ss-filters label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
-.ss-filters button { padding: 8px 16px; background: var(--blue); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
-.ss-filters button:hover { opacity: 0.88; }
 .ss-since { font-size: 12px; color: var(--dim); margin-left: auto; align-self: center; }
 
 /* Поиск по ученику (имя / telegram) — клиентский, по всем секциям */
@@ -92,7 +87,7 @@
 <div class="ss-wrap">
 
     <div class="ss-header">
-        <a href="/cabinet" class="ss-back">← Дашборд</a>
+        <a href="/cabinet" class="back-link" style="margin-bottom:0">← Дашборд</a>
         <h1 class="ss-title">Статистика пробников</h1>
     </div>
 
@@ -109,7 +104,7 @@
                 {% endfor %}
             </select>
         </label>
-        <button type="submit">Показать</button>
+        <button type="submit" class="btn-blue btn-save">Показать</button>
         <a class="ss-export-btn" href="/cabinet/superadmin/stats/export{% if selected_period_id %}?period_id={{ selected_period_id }}{% endif %}">⬇ Excel</a>
         <span class="ss-since">Данные с 13.06.2026</span>
     </form>

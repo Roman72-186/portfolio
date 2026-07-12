@@ -6,15 +6,10 @@
 
 .su-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
 .su-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
-.su-back { font-size: 13px; color: var(--dim); text-decoration: none; font-weight: 600; }
-.su-back:hover { color: var(--blue); }
-
 .su-filters { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 .su-filters input { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; }
 .su-filters input:focus { border-color: var(--blue); }
 .su-filters label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
-.su-filters button { padding: 8px 16px; background: var(--blue); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
-.su-filters button:hover { opacity: 0.88; }
 
 .tags-table-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--sh-sm); }
 .tags-table { width: 100%; border-collapse: collapse; }
@@ -70,8 +65,6 @@
 .bulk-input-row { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
 .bulk-input-row textarea { flex: 1; min-width: 220px; font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; resize: vertical; }
 .bulk-input-row textarea:focus { border-color: var(--blue); }
-.bulk-input-row button { padding: 8px 16px; background: var(--blue); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
-.bulk-input-row button:hover { opacity: 0.88; }
 .bulk-result { margin-top: 14px; }
 .bulk-table { width: 100%; border-collapse: collapse; }
 .bulk-table th { text-align: left; padding: 9px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); border-bottom: 1px solid var(--line); background: var(--bg); }
@@ -108,7 +101,7 @@
 <div class="su-wrap">
 
     <div class="su-header">
-        <a href="/cabinet/superadmin/users" class="su-back">← Управление пользователями</a>
+        <a href="/cabinet/superadmin/users" class="back-link" style="margin-bottom:0">← Управление пользователями</a>
         <h1 class="su-title">Проставить теги</h1>
     </div>
 
@@ -123,14 +116,14 @@
             <span style="font-size:12px;font-weight:700;color:var(--warning)">Без периодов</span>
         </label>
         {% endif %}
-        <button type="submit">Найти</button>
+        <button type="submit" class="btn-blue btn-save">Найти</button>
     </form>
 
     <div class="bulk-wrap">
         <h2 class="bulk-title">Массовая проставка тегов Р / К</h2>
         <div class="bulk-input-row">
             <textarea id="bulkUsernames" rows="4" placeholder="Вставьте список @username, каждый на новой строке"></textarea>
-            <button type="button" onclick="bulkLookup()">Показать</button>
+            <button type="button" class="btn-blue btn-save" onclick="bulkLookup()">Показать</button>
         </div>
         <div class="bulk-result" id="bulkResult"></div>
     </div>

@@ -6,9 +6,6 @@
 
 .su-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
 .su-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
-.su-back { font-size: 13px; color: var(--dim); text-decoration: none; font-weight: 600; }
-.su-back:hover { color: var(--blue); }
-
 .creds-panel { background: rgba(59,91,255,0.06); border: 1px solid rgba(59,91,255,0.2); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; }
 .creds-title { font-size: 14px; font-weight: 900; color: var(--blue); margin-bottom: 10px; }
 .creds-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
@@ -24,13 +21,11 @@
 .create-student-panel label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
 .create-student-panel input, .create-student-panel select { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; }
 .create-student-panel input:focus, .create-student-panel select:focus { border-color: var(--blue); }
-.create-student-panel button { padding: 10px 16px; background: var(--blue); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 800; cursor: pointer; font-family: inherit; white-space: nowrap; }
-.create-student-panel button:hover { opacity: 0.88; }
 .create-staff-grid { display: grid; grid-template-columns: repeat(3, minmax(140px, 1fr)) auto; gap: 10px; align-items: flex-end; }
 
 @media (max-width: 760px) {
     .create-staff-grid { grid-template-columns: 1fr; }
-    .create-student-panel button { width: 100%; }
+    .create-student-panel .btn-blue { width: 100%; justify-content: center; }
 }
 </style>
 {% endblock %}
@@ -38,7 +33,7 @@
 <div class="su-wrap">
 
     <div class="su-header">
-        <a href="/cabinet/superadmin/users" class="su-back">← Управление пользователями</a>
+        <a href="/cabinet/superadmin/users" class="back-link" style="margin-bottom:0">← Управление пользователями</a>
         <div class="su-title">Создать аккаунт сотрудника</div>
     </div>
 
@@ -87,7 +82,7 @@
                     {% endfor %}
                 </select>
             </label>
-            <button type="submit">Создать сотрудника</button>
+            <button type="submit" class="btn-blue" style="white-space:nowrap">Создать сотрудника</button>
         </div>
     </form>
 

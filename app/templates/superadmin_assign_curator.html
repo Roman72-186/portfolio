@@ -6,9 +6,6 @@
 
 .su-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
 .su-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
-.su-back { font-size: 13px; color: var(--dim); text-decoration: none; font-weight: 600; }
-.su-back:hover { color: var(--blue); }
-
 .bulk-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px 18px; margin-bottom: 18px; box-shadow: var(--sh-sm); }
 .bulk-title { font-size: 14px; font-weight: 900; color: var(--text); margin-bottom: 4px; }
 .bulk-sub { font-size: 12px; color: var(--dim); margin-bottom: 12px; line-height: 1.45; }
@@ -17,8 +14,6 @@
 .bulk-panel select, .bulk-panel textarea { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; }
 .bulk-panel textarea { min-height: 78px; resize: vertical; }
 .bulk-panel select:focus, .bulk-panel textarea:focus { border-color: var(--blue); }
-.bulk-panel button { padding: 10px 16px; background: var(--blue); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 800; cursor: pointer; font-family: inherit; white-space: nowrap; }
-.bulk-panel button:hover { opacity: 0.88; }
 .bulk-result { border-radius: 10px; padding: 12px 14px; margin-bottom: 18px; font-size: 13px; line-height: 1.45; }
 .bulk-result.ok { background: rgba(5,150,105,0.08); border: 1px solid rgba(5,150,105,0.24); color: var(--ok); }
 .bulk-result.warn { background: rgba(217,119,6,0.08); border: 1px solid rgba(217,119,6,0.24); color: var(--warning); }
@@ -27,7 +22,7 @@
 
 @media (max-width: 760px) {
     .bulk-grid { grid-template-columns: 1fr; }
-    .bulk-panel button { width: 100%; }
+    .bulk-panel .btn-blue { width: 100%; justify-content: center; }
 }
 </style>
 {% endblock %}
@@ -35,7 +30,7 @@
 <div class="su-wrap">
 
     <div class="su-header">
-        <a href="/cabinet/superadmin/users" class="su-back">← Управление пользователями</a>
+        <a href="/cabinet/superadmin/users" class="back-link" style="margin-bottom:0">← Управление пользователями</a>
         <div class="su-title">Массовая привязка учеников к куратору</div>
     </div>
 
@@ -98,7 +93,7 @@
                 Username учеников
                 <textarea name="student_usernames" placeholder="@student_one&#10;student_two&#10;@student_three" required></textarea>
             </label>
-            <button type="submit">Привязать списком</button>
+            <button type="submit" class="btn-blue" style="white-space:nowrap">Привязать списком</button>
         </div>
     </form>
     <script>
