@@ -393,6 +393,11 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 /* Full-width modifier (замена legacy .btn-primary: используем .btn-blue.btn-full) */
 .btn-full { width: 100%; justify-content: center; }
 
+/* Компактный save-модификатор (эталон «Сохранить балл» staff-проверки,
+   REDESIGN-PLAN-2 Фаза 2): используем .btn-blue.btn-save во всех формах
+   проверки/инлайн-редактирования вместо локальных save-классов */
+.btn-save { padding: 8px 14px; border-radius: var(--r-sm); font-size: 13px; }
+
 /* Destructive action — конвенция №3 (REDESIGN-PLAN-2): контурная, ВСЕГДА
    видимо-красная в покое (не только на hover — иначе на touch неотличима
    от нейтральной). Образец — .dlg-delete-btn из cabinet_feedback_detail. */

@@ -547,13 +547,6 @@
     min-height: 50px; transition: border-color 0.2s; margin-bottom: 8px;
 }
 .comment-input:focus { border-color: var(--blue); }
-.score-submit-btn {
-    padding: 7px 18px; border: none; border-radius: 8px;
-    background: var(--blue); color: #fff;
-    font-size: 13px; font-weight: 700; cursor: pointer;
-    font-family: inherit; transition: opacity 0.15s;
-}
-.score-submit-btn:hover { opacity: 0.85; }
 .score-form-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .score-retake-btn {
     display: inline-flex; align-items: center; gap: 6px;
@@ -839,10 +832,9 @@
     border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--text);
     font-family: inherit; outline: none;
 }
-.profile-edit-actions {
-    display: flex; gap: 10px; margin-top: 16px; grid-column: 1 / -1;
-}
-.profile-save-btn { padding: 9px 24px; border-radius: var(--r-sm); font-size: 14px; }
+/* Кнопочный ряд — канонический .form-actions из base.css (Cancel слева →
+   Confirm справа), здесь только растяжка на всю ширину грида */
+.profile-edit-actions { grid-column: 1 / -1; }
 .profile-cancel-btn {
     padding: 9px 24px; border: 1.5px solid var(--line); border-radius: var(--r-sm);
     background: none; color: var(--muted);
@@ -915,14 +907,6 @@
 .upload-preview-del:hover { background: rgba(220,38,38,0.9); }
 .upload-count-row { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 12px; color: var(--muted); }
 .upload-count-clear { background: none; border: none; color: var(--error); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
-.upload-submit-btn {
-    width: 100%; padding: 12px; border: none; border-radius: var(--r-md);
-    background: var(--blue); color: #fff;
-    font-size: 15px; font-weight: 700; cursor: pointer;
-    font-family: inherit; transition: opacity 0.15s;
-}
-.upload-submit-btn:hover { opacity: 0.85; }
-.upload-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Admin upload button ── */
 .admin-upload-btn {
@@ -1262,7 +1246,7 @@
                 </div>
                 <div class="upload-preview-grid" id="upload-preview-grid"></div>
             </div>
-            <button type="submit" class="upload-submit-btn" id="upload-submit-btn" disabled>Загрузить</button>
+            <button type="submit" class="btn-blue btn-full" id="upload-submit-btn" disabled>Загрузить</button>
         </form>
     </div>
 </div>
@@ -2535,7 +2519,7 @@ function buildScoreForm(sid, workId, tab, currentScore, currentComment) {
         + (currentComment ? esc(currentComment) : '')
         + '</textarea>'
         + '<div class="score-form-actions">'
-        + '<button type="submit" class="score-submit-btn" onclick="this.form.closest(\'.score-form\').dataset.saving=\'1\';this.disabled=true;this.textContent=\'Сохраняем…\';this.form.submit()"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> ' + saveLabel + '</button>'
+        + '<button type="submit" class="btn-blue btn-save" onclick="this.form.closest(\'.score-form\').dataset.saving=\'1\';this.disabled=true;this.textContent=\'Сохраняем…\';this.form.submit()"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> ' + saveLabel + '</button>'
         + (tab === 'mock-exams'
             ? '<button type="button" class="score-retake-btn" onclick="submitMockRetake(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> На отработку</button>'
                 + (IS_SUPERADMIN && currentScore == null ? '<button type="button" class="score-revision-btn" onclick="submitMockRevision(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> На доработку</button>' : '')
@@ -2768,9 +2752,9 @@ function startEditProfile() {
             return '<option value="' + key + '"' + (s.cohort_tag === key ? ' selected' : '') + '>' + COHORT_TAG_LABELS[key] + '</option>';
         }).join('')
         + '</select></div>';
-    html += '<div class="profile-edit-actions">'
-        + '<button class="btn-blue profile-save-btn" onclick="saveProfile()">Сохранить</button>'
+    html += '<div class="profile-edit-actions form-actions">'
         + '<button class="profile-cancel-btn" onclick="cancelEditProfile()">Отмена</button>'
+        + '<button class="btn-blue btn-save" onclick="saveProfile()">Сохранить</button>'
         + '</div>';
     html += '</div></div>';
 

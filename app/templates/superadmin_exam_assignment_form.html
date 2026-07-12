@@ -82,6 +82,10 @@
 
 /* Submit */
 .form-actions { display: flex; gap: 12px; align-items: center; }
+/* НЕ дубль глобального .btn-save из base.css: здесь намеренно КРУПНЫЙ
+   primary-размер (глобальный — компактный 8px/14px для форм проверки).
+   Локальное правило выигрывает каскадом (extra_styles после base.css).
+   Унификация/переименование — Фаза 3 (SA-экраны). */
 .btn-save { padding: 12px 32px; border-radius: var(--r-md); font-size: 15px; }
 .btn-cancel { padding: 12px 20px; background: none; border: 1.5px solid var(--line); border-radius: var(--r-md); font-size: 14px; font-weight: 700; color: var(--muted); cursor: pointer; font-family: inherit; text-decoration: none; }
 .btn-cancel:hover { border-color: rgba(59,91,255,0.30); color: var(--text); }

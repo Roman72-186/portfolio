@@ -27,10 +27,22 @@
 .staff-hero-sub  { font-size: 13px; color: rgba(255,255,255,0.5); font-weight: 500; }
 
 /* ── Очередь на проверку (главный CTA) ── */
+/* Карточка-развилка кликабельна целиком (конвенция №6 плана 2, паттерн .hub-card);
+   .next-card-cta внутри — визуальный аффорданс (span), не отдельная ссылка. */
 .next-card {
+    display: block;
     border-radius: var(--r-lg);
     padding: 22px 24px;
     margin-bottom: 20px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: transform var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out);
+}
+a.next-card:hover { transform: translateY(-2px); opacity: 1; }
+a.next-card--blue, a.next-card--blue:hover { color: #fff; }
+a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+@media (hover: none), (pointer: coarse) {
+    a.next-card:hover { transform: none; }
 }
 .next-card--blue {
     background: linear-gradient(165deg, #6F8BFF 0%, var(--blue) 100%);
@@ -57,7 +69,7 @@
     color: #fff;
     transition: background var(--duration-fast) var(--ease-out);
 }
-.next-card-cta:hover { background: rgba(255,255,255,0.26); opacity: 1; }
+a.next-card:hover .next-card-cta { background: rgba(255,255,255,0.26); }
 
 /* ── Banners ── */
 .info-banner { border-radius: var(--r-md); padding: 16px 20px; margin-bottom: 20px; }
@@ -112,13 +124,34 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
 .staff-info { flex: 1; min-width: 0; }
 .staff-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .staff-meta { font-size: 11px; color: var(--dim); margin-top: 1px; }
+/* Мелкая outline-кнопка строчных действий — шкала Spark (.btn-outline
+   в компактном размере: pill-радиус, контур var(--line) → blue на hover).
+   Размер держим прежним (11px / 5px 11px): в two-col панелях три кнопки в
+   строке, более крупная шкала сжимает колонку имени куратора/админа. */
 .issue-link-btn {
-    flex-shrink: 0; background: none; border: 1.5px solid var(--line);
-    border-radius: 8px; padding: 5px 11px;
+    display: inline-flex; align-items: center; gap: 4px;
+    flex-shrink: 0; background: transparent; border: 1.5px solid var(--line);
+    border-radius: var(--r-pill); padding: 5px 11px;
     font-size: 11px; font-weight: 700; color: var(--muted); cursor: pointer;
-    font-family: var(--font-body); transition: border-color 0.15s, color 0.15s; white-space: nowrap;
+    font-family: var(--font-body);
+    transition: border-color var(--duration-fast), color var(--duration-fast);
+    white-space: nowrap;
 }
 .issue-link-btn:hover { border-color: var(--blue); color: var(--blue); }
+.issue-link-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* Toggle периода сдачи — пилюля в шкале .chip/.tag-pill (замена inline style) */
+.period-toggle-btn {
+    font-size: 12px; font-weight: 700; padding: 6px 16px;
+    border-radius: var(--r-pill); border: none; cursor: pointer;
+    font-family: var(--font-body);
+    transition: background var(--duration-fast);
+}
+.period-toggle-btn--close { background: rgba(220,38,38,0.1); color: var(--error); }
+.period-toggle-btn--close:hover { background: rgba(220,38,38,0.18); }
+.period-toggle-btn--open { background: rgba(5,150,105,0.1); color: var(--ok); }
+.period-toggle-btn--open:hover { background: rgba(5,150,105,0.18); }
+.period-toggle-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
 /* Works by type */
 .type-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; }
@@ -244,11 +277,11 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
 
     <!-- Очередь на проверку — главный CTA дашборда -->
     {% if unscored_mocks > 0 %}
-    <div class="next-card next-card--blue">
+    <a href="/cabinet/admin/mock-check" class="next-card next-card--blue">
         <h2 class="next-card-title">{{ unscored_mocks }} пробных экзамен{{ 'ов' if unscored_mocks > 4 else ('а' if unscored_mocks > 1 else '') }} ожидают проверки</h2>
         <div class="next-card-note">Оцените работы учеников, чтобы куратор мог продолжить цикл.</div>
-        <a href="/cabinet/admin/mock-check" class="next-card-cta">Проверить →</a>
-    </div>
+        <span class="next-card-cta">Проверить →</span>
+    </a>
     {% endif %}
 
     <!-- Stats -->
@@ -337,15 +370,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                 <input type="hidden" name="feature" value="{{ feat_key }}">
                 <input type="hidden" name="redirect_to" value="/cabinet">
-                <button type="submit" style="
-                    font-size:12px;font-weight:700;padding:6px 16px;border-radius:20px;
-                    border:none;cursor:pointer;font-family:var(--font-body);transition:opacity 0.15s;
-                    {% if feat.open %}
-                    background:rgba(220,38,38,0.1);color:var(--error);
-                    {% else %}
-                    background:rgba(5,150,105,0.1);color:var(--ok);
-                    {% endif %}
-                ">
+                <button type="submit" class="period-toggle-btn {% if feat.open %}period-toggle-btn--close{% else %}period-toggle-btn--open{% endif %}">
                     {% if feat.open %}Закрыть{% else %}Открыть{% endif %}
                 </button>
             </form>
