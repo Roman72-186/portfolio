@@ -1,7 +1,7 @@
 {
-  "name": "Портфолио",
-  "short_name": "Портфолио",
-  "description": "Портфолио студентов",
+  "name": "Путь к сотке!",
+  "short_name": "Путь к сотке!",
+  "description": "Путь к сотке! — учебное веб-приложение",
   "start_url": "/cabinet",
   "display": "standalone",
   "orientation": "portrait",

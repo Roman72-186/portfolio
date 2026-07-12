@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
 
 _docs_enabled = settings.env != "production"
 app = FastAPI(
-    title="Портфолио",
+    title="Путь к сотке!",
     lifespan=lifespan,
     docs_url="/docs" if _docs_enabled else None,
     redoc_url="/redoc" if _docs_enabled else None,
