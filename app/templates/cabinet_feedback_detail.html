@@ -3,8 +3,6 @@
 {% block extra_styles %}
 <style>
 .dlg-page { max-width: 820px; margin: 0 auto; padding: 18px 16px 120px; }
-.dlg-back { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); font-weight: 700; text-decoration: none; margin-bottom: 10px; }
-.dlg-back:hover { color: var(--blue); }
 .dlg-head { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; margin-bottom: 14px; }
 .dlg-head h1 { font-family: var(--font-display); font-size: 22px; font-weight: 900; margin: 0; }
 .dlg-head .dlg-meta { color: var(--muted); font-size: 13px; font-weight: 700; }
@@ -97,17 +95,31 @@
 .dlg-stages img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); cursor: zoom-in; }
 .dlg-context-meta { font-size: 12px; color: var(--muted); flex: 1 1 200px; }
 
-.dlg-messages { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; max-height: 540px; overflow-y: auto; }
-.dlg-msg { display: flex; flex-direction: column; gap: 4px; max-width: 78%; }
+.dlg-messages { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; max-height: 540px; overflow-y: auto; }
+.dlg-msg { display: flex; align-items: flex-start; gap: 8px; max-width: 82%; }
 .dlg-msg.from-them { align-self: flex-start; }
-.dlg-msg.from-me { align-self: flex-end; align-items: flex-end; }
+.dlg-msg.from-me { align-self: flex-end; flex-direction: row-reverse; }
+.dlg-msg-avatar {
+    flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800; letter-spacing: 0.02em; user-select: none;
+    background: var(--surface-2); border: 1px solid var(--line); color: var(--muted);
+}
+.dlg-msg.from-me .dlg-msg-avatar { background: var(--blue); border-color: var(--blue); color: #fff; }
+.dlg-msg-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dlg-msg.from-me .dlg-msg-body { align-items: flex-end; }
 .dlg-msg-bubble {
     padding: 10px 14px; border-radius: 14px;
     background: var(--surface-2); border: 1px solid var(--line);
     word-break: break-word; white-space: pre-wrap;
     font-size: 14px; line-height: 1.45; color: var(--text);
 }
-.dlg-msg.from-me .dlg-msg-bubble { background: var(--blue); border-color: var(--blue); color: #fff; }
+.dlg-msg.from-them .dlg-msg-bubble { border-top-left-radius: 4px; }
+.dlg-msg.from-me .dlg-msg-bubble { background: var(--blue); border-color: var(--blue); color: #fff; border-top-right-radius: 4px; }
+@media (max-width: 640px) {
+    .dlg-msg { max-width: 94%; }
+    .dlg-msg-avatar { width: 28px; height: 28px; font-size: 11px; }
+}
 .dlg-msg-bubble img { display: block; max-width: 320px; width: 100%; border-radius: 8px; margin-top: 4px; cursor: zoom-in; }
 .dlg-msg.from-me .dlg-msg-bubble img { background: rgba(255,255,255,0.1); }
 .dlg-msg-bubble video { display: block; max-width: 320px; width: 100%; border-radius: 8px; margin-top: 4px; background: #000; }
@@ -211,7 +223,7 @@
 {% endblock %}
 {% block content %}
 <div class="dlg-page">
-    <a class="dlg-back" href="{{ back_url }}">‹ {{ back_label }}</a>
+    <a class="back-link" href="{{ back_url }}">‹ {{ back_label }}</a>
     <div class="dlg-head">
         <h1>{{ cycle.subject }}</h1>
         <span class="dlg-meta">Цикл с {{ cycle.started_at[:10] }}</span>
@@ -360,30 +372,50 @@
                         (viewer_role == 'student' and m.sender_role == 'student') or
                         (viewer_role != 'student' and m.sender_role != 'student')
                     %}
+                    {# Staff-сообщения обезличены для всех (и ученика, и staff): нейтральный
+                       аватар, в подписи только дата и время. Куратор находит свои сообщения
+                       по кнопке «✎ Изменить» (m.sender_id == user.user_id), подпись не нужна. #}
+                    {% set anon_staff = m.sender_role != 'student' %}
+                    {% set sender_label = (m.sender_name or m.sender_role_label or '?')|trim %}
+                    {% set name_parts = sender_label.split() %}
+                    {% set initials = ((name_parts[0][:1] if name_parts else '?') ~ (name_parts[1][:1] if name_parts|length > 1 else ''))|upper %}
                     <div class="dlg-msg {% if is_me %}from-me{% else %}from-them{% endif %}" id="m-{{ m.id }}">
-                        <div class="dlg-msg-bubble">
-                            {% if m.text %}{{ m.text }}{% endif %}
-                            {% if m.photo_s3_url %}
-                                <img src="{{ m.photo_s3_url }}" alt="" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">
-                            {% endif %}
-                            {% if m.video_s3_url %}
-                                <video class="dlg-msg-video" controls preload="metadata" src="{{ m.video_s3_url }}"></video>
-                            {% endif %}
-                        </div>
-                        <div class="dlg-msg-meta">
-                            <span class="dlg-msg-author">{{ m.sender_name or m.sender_role_label }}</span> · <span class="dlg-msg-role">{{ m.sender_role_label }}</span> · {{ m.created_at[:16].replace('T', ' ') if m.created_at else '' }}
-                        </div>
-                        {% if cycle.revision_requested_at and viewer_role != 'student' and m.sender_role != 'student' and m.sender_id == user.user_id and m.text %}
-                            <button type="button" class="dlg-msg-edit" onclick="startEditMsg({{ m.id }})">✎ Изменить</button>
-                            <form class="dlg-msg-edit-form" id="edit-form-{{ m.id }}" style="display:none" onsubmit="return submitEditMsg(event, {{ m.id }})">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                                <textarea maxlength="4000">{{ m.text }}</textarea>
-                                <div class="dlg-msg-edit-actions">
-                                    <button type="submit" class="btn-blue dlg-send">Сохранить</button>
-                                    <button type="button" class="dlg-score-edit" onclick="cancelEditMsg({{ m.id }})">Отмена</button>
-                                </div>
-                            </form>
+                        {% if anon_staff %}
+                            <div class="dlg-msg-avatar" aria-hidden="true">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                            </div>
+                        {% else %}
+                            <div class="dlg-msg-avatar" aria-hidden="true" title="{{ sender_label }}">{{ initials }}</div>
                         {% endif %}
+                        <div class="dlg-msg-body">
+                            <div class="dlg-msg-bubble">
+                                {% if m.text %}{{ m.text }}{% endif %}
+                                {% if m.photo_s3_url %}
+                                    <img src="{{ m.photo_s3_url }}" alt="" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">
+                                {% endif %}
+                                {% if m.video_s3_url %}
+                                    <video class="dlg-msg-video" controls preload="metadata" src="{{ m.video_s3_url }}"></video>
+                                {% endif %}
+                            </div>
+                            <div class="dlg-msg-meta">
+                                {% if anon_staff %}
+                                    {{ m.created_at[:16].replace('T', ' ') if m.created_at else '' }}
+                                {% else %}
+                                    <span class="dlg-msg-author">{{ m.sender_name or m.sender_role_label }}</span> · <span class="dlg-msg-role">{{ m.sender_role_label }}</span> · {{ m.created_at[:16].replace('T', ' ') if m.created_at else '' }}
+                                {% endif %}
+                            </div>
+                            {% if cycle.revision_requested_at and viewer_role != 'student' and m.sender_role != 'student' and m.sender_id == user.user_id and m.text %}
+                                <button type="button" class="dlg-msg-edit" onclick="startEditMsg({{ m.id }})">✎ Изменить</button>
+                                <form class="dlg-msg-edit-form" id="edit-form-{{ m.id }}" style="display:none" onsubmit="return submitEditMsg(event, {{ m.id }})">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                                    <textarea maxlength="4000">{{ m.text }}</textarea>
+                                    <div class="dlg-msg-edit-actions">
+                                        <button type="button" class="dlg-score-edit" onclick="cancelEditMsg({{ m.id }})">Отмена</button>
+                                        <button type="submit" class="btn-blue dlg-send">Сохранить</button>
+                                    </div>
+                                </form>
+                            {% endif %}
+                        </div>
                     </div>
                 {% endfor %}
             </div>
@@ -497,14 +529,14 @@
                     </div>
                     <textarea name="comment" placeholder="Комментарий (необязательно)" maxlength="500">{{ a.comment or '' }}</textarea>
                     <div class="dlg-score-actions">
-                        <button type="button" class="btn-blue dlg-score-btn" onclick="submitDlgScore({{ a.work_id }}, {{ student.id }})">
-                            Сохранить балл
-                        </button>
                         {% if a.score is not none %}
                             <button type="button" class="dlg-score-edit" onclick="toggleScoreEdit({{ a.work_id }}, false)">
                                 Отмена
                             </button>
                         {% endif %}
+                        <button type="button" class="btn-blue dlg-score-btn" onclick="submitDlgScore({{ a.work_id }}, {{ student.id }})">
+                            Сохранить балл
+                        </button>
                     </div>
                     <div class="dlg-score-msg" style="display:none"></div>
                 </div>
