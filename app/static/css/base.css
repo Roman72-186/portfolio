@@ -327,7 +327,8 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
    BUTTONS
    ═══════════════════════════════════════ */
 
-/* Dark pill (primary Spark button) */
+/* Dark pill — DEPRECATED (REDESIGN-PLAN-2 Фаза 0): 0 использований в шаблонах/JS.
+   Канонический primary = .btn-blue. Не применять в новом коде; удалить в Фазе 5. */
 .btn-dark {
     display: inline-flex; align-items: center; gap: 8px;
     background: var(--ink); color: #fff;
@@ -388,6 +389,87 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 .btn-primary:hover { filter: brightness(1.05); box-shadow: 0 12px 32px rgba(59,91,255,.38); transform: translateY(-1px); color: #fff; opacity: 1; }
 .btn-primary:disabled { opacity: 0.38; cursor: not-allowed; transform: none; box-shadow: none; filter: none; }
 .btn-primary:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+
+/* Full-width modifier (замена legacy .btn-primary: используем .btn-blue.btn-full) */
+.btn-full { width: 100%; justify-content: center; }
+
+/* Destructive action — конвенция №3 (REDESIGN-PLAN-2): контурная, ВСЕГДА
+   видимо-красная в покое (не только на hover — иначе на touch неотличима
+   от нейтральной). Образец — .dlg-delete-btn из cabinet_feedback_detail. */
+.btn-danger {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    background: transparent; color: var(--error);
+    font-size: 14px; font-weight: 600;
+    padding: 12px 22px; border-radius: var(--r-pill);
+    border: 1.5px solid var(--error);
+    cursor: pointer; font-family: inherit;
+    text-decoration: none;
+    transition: background var(--duration-fast), color var(--duration-fast);
+}
+.btn-danger:hover { background: var(--error); color: #fff; opacity: 1; }
+.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-danger:focus-visible { outline: 2px solid var(--error); outline-offset: 2px; }
+
+/* Warning-действие (вернуть на правку и т.п.) — тот же контурный паттерн */
+.btn-warn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    background: transparent; color: var(--warning-deep);
+    font-size: 14px; font-weight: 600;
+    padding: 12px 22px; border-radius: var(--r-pill);
+    border: 1.5px solid var(--warning-deep);
+    cursor: pointer; font-family: inherit;
+    text-decoration: none;
+    transition: background var(--duration-fast), color var(--duration-fast);
+}
+.btn-warn:hover { background: var(--warning-deep); color: #fff; opacity: 1; }
+.btn-warn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-warn:focus-visible { outline: 2px solid var(--warning-deep); outline-offset: 2px; }
+
+/* ═══════════════════════════════════════
+   ACTION LAYOUT (REDESIGN-PLAN-2, Фаза 0)
+   Конвенция №2: в DOM Cancel/назад идёт ПЕРВЫМ, Confirm/primary — ПОСЛЕДНИМ;
+   flex-end прижимает группу вправо (primary оказывается справа). На узких
+   экранах .form-actions складывается колонкой primary-сверху.
+   ═══════════════════════════════════════ */
+.form-actions {
+    display: flex; align-items: center; justify-content: flex-end;
+    flex-wrap: wrap; gap: 10px;
+    margin-top: 18px;
+}
+.modal-actions {
+    display: flex; align-items: center; justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+@media (max-width: 480px) {
+    .form-actions { flex-direction: column-reverse; align-items: stretch; }
+    .form-actions > * { width: 100%; justify-content: center; }
+}
+
+/* «← Назад» — единый класс (конвенция №4), визуальный язык существующих
+   ~15 локальных копий (.dlg-back/.page-back/.su-back и т.д.) */
+.back-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 700;
+    color: var(--muted); text-decoration: none;
+    margin-bottom: 10px;
+}
+.back-link:hover { color: var(--blue); opacity: 1; }
+
+/* Sticky mobile CTA (конвенция №5): обёртка вокруг primary-кнопки внизу
+   главной формы экрана. position:sticky остаётся в потоке (не перекрывает
+   контент), липнет над bottom-nav (высота ~72px, z-index 100) до своей
+   естественной позиции. На десктопе (≥1024px, bottom-nav скрыт) — обычный блок. */
+.cta-sticky {
+    position: sticky;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px) + 10px);
+    z-index: 90;
+}
+/* Вариант для экранов без bottom-nav (онбординг-профиль и т.п.) */
+.cta-sticky--bare { bottom: calc(env(safe-area-inset-bottom, 0px) + 10px); }
+@media (min-width: 1024px) {
+    .cta-sticky { position: static; }
+}
 
 /* ═══════════════════════════════════════
    PILL NAVIGATION
@@ -860,6 +942,10 @@ button.desk-nav-item {
 /* ── Touch devices ── */
 @media (hover: none), (pointer: coarse) {
     .btn-primary:hover, .btn-dark:hover, .btn-blue:hover { transform: none; box-shadow: none; filter: none; }
+    .btn-danger:hover { background: transparent; color: var(--error); }
+    .btn-warn:hover { background: transparent; color: var(--warning-deep); }
+    .btn-danger:active { background: var(--error); color: #fff; }
+    .btn-warn:active { background: var(--warning-deep); color: #fff; }
     .card:hover, .card-dark:hover, .card-blue:hover { transform: none; box-shadow: var(--sh-sm); }
     .desk-nav-item:hover { background: none; color: var(--muted); }
     .btn-primary:active { filter: brightness(0.95); }

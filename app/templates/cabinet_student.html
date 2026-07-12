@@ -272,10 +272,23 @@
 }
 
 /* ── Что дальше (hero next-action) ── */
+/* Карточка-развилка кликабельна целиком (конвенция №6 плана 2, паттерн .hub-card);
+   .next-card-cta внутри — визуальный аффорданс (span), не отдельная ссылка. */
 .next-card {
+    display: block;
     border-radius: var(--r-lg);
     padding: 22px 24px;
     margin-bottom: 20px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: transform var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out);
+}
+a.next-card:hover { transform: translateY(-2px); opacity: 1; }
+a.next-card--blue, a.next-card--blue:hover { color: #fff; }
+a.next-card--neutral, a.next-card--neutral:hover { color: inherit; }
+a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+@media (hover: none), (pointer: coarse) {
+    a.next-card:hover { transform: none; }
 }
 .next-card--blue {
     background: linear-gradient(165deg, #6F8BFF 0%, var(--blue) 100%);
@@ -436,14 +449,14 @@
 
     <!-- ── ЧТО ДАЛЬШЕ ── -->
     {% if not user.portfolio_do_completed %}
-    <div class="next-card next-card--blue">
+    <a href="/upload" class="next-card next-card--blue">
         <div class="next-card-title">Загрузите портфолио «До»</div>
         <div class="next-card-note">Первый шаг — покажите свои работы до обучения у нас. Это займёт пару минут.</div>
-        <a href="/upload" class="next-card-cta">Загрузить фото →</a>
-    </div>
+        <span class="next-card-cta">Загрузить фото →</span>
+    </a>
     {% endif %}
     {% if active_cycle %}
-    <div class="next-card next-card--blue">
+    <a href="/cabinet/cycle" class="next-card next-card--blue">
         <div class="next-card-title">Текущий цикл — {{ active_cycle.subject }}</div>
         <div class="next-card-chips">
             {% if active_cycle.pending_review_count > 0 %}
@@ -456,10 +469,10 @@
         {% if active_cycle.pending_review_count == 0 and unread_count == 0 %}
         <div class="next-card-note">Куратор проверил все работы цикла — ждём новых материалов.</div>
         {% endif %}
-        <a href="/cabinet/cycle" class="next-card-cta">Перейти к циклу →</a>
-    </div>
+        <span class="next-card-cta">Перейти к циклу →</span>
+    </a>
     {% elif avg_score_by_subject %}
-    <div class="next-card next-card--neutral">
+    <a href="/upload/mock-exam" class="next-card next-card--neutral">
         <div class="next-card-title">Прогресс по предметам</div>
         <div class="subject-progress">
             {% for subj in ['Рисунок', 'Композиция'] %}
@@ -480,8 +493,8 @@
             </div>
             {% endfor %}
         </div>
-        <a href="/upload/mock-exam" class="next-card-cta">Загрузить пробник →</a>
-    </div>
+        <span class="next-card-cta">Загрузить пробник →</span>
+    </a>
     {% endif %}
 
     <!-- ── STATS (год, дата, статус, длительность) ── -->

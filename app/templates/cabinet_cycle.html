@@ -42,22 +42,6 @@
 .cyc-panel { display: none; }
 .cyc-panel.active { display: block; }
 
-.cyc-upload-bar {
-    display: flex; flex-wrap: wrap; gap: 12px;
-    align-items: center; justify-content: space-between;
-    margin-bottom: 14px;
-}
-.cyc-upload-btn {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 10px 16px; border-radius: var(--r-pill);
-    background: var(--blue); color: #fff; font-weight: 800; font-size: 14px;
-    text-decoration: none; border: 1px solid var(--blue);
-    transition: background .15s, transform .12s;
-}
-.cyc-upload-btn:hover { background: var(--blue-deep); opacity: 1; transform: translateY(-1px); }
-.cyc-upload-btn.disabled { background: var(--surface-2); color: var(--dim); border-color: var(--line); pointer-events: none; }
-.cyc-upload-msg { font-size: 12px; color: var(--muted); }
-
 .fb-group-title {
     font-size: 11px; font-weight: 800; color: var(--dim);
     text-transform: uppercase; letter-spacing: 0.08em;

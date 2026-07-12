@@ -92,9 +92,28 @@ label:hover .subject-btn { border-color: var(--warning); color: var(--warning); 
 .ticket-img-retry:hover { opacity: 0.88; }
 .ticket-img-retry:disabled { opacity: 0.6; cursor: default; }
 
+/* ── Primary этого экрана — амбер (палитра пробника, Фаза 2a плана 1),
+      механика и форма — как у .btn-blue (конвенция №1 плана 2) ── */
+.btn-mock-primary {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    background: linear-gradient(135deg, var(--warning), #F59E0B); color: #fff;
+    font-size: 15px; font-weight: 700;
+    padding: 14px 28px; border-radius: var(--r-pill);
+    border: none; cursor: pointer; font-family: inherit;
+    transition: filter var(--duration-fast), transform var(--duration-fast);
+}
+.btn-mock-primary:hover { filter: brightness(1.05); transform: translateY(-1px); color: #fff; opacity: 1; }
+.btn-mock-primary:disabled { opacity: 0.38; cursor: not-allowed; filter: none; transform: none; }
+.btn-mock-primary:focus-visible { outline: 2px solid var(--warning); outline-offset: 2px; }
+@media (hover: none), (pointer: coarse) {
+    .btn-mock-primary:hover { transform: none; filter: none; }
+    .btn-mock-primary:active { filter: brightness(0.95); }
+}
+
 /* ── Timer widget ── */
+/* На мобиле поднят над sticky-CTA «Отправить на проверку» (конвенция №5 плана 2) */
 .exam-timer {
-    position: fixed; bottom: 80px; right: 16px; z-index: 90;
+    position: fixed; bottom: calc(132px + env(safe-area-inset-bottom, 0px)); right: 16px; z-index: 90;
     background: var(--ink); color: #fff;
     border-radius: 14px; padding: 10px 16px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.25);
@@ -105,6 +124,9 @@ label:hover .subject-btn { border-color: var(--warning); color: var(--warning); 
 .timer-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.5); }
 .timer-value { font-size: 22px; font-weight: 900; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
 .timer-value.expired { color: var(--success, #16A34A); font-size: 14px; }
+@media (min-width: 1024px) {
+    .exam-timer { bottom: 80px; }
+}
 @media (max-width: 480px) {
     .upload-drop { padding: 28px 20px; }
     .upload-circle { width: 76px; height: 76px; font-size: 34px; }
@@ -207,9 +229,7 @@ label:hover .subject-btn { border-color: var(--warning); color: var(--warning); 
         </div>
 
         <!-- Start button (shown after subject chosen, when no active attempt yet) -->
-        <button type="button" id="startBtn" style="display:none; padding:14px 28px; font-size:15px; font-weight:700;
-                background:linear-gradient(135deg,var(--warning),#F59E0B); color:#fff; border:none; border-radius:12px;
-                cursor:pointer; transition:opacity 0.15s">
+        <button type="button" id="startBtn" class="btn-mock-primary" style="display:none">
             ▶ Начать пробник
         </button>
 
@@ -261,10 +281,11 @@ label:hover .subject-btn { border-color: var(--warning); color: var(--warning); 
                 </div>
             </div>
 
-            <button type="button" id="submitBtn" class="btn-primary" disabled
-                    style="background:linear-gradient(135deg,var(--warning),#F59E0B)">
-                Отправить на проверку
-            </button>
+            <div class="cta-sticky">
+                <button type="button" id="submitBtn" class="btn-mock-primary btn-full" disabled>
+                    Отправить на проверку
+                </button>
+            </div>
             <div id="uploadMsg" style="display:none"></div>
         </div>
     </form>
@@ -705,7 +726,7 @@ function onSubjectSelected(subject) {
         document.getElementById('prepBlock').style.display = 'block';
         var startBtn = document.getElementById('startBtn');
         var canStart = START_OPEN_BY_SUBJECT[subject] !== false;
-        startBtn.style.display = 'inline-block';
+        startBtn.style.display = 'inline-flex';
         startBtn.disabled = !canStart;
         startBtn.innerHTML = canStart ? '▶ Начать пробник' : 'Получение билета закрыто';
         if (!canStart && WINDOW_MESSAGE_BY_SUBJECT[subject]) {

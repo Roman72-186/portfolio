@@ -52,6 +52,23 @@
     text-align: center;
 }
 .score-input:focus { outline: none; border-color: #7C3AED; }
+/* ── Primary этого экрана — фиолет (палитра отработки, = .tag-pill--publish),
+      механика и форма — как у .btn-blue (конвенция №1 плана 2) ── */
+.btn-retake-primary {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    background: linear-gradient(135deg, #7C3AED, #A78BFA); color: #fff;
+    font-size: 15px; font-weight: 700;
+    padding: 14px 28px; border-radius: var(--r-pill);
+    border: none; cursor: pointer; font-family: inherit;
+    transition: filter var(--duration-fast), transform var(--duration-fast);
+}
+.btn-retake-primary:hover { filter: brightness(1.05); transform: translateY(-1px); color: #fff; opacity: 1; }
+.btn-retake-primary:disabled { opacity: 0.38; cursor: not-allowed; filter: none; transform: none; }
+.btn-retake-primary:focus-visible { outline: 2px solid #7C3AED; outline-offset: 2px; }
+@media (hover: none), (pointer: coarse) {
+    .btn-retake-primary:hover { transform: none; filter: none; }
+    .btn-retake-primary:active { filter: brightness(0.95); }
+}
 @media (max-width: 480px) {
     .upload-drop { padding: 28px 20px; }
     .upload-circle { width: 76px; height: 76px; font-size: 34px; }
@@ -143,10 +160,11 @@
             </div>
         </div>
 
-        <button type="submit" id="submitBtn" class="btn-primary" disabled
-                style="background:linear-gradient(135deg,#7C3AED,#A78BFA)">
-            Отправить на проверку
-        </button>
+        <div class="cta-sticky">
+            <button type="submit" id="submitBtn" class="btn-retake-primary btn-full" disabled>
+                Отправить на проверку
+            </button>
+        </div>
     </form>
 
     {% endif %}{# end feature gate #}
