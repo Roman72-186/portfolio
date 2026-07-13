@@ -399,7 +399,7 @@
     margin-bottom: 12px;
 }
 .mock-hero-photo { flex: 1; min-width: 0; }
-.mock-hero-photo > .photo-wrap > img {
+.mock-hero-photo > .photo-wrap > .photo-zoom-button > img {
     width: 100%; aspect-ratio: 4/3; object-fit: cover;
     border-radius: 10px; border: 1px solid var(--line);
     cursor: zoom-in; display: block;
@@ -614,7 +614,7 @@ function buildSubjectCard(subject, data, subjectIndex) {
         works.slice(0, 6).forEach(function(w) {
             if (w.s3_url) {
                 html += '<div class="photo-wrap">'
-                    +   '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">'
+                    +   '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото"><img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy"></button>'
                     +   '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)">&times;</button>'
                     + '</div>';
             }
@@ -800,7 +800,7 @@ function buildMockDayPanel(sid, subject, grouped, state) {
             var bc = scoreBadgeClass(primary.score);
             var bt = primary.score != null ? Math.round(primary.score) + '/100' : '—';
             html += '<div class="photo-wrap" style="position:relative">'
-                + '<img src="' + esc(primary.s3_url) + '" alt="' + esc(primary.filename) + '" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">'
+                + '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото"><img src="' + esc(primary.s3_url) + '" alt="' + esc(primary.filename) + '" loading="lazy"></button>'
                 + '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
                 + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + primary.id + ',this)">&times;</button>'
                 + '</div>';
@@ -820,7 +820,7 @@ function buildMockDayPanel(sid, subject, grouped, state) {
             var bc = scoreBadgeClass(primary.score);
             var bt = primary.score != null ? Math.round(primary.score) + '/100' : '—';
             html += '<div class="photo-wrap" style="position:relative">'
-                + '<img src="' + esc(primary.s3_url) + '" alt="' + esc(primary.filename) + '" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">'
+                + '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото"><img src="' + esc(primary.s3_url) + '" alt="' + esc(primary.filename) + '" loading="lazy"></button>'
                 + '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
                 + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + primary.id + ',this)">&times;</button>'
                 + '</div>';
@@ -833,7 +833,7 @@ function buildMockDayPanel(sid, subject, grouped, state) {
             if (w.s3_url) {
                 var wbc = scoreBadgeClass(w.score);
                 html += '<div class="photo-wrap" style="position:relative">'
-                    + '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">'
+                    + '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото"><img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy"></button>'
                     + (w.score != null ? '<span class="work-score-badge ' + wbc + '">' + Math.round(w.score) + '/100</span>' : '')
                     + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)">&times;</button>'
                     + '</div>';

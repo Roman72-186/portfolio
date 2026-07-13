@@ -316,7 +316,9 @@
                     {% if ticket.title %}<div class="dlg-ticket-title">{{ ticket.title }}</div>{% endif %}
                 </div>
                 <div class="dlg-ticket-image">
-                    <img src="{{ ticket.image_url }}" alt="Билет{% if ticket.title %}: {{ ticket.title }}{% endif %}" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото билета">
+                    <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото билета">
+                        <img src="{{ ticket.image_url }}" alt="Билет{% if ticket.title %}: {{ ticket.title }}{% endif %}" loading="lazy">
+                    </button>
                 </div>
             </section>
         {% endif %}
@@ -334,7 +336,9 @@
                     <div class="dlg-context-row"{% if not loop.first %} style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);"{% endif %}>
                         {% if a.s3_url %}
                             <div class="dlg-final-img">
-                                <img src="{{ a.s3_url }}" alt="" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">
+                                <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото">
+                                    <img src="{{ a.s3_url }}" alt="" loading="lazy">
+                                </button>
                             </div>
                         {% endif %}
                         <div class="dlg-context-meta">
@@ -348,7 +352,9 @@
                                 <div style="margin-top:8px;font-weight:800;color:var(--text);">Этапы:</div>
                                 <div class="dlg-stages" style="margin-top:4px;">
                                     {% for i in a.intermediates %}
-                                        <img src="{{ i.s3_url }}" alt="" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">
+                                        <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото">
+                                            <img src="{{ i.s3_url }}" alt="" loading="lazy">
+                                        </button>
                                     {% endfor %}
                                 </div>
                             {% endif %}
@@ -393,7 +399,9 @@
                             <div class="dlg-msg-bubble">
                                 {%- if m.text %}{{ m.text }}{% endif -%}
                                 {%- if m.photo_s3_url -%}
-                                    <img src="{{ m.photo_s3_url }}" alt="" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">
+                                    <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото">
+                                        <img src="{{ m.photo_s3_url }}" alt="" loading="lazy">
+                                    </button>
                                 {%- endif -%}
                                 {%- if m.video_s3_url -%}
                                     <video class="dlg-msg-video" controls preload="metadata" src="{{ m.video_s3_url }}"></video>

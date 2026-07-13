@@ -4,13 +4,6 @@
 <style>
 .notif-page { max-width: 640px; margin: 0 auto; padding-bottom: 90px; }
 
-.page-back {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-size: 13px; color: var(--muted); font-weight: 600;
-    text-decoration: none; margin-bottom: 20px;
-}
-.page-back:hover { color: var(--blue); opacity: 1; }
-
 .page-title {
     font-size: 22px; font-weight: 900; color: var(--ink); margin-bottom: 20px;
     display: flex; align-items: center; gap: 10px;
@@ -64,7 +57,7 @@
 {% endblock %}
 {% block content %}
 <div class="notif-page">
-    <a href="/cabinet/student" class="page-back">← Кабинет</a>
+    <a href="/cabinet/student" class="back-link">← Кабинет</a>
 
     <div class="page-title">
         <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Уведомления

@@ -130,8 +130,20 @@
 .pf-mlabel { font-size: 13px; font-weight: 700; color: var(--text); text-transform: capitalize; }
 .pf-mcount { font-size: 12px; color: var(--dim); white-space: nowrap; }
 .pf-mgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 6px; padding: 12px; }
-.pf-mgrid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); cursor: zoom-in; transition: opacity 0.15s; }
-.pf-mgrid img:hover { opacity: 0.85; }
+.pf-work-card {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    border-radius: 8px;
+    cursor: zoom-in;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+}
+.pf-work-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.pf-work-card img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); transition: opacity 0.15s; display: block; }
+.pf-work-card:hover img { opacity: 0.85; }
 </style>
 {% endblock %}
 {% block content %}
@@ -150,7 +162,11 @@
         <div class="pf-mgrid" data-gallery="pf-{{ key }}-{{ g.year }}-{{ g.month }}">
             {% for w in g.works %}
             {% set src = w.thumb or w.s3_url or "" %}
-            {% if src %}<img src="{{ src }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">{% endif %}
+            {% if src %}
+            <button type="button" class="pf-work-card" onclick="openGallery(this.querySelector('img'))" aria-label="Открыть фото {{ w.filename }}">
+                <img src="{{ src }}" alt="{{ w.filename }}" loading="lazy">
+            </button>
+            {% endif %}
             {% endfor %}
         </div>
     </div>

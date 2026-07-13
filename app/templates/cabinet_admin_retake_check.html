@@ -599,7 +599,7 @@ function buildMonthWorks(sid, works, galleryKey, subject, isUnassigned, subjects
             var bt = w.curator_score != null ? Math.round(w.curator_score) + '/100' : '—';
             html += '<div style="padding:12px 16px 8px">'
                 + '<div class="photo-wrap" data-gallery="' + esc(gallery) + '" style="display:inline-block">'
-                + '<img src="' + esc(w.s3_url) + '" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото" alt="" style="width:100%;max-width:320px;aspect-ratio:1;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--line);cursor:zoom-in;display:block">'
+                + '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото"><img src="' + esc(w.s3_url) + '" loading="lazy" alt="" style="width:100%;max-width:320px;aspect-ratio:1;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--line);display:block"></button>'
                 + '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
                 + '<button type="button" class="photo-del" title="Удалить работу" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)">&times;</button>'
                 + '</div>'

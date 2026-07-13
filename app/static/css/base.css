@@ -327,26 +327,6 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
    BUTTONS
    ═══════════════════════════════════════ */
 
-/* Dark pill — DEPRECATED (REDESIGN-PLAN-2 Фаза 0): 0 использований в шаблонах/JS.
-   Канонический primary = .btn-blue. Не применять в новом коде; удалить в Фазе 5. */
-.btn-dark {
-    display: inline-flex; align-items: center; gap: 8px;
-    background: var(--ink); color: #fff;
-    font-size: 14px; font-weight: 600;
-    padding: 13px 22px; border-radius: var(--r-pill);
-    border: none; cursor: pointer; font-family: inherit;
-    text-decoration: none;
-    transition: background var(--duration-fast), transform var(--duration-fast);
-}
-.btn-dark:hover { background: #000; transform: translateY(-1px); color: #fff; opacity: 1; }
-.btn-dark .arrow {
-    width: 22px; height: 22px;
-    background: var(--blue);
-    border-radius: 50%;
-    display: inline-flex; align-items: center; justify-content: center;
-    color: #fff; font-size: 13px;
-}
-
 /* Blue brand button */
 .btn-blue {
     display: inline-flex; align-items: center; gap: 8px;
@@ -375,22 +355,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 }
 .btn-outline:hover { border-color: var(--blue); color: var(--blue); opacity: 1; }
 
-/* Legacy primary button (kept for template compat) */
-.btn-primary {
-    display: inline-flex; align-items: center; justify-content: center;
-    background: var(--blue); color: #fff;
-    padding: 13px 28px; border-radius: var(--r-pill);
-    font-size: 14px; font-weight: 700; cursor: pointer;
-    font-family: inherit; border: none;
-    width: 100%; text-align: center;
-    transition: filter var(--duration-fast), box-shadow var(--duration-base), transform var(--duration-fast);
-    box-shadow: var(--sh-blue);
-}
-.btn-primary:hover { filter: brightness(1.05); box-shadow: 0 12px 32px rgba(59,91,255,.38); transform: translateY(-1px); color: #fff; opacity: 1; }
-.btn-primary:disabled { opacity: 0.38; cursor: not-allowed; transform: none; box-shadow: none; filter: none; }
-.btn-primary:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
-
-/* Full-width modifier (замена legacy .btn-primary: используем .btn-blue.btn-full) */
+/* Full-width primary modifier */
 .btn-full { width: 100%; justify-content: center; }
 
 /* Компактный save-модификатор (эталон «Сохранить балл» staff-проверки,
@@ -460,6 +425,15 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     margin-bottom: 10px;
 }
 .back-link:hover { color: var(--blue); opacity: 1; }
+
+/* Native trigger for image lightboxes. Keeps gallery thumbnails keyboard-accessible. */
+.photo-zoom-button {
+    display: block; max-width: 100%; padding: 0; border: 0;
+    background: transparent; color: inherit; font: inherit; line-height: 0;
+    cursor: zoom-in;
+}
+.photo-zoom-button > img { display: block; max-width: 100%; }
+.photo-zoom-button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
 /* Sticky mobile CTA (конвенция №5): обёртка вокруг primary-кнопки внизу
    главной формы экрана. position:sticky остаётся в потоке (не перекрывает
@@ -946,14 +920,15 @@ button.desk-nav-item {
 
 /* ── Touch devices ── */
 @media (hover: none), (pointer: coarse) {
-    .btn-primary:hover, .btn-dark:hover, .btn-blue:hover { transform: none; box-shadow: none; filter: none; }
+    .btn-blue, .btn-outline, .btn-danger, .btn-warn { min-height: 44px; }
+    .btn-blue:hover { transform: none; box-shadow: none; filter: none; }
     .btn-danger:hover { background: transparent; color: var(--error); }
     .btn-warn:hover { background: transparent; color: var(--warning-deep); }
     .btn-danger:active { background: var(--error); color: #fff; }
     .btn-warn:active { background: var(--warning-deep); color: #fff; }
     .card:hover, .card-dark:hover, .card-blue:hover { transform: none; box-shadow: var(--sh-sm); }
     .desk-nav-item:hover { background: none; color: var(--muted); }
-    .btn-primary:active { filter: brightness(0.95); }
+    .btn-blue:active { filter: brightness(0.95); }
     .card:active { border-color: rgba(59,91,255,.18); }
     .mobile-dashboard-logout__button:hover { transform: none; }
     .mobile-dashboard-logout__button:active { background: var(--blue-deep); }

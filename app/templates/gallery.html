@@ -60,13 +60,20 @@
 }
 @media (min-width: 480px) { .works-grid { grid-template-columns: repeat(4, 1fr); } }
 @media (min-width: 1024px) { .works-grid { grid-template-columns: repeat(6, 1fr); } }
-.work-cell { position: relative; border-radius: var(--r-sm); overflow: hidden; }
+.work-cell {
+    position: relative; border-radius: var(--r-sm); overflow: hidden;
+    display: block; width: 100%; padding: 0; border: 0; background: transparent;
+    font: inherit; color: inherit; text-align: inherit;
+}
+button.work-cell { cursor: zoom-in; -webkit-tap-highlight-color: transparent; }
+button.work-cell:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+button.work-cell:disabled { cursor: default; }
 .work-cell img {
     width: 100%; aspect-ratio: 1; object-fit: cover; display: block;
-    border: 1px solid var(--line); cursor: zoom-in;
+    border: 1px solid var(--line);
     transition: opacity 0.2s;
 }
-.work-cell img:hover { opacity: 0.88; }
+button.work-cell:hover img { opacity: 0.88; }
 .work-no-photo {
     aspect-ratio: 1; background: var(--surface); border-radius: var(--r-sm);
     border: 1px solid var(--line); display: flex; align-items: center;
@@ -96,6 +103,10 @@
 /* Empty state */
 .empty-mini {
     padding: 24px 0; text-align: center; color: var(--dim); font-size: 13px;
+}
+.gallery-empty-cta {
+    justify-content: center;
+    min-width: 220px;
 }
 </style>
 {% endblock %}
@@ -153,7 +164,7 @@
         </div>
         <div style="font-size:17px;font-weight:700;margin-bottom:8px">Работ пока нет</div>
         <div style="color:var(--dim);font-size:14px;margin-bottom:20px">Загрузите первые фото — они появятся здесь</div>
-        <a href="/upload" class="btn-primary" style="max-width:220px;display:inline-block;padding:11px 24px">Загрузить фото</a>
+        <a href="/upload" class="btn-blue gallery-empty-cta">Загрузить фото</a>
     </div>
     {% else %}
 
@@ -177,16 +188,23 @@
                     <div class="works-grid" id="grid-{{ gid }}" data-gallery="{{ gid }}">
                         {% for w in group.works %}
                         {% set thumb = w.s3_url or (drive_thumbs.get(w.drive_file_id, '') if w.drive_file_id else '') %}
-                        <div class="work-cell" data-page-index="{{ loop.index0 }}">
                             {% if thumb %}
-                            <img src="{{ thumb }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото"
-                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-                            {% endif %}
+                        <button type="button" class="work-cell" data-page-index="{{ loop.index0 }}" onclick="openGallery(this.querySelector('img'))" aria-label="Открыть фото {{ w.filename }}">
+                            <img src="{{ thumb }}" alt="{{ w.filename }}" loading="lazy"
+                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex';this.closest('.work-cell').disabled=true">
                             <div class="work-no-photo" style="display:{% if not thumb %}flex{% else %}none{% endif %}">фото</div>
                             {% if w.score is not none %}
                             <div class="score-badge">{{ w.score | int }}</div>
                             {% endif %}
+                        </button>
+                            {% else %}
+                        <div class="work-cell" data-page-index="{{ loop.index0 }}">
+                            <div class="work-no-photo">фото</div>
+                            {% if w.score is not none %}
+                            <div class="score-badge">{{ w.score | int }}</div>
+                            {% endif %}
                         </div>
+                            {% endif %}
                         {% endfor %}
                     </div>
                     {% if group.total > page_size %}
@@ -224,16 +242,23 @@
                     <div class="works-grid" id="grid-{{ gid }}" data-gallery="{{ gid }}">
                         {% for w in group.works %}
                         {% set thumb = w.s3_url or (drive_thumbs.get(w.drive_file_id, '') if w.drive_file_id else '') %}
-                        <div class="work-cell" data-page-index="{{ loop.index0 }}">
                             {% if thumb %}
-                            <img src="{{ thumb }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото"
-                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-                            {% endif %}
+                        <button type="button" class="work-cell" data-page-index="{{ loop.index0 }}" onclick="openGallery(this.querySelector('img'))" aria-label="Открыть фото {{ w.filename }}">
+                            <img src="{{ thumb }}" alt="{{ w.filename }}" loading="lazy"
+                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex';this.closest('.work-cell').disabled=true">
                             <div class="work-no-photo" style="display:{% if not thumb %}flex{% else %}none{% endif %}">фото</div>
                             {% if w.score is not none %}
                             <div class="score-badge">{{ w.score | int }}</div>
                             {% endif %}
+                        </button>
+                            {% else %}
+                        <div class="work-cell" data-page-index="{{ loop.index0 }}">
+                            <div class="work-no-photo">фото</div>
+                            {% if w.score is not none %}
+                            <div class="score-badge">{{ w.score | int }}</div>
+                            {% endif %}
                         </div>
+                            {% endif %}
                         {% endfor %}
                     </div>
                     {% if group.total > page_size %}
@@ -271,16 +296,23 @@
                     <div class="works-grid" id="grid-{{ gid }}" data-gallery="{{ gid }}">
                         {% for w in group.works %}
                         {% set thumb = w.s3_url or '' %}
-                        <div class="work-cell" data-page-index="{{ loop.index0 }}">
                             {% if thumb %}
-                            <img src="{{ thumb }}" alt="{{ w.subject or w.filename }}" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото"
-                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-                            {% endif %}
+                        <button type="button" class="work-cell" data-page-index="{{ loop.index0 }}" onclick="openGallery(this.querySelector('img'))" aria-label="Открыть фото {{ w.subject or w.filename }}">
+                            <img src="{{ thumb }}" alt="{{ w.subject or w.filename }}" loading="lazy"
+                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex';this.closest('.work-cell').disabled=true">
                             <div class="work-no-photo" style="display:{% if not thumb %}flex{% else %}none{% endif %}">фото</div>
                             {% if w.score is not none %}
                             <div class="score-badge">{{ w.score | int }}</div>
                             {% endif %}
+                        </button>
+                            {% else %}
+                        <div class="work-cell" data-page-index="{{ loop.index0 }}">
+                            <div class="work-no-photo">фото</div>
+                            {% if w.score is not none %}
+                            <div class="score-badge">{{ w.score | int }}</div>
+                            {% endif %}
                         </div>
+                            {% endif %}
                         {% endfor %}
                     </div>
                     {% if group.total > page_size %}
@@ -318,16 +350,23 @@
                     <div class="works-grid" id="grid-{{ gid }}" data-gallery="{{ gid }}">
                         {% for w in group.works %}
                         {% set thumb = w.s3_url or '' %}
-                        <div class="work-cell" data-page-index="{{ loop.index0 }}">
                             {% if thumb %}
-                            <img src="{{ thumb }}" alt="{{ w.filename }}" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото"
-                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-                            {% endif %}
+                        <button type="button" class="work-cell" data-page-index="{{ loop.index0 }}" onclick="openGallery(this.querySelector('img'))" aria-label="Открыть фото {{ w.filename }}">
+                            <img src="{{ thumb }}" alt="{{ w.filename }}" loading="lazy"
+                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex';this.closest('.work-cell').disabled=true">
                             <div class="work-no-photo" style="display:{% if not thumb %}flex{% else %}none{% endif %}">фото</div>
                             {% if w.score is not none %}
                             <div class="score-badge">{{ w.score | int }}</div>
                             {% endif %}
+                        </button>
+                            {% else %}
+                        <div class="work-cell" data-page-index="{{ loop.index0 }}">
+                            <div class="work-no-photo">фото</div>
+                            {% if w.score is not none %}
+                            <div class="score-badge">{{ w.score | int }}</div>
+                            {% endif %}
                         </div>
+                            {% endif %}
                         {% endfor %}
                     </div>
                     {% if group.total > page_size %}

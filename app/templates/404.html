@@ -71,27 +71,30 @@
         text-shadow: 0 0 20px rgba(255,255,255,0.9), 0 0 8px rgba(255,255,255,0.7);
     }
 
-    .btn-home {
+    .error-actions {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .error-cta {
+        display: inline-flex;
+        justify-content: center;
+        min-width: 190px;
+    }
+
+    .error-support-link {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
-        background: var(--blue);
-        color: #fff;
-        padding: 13px 32px;
-        border-radius: var(--r-md);
-        font-size: 15px;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 13px;
         font-weight: 700;
         text-decoration: none;
-        font-family: inherit;
-        transition: background var(--duration-base), transform var(--duration-fast), box-shadow var(--duration-base);
-        box-shadow: var(--sh-blue);
     }
-    .btn-home:hover {
-        filter: brightness(1.1);
-        color: #fff;
-        transform: translateY(-2px);
-        box-shadow: 0 12px 32px rgba(59,91,255,0.35);
-        opacity: 1;
+    .error-support-link:hover {
+        color: var(--blue);
     }
 </style>
 {% endblock %}
@@ -110,10 +113,12 @@
     <h1 class="error-title">Страница не найдена</h1>
     <p class="error-desc">Такой страницы нет — скорее всего, ссылка устарела.</p>
 
-    <a href="/" class="btn-home">← На главную</a>
-    <a href="https://t.me/roman_chatbots" target="_blank" class="btn-home" style="margin-top:12px;background:var(--blue-deep)">
-        <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Техподдержка
-    </a>
+    <div class="error-actions">
+        <a href="/" class="btn-blue error-cta">← На главную</a>
+        <a href="https://t.me/roman_chatbots" target="_blank" rel="noopener noreferrer" class="error-support-link">
+            <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Техподдержка
+        </a>
+    </div>
 </div>
 <script>
     document.querySelector('.digit-zero video')?.play().catch(() => {});

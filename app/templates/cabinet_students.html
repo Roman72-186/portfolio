@@ -1817,7 +1817,7 @@ function buildPortfolioMonthBlock(sid, workType, g, blockId) {
     html += '<div class="month-grid" style="display:none" data-gallery="' + workType + '-' + sid + '-' + esc(g.year) + '-' + esc(g.month) + '">';
     g.works.forEach(function(w) {
         if (w.s3_url) {
-            var img = '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото">';
+            var img = '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото"><img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy"></button>';
             html += wrapPortfolioPhoto(img, sid, w.id, workType);
         }
     });
@@ -2185,7 +2185,7 @@ function buildMockDayPanel(sid, subject, grouped, state) {
         var imgStyle = hero
             ? 'style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--line);cursor:zoom-in;display:block"'
             : 'style="width:88px;height:88px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:zoom-in;display:block"';
-        var img = '<img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото" ' + imgStyle + '>';
+        var img = '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото"><img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" ' + imgStyle + '></button>';
         var badge = '<span class="work-score-badge ' + bc + '">' + bt + '</span>';
         var delBtn = CAN_SCORE
             ? '<button class="photo-del" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)" title="Удалить">&times;</button>'
@@ -2416,7 +2416,7 @@ function buildRetakeWorkCard(sid, w, subject, allSubjects, gallery) {
         var bt = w.curator_score != null ? Math.round(w.curator_score) + '/100' : '—';
         html += '<div style="padding:0 0 8px">'
             + '<div class="photo-wrap" data-gallery="' + esc(gallery) + '" style="display:inline-block">'
-            + '<img src="' + esc(w.s3_url) + '" loading="lazy" onclick="openGallery(this)" tabindex="0" role="button" aria-label="Открыть фото" alt="" style="width:100%;max-width:320px;aspect-ratio:1;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--line);cursor:zoom-in;display:block">'
+            + '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото"><img src="' + esc(w.s3_url) + '" loading="lazy" alt="" style="width:100%;max-width:320px;aspect-ratio:1;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--line);display:block"></button>'
             + '<span class="work-score-badge ' + bc + '">' + bt + '</span>'
             + '</div>'
             + '</div>';

@@ -173,15 +173,6 @@
         else if (e.key === 'ArrowRight') window.lightboxStep(1);
     });
 
-    // Клавиатурный доступ для триггеров галереи (img[role="button"] с onclick=openGallery/openLightbox).
-    document.addEventListener('keydown', function(e){
-        if (e.key !== 'Enter' && e.key !== ' ') return;
-        var el = e.target;
-        if (!el || el.tagName !== 'IMG' || el.getAttribute('role') !== 'button') return;
-        e.preventDefault();
-        el.click();
-    });
-
     // Swipe navigation on touch
     var touchStartX = null;
     img.addEventListener('touchstart', function(e){

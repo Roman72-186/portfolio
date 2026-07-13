@@ -43,21 +43,13 @@
 }
 .staff-input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(59,91,255,.15); }
 .staff-btn {
-    width: 100%; padding: 15px;
-    background: var(--blue);
-    color: #fff; border: none; border-radius: var(--r-pill);
+    width: 100%;
+    justify-content: center;
+    padding: 15px;
     font-size: 15px; font-weight: 700;
-    font-family: inherit;
-    cursor: pointer; margin-top: 8px;
-    box-shadow: var(--sh-blue);
-    transition: filter 0.15s, transform 0.15s;
+    margin-top: 8px;
 }
-.staff-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
-.back-link {
-    display: block; text-align: center; margin-top: 20px;
-    font-size: 13px; color: var(--dim); text-decoration: none;
-}
-.back-link:hover { color: var(--blue); opacity: 1; }
+.staff-back { margin: 20px auto 0; }
 </style>
 {% endblock %}
 {% block content %}
@@ -84,10 +76,10 @@
                        placeholder="Введите пароль" autocomplete="current-password"
                        required>
             </div>
-            <button type="submit" class="staff-btn">Войти</button>
+            <button type="submit" class="btn-blue btn-full staff-btn">Войти</button>
         </form>
 
-        <a href="/" class="back-link">← Вернуться на главную</a>
+        <a href="/" class="back-link staff-back">← Вернуться на главную</a>
     </div>
 </div>
 {% endblock %}
