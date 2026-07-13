@@ -320,7 +320,7 @@ def test_staff_structured_first_feedback_composed_into_one_message(
     text = msgs[0].text
     assert "Общее впечатление:\nВ целом крепко" in text
     assert "Что хорошо:\nКомпозиция сильная" in text
-    assert "Что усилить:\nТон в тенях" in text
+    assert "Что улучшить:\nТон в тенях" in text
     assert "Рекомендации:\nПоработать над краями" in text
 
 

@@ -104,6 +104,15 @@ window.CYCCAL = window.CYCCAL || (function () {
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
     function cap(s) { s = String(s||''); return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; }
+    function workCountLabel(n) {
+        n = Number(n) || 0;
+        const mod10 = Math.abs(n) % 10;
+        const mod100 = Math.abs(n) % 100;
+        const word = (mod10 === 1 && mod100 !== 11)
+            ? 'работа'
+            : (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? 'работы' : 'работ');
+        return n + ' ' + word;
+    }
     function nl2br(s) { return esc(s).replace(/\n/g, '<br>'); }
 
     function getWorkDate(w) {
@@ -282,7 +291,7 @@ window.CYCCAL = window.CYCCAL || (function () {
         const works = selected ? (grouped[selected] || []) : [];
         let html = '<div class="cal-detail">';
         if (!works.length) {
-            return html + '<div class="cal-detail-empty">Нажми на синюю дату в календаре, чтобы открыть работу.</div></div>';
+            return html + '<div class="cal-detail-empty">Нажмите на синюю дату в календаре, чтобы открыть работу.</div></div>';
         }
         works.forEach(function(w, i) {
             const gallery = inst.key+'-'+esc(subject)+'-'+esc(selected)+'-'+i;
@@ -317,7 +326,7 @@ window.CYCCAL = window.CYCCAL || (function () {
             const grouped = groupByDate(works);
             const state = getState(inst, idx, grouped);
             html += '<div class="subj-card">';
-            html += '<div class="subj-header"><div class="subj-title">'+esc(subj)+'</div><div class="subj-count">'+works.length+' работ</div></div>';
+            html += '<div class="subj-header"><div class="subj-title">'+esc(subj)+'</div><div class="subj-count">'+workCountLabel(works.length)+'</div></div>';
             if (works.length) {
                 html += '<div class="cal-layout">' + buildSide(inst, idx, grouped, state) + buildDetail(inst, subj, grouped, state) + '</div>';
             } else {

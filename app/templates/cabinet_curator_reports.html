@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Видео-отчёты{% endblock %}
+{% block title %}Видеоотчёты{% endblock %}
 {% block extra_styles %}
 <style>
 .reports-page { max-width: 720px; margin: 0 auto; }
@@ -65,19 +65,19 @@
 <div class="reports-page">
 
     <div class="reports-head">
-        <div class="reports-title">🎬 Видео-отчёты{% if is_staff %} кураторов{% endif %}</div>
+        <div class="reports-title">🎬 Видеоотчёты{% if is_staff %} кураторов{% endif %}</div>
         <div class="reports-sub">
             {% if is_staff %}
             Все видео-отчёты, присланные кураторами. Новые также приходят вам в уведомлениях.
             {% else %}
-            Выберите видео с компьютера или телефона либо снимите его сразу через камеру.
-            Отчёт загрузится напрямую и уйдёт уведомлением админам и руководителю.
+            Выберите готовое видео или снимите его на телефон.
+            После загрузки администраторы и руководитель получат уведомление.
             {% endif %}
         </div>
     </div>
 
     {% if ok %}
-    <div class="alert alert-success">✓ Отчёт отправлен админам и руководителю.</div>
+    <div class="alert alert-success">✓ Отчёт отправлен администраторам и руководителю.</div>
     {% endif %}
     {% if deleted %}
     <div class="alert alert-success">✓ Видео-отчёт удалён.</div>
@@ -94,7 +94,7 @@
             <div class="report-field">
                 <label class="field-label" for="video">Видео-отчёт</label>
                 <input class="report-file" type="file" id="video" name="video" accept="video/*" required>
-                <div class="field-hint">Можно выбрать готовый видео-файл или снять видео сразу с телефона. Ссылки не нужны.</div>
+                <div class="field-hint">Можно выбрать готовое видео или снять новое с телефона. Ссылку вставлять не нужно.</div>
             </div>
 
             <div class="report-field">

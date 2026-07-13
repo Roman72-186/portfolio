@@ -363,7 +363,7 @@
                         {% if viewer_role == 'student' %}
                             Ждём обратной связи от куратора.
                         {% else %}
-                            Сообщений пока нет. Напишите первое.
+                            Обратной связи пока нет. Напишите первое сообщение ученику.
                         {% endif %}
                     </div>
                 {% endif %}
@@ -443,8 +443,8 @@
                         <textarea name="good" rows="2" placeholder="Сильные стороны работы"></textarea>
                     </div>
                     <div class="dlg-sf-field">
-                        <label class="dlg-sf-label">Что усилить</label>
-                        <textarea name="strengthen" rows="2" placeholder="Слабые места, над чем поработать"></textarea>
+                        <label class="dlg-sf-label">Что улучшить</label>
+                        <textarea name="strengthen" rows="2" placeholder="Зоны роста и над чем поработать"></textarea>
                     </div>
                     <div class="dlg-sf-field">
                         <label class="dlg-sf-label">Рекомендации</label>
@@ -470,13 +470,13 @@
                         </label>
                         <button type="submit" class="btn-blue dlg-send">Отправить обратную связь</button>
                     </div>
-                    <div class="dlg-form-hint">Заполни хотя бы один пункт или прикрепи фото до 25 МБ / видео до 500 МБ. Фото будет сжато автоматически.</div>
+                    <div class="dlg-form-hint">Заполните хотя бы один пункт или прикрепите фото до 25 МБ / видео до 500 МБ. Фото будет сжато автоматически.</div>
                 </form>
             {% else %}
                 <form class="dlg-form" method="post" action="/cabinet/feedback/{{ target_work_id }}/message" enctype="multipart/form-data" data-work-id="{{ target_work_id }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                     <div class="dlg-form-row">
-                        <textarea name="text" placeholder="Напишите сообщение или прикрепите фото" rows="3"></textarea>
+                        <textarea name="text" placeholder="Напишите сообщение или прикрепите фото/видео" rows="3"></textarea>
                         <div class="dlg-form-actions">
                             <label class="dlg-attach">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
@@ -509,7 +509,7 @@
         {% endif %}
         <section class="dlg-close-zone">
             <div class="dlg-score" data-work-id="{{ a.work_id }}" data-student-id="{{ student.id }}">
-                <div class="dlg-score-label">Оценить работу (последнее отправленное фото — финальное)</div>
+                <div class="dlg-score-label">Оценить финальную работу</div>
                 {% if a.score is not none %}
                     <div class="dlg-score-current" id="score-view-{{ a.work_id }}">
                         <span class="dlg-attempt-score {{ score_cls }}">{{ a.score|int }} / 100</span>
@@ -767,7 +767,7 @@ document.querySelectorAll('form.dlg-form').forEach(form => {
         const btn = form.querySelector('.dlg-send');
         const anyText = Array.from(form.querySelectorAll('textarea')).some(t => (t.value || '').trim());
         const hasFile = Array.from(form.querySelectorAll('input[type="file"]')).some(i => i.files && i.files.length > 0);
-        if (!anyText && !hasFile) { alert('Заполни хотя бы один пункт или прикрепи фото/видео'); return; }
+        if (!anyText && !hasFile) { alert('Заполните хотя бы один пункт или прикрепите фото/видео'); return; }
         btn.disabled = true;
         const origText = btn.textContent;
         btn.textContent = 'Отправка…';

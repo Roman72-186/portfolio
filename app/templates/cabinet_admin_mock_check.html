@@ -473,9 +473,9 @@ const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
                 {% if ss | length >= 2 %}
                 <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверено</span>
                 {% elif 'Рисунок' in ss %}
-                <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверен рис</span>
+                <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверен рисунок</span>
                 {% elif 'Композиция' in ss %}
-                <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверен комп</span>
+                <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверена композиция</span>
                 {% elif s.unchecked %}
                 <span class="pending-badge">{{ s.unchecked }}</span>
                 {% endif %}
@@ -555,7 +555,7 @@ function renderMockExams(data) {
         });
         scoreHtml += '</div>';
     } else if (s.avg_score != null) {
-        scoreHtml = '<div class="student-hero-score"><div class="score-big">' + s.avg_score + '</div><div class="score-label">ср. балл</div></div>';
+        scoreHtml = '<div class="student-hero-score"><div class="score-big">' + s.avg_score + '</div><div class="score-label">средний балл</div></div>';
     }
     var html = '<button class="mobile-back-btn" onclick="backToList()">← К списку учеников</button>'
         + '<div class="student-hero">'
@@ -590,8 +590,8 @@ function buildSubjectCard(subject, data, subjectIndex) {
     var state = getMockCalendarState(sid, subjectIndex, grouped);
 
     var lockBadge = isLocked
-        ? '<span class="lock-badge locked"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Пересдача закрыта</span>'
-        : '<span class="lock-badge open"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Открыто</span>';
+        ? '<span class="lock-badge locked"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Повторная сдача закрыта</span>'
+        : '<span class="lock-badge open"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Повторная сдача открыта</span>';
 
     var html = '<div class="subject-card' + (isScored ? ' is-scored' : '') + '">'
         + '<div class="subject-card-header">'
@@ -899,8 +899,8 @@ function buildScoreForm(sid, workId, currentScore, currentComment) {
         + '<textarea name="comment" placeholder="Комментарий" maxlength="500">' + commentVal + '</textarea>'
         + '<div class="score-form-btns">'
         +   '<button type="button" class="btn-blue btn-save" onclick="submitScore(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Сохранить балл</button>'
-        +   '<button type="button" class="btn-retake" onclick="submitRetake(' + sid + ',' + workId + ',\'' + formId + '\')" title="Поставить оценку и отправить работу на отработку"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> На отработку</button>'
-        +   (IS_SUPERADMIN ? '<button type="button" class="btn-revision" onclick="submitRevision(' + sid + ',' + workId + ',\'' + formId + '\')" title="Вернуть на доработку — студент переснимает фото пробника заново"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> На доработку</button>' : '')
+        +   '<button type="button" class="btn-retake" onclick="submitRetake(' + sid + ',' + workId + ',\'' + formId + '\')" title="Поставить оценку и отправить работу на отработку"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Отправить на отработку</button>'
+        +   (IS_SUPERADMIN ? '<button type="button" class="btn-revision" onclick="submitRevision(' + sid + ',' + workId + ',\'' + formId + '\')" title="Вернуть на доработку — ученик заново загрузит фото пробника"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Вернуть на доработку</button>' : '')
         + '</div>'
         + '<div class="score-msg" style="display:none"></div>'
         + '</div>';

@@ -450,7 +450,7 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
     <!-- ── ЧТО ДАЛЬШЕ ── -->
     {% if not user.portfolio_do_completed %}
     <a href="/upload" class="next-card next-card--blue">
-        <div class="next-card-title">Загрузите портфолио «До»</div>
+        <div class="next-card-title">Загрузите работы «До»</div>
         <div class="next-card-note">Первый шаг — покажите свои работы до обучения у нас. Это займёт пару минут.</div>
         <span class="next-card-cta">Загрузить фото →</span>
     </a>
@@ -463,11 +463,11 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
             <span class="next-card-chip">На проверке: {{ active_cycle.pending_review_count }} {{ 'работа' if active_cycle.pending_review_count == 1 else 'работы' }}</span>
             {% endif %}
             {% if unread_count > 0 %}
-            <span class="next-card-chip">Новых сообщений ОС: {{ unread_count }}</span>
+            <span class="next-card-chip">Новых сообщений от куратора: {{ unread_count }}</span>
             {% endif %}
         </div>
         {% if active_cycle.pending_review_count == 0 and unread_count == 0 %}
-        <div class="next-card-note">Куратор проверил все работы цикла — ждём новых материалов.</div>
+        <div class="next-card-note">Сейчас нет работ на проверке. Новые сообщения появятся в разделе «Цикл».</div>
         {% endif %}
         <span class="next-card-cta">Перейти к циклу →</span>
     </a>
@@ -621,7 +621,7 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
             <span class="tariff-badge tariff-current">
                 <span class="tariff-dot"></span>
                 {{ user.tariff }}
-                <span style="font-size:11px;font-weight:500;opacity:0.65">текущий</span>
+                <span style="font-size:11px;font-weight:500;opacity:0.65">сейчас</span>
             </span>
             {% endif %}
             {% if user.past_tariffs %}

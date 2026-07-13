@@ -372,7 +372,7 @@ async def post_dialog_message(
         for label, value in (
             ("Общее впечатление", impression),
             ("Что хорошо", good),
-            ("Что усилить", strengthen),
+            ("Что улучшить", strengthen),
             ("Рекомендации", recommendations),
         ):
             v = (value or "").strip()

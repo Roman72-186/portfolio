@@ -298,7 +298,7 @@ def test_activity_page_renders_with_data(superadmin_client, db, user_factory):
     assert "Статистика активности" in resp.text
     assert "Скорость проверки работ" in resp.text
     assert "Куратор Быстрый" in resp.text
-    assert "Возвраты ОС на правку" in resp.text
+    assert "Возвраты обратной связи на правку" in resp.text
     assert "Ученик Активный" in resp.text
     assert "Смена куратора" in resp.text
     assert "Смена тарифа" in resp.text
@@ -309,7 +309,7 @@ def test_activity_page_renders_with_data(superadmin_client, db, user_factory):
     assert "Циклы Пробника" in resp.text
     assert "Пересдачи и доработки" in resp.text
     assert "Самооценка vs оценка куратора" in resp.text
-    assert "Одноразовые login-ссылки" in resp.text
+    assert "Одноразовые ссылки для входа" in resp.text
 
 
 def test_activity_page_forbidden_for_student(auth_client):
@@ -323,4 +323,4 @@ def test_activity_page_renders_empty(superadmin_client):
     resp = client.get("/cabinet/superadmin/activity")
     assert resp.status_code == 200
     assert "Оценённых работ пока нет" in resp.text
-    assert "Сейчас ни один цикл не висит на правке" in resp.text
+    assert "Нет циклов, ожидающих правки" in resp.text

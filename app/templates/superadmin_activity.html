@@ -62,7 +62,7 @@
     <div class="ss-header">
         <a href="/cabinet" class="back-link" style="margin-bottom:0">← Дашборд</a>
         <h1 class="ss-title">Статистика активности</h1>
-        <span class="ss-since">Входы, реакции и правки копятся с 11.07.2026</span>
+        <span class="ss-since">Данные о входах, реакциях и правках собираются с 11.07.2026</span>
     </div>
 
     <!-- Плитки: входы + онбординг -->
@@ -135,7 +135,7 @@
 
     <!-- 2. Возвраты на правку ОС -->
     <details class="ss-acc">
-        <summary><h2 class="ss-acc-title">Возвраты ОС на правку</h2><span class="ss-acc-badge">{{ revisions.pending | length }} на правке · {{ revisions.done_count }} завершено{% if revisions.avg_fix_text %} · среднее {{ revisions.avg_fix_text }}{% endif %}</span></summary>
+        <summary><h2 class="ss-acc-title">Возвраты обратной связи на правку</h2><span class="ss-acc-badge">{{ revisions.pending | length }} на правке · {{ revisions.done_count }} завершено{% if revisions.avg_fix_text %} · среднее {{ revisions.avg_fix_text }}{% endif %}</span></summary>
         <div class="ss-acc-body">
             {% if revisions.pending %}
             <div class="ss-table-wrap">
@@ -153,7 +153,7 @@
                     </tbody>
                 </table>
             </div>
-            {% else %}<div class="ss-empty">Сейчас ни один цикл не висит на правке</div>{% endif %}
+            {% else %}<div class="ss-empty">Нет циклов, ожидающих правки</div>{% endif %}
         </div>
     </details>
 
@@ -164,7 +164,7 @@
             <div class="ss-stats-strip" style="grid-template-columns: repeat(4, 1fr)">
                 <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.total }}</div><div class="ss-stat-lbl">Билетов получено</div></div>
                 <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.completed_count }}</div><div class="ss-stat-lbl">Сдано</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.expired_count }}</div><div class="ss-stat-lbl">Сгорело (не сдано за 4 ч.)</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.expired_count }}</div><div class="ss-stat-lbl">Истёк срок сдачи (не сдано за 4 ч.)</div></div>
                 <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.avg_text or "—" }}</div><div class="ss-stat-lbl">Среднее время до сдачи</div></div>
             </div>
             {% if mock_attempts.by_subject %}
@@ -241,7 +241,7 @@
 
     <!-- 3а. Login-ссылки -->
     <details class="ss-acc">
-        <summary><h2 class="ss-acc-title">Одноразовые login-ссылки</h2><span class="ss-acc-badge">{{ login_links.used_count }} / {{ login_links.total }} использовано{% if login_links.conversion_pct is not none %} ({{ login_links.conversion_pct }}%){% endif %}</span></summary>
+        <summary><h2 class="ss-acc-title">Одноразовые ссылки для входа</h2><span class="ss-acc-badge">{{ login_links.used_count }} / {{ login_links.total }} использовано{% if login_links.conversion_pct is not none %} ({{ login_links.conversion_pct }}%){% endif %}</span></summary>
         <div class="ss-acc-body">
             <div class="ss-stats-strip" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 0">
                 <div class="ss-stat"><div class="ss-stat-val">{{ login_links.total }}</div><div class="ss-stat-lbl">Выдано ссылок</div></div>
@@ -258,7 +258,7 @@
         <div class="ss-acc-body">
             <div class="ss-stats-strip" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 0">
                 <div class="ss-stat"><div class="ss-stat-val">{{ report_views.total }}</div><div class="ss-stat-lbl">Всего отчётов</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ report_views.viewed_count }}</div><div class="ss-stat-lbl">Просмотрено staff</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ report_views.viewed_count }}</div><div class="ss-stat-lbl">Просмотрено сотрудниками</div></div>
                 <div class="ss-stat"><div class="ss-stat-val">{{ report_views.avg_view_text or "—" }}</div><div class="ss-stat-lbl">Среднее время до просмотра</div></div>
             </div>
         </div>

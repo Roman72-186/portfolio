@@ -148,7 +148,7 @@ def test_dashboard_shows_portfolio_cta_when_not_completed(client, user_factory, 
                       vk_id=100_108, portfolio_do_completed=False)
     resp = client.get("/cabinet/student")
     assert resp.status_code == 200
-    assert "Загрузите портфолио" in resp.text
+    assert "Загрузите работы" in resp.text
     assert 'href="/upload"' in resp.text
 
 
@@ -157,7 +157,7 @@ def test_dashboard_hides_portfolio_cta_when_completed(auth_client):
     client, _ = auth_client
     resp = client.get("/cabinet/student")
     assert resp.status_code == 200
-    assert "Загрузите портфолио" not in resp.text
+    assert "Загрузите работы" not in resp.text
 
 
 def test_dashboard_shows_mock_count_and_avg(auth_client, db):
@@ -224,8 +224,8 @@ def test_portfolio_renders_before_after_month_blocks(auth_client, db):
     client, user = auth_client
     db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
     db.add_all([
-        Work(user_id=user.id, work_type=WORK_TYPE_BEFORE, month="январь", year=2026, filename="before-1.jpg", status="success"),
-        Work(user_id=user.id, work_type=WORK_TYPE_BEFORE, month="февраль", year=2026, filename="before-2.jpg", status="success"),
+        Work(user_id=user.id, work_type=WORK_TYPE_BEFORE, month="январь", year=2026, filename="before-1.jpg", s3_url="https://s3.example/before-1.jpg", status="success"),
+        Work(user_id=user.id, work_type=WORK_TYPE_BEFORE, month="февраль", year=2026, filename="before-2.jpg", s3_url="https://s3.example/before-2.jpg", status="success"),
     ])
     db.commit()
 
@@ -321,24 +321,35 @@ def test_cycle_page_returns_200_empty(auth_client):
     assert resp.status_code == 200
 
 
-def test_cycle_page_shows_mock_works_in_payload(auth_client, db):
+def test_cycle_page_shows_closed_mock_cycle(auth_client, db):
+    from app.models.exam_cycle import ExamCycle
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
     client, user = auth_client
+    cycle = ExamCycle(
+        user_id=user.id,
+        subject="Рисунок",
+        started_at=date(2026, 1, 10),
+        closed_at=datetime(2026, 1, 10, 12, 0, tzinfo=timezone.utc),
+    )
+    db.add(cycle)
+    db.flush()
     db.add(Work(
         user_id=user.id,
         work_type=WORK_TYPE_MOCK_EXAM,
         month="01", year=2026,
         filename="a_mock_only.jpg",
-        subject="Drawing-subject",
+        s3_url="https://s3.example/a_mock_only.jpg",
+        subject="Рисунок",
         score=Decimal("75"),
         status="success",
         is_final=True,
+        cycle_id=cycle.id,
     ))
     db.commit()
     resp = client.get("/cabinet/cycle")
     assert resp.status_code == 200
-    assert "a_mock_only.jpg" in resp.text
-    assert "WORKS_BY_SUBJECT" in resp.text
+    assert "Рисунок" in resp.text
+    assert "75 / 100" in resp.text
 
 
 # 5. Gallery and history

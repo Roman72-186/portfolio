@@ -447,7 +447,7 @@ function buildSubjectRetakeBlock(sid, subject, works, isUnassigned, subjects) {
     var html = '<div class="subject-block" style="margin-bottom:24px"' + dropAttrs + '>'
         + '<div class="subject-block-header" style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:var(--surface-2);border:1.5px solid var(--line);border-radius:var(--r-md) var(--r-md) 0 0;border-bottom:none">'
         +   '<h3 style="margin:0;font-family:var(--font-display);font-size:16px;font-weight:800;color:var(--ink)">' + esc(subject) + '</h3>'
-        +   '<span style="font-size:12px;color:var(--muted)">' + works.length + ' работ</span>'
+        +   '<span style="font-size:12px;color:var(--muted)">' + workCountLabel(works.length) + '</span>'
         + '</div>'
         + '<div class="subject-block-body" style="border:1.5px solid var(--line);border-top:none;border-radius:0 0 var(--r-md) var(--r-md);padding:12px;background:var(--surface)">';
 
@@ -472,7 +472,7 @@ function buildSubjectRetakeBlock(sid, subject, works, isUnassigned, subjects) {
         html += '<div class="month-block">'
             + '<div class="month-header">'
             +   '<h4 class="month-label">' + esc(label) + '</h4>'
-            +   '<span class="month-count">' + monthWorks.length + ' работ</span>'
+            +   '<span class="month-count">' + workCountLabel(monthWorks.length) + '</span>'
             + '</div>';
         html += buildMonthWorks(sid, monthWorks, year + '-' + monthName + '-' + esc(subject), subject, isUnassigned, subjects || []);
         html += '</div>';
@@ -530,7 +530,7 @@ function buildRetakeMoveButtons(sid, workIds, currentSubject, subjects) {
     var buttons = '';
     subjects.forEach(function(sj) {
         if (sj === currentSubject) return;
-        buttons += '<button type="button" class="retake-move-btn" onclick="moveRetakesToSubject(' + sid + ',\'' + esc(workIds) + '\',\'' + esc(sj) + '\')">В ' + esc(sj) + '</button>';
+        buttons += '<button type="button" class="retake-move-btn" onclick="moveRetakesToSubject(' + sid + ',\'' + esc(workIds) + '\',\'' + esc(sj) + '\')">Перенести в ' + esc(sj) + '</button>';
     });
     return buttons ? '<div class="retake-move-row">' + buttons + '</div>' : '';
 }
@@ -776,6 +776,15 @@ function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
 function esc(s) {
     if (s == null) return '';
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function workCountLabel(n) {
+    n = Number(n) || 0;
+    var mod10 = Math.abs(n) % 10;
+    var mod100 = Math.abs(n) % 100;
+    var word = (mod10 === 1 && mod100 !== 11)
+        ? 'работа'
+        : (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? 'работы' : 'работ');
+    return n + ' ' + word;
 }
 
 if (INITIAL_STUDENT_ID) selectStudent(INITIAL_STUDENT_ID);

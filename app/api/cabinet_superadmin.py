@@ -140,7 +140,7 @@ async def rotate_photo(
     direction: Annotated[str, Form()],
 ):
     if direction not in ("left", "right"):
-        return JSONResponse({"success": False, "error": "Неверное направление"}, status_code=422)
+        return JSONResponse({"success": False, "error": "Неверное направление поворота"}, status_code=422)
     if not s3_service.is_configured():
         return JSONResponse({"success": False, "error": "S3 не настроен"}, status_code=503)
 
@@ -2610,11 +2610,11 @@ async def retry_drive_sync(
         raise HTTPException(status_code=404, detail="Работа не найдена")
 
     if not work.s3_url and not work.s3_path:
-        raise HTTPException(status_code=400, detail="У работы нет файла в S3 — ретрай невозможен")
+        raise HTTPException(status_code=400, detail="У работы нет файла в хранилище — повторная отправка невозможна")
 
     student = db.query(User).filter(User.id == work.user_id).first()
     if not student:
-        raise HTTPException(status_code=404, detail="Студент не найден")
+        raise HTTPException(status_code=404, detail="Ученик не найден")
 
     # Reset status so background task will update it
     work.drive_status = "pending"
@@ -2634,7 +2634,7 @@ async def retry_drive_sync(
             logger.warning("retry_drive_sync: could not fetch S3 for work_id=%s: %s", work_id, exc)
 
     if not photo_bytes:
-        raise HTTPException(status_code=502, detail="Не удалось скачать файл из S3 для повторной отправки")
+        raise HTTPException(status_code=502, detail="Не удалось скачать файл из хранилища для повторной отправки")
 
     from app.api.upload import _send_to_n8n_background
     from app.constants import MONTHS

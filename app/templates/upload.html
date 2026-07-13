@@ -110,16 +110,16 @@
     <div style="margin-bottom:24px">
         <a href="/cabinet" class="back-link">← Кабинет</a>
         {% if mode == "before" %}
-        <div class="mode-badge mode-before">● Раздел ДО</div>
+        <div class="mode-badge mode-before">Раздел «До»</div>
         {% else %}
-        <div class="mode-badge mode-after">● Раздел ПОСЛЕ</div>
+        <div class="mode-badge mode-after">Раздел «После»</div>
         {% endif %}
         <h1 style="font-size:26px;font-weight:900;letter-spacing:-0.5px" class="text-accent">
             {% if mode == "before" %}Загрузка фото «До»{% else %}Загрузка фото «После»{% endif %}
         </h1>
         {% if mode == "before" %}
         <p style="color:var(--muted);font-size:14px;margin-top:6px;line-height:1.5">
-            Загрузите фото до начала обучения. Просто добавьте снимки — без выбора месяца.
+            Добавьте фото работ до начала обучения. Месяц выбирать не нужно.
         </p>
         {% endif %}
     </div>
@@ -157,7 +157,7 @@
                 <!-- Месяц -->
                 <div class="card" style="padding:20px">
                     <label class="form-label" style="margin-bottom:10px">
-                        Выбери месяц <span style="color:var(--error)" aria-hidden="true">*</span>
+                        Выберите месяц <span style="color:var(--error)" aria-hidden="true">*</span>
                     </label>
                     <select name="month" required class="form-select" aria-required="true">
                         <option value="">— выберите месяц —</option>

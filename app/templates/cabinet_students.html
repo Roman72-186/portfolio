@@ -1011,7 +1011,7 @@
         {% if mock_status_available %}
         <details class="mock-status-panel">
             <summary>
-                <span>Пробник: статус сдачи</span>
+                <span>Пробники: статус сдачи</span>
                 <span class="mock-status-counts">
                     <span class="mock-status-count mock-status-count--ok">Сдали {{ submitted_students|length }}</span>
                     <span class="mock-status-count mock-status-count--bad">Не сдали {{ not_submitted_students|length }}</span>
@@ -1033,7 +1033,7 @@
                         <div class="mock-status-col-title">
                             <span>Не сдали ({{ not_submitted_students|length }})</span>
                             {% if not_submitted_students %}
-                            <button type="button" class="mock-status-copy-btn" onclick="copyNotSubmittedUsernames(this)">Копировать username</button>
+                            <button type="button" class="mock-status-copy-btn" onclick="copyNotSubmittedUsernames(this)">Скопировать username</button>
                             {% endif %}
                         </div>
                         <ul class="mock-status-list" id="not-submitted-list">
@@ -1062,11 +1062,11 @@
         {% if is_admin_panel %}
         <div class="sidebar-hard-filters-add">
             <details>
-                <summary>+ Ещё фильтр</summary>
+                <summary>Добавить фильтр</summary>
                 <div class="hard-filter-options">
                     <a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}has_unchecked_mocks=1">Непроверенные пробники</a>
                     <a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}mock_period_submitted=1">Сдавал в текущий период</a>
-                    {% if is_superadmin %}<a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}show_hidden=1">Все (без периодов)</a>{% endif %}
+                    {% if is_superadmin %}<a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}show_hidden=1">Все ученики, включая без периода</a>{% endif %}
                 </div>
             </details>
         </div>
@@ -1126,9 +1126,9 @@
                     {% if ss | length >= 2 %}
                     <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверено</span>
                     {% elif 'Рисунок' in ss %}
-                    <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверен рис</span>
+                    <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверен рисунок</span>
                     {% elif 'Композиция' in ss %}
-                    <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверен комп</span>
+                    <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверена композиция</span>
                     {% elif s.unchecked %}
                     <span class="pending-badge">{{ s.unchecked }}</span>
                     {% endif %}
@@ -1161,7 +1161,7 @@
         <div class="tab-bar" id="tab-bar">
             <button class="tab-btn" id="tab-portfolio"  onclick="switchTab('portfolio')">Портфолио</button>
             <button class="tab-btn" id="tab-mock-exams" onclick="switchTab('mock-exams')">Пробники</button>
-            <button class="tab-btn" id="tab-cycles"     onclick="switchTab('cycles')">Цикл Пробника</button>
+            <button class="tab-btn" id="tab-cycles"     onclick="switchTab('cycles')">Цикл пробника</button>
             <button class="tab-btn" id="tab-statistics" onclick="switchTab('statistics')">Статистика</button>
         </div>
 
@@ -1237,7 +1237,7 @@
                 <label class="upload-dropzone" id="upload-dropzone">
                     <input type="file" name="photos" id="upload-photo-input" multiple accept="image/*" required>
                     <div class="upload-dz-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
-                    <div class="upload-dz-title">Нажмите или перенесите фото</div>
+                    <div class="upload-dz-title">Нажмите или перетащите фото</div>
                     <div class="upload-dz-hint" id="upload-dz-hint">До 10 МБ · до 10 штук</div>
                 </label>
                 <div class="upload-count-row" id="upload-count-row" style="display:none">
@@ -1416,16 +1416,16 @@ function renderProfile(data) {
         + '<button class="profile-action-btn" onclick="openTab(\'portfolio\')">'
         +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>'
         +   '<div class="profile-action-label">Портфолио</div>'
-        +   '<div class="profile-action-count">' + (s.portfolio_count || 0) + ' работ</div>'
+        +   '<div class="profile-action-count">' + workCountLabel(s.portfolio_count || 0) + '</div>'
         + '</button>'
         + '<button class="profile-action-btn" onclick="openTab(\'mock-exams\')">'
         +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></div>'
         +   '<div class="profile-action-label">Пробники</div>'
-        +   '<div class="profile-action-count">' + (s.mock_exam_count || 0) + ' работ</div>'
+        +   '<div class="profile-action-count">' + workCountLabel(s.mock_exam_count || 0) + '</div>'
         + '</button>'
         + '<button class="profile-action-btn" onclick="openTab(\'cycles\')">'
         +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9"/><polyline points="21 3 21 9 15 9"/></svg></div>'
-        +   '<div class="profile-action-label">Цикл Пробника</div>'
+        +   '<div class="profile-action-label">Цикл пробника</div>'
         +   '<div class="profile-action-count">' + (s.cycle_count || 0) + ' циклов</div>'
         + '</button>'
         + '<button class="profile-action-btn" onclick="openTab(\'statistics\')">'
@@ -1659,7 +1659,7 @@ function buildStatistics(data) {
 }
 
 function buildCycles(data) {
-    var html = '<div class="section-title">Цикл Пробника</div>';
+    var html = '<div class="section-title">Цикл пробника</div>';
     if (!data.cycles || data.cycles.length === 0) {
         return html + '<div class="no-works">У ученика пока нет циклов пробника.</div>';
     }
@@ -1718,7 +1718,7 @@ function buildHero(s, bySubj) {
         });
         scoreHtml += '</div>';
     } else if (s.avg_score != null) {
-        scoreHtml = '<div class="student-hero-score"><div class="score-big">' + s.avg_score + '</div><div class="score-label">ср. балл</div></div>';
+        scoreHtml = '<div class="student-hero-score"><div class="score-big">' + s.avg_score + '</div><div class="score-label">средний балл</div></div>';
     }
     var uploadBtn = '';
     if (CAN_SCORE && _viewMode === 'tab') {
@@ -1991,8 +1991,8 @@ function buildSubjectCard(subject, data, subjectIndex) {
 
     // Header: subject title + lock status
     var lockBadge = isLocked
-        ? '<span class="lock-badge locked"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Пересдача закрыта</span>'
-        : '<span class="lock-badge open"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Открыто</span>';
+        ? '<span class="lock-badge locked"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Повторная сдача закрыта</span>'
+        : '<span class="lock-badge open"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Повторная сдача открыта</span>';
 
     var html = '<div class="subject-card' + (isScored ? ' is-scored' : '') + '">'
         + '<div class="subject-card-header">'
@@ -2171,7 +2171,7 @@ function buildMockDayPanel(sid, subject, grouped, state) {
     }
     html += '<div class="mock-day-head">'
         + '<div class="mock-day-title">' + formatMockDate(selected) + '</div>'
-        + '<div class="mock-day-count">' + works.length + ' работ</div>'
+        + '<div class="mock-day-count">' + workCountLabel(works.length) + '</div>'
         + '</div>';
     // Primary = оцененная работа (если есть), иначе первая
     var primary = works.find(function(w){ return w.score != null; }) || works[0];
@@ -2282,7 +2282,7 @@ function buildRetakeSubjectCard(subject, works, isUnassigned) {
         + '<div class="subject-card-header">'
         +   '<span class="subject-title">' + esc(subject) + '</span>'
         +   '<span class="lock-badge ' + (isUnassigned ? 'locked' : 'open') + '">'
-        +     (isUnassigned ? 'Без предмета' : works.length + ' работ')
+        +     (isUnassigned ? 'Без предмета' : workCountLabel(works.length))
         +   '</span>'
         + '</div>'
         + '<div class="subject-card-body">';
@@ -2306,7 +2306,7 @@ function buildRetakeSubjectCard(subject, works, isUnassigned) {
         html += '<div class="month-header">'
             + '<span class="month-label">' + esc(label) + '</span>'
             + '<div style="display:flex;align-items:center;gap:10px">'
-            + '<span class="month-count">' + works.length + ' работ</span>'
+            + '<span class="month-count">' + workCountLabel(works.length) + '</span>'
             + delBtn
             + '</div></div>';
         html += '<div style="padding:12px 16px">';
@@ -2521,8 +2521,8 @@ function buildScoreForm(sid, workId, tab, currentScore, currentComment) {
         + '<div class="score-form-actions">'
         + '<button type="submit" class="btn-blue btn-save" onclick="this.form.closest(\'.score-form\').dataset.saving=\'1\';this.disabled=true;this.textContent=\'Сохраняем…\';this.form.submit()"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> ' + saveLabel + '</button>'
         + (tab === 'mock-exams'
-            ? '<button type="button" class="score-retake-btn" onclick="submitMockRetake(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> На отработку</button>'
-                + (IS_SUPERADMIN && currentScore == null ? '<button type="button" class="score-revision-btn" onclick="submitMockRevision(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> На доработку</button>' : '')
+            ? '<button type="button" class="score-retake-btn" onclick="submitMockRetake(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Отправить на отработку</button>'
+                + (IS_SUPERADMIN && currentScore == null ? '<button type="button" class="score-revision-btn" onclick="submitMockRevision(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Вернуть на доработку</button>' : '')
             : '')
         + '</div>'
         + '</form>'
@@ -2721,6 +2721,15 @@ function cap(s) {
     if (!s) return '';
     return String(s).charAt(0).toUpperCase() + String(s).slice(1);
 }
+function workCountLabel(n) {
+    n = Number(n) || 0;
+    var mod10 = Math.abs(n) % 10;
+    var mod100 = Math.abs(n) % 100;
+    var word = (mod10 === 1 && mod100 !== 11)
+        ? 'работа'
+        : (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? 'работы' : 'работ');
+    return n + ' ' + word;
+}
 
 // ── Profile inline editing ──────────────────────────────────────────────────
 
@@ -2744,7 +2753,7 @@ function startEditProfile() {
         + '<option value="Я С ВАМИ"' + (s.tariff === 'Я С ВАМИ' ? ' selected' : '') + '>Я С ВАМИ</option>'
         + '</select></div>';
     html += editField('Год поступления', 'enrollment_year', s.enrollment_year || '');
-    html += editField('Год ВУЗ', 'university_year', s.university_year || '');
+    html += editField('Курс университета', 'university_year', s.university_year || '');
     html += '<div class="profile-field"><div class="profile-field-label">Метка набора</div>'
         + '<select class="profile-edit-select" id="edit-cohort_tag">'
         + '<option value="">— нет —</option>'
@@ -3054,7 +3063,7 @@ function submitUpload(e) {
 
 function deleteFolderWorks(studentId, workType, month, year, count) {
     var label = cap(month) + ' ' + year;
-    if (!confirm('Удалить все ' + count + ' работ за ' + label + '?')) return;
+    if (!confirm('Удалить все ' + workCountLabel(count) + ' за ' + label + '?')) return;
 
     fetch('/cabinet/students/' + studentId + '/works/bulk', {
         method: 'DELETE',
@@ -3072,7 +3081,7 @@ function deleteFolderWorks(studentId, workType, month, year, count) {
                 delete _tabCache[studentId].profile;
             }
             switchTab(_currentTab);
-            showToast('Удалено ' + data.deleted_count + ' работ');
+            showToast('Удалено ' + workCountLabel(data.deleted_count));
         } else {
             alert(data.error || 'Ошибка удаления');
         }
