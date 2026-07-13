@@ -5,6 +5,7 @@ from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session as DBSession
 
+from app.config import settings
 from app.db.database import get_db
 from app.dependencies import require_student
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
@@ -42,7 +43,7 @@ async def cabinet_gallery(
 
     drive_thumbs: dict[str, str] = {}
     needs_drive = any(w.drive_file_id and not w.s3_url for w in works)
-    if needs_drive and user.get("tg_username"):
+    if settings.n8n_enabled and needs_drive and user.get("tg_username"):
         try:
             from app.services.drive import list_student_photos
             photos = await list_student_photos(
@@ -80,7 +81,7 @@ def gallery_thumb(
     user: Annotated[dict, Depends(require_student)],
 ):
     from app.services.drive import get_photo_thumbnail_url
-    thumbnail_url = get_photo_thumbnail_url(file_id)
+    thumbnail_url = get_photo_thumbnail_url(user["vk_id"], file_id)
     if not thumbnail_url:
         raise HTTPException(status_code=404, detail="Thumbnail not available")
     return RedirectResponse(url=thumbnail_url, status_code=302)

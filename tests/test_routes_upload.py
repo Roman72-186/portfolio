@@ -2,6 +2,10 @@
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch, MagicMock
 
+import pytest
+
+pytestmark = pytest.mark.usefixtures("enable_n8n")
+
 
 _MOCK_N8N = "app.api.upload.send_photo_to_n8n"
 _MOCK_S3_UPLOAD = "app.api.upload.s3_service.upload_to_s3"
@@ -213,6 +217,53 @@ def test_upload_s3_failure_shows_retry_error(auth_client, db):
     assert resp.status_code == 200
     assert "попробуйте" in resp.text.lower() or "хранилище" in resp.text.lower()
     # No Work record should be created
+    assert db.query(Work).filter(Work.user_id == user.id).count() == 0
+
+
+def test_upload_with_n8n_disabled_is_s3_only(auth_client, db):
+    from app.models.work import Work
+
+    client, user = auth_client
+    _create_active_period(db, user, "portfolio_upload")
+    n8n_mock = AsyncMock(return_value=_OK_RESULT)
+
+    with patch("app.api.upload.settings.n8n_enabled", False), \
+         patch(_MOCK_S3_CONFIGURED, return_value=True), \
+         patch(_MOCK_S3_UPLOAD, return_value="https://s3.example/work.jpg"), \
+         patch(_MOCK_N8N, n8n_mock):
+        resp = client.post(
+            "/upload/api",
+            data={"month": "январь", "section": "after"},
+            files=[("photos", ("p.jpg", _JPG_BYTES, "image/jpeg"))],
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+    db.expire_all()
+    work = db.query(Work).filter(Work.user_id == user.id).one()
+    assert work.s3_url == "https://s3.example/work.jpg"
+    assert work.drive_status == "s3_only"
+    n8n_mock.assert_not_awaited()
+
+
+def test_upload_with_n8n_disabled_requires_s3(auth_client, db):
+    from app.models.work import Work
+
+    client, user = auth_client
+    _create_active_period(db, user, "portfolio_upload")
+
+    with patch("app.api.upload.settings.n8n_enabled", False), \
+         patch(_MOCK_S3_CONFIGURED, return_value=False), \
+         patch(_MOCK_S3_UPLOAD, return_value=None):
+        resp = client.post(
+            "/upload/api",
+            data={"month": "январь", "section": "after"},
+            files=[("photos", ("p.jpg", _JPG_BYTES, "image/jpeg"))],
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["success"] is False
+    assert resp.json()["created"] == 0
     assert db.query(Work).filter(Work.user_id == user.id).count() == 0
 
 

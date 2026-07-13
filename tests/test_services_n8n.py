@@ -10,6 +10,8 @@ import pytest
 import app.services.n8n as n8n_module
 from app.services.n8n import send_photo_to_n8n
 
+pytestmark = pytest.mark.usefixtures("enable_n8n")
+
 
 @pytest.fixture(autouse=True)
 def reset_n8n_client():
@@ -55,6 +57,18 @@ def test_send_photo_success_returns_response():
 
     assert result["success"] is True
     assert result["drive_file_id"] == "abc123"
+
+
+def test_send_photo_disabled_never_creates_http_client(monkeypatch):
+    monkeypatch.setattr(n8n_module.settings, "n8n_enabled", False)
+    client_factory = MagicMock()
+    monkeypatch.setattr(n8n_module.httpx, "AsyncClient", client_factory)
+
+    result = _call()
+
+    assert result["success"] is False
+    assert result["disabled"] is True
+    client_factory.assert_not_called()
 
 
 def test_send_photo_payload_structure():

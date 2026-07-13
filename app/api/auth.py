@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.cache import invalidate_session, pop_vk_pkce, set_vk_pkce
 from app.config import settings
 from app.db.database import get_db
-from app.dependencies import get_current_user, require_internal_api_token, require_lab3d_token
+from app.dependencies import _as_utc, get_current_user, require_internal_api_token, require_lab3d_token
 from app.limiter import limiter
 from app.models.role import Role
 from app.tmpl import templates
@@ -180,7 +180,7 @@ async def entry_point(
         if session_row:
             session, user = session_row
             if (
-                session.expires_at > _now()
+                _as_utc(session.expires_at) > _now()
                 and user.is_active
                 and (
                     user.is_admin
@@ -340,10 +340,11 @@ async def vk_callback(
         db.commit()
         return templates.TemplateResponse("blocked.html", {"request": request})
 
-    background.add_task(
-        drive_service.sync_drive_works,
-        user.id, user.vk_id, user.tariff or "", user.tg_username or "",
-    )
+    if settings.n8n_enabled:
+        background.add_task(
+            drive_service.sync_drive_works,
+            user.id, user.vk_id, user.tariff or "", user.tg_username or "",
+        )
     return _create_session_response(db, user)
 
 
@@ -380,10 +381,11 @@ async def one_time_link_login(
             "reason": "Доступ к кабинету доступен только участникам закрытой группы ВК.",
         })
 
-    background.add_task(
-        drive_service.sync_drive_works,
-        user.id, user.vk_id, user.tariff or "", user.tg_username or "",
-    )
+    if settings.n8n_enabled:
+        background.add_task(
+            drive_service.sync_drive_works,
+            user.id, user.vk_id, user.tariff or "", user.tg_username or "",
+        )
     return _create_session_response(db, user)
 
 
@@ -412,6 +414,9 @@ def issue_one_time_link_internal(
     db: Annotated[DBSession, Depends(get_db)],
     _: Annotated[None, Depends(require_internal_api_token)],
 ):
+    if not settings.n8n_enabled:
+        raise HTTPException(status_code=503, detail="Интеграция n8n отключена")
+
     user = _upsert_user(
         db,
         vk_id=payload.vk_id,

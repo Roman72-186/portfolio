@@ -15,6 +15,13 @@ from app.models.session import Session
 from app.models.user import User
 
 
+def _as_utc(value: datetime) -> datetime:
+    """Normalize timestamps returned by SQLite and PostgreSQL to aware UTC."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def get_current_user(
     request: Request,
     response: Response,
@@ -49,13 +56,14 @@ def get_current_user(
     session, user = row
 
     now = datetime.now(timezone.utc)
-    if session.expires_at < now:
+    expires_at = _as_utc(session.expires_at)
+    if expires_at < now:
         log.warning(
             "Auth 401 'Сессия истекла' | path=%s | session_id_prefix=%s | user_id=%s | "
             "expires_at=%s | now=%s | overdue_sec=%.1f",
             request.url.path, session_id[:8], user.id,
-            session.expires_at.isoformat(), now.isoformat(),
-            (now - session.expires_at).total_seconds(),
+            expires_at.isoformat(), now.isoformat(),
+            (now - expires_at).total_seconds(),
         )
         session.is_active = False
         db.commit()
@@ -66,7 +74,7 @@ def get_current_user(
     # but actively-used tab (e.g. the 4h mock exam) can outlive a fixed
     # session_id cookie expiry and the browser drops the cookie mid-session.
     ttl = timedelta(hours=settings.session_ttl_hours)
-    if session.expires_at - now < ttl / 2:
+    if expires_at - now < ttl / 2:
         session.expires_at = now + ttl
         db.commit()
         response.set_cookie(

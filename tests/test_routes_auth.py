@@ -7,6 +7,7 @@ import pytest
 
 import app.api.auth as auth_module
 from app.config import settings as _app_settings
+from app.dependencies import _as_utc
 from app.models.session import Session as DbSession
 from app.services.auth_links import issue_one_time_login_link, issue_sso_token
 
@@ -14,6 +15,13 @@ from app.services.auth_links import issue_one_time_login_link, issue_sso_token
 # ---------------------------------------------------------------------------
 # GET / — entry point / login page
 # ---------------------------------------------------------------------------
+
+def test_session_timestamp_normalizer_accepts_sqlite_naive_datetime():
+    value = datetime(2026, 7, 13, 10, 0, 0)
+    normalized = _as_utc(value)
+    assert normalized.tzinfo is timezone.utc
+    assert normalized.hour == 10
+
 
 def test_root_no_session_shows_login(client):
     resp = client.get("/", follow_redirects=False)
@@ -509,23 +517,23 @@ def test_embedded_3dlab_available_for_admin(admin_client):
     assert b"/static/3dlab/js/app.js" in resp.content
 
 
-def test_embedded_3dlab_not_group_member_redirects_denied(client, db, user_factory, session_factory):
+def test_embedded_3dlab_available_for_student_outside_vk_group(client, db, user_factory, session_factory):
+    """Since 2026-07-05, an assigned student role grants 3D Lab access."""
     user = user_factory(is_group_member=False)
     sess = session_factory(user)
     client.cookies.set("session_id", sess.id)
     resp = client.get("/3dlab", follow_redirects=False)
-    assert resp.status_code == 302
-    assert "denied" in resp.headers["location"]
+    assert resp.status_code == 200
+    assert b"/static/3dlab/js/app.js" in resp.content
 
 
-def test_embedded_3dlab_not_group_member_denied_page_not_404(client, db, user_factory, session_factory):
+def test_embedded_3dlab_student_role_does_not_redirect_to_denied(client, db, user_factory, session_factory):
     user = user_factory(is_group_member=False)
     sess = session_factory(user)
     client.cookies.set("session_id", sess.id)
     resp = client.get("/3dlab", follow_redirects=True)
-    assert resp.status_code == 403
-    assert resp.url.path == "/denied"
-    assert "404" not in resp.text
+    assert resp.status_code == 200
+    assert resp.url.path == "/3dlab"
 
 
 def test_denied_page_exists(client):
@@ -534,14 +542,16 @@ def test_denied_page_exists(client):
     assert "404" not in resp.text
 
 
-def test_3dlab_enter_not_group_member_redirects_denied(client, db, user_factory, session_factory):
+def test_3dlab_enter_student_outside_vk_group_redirects_with_token(client, db, user_factory, session_factory):
     user = user_factory(is_group_member=False)
     sess = session_factory(user)
     client.cookies.set("session_id", sess.id)
-    resp = client.get("/cabinet/3dlab/enter", follow_redirects=False)
-    assert resp.status_code in (302, 403)
-    if resp.status_code == 302:
-        assert "denied" in resp.headers["location"]
+    with patch.object(_app_settings, "lab3d_url", "https://3dlab.example.com"), \
+         patch.object(_app_settings, "sso_token_ttl_minutes", 2):
+        resp = client.get("/cabinet/3dlab/enter", follow_redirects=False)
+    assert resp.status_code == 302
+    assert "3dlab.example.com/auth/sso" in resp.headers["location"]
+    assert "token=" in resp.headers["location"]
 
 
 # ---------------------------------------------------------------------------
@@ -633,3 +643,23 @@ def test_sso_verify_expired_token_returns_400(client, db, user_factory):
         )
     assert resp.status_code == 400
     assert resp.json()["reason"] == "expired"
+
+
+def test_internal_issue_link_is_disabled_with_n8n(client, db):
+    before = db.query(auth_module.User).count()
+
+    with patch.object(_app_settings, "n8n_enabled", False), \
+         patch.object(_app_settings, "internal_api_token", "test-internal-token"):
+        resp = client.post(
+            "/auth/internal/issue-link",
+            headers={"X-Internal-Token": "test-internal-token"},
+            json={
+                "vk_id": 990001,
+                "name": "Disabled n8n user",
+                "tariff": "TEST",
+                "is_group_member": True,
+            },
+        )
+
+    assert resp.status_code == 503
+    assert db.query(auth_module.User).count() == before

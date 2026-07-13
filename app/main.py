@@ -48,9 +48,10 @@ async def lifespan(app: FastAPI):
         seed_roles_and_permissions(db)
     finally:
         db.close()
-    await n8n_service.init_client()
+    if settings.n8n_enabled:
+        await n8n_service.init_client()
+        await drive_service.init_client()
     await vk_service.init_client()
-    await drive_service.init_client()
     should_start_scheduler = (
         not os.environ.get("PYTEST_CURRENT_TEST")
         and settings.database_url != "sqlite:///:memory:"
@@ -58,9 +59,10 @@ async def lifespan(app: FastAPI):
     if should_start_scheduler:
         exam_scheduler.start_scheduler()
     yield
-    await n8n_service.close_client()
+    if settings.n8n_enabled:
+        await n8n_service.close_client()
+        await drive_service.close_client()
     await vk_service.close_client()
-    await drive_service.close_client()
     if should_start_scheduler:
         exam_scheduler.stop_scheduler()
 

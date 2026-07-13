@@ -48,7 +48,6 @@ from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
 from app.services import s3 as s3_service
 from app.services.auth_links import issue_one_time_login_link
-from app.services.n8n import send_photo_to_n8n
 from app.services.tags import get_all_tags
 from app.services.mock_exam_access import (
     MOCK_EXAM_DEFAULT_DURATION_MINUTES,
@@ -2590,9 +2589,11 @@ def drive_sync_status(
     )
     counts = {status: cnt for status, cnt in rows}
     return JSONResponse({
+        "enabled": settings.n8n_enabled,
         "pending": counts.get("pending", 0),
         "synced": counts.get("synced", 0),
         "failed": counts.get("failed", 0),
+        "s3_only": counts.get("s3_only", 0),
     })
 
 
@@ -2605,6 +2606,9 @@ async def retry_drive_sync(
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
     """Re-queue a single work for Drive upload (admin+). Resets drive_status to pending."""
+    if not settings.n8n_enabled:
+        raise HTTPException(status_code=503, detail="Интеграция n8n отключена")
+
     work = db.query(Work).filter(Work.id == work_id).first()
     if not work:
         raise HTTPException(status_code=404, detail="Работа не найдена")

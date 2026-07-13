@@ -1234,6 +1234,7 @@ async def admin_upload_works(
                 scored_at=datetime.now(timezone.utc) if work_score is not None else None,
                 scored_by_id=user["user_id"] if work_score is not None else None,
                 status="success",
+                drive_status="s3_only",
                 uploaded_by_id=user["user_id"],
                 created_at=work_created_at or datetime.now(timezone.utc),
                 cycle_id=cycle_id,

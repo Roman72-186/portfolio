@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     google_credentials_path: str = "/app/credentials.json"
 
     # n8n
+    n8n_enabled: bool = False  # disabled: S3 remains the only photo storage
     n8n_base_url: str = "https://n8n-new.twc1.net"
     n8n_webhook_upload: str = "https://n8n-new.twc1.net/webhook/TMEog8ATVv9CW6xh/webhook/portfolio-upload"
     n8n_webhook_download_file: str = ""  # portfolio-download-file webhook URL (for Drive→S3 migration)

@@ -397,8 +397,13 @@ def test_gallery_thumb_returns_404_for_another_users_file(auth_client, db, user_
                 month="апрель", year=2026, filename="secret.jpg",
                 drive_file_id="drive_secret_abc", status="success"))
     db.commit()
+    from app.services import drive
+    drive._file_index[(other.vk_id, "drive_secret_abc")] = {
+        "thumbnail_url": "https://drive.example/secret-thumb"
+    }
     resp = client.get("/cabinet/gallery/thumb/drive_secret_abc")
     assert resp.status_code == 404
+    drive._file_index.clear()
 
 
 def test_history_returns_200(auth_client):

@@ -863,6 +863,21 @@ def test_stats_page_redesign_structure(superadmin_client, db, user_factory):
     assert "Статистика по баллам" in resp.text
 
 
+def test_drive_sync_endpoints_report_n8n_disabled(superadmin_client, monkeypatch):
+    from app.config import settings
+
+    client, _ = superadmin_client
+    monkeypatch.setattr(settings, "n8n_enabled", False)
+
+    status = client.get("/cabinet/superadmin/drive-sync-status")
+    retry = client.post("/cabinet/superadmin/works/999999/retry-drive-sync")
+
+    assert status.status_code == 200
+    assert status.json()["enabled"] is False
+    assert "s3_only" in status.json()
+    assert retry.status_code == 503
+
+
 def test_stats_export_includes_feedback_sheet(superadmin_client, db, user_factory):
     client, _ = superadmin_client
     curator = user_factory(vk_id=900410, name="Куратор Эксп", role_name="куратор")

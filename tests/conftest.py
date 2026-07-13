@@ -43,6 +43,13 @@ from app.models.session import Session as DbSession  # noqa: E402
 from app.models.user import User                     # noqa: E402
 from app.models.role import Role                     # noqa: E402
 from app.dependencies import require_csrf            # noqa: E402
+from app.config import settings as _app_settings     # noqa: E402
+
+
+@pytest.fixture
+def enable_n8n(monkeypatch):
+    """Opt in only tests that explicitly exercise the legacy n8n contract."""
+    monkeypatch.setattr(_app_settings, "n8n_enabled", True)
 
 # ─── Fix SQLite naive-datetime issue.
 #

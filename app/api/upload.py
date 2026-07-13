@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session
+from app.config import settings
 from app.constants import MONTHS, MOCK_SUBJECTS, FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM, FEATURE_RETAKE
 from app.services.exam_cycle import (
     MAX_INTERMEDIATE_PER_FINAL,
@@ -290,6 +291,20 @@ async def _send_to_n8n_background(
     """
     from app.db.database import SessionLocal
 
+    if not settings.n8n_enabled:
+        work_ids = [item[0] for item in work_queue]
+        if work_ids:
+            db = SessionLocal()
+            try:
+                db.query(Work).filter(Work.id.in_(work_ids)).update(
+                    {Work.drive_status: "s3_only"},
+                    synchronize_session=False,
+                )
+                db.commit()
+            finally:
+                db.close()
+        return
+
     def _update_work(work_id: int, *, drive_file_id: str | None = None, drive_status: str) -> None:
         db = SessionLocal()
         try:
@@ -368,6 +383,9 @@ def _schedule_n8n_mirror_best_effort(
     Even an unexpected failure while registering the background task must not turn
     an already successful student upload into an HTTP 500 or roll it back.
     """
+    if not settings.n8n_enabled or not work_queue:
+        return
+
     try:
         background_tasks.add_task(
             _send_to_n8n_background,
@@ -457,7 +475,10 @@ async def _process_uploads(
             return compressed, url
 
         compressed_bytes, s3_url = await loop.run_in_executor(None, _compress_and_upload)
-        if s3_service.is_configured() and s3_url is None:
+        s3_configured = s3_service.is_configured()
+        if not s3_configured and not settings.n8n_enabled:
+            return {"success": False, "error": "Хранилище S3 не настроено. Загрузка временно недоступна."}
+        if s3_configured and s3_url is None:
             return {"success": False, "error": "Ошибка загрузки в хранилище. Попробуйте ещё раз."}
         # Use compressed bytes for n8n as well — smaller base64 payload
         return {"success": True, "filename": filename, "photo_bytes": compressed_bytes,
@@ -494,7 +515,7 @@ async def _process_uploads(
             tariff=user["tariff"],
             student_score=student_score,
             status="success",
-            drive_status="pending",
+            drive_status="pending" if settings.n8n_enabled else "s3_only",
             cycle_id=cycle_id,
             is_final=True if cycle_id else None,
             attempt_number=attempt_no,
@@ -512,22 +533,24 @@ async def _process_uploads(
         )
         db.add(log)
         success_count += 1
-        n8n_queue.append((work, res["filename"], res["photo_bytes"], res.get("s3_path")))
+        if settings.n8n_enabled:
+            n8n_queue.append((work, res["filename"], res["photo_bytes"], res.get("s3_path")))
 
     if success_count > 0:
         # Source of truth for a successful student upload: S3 + Work/UploadLog.
         # The optional n8n/Drive mirror is scheduled only after this commit.
         db.commit()
         # After commit work.id is available
-        n8n_queue_with_ids = [(w.id, fn, pb, sp) for w, fn, pb, sp in n8n_queue]
-        _schedule_n8n_mirror_best_effort(
-            background_tasks=background_tasks,
-            db=db,
-            work_queue=n8n_queue_with_ids,
-            user=user,
-            month=month,
-            work_type=work_type,
-        )
+        if settings.n8n_enabled:
+            n8n_queue_with_ids = [(w.id, fn, pb, sp) for w, fn, pb, sp in n8n_queue]
+            _schedule_n8n_mirror_best_effort(
+                background_tasks=background_tasks,
+                db=db,
+                work_queue=n8n_queue_with_ids,
+                user=user,
+                month=month,
+                work_type=work_type,
+            )
 
     return success_count, fail_count, last_error
 

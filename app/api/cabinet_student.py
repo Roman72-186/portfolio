@@ -16,6 +16,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session, get_cached_unread, set_cached_unread, invalidate_unread
+from app.config import settings
 from app.constants import (
     MONTHS,
     TARIFFS,
@@ -626,7 +627,7 @@ async def cabinet_portfolio(
     drive_thumbnails: dict[str, str] = {}
     all_works = before_works + after_works
     needs_thumb = any(w.drive_file_id and not w.s3_url for w in all_works)
-    if needs_thumb and user.get("tg_username"):
+    if settings.n8n_enabled and needs_thumb and user.get("tg_username"):
         photos = await list_student_photos(
             vk_id=user["vk_id"],
             tariff=user.get("tariff", ""),

@@ -15,6 +15,8 @@ _client: httpx.AsyncClient | None = None
 async def init_client() -> None:
     """Create the shared httpx client. Called once at application startup."""
     global _client
+    if not settings.n8n_enabled:
+        return
     _client = httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=15.0), limits=httpx.Limits(max_connections=20, max_keepalive_connections=10))
 
 
@@ -29,6 +31,8 @@ async def close_client() -> None:
 async def _get_client() -> httpx.AsyncClient:
     """Return the shared client, creating it on-demand if lifespan didn't run (e.g. tests)."""
     global _client
+    if not settings.n8n_enabled:
+        raise RuntimeError("n8n integration is disabled")
     if _client is None or _client.is_closed:
         _client = httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=15.0), limits=httpx.Limits(max_connections=20, max_keepalive_connections=10))
     return _client
@@ -50,6 +54,9 @@ async def send_photo_to_n8n(
     photo_type: "before" | "after" | "mock_exam"
     s3_path: already-uploaded S3 path (so n8n can skip S3 and mirror to Drive only)
     """
+    if not settings.n8n_enabled:
+        return {"success": False, "disabled": True, "error": "n8n integration is disabled"}
+
     photo_b64 = base64.b64encode(photo_bytes).decode("utf-8")
 
     payload = {
