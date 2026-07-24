@@ -3,8 +3,6 @@
 {% block extra_styles %}
 <style>
 .ea-wrap { max-width: 860px; margin: 0 auto; }
-.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; gap: 16px; }
-.page-title { font-size: 24px; font-weight: 900; color: var(--text); }
 
 .assignments-list { display: flex; flex-direction: column; gap: 12px; }
 .assignment-card { background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-lg); padding: 18px 20px; box-shadow: var(--sh-sm); }
@@ -35,7 +33,7 @@
 .btn-arch:hover { background: rgba(156,163,175,0.18); color: var(--muted); }
 .ac-actions .spacer { flex: 1; }
 
-.empty-state { text-align: center; padding: 64px 20px; color: var(--dim); }
+.empty-state { padding: 64px 20px; }
 .empty-icon { font-size: 48px; margin-bottom: 14px; }
 .empty-text { font-size: 15px; margin-bottom: 20px; }
 </style>
@@ -45,7 +43,7 @@
     <div class="page-header">
         <div>
             <a href="/cabinet/exam-assignments" class="back-link" style="margin-bottom:0">← Билеты для пробников</a>
-            <div class="page-title">{{ 'Активные пробники' if mode == 'active' else 'Архив пробников' }}</div>
+            <h1 class="page-title">{{ 'Активные пробники' if mode == 'active' else 'Архив пробников' }}</h1>
         </div>
         {% if mode == 'active' %}
         <a href="/cabinet/exam-assignments/create" class="btn-blue">+ Создать билет</a>

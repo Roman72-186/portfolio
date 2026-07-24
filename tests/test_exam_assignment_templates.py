@@ -288,6 +288,9 @@ def test_exam_assignment_create_form_renders_student_selector(
     assert "_assign_mode" in resp.text          # радио «Кому выдать билет»
     assert "Конкретным" in resp.text            # режим точечной выдачи
     assert "initStudentSearch" in resp.text     # рендер чекбоксов учеников
+    assert '<h1 class="page-title page-title--standalone">' in resp.text
+    assert 'src=""' not in resp.text            # скрытая картинка не запрашивает текущую страницу
+    assert "ensurePreviewImage" in resp.text     # img создаётся только после выбора файла
 
 
 def test_exam_assignment_form_student_list_includes_username(
@@ -578,3 +581,4 @@ def test_exam_assignment_detail_renders_status_badge(
     assert resp.status_code == 200
     assert 'class="status-badge status-draft"' in resp.text
     assert "Черновик" in resp.text
+    assert '<h1 class="page-title">' in resp.text

@@ -930,9 +930,7 @@
 /* ── No works / empty ── */
 .no-works { font-size: 13px; color: var(--dim); padding: 10px 0; }
 
-.empty-state { text-align: center; padding: 64px 20px; color: var(--dim); }
-.empty-icon  { font-size: 40px; margin-bottom: 12px; }
-.empty-text  { font-size: 14px; }
+.empty-state { padding: 64px 20px; }
 
 /* ── Lightbox ── */
 .lb {
@@ -1979,7 +1977,7 @@ function buildMockExams(data) {
 function buildLegacyArchive(groups) {
     if (!groups.length) return '';
     var html = '<div style="margin-top:20px">'
-        + '<div style="font-size:13px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">'
+        + '<div class="section-label">'
         + 'Архив (импорт из старого чат-бота)</div>';
     groups.forEach(function(g, i) {
         html += '<div style="margin-bottom:12px">'
