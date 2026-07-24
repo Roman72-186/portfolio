@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Для российского сервера: включает собственный Traefik, не зависит от n8n_default.
 # Деплой: PORTFOLIO_COMPOSE_FILE=docker-compose.prod-ru.yml python scripts/deploy.py
 
