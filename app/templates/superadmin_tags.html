@@ -113,7 +113,7 @@
         {% if is_superadmin %}
         <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
             <input type="checkbox" name="show_hidden" value="1" {% if show_hidden %}checked{% endif %} style="width:auto;padding:0">
-            <span style="font-size:12px;font-weight:700;color:var(--warning)">Без периодов</span>
+            <span style="font-size:12px;font-weight:700;color:var(--warning-deep)">Без периодов</span>
         </label>
         {% endif %}
         <button type="submit" class="btn-blue btn-save">Найти</button>
@@ -122,7 +122,7 @@
     <div class="bulk-wrap">
         <h2 class="bulk-title">Массовая проставка тегов Р / К</h2>
         <div class="bulk-input-row">
-            <textarea id="bulkUsernames" rows="4" placeholder="Вставьте список @username, каждый на новой строке"></textarea>
+            <textarea id="bulkUsernames" rows="4" aria-label="Список Telegram username для массовой простановки тегов" placeholder="Вставьте список @username, каждый на новой строке"></textarea>
             <button type="button" class="btn-blue btn-save" onclick="bulkLookup()">Показать</button>
         </div>
         <div class="bulk-result" id="bulkResult"></div>

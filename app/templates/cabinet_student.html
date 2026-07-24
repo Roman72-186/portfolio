@@ -435,9 +435,9 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
         <div class="profile-hero-info">
             <div class="profile-role-tag">◉ Ученик</div>
             <div class="dashboard-name-row">
-                <div class="profile-name">
+                <h1 class="profile-name">
                     {{ user.last_name or '' }} {{ user.first_name or user.name }}
-                </div>
+                </h1>
                 {% include "partials/mobile_dashboard_logout.html" %}
             </div>
             <span class="profile-tariff">

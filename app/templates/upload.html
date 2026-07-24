@@ -148,7 +148,7 @@
     <div class="upload-layout">
         <!-- ── Основная форма ── -->
         <div>
-            <form action="/upload" method="post" enctype="multipart/form-data"
+            <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data"
                   style="display:flex;flex-direction:column;gap:20px">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                 <input type="hidden" name="section" value="{{ mode }}">
@@ -273,7 +273,9 @@ const counter    = document.getElementById('fileCount');
 const submitBtn  = document.getElementById('submitBtn');
 const reselectBtn= document.getElementById('reselectBtn');
 const addMoreBtn = document.getElementById('addMoreBtn');
+const uploadForm  = document.getElementById('upload-form');
 
+if (input && dropZone && previewArea && grid && counter && submitBtn && reselectBtn && addMoreBtn && uploadForm) {
 let selectedFiles = [];
 
 function syncInputFiles() {
@@ -386,7 +388,7 @@ function resetForm() {
     submitBtn.disabled = true;
 }
 
-document.querySelector('form').addEventListener('submit', function(ev) {
+uploadForm.addEventListener('submit', function(ev) {
     syncInputFiles();
     if (!selectedFiles.length) return;
 
@@ -439,5 +441,6 @@ document.querySelector('form').addEventListener('submit', function(ev) {
 
     xhr.send(fd);
 });
+}
 </script>
 {% endblock %}

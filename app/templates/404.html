@@ -103,7 +103,7 @@
     <div class="digits">
         <span class="digit">4</span>
         <div class="digit-zero">
-            <video autoplay loop muted playsinline preload="metadata">
+            <video loop muted playsinline preload="none" poster="/static/img/logo-sm.webp?v=2" aria-hidden="true">
                 <source src="/static/404.mp4" type="video/mp4">
             </video>
         </div>
@@ -121,6 +121,11 @@
     </div>
 </div>
 <script>
-    document.querySelector('.digit-zero video')?.play().catch(() => {});
+    const errorVideo = document.querySelector('.digit-zero video');
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const saveData = navigator.connection && navigator.connection.saveData;
+    if (errorVideo && !reduceMotion && !saveData) {
+        errorVideo.play().catch(() => {});
+    }
 </script>
 {% endblock %}

@@ -16,23 +16,26 @@
     --line:         #E6E8EE;
 
     /* ── Brand Blues ────────────────────────── */
-    --blue:         #3B5BFF;
+    --blue:         #3347D1;
     --blue-deep:    #2A3FB8;
     --blue-mid:     #4A6BFF;
     --blue-ink:     #1B2470;
+    --blue-on-soft: #2A3FB8;
     --blue-soft:    #E5EAFF;
     --blue-tint:    #DCE3FF;
 
     /* ── Status ─────────────────────────────── */
-    --success:      #16A34A;
+    --success:      #15803D;
     --error:        #DC2626;
-    --warning:      #D97706;
-    --warning-deep: #B45309;
+    --warning:      #B45309;
+    --warning-deep: #92400E;
     --warning-ink:  #78350F;
     --warning-text: #92400E;
     --warning-soft: #FEF3C7;
     --warning-tint: #FDE68A;
-    --ok:           #059669;
+    --ok:           #047857;
+    --ok-strong:    #047857;
+    --success-text: #166534;
     --gold:         #FCD34D;
 
     /* ── Shadows ────────────────────────────── */
@@ -361,7 +364,13 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 /* Компактный save-модификатор (эталон «Сохранить балл» staff-проверки,
    REDESIGN-PLAN-2 Фаза 2): используем .btn-blue.btn-save во всех формах
    проверки/инлайн-редактирования вместо локальных save-классов */
-.btn-save { padding: 8px 14px; border-radius: var(--r-sm); font-size: 13px; }
+.btn-save {
+    min-height: 44px;
+    padding: 8px 14px;
+    border-radius: var(--r-sm);
+    font-size: 13px;
+    justify-content: center;
+}
 
 /* Destructive action — конвенция №3 (REDESIGN-PLAN-2): контурная, ВСЕГДА
    видимо-красная в покое (не только на hover — иначе на touch неотличима
@@ -420,6 +429,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
    ~15 локальных копий (.dlg-back/.page-back/.su-back и т.д.) */
 .back-link {
     display: inline-flex; align-items: center; gap: 6px;
+    min-height: 44px;
     font-size: 13px; font-weight: 700;
     color: var(--muted); text-decoration: none;
     margin-bottom: 10px;
@@ -499,7 +509,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     display: inline-flex; align-items: center; gap: 5px;
     padding: 5px 12px; border-radius: var(--r-pill);
     font-size: 12px; font-weight: 600;
-    background: var(--blue-soft); color: var(--blue);
+    background: var(--blue-soft); color: var(--blue-on-soft);
 }
 .tag-pill-muted {
     background: var(--bg); color: var(--muted);
@@ -515,6 +525,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     padding: 18px 20px;
     display: flex; flex-direction: column;
     justify-content: space-between;
+    min-width: 0;
 }
 .stat-tile-head {
     display: flex; align-items: center; gap: 8px;
@@ -868,7 +879,7 @@ button.desk-nav-item {
     flex-shrink: 0;
 }
 .mobile-dashboard-logout__button {
-    min-height: 36px;
+    min-height: 44px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -945,6 +956,11 @@ button.desk-nav-item {
         transition-duration: 0.01ms !important;
         scroll-behavior: auto !important;
     }
+    /* Индикатор загрузки передаёт состояние, поэтому остаётся заметным. */
+    .spinner {
+        animation-duration: 0.9s !important;
+        animation-iteration-count: infinite !important;
+    }
 }
 
 /* ── Student tag pills (admin LK) ───────────────────────────────── */
@@ -955,8 +971,8 @@ button.desk-nav-item {
     letter-spacing: 0.02em; white-space: nowrap;
 }
 .tag-pill--exam         { background: var(--blue-soft);            color: var(--blue-ink); }
-.tag-pill--mode-offline { background: rgba(22,163,74,0.12);        color: var(--success); }
-.tag-pill--mode-online  { background: rgba(59,91,255,0.12);        color: var(--blue); }
+.tag-pill--mode-offline { background: rgba(22,163,74,0.12);        color: var(--success-text); }
+.tag-pill--mode-online  { background: rgba(59,91,255,0.12);        color: var(--blue-on-soft); }
 .tag-pill--case         { background: rgba(252,211,77,0.22);       color: #92590A; }
 .tag-pill--publish      { background: rgba(124,58,237,0.12);       color: #7C3AED; }
 .tag-pill--curator,

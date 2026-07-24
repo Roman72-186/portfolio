@@ -127,7 +127,7 @@
 }
 .tab-btn:hover { background: var(--surface-2); color: var(--text); }
 .tab-btn.active {
-    background: var(--blue-soft); color: var(--blue);
+    background: var(--blue-soft); color: var(--blue-on-soft);
     border-color: var(--blue);
 }
 
@@ -151,7 +151,7 @@
     padding: 8px 12px 4px; border-bottom: 1px solid var(--line);
 }
 .tariff-pill {
-    padding: 4px 12px; border-radius: var(--r-xl);
+    min-height: 44px; padding: 8px 12px; border-radius: var(--r-xl);
     font-size: 11px; font-weight: 700; cursor: pointer;
     border: 1.5px solid var(--line);
     background: none; color: var(--dim);
@@ -160,7 +160,7 @@
 }
 .tariff-pill:hover { border-color: var(--blue); color: var(--blue); }
 .tariff-pill.active {
-    background: var(--blue-soft); color: var(--blue);
+    background: var(--blue-soft); color: var(--blue-on-soft);
     border-color: var(--blue);
 }
 
@@ -1006,6 +1006,7 @@
         <div class="sidebar-header">
             <h1 class="sidebar-title">{{ sidebar_title }}</h1>
             <input type="text" class="sidebar-search" placeholder="Имя, @username или VK ID…"
+                   aria-label="Поиск ученика"
                    oninput="filterSidebar()" id="student-search">
         </div>
         {% if mock_status_available %}
@@ -1079,7 +1080,7 @@
         </div>
         <div class="sidebar-filters">
             {% if show_curator_filter and curators %}
-            <select class="sidebar-select" id="filter-curator" onchange="filterSidebar()">
+            <select class="sidebar-select" id="filter-curator" aria-label="Фильтр по куратору" onchange="filterSidebar()">
                 <option value="">Все кураторы</option>
                 {% for c in curators %}
                 <option value="{{ c.id }}">{{ c.name }}</option>
@@ -1087,7 +1088,7 @@
             </select>
             {% endif %}
             {% if enrollment_years %}
-            <select class="sidebar-select" id="filter-year" onchange="filterSidebar()">
+            <select class="sidebar-select" id="filter-year" aria-label="Фильтр по году присоединения" onchange="filterSidebar()">
                 <option value="">Все годы</option>
                 {% for y in enrollment_years %}
                 <option value="{{ y }}">{{ y }}</option>

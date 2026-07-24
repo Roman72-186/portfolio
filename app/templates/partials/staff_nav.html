@@ -57,8 +57,9 @@
     overflow-x: auto;
     scrollbar-width: none;
     box-shadow: 0 8px 32px rgba(30,45,107,0.14), 0 2px 8px rgba(30,45,107,0.08);
-    min-width: 320px;
-    max-width: 95vw;
+    width: max-content;
+    min-width: min(320px, calc(100vw - 16px));
+    max-width: calc(100vw - 16px);
     height: 56px;
 }
 .staff-pill-nav::-webkit-scrollbar { display: none; }
@@ -92,7 +93,7 @@
 .spn-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 .spn-btn.spn-active {
     background: var(--blue-soft);
-    color: var(--blue);
+    color: var(--blue-on-soft);
 }
 .spn-icon {
     width: 22px; height: 22px;

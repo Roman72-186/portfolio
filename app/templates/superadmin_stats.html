@@ -37,7 +37,7 @@
 .type-badge { display: inline-flex; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
 .tb-mock { background: rgba(217,119,6,0.1); color: var(--warning); }
 
-.ss-export-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--ok); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; text-decoration: none; }
+.ss-export-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 8px 16px; background: var(--ok-strong); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; text-decoration: none; }
 .ss-export-btn:hover { opacity: 0.88; }
 
 .ss-empty { padding: 28px; text-align: center; color: var(--dim); font-size: 14px; }
@@ -112,8 +112,8 @@
     <!-- Поиск по ученику (имя или Telegram) — фильтрует все секции -->
     <div class="ss-search" id="ss-search">
         <span class="ss-search-icon">🔍</span>
-        <input type="text" id="ss-search-input" placeholder="Поиск по имени или Telegram — по всем вкладкам…" autocomplete="off">
-        <button type="button" class="ss-search-clear" id="ss-search-clear" title="Очистить">×</button>
+        <input type="text" id="ss-search-input" aria-label="Поиск по имени или Telegram" placeholder="Поиск по имени или Telegram — по всем вкладкам…" autocomplete="off">
+        <button type="button" class="ss-search-clear" id="ss-search-clear" title="Очистить" aria-label="Очистить поиск">×</button>
     </div>
     <div class="ss-noresults" id="ss-noresults">По запросу ничего не найдено</div>
 

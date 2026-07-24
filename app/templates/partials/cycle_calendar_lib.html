@@ -176,7 +176,8 @@ window.CYCCAL = window.CYCCAL || (function () {
         const id = 'calimg' + (++imgSeq);
         return '<span class="cal-img-wrap is-loading" id="' + id + '">'
             + '<img src="' + esc(url) + '" data-src="' + esc(url) + '" alt="' + esc(alt || '') + '" loading="lazy" tabindex="0" role="button" aria-label="Открыть фото" '
-            + 'onclick="openGallery(this)" onload="CYCCAL._imgOk(\'' + id + '\')" onerror="CYCCAL._imgFail(\'' + id + '\')">'
+            + 'onclick="openGallery(this)" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openGallery(this)}" '
+            + 'onload="CYCCAL._imgOk(\'' + id + '\')" onerror="CYCCAL._imgFail(\'' + id + '\')">'
             + '<span class="cal-img-overlay"><span class="spinner"></span>'
             + '<span class="cal-img-error-text">Не удалось загрузить</span>'
             + '<button type="button" class="cal-img-retry" onclick="CYCCAL._imgRetry(event,\'' + id + '\')">↻ Повторить</button>'

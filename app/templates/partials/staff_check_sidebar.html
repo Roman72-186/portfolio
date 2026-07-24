@@ -24,6 +24,7 @@
                 {{ total_students }} учен{{ 'иков' if total_students != 1 else 'ик' }} · на проверке {{ total_unchecked }} работ
             </div>
             <input type="text" class="sidebar-search" placeholder="{{ search_placeholder }}"
+                   aria-label="Поиск ученика"
                    oninput="applyFilters()" id="student-search">
             {% if tariffs %}
             <div class="tariff-filter" id="tariff-filter">
