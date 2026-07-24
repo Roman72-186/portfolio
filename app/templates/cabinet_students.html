@@ -1434,6 +1434,13 @@ function renderProfile(data) {
         +   '<div class="profile-action-label">Статистика</div>'
         +   '<div class="profile-action-count">динамика баллов</div>'
         + '</button>'
+        + (s.legacy_photo_count ? (
+            '<a class="profile-action-btn" href="/cabinet/students/' + s.id + '/legacy-portfolio" target="_blank" rel="noopener">'
+            +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg></div>'
+            +   '<div class="profile-action-label">Архив</div>'
+            +   '<div class="profile-action-count">' + s.legacy_photo_count + ' фото</div>'
+            + '</a>'
+          ) : '')
         + '</div>';
 
     document.getElementById('main-panel').innerHTML = html;
@@ -1963,6 +1970,29 @@ function buildMockExams(data) {
     html += '<div class="subjects-grid">';
     MOCK_SUBJECTS.forEach(function(subject, idx) {
         html += buildSubjectCard(subject, data, idx);
+    });
+    html += '</div>';
+    html += buildLegacyArchive(data.legacy_by_month || []);
+    return html;
+}
+
+function buildLegacyArchive(groups) {
+    if (!groups.length) return '';
+    var html = '<div style="margin-top:20px">'
+        + '<div style="font-size:13px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">'
+        + 'Архив (импорт из старого чат-бота)</div>';
+    groups.forEach(function(g, i) {
+        html += '<div style="margin-bottom:12px">'
+            + '<div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px;text-transform:capitalize">'
+            + esc(g.year + ' — ' + g.month) + ' <span style="font-weight:400;color:var(--dim);font-size:12px">' + g.total + ' фото</span></div>'
+            + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px">';
+        g.photos.forEach(function(p) {
+            if (!p.s3_url) return;
+            html += '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото">'
+                + '<img src="' + esc(p.s3_url) + '" alt="' + esc(p.filename) + '" loading="lazy" '
+                + 'style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:zoom-in;display:block"></button>';
+        });
+        html += '</div></div>';
     });
     html += '</div>';
     return html;

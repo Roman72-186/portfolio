@@ -16,6 +16,7 @@ from app.api import auth, cabinet, upload, gallery
 from app.api import cabinet_student, cabinet_curator, cabinet_admin, cabinet_superadmin
 from app.api import cabinet_students_shared, cabinet_tags, cases
 from app.api import cycle_upload, feedback as feedback_router
+from app.api import legacy_portfolio
 from app.limiter import limiter
 from app.services.rbac import seed_roles_and_permissions
 from app.services import n8n as n8n_service
@@ -248,6 +249,7 @@ app.include_router(upload.router)
 app.include_router(cycle_upload.router)
 app.include_router(feedback_router.router)
 app.include_router(gallery.router)
+app.include_router(legacy_portfolio.router)
 
 
 @app.get("/health")

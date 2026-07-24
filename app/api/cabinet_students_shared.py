@@ -19,12 +19,13 @@ from sqlalchemy import func, or_, and_
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session, invalidate_unread
-from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, MONTHS, TARIFFS, COHORT_TAGS, COHORT_TAG_LABELS
+from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, MONTHS, MONTH_TO_NUM, TARIFFS, COHORT_TAGS, COHORT_TAG_LABELS
 from app.db.database import get_db
 from app.dependencies import get_current_user, require_admin_role, require_csrf
 from app.models.session import Session
 from app.models.exam_assignment import ExamTicket
 from app.models.exam_cycle import ExamCycle
+from app.models.legacy_portfolio_photo import LegacyPortfolioPhoto
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
@@ -453,6 +454,11 @@ def get_student_profile(
         .filter(ExamCycle.user_id == student_id)
         .scalar()
     ) or 0
+    legacy_photo_count = (
+        db.query(func.count(LegacyPortfolioPhoto.id))
+        .filter(LegacyPortfolioPhoto.user_id == student_id)
+        .scalar()
+    ) or 0
 
     return JSONResponse({
         "student": {
@@ -484,6 +490,7 @@ def get_student_profile(
             "mock_exam_count": len(mock_works),
             "retake_count": retake_count,
             "cycle_count": cycle_count,
+            "legacy_photo_count": legacy_photo_count,
         },
     })
 
@@ -629,6 +636,33 @@ def get_mock_exams(
         for lock in db.query(MockExamLock).filter(MockExamLock.user_id == student_id).all()
     }
 
+    # Архив (импорт из Telegram-чат-бота, задним числом): read-only, по месяцам.
+    # Намеренно не смешивается с mock_works — там id ссылается на реальный Work
+    # и участвует в оценке/пересдаче/разблокировке; архивные фото этого не имеют.
+    legacy_photos = (
+        db.query(LegacyPortfolioPhoto)
+        .filter(LegacyPortfolioPhoto.user_id == student_id)
+        .order_by(LegacyPortfolioPhoto.sent_at.desc())
+        .limit(2000)
+        .all()
+    )
+    legacy_groups: dict[tuple, list] = defaultdict(list)
+    for p in legacy_photos:
+        legacy_groups[(p.year, p.month)].append(p)
+    legacy_by_month = [
+        {
+            "year": year,
+            "month": month,
+            "total": len(items),
+            "photos": [{"s3_url": p.s3_url, "filename": p.original_filename} for p in items],
+        }
+        for (year, month), items in sorted(
+            legacy_groups.items(),
+            key=lambda kv: (kv[0][0], MONTH_TO_NUM.get(kv[0][1], 99)),
+            reverse=True,
+        )
+    ]
+
     return JSONResponse({
         "student": {
             "id": student.id,
@@ -647,6 +681,7 @@ def get_mock_exams(
         "avg_score_by_subject": avg_score_by_subject,
         "period_only": period_only_bool,
         "period_active": bool(active_period),
+        "legacy_by_month": legacy_by_month,
     })
 
 

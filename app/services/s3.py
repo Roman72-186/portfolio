@@ -13,6 +13,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from functools import lru_cache
+from pathlib import Path
 
 from app.config import settings
 from app.constants import TARIFF_DISPLAY
@@ -70,6 +71,14 @@ def s3_path_mock_exam(vk_id: int, tariff: str, filename: str) -> str:
     tf = tariff_display(tariff)
     ym = datetime.now(timezone.utc).strftime("%Y-%m")
     return f"Пробники/{tf}/{tf}_{vk_id}/{ym}/{_make_filename(tariff, vk_id, filename)}"
+
+
+def s3_path_legacy_archive(vk_id: int, tariff: str, year: int, month_num: int, filename: str) -> str:
+    """Build a stable key for a historical photo imported from the old bot."""
+    tf = tariff_display(tariff)
+    ym = f"{year:04d}-{month_num:02d}"
+    safe_name = Path(filename).name
+    return f"Архив/{tf}/{tf}_{vk_id}/{ym}/{tf}_{vk_id}_{safe_name}"
 
 
 def s3_path_retake(vk_id: int, tariff: str, filename: str) -> str:
