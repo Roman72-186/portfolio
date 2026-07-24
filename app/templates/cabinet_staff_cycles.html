@@ -22,7 +22,7 @@
 .cyc-subj-pill {
     padding: 6px 14px; border: 1px solid var(--line); border-radius: var(--r-pill);
     background: var(--surface); color: var(--muted); font-size: 13px; font-weight: 800;
-    cursor: pointer; transition: all .12s;
+    cursor: pointer; transition: background-color .12s, border-color .12s, color .12s;
 }
 .cyc-subj-pill:hover { border-color: var(--blue); color: var(--blue); }
 .cyc-subj-pill.active { background: var(--blue); border-color: var(--blue); color: #fff; }
@@ -39,7 +39,7 @@
 .cyc-copy-btn {
     padding: 8px 14px; border: 1px solid var(--line); border-radius: var(--r-sm);
     background: var(--surface); color: var(--ink); font-size: 13px; font-weight: 800;
-    cursor: pointer; transition: all .12s; font-family: inherit; white-space: nowrap;
+    cursor: pointer; transition: background-color .12s, border-color .12s, color .12s; font-family: inherit; white-space: nowrap;
 }
 .cyc-copy-btn:hover { border-color: var(--blue); color: var(--blue); }
 .cyc-copy-btn.copied { background: rgba(22,163,74,0.14); color: var(--success); border-color: transparent; }
@@ -91,7 +91,7 @@
 .cyc-load-more-btn {
     padding: 10px 22px; border: 1px solid var(--line); border-radius: var(--r-pill);
     background: var(--surface); color: var(--blue); font-size: 13px; font-weight: 800;
-    cursor: pointer; transition: all .12s; font-family: inherit;
+    cursor: pointer; transition: background-color .12s, border-color .12s, color .12s; font-family: inherit;
 }
 .cyc-load-more-btn:hover { border-color: var(--blue); background: var(--blue-soft); }
 </style>

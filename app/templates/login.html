@@ -28,7 +28,7 @@
     background: var(--blue-soft);
     display: flex; align-items: center; justify-content: center;
 }
-.login-text h2 {
+.login-text h1 {
     font-family: var(--font-display);
     font-size: 17px;
     font-weight: 700;
@@ -66,7 +66,11 @@
 }
 .tg-support-btn:hover { color: #0088cc; border-color: #0088cc; opacity: 1; }
 
-.staff-login-link { font-size: 13px; color: var(--dim); text-decoration: none; transition: color 0.15s; }
+.staff-login-link {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 44px;
+    font-size: 13px; color: var(--dim); text-decoration: none; transition: color 0.15s;
+}
 .staff-login-link:hover, .staff-login-link:focus-visible { color: var(--blue); }
 
 {% if settings.course_calculator_all_roles %}
@@ -101,7 +105,7 @@
                 <img src="/static/img/logo.webp?v=2" alt="Логотип" width="40" height="40">
             </div>
             <div class="login-text">
-                <h2>Войдите в личный кабинет</h2>
+                <h1>Войдите в личный кабинет</h1>
                 <p>Доступ открыт только участникам закрытого сообщества ВКонтакте</p>
             </div>
         </div>

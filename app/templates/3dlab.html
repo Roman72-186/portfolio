@@ -1138,7 +1138,8 @@ body.inset-mode #insetOpacityRow {
 </div>
         <div class="viewer-toolbar-row" id="insetOpacityRow" style="display:none; gap:10px; align-items:center;">
   <div style="font-size:12px; opacity:.75; min-width:110px;">Прозрачность</div>
-  <input id="insetOpacitySlider" type="range" min="0" max="100" value="100" style="flex:1;">
+  <input id="insetOpacitySlider" type="range" min="0" max="100" value="100"
+         aria-label="Прозрачность вставки" style="flex:1;">
 </div>
       </div>
 
@@ -1150,9 +1151,19 @@ body.inset-mode #insetOpacityRow {
 
 <div class="alt-overlay" id="schemeOverlay">
   <button class="scheme-nav-btn prev" id="schemePrevBtn" type="button" aria-label="Предыдущая схема">‹</button>
-  <img id="schemeImage" src="" alt="Схема построения" />
+  <span id="schemeImageMount" aria-hidden="true"></span>
   <button class="scheme-nav-btn next" id="schemeNextBtn" type="button" aria-label="Следующая схема">›</button>
 </div>
+<script>
+(function mountSchemeImage() {
+  var mount = document.getElementById("schemeImageMount");
+  if (!mount) return;
+  var image = document.createElement("img");
+  image.id = "schemeImage";
+  image.alt = "Схема построения";
+  mount.replaceWith(image);
+})();
+</script>
 
 <!-- ВИДЕО -->
 <div class="alt-overlay" id="videoOverlay">

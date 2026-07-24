@@ -104,7 +104,9 @@
     flex: 1; cursor: pointer; padding: 10px 14px; border-radius: var(--r-sm);
     border: 1.5px solid var(--line); background: var(--surface);
     font-size: 13px; font-weight: 700; color: var(--muted);
-    text-align: center; transition: all 0.15s; user-select: none;
+    text-align: center;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+    user-select: none;
     display: flex; align-items: center; justify-content: center; gap: 6px;
 }
 .activate-opt:hover { border-color: var(--blue); color: var(--blue); }
@@ -133,7 +135,7 @@
     display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
     padding: 5px 10px; border: 1.5px solid var(--line); border-radius: 999px;
     font-size: 12px; font-weight: 600; color: var(--muted); background: var(--bg);
-    transition: all 0.15s;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
 }
 .rf-chip:hover { border-color: var(--blue); color: var(--blue); }
 .rf-chip input { display: none; }

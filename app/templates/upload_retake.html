@@ -24,7 +24,7 @@
 .preview-area { display: none; }
 .preview-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .preview-count { font-size: 14px; font-weight: 700; color: #7C3AED; }
-.btn-reselect { font-size: 12px; font-weight: 500; color: var(--dim); background: none; border: 1px solid var(--line); border-radius: 20px; padding: 4px 12px; cursor: pointer; transition: all 0.2s; }
+.btn-reselect { font-size: 12px; font-weight: 500; color: var(--dim); background: none; border: 1px solid var(--line); border-radius: 20px; padding: 4px 12px; cursor: pointer; transition: background-color 0.2s, border-color 0.2s, color 0.2s; }
 .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .photo-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
 .preview-cell { position: relative; }
@@ -173,6 +173,7 @@
 {% set active_tab = "retake" %}
 {% include "partials/bottom_nav.html" %}
 
+{% if feature_available %}
 <script>
 const MAX_FILES = {{ max_files }}, MAX_SIZE = 10*1024*1024;
 const input = document.getElementById('photoInput'), dropZone = document.getElementById('dropZone');
@@ -261,4 +262,5 @@ document.getElementById('retakeForm').addEventListener('submit', function(){
 });
 updateSubmit();
 </script>
+{% endif %}
 {% endblock %}

@@ -974,7 +974,14 @@ def mock_exam_form(
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    return _render_mock(request, user, db)
+    feature_available, feature_message = is_feature_available(db, FEATURE_MOCK_EXAM)
+    return _render_mock(
+        request,
+        user,
+        db,
+        feature_available=feature_available,
+        feature_message=feature_message,
+    )
 
 
 # ── GET /upload/mock-exam/csrf ───────────────────────────────────────────────

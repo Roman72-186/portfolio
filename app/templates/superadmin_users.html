@@ -261,7 +261,9 @@
                     {% if u.id != current_user_id and u_rank < current_user_rank %}
                     <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/role" class="role-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                        <select name="role_id" onchange="this.form.submit()">
+                        <select name="role_id"
+                                aria-label="Роль пользователя {{ u.name }}"
+                                onchange="this.form.submit()">
                             <option value="" {% if not u.role_id %}selected{% endif %}>— нет —</option>
                             {% for r in roles %}
                             <option value="{{ r.id }}"
