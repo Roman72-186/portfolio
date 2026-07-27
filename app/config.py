@@ -36,12 +36,16 @@ class Settings(BaseSettings):
     vk_group_id: int = 0
     vk_community_token: str = ""  # service token for re-checking group membership
 
-    # TimeWeb S3
+    # S3 (TimeWeb сейчас, Selectel — после миграции)
     s3_endpoint: str = ""        # e.g. https://s3.timeweb.cloud
     s3_bucket: str = ""
     s3_access_key: str = ""
     s3_secret_key: str = ""
     s3_region: str = "ru-1"
+    # TimeWeb делает объект публичным через Object ACL, Selectel его не поддерживает
+    # (там публичность задаётся типом бакета / bucket policy). Default=True сохраняет
+    # текущее поведение; на Selectel выставить S3_USE_ACL=false.
+    s3_use_acl: bool = True
 
     # Superadmin permanent access link
     admin_access_token: str = ""

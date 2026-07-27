@@ -37,6 +37,16 @@ def is_configured() -> bool:
     return bool(settings.s3_endpoint and settings.s3_bucket and settings.s3_access_key)
 
 
+def _acl_kwargs() -> dict:
+    """ACL-параметр для запросов, делающих объект публичным.
+
+    TimeWeb требует ACL="public-read" на каждый объект. Selectel Object ACL не
+    поддерживает и отвергает такой запрос — там публичность задаётся типом бакета
+    или bucket policy. Переключается через S3_USE_ACL в .env.
+    """
+    return {"ACL": "public-read"} if settings.s3_use_acl else {}
+
+
 @lru_cache(maxsize=1)
 def _get_client():
     """Build and cache a boto3 S3 client."""
@@ -136,7 +146,7 @@ def move_s3_object(old_path: str, new_path: str) -> bool:
             Bucket=settings.s3_bucket,
             CopySource={"Bucket": settings.s3_bucket, "Key": old_path},
             Key=new_path,
-            ACL="public-read",
+            **_acl_kwargs(),
         )
         client.delete_object(Bucket=settings.s3_bucket, Key=old_path)
         return True
@@ -183,7 +193,7 @@ def upload_to_s3(s3_path: str, data: bytes, content_type: str = "image/jpeg") ->
             Key=s3_path,
             Body=data,
             ContentType=content_type,
-            ACL="public-read",
+            **_acl_kwargs(),
         )
         url = s3_public_url(s3_path)
         logger.info("S3 upload OK: %s", url)
