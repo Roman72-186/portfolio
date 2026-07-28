@@ -2,4 +2,8 @@
 # поэтому первый деплой на новый сервер упадёт, пока его ключа здесь нет.
 # Разово: PORTFOLIO_SSH_ALLOW_UNKNOWN_HOST=1 python scripts/deploy.py
 # затем снять ключ и дописать сюда: ssh-keyscan -t ed25519 <NEW_IP>
+# Старый прод TimeWeb
 89.23.96.254 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAjYfmeEoaObHrTNOMRa900wh6VkjEKmEoSWSiZzZV5x
+# Новый VDS Selectel, снят ssh-keyscan 2026-07-27.
+# Отпечаток: SHA256:pyogfQnCWTO/5YXffU3DQMFKDvnYdmaN+av4e0b8SgU
+139.100.237.57 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAq0ralpi9g4aR4Uttj154wzmRpbUQaJ3i/8ox8AG+0Z

@@ -1,0 +1,4 @@
+# core.autocrlf=true на машине разработки превращает .sh в CRLF при checkout,
+# а эти скрипты запускаются на Linux через `ssh root@host 'bash -s' < script.sh`.
+# Bash на \r падает с `$'\r': command not found`, поэтому переносы фиксируем.
+*.sh text eol=lf
