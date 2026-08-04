@@ -148,6 +148,24 @@ def test_video_fullscreen_keeps_watermark_inside_fullscreen_container(
     assert "picture-in-picture; fullscreen" not in response.text
 
 
+def test_mobile_video_uses_pseudo_fullscreen_with_watermark(auth_client, monkeypatch):
+    client, _ = auth_client
+    _configure_bunny(monkeypatch)
+
+    response = client.get("/cabinet/video")
+
+    assert response.status_code == 200
+    assert ".video-frame.is-pseudo-fullscreen" in response.text
+    assert "height: 100dvh" in response.text
+    assert "safe-area-inset-right" in response.text
+    assert "function shouldUsePseudoFullscreen()" in response.text
+    assert "(max-width: 900px), (pointer: coarse)" in response.text
+    assert "enterPseudoFullscreen()" in response.text
+    assert "exitPseudoFullscreen()" in response.text
+    assert "requestResult.catch(enterPseudoFullscreen)" in response.text
+    assert "fullscreenButton.hidden = true" not in response.text
+
+
 def test_legacy_url_cannot_bypass_catalogue_unpublish(auth_client, db, monkeypatch):
     client, _ = auth_client
     _configure_bunny(monkeypatch)

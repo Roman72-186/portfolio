@@ -23,6 +23,22 @@
     aspect-ratio: auto;
     background: #0f121c;
 }
+html.has-video-pseudo-fullscreen,
+body.has-video-pseudo-fullscreen {
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+.video-frame.is-pseudo-fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    max-width: none;
+    aspect-ratio: auto;
+    background: #0f121c;
+}
 .video-frame iframe {
     position: absolute; inset: 0; z-index: 2;
     width: 100%; height: 100%; border: 0;
@@ -87,6 +103,10 @@
 .video-fullscreen-button:focus-visible {
     outline: 2px solid #fff;
     outline-offset: 2px;
+}
+.video-frame.is-pseudo-fullscreen .video-fullscreen-button {
+    right: max(8px, env(safe-area-inset-right));
+    bottom: max(8px, env(safe-area-inset-bottom));
 }
 .video-loading {
     position: absolute; inset: 0; z-index: 1;
@@ -184,6 +204,7 @@
         var watermarkStepTimer = null;
         var watermarkResizeObserver = null;
         var orbitMetrics = null;
+        var pseudoFullscreen = false;
         frame.addEventListener('load', function () {
             playerContainer.classList.add('is-ready');
         }, { once: true });
@@ -268,20 +289,42 @@
         }
 
         startWatermarkOrbit();
-        window.addEventListener('pagehide', stopWatermarkOrbit, { once: true });
-
         function fullscreenElement() {
             return document.fullscreenElement || document.webkitFullscreenElement || null;
         }
 
+        function isFullscreenActive() {
+            return pseudoFullscreen || fullscreenElement() === playerContainer;
+        }
+
+        function enterPseudoFullscreen() {
+            if (pseudoFullscreen) return;
+            pseudoFullscreen = true;
+            playerContainer.classList.add('is-pseudo-fullscreen');
+            document.documentElement.classList.add('has-video-pseudo-fullscreen');
+            document.body.classList.add('has-video-pseudo-fullscreen');
+            updateFullscreenButton();
+        }
+
+        function exitPseudoFullscreen(restoreFocus) {
+            if (!pseudoFullscreen) return;
+            pseudoFullscreen = false;
+            playerContainer.classList.remove('is-pseudo-fullscreen');
+            document.documentElement.classList.remove('has-video-pseudo-fullscreen');
+            document.body.classList.remove('has-video-pseudo-fullscreen');
+            updateFullscreenButton();
+            if (restoreFocus !== false && fullscreenButton) fullscreenButton.focus();
+        }
+
         function updateFullscreenButton() {
             if (!fullscreenButton) return;
-            var isFullscreen = fullscreenElement() === playerContainer;
+            var isFullscreen = isFullscreenActive();
             var label = isFullscreen ? 'Выйти из полноэкранного режима' : 'На весь экран';
             fullscreenButton.setAttribute('aria-label', label);
             fullscreenButton.setAttribute('title', label);
             fullscreenButton.setAttribute('aria-pressed', String(isFullscreen));
             window.requestAnimationFrame(measureWatermarkOrbit);
+            window.setTimeout(measureWatermarkOrbit, 250);
         }
 
         function reportFullscreenError() {
@@ -295,29 +338,56 @@
             var exitFullscreen = document.exitFullscreen
                 || document.webkitExitFullscreen;
 
-            if (!requestFullscreen || !exitFullscreen) {
-                fullscreenButton.hidden = true;
-            } else {
-                fullscreenButton.addEventListener('click', function () {
+            function shouldUsePseudoFullscreen() {
+                if (!requestFullscreen || !exitFullscreen) return true;
+                return window.matchMedia
+                    && window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
+            }
+
+            fullscreenButton.addEventListener('click', function () {
+                if (pseudoFullscreen) {
+                    exitPseudoFullscreen();
+                    return;
+                }
+
+                if (fullscreenElement() === playerContainer) {
                     try {
-                        var result;
-                        if (fullscreenElement() === playerContainer) {
-                            result = exitFullscreen.call(document);
-                        } else {
-                            result = requestFullscreen.call(playerContainer);
-                        }
-                        if (result && typeof result.catch === 'function') {
-                            result.catch(reportFullscreenError);
+                        var exitResult = exitFullscreen.call(document);
+                        if (exitResult && typeof exitResult.catch === 'function') {
+                            exitResult.catch(reportFullscreenError);
                         }
                     } catch (error) {
                         reportFullscreenError();
                     }
-                });
-                document.addEventListener('fullscreenchange', updateFullscreenButton);
-                document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
-                updateFullscreenButton();
-            }
+                    return;
+                }
+
+                if (shouldUsePseudoFullscreen()) {
+                    enterPseudoFullscreen();
+                    return;
+                }
+
+                try {
+                    var requestResult = requestFullscreen.call(playerContainer);
+                    if (requestResult && typeof requestResult.catch === 'function') {
+                        requestResult.catch(enterPseudoFullscreen);
+                    }
+                } catch (error) {
+                    enterPseudoFullscreen();
+                }
+            });
+            document.addEventListener('fullscreenchange', updateFullscreenButton);
+            document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape' && pseudoFullscreen) exitPseudoFullscreen();
+            });
+            updateFullscreenButton();
         }
+
+        window.addEventListener('pagehide', function () {
+            stopWatermarkOrbit();
+            exitPseudoFullscreen(false);
+        }, { once: true });
 
         if (!window.playerjs || !window.playerjs.Player) {
             status.textContent = 'Автосохранение временно недоступно. Видео продолжит работать.';
