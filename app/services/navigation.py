@@ -149,6 +149,16 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         min_rank=4,
     ),
     StaffNavItem(
+        key="videos",
+        href="/cabinet/admin/videos",
+        sidebar_label="Видео",
+        pill_label="Видео",
+        aria_label="Управление видео",
+        tooltip="Видеоуроки",
+        icon="video",
+        min_rank=4,
+    ),
+    StaffNavItem(
         key="3dlab",
         href="/3dlab",
         sidebar_label="3D Лаб",

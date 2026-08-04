@@ -16,7 +16,7 @@ from app.api import auth, cabinet, upload, gallery
 from app.api import cabinet_student, cabinet_curator, cabinet_admin, cabinet_superadmin
 from app.api import cabinet_students_shared, cabinet_tags, cases
 from app.api import cycle_upload, feedback as feedback_router
-from app.api import legacy_portfolio
+from app.api import legacy_portfolio, video, video_admin
 from app.limiter import limiter
 from app.services.rbac import seed_roles_and_permissions
 from app.services import n8n as n8n_service
@@ -180,6 +180,9 @@ async def security_headers(request: Request, call_next):
 @app.middleware("http")
 async def cache_control(request: Request, call_next):
     response: Response = await call_next(request)
+    if request.url.path.startswith("/cabinet/video") or request.url.path.startswith("/cabinet/admin/videos"):
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
     if request.url.path.startswith("/static/3dlab/js/"):
         response.headers["Cache-Control"] = "no-cache"
         return response
@@ -250,6 +253,8 @@ app.include_router(cycle_upload.router)
 app.include_router(feedback_router.router)
 app.include_router(gallery.router)
 app.include_router(legacy_portfolio.router)
+app.include_router(video.router)
+app.include_router(video_admin.router)
 
 
 @app.get("/health")

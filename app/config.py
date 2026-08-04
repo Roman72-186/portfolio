@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     # Course calculator
     course_calculator_all_roles: bool = False  # set true to show calculator on login and widget to all logged-in users
 
+    # Bunny Stream pilot video
+    bunny_stream_enabled: bool = False
+    bunny_stream_library_id: int = 0
+    bunny_stream_video_id: str = ""
+    bunny_stream_token_key: str = ""
+    bunny_stream_api_key: str = ""
+    bunny_stream_token_ttl_seconds: int = 300
+    bunny_stream_video_title: str = "Тестовый видеоурок"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

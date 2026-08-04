@@ -53,6 +53,7 @@ def test_staff_nav_items_keep_admin_contract():
         ("students", "/cabinet/students", "Ученики", "Ученики", "Ученики", "Ученики"),
         ("cycles", "/cabinet/staff/cycles", "Цикл Пробника", "Цикл", "Цикл Пробника", "Цикл Пробника"),
         ("cases", "/cabinet/cases", "Кейсы", "Кейсы", "Кейсы", "Кейсы по пробникам"),
+        ("videos", "/cabinet/admin/videos", "Видео", "Видео", "Управление видео", "Видеоуроки"),
         ("3dlab", "/3dlab", "3D Лаб", "3D Лаб", "3D Лаб", "3D Лаборатория"),
         (
             "reports",
@@ -82,6 +83,9 @@ def test_staff_nav_items_keep_rank_specific_visibility_contract():
     assert "cases" not in [item.key for item in rank_3_items]
     assert "cases" in [item.key for item in rank_4_items]
     assert "cases" in [item.key for item in rank_5_items]
+    assert "videos" not in [item.key for item in rank_3_items]
+    assert "videos" in [item.key for item in rank_4_items]
+    assert "videos" in [item.key for item in rank_5_items]
     assert "reports" not in [item.key for item in rank_3_items]
     assert "reports" in [item.key for item in rank_4_items]
     assert "reports" in [item.key for item in rank_5_items]

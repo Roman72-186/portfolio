@@ -1,0 +1,385 @@
+{% extends "base.html" %}
+{#
+THESIS: видео проходит видимый путь от файла до публикации; интерфейс не прячет состояние в отдельных карточках.
+OWN-WORLD: существующий светлый Spark UI, одна синяя основная кнопка, линейные строки и спокойные статусные метки.
+STORY: сотрудник загружает файл, видит реальный прогресс, дожидается обработки, проверяет и публикует.
+FIRST VIEWPORT: заголовок и загрузка слева, сводка состояний справа; ниже единая очередь видео.
+FORM: Operate, расширение существующего кабинета без новой визуальной системы.
+#}
+{% block title %}Управление видео{% endblock %}
+{% block extra_styles %}
+<style>
+.vam-page { max-width: 1040px; margin: 0 auto; }
+.vam-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
+.vam-head-copy { max-width: 65ch; }
+.vam-head h1 { margin: 0 0 6px; font: 800 24px/1.25 var(--font-display); color: var(--text); }
+.vam-head p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+.vam-upload {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, .7fr); gap: 20px;
+    padding: 20px; margin-bottom: 18px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-md); box-shadow: var(--sh-sm);
+}
+.vam-upload h2, .vam-queue h2 { margin: 0 0 12px; font: 700 17px/1.3 var(--font-display); color: var(--text); }
+.vam-fields { display: grid; gap: 12px; }
+.vam-field { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.vam-field input, .vam-field textarea {
+    width: 100%; box-sizing: border-box; padding: 10px 12px; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 10px; font: 500 14px/1.4 var(--font-body);
+}
+.vam-field textarea { min-height: 82px; resize: vertical; }
+.vam-field input:focus, .vam-field textarea:focus { outline: 2px solid var(--blue); outline-offset: 1px; }
+.vam-file-note { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.vam-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
+.vam-actions button { min-height: 44px; }
+.vam-upload-state { display: grid; align-content: center; gap: 10px; padding: 16px; background: var(--bg); border-radius: var(--r-md); }
+.vam-upload-state strong { font-size: 14px; color: var(--text); }
+.vam-upload-state p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.vam-progress { height: 10px; overflow: hidden; background: var(--surface-2); border-radius: var(--r-pill); }
+.vam-progress > span { display: block; width: 0; height: 100%; background: var(--blue); }
+.vam-progress-value { font: 700 13px/1 var(--font-body); color: var(--text); }
+.vam-message { min-height: 20px; margin: 10px 0 0; color: var(--muted); font-size: 13px; }
+.vam-message.is-error { color: var(--error); }
+.vam-config-warning { padding: 14px 16px; margin-bottom: 18px; color: var(--warning); background: var(--warning-soft); border-radius: var(--r-md); font-size: 13px; line-height: 1.5; }
+.vam-list { display: grid; gap: 10px; }
+.vam-row { padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); }
+.vam-row-main { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: start; }
+.vam-title { margin: 0 0 5px; font: 700 15px/1.35 var(--font-display); color: var(--text); }
+.vam-meta { display: flex; flex-wrap: wrap; gap: 7px 12px; color: var(--muted); font-size: 12px; }
+.vam-badge { display: inline-flex; align-items: center; min-height: 28px; padding: 4px 9px; border-radius: var(--r-pill); font-size: 11px; font-weight: 700; }
+.vam-badge--ready { color: var(--ok-strong); background: rgba(4,120,87,.10); }
+.vam-badge--active { color: var(--blue-on-soft); background: var(--blue-soft); }
+.vam-badge--working { color: var(--warning); background: var(--warning-soft); }
+.vam-badge--failed { color: var(--error); background: rgba(220,38,38,.08); }
+.vam-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; margin-top: 13px; }
+.vam-row-actions button, .vam-row-actions a { min-height: 36px; padding: 7px 12px; font-size: 12px; }
+.vam-edit { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+.vam-edit summary { cursor: pointer; color: var(--blue); font-size: 12px; font-weight: 700; }
+.vam-edit-fields { display: grid; grid-template-columns: 1fr 1.4fr auto; gap: 8px; align-items: end; margin-top: 10px; }
+.vam-empty { padding: 28px 20px; text-align: center; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); }
+@media (max-width: 760px) {
+    .vam-head, .vam-row-main { grid-template-columns: 1fr; display: grid; }
+    .vam-upload { grid-template-columns: 1fr; padding: 16px; }
+    .vam-edit-fields { grid-template-columns: 1fr; }
+    .vam-row-actions { justify-content: flex-start; }
+}
+</style>
+{% endblock %}
+{% block content %}
+{% set status_labels = {'uploading':'Загрузка', 'processing':'Обработка', 'ready':'Готово', 'failed':'Ошибка', 'deleting':'Удаление', 'delete_failed':'Ошибка удаления'} %}
+<div class="vam-page">
+    <div class="vam-head">
+        <div class="vam-head-copy">
+            <h1>Видео</h1>
+            <p>Загрузка идёт напрямую в Bunny. После обработки проверьте ролик и опубликуйте его для учеников.</p>
+        </div>
+        <a class="btn-outline" href="/cabinet/videos">Открыть каталог</a>
+    </div>
+
+    {% if not upload_available %}
+    <div class="vam-config-warning" role="status">
+        Загрузка пока не настроена: добавьте Stream API Key в окружение сервера. Уже опубликованные видео продолжают работать.
+    </div>
+    {% endif %}
+
+    <section class="vam-upload" aria-labelledby="vam-upload-title">
+        <div>
+            <h2 id="vam-upload-title">Загрузить новое видео</h2>
+            <form id="video-upload-form" class="vam-fields">
+                <label class="vam-field">Название
+                    <input id="video-title" type="text" maxlength="200" required autocomplete="off">
+                </label>
+                <label class="vam-field">Описание
+                    <textarea id="video-description" maxlength="5000" placeholder="Коротко: о чём этот урок"></textarea>
+                </label>
+                <label class="vam-field">Видеофайл
+                    <input id="video-file" type="file" accept="video/*,.mkv,.ts" required>
+                </label>
+            </form>
+            <p class="vam-file-note">Поддерживаются MP4, MOV, MKV, WebM и другие видеоформаты Bunny. Файл не сохраняется на сервере Apparchi.</p>
+            <div class="vam-actions">
+                <button id="video-upload-start" type="submit" form="video-upload-form" class="btn-blue" {% if not upload_available %}disabled{% endif %}>Начать загрузку</button>
+                <button id="video-upload-pause" type="button" class="btn-outline" hidden>Пауза</button>
+            </div>
+            <p id="video-upload-message" class="vam-message" aria-live="polite"></p>
+        </div>
+        <div class="vam-upload-state" aria-live="polite">
+            <strong id="video-upload-state-title">Файл ещё не выбран</strong>
+            <div class="vam-progress" aria-hidden="true"><span id="video-upload-bar"></span></div>
+            <div id="video-upload-percent" class="vam-progress-value">0%</div>
+            <p>Окно можно оставить открытым. При временном разрыве соединения загрузчик попробует продолжить автоматически.</p>
+        </div>
+    </section>
+
+    <section class="vam-queue" aria-labelledby="vam-queue-title">
+        <h2 id="vam-queue-title">Все видео</h2>
+        {% if videos %}
+        <div class="vam-list">
+            {% for video in videos %}
+            <article class="vam-row" data-video-id="{{ video.id }}" data-status="{{ video.status }}">
+                <div class="vam-row-main">
+                    <div>
+                        <h3 class="vam-title">{{ video.title }}</h3>
+                        <div class="vam-meta">
+                            <span>{{ video.original_filename or 'Добавлено из Bunny' }}</span>
+                            {% if video.duration_seconds %}<span>{{ (video.duration_seconds / 60)|round(1) }} мин.</span>{% endif %}
+                            {% if video.encode_progress is not none %}<span>Обработка: {{ video.encode_progress }}%</span>{% endif %}
+                        </div>
+                    </div>
+                    {% if video.is_published %}
+                    <span class="vam-badge vam-badge--active">Опубликовано</span>
+                    {% elif video.status == 'ready' %}
+                    <span class="vam-badge vam-badge--ready">Готово</span>
+                    {% elif video.status in ('failed', 'delete_failed') %}
+                    <span class="vam-badge vam-badge--failed">{{ status_labels.get(video.status, video.status) }}</span>
+                    {% else %}
+                    <span class="vam-badge vam-badge--working">{{ status_labels.get(video.status, video.status) }}</span>
+                    {% endif %}
+                </div>
+                <div class="vam-row-actions">
+                    {% if video.status in ('uploading', 'processing', 'failed', 'delete_failed') %}
+                    <button type="button" class="btn-outline" data-video-action="refresh">Обновить статус</button>
+                    {% endif %}
+                    {% if video.status == 'ready' %}
+                    <a class="btn-outline" href="/cabinet/videos/{{ video.id }}">Предпросмотр</a>
+                    {% if video.is_published %}
+                    <button type="button" class="btn-outline" data-video-action="unpublish">Скрыть</button>
+                    {% else %}
+                    <button type="button" class="btn-blue" data-video-action="publish">Опубликовать</button>
+                    {% endif %}
+                    {% endif %}
+                    {% if user.role_rank >= 5 and not video.is_published %}
+                    <button type="button" class="btn-danger" data-video-action="delete" data-video-title="{{ video.title }}">Удалить</button>
+                    {% endif %}
+                </div>
+                <details class="vam-edit">
+                    <summary>Изменить название и описание</summary>
+                    <div class="vam-edit-fields">
+                        <label class="vam-field">Название<input data-edit-title value="{{ video.title }}" maxlength="200"></label>
+                        <label class="vam-field">Описание<input data-edit-description value="{{ video.description or '' }}" maxlength="5000"></label>
+                        <button type="button" class="btn-outline" data-video-action="metadata">Сохранить</button>
+                    </div>
+                </details>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="vam-empty">Видео ещё не добавлены. Загрузите первый файл выше.</div>
+        {% endif %}
+    </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js" integrity="sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1" crossorigin="anonymous"></script>
+<script>
+(function () {
+    var csrfToken = {{ csrf_token(request)|tojson }};
+    var form = document.getElementById('video-upload-form');
+    var startButton = document.getElementById('video-upload-start');
+    var pauseButton = document.getElementById('video-upload-pause');
+    var message = document.getElementById('video-upload-message');
+    var stateTitle = document.getElementById('video-upload-state-title');
+    var bar = document.getElementById('video-upload-bar');
+    var percent = document.getElementById('video-upload-percent');
+    var activeUpload = null;
+    var paused = false;
+    var activeStorageKey = null;
+
+    function setMessage(text, isError) {
+        message.textContent = text;
+        message.classList.toggle('is-error', Boolean(isError));
+    }
+
+    function api(path, body) {
+        return fetch(path, {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Accept':'application/json', 'Content-Type':'application/json', 'X-CSRF-Token':csrfToken},
+            body: JSON.stringify(body || {})
+        }).then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (data) {
+                if (!response.ok) {
+                    var error = new Error(data.error || 'request_failed');
+                    error.status = response.status;
+                    throw error;
+                }
+                return data;
+            });
+        });
+    }
+
+    function uploadStorageKey(file) {
+        return 'apparchi:bunny-upload:' + [file.name, file.size, file.lastModified].join(':');
+    }
+
+    function readStoredUpload(file) {
+        try {
+            var value = window.localStorage.getItem(uploadStorageKey(file));
+            return value ? JSON.parse(value) : null;
+        } catch (error) { return null; }
+    }
+
+    function rememberUpload(file, credentials) {
+        activeStorageKey = uploadStorageKey(file);
+        try {
+            window.localStorage.setItem(activeStorageKey, JSON.stringify({catalog_video_id: credentials.catalog_video_id}));
+        } catch (error) {}
+    }
+
+    function forgetUpload() {
+        if (!activeStorageKey) return;
+        try { window.localStorage.removeItem(activeStorageKey); } catch (error) {}
+    }
+
+    function pollUntilReady(videoId, attempts) {
+        if (attempts <= 0) return;
+        window.setTimeout(function () {
+            api('/cabinet/admin/videos/' + videoId + '/refresh').then(function (data) {
+                var status = data.video && data.video.status;
+                if (status === 'ready' || status === 'failed') {
+                    window.location.reload();
+                    return;
+                }
+                stateTitle.textContent = 'Bunny обрабатывает видео…';
+                if (data.video && data.video.encode_progress !== null) {
+                    percent.textContent = data.video.encode_progress + '% обработки';
+                }
+                pollUntilReady(videoId, attempts - 1);
+            }).catch(function () { pollUntilReady(videoId, attempts - 1); });
+        }, 15000);
+    }
+
+    if (form) form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        var file = document.getElementById('video-file').files[0];
+        var title = document.getElementById('video-title').value.trim();
+        if (!file || !title) { setMessage('Укажите название и выберите видеофайл.', true); return; }
+        if (!window.tus || !window.tus.Upload) { setMessage('Загрузчик не запустился. Обновите страницу.', true); return; }
+
+        startButton.disabled = true;
+        stateTitle.textContent = 'Подготавливаем загрузку…';
+        setMessage('', false);
+        var createPayload = {
+            title: title,
+            description: document.getElementById('video-description').value,
+            filename: file.name,
+            size_bytes: file.size,
+            mime_type: file.type || 'application/octet-stream'
+        };
+        var stored = readStoredUpload(file);
+        var credentialsRequest;
+        if (stored && stored.catalog_video_id) {
+            activeStorageKey = uploadStorageKey(file);
+            credentialsRequest = api('/cabinet/admin/videos/' + stored.catalog_video_id + '/upload-credentials')
+                .then(function (credentials) { credentials.resume_existing = true; return credentials; })
+                .catch(function (error) {
+                    if (error.status === 404 || error.status === 409) {
+                        forgetUpload();
+                        return api('/cabinet/admin/videos/create-upload', createPayload);
+                    }
+                    throw error;
+                });
+        } else {
+            credentialsRequest = api('/cabinet/admin/videos/create-upload', createPayload);
+        }
+        credentialsRequest.then(function (credentials) {
+            rememberUpload(file, credentials);
+            activeUpload = new window.tus.Upload(file, {
+                endpoint: credentials.endpoint,
+                retryDelays: [0, 3000, 5000, 10000, 20000, 60000],
+                removeFingerprintOnSuccess: true,
+                fingerprint: function (selectedFile) {
+                    return Promise.resolve([
+                        'apparchi-bunny-v1',
+                        credentials.catalog_video_id,
+                        selectedFile.name,
+                        selectedFile.size,
+                        selectedFile.lastModified
+                    ].join(':'));
+                },
+                headers: {
+                    AuthorizationSignature: credentials.authorization_signature,
+                    AuthorizationExpire: String(credentials.authorization_expire),
+                    VideoId: credentials.video_id,
+                    LibraryId: String(credentials.library_id)
+                },
+                metadata: {filename: file.name, filetype: file.type || 'application/octet-stream', title: title},
+                onError: function () {
+                    startButton.disabled = false;
+                    pauseButton.hidden = true;
+                    setMessage('Загрузка прервалась. Попробуйте продолжить тем же файлом.', true);
+                    stateTitle.textContent = 'Загрузка остановлена';
+                },
+                onProgress: function (uploaded, total) {
+                    var value = total ? Math.round(uploaded / total * 100) : 0;
+                    bar.style.width = value + '%'; percent.textContent = value + '%';
+                    stateTitle.textContent = 'Загружаем напрямую в Bunny';
+                },
+                onSuccess: function () {
+                    forgetUpload();
+                    bar.style.width = '100%'; percent.textContent = '100%';
+                    stateTitle.textContent = 'Файл загружен. Началась обработка';
+                    pauseButton.hidden = true;
+                    setMessage('Можно дождаться готовности на этой странице или вернуться позже.', false);
+                    pollUntilReady(credentials.catalog_video_id, 120);
+                }
+            });
+            pauseButton.hidden = false;
+            if (credentials.resume_existing) {
+                activeUpload.findPreviousUploads().then(function (previous) {
+                    if (previous.length) activeUpload.resumeFromPreviousUpload(previous[0]);
+                    activeUpload.start();
+                });
+            } else {
+                activeUpload.start();
+            }
+        }).catch(function (error) {
+            startButton.disabled = false;
+            stateTitle.textContent = 'Не удалось начать загрузку';
+            if (error.message === 'upload_not_configured') {
+                setMessage('Stream API Key ещё не добавлен.', true);
+            } else if (error.message === 'provider_create_uncertain') {
+                setMessage('Bunny не подтвердил создание. Не повторяйте загрузку сразу: сначала проверьте библиотеку Bunny на дубликат.', true);
+            } else {
+                setMessage('Не удалось создать видео в Bunny.', true);
+            }
+        });
+    });
+
+    if (pauseButton) pauseButton.addEventListener('click', function () {
+        if (!activeUpload) return;
+        if (!paused) {
+            activeUpload.abort(); paused = true; pauseButton.textContent = 'Продолжить'; stateTitle.textContent = 'Загрузка на паузе';
+        } else {
+            activeUpload.start(); paused = false; pauseButton.textContent = 'Пауза'; stateTitle.textContent = 'Продолжаем загрузку';
+        }
+    });
+
+    document.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-video-action]');
+        if (!button) return;
+        var row = button.closest('[data-video-id]');
+        var videoId = row.dataset.videoId;
+        var action = button.dataset.videoAction;
+        var body = {};
+        if (action === 'metadata') {
+            body = {title: row.querySelector('[data-edit-title]').value, description: row.querySelector('[data-edit-description]').value};
+        }
+        if (action === 'delete') {
+            var title = button.dataset.videoTitle;
+            var confirmation = window.prompt('Удаление необратимо. Введите название видео:\n' + title);
+            if (confirmation === null) return;
+            body = {confirmation: confirmation};
+        }
+        button.disabled = true;
+        api('/cabinet/admin/videos/' + videoId + '/' + action, body).then(function () {
+            window.location.reload();
+        }).catch(function (error) {
+            button.disabled = false;
+            window.alert(error.message === 'unpublish_first' ? 'Сначала скройте видео.' : 'Действие не выполнено. Попробуйте ещё раз.');
+        });
+    });
+
+    document.querySelectorAll('[data-status="uploading"], [data-status="processing"]').forEach(function (row) {
+        pollUntilReady(row.dataset.videoId, 120);
+    });
+})();
+</script>
+{% endblock %}

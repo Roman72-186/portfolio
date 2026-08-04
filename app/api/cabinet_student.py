@@ -46,6 +46,7 @@ from app.services.mock_exam_access import (
 from app.services.tz import MSK_TZ, today_msk
 from app.services.user_management import log_tariff_change
 from app.services.utils import study_duration_text, group_works
+from app.services.video_catalog import list_published_videos
 from app.tmpl import templates, format_ticket_description
 
 MOCK_EXAM_PREVIEW = 4  # number of recent mock photos shown on cabinet home
@@ -215,6 +216,9 @@ def cabinet_student(
         "unread_count": unread_count,
         "active_attempts": active_attempts,
         "mock_exam_duration_sec": MOCK_EXAM_DURATION_SEC,
+        "video_module_available": bool(list_published_videos(db)) and (
+            user.get("role_rank", 0) >= 2 or user.get("is_group_member", False)
+        ),
     })
 
 

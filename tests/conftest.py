@@ -42,7 +42,7 @@ from app.main import app                             # noqa: E402
 from app.models.session import Session as DbSession  # noqa: E402
 from app.models.user import User                     # noqa: E402
 from app.models.role import Role                     # noqa: E402
-from app.dependencies import require_csrf            # noqa: E402
+from app.dependencies import require_csrf, require_csrf_header  # noqa: E402
 from app.config import settings as _app_settings     # noqa: E402
 
 
@@ -147,6 +147,7 @@ def client(db):
 
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[require_csrf] = _csrf_noop
+    app.dependency_overrides[require_csrf_header] = _csrf_noop
     with TestClient(app, base_url="https://testserver", raise_server_exceptions=True) as c:
         yield c
     app.dependency_overrides.clear()

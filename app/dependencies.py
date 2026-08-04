@@ -153,6 +153,25 @@ require_admin_role = require_role(4)
 require_superadmin = require_role(5)
 
 
+def require_learning_content_access(
+    user: Annotated[dict, Depends(get_current_user)],
+) -> dict:
+    """Allow students with confirmed group access and staff preview users.
+
+    Telegram live membership verification will become the owner check later.
+    Until then, student access fails closed on the existing membership flag.
+    """
+    role_rank = user.get("role_rank", 0)
+    if role_rank < 1:
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    if role_rank == 1 and not user.get("is_group_member"):
+        raise HTTPException(
+            status_code=403,
+            detail="Доступ к учебным материалам доступен только участникам группы",
+        )
+    return user
+
+
 def require_admin(user: Annotated[dict, Depends(get_current_user)]) -> dict:
     """Backward-compatible admin check (rank >= 4)."""
     if not user.get("is_admin"):
@@ -190,6 +209,26 @@ def require_csrf(
             token[:10] if token else "(empty)",
         )
         raise HTTPException(status_code=403, detail="Неверный CSRF-токен. Обновите страницу и попробуйте снова.")
+
+
+def require_csrf_header(
+    request: Request,
+    x_csrf_token: Annotated[str | None, Header(alias="X-CSRF-Token")] = None,
+) -> None:
+    """Validate CSRF for JSON endpoints without changing their body media type."""
+    session_id = request.cookies.get("session_id", "")
+    token = x_csrf_token or ""
+    if not validate_csrf_token(session_id, token):
+        log.warning(
+            "CSRF header validation failed | path=%s | has_session=%s | has_token=%s",
+            request.url.path,
+            bool(session_id),
+            bool(token),
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="Неверный CSRF-токен. Обновите страницу и попробуйте снова.",
+        )
 
 
 def require_lab3d_token(

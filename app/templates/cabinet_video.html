@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+{% block title %}{{ video_title }}{% endblock %}
+{% block extra_styles %}
+<style>
+.video-page { max-width: 920px; margin: 0 auto; }
+.video-shell {
+    overflow: hidden;
+    background: #0f121c;
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: var(--sh-md);
+}
+.video-frame {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #0f121c;
+}
+.video-frame iframe {
+    position: absolute; inset: 0; z-index: 2;
+    width: 100%; height: 100%; border: 0;
+    opacity: 0;
+    transition: opacity var(--duration-base) var(--ease-out);
+}
+.video-frame.is-ready iframe { opacity: 1; }
+.video-watermark {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: center;
+    justify-items: center;
+    overflow: hidden;
+    pointer-events: none;
+    user-select: none;
+}
+.video-watermark-copy {
+    width: min(88%, 310px);
+    color: rgba(255, 255, 255, .42);
+    font-size: clamp(10px, 1.35vw, 13px);
+    font-weight: 600;
+    line-height: 1.45;
+    text-align: center;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .78);
+    transform: rotate(-18deg);
+}
+.video-watermark-copy span { display: block; }
+.video-loading {
+    position: absolute; inset: 0; z-index: 1;
+    display: grid; place-items: center;
+    color: rgba(255,255,255,.72);
+    font-size: 13px;
+}
+.video-frame.is-ready .video-loading { display: none; }
+.video-help { margin-top: 14px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.video-progress-status {
+    min-height: 20px;
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+.video-progress-status.is-error { color: var(--error); }
+.video-unavailable { padding: 44px 24px; text-align: center; color: #fff; }
+.video-unavailable h2 { margin: 0 0 8px; font-family: var(--font-display); font-size: 18px; }
+.video-unavailable p { margin: 0; color: rgba(255,255,255,.72); font-size: 14px; }
+@media (max-width: 600px) {
+    .video-shell { margin-inline: -12px; border-radius: var(--r-md); }
+    .video-watermark-copy:nth-child(n + 3) { display: none; }
+    .video-help { font-size: 12px; }
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="video-page">
+    <a class="back-link" href="{{ back_url|default('/cabinet/videos') }}">← К видеоурокам</a>
+    <header class="page-header page-header--stacked">
+        <h1 class="page-title">{{ video_title }}</h1>
+        {% if video_description %}
+        <p class="page-subtitle">{{ video_description }}</p>
+        {% else %}
+        <p class="page-subtitle">Учебный видеоурок.</p>
+        {% endif %}
+    </header>
+
+    <section class="video-shell" aria-label="Видеоурок">
+        {% if player_url %}
+        <script
+            src="https://assets.mediadelivery.net/playerjs/player-0.1.0.min.js"
+            integrity="sha384-FzNVGZdy6ImmE/3LFewUFSxAVlmjM0wP4aKlUJYalPvzGkIEva94s2WZgmeQPVvC"
+            crossorigin="anonymous"></script>
+        <div class="video-frame">
+            <div class="video-loading" role="status">Загружаем видео...</div>
+            <iframe
+                id="bunny-stream-embed"
+                src="{{ player_url }}"
+                title="{{ video_title }}"
+                loading="eager"
+                allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
+                referrerpolicy="strict-origin-when-cross-origin"
+                allowfullscreen></iframe>
+            <div class="video-watermark" aria-hidden="true">
+                {% for _ in range(4) %}
+                <div class="video-watermark-copy">
+                    <span>{{ viewer_watermark.name }}</span>
+                    <span>{{ viewer_watermark.username }}</span>
+                    <span>{{ viewer_watermark.phone }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <div class="video-unavailable" role="status">
+            <h2>Видео временно недоступно</h2>
+            <p>Попробуйте открыть страницу позже. Настройки доступа уже проверяются.</p>
+        </div>
+        {% endif %}
+    </section>
+
+    {% if player_url %}
+    <p class="video-help">Качество подбирается автоматически. При необходимости его можно изменить в настройках плеера.</p>
+    <p id="video-progress-status" class="video-progress-status" aria-live="polite">
+        {% if resume_position_seconds|default(0) >= 5 %}
+        Продолжим с сохранённого места.
+        {% else %}
+        Место просмотра сохраняется автоматически.
+        {% endif %}
+    </p>
+    <script>
+    (function () {
+        var frame = document.getElementById('bunny-stream-embed');
+        var status = document.getElementById('video-progress-status');
+        if (!frame) return;
+        frame.addEventListener('load', function () {
+            frame.parentElement.classList.add('is-ready');
+        }, { once: true });
+
+        if (!window.playerjs || !window.playerjs.Player) {
+            status.textContent = 'Автосохранение временно недоступно. Видео продолжит работать.';
+            status.classList.add('is-error');
+            return;
+        }
+
+        var resumeSeconds = {{ resume_position_seconds|default(0)|tojson }};
+        var csrfToken = {{ csrf_token(request)|tojson }};
+        var player = new window.playerjs.Player(frame);
+        var currentSeconds = resumeSeconds;
+        var durationSeconds = null;
+        var lastSavedSeconds = resumeSeconds;
+        var lastAutomaticSaveAt = Date.now();
+        var saveInFlight = false;
+        var pendingProgress = null;
+        var savingDisabled = false;
+        var hasReportedSaved = false;
+
+        function finiteNumber(value) {
+            var number = Number(value);
+            return Number.isFinite(number) ? number : null;
+        }
+
+        function timingData(raw) {
+            if (typeof raw === 'string') {
+                try { raw = JSON.parse(raw); } catch (error) { return null; }
+            }
+            if (!raw || typeof raw !== 'object') return null;
+            return {
+                seconds: finiteNumber(raw.seconds),
+                duration: finiteNumber(raw.duration)
+            };
+        }
+
+        function formatTime(seconds) {
+            var whole = Math.max(0, Math.floor(seconds));
+            var hours = Math.floor(whole / 3600);
+            var minutes = Math.floor((whole % 3600) / 60);
+            var remainder = whole % 60;
+            if (hours > 0) {
+                return hours + ':' + String(minutes).padStart(2, '0') + ':' + String(remainder).padStart(2, '0');
+            }
+            return minutes + ':' + String(remainder).padStart(2, '0');
+        }
+
+        function setStatus(message, isError) {
+            if (status.textContent.trim() === message) return;
+            status.textContent = message;
+            status.classList.toggle('is-error', Boolean(isError));
+        }
+
+        function sendProgress(progress, keepalive) {
+            if (savingDisabled) return;
+            if (saveInFlight) {
+                pendingProgress = progress;
+                return;
+            }
+            saveInFlight = true;
+
+            fetch({{ progress_endpoint|default('/cabinet/video/progress')|tojson }}, {
+                method: 'POST',
+                credentials: 'same-origin',
+                keepalive: Boolean(keepalive),
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken
+                },
+                body: JSON.stringify({
+                    position_seconds: progress.position_seconds,
+                    duration_seconds: progress.duration_seconds
+                })
+            }).then(function (response) {
+                if (response.status === 401) {
+                    savingDisabled = true;
+                    throw new Error('session_expired');
+                }
+                if (!response.ok) throw new Error('save_failed');
+                lastSavedSeconds = progress.position_seconds;
+                if (!hasReportedSaved && !progress.completed) {
+                    hasReportedSaved = true;
+                    setStatus('Место просмотра сохранено.', false);
+                }
+                if (progress.completed) {
+                    setStatus('Видео просмотрено. При следующем открытии начнём сначала.', false);
+                }
+            }).catch(function (error) {
+                if (error.message === 'session_expired') {
+                    setStatus('Войдите заново, чтобы сохранять место просмотра.', true);
+                } else {
+                    setStatus('Не удалось сохранить место. Видео продолжит работать.', true);
+                }
+            }).finally(function () {
+                saveInFlight = false;
+                if (pendingProgress) {
+                    var nextProgress = pendingProgress;
+                    pendingProgress = null;
+                    sendProgress(nextProgress, false);
+                }
+            });
+        }
+
+        function saveProgress(force, completed, keepalive) {
+            if (savingDisabled || currentSeconds === null || currentSeconds < 0) return;
+            if (!force && Math.abs(currentSeconds - lastSavedSeconds) < 2) return;
+            sendProgress({
+                position_seconds: Math.max(0, currentSeconds),
+                duration_seconds: durationSeconds && durationSeconds > 0 ? durationSeconds : null,
+                completed: Boolean(completed)
+            }, keepalive);
+        }
+
+        player.on('ready', function () {
+            frame.parentElement.classList.add('is-ready');
+            player.getDuration(function (value) {
+                durationSeconds = finiteNumber(value);
+                if (
+                    resumeSeconds >= 5
+                    && (!durationSeconds || resumeSeconds < durationSeconds - 10)
+                ) {
+                    player.setCurrentTime(resumeSeconds);
+                    currentSeconds = resumeSeconds;
+                    setStatus('Продолжили с ' + formatTime(resumeSeconds) + '.', false);
+                } else {
+                    currentSeconds = 0;
+                    setStatus('Место просмотра сохраняется автоматически.', false);
+                }
+            });
+        });
+
+        player.on('timeupdate', function (raw) {
+            var timing = timingData(raw);
+            if (!timing || timing.seconds === null) return;
+            currentSeconds = timing.seconds;
+            if (timing.duration !== null && timing.duration > 0) durationSeconds = timing.duration;
+            if (Date.now() - lastAutomaticSaveAt >= 10000) {
+                lastAutomaticSaveAt = Date.now();
+                saveProgress(false, false, false);
+            }
+        });
+
+        player.on('pause', function () {
+            saveProgress(true, false, false);
+        });
+
+        player.on('seeked', function () {
+            player.getCurrentTime(function (value) {
+                var seconds = finiteNumber(value);
+                if (seconds !== null) currentSeconds = seconds;
+                saveProgress(true, false, false);
+            });
+        });
+
+        player.on('ended', function () {
+            if (durationSeconds !== null) currentSeconds = durationSeconds;
+            saveProgress(true, true, false);
+        });
+
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'hidden') saveProgress(true, false, true);
+        });
+        window.addEventListener('pagehide', function () {
+            saveProgress(true, false, true);
+        });
+    })();
+    </script>
+    {% endif %}
+</div>
+
+{% if user.role_rank < 4 %}
+    {% set active_tab = "" %}
+    {% include "partials/bottom_nav.html" %}
+{% endif %}
+{% endblock %}

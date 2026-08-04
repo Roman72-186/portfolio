@@ -15,3 +15,5 @@ from app.models.feedback import Feedback, FeedbackPhoto, FeedbackMessage
 from app.models.curator_report import CuratorReport
 from app.models.tag import Tag, UserTag
 from app.models.legacy_portfolio_photo import LegacyPortfolioPhoto
+from app.models.video_progress import VideoProgress
+from app.models.learning_video import LearningVideo

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Видеоуроки{% endblock %}
+{% block extra_styles %}
+<style>
+.videos-page { max-width: 900px; margin: 0 auto; }
+.videos-list { display: grid; gap: 12px; }
+.video-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: center;
+    padding: 18px 20px; color: inherit; text-decoration: none;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
+    box-shadow: var(--sh-sm); transition: border-color var(--duration-fast), transform var(--duration-fast);
+}
+.video-row:hover { border-color: var(--blue); transform: translateY(-1px); opacity: 1; }
+.video-row:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+.video-row-title { margin: 0 0 6px; font: 700 16px/1.3 var(--font-display); color: var(--text); }
+.video-row-description { margin: 0; max-width: 65ch; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.video-row-state { display: inline-flex; align-items: center; min-height: 32px; padding: 5px 11px; border-radius: var(--r-pill); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.video-row-state--new { color: var(--blue-on-soft); background: var(--blue-soft); }
+.video-row-state--started { color: var(--warning); background: var(--warning-soft); }
+.video-row-state--completed { color: var(--ok-strong); background: rgba(4,120,87,.10); }
+.videos-empty { padding: 34px 22px; text-align: center; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); }
+.videos-empty h2 { margin: 0 0 8px; font: 700 18px/1.3 var(--font-display); }
+.videos-empty p { margin: 0; color: var(--muted); font-size: 14px; }
+@media (max-width: 600px) {
+    .video-row { grid-template-columns: 1fr; gap: 12px; padding: 16px; }
+    .video-row-state { justify-self: start; }
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="videos-page">
+    <a class="back-link" href="/cabinet/student">← Назад в кабинет</a>
+    <header class="page-header page-header--stacked">
+        <h1 class="page-title">Видеоуроки</h1>
+        <p class="page-subtitle">Место просмотра сохраняется автоматически — урок можно продолжить позже.</p>
+    </header>
+
+    {% if items %}
+    <section class="videos-list" aria-label="Доступные видеоуроки">
+        {% for item in items %}
+        <a class="video-row" href="/cabinet/videos/{{ item.video.id }}">
+            <div>
+                <h2 class="video-row-title">{{ item.video.title }}</h2>
+                {% if item.video.description %}
+                <p class="video-row-description">{{ item.video.description }}</p>
+                {% endif %}
+            </div>
+            {% if item.state == 'completed' %}
+            <span class="video-row-state video-row-state--completed">Просмотрено</span>
+            {% elif item.state == 'started' %}
+            <span class="video-row-state video-row-state--started">Продолжить</span>
+            {% else %}
+            <span class="video-row-state video-row-state--new">Смотреть</span>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </section>
+    {% else %}
+    <section class="videos-empty">
+        <h2>Пока нет опубликованных видео</h2>
+        <p>Новые уроки появятся здесь после публикации администратором.</p>
+    </section>
+    {% endif %}
+</div>
+
+{% if user.role_rank < 4 %}
+    {% set active_tab = "" %}
+    {% include "partials/bottom_nav.html" %}
+{% endif %}
+{% endblock %}

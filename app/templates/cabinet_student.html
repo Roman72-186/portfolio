@@ -324,6 +324,7 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
     color: rgba(255,255,255,0.85);
     margin-bottom: 14px;
 }
+.next-card--neutral .next-card-note { color: var(--muted); }
 .next-card-cta {
     display: inline-flex; align-items: center; gap: 8px;
     padding: 10px 20px; border-radius: var(--r-pill);
@@ -494,6 +495,14 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
             {% endfor %}
         </div>
         <span class="next-card-cta">Загрузить пробник →</span>
+    </a>
+    {% endif %}
+
+    {% if video_module_available %}
+    <a href="/cabinet/videos" class="next-card next-card--neutral">
+        <div class="next-card-title">Видеоуроки</div>
+        <div class="next-card-note">Учебные видео с автоматическим сохранением места просмотра.</div>
+        <span class="next-card-cta">Открыть видео →</span>
     </a>
     {% endif %}
 
