@@ -34,16 +34,14 @@
     position: absolute;
     inset: 0;
     z-index: 3;
-    display: flex;
-    align-items: flex-end;
-    justify-content: flex-end;
-    box-sizing: border-box;
-    padding: 16px 16px 64px;
     overflow: hidden;
     pointer-events: none;
     user-select: none;
 }
 .video-watermark-copy {
+    position: absolute;
+    right: 16px;
+    bottom: 64px;
     width: min(76%, 310px);
     color: rgba(255, 255, 255, .42);
     font-size: clamp(10px, 1.35vw, 13px);
@@ -53,6 +51,13 @@
     text-shadow: 0 1px 3px rgba(0, 0, 0, .78);
     transform: rotate(-8deg);
     transform-origin: right bottom;
+}
+.video-watermark-copy.is-orbiting {
+    top: 0;
+    left: 0;
+    right: auto;
+    bottom: auto;
+    will-change: transform;
 }
 .video-watermark-copy span { display: block; }
 .video-fullscreen-button {
@@ -104,7 +109,7 @@
 .video-unavailable p { margin: 0; color: rgba(255,255,255,.72); font-size: 14px; }
 @media (max-width: 600px) {
     .video-shell { margin-inline: -12px; border-radius: var(--r-md); }
-    .video-watermark { padding: 12px 12px 58px; }
+    .video-watermark-copy { right: 12px; bottom: 58px; }
     .video-help { font-size: 12px; }
 }
 </style>
@@ -174,9 +179,96 @@
         var fullscreenButton = document.getElementById('video-fullscreen-button');
         if (!frame) return;
         var playerContainer = frame.parentElement;
+        var watermarkCopy = playerContainer.querySelector('.video-watermark-copy');
+        var watermarkAnimationFrame = null;
+        var watermarkStepTimer = null;
+        var watermarkResizeObserver = null;
+        var orbitMetrics = null;
         frame.addEventListener('load', function () {
             playerContainer.classList.add('is-ready');
         }, { once: true });
+
+        function measureWatermarkOrbit() {
+            if (!watermarkCopy) return;
+            var containerWidth = playerContainer.clientWidth;
+            var containerHeight = playerContainer.clientHeight;
+            var watermarkWidth = watermarkCopy.offsetWidth;
+            var watermarkHeight = watermarkCopy.offsetHeight;
+            var sidePadding = Math.max(12, Math.min(24, containerWidth * 0.025));
+            var topPadding = Math.max(12, Math.min(24, containerHeight * 0.04));
+            var bottomPadding = Math.max(58, Math.min(72, containerHeight * 0.1));
+            var minX = sidePadding;
+            var maxX = Math.max(minX, containerWidth - watermarkWidth - sidePadding);
+            var minY = topPadding;
+            var maxY = Math.max(minY, containerHeight - watermarkHeight - bottomPadding);
+
+            orbitMetrics = {
+                centerX: (minX + maxX) / 2,
+                centerY: (minY + maxY) / 2,
+                radiusX: (maxX - minX) / 2,
+                radiusY: (maxY - minY) / 2
+            };
+        }
+
+        function positionWatermark(angle) {
+            if (!watermarkCopy || !orbitMetrics) return;
+            var x = orbitMetrics.centerX + orbitMetrics.radiusX * Math.cos(angle);
+            var y = orbitMetrics.centerY + orbitMetrics.radiusY * Math.sin(angle);
+            watermarkCopy.style.transform =
+                'translate3d(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px,0) rotate(-8deg)';
+        }
+
+        function startWatermarkOrbit() {
+            if (!watermarkCopy) return;
+            watermarkCopy.classList.add('is-orbiting');
+            measureWatermarkOrbit();
+
+            var reduceMotion = window.matchMedia
+                && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            var startAngle = -Math.PI / 2;
+
+            if (reduceMotion) {
+                var step = 0;
+                positionWatermark(startAngle);
+                watermarkStepTimer = window.setInterval(function () {
+                    step = (step + 1) % 8;
+                    positionWatermark(startAngle + step * Math.PI / 4);
+                }, 4500);
+            } else {
+                var orbitStartedAt = performance.now();
+                var orbitDuration = 20000;
+                function animateWatermark(now) {
+                    var progress = ((now - orbitStartedAt) % orbitDuration) / orbitDuration;
+                    positionWatermark(startAngle + progress * Math.PI * 2);
+                    watermarkAnimationFrame = window.requestAnimationFrame(animateWatermark);
+                }
+                watermarkAnimationFrame = window.requestAnimationFrame(animateWatermark);
+            }
+
+            if ('ResizeObserver' in window) {
+                watermarkResizeObserver = new ResizeObserver(measureWatermarkOrbit);
+                watermarkResizeObserver.observe(playerContainer);
+            } else {
+                window.addEventListener('resize', measureWatermarkOrbit);
+            }
+        }
+
+        function stopWatermarkOrbit() {
+            if (watermarkAnimationFrame !== null) {
+                window.cancelAnimationFrame(watermarkAnimationFrame);
+            }
+            if (watermarkStepTimer !== null) {
+                window.clearInterval(watermarkStepTimer);
+            }
+            if (watermarkResizeObserver) {
+                watermarkResizeObserver.disconnect();
+            } else {
+                window.removeEventListener('resize', measureWatermarkOrbit);
+            }
+        }
+
+        startWatermarkOrbit();
+        window.addEventListener('pagehide', stopWatermarkOrbit, { once: true });
 
         function fullscreenElement() {
             return document.fullscreenElement || document.webkitFullscreenElement || null;
@@ -189,6 +281,7 @@
             fullscreenButton.setAttribute('aria-label', label);
             fullscreenButton.setAttribute('title', label);
             fullscreenButton.setAttribute('aria-pressed', String(isFullscreen));
+            window.requestAnimationFrame(measureWatermarkOrbit);
         }
 
         function reportFullscreenError() {

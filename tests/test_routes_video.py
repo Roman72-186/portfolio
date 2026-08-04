@@ -110,6 +110,24 @@ def test_video_watermark_escapes_viewer_identity(auth_client, db, monkeypatch):
     assert "&lt;svg onload" in response.text
 
 
+def test_video_watermark_moves_around_safe_orbit(auth_client, monkeypatch):
+    client, _ = auth_client
+    _configure_bunny(monkeypatch)
+
+    response = client.get("/cabinet/video")
+
+    assert response.status_code == 200
+    assert "function measureWatermarkOrbit()" in response.text
+    assert "Math.cos(angle)" in response.text
+    assert "Math.sin(angle)" in response.text
+    assert "orbitDuration = 20000" in response.text
+    assert "window.requestAnimationFrame(animateWatermark)" in response.text
+    assert "new ResizeObserver(measureWatermarkOrbit)" in response.text
+    assert "(prefers-reduced-motion: reduce)" in response.text
+    assert "step = (step + 1) % 8" in response.text
+    assert "bottomPadding" in response.text
+
+
 def test_video_fullscreen_keeps_watermark_inside_fullscreen_container(
     auth_client, monkeypatch
 ):
