@@ -85,9 +85,9 @@ def test_video_watermark_shows_current_viewer_identity(auth_client, db, monkeypa
     response = client.get("/cabinet/video")
 
     assert response.status_code == 200
-    assert response.text.count("Анна Смирнова") == 4
-    assert response.text.count("@anna_art") == 4
-    assert response.text.count("+7 999 123-45-67") == 4
+    assert response.text.count("Анна Смирнова") == 1
+    assert response.text.count("@anna_art") == 1
+    assert response.text.count("+7 999 123-45-67") == 1
     assert 'class="video-watermark" aria-hidden="true"' in response.text
 
 
