@@ -16,6 +16,13 @@
     aspect-ratio: 16 / 9;
     background: #0f121c;
 }
+.video-frame:fullscreen,
+.video-frame:-webkit-full-screen {
+    width: 100vw;
+    height: 100vh;
+    aspect-ratio: auto;
+    background: #0f121c;
+}
 .video-frame iframe {
     position: absolute; inset: 0; z-index: 2;
     width: 100%; height: 100%; border: 0;
@@ -46,6 +53,34 @@
     transform: rotate(-18deg);
 }
 .video-watermark-copy span { display: block; }
+.video-fullscreen-button {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    z-index: 4;
+    display: grid;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, .22);
+    border-radius: var(--r-sm);
+    background: rgba(15, 18, 28, .78);
+    color: #fff;
+    font: inherit;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    transition:
+        background-color var(--duration-fast) var(--ease-out),
+        transform var(--duration-fast) var(--ease-out);
+}
+.video-fullscreen-button:hover { background: rgba(15, 18, 28, .94); }
+.video-fullscreen-button:active { transform: scale(.96); }
+.video-fullscreen-button:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
 .video-loading {
     position: absolute; inset: 0; z-index: 1;
     display: grid; place-items: center;
@@ -97,9 +132,8 @@
                 src="{{ player_url }}"
                 title="{{ video_title }}"
                 loading="eager"
-                allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
-                referrerpolicy="strict-origin-when-cross-origin"
-                allowfullscreen></iframe>
+                allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
+                referrerpolicy="strict-origin-when-cross-origin"></iframe>
             <div class="video-watermark" aria-hidden="true">
                 {% for _ in range(4) %}
                 <div class="video-watermark-copy">
@@ -109,6 +143,12 @@
                 </div>
                 {% endfor %}
             </div>
+            <button
+                id="video-fullscreen-button"
+                class="video-fullscreen-button"
+                type="button"
+                aria-label="На весь экран"
+                title="На весь экран">⛶</button>
         </div>
         {% else %}
         <div class="video-unavailable" role="status">
@@ -131,10 +171,60 @@
     (function () {
         var frame = document.getElementById('bunny-stream-embed');
         var status = document.getElementById('video-progress-status');
+        var fullscreenButton = document.getElementById('video-fullscreen-button');
         if (!frame) return;
+        var playerContainer = frame.parentElement;
         frame.addEventListener('load', function () {
-            frame.parentElement.classList.add('is-ready');
+            playerContainer.classList.add('is-ready');
         }, { once: true });
+
+        function fullscreenElement() {
+            return document.fullscreenElement || document.webkitFullscreenElement || null;
+        }
+
+        function updateFullscreenButton() {
+            if (!fullscreenButton) return;
+            var isFullscreen = fullscreenElement() === playerContainer;
+            var label = isFullscreen ? 'Выйти из полноэкранного режима' : 'На весь экран';
+            fullscreenButton.setAttribute('aria-label', label);
+            fullscreenButton.setAttribute('title', label);
+            fullscreenButton.setAttribute('aria-pressed', String(isFullscreen));
+        }
+
+        function reportFullscreenError() {
+            status.textContent = 'Не удалось включить полноэкранный режим. Разрешите его в настройках браузера.';
+            status.classList.add('is-error');
+        }
+
+        if (fullscreenButton) {
+            var requestFullscreen = playerContainer.requestFullscreen
+                || playerContainer.webkitRequestFullscreen;
+            var exitFullscreen = document.exitFullscreen
+                || document.webkitExitFullscreen;
+
+            if (!requestFullscreen || !exitFullscreen) {
+                fullscreenButton.hidden = true;
+            } else {
+                fullscreenButton.addEventListener('click', function () {
+                    try {
+                        var result;
+                        if (fullscreenElement() === playerContainer) {
+                            result = exitFullscreen.call(document);
+                        } else {
+                            result = requestFullscreen.call(playerContainer);
+                        }
+                        if (result && typeof result.catch === 'function') {
+                            result.catch(reportFullscreenError);
+                        }
+                    } catch (error) {
+                        reportFullscreenError();
+                    }
+                });
+                document.addEventListener('fullscreenchange', updateFullscreenButton);
+                document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
+                updateFullscreenButton();
+            }
+        }
 
         if (!window.playerjs || !window.playerjs.Player) {
             status.textContent = 'Автосохранение временно недоступно. Видео продолжит работать.';
@@ -249,7 +339,7 @@
         }
 
         player.on('ready', function () {
-            frame.parentElement.classList.add('is-ready');
+            playerContainer.classList.add('is-ready');
             player.getDuration(function (value) {
                 durationSeconds = finiteNumber(value);
                 if (

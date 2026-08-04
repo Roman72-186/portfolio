@@ -110,6 +110,26 @@ def test_video_watermark_escapes_viewer_identity(auth_client, db, monkeypatch):
     assert "&lt;svg onload" in response.text
 
 
+def test_video_fullscreen_keeps_watermark_inside_fullscreen_container(
+    auth_client, monkeypatch
+):
+    client, _ = auth_client
+    _configure_bunny(monkeypatch)
+
+    response = client.get("/cabinet/video")
+
+    assert response.status_code == 200
+    assert 'id="video-fullscreen-button"' in response.text
+    assert ".video-frame:fullscreen" in response.text
+    assert "playerContainer.requestFullscreen" in response.text
+    assert "requestFullscreen.call(playerContainer)" in response.text
+    assert "document.exitFullscreen" in response.text
+    assert "document.addEventListener('fullscreenchange'" in response.text
+    assert 'allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"' in response.text
+    assert "allowfullscreen" not in response.text.lower()
+    assert "picture-in-picture; fullscreen" not in response.text
+
+
 def test_legacy_url_cannot_bypass_catalogue_unpublish(auth_client, db, monkeypatch):
     client, _ = auth_client
     _configure_bunny(monkeypatch)
