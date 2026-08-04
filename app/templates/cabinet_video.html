@@ -116,6 +116,13 @@ body.has-video-pseudo-fullscreen {
 }
 .video-frame.is-ready .video-loading { display: none; }
 .video-help { margin-top: 14px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.video-ios-install-hint {
+    margin: 10px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.55;
+}
+.video-ios-install-hint[hidden] { display: none; }
 .video-progress-status {
     min-height: 20px;
     margin-top: 8px;
@@ -184,6 +191,10 @@ body.has-video-pseudo-fullscreen {
     </section>
 
     {% if player_url %}
+    <p id="video-ios-install-hint" class="video-ios-install-hint" hidden>
+        На iPhone просмотр без панелей Safari доступен при запуске с экрана «Домой»:
+        нажмите «Поделиться», затем «На экран „Домой“» и откройте Apparchi с иконки.
+    </p>
     <p class="video-help">Качество подбирается автоматически. При необходимости его можно изменить в настройках плеера.</p>
     <p id="video-progress-status" class="video-progress-status" aria-live="polite">
         {% if resume_position_seconds|default(0) >= 5 %}
@@ -197,6 +208,7 @@ body.has-video-pseudo-fullscreen {
         var frame = document.getElementById('bunny-stream-embed');
         var status = document.getElementById('video-progress-status');
         var fullscreenButton = document.getElementById('video-fullscreen-button');
+        var iosInstallHint = document.getElementById('video-ios-install-hint');
         if (!frame) return;
         var playerContainer = frame.parentElement;
         var watermarkCopy = playerContainer.querySelector('.video-watermark-copy');
@@ -208,6 +220,20 @@ body.has-video-pseudo-fullscreen {
         frame.addEventListener('load', function () {
             playerContainer.classList.add('is-ready');
         }, { once: true });
+
+        function isIosDevice() {
+            return /iPad|iPhone|iPod/.test(window.navigator.userAgent)
+                || (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1);
+        }
+
+        function isStandaloneApp() {
+            return window.navigator.standalone === true
+                || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+        }
+
+        if (iosInstallHint && isIosDevice() && !isStandaloneApp()) {
+            iosInstallHint.hidden = false;
+        }
 
         function measureWatermarkOrbit() {
             if (!watermarkCopy) return;

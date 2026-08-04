@@ -164,6 +164,12 @@ def test_mobile_video_uses_pseudo_fullscreen_with_watermark(auth_client, monkeyp
     assert "exitPseudoFullscreen()" in response.text
     assert "requestResult.catch(enterPseudoFullscreen)" in response.text
     assert "fullscreenButton.hidden = true" not in response.text
+    assert "playsinline=true" in response.text
+    assert "disableIosPlayer=true" in response.text
+    assert 'id="video-ios-install-hint"' in response.text
+    assert "function isIosDevice()" in response.text
+    assert "function isStandaloneApp()" in response.text
+    assert "На экран „Домой“" in response.text
 
 
 def test_legacy_url_cannot_bypass_catalogue_unpublish(auth_client, db, monkeypatch):

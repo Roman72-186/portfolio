@@ -99,7 +99,17 @@ def build_signed_embed_url(
     token = hashlib.sha256(
         f"{token_key}{normalized_video_id}{expires}".encode("utf-8")
     ).hexdigest()
-    query = urlencode({"token": token, "expires": expires, "autoplay": "false"})
+    query = urlencode(
+        {
+            "token": token,
+            "expires": expires,
+            "autoplay": "false",
+            # Keep iPhone playback inside the iframe. Native iOS fullscreen
+            # would detach the video from our per-viewer watermark layer.
+            "playsinline": "true",
+            "disableIosPlayer": "true",
+        }
+    )
     return (
         f"https://iframe.mediadelivery.net/embed/{library_id}/"
         f"{normalized_video_id}?{query}"
