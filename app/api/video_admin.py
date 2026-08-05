@@ -16,6 +16,7 @@ from app.config import settings
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf_header, require_superadmin
 from app.models.audit_log import AuditLog
+from app.models.exam_assignment import ExamAssignment
 from app.models.learning_video import LearningVideo
 from app.services.bunny_stream import (
     BunnyStreamAPIError,
@@ -87,6 +88,8 @@ class UpdateVideoMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
+    # None — урок остаётся открытым всем ученикам; id — доступ идёт по теме.
+    assignment_id: int | None = Field(default=None, ge=1)
 
     @field_validator("title")
     @classmethod
@@ -137,6 +140,7 @@ def _serialize_video(video: LearningVideo) -> dict:
         "duration_seconds": video.duration_seconds,
         "is_published": video.is_published,
         "status_message": video.status_message,
+        "assignment_id": video.assignment_id,
     }
 
 
@@ -146,12 +150,20 @@ def video_admin_page(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
+    assignments = (
+        db.query(ExamAssignment)
+        .filter(ExamAssignment.status != "archived")
+        .order_by(ExamAssignment.created_at.desc())
+        .all()
+    )
     return templates.TemplateResponse(
         "cabinet_videos_admin.html",
         {
             "request": request,
             "user": user,
             "videos": list_all_videos(db),
+            "assignments": assignments,
+            "assignment_titles": {a.id: a.title for a in assignments},
             "upload_available": is_bunny_upload_available(),
         },
     )
@@ -265,8 +277,11 @@ def update_video_metadata(
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
     video = _get_video_or_404(db, video_id)
+    if payload.assignment_id is not None and not db.get(ExamAssignment, payload.assignment_id):
+        return JSONResponse({"ok": False, "error": "assignment_not_found"}, status_code=422)
     video.title = payload.title
     video.description = payload.description
+    video.assignment_id = payload.assignment_id
     db.commit()
     return JSONResponse({"ok": True})
 

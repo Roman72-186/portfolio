@@ -50,7 +50,7 @@ def _not_found(request: Request, user: dict):
 def _video_for_viewer(db: DBSession, *, catalog_id: int, user: dict):
     if not settings.bunny_stream_enabled:
         return None
-    video = get_published_video(db, catalog_id)
+    video = get_published_video(db, catalog_id, viewer=user)
     if video is not None:
         return video
     if user.get("role_rank", 0) < 4:
@@ -115,7 +115,7 @@ def cabinet_videos(
     db: Annotated[DBSession, Depends(get_db)],
 ):
     items = []
-    for video in list_published_videos(db):
+    for video in list_published_videos(db, viewer=user):
         try:
             progress = get_video_progress(db, user_id=user["user_id"], video_id=video.bunny_video_id)
         except SQLAlchemyError:

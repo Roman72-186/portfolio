@@ -216,9 +216,11 @@ def cabinet_student(
         "unread_count": unread_count,
         "active_attempts": active_attempts,
         "mock_exam_duration_sec": MOCK_EXAM_DURATION_SEC,
-        "video_module_available": bool(list_published_videos(db)) and (
+        # Пункт меню показываем, только если ученику открыт хотя бы один урок:
+        # иначе он придёт в каталог, где все темы ещё не начались, и увидит пустоту.
+        "video_module_available": (
             user.get("role_rank", 0) >= 2 or user.get("is_group_member", False)
-        ),
+        ) and bool(list_published_videos(db, viewer=user)),
     })
 
 

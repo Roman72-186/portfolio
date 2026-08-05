@@ -123,6 +123,7 @@ FORM: Operate, расширение существующего кабинета 
                             <span>{{ video.original_filename or 'Добавлено из Bunny' }}</span>
                             {% if video.duration_seconds %}<span>{{ (video.duration_seconds / 60)|round(1) }} мин.</span>{% endif %}
                             {% if video.encode_progress is not none %}<span>Обработка: {{ video.encode_progress }}%</span>{% endif %}
+                            {% if video.assignment_id %}<span>Тема: {{ assignment_titles.get(video.assignment_id, 'тема удалена') }}</span>{% else %}<span>Доступно всем ученикам</span>{% endif %}
                         </div>
                     </div>
                     {% if video.is_published %}
@@ -152,10 +153,18 @@ FORM: Operate, расширение существующего кабинета 
                     {% endif %}
                 </div>
                 <details class="vam-edit">
-                    <summary>Изменить название и описание</summary>
+                    <summary>Изменить название, описание и тему</summary>
                     <div class="vam-edit-fields">
                         <label class="vam-field">Название<input data-edit-title value="{{ video.title }}" maxlength="200"></label>
                         <label class="vam-field">Описание<input data-edit-description value="{{ video.description or '' }}" maxlength="5000"></label>
+                        <label class="vam-field">Тема
+                            <select data-edit-assignment>
+                                <option value="">Доступно всем ученикам</option>
+                                {% for assignment in assignments %}
+                                <option value="{{ assignment.id }}"{% if video.assignment_id == assignment.id %} selected{% endif %}>{{ assignment.title }}{% if assignment.status != 'published' %} — черновик{% endif %}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
                         <button type="button" class="btn-outline" data-video-action="metadata">Сохранить</button>
                     </div>
                 </details>
@@ -360,7 +369,12 @@ FORM: Operate, расширение существующего кабинета 
         var action = button.dataset.videoAction;
         var body = {};
         if (action === 'metadata') {
-            body = {title: row.querySelector('[data-edit-title]').value, description: row.querySelector('[data-edit-description]').value};
+            var assignmentValue = row.querySelector('[data-edit-assignment]').value;
+            body = {
+                title: row.querySelector('[data-edit-title]').value,
+                description: row.querySelector('[data-edit-description]').value,
+                assignment_id: assignmentValue ? Number(assignmentValue) : null
+            };
         }
         if (action === 'delete') {
             var title = button.dataset.videoTitle;
