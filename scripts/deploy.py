@@ -4,9 +4,35 @@ Usage:
   python scripts/deploy.py                          # full deploy (все файлы)
   python scripts/deploy.py app/templates/foo.html  # только указанные файлы
   python scripts/deploy.py app/templates/a.html app/api/b.py  # несколько файлов
+  python scripts/deploy.py --sync-env               # + залить окружение из .env.prod
+  python scripts/deploy.py --sync-env --allow-remove-env-keys  # разрешить удаление ключей
+  python scripts/deploy.py --status                 # что за версия на сервере, есть ли расхождения
+  python scripts/deploy.py --allow-dirty            # деплой незакоммиченного (пометит версию грязной)
+
+**Прод не должен расходиться с коммитом.** Скрипт отказывается деплоить
+незакоммиченное: полный деплой требует чистого дерева, поштучный — чтобы были
+закоммичены заливаемые файлы. Обход — `--allow-dirty`, тогда деплой помечается
+грязным в маркере. После каждой заливки на сервер пишется `.deployed-version`
+с коммитом, веткой, временем и режимом; `--status` сравнивает его с локальным
+HEAD и дополнительно сверяет sha256 всех отслеживаемых файлов.
+
+⚠️ **`.env` сервера по умолчанию НЕ трогается.** До 2026-08-05 скрипт заливал туда
+локальный `.env` при каждом запуске, включая поштучный режим. Локальный `.env` —
+это dev-конфигурация: на 05.08 из 33 переменных 32 расходились с боевыми, в том
+числе `DATABASE_URL`, `POSTGRES_PASSWORD`, `SESSION_SECRET`, `REDIS_PASSWORD` и
+ключи S3/VK. Любой деплой положил бы прод и разлогинил всех учеников.
+
+Прод-окружение живёт в отдельном файле `.env.prod` (в `.gitignore`, значения вносит
+владелец руками) и заливается только явным флагом `--sync-env`. Перед заливкой
+скрипт делает бэкап на сервере, показывает разницу по именам переменных — значения
+не печатаются никогда — и отказывается работать, если ключ пропадает.
 """
+import hashlib
+import json
 import os
+import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 try:
@@ -69,13 +95,296 @@ def connect_client() -> "paramiko.SSHClient":
 
 
 def read_app_env() -> str:
-    env_path = Path(os.getenv("PORTFOLIO_APP_ENV_FILE", LOCAL_DIR / ".env"))
+    """Прод-окружение для заливки. По умолчанию `.env.prod`, а НЕ `.env`.
+
+    `.env` — локальная dev-конфигурация с другой БД, другим Redis и dev-приложением
+    VK. Заливать её на сервер нельзя (см. модуль-докстринг).
+    """
+    env_path = Path(os.getenv("PORTFOLIO_APP_ENV_FILE", LOCAL_DIR / ".env.prod"))
     if not env_path.exists():
         raise RuntimeError(
-            f"App env file not found: {env_path}. "
-            "Create portfolio-saas/.env or set PORTFOLIO_APP_ENV_FILE."
+            f"Prod env file not found: {env_path}.\n"
+            "Создайте portfolio-saas/.env.prod — это источник правды для окружения\n"
+            "сервера. Взять текущее боевое состояние можно так:\n"
+            "  ssh apparchi-prod 'cat /home/portfolio-saas/.env' > portfolio-saas/.env.prod\n"
+            "Либо укажите другой файл через PORTFOLIO_APP_ENV_FILE."
         )
+    assert_not_tracked_by_git(env_path)
     return env_path.read_text(encoding="utf-8")
+
+
+def assert_not_tracked_by_git(path: Path) -> None:
+    """Отказ, если файл с боевыми секретами отслеживается git.
+
+    Защита стоит в коде, а не только в `.gitignore`: правило легко потерять при
+    мерже или на свежем клоне, а цена — боевые пароли в истории репозитория.
+    """
+    try:
+        completed = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", str(path)],
+            cwd=LOCAL_DIR,
+            capture_output=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return  # git недоступен — не наше дело блокировать деплой
+    if completed.returncode == 0:
+        raise SystemExit(
+            f"\nОТМЕНА: {path.name} отслеживается git — боевые секреты попадут в историю.\n"
+            f"Уберите файл из индекса и добавьте в .gitignore:\n"
+            f"  git rm --cached {path.name}\n"
+            f"  echo '{path.name}' >> .gitignore"
+        )
+
+
+def env_fingerprint(text: str) -> dict[str, str]:
+    """{имя переменной: короткий хеш значения}. Значения не возвращаются наружу."""
+    result: dict[str, str] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        key = key.strip()
+        if not key or not (key[0].isalpha() or key[0] == "_"):
+            continue
+        result[key] = hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
+    return result
+
+
+def sync_app_env(sftp, *, allow_remove: bool) -> None:
+    """Залить прод-окружение с бэкапом и защитой от потери ключей.
+
+    Печатает только имена переменных — значения не попадают ни в консоль, ни в логи.
+    """
+    local_text = read_app_env()
+    local_fp = env_fingerprint(local_text)
+    if not local_fp:
+        raise RuntimeError("Prod env file has no variables — заливка отменена.")
+
+    remote_path = f"{REMOTE_DIR}/.env"
+    try:
+        with sftp.open(remote_path, "r") as f:
+            remote_text = f.read().decode("utf-8")
+    except FileNotFoundError:
+        remote_text = ""
+    remote_fp = env_fingerprint(remote_text)
+
+    removed = sorted(set(remote_fp) - set(local_fp))
+    added = sorted(set(local_fp) - set(remote_fp))
+    changed = sorted(k for k in set(local_fp) & set(remote_fp) if local_fp[k] != remote_fp[k])
+
+    print("\n  Синхронизация окружения сервера:")
+    print(f"    добавится:  {', '.join(added) or '—'}")
+    print(f"    изменится:  {', '.join(changed) or '—'}")
+    print(f"    исчезнет:   {', '.join(removed) or '—'}")
+
+    if removed and not allow_remove:
+        raise SystemExit(
+            "\nОТМЕНА: на сервере есть переменные, которых нет в прод-файле — "
+            "заливка стёрла бы их.\nДобавьте их в прод-файл или запустите с "
+            "--allow-remove-env-keys, если удаление осознанное."
+        )
+
+    if remote_text:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        backup_path = f"{REMOTE_DIR}/.env.bak-{stamp}"
+        with sftp.open(backup_path, "w") as f:
+            f.write(remote_text)
+        sftp.chmod(backup_path, 0o600)
+        print(f"    бэкап:      {backup_path}")
+
+    with sftp.open(remote_path, "w") as f:
+        f.write(local_text)
+    sftp.chmod(remote_path, 0o600)
+    print("    окружение залито")
+
+
+VERSION_FILE = ".deployed-version"
+
+
+def git(*args: str) -> str | None:
+    """Вывод git-команды или None, если git недоступен либо команда упала."""
+    try:
+        done = subprocess.run(
+            # -c core.quotepath=false: иначе git экранирует не-ASCII пути в \NNN.
+            # encoding задаём явно — консоль Windows (cp1251) на UTF-8 именах падает.
+            ["git", "-c", "core.quotepath=false", *args],
+            cwd=LOCAL_DIR,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return None
+    if done.returncode != 0 or done.stdout is None:
+        return None
+    return done.stdout.strip()
+
+
+def git_state() -> dict:
+    """Текущее состояние репозитория: коммит, ветка, незакоммиченное."""
+    commit = git("rev-parse", "HEAD")
+    if commit is None:
+        return {"available": False}
+    porcelain = git("status", "--porcelain") or ""
+    modified: list[str] = []
+    untracked: list[str] = []
+    for line in porcelain.splitlines():
+        if len(line) < 4:
+            continue
+        status, path = line[:2], line[3:].strip().strip('"')
+        (untracked if status == "??" else modified).append(path)
+    return {
+        "available": True,
+        "commit": commit,
+        "short": commit[:7],
+        "branch": git("rev-parse", "--abbrev-ref", "HEAD") or "?",
+        "modified": sorted(modified),
+        "untracked": sorted(untracked),
+    }
+
+
+def assert_clean_enough(state: dict, target_files: list[Path], *, allow_dirty: bool) -> None:
+    """Не дать проду разойтись с коммитом.
+
+    Полный деплой требует чистого дерева целиком: он заливает и незакоммиченные
+    правки, и новые файлы. Поштучный смотрит только на свои файлы — остальной WIP
+    на сервер не поедет и разойтись не может.
+    """
+    if not state.get("available"):
+        print("  git недоступен — проверка версии пропущена")
+        return
+
+    if target_files:
+        rel = {p.relative_to(LOCAL_DIR).as_posix() for p in target_files}
+        dirty = sorted(rel & (set(state["modified"]) | set(state["untracked"])))
+        problem = "заливаемые файлы не закоммичены"
+    else:
+        dirty = sorted(state["modified"] + state["untracked"])
+        problem = "дерево грязное, а полный деплой заливает всё"
+
+    if not dirty:
+        return
+
+    print(f"\n  ВНИМАНИЕ: {problem}:")
+    for path in dirty[:20]:
+        print(f"      {path}")
+    if len(dirty) > 20:
+        print(f"      … и ещё {len(dirty) - 20}")
+
+    if not allow_dirty:
+        raise SystemExit(
+            "\nОТМЕНА: прод разошёлся бы с коммитом.\n"
+            "Закоммитьте изменения или запустите с --allow-dirty, если это осознанно "
+            "(маркер версии на сервере тогда пометит деплой как грязный)."
+        )
+    print("  --allow-dirty: продолжаем, деплой будет помечен как грязный")
+
+
+def write_version_marker(sftp, state: dict, *, target_files: list[Path], dirty_ok: bool) -> None:
+    """Записать на сервер, какой версией кода он сейчас живёт."""
+    if not state.get("available"):
+        return
+    rel = sorted(p.relative_to(LOCAL_DIR).as_posix() for p in target_files)
+    dirty = sorted(set(state["modified"]) | set(state["untracked"]))
+    if rel:
+        dirty = [p for p in dirty if p in set(rel)]
+    payload = {
+        "commit": state["commit"],
+        "branch": state["branch"],
+        "deployed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "mode": "files" if rel else "full",
+        "files": rel,
+        "dirty": bool(dirty) and dirty_ok,
+        "dirty_files": dirty,
+    }
+    with sftp.open(f"{REMOTE_DIR}/{VERSION_FILE}", "w") as f:
+        f.write(json.dumps(payload, ensure_ascii=False, indent=2))
+    mark = " (грязный)" if payload["dirty"] else ""
+    print(f"\n  Версия на сервере: {state['short']} / {state['branch']}{mark}")
+
+
+def read_version_marker(sftp) -> dict | None:
+    try:
+        with sftp.open(f"{REMOTE_DIR}/{VERSION_FILE}", "r") as f:
+            return json.loads(f.read().decode("utf-8"))
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def deployable_files() -> list[str]:
+    """Отслеживаемые git файлы, которые реально уезжают на сервер."""
+    listing = git("ls-files") or ""
+    result = []
+    for path in listing.splitlines():
+        parts = Path(path).parts
+        if any(part in SKIP for part in parts):
+            continue
+        if (LOCAL_DIR / path).is_file():
+            result.append(path)
+    return result
+
+
+def show_status(client, sftp) -> None:
+    """Сравнить прод с локальным репозиторием: версия и фактические файлы."""
+    state = git_state()
+    marker = read_version_marker(sftp)
+
+    print("\n=== Версия ===")
+    if state.get("available"):
+        print(f"  локально:  {state['short']} / {state['branch']}")
+        if state["modified"] or state["untracked"]:
+            print(f"             незакоммичено файлов: "
+                  f"{len(state['modified']) + len(state['untracked'])}")
+    else:
+        print("  локально:  git недоступен")
+
+    if marker is None:
+        print("  на сервере: маркера нет — деплой был до появления версионирования")
+    else:
+        mark = " (грязный)" if marker.get("dirty") else ""
+        print(f"  на сервере: {marker.get('commit','?')[:7]} / "
+              f"{marker.get('branch','?')}{mark}, {marker.get('deployed_at','?')}")
+        if marker.get("mode") == "files":
+            print(f"              поштучный деплой, файлов: {len(marker.get('files', []))}")
+        if state.get("available") and marker.get("commit") != state.get("commit"):
+            print("  ВНИМАНИЕ: коммиты расходятся")
+
+    print("\n=== Файлы (sha256 рабочего дерева против сервера) ===")
+    files = deployable_files()
+    if not files:
+        print("  список пуст — git недоступен")
+        return
+
+    local_hashes = {}
+    for path in files:
+        digest = hashlib.sha256((LOCAL_DIR / path).read_bytes()).hexdigest()
+        local_hashes[path] = digest
+
+    quoted = " ".join(f"'{p}'" for p in files)
+    _, stdout, _ = client.exec_command(
+        f"cd {REMOTE_DIR} && sha256sum {quoted} 2>/dev/null", timeout=120
+    )
+    remote_hashes = {}
+    for line in stdout.read().decode("utf-8", errors="replace").splitlines():
+        digest, _, path = line.partition("  ")
+        if path:
+            remote_hashes[path.strip()] = digest.strip()
+
+    differ = [p for p in files if remote_hashes.get(p) != local_hashes[p]]
+    missing = [p for p in files if p not in remote_hashes]
+    print(f"  проверено: {len(files)}, совпало: {len(files) - len(differ)}")
+    if differ:
+        print("  расходятся:")
+        for path in differ[:25]:
+            tail = " (нет на сервере)" if path in missing else ""
+            print(f"      {path}{tail}")
+        if len(differ) > 25:
+            print(f"      … и ещё {len(differ) - 25}")
+    else:
+        print("  расхождений нет")
 
 
 def upload_dir(sftp, local_path, remote_path):
@@ -120,8 +429,18 @@ def upload_files(sftp, local_paths: list[Path]):
 
 
 def main():
+    args = sys.argv[1:]
+    known = {"--sync-env", "--allow-remove-env-keys", "--allow-dirty", "--status"}
+    sync_env = "--sync-env" in args
+    allow_remove = "--allow-remove-env-keys" in args
+    allow_dirty = "--allow-dirty" in args
+    status_only = "--status" in args
+    unknown = [a for a in args if a.startswith("-") and a not in known]
+    if unknown:
+        raise SystemExit(f"Unknown option(s): {' '.join(unknown)}")
+
     # Позиционные аргументы = пути файлов относительно LOCAL_DIR
-    file_args = sys.argv[1:]
+    file_args = [a for a in args if not a.startswith("-")]
     target_files: list[Path] = []
     for arg in file_args:
         p = (LOCAL_DIR / arg).resolve()
@@ -131,11 +450,26 @@ def main():
             raise SystemExit(f"Not a file: {p}")
         target_files.append(p)
 
+    # Прод-окружение валидируем до подключения: падать на нём после заливки
+    # половины файлов — худший из возможных моментов.
+    if sync_env and not status_only:
+        read_app_env()
+
+    state = git_state()
+    if not status_only:
+        assert_clean_enough(state, target_files, allow_dirty=allow_dirty)
+
     host = require_env("PORTFOLIO_SSH_HOST")
     print(f"Connecting to {host}...")
     client = connect_client()
 
     sftp = client.open_sftp()
+
+    if status_only:
+        show_status(client, sftp)
+        sftp.close()
+        client.close()
+        return
 
     # Create remote dir
     try:
@@ -150,10 +484,12 @@ def main():
         print(f"Uploading {LOCAL_DIR} -> {REMOTE_DIR}")
         upload_dir(sftp, str(LOCAL_DIR), REMOTE_DIR)
 
-    print("\n  Uploading app .env to server...")
-    env_content = read_app_env()
-    with sftp.open(f"{REMOTE_DIR}/.env", "w") as f:
-        f.write(env_content)
+    if sync_env:
+        sync_app_env(sftp, allow_remove=allow_remove)
+    else:
+        print("\n  Окружение сервера не трогаем (нужен флаг --sync-env).")
+
+    write_version_marker(sftp, state, target_files=target_files, dirty_ok=allow_dirty)
 
     sftp.close()
     print("\nDone! Files uploaded.")
