@@ -20,3 +20,4 @@ venv/
 # уезжают (см. SKIP в scripts/deploy.py).
 .artifacts/
 prototypes/
+scripts/video_prototype.py
