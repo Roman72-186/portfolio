@@ -1,0 +1,38 @@
+# Что не должно попадать даже в контекст сборки.
+#
+# Образ копирует только app/, scripts/, alembic/ и alembic.ini (см. Dockerfile),
+# но контекст `build: .` собирается со всего каталога и уезжает демону целиком.
+# Здесь лежат окружения с боевыми паролями и их бэкапы, поэтому список важен не
+# только ради скорости сборки.
+
+.git
+.gitignore
+.gitattributes
+
+# Окружение и его копии на сервере
+.env
+.env.*
+!.env.example
+deploy_known_hosts
+
+# Кэши и артефакты
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.codegraph
+.artifacts
+venv
+.venv
+node_modules
+*.db
+
+# Не нужно приложению в рантайме
+tests
+prototypes
+reports
+session-handoffs
+docs
+*.md
+*.docx
+*.pdf

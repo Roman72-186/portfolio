@@ -170,14 +170,20 @@ showLockScreen(
     if (raf) cancelAnimationFrame(raf);
 
     raf = requestAnimationFrame(() => {
+      if (!viewer.classList.contains("visible")) {
+        wm.replaceChildren();
+        return;
+      }
+
       const rect = viewer.getBoundingClientRect();
 
       const step = 140;
-      const cols = Math.ceil(rect.width / step) + 18;
-      const rows = Math.ceil(rect.height / step) + 18;
+      const overscanTiles = 2;
+      const cols = Math.ceil(rect.width / step) + overscanTiles * 2;
+      const rows = Math.ceil(rect.height / step) + overscanTiles * 2;
 
-      const offsetX = -Math.floor(cols / 2) * step;
-      const offsetY = -Math.floor(rows / 2) * step;
+      const offsetX = -overscanTiles * step;
+      const offsetY = -overscanTiles * step;
 
       let html = "";
       for (let y = 0; y < rows; y++) {
@@ -191,6 +197,12 @@ showLockScreen(
   };
 
   rebuild();
+
+  const viewerObserver = new MutationObserver(rebuild);
+  viewerObserver.observe(viewer, {
+    attributes: true,
+    attributeFilter: ["class"]
+  });
 
   window.addEventListener("resize", rebuild);
   window.addEventListener("orientationchange", () => setTimeout(rebuild, 150));

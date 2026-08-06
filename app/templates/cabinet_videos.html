@@ -29,7 +29,7 @@
 {% endblock %}
 {% block content %}
 <div class="videos-page">
-    <a class="back-link" href="/cabinet/student">← Назад в кабинет</a>
+    <a class="back-link" href="{{ back_url | default('/cabinet/student') }}">← Назад{% if back_url == '/cabinet/admin/videos' %} в управление видео{% else %} в кабинет{% endif %}</a>
     <header class="page-header page-header--stacked">
         <h1 class="page-title">Видеоуроки</h1>
         <p class="page-subtitle">Место просмотра сохраняется автоматически — урок можно продолжить позже.</p>

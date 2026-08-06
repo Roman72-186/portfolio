@@ -13,8 +13,20 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.learning_topic import LearningTopic, LearningTopicAssignee, LearningTopicTag
-from app.models.tag import UserTag
+from app.models.role import Role
+from app.models.tag import Tag, UserTag
+from app.models.user import User
 from app.services.tz import now_msk
+
+STUDENT_ROLE_RANK = 1
+
+# Однобуквенные «Р» и «К» (и их склейки вроде «Р+К») в проде означают группу и
+# уровень куратора, а в модуле пробников такие же имена трактуются как маркеры
+# предмета. Здесь сопоставление строгое: тема, адресованная тегу «Р», не дойдёт
+# до учеников с тегом «Р+К» — админ обычно ждёт обратного. Значение намеренно не
+# импортируется из mock_exam_access: это подсказка админу, а не правило доступа,
+# и связь видеомодуля с пробниками остаётся разорванной.
+AMBIGUOUS_TAG_LETTERS = frozenset("рк")
 
 
 def list_topics(db: Session, *, include_deleted: bool = False) -> list[LearningTopic]:
@@ -147,6 +159,69 @@ def get_assignee_ids(db: Session, topic_id: int) -> list[int]:
         .all()
     )
     return [row[0] for row in rows]
+
+
+def ambiguous_tag_names(db: Session, tag_ids: list[int]) -> list[str]:
+    """Имена выбранных тегов, которые легко понять не так.
+
+    Возвращает теги вида «Р», «К», «Р+К» — см. AMBIGUOUS_TAG_LETTERS. Доступ они
+    не меняют, но админ, который ждёт «все, кто учит рисунок», получит только
+    точное совпадение по тегу.
+    """
+    if not tag_ids:
+        return []
+    rows = db.query(Tag.name).filter(Tag.id.in_(tag_ids)).all()
+    names = []
+    for (name,) in rows:
+        compact = (name or "").strip().lower()
+        for separator in (" ", "+", "/", ",", "-"):
+            compact = compact.replace(separator, "")
+        if compact and set(compact) <= AMBIGUOUS_TAG_LETTERS:
+            names.append(name)
+    return names
+
+
+def count_topic_audience(
+    db: Session,
+    *,
+    assign_to_all: bool,
+    tag_ids: list[int],
+    assignee_ids: list[int],
+) -> int:
+    """Сколько активных учеников реально получат тему.
+
+    Считается по той же адресации, что и в accessible_topic_ids, и служит
+    проверкой на глаз: адресовал теме «Р» и увидел трёх человек вместо сорока —
+    значит выбран не тот тег.
+
+    Учитывается и членство в группе: без него `require_learning_content_access`
+    отдаёт ученику 403 на весь видеомодуль, и такой человек в охвате — обман.
+    """
+    students = (
+        db.query(User.id)
+        .join(Role, User.role_id == Role.id)
+        .filter(
+            Role.rank == STUDENT_ROLE_RANK,
+            User.is_active.is_(True),
+            User.deleted_at.is_(None),
+            User.is_group_member.is_(True),
+        )
+    )
+    if assign_to_all:
+        return students.count()
+
+    reached: set[int] = set()
+    if tag_ids:
+        rows = (
+            students.join(UserTag, UserTag.user_id == User.id)
+            .filter(UserTag.tag_id.in_(tag_ids))
+            .all()
+        )
+        reached.update(row[0] for row in rows)
+    if assignee_ids:
+        rows = students.filter(User.id.in_(assignee_ids)).all()
+        reached.update(row[0] for row in rows)
+    return len(reached)
 
 
 def publish_topic(topic: LearningTopic, *, user_id: int) -> None:

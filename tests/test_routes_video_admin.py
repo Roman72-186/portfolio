@@ -348,6 +348,72 @@ def test_topic_with_attached_lesson_cannot_be_deleted(admin_client, db, monkeypa
     assert refused.json()["error"] == "topic_has_videos"
 
 
+def test_topic_response_reports_audience_and_ambiguous_tags(
+    admin_client, db, user_factory, monkeypatch
+):
+    """Промах адресации должен быть виден при сохранении, а не через неделю.
+
+    Тег «Р» в проде значит группу и уровень куратора; ученик с «Р+К» под него не
+    подпадает, потому что сопоставление строгое.
+    """
+    from app.models.tag import Tag, UserTag
+
+    client, _ = admin_client
+    _configure_upload(monkeypatch)
+    exact = user_factory(vk_id=400_010, name="С тегом Р")
+    wider = user_factory(vk_id=400_011, name="С тегом Р+К")
+    narrow_tag = Tag(name="Р")
+    wide_tag = Tag(name="Р+К")
+    db.add_all([narrow_tag, wide_tag])
+    db.flush()
+    db.add_all([
+        UserTag(user_id=exact.id, tag_id=narrow_tag.id),
+        UserTag(user_id=wider.id, tag_id=wide_tag.id),
+    ])
+    db.commit()
+
+    created = client.post(
+        "/cabinet/admin/videos/topics",
+        json={
+            "title": "Тема на спорный тег",
+            "opens_at": "2026-08-03T10:00",
+            "tag_ids": [narrow_tag.id],
+        },
+    )
+
+    assert created.status_code == 200
+    assert created.json()["audience_size"] == 1
+    assert created.json()["ambiguous_tags"] == ["Р"]
+
+    page = client.get("/cabinet/admin/videos")
+    assert page.status_code == 200
+    assert "Получат доступ: 1" in page.text
+    assert "означают группу и уровень куратора" in page.text
+
+
+def test_topic_for_everyone_reports_full_student_audience(
+    admin_client, db, user_factory, monkeypatch
+):
+    client, _ = admin_client
+    _configure_upload(monkeypatch)
+    user_factory(vk_id=400_020, name="Ученик один")
+    user_factory(vk_id=400_021, name="Ученик два")
+    user_factory(vk_id=400_022, name="Куратор", role_name="куратор")
+
+    created = client.post(
+        "/cabinet/admin/videos/topics",
+        json={
+            "title": "Тема всем",
+            "opens_at": "2026-08-03T10:00",
+            "assign_to_all": True,
+        },
+    )
+
+    assert created.status_code == 200
+    assert created.json()["audience_size"] == 2
+    assert created.json()["ambiguous_tags"] == []
+
+
 def test_student_cannot_manage_topics(auth_client):
     client, _ = auth_client
     response = client.post(
@@ -355,3 +421,352 @@ def test_student_cannot_manage_topics(auth_client):
         json={"title": "Чужая тема", "opens_at": "2026-08-03T10:00", "assign_to_all": True},
     )
     assert response.status_code == 403
+
+
+def test_topic_opens_at_is_rendered_in_msk(admin_client, db, monkeypatch):
+    """Список и форма обязаны показывать московское время, а не время сессии БД.
+
+    `opens_at` — `TIMESTAMPTZ`, и Postgres отдаёт его в таймзоне сессии, в
+    контейнере это UTC. Форма же трактует ввод как МСК (`_parse_opens_at`), и
+    рассинхрон делал каждое повторное сохранение темы сдвигом на три часа назад:
+    тема открывалась ученикам раньше объявленного.
+
+    Значение кладём напрямую aware-UTC — так, как его вернул бы Postgres. Прогон
+    через форму ничего бы не доказал: SQLite отбрасывает смещение, и round-trip
+    остаётся зелёным при любой ошибке в приведении.
+    """
+    from datetime import datetime, timezone
+
+    from app.models.learning_topic import LearningTopic
+
+    client, _ = admin_client
+    _configure_upload(monkeypatch)
+    db.add(LearningTopic(
+        title="Тема с точным временем",
+        opens_at=datetime(2026, 8, 10, 7, 0, tzinfo=timezone.utc),
+        assign_to_all=True,
+    ))
+    db.commit()
+
+    page = client.get("/cabinet/admin/videos")
+
+    assert page.status_code == 200
+    assert 'data-opens="2026-08-10T10:00"' in page.text
+    assert "Открыта с 10.08.2026 10:00 МСК" in page.text
+
+
+def test_topic_edit_keeps_named_students(admin_client, db, user_factory, monkeypatch):
+    """Правка темы не должна снимать доступ у назначенных поимённо.
+
+    Сохранение переписывает список целиком, поэтому форму обязана предзаполнять
+    страница. Пока она этого не делала, любое изменение названия или даты молча
+    отбирало тему у догоняющих, а в аудите оставалась запись без состава.
+    """
+    from app.services.video_topics import get_assignee_ids
+
+    client, _ = admin_client
+    _configure_upload(monkeypatch)
+    student = user_factory(vk_id=400_030, name="Догоняющий")
+    student.tg_username = "catchup"
+    db.commit()
+
+    created = client.post(
+        "/cabinet/admin/videos/topics",
+        json={
+            "title": "Тема для догоняющих",
+            "opens_at": "2026-08-03T10:00",
+            "assignee_usernames": "@catchup",
+        },
+    )
+    topic_id = created.json()["topic_id"]
+    assert created.json()["audience_size"] == 1
+
+    page = client.get("/cabinet/admin/videos")
+    assert 'data-assignees="@catchup"' in page.text
+
+    renamed = client.post(
+        f"/cabinet/admin/videos/topics/{topic_id}",
+        json={
+            "title": "Тема для догоняющих (переименована)",
+            "opens_at": "2026-08-03T10:00",
+            "assignee_usernames": "@catchup",
+        },
+    )
+
+    assert renamed.status_code == 200
+    assert renamed.json()["audience_size"] == 1
+    assert get_assignee_ids(db, topic_id) == [student.id]
+
+
+def test_topic_audience_counts_only_group_members(
+    admin_client, db, user_factory, monkeypatch
+):
+    """Ученик без членства в группе получает 403 на весь видеомодуль.
+
+    Счётчик охвата существует ради того, чтобы поймать промах адресации до жалоб;
+    показывать в нём людей, которые физически не откроют урок, — обманывать себя.
+    """
+    client, _ = admin_client
+    _configure_upload(monkeypatch)
+    user_factory(vk_id=400_040, name="В группе")
+    user_factory(vk_id=400_041, name="Вне группы", is_group_member=False)
+
+    created = client.post(
+        "/cabinet/admin/videos/topics",
+        json={"title": "Тема всем", "opens_at": "2026-08-03T10:00", "assign_to_all": True},
+    )
+
+    assert created.status_code == 200
+    assert created.json()["audience_size"] == 1
+
+
+def test_video_topic_change_is_audited(admin_client, db, monkeypatch):
+    """Смена темы урока меняет его видимость, поэтому обязана оставлять след.
+
+    Переброс урока на «доступно всем» (`topic_id=None`) — единственный способ
+    раздать платный материал одним запросом, и он был единственным мутирующим
+    маршрутом файла без записи в аудит.
+    """
+    from app.models.audit_log import AuditLog
+
+    client, _ = admin_client
+    _configure_upload(monkeypatch)
+    created = client.post(
+        "/cabinet/admin/videos/topics",
+        json={"title": "Закрытая тема", "opens_at": "2026-08-03T10:00"},
+    )
+    topic_id = created.json()["topic_id"]
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Урок закрытой темы",
+        status="ready",
+        is_published=True,
+        topic_id=topic_id,
+    )
+    db.add(video)
+    db.commit()
+
+    opened = client.post(
+        f"/cabinet/admin/videos/{video.id}/metadata",
+        json={"title": "Урок закрытой темы", "topic_id": None},
+    )
+
+    assert opened.status_code == 200
+    entry = (
+        db.query(AuditLog)
+        .filter(AuditLog.action == "video_metadata_update")
+        .order_by(AuditLog.id.desc())
+        .first()
+    )
+    assert entry is not None
+    assert f'"topic_id_before": {topic_id}' in entry.details
+    assert '"topic_id_after": null' in entry.details
+
+
+def test_completion_uses_server_duration_not_client_claim(
+    auth_client, db, monkeypatch
+):
+    """Клиент не должен уметь объявить урок пройденным.
+
+    Валидатор ловит только позицию больше длительности, поэтому тело
+    `{"position_seconds": 0, "duration_seconds": 1}` проходило проверку и ставило
+    `completed_at` без единой секунды просмотра. Настоящая длительность у сервера
+    есть — её пишет `refresh_video_status` из ответа Bunny.
+    """
+    from app.models.video_progress import VideoProgress
+
+    client, user = auth_client
+    monkeypatch.setattr(settings, "bunny_stream_enabled", True)
+    monkeypatch.setattr(settings, "bunny_stream_library_id", 720058)
+    monkeypatch.setattr(settings, "bunny_stream_token_key", "playback-key")
+    monkeypatch.setattr(settings, "bunny_stream_token_ttl_seconds", 300)
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Урок на час",
+        status="ready",
+        is_published=True,
+        duration_seconds=3600.0,
+    )
+    db.add(video)
+    db.commit()
+
+    forged = client.post(
+        f"/cabinet/videos/{video.id}/progress",
+        json={"position_seconds": 0, "duration_seconds": 1},
+    )
+
+    assert forged.status_code == 200
+    assert forged.json()["completed"] is False
+    assert db.get(VideoProgress, (user.id, VIDEO_ID)).completed_at is None
+
+    honest = client.post(
+        f"/cabinet/videos/{video.id}/progress",
+        json={"position_seconds": 3598, "duration_seconds": 3600},
+    )
+
+    assert honest.json()["completed"] is True
+    assert db.get(VideoProgress, (user.id, VIDEO_ID)).completed_at is not None
+
+
+def test_catalog_progress_requires_real_csrf(auth_client, db, monkeypatch):
+    """`conftest` глушит CSRF на всю сессию, поэтому проверяем настоящую зависимость.
+
+    Без такого теста удаление `require_csrf_header` из любого нового маршрута —
+    включая публикацию и удаление уроков — не уронило бы ни одной проверки.
+    """
+    from app.csrf import generate_csrf_token
+    from app.dependencies import require_csrf_header
+    from app.main import app
+
+    client, _ = auth_client
+    monkeypatch.setattr(settings, "bunny_stream_enabled", True)
+    monkeypatch.setattr(settings, "bunny_stream_library_id", 720058)
+    monkeypatch.setattr(settings, "bunny_stream_token_key", "playback-key")
+    monkeypatch.setattr(settings, "bunny_stream_token_ttl_seconds", 300)
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Урок с CSRF",
+        status="ready",
+        is_published=True,
+    )
+    db.add(video)
+    db.commit()
+
+    csrf_override = app.dependency_overrides.pop(require_csrf_header)
+    try:
+        session_id = next(
+            cookie.value for cookie in client.cookies.jar if cookie.name == "session_id"
+        )
+        missing = client.post(
+            f"/cabinet/videos/{video.id}/progress",
+            json={"position_seconds": 10, "duration_seconds": 100},
+        )
+        valid = client.post(
+            f"/cabinet/videos/{video.id}/progress",
+            json={"position_seconds": 10, "duration_seconds": 100},
+            headers={"X-CSRF-Token": generate_csrf_token(session_id)},
+        )
+
+        assert missing.status_code == 403
+        assert valid.status_code == 200
+    finally:
+        app.dependency_overrides[require_csrf_header] = csrf_override
+
+
+def test_topic_and_publish_routes_require_real_csrf(admin_client, db, monkeypatch):
+    """Маршруты, раздающие и отбирающие доступ к контенту, обязаны требовать токен."""
+    from app.csrf import generate_csrf_token
+    from app.dependencies import require_csrf_header
+    from app.main import app
+
+    client, _ = admin_client
+    _configure_upload(monkeypatch)
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Урок для публикации",
+        status="ready",
+        is_published=False,
+    )
+    db.add(video)
+    db.commit()
+
+    csrf_override = app.dependency_overrides.pop(require_csrf_header)
+    try:
+        session_id = next(
+            cookie.value for cookie in client.cookies.jar if cookie.name == "session_id"
+        )
+        token = {"X-CSRF-Token": generate_csrf_token(session_id)}
+
+        assert client.post(
+            "/cabinet/admin/videos/topics",
+            json={"title": "Без токена", "opens_at": "2026-08-03T10:00", "assign_to_all": True},
+        ).status_code == 403
+        assert client.post(
+            f"/cabinet/admin/videos/{video.id}/publish", json={}
+        ).status_code == 403
+        assert client.post(
+            f"/cabinet/admin/videos/{video.id}/metadata",
+            json={"title": "Без токена", "topic_id": None},
+        ).status_code == 403
+
+        assert client.post(
+            f"/cabinet/admin/videos/{video.id}/publish", json={}, headers=token
+        ).status_code == 200
+    finally:
+        app.dependency_overrides[require_csrf_header] = csrf_override
+
+
+def test_completion_is_refused_when_server_duration_is_unknown(
+    auth_client, db, monkeypatch
+):
+    """Не знаем длительность — не засчитываем просмотр. Позиция при этом пишется.
+
+    Случай создаёт сама миграция каталога: пилотный ролик вставляется
+    опубликованным и без `duration_seconds`, а `publish_video` длительность не
+    требует. Пока код откатывался на клиентскую, такой урок отмечался пройденным
+    телом `{"position_seconds": 0, "duration_seconds": 1}`.
+    """
+    from app.models.video_progress import VideoProgress
+
+    client, user = auth_client
+    monkeypatch.setattr(settings, "bunny_stream_enabled", True)
+    monkeypatch.setattr(settings, "bunny_stream_library_id", 720058)
+    monkeypatch.setattr(settings, "bunny_stream_token_key", "playback-key")
+    monkeypatch.setattr(settings, "bunny_stream_token_ttl_seconds", 300)
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Урок без известной длительности",
+        status="ready",
+        is_published=True,
+    )
+    db.add(video)
+    db.commit()
+    assert video.duration_seconds is None
+
+    forged = client.post(
+        f"/cabinet/videos/{video.id}/progress",
+        json={"position_seconds": 0, "duration_seconds": 1},
+    )
+
+    assert forged.status_code == 200
+    assert forged.json()["completed"] is False
+    saved = db.get(VideoProgress, (user.id, VIDEO_ID))
+    assert saved.completed_at is None
+    assert saved.position_seconds == 0
+
+
+def test_zero_server_duration_is_not_treated_as_known(auth_client, db, monkeypatch):
+    """`length: 0` от Bunny — это «неизвестно», а не «урок нулевой длины».
+
+    Через `or` такое значение откатывалось к клиентскому и открывало ту же дыру.
+    """
+    from app.models.video_progress import VideoProgress
+
+    client, user = auth_client
+    monkeypatch.setattr(settings, "bunny_stream_enabled", True)
+    monkeypatch.setattr(settings, "bunny_stream_library_id", 720058)
+    monkeypatch.setattr(settings, "bunny_stream_token_key", "playback-key")
+    monkeypatch.setattr(settings, "bunny_stream_token_ttl_seconds", 300)
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Урок с нулевой длительностью",
+        status="ready",
+        is_published=True,
+        duration_seconds=0.0,
+    )
+    db.add(video)
+    db.commit()
+
+    response = client.post(
+        f"/cabinet/videos/{video.id}/progress",
+        json={"position_seconds": 0, "duration_seconds": 1},
+    )
+
+    assert response.json()["completed"] is False
+    assert db.get(VideoProgress, (user.id, VIDEO_ID)).completed_at is None

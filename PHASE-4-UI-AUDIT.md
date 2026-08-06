@@ -53,4 +53,5 @@
   намеренная часть его визуального языка, а не дрейф Spark.
 - Предупреждения тестов относятся к устаревающим API Pydantic, SlowAPI и
   Starlette; они не появились из-за UI-изменений.
-- Для завершения релиза нужен отдельный commit, push и production deploy.
+- Релиз фазы 4 завершён: commit `4af88ea`, push ветки
+  `restore-tabs-pre-b3996b6` и production deploy выполнены 2026-07-24.

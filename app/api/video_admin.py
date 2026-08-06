@@ -35,6 +35,8 @@ from app.services.tags import get_all_tags, parse_usernames
 from app.services.tz import MSK_TZ
 from app.services.video_catalog import list_all_videos, publish_video, unpublish_video
 from app.services.video_topics import (
+    ambiguous_tag_names,
+    count_topic_audience,
     create_topic,
     delete_topic,
     get_assignee_ids,
@@ -135,15 +137,26 @@ def _get_video_or_404(db: DBSession, video_id: int) -> LearningVideo:
     return video
 
 
-def _audit(db: DBSession, *, action: str, user_id: int, video: LearningVideo) -> None:
+def _audit(
+    db: DBSession,
+    *,
+    action: str,
+    user_id: int,
+    video: LearningVideo,
+    extra: dict | None = None,
+) -> None:
+    details = {
+        "video_id": video.id,
+        "bunny_video_id": video.bunny_video_id,
+        "title": video.title[:200],
+    }
+    if extra:
+        details.update(extra)
     db.add(
         AuditLog(
             action=action,
             performed_by_id=user_id,
-            details=json.dumps(
-                {"video_id": video.id, "bunny_video_id": video.bunny_video_id, "title": video.title[:200]},
-                ensure_ascii=False,
-            ),
+            details=json.dumps(details, ensure_ascii=False),
         )
     )
 
@@ -168,6 +181,10 @@ def video_admin_page(
     db: Annotated[DBSession, Depends(get_db)],
 ):
     topics = list_topics(db)
+    topic_tag_ids = {t.id: get_tag_ids(db, t.id) for t in topics}
+    topic_assignee_ids = {t.id: get_assignee_ids(db, t.id) for t in topics}
+    all_tags = get_all_tags(db)
+    ambiguous_names = set(ambiguous_tag_names(db, [tag.id for tag in all_tags]))
     return templates.TemplateResponse(
         "cabinet_videos_admin.html",
         {
@@ -176,9 +193,37 @@ def video_admin_page(
             "videos": list_all_videos(db),
             "topics": topics,
             "topic_titles": {t.id: t.title for t in topics},
-            "topic_tag_ids": {t.id: get_tag_ids(db, t.id) for t in topics},
-            "topic_assignee_ids": {t.id: get_assignee_ids(db, t.id) for t in topics},
-            "all_tags": get_all_tags(db),
+            "topic_tag_ids": topic_tag_ids,
+            "topic_assignee_ids": topic_assignee_ids,
+            # Время открытия форматируется здесь, а не в шаблоне: колонка
+            # TIMESTAMPTZ приезжает в таймзоне сессии, а форма трактует ввод как
+            # МСК — расхождение уводило бы тему на три часа за каждую правку.
+            "topic_opens_form": {t.id: _format_msk_datetime_local(t.opens_at) for t in topics},
+            "topic_opens_display": {t.id: _format_msk_display(t.opens_at) for t in topics},
+            # Поимённые ученики возвращаются в форму, иначе сохранение стирает их.
+            "topic_assignee_usernames": {
+                t.id: _assignee_usernames(db, topic_assignee_ids.get(t.id, []))
+                for t in topics
+            },
+            # Аудитория и спорные теги считаются на сервере, чтобы админ видел
+            # охват темы до того, как ученики не увидят урок.
+            "topic_audience": {
+                t.id: count_topic_audience(
+                    db,
+                    assign_to_all=t.assign_to_all,
+                    tag_ids=topic_tag_ids.get(t.id, []),
+                    assignee_ids=topic_assignee_ids.get(t.id, []),
+                )
+                for t in topics
+            },
+            "topic_ambiguous_tags": {
+                t.id: ambiguous_tag_names(db, topic_tag_ids.get(t.id, []))
+                for t in topics
+            },
+            "all_tags": all_tags,
+            "ambiguous_tag_ids": {
+                tag.id for tag in all_tags if tag.name in ambiguous_names
+            },
             "upload_available": is_bunny_upload_available(),
         },
     )
@@ -254,12 +299,31 @@ def refresh_video_status(
     bunny_status = remote.get("status")
     video.bunny_status = bunny_status if isinstance(bunny_status, int) else None
     video.status = normalize_bunny_status(video.bunny_status)
+    # Форме ответа провайдера не доверяем: NaN в числе или не-словарь в списке
+    # сообщений дали бы 500 вместо аккуратного 502, хотя остальной маршрут отказы
+    # Bunny обрабатывает. Статус при этом уже разобран и сохранён.
     encode_progress = remote.get("encodeProgress")
-    video.encode_progress = max(0, min(100, int(encode_progress))) if isinstance(encode_progress, (int, float)) else None
+    try:
+        video.encode_progress = (
+            max(0, min(100, int(encode_progress)))
+            if isinstance(encode_progress, (int, float))
+            else None
+        )
+    except (ValueError, OverflowError):
+        video.encode_progress = None
     duration = remote.get("length")
-    video.duration_seconds = float(duration) if isinstance(duration, (int, float)) and duration >= 0 else None
-    messages = remote.get("transcodingMessages") or []
-    video.status_message = str(messages[-1].get("message", ""))[:500] or None if messages else None
+    try:
+        video.duration_seconds = (
+            float(duration) if isinstance(duration, (int, float)) and duration >= 0 else None
+        )
+    except (ValueError, OverflowError):
+        video.duration_seconds = None
+    messages = remote.get("transcodingMessages")
+    last_message = messages[-1] if isinstance(messages, list) and messages else None
+    if isinstance(last_message, dict):
+        video.status_message = str(last_message.get("message", ""))[:500] or None
+    else:
+        video.status_message = None
     db.commit()
     db.refresh(video)
     return JSONResponse({"ok": True, "video": _serialize_video(video)})
@@ -294,9 +358,19 @@ def update_video_metadata(
     video = _get_video_or_404(db, video_id)
     if payload.topic_id is not None and get_topic(db, payload.topic_id) is None:
         return JSONResponse({"ok": False, "error": "topic_not_found"}, status_code=422)
+    previous_topic_id = video.topic_id
     video.title = payload.title
     video.description = payload.description
     video.topic_id = payload.topic_id
+    # Маршрут меняет привязку к теме, то есть кто вообще увидит урок. Без записи
+    # переброс урока на «доступно всем» (topic_id=None) не оставлял следа.
+    _audit(
+        db,
+        action="video_metadata_update",
+        user_id=user["user_id"],
+        video=video,
+        extra={"topic_id_before": previous_topic_id, "topic_id_after": payload.topic_id},
+    )
     db.commit()
     return JSONResponse({"ok": True})
 
@@ -413,6 +487,27 @@ def _parse_opens_at(raw: str) -> datetime:
     return parsed
 
 
+def _format_msk_datetime_local(value: datetime) -> str:
+    """`opens_at` → строка для `<input type="datetime-local">` в МСК.
+
+    Колонка `TIMESTAMPTZ`, и Postgres отдаёт её в таймзоне сессии — в контейнере
+    UTC. Отдать это значение в форму как есть нельзя: `_parse_opens_at` трактует
+    ввод как московское время, поэтому каждое повторное сохранение темы уводило
+    бы её открытие на три часа назад. Формат тот же, что у пробников
+    (`cabinet_superadmin.py`), — обе формы обязаны понимать время одинаково.
+    """
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M")
+
+
+def _format_msk_display(value: datetime) -> str:
+    """`opens_at` → человекочитаемое московское время для списка тем."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(MSK_TZ).strftime("%d.%m.%Y %H:%M")
+
+
 def _resolve_assignees(db: DBSession, raw: str) -> tuple[list[int], list[str]]:
     """@username → id учеников. Возвращает найденных и ненайденных.
 
@@ -445,6 +540,22 @@ def _resolve_assignees(db: DBSession, raw: str) -> tuple[list[int], list[str]]:
     return list(found.values()), not_found
 
 
+def _assignee_usernames(db: DBSession, user_ids: list[int]) -> str:
+    """id учеников → строка «@user1, @user2» для предзаполнения формы.
+
+    Без неё форма редактирования открывалась с пустым полем, а сохранение
+    переписывало список поимённых целиком — любая правка темы снимала доступ у
+    догоняющих. `tg_username` зашифрован, поэтому читаем объекты и расшифровываем
+    в Python, как в `_resolve_assignees`.
+    """
+    if not user_ids:
+        return ""
+    users = db.query(User).filter(User.id.in_(user_ids)).all()
+    by_id = {u.id: (u.tg_username or "").strip().lstrip("@") for u in users}
+    names = [by_id.get(uid, "") for uid in user_ids]
+    return ", ".join(f"@{name}" for name in names if name)
+
+
 def _audit_topic(db: DBSession, *, action: str, user_id: int, topic) -> None:
     db.add(
         AuditLog(
@@ -455,6 +566,21 @@ def _audit_topic(db: DBSession, *, action: str, user_id: int, topic) -> None:
             ),
         )
     )
+
+
+def _topic_audience_feedback(
+    db: DBSession, *, assign_to_all: bool, tag_ids: list[int], assignee_ids: list[int]
+) -> dict:
+    """Охват темы и спорные теги — чтобы админ увидел промах адресации сразу."""
+    return {
+        "audience_size": count_topic_audience(
+            db,
+            assign_to_all=assign_to_all,
+            tag_ids=tag_ids,
+            assignee_ids=assignee_ids,
+        ),
+        "ambiguous_tags": ambiguous_tag_names(db, tag_ids),
+    }
 
 
 def _get_topic_or_404(db: DBSession, topic_id: int):
@@ -483,8 +609,16 @@ def create_video_topic(
     assignee_ids, not_found = _resolve_assignees(db, payload.assignee_usernames)
     set_topic_assignees(db, topic, assignee_ids)
     _audit_topic(db, action="video_topic_create", user_id=user["user_id"], topic=topic)
+    feedback = _topic_audience_feedback(
+        db,
+        assign_to_all=payload.assign_to_all,
+        tag_ids=payload.tag_ids,
+        assignee_ids=assignee_ids,
+    )
     db.commit()
-    return JSONResponse({"ok": True, "topic_id": topic.id, "not_found": not_found})
+    return JSONResponse(
+        {"ok": True, "topic_id": topic.id, "not_found": not_found, **feedback}
+    )
 
 
 @router.post("/topics/{topic_id}", response_class=JSONResponse)
@@ -508,8 +642,14 @@ def update_video_topic(
     assignee_ids, not_found = _resolve_assignees(db, payload.assignee_usernames)
     set_topic_assignees(db, topic, assignee_ids)
     _audit_topic(db, action="video_topic_update", user_id=user["user_id"], topic=topic)
+    feedback = _topic_audience_feedback(
+        db,
+        assign_to_all=payload.assign_to_all,
+        tag_ids=payload.tag_ids,
+        assignee_ids=assignee_ids,
+    )
     db.commit()
-    return JSONResponse({"ok": True, "not_found": not_found})
+    return JSONResponse({"ok": True, "not_found": not_found, **feedback})
 
 
 @router.post("/topics/{topic_id}/publish", response_class=JSONResponse)
@@ -550,8 +690,15 @@ def delete_video_topic(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
-    """Мягкое удаление. Уроки темы не пропадают — они становятся доступны всем,
-    поэтому сначала требуем отвязать их вручную."""
+    """Мягкое удаление темы, только если к ней не привязано ни одного урока.
+
+    Уроки при этом никуда не денутся, но и доступны не станут: `topic_id` у них
+    сохраняется, а `accessible_topic_ids` удалённые темы отфильтровывает — то
+    есть урок тихо исчезает у всех учеников, кроме персонала (fail-closed).
+    `ON DELETE SET NULL` сработал бы только при физическом удалении, которого
+    здесь нет. Поэтому гейт ниже защищает не от раздачи контента, а от потери
+    доступа к нему: снимать его, рассчитывая на «ну станут открыты всем», нельзя.
+    """
     topic = _get_topic_or_404(db, topic_id)
     attached = (
         db.query(LearningVideo.id)

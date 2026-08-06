@@ -59,12 +59,19 @@ body.has-video-pseudo-fullscreen {
     right: 16px;
     bottom: 64px;
     width: min(76%, 310px);
-    color: rgba(255, 255, 255, .42);
+    /* Ватермарка должна оставаться читаемой на светлом кадре: уроки — это
+       чертежи и белые слайды, и с них же снимают запись. Полупрозрачный белый
+       на таком фоне почти исчезал, поэтому под текстом стоит собственная тень
+       по контуру, а не только мягкая подложка. */
+    color: rgba(255, 255, 255, .58);
     font-size: clamp(10px, 1.35vw, 13px);
     font-weight: 600;
     line-height: 1.45;
     text-align: right;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, .78);
+    text-shadow:
+        0 1px 3px rgba(0, 0, 0, .85),
+        0 0 1px rgba(0, 0, 0, .9),
+        1px 1px 0 rgba(0, 0, 0, .35);
     transform: rotate(-8deg);
     transform-origin: right bottom;
 }
@@ -166,7 +173,10 @@ body.has-video-pseudo-fullscreen {
                 src="{{ player_url }}"
                 title="{{ video_title }}"
                 loading="eager"
-                allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
+                {# picture-in-picture не выдаём намеренно: PiP выносит кадр из DOM
+                   страницы, и ватермарка со зрителем остаётся здесь. По той же
+                   причине у iframe нет allowfullscreen — фуллскрин только свой. #}
+                allow="accelerometer; gyroscope; autoplay; encrypted-media"
                 referrerpolicy="strict-origin-when-cross-origin"></iframe>
             <div class="video-watermark" aria-hidden="true">
                 <div class="video-watermark-copy">
@@ -216,6 +226,9 @@ body.has-video-pseudo-fullscreen {
         var watermarkStepTimer = null;
         var watermarkResizeObserver = null;
         var orbitMetrics = null;
+        // Последний угол на орбите: по нему ватермарка возвращается на место
+        // после пересчёта размеров, не дожидаясь следующего тика.
+        var lastWatermarkAngle = -Math.PI / 2;
         var pseudoFullscreen = false;
         frame.addEventListener('load', function () {
             playerContainer.classList.add('is-ready');
@@ -255,10 +268,17 @@ body.has-video-pseudo-fullscreen {
                 radiusX: (maxX - minX) / 2,
                 radiusY: (maxY - minY) / 2
             };
+            // Переставляем сразу после пересчёта орбиты. В анимированном режиме
+            // это сделал бы следующий кадр, но при prefers-reduced-motion кадров
+            // нет: координаты обновляются раз в 4.5 секунды, и после выхода из
+            // фуллскрина ватермарка оставалась за границами уменьшившегося
+            // контейнера — а он с overflow: hidden, то есть её попросту не видно.
+            positionWatermark(lastWatermarkAngle);
         }
 
         function positionWatermark(angle) {
             if (!watermarkCopy || !orbitMetrics) return;
+            lastWatermarkAngle = angle;
             var x = orbitMetrics.centerX + orbitMetrics.radiusX * Math.cos(angle);
             var y = orbitMetrics.centerY + orbitMetrics.radiusY * Math.sin(angle);
             watermarkCopy.style.transform =
@@ -267,6 +287,9 @@ body.has-video-pseudo-fullscreen {
 
         function startWatermarkOrbit() {
             if (!watermarkCopy) return;
+            // Идемпотентно: страница возвращается из bfcache уже остановленной,
+            // а второй запуск поверх живого цикла дал бы два rAF и два наблюдателя.
+            stopWatermarkOrbit();
             watermarkCopy.classList.add('is-orbiting');
             measureWatermarkOrbit();
 
@@ -303,12 +326,15 @@ body.has-video-pseudo-fullscreen {
         function stopWatermarkOrbit() {
             if (watermarkAnimationFrame !== null) {
                 window.cancelAnimationFrame(watermarkAnimationFrame);
+                watermarkAnimationFrame = null;
             }
             if (watermarkStepTimer !== null) {
                 window.clearInterval(watermarkStepTimer);
+                watermarkStepTimer = null;
             }
             if (watermarkResizeObserver) {
                 watermarkResizeObserver.disconnect();
+                watermarkResizeObserver = null;
             } else {
                 window.removeEventListener('resize', measureWatermarkOrbit);
             }
@@ -410,12 +436,113 @@ body.has-video-pseudo-fullscreen {
             updateFullscreenButton();
         }
 
+        // Без { once: true }: pagehide срабатывает и при уходе в bfcache, а оттуда
+        // страница возвращается живой — орбиту надо будет остановить снова.
         window.addEventListener('pagehide', function () {
             stopWatermarkOrbit();
             exitPseudoFullscreen(false);
-        }, { once: true });
+        });
+
+        // ── Свежая подписанная ссылка ──────────────────────────────────────
+        // Токен Bunny живёт минуты. Пока iframe загружен, просмотр не рвётся, но
+        // любой его перезапрос — возврат на вкладку, перезапуск PWA, старт позже
+        // TTL — упирается в заглушку. Поднимать TTL нельзя: страница плеера
+        // открывается и без Referer. Значит берём свежую ссылку перед перезапросом.
+        var playerUrlEndpoint = {{ player_url_endpoint|default('')|tojson }};
+        var playerUrlTtlSeconds = {{ player_url_ttl_seconds|default(300)|tojson }};
+        var playerUrlMintedAt = Date.now();
+        var playerUrlRefreshInFlight = false;
+        var playerUrlRefreshDisabled = false;
+        var reattachPlayer = null;
+        var playerGeneration = 0;
+        var isPlaying = false;
+        var hasEverPlayed = false;
+
+        function showStatus(message, isError) {
+            if (!status) return;
+            status.textContent = message;
+            status.classList.toggle('is-error', Boolean(isError));
+        }
+
+        function isPlayerUrlStale() {
+            var safeLifetimeMs = Math.max(30, playerUrlTtlSeconds - 60) * 1000;
+            return Date.now() - playerUrlMintedAt > safeLifetimeMs;
+        }
+
+        function refreshPlayerUrl() {
+            if (!playerUrlEndpoint || playerUrlRefreshInFlight || playerUrlRefreshDisabled) return;
+            playerUrlRefreshInFlight = true;
+            fetch(playerUrlEndpoint, {
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' }
+            }).then(function (response) {
+                // 401 — истёкшая сессия. Без отдельной ветки он уходил в общий
+                // отказ и гасился молча: ученик видел рабочую страницу, где
+                // «Play» упирается в заглушку Bunny, и не понимал почему.
+                if (response.status === 401) {
+                    playerUrlRefreshDisabled = true;
+                    throw new Error('session_expired');
+                }
+                if (response.status === 403 || response.status === 404) {
+                    playerUrlRefreshDisabled = true;
+                    throw new Error('access_closed');
+                }
+                if (!response.ok) throw new Error('refresh_failed');
+                return response.json();
+            }).then(function (data) {
+                if (!data || !data.player_url) throw new Error('refresh_failed');
+                if (data.ttl_seconds) playerUrlTtlSeconds = data.ttl_seconds;
+                playerUrlMintedAt = Date.now();
+                playerContainer.classList.remove('is-ready');
+                frame.addEventListener('load', function () {
+                    playerContainer.classList.add('is-ready');
+                    if (reattachPlayer) reattachPlayer();
+                }, { once: true });
+                frame.src = data.player_url;
+            }).catch(function (error) {
+                if (error.message === 'access_closed') {
+                    showStatus('Доступ к уроку закрыт. Обновите страницу.', true);
+                } else if (error.message === 'session_expired') {
+                    showStatus('Войдите заново, чтобы продолжить просмотр.', true);
+                }
+            }).finally(function () {
+                playerUrlRefreshInFlight = false;
+            });
+        }
+
+        function refreshPlayerUrlIfStale() {
+            if (isPlaying || !isPlayerUrlStale()) return;
+            refreshPlayerUrl();
+        }
+
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'visible') refreshPlayerUrlIfStale();
+        });
+        // Страница отдаётся с `Cache-Control: private, no-store` (см. app/main.py),
+        // поэтому восстановление из bfcache здесь не гарантировано: чаще браузер
+        // просто перезагрузит страницу, и вся инициализация пройдёт заново. Ветка
+        // нужна для тех браузеров, которые страницу всё же вернут живой, — без неё
+        // ватермарка осталась бы стоять, а ссылка протухшей. Полагаться на неё как
+        // на основной путь нельзя.
+        window.addEventListener('pageshow', function (event) {
+            if (!event.persisted) return;
+            // Возврат из bfcache: pagehide уже погасил орбиту, но страница жива и
+            // видео снова на экране — без перезапуска ватермарка застыла бы в точке.
+            startWatermarkOrbit();
+            refreshPlayerUrlIfStale();
+        });
+        // Урок могли открыть, а включить через полчаса: пока просмотр не начался,
+        // подтягиваем ссылку сами, чтобы «Play» не упёрся в заглушку.
+        window.setInterval(function () {
+            if (document.visibilityState !== 'visible' || hasEverPlayed) return;
+            refreshPlayerUrlIfStale();
+        }, 60000);
 
         if (!window.playerjs || !window.playerjs.Player) {
+            // Без playerjs не видно, идёт ли просмотр, поэтому обновление ссылки
+            // выключено: перезагрузить iframe посреди урока хуже, чем оставить
+            // ученику ручное обновление страницы.
+            playerUrlRefreshDisabled = true;
             status.textContent = 'Автосохранение временно недоступно. Видео продолжит работать.';
             status.classList.add('is-error');
             return;
@@ -423,7 +550,6 @@ body.has-video-pseudo-fullscreen {
 
         var resumeSeconds = {{ resume_position_seconds|default(0)|tojson }};
         var csrfToken = {{ csrf_token(request)|tojson }};
-        var player = new window.playerjs.Player(frame);
         var currentSeconds = resumeSeconds;
         var durationSeconds = null;
         var lastSavedSeconds = resumeSeconds;
@@ -462,8 +588,7 @@ body.has-video-pseudo-fullscreen {
 
         function setStatus(message, isError) {
             if (status.textContent.trim() === message) return;
-            status.textContent = message;
-            status.classList.toggle('is-error', Boolean(isError));
+            showStatus(message, isError);
         }
 
         function sendProgress(progress, keepalive) {
@@ -489,6 +614,15 @@ body.has-video-pseudo-fullscreen {
                 })
             }).then(function (response) {
                 if (response.status === 401) {
+                    savingDisabled = true;
+                    throw new Error('session_expired');
+                }
+                // 403 — истёкший CSRF-токен (живёт 6 часов, а вкладку с уроком
+                // держат дольше). Без выключения сохранение уходило в цикл: порог
+                // «сдвинулись на 2 секунды» считается от последнего успешного
+                // сохранения, поэтому запросы шли каждые 10 секунд до закрытия
+                // вкладки, и каждый писал warning в журнал сервера.
+                if (response.status === 403) {
                     savingDisabled = true;
                     throw new Error('session_expired');
                 }
@@ -527,51 +661,82 @@ body.has-video-pseudo-fullscreen {
             }, keepalive);
         }
 
-        player.on('ready', function () {
-            playerContainer.classList.add('is-ready');
-            player.getDuration(function (value) {
-                durationSeconds = finiteNumber(value);
-                if (
-                    resumeSeconds >= 5
-                    && (!durationSeconds || resumeSeconds < durationSeconds - 10)
-                ) {
-                    player.setCurrentTime(resumeSeconds);
-                    currentSeconds = resumeSeconds;
-                    setStatus('Продолжили с ' + formatTime(resumeSeconds) + '.', false);
-                } else {
-                    currentSeconds = 0;
-                    setStatus('Место просмотра сохраняется автоматически.', false);
+        // После обновления ссылки iframe перезагружается, и внутри живёт уже
+        // новый плеер: обвязку приходится создавать заново, а не переиспользовать.
+        function attachPlayer() {
+            // playerjs слушает сообщения окна и не различает старый и новый
+            // экземпляры: без поколения прежняя обвязка продолжила бы отвечать на
+            // события нового плеера и сохранять прогресс дважды.
+            var generation = ++playerGeneration;
+            var player = new window.playerjs.Player(frame);
+
+            player.on('ready', function () {
+                if (generation !== playerGeneration) return;
+                playerContainer.classList.add('is-ready');
+                player.getDuration(function (value) {
+                    durationSeconds = finiteNumber(value);
+                    if (
+                        resumeSeconds >= 5
+                        && (!durationSeconds || resumeSeconds < durationSeconds - 10)
+                    ) {
+                        player.setCurrentTime(resumeSeconds);
+                        currentSeconds = resumeSeconds;
+                        setStatus('Продолжили с ' + formatTime(resumeSeconds) + '.', false);
+                    } else {
+                        currentSeconds = 0;
+                        setStatus('Место просмотра сохраняется автоматически.', false);
+                    }
+                });
+            });
+
+            player.on('timeupdate', function (raw) {
+                if (generation !== playerGeneration) return;
+                var timing = timingData(raw);
+                if (!timing || timing.seconds === null) return;
+                currentSeconds = timing.seconds;
+                if (timing.duration !== null && timing.duration > 0) durationSeconds = timing.duration;
+                if (Date.now() - lastAutomaticSaveAt >= 10000) {
+                    lastAutomaticSaveAt = Date.now();
+                    saveProgress(false, false, false);
                 }
             });
-        });
 
-        player.on('timeupdate', function (raw) {
-            var timing = timingData(raw);
-            if (!timing || timing.seconds === null) return;
-            currentSeconds = timing.seconds;
-            if (timing.duration !== null && timing.duration > 0) durationSeconds = timing.duration;
-            if (Date.now() - lastAutomaticSaveAt >= 10000) {
-                lastAutomaticSaveAt = Date.now();
-                saveProgress(false, false, false);
-            }
-        });
+            player.on('play', function () {
+                if (generation !== playerGeneration) return;
+                isPlaying = true;
+                hasEverPlayed = true;
+            });
 
-        player.on('pause', function () {
-            saveProgress(true, false, false);
-        });
-
-        player.on('seeked', function () {
-            player.getCurrentTime(function (value) {
-                var seconds = finiteNumber(value);
-                if (seconds !== null) currentSeconds = seconds;
+            player.on('pause', function () {
+                if (generation !== playerGeneration) return;
+                isPlaying = false;
                 saveProgress(true, false, false);
             });
-        });
 
-        player.on('ended', function () {
-            if (durationSeconds !== null) currentSeconds = durationSeconds;
-            saveProgress(true, true, false);
-        });
+            player.on('seeked', function () {
+                if (generation !== playerGeneration) return;
+                player.getCurrentTime(function (value) {
+                    var seconds = finiteNumber(value);
+                    if (seconds !== null) currentSeconds = seconds;
+                    saveProgress(true, false, false);
+                });
+            });
+
+            player.on('ended', function () {
+                if (generation !== playerGeneration) return;
+                isPlaying = false;
+                if (durationSeconds !== null) currentSeconds = durationSeconds;
+                saveProgress(true, true, false);
+            });
+        }
+
+        attachPlayer();
+        reattachPlayer = function () {
+            // Ученик должен вернуться на то же место, а не в начало урока.
+            resumeSeconds = currentSeconds;
+            isPlaying = false;
+            attachPlayer();
+        };
 
         document.addEventListener('visibilitychange', function () {
             if (document.visibilityState === 'hidden') saveProgress(true, false, true);

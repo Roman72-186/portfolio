@@ -2,10 +2,21 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
-.env
 credentials/google.json
 *.db
 .venv/
 venv/
-.env.deploy
 .codegraph/
+
+# Окружение — целиком, кроме образца. Раньше `.env.prod` с боевыми паролями
+# держался только на `.git/info/exclude`: тот файл не версионируется и не
+# переживает свежий клон, вторую машину и работу из другого агента, а цена
+# промаха — боевые пароли в истории публичного репозитория.
+.env
+.env.*
+!.env.example
+
+# Исследовательские артефакты и прототипы: в поставку не входят и на сервер не
+# уезжают (см. SKIP в scripts/deploy.py).
+.artifacts/
+prototypes/

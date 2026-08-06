@@ -12,9 +12,19 @@ Usage:
 **Прод не должен расходиться с коммитом.** Скрипт отказывается деплоить
 незакоммиченное: полный деплой требует чистого дерева, поштучный — чтобы были
 закоммичены заливаемые файлы. Обход — `--allow-dirty`, тогда деплой помечается
-грязным в маркере. После каждой заливки на сервер пишется `.deployed-version`
+грязным в маркере. После успешной сборки на сервер пишется `.deployed-version`
 с коммитом, веткой, временем и режимом; `--status` сравнивает его с локальным
 HEAD и дополнительно сверяет sha256 всех отслеживаемых файлов.
+
+**Полный деплой заливает файлы из индекса git**, за вычетом `SKIP`, — то же
+множество, которое потом сверяет `--status`. Раньше он обходил файловую систему
+и увозил на сервер всё игнорируемое: `.env.prod` с боевыми паролями,
+`.env.deploy` (а тот по умолчанию целится в чужой прод), кэши и выгрузки. Ни
+гейт чистоты, ни `--status` этого не показывали — оба смотрят только в git.
+Файлы, оставшиеся на сервере вне индекса, деплой не удаляет, но называет вслух.
+
+**Целевой хост сверяется с `ALLOWED_HOSTS`** до подключения. Разовый обход —
+`PORTFOLIO_ALLOW_ANY_HOST=1`.
 
 ⚠️ **`.env` сервера по умолчанию НЕ трогается.** До 2026-08-05 скрипт заливал туда
 локальный `.env` при каждом запуске, включая поштучный режим. Локальный `.env` —
@@ -22,8 +32,9 @@ HEAD и дополнительно сверяет sha256 всех отслежи
 числе `DATABASE_URL`, `POSTGRES_PASSWORD`, `SESSION_SECRET`, `REDIS_PASSWORD` и
 ключи S3/VK. Любой деплой положил бы прод и разлогинил всех учеников.
 
-Прод-окружение живёт в отдельном файле `.env.prod` (в `.gitignore`, значения вносит
-владелец руками) и заливается только явным флагом `--sync-env`. Перед заливкой
+Прод-окружение живёт в отдельном файле `.env.prod` (в `.gitignore` правилом
+`.env.*`, значения вносит владелец руками) и заливается только явным флагом
+`--sync-env`. На сервер сам файл не уезжает — только его содержимое в `.env`. Перед заливкой
 скрипт делает бэкап на сервере, показывает разницу по именам переменных — значения
 не печатаются никогда — и отказывается работать, если ключ пропадает.
 """
@@ -32,8 +43,9 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 try:
     import paramiko
@@ -44,7 +56,36 @@ LOCAL_DIR = Path(__file__).resolve().parent.parent
 REMOTE_DIR = os.getenv("PORTFOLIO_REMOTE_DIR", "/home/portfolio-saas")
 COMPOSE_FILE = os.getenv("PORTFOLIO_COMPOSE_FILE", "docker-compose.prod-ru.yml")
 
-SKIP = {".git", "__pycache__", ".env", "tests", "venv", ".venv", "node_modules"}
+# Из индекса git на сервер не уезжают тесты и служебные каталоги. Множество
+# используется и поштучным режимом: что исключено из полного деплоя, то нельзя
+# протащить и поимённо.
+SKIP = {
+    ".git", "__pycache__", ".env", "tests", "venv", ".venv", "node_modules",
+    ".artifacts", "prototypes",
+}
+
+# Куда этому проекту вообще позволено выкатываться. Список нужен из-за конкретной
+# ловушки: `.env.deploy` по умолчанию указывает на 89.23.96.254 — прежний хост
+# Apparchi, где сейчас живёт чужой боевой проект. Команда деплоя из документации
+# подхватывает этот файл как есть, и ошибка стоит чужого прода, а не своего.
+# Расширять список осознанно; разовый обход — PORTFOLIO_ALLOW_ANY_HOST=1.
+ALLOWED_HOSTS = {
+    "139.100.237.57",  # боевой Apparchi
+}
+
+
+def assert_known_host(host: str) -> None:
+    if os.getenv("PORTFOLIO_ALLOW_ANY_HOST") == "1":
+        print(f"  ВНИМАНИЕ: проверка хоста отключена вручную, цель — {host}")
+        return
+    if host not in ALLOWED_HOSTS:
+        allowed = ", ".join(sorted(ALLOWED_HOSTS))
+        raise SystemExit(
+            f"\nОТМЕНА: {host} не в списке серверов этого проекта ({allowed}).\n"
+            "Проверьте PORTFOLIO_SSH_HOST — .env.deploy по умолчанию указывает на\n"
+            "чужой боевой сервер. Если хост верный, добавьте его в ALLOWED_HOSTS\n"
+            "или разово запустите с PORTFOLIO_ALLOW_ANY_HOST=1."
+        )
 
 
 def require_env(name: str, default: str | None = None) -> str:
@@ -113,6 +154,20 @@ def read_app_env() -> str:
     return env_path.read_text(encoding="utf-8")
 
 
+def is_tracked_by_git(relative: Path) -> bool:
+    """Лежит ли файл в индексе git. При недоступном git — считаем, что да."""
+    try:
+        completed = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", relative.as_posix()],
+            cwd=LOCAL_DIR,
+            capture_output=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return True  # git недоступен — блокировать деплой не наше дело
+    return completed.returncode == 0
+
+
 def assert_not_tracked_by_git(path: Path) -> None:
     """Отказ, если файл с боевыми секретами отслеживается git.
 
@@ -138,18 +193,98 @@ def assert_not_tracked_by_git(path: Path) -> None:
 
 
 def env_fingerprint(text: str) -> dict[str, str]:
-    """{имя переменной: короткий хеш значения}. Значения не возвращаются наружу."""
+    """{имя переменной: короткий хеш значения}. Значения не возвращаются наружу.
+
+    Разбор терпим к тому, что реально встречается в `.env`: префикс `export`,
+    значения в кавычках и многострочные значения вроде приватных ключей. Наивный
+    разбор «строка = одна переменная» ломался на них дважды: продолжение
+    многострочного значения принималось за новую переменную, а `export KEY=`
+    давал ключ `export KEY`. Оба случая дают ложную картину в diff по именам, а
+    на ней стоит отказ от потери ключей — то есть защита срабатывала бы невпопад.
+    """
     result: dict[str, str] = {}
+    pending_key: str | None = None
+    pending_value: list[str] = []
+    quote: str | None = None
+
+    def _store(key: str, value: str) -> None:
+        result[key] = hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
+
     for line in text.splitlines():
+        if pending_key is not None:
+            # Внутри многострочного значения: копим, пока не встретим кавычку.
+            if quote and line.rstrip().endswith(quote):
+                pending_value.append(line.rstrip()[:-1])
+                _store(pending_key, "\n".join(pending_value))
+                pending_key, pending_value, quote = None, [], None
+            else:
+                pending_value.append(line)
+            continue
+
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
         key, _, value = stripped.partition("=")
         key = key.strip()
+        if key.startswith("export "):
+            key = key[len("export "):].strip()
         if not key or not (key[0].isalpha() or key[0] == "_"):
             continue
-        result[key] = hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
+        value = value.strip()
+        if value[:1] in ('"', "'"):
+            quote = value[0]
+            body = value[1:]
+            # Закрывающую кавычку ищем внутри строки, а не только в её конце:
+            # `KEY="value"  # комментарий` иначе принимался за начало
+            # многострочного значения и съедал все переменные до следующей
+            # строки с кавычкой. Они попадали в «исчезнет», и человек видел
+            # десяток пропадающих ключей, которых не трогал, — а на этом списке
+            # стоит отказ от потери ключей.
+            closing = body.find(quote)
+            if closing != -1:
+                _store(key, body[:closing])
+                quote = None
+            else:
+                pending_key, pending_value = key, [body]
+            continue
+        _store(key, value)
+
+    if pending_key is not None:
+        # Незакрытая кавычка: значение всё равно принадлежит этому ключу.
+        _store(pending_key, "\n".join(pending_value))
     return result
+
+
+def _write_secret_file(sftp, remote_path: str, text: str) -> None:
+    """Записать файл с секретами так, чтобы он ни секунды не лежал открытым.
+
+    Прямая запись с последующим chmod оставляла окно: между созданием и сменой
+    прав полный слепок боевого окружения доступен на чтение всем. Пишем во
+    временный файл, закрываем права и только потом ставим на место.
+
+    Подмена идёт через `posix_rename` — расширение OpenSSH, которое
+    перезаписывает цель одним шагом. Обычный SFTP-rename на существующий путь
+    падает, и обход через `remove` + `rename` оставлял бы окно, где `.env` на
+    сервере нет вовсе: обрыв связи ровно там — и следующий `docker compose up`
+    поднимется без единой переменной окружения. Fallback оставлен для серверов
+    без расширения, но он честно назван менее безопасным.
+    """
+    tmp_path = f"{remote_path}.tmp-{os.getpid()}"
+    with sftp.open(tmp_path, "w") as f:
+        f.write(text)
+    sftp.chmod(tmp_path, 0o600)
+    posix_rename = getattr(sftp, "posix_rename", None)
+    if posix_rename is not None:
+        try:
+            posix_rename(tmp_path, remote_path)
+            return
+        except IOError:
+            print("    (сервер не поддерживает posix-rename, подменяем в два шага)")
+    try:
+        sftp.remove(remote_path)
+    except FileNotFoundError:
+        pass
+    sftp.rename(tmp_path, remote_path)
 
 
 def sync_app_env(sftp, *, allow_remove: bool) -> None:
@@ -189,14 +324,19 @@ def sync_app_env(sftp, *, allow_remove: bool) -> None:
     if remote_text:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         backup_path = f"{REMOTE_DIR}/.env.bak-{stamp}"
-        with sftp.open(backup_path, "w") as f:
-            f.write(remote_text)
-        sftp.chmod(backup_path, 0o600)
+        _write_secret_file(sftp, backup_path, remote_text)
         print(f"    бэкап:      {backup_path}")
+        # Каждый бэкап — полный слепок боевых секретов. Ротацию не делаем сами:
+        # удалять файлы на проде вслепую опаснее, чем сказать о них вслух.
+        try:
+            backups = [n for n in sftp.listdir(REMOTE_DIR) if n.startswith(".env.bak-")]
+        except OSError:
+            backups = []
+        if len(backups) > 5:
+            print(f"    ВНИМАНИЕ:   на сервере {len(backups)} копий окружения "
+                  f"с боевыми секретами — старые стоит удалить руками")
 
-    with sftp.open(remote_path, "w") as f:
-        f.write(local_text)
-    sftp.chmod(remote_path, 0o600)
+    _write_secret_file(sftp, remote_path, local_text)
     print("    окружение залито")
 
 
@@ -235,6 +375,14 @@ def git_state() -> dict:
         if len(line) < 4:
             continue
         status, path = line[:2], line[3:].strip().strip('"')
+        # Переименование печатается как `R  old -> new`. Без разбора в список
+        # попадала вся строка, она не совпадала ни с одним реальным путём, и
+        # поштучный гейт считал незакоммиченный переименованный файл чистым.
+        if "R" in status and " -> " in path:
+            source, _, target = path.partition(" -> ")
+            modified.append(source.strip().strip('"'))
+            modified.append(target.strip().strip('"'))
+            continue
         (untracked if status == "??" else modified).append(path)
     return {
         "available": True,
@@ -249,9 +397,15 @@ def git_state() -> dict:
 def assert_clean_enough(state: dict, target_files: list[Path], *, allow_dirty: bool) -> None:
     """Не дать проду разойтись с коммитом.
 
-    Полный деплой требует чистого дерева целиком: он заливает и незакоммиченные
-    правки, и новые файлы. Поштучный смотрит только на свои файлы — остальной WIP
-    на сервер не поедет и разойтись не может.
+    Полный деплой требует чистого дерева целиком. Обратите внимание на асимметрию:
+    изменения отслеживаемых файлов уедут на сервер, а новые (untracked) — нет,
+    потому что множество берётся из индекса git. Поэтому грязное дерево опаснее,
+    чем кажется: под `--allow-dirty` уже изменённый код уедет, а новый модуль или
+    шаблон, на который он ссылается, останется локально, и приложение упадёт на
+    импорте при следующем рестарте.
+
+    Поштучный режим смотрит только на свои файлы — остальной WIP на сервер не
+    поедет и разойтись не может.
     """
     if not state.get("available"):
         print("  git недоступен — проверка версии пропущена")
@@ -263,7 +417,10 @@ def assert_clean_enough(state: dict, target_files: list[Path], *, allow_dirty: b
         problem = "заливаемые файлы не закоммичены"
     else:
         dirty = sorted(state["modified"] + state["untracked"])
-        problem = "дерево грязное, а полный деплой заливает всё"
+        problem = (
+            "дерево грязное: изменения отслеживаемых файлов уедут, "
+            "а новые файлы — нет (заливка идёт по индексу git)"
+        )
 
     if not dirty:
         return
@@ -283,9 +440,34 @@ def assert_clean_enough(state: dict, target_files: list[Path], *, allow_dirty: b
     print("  --allow-dirty: продолжаем, деплой будет помечен как грязный")
 
 
-def write_version_marker(sftp, state: dict, *, target_files: list[Path], dirty_ok: bool) -> None:
-    """Записать на сервер, какой версией кода он сейчас живёт."""
+def write_version_marker(
+    sftp, state: dict, *, target_files: list[Path], dirty_ok: bool, previous: dict | None
+) -> None:
+    """Записать на сервер, какой версией кода он сейчас живёт.
+
+    Поштучный деплой не переводит сервер на локальный HEAD: приехал один файл, а
+    остальное дерево осталось от прошлой полной заливки. Поэтому `commit`
+    продолжает указывать на последний полный деплой, а коммит-источник заплатки
+    пишется отдельным полем. Иначе `--status` уверенно печатал бы «коммиты
+    сходятся» для сервера, где этого коммита нет.
+    """
     if not state.get("available"):
+        # Git недоступен, но файлы уже уехали. Прежний маркер оставлять нельзя:
+        # он продолжал бы называть старый коммит выкаченным, хотя дерево сервера
+        # уже другое. Пишем честное «неизвестно».
+        payload = {
+            "commit": None,
+            "branch": "?",
+            "deployed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "mode": "files" if target_files else "full",
+            "files": sorted(p.relative_to(LOCAL_DIR).as_posix() for p in target_files),
+            "dirty": True,
+            "dirty_files": [],
+            "note": "git был недоступен при деплое — версия не установлена",
+        }
+        with sftp.open(f"{REMOTE_DIR}/{VERSION_FILE}", "w") as f:
+            f.write(json.dumps(payload, ensure_ascii=False, indent=2))
+        print("\n  Версия на сервере: неизвестна (git был недоступен)")
         return
     rel = sorted(p.relative_to(LOCAL_DIR).as_posix() for p in target_files)
     dirty = sorted(set(state["modified"]) | set(state["untracked"]))
@@ -300,10 +482,28 @@ def write_version_marker(sftp, state: dict, *, target_files: list[Path], dirty_o
         "dirty": bool(dirty) and dirty_ok,
         "dirty_files": dirty,
     }
+    if rel:
+        # Базовым остаётся коммит прошлой полной заливки, если он известен.
+        base = (previous or {}).get("commit")
+        payload["commit"] = base or None
+        payload["patched_from_commit"] = state["commit"]
+        history = list((previous or {}).get("patches", []))
+        history.append({
+            "commit": state["commit"],
+            "deployed_at": payload["deployed_at"],
+            "files": rel,
+        })
+        # Историю заплаток храним, иначе после второй поштучной заливки нельзя
+        # восстановить, какой файл приехал из какого коммита.
+        payload["patches"] = history[-20:]
     with sftp.open(f"{REMOTE_DIR}/{VERSION_FILE}", "w") as f:
         f.write(json.dumps(payload, ensure_ascii=False, indent=2))
     mark = " (грязный)" if payload["dirty"] else ""
-    print(f"\n  Версия на сервере: {state['short']} / {state['branch']}{mark}")
+    if rel:
+        base_short = (payload["commit"] or "неизвестен")[:7]
+        print(f"\n  Сервер: база {base_short}, заплатка {state['short']} / {state['branch']}{mark}")
+    else:
+        print(f"\n  Версия на сервере: {state['short']} / {state['branch']}{mark}")
 
 
 def read_version_marker(sftp) -> dict | None:
@@ -327,6 +527,90 @@ def deployable_files() -> list[str]:
     return result
 
 
+def wait_until_healthy(client, *, attempts: int = 40, delay_seconds: int = 5) -> bool:
+    """Дождаться, пока контейнер приложения станет healthy.
+
+    `docker compose up -d` отвечает «контейнеры запущены», а не «приложение
+    работает»: в образе `CMD` сначала гонит `alembic upgrade head` и только потом
+    поднимает uvicorn. То есть миграции идут уже после того, как сборка вернула
+    ноль. Упавшая миграция роняет контейнер в рестарт-петлю, а деплой без этой
+    проверки печатал «Done!», записывал маркер с новым коммитом, и `--status`
+    после этого уверенно показывал коммит выкаченным.
+
+    Опираемся на HEALTHCHECK из образа: он уже описан и бьёт в `/health`.
+    """
+    print("\nЖдём, пока приложение станет healthy...")
+    probe = (
+        f"cd {REMOTE_DIR} && cid=$(docker compose -f {COMPOSE_FILE} ps -q app) && "
+        '[ -n "$cid" ] && docker inspect -f '
+        "'{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}nohealth{{end}}' "
+        '"$cid"'
+    )
+    for attempt in range(1, attempts + 1):
+        _, stdout, _ = client.exec_command(probe, timeout=30)
+        line = stdout.read().decode("utf-8", errors="replace").strip()
+        if stdout.channel.recv_exit_status() != 0 or not line:
+            time.sleep(delay_seconds)
+            continue
+        status, _, health = line.partition(" ")
+        if health == "healthy":
+            print(f"  приложение отвечает (попытка {attempt})")
+            return True
+        if health == "nohealth" and status == "running":
+            # У образа нет HEALTHCHECK — большего отсюда не проверить.
+            print("  у контейнера нет HEALTHCHECK, ограничиваемся статусом running")
+            return True
+        if status in {"exited", "dead"}:
+            print(f"  контейнер {status} — приложение не поднялось")
+            return False
+        time.sleep(delay_seconds)
+    print(f"  не дождались за {attempts * delay_seconds} секунд")
+    return False
+
+
+def warn_about_stale_remote_files(client, tracked: list[str]) -> None:
+    """Предупредить о файлах, которые остались на сервере лишними.
+
+    Деплой ничего не удаляет, поэтому файл, убранный из git, продолжает жить на
+    проде и импортироваться. Удалять его отсюда нельзя — на той стороне боевой
+    сервер, а сравнение не знает про файлы, созданные приложением в рантайме.
+    Поэтому только называем расхождение вслух, решение остаётся за человеком.
+    """
+    listing = (
+        f"cd {REMOTE_DIR} && find . -type f "
+        r"-not -path './.git/*' -not -path './__pycache__/*' "
+        r"-not -name '.env' -not -name '.env.bak-*' -not -name '" + VERSION_FILE + "' "
+        r"-printf '%P\n' 2>/dev/null"
+    )
+    _, stdout, _ = client.exec_command(listing, timeout=60)
+    payload = stdout.read().decode("utf-8", "replace")
+    status = stdout.channel.recv_exit_status()
+    remote = {line.strip() for line in payload.splitlines() if line.strip()}
+    # `find` возвращает ненулевой код на любом нечитаемом каталоге в обходе.
+    # Молчать в этом случае нельзя: человек получил бы подтверждение, что лишних
+    # файлов нет, ровно там, где проверка ничего не смогла узнать.
+    if status != 0 and not remote:
+        print("\n  ВНИМАНИЕ: не удалось перечислить файлы на сервере "
+              f"(find вернул {status}) — проверка остатков не выполнена.")
+        return
+    if status != 0:
+        print(f"\n  ВНИМАНИЕ: find вернул {status}, список ниже может быть неполным.")
+    if not remote:
+        return
+    stale = sorted(remote - set(tracked))
+    if not stale:
+        return
+    # Окружения показываем первыми: именно они опаснее всего, а по алфавиту
+    # точечные каталоги вытеснили бы `.env.prod` за границу вывода.
+    stale.sort(key=lambda p: (0 if PurePosixPath(p).name.startswith(".env") else 1, p))
+    print(f"\n  ВНИМАНИЕ: на сервере {len(stale)} файл(ов) вне индекса git.")
+    print("  Деплой их не удаляет — проверьте и уберите руками, если это остатки:")
+    for path in stale[:20]:
+        print(f"      {path}")
+    if len(stale) > 20:
+        print(f"      … и ещё {len(stale) - 20}")
+
+
 def show_status(client, sftp) -> None:
     """Сравнить прод с локальным репозиторием: версия и фактические файлы."""
     state = git_state()
@@ -345,10 +629,14 @@ def show_status(client, sftp) -> None:
         print("  на сервере: маркера нет — деплой был до появления версионирования")
     else:
         mark = " (грязный)" if marker.get("dirty") else ""
-        print(f"  на сервере: {marker.get('commit','?')[:7]} / "
+        base = marker.get("commit") or "?"
+        print(f"  на сервере: {base[:7]} / "
               f"{marker.get('branch','?')}{mark}, {marker.get('deployed_at','?')}")
         if marker.get("mode") == "files":
-            print(f"              поштучный деплой, файлов: {len(marker.get('files', []))}")
+            patched = marker.get("patched_from_commit") or "?"
+            print(f"              поверх базы заплатки, последняя из {patched[:7]}, "
+                  f"файлов: {len(marker.get('files', []))}")
+            print(f"              всего заплаток в истории: {len(marker.get('patches', []))}")
         if state.get("available") and marker.get("commit") != state.get("commit"):
             print("  ВНИМАНИЕ: коммиты расходятся")
 
@@ -387,24 +675,42 @@ def show_status(client, sftp) -> None:
         print("  расхождений нет")
 
 
-def upload_dir(sftp, local_path, remote_path):
-    """Recursively upload directory."""
-    for item in os.listdir(local_path):
-        if item in SKIP:
-            continue
-        local_item = os.path.join(local_path, item)
-        remote_item = f"{remote_path}/{item}"
+def assert_uploadable(local_paths: list[Path]) -> None:
+    """Не пустить в поштучный режим то, что исключено из полного деплоя.
 
-        if os.path.isdir(local_item):
-            try:
-                sftp.stat(remote_item)
-            except FileNotFoundError:
-                sftp.mkdir(remote_item)
-                print(f"  mkdir {remote_item}")
-            upload_dir(sftp, local_item, remote_item)
-        else:
-            print(f"  upload {remote_item}")
-            sftp.put(local_item, remote_item)
+    Гейт чистоты дерева сравнивает пути с `git status --porcelain`, а `.env` и
+    прочее игнорируемое туда не попадает вовсе. Без этой проверки `deploy.py .env`
+    молча кладёт локальную dev-конфигурацию поверх боевой — ровно та авария, от
+    которой уходили, когда перестали заливать окружение автоматически. Заливка
+    окружения — только через `--sync-env`, с бэкапом и разницей по именам ключей.
+    """
+    for path in local_paths:
+        rel = path.relative_to(LOCAL_DIR)
+        # Окружение проверяем первым: `.env` попадает и под SKIP, но человеку
+        # нужен не факт исключения, а рабочий способ залить окружение.
+        # Образец окружения секретов не содержит и является частью поставки —
+        # проверку на «файл окружения» он проходит, остальные ниже обязан пройти.
+        if (rel.name == ".env" or rel.name.startswith(".env.")) and rel.name != ".env.example":
+            raise SystemExit(
+                f"\nОТМЕНА: {rel.as_posix()} — файл окружения.\n"
+                "Окружение сервера заливается только флагом --sync-env из .env.prod:\n"
+                "  python scripts/deploy.py --sync-env"
+            )
+        if any(part in SKIP for part in rel.parts):
+            raise SystemExit(
+                f"\nОТМЕНА: {rel.as_posix()} исключён из деплоя (SKIP).\n"
+                "Полный деплой такие файлы не заливает, поштучный тоже не должен."
+            )
+        # Файл обязан быть в индексе git. Игнорируемый не попадает в
+        # `git status --porcelain`, поэтому гейт чистоты пропускал бы его молча,
+        # маркер помечал деплой чистым, а `--status` никогда бы о нём не узнал:
+        # поштучный режим принимал больше, чем проверка вообще способна увидеть.
+        if not is_tracked_by_git(rel):
+            raise SystemExit(
+                f"\nОТМЕНА: {rel.as_posix()} не отслеживается git.\n"
+                "Такой файл не проверить ни гейтом чистоты, ни --status, а прод\n"
+                "обязан совпадать с коммитом. Закоммитьте файл или уберите из деплоя."
+            )
 
 
 def upload_files(sftp, local_paths: list[Path]):
@@ -449,6 +755,7 @@ def main():
         if not p.is_file():
             raise SystemExit(f"Not a file: {p}")
         target_files.append(p)
+    assert_uploadable(target_files)
 
     # Прод-окружение валидируем до подключения: падать на нём после заливки
     # половины файлов — худший из возможных моментов.
@@ -460,6 +767,7 @@ def main():
         assert_clean_enough(state, target_files, allow_dirty=allow_dirty)
 
     host = require_env("PORTFOLIO_SSH_HOST")
+    assert_known_host(host)
     print(f"Connecting to {host}...")
     client = connect_client()
 
@@ -477,31 +785,47 @@ def main():
     except FileNotFoundError:
         sftp.mkdir(REMOTE_DIR)
 
+    # Читаем маркер до заливки: поштучный режим опирается на коммит прошлого
+    # полного деплоя, а после записи нового маркера прежний уже не восстановить.
+    previous_marker = read_version_marker(sftp)
+
     if target_files:
         print(f"Uploading {len(target_files)} file(s) -> {REMOTE_DIR}")
         upload_files(sftp, target_files)
     else:
-        print(f"Uploading {LOCAL_DIR} -> {REMOTE_DIR}")
-        upload_dir(sftp, str(LOCAL_DIR), REMOTE_DIR)
+        # Источник множества — индекс git, а не обход файловой системы. Обход
+        # увозил на сервер всё игнорируемое: `.env.prod` с боевыми секретами,
+        # `.env.deploy` (а он по умолчанию целится в чужой прод), `.codegraph/`,
+        # `.pytest_cache/`, `visual_smoke.db`, выгрузки `reports/`. Причём
+        # `--status` их не показывал — он сверяет ровно `git ls-files`, поэтому
+        # проверка молчала именно про те файлы, которых на сервере быть не должно.
+        # Теперь заливается и сверяется одно и то же множество.
+        tracked = deployable_files()
+        if not tracked:
+            raise SystemExit(
+                "\nОТМЕНА: список файлов пуст — git недоступен или каталог не репозиторий.\n"
+                "Полный деплой берёт файлы из индекса git, вслепую дерево не заливается."
+            )
+        print(f"Uploading {len(tracked)} tracked file(s) -> {REMOTE_DIR}")
+        upload_files(sftp, [LOCAL_DIR / path for path in tracked])
+        warn_about_stale_remote_files(client, tracked)
 
     if sync_env:
         sync_app_env(sftp, allow_remove=allow_remove)
     else:
         print("\n  Окружение сервера не трогаем (нужен флаг --sync-env).")
 
-    write_version_marker(sftp, state, target_files=target_files, dirty_ok=allow_dirty)
-
-    sftp.close()
     print("\nDone! Files uploaded.")
 
     # Build and start (пересобирает только app, db и redis не трогает)
     print(f"\nBuilding and starting containers (compose: {COMPOSE_FILE})...")
     stdin, stdout, stderr = client.exec_command(
         f"cd {REMOTE_DIR} && docker compose -f {COMPOSE_FILE} up -d --build 2>&1",
-        timeout=300,
+        timeout=600,
     )
     output = stdout.read().decode("utf-8", errors="replace")
     errors = stderr.read().decode("utf-8", errors="replace")
+    build_status = stdout.channel.recv_exit_status()
     # Windows console cp1251 не печатает часть UTF-символов — заменяем их на ?
     def _safe_print(text):
         try:
@@ -512,6 +836,44 @@ def main():
     _safe_print(output)
     if errors:
         _safe_print("STDERR: " + errors)
+
+    # Маркер пишется только после успешной сборки и читает её код возврата.
+    # Иначе упавший build оставлял бы на сервере запись о новом коммите при
+    # работающем старом образе, а `--status` подтверждал бы, что всё выкачено.
+    if build_status != 0:
+        sftp.close()
+        client.close()
+        raise SystemExit(
+            f"\nОТМЕНА: сборка на сервере вернула код {build_status}.\n"
+            "Маркер версии не записан, но прод УЖЕ ЗАТРОНУТ: каталог app/ примонтирован\n"
+            "в контейнер, поэтому залитые шаблоны отдаются ученикам сразу, а Python-код\n"
+            "останется старым до ближайшего рестарта — после которого поедет новый код\n"
+            "без пересобранного образа.\n"
+            "Разберите вывод выше и либо доведите деплой до конца, либо выкатите\n"
+            "предыдущий коммит целиком."
+        )
+
+    if not wait_until_healthy(client):
+        sftp.close()
+        client.close()
+        raise SystemExit(
+            "\nОТМЕНА: контейнер не вышел в состояние healthy.\n"
+            "Маркер версии не записан, поэтому --status не покажет этот коммит\n"
+            "выкаченным. Но прод УЖЕ ЗАТРОНУТ: файлы залиты, а каталог app/\n"
+            "примонтирован в контейнер — шаблоны отдаются новые. Чаще всего сюда\n"
+            "приводит упавшая миграция: alembic upgrade head идёт в CMD, то есть\n"
+            "уже после успешной сборки.\n"
+            f"Логи: docker compose -f {COMPOSE_FILE} logs --tail=100 app"
+        )
+
+    write_version_marker(
+        sftp,
+        state,
+        target_files=target_files,
+        dirty_ok=allow_dirty,
+        previous=previous_marker,
+    )
+    sftp.close()
 
     # Сброс Redis-кэша после деплоя (сессии не трогаем — только app-кэш)
     print("\nFlushing Redis cache...")

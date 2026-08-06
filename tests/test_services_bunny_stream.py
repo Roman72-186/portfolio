@@ -160,3 +160,33 @@ def test_build_signed_embed_url_rejects_invalid_configuration(monkeypatch, field
         build_signed_embed_url()
 
     assert is_bunny_stream_available() is False
+
+
+def test_bunny_status_mapping_follows_provider_reference():
+    """Таблица VideoModelStatus из справочника Bunny, а не догадки.
+
+    Три кода трактовались неверно, и каждый стоил конкретного поведения:
+    6 (UploadFailed) показывался как идущая загрузка — сорвавшийся аплоад навсегда
+    оставался строкой, которую админка опрашивала каждые 15 секунд; 8
+    (JitPlaylistsCreated) считался отказом, хотя видео готово; 0 (Created) выглядел
+    обработкой, хотя файл к провайдеру ещё не поступил.
+    """
+    from app.services.bunny_stream import normalize_bunny_status
+
+    assert normalize_bunny_status(0) == "uploading"
+    assert normalize_bunny_status(1) == "processing"
+    assert normalize_bunny_status(2) == "processing"
+    assert normalize_bunny_status(3) == "ready"
+    assert normalize_bunny_status(4) == "ready"
+    assert normalize_bunny_status(5) == "failed"
+    assert normalize_bunny_status(6) == "failed"
+    assert normalize_bunny_status(7) == "processing"
+    assert normalize_bunny_status(8) == "ready"
+
+
+def test_unknown_bunny_status_is_treated_as_processing():
+    """Из «обрабатывается» система выходит сама по опросу — безопасное умолчание."""
+    from app.services.bunny_stream import normalize_bunny_status
+
+    assert normalize_bunny_status(None) == "processing"
+    assert normalize_bunny_status(99) == "processing"

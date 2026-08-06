@@ -155,11 +155,12 @@ FORM: Operate, расширение существующего кабинета 
                 <div class="vam-hint">Кому открыть — отметьте теги:</div>
                 <div class="vam-tag-picker">
                     {% for tag in all_tags %}
-                    <label><input type="checkbox" data-topic-tag value="{{ tag.id }}">{{ tag.name }}</label>
+                    <label><input type="checkbox" data-topic-tag value="{{ tag.id }}"{% if tag.id in ambiguous_tag_ids|default([]) %} data-topic-tag-ambiguous{% endif %}>{{ tag.name }}</label>
                     {% else %}
                     <span class="vam-hint">Тегов пока нет — их заводят на странице «Теги».</span>
                     {% endfor %}
                 </div>
+                <p class="vam-message is-error" data-topic-tag-warning hidden></p>
                 <label class="vam-field" style="margin-top: 10px;">Плюс отдельным ученикам: @username через запятую или с новой строки
                     <input data-topic-assignees type="text" placeholder="@ivanov, @petrova" autocomplete="off">
                 </label>
@@ -177,20 +178,28 @@ FORM: Operate, расширение существующего кабинета 
             <article class="vam-topic-row" data-topic-row data-id="{{ topic.id }}"
                      data-title="{{ topic.title }}"
                      data-description="{{ topic.description or '' }}"
-                     data-opens="{{ topic.opens_at.strftime('%Y-%m-%dT%H:%M') }}"
+                     data-opens="{{ topic_opens_form.get(topic.id, '') }}"
                      data-all="{{ '1' if topic.assign_to_all else '' }}"
-                     data-tags="{{ topic_tag_ids.get(topic.id, [])|join(',') }}">
+                     data-tags="{{ topic_tag_ids.get(topic.id, [])|join(',') }}"
+                     data-assignees="{{ topic_assignee_usernames.get(topic.id, '') }}">
                 <div>
                     <h3 class="vam-title">{{ topic.title }}</h3>
                     <div class="vam-meta">
-                        <span>Открыта с {{ topic.opens_at.strftime('%d.%m.%Y %H:%M') }}</span>
+                        <span>Открыта с {{ topic_opens_display.get(topic.id, '') }} МСК</span>
                         {% if topic.assign_to_all %}
                         <span>Всем ученикам</span>
                         {% else %}
                         <span>Тегов: {{ topic_tag_ids.get(topic.id, [])|length }}</span>
                         {% if topic_assignee_ids.get(topic.id) %}<span>Поимённо: {{ topic_assignee_ids.get(topic.id)|length }}</span>{% endif %}
                         {% endif %}
+                        <span>Получат доступ: {{ topic_audience.get(topic.id, 0) }}</span>
                     </div>
+                    {% if topic_ambiguous_tags.get(topic.id) %}
+                    <p class="vam-message is-error">
+                        Теги {{ topic_ambiguous_tags.get(topic.id)|join(', ') }} в проде означают группу и уровень куратора,
+                        а не предмет. Совпадение точное: ученики с тегом вида «Р+К» тему не получат.
+                    </p>
+                    {% endif %}
                 </div>
                 <div class="vam-row-actions" style="margin-top: 0;">
                     {% if topic.is_published %}
@@ -290,6 +299,10 @@ FORM: Operate, расширение существующего кабинета 
     var bar = document.getElementById('video-upload-bar');
     var percent = document.getElementById('video-upload-percent');
     var activeUpload = null;
+    // Идёт ли прямо сейчас передача файла в Bunny. Отдельно от activeUpload:
+    // объект загрузки живёт и после успеха, а фоновому поллеру важен именно факт
+    // «файл ещё летит» — перезагружать страницу в этот момент нельзя.
+    var uploadInFlight = false;
     var paused = false;
     var activeStorageKey = null;
 
@@ -338,21 +351,43 @@ FORM: Operate, расширение существующего кабинета 
         try { window.localStorage.removeItem(activeStorageKey); } catch (error) {}
     }
 
-    function pollUntilReady(videoId, attempts) {
+    function isAdminBusy() {
+        // Открытая форма темы или выбранный файл — признак несохранённого ввода.
+        if (topicForm && !topicForm.hidden) return true;
+        var fileInput = document.getElementById('video-file');
+        if (fileInput && fileInput.files && fileInput.files.length) return true;
+        var titleInput = document.getElementById('video-title');
+        return Boolean(titleInput && titleInput.value.trim());
+    }
+
+    // `own` отделяет ролик, который админ грузит прямо сейчас, от чужих строк,
+    // которые страница опрашивает фоном. Панель загрузчика принадлежит своей
+    // загрузке, а перезагрузка страницы посреди чужой оборвала бы файл на
+    // несколько гигабайт — поэтому фоновый поллер ждёт, пока своя закончится.
+    function pollUntilReady(videoId, attempts, own) {
         if (attempts <= 0) return;
         window.setTimeout(function () {
             api('/cabinet/admin/videos/' + videoId + '/refresh').then(function (data) {
                 var status = data.video && data.video.status;
                 if (status === 'ready' || status === 'failed') {
+                    // Фоновый поллер не имеет права перезагружать страницу, пока
+                    // человек занят: своя загрузка оборвётся, а введённые название
+                    // темы, дата и список @username пропадут без следа.
+                    if (!own && (uploadInFlight || isAdminBusy())) {
+                        pollUntilReady(videoId, attempts - 1, own);
+                        return;
+                    }
                     window.location.reload();
                     return;
                 }
-                stateTitle.textContent = 'Bunny обрабатывает видео…';
-                if (data.video && data.video.encode_progress !== null) {
-                    percent.textContent = data.video.encode_progress + '% обработки';
+                if (own) {
+                    stateTitle.textContent = 'Bunny обрабатывает видео…';
+                    if (data.video && data.video.encode_progress !== null) {
+                        percent.textContent = data.video.encode_progress + '% обработки';
+                    }
                 }
-                pollUntilReady(videoId, attempts - 1);
-            }).catch(function () { pollUntilReady(videoId, attempts - 1); });
+                pollUntilReady(videoId, attempts - 1, own);
+            }).catch(function () { pollUntilReady(videoId, attempts - 1, own); });
         }, 15000);
     }
 
@@ -412,6 +447,7 @@ FORM: Operate, расширение существующего кабинета 
                 },
                 metadata: {filename: file.name, filetype: file.type || 'application/octet-stream', title: title},
                 onError: function () {
+                    uploadInFlight = false;
                     startButton.disabled = false;
                     pauseButton.hidden = true;
                     setMessage('Загрузка прервалась. Попробуйте продолжить тем же файлом.', true);
@@ -423,15 +459,17 @@ FORM: Operate, расширение существующего кабинета 
                     stateTitle.textContent = 'Загружаем напрямую в Bunny';
                 },
                 onSuccess: function () {
+                    uploadInFlight = false;
                     forgetUpload();
                     bar.style.width = '100%'; percent.textContent = '100%';
                     stateTitle.textContent = 'Файл загружен. Началась обработка';
                     pauseButton.hidden = true;
                     setMessage('Можно дождаться готовности на этой странице или вернуться позже.', false);
-                    pollUntilReady(credentials.catalog_video_id, 120);
+                    pollUntilReady(credentials.catalog_video_id, 120, true);
                 }
             });
             pauseButton.hidden = false;
+            uploadInFlight = true;
             if (credentials.resume_existing) {
                 activeUpload.findPreviousUploads().then(function (previous) {
                     if (previous.length) activeUpload.resumeFromPreviousUpload(previous[0]);
@@ -507,6 +545,28 @@ FORM: Operate, расширение существующего кабинета 
     function syncAudienceVisibility() {
         var audience = topicForm.querySelector('[data-topic-audience]');
         if (audience) audience.hidden = topicField('all').checked;
+        syncAmbiguousTagWarning();
+    }
+
+    // Однобуквенные «Р» и «К» в проде значат группу и уровень куратора, хотя на
+    // пробниках такие же имена читаются как предмет. Совпадение здесь точное,
+    // поэтому предупреждаем до сохранения, а не после жалоб учеников.
+    function syncAmbiguousTagWarning() {
+        var warning = topicForm.querySelector('[data-topic-tag-warning]');
+        if (!warning) return;
+        var names = [];
+        topicForm.querySelectorAll('[data-topic-tag-ambiguous]:checked').forEach(function (box) {
+            names.push(box.parentElement.textContent.trim());
+        });
+        if (!names.length || topicField('all').checked) {
+            warning.hidden = true;
+            warning.textContent = '';
+            return;
+        }
+        warning.hidden = false;
+        warning.textContent = 'Теги ' + names.join(', ')
+            + ' в проде означают группу и уровень куратора, а не предмет.'
+            + ' Совпадение точное: ученики с тегом вида «Р+К» тему не получат.';
     }
 
     function openTopicForm(row) {
@@ -517,7 +577,9 @@ FORM: Operate, расширение существующего кабинета 
         topicField('description').value = row ? row.dataset.description : '';
         topicField('opens').value = row ? row.dataset.opens : '';
         topicField('all').checked = row ? row.dataset.all === '1' : false;
-        topicField('assignees').value = '';
+        // Возвращаем в форму уже назначенных: сохранение переписывает список
+        // целиком, и пустое поле сняло бы доступ у всех поимённых.
+        topicField('assignees').value = row ? (row.dataset.assignees || '') : '';
         var selected = row && row.dataset.tags ? row.dataset.tags.split(',') : [];
         topicForm.querySelectorAll('[data-topic-tag]').forEach(function (box) {
             box.checked = selected.indexOf(box.value) !== -1;
@@ -528,6 +590,9 @@ FORM: Operate, расширение существующего кабинета 
 
     if (topicForm) {
         topicField('all').addEventListener('change', syncAudienceVisibility);
+        topicForm.addEventListener('change', function (event) {
+            if (event.target.hasAttribute('data-topic-tag')) syncAmbiguousTagWarning();
+        });
 
         document.addEventListener('click', function (event) {
             if (event.target.closest('[data-topic-toggle]')) { openTopicForm(null); return; }
@@ -566,6 +631,13 @@ FORM: Operate, расширение существующего кабинета 
                     if (data && data.not_found && data.not_found.length) {
                         window.alert('Не нашлись ученики: @' + data.not_found.join(', @'));
                     }
+                    if (data && data.audience_size === 0) {
+                        window.alert('Тему сейчас никто не увидит: под выбранную аудиторию не подошёл ни один активный ученик.');
+                    } else if (data && data.ambiguous_tags && data.ambiguous_tags.length) {
+                        window.alert('Тема сохранена и уйдёт ' + data.audience_size + ' ученикам.'
+                            + ' Проверьте теги ' + data.ambiguous_tags.join(', ')
+                            + ': в проде это группа и уровень куратора, а совпадение точное.');
+                    }
                     window.location.reload();
                 }).catch(function () {
                     saveButton.disabled = false;
@@ -592,8 +664,11 @@ FORM: Operate, расширение существующего кабинета 
         });
     }
 
-    document.querySelectorAll('[data-status="uploading"], [data-status="processing"]').forEach(function (row) {
-        pollUntilReady(row.dataset.videoId, 120);
+    // Фоном опрашиваем только то, что Bunny двигает само. Строки в статусе
+    // uploading ждут файла из чьей-то вкладки: опрашивать их бессмысленно, а
+    // брошенная загрузка так и висела бы, дёргая API по 120 раз за каждый заход.
+    document.querySelectorAll('[data-status="processing"]').forEach(function (row) {
+        pollUntilReady(row.dataset.videoId, 120, false);
     });
 })();
 </script>

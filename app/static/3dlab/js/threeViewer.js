@@ -71,6 +71,26 @@ const state = {
   target: new THREE.Vector3(0, 0, 0),
 };
 
+function getTargetPixelRatio() {
+  const isCompactViewport = window.matchMedia("(max-width: 768px)").matches;
+  const maxPixelRatio = isCompactViewport ? 1.5 : 2;
+  return Math.min(window.devicePixelRatio || 1, maxPixelRatio);
+}
+
+function shouldRenderFrame(canvas) {
+  if (document.hidden) return false;
+
+  const viewer = canvas.closest(".viewer-wrapper");
+  if (viewer && !viewer.classList.contains("visible")) return false;
+
+  // pointerEvents здесь читается как признак «холст выведен из 3D-режима»:
+  // его ставит setCanvasInteractionEnabled(false) в viewer.js, roomsViewer.js и
+  // insetsViewer.js, и других владельцев у этого стиля быть не должно. Связь
+  // неявная: если кто-то поставит pointer-events: none ради проброса клика к
+  // подсказке, рендер молча замрёт, а выглядеть это будет как сбой WebGL.
+  return canvas.style.pointerEvents !== "none";
+}
+
 export function initThree(canvas) {
 scene = new THREE.Scene();
 scene.background = new THREE.Color(0x050506);
@@ -119,7 +139,7 @@ sectionEdgesScene.add(sectionEdgesGroup);
   });
 
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(getTargetPixelRatio());
   // CAD thick lines material (pixels)
 cadLineMat = new LineMaterial({
   color: 0xdf1a84,
@@ -141,6 +161,8 @@ cadLineMat.resolution.set(
   initControls(canvas);
 
 renderer.setAnimationLoop(() => {
+  if (!shouldRenderFrame(canvas)) return;
+
   state.rotX += (state.targetRotX - state.rotX) * 0.22;
   state.rotY += (state.targetRotY - state.rotY) * 0.22;
 
@@ -446,6 +468,7 @@ export function resize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
 
+  renderer.setPixelRatio(getTargetPixelRatio());
   renderer.setSize(window.innerWidth, window.innerHeight);
 
   if (cadLineMat) {
@@ -868,9 +891,10 @@ if (!rtN || rtN.width !== w || rtN.height !== h) {
   rtN.depthTexture.type = THREE.UnsignedShortType;
 }
 const isAndroid = /Android/i.test(navigator.userAgent);
+const isCompactViewport = window.matchMedia("(max-width: 768px)").matches;
 
 // На Android MSAA в render targets ломает depth и даёт 1282
-const samples = isAndroid ? 0 : rtSamples;
+const samples = isAndroid ? 0 : (isCompactViewport ? Math.min(rtSamples, 2) : rtSamples);
 
 rtA.samples = samples;
 rtB.samples = samples;

@@ -39,8 +39,15 @@ def _normalize_video_id(video_id: str) -> str:
         raise BunnyStreamConfigError("Bunny Stream video ID is invalid") from exc
 
 
-def _playback_config(video_id: str | None = None) -> tuple[int, str, str, int]:
-    library_id = settings.bunny_stream_library_id
+def _playback_config(
+    video_id: str | None = None, library_id: int | None = None
+) -> tuple[int, str, str, int]:
+    # Библиотека берётся из записи урока, если она известна: у каждого ролика
+    # своя `bunny_library_id`, и при смене BUNNY_STREAM_LIBRARY_ID или появлении
+    # второй библиотеки старые уроки иначе получали бы валидно подписанные
+    # ссылки в чужую библиотеку — плеер показывал бы заглушку, а причина по коду
+    # была бы неочевидна.
+    library_id = library_id or settings.bunny_stream_library_id
     normalized_video_id = _normalize_video_id(video_id or settings.bunny_stream_video_id)
     token_key = settings.bunny_stream_token_key.strip()
     ttl_seconds = settings.bunny_stream_token_ttl_seconds
@@ -87,11 +94,14 @@ def is_bunny_upload_available() -> bool:
 def build_signed_embed_url(
     video_id: str | None = None,
     now: datetime | None = None,
+    library_id: int | None = None,
 ) -> str:
     """Build a short-lived Bunny iframe URL without exposing the private key."""
     if not settings.bunny_stream_enabled:
         raise BunnyStreamConfigError("Bunny Stream is disabled")
-    library_id, normalized_video_id, token_key, ttl_seconds = _playback_config(video_id)
+    library_id, normalized_video_id, token_key, ttl_seconds = _playback_config(
+        video_id, library_id
+    )
     current_time = now or datetime.now(timezone.utc)
     if current_time.tzinfo is None:
         current_time = current_time.replace(tzinfo=timezone.utc)
@@ -106,6 +116,13 @@ def build_signed_embed_url(
             "autoplay": "false",
             # Keep iPhone playback inside the iframe. Native iOS fullscreen
             # would detach the video from our per-viewer watermark layer.
+            #
+            # ДОПУЩЕНИЕ, которое некому проверить автоматически: удержание видео
+            # в рамке на iPhone держится на этих двух параметрах плеера Bunny.
+            # Из cross-origin iframe уход видео в нативный полноэкранный режим
+            # клиенту не виден, поэтому переименование или отмена параметра на
+            # стороне провайдера снимет ватермарку молча — ни тест, ни логи этого
+            # не заметят. Проверять руками на iPhone после смен версии плеера.
             "playsinline": "true",
             "disableIosPlayer": "true",
         }
@@ -203,11 +220,35 @@ def delete_video(video_id: str) -> None:
         raise
 
 
+# Числовые статусы видео у Bunny (VideoModelStatus в их справочнике API):
+# 0 Created, 1 Uploaded, 2 Processing, 3 Transcoding, 4 Finished, 5 Error,
+# 6 UploadFailed, 7 JitSegmenting, 8 JitPlaylistsCreated.
+_BUNNY_STATUS = {
+    0: "uploading",    # объект создан, файл ещё не приехал
+    1: "processing",
+    2: "processing",
+    3: "ready",        # Transcoding: JIT отдаёт видео играбельным уже здесь
+    4: "ready",
+    5: "failed",
+    6: "failed",       # UploadFailed — именно провал, а не идущая загрузка
+    7: "processing",
+    8: "ready",        # JitPlaylistsCreated — плейлисты собраны, это успех
+}
+
+
 def normalize_bunny_status(status: int | None) -> str:
-    if status == 3:
-        return "ready"
-    if status in {5, 8}:
-        return "failed"
-    if status == 6:
-        return "uploading"
-    return "processing"
+    """Статус Bunny → наш.
+
+    Прежняя таблица расходилась со справочником в трёх местах, и каждое
+    расхождение било по делу: `6` (UploadFailed) показывался как «идёт загрузка»,
+    поэтому брошенная или сорвавшаяся загрузка навсегда оставалась строкой,
+    которую админка бесконечно опрашивала; `8` (JitPlaylistsCreated) считался
+    отказом, хотя это готовое видео; `0` (Created) попадал в «обрабатывается» и
+    выглядел как живая работа Bunny, хотя файл к провайдеру ещё не поступал.
+
+    `3` (Transcoding) намеренно оставлен готовым: при JIT-энкодинге видео уже
+    воспроизводится, ждать `4` значит держать урок закрытым без нужды.
+    Неизвестный код трактуем как «обрабатывается» — это единственное состояние,
+    из которого система сама выходит по опросу.
+    """
+    return _BUNNY_STATUS.get(status, "processing")

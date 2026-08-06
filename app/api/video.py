@@ -61,6 +61,30 @@ def _video_for_viewer(db: DBSession, *, catalog_id: int, user: dict):
     return None
 
 
+def _player_url_payload(video) -> JSONResponse:
+    """Свежая подписанная ссылка для уже открытой страницы.
+
+    Токен Bunny живёт минуты, а страница живёт часами: при любом перезапросе
+    iframe (возврат на вкладку, перезапуск PWA, старт просмотра позже TTL)
+    старый URL отдаёт заглушку. Поднимать TTL нельзя — страница плеера
+    открывается и без Referer, то есть утёкшая ссылка играет откуда угодно.
+    """
+    try:
+        player_url = build_signed_embed_url(
+            video.bunny_video_id, library_id=getattr(video, "bunny_library_id", None)
+        )
+    except BunnyStreamConfigError as exc:
+        logger.error("Bunny Stream playback configuration error: %s", exc)
+        return JSONResponse({"ok": False, "error": "player_unavailable"}, status_code=503)
+    return JSONResponse(
+        {
+            "ok": True,
+            "player_url": player_url,
+            "ttl_seconds": settings.bunny_stream_token_ttl_seconds,
+        }
+    )
+
+
 def _render_player(
     request: Request,
     user: dict,
@@ -68,6 +92,7 @@ def _render_player(
     *,
     video,
     progress_endpoint: str,
+    player_url_endpoint: str,
 ):
     viewer_name = " ".join(
         str(user.get(field) or "").strip()
@@ -84,6 +109,8 @@ def _render_player(
         "video_title": video.title,
         "video_description": getattr(video, "description", None),
         "progress_endpoint": progress_endpoint,
+        "player_url_endpoint": player_url_endpoint,
+        "player_url_ttl_seconds": settings.bunny_stream_token_ttl_seconds,
         "back_url": "/cabinet/admin/videos" if user.get("role_rank", 0) >= 4 else "/cabinet/videos",
         "viewer_watermark": {
             "name": viewer_name,
@@ -92,7 +119,9 @@ def _render_player(
         },
     }
     try:
-        context["player_url"] = build_signed_embed_url(video.bunny_video_id)
+        context["player_url"] = build_signed_embed_url(
+            video.bunny_video_id, library_id=getattr(video, "bunny_library_id", None)
+        )
     except BunnyStreamConfigError as exc:
         logger.error("Bunny Stream playback configuration error: %s", exc)
         context["player_url"] = None
@@ -126,7 +155,16 @@ def cabinet_videos(
         state = "completed" if progress and progress.completed_at else ("started" if resume >= 5 else "new")
         items.append({"video": video, "resume_seconds": resume, "state": state})
     return templates.TemplateResponse(
-        "cabinet_videos.html", {"request": request, "user": user, "items": items}
+        "cabinet_videos.html",
+        {
+            "request": request,
+            "user": user,
+            "items": items,
+            # Персонал заходит в каталог из админки видео, и жёсткая ссылка на
+            # ученический кабинет уводила его в чужой по смыслу экран. Правило то
+            # же, что у страницы урока ниже.
+            "back_url": "/cabinet/admin/videos" if user.get("role_rank", 0) >= 4 else "/cabinet/student",
+        },
     )
 
 
@@ -141,8 +179,25 @@ def cabinet_video_by_id(
     if video is None:
         return _not_found(request, user)
     return _render_player(
-        request, user, db, video=video, progress_endpoint=f"/cabinet/videos/{video_id}/progress"
+        request,
+        user,
+        db,
+        video=video,
+        progress_endpoint=f"/cabinet/videos/{video_id}/progress",
+        player_url_endpoint=f"/cabinet/videos/{video_id}/player-url",
     )
+
+
+@router.get("/videos/{video_id}/player-url", response_class=JSONResponse)
+def refresh_catalog_player_url(
+    video_id: int,
+    user: Annotated[dict, Depends(require_learning_content_access)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    video = _video_for_viewer(db, catalog_id=video_id, user=user)
+    if video is None:
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+    return _player_url_payload(video)
 
 
 @router.post("/videos/{video_id}/progress", response_class=JSONResponse)
@@ -156,7 +211,13 @@ def save_catalog_video_progress(
     video = _video_for_viewer(db, catalog_id=video_id, user=user)
     if video is None:
         raise HTTPException(status_code=404, detail="Видео не найдено")
-    return _save_progress(payload, user=user, db=db, bunny_video_id=video.bunny_video_id)
+    return _save_progress(
+        payload,
+        user=user,
+        db=db,
+        bunny_video_id=video.bunny_video_id,
+        known_duration_seconds=video.duration_seconds,
+    )
 
 
 @router.get("/video", response_class=HTMLResponse)
@@ -187,7 +248,19 @@ def cabinet_video_legacy(
         db,
         video=legacy_pilot_video(),
         progress_endpoint="/cabinet/video/progress",
+        player_url_endpoint="/cabinet/video/player-url",
     )
+
+
+@router.get("/video/player-url", response_class=JSONResponse)
+def refresh_legacy_player_url(
+    user: Annotated[dict, Depends(require_learning_content_access)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Пилотный ролик живёт только пока каталог пуст — те же условия, что у страницы."""
+    if not settings.bunny_stream_enabled or db.query(LearningVideo.id).first():
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+    return _player_url_payload(legacy_pilot_video())
 
 
 def _save_progress(
@@ -196,10 +269,34 @@ def _save_progress(
     user: dict,
     db: DBSession,
     bunny_video_id: str,
+    known_duration_seconds: float | None = None,
+    allow_client_duration: bool = False,
 ):
+    """Сохранить позицию просмотра. Факт «досмотрел» решает сервер.
+
+    Длительность берётся только своя — её пишет `refresh_video_status` из поля
+    `length` Bunny. Клиентской верить нельзя: валидатор ловит лишь позицию
+    больше длительности, поэтому тело `{"position_seconds": 0,
+    "duration_seconds": 1}` отмечало урок пройденным без секунды просмотра.
+
+    Если своей длительности нет — отметку не ставим вовсе (fail-closed).
+    Случай не гипотетический: миграция каталога вставляет опубликованный
+    пилотный ролик без `duration_seconds`, а `publish_video` длительность не
+    требует. Позиция просмотра при этом сохраняется как обычно, теряется только
+    бейдж «просмотрено» — это дешевле, чем засчитанный без просмотра урок.
+
+    `allow_client_duration` включён лишь для легаси-маршрута пилотного ролика: у
+    него записи в каталоге нет в принципе, и сравнивать не с чем.
+    """
+    if known_duration_seconds is not None and known_duration_seconds > 0:
+        duration = known_duration_seconds
+    elif allow_client_duration:
+        duration = payload.duration_seconds
+    else:
+        duration = None
     completed = (
-        payload.duration_seconds is not None
-        and payload.duration_seconds - payload.position_seconds <= 5
+        duration is not None
+        and duration - payload.position_seconds <= 5
     )
     try:
         completed = persist_video_progress(
@@ -224,8 +321,18 @@ def save_video_progress_legacy(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
-    if not settings.bunny_stream_enabled:
+    """Прогресс пилотного ролика — те же условия, что у страницы и у player-url.
+
+    Без проверки каталога маршрут продолжал писать прогресс на пилотный ролик и
+    после того, как страница с ним перестала существовать: доступа это не давало,
+    но три эндпоинта одной пары жили по разным правилам и разъехались бы дальше.
+    """
+    if not settings.bunny_stream_enabled or db.query(LearningVideo.id).first():
         return JSONResponse({"ok": False, "error": "video_disabled"}, status_code=404)
     return _save_progress(
-        payload, user=user, db=db, bunny_video_id=settings.bunny_stream_video_id
+        payload,
+        user=user,
+        db=db,
+        bunny_video_id=settings.bunny_stream_video_id,
+        allow_client_duration=True,
     )

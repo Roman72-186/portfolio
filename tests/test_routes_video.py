@@ -143,9 +143,11 @@ def test_video_fullscreen_keeps_watermark_inside_fullscreen_container(
     assert "requestFullscreen.call(playerContainer)" in response.text
     assert "document.exitFullscreen" in response.text
     assert "document.addEventListener('fullscreenchange'" in response.text
-    assert 'allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"' in response.text
+    assert 'allow="accelerometer; gyroscope; autoplay; encrypted-media"' in response.text
     assert "allowfullscreen" not in response.text.lower()
-    assert "picture-in-picture; fullscreen" not in response.text
+    # Ни фуллскрина, ни картинки-в-картинке у iframe: оба режима выносят кадр
+    # из-под слоя с данными зрителя, и видео поехало бы дальше без ватермарки.
+    assert "picture-in-picture" not in response.text
 
 
 def test_mobile_video_uses_pseudo_fullscreen_with_watermark(auth_client, monkeypatch):
@@ -335,7 +337,15 @@ def test_video_progress_rejects_invalid_timing(auth_client, monkeypatch):
     assert not_a_number.status_code == 422
 
 
-def test_video_progress_completion_is_calculated_on_server(auth_client, db, monkeypatch):
+def test_video_progress_ignores_client_completed_flag(auth_client, db, monkeypatch):
+    """Клиентский флаг `completed` отвергается схемой — решает сервер.
+
+    Тест намеренно не обещает большего: это легаси-маршрут пилотного ролика, у
+    которого нет записи в каталоге, а значит и своей длительности. Сравнение
+    идёт с присланной, и объявить пилот пройденным клиент технически может.
+    Для уроков каталога дыра закрыта серверной длительностью — см.
+    `test_completion_uses_server_duration_not_client_claim`.
+    """
     from app.models.video_progress import VideoProgress
 
     client, user = auth_client
@@ -418,6 +428,132 @@ def test_video_progress_save_failure_returns_safe_503(auth_client, monkeypatch):
 
     assert response.status_code == 503
     assert response.json() == {"ok": False, "error": "save_failed"}
+
+
+def test_player_url_endpoint_mints_a_fresh_signed_link(auth_client, db, monkeypatch):
+    """Подписанная ссылка живёт минуты, страница — часами.
+
+    Без свежего URL любой перезапрос iframe (возврат на вкладку, перезапуск PWA)
+    упирается в заглушку Bunny.
+    """
+    client, _ = auth_client
+    _configure_bunny(monkeypatch)
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Урок с темой",
+        status="ready",
+        is_published=True,
+    )
+    db.add(video)
+    db.commit()
+
+    page = client.get(f"/cabinet/videos/{video.id}")
+    first = client.get(f"/cabinet/videos/{video.id}/player-url")
+
+    assert page.status_code == 200
+    assert f'"/cabinet/videos/{video.id}/player-url"' in page.text
+    assert first.status_code == 200
+    payload = first.json()
+    assert payload["ok"] is True
+    assert f"https://iframe.mediadelivery.net/embed/720058/{VIDEO_ID}" in payload["player_url"]
+    assert "token=" in payload["player_url"]
+    assert payload["ttl_seconds"] == 300
+    assert TOKEN_KEY not in first.text
+
+
+def test_player_url_endpoint_respects_topic_access(auth_client, db, admin_user, monkeypatch):
+    """Тот же фильтр, что у страницы: ссылка не должна обходить темы."""
+    from datetime import timedelta
+
+    from app.models.learning_topic import LearningTopic, LearningTopicTag
+    from app.models.tag import Tag
+    from app.services.tz import now_msk
+
+    client, _ = auth_client
+    _configure_bunny(monkeypatch)
+    topic = LearningTopic(
+        title="Чужая тема",
+        opens_at=now_msk() - timedelta(days=1),
+        is_published=True,
+        created_by_id=admin_user.id,
+    )
+    tag = Tag(name="Чужой поток")
+    db.add_all([topic, tag])
+    db.flush()
+    db.add(LearningTopicTag(topic_id=topic.id, tag_id=tag.id))
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Урок чужой темы",
+        status="ready",
+        is_published=True,
+        topic_id=topic.id,
+    )
+    db.add(video)
+    db.commit()
+
+    response = client.get(f"/cabinet/videos/{video.id}/player-url")
+
+    assert response.status_code == 404
+    assert "iframe.mediadelivery.net" not in response.text
+
+
+def test_player_url_endpoint_fails_closed_without_configuration(auth_client, monkeypatch):
+    client, _ = auth_client
+    _configure_bunny(monkeypatch, token_key="")
+
+    response = client.get("/cabinet/video/player-url")
+
+    assert response.status_code == 503
+    assert response.json() == {"ok": False, "error": "player_unavailable"}
+
+
+def test_legacy_player_url_disappears_once_catalogue_exists(auth_client, db, monkeypatch):
+    client, _ = auth_client
+    _configure_bunny(monkeypatch)
+
+    pilot = client.get("/cabinet/video/player-url")
+    db.add(
+        LearningVideo(
+            bunny_library_id=720058,
+            bunny_video_id=VIDEO_ID,
+            title="Первый каталожный урок",
+            status="ready",
+            is_published=True,
+        )
+    )
+    db.commit()
+    after_catalogue = client.get("/cabinet/video/player-url")
+
+    assert pilot.status_code == 200
+    assert after_catalogue.status_code == 404
+
+
+def test_video_page_refreshes_expired_player_url(auth_client, monkeypatch):
+    client, _ = auth_client
+    _configure_bunny(monkeypatch)
+
+    response = client.get("/cabinet/video")
+
+    assert response.status_code == 200
+    assert 'var playerUrlEndpoint = "/cabinet/video/player-url";' in response.text
+    assert "var playerUrlTtlSeconds = 300;" in response.text
+    assert "function isPlayerUrlStale()" in response.text
+    assert "function refreshPlayerUrl()" in response.text
+    assert "frame.src = data.player_url;" in response.text
+    assert "if (reattachPlayer) reattachPlayer();" in response.text
+    assert "resumeSeconds = currentSeconds;" in response.text
+    assert "if (document.visibilityState === 'visible') refreshPlayerUrlIfStale();" in response.text
+    assert "if (!event.persisted) return;" in response.text
+    # Возврат из bfcache: pagehide гасит орбиту ватермарки, и без перезапуска она
+    # осталась бы висеть в одной точке — то есть перестала бы мешать записи экрана.
+    assert "startWatermarkOrbit();\n            refreshPlayerUrlIfStale();" in response.text
+    # Обвязка пересоздаётся, а старая замолкает по поколению: иначе прогресс
+    # сохранялся бы дважды после каждого обновления ссылки.
+    assert "function attachPlayer()" in response.text
+    assert "var generation = ++playerGeneration;" in response.text
+    assert "if (generation !== playerGeneration) return;" in response.text
 
 
 def test_video_page_has_throttled_playerjs_progress_contract(auth_client, monkeypatch):

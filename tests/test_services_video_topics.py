@@ -5,6 +5,8 @@ from app.models.tag import Tag, UserTag
 from app.services.tz import now_msk
 from app.services.video_topics import (
     accessible_topic_ids,
+    ambiguous_tag_names,
+    count_topic_audience,
     create_topic,
     delete_topic,
     get_assignee_ids,
@@ -174,6 +176,69 @@ def test_deleted_topic_disappears_from_listing_and_lookup(db, admin_user):
     assert get_topic(db, topic.id) is None
     assert list_topics(db) == []
     assert len(list_topics(db, include_deleted=True)) == 1
+
+
+# ---------------------------------------------------------------------------
+# Охват темы и спорные теги
+# ---------------------------------------------------------------------------
+
+def test_audience_counts_only_active_students(db, admin_user, user_factory):
+    active = user_factory(vk_id=300_010, name="Активный")
+    user_factory(vk_id=300_011, name="Заблокированный", is_active=False)
+    user_factory(vk_id=300_012, name="Куратор", role_name="куратор")
+
+    # admin_user и regular_user в этот тест не приходят: считаем только учеников.
+    count = count_topic_audience(db, assign_to_all=True, tag_ids=[], assignee_ids=[])
+
+    assert count == 1
+    assert active.is_active is True
+
+
+def test_audience_of_tag_does_not_include_wider_tag_holders(db, admin_user, user_factory):
+    """Тот же промах, что ловит строгое сопоставление, но видимый до сохранения.
+
+    Ученик с «Р+К» в охват темы по тегу «Р» не попадает — и админ видит это
+    числом, а не по жалобам через неделю.
+    """
+    exact = user_factory(vk_id=300_020, name="Точный")
+    wider = user_factory(vk_id=300_021, name="Широкий")
+    narrow_tag = _tag(db, "Р", user=exact)
+    _tag(db, "Р+К", user=wider)
+
+    count = count_topic_audience(
+        db, assign_to_all=False, tag_ids=[narrow_tag.id], assignee_ids=[]
+    )
+
+    assert count == 1
+
+
+def test_audience_does_not_double_count_tagged_assignee(db, admin_user, user_factory):
+    student = user_factory(vk_id=300_030, name="И тег, и поимённо")
+    tag = _tag(db, "Поток-9", user=student)
+
+    count = count_topic_audience(
+        db, assign_to_all=False, tag_ids=[tag.id], assignee_ids=[student.id]
+    )
+
+    assert count == 1
+
+
+def test_empty_audience_is_zero(db, admin_user):
+    orphan = _tag(db, "Никому")
+    assert count_topic_audience(
+        db, assign_to_all=False, tag_ids=[orphan.id], assignee_ids=[]
+    ) == 0
+
+
+def test_single_letter_tags_are_reported_as_ambiguous(db):
+    drawing = _tag(db, "Р")
+    both = _tag(db, "Р+К")
+    stream = _tag(db, "Поток-1")
+
+    names = ambiguous_tag_names(db, [drawing.id, both.id, stream.id])
+
+    assert sorted(names) == ["Р", "Р+К"]
+    assert ambiguous_tag_names(db, []) == []
 
 
 # ---------------------------------------------------------------------------

@@ -180,6 +180,12 @@ async def security_headers(request: Request, call_next):
 @app.middleware("http")
 async def cache_control(request: Request, call_next):
     response: Response = await call_next(request)
+    # Видео — единственное место, где `no-store` перевешивает bfcache: страница
+    # несёт подписанный embed-URL и ФИО с телефоном зрителя в ватермарке, и
+    # оставлять её копию в дисковом кэше нельзя. Плата за это — bfcache здесь
+    # ненадёжен: часть браузеров такую страницу не восстанавливает, а
+    # перезагружает. Обработчик `pageshow`/`persisted` в cabinet_video.html —
+    # страховка для тех, кто всё же восстановит, а не рабочий путь по умолчанию.
     if request.url.path.startswith("/cabinet/video") or request.url.path.startswith("/cabinet/admin/videos"):
         response.headers["Cache-Control"] = "private, no-store"
         return response
