@@ -56,6 +56,20 @@ FORM: Operate, расширение существующего кабинета 
 .vam-edit summary { cursor: pointer; color: var(--blue); font-size: 12px; font-weight: 700; }
 .vam-edit-fields { display: grid; grid-template-columns: 1fr 1.4fr auto; gap: 8px; align-items: end; margin-top: 10px; }
 .vam-empty { padding: 28px 20px; text-align: center; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); }
+.vam-topics { margin-bottom: 26px; }
+.vam-topics-head { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.vam-topics-head h2 { margin: 0; }
+.vam-hint { margin: 0 0 12px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.vam-topic-form { display: grid; gap: 10px; padding: 16px 18px; margin-bottom: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); }
+.vam-topic-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 10px; }
+.vam-tag-picker { display: flex; flex-wrap: wrap; gap: 6px 12px; max-height: 132px; overflow-y: auto; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.vam-tag-picker label { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text); }
+.vam-topic-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.vam-topic-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 13px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); }
+.vam-topic-row + .vam-topic-row { margin-top: 8px; }
+@media (max-width: 760px) {
+    .vam-topic-grid, .vam-topic-row { grid-template-columns: 1fr; }
+}
 @media (max-width: 760px) {
     .vam-head, .vam-row-main { grid-template-columns: 1fr; display: grid; }
     .vam-upload { grid-template-columns: 1fr; padding: 16px; }
@@ -110,6 +124,93 @@ FORM: Operate, расширение существующего кабинета 
         </div>
     </section>
 
+    <section class="vam-topics" aria-labelledby="vam-topics-title">
+        <div class="vam-topics-head">
+            <h2 id="vam-topics-title">Темы недели</h2>
+            <button type="button" class="btn-outline" data-topic-toggle>Новая тема</button>
+        </div>
+        <p class="vam-hint">
+            Тема открывается в указанное время по Москве и дальше остаётся у учеников —
+            прошедший материал не пропадает. Урок без темы виден всем.
+        </p>
+
+        <form class="vam-topic-form" data-topic-form hidden>
+            <input type="hidden" data-topic-id value="">
+            <div class="vam-topic-grid">
+                <label class="vam-field">Название темы
+                    <input data-topic-title type="text" maxlength="200" placeholder="Например: Архитектура США" autocomplete="off">
+                </label>
+                <label class="vam-field">Открыть с (МСК)
+                    <input data-topic-opens type="datetime-local">
+                </label>
+            </div>
+            <label class="vam-field">Описание, необязательно
+                <input data-topic-description type="text" maxlength="5000" autocomplete="off">
+            </label>
+            <label class="vam-field" style="flex-direction: row; align-items: center; gap: 8px;">
+                <input data-topic-all type="checkbox">
+                <span>Открыть всем ученикам</span>
+            </label>
+            <div data-topic-audience>
+                <div class="vam-hint">Кому открыть — отметьте теги:</div>
+                <div class="vam-tag-picker">
+                    {% for tag in all_tags %}
+                    <label><input type="checkbox" data-topic-tag value="{{ tag.id }}">{{ tag.name }}</label>
+                    {% else %}
+                    <span class="vam-hint">Тегов пока нет — их заводят на странице «Теги».</span>
+                    {% endfor %}
+                </div>
+                <label class="vam-field" style="margin-top: 10px;">Плюс отдельным ученикам: @username через запятую или с новой строки
+                    <input data-topic-assignees type="text" placeholder="@ivanov, @petrova" autocomplete="off">
+                </label>
+            </div>
+            <div class="vam-topic-actions">
+                <button type="button" class="btn-blue" data-topic-save>Сохранить тему</button>
+                <button type="button" class="btn-outline" data-topic-cancel>Отмена</button>
+            </div>
+            <p class="vam-message" data-topic-message></p>
+        </form>
+
+        {% if topics %}
+        <div>
+            {% for topic in topics %}
+            <article class="vam-topic-row" data-topic-row data-id="{{ topic.id }}"
+                     data-title="{{ topic.title }}"
+                     data-description="{{ topic.description or '' }}"
+                     data-opens="{{ topic.opens_at.strftime('%Y-%m-%dT%H:%M') }}"
+                     data-all="{{ '1' if topic.assign_to_all else '' }}"
+                     data-tags="{{ topic_tag_ids.get(topic.id, [])|join(',') }}">
+                <div>
+                    <h3 class="vam-title">{{ topic.title }}</h3>
+                    <div class="vam-meta">
+                        <span>Открыта с {{ topic.opens_at.strftime('%d.%m.%Y %H:%M') }}</span>
+                        {% if topic.assign_to_all %}
+                        <span>Всем ученикам</span>
+                        {% else %}
+                        <span>Тегов: {{ topic_tag_ids.get(topic.id, [])|length }}</span>
+                        {% if topic_assignee_ids.get(topic.id) %}<span>Поимённо: {{ topic_assignee_ids.get(topic.id)|length }}</span>{% endif %}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="vam-row-actions" style="margin-top: 0;">
+                    {% if topic.is_published %}
+                    <span class="vam-badge vam-badge--active">Опубликована</span>
+                    <button type="button" class="btn-outline" data-topic-action="unpublish">Скрыть</button>
+                    {% else %}
+                    <span class="vam-badge vam-badge--working">Черновик</span>
+                    <button type="button" class="btn-blue" data-topic-action="publish">Опубликовать</button>
+                    {% endif %}
+                    <button type="button" class="btn-outline" data-topic-edit>Изменить</button>
+                    <button type="button" class="btn-danger" data-topic-action="delete">Удалить</button>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="vam-empty">Тем пока нет. Пока их нет, уроки без темы видны всем ученикам.</div>
+        {% endif %}
+    </section>
+
     <section class="vam-queue" aria-labelledby="vam-queue-title">
         <h2 id="vam-queue-title">Все видео</h2>
         {% if videos %}
@@ -123,7 +224,7 @@ FORM: Operate, расширение существующего кабинета 
                             <span>{{ video.original_filename or 'Добавлено из Bunny' }}</span>
                             {% if video.duration_seconds %}<span>{{ (video.duration_seconds / 60)|round(1) }} мин.</span>{% endif %}
                             {% if video.encode_progress is not none %}<span>Обработка: {{ video.encode_progress }}%</span>{% endif %}
-                            {% if video.assignment_id %}<span>Тема: {{ assignment_titles.get(video.assignment_id, 'тема удалена') }}</span>{% else %}<span>Доступно всем ученикам</span>{% endif %}
+                            {% if video.topic_id %}<span>Тема: {{ topic_titles.get(video.topic_id, 'тема удалена') }}</span>{% else %}<span>Доступно всем ученикам</span>{% endif %}
                         </div>
                     </div>
                     {% if video.is_published %}
@@ -158,10 +259,10 @@ FORM: Operate, расширение существующего кабинета 
                         <label class="vam-field">Название<input data-edit-title value="{{ video.title }}" maxlength="200"></label>
                         <label class="vam-field">Описание<input data-edit-description value="{{ video.description or '' }}" maxlength="5000"></label>
                         <label class="vam-field">Тема
-                            <select data-edit-assignment>
+                            <select data-edit-topic>
                                 <option value="">Доступно всем ученикам</option>
-                                {% for assignment in assignments %}
-                                <option value="{{ assignment.id }}"{% if video.assignment_id == assignment.id %} selected{% endif %}>{{ assignment.title }}{% if assignment.status != 'published' %} — черновик{% endif %}</option>
+                                {% for topic in topics %}
+                                <option value="{{ topic.id }}"{% if video.topic_id == topic.id %} selected{% endif %}>{{ topic.title }}{% if not topic.is_published %} — черновик{% endif %}</option>
                                 {% endfor %}
                             </select>
                         </label>
@@ -369,11 +470,11 @@ FORM: Operate, расширение существующего кабинета 
         var action = button.dataset.videoAction;
         var body = {};
         if (action === 'metadata') {
-            var assignmentValue = row.querySelector('[data-edit-assignment]').value;
+            var topicValue = row.querySelector('[data-edit-topic]').value;
             body = {
                 title: row.querySelector('[data-edit-title]').value,
                 description: row.querySelector('[data-edit-description]').value,
-                assignment_id: assignmentValue ? Number(assignmentValue) : null
+                topic_id: topicValue ? Number(topicValue) : null
             };
         }
         if (action === 'delete') {
@@ -390,6 +491,106 @@ FORM: Operate, расширение существующего кабинета 
             window.alert(error.message === 'unpublish_first' ? 'Сначала скройте видео.' : 'Действие не выполнено. Попробуйте ещё раз.');
         });
     });
+
+    // ── Темы недели ────────────────────────────────────────────────────────
+    var topicForm = document.querySelector('[data-topic-form]');
+    var topicMessage = topicForm ? topicForm.querySelector('[data-topic-message]') : null;
+
+    function topicField(name) { return topicForm.querySelector('[data-topic-' + name + ']'); }
+
+    function setTopicMessage(text, isError) {
+        if (!topicMessage) return;
+        topicMessage.textContent = text || '';
+        topicMessage.classList.toggle('is-error', !!isError);
+    }
+
+    function syncAudienceVisibility() {
+        var audience = topicForm.querySelector('[data-topic-audience]');
+        if (audience) audience.hidden = topicField('all').checked;
+    }
+
+    function openTopicForm(row) {
+        topicForm.hidden = false;
+        setTopicMessage('');
+        topicField('id').value = row ? row.dataset.id : '';
+        topicField('title').value = row ? row.dataset.title : '';
+        topicField('description').value = row ? row.dataset.description : '';
+        topicField('opens').value = row ? row.dataset.opens : '';
+        topicField('all').checked = row ? row.dataset.all === '1' : false;
+        topicField('assignees').value = '';
+        var selected = row && row.dataset.tags ? row.dataset.tags.split(',') : [];
+        topicForm.querySelectorAll('[data-topic-tag]').forEach(function (box) {
+            box.checked = selected.indexOf(box.value) !== -1;
+        });
+        syncAudienceVisibility();
+        topicField('title').focus();
+    }
+
+    if (topicForm) {
+        topicField('all').addEventListener('change', syncAudienceVisibility);
+
+        document.addEventListener('click', function (event) {
+            if (event.target.closest('[data-topic-toggle]')) { openTopicForm(null); return; }
+            if (event.target.closest('[data-topic-cancel]')) { topicForm.hidden = true; return; }
+
+            var editButton = event.target.closest('[data-topic-edit]');
+            if (editButton) { openTopicForm(editButton.closest('[data-topic-row]')); return; }
+
+            var saveButton = event.target.closest('[data-topic-save]');
+            if (saveButton) {
+                var title = topicField('title').value.trim();
+                var opensAt = topicField('opens').value;
+                if (!title || !opensAt) { setTopicMessage('Укажите название и дату открытия.', true); return; }
+
+                var tagIds = [];
+                topicForm.querySelectorAll('[data-topic-tag]:checked').forEach(function (box) {
+                    tagIds.push(Number(box.value));
+                });
+                var assignees = topicField('assignees').value;
+                var isForAll = topicField('all').checked;
+                if (!isForAll && !tagIds.length && !assignees.trim()) {
+                    setTopicMessage('Тему никто не увидит: отметьте теги, добавьте учеников или откройте всем.', true);
+                    return;
+                }
+
+                var topicId = topicField('id').value;
+                saveButton.disabled = true;
+                api('/cabinet/admin/videos/topics' + (topicId ? '/' + topicId : ''), {
+                    title: title,
+                    description: topicField('description').value,
+                    opens_at: opensAt,
+                    assign_to_all: isForAll,
+                    tag_ids: isForAll ? [] : tagIds,
+                    assignee_usernames: isForAll ? '' : assignees
+                }).then(function (data) {
+                    if (data && data.not_found && data.not_found.length) {
+                        window.alert('Не нашлись ученики: @' + data.not_found.join(', @'));
+                    }
+                    window.location.reload();
+                }).catch(function () {
+                    saveButton.disabled = false;
+                    setTopicMessage('Не удалось сохранить тему. Попробуйте ещё раз.', true);
+                });
+                return;
+            }
+
+            var actionButton = event.target.closest('[data-topic-action]');
+            if (!actionButton) return;
+            var topicRow = actionButton.closest('[data-topic-row]');
+            var topicAction = actionButton.dataset.topicAction;
+            if (topicAction === 'delete' && !window.confirm('Удалить тему «' + topicRow.dataset.title + '»?')) return;
+
+            actionButton.disabled = true;
+            api('/cabinet/admin/videos/topics/' + topicRow.dataset.id + '/' + topicAction).then(function () {
+                window.location.reload();
+            }).catch(function (error) {
+                actionButton.disabled = false;
+                window.alert(error.message === 'topic_has_videos'
+                    ? 'К теме привязаны уроки. Сначала переназначьте их.'
+                    : 'Действие не выполнено. Попробуйте ещё раз.');
+            });
+        });
+    }
 
     document.querySelectorAll('[data-status="uploading"], [data-status="processing"]').forEach(function (row) {
         pollUntilReady(row.dataset.videoId, 120);

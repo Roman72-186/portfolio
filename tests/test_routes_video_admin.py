@@ -296,3 +296,62 @@ def test_publish_and_student_catalogue_use_local_source_of_truth(
     assert hidden.status_code == 200
     catalogue = client.get("/cabinet/videos")
     assert "Опубликованный урок" not in catalogue.text
+
+
+def test_admin_creates_topic_and_page_renders_it(admin_client, db, monkeypatch):
+    """Заодно покрывает ветку шаблона со списком тем: там форматируется opens_at."""
+    client, _ = admin_client
+    _configure_upload(monkeypatch)
+    created = client.post(
+        "/cabinet/admin/videos/topics",
+        json={
+            "title": "Архитектура США",
+            "opens_at": "2026-08-03T10:00",
+            "assign_to_all": True,
+        },
+    )
+    assert created.status_code == 200
+    topic_id = created.json()["topic_id"]
+
+    page = client.get("/cabinet/admin/videos")
+    assert page.status_code == 200
+    assert "Архитектура США" in page.text
+    assert "Черновик" in page.text
+
+    published = client.post(f"/cabinet/admin/videos/topics/{topic_id}/publish", json={})
+    assert published.status_code == 200
+    assert "Опубликована" in client.get("/cabinet/admin/videos").text
+
+
+def test_topic_with_attached_lesson_cannot_be_deleted(admin_client, db, monkeypatch):
+    """Иначе урок молча стал бы доступен всем — удаление темы не должно раздавать контент."""
+    client, _ = admin_client
+    _configure_upload(monkeypatch)
+    created = client.post(
+        "/cabinet/admin/videos/topics",
+        json={"title": "Тема с уроком", "opens_at": "2026-08-03T10:00", "assign_to_all": True},
+    )
+    topic_id = created.json()["topic_id"]
+
+    db.add(LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Урок темы",
+        status="ready",
+        is_published=True,
+        topic_id=topic_id,
+    ))
+    db.commit()
+
+    refused = client.post(f"/cabinet/admin/videos/topics/{topic_id}/delete", json={})
+    assert refused.status_code == 409
+    assert refused.json()["error"] == "topic_has_videos"
+
+
+def test_student_cannot_manage_topics(auth_client):
+    client, _ = auth_client
+    response = client.post(
+        "/cabinet/admin/videos/topics",
+        json={"title": "Чужая тема", "opens_at": "2026-08-03T10:00", "assign_to_all": True},
+    )
+    assert response.status_code == 403

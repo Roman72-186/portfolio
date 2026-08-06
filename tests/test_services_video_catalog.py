@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
+from app.models.learning_topic import LearningTopic, LearningTopicAssignee, LearningTopicTag
 from app.models.learning_video import LearningVideo
 from app.models.tag import Tag, UserTag
 from app.services.tz import now_msk
@@ -28,33 +28,22 @@ def _viewer(user, rank: int = 1) -> dict:
     return {"user_id": user.id, "role_rank": rank, "is_group_member": True}
 
 
-def _topic(db, owner, *, target_tag_id=None, assign_to_all=False, opens_in_days=-1,
-           status="published", title="Архитектура США"):
-    """Тема недели: задание + один билет с окном и адресатом."""
-    assignment = ExamAssignment(
+def _topic(db, owner, *, tag_id=None, assign_to_all=False, opens_in_days=-1,
+           is_published=True, title="Архитектура США"):
+    """Тема недели видеомодуля. С пробниками не связана."""
+    topic = LearningTopic(
         title=title,
-        subject="Композиция",
-        kind="lesson",
-        created_by_id=owner.id,
-        status=status,
-    )
-    db.add(assignment)
-    db.flush()
-    opens_at = now_msk() + timedelta(days=opens_in_days)
-    ticket = ExamTicket(
-        assignment_id=assignment.id,
-        ticket_number=1,
-        title=f"Задание: {title}",
-        start_date=opens_at.date(),
-        end_date=(opens_at + timedelta(days=7)).date(),
-        opens_at=opens_at,
-        closes_at=opens_at + timedelta(days=7),
-        target_tag_id=target_tag_id,
+        opens_at=now_msk() + timedelta(days=opens_in_days),
         assign_to_all=assign_to_all,
+        is_published=is_published,
+        created_by_id=owner.id,
     )
-    db.add(ticket)
+    db.add(topic)
+    db.flush()
+    if tag_id is not None:
+        db.add(LearningTopicTag(topic_id=topic.id, tag_id=tag_id))
     db.commit()
-    return assignment, ticket
+    return topic
 
 
 def _tag(db, user, name: str) -> Tag:
@@ -133,8 +122,8 @@ def test_video_without_topic_stays_open_to_every_student(db, monkeypatch, regula
 
 def test_topic_assigned_to_all_opens_its_video(db, monkeypatch, regular_user, admin_user):
     monkeypatch.setattr("app.services.video_catalog.is_bunny_stream_available", lambda: False)
-    assignment, _ = _topic(db, admin_user, assign_to_all=True)
-    video = _video(is_published=True, assignment_id=assignment.id)
+    topic = _topic(db, admin_user, assign_to_all=True)
+    video = _video(is_published=True, topic_id=topic.id)
     db.add(video)
     db.commit()
 
@@ -148,8 +137,8 @@ def test_topic_targeted_at_a_tag_hides_video_from_other_students(
     insider = user_factory(vk_id=200_101, name="Свой поток")
     outsider = regular_user
     tag = _tag(db, insider, "Поток-1")
-    assignment, _ = _topic(db, admin_user, target_tag_id=tag.id)
-    video = _video(is_published=True, assignment_id=assignment.id)
+    topic = _topic(db, admin_user, tag_id=tag.id)
+    video = _video(is_published=True, topic_id=topic.id)
     db.add(video)
     db.commit()
 
@@ -159,8 +148,8 @@ def test_topic_targeted_at_a_tag_hides_video_from_other_students(
 
 def test_topic_that_has_not_started_yet_stays_closed(db, monkeypatch, regular_user, admin_user):
     monkeypatch.setattr("app.services.video_catalog.is_bunny_stream_available", lambda: False)
-    assignment, _ = _topic(db, admin_user, assign_to_all=True, opens_in_days=3)
-    video = _video(is_published=True, assignment_id=assignment.id)
+    topic = _topic(db, admin_user, assign_to_all=True, opens_in_days=3)
+    video = _video(is_published=True, topic_id=topic.id)
     db.add(video)
     db.commit()
 
@@ -169,19 +158,19 @@ def test_topic_that_has_not_started_yet_stays_closed(db, monkeypatch, regular_us
 
 def test_draft_topic_does_not_open_its_video(db, monkeypatch, regular_user, admin_user):
     monkeypatch.setattr("app.services.video_catalog.is_bunny_stream_available", lambda: False)
-    assignment, _ = _topic(db, admin_user, assign_to_all=True, status="draft")
-    video = _video(is_published=True, assignment_id=assignment.id)
+    topic = _topic(db, admin_user, assign_to_all=True, is_published=False)
+    video = _video(is_published=True, topic_id=topic.id)
     db.add(video)
     db.commit()
 
     assert list_published_videos(db, viewer=_viewer(regular_user)) == []
 
 
-def test_personally_assigned_ticket_opens_the_topic(db, monkeypatch, regular_user, admin_user):
+def test_personally_assigned_student_gets_the_topic(db, monkeypatch, regular_user, admin_user):
     monkeypatch.setattr("app.services.video_catalog.is_bunny_stream_available", lambda: False)
-    assignment, ticket = _topic(db, admin_user, assign_to_all=False)
-    db.add(ExamTicketAssignee(ticket_id=ticket.id, user_id=regular_user.id))
-    video = _video(is_published=True, assignment_id=assignment.id)
+    topic = _topic(db, admin_user, assign_to_all=False)
+    db.add(LearningTopicAssignee(topic_id=topic.id, user_id=regular_user.id))
+    video = _video(is_published=True, topic_id=topic.id)
     db.add(video)
     db.commit()
 
@@ -191,8 +180,8 @@ def test_personally_assigned_ticket_opens_the_topic(db, monkeypatch, regular_use
 def test_staff_preview_sees_every_topic(db, monkeypatch, regular_user, admin_user, user_factory):
     monkeypatch.setattr("app.services.video_catalog.is_bunny_stream_available", lambda: False)
     curator = user_factory(vk_id=200_102, name="Куратор", role_name="куратор")
-    assignment, _ = _topic(db, admin_user, assign_to_all=False)
-    video = _video(is_published=True, assignment_id=assignment.id)
+    topic = _topic(db, admin_user, assign_to_all=False)
+    video = _video(is_published=True, topic_id=topic.id)
     db.add(video)
     db.commit()
 
@@ -203,8 +192,8 @@ def test_staff_preview_sees_every_topic(db, monkeypatch, regular_user, admin_use
 def test_direct_link_to_foreign_topic_is_closed(db, monkeypatch, regular_user, admin_user):
     """Карточка урока — отдельный от каталога путь, ссылка не должна его обходить."""
     monkeypatch.setattr("app.services.video_catalog.is_bunny_stream_available", lambda: False)
-    assignment, _ = _topic(db, admin_user, assign_to_all=False)
-    video = _video(is_published=True, assignment_id=assignment.id)
+    topic = _topic(db, admin_user, assign_to_all=False)
+    video = _video(is_published=True, topic_id=topic.id)
     db.add(video)
     db.commit()
 

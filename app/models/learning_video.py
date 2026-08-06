@@ -20,11 +20,10 @@ class LearningVideo(Base):
     original_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     original_mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    # Тема, к которой привязан урок (ExamAssignment). NULL — урок открыт всем
-    # ученикам, как было до появления тем; доступ к привязанному уроку считает
-    # app/services/video_catalog.py по билетам темы (тег/всем + opens_at).
-    assignment_id: Mapped[int | None] = mapped_column(
-        ForeignKey("exam_assignments.id", ondelete="SET NULL"), nullable=True
+    # Тема недели, к которой привязан урок. NULL — урок открыт всем ученикам.
+    # Доступ считает app/services/video_topics.py; с пробниками не связано.
+    topic_id: Mapped[int | None] = mapped_column(
+        ForeignKey("learning_topics.id", ondelete="SET NULL"), nullable=True
     )
 
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="uploading")
@@ -58,5 +57,5 @@ class LearningVideo(Base):
     __table_args__ = (
         Index("ix_learning_videos_public", "is_published", "status", "sort_order"),
         Index("ix_learning_videos_status", "status"),
-        Index("ix_learning_videos_assignment", "assignment_id"),
+        Index("ix_learning_videos_topic", "topic_id"),
     )

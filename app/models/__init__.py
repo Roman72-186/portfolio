@@ -17,3 +17,8 @@ from app.models.tag import Tag, UserTag
 from app.models.legacy_portfolio_photo import LegacyPortfolioPhoto
 from app.models.video_progress import VideoProgress
 from app.models.learning_video import LearningVideo
+from app.models.learning_topic import (
+    LearningTopic,
+    LearningTopicAssignee,
+    LearningTopicTag,
+)

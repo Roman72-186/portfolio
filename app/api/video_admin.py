@@ -2,6 +2,7 @@
 
 import json
 import logging
+from datetime import datetime, timezone
 from pathlib import PurePath
 from typing import Annotated
 
@@ -16,8 +17,9 @@ from app.config import settings
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf_header, require_superadmin
 from app.models.audit_log import AuditLog
-from app.models.exam_assignment import ExamAssignment
 from app.models.learning_video import LearningVideo
+from app.models.role import Role
+from app.models.user import User
 from app.services.bunny_stream import (
     BunnyStreamAPIError,
     BunnyStreamCreateUncertainError,
@@ -29,7 +31,22 @@ from app.services.bunny_stream import (
     is_bunny_upload_available,
     normalize_bunny_status,
 )
+from app.services.tags import get_all_tags, parse_usernames
+from app.services.tz import MSK_TZ
 from app.services.video_catalog import list_all_videos, publish_video, unpublish_video
+from app.services.video_topics import (
+    create_topic,
+    delete_topic,
+    get_assignee_ids,
+    get_tag_ids,
+    get_topic,
+    list_topics,
+    publish_topic,
+    set_topic_assignees,
+    set_topic_tags,
+    unpublish_topic,
+    update_topic,
+)
 from app.tmpl import templates
 
 
@@ -89,7 +106,7 @@ class UpdateVideoMetadata(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
     # None — урок остаётся открытым всем ученикам; id — доступ идёт по теме.
-    assignment_id: int | None = Field(default=None, ge=1)
+    topic_id: int | None = Field(default=None, ge=1)
 
     @field_validator("title")
     @classmethod
@@ -140,7 +157,7 @@ def _serialize_video(video: LearningVideo) -> dict:
         "duration_seconds": video.duration_seconds,
         "is_published": video.is_published,
         "status_message": video.status_message,
-        "assignment_id": video.assignment_id,
+        "topic_id": video.topic_id,
     }
 
 
@@ -150,20 +167,18 @@ def video_admin_page(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    assignments = (
-        db.query(ExamAssignment)
-        .filter(ExamAssignment.status != "archived")
-        .order_by(ExamAssignment.created_at.desc())
-        .all()
-    )
+    topics = list_topics(db)
     return templates.TemplateResponse(
         "cabinet_videos_admin.html",
         {
             "request": request,
             "user": user,
             "videos": list_all_videos(db),
-            "assignments": assignments,
-            "assignment_titles": {a.id: a.title for a in assignments},
+            "topics": topics,
+            "topic_titles": {t.id: t.title for t in topics},
+            "topic_tag_ids": {t.id: get_tag_ids(db, t.id) for t in topics},
+            "topic_assignee_ids": {t.id: get_assignee_ids(db, t.id) for t in topics},
+            "all_tags": get_all_tags(db),
             "upload_available": is_bunny_upload_available(),
         },
     )
@@ -277,11 +292,11 @@ def update_video_metadata(
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
     video = _get_video_or_404(db, video_id)
-    if payload.assignment_id is not None and not db.get(ExamAssignment, payload.assignment_id):
-        return JSONResponse({"ok": False, "error": "assignment_not_found"}, status_code=422)
+    if payload.topic_id is not None and get_topic(db, payload.topic_id) is None:
+        return JSONResponse({"ok": False, "error": "topic_not_found"}, status_code=422)
     video.title = payload.title
     video.description = payload.description
-    video.assignment_id = payload.assignment_id
+    video.topic_id = payload.topic_id
     db.commit()
     return JSONResponse({"ok": True})
 
@@ -342,11 +357,213 @@ def delete_catalog_video(
         db.commit()
         return JSONResponse({"ok": False, "error": "provider_delete_failed"}, status_code=502)
 
-    from datetime import datetime, timezone
-
     video.status = "deleted"
     video.deleted_at = datetime.now(timezone.utc)
     video.deleted_by_id = user["user_id"]
     _audit(db, action="video_delete", user_id=user["user_id"], video=video)
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Темы недели
+# ---------------------------------------------------------------------------
+
+class TopicPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    # Локальное время МСК из <input type="datetime-local">, без таймзоны.
+    opens_at: str = Field(min_length=1, max_length=32)
+    assign_to_all: bool = False
+    tag_ids: list[int] = Field(default_factory=list, max_length=200)
+    # Поимённые исключения задаются списком @username — тем же способом, каким
+    # владелец уже раздаёт теги (app/services/tags.py::parse_usernames).
+    assignee_usernames: str = Field(default="", max_length=20_000)
+    sort_order: int | None = Field(default=None, ge=0, le=100_000)
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Title cannot be empty")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def strip_description(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        return value or None
+
+
+def _parse_opens_at(raw: str) -> datetime:
+    """Строку из формы трактуем как московское время.
+
+    В контейнере UTC, и без явной таймзоны тема открылась бы на три часа позже
+    заявленного — та же ловушка, из-за которой в проекте всюду используется tz.py.
+    """
+    try:
+        parsed = datetime.fromisoformat(raw.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Неверная дата открытия") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=MSK_TZ)
+    return parsed
+
+
+def _resolve_assignees(db: DBSession, raw: str) -> tuple[list[int], list[str]]:
+    """@username → id учеников. Возвращает найденных и ненайденных.
+
+    `tg_username` зашифрован (EncryptedString), поэтому сравниваем в Python после
+    расшифровки, а не через SQL — как в cabinet_tags.py::superadmin_bulk_lookup.
+    """
+    requested = parse_usernames(raw)
+    if not requested:
+        return [], []
+    wanted = set(requested)
+    student_role = db.query(Role).filter(Role.rank == 1).first()
+    if student_role is None:
+        return [], requested
+
+    found: dict[str, int] = {}
+    candidates = (
+        db.query(User)
+        .filter(
+            User.role_id == student_role.id,
+            User.is_active == True,  # noqa: E712
+            User.deleted_at.is_(None),
+        )
+        .all()
+    )
+    for candidate in candidates:
+        uname = (candidate.tg_username or "").strip().lstrip("@").lower()
+        if uname in wanted and uname not in found:
+            found[uname] = candidate.id
+    not_found = [u for u in requested if u not in found]
+    return list(found.values()), not_found
+
+
+def _audit_topic(db: DBSession, *, action: str, user_id: int, topic) -> None:
+    db.add(
+        AuditLog(
+            action=action,
+            performed_by_id=user_id,
+            details=json.dumps(
+                {"topic_id": topic.id, "title": topic.title[:200]}, ensure_ascii=False
+            ),
+        )
+    )
+
+
+def _get_topic_or_404(db: DBSession, topic_id: int):
+    topic = get_topic(db, topic_id)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Тема не найдена")
+    return topic
+
+
+@router.post("/topics", response_class=JSONResponse)
+def create_video_topic(
+    payload: TopicPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    topic = create_topic(
+        db,
+        title=payload.title,
+        description=payload.description,
+        opens_at=_parse_opens_at(payload.opens_at),
+        assign_to_all=payload.assign_to_all,
+        user_id=user["user_id"],
+    )
+    set_topic_tags(db, topic, payload.tag_ids)
+    assignee_ids, not_found = _resolve_assignees(db, payload.assignee_usernames)
+    set_topic_assignees(db, topic, assignee_ids)
+    _audit_topic(db, action="video_topic_create", user_id=user["user_id"], topic=topic)
+    db.commit()
+    return JSONResponse({"ok": True, "topic_id": topic.id, "not_found": not_found})
+
+
+@router.post("/topics/{topic_id}", response_class=JSONResponse)
+def update_video_topic(
+    topic_id: int,
+    payload: TopicPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    topic = _get_topic_or_404(db, topic_id)
+    update_topic(
+        topic,
+        title=payload.title,
+        description=payload.description,
+        opens_at=_parse_opens_at(payload.opens_at),
+        assign_to_all=payload.assign_to_all,
+        sort_order=payload.sort_order,
+    )
+    set_topic_tags(db, topic, payload.tag_ids)
+    assignee_ids, not_found = _resolve_assignees(db, payload.assignee_usernames)
+    set_topic_assignees(db, topic, assignee_ids)
+    _audit_topic(db, action="video_topic_update", user_id=user["user_id"], topic=topic)
+    db.commit()
+    return JSONResponse({"ok": True, "not_found": not_found})
+
+
+@router.post("/topics/{topic_id}/publish", response_class=JSONResponse)
+def publish_video_topic(
+    topic_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    topic = _get_topic_or_404(db, topic_id)
+    try:
+        publish_topic(topic, user_id=user["user_id"])
+    except ValueError:
+        return JSONResponse({"ok": False, "error": "topic_deleted"}, status_code=409)
+    _audit_topic(db, action="video_topic_publish", user_id=user["user_id"], topic=topic)
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/topics/{topic_id}/unpublish", response_class=JSONResponse)
+def unpublish_video_topic(
+    topic_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    topic = _get_topic_or_404(db, topic_id)
+    unpublish_topic(topic)
+    _audit_topic(db, action="video_topic_unpublish", user_id=user["user_id"], topic=topic)
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/topics/{topic_id}/delete", response_class=JSONResponse)
+def delete_video_topic(
+    topic_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Мягкое удаление. Уроки темы не пропадают — они становятся доступны всем,
+    поэтому сначала требуем отвязать их вручную."""
+    topic = _get_topic_or_404(db, topic_id)
+    attached = (
+        db.query(LearningVideo.id)
+        .filter(LearningVideo.topic_id == topic.id, LearningVideo.deleted_at.is_(None))
+        .count()
+    )
+    if attached:
+        return JSONResponse(
+            {"ok": False, "error": "topic_has_videos", "videos": attached},
+            status_code=409,
+        )
+    delete_topic(topic)
+    _audit_topic(db, action="video_topic_delete", user_id=user["user_id"], topic=topic)
     db.commit()
     return JSONResponse({"ok": True})
