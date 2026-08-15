@@ -124,7 +124,14 @@ def s3_path_curator_report(curator_id: int, filename: str) -> str:
 
 
 def s3_public_url(s3_path: str) -> str:
-    """Construct the public URL for an S3 object."""
+    """Construct the public URL for an S3 object.
+
+    Если задан S3_PUBLIC_BASE_URL (Selectel: отдельный домен {bucket_uuid}.selstorage.ru,
+    не совпадает с S3_ENDPOINT) — объекты отдаются через него. Иначе — старое поведение
+    TimeWeb, где публичный URL строится прямо из endpoint и имени бакета.
+    """
+    if settings.s3_public_base_url:
+        return f"{settings.s3_public_base_url.rstrip('/')}/{s3_path}"
     endpoint = settings.s3_endpoint.rstrip("/")
     return f"{endpoint}/{settings.s3_bucket}/{s3_path}"
 

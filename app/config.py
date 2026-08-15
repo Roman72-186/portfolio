@@ -37,11 +37,16 @@ class Settings(BaseSettings):
     vk_community_token: str = ""  # service token for re-checking group membership
 
     # S3 (TimeWeb сейчас, Selectel — после миграции)
-    s3_endpoint: str = ""        # e.g. https://s3.timeweb.cloud
+    s3_endpoint: str = ""        # e.g. https://s3.timeweb.cloud — API-эндпоинт для boto3 (put/get/delete)
     s3_bucket: str = ""
     s3_access_key: str = ""
     s3_secret_key: str = ""
     s3_region: str = "ru-1"
+    # Публичный домен для отдачи объектов, если отличается от S3_ENDPOINT+S3_BUCKET.
+    # У Selectel это отдельный домен вида https://{bucket_uuid}.selstorage.ru — тот же
+    # домен, что и S3_ENDPOINT, объекты анонимно не отдаёт (проверено на боевом бакете).
+    # Пусто — используется старое поведение TimeWeb: {S3_ENDPOINT}/{S3_BUCKET}/{путь}.
+    s3_public_base_url: str = ""
     # TimeWeb делает объект публичным через Object ACL, Selectel его не поддерживает
     # (там публичность задаётся типом бакета / bucket policy). Default=True сохраняет
     # текущее поведение; на Selectel выставить S3_USE_ACL=false.
