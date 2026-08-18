@@ -134,6 +134,43 @@ def test_portfolio_student_json_contains_works(curator_client, db, student):
     assert len(data["before_works"]) == 2
 
 
+# ---------------------------------------------------------------------------
+# GET /cabinet/students/{id}/profile — контакты ученика скрыты от куратора
+# ---------------------------------------------------------------------------
+
+def test_curator_cannot_see_student_contact_fields(curator_client, db, student):
+    client, _ = curator_client
+    student.phone = "+79991234567"
+    student.parent_phone = "+79997654321"
+    student.tg_username = "anna_ivanova"
+    student.vk_id = 424242
+    db.add(student)
+    db.commit()
+
+    resp = client.get(f"/cabinet/students/{student.id}/profile")
+    assert resp.status_code == 200
+    data = resp.json()["student"]
+    assert data["can_see_contacts"] is False
+    assert data["phone"] is None
+    assert data["parent_phone"] is None
+    assert data["tg_username"] is None
+    assert data["vk_id"] is None
+
+
+def test_admin_can_see_student_contact_fields(admin_client, db, user_factory):
+    client, _ = admin_client
+    student = user_factory(vk_id=800900, name="Admin View Student", role_name="ученик")
+    student.phone = "+79991234567"
+    db.add(student)
+    db.commit()
+
+    resp = client.get(f"/cabinet/students/{student.id}/profile")
+    assert resp.status_code == 200
+    data = resp.json()["student"]
+    assert data["can_see_contacts"] is True
+    assert data["phone"] == "+79991234567"
+
+
 def test_portfolio_student_access_denied_other_curator(client, db, user_factory, session_factory):
     # Curator 1 owns the student
     cur1 = user_factory(vk_id=810001, name="Curator1", role_name="куратор")

@@ -159,6 +159,29 @@ def _check_access(student_id: int, user: dict, db: DBSession) -> User:
     )
 
 
+def _avg_score_by_subject_all_time(db: DBSession, student_id: int) -> dict:
+    """Средний балл по пробникам за всю историю, отдельно по предметам —
+    для бейджей шапки ученика на всех вкладках карточки. Намеренно не учитывает
+    period_only: тот фильтр относится только к списку работ на вкладке mock-exams,
+    иначе бейджи шапки дёргались бы при переключении фильтра."""
+    scored = (
+        db.query(Work)
+        .filter(
+            Work.user_id == student_id,
+            Work.work_type == WORK_TYPE_MOCK_EXAM,
+            Work.status == "success",
+            Work.score.isnot(None),
+        )
+        .all()
+    )
+    result: dict = {}
+    for subj in MOCK_SUBJECTS:
+        subj_scored = [w for w in scored if w.subject == subj]
+        if subj_scored:
+            result[subj] = round(sum(float(w.score) for w in subj_scored) / len(subj_scored))
+    return result
+
+
 def _enrich(s: User, counts_by_user: dict, avg_by_user: dict,
             mock_counts_by_user: dict | None = None,
             unchecked_by_user: dict | None = None,
@@ -460,6 +483,10 @@ def get_student_profile(
         .scalar()
     ) or 0
 
+    # Контакты ученика (телефон/телефон родителя/Telegram/VK) видны только рангам >= 4
+    # (админ/суперадмин) — куратор (rank=2) их больше не получает в ответе.
+    can_see_contacts = user["role_rank"] >= 4
+
     return JSONResponse({
         "student": {
             "id": student.id,
@@ -468,10 +495,11 @@ def get_student_profile(
             "last_name": student.last_name,
             "photo_url": student.photo_url,
             "cohort_tag": student.cohort_tag,
-            "phone": student.phone,
-            "parent_phone": student.parent_phone,
-            "tg_username": student.tg_username,
-            "vk_id": student.vk_id,
+            "phone": student.phone if can_see_contacts else None,
+            "parent_phone": student.parent_phone if can_see_contacts else None,
+            "tg_username": student.tg_username if can_see_contacts else None,
+            "vk_id": student.vk_id if can_see_contacts else None,
+            "can_see_contacts": can_see_contacts,
             "about": student.about,
             "tariff": student.tariff or "—",
             "past_tariffs": student.past_tariffs,
@@ -486,6 +514,7 @@ def get_student_profile(
             "profile_completed": student.profile_completed,
             "curator_name": curator_name,
             "avg_score": avg_score,
+            "avg_score_by_subject": _avg_score_by_subject_all_time(db, student_id),
             "portfolio_count": portfolio_count,
             "mock_exam_count": len(mock_works),
             "retake_count": retake_count,
@@ -541,6 +570,7 @@ def get_portfolio(
             "tariff": student.tariff or "—",
             "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
             "avg_score": avg_score,
+            "avg_score_by_subject": _avg_score_by_subject_all_time(db, student_id),
             "photo_url": student.photo_url,
             "cohort_tag": student.cohort_tag,
         },
@@ -592,14 +622,6 @@ def get_mock_exams(
     mock_works = q.order_by(Work.created_at.desc()).limit(100).all()
     scored = [w for w in mock_works if w.score is not None]
     avg_score = round(sum(float(w.score) for w in scored) / len(scored)) if scored else None
-
-    avg_score_by_subject: dict = {}
-    for subj in MOCK_SUBJECTS:
-        subj_scored = [w for w in mock_works if w.subject == subj and w.score is not None]
-        if subj_scored:
-            avg_score_by_subject[subj] = round(
-                sum(float(w.score) for w in subj_scored) / len(subj_scored)
-            )
 
     works_by_subject: dict = defaultdict(list)
     for w in mock_works:
@@ -670,6 +692,9 @@ def get_mock_exams(
             "tariff": student.tariff or "—",
             "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
             "avg_score": avg_score,
+            # Всегда за всю историю, не завязано на period_only — иначе бейджи шапки
+            # дёргались бы при переключении фильтра «только за текущий период».
+            "avg_score_by_subject": _avg_score_by_subject_all_time(db, student_id),
             "photo_url": student.photo_url,
             "cohort_tag": student.cohort_tag,
         },
@@ -678,7 +703,6 @@ def get_mock_exams(
             for subject, works_list in works_by_subject.items()
         },
         "mock_locks": locks,
-        "avg_score_by_subject": avg_score_by_subject,
         "period_only": period_only_bool,
         "period_active": bool(active_period),
         "legacy_by_month": legacy_by_month,
@@ -703,6 +727,7 @@ def get_statistics(
             "name": f"{student.last_name or ''} {student.first_name or student.name}".strip(),
             "tariff": student.tariff or "—",
             "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
+            "avg_score_by_subject": _avg_score_by_subject_all_time(db, student_id),
             "photo_url": student.photo_url,
             "cohort_tag": student.cohort_tag,
         },
@@ -771,6 +796,7 @@ def get_retakes(
             "name": f"{student.last_name or ''} {student.first_name or student.name}".strip(),
             "tariff": student.tariff or "—",
             "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
+            "avg_score_by_subject": _avg_score_by_subject_all_time(db, student_id),
             "photo_url": student.photo_url,
             "cohort_tag": student.cohort_tag,
         },

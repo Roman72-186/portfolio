@@ -1253,6 +1253,9 @@
 <script>
 const CAN_SCORE      = {{ can_score | tojson }};
 const MOCK_SUBJECTS  = {{ mock_subjects | tojson }};
+// Однобуквенные бейджи шапки ученика (по макету 17082026/Скриншот-20260818-081501.png) —
+// только для student-hero, полные названия предметов используются везде остальные.
+const SUBJECT_BADGE_LABEL = {'Рисунок': 'Р', 'Композиция': 'К'};
 const MONTHS_LIST    = {{ months | tojson }};
 const MONTH_NAMES    = MONTHS_LIST;
 const MONTH_TO_NUM   = (function() {
@@ -1371,15 +1374,20 @@ function backToProfile() {
 
 function renderProfile(data) {
     var s = data.student;
-    var html = buildHero(s);
+    var html = buildHero(s, s.avg_score_by_subject || null);
 
     html += '<div class="profile-details"><div class="profile-grid">';
 
     // Fields
-    html += profileField('Телефон', s.phone);
-    html += profileField('Телефон родителя', s.parent_phone);
-    html += profileField('Telegram', s.tg_username ? '@' + s.tg_username : null);
-    html += profileField('VK ID', s.vk_id);
+    // Контакты (телефон/телефон родителя/Telegram/VK) видны только рангам >= 4 —
+    // куратору бэкенд отдаёт can_see_contacts=false и сами поля пустыми, здесь
+    // это осознанное «скрыто», не «не указано».
+    if (s.can_see_contacts !== false) {
+        html += profileField('Телефон', s.phone);
+        html += profileField('Телефон родителя', s.parent_phone);
+        html += profileField('Telegram', s.tg_username ? '@' + s.tg_username : null);
+        html += profileField('VK ID', s.vk_id);
+    }
     html += profileField('Тариф', s.tariff);
     html += profileField('Куратор', s.curator_name);
     html += profileField('Год поступления', s.enrollment_year);
@@ -1496,7 +1504,7 @@ function switchTab(tabName) {
 
 function renderTab(tabName, data) {
     var heroEl = document.getElementById('student-hero-container');
-    var bySubj = (tabName === 'mock-exams') ? (data.avg_score_by_subject || null) : null;
+    var bySubj = data.student ? (data.student.avg_score_by_subject || null) : null;
     if (heroEl && data.student) heroEl.innerHTML = buildHero(data.student, bySubj);
 
     var tc = document.getElementById('tab-content');
@@ -1718,13 +1726,11 @@ function buildHero(s, bySubj) {
             if (sc != null) {
                 scoreHtml += '<div class="subj-score-item">'
                     + '<div class="score-big">' + sc + '</div>'
-                    + '<div class="score-label">' + esc(subj) + '</div>'
+                    + '<div class="score-label">' + esc(SUBJECT_BADGE_LABEL[subj] || subj) + '</div>'
                     + '</div>';
             }
         });
         scoreHtml += '</div>';
-    } else if (s.avg_score != null) {
-        scoreHtml = '<div class="student-hero-score"><div class="score-big">' + s.avg_score + '</div><div class="score-label">средний балл</div></div>';
     }
     var uploadBtn = '';
     if (CAN_SCORE && _viewMode === 'tab') {
@@ -2768,7 +2774,7 @@ function startEditProfile() {
     if (!data) return;
     var s = data.student;
 
-    var html = buildHero(s);
+    var html = buildHero(s, s.avg_score_by_subject || null);
     html += '<div class="profile-details"><div class="profile-grid">';
     html += editField('Имя', 'first_name', s.first_name || '');
     html += editField('Фамилия', 'last_name', s.last_name || '');
