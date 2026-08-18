@@ -46,7 +46,7 @@ def test_profile_form_redirects_when_already_complete(auth_client):
     client, _ = auth_client
     resp = client.get("/cabinet/profile", follow_redirects=False)
     assert resp.status_code == 302
-    assert "/cabinet/student" in resp.headers["location"]
+    assert "/cabinet/learning" in resp.headers["location"]
 
 
 def test_profile_form_shows_step_indicator(client, user_factory, session_factory):

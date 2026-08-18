@@ -12,7 +12,7 @@ ROLE_CABINET_MAP = {
     "админ":      "/cabinet/admin-panel",
     "модератор":  "/cabinet/student",
     "куратор":    "/cabinet/curator",
-    "ученик":     "/cabinet/student",
+    "ученик":     "/cabinet/learning",
 }
 
 

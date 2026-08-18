@@ -255,7 +255,7 @@ def profile_get(
 ):
     has_periods = bool(user.get("course_periods")) and bool(user.get("lessons_count"))
     if user["profile_completed"] and has_periods:
-        return RedirectResponse("/cabinet/student", status_code=302)
+        return RedirectResponse("/cabinet/learning", status_code=302)
 
     form = None
     if user["profile_completed"]:
@@ -423,7 +423,7 @@ def profile_post(
     db.commit()
     invalidate_session(user["session_id"])
 
-    return RedirectResponse("/cabinet/student", status_code=302)
+    return RedirectResponse("/cabinet/learning", status_code=302)
 
 
 @router.get("/notifications", response_class=HTMLResponse)

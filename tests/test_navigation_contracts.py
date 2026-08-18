@@ -22,7 +22,7 @@ def _html_between(text: str, start: str, end: str) -> str:
 @pytest.mark.parametrize(
     ("role_name", "vk_id", "expected_location"),
     [
-        ("ученик", 301001, "/cabinet/student"),
+        ("ученик", 301001, "/cabinet/learning"),
         ("куратор", 301002, "/cabinet/curator"),
         ("модератор", 301003, "/cabinet/student"),
         ("админ", 301004, "/cabinet/admin-panel"),

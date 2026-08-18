@@ -162,8 +162,14 @@ def cabinet_videos(
             "items": items,
             # Персонал заходит в каталог из админки видео, и жёсткая ссылка на
             # ученический кабинет уводила его в чужой по смыслу экран. Правило то
-            # же, что у страницы урока ниже.
-            "back_url": "/cabinet/admin/videos" if user.get("role_rank", 0) >= 4 else "/cabinet/student",
+            # же, что у страницы урока ниже. Ученик после трека A попадает на
+            # /cabinet/learning — новую стартовую страницу, не на /cabinet/student
+            # (роут жив, но ушёл из нижнего меню); куратор/модератор — как раньше.
+            "back_url": (
+                "/cabinet/admin/videos" if user.get("role_rank", 0) >= 4
+                else "/cabinet/learning" if user.get("role_rank", 0) == 1
+                else "/cabinet/student"
+            ),
         },
     )
 

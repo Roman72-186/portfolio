@@ -15,14 +15,16 @@ def test_cabinet_with_valid_session_returns_200(auth_client):
 
 
 def test_cabinet_shows_student_name(auth_client):
+    # /cabinet теперь редиректит ученика на /cabinet/learning (тема недели,
+    # без личных данных) — имя/тариф смотрим на /cabinet/tracker, его личном трекере.
     client, user = auth_client
-    resp = client.get("/cabinet")
+    resp = client.get("/cabinet/tracker")
     assert user.name in resp.text
 
 
 def test_cabinet_shows_tariff(auth_client):
     client, user = auth_client
-    resp = client.get("/cabinet")
+    resp = client.get("/cabinet/tracker")
     assert user.tariff in resp.text
 
 
