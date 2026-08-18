@@ -344,3 +344,117 @@ def test_guest_module_does_not_touch_core_tables(client, db, guest_config_factor
 
     assert db.query(User).count() == users_before
     assert db.query(DbSession).count() == sessions_before
+
+
+# ---------------------------------------------------------------------------
+# Admin: ссылки и билеты — та же логика, что у реальных билетов пробника
+# (форма + AJAX-загрузка фото через /cabinet/upload-ticket-image)
+# ---------------------------------------------------------------------------
+
+def test_config_create_requires_admin_rank(client, user_factory, session_factory):
+    curator = user_factory(vk_id=444_444, name="Куратор", role_name="куратор")
+    sess = session_factory(curator)
+    client.cookies.set("session_id", sess.id)
+
+    resp = client.post(
+        "/cabinet/staff/guest-exam/configs",
+        data={
+            "token": "trial-1",
+            "title": "Пробник",
+            "starts_at": "2026-08-26T00:00",
+            "ends_at": "2026-08-28T23:59",
+        },
+    )
+    assert resp.status_code == 403
+
+
+def test_config_create_and_detail_by_admin(admin_client, db):
+    admin_ui_client, admin = admin_client
+    resp = admin_ui_client.post(
+        "/cabinet/staff/guest-exam/configs",
+        data={
+            "token": "trial-e2e",
+            "title": "Пробник E2E",
+            "starts_at": "2026-08-26T00:00",
+            "ends_at": "2026-08-28T23:59",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    config = db.query(GuestExamConfig).filter(GuestExamConfig.token == "trial-e2e").first()
+    assert config is not None
+    assert config.created_by_id == admin.id
+
+    detail = admin_ui_client.get(f"/cabinet/staff/guest-exam/configs/{config.id}")
+    assert detail.status_code == 200
+    assert "Пробник E2E" in detail.text
+
+
+def test_config_create_rejects_duplicate_token(admin_client, guest_config_factory):
+    admin_ui_client, _ = admin_client
+    guest_config_factory(token="dup-token")
+    resp = admin_ui_client.post(
+        "/cabinet/staff/guest-exam/configs",
+        data={
+            "token": "dup-token",
+            "title": "Ещё одна",
+            "starts_at": "2026-08-26T00:00",
+            "ends_at": "2026-08-28T23:59",
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_ticket_create_via_admin_form_is_usable_by_guest(admin_client, db, guest_config_factory):
+    """Билет, добавленный через staff-форму (тот же принцип, что у реальных
+    билетов пробника: форма + фото через /cabinet/upload-ticket-image), реально
+    попадает в пул и выдаётся гостю."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    admin_ui_client, _ = admin_client
+    config = guest_config_factory()
+
+    resp = admin_ui_client.post(
+        f"/cabinet/staff/guest-exam/configs/{config.id}/tickets",
+        data={
+            "subject": "Рисунок",
+            "title": "Натюрморт",
+            "description": "Нарисуйте натюрморт из трёх предметов",
+            "image_url": "https://s3.example/ticket.jpg",
+            "image_path": "guest-exam/tickets/ticket.jpg",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    ticket = db.query(GuestTicket).filter(GuestTicket.config_id == config.id).first()
+    assert ticket is not None
+    assert ticket.title == "Натюрморт"
+    assert ticket.image_s3_url == "https://s3.example/ticket.jpg"
+
+    with TestClient(app, base_url="https://testserver") as guest_client:
+        participant = _login_guest(guest_client, db, config)
+        csrf = _guest_csrf(guest_client)
+        ticket_resp = guest_client.post(
+            f"/guest/{config.token}/exam/Рисунок/ticket",
+            data={"csrf_token": csrf},
+            follow_redirects=False,
+        )
+        assert ticket_resp.status_code == 303
+        submission = guest_exam_service.get_submission(db, participant.id, "Рисунок")
+        assert submission.ticket_title == "Натюрморт"
+
+
+def test_ticket_toggle_deactivates(admin_client, guest_config_factory, guest_ticket_factory):
+    admin_ui_client, _ = admin_client
+    config = guest_config_factory()
+    ticket = guest_ticket_factory(config, subject="Рисунок", is_active=True)
+
+    resp = admin_ui_client.post(
+        f"/cabinet/staff/guest-exam/tickets/{ticket.id}/toggle",
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == f"/cabinet/staff/guest-exam/configs/{config.id}"

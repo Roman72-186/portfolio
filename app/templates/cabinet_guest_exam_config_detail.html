@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}{{ config.title }} — билеты{% endblock %}
+{% block extra_styles %}
+<style>
+.gexam-page { max-width: 640px; margin: 0 auto; padding: 20px 16px 80px; }
+.gexam-nav-link { font-size: 13px; color: var(--blue); margin-bottom: 16px; display: inline-block; }
+.gexam-page h1 {
+    font-family: var(--font-display); font-size: 20px; font-weight: 700;
+    color: var(--ink); margin-bottom: 4px;
+}
+.gexam-link-box {
+    display: flex; align-items: center; gap: 10px; background: var(--surface-2);
+    border: 1px dashed var(--line); border-radius: var(--r-md); padding: 10px 14px;
+    font-size: 13px; color: var(--ink); margin-bottom: 6px; word-break: break-all;
+}
+.gexam-sub { font-size: 13px; color: var(--dim); margin-bottom: 20px; }
+.gexam-ticket {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-lg); padding: 14px 16px; margin-bottom: 10px;
+    display: flex; gap: 12px; align-items: flex-start;
+}
+.gexam-ticket img { width: 64px; height: 64px; object-fit: cover; border-radius: var(--r-md); flex-shrink: 0; }
+.gexam-ticket-title { font-weight: 700; color: var(--ink); font-size: 14px; }
+.gexam-ticket-subject { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.gexam-badge { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: var(--surface-2); color: var(--dim); margin-left: auto; }
+.gexam-badge.active { background: rgba(59,91,255,.12); color: var(--blue); }
+.gexam-form { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px; margin-top: 24px; }
+.gexam-form h2 { font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 14px; }
+.gexam-field { margin-bottom: 12px; }
+.gexam-field label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 6px; }
+.gexam-field input, .gexam-field select, .gexam-field textarea {
+    width: 100%; padding: 11px 14px; border: 1.5px solid var(--line);
+    border-radius: var(--r-md); background: var(--surface-2); color: var(--ink);
+    font-size: 14px; box-sizing: border-box; font-family: inherit;
+}
+.gexam-upload-area {
+    border: 2px dashed var(--line); border-radius: var(--r-md); padding: 24px;
+    text-align: center; font-size: 13px; color: var(--muted); cursor: pointer;
+}
+.gexam-upload-area.dragover { border-color: var(--blue); color: var(--blue); }
+.gexam-upload-progress { font-size: 12px; color: var(--muted); margin-top: 8px; display: none; }
+.gexam-upload-preview { display: none; margin-top: 8px; }
+.gexam-upload-preview img { max-width: 160px; border-radius: var(--r-md); }
+</style>
+{% endblock %}
+{% block content %}
+<div class="gexam-page">
+    <a href="/cabinet/staff/guest-exam/configs" class="gexam-nav-link">← Все ссылки</a>
+    <h1>{{ config.title }}</h1>
+    <div class="gexam-link-box">{{ public_url }}</div>
+    <div class="gexam-sub">
+        Приём {{ config.starts_at.strftime('%d.%m %H:%M') }} — {{ config.ends_at.strftime('%d.%m %H:%M') }} (МСК).
+        <form method="post" action="/cabinet/staff/guest-exam/configs/{{ config.id }}/toggle" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <button type="submit" style="border:none;background:none;color:var(--blue);cursor:pointer;font-size:13px;padding:0">
+                {{ "отключить ссылку" if config.is_active else "включить ссылку" }}
+            </button>
+        </form>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error" style="margin-bottom:16px">{{ error }}</div>
+    {% endif %}
+
+    {% for ticket in tickets %}
+    <div class="gexam-ticket">
+        {% if ticket.image_s3_url %}<img src="{{ ticket.image_s3_url }}" alt="">{% endif %}
+        <div style="flex:1">
+            <div class="gexam-ticket-subject">{{ ticket.subject }}</div>
+            <div class="gexam-ticket-title">{{ ticket.title }}</div>
+        </div>
+        <span class="gexam-badge{% if ticket.is_active %} active{% endif %}">
+            {{ "активен" if ticket.is_active else "отключён" }}
+        </span>
+    </div>
+    {% else %}
+    <div style="font-size:14px;color:var(--muted);padding:16px 0">Билетов пока нет — гость не сможет их получить.</div>
+    {% endfor %}
+
+    <div class="gexam-form">
+        <h2>Новый билет</h2>
+        <form method="post" action="/cabinet/staff/guest-exam/configs/{{ config.id }}/tickets" id="ticket-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <div class="gexam-field">
+                <label for="gt-subject">Предмет</label>
+                <select id="gt-subject" name="subject" required>
+                    {% for subject in subjects %}
+                    <option value="{{ subject }}">{{ subject }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="gexam-field">
+                <label for="gt-title">Название</label>
+                <input id="gt-title" type="text" name="title" placeholder="Натюрморт" required>
+            </div>
+            <div class="gexam-field">
+                <label for="gt-desc">Описание задания</label>
+                <textarea id="gt-desc" name="description" rows="3" placeholder="Что нарисовать / скомпоновать"></textarea>
+            </div>
+            <div class="gexam-field">
+                <label>Фото задания</label>
+                <div class="gexam-upload-area" id="upload-area" onclick="document.getElementById('file-input').click()"
+                     ondragover="event.preventDefault(); this.classList.add('dragover')"
+                     ondragleave="this.classList.remove('dragover')"
+                     ondrop="dropTicketImage(event)">
+                    Перетащите фото или нажмите, чтобы выбрать
+                </div>
+                <input type="file" id="file-input" accept="image/*" style="display:none" onchange="onTicketFileSelected(event)">
+                <div class="gexam-upload-progress" id="upload-progress">Загружаем…</div>
+                <div class="gexam-upload-preview" id="upload-preview"><img id="upload-preview-img" alt=""></div>
+                <input type="hidden" name="image_url" id="gt-image-url">
+                <input type="hidden" name="image_path" id="gt-image-path">
+            </div>
+            <button type="submit" class="btn-blue">Добавить билет</button>
+        </form>
+    </div>
+</div>
+<script>
+function dropTicketImage(e){
+    e.preventDefault();
+    document.getElementById('upload-area').classList.remove('dragover');
+    var file = e.dataTransfer.files[0];
+    if (file) uploadTicketImage(file);
+}
+function onTicketFileSelected(e){
+    var file = e.target.files[0];
+    if (file) uploadTicketImage(file);
+}
+function uploadTicketImage(file){
+    var progress = document.getElementById('upload-progress');
+    progress.style.display = 'block';
+    progress.textContent = 'Загружаем…';
+
+    var csrf = document.querySelector('#ticket-form input[name="csrf_token"]').value;
+    var fd = new FormData();
+    fd.append('file', file);
+    fd.append('csrf_token', csrf);
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/cabinet/upload-ticket-image');
+    xhr.setRequestHeader('X-CSRF-Token', csrf);
+    xhr.upload.onprogress = function(e){
+        if (!e.lengthComputable) return;
+        progress.textContent = 'Загружаем ' + Math.round((e.loaded / e.total) * 100) + '%…';
+    };
+    xhr.onerror = function(){ progress.textContent = 'Ошибка сети'; };
+    xhr.onload = function(){
+        var data = null;
+        try { data = JSON.parse(xhr.responseText); } catch (_) {}
+        if (xhr.status >= 200 && xhr.status < 300 && data && data.success && data.url) {
+            progress.style.display = 'none';
+            document.getElementById('gt-image-url').value = data.url;
+            document.getElementById('gt-image-path').value = data.path || '';
+            document.getElementById('upload-preview-img').src = data.url;
+            document.getElementById('upload-preview').style.display = 'block';
+            document.getElementById('upload-area').style.display = 'none';
+        } else {
+            progress.textContent = 'Ошибка загрузки' + (data && data.error ? ': ' + data.error : '');
+        }
+    };
+    xhr.send(fd);
+}
+</script>
+{% endblock %}

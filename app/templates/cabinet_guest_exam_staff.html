@@ -29,10 +29,14 @@
     font-size: 14px; font-family: inherit; resize: vertical; min-height: 42px;
 }
 .gexam-empty { font-size: 14px; color: var(--muted); padding: 24px 0; text-align: center; }
+.gexam-nav-link { font-size: 13px; color: var(--blue); margin-bottom: 16px; display: inline-block; }
 </style>
 {% endblock %}
 {% block content %}
 <div class="gexam-page">
+    {% if user.role_rank >= 4 %}
+    <a href="/cabinet/staff/guest-exam/configs" class="gexam-nav-link">Ссылки и билеты →</a>
+    {% endif %}
     <h1>Гостевой пробник</h1>
     <div class="gexam-sub">Работы гостей без регистрации — балл и комментарий ставятся один раз.</div>
 
