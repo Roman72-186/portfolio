@@ -43,7 +43,7 @@ _CODE_GENERATION_ATTEMPTS = 10
 
 # Только визуальный отсчёт на странице — не блокирует отправку после истечения
 # (тот же принцип, что у реального пробника, см. mock_exam_access.py).
-VISUAL_DURATION_MINUTES = 90
+VISUAL_DURATION_MINUTES = 240
 
 
 def _serializer() -> URLSafeTimedSerializer:
