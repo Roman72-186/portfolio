@@ -23,6 +23,8 @@ class LearningTopic(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Ссылка на созвон занятия недели (Zoom/Google Meet и т.п.), заполняется вручную.
+    meeting_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # Когда тема появляется у учеников. Верхней границы нет — см. докстринг модуля.
     opens_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
