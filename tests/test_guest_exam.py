@@ -1,15 +1,20 @@
-"""Tests for the guest exam module (Track B) — temporary, isolated guest access.
+"""Tests for the guest mode module (Track B) — temporary, isolated guest access.
 
-Covers: config window gating, participant creation/resume by code, one-ticket-per-
-subject idempotency, upload flow, staff scoring, and isolation from the main
+Covers: link on/off gating (no date window — indefinite link), visit logging,
+participant creation/resume by code, one-ticket-per-subject idempotency, upload
+flow, admin-only ticket/link/scoring management, and isolation from the main
 User/Session/RBAC system.
 """
-from datetime import datetime, timedelta, timezone
-
 import pytest
 
 from app.csrf import generate_csrf_token
-from app.models.guest_exam import GuestExamConfig, GuestParticipant, GuestSubmission, GuestTicket
+from app.models.guest_exam import (
+    GuestExamConfig,
+    GuestParticipant,
+    GuestSubmission,
+    GuestTicket,
+    GuestVisit,
+)
 from app.services import guest_exam as guest_exam_service
 
 _JPG_BYTES = b"\xff\xd8\xff\xe0" + b"\x00" * 16  # minimal JPEG header, same as test_routes_upload.py
@@ -22,23 +27,10 @@ def guest_config_factory(db):
     def _make(
         *,
         token: str = "trial-test",
-        starts_hours: float = -1,
-        ends_hours: float = 48,
         is_active: bool = True,
         title: str = "Пробный экзамен Apparchi",
     ) -> GuestExamConfig:
-        # UTC, не now_msk(): DateTime(timezone=True) в SQLite при перечитывании
-        # теряет исходную зону и переприкрепляется как UTC (см. conftest.py
-        # _attach_utc) — конструирование в MSK внесло бы фантомный сдвиг в 3 часа
-        # на малых интервалах (часы), как здесь.
-        now = datetime.now(timezone.utc)
-        config = GuestExamConfig(
-            token=token,
-            title=title,
-            starts_at=now + timedelta(hours=starts_hours),
-            ends_at=now + timedelta(hours=ends_hours),
-            is_active=is_active,
-        )
+        config = GuestExamConfig(token=token, title=title, is_active=is_active)
         db.add(config)
         db.commit()
         db.refresh(config)
@@ -73,7 +65,7 @@ def _guest_csrf(client) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Window gating
+# Link on/off gating — no date window, just is_active
 # ---------------------------------------------------------------------------
 
 def test_landing_404_for_unknown_token(client):
@@ -81,23 +73,63 @@ def test_landing_404_for_unknown_token(client):
     assert resp.status_code == 404
 
 
-def test_landing_shows_closed_before_window_opens(client, guest_config_factory):
-    config = guest_config_factory(starts_hours=5, ends_hours=48)
+def test_landing_shows_closed_when_link_inactive(client, guest_config_factory):
+    config = guest_config_factory(is_active=False)
     resp = client.get(f"/guest/{config.token}")
     assert resp.status_code == 200
-    assert "Приём работ проходит с" in resp.text
-
-
-def test_start_rejected_when_window_closed(client, guest_config_factory):
-    config = guest_config_factory(starts_hours=-48, ends_hours=-1)
-    resp = client.post(f"/guest/{config.token}/start", data={"display_name": "Аня"})
-    assert resp.status_code == 403
+    assert "закрыт" in resp.text
 
 
 def test_start_rejected_when_config_inactive(client, guest_config_factory):
     config = guest_config_factory(is_active=False)
     resp = client.post(f"/guest/{config.token}/start", data={"display_name": "Аня"})
     assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Visit logging
+# ---------------------------------------------------------------------------
+
+def test_landing_visit_is_logged_anonymous(client, db, guest_config_factory):
+    config = guest_config_factory()
+    client.get(f"/guest/{config.token}")
+    visit = db.query(GuestVisit).filter(GuestVisit.config_id == config.id).first()
+    assert visit is not None
+    assert visit.participant_id is None
+
+
+def test_landing_visit_is_logged_with_participant(client, db, guest_config_factory):
+    config = guest_config_factory()
+    participant = _login_guest(client, db, config)
+    client.get(f"/guest/{config.token}", follow_redirects=False)
+    visit = (
+        db.query(GuestVisit)
+        .filter(GuestVisit.config_id == config.id, GuestVisit.participant_id == participant.id)
+        .first()
+    )
+    assert visit is not None
+
+
+def test_config_stats_counts_visits_participants_submissions(db, guest_config_factory, guest_ticket_factory):
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = guest_exam_service.create_participant(db, config, "Гость")
+    guest_exam_service.record_visit(db, config.id, participant.id)
+    guest_exam_service.record_visit(db, config.id, participant.id)
+    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    guest_exam_service.record_upload(db, submission, "https://s3.example/x.jpg", "guest-exam/x.jpg")
+
+    stats = guest_exam_service.config_stats(db, config.id)
+    assert stats["visits"] == 2
+    assert stats["participants"] == 1
+    assert stats["submitted"] == 1
+
+
+def test_get_primary_config_prefers_active_over_newer_inactive(db, guest_config_factory):
+    old_active = guest_config_factory(token="old-active", is_active=True)
+    guest_config_factory(token="new-inactive", is_active=False)
+    primary = guest_exam_service.get_primary_config(db)
+    assert primary.id == old_active.id
 
 
 # ---------------------------------------------------------------------------
@@ -263,50 +295,22 @@ def test_upload_success_marks_submission_submitted(client, db, guest_config_fact
     assert submission.s3_url == "https://s3.example/guest-exam/fake.jpg"
 
 
-# ---------------------------------------------------------------------------
-# Staff scoring
-# ---------------------------------------------------------------------------
-
-def test_score_requires_curator_role(client, db, guest_config_factory, guest_ticket_factory, auth_client):
-    """`auth_client` (see conftest.py) is a plain student session — must not be
-    able to score guest submissions."""
+def test_upload_rejected_when_link_disabled_mid_session(client, db, guest_config_factory, guest_ticket_factory):
     config = guest_config_factory()
     guest_ticket_factory(config, subject="Рисунок")
-    participant = guest_exam_service.create_participant(db, config, "Гость")
-    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
-    guest_exam_service.record_upload(db, submission, "https://s3.example/x.jpg", "guest-exam/x.jpg")
+    _login_guest(client, db, config)
+    csrf = _guest_csrf(client)
+    client.post(f"/guest/{config.token}/exam/Рисунок/ticket", data={"csrf_token": csrf})
 
-    student_client, _ = auth_client
-    resp = student_client.post(
-        f"/cabinet/staff/guest-exam/{submission.id}/score",
-        data={"score": "80", "comment": "Хорошо"},
-    )
-    assert resp.status_code == 403
-
-
-def test_score_flow_by_curator(client, db, guest_config_factory, guest_ticket_factory, user_factory, session_factory):
-    config = guest_config_factory()
-    guest_ticket_factory(config, subject="Рисунок")
-    participant = guest_exam_service.create_participant(db, config, "Гость")
-    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
-    guest_exam_service.record_upload(db, submission, "https://s3.example/x.jpg", "guest-exam/x.jpg")
-
-    curator = user_factory(vk_id=555_555, name="Куратор", role_name="куратор")
-    sess = session_factory(curator)
-    client.cookies.set("session_id", sess.id)
+    config.is_active = False
+    db.commit()
 
     resp = client.post(
-        f"/cabinet/staff/guest-exam/{submission.id}/score",
-        data={"score": "85.5", "comment": "Отличная работа"},
-        follow_redirects=False,
+        f"/guest/{config.token}/exam/Рисунок/upload",
+        data={"csrf_token": csrf},
+        files={"photo": ("photo.jpg", _JPG_BYTES, "image/jpeg")},
     )
-    assert resp.status_code == 302
-
-    db.refresh(submission)
-    assert submission.status == "scored"
-    assert float(submission.score) == 85.5
-    assert submission.comment == "Отличная работа"
-    assert submission.scored_by_id == curator.id
+    assert resp.status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -347,37 +351,31 @@ def test_guest_module_does_not_touch_core_tables(client, db, guest_config_factor
 
 
 # ---------------------------------------------------------------------------
-# Admin: ссылки и билеты — та же логика, что у реальных билетов пробника
-# (форма + AJAX-загрузка фото через /cabinet/upload-ticket-image)
+# Admin: единая страница «Гостевой режим» (rank >= 4, не curator) — билеты через
+# ту же логику, что реальные билеты пробника (форма + /cabinet/upload-ticket-image)
 # ---------------------------------------------------------------------------
 
-def test_config_create_requires_admin_rank(client, user_factory, session_factory):
+def test_guest_mode_page_requires_admin_rank(client, user_factory, session_factory):
     curator = user_factory(vk_id=444_444, name="Куратор", role_name="куратор")
     sess = session_factory(curator)
     client.cookies.set("session_id", sess.id)
 
-    resp = client.post(
-        "/cabinet/staff/guest-exam/configs",
-        data={
-            "token": "trial-1",
-            "title": "Пробник",
-            "starts_at": "2026-08-26T00:00",
-            "ends_at": "2026-08-28T23:59",
-        },
-    )
+    resp = client.get("/cabinet/staff/guest-exam")
     assert resp.status_code == 403
 
 
-def test_config_create_and_detail_by_admin(admin_client, db):
+def test_guest_mode_page_renders_tabs_for_admin(admin_client):
+    admin_ui_client, _ = admin_client
+    for tab in ("tickets", "link", "works"):
+        resp = admin_ui_client.get(f"/cabinet/staff/guest-exam?tab={tab}")
+        assert resp.status_code == 200
+
+
+def test_link_create_and_appears_as_primary(admin_client, db):
     admin_ui_client, admin = admin_client
     resp = admin_ui_client.post(
-        "/cabinet/staff/guest-exam/configs",
-        data={
-            "token": "trial-e2e",
-            "title": "Пробник E2E",
-            "starts_at": "2026-08-26T00:00",
-            "ends_at": "2026-08-28T23:59",
-        },
+        "/cabinet/staff/guest-exam/link",
+        data={"token": "trial-e2e", "title": "Пробник E2E"},
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -386,30 +384,37 @@ def test_config_create_and_detail_by_admin(admin_client, db):
     assert config is not None
     assert config.created_by_id == admin.id
 
-    detail = admin_ui_client.get(f"/cabinet/staff/guest-exam/configs/{config.id}")
+    detail = admin_ui_client.get("/cabinet/staff/guest-exam?tab=link")
     assert detail.status_code == 200
     assert "Пробник E2E" in detail.text
 
 
-def test_config_create_rejects_duplicate_token(admin_client, guest_config_factory):
+def test_link_create_rejects_duplicate_token(admin_client, guest_config_factory):
     admin_ui_client, _ = admin_client
     guest_config_factory(token="dup-token")
     resp = admin_ui_client.post(
-        "/cabinet/staff/guest-exam/configs",
-        data={
-            "token": "dup-token",
-            "title": "Ещё одна",
-            "starts_at": "2026-08-26T00:00",
-            "ends_at": "2026-08-28T23:59",
-        },
+        "/cabinet/staff/guest-exam/link",
+        data={"token": "dup-token", "title": "Ещё одна"},
     )
     assert resp.status_code == 422
 
 
+def test_link_toggle_flips_active(admin_client, db, guest_config_factory):
+    admin_ui_client, _ = admin_client
+    config = guest_config_factory(is_active=True)
+    resp = admin_ui_client.post(
+        f"/cabinet/staff/guest-exam/link/{config.id}/toggle",
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    db.refresh(config)
+    assert config.is_active is False
+
+
 def test_ticket_create_via_admin_form_is_usable_by_guest(admin_client, db, guest_config_factory):
-    """Билет, добавленный через staff-форму (тот же принцип, что у реальных
-    билетов пробника: форма + фото через /cabinet/upload-ticket-image), реально
-    попадает в пул и выдаётся гостю."""
+    """Билет, добавленный через форму «Билеты» (та же логика, что и у реальных
+    билетов пробника: поля + фото через /cabinet/upload-ticket-image), реально
+    попадает в пул и выдаётся гостю текущей (активной) ссылки."""
     from fastapi.testclient import TestClient
     from app.main import app
 
@@ -417,7 +422,7 @@ def test_ticket_create_via_admin_form_is_usable_by_guest(admin_client, db, guest
     config = guest_config_factory()
 
     resp = admin_ui_client.post(
-        f"/cabinet/staff/guest-exam/configs/{config.id}/tickets",
+        "/cabinet/staff/guest-exam/tickets",
         data={
             "subject": "Рисунок",
             "title": "Натюрморт",
@@ -447,7 +452,16 @@ def test_ticket_create_via_admin_form_is_usable_by_guest(admin_client, db, guest
         assert submission.ticket_title == "Натюрморт"
 
 
-def test_ticket_toggle_deactivates(admin_client, guest_config_factory, guest_ticket_factory):
+def test_ticket_create_without_any_link_returns_422(admin_client):
+    admin_ui_client, _ = admin_client
+    resp = admin_ui_client.post(
+        "/cabinet/staff/guest-exam/tickets",
+        data={"subject": "Рисунок", "title": "Натюрморт"},
+    )
+    assert resp.status_code == 422
+
+
+def test_ticket_toggle_deactivates(admin_client, db, guest_config_factory, guest_ticket_factory):
     admin_ui_client, _ = admin_client
     config = guest_config_factory()
     ticket = guest_ticket_factory(config, subject="Рисунок", is_active=True)
@@ -457,4 +471,46 @@ def test_ticket_toggle_deactivates(admin_client, guest_config_factory, guest_tic
         follow_redirects=False,
     )
     assert resp.status_code == 303
-    assert resp.headers["location"] == f"/cabinet/staff/guest-exam/configs/{config.id}"
+    db.refresh(ticket)
+    assert ticket.is_active is False
+
+
+def test_score_requires_admin_rank_not_curator(client, db, guest_config_factory, guest_ticket_factory, user_factory, session_factory):
+    """Проверка сдач теперь тоже rank >= 4 — куратор больше не допускается."""
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = guest_exam_service.create_participant(db, config, "Гость")
+    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    guest_exam_service.record_upload(db, submission, "https://s3.example/x.jpg", "guest-exam/x.jpg")
+
+    curator = user_factory(vk_id=555_555, name="Куратор", role_name="куратор")
+    sess = session_factory(curator)
+    client.cookies.set("session_id", sess.id)
+
+    resp = client.post(
+        f"/cabinet/staff/guest-exam/works/{submission.id}/score",
+        data={"score": "80", "comment": "Хорошо"},
+    )
+    assert resp.status_code == 403
+
+
+def test_score_flow_by_admin(admin_client, db, guest_config_factory, guest_ticket_factory):
+    admin_ui_client, admin = admin_client
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = guest_exam_service.create_participant(db, config, "Гость")
+    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    guest_exam_service.record_upload(db, submission, "https://s3.example/x.jpg", "guest-exam/x.jpg")
+
+    resp = admin_ui_client.post(
+        f"/cabinet/staff/guest-exam/works/{submission.id}/score",
+        data={"score": "85.5", "comment": "Отличная работа"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    db.refresh(submission)
+    assert submission.status == "scored"
+    assert float(submission.score) == 85.5
+    assert submission.comment == "Отличная работа"
+    assert submission.scored_by_id == admin.id

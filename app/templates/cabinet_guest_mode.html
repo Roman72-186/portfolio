@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+{% block title %}Гостевой режим{% endblock %}
+{% block extra_styles %}
+<style>
+.gexam-page { max-width: 680px; margin: 0 auto; padding: 20px 16px 80px; }
+.gexam-page h1 {
+    font-family: var(--font-display); font-size: 20px; font-weight: 700;
+    color: var(--ink); margin-bottom: 4px;
+}
+.gexam-sub { font-size: 13px; color: var(--dim); margin-bottom: 20px; }
+.gexam-tabs { display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
+.gexam-tab {
+    padding: 10px 16px; font-size: 14px; font-weight: 600; color: var(--dim);
+    text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.gexam-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+.gexam-row {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-lg); padding: 16px 18px; margin-bottom: 12px;
+}
+.gexam-row-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+.gexam-name { font-weight: 700; color: var(--ink); font-size: 15px; }
+.gexam-meta { font-size: 12px; color: var(--muted); }
+.gexam-subject { font-size: 13px; color: var(--dim); margin-bottom: 10px; }
+.gexam-img { max-width: 100%; border-radius: var(--r-md); margin-bottom: 10px; display: block; }
+.gexam-scored { font-size: 13px; color: var(--dim); }
+.gexam-form-row { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+.gexam-form-row input[type=number] {
+    width: 90px; padding: 10px 12px; border: 1.5px solid var(--line);
+    border-radius: var(--r-md); background: var(--surface-2); color: var(--ink); font-size: 14px;
+}
+.gexam-form-row textarea {
+    flex: 1; min-width: 220px; padding: 10px 12px; border: 1.5px solid var(--line);
+    border-radius: var(--r-md); background: var(--surface-2); color: var(--ink);
+    font-size: 14px; font-family: inherit; resize: vertical; min-height: 42px;
+}
+.gexam-empty { font-size: 14px; color: var(--muted); padding: 24px 0; text-align: center; }
+.gexam-badge { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: var(--surface-2); color: var(--dim); margin-left: auto; }
+.gexam-badge.active { background: rgba(59,91,255,.12); color: var(--blue); }
+.gexam-link-box {
+    display: flex; align-items: center; gap: 10px; background: var(--surface-2);
+    border: 1px dashed var(--line); border-radius: var(--r-md); padding: 10px 14px;
+    font-size: 13px; color: var(--ink); margin-bottom: 10px; word-break: break-all;
+}
+.gexam-stats { display: flex; gap: 18px; font-size: 13px; color: var(--dim); margin-bottom: 4px; }
+.gexam-stats b { color: var(--ink); }
+.gexam-form { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px; margin-top: 20px; }
+.gexam-form h2 { font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 14px; }
+.gexam-field { margin-bottom: 12px; }
+.gexam-field label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 6px; }
+.gexam-field input, .gexam-field select, .gexam-field textarea {
+    width: 100%; padding: 11px 14px; border: 1.5px solid var(--line);
+    border-radius: var(--r-md); background: var(--surface-2); color: var(--ink);
+    font-size: 14px; box-sizing: border-box; font-family: inherit;
+}
+.gexam-upload-area {
+    border: 2px dashed var(--line); border-radius: var(--r-md); padding: 24px;
+    text-align: center; font-size: 13px; color: var(--muted); cursor: pointer;
+}
+.gexam-upload-area.dragover { border-color: var(--blue); color: var(--blue); }
+.gexam-upload-progress { font-size: 12px; color: var(--muted); margin-top: 8px; display: none; }
+.gexam-upload-preview { display: none; margin-top: 8px; }
+.gexam-upload-preview img { max-width: 160px; border-radius: var(--r-md); }
+</style>
+{% endblock %}
+{% block content %}
+<div class="gexam-page">
+    <h1>Гостевой режим</h1>
+    <div class="gexam-sub">Пробник для участников без регистрации — билеты, ссылка, проверка сдач.</div>
+
+    <div class="gexam-tabs">
+        <a href="?tab=tickets" class="gexam-tab{% if tab == 'tickets' %} active{% endif %}">Билеты</a>
+        <a href="?tab=link" class="gexam-tab{% if tab == 'link' %} active{% endif %}">Ссылка</a>
+        <a href="?tab=works" class="gexam-tab{% if tab == 'works' %} active{% endif %}">Работы</a>
+    </div>
+
+    {% if tab == "tickets" %}
+        {% if not config %}
+        <div class="gexam-empty">Сначала создайте ссылку на вкладке «Ссылка».</div>
+        {% else %}
+            {% for ticket in tickets %}
+            <div class="gexam-row" style="display:flex;gap:12px;align-items:flex-start">
+                {% if ticket.image_s3_url %}<img src="{{ ticket.image_s3_url }}" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:var(--r-md);flex-shrink:0">{% endif %}
+                <div style="flex:1">
+                    <div class="gexam-subject" style="margin-bottom:2px">{{ ticket.subject }}</div>
+                    <div class="gexam-name" style="font-size:14px">{{ ticket.title }}</div>
+                </div>
+                <span class="gexam-badge{% if ticket.is_active %} active{% endif %}">
+                    {{ "активен" if ticket.is_active else "отключён" }}
+                </span>
+            </div>
+            {% else %}
+            <div class="gexam-empty">Билетов пока нет — гость не сможет их получить.</div>
+            {% endfor %}
+
+            <div class="gexam-form">
+                <h2>Новый билет</h2>
+                <form method="post" action="/cabinet/staff/guest-exam/tickets" id="ticket-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    <div class="gexam-field">
+                        <label for="gt-subject">Предмет</label>
+                        <select id="gt-subject" name="subject" required>
+                            {% for subject in subjects %}
+                            <option value="{{ subject }}">{{ subject }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="gexam-field">
+                        <label for="gt-title">Название</label>
+                        <input id="gt-title" type="text" name="title" placeholder="Натюрморт" required>
+                    </div>
+                    <div class="gexam-field">
+                        <label for="gt-desc">Описание задания</label>
+                        <textarea id="gt-desc" name="description" rows="3" placeholder="Что нарисовать / скомпоновать"></textarea>
+                    </div>
+                    <div class="gexam-field">
+                        <label>Фото задания</label>
+                        <div class="gexam-upload-area" id="upload-area" onclick="document.getElementById('file-input').click()"
+                             ondragover="event.preventDefault(); this.classList.add('dragover')"
+                             ondragleave="this.classList.remove('dragover')"
+                             ondrop="dropTicketImage(event)">
+                            Перетащите фото или нажмите, чтобы выбрать
+                        </div>
+                        <input type="file" id="file-input" accept="image/*" style="display:none" onchange="onTicketFileSelected(event)">
+                        <div class="gexam-upload-progress" id="upload-progress">Загружаем…</div>
+                        <div class="gexam-upload-preview" id="upload-preview"><img id="upload-preview-img" alt=""></div>
+                        <input type="hidden" name="image_url" id="gt-image-url">
+                        <input type="hidden" name="image_path" id="gt-image-path">
+                    </div>
+                    <button type="submit" class="btn-blue">Добавить билет</button>
+                </form>
+            </div>
+        {% endif %}
+
+    {% elif tab == "link" %}
+        {% for c in configs %}
+        <div class="gexam-row">
+            <div class="gexam-row-head">
+                <span class="gexam-name">{{ c.title }}</span>
+                <span class="gexam-badge{% if c.is_active %} active{% endif %}">
+                    {{ "активна" if c.is_active else "отключена" }}
+                </span>
+            </div>
+            <div class="gexam-link-box">{{ request.base_url }}guest/{{ c.token }}</div>
+            {% set s = stats_by_config.get(c.id, {}) %}
+            <div class="gexam-stats">
+                <span>Входов: <b>{{ s.get('visits', 0) }}</b></span>
+                <span>Участников: <b>{{ s.get('participants', 0) }}</b></span>
+                <span>Сдано работ: <b>{{ s.get('submitted', 0) }}</b></span>
+            </div>
+            <form method="post" action="/cabinet/staff/guest-exam/link/{{ c.id }}/toggle" style="margin-top:8px">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" style="border:none;background:none;color:var(--blue);cursor:pointer;font-size:13px;padding:0">
+                    {{ "отключить ссылку" if c.is_active else "включить ссылку" }}
+                </button>
+            </form>
+        </div>
+        {% else %}
+        <div class="gexam-empty">Пока нет ни одной ссылки.</div>
+        {% endfor %}
+
+        <div class="gexam-form">
+            <h2>Новая ссылка</h2>
+            <form method="post" action="/cabinet/staff/guest-exam/link">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <div class="gexam-field">
+                    <label for="gf-token">Код ссылки (латиницей, попадёт в URL)</label>
+                    <input id="gf-token" type="text" name="token" placeholder="probnik" required>
+                </div>
+                <div class="gexam-field">
+                    <label for="gf-title">Заголовок для гостя</label>
+                    <input id="gf-title" type="text" name="title" placeholder="Пробный экзамен Apparchi" required>
+                </div>
+                <button type="submit" class="btn-blue">Создать ссылку</button>
+            </form>
+        </div>
+
+    {% elif tab == "works" %}
+        {% if not rows %}
+        <div class="gexam-empty">Пока нет работ на проверке.</div>
+        {% endif %}
+        {% for submission, participant in rows %}
+        <div class="gexam-row">
+            <div class="gexam-row-head">
+                <span class="gexam-name">{{ participant.display_name }} · {{ participant.participant_code }}</span>
+                <span class="gexam-meta">
+                    {% if submission.submitted_at %}{{ submission.submitted_at.strftime('%d.%m %H:%M') }}{% endif %}
+                </span>
+            </div>
+            <div class="gexam-subject">{{ submission.subject }} — {{ submission.ticket_title }}</div>
+            {% if submission.s3_url %}
+            <a href="{{ submission.s3_url }}" target="_blank" rel="noopener">
+                <img src="{{ submission.s3_url }}" alt="" class="gexam-img">
+            </a>
+            {% endif %}
+            {% if submission.status == "scored" %}
+            <div class="gexam-scored">Балл: <strong>{{ submission.score }}</strong>{% if submission.comment %} — {{ submission.comment }}{% endif %}</div>
+            {% else %}
+            <form class="gexam-form-row" method="post" action="/cabinet/staff/guest-exam/works/{{ submission.id }}/score">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <input type="number" name="score" step="0.1" min="0" max="100" placeholder="Балл" required>
+                <textarea name="comment" placeholder="Комментарий"></textarea>
+                <button type="submit" class="btn-blue">Оценить</button>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+    {% endif %}
+</div>
+<script>
+function dropTicketImage(e){
+    e.preventDefault();
+    document.getElementById('upload-area').classList.remove('dragover');
+    var file = e.dataTransfer.files[0];
+    if (file) uploadTicketImage(file);
+}
+function onTicketFileSelected(e){
+    var file = e.target.files[0];
+    if (file) uploadTicketImage(file);
+}
+function uploadTicketImage(file){
+    var progress = document.getElementById('upload-progress');
+    progress.style.display = 'block';
+    progress.textContent = 'Загружаем…';
+
+    var csrf = document.querySelector('#ticket-form input[name="csrf_token"]').value;
+    var fd = new FormData();
+    fd.append('file', file);
+    fd.append('csrf_token', csrf);
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/cabinet/upload-ticket-image');
+    xhr.setRequestHeader('X-CSRF-Token', csrf);
+    xhr.upload.onprogress = function(e){
+        if (!e.lengthComputable) return;
+        progress.textContent = 'Загружаем ' + Math.round((e.loaded / e.total) * 100) + '%…';
+    };
+    xhr.onerror = function(){ progress.textContent = 'Ошибка сети'; };
+    xhr.onload = function(){
+        var data = null;
+        try { data = JSON.parse(xhr.responseText); } catch (_) {}
+        if (xhr.status >= 200 && xhr.status < 300 && data && data.success && data.url) {
+            progress.style.display = 'none';
+            document.getElementById('gt-image-url').value = data.url;
+            document.getElementById('gt-image-path').value = data.path || '';
+            document.getElementById('upload-preview-img').src = data.url;
+            document.getElementById('upload-preview').style.display = 'block';
+            document.getElementById('upload-area').style.display = 'none';
+        } else {
+            progress.textContent = 'Ошибка загрузки' + (data && data.error ? ': ' + data.error : '');
+        }
+    };
+    xhr.send(fd);
+}
+</script>
+{% endblock %}

@@ -1,7 +1,9 @@
-"""Публичные роуты гостевого пробника (Трек B) — ВРЕМЕННЫЙ модуль, окно 26-28.08.2026.
+"""Публичные роуты гостевого режима (Трек B) — ВРЕМЕННЫЙ модуль, пробник для
+участников без регистрации.
 
 Намеренно не использует Depends(get_current_user)/require_student — гость не
 проходит через основную auth-систему вообще: свой cookie, своя CSRF-привязка.
+Ссылка бессрочная — единственный гейт доступа GuestExamConfig.is_active.
 См. app/services/guest_exam.py и
 plans/2026-08-18-apparchi-student-cabinet-and-guest-trial.md, трек B.
 """
@@ -18,7 +20,6 @@ from app.db.database import get_db
 from app.limiter import limiter
 from app.services import guest_exam as guest_exam_service
 from app.services import s3 as s3_service
-from app.services.tz import now_msk
 from app.services.upload_validation import read_image_uploads
 from app.services.utils import compress_image
 from app.tmpl import templates
@@ -73,13 +74,14 @@ def require_guest_csrf(
 def guest_landing(request: Request, token: str, db: Annotated[DBSession, Depends(get_db)]):
     config = _get_config_or_404(db, token)
     participant = _get_participant_from_cookie(request, db, config)
+    guest_exam_service.record_visit(db, config.id, participant.id if participant else None)
     if participant:
         return RedirectResponse(f"/guest/{token}/exam", status_code=302)
 
     return templates.TemplateResponse("guest/guest_landing.html", {
         "request": request,
         "config": config,
-        "is_open": config.is_open_now(now_msk()),
+        "is_open": config.is_active,
     })
 
 
@@ -96,7 +98,7 @@ def guest_start(
     нет cookie, к которому его можно было бы привязать (тот же принцип, что у
     анонимной формы /login: защита — rate limit, не CSRF)."""
     config = _get_config_or_404(db, token)
-    if not config.is_open_now(now_msk()):
+    if not config.is_active:
         return templates.TemplateResponse("guest/guest_landing.html", {
             "request": request, "config": config, "is_open": False,
         }, status_code=403)
@@ -142,7 +144,7 @@ def guest_exam_page(request: Request, token: str, db: Annotated[DBSession, Depen
         "config": config,
         "participant": participant,
         "subjects": subjects,
-        "is_open": config.is_open_now(now_msk()),
+        "is_open": config.is_active,
         "guest_csrf_token": generate_csrf_token(request.cookies.get(GUEST_COOKIE_NAME, "")),
         "visual_duration_minutes": guest_exam_service.VISUAL_DURATION_MINUTES,
     })
@@ -162,7 +164,7 @@ def guest_issue_ticket(
         raise HTTPException(status_code=401)
     if subject not in MOCK_SUBJECTS:
         raise HTTPException(status_code=404)
-    if not config.is_open_now(now_msk()):
+    if not config.is_active:
         raise HTTPException(status_code=403, detail="Приём завершён")
 
     try:
@@ -189,7 +191,7 @@ async def guest_upload(
         raise HTTPException(status_code=401)
     if subject not in MOCK_SUBJECTS:
         raise HTTPException(status_code=404)
-    if not config.is_open_now(now_msk()):
+    if not config.is_active:
         raise HTTPException(status_code=403, detail="Приём завершён")
 
     submission = guest_exam_service.get_submission(db, participant.id, subject)

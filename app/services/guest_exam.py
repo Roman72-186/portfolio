@@ -12,17 +12,21 @@ from itsdangerous import URLSafeTimedSerializer, BadData
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
 
+from sqlalchemy import func
+
 from app.config import settings
 from app.models.guest_exam import (
     GuestExamConfig,
     GuestParticipant,
     GuestSubmission,
     GuestTicket,
+    GuestVisit,
 )
 
 GUEST_COOKIE_NAME = "guest_session"
-# С запасом относительно окна 26-28.08 — участник может зайти посмотреть балл позже.
-COOKIE_MAX_AGE = 30 * 24 * 3600
+# Ссылка бессрочная — участник может вернуться посмотреть балл в любой момент,
+# поэтому cookie живёт по максимуму (полгода), а не привязана к окну приёма.
+COOKIE_MAX_AGE = 180 * 24 * 3600
 
 # Алфавит без спутываемых символов (0/O, 1/I).
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -56,6 +60,41 @@ def load_guest_cookie(raw: str) -> dict | None:
 
 def get_config_by_token(db: DBSession, token: str) -> GuestExamConfig | None:
     return db.query(GuestExamConfig).filter(GuestExamConfig.token == token).first()
+
+
+def get_primary_config(db: DBSession) -> GuestExamConfig | None:
+    """Ссылка, с которой сейчас работает админка (вкладки «Билеты»/«Работы»):
+    активная и самая свежая, если активных нет — просто самая свежая."""
+    active = (
+        db.query(GuestExamConfig)
+        .filter(GuestExamConfig.is_active == True)  # noqa: E712
+        .order_by(GuestExamConfig.created_at.desc())
+        .first()
+    )
+    if active:
+        return active
+    return db.query(GuestExamConfig).order_by(GuestExamConfig.created_at.desc()).first()
+
+
+def record_visit(db: DBSession, config_id: int, participant_id: int | None = None) -> None:
+    db.add(GuestVisit(config_id=config_id, participant_id=participant_id))
+    db.commit()
+
+
+def config_stats(db: DBSession, config_id: int) -> dict:
+    visits = db.query(func.count(GuestVisit.id)).filter(GuestVisit.config_id == config_id).scalar() or 0
+    participants = (
+        db.query(func.count(GuestParticipant.id))
+        .filter(GuestParticipant.config_id == config_id)
+        .scalar() or 0
+    )
+    submitted = (
+        db.query(func.count(GuestSubmission.id))
+        .join(GuestParticipant, GuestSubmission.participant_id == GuestParticipant.id)
+        .filter(GuestParticipant.config_id == config_id, GuestSubmission.status.in_(["submitted", "scored"]))
+        .scalar() or 0
+    )
+    return {"visits": visits, "participants": participants, "submitted": submitted}
 
 
 def get_participant(db: DBSession, participant_id: int | None, config_id: int) -> GuestParticipant | None:

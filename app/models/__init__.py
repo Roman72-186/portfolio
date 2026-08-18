@@ -27,4 +27,5 @@ from app.models.guest_exam import (
     GuestTicket,
     GuestParticipant,
     GuestSubmission,
+    GuestVisit,
 )

@@ -10,7 +10,6 @@ def test_curator_nav_items_keep_current_contract():
         ("cycles", "/cabinet/staff/cycles", "Цикл Пробника"),
         ("reports", "/cabinet/curator/reports", "Отчёты"),
         ("statistics", "/cabinet/students?tab=statistics", "Статистика"),
-        ("guest_exam", "/cabinet/staff/guest-exam", "Гостевой пробник"),
     ]
 
 
@@ -67,10 +66,10 @@ def test_staff_nav_items_keep_admin_contract():
         (
             "guest_exam",
             "/cabinet/staff/guest-exam",
-            "Гостевой пробник",
+            "Гостевой режим",
             "Гости",
-            "Гостевой пробник",
-            "Гостевой пробник — участники без регистрации",
+            "Гостевой режим",
+            "Гостевой режим — пробник для участников без регистрации",
         ),
     ]
 

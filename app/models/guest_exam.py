@@ -1,11 +1,14 @@
-"""Гостевой пробник — ВРЕМЕННЫЙ модуль (окно приёма 26-28.08.2026).
+"""Гостевой режим — ВРЕМЕННЫЙ модуль: пробник для участников без регистрации.
 
-Изолированная схема для участников без полноценной регистрации: свой участник,
-свои билеты, своя сдача. Намеренно не связана с User.vk_id/Session/ExamCycle/
-Feedback/MockExamAttempt — см. обоснование в
+Изолированная схема: свой участник, свои билеты, своя сдача. Намеренно не связана
+с User.vk_id/Session/ExamCycle/Feedback/MockExamAttempt — см. обоснование в
 plans/2026-08-18-apparchi-student-cabinet-and-guest-trial.md, трек B.
 
-Снести после того, как результаты окна экспортированы (scripts/export_guest_exam_
+Ссылка бессрочная (владелец включает/выключает вручную через `is_active`, без
+окна дат) — одна ссылка рассылается всем участникам, входов сколько угодно.
+Каждый вход в `GuestVisit` — минимальная статистика посещений.
+
+Снести после того, как результаты экспортированы (scripts/export_guest_exam_
 results.py) и владелец подтвердил, что данные больше не нужны — отдельной
 alembic-миграцией, не автоматически.
 """
@@ -22,15 +25,13 @@ from app.db.database import Base
 
 
 class GuestExamConfig(Base):
-    """Сама долгоживущая ссылка: окно дат + ручной аварийный выключатель."""
+    """Сама бессрочная ссылка: единственный переключатель — `is_active`."""
 
     __tablename__ = "guest_exam_configs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
-    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_by_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -38,10 +39,6 @@ class GuestExamConfig(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
-
-    def is_open_now(self, now: datetime) -> bool:
-        """Приём открыт: ссылка активна и текущее время внутри окна."""
-        return self.is_active and self.starts_at <= now <= self.ends_at
 
 
 class GuestTicket(Base):
@@ -66,6 +63,29 @@ class GuestTicket(Base):
 
     __table_args__ = (
         Index("ix_guest_tickets_config_subject", "config_id", "subject", "is_active"),
+    )
+
+
+class GuestVisit(Base):
+    """Лог входов по ссылке — минимальная статистика («сколько раз заходили»).
+    Пишется на каждый заход на лендинг, `participant_id` заполняется, если гость
+    уже узнан по cookie/коду."""
+
+    __tablename__ = "guest_visits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    config_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("guest_exam_configs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    participant_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("guest_participants.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        Index("ix_guest_visits_config", "config_id", "created_at"),
     )
 
 
