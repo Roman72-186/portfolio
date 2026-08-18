@@ -33,8 +33,14 @@ MOCK_SUBJECTS = ["Рисунок", "Композиция"]
 
 # Тип экзаменационного задания. Метка-only: механика (цикл/локи/попытки/доступ)
 # не зависит от kind — она ключуется по subject. См. ExamAssignment.kind.
-ASSIGNMENT_KINDS = ("mock", "control")
-ASSIGNMENT_KIND_LABELS = {"mock": "Пробник", "control": "Контрольная"}
+#
+# "guest" — билеты гостевого режима (Трек B). ВСЕГДА исключать этот kind из
+# любого резолвера/списка/уведомления, адресованного настоящим ученикам —
+# см. app/services/exam_cycle.py::get_active_tickets,
+# app/services/exam_scheduler.py::_run_notification_check,
+# app/api/cabinet_superadmin.py::exam_assignments_hub/_render_assignment_list.
+ASSIGNMENT_KINDS = ("mock", "control", "guest")
+ASSIGNMENT_KIND_LABELS = {"mock": "Пробник", "control": "Контрольная", "guest": "Гостевой"}
 
 # ── Feature periods ───────────────────────────────────────────────────────────
 

@@ -8,11 +8,11 @@ User/Session/RBAC system.
 import pytest
 
 from app.csrf import generate_csrf_token
+from app.models.exam_assignment import ExamTicket
 from app.models.guest_exam import (
     GuestExamConfig,
     GuestParticipant,
     GuestSubmission,
-    GuestTicket,
     GuestVisit,
 )
 from app.services import guest_exam as guest_exam_service
@@ -39,13 +39,26 @@ def guest_config_factory(db):
 
 
 @pytest.fixture()
-def guest_ticket_factory(db):
-    def _make(config: GuestExamConfig, *, subject: str = "Рисунок", title: str = "Натюрморт", is_active: bool = True) -> GuestTicket:
-        ticket = GuestTicket(config_id=config.id, subject=subject, title=title, is_active=is_active)
-        db.add(ticket)
-        db.commit()
-        db.refresh(ticket)
-        return ticket
+def guest_ticket_factory(db, user_factory):
+    """Билет гостевого режима — теперь настоящий ExamTicket(kind="guest"),
+    создаётся тем же сервисом, что и в проде (guest_exam_service.create_guest_ticket).
+    `config` больше не участвует в связи (билеты общие по subject, не привязаны
+    к конкретной ссылке) — параметр оставлен, чтобы не переписывать вызовы."""
+    _creator_id: dict[str, int] = {}
+
+    def _make(config: GuestExamConfig, *, subject: str = "Рисунок", title: str = "Натюрморт") -> ExamTicket:
+        if "id" not in _creator_id:
+            creator = user_factory(vk_id=900_001, name="Guest Ticket Creator", role_name="админ")
+            _creator_id["id"] = creator.id
+        return guest_exam_service.create_guest_ticket(
+            db,
+            subject=subject,
+            title=title,
+            description=None,
+            image_url=None,
+            image_path=None,
+            created_by_id=_creator_id["id"],
+        )
     return _make
 
 
@@ -337,11 +350,15 @@ def test_guest_module_does_not_touch_core_tables(client, db, guest_config_factor
     from app.models.user import User
     from app.models.session import Session as DbSession
 
+    # Билет заводит staff-админ (настоящий User) — это происходит до входа гостя
+    # и не в счёт: тест проверяет, что именно ДЕЙСТВИЯ ГОСТЯ (вход, получение
+    # билета) не трогают users/sessions, а не что таблица User вообще пуста.
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+
     users_before = db.query(User).count()
     sessions_before = db.query(DbSession).count()
 
-    config = guest_config_factory()
-    guest_ticket_factory(config, subject="Рисунок")
     _login_guest(client, db, config)
     csrf = _guest_csrf(client)
     client.post(f"/guest/{config.token}/exam/Рисунок/ticket", data={"csrf_token": csrf})
@@ -366,7 +383,7 @@ def test_guest_mode_page_requires_admin_rank(client, user_factory, session_facto
 
 def test_guest_mode_page_renders_tabs_for_admin(admin_client):
     admin_ui_client, _ = admin_client
-    for tab in ("tickets", "link", "works"):
+    for tab in ("tickets", "link"):
         resp = admin_ui_client.get(f"/cabinet/staff/guest-exam?tab={tab}")
         assert resp.status_code == 200
 
@@ -413,8 +430,9 @@ def test_link_toggle_flips_active(admin_client, db, guest_config_factory):
 
 def test_ticket_create_via_admin_form_is_usable_by_guest(admin_client, db, guest_config_factory):
     """Билет, добавленный через форму «Билеты» (та же логика, что и у реальных
-    билетов пробника: поля + фото через /cabinet/upload-ticket-image), реально
-    попадает в пул и выдаётся гостю текущей (активной) ссылки."""
+    билетов пробника: поля + фото через /cabinet/upload-ticket-image), пишется в
+    настоящую ExamTicket (kind="guest") и реально попадает в пул, выдаваемый
+    гостю текущей (активной) ссылки."""
     from fastapi.testclient import TestClient
     from app.main import app
 
@@ -434,10 +452,11 @@ def test_ticket_create_via_admin_form_is_usable_by_guest(admin_client, db, guest
     )
     assert resp.status_code == 303
 
-    ticket = db.query(GuestTicket).filter(GuestTicket.config_id == config.id).first()
+    tickets = guest_exam_service.list_guest_tickets(db)
+    ticket = next((t for t in tickets if t.title == "Натюрморт"), None)
     assert ticket is not None
-    assert ticket.title == "Натюрморт"
     assert ticket.image_s3_url == "https://s3.example/ticket.jpg"
+    assert ticket.subject == "Рисунок"
 
     with TestClient(app, base_url="https://testserver") as guest_client:
         participant = _login_guest(guest_client, db, config)
@@ -461,18 +480,45 @@ def test_ticket_create_without_any_link_returns_422(admin_client):
     assert resp.status_code == 422
 
 
-def test_ticket_toggle_deactivates(admin_client, db, guest_config_factory, guest_ticket_factory):
+def test_ticket_delete_removes_it_from_pool(admin_client, db, guest_config_factory, guest_ticket_factory):
     admin_ui_client, _ = admin_client
     config = guest_config_factory()
-    ticket = guest_ticket_factory(config, subject="Рисунок", is_active=True)
+    ticket = guest_ticket_factory(config, subject="Рисунок")
 
     resp = admin_ui_client.post(
-        f"/cabinet/staff/guest-exam/tickets/{ticket.id}/toggle",
+        f"/cabinet/staff/guest-exam/tickets/{ticket.id}/delete",
         follow_redirects=False,
     )
     assert resp.status_code == 303
-    db.refresh(ticket)
-    assert ticket.is_active is False
+    assert db.query(ExamTicket).filter(ExamTicket.id == ticket.id).first() is None
+
+
+def test_ticket_delete_ignores_real_exam_ticket(admin_client, db):
+    """Страховка от риска, из-за которого билеты были в отдельной таблице:
+    удаление по id не должно задевать билет реального пробника (kind="mock")."""
+    from datetime import date
+    from app.models.exam_assignment import ExamAssignment
+
+    admin_ui_client, admin = admin_client
+    real_assignment = ExamAssignment(
+        title="Реальный пробник", subject="Рисунок", kind="mock",
+        created_by_id=admin.id, status="published",
+    )
+    db.add(real_assignment)
+    db.commit()
+    db.refresh(real_assignment)
+    real_ticket = ExamTicket(
+        assignment_id=real_assignment.id, ticket_number=1, title="Настоящий билет",
+        start_date=date.today(), end_date=date.today(),
+        assign_to_all=True,
+    )
+    db.add(real_ticket)
+    db.commit()
+    db.refresh(real_ticket)
+
+    resp = admin_ui_client.post(f"/cabinet/staff/guest-exam/tickets/{real_ticket.id}/delete")
+    assert resp.status_code == 404
+    assert db.query(ExamTicket).filter(ExamTicket.id == real_ticket.id).first() is not None
 
 
 def test_score_requires_admin_rank_not_curator(client, db, guest_config_factory, guest_ticket_factory, user_factory, session_factory):
@@ -514,3 +560,61 @@ def test_score_flow_by_admin(admin_client, db, guest_config_factory, guest_ticke
     assert float(submission.score) == 85.5
     assert submission.comment == "Отличная работа"
     assert submission.scored_by_id == admin.id
+
+
+# ---------------------------------------------------------------------------
+# Билеты гостевого режима — теперь настоящие ExamTicket/ExamAssignment(kind=
+# "guest"), переиспользуют ту же таблицу, что реальный пробник. Риск, из-за
+# которого раньше была отдельная таблица GuestTicket: gостевой билет мог бы
+# протечь настоящему ученику через резолверы, которые не фильтруют по kind.
+# ---------------------------------------------------------------------------
+
+def test_guest_tickets_do_not_leak_into_real_student_resolver(db, guest_config_factory, guest_ticket_factory, user_factory):
+    from app.services.exam_cycle import get_active_tickets
+
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок", title="Гостевой билет")
+    student = user_factory(vk_id=700_001, name="Реальный ученик", role_name="ученик")
+
+    tickets = get_active_tickets(db, student.id, "Рисунок")
+    assert all(t.title != "Гостевой билет" for t in tickets)
+
+
+def test_guest_assignments_excluded_from_admin_exam_hub_counts(admin_client, db, guest_config_factory, guest_ticket_factory):
+    """exam_assignments_hub считает published/draft для реальных заданий — гостевые
+    (kind="guest") не должны туда попадать и путать админа с реальными пробниками."""
+    admin_ui_client, _ = admin_client
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+
+    resp = admin_ui_client.get("/cabinet/exam-assignments")
+    assert resp.status_code == 200
+
+    active_list_resp = admin_ui_client.get("/cabinet/exam-assignments/active")
+    assert "Гостевой режим — Рисунок" not in active_list_resp.text
+
+
+# ---------------------------------------------------------------------------
+# Проверка сдач переехала на общий экран /cabinet/admin/mock-check?view=guests
+# ---------------------------------------------------------------------------
+
+def test_mock_check_guests_view_lists_submitted_work(admin_client, db, guest_config_factory, guest_ticket_factory):
+    admin_ui_client, _ = admin_client
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = guest_exam_service.create_participant(db, config, "Гость с экрана проверки")
+    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    guest_exam_service.record_upload(db, submission, "https://s3.example/x.jpg", "guest-exam/x.jpg")
+
+    resp = admin_ui_client.get("/cabinet/admin/mock-check?view=guests")
+    assert resp.status_code == 200
+    assert "Гость с экрана проверки" in resp.text
+
+
+def test_mock_check_guests_view_requires_admin_rank(client, user_factory, session_factory):
+    curator = user_factory(vk_id=444_445, name="Куратор2", role_name="куратор")
+    sess = session_factory(curator)
+    client.cookies.set("session_id", sess.id)
+
+    resp = client.get("/cabinet/admin/mock-check?view=guests")
+    assert resp.status_code == 403

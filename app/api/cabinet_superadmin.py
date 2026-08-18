@@ -448,6 +448,7 @@ def exam_assignments_hub(
 ):
     counts = dict(
         db.query(ExamAssignment.status, func.count(ExamAssignment.id))
+        .filter(ExamAssignment.kind != "guest")
         .group_by(ExamAssignment.status)
         .all()
     )
@@ -463,7 +464,7 @@ def _render_assignment_list(request, user, db: DBSession, statuses: list[str], m
     """Общий рендер списка заданий для вкладок «Активные» (published+draft) и «Архив»."""
     assignments = (
         db.query(ExamAssignment)
-        .filter(ExamAssignment.status.in_(statuses))
+        .filter(ExamAssignment.status.in_(statuses), ExamAssignment.kind != "guest")
         # published сверху, остальные — по дате создания (свежие выше)
         .order_by((ExamAssignment.status != "published").asc(), ExamAssignment.created_at.desc())
         .limit(200)

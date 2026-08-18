@@ -66,12 +66,14 @@
 {% block content %}
 <div class="gexam-page">
     <h1>Гостевой режим</h1>
-    <div class="gexam-sub">Пробник для участников без регистрации — билеты, ссылка, проверка сдач.</div>
+    <div class="gexam-sub">
+        Пробник для участников без регистрации — билеты и ссылка. Проверка сдач —
+        на <a href="/cabinet/admin/mock-check?view=guests">экране проверки пробников</a>.
+    </div>
 
     <div class="gexam-tabs">
         <a href="?tab=tickets" class="gexam-tab{% if tab == 'tickets' %} active{% endif %}">Билеты</a>
         <a href="?tab=link" class="gexam-tab{% if tab == 'link' %} active{% endif %}">Ссылка</a>
-        <a href="?tab=works" class="gexam-tab{% if tab == 'works' %} active{% endif %}">Работы</a>
     </div>
 
     {% if tab == "tickets" %}
@@ -85,9 +87,13 @@
                     <div class="gexam-subject" style="margin-bottom:2px">{{ ticket.subject }}</div>
                     <div class="gexam-name" style="font-size:14px">{{ ticket.title }}</div>
                 </div>
-                <span class="gexam-badge{% if ticket.is_active %} active{% endif %}">
-                    {{ "активен" if ticket.is_active else "отключён" }}
-                </span>
+                <form method="post" action="/cabinet/staff/guest-exam/tickets/{{ ticket.id }}/delete"
+                      onsubmit="return confirm('Удалить билет «{{ ticket.title }}»?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    <button type="submit" style="border:none;background:none;color:var(--dim);cursor:pointer;font-size:12px;padding:4px 0">
+                        удалить
+                    </button>
+                </form>
             </div>
             {% else %}
             <div class="gexam-empty">Билетов пока нет — гость не сможет их получить.</div>
@@ -175,36 +181,6 @@
             </form>
         </div>
 
-    {% elif tab == "works" %}
-        {% if not rows %}
-        <div class="gexam-empty">Пока нет работ на проверке.</div>
-        {% endif %}
-        {% for submission, participant in rows %}
-        <div class="gexam-row">
-            <div class="gexam-row-head">
-                <span class="gexam-name">{{ participant.display_name }} · {{ participant.participant_code }}</span>
-                <span class="gexam-meta">
-                    {% if submission.submitted_at %}{{ submission.submitted_at.strftime('%d.%m %H:%M') }}{% endif %}
-                </span>
-            </div>
-            <div class="gexam-subject">{{ submission.subject }} — {{ submission.ticket_title }}</div>
-            {% if submission.s3_url %}
-            <a href="{{ submission.s3_url }}" target="_blank" rel="noopener">
-                <img src="{{ submission.s3_url }}" alt="" class="gexam-img">
-            </a>
-            {% endif %}
-            {% if submission.status == "scored" %}
-            <div class="gexam-scored">Балл: <strong>{{ submission.score }}</strong>{% if submission.comment %} — {{ submission.comment }}{% endif %}</div>
-            {% else %}
-            <form class="gexam-form-row" method="post" action="/cabinet/staff/guest-exam/works/{{ submission.id }}/score">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                <input type="number" name="score" step="0.1" min="0" max="100" placeholder="Балл" required>
-                <textarea name="comment" placeholder="Комментарий"></textarea>
-                <button type="submit" class="btn-blue">Оценить</button>
-            </form>
-            {% endif %}
-        </div>
-        {% endfor %}
     {% endif %}
 </div>
 <script>

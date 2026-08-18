@@ -51,6 +51,7 @@ def _run_notification_check() -> None:
             .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
             .filter(
                 ExamAssignment.status == "published",
+                ExamAssignment.kind != "guest",
                 ExamTicket.end_date >= today,   # legacy prefilter: ещё не закончился
             )
             .all()

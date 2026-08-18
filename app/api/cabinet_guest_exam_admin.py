@@ -1,13 +1,21 @@
 """Гостевой режим — админ-панель (Трек B), ВРЕМЕННЫЙ модуль.
 
 Отдельная кнопка «Гостевой режим» только у админа и суперадмина (rank >= 4), одна
-страница с тремя вкладками: Билеты (форма создания — та же логика, что у реальных
-билетов пробника: поля + фото через уже существующий /cabinet/upload-ticket-image),
-Ссылка (бессрочная, только вкл/выкл вручную + статистика входов), Работы
-(проверка сдач — балл и комментарий один раз, без диалога).
+страница с двумя вкладками: Билеты (форма создания — та же логика, что у реальных
+билетов пробника: поля + фото через уже существующий /cabinet/upload-ticket-image,
+но билет пишется в настоящую ExamTicket/ExamAssignment(kind="guest") — см.
+app/services/guest_exam.py), Ссылка (бессрочная, только вкл/выкл вручную +
+статистика входов).
 
-Вкладки «Билеты»/«Работы» работают с «текущей» ссылкой — активной, либо
-последней созданной, если активных нет (см. guest_exam_service.get_primary_config).
+Проверка сдач переехала на общий экран проверки пробников —
+`/cabinet/admin/mock-check?view=guests` (app/api/cabinet_admin.py) — это тот же
+экран, которым staff уже проверяет реальных учеников, с отдельным фильтром
+«Гости». POST-роут простановки балла (`/works/{id}/score` ниже) не переносился,
+шаблон mock-check просто отправляет форму на него же.
+
+Вкладка «Билеты» работает с «текущей» ссылкой — активной, либо последней
+созданной, если активных нет (см. guest_exam_service.get_primary_config); сами
+билеты общие для всех ссылок (ключ — subject, не config_id).
 
 См. app/services/guest_exam.py и
 plans/2026-08-18-apparchi-student-cabinet-and-guest-trial.md, трек B.
@@ -21,7 +29,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.constants import MOCK_SUBJECTS
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf
-from app.models.guest_exam import GuestExamConfig, GuestParticipant, GuestSubmission, GuestTicket
+from app.models.guest_exam import GuestExamConfig, GuestSubmission
 from app.services import guest_exam as guest_exam_service
 from app.tmpl import templates
 
@@ -35,29 +43,13 @@ def guest_mode_page(
     db: Annotated[DBSession, Depends(get_db)],
     tab: str = "tickets",
 ):
-    if tab not in ("tickets", "link", "works"):
+    if tab not in ("tickets", "link"):
         tab = "tickets"
 
     config = guest_exam_service.get_primary_config(db)
     configs = db.query(GuestExamConfig).order_by(GuestExamConfig.created_at.desc()).all()
     stats_by_config = {c.id: guest_exam_service.config_stats(db, c.id) for c in configs}
-
-    tickets = []
-    if config:
-        tickets = (
-            db.query(GuestTicket)
-            .filter(GuestTicket.config_id == config.id)
-            .order_by(GuestTicket.subject, GuestTicket.created_at.desc())
-            .all()
-        )
-
-    rows = (
-        db.query(GuestSubmission, GuestParticipant)
-        .join(GuestParticipant, GuestSubmission.participant_id == GuestParticipant.id)
-        .filter(GuestSubmission.status.in_(["submitted", "scored"]))
-        .order_by(GuestSubmission.status.asc(), GuestSubmission.submitted_at.desc())
-        .all()
-    )
+    tickets = guest_exam_service.list_guest_tickets(db)
 
     return templates.TemplateResponse("cabinet_guest_mode.html", {
         "request": request,
@@ -68,7 +60,6 @@ def guest_mode_page(
         "stats_by_config": stats_by_config,
         "tickets": tickets,
         "subjects": MOCK_SUBJECTS,
-        "rows": rows,
         "public_url": (
             str(request.base_url).rstrip("/") + f"/guest/{config.token}" if config else None
         ),
@@ -137,35 +128,31 @@ def guest_mode_create_ticket(
     if not title.strip():
         raise HTTPException(status_code=422, detail="Название билета обязательно")
 
-    db.add(GuestTicket(
-        config_id=config.id,
+    guest_exam_service.create_guest_ticket(
+        db,
         subject=subject,
         title=title.strip(),
         description=description.strip() or None,
-        image_s3_url=image_url.strip() or None,
-        image_s3_path=image_path.strip() or None,
-        is_active=True,
-    ))
-    db.commit()
+        image_url=image_url.strip() or None,
+        image_path=image_path.strip() or None,
+        created_by_id=user["user_id"],
+    )
     return RedirectResponse("/cabinet/staff/guest-exam?tab=tickets", status_code=303)
 
 
-@router.post("/tickets/{ticket_id}/toggle")
-def guest_mode_toggle_ticket(
+@router.post("/tickets/{ticket_id}/delete")
+def guest_mode_delete_ticket(
     ticket_id: int,
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
-    ticket = db.query(GuestTicket).filter(GuestTicket.id == ticket_id).first()
-    if not ticket:
+    if not guest_exam_service.delete_guest_ticket(db, ticket_id):
         raise HTTPException(status_code=404)
-    ticket.is_active = not ticket.is_active
-    db.commit()
     return RedirectResponse("/cabinet/staff/guest-exam?tab=tickets", status_code=303)
 
 
-# ── Вкладка «Работы» ─────────────────────────────────────────────────────────
+# ── Проверка сдач — см. /cabinet/admin/mock-check?view=guests ───────────────
 
 @router.post("/works/{submission_id}/score")
 def guest_mode_score(
@@ -185,4 +172,4 @@ def guest_mode_score(
     guest_exam_service.score_submission(
         db, submission, score=score, comment=comment, scored_by_id=user["user_id"]
     )
-    return RedirectResponse("/cabinet/staff/guest-exam?tab=works", status_code=303)
+    return RedirectResponse("/cabinet/admin/mock-check?view=guests", status_code=303)

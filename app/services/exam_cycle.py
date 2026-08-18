@@ -59,6 +59,7 @@ def get_active_tickets(db: DBSession, user_id: int, subject: str) -> list[ExamTi
         .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
         .filter(
             ExamAssignment.status == "published",
+            ExamAssignment.kind != "guest",
             ExamAssignment.subject == subject,
             or_(
                 ExamTicket.target_tag_id.in_(matching_target_tag_ids),

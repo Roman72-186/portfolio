@@ -6,7 +6,7 @@ cookie (guest-v1), отдельный CSRF-контекст (переиспол�
 """
 import random
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from itsdangerous import URLSafeTimedSerializer, BadData
 from sqlalchemy.exc import IntegrityError
@@ -15,13 +15,21 @@ from sqlalchemy.orm import Session as DBSession
 from sqlalchemy import func
 
 from app.config import settings
+from app.models.exam_assignment import ExamAssignment, ExamTicket
 from app.models.guest_exam import (
     GuestExamConfig,
     GuestParticipant,
     GuestSubmission,
-    GuestTicket,
     GuestVisit,
 )
+from app.services.tz import today_msk
+
+GUEST_ASSIGNMENT_KIND = "guest"
+# Билеты гостевого режима не имеют окна времени (решение владельца, 18.08.2026:
+# «билет всегда доступен, пока включена ссылка») — end_date подставляется на
+# 10 лет вперёд просто чтобы удовлетворить NOT NULL колонки ExamTicket,
+# резолвер `issue_ticket` ниже дату вообще не проверяет.
+_FAR_FUTURE_DAYS = 3650
 
 GUEST_COOKIE_NAME = "guest_session"
 # Ссылка бессрочная — участник может вернуться посмотреть балл в любой момент,
@@ -74,6 +82,18 @@ def get_primary_config(db: DBSession) -> GuestExamConfig | None:
     if active:
         return active
     return db.query(GuestExamConfig).order_by(GuestExamConfig.created_at.desc()).first()
+
+
+def list_reviewable_submissions(db: DBSession) -> list[tuple[GuestSubmission, GuestParticipant]]:
+    """Сданные гостевые работы (submitted/scored) — источник для фильтра «Гости»
+    на экране проверки пробников (`/cabinet/admin/mock-check?view=guests`)."""
+    return (
+        db.query(GuestSubmission, GuestParticipant)
+        .join(GuestParticipant, GuestSubmission.participant_id == GuestParticipant.id)
+        .filter(GuestSubmission.status.in_(["submitted", "scored"]))
+        .order_by(GuestSubmission.status.asc(), GuestSubmission.submitted_at.desc())
+        .all()
+    )
 
 
 def record_visit(db: DBSession, config_id: int, participant_id: int | None = None) -> None:
@@ -163,6 +183,102 @@ def get_submission(db: DBSession, participant_id: int, subject: str) -> GuestSub
     )
 
 
+def _get_or_create_guest_assignment(db: DBSession, subject: str, created_by_id: int) -> ExamAssignment:
+    """Один ExamAssignment(kind="guest") на предмет — билеты копятся в нём же,
+    как обычные билеты внутри реального задания."""
+    assignment = (
+        db.query(ExamAssignment)
+        .filter(ExamAssignment.kind == GUEST_ASSIGNMENT_KIND, ExamAssignment.subject == subject)
+        .order_by(ExamAssignment.created_at.desc())
+        .first()
+    )
+    if assignment:
+        return assignment
+    assignment = ExamAssignment(
+        title=f"Гостевой режим — {subject}",
+        subject=subject,
+        kind=GUEST_ASSIGNMENT_KIND,
+        created_by_id=created_by_id,
+        status="published",
+    )
+    db.add(assignment)
+    db.commit()
+    db.refresh(assignment)
+    return assignment
+
+
+def list_guest_tickets(db: DBSession) -> list[ExamTicket]:
+    """Билеты гостевого режима по всем предметам — для вкладки «Билеты».
+
+    ExamTicket не хранит subject сам (он на ExamAssignment) и не объявляет
+    relationship — подставляем `.subject` на объект вручную, чтобы шаблон мог
+    читать `ticket.subject` не завязываясь на join."""
+    rows = (
+        db.query(ExamTicket, ExamAssignment.subject)
+        .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
+        .filter(ExamAssignment.kind == GUEST_ASSIGNMENT_KIND)
+        .order_by(ExamAssignment.subject, ExamTicket.created_at.desc())
+        .all()
+    )
+    tickets = []
+    for ticket, subject in rows:
+        ticket.subject = subject
+        tickets.append(ticket)
+    return tickets
+
+
+def create_guest_ticket(
+    db: DBSession,
+    *,
+    subject: str,
+    title: str,
+    description: str | None,
+    image_url: str | None,
+    image_path: str | None,
+    created_by_id: int,
+) -> ExamTicket:
+    assignment = _get_or_create_guest_assignment(db, subject, created_by_id)
+    next_number = (
+        db.query(func.max(ExamTicket.ticket_number))
+        .filter(ExamTicket.assignment_id == assignment.id)
+        .scalar() or 0
+    ) + 1
+    today = today_msk()
+    ticket = ExamTicket(
+        assignment_id=assignment.id,
+        ticket_number=next_number,
+        title=title,
+        description=description,
+        image_s3_url=image_url,
+        image_s3_path=image_path,
+        start_date=today,
+        end_date=today + timedelta(days=_FAR_FUTURE_DAYS),
+        opens_at=None,
+        closes_at=None,
+        assign_to_all=False,
+    )
+    db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
+    return ticket
+
+
+def delete_guest_ticket(db: DBSession, ticket_id: int) -> bool:
+    """Удаляет билет, только если он принадлежит гостевому (kind="guest") заданию —
+    страховка от случайного удаления билета реального пробника по чужому id."""
+    ticket = (
+        db.query(ExamTicket)
+        .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
+        .filter(ExamTicket.id == ticket_id, ExamAssignment.kind == GUEST_ASSIGNMENT_KIND)
+        .first()
+    )
+    if not ticket:
+        return False
+    db.delete(ticket)
+    db.commit()
+    return True
+
+
 def issue_ticket(db: DBSession, participant: GuestParticipant, subject: str) -> GuestSubmission:
     """Выдать билет по предмету — идемпотентно, один билет на предмет на участника."""
     existing = get_submission(db, participant.id, subject)
@@ -170,11 +286,12 @@ def issue_ticket(db: DBSession, participant: GuestParticipant, subject: str) -> 
         return existing
 
     tickets = (
-        db.query(GuestTicket)
+        db.query(ExamTicket)
+        .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
         .filter(
-            GuestTicket.config_id == participant.config_id,
-            GuestTicket.subject == subject,
-            GuestTicket.is_active == True,  # noqa: E712
+            ExamAssignment.kind == GUEST_ASSIGNMENT_KIND,
+            ExamAssignment.subject == subject,
+            ExamAssignment.status == "published",
         )
         .all()
     )

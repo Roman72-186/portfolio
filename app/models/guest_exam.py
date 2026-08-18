@@ -1,8 +1,16 @@
 """Гостевой режим — ВРЕМЕННЫЙ модуль: пробник для участников без регистрации.
 
-Изолированная схема: свой участник, свои билеты, своя сдача. Намеренно не связана
-с User.vk_id/Session/ExamCycle/Feedback/MockExamAttempt — см. обоснование в
-plans/2026-08-18-apparchi-student-cabinet-and-guest-trial.md, трек B.
+Билеты — настоящие `ExamTicket`/`ExamAssignment` (kind="guest", см. app/constants.py),
+переиспользуют ту же таблицу, что и билеты реального пробника, чтобы не дублировать
+модель. Изолированы от реальных учеников только фильтром `kind != "guest"` во всех
+местах, которые резолвят билеты для User (см. комментарий у ASSIGNMENT_KINDS).
+
+Участник, вход, сдача — свои таблицы ниже. Намеренно не связаны с
+User.vk_id/Session/ExamCycle/Feedback/MockExamAttempt/Work — см. обоснование в
+plans/2026-08-18-apparchi-student-cabinet-and-guest-trial.md, трек B: гость не
+заводится как настоящий User, а оценка гостевой работы не пишется в Work, чтобы
+не протечь в дашборд/статистику реальных учеников (Work.user_id NOT NULL и не
+везде джойнится на User).
 
 Ссылка бессрочная (владелец включает/выключает вручную через `is_active`, без
 окна дат) — одна ссылка рассылается всем участникам, входов сколько угодно.
@@ -38,31 +46,6 @@ class GuestExamConfig(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
-    )
-
-
-class GuestTicket(Base):
-    """Билет для гостей — отдельный от ExamTicket пул, не пересекается с реальными
-    учениками."""
-
-    __tablename__ = "guest_tickets"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    config_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("guest_exam_configs.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    subject: Mapped[str] = mapped_column(String(50), nullable=False)    # "Рисунок" | "Композиция"
-    title: Mapped[str] = mapped_column(String(200), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    image_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    image_s3_path: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
-    )
-
-    __table_args__ = (
-        Index("ix_guest_tickets_config_subject", "config_id", "subject", "is_active"),
     )
 
 
@@ -122,10 +105,10 @@ class GuestSubmission(Base):
     )
     subject: Mapped[str] = mapped_column(String(50), nullable=False)
 
-    # Снимок билета — правки/удаление GuestTicket не портят уже выданную попытку
-    # (тот же паттерн, что MockExamAttempt для ExamTicket).
+    # Снимок билета — правка/удаление ExamTicket не портит уже выданную попытку
+    # (тот же паттерн, что MockExamAttempt для ExamTicket у реальных учеников).
     ticket_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("guest_tickets.id", ondelete="SET NULL"), nullable=True
+        Integer, ForeignKey("exam_tickets.id", ondelete="SET NULL"), nullable=True
     )
     ticket_title: Mapped[str] = mapped_column(String(200), nullable=False)
     ticket_description: Mapped[str | None] = mapped_column(Text, nullable=True)

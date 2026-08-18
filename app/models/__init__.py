@@ -24,7 +24,6 @@ from app.models.learning_topic import (
 )
 from app.models.guest_exam import (
     GuestExamConfig,
-    GuestTicket,
     GuestParticipant,
     GuestSubmission,
     GuestVisit,
