@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Образовательное пространство{% endblock %}
+{% block extra_styles %}
+<style>
+.lrn-page { max-width: 1080px; margin: 0 auto; padding: 22px 18px 110px; }
+.lrn-hero {
+    background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue-mid) 100%);
+    color: #fff; border-radius: var(--r-xl); padding: 18px 22px;
+    margin-bottom: 16px; box-shadow: var(--sh-blue);
+}
+.lrn-hero h1 {
+    font-family: var(--font-display); font-size: 22px; font-weight: 800;
+    letter-spacing: -0.02em; margin: 0 0 4px;
+}
+.lrn-hero p { margin: 0; opacity: 0.85; font-size: 13px; line-height: 1.4; }
+
+.lrn-subject-toggle {
+    display: flex; gap: 2px; padding: 4px; margin: 0 0 16px;
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: var(--r-pill);
+}
+.lrn-subject-btn {
+    flex: 1; text-align: center; padding: 10px 14px;
+    font-size: 14px; font-weight: 800; letter-spacing: 0.01em;
+    color: var(--muted); cursor: pointer; border: none; background: none;
+    border-radius: var(--r-pill); transition: background .15s, color .15s;
+    font-family: var(--font-body);
+}
+.lrn-subject-btn.active { background: var(--surface); color: var(--blue); box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+
+.lrn-cards { display: flex; flex-direction: column; gap: 12px; }
+.lrn-card {
+    display: block; padding: 16px 18px; border: 1px solid var(--line);
+    border-radius: var(--r-xl); background: var(--surface);
+    text-decoration: none; color: inherit; transition: border-color .15s;
+}
+.lrn-card:hover { border-color: var(--blue); }
+.lrn-card.is-disabled { opacity: 0.55; cursor: default; }
+.lrn-card.is-disabled:hover { border-color: var(--line); }
+.lrn-card-title { font-size: 15px; font-weight: 800; margin: 0 0 4px; }
+.lrn-card-note { font-size: 13px; color: var(--dim); margin: 0; line-height: 1.4; }
+.lrn-card-cta { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--blue); }
+.lrn-card.is-disabled .lrn-card-cta { color: var(--dim); }
+
+.lrn-empty {
+    text-align: center; padding: 48px 20px; color: var(--dim);
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="lrn-page">
+
+    <div class="lrn-hero">
+        <h1>{{ topic.title if topic else 'Актуальное образовательное пространство' }}</h1>
+        {% if topic and topic.description %}
+        <p>{{ topic.description }}</p>
+        {% else %}
+        <p>Видео, задание, обратная связь и занятие текущей недели — в одном месте.</p>
+        {% endif %}
+    </div>
+
+    {% if topic %}
+    <div class="lrn-subject-toggle" role="tablist" aria-label="Направление">
+        <button type="button" class="lrn-subject-btn active" data-subject="Рисунок" onclick="lrnSwitchSubject(this)">Рисунок</button>
+        <button type="button" class="lrn-subject-btn" data-subject="Композиция" onclick="lrnSwitchSubject(this)">Композиция</button>
+    </div>
+
+    <div class="lrn-cards">
+        {% if video_available %}
+        <a class="lrn-card" href="/cabinet/videos">
+            <div class="lrn-card-title">Видео</div>
+            <p class="lrn-card-note">Уроки недели с автоматическим сохранением места просмотра.</p>
+            <span class="lrn-card-cta">Смотреть →</span>
+        </a>
+        {% endif %}
+
+        <a class="lrn-card" href="/cabinet/cycle">
+            <div class="lrn-card-title">Обратная связь</div>
+            <p class="lrn-card-note">Диалог с куратором по сданным работам.</p>
+            <span class="lrn-card-cta">Открыть →</span>
+        </a>
+
+        {% if topic.meeting_url %}
+        <a class="lrn-card" href="{{ topic.meeting_url }}" target="_blank" rel="noopener">
+            <div class="lrn-card-title">Занятие</div>
+            <p class="lrn-card-note">Ссылка на созвон недели.</p>
+            <span class="lrn-card-cta">Присоединиться →</span>
+        </a>
+        {% else %}
+        <div class="lrn-card is-disabled">
+            <div class="lrn-card-title">Занятие</div>
+            <p class="lrn-card-note">Ссылка на созвон появится позже.</p>
+        </div>
+        {% endif %}
+
+        <div class="lrn-card is-disabled">
+            <div class="lrn-card-title">Задание</div>
+            <p class="lrn-card-note">Скоро здесь появится домашнее задание недели.</p>
+        </div>
+
+        <div class="lrn-card is-disabled">
+            <div class="lrn-card-title">Анкета</div>
+            <p class="lrn-card-note">Скоро здесь появится анкета недели.</p>
+        </div>
+    </div>
+    {% else %}
+    <div class="lrn-empty">Пока нет ни одной доступной вам недели. Загляните позже.</div>
+    {% endif %}
+
+    <div style="height:96px"></div>
+</div>
+
+<script>
+function lrnSwitchSubject(btn) {
+    // Пока переключатель не разводит контент по предмету — недели одинаковы для
+    // Рисунка и Композиции, пока в схеме нет данных, которые от предмета зависят.
+    // Разводка появится вместе с реальным ДЗ (Р2) и адресацией недель (Р3/Р4).
+    document.querySelectorAll('.lrn-subject-btn').forEach(function(b) {
+        b.classList.toggle('active', b === btn);
+    });
+}
+</script>
+
+{% set active_tab = "learning" %}
+{% include "partials/bottom_nav.html" %}
+{% endblock %}

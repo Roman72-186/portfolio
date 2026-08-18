@@ -69,6 +69,12 @@ def _get_unread_count(user_id: int, db: DBSession) -> int:
 TARIFF_LABELS = list(TARIFF_DISPLAY.values())
 
 
+def needs_profile_setup(user: dict) -> bool:
+    """Профиль не заполнен — редиректить на /cabinet/profile вместо любой стартовой
+    страницы ученика (/cabinet/student, /cabinet/tracker, /cabinet/learning)."""
+    return not user["profile_completed"] or not user.get("course_periods") or not user.get("lessons_count")
+
+
 @router.get("/student", response_class=HTMLResponse)
 @router.get("/tracker", response_class=HTMLResponse)
 def cabinet_student(
@@ -76,7 +82,7 @@ def cabinet_student(
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    if not user["profile_completed"] or not user.get("course_periods") or not user.get("lessons_count"):
+    if needs_profile_setup(user):
         return RedirectResponse("/cabinet/profile", status_code=302)
 
     # History of tariffs: distinct tariffs ordered by first upload date
