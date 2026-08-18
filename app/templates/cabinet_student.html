@@ -472,7 +472,7 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
         {% endif %}
         <span class="next-card-cta">Перейти к циклу →</span>
     </a>
-    {% elif avg_score_by_subject %}
+    {% else %}
     <a href="/upload/mock-exam" class="next-card next-card--neutral">
         <div class="next-card-title">Прогресс по предметам</div>
         <div class="subject-progress">
@@ -649,6 +649,6 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
     <div style="height:96px"></div>
 </div>
 
-{% set active_tab = "" %}
+{% set active_tab = "tracker" %}
 {% include "partials/bottom_nav.html" %}
 {% endblock %}

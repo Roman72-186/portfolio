@@ -20,6 +20,7 @@ class StudentNavItem:
     mobile_label: str
     aria_label: str
     icon: str
+    soon: bool = False
 
 
 @dataclass(frozen=True)
@@ -53,13 +54,31 @@ CURATOR_NAV_ITEMS: tuple[NavItem, ...] = (
 
 STUDENT_NAV_ITEMS: tuple[StudentNavItem, ...] = (
     StudentNavItem(
-        key="",
-        desktop_href="/cabinet",
-        mobile_href="/cabinet/student",
-        desktop_label="Кабинет",
-        mobile_label="Кабинет",
-        aria_label="Кабинет",
-        icon="profile",
+        key="tracker",
+        desktop_href="/cabinet/tracker",
+        mobile_href="/cabinet/tracker",
+        desktop_label="Личный трекер",
+        mobile_label="Трекер",
+        aria_label="Личный трекер",
+        icon="tracker",
+    ),
+    StudentNavItem(
+        key="learning",
+        desktop_href="/cabinet/learning",
+        mobile_href="/cabinet/learning",
+        desktop_label="Актуальное образовательное пространство",
+        mobile_label="Обучение",
+        aria_label="Актуальное образовательное пространство",
+        icon="learning",
+    ),
+    StudentNavItem(
+        key="3dlab",
+        desktop_href="/3dlab",
+        mobile_href="/3dlab",
+        desktop_label="3D Лаб",
+        mobile_label="3D Лаб",
+        aria_label="3D Лаб",
+        icon="3dlab",
     ),
     StudentNavItem(
         key="portfolio",
@@ -71,31 +90,23 @@ STUDENT_NAV_ITEMS: tuple[StudentNavItem, ...] = (
         icon="portfolio",
     ),
     StudentNavItem(
-        key="cycle",
-        desktop_href="/cabinet/cycle",
-        mobile_href="/cabinet/cycle",
-        desktop_label="Цикл Пробника",
-        mobile_label="Цикл",
-        aria_label="Цикл Пробника",
-        icon="cycle",
+        key="statistics",
+        desktop_href="#",
+        mobile_href="#",
+        desktop_label="Статистика",
+        mobile_label="Статистика",
+        aria_label="Статистика (скоро)",
+        icon="statistics",
+        soon=True,
     ),
     StudentNavItem(
-        key="mock",
-        desktop_href="/upload/mock-exam",
-        mobile_href="/upload/mock-exam",
-        desktop_label="Пробник",
-        mobile_label="Пробник",
-        aria_label="Пробник",
-        icon="mock",
-    ),
-    StudentNavItem(
-        key="3dlab",
-        desktop_href="/3dlab",
-        mobile_href="/3dlab",
-        desktop_label="3D Лаб",
-        mobile_label="3D Лаб",
-        aria_label="3D Лаб",
-        icon="3dlab",
+        key="personal",
+        desktop_href="/cabinet/personal",
+        mobile_href="/cabinet/personal",
+        desktop_label="Личная информация",
+        mobile_label="Личное",
+        aria_label="Личная информация",
+        icon="personal",
     ),
 )
 

@@ -24,14 +24,24 @@ def test_student_nav_items_keep_current_contract():
             item.desktop_label,
             item.mobile_label,
             item.aria_label,
+            item.soon,
         )
         for item in items
     ] == [
-        ("", "/cabinet", "/cabinet/student", "Кабинет", "Кабинет", "Кабинет"),
-        ("portfolio", "/cabinet/portfolio", "/cabinet/portfolio", "Портфолио", "Портфолио", "Портфолио"),
-        ("cycle", "/cabinet/cycle", "/cabinet/cycle", "Цикл Пробника", "Цикл", "Цикл Пробника"),
-        ("mock", "/upload/mock-exam", "/upload/mock-exam", "Пробник", "Пробник", "Пробник"),
-        ("3dlab", "/3dlab", "/3dlab", "3D Лаб", "3D Лаб", "3D Лаб"),
+        ("tracker", "/cabinet/tracker", "/cabinet/tracker", "Личный трекер", "Трекер", "Личный трекер", False),
+        (
+            "learning",
+            "/cabinet/learning",
+            "/cabinet/learning",
+            "Актуальное образовательное пространство",
+            "Обучение",
+            "Актуальное образовательное пространство",
+            False,
+        ),
+        ("3dlab", "/3dlab", "/3dlab", "3D Лаб", "3D Лаб", "3D Лаб", False),
+        ("portfolio", "/cabinet/portfolio", "/cabinet/portfolio", "Портфолио", "Портфолио", "Портфолио", False),
+        ("statistics", "#", "#", "Статистика", "Статистика", "Статистика (скоро)", True),
+        ("personal", "/cabinet/personal", "/cabinet/personal", "Личная информация", "Личное", "Личная информация", False),
     ]
 
 

@@ -58,11 +58,21 @@ def test_student_cabinet_uses_student_bottom_nav_only(
 
     assert resp.status_code == 200
     assert 'class="bottom-nav"' in resp.text
-    assert 'href="/cabinet/student"' in resp.text
-    assert 'href="/cabinet/portfolio"' in resp.text
-    assert 'href="/cabinet/cycle"' in resp.text
-    assert 'href="/upload/mock-exam"' in resp.text
-    assert 'href="/3dlab"' in resp.text
+    bottom_nav = _html_between(resp.text, '<nav class="bottom-nav"', "</nav>")
+
+    assert 'href="/cabinet/tracker"' in bottom_nav
+    assert 'href="/cabinet/learning"' in bottom_nav
+    assert 'href="/cabinet/portfolio"' in bottom_nav
+    assert 'href="/cabinet/personal"' in bottom_nav
+    assert 'href="/3dlab"' in bottom_nav
+
+    # Статистика — заглушка «скоро», без рабочей ссылки.
+    assert 'nav-soon-badge' in bottom_nav
+
+    # Цикл пробника и загрузка пробника ушли из нижнего меню (роуты живы по прямым ссылкам,
+    # но со страницы кабинета ученика на них уже есть контекстные ссылки вне нижнего меню).
+    assert 'href="/cabinet/cycle"' not in bottom_nav
+    assert 'href="/upload/mock-exam"' not in bottom_nav
 
     assert 'class="staff-aside"' not in resp.text
     assert 'href="/cabinet/students"' not in resp.text
