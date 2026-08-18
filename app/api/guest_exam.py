@@ -135,7 +135,11 @@ def guest_exam_page(request: Request, token: str, db: Annotated[DBSession, Depen
 
     guest_exam_service.touch_participant(db, participant)
     subjects = [
-        {"name": subject, "submission": guest_exam_service.get_submission(db, participant.id, subject)}
+        {
+            "name": subject,
+            "submission": guest_exam_service.get_submission(db, participant.id, subject),
+            "has_tickets": guest_exam_service.has_available_tickets(db, subject),
+        }
         for subject in MOCK_SUBJECTS
     ]
 

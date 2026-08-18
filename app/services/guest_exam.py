@@ -295,13 +295,8 @@ def delete_guest_ticket(db: DBSession, ticket_id: int) -> bool:
     return True
 
 
-def issue_ticket(db: DBSession, participant: GuestParticipant, subject: str) -> GuestSubmission:
-    """Выдать билет по предмету — идемпотентно, один билет на предмет на участника."""
-    existing = get_submission(db, participant.id, subject)
-    if existing:
-        return existing
-
-    tickets = (
+def _published_tickets_query(db: DBSession, subject: str):
+    return (
         db.query(ExamTicket)
         .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
         .filter(
@@ -309,8 +304,22 @@ def issue_ticket(db: DBSession, participant: GuestParticipant, subject: str) -> 
             ExamAssignment.subject == subject,
             ExamAssignment.status == "published",
         )
-        .all()
     )
+
+
+def has_available_tickets(db: DBSession, subject: str) -> bool:
+    """Есть ли хотя бы один билет по предмету — кнопка «Получить билет» на
+    странице гостя активна только при True (см. app/api/guest_exam.py::guest_exam_page)."""
+    return db.query(_published_tickets_query(db, subject).exists()).scalar()
+
+
+def issue_ticket(db: DBSession, participant: GuestParticipant, subject: str) -> GuestSubmission:
+    """Выдать билет по предмету — идемпотентно, один билет на предмет на участника."""
+    existing = get_submission(db, participant.id, subject)
+    if existing:
+        return existing
+
+    tickets = _published_tickets_query(db, subject).all()
     if not tickets:
         raise LookupError("no_active_tickets")
     ticket = random.choice(tickets)

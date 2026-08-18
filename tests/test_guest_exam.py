@@ -208,6 +208,37 @@ def test_landing_redirects_logged_in_guest_straight_to_exam(client, db, guest_co
 
 
 # ---------------------------------------------------------------------------
+# Exam page — «Получить билет» disabled per subject without tickets
+# ---------------------------------------------------------------------------
+
+def test_exam_page_hides_ticket_button_for_subject_without_tickets(
+    client, db, guest_config_factory, guest_ticket_factory
+):
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")  # «Композиция» остаётся без билетов
+    _login_guest(client, db, config)
+
+    resp = client.get(f"/guest/{config.token}/exam")
+    assert resp.status_code == 200
+    assert "Билеты по этому предмету пока не готовы" in resp.text
+    # у «Рисунка» билет есть — кнопка должна остаться активной
+    assert resp.text.count('action="/guest/{}/exam/Рисунок/ticket"'.format(config.token)) == 1
+
+
+def test_exam_page_shows_ticket_button_when_tickets_exist(
+    client, db, guest_config_factory, guest_ticket_factory
+):
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    guest_ticket_factory(config, subject="Композиция")
+    _login_guest(client, db, config)
+
+    resp = client.get(f"/guest/{config.token}/exam")
+    assert resp.status_code == 200
+    assert "Билеты по этому предмету пока не готовы" not in resp.text
+
+
+# ---------------------------------------------------------------------------
 # Ticket issuance — one per subject, idempotent
 # ---------------------------------------------------------------------------
 
