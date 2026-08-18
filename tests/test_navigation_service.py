@@ -10,6 +10,7 @@ def test_curator_nav_items_keep_current_contract():
         ("cycles", "/cabinet/staff/cycles", "Цикл Пробника"),
         ("reports", "/cabinet/curator/reports", "Отчёты"),
         ("statistics", "/cabinet/students?tab=statistics", "Статистика"),
+        ("guest_exam", "/cabinet/staff/guest-exam", "Гостевой пробник"),
     ]
 
 
@@ -63,6 +64,14 @@ def test_staff_nav_items_keep_admin_contract():
             "Видео-отчёты",
             "Видео-отчёты кураторов",
         ),
+        (
+            "guest_exam",
+            "/cabinet/staff/guest-exam",
+            "Гостевой пробник",
+            "Гости",
+            "Гостевой пробник",
+            "Гостевой пробник — участники без регистрации",
+        ),
     ]
 
 
@@ -89,3 +98,6 @@ def test_staff_nav_items_keep_rank_specific_visibility_contract():
     assert "reports" not in [item.key for item in rank_3_items]
     assert "reports" in [item.key for item in rank_4_items]
     assert "reports" in [item.key for item in rank_5_items]
+    assert "guest_exam" not in [item.key for item in rank_3_items]
+    assert "guest_exam" in [item.key for item in rank_4_items]
+    assert "guest_exam" in [item.key for item in rank_5_items]

@@ -48,6 +48,7 @@ CURATOR_NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem(key="cycles", href="/cabinet/staff/cycles", label="Цикл Пробника", icon="🔁"),
     NavItem(key="reports", href="/cabinet/curator/reports", label="Отчёты", icon="🎬"),
     NavItem(key="statistics", href="/cabinet/students?tab=statistics", label="Статистика", icon="📈"),
+    NavItem(key="guest_exam", href="/cabinet/staff/guest-exam", label="Гостевой пробник", icon="🎫"),
 )
 
 
@@ -175,6 +176,16 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         aria_label="Видео-отчёты",
         tooltip="Видео-отчёты кураторов",
         icon="reports",
+        min_rank=4,
+    ),
+    StaffNavItem(
+        key="guest_exam",
+        href="/cabinet/staff/guest-exam",
+        sidebar_label="Гостевой пробник",
+        pill_label="Гости",
+        aria_label="Гостевой пробник",
+        tooltip="Гостевой пробник — участники без регистрации",
+        icon="mock",
         min_rank=4,
     ),
 )
