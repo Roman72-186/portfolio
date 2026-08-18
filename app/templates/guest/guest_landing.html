@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}{{ config.title }} — пробный экзамен{% endblock %}
+{% block extra_styles %}
+<style>
+.guest-wrap {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; min-height: 80vh; padding: 24px 16px;
+}
+.guest-card {
+    width: 100%; max-width: 440px;
+    background: var(--surface); border-radius: var(--r-xl);
+    box-shadow: var(--sh-md); border: 1px solid var(--line);
+    padding: 32px 28px;
+}
+.guest-title {
+    font-family: var(--font-display);
+    font-size: 22px; font-weight: 700; letter-spacing: -0.03em;
+    color: var(--ink); text-align: center; margin-bottom: 8px;
+}
+.guest-sub {
+    font-size: 14px; color: var(--dim); text-align: center;
+    margin-bottom: 26px; line-height: 1.5;
+}
+.guest-field { margin-bottom: 14px; }
+.guest-input {
+    width: 100%; padding: 13px 16px;
+    border: 1.5px solid var(--line); border-radius: var(--r-md);
+    background: var(--surface-2); color: var(--ink);
+    font-size: 15px; font-family: inherit; box-sizing: border-box;
+}
+.guest-input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(59,91,255,.15); }
+.guest-divider {
+    display: flex; align-items: center; gap: 12px;
+    margin: 24px 0; color: var(--muted); font-size: 12px;
+}
+.guest-divider::before, .guest-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.guest-secondary-btn {
+    width: 100%; padding: 13px; font-size: 14px; font-weight: 600;
+    color: var(--blue); background: none; border: 1px solid var(--line);
+    border-radius: var(--r-md); cursor: pointer;
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="guest-wrap">
+    <div class="guest-card">
+        <h1 class="guest-title">{{ config.title }}</h1>
+        <div class="guest-sub">Пробный экзамен без регистрации — рисунок и композиция.</div>
+
+        {% if error %}
+        <div class="alert alert-error" style="margin-bottom:18px">{{ error }}</div>
+        {% endif %}
+
+        {% if not is_open %}
+        <div class="alert" style="margin-bottom:0">
+            Приём работ проходит с {{ config.starts_at.strftime('%d.%m %H:%M') }}
+            по {{ config.ends_at.strftime('%d.%m %H:%M') }} (МСК).
+            {% if config.is_active == false %}Ссылка сейчас отключена.{% endif %}
+        </div>
+        {% else %}
+        <form method="post" action="/guest/{{ config.token }}/start">
+            <div class="guest-field">
+                <label for="guest-name" style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px">Ваше имя</label>
+                <input id="guest-name" type="text" name="display_name" class="guest-input"
+                       placeholder="Как к вам обращаться" autocomplete="given-name" autofocus required maxlength="200">
+            </div>
+            <button type="submit" class="btn-blue btn-full">Начать</button>
+        </form>
+
+        <div class="guest-divider">уже участвовали</div>
+
+        <form method="post" action="/guest/{{ config.token }}/start">
+            <div class="guest-field">
+                <input type="text" name="code" class="guest-input"
+                       placeholder="Код участника" autocomplete="off" maxlength="8"
+                       style="text-transform:uppercase;letter-spacing:.1em;text-align:center">
+            </div>
+            <button type="submit" class="guest-secondary-btn">Продолжить по коду</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

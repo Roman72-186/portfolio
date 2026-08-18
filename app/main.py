@@ -17,6 +17,7 @@ from app.api import cabinet_student, cabinet_curator, cabinet_admin, cabinet_sup
 from app.api import cabinet_students_shared, cabinet_tags, cases
 from app.api import cycle_upload, feedback as feedback_router
 from app.api import legacy_portfolio, video, video_admin
+from app.api import guest_exam, cabinet_guest_exam_admin
 from app.limiter import limiter
 from app.services.rbac import seed_roles_and_permissions
 from app.services import n8n as n8n_service
@@ -261,6 +262,8 @@ app.include_router(gallery.router)
 app.include_router(legacy_portfolio.router)
 app.include_router(video.router)
 app.include_router(video_admin.router)
+app.include_router(guest_exam.router)
+app.include_router(cabinet_guest_exam_admin.router)
 
 
 @app.get("/health")

@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}{{ config.title }} — пробный экзамен{% endblock %}
+{% block extra_styles %}
+<style>
+.guest-page { max-width: 560px; margin: 0 auto; padding: 20px 16px 60px; }
+.guest-head { text-align: center; margin-bottom: 20px; }
+.guest-head h1 {
+    font-family: var(--font-display); font-size: 20px; font-weight: 700;
+    color: var(--ink); margin-bottom: 6px;
+}
+.guest-code-box {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--surface-2); border: 1px dashed var(--line);
+    border-radius: var(--r-md); padding: 8px 14px; font-size: 13px; color: var(--dim);
+}
+.guest-code-box strong { font-size: 15px; letter-spacing: .12em; color: var(--ink); }
+.guest-subject-card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-xl); box-shadow: var(--sh-md);
+    padding: 22px; margin-bottom: 18px;
+}
+.guest-subject-title {
+    font-family: var(--font-display); font-size: 17px; font-weight: 700;
+    color: var(--ink); margin-bottom: 12px;
+}
+.guest-ticket-title { font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 6px; }
+.guest-ticket-desc { font-size: 14px; color: var(--dim); line-height: 1.5; margin-bottom: 12px; }
+.guest-ticket-img { width: 100%; border-radius: var(--r-md); margin-bottom: 12px; display: block; }
+.guest-timer { font-size: 13px; color: var(--muted); margin-bottom: 14px; }
+.guest-file-input { display: block; width: 100%; margin-bottom: 12px; font-size: 14px; }
+.guest-score { font-size: 32px; font-weight: 800; color: var(--blue); font-family: var(--font-display); }
+.guest-comment { font-size: 14px; color: var(--dim); line-height: 1.5; margin-top: 8px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="guest-page">
+    <div class="guest-head">
+        <h1>{{ config.title }}</h1>
+        <div style="font-size:14px;color:var(--dim);margin-bottom:10px">{{ participant.display_name }}</div>
+        <div class="guest-code-box">
+            Ваш код: <strong>{{ participant.participant_code }}</strong>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-top:8px">
+            Сохраните код — по нему можно вернуться с другого устройства и посмотреть результат.
+        </div>
+    </div>
+
+    {% if not is_open %}
+    <div class="alert" style="margin-bottom:18px">
+        Приём работ завершён {{ config.ends_at.strftime('%d.%m %H:%M') }} (МСК).
+        Уже выставленные баллы видны ниже.
+    </div>
+    {% endif %}
+
+    {% for item in subjects %}
+    {% set subject = item.name %}
+    {% set submission = item.submission %}
+    <div class="guest-subject-card">
+        <div class="guest-subject-title">{{ subject }}</div>
+
+        {% if not submission %}
+            {% if is_open %}
+            <form method="post" action="/guest/{{ config.token }}/exam/{{ subject }}/ticket">
+                <input type="hidden" name="csrf_token" value="{{ guest_csrf_token }}">
+                <button type="submit" class="btn-blue">Получить билет</button>
+            </form>
+            {% else %}
+            <div style="font-size:14px;color:var(--muted)">Приём завершён — билет не получен.</div>
+            {% endif %}
+
+        {% elif submission.status == "issued" %}
+            <div class="guest-ticket-title">{{ submission.ticket_title }}</div>
+            {% if submission.ticket_image_url %}
+            <img src="{{ submission.ticket_image_url }}" alt="" class="guest-ticket-img">
+            {% endif %}
+            {% if submission.ticket_description %}
+            <div class="guest-ticket-desc">{{ submission.ticket_description | ticket_desc | safe }}</div>
+            {% endif %}
+            <div class="guest-timer" data-started="{{ submission.started_at.isoformat() }}"
+                 data-duration-min="{{ visual_duration_minutes }}">Идёт отсчёт времени…</div>
+            {% if is_open %}
+            <form method="post" action="/guest/{{ config.token }}/exam/{{ subject }}/upload" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ guest_csrf_token }}">
+                <input type="file" name="photo" accept="image/*" capture="environment" class="guest-file-input" required>
+                <button type="submit" class="btn-blue btn-full">Загрузить работу</button>
+            </form>
+            {% else %}
+            <div style="font-size:14px;color:var(--muted)">Приём завершён — отправить работу уже нельзя.</div>
+            {% endif %}
+
+        {% elif submission.status == "submitted" %}
+            <div style="font-size:14px;color:var(--dim)">
+                Работа отправлена {{ submission.submitted_at.strftime('%d.%m %H:%M') }}.
+                Ждите балл и комментарий куратора — они появятся здесь же.
+            </div>
+
+        {% elif submission.status == "scored" %}
+            <div class="guest-score">{{ submission.score }}</div>
+            {% if submission.comment %}
+            <div class="guest-comment">{{ submission.comment }}</div>
+            {% endif %}
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+<script>
+(function(){
+    document.querySelectorAll('.guest-timer').forEach(function(el){
+        var started = new Date(el.getAttribute('data-started')).getTime();
+        var durationMs = parseInt(el.getAttribute('data-duration-min'), 10) * 60000;
+        var deadline = started + durationMs;
+        function tick(){
+            var left = deadline - Date.now();
+            if (left <= 0) { el.textContent = 'Время вышло — отправить работу всё ещё можно.'; return; }
+            var m = Math.floor(left / 60000);
+            var s = Math.floor((left % 60000) / 1000);
+            el.textContent = 'Осталось примерно ' + m + ' мин ' + (s < 10 ? '0' : '') + s + ' с';
+            setTimeout(tick, 1000);
+        }
+        tick();
+    });
+})();
+</script>
+{% endblock %}
