@@ -383,7 +383,7 @@ def test_guest_mode_page_requires_admin_rank(client, user_factory, session_facto
 
 def test_guest_mode_page_renders_tabs_for_admin(admin_client):
     admin_ui_client, _ = admin_client
-    for tab in ("tickets", "link"):
+    for tab in ("tickets", "link", "works"):
         resp = admin_ui_client.get(f"/cabinet/staff/guest-exam?tab={tab}")
         assert resp.status_code == 200
 
@@ -554,6 +554,7 @@ def test_score_flow_by_admin(admin_client, db, guest_config_factory, guest_ticke
         follow_redirects=False,
     )
     assert resp.status_code == 303
+    assert resp.headers["location"] == "/cabinet/staff/guest-exam?tab=works"
 
     db.refresh(submission)
     assert submission.status == "scored"
@@ -595,26 +596,73 @@ def test_guest_assignments_excluded_from_admin_exam_hub_counts(admin_client, db,
 
 
 # ---------------------------------------------------------------------------
-# Проверка сдач переехала на общий экран /cabinet/admin/mock-check?view=guests
+# Вкладка «Работы» на /cabinet/staff/guest-exam — один ряд на участника (имя +
+# дата сдачи), раскрытие по предмету (Рисунок/Композиция), оценка с
+# опциональным текстовым комментарием или фото обратной связи.
 # ---------------------------------------------------------------------------
 
-def test_mock_check_guests_view_lists_submitted_work(admin_client, db, guest_config_factory, guest_ticket_factory):
+def test_works_tab_lists_participant_with_submission(admin_client, db, guest_config_factory, guest_ticket_factory):
     admin_ui_client, _ = admin_client
     config = guest_config_factory()
     guest_ticket_factory(config, subject="Рисунок")
-    participant = guest_exam_service.create_participant(db, config, "Гость с экрана проверки")
+    participant = guest_exam_service.create_participant(db, config, "Гость на проверке")
     submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
     guest_exam_service.record_upload(db, submission, "https://s3.example/x.jpg", "guest-exam/x.jpg")
 
-    resp = admin_ui_client.get("/cabinet/admin/mock-check?view=guests")
+    resp = admin_ui_client.get("/cabinet/staff/guest-exam?tab=works")
     assert resp.status_code == 200
-    assert "Гость с экрана проверки" in resp.text
+    assert "Гость на проверке" in resp.text
 
 
-def test_mock_check_guests_view_requires_admin_rank(client, user_factory, session_factory):
-    curator = user_factory(vk_id=444_445, name="Куратор2", role_name="куратор")
-    sess = session_factory(curator)
-    client.cookies.set("session_id", sess.id)
+def test_works_tab_hides_participant_without_submission(admin_client, db, guest_config_factory):
+    admin_ui_client, _ = admin_client
+    config = guest_config_factory()
+    guest_exam_service.create_participant(db, config, "Ещё не сдавший")
 
-    resp = client.get("/cabinet/admin/mock-check?view=guests")
-    assert resp.status_code == 403
+    resp = admin_ui_client.get("/cabinet/staff/guest-exam?tab=works")
+    assert resp.status_code == 200
+    assert "Ещё не сдавший" not in resp.text
+
+
+def test_participants_board_groups_two_subjects_under_one_participant(db, guest_config_factory, guest_ticket_factory):
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок", title="Билет Р")
+    guest_ticket_factory(config, subject="Композиция", title="Билет К")
+    participant = guest_exam_service.create_participant(db, config, "Гость по двум предметам")
+
+    sub_r = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    guest_exam_service.record_upload(db, sub_r, "https://s3.example/r.jpg", "guest-exam/r.jpg")
+    sub_k = guest_exam_service.issue_ticket(db, participant, "Композиция")
+    guest_exam_service.record_upload(db, sub_k, "https://s3.example/k.jpg", "guest-exam/k.jpg")
+
+    board = guest_exam_service.list_participants_board(db)
+    entry = next(e for e in board if e["participant"].id == participant.id)
+    assert set(entry["subs"].keys()) == {"Рисунок", "Композиция"}
+
+
+def test_score_flow_saves_feedback_image_and_redirects_to_works_tab(admin_client, db, guest_config_factory, guest_ticket_factory):
+    admin_ui_client, admin = admin_client
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = guest_exam_service.create_participant(db, config, "Гость")
+    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    guest_exam_service.record_upload(db, submission, "https://s3.example/x.jpg", "guest-exam/x.jpg")
+
+    resp = admin_ui_client.post(
+        f"/cabinet/staff/guest-exam/works/{submission.id}/score",
+        data={
+            "score": "90",
+            "comment": "",
+            "feedback_image_url": "https://s3.example/feedback.jpg",
+            "feedback_image_path": "guest-exam/feedback/feedback.jpg",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/cabinet/staff/guest-exam?tab=works"
+
+    db.refresh(submission)
+    assert submission.status == "scored"
+    assert submission.feedback_image_url == "https://s3.example/feedback.jpg"
+    assert submission.feedback_image_path == "guest-exam/feedback/feedback.jpg"
+    assert submission.comment is None

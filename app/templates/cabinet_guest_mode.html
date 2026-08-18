@@ -61,19 +61,33 @@
 .gexam-upload-progress { font-size: 12px; color: var(--muted); margin-top: 8px; display: none; }
 .gexam-upload-preview { display: none; margin-top: 8px; }
 .gexam-upload-preview img { max-width: 160px; border-radius: var(--r-md); }
+.gwork-row-btn {
+    display: flex; justify-content: space-between; align-items: baseline;
+    width: 100%; background: none; border: none; cursor: pointer;
+    padding: 0; text-align: left; font-family: inherit;
+}
+.gwork-subjects { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.gwork-subject-btn {
+    padding: 6px 14px; margin-right: 8px; margin-bottom: 12px;
+    border: 1.5px solid var(--line); border-radius: var(--r-md);
+    background: var(--surface-2); color: var(--dim); font-size: 13px; font-weight: 700;
+    cursor: pointer; font-family: inherit;
+}
+.gwork-subject-btn.scored { border-color: var(--blue); color: var(--blue); }
+.gwork-subject-btn:disabled { opacity: .4; cursor: not-allowed; }
+.gwork-detail { margin-top: 4px; }
+.gexam-feedback-img { max-width: 200px; border-radius: var(--r-md); margin-top: 8px; display: block; }
 </style>
 {% endblock %}
 {% block content %}
 <div class="gexam-page">
     <h1>Гостевой режим</h1>
-    <div class="gexam-sub">
-        Пробник для участников без регистрации — билеты и ссылка. Проверка сдач —
-        на <a href="/cabinet/admin/mock-check?view=guests">экране проверки пробников</a>.
-    </div>
+    <div class="gexam-sub">Пробник для участников без регистрации — билеты, ссылка, проверка сдач.</div>
 
     <div class="gexam-tabs">
         <a href="?tab=tickets" class="gexam-tab{% if tab == 'tickets' %} active{% endif %}">Билеты</a>
         <a href="?tab=link" class="gexam-tab{% if tab == 'link' %} active{% endif %}">Ссылка</a>
+        <a href="?tab=works" class="gexam-tab{% if tab == 'works' %} active{% endif %}">Работы</a>
     </div>
 
     {% if tab == "tickets" %}
@@ -181,6 +195,74 @@
             </form>
         </div>
 
+    {% elif tab == "works" %}
+        {% if not board %}
+        <div class="gexam-empty">Пока нет сданных работ.</div>
+        {% endif %}
+        {% for entry in board %}
+        {% set p = entry.participant %}
+        <div class="gexam-row">
+            <button type="button" class="gwork-row-btn" onclick="toggleParticipant({{ p.id }})">
+                <span class="gexam-name">{{ p.display_name }} · {{ p.participant_code }}</span>
+                <span class="gexam-meta">
+                    {% if entry.latest_at %}{{ entry.latest_at.strftime('%d.%m %H:%M') }}{% endif %}
+                </span>
+            </button>
+            <div class="gwork-subjects" id="gwork-subjects-{{ p.id }}" style="display:none">
+                {% for subject in subjects %}
+                {% set sub = entry.subs.get(subject) %}
+                <button type="button" class="gwork-subject-btn{% if sub and sub.status == 'scored' %} scored{% endif %}"
+                        {% if not sub %}disabled{% endif %}
+                        onclick="toggleSubject({{ p.id }}, '{{ subject }}')">
+                    {{ subject }}{% if sub and sub.status == "scored" %} ✓{% endif %}
+                </button>
+                {% endfor %}
+
+                {% for subject in subjects %}
+                {% set sub = entry.subs.get(subject) %}
+                {% if sub %}
+                <div class="gwork-detail" id="gwork-detail-{{ p.id }}-{{ subject }}" style="display:none">
+                    <div class="gexam-subject">{{ sub.subject }} — {{ sub.ticket_title }}</div>
+                    {% if sub.s3_url %}
+                    <a href="{{ sub.s3_url }}" target="_blank" rel="noopener">
+                        <img src="{{ sub.s3_url }}" alt="" class="gexam-img">
+                    </a>
+                    {% endif %}
+                    {% if sub.status == "scored" %}
+                    <div class="gexam-scored">Балл: <strong>{{ sub.score }}</strong>{% if sub.comment %} — {{ sub.comment }}{% endif %}</div>
+                    {% if sub.feedback_image_url %}
+                    <a href="{{ sub.feedback_image_url }}" target="_blank" rel="noopener">
+                        <img src="{{ sub.feedback_image_url }}" alt="" class="gexam-feedback-img">
+                    </a>
+                    {% endif %}
+                    {% else %}
+                    <form class="gexam-form-row" method="post" action="/cabinet/staff/guest-exam/works/{{ sub.id }}/score" id="score-form-{{ sub.id }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                        <input type="number" name="score" step="0.1" min="0" max="100" placeholder="Балл" required>
+                        <textarea name="comment" placeholder="Комментарий (необязательно)"></textarea>
+                        <div style="flex-basis:100%">
+                            <div class="gexam-upload-area" id="fb-area-{{ sub.id }}" onclick="document.getElementById('fb-file-{{ sub.id }}').click()"
+                                 ondragover="event.preventDefault(); this.classList.add('dragover')"
+                                 ondragleave="this.classList.remove('dragover')"
+                                 ondrop="dropFeedbackImage(event, {{ sub.id }})">
+                                Фото обратной связи (необязательно) — перетащите или нажмите
+                            </div>
+                            <input type="file" id="fb-file-{{ sub.id }}" accept="image/*" style="display:none" onchange="onFeedbackFileSelected(event, {{ sub.id }})">
+                            <div class="gexam-upload-progress" id="fb-progress-{{ sub.id }}">Загружаем…</div>
+                            <div class="gexam-upload-preview" id="fb-preview-{{ sub.id }}"><img id="fb-preview-img-{{ sub.id }}" alt=""></div>
+                            <input type="hidden" name="feedback_image_url" id="fb-image-url-{{ sub.id }}">
+                            <input type="hidden" name="feedback_image_path" id="fb-image-path-{{ sub.id }}">
+                        </div>
+                        <button type="submit" class="btn-blue">Оценить</button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+
     {% endif %}
 </div>
 <script>
@@ -222,6 +304,63 @@ function uploadTicketImage(file){
             document.getElementById('upload-preview-img').src = data.url;
             document.getElementById('upload-preview').style.display = 'block';
             document.getElementById('upload-area').style.display = 'none';
+        } else {
+            progress.textContent = 'Ошибка загрузки' + (data && data.error ? ': ' + data.error : '');
+        }
+    };
+    xhr.send(fd);
+}
+
+function toggleParticipant(id){
+    var el = document.getElementById('gwork-subjects-' + id);
+    if (!el) return;
+    el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
+}
+
+function toggleSubject(participantId, subject){
+    var el = document.getElementById('gwork-detail-' + participantId + '-' + subject);
+    if (!el) return;
+    el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
+}
+
+function dropFeedbackImage(e, subId){
+    e.preventDefault();
+    document.getElementById('fb-area-' + subId).classList.remove('dragover');
+    var file = e.dataTransfer.files[0];
+    if (file) uploadFeedbackImage(file, subId);
+}
+function onFeedbackFileSelected(e, subId){
+    var file = e.target.files[0];
+    if (file) uploadFeedbackImage(file, subId);
+}
+function uploadFeedbackImage(file, subId){
+    var progress = document.getElementById('fb-progress-' + subId);
+    progress.style.display = 'block';
+    progress.textContent = 'Загружаем…';
+
+    var csrf = document.querySelector('#score-form-' + subId + ' input[name="csrf_token"]').value;
+    var fd = new FormData();
+    fd.append('file', file);
+    fd.append('csrf_token', csrf);
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/cabinet/upload-ticket-image');
+    xhr.setRequestHeader('X-CSRF-Token', csrf);
+    xhr.upload.onprogress = function(e){
+        if (!e.lengthComputable) return;
+        progress.textContent = 'Загружаем ' + Math.round((e.loaded / e.total) * 100) + '%…';
+    };
+    xhr.onerror = function(){ progress.textContent = 'Ошибка сети'; };
+    xhr.onload = function(){
+        var data = null;
+        try { data = JSON.parse(xhr.responseText); } catch (_) {}
+        if (xhr.status >= 200 && xhr.status < 300 && data && data.success && data.url) {
+            progress.style.display = 'none';
+            document.getElementById('fb-image-url-' + subId).value = data.url;
+            document.getElementById('fb-image-path-' + subId).value = data.path || '';
+            document.getElementById('fb-preview-img-' + subId).src = data.url;
+            document.getElementById('fb-preview-' + subId).style.display = 'block';
+            document.getElementById('fb-area-' + subId).style.display = 'none';
         } else {
             progress.textContent = 'Ошибка загрузки' + (data && data.error ? ': ' + data.error : '');
         }

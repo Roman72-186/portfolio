@@ -84,16 +84,32 @@ def get_primary_config(db: DBSession) -> GuestExamConfig | None:
     return db.query(GuestExamConfig).order_by(GuestExamConfig.created_at.desc()).first()
 
 
-def list_reviewable_submissions(db: DBSession) -> list[tuple[GuestSubmission, GuestParticipant]]:
-    """Сданные гостевые работы (submitted/scored) — источник для фильтра «Гости»
-    на экране проверки пробников (`/cabinet/admin/mock-check?view=guests`)."""
-    return (
+def list_participants_board(db: DBSession) -> list[dict]:
+    """Участники со сданными/оценёнными работами — для вкладки «Работы»: один
+    ряд на участника (имя + дата последней сдачи), с раскрытием по предметам
+    (`subs["Рисунок"|"Композиция"]` → GuestSubmission, если сдан)."""
+    rows = (
         db.query(GuestSubmission, GuestParticipant)
         .join(GuestParticipant, GuestSubmission.participant_id == GuestParticipant.id)
         .filter(GuestSubmission.status.in_(["submitted", "scored"]))
-        .order_by(GuestSubmission.status.asc(), GuestSubmission.submitted_at.desc())
         .all()
     )
+    board: dict[int, dict] = {}
+    for submission, participant in rows:
+        entry = board.setdefault(participant.id, {
+            "participant": participant,
+            "subs": {},
+            "latest_at": None,
+        })
+        entry["subs"][submission.subject] = submission
+        if submission.submitted_at and (
+            entry["latest_at"] is None or submission.submitted_at > entry["latest_at"]
+        ):
+            entry["latest_at"] = submission.submitted_at
+
+    board_list = list(board.values())
+    board_list.sort(key=lambda e: e["latest_at"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    return board_list
 
 
 def record_visit(db: DBSession, config_id: int, participant_id: int | None = None) -> None:
@@ -342,9 +358,13 @@ def score_submission(
     score,
     comment: str | None,
     scored_by_id: int,
+    feedback_image_url: str | None = None,
+    feedback_image_path: str | None = None,
 ) -> GuestSubmission:
     submission.score = score
     submission.comment = (comment or "").strip() or None
+    submission.feedback_image_url = feedback_image_url or None
+    submission.feedback_image_path = feedback_image_path or None
     submission.scored_by_id = scored_by_id
     submission.scored_at = datetime.now(timezone.utc)
     submission.status = "scored"

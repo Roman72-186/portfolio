@@ -1,21 +1,18 @@
 """Гостевой режим — админ-панель (Трек B), ВРЕМЕННЫЙ модуль.
 
 Отдельная кнопка «Гостевой режим» только у админа и суперадмина (rank >= 4), одна
-страница с двумя вкладками: Билеты (форма создания — та же логика, что у реальных
+страница с тремя вкладками: Билеты (форма создания — та же логика, что у реальных
 билетов пробника: поля + фото через уже существующий /cabinet/upload-ticket-image,
 но билет пишется в настоящую ExamTicket/ExamAssignment(kind="guest") — см.
 app/services/guest_exam.py), Ссылка (бессрочная, только вкл/выкл вручную +
-статистика входов).
-
-Проверка сдач переехала на общий экран проверки пробников —
-`/cabinet/admin/mock-check?view=guests` (app/api/cabinet_admin.py) — это тот же
-экран, которым staff уже проверяет реальных учеников, с отдельным фильтром
-«Гости». POST-роут простановки балла (`/works/{id}/score` ниже) не переносился,
-шаблон mock-check просто отправляет форму на него же.
+статистика входов), Работы (список участников со сдачами — один ряд на
+участника, раскрывается на «Рисунок»/«Композиция», внутри — фото + балл +
+необязательный комментарий или фото обратной связи).
 
 Вкладка «Билеты» работает с «текущей» ссылкой — активной, либо последней
 созданной, если активных нет (см. guest_exam_service.get_primary_config); сами
-билеты общие для всех ссылок (ключ — subject, не config_id).
+билеты общие для всех ссылок (ключ — subject, не config_id). Вкладка «Работы»
+не привязана к конкретной ссылке — показывает всех участников со сдачами.
 
 См. app/services/guest_exam.py и
 plans/2026-08-18-apparchi-student-cabinet-and-guest-trial.md, трек B.
@@ -43,13 +40,14 @@ def guest_mode_page(
     db: Annotated[DBSession, Depends(get_db)],
     tab: str = "tickets",
 ):
-    if tab not in ("tickets", "link"):
+    if tab not in ("tickets", "link", "works"):
         tab = "tickets"
 
     config = guest_exam_service.get_primary_config(db)
     configs = db.query(GuestExamConfig).order_by(GuestExamConfig.created_at.desc()).all()
     stats_by_config = {c.id: guest_exam_service.config_stats(db, c.id) for c in configs}
     tickets = guest_exam_service.list_guest_tickets(db)
+    board = guest_exam_service.list_participants_board(db) if tab == "works" else []
 
     return templates.TemplateResponse("cabinet_guest_mode.html", {
         "request": request,
@@ -60,6 +58,7 @@ def guest_mode_page(
         "stats_by_config": stats_by_config,
         "tickets": tickets,
         "subjects": MOCK_SUBJECTS,
+        "board": board,
         "public_url": (
             str(request.base_url).rstrip("/") + f"/guest/{config.token}" if config else None
         ),
@@ -152,7 +151,7 @@ def guest_mode_delete_ticket(
     return RedirectResponse("/cabinet/staff/guest-exam?tab=tickets", status_code=303)
 
 
-# ── Проверка сдач — см. /cabinet/admin/mock-check?view=guests ───────────────
+# ── Вкладка «Работы» ─────────────────────────────────────────────────────────
 
 @router.post("/works/{submission_id}/score")
 def guest_mode_score(
@@ -162,6 +161,8 @@ def guest_mode_score(
     _csrf: Annotated[None, Depends(require_csrf)],
     score: Annotated[float, Form()],
     comment: Annotated[str, Form()] = "",
+    feedback_image_url: Annotated[str, Form()] = "",
+    feedback_image_path: Annotated[str, Form()] = "",
 ):
     submission = db.query(GuestSubmission).filter(GuestSubmission.id == submission_id).first()
     if not submission:
@@ -170,6 +171,11 @@ def guest_mode_score(
         raise HTTPException(status_code=400, detail="Гость ещё не загрузил работу")
 
     guest_exam_service.score_submission(
-        db, submission, score=score, comment=comment, scored_by_id=user["user_id"]
+        db, submission,
+        score=score,
+        comment=comment,
+        scored_by_id=user["user_id"],
+        feedback_image_url=feedback_image_url.strip() or None,
+        feedback_image_path=feedback_image_path.strip() or None,
     )
-    return RedirectResponse("/cabinet/admin/mock-check?view=guests", status_code=303)
+    return RedirectResponse("/cabinet/staff/guest-exam?tab=works", status_code=303)

@@ -123,6 +123,10 @@ class GuestSubmission(Base):
 
     score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Необязательная альтернатива/дополнение к текстовому комментарию — фото
+    # обратной связи (например, разметка поверх присланной работы).
+    feedback_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    feedback_image_path: Mapped[str | None] = mapped_column(String(300), nullable=True)
     scored_by_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

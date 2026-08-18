@@ -4,38 +4,6 @@
 <style>
 .main { max-width: 100% !important; padding: 0 !important; }
 
-.mockcheck-view-tabs {
-    display: flex; gap: 8px; padding: 10px 16px 0;
-    border-bottom: 1px solid var(--line); background: var(--surface);
-}
-.mockcheck-view-tab {
-    padding: 8px 14px; font-size: 13px; font-weight: 700; color: var(--dim);
-    text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
-}
-.mockcheck-view-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
-.guest-review-page { max-width: 680px; margin: 0 auto; padding: 20px 16px 80px; }
-.guest-review-row {
-    background: var(--surface); border: 1px solid var(--line);
-    border-radius: var(--r-lg); padding: 16px 18px; margin-bottom: 12px;
-}
-.guest-review-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 6px; }
-.guest-review-name { font-weight: 700; color: var(--ink); font-size: 15px; }
-.guest-review-meta { font-size: 12px; color: var(--muted); }
-.guest-review-subject { font-size: 13px; color: var(--dim); margin-bottom: 10px; }
-.guest-review-img { max-width: 100%; border-radius: var(--r-md); margin-bottom: 10px; display: block; }
-.guest-review-scored { font-size: 13px; color: var(--dim); }
-.guest-review-form-row { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
-.guest-review-form-row input[type=number] {
-    width: 90px; padding: 10px 12px; border: 1.5px solid var(--line);
-    border-radius: var(--r-md); background: var(--surface-2); color: var(--ink); font-size: 14px;
-}
-.guest-review-form-row textarea {
-    flex: 1; min-width: 220px; padding: 10px 12px; border: 1.5px solid var(--line);
-    border-radius: var(--r-md); background: var(--surface-2); color: var(--ink);
-    font-size: 14px; font-family: inherit; resize: vertical; min-height: 42px;
-}
-.guest-review-empty { font-size: 14px; color: var(--muted); padding: 24px 0; text-align: center; }
-
 .split-wrap {
     display: flex;
     height: calc(100vh - 57px);
@@ -478,45 +446,6 @@
 </style>
 {% endblock %}
 {% block content %}
-<div class="mockcheck-view-tabs">
-    <a href="/cabinet/admin/mock-check" class="mockcheck-view-tab{% if view != 'guests' %} active{% endif %}">Ученики</a>
-    <a href="/cabinet/admin/mock-check?view=guests" class="mockcheck-view-tab{% if view == 'guests' %} active{% endif %}">
-        Гости{% if guest_total_unchecked %} <span class="sidebar-counter">{{ guest_total_unchecked }}</span>{% endif %}
-    </a>
-</div>
-{% if view == "guests" %}
-<div class="guest-review-page">
-    {% if not guest_rows %}
-    <div class="guest-review-empty">Пока нет сданных гостевых работ.</div>
-    {% endif %}
-    {% for submission, participant in guest_rows %}
-    <div class="guest-review-row">
-        <div class="guest-review-head">
-            <span class="guest-review-name">{{ participant.display_name }} · {{ participant.participant_code }}</span>
-            <span class="guest-review-meta">
-                {% if submission.submitted_at %}{{ submission.submitted_at.strftime('%d.%m %H:%M') }}{% endif %}
-            </span>
-        </div>
-        <div class="guest-review-subject">{{ submission.subject }} — {{ submission.ticket_title }}</div>
-        {% if submission.s3_url %}
-        <a href="{{ submission.s3_url }}" target="_blank" rel="noopener">
-            <img src="{{ submission.s3_url }}" alt="" class="guest-review-img">
-        </a>
-        {% endif %}
-        {% if submission.status == "scored" %}
-        <div class="guest-review-scored">Балл: <strong>{{ submission.score }}</strong>{% if submission.comment %} — {{ submission.comment }}{% endif %}</div>
-        {% else %}
-        <form class="guest-review-form-row" method="post" action="/cabinet/staff/guest-exam/works/{{ submission.id }}/score">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-            <input type="number" name="score" step="0.1" min="0" max="100" placeholder="Балл" required>
-            <textarea name="comment" placeholder="Комментарий"></textarea>
-            <button type="submit" class="btn-blue">Оценить</button>
-        </form>
-        {% endif %}
-    </div>
-    {% endfor %}
-</div>
-{% else %}
 <script>
 const CSRF_TOKEN = "{{ csrf_token(request) }}";
 const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
@@ -1162,5 +1091,4 @@ function cap(s) {
 
 if (INITIAL_STUDENT_ID) selectStudent(INITIAL_STUDENT_ID);
 </script>
-{% endif %}
 {% endblock %}

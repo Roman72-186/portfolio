@@ -216,29 +216,9 @@ def admin_mock_check(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     student: int = Query(0),
-    view: str = Query("students"),
 ):
     from app.constants import MOCK_SUBJECTS, TARIFFS
     from app.models.role import Role
-    from app.services import guest_exam as guest_exam_service
-
-    guest_rows = guest_exam_service.list_reviewable_submissions(db)
-    guest_total_unchecked = sum(1 for s, _p in guest_rows if s.status == "submitted")
-
-    if view == "guests":
-        return templates.TemplateResponse("cabinet_admin_mock_check.html", {
-            "request": request,
-            "user": user,
-            "view": "guests",
-            "guest_rows": guest_rows,
-            "guest_total_unchecked": guest_total_unchecked,
-            "sidebar_students": [],
-            "initial_student_id": 0,
-            "mock_subjects": MOCK_SUBJECTS,
-            "total_unchecked": 0,
-            "total_students": 0,
-            "tariffs": [],
-        })
 
     student_role = db.query(Role).filter(Role.rank == 1).first()
     sidebar_students: list[dict] = []
@@ -300,9 +280,6 @@ def admin_mock_check(
     return templates.TemplateResponse("cabinet_admin_mock_check.html", {
         "request": request,
         "user": user,
-        "view": "students",
-        "guest_rows": guest_rows,
-        "guest_total_unchecked": guest_total_unchecked,
         "sidebar_students": sidebar_students,
         "initial_student_id": student,
         "mock_subjects": MOCK_SUBJECTS,
