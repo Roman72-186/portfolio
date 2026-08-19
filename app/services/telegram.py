@@ -54,7 +54,16 @@ async def send_message(chat_id: int, text: str, *, reply_markup: dict | None = N
         return False
 
     client = await _get_client()
-    payload: dict = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+    payload: dict = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+        # Одноразовые ссылки входа идут в этом же тексте — Telegram сам
+        # открывает URL для карточки-превью почти сразу после отправки и
+        # сжигает токен раньше, чем получатель успевает нажать (LinkPreviewOptions,
+        # заменил disable_web_page_preview в Bot API с 2023-12-29).
+        "link_preview_options": {"is_disabled": True},
+    }
     if reply_markup is not None:
         payload["reply_markup"] = reply_markup
 
