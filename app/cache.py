@@ -81,6 +81,40 @@ def pop_vk_pkce(state: str) -> dict[str, Any] | None:
         return None
 
 
+def set_telegram_oidc_pkce(state: str, code_verifier: str, ttl: int = 300) -> bool:
+    """Store Telegram Login (OIDC) PKCE verifier server-side, mirrors set_vk_pkce."""
+    if not _client:
+        return False
+    payload = json.dumps({
+        "code_verifier": code_verifier,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    try:
+        _client.setex(f"tg_oidc_pkce:{state}", ttl, payload)
+        return True
+    except Exception:
+        return False
+
+
+def pop_telegram_oidc_pkce(state: str) -> dict[str, Any] | None:
+    """Atomically read and delete Telegram OIDC PKCE verifier, mirrors pop_vk_pkce."""
+    if not _client:
+        return None
+    try:
+        pipe = _client.pipeline()
+        pipe.get(f"tg_oidc_pkce:{state}")
+        pipe.delete(f"tg_oidc_pkce:{state}")
+        raw, _ = pipe.execute()
+        if not raw:
+            return None
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return None
+        return data
+    except Exception:
+        return None
+
+
 # ── Unread notification count cache (TTL 60s) ─────────────────────────────────
 
 UNREAD_TTL = 60  # seconds

@@ -20,3 +20,4 @@ pillow-heif==0.18.0
 apscheduler==3.10.4
 openpyxl==3.1.5
 pywebpush==2.4.0
+pyjwt[crypto]==2.13.0

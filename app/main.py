@@ -24,6 +24,7 @@ from app.services.rbac import seed_roles_and_permissions
 from app.services import n8n as n8n_service
 from app.services import vk as vk_service
 from app.services import telegram as telegram_service
+from app.services import telegram_login as telegram_login_service
 from app.services import drive as drive_service
 from app.services import exam_scheduler
 import app.models  # noqa: F401 — ensures all models are registered with Base.metadata
@@ -57,6 +58,7 @@ async def lifespan(app: FastAPI):
         await drive_service.init_client()
     await vk_service.init_client()
     await telegram_service.init_client()
+    await telegram_login_service.init_client()
     should_start_scheduler = (
         not os.environ.get("PYTEST_CURRENT_TEST")
         and settings.database_url != "sqlite:///:memory:"
@@ -69,6 +71,7 @@ async def lifespan(app: FastAPI):
         await drive_service.close_client()
     await vk_service.close_client()
     await telegram_service.close_client()
+    await telegram_login_service.close_client()
     if should_start_scheduler:
         exam_scheduler.stop_scheduler()
 

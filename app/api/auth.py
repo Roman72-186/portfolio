@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -12,7 +13,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
-from app.cache import invalidate_session, pop_vk_pkce, set_vk_pkce
+from app.cache import (
+    invalidate_session, pop_vk_pkce, set_vk_pkce,
+    pop_telegram_oidc_pkce, set_telegram_oidc_pkce,
+)
 from app.config import settings
 from app.db.database import get_db
 from app.dependencies import (
@@ -32,6 +36,11 @@ from app.services.auth_links import (
 from app.services.vk import (
     get_authorize_url, exchange_code, get_user_info, check_group_membership,
     generate_code_verifier, generate_code_challenge,
+)
+from app.services.telegram_login import (
+    get_authorize_url as tg_get_authorize_url,
+    exchange_code as tg_exchange_code,
+    verify_id_token as tg_verify_id_token,
 )
 from app.services import drive as drive_service
 from app.services import telegram as telegram_service
@@ -57,6 +66,10 @@ def _vk_login_enabled() -> bool:
     return bool(settings.vk_app_id and settings.vk_app_secret and settings.vk_group_id)
 
 
+def _telegram_login_enabled() -> bool:
+    return bool(settings.telegram_login_client_id and settings.telegram_login_client_secret)
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -65,7 +78,7 @@ def _render_login(request: Request, error: str | None = None):
     context = {
         "request": request,
         "vk_login_enabled": _vk_login_enabled(),
-        "telegram_bot_username": settings.telegram_bot_username,
+        "telegram_login_enabled": _telegram_login_enabled(),
     }
     if error:
         context["error"] = error
@@ -89,6 +102,27 @@ def _load_pkce_cookie(request: Request) -> tuple[dict | None, str | None]:
         return None, "Ссылка истекла — вы слишком долго авторизовывались. Попробуйте снова."
     except (BadSignature, KeyError) as exc:
         logger.warning("VK callback: pkce_cv bad signature or key: %s", exc)
+        return None, "Ссылка истекла. Попробуйте снова."
+    return pkce_data, None
+
+
+def _load_telegram_pkce_cookie(request: Request) -> tuple[dict | None, str | None]:
+    """Load signed PKCE cookie for Telegram Login, mirrors _load_pkce_cookie."""
+    pkce_cookie = request.cookies.get("tg_pkce_cv")
+    if not pkce_cookie:
+        logger.warning("Telegram login callback: tg_pkce_cv cookie missing (cookies=%s)", list(request.cookies.keys()))
+        return None, "Ошибка сессии. Попробуйте снова или очистите cookies."
+    try:
+        pkce_data = _signer.loads(pkce_cookie, max_age=300)
+        if not isinstance(pkce_data, dict):
+            raise KeyError("tg pkce cookie payload is not a dict")
+        _ = pkce_data["cv"]
+        _ = pkce_data["st"]
+    except SignatureExpired:
+        logger.warning("Telegram login callback: tg_pkce_cv cookie expired")
+        return None, "Ссылка истекла — вы слишком долго авторизовывались. Попробуйте снова."
+    except (BadSignature, KeyError) as exc:
+        logger.warning("Telegram login callback: tg_pkce_cv bad signature or key: %s", exc)
         return None, "Ссылка истекла. Попробуйте снова."
     return pkce_data, None
 
@@ -354,6 +388,133 @@ async def vk_callback(
             drive_service.sync_drive_works,
             user.id, user.vk_id, user.tariff or "", user.tg_username or "",
         )
+    return _create_session_response(db, user)
+
+
+@router.get("/auth/telegram-login")
+@limiter.limit("20/minute")
+async def telegram_login_start(request: Request):
+    """Основной вход на сайте: редирект на oauth.telegram.org (обычная
+    веб-страница, без выхода в приложение Telegram) — чинит вход из
+    iOS-приложения, добавленного на экран «Домой» (см. telegram_login.py)."""
+    if not _telegram_login_enabled():
+        return RedirectResponse("/?error=Вход через Telegram пока не настроен", status_code=302)
+
+    state = secrets.token_urlsafe(32)
+    code_verifier = generate_code_verifier()
+    code_challenge = generate_code_challenge(code_verifier)
+
+    stored_in_redis = set_telegram_oidc_pkce(state, code_verifier, ttl=300)
+    if not stored_in_redis:
+        logger.warning("Telegram login: failed to store PKCE in Redis for state=%s", state[:12])
+
+    pkce_signed = _signer.dumps({"cv": code_verifier, "st": state})
+    url = tg_get_authorize_url(state, code_challenge)
+    response = RedirectResponse(url, status_code=302)
+    response.set_cookie(
+        "tg_pkce_cv", pkce_signed,
+        httponly=True, secure=True, samesite="lax",
+        max_age=300, path="/",
+    )
+    return response
+
+
+@router.get("/auth/telegram-login/callback", response_class=HTMLResponse)
+@limiter.limit("20/minute")
+async def telegram_login_callback(
+    request: Request,
+    db: Annotated[DBSession, Depends(get_db)],
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+):
+    if error or not code:
+        logger.warning("Telegram login callback error: %s", error)
+        return _render_login(request, "Авторизация через Telegram отменена")
+
+    if not state:
+        logger.warning("Telegram login callback: state missing")
+        return _render_login(request, "Ошибка безопасности. Попробуйте снова.")
+
+    code_verifier: str | None = None
+    stored_state: str | None = None
+
+    redis_pkce = pop_telegram_oidc_pkce(state)
+    if redis_pkce:
+        code_verifier = redis_pkce.get("code_verifier")
+        stored_state = state
+    else:
+        logger.warning("Telegram login callback: PKCE missing in Redis for state=%s", state[:12])
+        cookie_pkce, cookie_error = _load_telegram_pkce_cookie(request)
+        if not cookie_pkce:
+            return _render_login(request, cookie_error)
+        code_verifier = cookie_pkce["cv"]
+        stored_state = cookie_pkce["st"]
+
+    if not code_verifier or not stored_state:
+        return _render_login(request, "Ошибка сессии. Попробуйте снова или очистите cookies.")
+
+    if stored_state != state:
+        logger.warning("Telegram login callback: state mismatch stored=%r url=%r", stored_state[:20], state[:20])
+        return _render_login(request, "Ошибка безопасности. Попробуйте снова.")
+
+    try:
+        token_data = await tg_exchange_code(code, code_verifier)
+    except Exception as exc:
+        logger.error("Telegram login token exchange failed: %s", exc)
+        return _render_login(request, "Ошибка авторизации Telegram. Попробуйте позже.")
+
+    id_token = token_data.get("id_token")
+    if not id_token:
+        return _render_login(request, "Telegram не вернул данные авторизации.")
+
+    try:
+        claims = await asyncio.to_thread(tg_verify_id_token, id_token)
+    except Exception as exc:
+        logger.error("Telegram login id_token verification failed: %s", exc)
+        return _render_login(request, "Не удалось проверить данные Telegram. Попробуйте позже.")
+
+    chat_id = claims.get("id")
+    if not chat_id:
+        return _render_login(request, "Telegram не вернул идентификатор пользователя.")
+
+    is_member = await telegram_service.check_channel_membership(chat_id)
+    if is_member is None:
+        logger.warning("Telegram login callback: membership check inconclusive for chat_id=%s", chat_id)
+        return templates.TemplateResponse("denied.html", {
+            "request": request,
+            "reason": "Не удалось проверить участие в закрытом канале. Попробуйте войти ещё раз через минуту.",
+            "recheck_url": "/auth/telegram-login",
+            "recheck_note": "Попробуйте войти ещё раз через минуту.",
+            "support_url": _SUPPORT_URL,
+        })
+
+    if not is_member:
+        existing_user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
+        if existing_user:
+            existing_user.is_group_member = False
+            db.commit()
+        return templates.TemplateResponse("denied.html", {
+            "request": request,
+            "reason": "Доступ запрещён. Вы не являетесь участником закрытого канала.",
+            "recheck_url": "/auth/telegram-login",
+            "recheck_note": "Вступите в канал, затем нажмите «Проверить снова» — это заново запустит вход.",
+            "support_url": _SUPPORT_URL,
+        })
+
+    tg_from = _TgFrom(
+        id=chat_id,
+        username=claims.get("preferred_username"),
+        first_name=claims.get("given_name"),
+        last_name=claims.get("family_name"),
+    )
+    user = _upsert_telegram_user(db, chat_id=chat_id, tg_from=tg_from, is_group_member=True)
+
+    if not user.is_active:
+        db.commit()
+        return templates.TemplateResponse("blocked.html", {"request": request})
+
+    db.commit()
     return _create_session_response(db, user)
 
 

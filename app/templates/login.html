@@ -128,8 +128,8 @@
         <div class="alert alert-error" style="margin-top:16px">{{ error }}</div>
         {% endif %}
 
-        {% if telegram_bot_username %}
-        <a href="https://t.me/{{ telegram_bot_username }}" class="tg-btn">
+        {% if telegram_login_enabled %}
+        <a href="/auth/telegram-login" class="tg-btn">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8-1.7 8.01c-.12.55-.46.68-.93.43l-2.57-1.9-1.24 1.2c-.14.14-.26.26-.52.26l.18-2.62 4.74-4.28c.2-.18-.05-.28-.32-.1L7.95 14.4 5.41 13.6c-.55-.18-.56-.55.12-.81l8.97-3.46c.45-.17.85.11.14.47z"/>
             </svg>
@@ -144,7 +144,7 @@
             </svg>
             Войти через ВКонтакте
         </a>
-        {% elif not telegram_bot_username %}
+        {% elif not telegram_login_enabled %}
         <div class="alert alert-error" style="margin-top:16px">Вход временно недоступен. Напишите в поддержку.</div>
         {% endif %}
 

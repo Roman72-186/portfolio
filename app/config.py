@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str = "" # сверяется с X-Telegram-Bot-Api-Secret-Token
     telegram_link_ttl_hours: int = 72 # TTL ссылки-приглашения для действующих учеников
 
+    # Telegram Login (OIDC) — основной способ входа на сайте, заменяет
+    # deep-link на бота (тот остаётся для /start-привязки существующих
+    # учеников и как канал уведомлений). Client ID/Secret выдаёт @BotFather
+    # (раздел Login Widget бота), вписывает в .env.prod владелец.
+    telegram_login_client_id: str = ""
+    telegram_login_client_secret: str = ""
+    telegram_login_redirect_uri: str = "https://apparchi.ru/auth/telegram-login/callback"
+
     # Web Push (Фаза 3) — VAPID-ключи выпускает и вписывает в .env.prod владелец
     vapid_public_key: str = ""   # отдаётся браузеру для подписки (pushManager.subscribe)
     vapid_private_key: str = ""  # серверный ключ подписи push-сообщений, не покидает сервер

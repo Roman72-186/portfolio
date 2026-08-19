@@ -45,13 +45,19 @@
         </a>
         {% endif %}
 
-        <a href="/auth/vk/recheck" class="btn-outline">
+        {% if support_url %}
+        <a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" class="btn-outline">
+            Написать в поддержку
+        </a>
+        {% endif %}
+
+        <a href="{{ recheck_url | default('/auth/vk/recheck') }}" class="btn-outline">
             ↻ Проверить снова
         </a>
         </div>
 
         <p style="color:var(--dim);font-size:12px;margin-top:20px;line-height:1.5">
-            Вступите в сообщество, затем нажмите «Проверить снова». Повторно входить не нужно.
+            {{ recheck_note | default("Вступите в сообщество, затем нажмите «Проверить снова». Повторно входить не нужно.") }}
         </p>
     </div>
 </div>
