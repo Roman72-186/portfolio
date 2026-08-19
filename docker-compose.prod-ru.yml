@@ -60,7 +60,7 @@ services:
       - "traefik.http.middlewares.sec-headers.headers.frameDeny=true"
       - "traefik.http.middlewares.sec-headers.headers.referrerPolicy=strict-origin-when-cross-origin"
       - "traefik.http.middlewares.sec-headers.headers.permissionsPolicy=geolocation=(), microphone=(), camera=()"
-      - "traefik.http.middlewares.sec-headers.headers.contentSecurityPolicy=default-src 'self'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'unsafe-inline' https://telegram.org https://assets.mediadelivery.net https://cdn.jsdelivr.net; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' blob: https:; frame-src https://iframe.mediadelivery.net; frame-ancestors 'none'"
+      - "traefik.http.middlewares.sec-headers.headers.contentSecurityPolicy=default-src 'self'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'unsafe-inline' https://telegram.org https://assets.mediadelivery.net https://cdn.jsdelivr.net; worker-src 'self'; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' blob: https:; frame-src https://iframe.mediadelivery.net; frame-ancestors 'none'"
       - "traefik.http.middlewares.sec-headers.headers.customResponseHeaders.Server="
       - "traefik.http.middlewares.sec-headers.headers.customResponseHeaders.X-Powered-By="
     networks:

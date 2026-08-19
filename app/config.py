@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str = "" # сверяется с X-Telegram-Bot-Api-Secret-Token
     telegram_link_ttl_hours: int = 72 # TTL ссылки-приглашения для действующих учеников
 
+    # Web Push (Фаза 3) — VAPID-ключи выпускает и вписывает в .env.prod владелец
+    vapid_public_key: str = ""   # отдаётся браузеру для подписки (pushManager.subscribe)
+    vapid_private_key: str = ""  # серверный ключ подписи push-сообщений, не покидает сервер
+    vapid_claim_email: str = ""  # mailto: в VAPID claims, требование push-сервисов (FCM и др.)
+
     # S3 (TimeWeb сейчас, Selectel — после миграции)
     s3_endpoint: str = ""        # e.g. https://s3.timeweb.cloud — API-эндпоинт для boto3 (put/get/delete)
     s3_bucket: str = ""

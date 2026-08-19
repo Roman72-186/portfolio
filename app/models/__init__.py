@@ -29,3 +29,4 @@ from app.models.guest_exam import (
     GuestSubmission,
     GuestVisit,
 )
+from app.models.push_subscription import PushSubscription

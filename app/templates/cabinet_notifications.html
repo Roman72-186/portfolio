@@ -53,6 +53,32 @@
 }
 .notif-empty-icon { font-size: 40px; margin-bottom: 12px; }
 .notif-empty-text { font-size: 14px; }
+
+.push-toggle-card {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 16px; border-radius: var(--r-lg);
+    background: var(--surface); border: 1px solid var(--line);
+    margin-bottom: 14px;
+}
+.push-toggle-body { flex: 1; min-width: 0; }
+.push-toggle-title { font-size: 14px; font-weight: 700; color: var(--ink); margin-bottom: 2px; }
+.push-toggle-note { font-size: 12px; color: var(--dim); line-height: 1.4; }
+.push-toggle-switch {
+    position: relative; flex-shrink: 0; width: 44px; height: 26px;
+}
+.push-toggle-switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.push-toggle-track {
+    position: absolute; inset: 0; background: var(--line);
+    border-radius: var(--r-pill); transition: background 0.15s;
+}
+.push-toggle-track::before {
+    content: ''; position: absolute; top: 3px; left: 3px;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #fff; box-shadow: var(--sh-md); transition: transform 0.15s;
+}
+.push-toggle-switch input:checked + .push-toggle-track { background: var(--blue); }
+.push-toggle-switch input:checked + .push-toggle-track::before { transform: translateX(18px); }
+.push-toggle-switch input:disabled + .push-toggle-track { opacity: 0.5; cursor: not-allowed; }
 </style>
 {% endblock %}
 {% block content %}
@@ -65,6 +91,17 @@
         <span class="page-title-badge">{{ unread_count }} новых</span>
         {% endif %}
     </h1>
+
+    <div class="push-toggle-card">
+        <div class="push-toggle-body">
+            <div class="push-toggle-title">Push-уведомления в браузере</div>
+            <div class="push-toggle-note" id="pushToggleNote">Проверка поддержки браузера…</div>
+        </div>
+        <label class="push-toggle-switch">
+            <input type="checkbox" id="pushToggleInput" disabled>
+            <span class="push-toggle-track"></span>
+        </label>
+    </div>
 
     {% if notifications %}
     <div class="notif-list">
@@ -99,6 +136,98 @@
     </div>
     {% endif %}
 </div>
+
+<script>
+(function(){
+    var input = document.getElementById('pushToggleInput');
+    var note = document.getElementById('pushToggleNote');
+    var CSRF = '{{ csrf_token(request) }}';
+    var VAPID_PUBLIC_KEY = '{{ settings.vapid_public_key }}';
+
+    function setNote(text){ note.textContent = text; }
+
+    function urlBase64ToUint8Array(base64String){
+        var padding = '='.repeat((4 - base64String.length % 4) % 4);
+        var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+        var raw = atob(base64);
+        var out = new Uint8Array(raw.length);
+        for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+        return out;
+    }
+
+    function postJson(url, body){
+        return fetch(url, {
+            method: 'POST',
+            headers: {'X-CSRF-Token': CSRF, 'Content-Type': 'application/json'},
+            body: JSON.stringify(body),
+            cache: 'no-store'
+        });
+    }
+
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        setNote('Браузер не поддерживает push-уведомления (или это встроенный браузер Telegram — открой сайт в обычном браузере).');
+        return;
+    }
+    if (!VAPID_PUBLIC_KEY) {
+        setNote('Push пока не настроен на сервере.');
+        return;
+    }
+    if (Notification.permission === 'denied') {
+        setNote('Уведомления заблокированы в настройках браузера для этого сайта.');
+        return;
+    }
+
+    navigator.serviceWorker.register('/sw.js').then(function(){
+        return navigator.serviceWorker.ready;
+    }).then(function(registration){
+        return registration.pushManager.getSubscription().then(function(sub){
+            input.disabled = false;
+            input.checked = !!sub;
+            setNote(sub ? 'Включены на этом устройстве.' : 'Выключены на этом устройстве.');
+
+            input.addEventListener('change', function(){
+                input.disabled = true;
+                if (input.checked) {
+                    Notification.requestPermission().then(function(permission){
+                        if (permission !== 'granted') {
+                            input.checked = false;
+                            input.disabled = false;
+                            setNote('Разрешение на уведомления не выдано.');
+                            return;
+                        }
+                        registration.pushManager.subscribe({
+                            userVisibleOnly: true,
+                            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+                        }).then(function(newSub){
+                            return postJson('/cabinet/push/subscribe', newSub.toJSON());
+                        }).then(function(){
+                            setNote('Включены на этом устройстве.');
+                        }).catch(function(){
+                            input.checked = false;
+                            setNote('Не получилось включить, попробуй ещё раз.');
+                        }).finally(function(){
+                            input.disabled = false;
+                        });
+                    });
+                } else {
+                    registration.pushManager.getSubscription().then(function(activeSub){
+                        if (!activeSub) { input.disabled = false; return; }
+                        var endpoint = activeSub.endpoint;
+                        activeSub.unsubscribe().finally(function(){
+                            postJson('/cabinet/push/unsubscribe', {endpoint: endpoint}).finally(function(){
+                                setNote('Выключены на этом устройстве.');
+                                input.disabled = false;
+                            });
+                        });
+                    });
+                }
+            });
+        });
+    }).catch(function(){
+        setNote('Не получилось подготовить push-уведомления.');
+    });
+})();
+</script>
 
 {% set active_tab = "" %}
 {% include "partials/bottom_nav.html" %}

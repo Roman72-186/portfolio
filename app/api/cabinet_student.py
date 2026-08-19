@@ -10,7 +10,7 @@ from datetime import date
 _PHONE_RE = re.compile(r'^[\d\s\+\-\(\)]{7,20}$')
 _TG_RE = re.compile(r'^[A-Za-z0-9_]{4,32}$')
 
-from fastapi import APIRouter, Request, Depends, Form, Query
+from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query, Body
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
@@ -27,8 +27,9 @@ from app.constants import (
     MOCK_SUBJECTS,
 )
 from app.db.database import get_db
-from app.dependencies import require_student, require_csrf
+from app.dependencies import require_student, require_csrf, require_csrf_header
 from app.models.notification import Notification
+from app.models.push_subscription import PushSubscription
 from app.models.upload_log import UploadLog
 from app.models.user import User
 from app.services.exam_cycle import get_active_ticket
@@ -458,6 +459,59 @@ def mark_notifications_read(
     ).update({"is_read": True, "read_at": datetime.now(timezone.utc)})
     db.commit()
     invalidate_unread(user["user_id"])
+    return JSONResponse({"ok": True})
+
+
+@router.post("/push/subscribe")
+def push_subscribe(
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+    payload: Annotated[dict, Body(...)],
+):
+    """Сохранить/обновить Web Push подписку браузера (Фаза 3).
+
+    Тело — PushSubscription.toJSON() из браузера: {endpoint, keys: {p256dh, auth}}.
+    endpoint уникален глобально — тот же браузер повторно шлёт тот же endpoint,
+    апсерт переносит его на текущего user_id и включает is_active.
+    """
+    endpoint = (payload.get("endpoint") or "").strip()
+    keys = payload.get("keys") or {}
+    p256dh = (keys.get("p256dh") or "").strip()
+    auth_key = (keys.get("auth") or "").strip()
+    if not endpoint or not p256dh or not auth_key:
+        raise HTTPException(status_code=400, detail="Неполные данные подписки")
+
+    sub = db.query(PushSubscription).filter(PushSubscription.endpoint == endpoint).first()
+    if sub:
+        sub.user_id = user["user_id"]
+        sub.p256dh = p256dh
+        sub.auth_key = auth_key
+        sub.is_active = True
+    else:
+        db.add(PushSubscription(
+            user_id=user["user_id"], endpoint=endpoint, p256dh=p256dh, auth_key=auth_key, is_active=True,
+        ))
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/push/unsubscribe")
+def push_unsubscribe(
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+    payload: Annotated[dict, Body(...)],
+):
+    """Тумблер «выключить push» — не удаляет подписку, только гасит is_active,
+    чтобы повторное включение не требовало нового запроса разрешения браузера."""
+    endpoint = (payload.get("endpoint") or "").strip()
+    if endpoint:
+        db.query(PushSubscription).filter(
+            PushSubscription.endpoint == endpoint,
+            PushSubscription.user_id == user["user_id"],
+        ).update({"is_active": False})
+        db.commit()
     return JSONResponse({"ok": True})
 
 

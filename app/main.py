@@ -5,7 +5,7 @@ import os
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from slowapi.errors import RateLimitExceeded
@@ -157,6 +157,18 @@ async def unhandled_exception_handler(request: Request, exc):
 # Static files
 mimetypes.add_type("image/webp", ".webp")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+
+# Service Worker для Web Push (Фаза 3) — отдельный роут вне /static/, чтобы
+# заголовок Service-Worker-Allowed: / дал воркеру область действия на весь
+# origin, а не только /static/*.
+@app.get("/sw.js")
+async def service_worker():
+    return FileResponse(
+        "app/static/sw.js",
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"},
+    )
 
 # Security headers middleware
 @app.middleware("http")
