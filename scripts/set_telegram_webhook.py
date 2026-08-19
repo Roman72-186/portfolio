@@ -38,7 +38,7 @@ def main() -> None:
         json={
             "url": webhook_url,
             "secret_token": secret,
-            "allowed_updates": ["message", "callback_query"],
+            "allowed_updates": ["message"],
         },
         timeout=15.0,
     )
