@@ -47,7 +47,7 @@ def superadmin_tags_page(
 
         show_hidden_b = user["role_rank"] >= 5 and _parse_bool(show_hidden)
         if not show_hidden_b:
-            query = query.filter(User.course_periods.isnot(None), User.lessons_count.isnot(None))
+            query = query.filter(User.profile_completed == True)  # noqa: E712
 
         # @username — это Telegram-логин; tg_username зашифрован (EncryptedString),
         # поэтому ищем по нему в Python, а не через SQL ilike. Имя/фамилию матчим тоже
@@ -105,7 +105,7 @@ def superadmin_bulk_lookup(
             User.deleted_at.is_(None),
         )
         if user["role_rank"] < 5:
-            query = query.filter(User.course_periods.isnot(None), User.lessons_count.isnot(None))
+            query = query.filter(User.profile_completed == True)  # noqa: E712
         candidates = query.all()
         # tg_username зашифрован (EncryptedString) — сравниваем в Python после расшифровки
         for candidate in candidates:

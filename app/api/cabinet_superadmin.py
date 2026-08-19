@@ -1811,12 +1811,12 @@ def _render_superadmin_users(
     elif not show_deleted_b:
         query = query.filter(User.deleted_at.is_(None))
     if not show_hidden_b:
-        from sqlalchemy import or_ as _or, and_ as _and
+        from sqlalchemy import or_ as _or
         query = query.filter(
             _or(
                 Role.rank.is_(None),
                 Role.rank != 1,
-                _and(User.course_periods.isnot(None), User.lessons_count.isnot(None)),
+                User.profile_completed == True,  # noqa: E712
             )
         )
     if role_rank_int is not None:

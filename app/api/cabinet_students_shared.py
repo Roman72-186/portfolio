@@ -96,17 +96,17 @@ def _get_accessible_students(
     применяются только для admin/superadmin (rank>=4). Для куратора
     игнорируются.
 
-    По умолчанию скрыты студенты без выбранных периодов/занятий.
+    По умолчанию скрыты студенты, не заполнившие анкету (profile_completed=False).
     Суперадмин может раскрыть их через show_hidden=True.
     """
     hide_pre_cohort = not (show_hidden and user["role_rank"] >= 5)
 
     if user["role_rank"] == 2:
         # Куратор ВСЕГДА видит всех своих активных учеников, включая тех, кто
-        # ещё не завершил онбординг (пустые course_periods/lessons_count).
-        # period/lessons заполняет сам ученик в своём профиле (персонал — не может),
-        # поэтому только-что привязанный ученик иначе «пропадал» у куратора без
-        # сигнала. Незавершённые помечаются бейджем needs_setup в сайдбаре.
+        # ещё не завершил онбординг (profile_completed=False) — анкету заполняет
+        # сам ученик (персонал — не может), поэтому только-что привязанный
+        # ученик иначе «пропадал» у куратора без сигнала. Незавершённые
+        # помечаются бейджем needs_setup в сайдбаре.
         return (
             db.query(User)
             .filter(User.curator_id == user["user_id"], User.is_active == True)
@@ -121,7 +121,7 @@ def _get_accessible_students(
 
     q = db.query(User).filter(User.role_id == student_role.id, User.is_active == True)
     if hide_pre_cohort:
-        q = q.filter(User.course_periods.isnot(None), User.lessons_count.isnot(None))
+        q = q.filter(User.profile_completed == True)  # noqa: E712
 
     if has_unchecked_mocks or mock_period_submitted:
         active_period = get_active_period(db, FEATURE_MOCK_EXAM)
@@ -209,9 +209,9 @@ def _enrich(s: User, counts_by_user: dict, avg_by_user: dict,
         "mock_count": mock_counts_by_user.get(s.id, 0) if mock_counts_by_user else 0,
         "unchecked": unchecked_by_user.get(s.id, 0) if unchecked_by_user else 0,
         "scored_subjects": scored_subjects_by_user.get(s.id, []) if scored_subjects_by_user else [],
-        # Незавершённый онбординг: ученик не выбрал период обучения / кол-во занятий.
-        # Точно совпадает с набором, который раньше скрывался от куратора (pre-cohort).
-        "needs_setup": not (s.course_periods and s.lessons_count),
+        # Незавершённый онбординг: ученик не заполнил анкету.
+        # Точно совпадает с набором, который скрывается от персонала (pre-cohort).
+        "needs_setup": not s.profile_completed,
     }
 
 

@@ -25,9 +25,6 @@ from app.constants import (
     MONTH_TO_NUM,
     FEATURE_PORTFOLIO_UPLOAD,
     MOCK_SUBJECTS,
-    COURSE_PERIODS,
-    LESSON_COUNTS,
-    MANDATORY_COURSE_PERIOD,
 )
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
@@ -72,7 +69,7 @@ TARIFF_LABELS = list(TARIFF_DISPLAY.values())
 def needs_profile_setup(user: dict) -> bool:
     """Профиль не заполнен — редиректить на /cabinet/profile вместо любой стартовой
     страницы ученика (/cabinet/student, /cabinet/tracker, /cabinet/learning)."""
-    return not user["profile_completed"] or not user.get("course_periods") or not user.get("lessons_count")
+    return not user["profile_completed"]
 
 
 @router.get("/student", response_class=HTMLResponse)
@@ -240,9 +237,6 @@ def _profile_template_ctx(request, user, errors=None, form=None):
         "months": MONTHS,
         "enrollment_years": ENROLLMENT_YEARS,
         "university_years": list(range(2015, 2032)),
-        "course_periods": COURSE_PERIODS,
-        "lesson_counts": LESSON_COUNTS,
-        "mandatory_course_period": MANDATORY_COURSE_PERIOD,
         **({"errors": errors} if errors else {}),
         **({"form": form} if form else {}),
     }
@@ -253,31 +247,10 @@ def profile_get(
     request: Request,
     user: Annotated[dict, Depends(require_student)],
 ):
-    has_periods = bool(user.get("course_periods")) and bool(user.get("lessons_count"))
-    if user["profile_completed"] and has_periods:
+    if user["profile_completed"]:
         return RedirectResponse("/cabinet/learning", status_code=302)
 
-    form = None
-    if user["profile_completed"]:
-        enrolled_at = user.get("enrolled_at")
-        tariff = user.get("tariff") or ""
-        past_tariffs_raw = user.get("past_tariffs") or ""
-        course_periods_raw = user.get("course_periods") or ""
-        form = {
-            "first_name": user.get("first_name") or "",
-            "last_name": user.get("last_name") or "",
-            "phone": user.get("phone") or "",
-            "parent_phone": user.get("parent_phone") or "",
-            "tariff": TARIFF_DISPLAY.get(tariff, tariff),
-            "tg_username": user.get("tg_username") or "",
-            "enrollment_month": enrolled_at.month if enrolled_at else user.get("enrollment_year") and None,
-            "enrollment_year": enrolled_at.year if enrolled_at else user.get("enrollment_year"),
-            "university_year": user.get("university_year"),
-            "past_tariffs": [TARIFF_DISPLAY.get(t, t) for t in past_tariffs_raw.split(",") if t],
-            "course_periods": [p for p in course_periods_raw.split(",") if p],
-            "lessons_count": user.get("lessons_count") or "",
-        }
-    return templates.TemplateResponse("profile.html", _profile_template_ctx(request, user, form=form))
+    return templates.TemplateResponse("profile.html", _profile_template_ctx(request, user))
 
 
 @router.post("/profile", response_class=HTMLResponse)
@@ -297,8 +270,6 @@ def profile_post(
     university_year: Annotated[str, Form()] = "",
     about: Annotated[str, Form()] = "",
     past_tariffs: Annotated[list[str], Form()] = [],
-    course_periods: Annotated[list[str], Form()] = [],
-    lessons_count: Annotated[str, Form()] = "",
 ):
     errors = []
     first_name = first_name.strip()
@@ -377,13 +348,6 @@ def profile_post(
 
     past_tariffs = [t.upper() for t in past_tariffs if t.upper() in TARIFFS and t.upper() != tariff]
 
-    course_periods = [p for p in course_periods if p in COURSE_PERIODS]
-    if MANDATORY_COURSE_PERIOD not in course_periods:
-        course_periods.insert(0, MANDATORY_COURSE_PERIOD)
-    lessons_count = lessons_count.strip()
-    if lessons_count not in LESSON_COUNTS:
-        errors.append("Выберите количество занятий")
-
     if errors:
         form = {
             "first_name": first_name,
@@ -396,8 +360,6 @@ def profile_post(
             "enrollment_year": parsed_year,
             "university_year": parsed_university_year,
             "past_tariffs": past_tariffs,
-            "course_periods": course_periods,
-            "lessons_count": lessons_count,
         }
         return templates.TemplateResponse("profile.html",
             _profile_template_ctx(request, user, errors=errors, form=form))
@@ -415,8 +377,6 @@ def profile_post(
     db_user.enrolled_at = parsed_enrolled_at
     db_user.university_year = parsed_university_year
     db_user.past_tariffs = ",".join(past_tariffs) if past_tariffs else None
-    db_user.course_periods = ",".join(course_periods) if course_periods else None
-    db_user.lessons_count = lessons_count or None
     db_user.profile_completed = True
     if db_user.profile_completed_at is None:
         db_user.profile_completed_at = datetime.now(timezone.utc)

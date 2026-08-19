@@ -229,7 +229,7 @@ def get_onboarding_funnel(db: DBSession) -> dict:
     total = len(students)
     profile_done = sum(1 for s in students if s.profile_completed)
     portfolio_done = sum(1 for s in students if s.portfolio_do_completed)
-    needs_setup = sum(1 for s in students if not s.course_periods or not s.lessons_count)
+    needs_setup = sum(1 for s in students if not s.profile_completed)
 
     profile_sec = _avg_seconds([
         (s.created_at, s.profile_completed_at) for s in students if s.profile_completed_at
