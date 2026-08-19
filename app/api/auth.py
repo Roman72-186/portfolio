@@ -113,7 +113,7 @@ def _load_telegram_pkce_cookie(request: Request) -> tuple[dict | None, str | Non
         logger.warning("Telegram login callback: tg_pkce_cv cookie missing (cookies=%s)", list(request.cookies.keys()))
         return None, "Ошибка сессии. Попробуйте снова или очистите cookies."
     try:
-        pkce_data = _signer.loads(pkce_cookie, max_age=300)
+        pkce_data = _signer.loads(pkce_cookie, max_age=600)
         if not isinstance(pkce_data, dict):
             raise KeyError("tg pkce cookie payload is not a dict")
         _ = pkce_data["cv"]
@@ -404,7 +404,10 @@ async def telegram_login_start(request: Request):
     code_verifier = generate_code_verifier()
     code_challenge = generate_code_challenge(code_verifier)
 
-    stored_in_redis = set_telegram_oidc_pkce(state, code_verifier, ttl=300)
+    # TTL 10 минут (не 5, как у VK) — путь через Telegram может уводить в
+    # приложение для подтверждения телефона/2FA-пароля и обратно, это дольше,
+    # чем чистый OAuth-редирект.
+    stored_in_redis = set_telegram_oidc_pkce(state, code_verifier, ttl=600)
     if not stored_in_redis:
         logger.warning("Telegram login: failed to store PKCE in Redis for state=%s", state[:12])
 
@@ -414,7 +417,7 @@ async def telegram_login_start(request: Request):
     response.set_cookie(
         "tg_pkce_cv", pkce_signed,
         httponly=True, secure=True, samesite="lax",
-        max_age=300, path="/",
+        max_age=600, path="/",
     )
     return response
 

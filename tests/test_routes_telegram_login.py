@@ -54,11 +54,11 @@ def test_telegram_login_stores_pkce_in_redis(client, monkeypatch):
     state = parse_qs(urlparse(resp.headers["location"]).query)["state"][0]
     assert captured["state"] == state
     assert captured["code_verifier"]
-    assert captured["ttl"] == 300
+    assert captured["ttl"] == 600
 
     pkce_cookie = resp.cookies.get("tg_pkce_cv")
     assert pkce_cookie
-    cookie_data = auth_module._signer.loads(pkce_cookie, max_age=300)
+    cookie_data = auth_module._signer.loads(pkce_cookie, max_age=600)
     assert cookie_data["st"] == state
 
 

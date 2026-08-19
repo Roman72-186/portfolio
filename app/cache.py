@@ -81,7 +81,7 @@ def pop_vk_pkce(state: str) -> dict[str, Any] | None:
         return None
 
 
-def set_telegram_oidc_pkce(state: str, code_verifier: str, ttl: int = 300) -> bool:
+def set_telegram_oidc_pkce(state: str, code_verifier: str, ttl: int = 600) -> bool:
     """Store Telegram Login (OIDC) PKCE verifier server-side, mirrors set_vk_pkce."""
     if not _client:
         return False
