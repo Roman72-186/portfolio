@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -89,6 +90,14 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         extra = "ignore"
+
+    @field_validator("telegram_bot_username")
+    @classmethod
+    def _strip_bot_username_at(cls, v: str) -> str:
+        """t.me/username-ссылки не понимают ведущий @ — люди привычно вводят
+        юзернейм бота с ним (как везде в интерфейсе Telegram), нормализуем
+        один раз здесь, а не в каждом месте, где строится deep-link."""
+        return v.lstrip("@")
 
 
 settings = Settings()
