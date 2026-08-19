@@ -1,7 +1,12 @@
-"""Tests for the direct Telegram bot login integration (webhook, /start, tariff
-selection, staff-issued linking for existing students) — see
-app/api/auth.py (Telegram bot login section) and
+"""Tests for the direct Telegram bot login integration (webhook, /start,
+staff-issued linking for existing students) — see app/api/auth.py (Telegram
+bot login section) and
 app/services/auth_links.py::issue_telegram_link_token/consume_telegram_link_token.
+
+No tariff dialog in the bot itself: a confirmed member is provisioned and
+logged in immediately — /cabinet/profile (needs_profile_setup) picks up the
+rest (name, phone, tariff) on first cabinet visit, same as it already does
+for manually-created VK accounts.
 """
 from datetime import datetime, timedelta, timezone
 
@@ -40,18 +45,6 @@ def _start_update(chat_id: int, *, text: str = "/start", user_id: int | None = N
     }
 
 
-def _callback_update(chat_id: int, data: str, *, user_id: int | None = None) -> dict:
-    return {
-        "update_id": 2,
-        "callback_query": {
-            "id": "cbq-1",
-            "data": data,
-            "message": {"chat": {"id": chat_id}, "text": None},
-            "from": {"id": user_id or chat_id, "username": "tguser", "first_name": "Ира", "last_name": None},
-        },
-    }
-
-
 @pytest.fixture(autouse=True)
 def _telegram_settings(monkeypatch):
     monkeypatch.setattr(_app_settings, "telegram_webhook_secret", WEBHOOK_SECRET)
@@ -71,17 +64,6 @@ def sent_messages(monkeypatch):
         return True
 
     monkeypatch.setattr(auth_module.telegram_service, "send_message", fake_send_message)
-    return calls
-
-
-@pytest.fixture()
-def answered_callbacks(monkeypatch):
-    calls: list[str] = []
-
-    async def fake_answer(callback_query_id, text=None):
-        calls.append(callback_query_id)
-
-    monkeypatch.setattr(auth_module.telegram_service, "answer_callback_query", fake_answer)
     return calls
 
 
@@ -120,13 +102,14 @@ def test_webhook_malformed_body_does_not_500(client):
 # New student sign-up: /start without payload
 # ---------------------------------------------------------------------------
 
-def test_new_start_not_member_sends_join_message_and_creates_no_user(client, db, monkeypatch, sent_messages):
+def test_new_start_not_member_sends_support_message_and_creates_no_user(client, db, monkeypatch, sent_messages):
     _mock_membership(monkeypatch, False)
     resp = client.post("/auth/telegram/webhook", json=_start_update(CHAT_ID), headers=_headers())
     assert resp.status_code == 200
     assert db.query(User).filter(User.telegram_chat_id == CHAT_ID).first() is None
     assert len(sent_messages) == 1
-    assert "канал" in sent_messages[0]["text"].lower()
+    assert "поддержк" in sent_messages[0]["text"].lower()
+    assert sent_messages[0]["reply_markup"]["inline_keyboard"][0][0]["url"] == "https://t.me/roman_chatbots"
 
 
 def test_new_start_membership_inconclusive_does_not_deny_or_create_user(client, db, monkeypatch, sent_messages):
@@ -137,29 +120,21 @@ def test_new_start_membership_inconclusive_does_not_deny_or_create_user(client, 
     assert "попробуйте" in sent_messages[0]["text"].lower()
 
 
-def test_new_start_member_with_redis_state_offers_tariff_keyboard(client, db, monkeypatch, sent_messages):
+def test_new_start_member_creates_user_immediately_no_tariff_dialog(client, db, monkeypatch, sent_messages):
+    """Подтверждённый member заводится и логинится без диалога с ботом —
+    тариф и остальные поля соберёт анкета /cabinet/profile при первом
+    визите в кабинет (needs_profile_setup в cabinet_student.py)."""
     _mock_membership(monkeypatch, True)
-    monkeypatch.setattr(auth_module, "set_telegram_signup_state", lambda chat_id, data, ttl=600: True)
 
     resp = client.post("/auth/telegram/webhook", json=_start_update(CHAT_ID), headers=_headers())
     assert resp.status_code == 200
-    # No user yet — waiting for the tariff button.
-    assert db.query(User).filter(User.telegram_chat_id == CHAT_ID).first() is None
-    assert sent_messages[0]["reply_markup"] is not None
-    buttons = sent_messages[0]["reply_markup"]["inline_keyboard"]
-    assert [row[0]["text"] for row in buttons] == ["МАКСИМУМ", "УВЕРЕННЫЙ", "Я С ВАМИ"]
 
-
-def test_new_start_member_redis_unavailable_falls_back_to_default_tariff(client, db, monkeypatch, sent_messages):
-    _mock_membership(monkeypatch, True)
-    monkeypatch.setattr(auth_module, "set_telegram_signup_state", lambda chat_id, data, ttl=600: False)
-
-    resp = client.post("/auth/telegram/webhook", json=_start_update(CHAT_ID), headers=_headers())
-    assert resp.status_code == 200
     user = db.query(User).filter(User.telegram_chat_id == CHAT_ID).first()
     assert user is not None
-    assert user.tariff == "УВЕРЕННЫЙ"
-    assert user.vk_id < 0  # synthetic identity, next_manual_vk_id
+    assert user.tariff == "УВЕРЕННЫЙ"  # дефолт модели, анкета переопределит
+    assert user.profile_completed is False  # анкета ещё не заполнена
+    assert user.vk_id < 0  # синтетическая идентичность, next_manual_vk_id
+    assert len(sent_messages) == 1
     assert "ссылка" in sent_messages[0]["text"].lower()
 
 
@@ -176,41 +151,6 @@ def test_new_start_existing_linked_chat_id_relogs_in_instead_of_duplicating(clie
     db.refresh(user)
     assert user.is_group_member is True
     assert "ссылка" in sent_messages[-1]["text"].lower()
-
-
-# ---------------------------------------------------------------------------
-# Tariff selection via callback_query
-# ---------------------------------------------------------------------------
-
-def test_callback_tariff_selection_creates_user_and_sends_login_link(client, db, monkeypatch, sent_messages, answered_callbacks):
-    pending = {"first_name": "Ира", "last_name": "Иванова", "username": "tguser", "base_url": "https://apparchi.ru"}
-    monkeypatch.setattr(auth_module, "pop_telegram_signup_state", lambda chat_id: pending)
-
-    resp = client.post("/auth/telegram/webhook", json=_callback_update(CHAT_ID, "tariff:МАКСИМУМ"), headers=_headers())
-    assert resp.status_code == 200
-    assert answered_callbacks == ["cbq-1"]
-
-    user = db.query(User).filter(User.telegram_chat_id == CHAT_ID).first()
-    assert user is not None
-    assert user.tariff == "МАКСИМУМ"
-    assert user.is_group_member is True
-    assert "ссылка" in sent_messages[-1]["text"].lower()
-
-
-def test_callback_expired_signup_state_sends_retry_and_creates_no_user(client, db, monkeypatch, sent_messages, answered_callbacks):
-    monkeypatch.setattr(auth_module, "pop_telegram_signup_state", lambda chat_id: None)
-
-    resp = client.post("/auth/telegram/webhook", json=_callback_update(CHAT_ID, "tariff:МАКСИМУМ"), headers=_headers())
-    assert resp.status_code == 200
-    assert db.query(User).filter(User.telegram_chat_id == CHAT_ID).first() is None
-    assert "устарел" in sent_messages[-1]["text"].lower()
-
-
-def test_callback_unknown_data_is_ignored(client, db, monkeypatch, sent_messages, answered_callbacks):
-    resp = client.post("/auth/telegram/webhook", json=_callback_update(CHAT_ID, "something:else"), headers=_headers())
-    assert resp.status_code == 200
-    assert answered_callbacks == ["cbq-1"]
-    assert sent_messages == []
 
 
 # ---------------------------------------------------------------------------

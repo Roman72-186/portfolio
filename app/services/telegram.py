@@ -79,20 +79,6 @@ async def send_message(chat_id: int, text: str, *, reply_markup: dict | None = N
     return True
 
 
-async def answer_callback_query(callback_query_id: str, text: str | None = None) -> None:
-    """Снять «часики» с нажатой inline-кнопки. Ошибки не критичны — только лог."""
-    if not settings.telegram_bot_token:
-        return
-    client = await _get_client()
-    payload: dict = {"callback_query_id": callback_query_id}
-    if text:
-        payload["text"] = text
-    try:
-        await client.post(_api_url("answerCallbackQuery"), json=payload)
-    except Exception as exc:
-        logger.warning("Telegram answerCallbackQuery failed: %s", exc)
-
-
 async def check_channel_membership(user_id: int) -> bool | None:
     """Проверить членство user_id в settings.telegram_channel_id.
 
