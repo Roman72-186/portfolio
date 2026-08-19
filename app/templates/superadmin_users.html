@@ -215,6 +215,22 @@
     </div>
     {% endif %}
 
+    {% if issued_telegram_link %}
+    <div class="access-link-panel">
+        <h2 class="access-link-title">Ссылка на Telegram-бота — {{ issued_telegram_link_name }}</h2>
+        <div class="access-link-row">
+            <span class="access-link-value" id="issued-tg-link-text">{{ issued_telegram_link }}</span>
+            <button type="button" class="access-link-copy" onclick="copyText('issued-tg-link-text', this)">Копировать</button>
+        </div>
+        <div class="access-link-note">
+            Отправьте ссылку ученику лично — бот привяжет его Telegram к текущему аккаунту вместо
+            создания нового, портфолио и оценки останутся на месте. Действует до
+            {{ issued_telegram_link_expires_at.strftime('%d.%m.%Y %H:%M') if issued_telegram_link_expires_at else '—' }}
+            UTC, ссылка одноразовая.
+        </div>
+    </div>
+    {% endif %}
+
     <div style="margin-bottom:14px">
         <button type="button" id="usersToggleBtn" class="action-btn btn-tags" onclick="toggleUsersList()">Показать пользователей</button>
     </div>
@@ -320,6 +336,12 @@
                             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                             <button type="submit" class="action-btn">
                                 Ссылка входа
+                            </button>
+                        </form>
+                        <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/issue-telegram-link" style="margin:0">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                            <button type="submit" class="action-btn">
+                                Telegram-привязка
                             </button>
                         </form>
                         <form method="post" action="/cabinet/superadmin/impersonate/{{ u.id }}" style="margin:0">

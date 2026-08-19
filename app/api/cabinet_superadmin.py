@@ -47,7 +47,7 @@ from app.models.tag import Tag, UserTag
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
 from app.services import s3 as s3_service
-from app.services.auth_links import issue_one_time_login_link
+from app.services.auth_links import issue_one_time_login_link, issue_telegram_link_token, next_manual_vk_id
 from app.services.tags import get_all_tags
 from app.services.mock_exam_access import (
     MOCK_EXAM_DEFAULT_DURATION_MINUTES,
@@ -114,11 +114,6 @@ def _issue_login_password(db: DBSession, target: User) -> dict:
         "url": f"https://{settings.domain}/login" if settings.domain else "/login",
     }
 
-
-def _next_manual_vk_id(db: DBSession) -> int:
-    """Manual accounts do not have VK IDs; keep them in the negative range."""
-    min_vk = db.query(func.min(User.vk_id)).scalar() or 0
-    return min(min_vk - 1, -1)
 
 router = APIRouter(prefix="/cabinet")
 
@@ -1776,6 +1771,10 @@ def _render_superadmin_users(
     issued_link_name: str | None = None,
     issued_link: str | None = None,
     issued_link_expires_at=None,
+    issued_telegram_link_user_id: int | None = None,
+    issued_telegram_link_name: str | None = None,
+    issued_telegram_link: str | None = None,
+    issued_telegram_link_expires_at=None,
     page_error: str | None = None,
 ):
     role_rank_int: int | None = int(role_rank) if role_rank.strip() else None
@@ -1967,6 +1966,10 @@ def _render_superadmin_users(
         "issued_link_name": issued_link_name,
         "issued_link": issued_link,
         "issued_link_expires_at": issued_link_expires_at,
+        "issued_telegram_link_user_id": issued_telegram_link_user_id,
+        "issued_telegram_link_name": issued_telegram_link_name,
+        "issued_telegram_link": issued_telegram_link,
+        "issued_telegram_link_expires_at": issued_telegram_link_expires_at,
         "page_error": page_error,
     })
 
@@ -2086,7 +2089,7 @@ def superadmin_create_student(
     else:
         full_name = f"{first_name_clean} {last_name_clean}".strip()
         student = User(
-            vk_id=_next_manual_vk_id(db),
+            vk_id=next_manual_vk_id(db),
             name=full_name,
             first_name=first_name_clean,
             last_name=last_name_clean or None,
@@ -2134,7 +2137,7 @@ def superadmin_create_staff(
 
     full_name = f"{first_name_clean} {last_name_clean}".strip()
     staff = User(
-        vk_id=_next_manual_vk_id(db),
+        vk_id=next_manual_vk_id(db),
         name=full_name,
         first_name=first_name_clean,
         last_name=last_name_clean or None,
@@ -2223,6 +2226,55 @@ def superadmin_user_issue_link(
         issued_link_name=_display_user_name(target),
         issued_link=issued_link,
         issued_link_expires_at=login_token.expires_at,
+    )
+
+
+@router.post("/superadmin/users/{target_id}/issue-telegram-link", response_class=HTMLResponse)
+def superadmin_user_issue_telegram_link(
+    target_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    """Ссылка-приглашение для действующего ученика привязать Telegram к его
+    текущему аккаунту вместо создания нового при переходе с VK-входа —
+    портфолио и оценки остаются на месте (см. auth.py::_handle_telegram_link_start)."""
+    if not settings.telegram_bot_username:
+        return _render_superadmin_users(request, user, db, page_error="Telegram-бот ещё не настроен.")
+
+    target = db.query(User).filter(User.id == target_id).first()
+    if not target:
+        return _render_superadmin_users(request, user, db, page_error="Пользователь не найден.")
+    if not can_manage_user_by_rank(user["user_id"], user["role_rank"], target):
+        return _render_superadmin_users(
+            request,
+            user,
+            db,
+            page_error="Нельзя выпустить ссылку для роли равной или выше своей.",
+        )
+    if not target.is_active:
+        return _render_superadmin_users(
+            request,
+            user,
+            db,
+            page_error="Нельзя выпустить ссылку для неактивного пользователя.",
+        )
+
+    raw_token, link_token = issue_telegram_link_token(
+        db,
+        user=target,
+        issued_by=f"superadmin:{user['user_id']}",
+    )
+    deep_link = f"https://t.me/{settings.telegram_bot_username}?start={raw_token}"
+    return _render_superadmin_users(
+        request,
+        user,
+        db,
+        issued_telegram_link_user_id=target.id,
+        issued_telegram_link_name=_display_user_name(target),
+        issued_telegram_link=deep_link,
+        issued_telegram_link_expires_at=link_token.expires_at,
     )
 
 

@@ -52,6 +52,20 @@
 }
 .vk-btn:hover { background: #005BB8; transform: translateY(-1px); color: #fff; opacity: 1; box-shadow: 0 10px 28px rgba(0,102,204,0.38); }
 
+.tg-btn {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    margin-top: 20px;
+    background: #0088cc;
+    color: #fff;
+    padding: 15px 28px;
+    border-radius: var(--r-pill);
+    font-size: 15px; font-weight: 700;
+    text-decoration: none;
+    transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+    box-shadow: 0 6px 20px rgba(0,136,204,0.30);
+}
+.tg-btn:hover { background: #0077b3; transform: translateY(-1px); color: #fff; opacity: 1; box-shadow: 0 10px 28px rgba(0,136,204,0.38); }
+
 .tg-support-btn {
     display: flex; align-items: center; justify-content: center; gap: 8px;
     margin-top: 10px;
@@ -106,12 +120,21 @@
             </div>
             <div class="login-text">
                 <h1>Войдите в личный кабинет</h1>
-                <p>Доступ открыт только участникам закрытого сообщества ВКонтакте</p>
+                <p>Доступ открыт только участникам закрытого сообщества</p>
             </div>
         </div>
 
         {% if error %}
         <div class="alert alert-error" style="margin-top:16px">{{ error }}</div>
+        {% endif %}
+
+        {% if telegram_bot_username %}
+        <a href="https://t.me/{{ telegram_bot_username }}" class="tg-btn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8-1.7 8.01c-.12.55-.46.68-.93.43l-2.57-1.9-1.24 1.2c-.14.14-.26.26-.52.26l.18-2.62 4.74-4.28c.2-.18-.05-.28-.32-.1L7.95 14.4 5.41 13.6c-.55-.18-.56-.55.12-.81l8.97-3.46c.45-.17.85.11.14.47z"/>
+            </svg>
+            Войти через Telegram
+        </a>
         {% endif %}
 
         {% if vk_login_enabled %}
@@ -121,7 +144,7 @@
             </svg>
             Войти через ВКонтакте
         </a>
-        {% else %}
+        {% elif not telegram_bot_username %}
         <div class="alert alert-error" style="margin-top:16px">Вход временно недоступен. Напишите в поддержку.</div>
         {% endif %}
 

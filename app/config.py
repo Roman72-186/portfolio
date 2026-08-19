@@ -29,12 +29,21 @@ class Settings(BaseSettings):
     n8n_webhook_download_file: str = ""  # portfolio-download-file webhook URL (for Drive→S3 migration)
     n8n_webhook_secret: str = ""  # sent as X-Webhook-Secret when configured
 
-    # VK OAuth
+    # VK OAuth (переходный период — заменяется Telegram-ботом, см. ниже; отключается
+    # очисткой vk_app_id/vk_app_secret/vk_group_id, читает _vk_login_enabled() в auth.py)
     vk_app_id: str = ""
     vk_app_secret: str = ""
     vk_redirect_uri: str = "https://apparchi.ru/auth/vk/callback"
     vk_group_id: int = 0
     vk_community_token: str = ""  # service token for re-checking group membership
+
+    # Telegram bot — прямая интеграция (без n8n): вход через /start в боте с
+    # проверкой членства в закрытом канале, плюс канал уведомлений.
+    telegram_bot_token: str = ""
+    telegram_bot_username: str = ""   # для deep-link t.me/<username>?start=...
+    telegram_channel_id: int = 0      # закрытый канал, членство проверяет getChatMember
+    telegram_webhook_secret: str = "" # сверяется с X-Telegram-Bot-Api-Secret-Token
+    telegram_link_ttl_hours: int = 72 # TTL ссылки-приглашения для действующих учеников
 
     # S3 (TimeWeb сейчас, Selectel — после миграции)
     s3_endpoint: str = ""        # e.g. https://s3.timeweb.cloud — API-эндпоинт для boto3 (put/get/delete)

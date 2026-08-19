@@ -188,6 +188,19 @@ def require_internal_api_token(
         raise HTTPException(status_code=401, detail="Invalid internal API token")
 
 
+def require_telegram_webhook_secret(
+    x_telegram_bot_api_secret_token: Annotated[str | None, Header()] = None,
+) -> None:
+    """Telegram шлёт этот заголовок на каждый апдейт, если secret_token задан
+    при setWebhook (scripts/set_telegram_webhook.py). Замена rate-limit'а по
+    IP: вебхук — сервер-серверный вызов с общих IP Telegram, лимит по IP там
+    бессмыслен и может случайно резать легитимный трафик."""
+    if not settings.telegram_webhook_secret:
+        raise HTTPException(status_code=503, detail="Telegram webhook secret is not configured")
+    if not secrets.compare_digest(x_telegram_bot_api_secret_token or "", settings.telegram_webhook_secret):
+        raise HTTPException(status_code=401, detail="Invalid Telegram webhook secret")
+
+
 def require_csrf(
     request: Request,
     csrf_token: Annotated[str, Form(alias="csrf_token")] = "",

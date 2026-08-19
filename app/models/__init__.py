@@ -2,6 +2,7 @@ from app.models.user import User
 from app.models.session import Session
 from app.models.upload_log import UploadLog
 from app.models.login_token import LoginToken
+from app.models.telegram_link_token import TelegramLinkToken
 from app.models.work import Work
 from app.models.role import Role
 from app.models.mock_exam_lock import MockExamLock

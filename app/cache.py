@@ -105,6 +105,38 @@ def set_cached_unread(user_id: int, count: int) -> None:
         pass
 
 
+# ── Telegram-бот: ожидание выбора тарифа между /start и нажатием кнопки ──────
+
+TELEGRAM_SIGNUP_TTL = 600  # 10 минут — время на выбор тарифа после /start
+
+
+def set_telegram_signup_state(chat_id: int, data: dict[str, Any], ttl: int = TELEGRAM_SIGNUP_TTL) -> bool:
+    if not _client:
+        return False
+    try:
+        _client.setex(f"tg_signup:{chat_id}", ttl, json.dumps(data))
+        return True
+    except Exception:
+        return False
+
+
+def pop_telegram_signup_state(chat_id: int) -> dict[str, Any] | None:
+    """Атомарно прочитать и удалить состояние — кнопку тарифа можно нажать один раз."""
+    if not _client:
+        return None
+    try:
+        pipe = _client.pipeline()
+        pipe.get(f"tg_signup:{chat_id}")
+        pipe.delete(f"tg_signup:{chat_id}")
+        raw, _ = pipe.execute()
+        if not raw:
+            return None
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
 def invalidate_unread(user_id: int) -> None:
     """Call after marking notifications read or creating new ones."""
     if not _client:

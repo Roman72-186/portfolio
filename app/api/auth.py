@@ -3,30 +3,42 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Request, Depends, HTTPException, Form, BackgroundTasks
+from fastapi import APIRouter, Request, Depends, HTTPException, Form, Header, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import bcrypt as _bcrypt_lib
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
-from app.cache import invalidate_session, pop_vk_pkce, set_vk_pkce
+from app.cache import (
+    invalidate_session, pop_vk_pkce, set_vk_pkce,
+    pop_telegram_signup_state, set_telegram_signup_state,
+)
 from app.config import settings
+from app.constants import TARIFFS
 from app.db.database import get_db
-from app.dependencies import _as_utc, get_current_user, require_internal_api_token, require_lab3d_token
+from app.dependencies import (
+    _as_utc, get_current_user, require_internal_api_token, require_lab3d_token,
+    require_telegram_webhook_secret,
+)
 from app.limiter import limiter
 from app.models.role import Role
 from app.tmpl import templates
 from app.models.session import Session
 from app.models.user import User
-from app.services.auth_links import consume_one_time_login_token, issue_one_time_login_link, issue_sso_token
+from app.services.auth_links import (
+    consume_one_time_login_token, consume_telegram_link_token,
+    issue_one_time_login_link, issue_sso_token, issue_telegram_link_token,
+    next_manual_vk_id,
+)
 from app.services.vk import (
     get_authorize_url, exchange_code, get_user_info, check_group_membership,
     generate_code_verifier, generate_code_challenge,
 )
 from app.services import drive as drive_service
+from app.services import telegram as telegram_service
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +69,7 @@ def _render_login(request: Request, error: str | None = None):
     context = {
         "request": request,
         "vk_login_enabled": _vk_login_enabled(),
+        "telegram_bot_username": settings.telegram_bot_username,
     }
     if error:
         context["error"] = error
@@ -490,6 +503,273 @@ def auth_handoff(
     return JSONResponse({"ok": True, "login_url": login_url})
 
 
+# ── Telegram bot login ───────────────────────────────────────────────────────
+#
+# Прямая интеграция с Telegram Bot API (без n8n): пользователь пишет боту
+# /start, бот проверяет членство в закрытом канале через
+# services/telegram.check_channel_membership, затем выпускает такую же
+# одноразовую ссылку входа, что и /auth/link (issue_one_time_login_link), и
+# присылает её сообщением в чат. Действующие ученики с историей на VK-входе
+# получают от персонала отдельную ссылку-приглашение (см.
+# cabinet_superadmin.py::superadmin_user_issue_telegram_link), которая через
+# consume_telegram_link_token привязывает Telegram к их текущему аккаунту
+# вместо создания нового — портфолио и оценки остаются на месте.
+
+
+class _TgChat(BaseModel):
+    id: int
+
+
+class _TgFrom(BaseModel):
+    id: int
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+
+
+class _TgMessage(BaseModel):
+    chat: _TgChat
+    text: str | None = None
+    from_user: _TgFrom | None = Field(default=None, alias="from")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class _TgCallbackQuery(BaseModel):
+    id: str
+    data: str | None = None
+    message: _TgMessage | None = None
+    from_user: _TgFrom = Field(alias="from")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class TelegramUpdate(BaseModel):
+    update_id: int
+    message: _TgMessage | None = None
+    callback_query: _TgCallbackQuery | None = None
+
+
+def _tg_display_name(tg_from: _TgFrom | None) -> str:
+    if not tg_from:
+        return "Ученик"
+    parts = [p for p in (tg_from.first_name, tg_from.last_name) if p]
+    return " ".join(parts).strip() or "Ученик"
+
+
+def _upsert_telegram_user(
+    db: DBSession,
+    *,
+    chat_id: int,
+    tg_from: _TgFrom | None,
+    tariff: str | None,
+    is_group_member: bool,
+) -> User:
+    user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
+    if user:
+        if user.deleted_at is not None:
+            user.deleted_at = None
+            user.is_active = True
+            user.profile_completed = False
+        user.name = _tg_display_name(tg_from)
+        if tg_from and tg_from.first_name:
+            user.first_name = tg_from.first_name
+        if tg_from and tg_from.last_name:
+            user.last_name = tg_from.last_name
+        if tg_from and tg_from.username:
+            user.tg_username = tg_from.username
+        user.is_group_member = is_group_member
+        return user
+
+    student_role = db.query(Role).filter(Role.name == "ученик").first()
+    user = User(
+        vk_id=next_manual_vk_id(db),
+        telegram_chat_id=chat_id,
+        name=_tg_display_name(tg_from),
+        first_name=tg_from.first_name if tg_from else None,
+        last_name=tg_from.last_name if tg_from else None,
+        tg_username=tg_from.username if tg_from else None,
+        tariff=tariff or "УВЕРЕННЫЙ",
+        is_group_member=is_group_member,
+        role_id=student_role.id if student_role else None,
+    )
+    db.add(user)
+    db.flush()
+    return user
+
+
+async def _issue_and_send_login_link(db: DBSession, user: User, chat_id: int, base_url: str) -> None:
+    login_url, _token = issue_one_time_login_link(db, user=user, base_url=base_url, issued_by="telegram-bot")
+    await telegram_service.send_message(
+        chat_id,
+        "Добро пожаловать! Ссылка для входа в кабинет "
+        f"(одноразовая, действует {settings.one_time_link_ttl_minutes} мин):\n{login_url}",
+    )
+
+
+async def _finish_membership_check_and_login(db: DBSession, user: User, chat_id: int, base_url: str) -> None:
+    """Общий хвост для входа уже привязанного Telegram-аккаунта: перепроверяет
+    членство в канале и либо выпускает ссылку, либо отказывает — те же
+    правила, что и у vk_callback (fail-closed только для роли «ученик»,
+    неопределённый ответ API не трактуется как отказ)."""
+    if not user.is_active or user.deleted_at is not None:
+        await telegram_service.send_message(chat_id, "Ваш доступ отключён. Обратитесь к администратору.")
+        return
+
+    is_member = await telegram_service.check_channel_membership(chat_id)
+    if is_member is None:
+        await telegram_service.send_message(
+            chat_id,
+            "Не удалось проверить участие в канале. Попробуйте написать /start ещё раз через минуту.",
+        )
+        return
+
+    user.is_group_member = is_member
+    db.commit()
+
+    role_rank = user.role.rank if user.role else 0
+    if not is_member and not user.is_admin and role_rank < 2:
+        await telegram_service.send_message(
+            chat_id,
+            "Доступ открыт только участникам закрытого канала. Вступите в канал и напишите /start ещё раз.",
+        )
+        return
+
+    await _issue_and_send_login_link(db, user, chat_id, base_url)
+
+
+async def _handle_telegram_link_start(
+    db: DBSession, *, chat_id: int, raw_token: str, tg_from: _TgFrom | None, base_url: str,
+) -> None:
+    """/start <token> — токен, выданный персоналом конкретному действующему
+    ученику (см. superadmin_user_issue_telegram_link)."""
+    _link_token, target_user, error = consume_telegram_link_token(db, raw_token=raw_token)
+    if error or not target_user:
+        reason = {
+            "invalid": "Ссылка-приглашение недействительна.",
+            "expired": "Ссылка-приглашение истекла — попросите новую у куратора.",
+            "used": "Эта ссылка уже была использована.",
+            "revoked": "Эта ссылка больше не действует — попросите новую у куратора.",
+        }.get(error or "invalid", "Не удалось привязать Telegram.")
+        await telegram_service.send_message(chat_id, reason)
+        return
+
+    already_linked = db.query(User).filter(
+        User.telegram_chat_id == chat_id, User.id != target_user.id,
+    ).first()
+    if already_linked:
+        await telegram_service.send_message(
+            chat_id,
+            "Этот Telegram-аккаунт уже привязан к другому ученику. Обратитесь к куратору.",
+        )
+        return
+
+    target_user.telegram_chat_id = chat_id
+    if tg_from and tg_from.username:
+        target_user.tg_username = tg_from.username
+    db.commit()
+
+    await _finish_membership_check_and_login(db, target_user, chat_id, base_url)
+
+
+async def _handle_telegram_new_start(
+    db: DBSession, *, chat_id: int, tg_from: _TgFrom | None, base_url: str,
+) -> None:
+    """Обычный /start без payload — новый ученик либо повторный вход уже
+    привязанного Telegram-аккаунта."""
+    existing = db.query(User).filter(User.telegram_chat_id == chat_id).first()
+    if existing:
+        await _finish_membership_check_and_login(db, existing, chat_id, base_url)
+        return
+
+    is_member = await telegram_service.check_channel_membership(chat_id)
+    if is_member is None:
+        await telegram_service.send_message(
+            chat_id,
+            "Не удалось проверить участие в канале. Попробуйте написать /start ещё раз через минуту.",
+        )
+        return
+    if not is_member:
+        await telegram_service.send_message(
+            chat_id,
+            "Доступ открыт только участникам закрытого канала. Вступите в канал и напишите /start ещё раз.",
+        )
+        return
+
+    stored = set_telegram_signup_state(chat_id, {
+        "first_name": tg_from.first_name if tg_from else None,
+        "last_name": tg_from.last_name if tg_from else None,
+        "username": tg_from.username if tg_from else None,
+        "base_url": base_url,
+    })
+    if not stored:
+        # Redis недоступен — не блокируем вход, заводим с тарифом по умолчанию
+        # вместо диалога выбора (тот держит состояние между /start и кнопкой).
+        user = _upsert_telegram_user(db, chat_id=chat_id, tg_from=tg_from, tariff=None, is_group_member=True)
+        db.commit()
+        await _issue_and_send_login_link(db, user, chat_id, base_url)
+        return
+
+    keyboard = {"inline_keyboard": [[{"text": t, "callback_data": f"tariff:{t}"}] for t in TARIFFS]}
+    await telegram_service.send_message(chat_id, "Вы подтверждены. Выберите ваш тариф:", reply_markup=keyboard)
+
+
+async def _handle_telegram_message(db: DBSession, message: _TgMessage, base_url: str) -> None:
+    text = (message.text or "").strip()
+    command, _sep, payload = text.partition(" ")
+    if command.split("@")[0] != "/start":
+        return
+
+    chat_id = message.chat.id
+    payload = payload.strip()
+    if payload:
+        await _handle_telegram_link_start(db, chat_id=chat_id, raw_token=payload, tg_from=message.from_user, base_url=base_url)
+    else:
+        await _handle_telegram_new_start(db, chat_id=chat_id, tg_from=message.from_user, base_url=base_url)
+
+
+async def _handle_telegram_callback(db: DBSession, callback: _TgCallbackQuery, base_url: str) -> None:
+    await telegram_service.answer_callback_query(callback.id)
+
+    if not callback.data or not callback.data.startswith("tariff:"):
+        return
+    tariff = callback.data.split(":", 1)[1]
+    if tariff not in TARIFFS:
+        return
+
+    chat_id = callback.message.chat.id if callback.message else callback.from_user.id
+    pending = pop_telegram_signup_state(chat_id)
+    if pending is None:
+        await telegram_service.send_message(chat_id, "Выбор тарифа устарел, напишите /start ещё раз.")
+        return
+
+    user = _upsert_telegram_user(db, chat_id=chat_id, tg_from=callback.from_user, tariff=tariff, is_group_member=True)
+    db.commit()
+    await _issue_and_send_login_link(db, user, chat_id, pending.get("base_url") or base_url)
+
+
+@router.post("/auth/telegram/webhook")
+async def telegram_webhook(
+    request: Request,
+    db: Annotated[DBSession, Depends(get_db)],
+    _: Annotated[None, Depends(require_telegram_webhook_secret)],
+):
+    try:
+        body = await request.json()
+        update = TelegramUpdate.model_validate(body)
+    except Exception:
+        logger.warning("Telegram webhook: не удалось разобрать апдейт")
+        return {"ok": True}
+
+    base_url = _public_base_url(request)
+    if update.callback_query is not None:
+        await _handle_telegram_callback(db, update.callback_query, base_url)
+    elif update.message is not None and update.message.text:
+        await _handle_telegram_message(db, update.message, base_url)
+
+    return {"ok": True}
+
+
 # ── 3D Лаборатория ──────────────────────────────────────────────────────────
 
 
@@ -537,7 +817,7 @@ def denied_page(request: Request):
     """Show the VK group access denial page used by redirects."""
     return templates.TemplateResponse("denied.html", {
         "request": request,
-        "reason": "Доступ к 3D лаборатории открыт только участникам сообщества ВКонтакте.",
+        "reason": "Доступ к 3D лаборатории открыт только участникам закрытого сообщества.",
         "vk_group_id": settings.vk_group_id,
     }, status_code=403)
 

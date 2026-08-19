@@ -27,6 +27,7 @@ class User(Base):
     profile_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     role_id: Mapped[int | None] = mapped_column(ForeignKey("roles.id"), nullable=True)
     tg_username: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
+    telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, index=True, nullable=True)
     enrollment_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     past_tariffs: Mapped[str | None] = mapped_column(String(200), nullable=True)
     cohort_tag: Mapped[str | None] = mapped_column(String(20), nullable=True)
