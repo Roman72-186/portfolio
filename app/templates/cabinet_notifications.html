@@ -165,7 +165,14 @@
     }
 
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        setNote('Браузер не поддерживает push-уведомления (или это встроенный браузер Telegram — открой сайт в обычном браузере).');
+        var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        var isStandalone = window.navigator.standalone === true
+            || window.matchMedia('(display-mode: standalone)').matches;
+        if (isIOS && !isStandalone) {
+            setNote('На iPhone push работает только у сайта, добавленного на экран «Домой». Откройте apparchi.ru в Safari, нажмите «Поделиться», затем «На экран „Домой“» и зайдите через новую иконку – тумблер заработает.');
+        } else {
+            setNote('Браузер не поддерживает push-уведомления (или это встроенный браузер Telegram – открой сайт в обычном браузере).');
+        }
         return;
     }
     if (!VAPID_PUBLIC_KEY) {
