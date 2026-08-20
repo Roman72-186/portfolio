@@ -10,7 +10,7 @@ from datetime import date
 _PHONE_RE = re.compile(r'^[\d\s\+\-\(\)]{7,20}$')
 _TG_RE = re.compile(r'^[A-Za-z0-9_]{4,32}$')
 
-from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query, Body
+from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query, Body, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
@@ -35,6 +35,8 @@ from app.models.user import User
 from app.services.exam_cycle import get_active_ticket
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.feature_periods import is_feature_available
+from app.services import s3 as s3_service
+from app.services.upload_validation import read_image_uploads
 from app.services.mock_exam_access import (
     MOCK_EXAM_DURATION_SEC,
     is_mock_exam_attempt_open,
@@ -43,7 +45,7 @@ from app.services.mock_exam_access import (
 )
 from app.services.tz import MSK_TZ, today_msk
 from app.services.user_management import log_tariff_change
-from app.services.utils import study_duration_text, group_works
+from app.services.utils import study_duration_text, group_works, compress_image
 from app.services.video_catalog import list_published_videos
 from app.tmpl import templates, format_ticket_description
 
@@ -531,6 +533,50 @@ def toggle_telegram_notifications(
     db.commit()
     invalidate_session(user["session_id"])
     return JSONResponse({"ok": True})
+
+
+@router.post("/avatar")
+async def upload_avatar(
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    photo: UploadFile = File(...),
+):
+    """Аватар в шапке кабинета — ученик загружает свою фотографию один раз.
+
+    В отличие от photo_url (приходит из Telegram и перезаписывается при каждом
+    входе, см. auth.py), custom_avatar_url ставится ровно один раз и дальше
+    не меняется отсюда — повторный вызов отклоняется."""
+    db_user = db.query(User).filter(User.id == user["user_id"]).first()
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if db_user.custom_avatar_url:
+        raise HTTPException(status_code=400, detail="Фото уже загружено")
+
+    files_data, err = await read_image_uploads(
+        [photo],
+        max_files=1,
+        max_size=5 * 1024 * 1024,
+        unsupported_format_error="Неподдерживаемый формат. Допустимы: JPG, PNG, WebP",
+        too_large_error="Файл слишком большой (макс. 5 МБ)",
+    )
+    if err:
+        return JSONResponse({"success": False, "error": err}, status_code=422)
+
+    filename, photo_bytes = files_data[0]
+    compressed = compress_image(photo_bytes, max_px=512, quality=85)
+    s3_path = s3_service.s3_path_avatar(user["vk_id"], filename)
+    url = s3_service.upload_to_s3(s3_path, compressed, "image/jpeg")
+    s3_configured = s3_service.is_configured()
+    if not s3_configured:
+        return JSONResponse({"success": False, "error": "Хранилище S3 не настроено. Загрузка временно недоступна."}, status_code=502)
+    if url is None:
+        return JSONResponse({"success": False, "error": "Ошибка загрузки в хранилище. Попробуйте ещё раз."}, status_code=502)
+
+    db_user.custom_avatar_url = url
+    db.commit()
+    invalidate_session(user["session_id"])
+    return JSONResponse({"success": True, "avatar_url": url})
 
 
 # ── GET /cabinet/portfolio ────────────────────────────────────────────────────

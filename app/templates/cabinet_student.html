@@ -8,11 +8,8 @@
 .profile-hero {
     background: linear-gradient(135deg, #1E2D6B 0%, #3B4FC8 100%);
     border-radius: 20px;
-    padding: 32px;
+    padding: 20px 20px 56px;
     margin-bottom: 20px;
-    display: flex;
-    align-items: center;
-    gap: 24px;
     box-shadow: 0 8px 32px rgba(30,45,107,0.22);
     position: relative;
     overflow: hidden;
@@ -33,24 +30,44 @@
     background: rgba(255,255,255,0.04);
     bottom: -60px; right: 100px;
 }
+.profile-hero-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    position: relative; z-index: 1;
+}
+.profile-avatar-wrap { position: relative; flex-shrink: 0; }
 .profile-avatar {
-    width: 76px; height: 76px;
+    width: 60px; height: 60px;
     border-radius: 50%;
     object-fit: cover;
     border: 3px solid rgba(255,255,255,0.25);
-    flex-shrink: 0;
-    position: relative; z-index: 1;
+    display: block;
 }
 .profile-avatar-placeholder {
-    width: 76px; height: 76px;
+    width: 60px; height: 60px;
     border-radius: 50%;
     background: rgba(255,255,255,0.12);
     border: 3px solid rgba(255,255,255,0.2);
     display: flex; align-items: center; justify-content: center;
-    font-size: 28px; flex-shrink: 0;
-    position: relative; z-index: 1;
+    font-size: 28px;
 }
-.profile-hero-info { flex: 1; position: relative; z-index: 1; }
+.profile-avatar-upload {
+    position: absolute; right: -2px; bottom: -2px;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--blue); color: #fff;
+    border: 2px solid #1E2D6B;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: background var(--duration-fast);
+}
+.profile-avatar-upload:hover { background: var(--blue-deep); }
+.profile-avatar-input {
+    position: absolute; inset: 0;
+    opacity: 0; cursor: pointer;
+    width: 100%; height: 100%;
+}
+.profile-hero-info { flex: 1 1 auto; min-width: 0; }
 .profile-role-tag {
     display: inline-flex; align-items: center; gap: 5px;
     background: rgba(255,255,255,0.15);
@@ -60,14 +77,15 @@
     font-size: 11px; font-weight: 700;
     letter-spacing: 0.07em; text-transform: uppercase;
     color: rgba(255,255,255,0.85);
-    margin-bottom: 10px;
+    margin-bottom: 8px;
 }
 .profile-name {
-    font-size: 26px; font-weight: 900;
+    font-size: 20px; font-weight: 900;
     color: #fff;
-    letter-spacing: -0.5px;
-    margin-bottom: 0;
-    line-height: 1.1;
+    letter-spacing: -0.3px;
+    margin-bottom: 8px;
+    line-height: 1.15;
+    overflow-wrap: break-word;
 }
 .profile-tariff {
     display: inline-flex; align-items: center; gap: 6px;
@@ -81,22 +99,29 @@
     width: 7px; height: 7px;
     border-radius: 50%; background: #6EE7B7;
 }
-.profile-hero-edit {
-    position: relative; z-index: 1;
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 8px 18px; border-radius: 20px;
-    background: rgba(255,255,255,0.12);
-    border: 1px solid rgba(255,255,255,0.2);
-    color: rgba(255,255,255,0.9);
-    font-size: 13px; font-weight: 500;
-    transition: background 0.2s, border-color 0.2s;
-    flex-shrink: 0;
-    opacity: 1;
+.profile-scores {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 14px;
+    padding: 8px 12px;
 }
-.profile-hero-edit:hover {
-    background: rgba(255,255,255,0.2);
-    border-color: rgba(255,255,255,0.35);
-    opacity: 1;
+.profile-score-cell {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    min-width: 22px;
+}
+.profile-score-label {
+    font-size: 11px; font-weight: 800; color: rgba(255,255,255,0.7);
+    letter-spacing: 0.03em;
+}
+.profile-score-value { font-size: 15px; font-weight: 900; color: #fff; line-height: 1; }
+.profile-score-divider { width: 1px; align-self: stretch; background: rgba(255,255,255,0.2); }
+.profile-hero-actions {
+    position: absolute;
+    right: 18px; bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+    z-index: 1;
 }
 
 /* ── Info grid (метрики) ── */
@@ -203,19 +228,11 @@
     .stats-strip { flex-direction: column; }
     .stat-item { border-right: none; border-bottom: 1px solid var(--line); }
     .stat-item:last-child { border-bottom: none; }
-    .profile-hero { flex-wrap: wrap; }
 }
 @media (max-width: 480px) {
     .info-grid { grid-template-columns: 1fr; }
-    .profile-hero {
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-        padding: 24px 20px;
-    }
-    .profile-hero .dashboard-name-row { justify-content: center; }
-    .profile-name { font-size: 22px; }
-    .profile-hero-edit { width: 100%; justify-content: center; }
+    .profile-hero-top { gap: 10px; }
+    .profile-scores { padding: 6px 9px; gap: 8px; }
     .stat-item { padding: 12px 16px; }
     .stat-value { font-size: 16px; }
     .tariffs-card { padding: 14px 16px; }
@@ -223,8 +240,9 @@
 /* ── Desktop expansions ── */
 @media (min-width: 1024px) {
     .info-grid { grid-template-columns: repeat(4, 1fr); }
-    .profile-hero { padding: 36px 40px; }
-    .profile-name { font-size: 30px; }
+    .profile-hero { padding: 28px 32px 60px; }
+    .profile-avatar, .profile-avatar-placeholder { width: 76px; height: 76px; }
+    .profile-name { font-size: 26px; }
 }
 
 /* ── Активный пробник ── */
@@ -424,31 +442,108 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
 
     <!-- ── HERO профиля ── -->
     <div class="profile-hero">
-        {% if user.photo_url %}
-        <img src="{{ user.photo_url }}" alt="Фото профиля" class="profile-avatar" width="76" height="76">
-        {% else %}
-        <div class="profile-avatar-placeholder" aria-hidden="true">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-            </svg>
-        </div>
-        {% endif %}
-
-        <div class="profile-hero-info">
-            <div class="profile-role-tag">◉ Ученик</div>
-            <div class="dashboard-name-row">
-                <h1 class="profile-name">
-                    {{ user.last_name or '' }} {{ user.first_name or user.name }}
-                </h1>
-                {{ notif_gear_widget() }}
-                {% include "partials/mobile_dashboard_logout.html" %}
+        <div class="profile-hero-top">
+            <div class="profile-avatar-wrap" data-csrf="{{ csrf_token(request) }}" data-upload-url="/cabinet/avatar">
+                {% set avatar_src = user.custom_avatar_url or user.photo_url %}
+                {% if avatar_src %}
+                <img src="{{ avatar_src }}" alt="Фото профиля" class="profile-avatar" width="60" height="60">
+                {% else %}
+                <div class="profile-avatar-placeholder" aria-hidden="true">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                    </svg>
+                </div>
+                {% endif %}
+                {% if not user.custom_avatar_url %}
+                <label class="profile-avatar-upload" aria-label="Загрузить фото профиля (один раз)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 5v14M5 12h14"/>
+                    </svg>
+                    <input type="file" accept="image/*" class="profile-avatar-input">
+                </label>
+                {% endif %}
             </div>
-            <span class="profile-tariff">
-                <span class="profile-tariff-dot"></span>
-                {{ user.tariff }}
-            </span>
+
+            <div class="profile-hero-info">
+                <div class="profile-role-tag">◉ Ученик</div>
+                <h1 class="profile-name">{{ [user.last_name, user.first_name] | select | join(' ') }}</h1>
+                <span class="profile-tariff">
+                    <span class="profile-tariff-dot"></span>
+                    {{ user.tariff }}
+                </span>
+            </div>
+
+            <div class="profile-scores">
+                <div class="profile-score-cell">
+                    <span class="profile-score-label" title="Рисунок">Р</span>
+                    <span class="profile-score-value">{{ avg_score_by_subject.get('Рисунок', '-') }}</span>
+                </div>
+                <div class="profile-score-divider"></div>
+                <div class="profile-score-cell">
+                    <span class="profile-score-label" title="Композиция">К</span>
+                    <span class="profile-score-value">{{ avg_score_by_subject.get('Композиция', '-') }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="profile-hero-actions">
+            {{ notif_gear_widget() }}
+            {% include "partials/mobile_dashboard_logout.html" %}
         </div>
     </div>
+    {% if not user.custom_avatar_url %}
+    <script>
+    (function () {
+        var wrap = document.querySelector('.profile-avatar-wrap');
+        if (!wrap) return;
+        var input = wrap.querySelector('.profile-avatar-input');
+        var label = wrap.querySelector('.profile-avatar-upload');
+        if (!input || !label) return;
+        var csrf = wrap.getAttribute('data-csrf');
+        var url = wrap.getAttribute('data-upload-url');
+
+        input.addEventListener('change', function () {
+            var file = input.files && input.files[0];
+            if (!file) return;
+            label.style.opacity = '0.5';
+            label.style.pointerEvents = 'none';
+
+            var formData = new FormData();
+            formData.append('photo', file);
+            formData.append('csrf_token', csrf);
+
+            window.fetchWithTimeout(url, {
+                method: 'POST',
+                headers: {'X-CSRF-Token': csrf},
+                body: formData,
+                cache: 'no-store'
+            }, 30000)
+                .then(function (r) { return r.json().then(function (data) { return {ok: r.ok, data: data}; }); })
+                .then(function (res) {
+                    if (!res.ok || !res.data.success) {
+                        throw new Error(res.data && res.data.error || 'Не удалось загрузить фото');
+                    }
+                    var img = wrap.querySelector('.profile-avatar');
+                    if (!img) {
+                        var placeholder = wrap.querySelector('.profile-avatar-placeholder');
+                        img = document.createElement('img');
+                        img.className = 'profile-avatar';
+                        img.width = 60; img.height = 60;
+                        img.alt = 'Фото профиля';
+                        if (placeholder) placeholder.replaceWith(img);
+                    }
+                    img.src = res.data.avatar_url;
+                    label.remove();
+                })
+                .catch(function (err) {
+                    label.style.opacity = '1';
+                    label.style.pointerEvents = 'auto';
+                    alert(err.message || 'Не удалось загрузить фото. Попробуйте ещё раз.');
+                });
+        });
+    })();
+    </script>
+    {% endif %}
 
     <!-- ── ЧТО ДАЛЬШЕ ── -->
     {% if not user.portfolio_do_completed %}

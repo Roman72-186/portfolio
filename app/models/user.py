@@ -14,6 +14,9 @@ class User(Base):
     vk_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     photo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Аватар, загруженный самим учеником один раз в кабинете (не путать с photo_url —
+    # тот приходит из Telegram и перезаписывается при каждом входе, см. auth.py).
+    custom_avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     tariff: Mapped[str] = mapped_column(String(50), default="УВЕРЕННЫЙ")
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

@@ -118,6 +118,7 @@ def get_current_user(
         "curator_id": user.curator_id,
         "tariff": user.tariff,
         "photo_url": user.photo_url,
+        "custom_avatar_url": user.custom_avatar_url,
         "is_admin": is_admin,
         "is_group_member": user.is_group_member,
         "last_vk_check_at": user.last_vk_check_at,

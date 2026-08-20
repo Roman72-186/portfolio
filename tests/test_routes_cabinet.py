@@ -1,4 +1,5 @@
 """Tests for /cabinet route."""
+import re
 
 
 def test_cabinet_without_auth_redirects(client):
@@ -14,12 +15,19 @@ def test_cabinet_with_valid_session_returns_200(auth_client):
     assert resp.status_code == 200
 
 
-def test_cabinet_shows_student_name(auth_client):
+def test_cabinet_shows_student_name(auth_client, db):
     # /cabinet теперь редиректит ученика на /cabinet/learning (тема недели,
     # без личных данных) — имя/тариф смотрим на /cabinet/tracker, его личном трекере.
+    # Показывается имя, заполненное учеником при регистрации (first_name/last_name),
+    # а не никнейм из Telegram (user.name) — см. TODO.md.
     client, user = auth_client
+    user.first_name = "Анна"
+    user.last_name = "Смирнова"
+    db.commit()
+
     resp = client.get("/cabinet/tracker")
-    assert user.name in resp.text
+    assert "Смирнова Анна" in resp.text
+    assert user.name not in resp.text
 
 
 def test_cabinet_shows_tariff(auth_client):
@@ -37,6 +45,38 @@ def test_student_dashboard_has_mobile_logout_action(auth_client):
     assert 'class="mobile-dashboard-logout"' in resp.text
     assert 'method="post" action="/logout"' in resp.text
     assert 'aria-label="Выйти из аккаунта"' in resp.text
+    # Требование владельца: в hero-карточке значок без подписи — текст "Выйти"
+    # рядом с иконкой убран (десктопный сайдбар с текстом — отдельный элемент,
+    # его не трогаем).
+    mobile_button = re.search(
+        r'aria-label="Выйти из аккаунта">(.*?)</button>', resp.text, re.S
+    )
+    assert mobile_button is not None
+    assert "<span>" not in mobile_button.group(1)
+
+
+def test_profile_hero_scores_show_dash_without_results(auth_client):
+    """Р/К в шапке кабинета — прочерк, пока нет ни одной оценённой пробной работы."""
+    client, _ = auth_client
+    resp = client.get("/cabinet/tracker")
+    assert resp.status_code == 200
+    assert '<span class="profile-score-value">-</span>' in resp.text
+
+
+def test_profile_hero_scores_show_average_when_present(auth_client, db):
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+
+    client, user = auth_client
+    db.add(Work(
+        user_id=user.id, work_type=WORK_TYPE_MOCK_EXAM, subject="Рисунок",
+        month="январь", year=2026, filename="mock.jpg",
+        status="success", score=72, tariff=user.tariff,
+    ))
+    db.commit()
+
+    resp = client.get("/cabinet/tracker")
+    assert resp.status_code == 200
+    assert '<span class="profile-score-value">72</span>' in resp.text
 
 
 def test_cabinet_student_shows_mock_exam_empty_state(auth_client):

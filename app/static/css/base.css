@@ -932,28 +932,22 @@ button.desk-nav-item {
     flex-shrink: 0;
 }
 .mobile-dashboard-logout__button {
-    min-height: 44px;
+    width: 36px; height: 36px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    padding: 8px 12px;
+    padding: 0;
     border: 1px solid rgba(255,255,255,.35);
-    border-radius: var(--r-pill);
-    background: var(--blue);
+    border-radius: 50%;
+    background: rgba(255,255,255,.14);
     color: #fff;
-    box-shadow: 0 5px 14px rgba(0,65,180,.28);
     font: inherit;
-    font-size: 12px;
-    font-weight: 800;
     line-height: 1;
     cursor: pointer;
-    transition: background var(--duration-fast), transform var(--duration-fast), box-shadow var(--duration-fast);
+    transition: background var(--duration-fast), transform var(--duration-fast);
 }
 .mobile-dashboard-logout__button:hover {
-    background: var(--blue-deep);
-    box-shadow: 0 7px 18px rgba(0,65,180,.34);
-    transform: translateY(-1px);
+    background: rgba(255,255,255,.24);
 }
 
 /* Шестерёнка настроек уведомлений — рядом с "Выйти" в кабинете ученика. */
@@ -1053,7 +1047,7 @@ button.desk-nav-item {
     .btn-blue:active { filter: brightness(0.95); }
     .card:active { border-color: rgba(59,91,255,.18); }
     .mobile-dashboard-logout__button:hover { transform: none; }
-    .mobile-dashboard-logout__button:active { background: var(--blue-deep); }
+    .mobile-dashboard-logout__button:active { background: rgba(255,255,255,.3); }
 }
 
 /* ── focus-visible ── */

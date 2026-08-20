@@ -109,6 +109,13 @@ def s3_path_otrabotka_cycle(vk_id: int, cycle_id: int, attempt: int, kind: str, 
     return f"otrabotki/{vk_id}/{cycle_id}/attempt-{attempt}/{kind}/{_make_filename(tariff or 'X', vk_id, filename)}"
 
 
+def s3_path_avatar(vk_id: int, filename: str) -> str:
+    """Аватар, загруженный учеником вручную: Аватары/{vk_id}/{vk_id}_{random8}.ext."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpg"
+    rnd = uuid.uuid4().hex[:8]
+    return f"Аватары/{vk_id}/{vk_id}_{rnd}.{ext}"
+
+
 def s3_path_feedback(work_id: int, filename: str) -> str:
     """Файлы обратной связи: feedback/{work_id}/{filename}."""
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpg"
