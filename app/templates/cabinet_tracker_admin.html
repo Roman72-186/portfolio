@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{#
+THESIS: задача видна преподавателю целиком до публикации — текст, срок и число адресатов в одной строке.
+OWN-WORLD: существующий светлый Spark UI, одна синяя основная кнопка, линейные строки и спокойные статусные метки.
+STORY: преподаватель заводит задачу, проверяет охват, публикует; ошибка адресации ловится до того, как её увидят ученики.
+FIRST VIEWPORT: заголовок, кнопка «Новая задача», сразу под ней список ближайших дедлайнов.
+FORM: Operate, расширение существующего кабинета без новой визуальной системы.
+#}
+{% block title %}Задачи трекера{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/tracker.css?v=1">
+{% endblock %}
+{% block content %}
+<div class="trk-page">
+    <div class="trk-head">
+        <div class="trk-head-copy">
+            <h1>Задачи трекера</h1>
+            <p>Задачи из этого списка ученик видит во вкладке «Личный трекер». Пока задача не опубликована, её не видит никто.</p>
+        </div>
+        <button type="button" class="btn-blue" data-task-toggle>Новая задача</button>
+    </div>
+
+    <p class="trk-hint">
+        Время указывается по Москве. Дедлайн можно оставить пустым — тогда задача
+        висит без срока. Пустое «показать с» значит «сразу после публикации».
+    </p>
+
+    <form class="trk-form" data-task-form hidden>
+        <input type="hidden" data-task-id value="">
+        <div class="trk-grid">
+            <label class="trk-field">Название
+                <input data-task-title type="text" maxlength="200" placeholder="Например: сдать работу по перспективе" autocomplete="off">
+            </label>
+            <label class="trk-field">Дедлайн (МСК)
+                <input data-task-due type="datetime-local">
+            </label>
+            <label class="trk-field">Показать с (МСК)
+                <input data-task-starts type="datetime-local">
+            </label>
+        </div>
+        <label class="trk-field">Описание, необязательно
+            <textarea data-task-description maxlength="5000" placeholder="Что именно нужно сделать"></textarea>
+        </label>
+        <label class="trk-field">Предмет
+            <select data-task-subject>
+                <option value="">Без предмета</option>
+                {% for subject in subjects %}
+                <option value="{{ subject }}">{{ subject }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="trk-field trk-field--row">
+            <input data-task-all type="checkbox">
+            <span>Выдать всем ученикам</span>
+        </label>
+        <div data-task-audience>
+            <div class="trk-hint">Кому выдать — отметьте теги:</div>
+            <div class="trk-tag-picker">
+                {% for tag in all_tags %}
+                <label><input type="checkbox" data-task-tag value="{{ tag.id }}"{% if tag.id in ambiguous_tag_ids|default([]) %} data-task-tag-ambiguous{% endif %}>{{ tag.name }}</label>
+                {% else %}
+                <span class="trk-hint">Тегов пока нет — их заводят на странице «Теги».</span>
+                {% endfor %}
+            </div>
+            <p class="trk-message is-error" data-task-tag-warning hidden></p>
+            <label class="trk-field" style="margin-top: 10px;">Плюс отдельным ученикам: @username через запятую или с новой строки
+                <input data-task-assignees type="text" placeholder="@ivanov, @petrova" autocomplete="off">
+            </label>
+        </div>
+        <div class="trk-actions">
+            <button type="button" class="btn-blue" data-task-save>Сохранить задачу</button>
+            <button type="button" class="btn-outline" data-task-cancel>Отмена</button>
+        </div>
+        <p class="trk-message" data-task-message></p>
+    </form>
+
+    <div class="trk-list-head">
+        <h2>Все задачи</h2>
+    </div>
+
+    {% if tasks %}
+    <div>
+        {% for task in tasks %}
+        <article class="trk-row" data-task-row data-id="{{ task.id }}"
+                 data-title="{{ task.title }}"
+                 data-description="{{ task.description or '' }}"
+                 data-due="{{ task_due_form.get(task.id, '') }}"
+                 data-starts="{{ task_starts_form.get(task.id, '') }}"
+                 data-subject="{{ task.subject or '' }}"
+                 data-all="{{ '1' if task.assign_to_all else '' }}"
+                 data-tags="{{ task_tag_ids.get(task.id, [])|join(',') }}"
+                 data-assignees="{{ task_assignee_usernames.get(task.id, '') }}">
+            <div>
+                <h3>{{ task.title }}</h3>
+                {% if task.description %}<p>{{ task.description }}</p>{% endif %}
+                <div class="trk-meta">
+                    {% if task_due_display.get(task.id) %}
+                    <span>Дедлайн: {{ task_due_display.get(task.id) }} МСК</span>
+                    {% else %}
+                    <span>Без дедлайна</span>
+                    {% endif %}
+                    {% if task_starts_display.get(task.id) %}<span>Показать с {{ task_starts_display.get(task.id) }} МСК</span>{% endif %}
+                    {% if task.subject %}<span>{{ task.subject }}</span>{% endif %}
+                    {% if task.assign_to_all %}
+                    <span>Всем ученикам</span>
+                    {% else %}
+                    <span>Тегов: {{ task_tag_ids.get(task.id, [])|length }}</span>
+                    {% if task_assignee_ids.get(task.id) %}<span>Поимённо: {{ task_assignee_ids.get(task.id)|length }}</span>{% endif %}
+                    {% endif %}
+                    <span>Получат: {{ task_audience.get(task.id, 0) }}</span>
+                    <span>Выполнили: {{ task_done.get(task.id, 0) }}</span>
+                </div>
+                {% if task_ambiguous_tags.get(task.id) %}
+                <p class="trk-message is-error">
+                    Теги {{ task_ambiguous_tags.get(task.id)|join(', ') }} в проде означают группу и уровень куратора,
+                    а не предмет. Совпадение точное: ученики с тегом вида «Р+К» задачу не получат.
+                </p>
+                {% endif %}
+            </div>
+            <div class="trk-row-actions">
+                {% if task.is_published %}
+                <span class="trk-badge trk-badge--live">Опубликована</span>
+                <button type="button" class="btn-outline" data-task-action="unpublish">Скрыть</button>
+                {% else %}
+                <span class="trk-badge trk-badge--draft">Черновик</span>
+                <button type="button" class="btn-blue" data-task-action="publish">Опубликовать</button>
+                {% endif %}
+                <button type="button" class="btn-outline" data-task-edit>Изменить</button>
+                <button type="button" class="btn-danger" data-task-action="delete">Удалить</button>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="trk-empty">Задач пока нет. Первая появится у учеников после публикации.</div>
+    {% endif %}
+</div>
+
+<script>
+(function () {
+    var csrfToken = {{ csrf_token(request)|tojson }};
+    var form = document.querySelector('[data-task-form]');
+    if (!form) return;
+    var message = form.querySelector('[data-task-message]');
+
+    function field(name) { return form.querySelector('[data-task-' + name + ']'); }
+
+    function setMessage(text, isError) {
+        if (!message) return;
+        message.textContent = text || '';
+        message.classList.toggle('is-error', !!isError);
+    }
+
+    function api(path, body) {
+        return fetch(path, {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Accept':'application/json', 'Content-Type':'application/json', 'X-CSRF-Token':csrfToken},
+            body: JSON.stringify(body || {})
+        }).then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (data) {
+                if (!response.ok) {
+                    var error = new Error(data.error || data.detail || 'request_failed');
+                    error.status = response.status;
+                    throw error;
+                }
+                return data;
+            });
+        });
+    }
+
+    function syncAudienceVisibility() {
+        var audience = form.querySelector('[data-task-audience]');
+        if (audience) audience.hidden = field('all').checked;
+        syncAmbiguousTagWarning();
+    }
+
+    // Однобуквенные «Р» и «К» в проде значат группу и уровень куратора, хотя на
+    // пробниках такие же имена читаются как предмет. Совпадение здесь точное,
+    // поэтому предупреждаем до сохранения, а не после жалоб учеников.
+    function syncAmbiguousTagWarning() {
+        var warning = form.querySelector('[data-task-tag-warning]');
+        if (!warning) return;
+        var names = [];
+        form.querySelectorAll('[data-task-tag-ambiguous]:checked').forEach(function (box) {
+            names.push(box.parentElement.textContent.trim());
+        });
+        if (!names.length || field('all').checked) {
+            warning.hidden = true;
+            warning.textContent = '';
+            return;
+        }
+        warning.hidden = false;
+        warning.textContent = 'Теги ' + names.join(', ')
+            + ' в проде означают группу и уровень куратора, а не предмет.'
+            + ' Совпадение точное: ученики с тегом вида «Р+К» задачу не получат.';
+    }
+
+    function openForm(row) {
+        form.hidden = false;
+        setMessage('');
+        field('id').value = row ? row.dataset.id : '';
+        field('title').value = row ? row.dataset.title : '';
+        field('description').value = row ? row.dataset.description : '';
+        field('due').value = row ? row.dataset.due : '';
+        field('starts').value = row ? row.dataset.starts : '';
+        field('subject').value = row ? row.dataset.subject : '';
+        field('all').checked = row ? row.dataset.all === '1' : false;
+        // Возвращаем в форму уже назначенных: сохранение переписывает список
+        // целиком, и пустое поле сняло бы задачу у всех поимённых.
+        field('assignees').value = row ? (row.dataset.assignees || '') : '';
+        var selected = row && row.dataset.tags ? row.dataset.tags.split(',') : [];
+        form.querySelectorAll('[data-task-tag]').forEach(function (box) {
+            box.checked = selected.indexOf(box.value) !== -1;
+        });
+        syncAudienceVisibility();
+        field('title').focus();
+    }
+
+    field('all').addEventListener('change', syncAudienceVisibility);
+    form.addEventListener('change', function (event) {
+        if (event.target.hasAttribute('data-task-tag')) syncAmbiguousTagWarning();
+    });
+
+    document.addEventListener('click', function (event) {
+        if (event.target.closest('[data-task-toggle]')) { openForm(null); return; }
+        if (event.target.closest('[data-task-cancel]')) { form.hidden = true; return; }
+
+        var editButton = event.target.closest('[data-task-edit]');
+        if (editButton) { openForm(editButton.closest('[data-task-row]')); return; }
+
+        var saveButton = event.target.closest('[data-task-save]');
+        if (saveButton) {
+            var title = field('title').value.trim();
+            if (!title) { setMessage('Укажите название задачи.', true); return; }
+
+            var tagIds = [];
+            form.querySelectorAll('[data-task-tag]:checked').forEach(function (box) {
+                tagIds.push(Number(box.value));
+            });
+            var assignees = field('assignees').value;
+            var isForAll = field('all').checked;
+            if (!isForAll && !tagIds.length && !assignees.trim()) {
+                setMessage('Задачу никто не увидит: отметьте теги, добавьте учеников или выдайте всем.', true);
+                return;
+            }
+
+            var taskId = field('id').value;
+            saveButton.disabled = true;
+            api('/cabinet/staff/tracker/tasks' + (taskId ? '/' + taskId : ''), {
+                title: title,
+                description: field('description').value,
+                due_at: field('due').value,
+                starts_at: field('starts').value,
+                subject: field('subject').value || null,
+                assign_to_all: isForAll,
+                tag_ids: isForAll ? [] : tagIds,
+                assignee_usernames: isForAll ? '' : assignees
+            }).then(function (data) {
+                if (data && data.not_found && data.not_found.length) {
+                    window.alert('Не нашлись ученики: @' + data.not_found.join(', @'));
+                }
+                if (data && data.audience_size === 0) {
+                    window.alert('Задачу сейчас никто не увидит: под выбранную аудиторию не подошёл ни один активный ученик.');
+                } else if (data && data.ambiguous_tags && data.ambiguous_tags.length) {
+                    window.alert('Задача сохранена и уйдёт ' + data.audience_size + ' ученикам.'
+                        + ' Проверьте теги ' + data.ambiguous_tags.join(', ')
+                        + ': в проде это группа и уровень куратора, а совпадение точное.');
+                }
+                window.location.reload();
+            }).catch(function (error) {
+                saveButton.disabled = false;
+                setMessage(error.status === 422
+                    ? 'Проверьте даты: задача не может открываться позже своего дедлайна.'
+                    : 'Не удалось сохранить задачу. Попробуйте ещё раз.', true);
+            });
+            return;
+        }
+
+        var actionButton = event.target.closest('[data-task-action]');
+        if (!actionButton) return;
+        var row = actionButton.closest('[data-task-row]');
+        var action = actionButton.dataset.taskAction;
+        if (action === 'delete' && !window.confirm('Удалить задачу «' + row.dataset.title + '»?')) return;
+
+        actionButton.disabled = true;
+        api('/cabinet/staff/tracker/tasks/' + row.dataset.id + '/' + action).then(function () {
+            window.location.reload();
+        }).catch(function (error) {
+            actionButton.disabled = false;
+            window.alert(error.message === 'unpublish_first'
+                ? 'Задача опубликована и висит у учеников. Сначала скройте её.'
+                : 'Действие не выполнено. Попробуйте ещё раз.');
+        });
+    });
+})();
+</script>
+{% endblock %}

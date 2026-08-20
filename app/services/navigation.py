@@ -160,6 +160,16 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         min_rank=4,
     ),
     StaffNavItem(
+        key="tracker",
+        href="/cabinet/staff/tracker",
+        sidebar_label="Задачи",
+        pill_label="Задачи",
+        aria_label="Задачи трекера",
+        tooltip="Задачи для личного трекера учеников",
+        icon="tracker",
+        min_rank=4,
+    ),
+    StaffNavItem(
         key="videos",
         href="/cabinet/admin/videos",
         sidebar_label="Видео",

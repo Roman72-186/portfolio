@@ -1,0 +1,90 @@
+/* ───────────────────────────────────────────────
+   Личный трекер — свои стили, поверх токенов base.css.
+   Отдельный файл намеренно: base.css правит параллельная сессия, и общий
+   ?v= бампали бы оба агента. Меняешь этот файл — подними ?v= в шаблонах
+   трекера (Cache-Control: immutable на /static/).
+   ─────────────────────────────────────────────── */
+
+.trk-page { max-width: 1040px; margin: 0 auto; }
+
+.trk-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 20px; margin-bottom: 18px;
+}
+.trk-head-copy { max-width: 65ch; }
+.trk-head h1 { margin: 0 0 6px; font: 800 24px/1.25 var(--font-display); color: var(--text); }
+.trk-head p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+
+.trk-hint { margin: 0 0 12px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+.trk-form {
+    display: grid; gap: 10px; padding: 16px 18px; margin-bottom: 16px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-md); box-shadow: var(--sh-sm);
+}
+.trk-grid { display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 10px; }
+.trk-grid--two { grid-template-columns: 1fr 1fr; }
+
+.trk-field { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.trk-field input, .trk-field textarea, .trk-field select {
+    width: 100%; box-sizing: border-box; padding: 10px 12px; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    font: 500 14px/1.4 var(--font-body);
+}
+.trk-field textarea { min-height: 72px; resize: vertical; }
+.trk-field input:focus, .trk-field textarea:focus, .trk-field select:focus {
+    outline: 2px solid var(--blue); outline-offset: 1px;
+}
+.trk-field--row { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+.trk-field--row input { width: auto; }
+
+.trk-tag-picker {
+    display: flex; flex-wrap: wrap; gap: 6px 12px; max-height: 132px; overflow-y: auto;
+    padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm);
+}
+.trk-tag-picker label { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text); }
+
+.trk-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.trk-actions button { min-height: 44px; }
+
+.trk-message { min-height: 20px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.trk-message.is-error { color: var(--error); }
+
+.trk-list-head {
+    display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between;
+    align-items: center; margin-bottom: 6px;
+}
+.trk-list-head h2 { margin: 0; font: 700 17px/1.3 var(--font-display); color: var(--text); }
+
+.trk-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start;
+    padding: 13px 16px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-md);
+}
+.trk-row + .trk-row { margin-top: 8px; }
+.trk-row h3 { margin: 0 0 5px; font: 700 15px/1.35 var(--font-display); color: var(--text); }
+.trk-row p { margin: 0 0 6px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+.trk-meta { display: flex; flex-wrap: wrap; gap: 7px 12px; color: var(--muted); font-size: 12px; }
+.trk-meta .is-overdue { color: var(--error); font-weight: 700; }
+
+.trk-badge {
+    display: inline-flex; align-items: center; min-height: 28px; padding: 4px 9px;
+    border-radius: var(--r-pill); font-size: 11px; font-weight: 700;
+}
+.trk-badge--live { color: var(--blue-on-soft); background: var(--blue-soft); }
+.trk-badge--draft { color: var(--warning); background: var(--warning-soft); }
+
+.trk-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.trk-row-actions button { min-height: 36px; padding: 7px 12px; font-size: 12px; }
+
+.trk-empty {
+    padding: 28px 20px; text-align: center; color: var(--muted); background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--r-md);
+}
+
+@media (max-width: 760px) {
+    .trk-head { display: grid; grid-template-columns: 1fr; }
+    .trk-grid, .trk-grid--two, .trk-row { grid-template-columns: 1fr; }
+    .trk-row-actions { justify-content: flex-start; }
+}
