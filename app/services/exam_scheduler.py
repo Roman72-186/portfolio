@@ -28,6 +28,7 @@ from app.services.mock_exam_access import (
     ticket_closes_at,
     ticket_opens_at,
 )
+from app.services.notify import notify_many_sync
 from app.services.tz import MSK_TZ, today_msk
 
 logger = logging.getLogger(__name__)
@@ -159,6 +160,7 @@ def _run_notification_check() -> None:
 
         # Отправляем уведомления
         sent = 0
+        created_notifications = []
         for assignee in pending:
             if assignee.notified_at is not None:
                 continue
@@ -198,6 +200,7 @@ def _run_notification_check() -> None:
                 ),
             )
             db.add(notif)
+            created_notifications.append(notif)
             invalidate_unread(assignee.user_id)
             assignee.notified_at = now
             sent += 1
@@ -205,6 +208,7 @@ def _run_notification_check() -> None:
         db.commit()
         if sent:
             logger.info("Exam scheduler: отправлено %d уведомлений о пробниках", sent)
+            notify_many_sync([n.id for n in created_notifications])
 
     except Exception:
         logger.exception("Ошибка в планировщике уведомлений о пробниках")

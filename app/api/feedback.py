@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import and_ as sa_and, or_ as sa_or
 from sqlalchemy.orm import Session as DBSession
@@ -42,6 +42,7 @@ from app.dependencies import (
     require_superadmin,
     require_csrf,
 )
+from app.services.notify import notify
 from app.models.exam_cycle import ExamCycle
 from app.models.exam_assignment import ExamTicket
 from app.models.feedback import Feedback, FeedbackMessage
@@ -279,6 +280,7 @@ async def post_dialog_message(
     user: Annotated[dict, Depends(get_current_user)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
+    background_tasks: BackgroundTasks,
     text: str = Form(default=""),
     impression: str = Form(default=""),
     good: str = Form(default=""),
@@ -428,13 +430,14 @@ async def post_dialog_message(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    fb_service.notify_counterpart(
+    notification = fb_service.notify_counterpart(
         db, work=work, recipient_id=recipient_id, sender_role=sender_role
     )
     if intermediate_score_value is not None:
         cycle.intermediate_score = intermediate_score_value
 
     db.commit()
+    background_tasks.add_task(notify, notification.id)
 
     accept = request.headers.get("accept", "")
     if "application/json" in accept:
@@ -881,6 +884,7 @@ def edit_feedback_message(
     user: Annotated[dict, Depends(get_current_user)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
+    background_tasks: BackgroundTasks,
     text: str = Form(default=""),
 ):
     """Автор сообщения ОС правит ТЕКСТ своего сообщения, пока цикл «на изменении».
@@ -920,14 +924,16 @@ def edit_feedback_message(
         text_clean = text_clean[:MAX_TEXT_LEN]
     msg.text = text_clean
 
-    db.add(Notification(
+    notification = Notification(
         user_id=work.user_id,
         title="Куратор обновил обратную связь",
         text=f"По работе #{work.id} ({work.subject or ''}) обратная связь была изменена.",
         work_id=work.id,
-    ))
+    )
+    db.add(notification)
     db.commit()
     invalidate_unread(work.user_id)
+    background_tasks.add_task(notify, notification.id)
     return JSONResponse({"ok": True, "text": msg.text})
 
 

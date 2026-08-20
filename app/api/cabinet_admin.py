@@ -2,7 +2,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Request, Depends, Form, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession, aliased
@@ -14,6 +14,7 @@ from app.dependencies import require_admin_role, require_csrf
 from app.models.feature_period import FeaturePeriod
 from app.services.tz import today_msk, msk_midnight
 from app.services.feature_periods import get_active_period
+from app.services.notify import notify
 from app.models.notification import Notification
 from app.models.role import Role
 from app.models.user import User
@@ -380,6 +381,7 @@ def admin_score_work(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
+    background_tasks: BackgroundTasks,
     score: float = Form(...),
     comment: str = Form(""),
     redirect_to: str = Form(""),
@@ -396,14 +398,16 @@ def admin_score_work(
     work.scored_at = datetime.now(timezone.utc)
     work.scored_by_id = user["user_id"]
 
-    db.add(Notification(
+    notification = Notification(
         user_id=work.user_id,
         title=f"Работа проверена — {int(work.score)} / 100",
         text=work.comment if work.comment else None,
         work_id=work.id,
-    ))
+    )
+    db.add(notification)
     db.commit()
     invalidate_unread(work.user_id)
+    background_tasks.add_task(notify, notification.id)
 
     dest = redirect_to or f"/cabinet/students?student={work.user_id}&tab=mock-exams"
     return RedirectResponse(dest, status_code=302)

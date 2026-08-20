@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import quote_plus
 from typing import Annotated
 
-from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Request, Depends, Form, HTTPException, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session as DBSession
 
@@ -15,6 +15,7 @@ from app.dependencies import get_current_user, require_curator, require_admin_ro
 from app.models.curator_report import CuratorReport
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
+from app.services.notify import notify
 from app.models.role import Role
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
@@ -200,6 +201,7 @@ async def curator_reports_submit(
     user: Annotated[dict, Depends(require_curator)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
+    background_tasks: BackgroundTasks,
     video: UploadFile = File(...),
     text: str = Form(""),
 ):
@@ -241,17 +243,22 @@ async def curator_reports_submit(
         .filter(Role.rank >= 4, User.is_active == True)
         .all()
     )
+    report_notifications = []
     for admin in admins:
-        db.add(Notification(
+        notification = Notification(
             user_id=admin.id,
             title=f"Видео-отчёт от куратора {curator_name}",
             text=notif_text,
             work_id=None,
-        ))
+        )
+        db.add(notification)
+        report_notifications.append(notification)
 
     db.commit()
     for admin in admins:
         invalidate_unread(admin.id)
+    for notification in report_notifications:
+        background_tasks.add_task(notify, notification.id)
 
     return RedirectResponse("/cabinet/curator/reports?ok=1", status_code=302)
 
@@ -520,6 +527,7 @@ def curator_score_work(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
+    background_tasks: BackgroundTasks,
     score: float = Form(...),
     comment: str = Form(""),
     redirect_to: str = Form(""),
@@ -536,14 +544,16 @@ def curator_score_work(
     work.scored_at = datetime.now(timezone.utc)
     work.scored_by_id = user["user_id"]
 
-    db.add(Notification(
+    notification = Notification(
         user_id=work.user_id,
         title=f"Куратор проверил вашу работу — {int(work.score)} / 100",
         text=work.comment if work.comment else None,
         work_id=work.id,
-    ))
+    )
+    db.add(notification)
     db.commit()
     invalidate_unread(work.user_id)
+    background_tasks.add_task(notify, notification.id)
 
     dest = redirect_to or f"/cabinet/students/{work.user_id}?tab=exams"
     return RedirectResponse(dest, status_code=302)

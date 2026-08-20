@@ -13,7 +13,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Request, Depends, Form, HTTPException, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from sqlalchemy import func, or_, and_
 from sqlalchemy.orm import Session as DBSession
@@ -29,6 +29,7 @@ from app.models.legacy_portfolio_photo import LegacyPortfolioPhoto
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
+from app.services.notify import notify
 from app.models.role import Role
 from app.models.upload_log import UploadLog
 from app.models.user import User
@@ -854,6 +855,7 @@ def score_work(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
+    background_tasks: BackgroundTasks,
     score: float = Form(...),
     comment: str = Form(""),
     tab: str = Form("mock-exams"),
@@ -873,14 +875,16 @@ def score_work(
     work.scored_at = datetime.now(timezone.utc)
     work.scored_by_id = user["user_id"]
 
-    db.add(Notification(
+    notification = Notification(
         user_id=work.user_id,
         title=f"Работа проверена — {int(work.score)} / 100",
         text=work.comment if work.comment else None,
         work_id=work.id,
-    ))
+    )
+    db.add(notification)
     db.commit()
     invalidate_unread(work.user_id)
+    background_tasks.add_task(notify, notification.id)
     return RedirectResponse(
         f"/cabinet/students?student={student_id}&tab={tab}&saved=1", status_code=302
     )
@@ -895,6 +899,7 @@ def send_mock_exam_to_retake(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
+    background_tasks: BackgroundTasks,
     score: float = Form(...),
     comment: str = Form(...),
 ):
@@ -920,14 +925,16 @@ def send_mock_exam_to_retake(
     work.sent_to_retake = True
     work.sent_to_retake_at = datetime.now(timezone.utc)
 
-    db.add(Notification(
+    notification = Notification(
         user_id=work.user_id,
         title=f"Пробник отправлен на отработку — {int(work.score)} / 100",
         text=f"{comment_clean}\n\nМожно загрузить отработку в разделе «Отработка».",
         work_id=work.id,
-    ))
+    )
+    db.add(notification)
     db.commit()
     invalidate_unread(work.user_id)
+    background_tasks.add_task(notify, notification.id)
 
     return JSONResponse({"ok": True, "score": int(round(score)), "comment": comment_clean})
 
@@ -941,6 +948,7 @@ def send_mock_exam_to_revision(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
+    background_tasks: BackgroundTasks,
 ):
     if user["role_rank"] < 4:
         raise HTTPException(status_code=403, detail="Доступно только админу и суперадмину")
@@ -1012,12 +1020,14 @@ def send_mock_exam_to_revision(
             lock.unlocked_at = datetime.now(timezone.utc)
             lock.unlocked_by_id = user["user_id"]
 
-    db.add(Notification(
+    notification = Notification(
         user_id=student_id,
         title="Пробник возвращён на доработку",
         text="Догрузи этапные фото выполненного задания и при необходимости обнови финальное фото.",
-    ))
+    )
+    db.add(notification)
     db.commit()
+    background_tasks.add_task(notify, notification.id)
     return JSONResponse({"ok": True})
 
 

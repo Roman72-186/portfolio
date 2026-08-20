@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Annotated, Callable
 
-from fastapi import APIRouter, Depends, UploadFile, File, Form
+from fastapi import APIRouter, BackgroundTasks, Depends, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
@@ -37,6 +37,7 @@ from app.models.work import (
     WORK_TYPE_RETAKE,
 )
 from app.services import s3 as s3_service
+from app.services.notify import notify
 from app.services.exam_cycle import (
     MAX_INTERMEDIATE_PER_FINAL,
     close_or_expire_mock_exam_attempts,
@@ -311,6 +312,7 @@ async def upload_probnik_final(
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
+    background_tasks: BackgroundTasks,
     photos: list[UploadFile] = File(...),
     subject: str = Form(...),
 ):
@@ -442,14 +444,17 @@ async def upload_probnik_final(
 
         # Перезалив: оповестить вовлечённый staff о новом фото (балл сброшен →
         # нужна повторная проверка). На первой сдаче recipients пуст → тихо.
+        resubmit_notifications = []
         if resubmit_recipients and final_id:
             for rid in resubmit_recipients:
-                db.add(Notification(
+                notification = Notification(
                     user_id=rid,
                     title="Ученик перезагрузил работу пробника",
                     text=f"{user['name']} загрузил новое фото пробника по «{subject}» — нужна повторная проверка.",
                     work_id=final_id,
-                ))
+                )
+                db.add(notification)
+                resubmit_notifications.append(notification)
                 invalidate_unread(rid)
 
         # Lock: блокируем повторную загрузку до закрытия цикла куратором
@@ -473,6 +478,8 @@ async def upload_probnik_final(
         # (старых) билетов этого предмета — устаревшие снимки, помечаем expired_at.
         close_or_expire_mock_exam_attempts(db, user["user_id"], subject, ticket.id)
         db.commit()
+        for notification in resubmit_notifications:
+            background_tasks.add_task(notify, notification.id)
     else:
         submission_state = cycle_submission_state(
             db,
