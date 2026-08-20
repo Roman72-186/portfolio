@@ -30,3 +30,13 @@ from app.models.guest_exam import (
     GuestVisit,
 )
 from app.models.push_subscription import PushSubscription
+from app.models.tracker import (
+    ScheduleDigest,
+    ScheduleDigestAssignee,
+    ScheduleDigestTag,
+    ScheduleEvent,
+    TrackerTask,
+    TrackerTaskAssignee,
+    TrackerTaskState,
+    TrackerTaskTag,
+)
