@@ -289,6 +289,63 @@ def test_copy_week_shifts_dates_and_stays_a_draft(
     assert db.query(HomeworkImage).count() == 2
 
 
+def test_reference_image_upload_goes_to_storage(
+    client, user_factory, session_factory, monkeypatch
+):
+    """Картинка задания уезжает в S3, а ключ хранилища не попадает в ответ."""
+    _staff_client(client, user_factory, session_factory)
+    saved: dict = {}
+
+    def _fake_upload(path, data, content_type="image/jpeg"):
+        saved["path"] = path
+        saved["content_type"] = content_type
+        saved["bytes"] = len(data)
+        return "https://s3.example/" + path
+
+    monkeypatch.setattr(
+        "app.api.cabinet_tracker_admin.s3_service.upload_to_s3", _fake_upload
+    )
+
+    from io import BytesIO
+    from PIL import Image
+
+    buffer = BytesIO()
+    Image.new("RGB", (12, 12), "white").save(buffer, format="PNG")
+
+    response = client.post(
+        f"{TRACKER}/homework/upload-image",
+        files={"file": ("reference.png", buffer.getvalue(), "image/png")},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ok"] is True
+    assert data["url"].startswith("https://s3.example/")
+    assert saved["path"].startswith("Домашние задания/")
+    assert saved["content_type"] == "image/jpeg"
+
+
+def test_non_image_upload_is_rejected(client, user_factory, session_factory):
+    _staff_client(client, user_factory, session_factory)
+
+    response = client.post(
+        f"{TRACKER}/homework/upload-image",
+        files={"file": ("plan.txt", b"not an image", "text/plain")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["ok"] is False
+
+
+def test_student_cannot_upload_reference_images(auth_client):
+    client, _ = auth_client
+    response = client.post(
+        f"{TRACKER}/homework/upload-image",
+        files={"file": ("reference.png", b"whatever", "image/png")},
+    )
+    assert response.status_code == 403
+
+
 def test_copied_week_audience_matches_the_original(
     client, db, user_factory, session_factory
 ):
