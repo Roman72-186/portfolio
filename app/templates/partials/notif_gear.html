@@ -1,0 +1,39 @@
+{% macro notif_gear_widget() %}
+<div class="notif-gear-wrap" data-csrf="{{ csrf_token(request) }}" data-vapid="{{ settings.vapid_public_key }}">
+    <button type="button" class="notif-gear-btn" aria-haspopup="dialog" aria-expanded="false" aria-label="Настройки уведомлений">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82A1.65 1.65 0 0 0 3 13.09H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+    </button>
+    <div class="notif-gear-pop" role="dialog" aria-label="Настройки уведомлений" hidden>
+        <div class="notif-gear-pop-title">Уведомления</div>
+        <div class="notif-gear-row">
+            <div class="notif-gear-row-body">
+                <div class="notif-gear-row-title">Telegram</div>
+                <div class="notif-gear-row-note" data-tg-note>
+                    {% if not user.telegram_chat_id %}Телеграм не привязан
+                    {%- elif user.telegram_notifications_enabled %}Включены
+                    {%- else %}Выключены{% endif %}
+                </div>
+            </div>
+            <label class="notif-gear-switch">
+                <input type="checkbox" data-tg-toggle
+                    {% if user.telegram_chat_id and user.telegram_notifications_enabled %}checked{% endif %}
+                    {% if not user.telegram_chat_id %}disabled{% endif %}>
+                <span class="notif-gear-track"></span>
+            </label>
+        </div>
+        <div class="notif-gear-row">
+            <div class="notif-gear-row-body">
+                <div class="notif-gear-row-title">Push в браузере</div>
+                <div class="notif-gear-row-note" data-push-note>Проверка поддержки браузера…</div>
+            </div>
+            <label class="notif-gear-switch">
+                <input type="checkbox" data-push-toggle disabled>
+                <span class="notif-gear-track"></span>
+            </label>
+        </div>
+    </div>
+</div>
+{% endmacro %}

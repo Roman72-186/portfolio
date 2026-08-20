@@ -904,6 +904,8 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     border-top: 1px solid var(--line);
     display: flex; flex-direction: column; gap: 2px;
 }
+.desk-nav-footer-row { display: flex; align-items: center; gap: 6px; }
+.desk-nav-footer-row .desk-nav-logout-form { flex: 1; margin: 0; }
 .desk-nav-logout { color: var(--dim) !important; }
 .desk-nav-logout:hover { color: var(--error) !important; background: rgba(220,38,38,.06) !important; }
 /* Логаут — POST-форма с кнопкой, стилизованной под пункт меню. */
@@ -954,6 +956,55 @@ button.desk-nav-item {
     transform: translateY(-1px);
 }
 
+/* Шестерёнка настроек уведомлений — рядом с "Выйти" в кабинете ученика. */
+.notif-gear-wrap { position: relative; flex-shrink: 0; }
+.notif-gear-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--surface);
+    color: var(--muted); cursor: pointer; padding: 0; flex-shrink: 0;
+    transition: background var(--duration-fast), color var(--duration-fast), border-color var(--duration-fast);
+}
+.notif-gear-btn:hover { background: var(--surface-2); color: var(--ink); opacity: 1; }
+.notif-gear-btn[aria-expanded="true"] { background: var(--blue-soft); color: var(--blue); border-color: var(--blue-tint); }
+.profile-hero .notif-gear-wrap { display: none; }
+.profile-hero .notif-gear-btn {
+    background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.35); color: #fff;
+}
+.profile-hero .notif-gear-btn:hover { background: rgba(255,255,255,.22); color: #fff; }
+.profile-hero .notif-gear-btn[aria-expanded="true"] { background: rgba(255,255,255,.28); border-color: rgba(255,255,255,.5); }
+
+/* position:fixed + координаты через JS (getBoundingClientRect кнопки) —
+   .profile-hero держит overflow:hidden ради декоративных кругов, absolute
+   внутри него обрезался бы по границе карточки. */
+.notif-gear-pop {
+    position: fixed; z-index: 260;
+    width: 280px; max-width: calc(100vw - 32px);
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-lg); box-shadow: 0 16px 48px rgba(20,30,80,.18);
+    padding: 14px;
+}
+.notif-gear-pop-title { font-size: 13px; font-weight: 800; color: var(--ink); margin-bottom: 8px; }
+.notif-gear-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+.notif-gear-row + .notif-gear-row { border-top: 1px solid var(--line); }
+.notif-gear-row-body { flex: 1; min-width: 0; }
+.notif-gear-row-title { font-size: 13px; font-weight: 700; color: var(--ink); }
+.notif-gear-row-note { font-size: 11px; color: var(--dim); line-height: 1.4; margin-top: 2px; }
+.notif-gear-switch { position: relative; flex-shrink: 0; width: 40px; height: 24px; }
+.notif-gear-switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.notif-gear-track {
+    position: absolute; inset: 0; background: var(--line);
+    border-radius: var(--r-pill); transition: background 0.15s;
+}
+.notif-gear-track::before {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #fff; box-shadow: var(--sh-md); transition: transform 0.15s;
+}
+.notif-gear-switch input:checked + .notif-gear-track { background: var(--blue); }
+.notif-gear-switch input:checked + .notif-gear-track::before { transform: translateX(16px); }
+.notif-gear-switch input:disabled + .notif-gear-track { opacity: 0.5; cursor: not-allowed; }
+
 /* ═══════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════ */
@@ -965,6 +1016,7 @@ button.desk-nav-item {
     .main { padding: 16px 16px calc(80px + env(safe-area-inset-bottom, 0px)); }
     .dashboard-name-row { flex-wrap: wrap; }
     .mobile-dashboard-logout { display: inline-flex; }
+    .profile-hero .notif-gear-wrap { display: inline-flex; }
 }
 @media (max-width: 640px) {
     .lightbox-prev { left: 4px; }

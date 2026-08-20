@@ -47,7 +47,7 @@ async def notify(notification_id: int) -> None:
         if user is None:
             return
 
-        if user.telegram_chat_id:
+        if user.telegram_chat_id and user.telegram_notifications_enabled:
             await _send_telegram(user.telegram_chat_id, notification)
 
         if settings.vapid_private_key:

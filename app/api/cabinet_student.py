@@ -515,6 +515,24 @@ def push_unsubscribe(
     return JSONResponse({"ok": True})
 
 
+@router.post("/notifications/telegram-toggle")
+def toggle_telegram_notifications(
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+    payload: Annotated[dict, Body(...)],
+):
+    """Тумблер шестерёнки — включить/выключить Telegram-уведомления отдельно
+    от Web Push (см. app/services/notify.py)."""
+    db_user = db.query(User).filter(User.id == user["user_id"]).first()
+    if db_user is None or not db_user.telegram_chat_id:
+        raise HTTPException(status_code=400, detail="Telegram не привязан")
+    db_user.telegram_notifications_enabled = bool(payload.get("enabled"))
+    db.commit()
+    invalidate_session(user["session_id"])
+    return JSONResponse({"ok": True})
+
+
 # ── GET /cabinet/portfolio ────────────────────────────────────────────────────
 
 PAGE_SIZE = 10

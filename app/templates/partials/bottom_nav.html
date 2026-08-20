@@ -53,6 +53,8 @@
     </svg>
 {%- endmacro %}
 
+{% from "partials/notif_gear.html" import notif_gear_widget with context %}
+
 {% set nav_role_rank = user.role_rank|default("") %}
 {% set nav_role_name = user.role_name|default("") %}
 {% if user.role is defined %}
@@ -92,7 +94,10 @@
     </nav>
 
     <div class="desk-nav-footer">
-        {% include "partials/desk_nav_logout.html" %}
+        <div class="desk-nav-footer-row">
+            {% include "partials/desk_nav_logout.html" %}
+            {{ notif_gear_widget() }}
+        </div>
     </div>
 </aside>
 
@@ -127,6 +132,154 @@
         var btn = e.target.closest('.nav-btn');
         if (!btn || btn.classList.contains('nav-disabled') || btn.classList.contains('nav-active')) return;
         loader.classList.add('active');
+    });
+})();
+</script>
+<script>
+(function () {
+    var wraps = document.querySelectorAll('.notif-gear-wrap');
+    if (!wraps.length) return;
+
+    function urlBase64ToUint8Array(base64String) {
+        var padding = '='.repeat((4 - base64String.length % 4) % 4);
+        var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+        var raw = atob(base64);
+        var out = new Uint8Array(raw.length);
+        for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+        return out;
+    }
+
+    function postJson(url, body, csrf) {
+        return fetch(url, {
+            method: 'POST',
+            headers: {'X-CSRF-Token': csrf, 'Content-Type': 'application/json'},
+            body: JSON.stringify(body),
+            cache: 'no-store'
+        });
+    }
+
+    wraps.forEach(function (wrap) {
+        var btn = wrap.querySelector('.notif-gear-btn');
+        var pop = wrap.querySelector('.notif-gear-pop');
+        var tgInput = wrap.querySelector('[data-tg-toggle]');
+        var tgNote = wrap.querySelector('[data-tg-note]');
+        var pushInput = wrap.querySelector('[data-push-toggle]');
+        var pushNote = wrap.querySelector('[data-push-note]');
+        var csrf = wrap.getAttribute('data-csrf');
+        var vapidKey = wrap.getAttribute('data-vapid');
+
+        function positionPop() {
+            var r = btn.getBoundingClientRect();
+            var popWidth = Math.min(280, window.innerWidth - 32);
+            var left = Math.min(r.right - popWidth, window.innerWidth - 16 - popWidth);
+            left = Math.max(16, left);
+            var top = r.bottom + 8;
+            if (top + 260 > window.innerHeight) top = Math.max(16, r.top - 8 - 260);
+            pop.style.left = left + 'px';
+            pop.style.top = top + 'px';
+        }
+        function openPop() {
+            pop.hidden = false;
+            positionPop();
+            btn.setAttribute('aria-expanded', 'true');
+        }
+        function closePop() {
+            pop.hidden = true;
+            btn.setAttribute('aria-expanded', 'false');
+        }
+        btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (pop.hidden) openPop(); else closePop();
+        });
+        document.addEventListener('click', function (e) {
+            if (pop.hidden) return;
+            if (!wrap.contains(e.target)) closePop();
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && !pop.hidden) closePop();
+        });
+
+        if (tgInput && !tgInput.disabled) {
+            tgInput.addEventListener('change', function () {
+                var checked = tgInput.checked;
+                tgInput.disabled = true;
+                postJson('/cabinet/notifications/telegram-toggle', {enabled: checked}, csrf)
+                    .then(function (r) {
+                        if (!r.ok) throw new Error();
+                        tgNote.textContent = checked ? 'Включены' : 'Выключены';
+                    })
+                    .catch(function () {
+                        tgInput.checked = !checked;
+                        tgNote.textContent = 'Не получилось изменить, попробуй ещё раз.';
+                    })
+                    .finally(function () { tgInput.disabled = false; });
+            });
+        }
+
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+            var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            var isStandalone = window.navigator.standalone === true
+                || window.matchMedia('(display-mode: standalone)').matches;
+            if (isIOS && !isStandalone) {
+                pushNote.textContent = 'На iPhone push работает только у сайта, добавленного на экран «Домой».';
+            } else {
+                pushNote.textContent = 'Браузер не поддерживает push-уведомления.';
+            }
+            return;
+        }
+        if (!vapidKey) { pushNote.textContent = 'Push пока не настроен на сервере.'; return; }
+        if (Notification.permission === 'denied') { pushNote.textContent = 'Уведомления заблокированы в браузере.'; return; }
+
+        navigator.serviceWorker.register('/sw.js').then(function () {
+            return navigator.serviceWorker.ready;
+        }).then(function (registration) {
+            return registration.pushManager.getSubscription().then(function (sub) {
+                pushInput.disabled = false;
+                pushInput.checked = !!sub;
+                pushNote.textContent = sub ? 'Включены на этом устройстве.' : 'Выключены на этом устройстве.';
+
+                pushInput.addEventListener('change', function () {
+                    pushInput.disabled = true;
+                    if (pushInput.checked) {
+                        Notification.requestPermission().then(function (permission) {
+                            if (permission !== 'granted') {
+                                pushInput.checked = false;
+                                pushInput.disabled = false;
+                                pushNote.textContent = 'Разрешение не выдано.';
+                                return;
+                            }
+                            registration.pushManager.subscribe({
+                                userVisibleOnly: true,
+                                applicationServerKey: urlBase64ToUint8Array(vapidKey)
+                            }).then(function (newSub) {
+                                return postJson('/cabinet/push/subscribe', newSub.toJSON(), csrf);
+                            }).then(function () {
+                                pushNote.textContent = 'Включены на этом устройстве.';
+                            }).catch(function () {
+                                pushInput.checked = false;
+                                pushNote.textContent = 'Не получилось включить, попробуй ещё раз.';
+                            }).finally(function () {
+                                pushInput.disabled = false;
+                            });
+                        });
+                    } else {
+                        registration.pushManager.getSubscription().then(function (activeSub) {
+                            if (!activeSub) { pushInput.disabled = false; return; }
+                            var endpoint = activeSub.endpoint;
+                            activeSub.unsubscribe().finally(function () {
+                                postJson('/cabinet/push/unsubscribe', {endpoint: endpoint}, csrf).finally(function () {
+                                    pushNote.textContent = 'Выключены на этом устройстве.';
+                                    pushInput.disabled = false;
+                                });
+                            });
+                        });
+                    }
+                });
+            });
+        }).catch(function () {
+            pushNote.textContent = 'Не получилось подготовить push-уведомления.';
+        });
     });
 })();
 </script>

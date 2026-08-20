@@ -122,6 +122,8 @@ def get_current_user(
         "is_group_member": user.is_group_member,
         "last_vk_check_at": user.last_vk_check_at,
         "tg_username": user.tg_username,
+        "telegram_chat_id": user.telegram_chat_id,
+        "telegram_notifications_enabled": user.telegram_notifications_enabled,
         "enrollment_year": user.enrollment_year,
         "university_year": user.university_year,
         "past_tariffs": user.past_tariffs,
