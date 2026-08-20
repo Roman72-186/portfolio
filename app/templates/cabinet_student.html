@@ -603,47 +603,6 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
     </a>
     {% endif %}
 
-    <!-- ── STATS (год, дата, статус, длительность) ── -->
-    <div class="stats-strip">
-        <div class="stat-item">
-            <div class="stat-icon" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                </svg>
-            </div>
-            <div class="stat-text">
-                <div class="stat-value">{{ study_duration or '—' }}</div>
-                <div class="stat-label">Уже учится</div>
-            </div>
-        </div>
-        <div class="stat-item">
-            <div class="stat-icon" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
-                    <path d="M6 12v5c3 3 9 3 12 0v-5"/>
-                </svg>
-            </div>
-            <div class="stat-text">
-                <div class="stat-value">
-                    {% if user.university_year %}{{ user.university_year }}{% else %}—{% endif %}
-                </div>
-                <div class="stat-label">Год поступления</div>
-            </div>
-        </div>
-        <div class="stat-item">
-            <div class="stat-icon" style="background:rgba(5,150,105,0.10);color:var(--ok)" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                    <polyline points="22 4 12 14.01 9 11.01"/>
-                </svg>
-            </div>
-            <div class="stat-text">
-                <div class="stat-value" style="color:var(--ok)">Активен</div>
-                <div class="stat-label">Доступ</div>
-            </div>
-        </div>
-    </div>
-
     <div style="height:96px"></div>
 </div>
 

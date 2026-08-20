@@ -45,7 +45,7 @@ from app.services.mock_exam_access import (
 )
 from app.services.tz import MSK_TZ, today_msk
 from app.services.user_management import log_tariff_change
-from app.services.utils import study_duration_text, group_works, compress_image
+from app.services.utils import group_works, compress_image
 from app.services.video_catalog import list_published_videos
 from app.tmpl import templates, format_ticket_description
 
@@ -101,9 +101,6 @@ def cabinet_student(
 
     if not tariff_history and user["tariff"]:
         tariff_history = [{"tariff": user["tariff"], "first_used": None}]
-
-    enrolled_at = user.get("enrolled_at") or user.get("created_at")
-    study_duration = study_duration_text(enrolled_at) if enrolled_at else None
 
     # Limit: max 100 recent mock exams (защита от медленных выборок)
     mock_works = (
@@ -211,7 +208,6 @@ def cabinet_student(
         "request": request,
         "user": user,
         "tariff_history": tariff_history,
-        "study_duration": study_duration,
         "mock_count": len(mock_works),
         "mock_avg": mock_avg,
         "avg_score_by_subject": avg_score_by_subject,
