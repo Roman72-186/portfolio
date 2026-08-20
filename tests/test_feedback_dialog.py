@@ -1143,7 +1143,11 @@ def test_staff_cycles_page_has_subject_and_search_filters(
     assert 'id="cyc-search"' in resp.text
     # Строка несёт data-атрибуты для клиентской фильтрации.
     assert 'data-name="' in resp.text
-    assert 'data-username="ivanp"' in resp.text
+    # Telegram-ник — личные данные, куратору (ранг 2) не показываются, только ГП/СА.
+    if role_name == "куратор":
+        assert 'data-username="ivanp"' not in resp.text
+    else:
+        assert 'data-username="ivanp"' in resp.text
     assert "function filterCycles" in resp.text
 
 

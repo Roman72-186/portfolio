@@ -557,7 +557,7 @@ def _staff_cycles_data(db: DBSession, user: dict, archived: bool = False) -> lis
             "feedbacks_count": sum(1 for w in finals if w.id in fb_work_ids),
             "student_id": student.id,
             "student_name": student.name,
-            "tg_username": (student.tg_username or "").lstrip("@"),
+            "tg_username": (student.tg_username or "").lstrip("@") if user["role_rank"] >= 4 else "",
             "tariff": student.tariff,
             "cohort_tag": student.cohort_tag,
             "course_periods": student.course_periods,

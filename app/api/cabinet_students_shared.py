@@ -187,7 +187,8 @@ def _enrich(s: User, counts_by_user: dict, avg_by_user: dict,
             mock_counts_by_user: dict | None = None,
             unchecked_by_user: dict | None = None,
             scored_subjects_by_user: dict | None = None,
-            has_case_by_user: dict | None = None) -> dict:
+            has_case_by_user: dict | None = None,
+            can_see_contacts: bool = True) -> dict:
     return {
         "id": s.id,
         "name": f"{s.last_name or ''} {s.first_name or s.name}".strip(),
@@ -205,8 +206,8 @@ def _enrich(s: User, counts_by_user: dict, avg_by_user: dict,
         "upload_count": counts_by_user.get(s.id, 0),
         "curator_id": s.curator_id or 0,
         "enrollment_year": s.enrollment_year or 0,
-        "tg_username": (s.tg_username or "").lstrip("@").lower(),
-        "vk_id": s.vk_id or "",
+        "tg_username": (s.tg_username or "").lstrip("@").lower() if can_see_contacts else "",
+        "vk_id": (s.vk_id or "") if can_see_contacts else "",
         "mock_count": mock_counts_by_user.get(s.id, 0) if mock_counts_by_user else 0,
         "unchecked": unchecked_by_user.get(s.id, 0) if unchecked_by_user else 0,
         "scored_subjects": scored_subjects_by_user.get(s.id, []) if scored_subjects_by_user else [],
@@ -352,6 +353,7 @@ def students_panel(
             unchecked_by_user,
             scored_subjects_by_user,
             has_case_by_user,
+            can_see_contacts=is_admin_panel,
         )
         for s in students
     ]

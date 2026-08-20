@@ -477,9 +477,10 @@ def test_mock_status_panel_splits_submitted_and_not_submitted(curator_client, db
     text = resp.text
     assert "Сдали 1" in text
     assert "Не сдали 1" in text
-    # tg_username normalized: no "@", lowercase
-    assert "anna_ivanova" in text
-    assert "petrov_p" in text
+    # Telegram-ник — личные данные, куратору (ранг 2) не показывается.
+    assert "anna_ivanova" not in text
+    assert "petrov_p" not in text
+    assert "Скопировать username" not in text
     # Анна — в списке "не сдали" с пометкой предмета, по которому есть билет
     assert 'mock-status-pending">Рисунок<' in text
 
