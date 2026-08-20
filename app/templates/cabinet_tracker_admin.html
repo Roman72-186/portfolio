@@ -8,7 +8,7 @@ FORM: Operate, расширение существующего кабинета 
 #}
 {% block title %}Задачи трекера{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=1">
+<link rel="stylesheet" href="/static/css/tracker.css?v=2">
 {% endblock %}
 {% block content %}
 <div class="trk-page">
@@ -24,6 +24,43 @@ FORM: Operate, расширение существующего кабинета 
         Время указывается по Москве. Дедлайн можно оставить пустым — тогда задача
         висит без срока. Пустое «показать с» значит «сразу после публикации».
     </p>
+
+    <section class="trk-weeks">
+        <div class="trk-list-head">
+            <h2>Недели программы</h2>
+            <a class="btn-outline" href="/cabinet/admin/videos">Завести неделю</a>
+        </div>
+        <p class="trk-hint">
+            Неделя — это тема недели видеоуроков: она задаёт дату открытия и аудиторию.
+            Внутри недели программа собирается по дням.
+        </p>
+        {% if weeks %}
+        <div>
+            {% for week in weeks %}
+            <article class="trk-row">
+                <div>
+                    <h3>{{ week.title }}</h3>
+                    <div class="trk-meta">
+                        <span>Открывается {{ week_opens_display.get(week.id, '') }} МСК</span>
+                        <span>Элементов: {{ week_items.get(week.id, 0) }}</span>
+                        <span>Получат: {{ week_audience.get(week.id, 0) }}</span>
+                    </div>
+                </div>
+                <div class="trk-row-actions">
+                    {% if week.is_published %}
+                    <span class="trk-badge trk-badge--live">Опубликована</span>
+                    {% else %}
+                    <span class="trk-badge trk-badge--draft">Черновик</span>
+                    {% endif %}
+                    <a class="btn-blue" href="/cabinet/staff/tracker/weeks/{{ week.id }}">Собрать программу</a>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="trk-empty">Недель пока нет. Их заводят на странице видеоуроков — там же дата открытия и аудитория.</div>
+        {% endif %}
+    </section>
 
     <form class="trk-form" data-task-form hidden>
         <input type="hidden" data-task-id value="">

@@ -10,44 +10,87 @@
 """
 
 import json
+import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session as DBSession
 
 from app.constants import MOCK_SUBJECTS
 from app.db.database import get_db
-from app.dependencies import require_admin_role, require_csrf_header
+from app.dependencies import require_admin_role, require_csrf, require_csrf_header
 from app.models.audit_log import AuditLog
+from app.models.tracker import (
+    ITEM_HOMEWORK,
+    ITEM_KINDS,
+    ITEM_OTHER,
+    ITEM_VIDEO,
+    SOURCE_HOMEWORK,
+    SOURCE_LEARNING_TOPIC,
+)
+from app.services import s3 as s3_service
 from app.services.tags import get_all_tags
 from app.services.tracker import (
     assignee_usernames,
+    copy_week,
     count_completed,
     count_task_audience,
+    count_week_items,
+    create_homework,
     create_task,
     delete_task,
     get_assignee_ids,
+    get_homework,
     get_tag_ids,
     get_task,
+    homework_images,
     list_tasks,
+    list_week_items,
     publish_task,
     resolve_assignees,
+    set_homework_images,
     set_task_assignees,
     set_task_tags,
     unpublish_task,
+    update_homework,
     update_task,
+    week_audience,
 )
 from app.services.tz import MSK_TZ
+from app.services.utils import compress_image
 # Подсказка про «Р»/«К» общая с видеоуроками: в проде это группа и уровень
 # куратора, а не предмет. Правило доступа от неё не зависит, поэтому берём
-# готовую функцию, а не копируем список букв во второе место.
-from app.services.video_topics import ambiguous_tag_names
+# готовую функцию, а не копируем список букв во второе место. Неделя программы —
+# это тема недели видеомодуля, поэтому список и чтение недель тоже оттуда.
+from app.services.video_topics import (
+    ambiguous_tag_names,
+    get_tag_ids as topic_tag_ids,
+    get_topic,
+    list_topics,
+)
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/staff/tracker")
+
+# Подписи типов элементов — в одном месте: их показывает и конструктор, и,
+# позже, экран ученика.
+ITEM_KIND_LABELS = {
+    "video": "Видео",
+    "homework": "Домашнее задание",
+    "mock_exam": "Пробник",
+    "survey": "Анкета",
+    "lesson": "Занятие",
+    "other": "Другое",
+}
+
+ALLOWED_IMAGE_EXTENSIONS = {
+    ".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".avif", ".gif", ".bmp",
+    ".tif", ".tiff",
+}
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 
 class TaskPayload(BaseModel):
@@ -134,6 +177,15 @@ def _format_msk_display(value: datetime | None) -> str:
     return value.astimezone(MSK_TZ).strftime("%d.%m.%Y %H:%M")
 
 
+def _format_msk_day(value: datetime | None) -> str:
+    """Дата без времени — заголовок дня в конструкторе недели."""
+    if value is None:
+        return "Без даты"
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(MSK_TZ).strftime("%d.%m.%Y")
+
+
 def _audit_task(db: DBSession, *, action: str, user_id: int, task) -> None:
     """Пишем в журнал каждое действие над задачей: все они меняют, кто и что
     увидит, — по той же причине аудируются темы видеоуроков."""
@@ -183,7 +235,10 @@ def tracker_admin_page(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    tasks = list_tasks(db)
+    # Только разовые задачи: элементы недель живут в конструкторе, иначе одна и
+    # та же строка висела бы на двух экранах.
+    tasks = list_tasks(db, standalone_only=True)
+    weeks = list_topics(db)
     task_tag_ids = {t.id: get_tag_ids(db, t.id) for t in tasks}
     task_assignee_ids = {t.id: get_assignee_ids(db, t.id) for t in tasks}
     all_tags = get_all_tags(db)
@@ -232,6 +287,11 @@ def tracker_admin_page(
             "ambiguous_tag_ids": {
                 tag.id for tag in all_tags if tag.name in ambiguous_names
             },
+            # Недели программы — вход в конструктор.
+            "weeks": weeks,
+            "week_items": {w.id: count_week_items(db, w.id) for w in weeks},
+            "week_audience": {w.id: week_audience(db, w) for w in weeks},
+            "week_opens_display": {w.id: _format_msk_display(w.opens_at) for w in weeks},
         },
     )
 
@@ -354,9 +414,319 @@ def delete_tracker_task(
     Сначала снять публикацию — это видимое действие с понятным результатом.
     """
     task = _get_task_or_404(db, task_id)
-    if task.is_published:
+    # Элемент недели гасится вместе с неделей, отдельной публикации у него нет —
+    # требовать «сначала скройте» здесь значило бы требовать снять всю неделю.
+    if task.is_published and task.topic_id is None:
         return JSONResponse({"ok": False, "error": "unpublish_first"}, status_code=409)
     delete_task(task)
     _audit_task(db, action="tracker_task_delete", user_id=user["user_id"], task=task)
     db.commit()
     return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Конструктор недели
+# ---------------------------------------------------------------------------
+
+class WeekItemPayload(BaseModel):
+    """Элемент программы внутри недели.
+
+    Аудитории здесь нет намеренно: элемент достаётся тем, кому адресована сама
+    неделя. И `starts_at` нет: показ гейтит дата открытия недели, отдельное поле
+    у элемента ничего бы не меняло, только вводило в заблуждение.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    kind: str = Field(default=ITEM_OTHER, max_length=20)
+    due_at: str = Field(default="", max_length=32)
+    subject: str | None = Field(default=None, max_length=50)
+    sort_order: int = Field(default=0, ge=0, le=1000)
+    # Заполняется только для kind="homework".
+    homework: "HomeworkPayload | None" = None
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Title cannot be empty")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def strip_description(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        return value or None
+
+    @field_validator("kind")
+    @classmethod
+    def validate_kind(cls, value: str) -> str:
+        value = (value or "").strip()
+        if value not in ITEM_KINDS:
+            raise ValueError("Unknown item kind")
+        return value
+
+    @field_validator("subject")
+    @classmethod
+    def validate_subject(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        if not value:
+            return None
+        if value not in MOCK_SUBJECTS:
+            raise ValueError("Unknown subject")
+        return value
+
+
+class HomeworkImagePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    url: str = Field(min_length=1, max_length=500)
+    path: str | None = Field(default=None, max_length=300)
+
+
+class HomeworkPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    submission_required: bool = True
+    max_files: int = Field(default=1, ge=0, le=20)
+    images: list[HomeworkImagePayload] = Field(default_factory=list, max_length=20)
+
+
+WeekItemPayload.model_rebuild()
+
+
+def _get_week_or_404(db: DBSession, topic_id: int):
+    week = get_topic(db, topic_id)
+    if week is None:
+        raise HTTPException(status_code=404, detail="Неделя не найдена")
+    return week
+
+
+def _item_of_week_or_404(db: DBSession, week, task_id: int):
+    task = _get_task_or_404(db, task_id)
+    if task.topic_id != week.id:
+        raise HTTPException(status_code=404, detail="Элемент не из этой недели")
+    return task
+
+
+def _apply_homework(
+    db: DBSession, task, payload: WeekItemPayload, *, user_id: int
+) -> None:
+    """Создать или обновить домашку элемента и привязать её к задаче.
+
+    Домашка — отдельная сущность (решение владельца по Р2), но заводится прямо
+    из конструктора: отдельный экран «сначала создайте задание, потом поставьте
+    его в неделю» — лишний шаг там, где преподаватель думает про день недели.
+    """
+    homework_data = payload.homework or HomeworkPayload()
+    existing = (
+        get_homework(db, task.source_id)
+        if task.source_kind == SOURCE_HOMEWORK and task.source_id
+        else None
+    )
+    if existing is None:
+        existing = create_homework(
+            db,
+            title=payload.title,
+            description=payload.description,
+            subject=payload.subject,
+            submission_required=homework_data.submission_required,
+            max_files=homework_data.max_files,
+            user_id=user_id,
+        )
+    else:
+        update_homework(
+            existing,
+            title=payload.title,
+            description=payload.description,
+            subject=payload.subject,
+            submission_required=homework_data.submission_required,
+            max_files=homework_data.max_files,
+        )
+    set_homework_images(
+        db, existing, [image.model_dump() for image in homework_data.images]
+    )
+    task.source_kind = SOURCE_HOMEWORK
+    task.source_id = existing.id
+
+
+def _bind_source(db: DBSession, task, payload: WeekItemPayload, *, user_id: int) -> None:
+    """Привязать элемент к объекту, по которому его потом гасить.
+
+    Пока связаны только два типа: домашка (своя сущность) и видео (уроки самой
+    недели). Пробник, анкета и занятие остаются без источника — автозакрытие по
+    ним не написано, и ученик отмечает их галочкой сам.
+    """
+    if payload.kind == ITEM_HOMEWORK:
+        _apply_homework(db, task, payload, user_id=user_id)
+        return
+    if payload.kind == ITEM_VIDEO:
+        task.source_kind = SOURCE_LEARNING_TOPIC
+        task.source_id = task.topic_id
+        return
+    task.source_kind = None
+    task.source_id = None
+
+
+@router.get("/weeks/{topic_id}", response_class=HTMLResponse)
+def week_constructor_page(
+    topic_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    week = _get_week_or_404(db, topic_id)
+    items = list_week_items(db, week.id)
+    homework_by_task = {
+        item.id: get_homework(db, item.source_id)
+        for item in items
+        if item.source_kind == SOURCE_HOMEWORK and item.source_id
+    }
+    images_by_task = {
+        task_id: homework_images(db, homework.id)
+        for task_id, homework in homework_by_task.items()
+        if homework
+    }
+    return templates.TemplateResponse(
+        "cabinet_tracker_week.html",
+        {
+            "request": request,
+            "user": user,
+            "week": week,
+            "week_opens_display": _format_msk_display(week.opens_at),
+            "week_audience": week_audience(db, week),
+            "week_ambiguous_tags": ambiguous_tag_names(db, topic_tag_ids(db, week.id)),
+            "items": items,
+            "item_kinds": ITEM_KINDS,
+            "item_kind_labels": ITEM_KIND_LABELS,
+            "subjects": MOCK_SUBJECTS,
+            "item_due_form": {i.id: _format_msk_datetime_local(i.due_at) for i in items},
+            "item_due_display": {i.id: _format_msk_display(i.due_at) for i in items},
+            "item_day": {i.id: _format_msk_day(i.due_at) for i in items},
+            "homework_by_task": homework_by_task,
+            "homework_images": images_by_task,
+            # Строки для data-атрибутов формы собираются здесь: у картинки путь
+            # может быть пустым, и join в шаблоне подставил бы туда «None».
+            "homework_image_urls": {
+                task_id: "|".join(image.image_s3_url for image in images)
+                for task_id, images in images_by_task.items()
+            },
+            "homework_image_paths": {
+                task_id: "|".join(image.image_s3_path or "" for image in images)
+                for task_id, images in images_by_task.items()
+            },
+        },
+    )
+
+
+@router.post("/weeks/{topic_id}/items", response_class=JSONResponse)
+def create_week_item(
+    topic_id: int,
+    payload: WeekItemPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    week = _get_week_or_404(db, topic_id)
+    task = create_task(
+        db,
+        title=payload.title,
+        description=payload.description,
+        due_at=_parse_msk_datetime(payload.due_at, field="дедлайн"),
+        subject=payload.subject,
+        topic_id=week.id,
+        kind=payload.kind,
+        sort_order=payload.sort_order,
+        user_id=user["user_id"],
+    )
+    # Публикацией элемента управляет неделя: отдельная кнопка «опубликовать» на
+    # каждой строке заставляла бы жать её по пять раз на неделю и ничего бы не
+    # решала — ученик всё равно не видит элементы неопубликованной недели.
+    task.is_published = True
+    _bind_source(db, task, payload, user_id=user["user_id"])
+    _audit_task(db, action="tracker_week_item_create", user_id=user["user_id"], task=task)
+    db.commit()
+    return JSONResponse({"ok": True, "task_id": task.id})
+
+
+@router.post("/weeks/{topic_id}/items/{task_id}", response_class=JSONResponse)
+def update_week_item(
+    topic_id: int,
+    task_id: int,
+    payload: WeekItemPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    week = _get_week_or_404(db, topic_id)
+    task = _item_of_week_or_404(db, week, task_id)
+    update_task(
+        task,
+        title=payload.title,
+        description=payload.description,
+        due_at=_parse_msk_datetime(payload.due_at, field="дедлайн"),
+        subject=payload.subject,
+        kind=payload.kind,
+        sort_order=payload.sort_order,
+    )
+    _bind_source(db, task, payload, user_id=user["user_id"])
+    _audit_task(db, action="tracker_week_item_update", user_id=user["user_id"], task=task)
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/weeks/{topic_id}/copy", response_class=JSONResponse)
+def copy_week_route(
+    topic_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Скопировать неделю со сдвигом на семь дней — прошлая как образец."""
+    week = _get_week_or_404(db, topic_id)
+    copy = copy_week(db, week, user_id=user["user_id"])
+    db.add(
+        AuditLog(
+            action="tracker_week_copy",
+            performed_by_id=user["user_id"],
+            details=json.dumps(
+                {"source_topic_id": week.id, "new_topic_id": copy.id},
+                ensure_ascii=False,
+            ),
+        )
+    )
+    db.commit()
+    return JSONResponse({"ok": True, "topic_id": copy.id})
+
+
+@router.post("/homework/upload-image")
+async def upload_homework_image(
+    user: Annotated[dict, Depends(require_admin_role)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    file: UploadFile = File(...),
+):
+    """Референсная картинка задания. Путь и сжатие — как у фото билетов."""
+    content_type = (file.content_type or "").lower()
+    filename = file.filename or "image.jpg"
+    ext = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
+    if not content_type.startswith("image/") and ext not in ALLOWED_IMAGE_EXTENSIONS:
+        return JSONResponse(
+            {"ok": False, "error": "Файл не является изображением"}, status_code=422
+        )
+
+    data = await file.read()
+    if not data:
+        return JSONResponse({"ok": False, "error": "Пустой файл"}, status_code=422)
+    if len(data) > MAX_IMAGE_BYTES:
+        return JSONResponse(
+            {"ok": False, "error": "Файл слишком большой (макс. 10 МБ)"}, status_code=413
+        )
+
+    s3_path = f"Домашние задания/{uuid.uuid4().hex[:12]}.jpg"
+    url = s3_service.upload_to_s3(s3_path, compress_image(data), "image/jpeg")
+    if s3_service.is_configured() and not url:
+        return JSONResponse(
+            {"ok": False, "error": "Ошибка загрузки в хранилище"}, status_code=502
+        )
+    return JSONResponse({"ok": True, "url": url, "path": s3_path if url else None})

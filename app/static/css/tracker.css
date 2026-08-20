@@ -78,6 +78,37 @@
 .trk-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .trk-row-actions button { min-height: 36px; padding: 7px 12px; font-size: 12px; }
 
+/* ── Конструктор недели ─────────────────────────────────────────────── */
+
+.trk-weeks { margin-bottom: 28px; }
+
+.trk-day {
+    margin: 18px 0 8px;
+    font: 700 13px/1.3 var(--font-display);
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+
+.trk-badge--kind { color: var(--blue-on-soft); background: var(--surface-2); }
+
+.trk-homework {
+    display: grid; gap: 10px; padding: 12px 14px; margin-top: 4px;
+    background: var(--bg); border: 1px dashed var(--line); border-radius: var(--r-sm);
+}
+
+.trk-thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.trk-thumbs img {
+    width: 84px; height: 84px; object-fit: cover;
+    border: 1px solid var(--line); border-radius: var(--r-sm);
+}
+.trk-thumb { position: relative; display: inline-flex; }
+.trk-thumb button {
+    position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; padding: 0;
+    color: var(--surface); background: var(--error); border: none; border-radius: 50%;
+    font: 700 13px/1 var(--font-body); cursor: pointer;
+}
+
 .trk-empty {
     padding: 28px 20px; text-align: center; color: var(--muted); background: var(--surface);
     border: 1px solid var(--line); border-radius: var(--r-md);

@@ -39,11 +39,27 @@ COMPLETION_MODES = (
 )
 
 # Откуда система узнаёт, что задача выполнена. None — события нет, гасится руками.
-SOURCE_EXAM_ASSIGNMENT = "exam_assignment"  # сдача домашки/пробника
+SOURCE_EXAM_ASSIGNMENT = "exam_assignment"  # сдача пробника
 SOURCE_LEARNING_TOPIC = "learning_topic"    # просмотр видео недели
 SOURCE_FEEDBACK = "feedback"                # ответ в диалоге обратной связи
+SOURCE_HOMEWORK = "homework"                # сдача домашней работы
 
-SOURCE_KINDS = (SOURCE_EXAM_ASSIGNMENT, SOURCE_LEARNING_TOPIC, SOURCE_FEEDBACK)
+SOURCE_KINDS = (
+    SOURCE_EXAM_ASSIGNMENT, SOURCE_LEARNING_TOPIC, SOURCE_FEEDBACK, SOURCE_HOMEWORK,
+)
+
+# Тип элемента программы — что преподаватель ставит в день недели. Отличается от
+# source_kind: тип отвечает на «что это», источник — на «по какому событию гасить».
+ITEM_VIDEO = "video"          # посмотреть видео недели
+ITEM_HOMEWORK = "homework"    # домашнее задание
+ITEM_MOCK_EXAM = "mock_exam"  # пробник
+ITEM_SURVEY = "survey"        # анкета
+ITEM_LESSON = "lesson"        # занятие или эфир
+ITEM_OTHER = "other"          # всё остальное, в том числе разовые задачи вне недели
+
+ITEM_KINDS = (
+    ITEM_VIDEO, ITEM_HOMEWORK, ITEM_MOCK_EXAM, ITEM_SURVEY, ITEM_LESSON, ITEM_OTHER,
+)
 
 STATUS_OPEN = "open"
 STATUS_DONE = "done"
@@ -66,6 +82,18 @@ class TrackerTask(Base):
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     subject: Mapped[str | None] = mapped_column(String(50), nullable=True)  # «Рисунок» | «Композиция» | None
+
+    # Неделя программы, в которую поставлен элемент. None — разовая задача вне
+    # программы. Неделя — это LearningTopic видеомодуля: расписание, публикация
+    # и адресация там уже обкатаны, второй такой сущности не заводим
+    # (plans/2026-08-20…, Этап 2 «Конструктор недели»).
+    topic_id: Mapped[int | None] = mapped_column(
+        ForeignKey("learning_topics.id", ondelete="SET NULL"), nullable=True
+    )
+    # Что это за элемент: видео, домашка, пробник, анкета, занятие.
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default=ITEM_OTHER)
+    # Порядок внутри одного дня: дата задаёт день, sort_order — что раньше внутри дня.
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     completion_mode: Mapped[str] = mapped_column(
         String(20), nullable=False, default=COMPLETION_MIXED
@@ -101,6 +129,7 @@ class TrackerTask(Base):
     __table_args__ = (
         Index("ix_tracker_tasks_public", "is_published", "due_at"),
         Index("ix_tracker_tasks_source", "source_kind", "source_id"),
+        Index("ix_tracker_tasks_topic", "topic_id", "due_at", "sort_order"),
     )
 
 

@@ -1,0 +1,358 @@
+{% extends "base.html" %}
+{#
+THESIS: неделя собирается по дням — видно, что и когда получит ученик, до того как неделю открыли.
+OWN-WORLD: существующий светлый Spark UI, одна синяя основная кнопка, линейные строки, спокойные метки.
+STORY: преподаватель ставит в день элемент, видит порядок недели целиком, копирует прошлую как образец.
+FIRST VIEWPORT: шапка недели с охватом и кнопкой копирования, сразу под ней — дни с элементами.
+FORM: Operate, расширение кабинета без новой визуальной системы.
+#}
+{% block title %}Неделя: {{ week.title }}{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/tracker.css?v=2">
+{% endblock %}
+{% block content %}
+<div class="trk-page">
+    <div class="trk-head">
+        <div class="trk-head-copy">
+            <h1>{{ week.title }}</h1>
+            <p>
+                Открывается {{ week_opens_display }} МСК ·
+                {% if week.is_published %}опубликована{% else %}черновик, ученики её не видят{% endif %} ·
+                получат: {{ week_audience }}
+            </p>
+        </div>
+        <div class="trk-actions">
+            <a class="btn-outline" href="/cabinet/staff/tracker">Все задачи</a>
+            <button type="button" class="btn-outline" data-week-copy>Скопировать неделю</button>
+        </div>
+    </div>
+
+    {% if week_ambiguous_tags %}
+    <p class="trk-message is-error">
+        Неделя адресована тегам {{ week_ambiguous_tags|join(', ') }} — в проде это группа и уровень
+        куратора, а не предмет. Совпадение точное: ученики с тегом вида «Р+К» неделю не получат.
+    </p>
+    {% endif %}
+
+    <p class="trk-hint">
+        Элементы наследуют аудиторию недели и появляются у учеников вместе с ней.
+        Дата — это день, в который элемент стоит в программе; она же дедлайн в трекере.
+    </p>
+
+    <div class="trk-list-head">
+        <h2>Программа недели</h2>
+        <button type="button" class="btn-blue" data-item-toggle>Добавить элемент</button>
+    </div>
+
+    <form class="trk-form" data-item-form hidden>
+        <input type="hidden" data-item-id value="">
+        <div class="trk-grid">
+            <label class="trk-field">Название
+                <input data-item-title type="text" maxlength="200" placeholder="Например: посмотреть видео недели" autocomplete="off">
+            </label>
+            <label class="trk-field">Тип элемента
+                <select data-item-kind>
+                    {% for kind in item_kinds %}
+                    <option value="{{ kind }}">{{ item_kind_labels.get(kind, kind) }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="trk-field">Дата и время (МСК)
+                <input data-item-due type="datetime-local">
+            </label>
+        </div>
+        <div class="trk-grid trk-grid--two">
+            <label class="trk-field">Предмет
+                <select data-item-subject>
+                    <option value="">Без предмета</option>
+                    {% for subject in subjects %}
+                    <option value="{{ subject }}">{{ subject }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="trk-field">Порядок внутри дня
+                <input data-item-order type="number" min="0" max="1000" value="0">
+            </label>
+        </div>
+        <label class="trk-field">Описание, необязательно
+            <textarea data-item-description maxlength="5000" placeholder="Что нужно сделать"></textarea>
+        </label>
+
+        <div class="trk-homework" data-homework-block hidden>
+            <div class="trk-hint">Домашнее задание — отдельная карточка: условие и референсы.</div>
+            <div class="trk-grid trk-grid--two">
+                <label class="trk-field trk-field--row">
+                    <input data-homework-required type="checkbox" checked>
+                    <span>Ученик загружает работу</span>
+                </label>
+                <label class="trk-field">Сколько файлов ждём
+                    <input data-homework-files type="number" min="0" max="20" value="1">
+                </label>
+            </div>
+            <label class="trk-field">Картинки-референсы
+                <input data-homework-upload type="file" accept="image/*" multiple>
+            </label>
+            <div class="trk-thumbs" data-homework-thumbs></div>
+            <p class="trk-message" data-homework-message></p>
+        </div>
+
+        <div class="trk-actions">
+            <button type="button" class="btn-blue" data-item-save>Сохранить элемент</button>
+            <button type="button" class="btn-outline" data-item-cancel>Отмена</button>
+        </div>
+        <p class="trk-message" data-item-message></p>
+    </form>
+
+    {% if items %}
+    {% set ns = namespace(day='') %}
+    {% for item in items %}
+    {% if item_day.get(item.id) != ns.day %}
+    {% set ns.day = item_day.get(item.id) %}
+    <h3 class="trk-day">{{ ns.day }}</h3>
+    {% endif %}
+    <article class="trk-row" data-item-row data-id="{{ item.id }}"
+             data-title="{{ item.title }}"
+             data-description="{{ item.description or '' }}"
+             data-kind="{{ item.kind }}"
+             data-due="{{ item_due_form.get(item.id, '') }}"
+             data-subject="{{ item.subject or '' }}"
+             data-order="{{ item.sort_order }}"
+             data-homework-required="{{ '1' if homework_by_task.get(item.id) and homework_by_task.get(item.id).submission_required else '' }}"
+             data-homework-files="{{ homework_by_task.get(item.id).max_files if homework_by_task.get(item.id) else 1 }}"
+             data-homework-images="{{ homework_image_urls.get(item.id, '') }}"
+             data-homework-paths="{{ homework_image_paths.get(item.id, '') }}">
+        <div>
+            <h3>{{ item.title }}</h3>
+            {% if item.description %}<p>{{ item.description }}</p>{% endif %}
+            <div class="trk-meta">
+                <span class="trk-badge trk-badge--kind">{{ item_kind_labels.get(item.kind, item.kind) }}</span>
+                {% if item_due_display.get(item.id) %}<span>{{ item_due_display.get(item.id) }} МСК</span>{% endif %}
+                {% if item.subject %}<span>{{ item.subject }}</span>{% endif %}
+                {% if homework_by_task.get(item.id) %}
+                <span>{% if homework_by_task.get(item.id).submission_required %}со сдачей работы{% else %}без загрузки файлов{% endif %}</span>
+                {% endif %}
+            </div>
+            {% if homework_images.get(item.id) %}
+            <div class="trk-thumbs">
+                {% for image in homework_images.get(item.id) %}
+                <img src="{{ image.image_s3_url }}" alt="Референс задания" loading="lazy">
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        <div class="trk-row-actions">
+            <button type="button" class="btn-outline" data-item-edit>Изменить</button>
+            <button type="button" class="btn-danger" data-item-delete>Удалить</button>
+        </div>
+    </article>
+    {% endfor %}
+    {% else %}
+    <div class="trk-empty">В неделе пока пусто. Добавьте первый элемент — например, видео на понедельник.</div>
+    {% endif %}
+</div>
+
+<script>
+(function () {
+    var csrfToken = {{ csrf_token(request)|tojson }};
+    var weekId = {{ week.id }};
+    var form = document.querySelector('[data-item-form]');
+    if (!form) return;
+    var message = form.querySelector('[data-item-message]');
+    var thumbs = form.querySelector('[data-homework-thumbs]');
+    // Картинки живут здесь до сохранения: загрузка в S3 идёт сразу при выборе
+    // файла, а привязка к заданию — только вместе с элементом.
+    var pendingImages = [];
+
+    function field(name) { return form.querySelector('[data-item-' + name + ']'); }
+
+    function setMessage(text, isError) {
+        message.textContent = text || '';
+        message.classList.toggle('is-error', !!isError);
+    }
+
+    function api(path, body) {
+        return fetch(path, {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Accept':'application/json', 'Content-Type':'application/json', 'X-CSRF-Token':csrfToken},
+            body: JSON.stringify(body || {})
+        }).then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (data) {
+                if (!response.ok) {
+                    var reason = data.error
+                        || (typeof data.detail === 'string' ? data.detail : '')
+                        || 'request_failed';
+                    var error = new Error(reason);
+                    error.status = response.status;
+                    throw error;
+                }
+                return data;
+            });
+        });
+    }
+
+    function renderThumbs() {
+        thumbs.innerHTML = '';
+        pendingImages.forEach(function (image, index) {
+            var wrap = document.createElement('span');
+            wrap.className = 'trk-thumb';
+            var img = document.createElement('img');
+            img.src = image.url;
+            img.alt = 'Референс задания';
+            var remove = document.createElement('button');
+            remove.type = 'button';
+            remove.textContent = '×';
+            remove.setAttribute('aria-label', 'Убрать картинку');
+            remove.addEventListener('click', function () {
+                pendingImages.splice(index, 1);
+                renderThumbs();
+            });
+            wrap.appendChild(img);
+            wrap.appendChild(remove);
+            thumbs.appendChild(wrap);
+        });
+    }
+
+    function syncHomeworkBlock() {
+        var block = form.querySelector('[data-homework-block]');
+        block.hidden = field('kind').value !== 'homework';
+    }
+
+    function openForm(row) {
+        form.hidden = false;
+        setMessage('');
+        field('id').value = row ? row.dataset.id : '';
+        field('title').value = row ? row.dataset.title : '';
+        field('description').value = row ? row.dataset.description : '';
+        field('kind').value = row ? row.dataset.kind : 'video';
+        field('due').value = row ? row.dataset.due : '';
+        field('subject').value = row ? row.dataset.subject : '';
+        field('order').value = row ? row.dataset.order : '0';
+
+        var required = form.querySelector('[data-homework-required]');
+        var files = form.querySelector('[data-homework-files]');
+        required.checked = row ? row.dataset.homeworkRequired === '1' : true;
+        files.value = row ? (row.dataset.homeworkFiles || '1') : '1';
+
+        pendingImages = [];
+        if (row && row.dataset.homeworkImages) {
+            var urls = row.dataset.homeworkImages.split('|');
+            var paths = (row.dataset.homeworkPaths || '').split('|');
+            urls.forEach(function (url, index) {
+                if (url) pendingImages.push({url: url, path: paths[index] || null});
+            });
+        }
+        renderThumbs();
+        syncHomeworkBlock();
+        field('title').focus();
+    }
+
+    field('kind').addEventListener('change', syncHomeworkBlock);
+
+    form.querySelector('[data-homework-upload]').addEventListener('change', function (event) {
+        var files = Array.prototype.slice.call(event.target.files || []);
+        if (!files.length) return;
+        var note = form.querySelector('[data-homework-message]');
+        note.textContent = 'Загружаем картинки…';
+        note.classList.remove('is-error');
+        var uploads = files.map(function (file) {
+            var data = new FormData();
+            data.append('file', file);
+            data.append('csrf_token', csrfToken);
+            return fetch('/cabinet/staff/tracker/homework/upload-image', {
+                method: 'POST', credentials: 'same-origin',
+                headers: {'X-CSRF-Token': csrfToken},
+                body: data
+            }).then(function (response) { return response.json(); });
+        });
+        Promise.all(uploads).then(function (results) {
+            var failed = 0;
+            results.forEach(function (result) {
+                if (result && result.ok && result.url) {
+                    pendingImages.push({url: result.url, path: result.path || null});
+                } else {
+                    failed += 1;
+                }
+            });
+            renderThumbs();
+            event.target.value = '';
+            if (failed) {
+                note.textContent = 'Не загрузились: ' + failed;
+                note.classList.add('is-error');
+            } else {
+                note.textContent = '';
+            }
+        }).catch(function () {
+            note.textContent = 'Не удалось загрузить картинки.';
+            note.classList.add('is-error');
+        });
+    });
+
+    document.addEventListener('click', function (event) {
+        if (event.target.closest('[data-item-toggle]')) { openForm(null); return; }
+        if (event.target.closest('[data-item-cancel]')) { form.hidden = true; return; }
+
+        var editButton = event.target.closest('[data-item-edit]');
+        if (editButton) { openForm(editButton.closest('[data-item-row]')); return; }
+
+        var copyButton = event.target.closest('[data-week-copy]');
+        if (copyButton) {
+            if (!window.confirm('Скопировать неделю целиком со сдвигом на 7 дней? Копия будет черновиком.')) return;
+            copyButton.disabled = true;
+            api('/cabinet/staff/tracker/weeks/' + weekId + '/copy').then(function (data) {
+                window.location.href = '/cabinet/staff/tracker/weeks/' + data.topic_id;
+            }).catch(function () {
+                copyButton.disabled = false;
+                window.alert('Не удалось скопировать неделю.');
+            });
+            return;
+        }
+
+        var deleteButton = event.target.closest('[data-item-delete]');
+        if (deleteButton) {
+            var deleteRow = deleteButton.closest('[data-item-row]');
+            if (!window.confirm('Удалить элемент «' + deleteRow.dataset.title + '»?')) return;
+            deleteButton.disabled = true;
+            api('/cabinet/staff/tracker/tasks/' + deleteRow.dataset.id + '/delete').then(function () {
+                window.location.reload();
+            }).catch(function () {
+                deleteButton.disabled = false;
+                window.alert('Не удалось удалить элемент.');
+            });
+            return;
+        }
+
+        var saveButton = event.target.closest('[data-item-save]');
+        if (!saveButton) return;
+
+        var title = field('title').value.trim();
+        if (!title) { setMessage('Укажите название элемента.', true); return; }
+
+        var body = {
+            title: title,
+            description: field('description').value,
+            kind: field('kind').value,
+            due_at: field('due').value,
+            subject: field('subject').value || null,
+            sort_order: Number(field('order').value || 0)
+        };
+        if (field('kind').value === 'homework') {
+            body.homework = {
+                submission_required: form.querySelector('[data-homework-required]').checked,
+                max_files: Number(form.querySelector('[data-homework-files]').value || 0),
+                images: pendingImages
+            };
+        }
+        var itemId = field('id').value;
+        saveButton.disabled = true;
+        api('/cabinet/staff/tracker/weeks/' + weekId + '/items' + (itemId ? '/' + itemId : ''), body)
+            .then(function () { window.location.reload(); })
+            .catch(function (error) {
+                saveButton.disabled = false;
+                setMessage(error.status === 422 && error.message !== 'request_failed'
+                    ? error.message
+                    : 'Не удалось сохранить элемент. Попробуйте ещё раз.', true);
+            });
+    });
+})();
+</script>
+{% endblock %}
