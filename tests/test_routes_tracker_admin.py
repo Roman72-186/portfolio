@@ -213,6 +213,7 @@ def test_tag_matching_is_strict_without_subject_heuristics(
     data = response.json()
     assert data["audience_size"] == 1
     assert data["ambiguous_tags"] == ["Р"]     # предупреждение, а не правило доступа
+    assert "означают группу и уровень куратора" in client.get(PAGE).text
 
 
 def test_audience_counts_students_outside_the_group(db, user_factory):

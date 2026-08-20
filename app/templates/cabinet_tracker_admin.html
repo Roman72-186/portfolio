@@ -159,7 +159,13 @@ FORM: Operate, расширение существующего кабинета 
         }).then(function (response) {
             return response.json().catch(function () { return {}; }).then(function (data) {
                 if (!response.ok) {
-                    var error = new Error(data.error || data.detail || 'request_failed');
+                    // Наши отказы приходят строкой: error — из JSON-роутов, detail —
+                // из HTTPException. Ошибки схемы Pydantic кладут в detail список
+                // объектов, и показывать его человеку бессмысленно.
+                var reason = data.error
+                    || (typeof data.detail === 'string' ? data.detail : '')
+                    || 'request_failed';
+                var error = new Error(reason);
                     error.status = response.status;
                     throw error;
                 }
@@ -269,8 +275,9 @@ FORM: Operate, расширение существующего кабинета 
                 window.location.reload();
             }).catch(function (error) {
                 saveButton.disabled = false;
-                setMessage(error.status === 422
-                    ? 'Проверьте даты: задача не может открываться позже своего дедлайна.'
+                var explained = error.status === 422 && error.message !== 'request_failed';
+                setMessage(explained
+                    ? error.message
                     : 'Не удалось сохранить задачу. Попробуйте ещё раз.', true);
             });
             return;
