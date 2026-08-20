@@ -608,23 +608,6 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
         <div class="stat-item">
             <div class="stat-icon" aria-hidden="true">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                    <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
-                    <line x1="3" y1="10" x2="21" y2="10"/>
-                </svg>
-            </div>
-            <div class="stat-text">
-                <div class="stat-value">
-                    {% if user.enrolled_at %}{{ user.enrolled_at.strftime('%m.%Y') }}
-                    {% elif user.created_at %}{{ user.created_at.strftime('%m.%Y') }}
-                    {% else %}—{% endif %}
-                </div>
-                <div class="stat-label">В школе с</div>
-            </div>
-        </div>
-        <div class="stat-item">
-            <div class="stat-icon" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
                 </svg>
             </div>
@@ -658,88 +641,6 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
                 <div class="stat-value" style="color:var(--ok)">Активен</div>
                 <div class="stat-label">Доступ</div>
             </div>
-        </div>
-    </div>
-
-    <!-- ── INFO GRID (контакты) ── -->
-    <div class="info-grid">
-        <div class="info-cell">
-            <div class="info-cell-icon" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                </svg>
-            </div>
-            <div class="info-cell-label">Telegram</div>
-            <div class="info-cell-value">
-                {% if user.tg_username %}
-                    <a href="https://t.me/{{ user.tg_username }}" target="_blank" rel="noopener">@{{ user.tg_username }}</a>
-                {% else %}
-                    <span class="not-set">Не добавлен</span>
-                {% endif %}
-            </div>
-        </div>
-
-        <div class="info-cell">
-            <div class="info-cell-icon" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-                </svg>
-            </div>
-            <div class="info-cell-label">ВКонтакте</div>
-            <div class="info-cell-value">
-                <a href="https://vk.com/id{{ user.vk_id }}" target="_blank" rel="noopener">vk.com/id{{ user.vk_id }}</a>
-            </div>
-        </div>
-
-        <div class="info-cell">
-            <div class="info-cell-icon" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.47 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
-                </svg>
-            </div>
-            <div class="info-cell-label">Телефон</div>
-            <div class="info-cell-value">
-                {% if user.phone %}{{ user.phone }}{% else %}<span class="not-set">Не указан</span>{% endif %}
-            </div>
-        </div>
-
-        <div class="info-cell">
-            <div class="info-cell-icon" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                </svg>
-            </div>
-            <div class="info-cell-label">Телефон родителя</div>
-            <div class="info-cell-value">
-                {% if user.parent_phone %}{{ user.parent_phone }}{% else %}<span class="not-set">Не указан</span>{% endif %}
-            </div>
-        </div>
-    </div>
-
-    <!-- ── ТАРИФЫ ── -->
-    <div class="tariffs-card">
-        <span class="tariffs-label">Тарифы обучения</span>
-        <div class="tariff-badges">
-            {% if user.tariff %}
-            <span class="tariff-badge tariff-current">
-                <span class="tariff-dot"></span>
-                {{ user.tariff }}
-                <span style="font-size:11px;font-weight:500;opacity:0.65">сейчас</span>
-            </span>
-            {% endif %}
-            {% if user.past_tariffs %}
-                {% for t in user.past_tariffs.split(',') %}
-                {% if t and t != user.tariff %}
-                <span class="tariff-badge tariff-past">{{ t }}</span>
-                {% endif %}
-                {% endfor %}
-            {% endif %}
-            {% if not user.tariff and not user.past_tariffs %}
-                <span style="font-size:13px;color:var(--dim)">Нет данных</span>
-            {% endif %}
         </div>
     </div>
 
