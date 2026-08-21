@@ -7,7 +7,7 @@ from app.db.database import Base
 
 
 class CuratorReport(Base):
-    """Видео-отчёт куратора: ссылка на видео + текст. Уходит уведомлением админам/SA."""
+    """Видео-отчёт куратора: ссылка на видео + текст. Уходит уведомлением главным преподавателям/SA."""
 
     __tablename__ = "curator_reports"
 
@@ -17,7 +17,7 @@ class CuratorReport(Base):
     )
     video_url: Mapped[str] = mapped_column(String(500), nullable=False)
     text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Первый просмотр отчёта админом/SA (для метрики «время до просмотра»)
+    # Первый просмотр отчёта главным преподавателем/SA (для метрики «время до просмотра»)
     viewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     viewed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

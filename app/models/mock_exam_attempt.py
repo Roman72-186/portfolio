@@ -22,7 +22,7 @@ class MockExamAttempt(Base):
     )
     subject: Mapped[str] = mapped_column(String(50), nullable=False)
 
-    # Ticket snapshot (на случай если админ отредактировал/удалил билет)
+    # Ticket snapshot (на случай если главный преподаватель отредактировал/удалил билет)
     ticket_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("exam_tickets.id", ondelete="SET NULL"), nullable=True
     )

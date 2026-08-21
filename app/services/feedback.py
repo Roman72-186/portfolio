@@ -59,7 +59,7 @@ STAFF_ROLES = {ROLE_CURATOR, ROLE_ADMIN, ROLE_SUPERADMIN}
 ROLE_LABELS_RU = {
     ROLE_STUDENT: "Ученик",
     ROLE_CURATOR: "Куратор",
-    ROLE_ADMIN: "Админ",
+    ROLE_ADMIN: "Главный преподаватель",
     ROLE_SUPERADMIN: "Суперадмин",
 }
 

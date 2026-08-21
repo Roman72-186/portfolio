@@ -205,7 +205,7 @@ def video_admin_page(
                 t.id: _assignee_usernames(db, topic_assignee_ids.get(t.id, []))
                 for t in topics
             },
-            # Аудитория и спорные теги считаются на сервере, чтобы админ видел
+            # Аудитория и спорные теги считаются на сервере, чтобы главный преподаватель видел
             # охват темы до того, как ученики не увидят урок.
             "topic_audience": {
                 t.id: count_topic_audience(
@@ -571,7 +571,7 @@ def _audit_topic(db: DBSession, *, action: str, user_id: int, topic) -> None:
 def _topic_audience_feedback(
     db: DBSession, *, assign_to_all: bool, tag_ids: list[int], assignee_ids: list[int]
 ) -> dict:
-    """Охват темы и спорные теги — чтобы админ увидел промах адресации сразу."""
+    """Охват темы и спорные теги — чтобы главный преподаватель увидел промах адресации сразу."""
     return {
         "audience_size": count_topic_audience(
             db,

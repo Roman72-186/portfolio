@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{% if user.role_rank >= 5 %}Суперадмин{% else %}Администратор{% endif %} — дашборд{% endblock %}
+{% block title %}{% if user.role_rank >= 5 %}Суперадмин{% else %}Главный преподаватель{% endif %} — дашборд{% endblock %}
 {% block extra_styles %}
 <style>
 .staff-wrap { max-width: 900px; margin: 0 auto; }
@@ -127,7 +127,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
 /* Мелкая outline-кнопка строчных действий — шкала Spark (.btn-outline
    в компактном размере: pill-радиус, контур var(--line) → blue на hover).
    Размер держим прежним (11px / 5px 11px): в two-col панелях три кнопки в
-   строке, более крупная шкала сжимает колонку имени куратора/админа. */
+   строке, более крупная шкала сжимает колонку имени куратора/главного преподавателя. */
 .issue-link-btn {
     display: inline-flex; align-items: center; gap: 4px;
     flex-shrink: 0; background: transparent; border: 1.5px solid var(--line);
@@ -221,7 +221,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
             </div>
             <div class="staff-hero-sub">Полный доступ · все системные функции</div>
             {% else %}
-            <div class="staff-role-tag">⚙️ Администратор</div>
+            <div class="staff-role-tag">⚙️ Главный преподаватель</div>
             <div class="dashboard-name-row">
                 <h1 class="staff-hero-name">{{ user.last_name or '' }} {{ user.first_name or user.name }}</h1>
                 {% include "partials/mobile_dashboard_logout.html" %}
@@ -455,7 +455,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
 
         <div class="panel">
             <div class="panel-header">
-                <h2 class="panel-title">Администраторы</h2>
+                <h2 class="panel-title">Главные преподаватели</h2>
                 <div style="display:flex;align-items:center;gap:10px">
                     <span style="font-size:12px;color:var(--dim)">{{ admins | length }} чел.</span>
                     <button type="button" id="staffToggleBtn-admins" class="issue-link-btn" onclick="toggleStaffList('admins')">Показать</button>
@@ -468,7 +468,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
                 {% if a.photo_url %}<img src="{{ a.photo_url }}" class="staff-ava" alt="" width="32" height="32" loading="lazy">{% else %}<div class="staff-ava-ph">⚙️</div>{% endif %}
                 <div class="staff-info">
                     <div class="staff-name">{{ a.name }}</div>
-                    <div class="staff-meta">Администратор</div>
+                    <div class="staff-meta">Главный преподаватель</div>
                 </div>
                 {% if user.role_rank >= 5 %}
                 <div style="display:flex;gap:6px;flex-shrink:0">
@@ -486,7 +486,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
             </div>
             {% endfor %}
             {% else %}
-            <div style="padding:20px 18px;font-size:13px;color:var(--dim)">Администраторы не найдены</div>
+            <div style="padding:20px 18px;font-size:13px;color:var(--dim)">Главные преподаватели не найдены</div>
             {% endif %}
             </div>
         </div>

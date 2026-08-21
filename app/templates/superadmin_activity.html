@@ -96,7 +96,7 @@
                     <tbody>
                     {% for r in review_speed %}
                     <tr>
-                        <td data-label="Проверяющий" style="font-weight:700">{{ r.curator_name }}{% if r.role_rank >= 4 %} <span class="act-badge ab-tariff">админ</span>{% endif %}</td>
+                        <td data-label="Проверяющий" style="font-weight:700">{{ r.curator_name }}{% if r.role_rank >= 4 %} <span class="act-badge ab-tariff">главный преподаватель</span>{% endif %}</td>
                         <td data-label="Оценено работ" style="text-align:right">{{ r.scored_count }}</td>
                         <td data-label="Среднее время" style="text-align:right">{{ r.avg_review_text or "—" }}</td>
                         <td data-label="Средний балл" style="text-align:right">{{ r.avg_score if r.avg_score is not none else "—" }}</td>

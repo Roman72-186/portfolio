@@ -143,7 +143,8 @@ def curator_reports(
     err: str = "",
 ):
     rank = user["role_rank"]
-    # Куратор — своя страница (форма + своя история); админ/SA — список всех отчётов.
+    # Куратор — своя страница (форма + своя история); главный преподаватель/SA —
+    # список всех отчётов.
     if not (rank == 2 or rank >= 4):
         raise HTTPException(status_code=403, detail="Нет доступа")
     is_staff = rank >= 4
