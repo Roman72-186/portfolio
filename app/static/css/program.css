@@ -76,8 +76,10 @@
 
 /* ── Экран дня ──────────────────────────────────────────────────────── */
 
+/* auto-fit, а не repeat(3): новая плитка добавляется одним блоком в шаблоне
+   и сама встаёт в ряд, без правки сетки. */
 .prg-tiles {
-    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px;
     margin-bottom: 22px;
 }
 .prg-tile {
@@ -86,6 +88,9 @@
     border-radius: 16px; box-shadow: var(--sh-sm); cursor: pointer;
 }
 .prg-tile:hover { border-color: var(--blue); transform: translateY(-2px); }
+.prg-tile.is-active { border-color: var(--blue); background: var(--blue-soft); box-shadow: none; }
+/* Иначе иконка сольётся с фоном активной плитки: у них один токен. */
+.prg-tile.is-active .prg-tile-icon { background: var(--surface); }
 .prg-tile strong { display: block; font: 700 15px/1.3 var(--font-display); color: var(--text); }
 .prg-tile small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .prg-tile-icon {
@@ -124,6 +129,9 @@
     background: var(--surface); border: 1px solid var(--line);
     border-radius: var(--r-md); box-shadow: var(--sh-sm);
 }
+/* Без этой строки формы видны всегда: display из .prg-form перебивает
+   браузерное [hidden] { display: none }, и атрибут hidden ни на что не влияет. */
+.prg-form[hidden] { display: none; }
 .prg-form h2 { margin: 0; font: 700 17px/1.3 var(--font-display); color: var(--text); }
 .prg-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .prg-grid3 { display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 10px; }

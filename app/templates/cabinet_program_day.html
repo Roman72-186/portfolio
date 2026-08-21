@@ -8,7 +8,7 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=1">
+<link rel="stylesheet" href="/static/css/program.css?v=2">
 {% endblock %}
 {% block content %}
 <div class="prg-page" data-day="{{ day_iso }}">
@@ -553,24 +553,42 @@ FORM: Operate.
         });
     }
 
+    // ── Переключение вкладок ────────────────────────────────────────────
+    // Реестр собирается из DOM, а не перечислен руками: новый вид элемента —
+    // это плитка с data-open-form и форма с тем же data-form, без правок JS.
+    // В прошедшем дне шаблон не рендерит ни плиток, ни форм — реестр пуст,
+    // и обработчик просто ничего не делает.
+    var tiles = Array.prototype.slice.call(document.querySelectorAll('[data-open-form]'));
+    var forms = Array.prototype.slice.call(document.querySelectorAll('.prg-form[data-form]'));
+
+    // Заполненное не сбрасываем: преподаватель мог набрать билеты и загрузить
+    // картинки, уход на соседнюю вкладку не должен их стирать.
+    function showForm(kind) {
+        forms.forEach(function (form) { form.hidden = form.dataset.form !== kind; });
+        tiles.forEach(function (tile) {
+            var isActive = tile.dataset.openForm === kind;
+            tile.classList.toggle('is-active', isActive);
+            tile.setAttribute('aria-expanded', isActive ? 'true' : 'false');
+        });
+        var opened = forms.filter(function (form) { return form.dataset.form === kind; })[0];
+        if (opened) opened.scrollIntoView({behavior: 'smooth', block: 'start'});
+    }
+
+    function hideForms() {
+        forms.forEach(function (form) { form.hidden = true; });
+        tiles.forEach(function (tile) {
+            tile.classList.remove('is-active');
+            tile.setAttribute('aria-expanded', 'false');
+        });
+    }
+
+    hideForms();
+
     document.addEventListener('click', function (event) {
-        if (event.target.closest('[data-open-form="mock"]')) {
-            mockForm.hidden = false;
-            mockForm.scrollIntoView({behavior: 'smooth', block: 'start'});
-            return;
-        }
-        if (event.target.closest('[data-open-form="video"]')) {
-            videoForm.hidden = false;
-            videoForm.scrollIntoView({behavior: 'smooth', block: 'start'});
-            return;
-        }
-        if (event.target.closest('[data-open-form="homework"]')) {
-            homeworkForm.hidden = false;
-            homeworkForm.scrollIntoView({behavior: 'smooth', block: 'start'});
-            return;
-        }
-        var cancel = event.target.closest('[data-form-cancel]');
-        if (cancel) { cancel.closest('.prg-form').hidden = true; return; }
+        var opener = event.target.closest('[data-open-form]');
+        if (opener) { showForm(opener.dataset.openForm); return; }
+
+        if (event.target.closest('[data-form-cancel]')) { hideForms(); return; }
 
         var addTicket = event.target.closest('[data-add-ticket]');
         if (addTicket) {
