@@ -1,12 +1,14 @@
 {#
-Шапка профиля ученика: аватар (с загрузкой своего фото), имя, тариф, средний
-балл по Рисунку/Композиции, год поступления. Стили — app/static/css/profile_hero.css,
-подключить его в extra_styles экрана, который вставляет этот partial.
+Шапка профиля ученика: аватар (с загрузкой своего фото), имя в две строки,
+средний балл по Рисунку/Композиции, год поступления, тариф. Стили —
+app/static/css/profile_hero.css, подключить его в extra_styles экрана,
+который вставляет этот partial.
 
 Требует в контексте: user, avg_score_by_subject (dict вида {"Рисунок": 67, ...}).
-Владелец 21.08.2026: ученик видит здесь имя, баллы, тариф и год поступления —
+Владелец 21.08.2026: ученик видит здесь имя, баллы, год поступления и тариф —
 остальные личные данные (контакты, «уже учится», доступ) в шапку не выносить,
-им место во вкладке «Личное».
+им место во вкладке «Личное». Роль отдельно не подписываем (владелец 21.08:
+слово «Ученик» убрать).
 #}
 <div class="profile-hero">
     <div class="profile-hero-top">
@@ -31,15 +33,13 @@
             {% endif %}
         </div>
 
-        <div class="profile-hero-info">
-            <div class="profile-role-tag">◉ Ученик</div>
-            <div class="profile-name">{{ [user.last_name, user.first_name] | select | join(' ') }}</div>
-            <span class="profile-tariff">
-                <span class="profile-tariff-dot"></span>
-                {{ user.tariff }}
-            </span>
+        <div class="profile-name-stack">
+            <div class="profile-name-line">{{ user.first_name }}</div>
+            <div class="profile-name-line">{{ user.last_name }}</div>
         </div>
+    </div>
 
+    <div class="profile-hero-bottom">
         <div class="profile-scores">
             <div class="profile-score-cell">
                 <span class="profile-score-label" title="Рисунок">Р</span>
@@ -58,6 +58,11 @@
             </div>
             {% endif %}
         </div>
+
+        <span class="profile-tariff">
+            <span class="profile-tariff-dot"></span>
+            {{ user.tariff }}
+        </span>
     </div>
 </div>
 {% if not user.custom_avatar_url %}

@@ -1,12 +1,16 @@
-/* Общая шапка профиля ученика: аватар, имя, тариф, баллы Р/К, год поступления.
-   Источник — .profile-hero из cabinet_student.html (там же жила инлайново),
-   вынесено сюда, чтобы новый экран подключал файл, а не копировал блок стилей —
-   инлайновый рост запрещён храповиком переиспользования (scripts/reuse_check.py). */
+/* Общая шапка профиля ученика: аватар, имя (в две строки), баллы Р/К,
+   год поступления, тариф. Вынесено в отдельный файл, чтобы новый экран
+   подключал его, а не копировал блок стилей — инлайновый рост запрещён
+   храповиком переиспользования (scripts/reuse_check.py).
+
+   Раскладка (владелец 21.08.2026): аватар вверху слева, рядом имя в две
+   строки (имя / фамилия), ниже — баллы и год в одной плашке, под ней —
+   тариф. Роль отдельно не подписываем. */
 
 .profile-hero {
     background: linear-gradient(135deg, #1E2D6B 0%, #3B4FC8 100%);
     border-radius: 20px;
-    padding: 20px 20px 56px;
+    padding: 20px 20px 22px;
     margin-bottom: 20px;
     box-shadow: 0 8px 32px rgba(30,45,107,0.22);
     position: relative;
@@ -30,7 +34,7 @@
 }
 .profile-hero-top {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 14px;
     position: relative; z-index: 1;
 }
@@ -65,25 +69,22 @@
     opacity: 0; cursor: pointer;
     width: 100%; height: 100%;
 }
-.profile-hero-info { flex: 1 1 auto; min-width: 0; }
-.profile-role-tag {
-    display: inline-flex; align-items: center; gap: 5px;
-    background: rgba(255,255,255,0.15);
-    border: 1px solid rgba(255,255,255,0.2);
-    border-radius: 20px;
-    padding: 3px 12px;
-    font-size: 11px; font-weight: 700;
-    letter-spacing: 0.07em; text-transform: uppercase;
-    color: rgba(255,255,255,0.85);
-    margin-bottom: 8px;
+.profile-name-stack {
+    flex: 1 1 auto; min-width: 0;
+    display: flex; flex-direction: column; gap: 2px;
 }
-.profile-name {
-    font-size: 20px; font-weight: 900;
+.profile-name-line {
+    font-size: 18px; font-weight: 900;
     color: #fff;
-    letter-spacing: -0.3px;
-    margin-bottom: 8px;
-    line-height: 1.15;
+    letter-spacing: -0.2px;
+    line-height: 1.25;
     overflow-wrap: break-word;
+}
+.profile-hero-bottom {
+    position: relative; z-index: 1;
+    margin-top: 14px;
+    display: flex; flex-direction: column; align-items: flex-start;
+    gap: 10px;
 }
 .profile-tariff {
     display: inline-flex; align-items: center; gap: 6px;
@@ -115,19 +116,13 @@
 }
 .profile-score-value { font-size: 15px; font-weight: 900; color: #fff; line-height: 1; }
 .profile-score-divider { width: 1px; align-self: stretch; background: rgba(255,255,255,0.2); }
-.profile-hero-actions {
-    position: absolute;
-    right: 18px; bottom: 14px;
-    display: flex; align-items: center; gap: 8px;
-    z-index: 1;
-}
 
 @media (max-width: 480px) {
     .profile-hero-top { gap: 10px; }
     .profile-scores { padding: 6px 9px; gap: 8px; }
 }
 @media (min-width: 1024px) {
-    .profile-hero { padding: 28px 32px 60px; }
+    .profile-hero { padding: 28px 32px 30px; }
     .profile-avatar, .profile-avatar-placeholder { width: 76px; height: 76px; }
-    .profile-name { font-size: 26px; }
+    .profile-name-line { font-size: 22px; }
 }
