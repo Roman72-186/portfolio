@@ -1,9 +1,10 @@
 """«Актуальное образовательное пространство» — стартовая вкладка ученика (трек A).
 
-Скелет: рендерит первую незавершённую неделю по LearningTopic, с карточками-ссылками
-на уже существующие «Видео» и «Обратная связь», кнопкой на созвон и заглушками
-«Задание»/«Анкета» (реальные сущности — после решений Р1/Р2, см. AGENTS.md проекта
-и plans/2026-08-18-apparchi-student-cabinet-and-guest-trial.md, раздел «Трек A»).
+Скелет: рендерит первую незавершённую неделю по LearningTopic, с кнопкой на
+созвон и заглушками «Задание»/«Анкета» (реальные сущности — после решений
+Р1/Р2, см. AGENTS.md проекта и plans/2026-08-18-apparchi-student-cabinet-and-guest-trial.md,
+раздел «Трек A»). Карточки «Видео» и «Обратная связь» убраны по просьбе
+владельца 21.08 — доступ к ним не через эту вкладку.
 
 Понятия «неделя пройдена» в схеме пока нет (video_progress.py — прогресс по видео,
 не по неделе целиком) — «актуальная» неделя здесь просто первая по sort_order/opens_at
@@ -30,7 +31,6 @@ from app.models.learning_topic import LearningTopic
 from app.services.program import WEEKDAY_LABELS, day_bounds, week_start
 from app.services.tracker import accessible_task_entries
 from app.services.tz import today_msk
-from app.services.video_catalog import list_published_videos
 from app.services.video_topics import accessible_topic_ids
 from app.tmpl import templates
 
@@ -55,8 +55,6 @@ def cabinet_learning(
             .order_by(LearningTopic.sort_order.asc(), LearningTopic.opens_at.asc())
             .first()
         )
-
-    video_available = bool(list_published_videos(db, viewer=user))
 
     today = today_msk()
     monday = week_start(today)
@@ -87,6 +85,5 @@ def cabinet_learning(
         "request": request,
         "user": user,
         "topic": current_topic,
-        "video_available": video_available,
         "week_days": week_days,
     })

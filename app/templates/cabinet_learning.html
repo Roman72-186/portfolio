@@ -56,7 +56,7 @@
         {% if topic and topic.description %}
         <p>{{ topic.description }}</p>
         {% else %}
-        <p>Видео, задание, обратная связь и занятие текущей недели — в одном месте.</p>
+        <p>Задание, анкета и занятие текущей недели — в одном месте.</p>
         {% endif %}
     </div>
 
@@ -110,20 +110,6 @@
     </div>
 
     <div class="lrn-cards">
-        {% if video_available %}
-        <a class="lrn-card" href="/cabinet/videos">
-            <div class="lrn-card-title">Видео</div>
-            <p class="lrn-card-note">Уроки недели с автоматическим сохранением места просмотра.</p>
-            <span class="lrn-card-cta">Смотреть →</span>
-        </a>
-        {% endif %}
-
-        <a class="lrn-card" href="/cabinet/cycle">
-            <div class="lrn-card-title">Обратная связь</div>
-            <p class="lrn-card-note">Диалог с куратором по сданным работам.</p>
-            <span class="lrn-card-cta">Открыть →</span>
-        </a>
-
         {% if topic.meeting_url %}
         <a class="lrn-card" href="{{ topic.meeting_url }}" target="_blank" rel="noopener">
             <div class="lrn-card-title">Занятие</div>
