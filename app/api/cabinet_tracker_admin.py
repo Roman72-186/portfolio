@@ -25,6 +25,7 @@ from app.dependencies import require_admin_role, require_csrf, require_csrf_head
 from app.models.audit_log import AuditLog
 from app.models.tracker import (
     ITEM_HOMEWORK,
+    ITEM_KIND_LABELS,
     ITEM_KINDS,
     ITEM_OTHER,
     ITEM_VIDEO,
@@ -74,17 +75,6 @@ from app.services.video_topics import (
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/staff/tracker")
-
-# Подписи типов элементов — в одном месте: их показывает и конструктор, и,
-# позже, экран ученика.
-ITEM_KIND_LABELS = {
-    "video": "Видео",
-    "homework": "Домашнее задание",
-    "mock_exam": "Пробник",
-    "survey": "Анкета",
-    "lesson": "Занятие",
-    "other": "Другое",
-}
 
 ALLOWED_IMAGE_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".avif", ".gif", ".bmp",

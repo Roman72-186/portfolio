@@ -1,0 +1,192 @@
+/* ───────────────────────────────────────────────
+   Учебные программы: календарь месяца и сборка дня.
+   Свой файл, а не base.css: тот правит параллельная сессия, и общий ?v=
+   бампали бы оба агента. Меняешь этот файл — подними ?v= в шаблонах
+   cabinet_program.html и cabinet_program_day.html.
+   ─────────────────────────────────────────────── */
+
+.prg-page { max-width: 1040px; margin: 0 auto; }
+
+.prg-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 20px; margin-bottom: 18px;
+}
+.prg-head-copy { max-width: 65ch; }
+.prg-head h1 { margin: 0 0 6px; font: 800 24px/1.25 var(--font-display); color: var(--text); }
+.prg-head p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+
+/* ── Полоса месяца ──────────────────────────────────────────────────── */
+
+.prg-monthbar {
+    display: flex; align-items: center; justify-content: center; gap: 14px;
+    margin-bottom: 12px;
+}
+.prg-monthbar h2 {
+    min-width: 220px; margin: 0; text-align: center;
+    font: 700 18px/1.3 var(--font-display); color: var(--text);
+}
+.prg-nav { min-width: 44px; min-height: 44px; padding: 8px 14px; }
+
+/* ── Сетка ──────────────────────────────────────────────────────────── */
+
+.prg-grid {
+    display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px;
+}
+.prg-dowhead {
+    padding: 4px 0; text-align: center; color: var(--muted);
+    font: 700 11px/1 var(--font-body); text-transform: uppercase; letter-spacing: .06em;
+}
+
+.prg-day {
+    display: flex; flex-direction: column; justify-content: space-between; gap: 6px;
+    min-height: 84px; padding: 8px 10px; text-decoration: none;
+    color: var(--text); background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--r-md);
+}
+.prg-day:hover { border-color: var(--blue); box-shadow: var(--sh-sm); }
+.prg-daynum { font: 700 15px/1 var(--font-display); }
+
+/* Выходные — тёмные ячейки: ими недели и отделяются друг от друга.
+   Метим атрибутом дня недели, а не nth-child: строка подписей и ячейки
+   соседних месяцев сбили бы счёт. */
+.prg-day[data-dow="6"], .prg-day[data-dow="7"] {
+    color: var(--surface); background: #2A3140; border-color: #2A3140;
+}
+.prg-day[data-dow="6"]:hover, .prg-day[data-dow="7"]:hover { border-color: var(--blue-mid); }
+
+.prg-day.is-outside { opacity: .45; }
+.prg-day.is-past { opacity: .6; }
+.prg-day.is-today { outline: 2px solid var(--blue); outline-offset: -2px; }
+
+.prg-marks { display: flex; flex-wrap: wrap; gap: 4px; }
+.prg-dot {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 20px; height: 20px; padding: 0 5px; border-radius: var(--r-pill);
+    font: 700 11px/1 var(--font-body);
+}
+.prg-dot--mock { color: var(--surface); background: var(--blue); }
+.prg-dot--video { color: var(--blue-on-soft); background: var(--blue-soft); }
+.prg-dot--homework { color: var(--warning); background: var(--warning-soft); }
+.prg-dot--other { color: var(--muted); background: var(--surface-2); }
+
+.prg-legend {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+    margin: 14px 0 0; color: var(--muted); font-size: 12px;
+}
+
+/* ── Экран дня ──────────────────────────────────────────────────────── */
+
+.prg-tiles {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;
+    margin-bottom: 22px;
+}
+.prg-tile {
+    display: flex; align-items: center; gap: 14px; padding: 18px;
+    text-align: left; background: var(--surface); border: 1.5px solid var(--line);
+    border-radius: 16px; box-shadow: var(--sh-sm); cursor: pointer;
+}
+.prg-tile:hover { border-color: var(--blue); transform: translateY(-2px); }
+.prg-tile strong { display: block; font: 700 15px/1.3 var(--font-display); color: var(--text); }
+.prg-tile small { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.prg-tile-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px;
+    color: var(--blue); background: var(--blue-soft); font-size: 18px;
+}
+
+.prg-items h2 { margin: 0 0 10px; font: 700 17px/1.3 var(--font-display); color: var(--text); }
+.prg-item {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start;
+    padding: 13px 16px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-md);
+}
+.prg-item + .prg-item { margin-top: 8px; }
+.prg-item h3 { margin: 6px 0 4px; font: 700 15px/1.35 var(--font-display); color: var(--text); }
+.prg-item p { margin: 0 0 6px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.prg-meta { display: flex; flex-wrap: wrap; gap: 7px 12px; color: var(--muted); font-size: 12px; }
+.prg-item-actions button { min-height: 36px; padding: 7px 12px; font-size: 12px; }
+
+.prg-badge {
+    display: inline-flex; align-items: center; min-height: 24px; padding: 3px 9px;
+    border-radius: var(--r-pill); color: var(--blue-on-soft); background: var(--surface-2);
+    font: 700 11px/1 var(--font-body);
+}
+
+.prg-empty {
+    padding: 24px 20px; text-align: center; color: var(--muted); background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--r-md);
+}
+
+/* ── Формы сборки ───────────────────────────────────────────────────── */
+
+.prg-form {
+    display: grid; gap: 12px; padding: 18px; margin-bottom: 20px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-md); box-shadow: var(--sh-sm);
+}
+.prg-form h2 { margin: 0; font: 700 17px/1.3 var(--font-display); color: var(--text); }
+.prg-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.prg-grid3 { display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 10px; }
+
+.prg-field { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.prg-field input, .prg-field textarea, .prg-field select {
+    width: 100%; box-sizing: border-box; padding: 10px 12px; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    font: 500 14px/1.4 var(--font-body);
+}
+.prg-field textarea { min-height: 72px; resize: vertical; }
+.prg-field input:focus, .prg-field textarea:focus, .prg-field select:focus {
+    outline: 2px solid var(--blue); outline-offset: 1px;
+}
+.prg-field--row { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+.prg-field--row input { width: auto; }
+
+.prg-subject {
+    padding: 14px 16px; background: var(--bg); border: 1px dashed var(--line);
+    border-radius: var(--r-sm);
+}
+.prg-subject + .prg-subject { margin-top: 10px; }
+.prg-subject h3 { margin: 0 0 8px; font: 700 14px/1.3 var(--font-display); color: var(--text); }
+
+.prg-ticket {
+    display: grid; gap: 10px; padding: 12px 14px; margin-top: 10px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm);
+}
+.prg-ticket-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.prg-ticket-head strong { font: 700 13px/1 var(--font-display); color: var(--text); }
+
+.prg-tagpicker {
+    display: flex; flex-wrap: wrap; gap: 6px 12px; max-height: 132px; overflow-y: auto;
+    padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm);
+}
+.prg-tagpicker label { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text); }
+.prg-tagpicker--tariff { background: var(--blue-soft); border-color: var(--blue-tint); }
+
+.prg-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.prg-actions button { min-height: 44px; }
+
+.prg-message { min-height: 20px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.prg-message.is-error { color: var(--error); }
+
+.prg-thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
+.prg-thumbs img {
+    width: 84px; height: 84px; object-fit: cover;
+    border: 1px solid var(--line); border-radius: var(--r-sm);
+}
+.prg-thumb { position: relative; display: inline-flex; }
+.prg-thumb button {
+    position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; padding: 0;
+    color: var(--surface); background: var(--error); border: none; border-radius: 50%;
+    font: 700 13px/1 var(--font-body); cursor: pointer;
+}
+
+.prg-progress { height: 10px; overflow: hidden; background: var(--surface-2); border-radius: var(--r-pill); }
+.prg-progress > span { display: block; width: 0; height: 100%; background: var(--blue); }
+
+@media (max-width: 760px) {
+    .prg-head { display: grid; grid-template-columns: 1fr; }
+    .prg-tiles, .prg-grid2, .prg-grid3, .prg-item { grid-template-columns: 1fr; }
+    .prg-day { min-height: 64px; padding: 6px; }
+    .prg-monthbar h2 { min-width: 0; font-size: 16px; }
+    .prg-grid { gap: 4px; }
+}

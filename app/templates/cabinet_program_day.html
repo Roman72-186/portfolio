@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{#
+THESIS: день собирается из крупных кнопок — сначала «что это», потом форма, потом кому.
+OWN-WORLD: существующий светлый Spark UI, плитки как в кабинете куратора, синяя основная кнопка.
+STORY: преподаватель выбрал понедельник, нажал «Пробник», добавил билеты, отметил теги, вернулся в календарь.
+FIRST VIEWPORT: дата, три плитки, ниже список того, что уже стоит в дне.
+FORM: Operate.
+#}
+{% block title %}{{ day_title }}{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=1">
+{% endblock %}
+{% block content %}
+<div class="prg-page" data-day="{{ day_iso }}">
+    <div class="prg-head">
+        <div class="prg-head-copy">
+            <h1>{{ day_title }}</h1>
+            <p>
+                {% if is_past %}
+                День уже прошёл: программу можно посмотреть, но не менять.
+                {% else %}
+                Выберите, что поставить в этот день. Ученик увидит его вместе со всей неделей.
+                {% endif %}
+            </p>
+        </div>
+        <a class="btn-outline" href="{{ month_href }}">К календарю</a>
+    </div>
+
+    {% if not is_past %}
+    <div class="prg-tiles">
+        <button type="button" class="prg-tile" data-open-form="mock">
+            <span class="prg-tile-icon" aria-hidden="true">★</span>
+            <span>
+                <strong>Пробник</strong>
+                <small>Билеты по рисунку и композиции, окно сдачи</small>
+            </span>
+        </button>
+        <button type="button" class="prg-tile" data-open-form="video">
+            <span class="prg-tile-icon" aria-hidden="true">▶</span>
+            <span>
+                <strong>Видеоматериал</strong>
+                <small>Название, обложка, файл ролика</small>
+            </span>
+        </button>
+        <button type="button" class="prg-tile" data-open-form="homework">
+            <span class="prg-tile-icon" aria-hidden="true">✎</span>
+            <span>
+                <strong>Самостоятельная работа</strong>
+                <small>Условие, референсы, сдача работы</small>
+            </span>
+        </button>
+    </div>
+    {% endif %}
+
+    <section class="prg-items">
+        <h2>Уже в этом дне</h2>
+        {% if items %}
+        {% for item in items %}
+        {% set detail = details.get(item.id, {}) %}
+        <article class="prg-item" data-item-id="{{ item.id }}">
+            <div>
+                <span class="prg-badge">{{ kind_labels.get(item.kind, item.kind) }}</span>
+                <h3>{{ item.title }}</h3>
+                {% if item.description %}<p>{{ item.description }}</p>{% endif %}
+                <div class="prg-meta">
+                    {% if item.subject %}<span>{{ item.subject }}</span>{% endif %}
+                    {% if detail.video %}<span>Ролик: {{ detail.video.status }}</span>{% endif %}
+                    {% if detail.homework %}
+                    <span>{% if detail.homework.submission_required %}со сдачей работы{% else %}без загрузки файлов{% endif %}</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% if not is_past %}
+            <div class="prg-item-actions">
+                <button type="button" class="btn-danger" data-item-delete>Удалить</button>
+            </div>
+            {% endif %}
+        </article>
+        {% endfor %}
+        {% else %}
+        <div class="prg-empty">В этом дне пока ничего нет.</div>
+        {% endif %}
+    </section>
+</div>
+
+<script>
+(function () {
+    var csrfToken = {{ csrf_token(request)|tojson }};
+
+    function api(path, body) {
+        return fetch(path, {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Accept':'application/json', 'Content-Type':'application/json', 'X-CSRF-Token':csrfToken},
+            body: JSON.stringify(body || {})
+        }).then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (data) {
+                if (!response.ok) {
+                    var reason = data.error
+                        || (typeof data.detail === 'string' ? data.detail : '')
+                        || 'request_failed';
+                    var error = new Error(reason);
+                    error.status = response.status;
+                    throw error;
+                }
+                return data;
+            });
+        });
+    }
+    window.PROGRAM_API = api;
+
+    document.addEventListener('click', function (event) {
+        var removeButton = event.target.closest('[data-item-delete]');
+        if (!removeButton) return;
+        var row = removeButton.closest('[data-item-id]');
+        if (!window.confirm('Убрать этот элемент из дня?')) return;
+        removeButton.disabled = true;
+        api('/cabinet/staff/program/items/' + row.dataset.itemId + '/delete')
+            .then(function () { window.location.reload(); })
+            .catch(function () {
+                removeButton.disabled = false;
+                window.alert('Не удалось удалить. Попробуйте ещё раз.');
+            });
+    });
+})();
+</script>
+{% endblock %}

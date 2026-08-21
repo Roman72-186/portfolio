@@ -61,6 +61,17 @@ ITEM_KINDS = (
     ITEM_VIDEO, ITEM_HOMEWORK, ITEM_MOCK_EXAM, ITEM_SURVEY, ITEM_LESSON, ITEM_OTHER,
 )
 
+# Подписи рядом с типами: их показывают и конструктор, и календарь программы, и
+# позже экран ученика.
+ITEM_KIND_LABELS = {
+    ITEM_VIDEO: "Видеоматериал",
+    ITEM_HOMEWORK: "Самостоятельная работа",
+    ITEM_MOCK_EXAM: "Пробник",
+    ITEM_SURVEY: "Анкета",
+    ITEM_LESSON: "Занятие",
+    ITEM_OTHER: "Другое",
+}
+
 STATUS_OPEN = "open"
 STATUS_DONE = "done"
 

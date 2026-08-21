@@ -47,6 +47,19 @@ def week_start(day: date) -> date:
     return day - timedelta(days=day.weekday())
 
 
+def day_bounds(day: date) -> tuple[datetime, datetime]:
+    """Границы московских суток в UTC: [начало дня, начало следующего).
+
+    В UTC намеренно: колонка на проде `TIMESTAMPTZ`, а SQLite в тестах хранит
+    время без таймзоны и сравнивает его как строку по стенным часам. Отдать
+    границу с московским смещением значило бы сравнивать 22:00 UTC с «00:00»
+    и терять вечерние элементы.
+    """
+    start = msk_midnight(day).astimezone(timezone.utc)
+    end = msk_midnight(day + timedelta(days=1)).astimezone(timezone.utc)
+    return start, end
+
+
 def msk_date(value: datetime) -> date:
     """Московская дата у значения из базы.
 
@@ -152,14 +165,15 @@ def month_marks(db: Session, year: int, month: int) -> dict[str, dict]:
     """
     first = week_start(date(year, month, 1))
     last_day = date(year, month, calendar.monthrange(year, month)[1])
-    last = last_day + timedelta(days=7)
+    start, _ = day_bounds(first)
+    _, end = day_bounds(last_day + timedelta(days=7))
     tasks = (
         db.query(TrackerTask)
         .filter(
             TrackerTask.deleted_at.is_(None),
             TrackerTask.due_at.isnot(None),
-            TrackerTask.due_at >= msk_midnight(first),
-            TrackerTask.due_at < msk_midnight(last),
+            TrackerTask.due_at >= start,
+            TrackerTask.due_at < end,
         )
         .all()
     )
@@ -185,12 +199,13 @@ def month_marks(db: Session, year: int, month: int) -> dict[str, dict]:
 
 
 def items_for_day(db: Session, day: date) -> list[TrackerTask]:
+    start, end = day_bounds(day)
     return (
         db.query(TrackerTask)
         .filter(
             TrackerTask.deleted_at.is_(None),
-            TrackerTask.due_at >= msk_midnight(day),
-            TrackerTask.due_at < msk_midnight(day + timedelta(days=1)),
+            TrackerTask.due_at >= start,
+            TrackerTask.due_at < end,
         )
         .order_by(TrackerTask.sort_order.asc(), TrackerTask.id.asc())
         .all()

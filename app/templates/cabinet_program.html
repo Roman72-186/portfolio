@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{#
+THESIS: программа видна целиком месяцем, недели читаются сразу — их разделяют тёмные выходные.
+OWN-WORLD: существующий светлый Spark UI, синяя основная кнопка, спокойные метки, никакой новой визуальной системы.
+STORY: преподаватель открывает месяц, видит пустые дни следующей недели и заходит в понедельник собирать программу.
+FIRST VIEWPORT: строка месяца со стрелками, под ней сетка недель с отметками.
+FORM: Operate, расширение кабинета.
+#}
+{% block title %}Учебные программы{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=1">
+{% endblock %}
+{% block content %}
+<div class="prg-page">
+    <div class="prg-head">
+        <div class="prg-head-copy">
+            <h1>Учебные программы</h1>
+            <p>Выберите день и соберите программу: пробник, видеоматериал, самостоятельная работа.</p>
+        </div>
+        <a class="btn-outline" href="/cabinet/staff/program?month={{ current_month }}">Текущий месяц</a>
+    </div>
+
+    <div class="prg-monthbar">
+        <a class="btn-outline prg-nav" href="/cabinet/staff/program?month={{ prev_month }}" aria-label="Предыдущий месяц">←</a>
+        <h2>{{ month_title }}</h2>
+        <a class="btn-outline prg-nav" href="/cabinet/staff/program?month={{ next_month }}" aria-label="Следующий месяц">→</a>
+    </div>
+
+    <div class="prg-grid" role="grid" aria-label="Календарь месяца">
+        {% for label in weekday_labels %}
+        <div class="prg-dowhead" aria-hidden="true">{{ label }}</div>
+        {% endfor %}
+
+        {% for day in days %}
+        {% set mark = marks.get(day.iso) %}
+        <a class="prg-day{% if not day.in_month %} is-outside{% endif %}{% if day.is_today %} is-today{% endif %}{% if day.is_past %} is-past{% endif %}"
+           data-dow="{{ day.dow }}"
+           href="/cabinet/staff/program/{{ day.iso }}"
+           aria-label="{{ day.number }} число{% if mark %}, элементов: {{ mark.total }}{% endif %}">
+            <span class="prg-daynum">{{ day.number }}</span>
+            {% if mark %}
+            <span class="prg-marks">
+                {% if mark.mock %}<span class="prg-dot prg-dot--mock" title="Пробник: {{ mark.mock|join(', ') }}">П</span>{% endif %}
+                {% if mark.video %}<span class="prg-dot prg-dot--video" title="Видеоматериал">В</span>{% endif %}
+                {% if mark.homework %}<span class="prg-dot prg-dot--homework" title="Самостоятельная работа">С</span>{% endif %}
+                {% if mark.other %}<span class="prg-dot prg-dot--other" title="Другое">·</span>{% endif %}
+            </span>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </div>
+
+    <p class="prg-legend">
+        <span class="prg-dot prg-dot--mock">П</span> пробник
+        <span class="prg-dot prg-dot--video">В</span> видеоматериал
+        <span class="prg-dot prg-dot--homework">С</span> самостоятельная работа
+    </p>
+</div>
+{% endblock %}
