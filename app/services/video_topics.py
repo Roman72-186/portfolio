@@ -12,7 +12,12 @@ from datetime import datetime, timezone
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.models.learning_topic import LearningTopic, LearningTopicAssignee, LearningTopicTag
+from app.models.learning_topic import (
+    TOPIC_KIND_WEEK,
+    LearningTopic,
+    LearningTopicAssignee,
+    LearningTopicTag,
+)
 from app.models.role import Role
 from app.models.tag import Tag, UserTag
 from app.models.user import User
@@ -29,18 +34,37 @@ STUDENT_ROLE_RANK = 1
 AMBIGUOUS_TAG_LETTERS = frozenset("рк")
 
 
-def list_topics(db: Session, *, include_deleted: bool = False) -> list[LearningTopic]:
+def list_topics(
+    db: Session,
+    *,
+    include_deleted: bool = False,
+    kinds: tuple[str, ...] | None = (TOPIC_KIND_WEEK,),
+) -> list[LearningTopic]:
+    """Темы для списков и выпадающих меню.
+
+    По умолчанию отдаются только темы недель: служебные темы элементов учебной
+    программы человек не заводил и выбирать их ему незачем. `kinds=None` снимает
+    фильтр целиком.
+    """
     query = db.query(LearningTopic)
     if not include_deleted:
         query = query.filter(LearningTopic.deleted_at.is_(None))
+    if kinds is not None:
+        query = query.filter(LearningTopic.kind.in_(kinds))
     return query.order_by(
         LearningTopic.sort_order.asc(), LearningTopic.opens_at.desc()
     ).all()
 
 
-def get_topic(db: Session, topic_id: int) -> LearningTopic | None:
+def get_topic(
+    db: Session, topic_id: int, *, kinds: tuple[str, ...] | None = None
+) -> LearningTopic | None:
+    """Тема по id. `kinds` сужает вид — например, чтобы экран недель не открылся
+    на служебной теме элемента программы."""
     topic = db.get(LearningTopic, topic_id)
     if topic is None or topic.deleted_at is not None:
+        return None
+    if kinds is not None and topic.kind not in kinds:
         return None
     return topic
 
@@ -93,12 +117,14 @@ def create_topic(
     user_id: int,
     description: str | None = None,
     assign_to_all: bool = False,
+    kind: str = TOPIC_KIND_WEEK,
 ) -> LearningTopic:
     topic = LearningTopic(
         title=title,
         description=description,
         opens_at=opens_at,
         assign_to_all=assign_to_all,
+        kind=kind,
         created_by_id=user_id,
     )
     db.add(topic)

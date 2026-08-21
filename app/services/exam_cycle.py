@@ -12,7 +12,12 @@ from datetime import datetime, timezone
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session as DBSession
 
-from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
+from app.models.exam_assignment import (
+    ExamAssignment,
+    ExamTicket,
+    ExamTicketAssignee,
+    ExamTicketTag,
+)
 from app.models.exam_cycle import ExamCycle
 from app.models.feedback import Feedback, FeedbackMessage, FeedbackPhoto
 from app.models.mock_exam_attempt import MockExamAttempt
@@ -54,6 +59,15 @@ def get_active_tickets(db: DBSession, user_id: int, subject: str) -> list[ExamTi
         .scalar_subquery()
     )
     matching_target_tag_ids = get_matching_target_tag_ids_for_student(db, user_id)
+    # Билеты учебной программы адресуются сразу нескольким тегам: тариф плюс
+    # дополнительные. Первый тег дублируется в target_tag_id ради планировщика
+    # уведомлений, остальные живут только здесь. У билетов старой формы таблица
+    # пустая, и подзапрос ничего не добавляет.
+    tag_ticket_ids = (
+        db.query(ExamTicketTag.ticket_id)
+        .filter(ExamTicketTag.tag_id.in_(matching_target_tag_ids))
+        .scalar_subquery()
+    )
     tickets = (
         db.query(ExamTicket)
         .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
@@ -63,6 +77,7 @@ def get_active_tickets(db: DBSession, user_id: int, subject: str) -> list[ExamTi
             ExamAssignment.subject == subject,
             or_(
                 ExamTicket.target_tag_id.in_(matching_target_tag_ids),
+                ExamTicket.id.in_(tag_ticket_ids),
                 and_(
                     ExamTicket.target_tag_id.is_(None),
                     or_(
