@@ -110,3 +110,76 @@ def test_learning_task_outside_current_week_not_shown(auth_client, db):
     resp = client.get("/cabinet/learning")
     assert resp.status_code == 200
     assert "Задача через две недели" not in resp.text
+
+
+# ── Выбор актуальной недели (21.08) ─────────────────────────────────────────
+
+def test_learning_shows_latest_opened_week_not_the_first(auth_client, db):
+    """Открыты две недели — в шапке должна быть поздняя.
+
+    Раньше выборка шла по возрастанию `opens_at`, а у `accessible_topic_ids`
+    нет верхней границы окна: экран навсегда застревал на первой неделе курса
+    и вместе с ней отдавал её ссылку на созвон.
+    """
+    client, user = auth_client
+    _topic(db, user, title="Неделя 1", opens_in_days=-14,
+           meeting_url="https://meet.example.com/week1")
+    _topic(db, user, title="Неделя 3", opens_in_days=-1,
+           meeting_url="https://meet.example.com/week3")
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert "Неделя 3" in resp.text
+    assert "Неделя 1" not in resp.text
+    assert 'href="https://meet.example.com/week3"' in resp.text
+    assert "week1" not in resp.text
+
+
+def test_learning_ignores_program_item_topics(auth_client, db):
+    """Служебная тема элемента программы не может стать «актуальной неделей».
+
+    `program.py::ensure_item_topic` заводит по теме на каждый элемент, и они
+    открываются позже недели. Без фильтра по `kind` в шапку попадало название
+    элемента, а `meeting_url` у служебной темы всегда пустой — ссылка на
+    созвон не показывалась никогда.
+    """
+    from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM
+
+    client, user = auth_client
+    # Служебная тема открыта раньше недели — так бывает, когда неделю завели
+    # позже её элементов. Порядок важен: иначе тест прошёл бы и на старом коде.
+    item = _topic(db, user, title="Видео недели", opens_in_days=-14)
+    _topic(db, user, title="Неделя 2", opens_in_days=-7,
+           meeting_url="https://meet.example.com/week2")
+    item.kind = TOPIC_KIND_PROGRAM_ITEM
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert "Неделя 2" in resp.text
+    assert "Видео недели" not in resp.text
+    assert 'href="https://meet.example.com/week2"' in resp.text
+
+
+def test_learning_marks_task_subject_for_the_switch(auth_client, db):
+    """Задачи выводятся с `data-subject` — по нему переключатель их и фильтрует.
+
+    Сама фильтрация живёт в JS, здесь держим контракт разметки: без атрибута
+    переключатель снова станет декоративным, как до 21.08.
+    """
+    client, user = auth_client
+    _topic(db, user, title="Неделя 1")
+    day = week_start(today_msk()) + timedelta(days=1)
+    due = day_bounds(day)[0] + timedelta(hours=10)
+    task = create_task(
+        db, title="Натюрморт", user_id=user.id, due_at=due,
+        assign_to_all=True, subject="Рисунок",
+    )
+    task.is_published = True
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert 'data-subject="Рисунок"' in resp.text
+    # Переключатель обязан стоять выше списка, который фильтрует.
+    assert resp.text.index('class="lrn-subject-toggle"') < resp.text.index('class="trk-weekstrip"')

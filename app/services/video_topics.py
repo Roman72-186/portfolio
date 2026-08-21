@@ -110,6 +110,45 @@ def accessible_topic_ids(db: Session, user_id: int) -> set[int]:
     return {row[0] for row in rows}
 
 
+def current_week_topic(db: Session, user_id: int) -> LearningTopic | None:
+    """Неделя, на которой ученик находится сейчас.
+
+    Два фильтра, каждый из которых раньше отсутствовал в `/cabinet/learning` и
+    давал неверный экран:
+
+    - **только темы недель.** Каждый элемент учебной программы заводит свою
+      служебную тему `kind=program_item` (`program.py::ensure_item_topic`),
+      и без фильтра «актуальной неделей» становилась одна из них: в шапке
+      всплывало название элемента, а `meeting_url` у служебной темы всегда
+      пустой, так что ссылка на созвон не показывалась никогда;
+    - **самая поздняя из открытых, а не самая ранняя.** У `accessible_topic_ids`
+      нет верхней границы окна — прошедшая неделя намеренно остаётся доступной
+      как архив. Поэтому выборка «первая по возрастанию» возвращала первую
+      неделю курса и продолжала возвращать её в декабре.
+
+    Это временное правило: пока в схеме нет понятия «неделя пройдена», система
+    не может отправить должника назад на незакрытую неделю, как описывал
+    заказчик на созвоне 17.08. Когда решение Р1 закроют, менять нужно здесь —
+    экран берёт неделю только отсюда.
+    """
+    topic_ids = accessible_topic_ids(db, user_id)
+    if not topic_ids:
+        return None
+    return (
+        db.query(LearningTopic)
+        .filter(
+            LearningTopic.id.in_(topic_ids),
+            LearningTopic.kind == TOPIC_KIND_WEEK,
+        )
+        .order_by(
+            LearningTopic.opens_at.desc(),
+            LearningTopic.sort_order.desc(),
+            LearningTopic.id.desc(),
+        )
+        .first()
+    )
+
+
 def create_topic(
     db: Session,
     *,

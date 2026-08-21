@@ -114,7 +114,15 @@ def test_video_links_to_player_by_topic_id(auth_client, db):
     assert f"/cabinet/videos/{video.id}" in resp.text
 
 
-def test_homework_links_to_submission_page_not_toggle(auth_client, db):
+def test_homework_links_to_submission_page_and_keeps_toggle(auth_client, db):
+    """Переход на сдачу — и отметка рядом с ним.
+
+    Раньше тест требовал, чтобы отметки у домашки не было. Но сдача домашки
+    ставит свой `HomeworkSubmission.status`, а `TrackerTaskState` не трогает
+    (`close_task_for_user` зовут только из `video.py`). Без отметки задача не
+    могла уйти из «Просрочено» никогда — ученик сдал работу и остался с
+    красной строкой. Отметку убираем только у видео, оно закрывается само.
+    """
     client, user = auth_client
     day, due = _day_and_due()
     task = create_task(
@@ -126,7 +134,7 @@ def test_homework_links_to_submission_page_not_toggle(auth_client, db):
     resp = client.get(f"{PAGE}/{day.isoformat()}")
     assert resp.status_code == 200
     assert f"/cabinet/homework/{task.id}" in resp.text
-    assert f'data-toggle-task="{task.id}"' not in resp.text
+    assert f'data-toggle-task="{task.id}"' in resp.text
 
 
 def test_other_kind_shows_toggle_button(auth_client, db):

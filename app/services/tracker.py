@@ -416,12 +416,20 @@ def accessible_task_entries(
         due_at = task.due_at
         if due_at.tzinfo is None:
             due_at = due_at.replace(tzinfo=timezone.utc)
+        state = states.get(task.id)
         entries.append({
             "task": task,
             "kind_label": ITEM_KIND_LABELS.get(task.kind, task.kind),
-            "status": task_status(task, states.get(task.id), now=now),
+            "status": task_status(task, state, now=now),
             "due_label": due_at.astimezone(MSK_TZ).strftime("%H:%M"),
             "day": msk_date(task.due_at),
+            # Дата закрытия отдельно от `day` (дата дедлайна): «Сделано» на
+            # экране ученика фильтруется по ней, иначе закрытый долг прошлой
+            # недели пропадал с экрана — из «Просрочено» вышел, в «Сделано»
+            # не попал. None у незакрытых и у закрытых до появления колонки.
+            "completed_on": msk_date(state.completed_at)
+            if state is not None and state.completed_at is not None
+            else None,
         })
     return entries
 

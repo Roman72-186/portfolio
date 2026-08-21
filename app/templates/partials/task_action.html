@@ -1,0 +1,44 @@
+{#
+Кнопка действия у задачи ученика — одна на все три экрана: обзор недели
+(`cabinet_learning.html`), день (`cabinet_learning_day.html`) и «Личный трекер»
+(`cabinet_tracker.html`).
+
+Смысл: у задачи, к которой ведёт свой экран, ученик должен идти на этот экран,
+а не закрывать её галочкой. Раньше умные кнопки были только на дне, а обзор
+недели и трекер показывали «Отметить» на всём подряд — видео закрывалось без
+просмотра, пробник без сдачи. Если на такие отметки повесят доступ к следующей
+неделе (решение Р1), это станет обходом в одно нажатие.
+
+**Галочку убираем только там, где задача закрывается сама.** Сегодня это один
+случай — видео с найденным роликом: `video.py::_close_video_task_once` закрывает
+задачу по первому «досмотрел». У домашки и пробника автозакрытия нет
+(`close_task_for_user` вызывается только из `video.py`), поэтому рядом с
+переходом на их экран остаётся и отметка — иначе такая задача не смогла бы
+уйти из «Просрочено» вообще и висела бы у ученика вечно. Когда сдача домашки и
+пробника начнут закрывать задачу сами, отметку отсюда можно убрать: условие
+одно, `autocloses`.
+
+Требует в контексте: `entry` (запись из `accessible_task_entries`) и `details`
+(результат `program.py::item_details` — словарь по id задачи). Без `details`
+видео падает в обычную отметку, как и раньше.
+#}
+{% set task = entry.task %}
+{% set detail = (details or {}).get(task.id, {}) %}
+{% set autocloses = task.kind == 'video' and detail.video %}
+
+{% if task.kind == 'mock_exam' %}
+<a class="btn-blue" href="/upload/mock-exam?subject={{ task.subject|urlencode }}">Начать пробник</a>
+{% elif autocloses %}
+<a class="btn-blue" href="/cabinet/videos/{{ detail.video.id }}">Смотреть</a>
+{% elif task.kind == 'homework' %}
+<a class="btn-blue" href="/cabinet/homework/{{ task.id }}">Открыть задание</a>
+{% endif %}
+
+{% if not autocloses %}
+<button
+    type="button"
+    class="trk-toggle-btn{{ ' is-done' if entry.status == 'done' }}"
+    data-toggle-task="{{ task.id }}"
+    aria-pressed="{{ 'true' if entry.status == 'done' else 'false' }}"
+>{{ 'Сделано' if entry.status == 'done' else 'Отметить' }}</button>
+{% endif %}

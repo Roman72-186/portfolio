@@ -36,20 +36,7 @@ prg-*, без плиток/форм создания — только списо
                 </div>
             </div>
             <div class="prg-item-actions">
-                {% if task.kind == 'mock_exam' %}
-                <a class="btn-blue" href="/upload/mock-exam?subject={{ task.subject|urlencode }}">Начать пробник</a>
-                {% elif task.kind == 'video' and detail.video %}
-                <a class="btn-blue" href="/cabinet/videos/{{ detail.video.id }}">Смотреть</a>
-                {% elif task.kind == 'homework' %}
-                <a class="btn-blue" href="/cabinet/homework/{{ task.id }}">Открыть задание</a>
-                {% else %}
-                <button
-                    type="button"
-                    class="trk-toggle-btn{{ ' is-done' if entry.status == 'done' }}"
-                    data-toggle-task="{{ task.id }}"
-                    aria-pressed="{{ 'true' if entry.status == 'done' else 'false' }}"
-                >{{ 'Сделано' if entry.status == 'done' else 'Отметить' }}</button>
-                {% endif %}
+                {% include "partials/task_action.html" %}
             </div>
         </article>
         {% endfor %}

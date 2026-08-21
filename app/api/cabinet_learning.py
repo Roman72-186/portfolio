@@ -1,14 +1,16 @@
 """«Актуальное образовательное пространство» — стартовая вкладка ученика (трек A).
 
-Скелет: рендерит первую незавершённую неделю по LearningTopic, с кнопкой на
-созвон и заглушками «Задание»/«Анкета» (реальные сущности — после решений
-Р1/Р2, см. AGENTS.md проекта и plans/2026-08-18-apparchi-student-cabinet-and-guest-trial.md,
+Скелет: рендерит текущую неделю по LearningTopic, с кнопкой на созвон и
+заглушками «Задание»/«Анкета» (реальные сущности — после решений Р1/Р2, см.
+AGENTS.md проекта и plans/2026-08-18-apparchi-student-cabinet-and-guest-trial.md,
 раздел «Трек A»). Карточки «Видео» и «Обратная связь» убраны по просьбе
 владельца 21.08 — доступ к ним не через эту вкладку.
 
-Понятия «неделя пройдена» в схеме пока нет (video_progress.py — прогресс по видео,
-не по неделе целиком) — «актуальная» неделя здесь просто первая по sort_order/opens_at
-среди доступных ученику тем. Полноценная адресация недель — фаза A2, после Р1/Р3.
+Какую именно неделю показывать, решает `video_topics.py::current_week_topic` —
+там же записано, почему только `kind=week` и почему самая поздняя из открытых.
+Понятия «неделя пройдена» в схеме пока нет (video_progress.py — прогресс по
+видео, не по неделе целиком), поэтому вернуть должника на незакрытую неделю
+система не умеет. Полноценная адресация недель — фаза A2, после Р1/Р3.
 
 **Разбивка по дням (21.08, правка после созвона 17.08).** Заказчик описал этот
 экран как единственное место с календарной полоской: «сегодня/завтра/эта
@@ -27,7 +29,6 @@ from sqlalchemy.orm import Session as DBSession
 from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_student
-from app.models.learning_topic import LearningTopic
 from app.models.tracker import ITEM_KIND_LABELS
 from app.services.program import (
     WEEKDAY_LABELS,
@@ -39,7 +40,7 @@ from app.services.program import (
 )
 from app.services.tracker import accessible_task_entries
 from app.services.tz import today_msk
-from app.services.video_topics import accessible_topic_ids
+from app.services.video_topics import current_week_topic
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet")
@@ -54,15 +55,7 @@ def cabinet_learning(
     if needs_profile_setup(user):
         return RedirectResponse("/cabinet/profile", status_code=302)
 
-    topic_ids = accessible_topic_ids(db, user["user_id"])
-    current_topic = None
-    if topic_ids:
-        current_topic = (
-            db.query(LearningTopic)
-            .filter(LearningTopic.id.in_(topic_ids))
-            .order_by(LearningTopic.sort_order.asc(), LearningTopic.opens_at.asc())
-            .first()
-        )
+    current_topic = current_week_topic(db, user["user_id"])
 
     today = today_msk()
     monday = week_start(today)
@@ -94,6 +87,9 @@ def cabinet_learning(
         "user": user,
         "topic": current_topic,
         "week_days": week_days,
+        # Нужен partial'у `partials/task_action.html`: без него видео недели
+        # получило бы кнопку «Отметить» вместо ссылки на плеер.
+        "details": item_details(db, [e["task"] for e in entries]),
     })
 
 

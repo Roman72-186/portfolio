@@ -60,6 +60,14 @@
         {% endif %}
     </div>
 
+    {# Переключатель направления стоит над тем, что фильтрует. Раньше он лежал
+       ниже списка задач и ничего не делал вовсе — теперь прячет задачи чужого
+       предмета по `task.subject`. #}
+    <div class="lrn-subject-toggle" role="tablist" aria-label="Направление">
+        <button type="button" class="lrn-subject-btn active" data-subject="Рисунок" onclick="lrnSwitchSubject(this)">Рисунок</button>
+        <button type="button" class="lrn-subject-btn" data-subject="Композиция" onclick="lrnSwitchSubject(this)">Композиция</button>
+    </div>
+
     {# Полоска недели и разбивка по дням — переиспользуют .trk-* из tracker.css,
        тот же движок выборки, что у «Личного трекера» (accessible_task_entries). #}
     <div class="trk-weekstrip">
@@ -77,12 +85,15 @@
     </div>
 
     {% for day in week_days if day.tasks %}
+    <div class="lrn-daygroup">
     <div class="trk-day" id="lrn-day-{{ day.date.isoformat() }}">
         {{ day.label }}, {{ day.date.strftime('%d.%m') }}
         <a href="/cabinet/learning/day/{{ day.date.isoformat() }}" class="lrn-card-cta">Открыть день →</a>
     </div>
     {% for entry in day.tasks %}
-    <div class="trk-row trk-item trk-item--{{ entry.status }}">
+    {# data-subject пустой у задач без предмета — такие видны в обоих
+       направлениях, прятать их переключателем нельзя. #}
+    <div class="trk-row trk-item trk-item--{{ entry.status }}" data-subject="{{ entry.task.subject or '' }}">
         <div>
             <div class="trk-meta" style="margin-bottom:6px;">
                 <span class="trk-badge trk-badge--kind">{{ entry.kind_label }}</span>
@@ -95,23 +106,16 @@
             </div>
         </div>
         <div class="trk-row-actions">
-            <button
-                type="button"
-                class="trk-toggle-btn{{ ' is-done' if entry.status == 'done' }}"
-                data-toggle-task="{{ entry.task.id }}"
-                aria-pressed="{{ 'true' if entry.status == 'done' else 'false' }}"
-            >{{ 'Сделано' if entry.status == 'done' else 'Отметить' }}</button>
+            {% include "partials/task_action.html" %}
         </div>
     </div>
     {% endfor %}
+    </div>
     {% endfor %}
 
-    {% if topic %}
-    <div class="lrn-subject-toggle" role="tablist" aria-label="Направление">
-        <button type="button" class="lrn-subject-btn active" data-subject="Рисунок" onclick="lrnSwitchSubject(this)">Рисунок</button>
-        <button type="button" class="lrn-subject-btn" data-subject="Композиция" onclick="lrnSwitchSubject(this)">Композиция</button>
-    </div>
+    <p class="lrn-empty lrn-subject-empty" hidden>По этому направлению на этой неделе задач нет.</p>
 
+    {% if topic %}
     <div class="lrn-cards">
         {% if topic.meeting_url %}
         <a class="lrn-card" href="{{ topic.meeting_url }}" target="_blank" rel="noopener">
@@ -145,13 +149,45 @@
 
 <script>
 function lrnSwitchSubject(btn) {
-    // Пока переключатель не разводит контент по предмету — недели одинаковы для
-    // Рисунка и Композиции, пока в схеме нет данных, которые от предмета зависят.
-    // Разводка появится вместе с реальным ДЗ (Р2) и адресацией недель (Р3/Р4).
-    document.querySelectorAll('.lrn-subject-btn').forEach(function(b) {
+    // Разводка по направлению, о которой просили на созвоне 17.08 (00:08:30):
+    // выбрал «Рисунок» — видишь только рисунок. Фильтруем по `task.subject`,
+    // поле уже есть у задачи и выводится бейджем рядом с названием.
+    //
+    // Задачи без предмета видны всегда: занятие или анкета недели относятся к
+    // обоим направлениям, и прятать их переключателем было бы враньём.
+    // Карточки «Занятие / Задание / Анкета» ниже — уровня недели, не предмета,
+    // их переключатель тоже не трогает.
+    var subject = btn.getAttribute('data-subject');
+    document.querySelectorAll('.lrn-subject-btn').forEach(function (b) {
         b.classList.toggle('active', b === btn);
+        b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
     });
+
+    var visible = 0;
+    document.querySelectorAll('.lrn-daygroup').forEach(function (group) {
+        var shown = 0;
+        group.querySelectorAll('.trk-item[data-subject]').forEach(function (row) {
+            var rowSubject = row.getAttribute('data-subject');
+            var show = !rowSubject || rowSubject === subject;
+            row.hidden = !show;
+            if (show) shown += 1;
+        });
+        // День без единой видимой задачи прячем вместе с его заголовком,
+        // иначе на экране остаётся дата без содержимого.
+        group.hidden = shown === 0;
+        visible += shown;
+    });
+
+    var empty = document.querySelector('.lrn-subject-empty');
+    if (empty) empty.hidden = visible > 0;
 }
+
+// Применяем фильтр сразу при загрузке: иначе кнопка «Рисунок» подсвечена, а в
+// списке лежат задачи обоих направлений — экран противоречит сам себе.
+(function () {
+    var active = document.querySelector('.lrn-subject-btn.active');
+    if (active) lrnSwitchSubject(active);
+})();
 
 (function () {
     // Тот же обработчик, что у «Личного трекера» (cabinet_tracker.html) —

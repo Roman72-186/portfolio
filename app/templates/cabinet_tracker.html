@@ -43,7 +43,7 @@ FORM: Operate, список, а не карточка-витрина.
             <div class="trk-meta"><span class="is-overdue">до {{ entry.day.strftime('%d.%m') }}, {{ entry.due_label }}</span></div>
         </div>
         <div class="trk-row-actions">
-            <button type="button" class="trk-toggle-btn" data-toggle-task="{{ entry.task.id }}" aria-pressed="false">Отметить</button>
+            {% include "partials/task_action.html" %}
         </div>
     </div>
     {% endfor %}
@@ -63,7 +63,7 @@ FORM: Operate, список, а не карточка-витрина.
             <div class="trk-meta"><span>до {{ entry.day.strftime('%d.%m') }}, {{ entry.due_label }}</span></div>
         </div>
         <div class="trk-row-actions">
-            <button type="button" class="trk-toggle-btn" data-toggle-task="{{ entry.task.id }}" aria-pressed="false">Отметить</button>
+            {% include "partials/task_action.html" %}
         </div>
     </div>
     {% endfor %}
@@ -82,7 +82,7 @@ FORM: Operate, список, а не карточка-витрина.
             <div class="trk-meta"><span>{{ entry.day.strftime('%d.%m') }}</span></div>
         </div>
         <div class="trk-row-actions">
-            <button type="button" class="trk-toggle-btn is-done" data-toggle-task="{{ entry.task.id }}" aria-pressed="true">Сделано</button>
+            {% include "partials/task_action.html" %}
         </div>
     </div>
     {% endfor %}

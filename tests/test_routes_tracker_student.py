@@ -237,3 +237,131 @@ def test_task_status_pure_function():
 
     done_state = TrackerTaskState(task_id=1, user_id=1, status=STATUS_DONE)
     assert task_status(overdue_task, done_state, now=now) == "done"
+
+
+# ── Закрытый долг не исчезает с экрана (21.08) ──────────────────────────────
+
+def test_closed_overdue_task_stays_visible_in_done(auth_client, db):
+    """Долг прошлой недели, закрытый сегодня, остаётся в блоке «Сделано».
+
+    Раньше «Сделано» отбиралось по дате дедлайна, и такая задача пропадала
+    совсем: статус вывел её из «Просрочено», а старый дедлайн не пустил в
+    «Сделано». Ученик закрывал долг и после обновления страницы не находил
+    ни задачи, ни подтверждения.
+    """
+    client, user = auth_client
+    last_week = week_start(today_msk()) - timedelta(days=3)
+    start, _ = day_bounds(last_week)
+    task = _standalone_task(
+        db, user_id=user.id, due_at=start + timedelta(hours=10), assign_to_all=True
+    )
+
+    resp = client.get(PAGE)
+    assert "Разовая задача" in resp.text  # видна как просроченная
+
+    assert client.post(f"{PAGE}/tasks/{task.id}/toggle").json()["status"] == "done"
+
+    resp = client.get(PAGE)
+    assert "Разовая задача" in resp.text
+    assert "Сделано на этой неделе" in resp.text
+
+
+def test_task_closed_long_ago_is_not_shown(auth_client, db):
+    """Отбор по дате закрытия не должен превратиться в «показывать всё».
+
+    Задача прошлой недели, закрытая тогда же, на экране этой недели не нужна.
+    """
+    client, user = auth_client
+    last_week = week_start(today_msk()) - timedelta(days=3)
+    start, _ = day_bounds(last_week)
+    task = _standalone_task(
+        db, user_id=user.id, due_at=start + timedelta(hours=10), assign_to_all=True
+    )
+    db.add(TrackerTaskState(
+        task_id=task.id,
+        user_id=user.id,
+        status=STATUS_DONE,
+        completed_at=start + timedelta(hours=12),
+        completed_by_id=user.id,
+    ))
+    db.commit()
+
+    resp = client.get(PAGE)
+    assert "Разовая задача" not in resp.text
+
+
+# ── Умные кнопки вместо голой галочки (21.08) ───────────────────────────────
+
+def _video_task_with_video(db, user_id, *, due_at):
+    """Задача-видео с настоящим роликом — как её заводит учебная программа."""
+    from app.models.learning_video import LearningVideo
+    from app.models.tracker import ITEM_VIDEO
+    from app.services.program import ensure_item_topic, set_item_audience
+
+    topic = ensure_item_topic(db, title="Видео недели", day=today_msk(), user_id=user_id)
+    set_item_audience(db, topic, assign_to_all=True, tag_ids=[], assignee_ids=[])
+    task = create_task(
+        db, title="Видео недели", user_id=user_id, due_at=due_at,
+        topic_id=topic.id, kind=ITEM_VIDEO,
+    )
+    task.is_published = True
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id="35ed80ae-8103-4528-a700-3f69ec56957d",
+        title="Видео недели",
+        topic_id=topic.id,
+        status="ready",
+        is_published=True,
+    )
+    db.add(video)
+    db.commit()
+    db.refresh(video)
+    return task, video
+
+
+def test_video_task_links_to_player_instead_of_checkbox(auth_client, db):
+    """Видео на трекере ведёт в плеер, а не закрывается галочкой.
+
+    Иначе ученик отмечает урок просмотренным, не открыв его — а если на такие
+    отметки повесят доступ к следующей неделе (Р1), это обход в одно нажатие.
+    """
+    client, user = auth_client
+    _, due = _current_week_due(offset_days=1)
+    task, video = _video_task_with_video(db, user.id, due_at=due)
+
+    resp = client.get(PAGE)
+    assert resp.status_code == 200
+    assert f'href="/cabinet/videos/{video.id}"' in resp.text
+    assert f'data-toggle-task="{task.id}"' not in resp.text
+
+
+def test_task_without_own_screen_keeps_checkbox(auth_client, db):
+    """У задачи без своего экрана галочка остаётся — она единственный способ закрыть."""
+    client, user = auth_client
+    _, due = _current_week_due(offset_days=1)
+    task = _standalone_task(db, user_id=user.id, due_at=due, assign_to_all=True)
+
+    resp = client.get(PAGE)
+    assert f'data-toggle-task="{task.id}"' in resp.text
+
+
+def test_mock_exam_task_keeps_checkbox_next_to_the_link(auth_client, db):
+    """У пробника есть и переход, и отметка: сдача пробника задачу не закрывает.
+
+    `close_task_for_user` зовут только из `video.py`. Убрать отметку у пробника
+    и домашки значило бы, что такая задача не может уйти из «Просрочено» вообще.
+    """
+    from app.models.tracker import ITEM_MOCK_EXAM
+
+    client, user = auth_client
+    _, due = _current_week_due(offset_days=1)
+    task = create_task(
+        db, title="Пробник по рисунку", user_id=user.id, due_at=due,
+        assign_to_all=True, kind=ITEM_MOCK_EXAM, subject="Рисунок",
+    )
+    task.is_published = True
+    db.commit()
+
+    resp = client.get(PAGE)
+    assert "Начать пробник" in resp.text
+    assert f'data-toggle-task="{task.id}"' in resp.text

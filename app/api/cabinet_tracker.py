@@ -32,7 +32,7 @@ from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
 from app.models.tracker import STATUS_DONE, STATUS_OPEN, TrackerTask, TrackerTaskState
-from app.services.program import day_bounds, week_start
+from app.services.program import day_bounds, item_details, week_start
 from app.services.stats import avg_score_by_subject_all_time
 from app.services.tracker import accessible_task_entries, accessible_task_ids, task_status
 from app.services.tz import today_msk, now_msk
@@ -60,7 +60,19 @@ def cabinet_tracker(
     upcoming = [e for e in entries if e["status"] == "upcoming"]
     # Сделанное показываем только за эту неделю — иначе список рос бы вечно
     # закрытыми делами месячной давности, которые уже никому не интересны.
-    done = [e for e in entries if e["status"] == "done" and e["day"] >= week_monday]
+    #
+    # Отбор по дате закрытия, не по дате дедлайна: закрытый сегодня долг
+    # прошлой недели должен остаться на экране. Раньше здесь стояло
+    # `e["day"] >= week_monday`, и такая задача исчезала совсем — из
+    # «Просрочено» её выводил статус, в «Сделано» не пускал старый дедлайн.
+    # Ученик жал галочку, обновлял страницу и не находил ни подтверждения,
+    # ни задачи. Закрытые без отметки времени (до появления колонки) —
+    # показываем, потерять их хуже, чем показать лишнее.
+    done = [
+        e for e in entries
+        if e["status"] == "done"
+        and (e["completed_on"] is None or e["completed_on"] >= week_monday)
+    ]
 
     return templates.TemplateResponse("cabinet_tracker.html", {
         "request": request,
@@ -70,6 +82,9 @@ def cabinet_tracker(
         "done": done,
         "active_tab": "tracker",
         "avg_score_by_subject": avg_score_by_subject_all_time(db, user["user_id"]),
+        # Нужен partial'у `partials/task_action.html`: видео, пробник и домашка
+        # ведут на свой экран, галочка остаётся только у остального.
+        "details": item_details(db, [e["task"] for e in entries]),
     })
 
 
