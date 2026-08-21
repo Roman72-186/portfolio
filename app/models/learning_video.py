@@ -16,6 +16,11 @@ class LearningVideo(Base):
     bunny_video_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Обложка — своя картинка в S3, не превью от Bunny: в API-слое thumbnail не
+    # реализован, а хоста pull-zone в конфиге нет, так что автопревью нечем
+    # адресовать. Хранится рядом с уроком, чтобы позже пригодиться и в каталоге.
+    cover_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    cover_s3_path: Mapped[str | None] = mapped_column(String(300), nullable=True)
     original_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     original_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     original_mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)

@@ -81,6 +81,31 @@ class ExamTicket(Base):
     )
 
 
+class ExamTicketTag(Base):
+    """Теги, которым адресован билет. Источник правды для доступа.
+
+    У билета исторически один `target_tag_id`, а учебная программа выдаёт
+    пробник сразу нескольким тегам: тариф плюс дополнительные. Первый тег
+    по-прежнему дублируется в `ExamTicket.target_tag_id` — его читает
+    планировщик уведомлений (`app/services/exam_scheduler.py`), который про эту
+    таблицу не знает. Билеты со старой формы сюда не пишут, и пустая таблица
+    означает прежнее поведение.
+    """
+
+    __tablename__ = "exam_ticket_tags"
+
+    ticket_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("exam_tickets.id", ondelete="CASCADE"), primary_key=True
+    )
+    tag_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True
+    )
+
+    __table_args__ = (
+        Index("ix_exam_ticket_tags_tag", "tag_id"),
+    )
+
+
 class ExamTicketAssignee(Base):
     """Ученик, которому выдан конкретный билет."""
 

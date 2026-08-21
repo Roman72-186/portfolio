@@ -7,6 +7,16 @@
 Тема только открывается по дате — окна закрытия нет. Прошедшая тема остаётся в
 каталоге как учебный архив: ученик может вернуться к материалу третьей недели,
 сидя на седьмой.
+
+**Два вида тем, различаются колонкой `kind`.** `week` — обычная тема недели,
+которую заводит человек на странице видеоуроков. `program_item` — служебная
+тема одного элемента учебной программы: её создаёт календарь, человек её не
+видит и не выбирает. Служебные темы нужны затем, что аудиторию элемента
+программы надо где-то хранить, а доступ к ролику в проекте умеет считать
+только `accessible_topic_ids` по теме. Списки тем фильтруются по `kind`, иначе
+выпадающий список на странице «Видео» зарастёт служебными строками. Любой новый
+код, который пойдёт в `db.query(LearningTopic)` мимо `list_topics`, увидит и те
+и другие — фильтр придётся ставить руками.
 """
 
 from datetime import datetime, timezone
@@ -16,12 +26,20 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
 
+TOPIC_KIND_WEEK = "week"
+TOPIC_KIND_PROGRAM_ITEM = "program_item"
+
 
 class LearningTopic(Base):
     __tablename__ = "learning_topics"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
+    # «week» — тема недели, её заводит человек. «program_item» — служебная тема
+    # элемента учебной программы, её создаёт календарь (см. докстринг модуля).
+    kind: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=TOPIC_KIND_WEEK, server_default=TOPIC_KIND_WEEK
+    )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Ссылка на созвон занятия недели (Zoom/Google Meet и т.п.), заполняется вручную.
     meeting_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -53,6 +71,7 @@ class LearningTopic(Base):
 
     __table_args__ = (
         Index("ix_learning_topics_public", "is_published", "opens_at"),
+        Index("ix_learning_topics_kind", "kind", "opens_at"),
     )
 
 
