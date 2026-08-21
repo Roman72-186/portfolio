@@ -23,6 +23,7 @@ from app.constants import MOCK_SUBJECTS
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf, require_csrf_header
 from app.models.audit_log import AuditLog
+from app.models.learning_topic import TOPIC_KIND_WEEK
 from app.models.tracker import (
     ITEM_HOMEWORK,
     ITEM_KIND_LABELS,
@@ -39,7 +40,6 @@ from app.services.tracker import (
     copy_week,
     count_completed,
     count_task_audience,
-    count_week_items,
     create_homework,
     create_task,
     delete_task,
@@ -58,7 +58,6 @@ from app.services.tracker import (
     unpublish_task,
     update_homework,
     update_task,
-    week_audience,
 )
 from app.services.tz import MSK_TZ
 from app.services.utils import compress_image
@@ -66,12 +65,7 @@ from app.services.utils import compress_image
 # куратора, а не предмет. Правило доступа от неё не зависит, поэтому берём
 # готовую функцию, а не копируем список букв во второе место. Неделя программы —
 # это тема недели видеомодуля, поэтому список и чтение недель тоже оттуда.
-from app.services.video_topics import (
-    ambiguous_tag_names,
-    get_tag_ids as topic_tag_ids,
-    get_topic,
-    list_topics,
-)
+from app.services.video_topics import ambiguous_tag_names, get_topic
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/staff/tracker")
@@ -228,7 +222,6 @@ def tracker_admin_page(
     # Только разовые задачи: элементы недель живут в конструкторе, иначе одна и
     # та же строка висела бы на двух экранах.
     tasks = list_tasks(db, standalone_only=True)
-    weeks = list_topics(db)
     task_tag_ids = {t.id: get_tag_ids(db, t.id) for t in tasks}
     task_assignee_ids = {t.id: get_assignee_ids(db, t.id) for t in tasks}
     all_tags = get_all_tags(db)
@@ -277,11 +270,6 @@ def tracker_admin_page(
             "ambiguous_tag_ids": {
                 tag.id for tag in all_tags if tag.name in ambiguous_names
             },
-            # Недели программы — вход в конструктор.
-            "weeks": weeks,
-            "week_items": {w.id: count_week_items(db, w.id) for w in weeks},
-            "week_audience": {w.id: week_audience(db, w) for w in weeks},
-            "week_opens_display": {w.id: _format_msk_display(w.opens_at) for w in weeks},
         },
     )
 
@@ -487,7 +475,9 @@ WeekItemPayload.model_rebuild()
 
 
 def _get_week_or_404(db: DBSession, topic_id: int):
-    week = get_topic(db, topic_id)
+    # Только темы недель: у элементов учебной программы своя служебная тема, и
+    # прицепить к ней элемент недели значило бы собрать программу мимо календаря.
+    week = get_topic(db, topic_id, kinds=(TOPIC_KIND_WEEK,))
     if week is None:
         raise HTTPException(status_code=404, detail="Неделя не найдена")
     return week
@@ -574,56 +564,6 @@ def week_constructor_page(
     программу в двух местах сразу.
     """
     return RedirectResponse("/cabinet/staff/program", status_code=302)
-
-
-def _week_constructor_page_legacy(
-    topic_id: int,
-    request: Request,
-    user: dict,
-    db: DBSession,
-):
-    week = _get_week_or_404(db, topic_id)
-    items = list_week_items(db, week.id)
-    homework_by_task = {
-        item.id: get_homework(db, item.source_id)
-        for item in items
-        if item.source_kind == SOURCE_HOMEWORK and item.source_id
-    }
-    images_by_task = {
-        task_id: homework_images(db, homework.id)
-        for task_id, homework in homework_by_task.items()
-        if homework
-    }
-    return templates.TemplateResponse(
-        "cabinet_tracker_week.html",
-        {
-            "request": request,
-            "user": user,
-            "week": week,
-            "week_opens_display": _format_msk_display(week.opens_at),
-            "week_audience": week_audience(db, week),
-            "week_ambiguous_tags": ambiguous_tag_names(db, topic_tag_ids(db, week.id)),
-            "items": items,
-            "item_kinds": ITEM_KINDS,
-            "item_kind_labels": ITEM_KIND_LABELS,
-            "subjects": MOCK_SUBJECTS,
-            "item_due_form": {i.id: _format_msk_datetime_local(i.due_at) for i in items},
-            "item_due_display": {i.id: _format_msk_display(i.due_at) for i in items},
-            "item_day": {i.id: _format_msk_day(i.due_at) for i in items},
-            "homework_by_task": homework_by_task,
-            "homework_images": images_by_task,
-            # Строки для data-атрибутов формы собираются здесь: у картинки путь
-            # может быть пустым, и join в шаблоне подставил бы туда «None».
-            "homework_image_urls": {
-                task_id: "|".join(image.image_s3_url for image in images)
-                for task_id, images in images_by_task.items()
-            },
-            "homework_image_paths": {
-                task_id: "|".join(image.image_s3_path or "" for image in images)
-                for task_id, images in images_by_task.items()
-            },
-        },
-    )
 
 
 @router.post("/weeks/{topic_id}/items", response_class=JSONResponse)
