@@ -14,8 +14,12 @@ Trello-чеклист без досок. Разбивка по дням неде
 Раньше `/cabinet/tracker` был вторым именем общего дашборда ученика
 (`cabinet_student.py`) — сюда переехала только его роль в навигации
 (`STUDENT_NAV_ITEMS[key="tracker"]`), сам маршрут теперь самостоятельный.
-Hero-карточка (имя/тариф/баллы) сюда не переезжает — её место в «Актуальном
-образовательном пространстве», это отдельная задача.
+
+Hero-карточка (аватар/имя/тариф/баллы Р-К/год поступления) — решение владельца
+21.08: живёт здесь, не в АОП. Partial `partials/profile_hero.html`, стили —
+`app/static/css/profile_hero.css`, данные по баллам — общий сервис
+`app/services/stats.py::avg_score_by_subject_all_time` (тот же, что у карточки
+ученика для персонала).
 """
 from datetime import timedelta
 from typing import Annotated
@@ -29,6 +33,7 @@ from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
 from app.models.tracker import STATUS_DONE, STATUS_OPEN, TrackerTask, TrackerTaskState
 from app.services.program import day_bounds, week_start
+from app.services.stats import avg_score_by_subject_all_time
 from app.services.tracker import accessible_task_entries, accessible_task_ids, task_status
 from app.services.tz import today_msk, now_msk
 from app.services.video_topics import accessible_topic_ids
@@ -64,6 +69,7 @@ def cabinet_tracker(
         "upcoming": upcoming,
         "done": done,
         "active_tab": "tracker",
+        "avg_score_by_subject": avg_score_by_subject_all_time(db, user["user_id"]),
     })
 
 

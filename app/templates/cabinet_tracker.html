@@ -12,9 +12,12 @@ FORM: Operate, список, а не карточка-витрина.
 {% block title %}Личный трекер{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/tracker.css?v=4">
+<link rel="stylesheet" href="/static/css/profile_hero.css?v=1">
 {% endblock %}
 {% block content %}
 <div class="trk-page">
+    {% include "partials/profile_hero.html" %}
+
     <div class="trk-head">
         <div class="trk-head-copy">
             <h1>Личный трекер</h1>

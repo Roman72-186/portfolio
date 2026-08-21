@@ -1,0 +1,133 @@
+/* Общая шапка профиля ученика: аватар, имя, тариф, баллы Р/К, год поступления.
+   Источник — .profile-hero из cabinet_student.html (там же жила инлайново),
+   вынесено сюда, чтобы новый экран подключал файл, а не копировал блок стилей —
+   инлайновый рост запрещён храповиком переиспользования (scripts/reuse_check.py). */
+
+.profile-hero {
+    background: linear-gradient(135deg, #1E2D6B 0%, #3B4FC8 100%);
+    border-radius: 20px;
+    padding: 20px 20px 56px;
+    margin-bottom: 20px;
+    box-shadow: 0 8px 32px rgba(30,45,107,0.22);
+    position: relative;
+    overflow: hidden;
+}
+.profile-hero::before {
+    content: '';
+    position: absolute;
+    width: 300px; height: 300px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+    top: -80px; right: -60px;
+}
+.profile-hero::after {
+    content: '';
+    position: absolute;
+    width: 180px; height: 180px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+    bottom: -60px; right: 100px;
+}
+.profile-hero-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    position: relative; z-index: 1;
+}
+.profile-avatar-wrap { position: relative; flex-shrink: 0; }
+.profile-avatar {
+    width: 60px; height: 60px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid rgba(255,255,255,0.25);
+    display: block;
+}
+.profile-avatar-placeholder {
+    width: 60px; height: 60px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.12);
+    border: 3px solid rgba(255,255,255,0.2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px;
+}
+.profile-avatar-upload {
+    position: absolute; right: -2px; bottom: -2px;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--blue); color: #fff;
+    border: 2px solid #1E2D6B;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: background var(--duration-fast);
+}
+.profile-avatar-upload:hover { background: var(--blue-deep); }
+.profile-avatar-input {
+    position: absolute; inset: 0;
+    opacity: 0; cursor: pointer;
+    width: 100%; height: 100%;
+}
+.profile-hero-info { flex: 1 1 auto; min-width: 0; }
+.profile-role-tag {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 20px;
+    padding: 3px 12px;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.07em; text-transform: uppercase;
+    color: rgba(255,255,255,0.85);
+    margin-bottom: 8px;
+}
+.profile-name {
+    font-size: 20px; font-weight: 900;
+    color: #fff;
+    letter-spacing: -0.3px;
+    margin-bottom: 8px;
+    line-height: 1.15;
+    overflow-wrap: break-word;
+}
+.profile-tariff {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 13px; font-weight: 700; color: #fff;
+}
+.profile-tariff-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%; background: #6EE7B7;
+}
+.profile-scores {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 14px;
+    padding: 8px 12px;
+}
+.profile-score-cell {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    min-width: 22px;
+}
+.profile-score-label {
+    font-size: 11px; font-weight: 800; color: rgba(255,255,255,0.7);
+    letter-spacing: 0.03em;
+}
+.profile-score-value { font-size: 15px; font-weight: 900; color: #fff; line-height: 1; }
+.profile-score-divider { width: 1px; align-self: stretch; background: rgba(255,255,255,0.2); }
+.profile-hero-actions {
+    position: absolute;
+    right: 18px; bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+    z-index: 1;
+}
+
+@media (max-width: 480px) {
+    .profile-hero-top { gap: 10px; }
+    .profile-scores { padding: 6px 9px; gap: 8px; }
+}
+@media (min-width: 1024px) {
+    .profile-hero { padding: 28px 32px 60px; }
+    .profile-avatar, .profile-avatar-placeholder { width: 76px; height: 76px; }
+    .profile-name { font-size: 26px; }
+}

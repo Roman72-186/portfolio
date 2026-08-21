@@ -233,6 +233,30 @@ def student_score_curve(db: DBSession, student_id: int) -> list[CurvePoint]:
     return points
 
 
+def avg_score_by_subject_all_time(db: DBSession, student_id: int) -> dict:
+    """Средний балл по пробникам за всю историю, отдельно по предметам —
+    для бейджей шапки ученика на всех вкладках карточки/кабинета. Намеренно не
+    учитывает period_only: тот фильтр относится только к списку работ на
+    вкладке mock-exams, иначе бейджи шапки дёргались бы при переключении
+    фильтра."""
+    scored = (
+        db.query(Work)
+        .filter(
+            Work.user_id == student_id,
+            Work.work_type == WORK_TYPE_MOCK_EXAM,
+            Work.status == "success",
+            Work.score.isnot(None),
+        )
+        .all()
+    )
+    result: dict = {}
+    for subj in MOCK_SUBJECTS:
+        subj_scored = [w for w in scored if w.subject == subj]
+        if subj_scored:
+            result[subj] = round(sum(float(w.score) for w in subj_scored) / len(subj_scored))
+    return result
+
+
 def curator_avg_scores(
     db: DBSession,
     curator_id: int,

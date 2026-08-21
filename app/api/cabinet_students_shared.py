@@ -40,6 +40,7 @@ from app.models.work import (
 from app.services import s3 as s3_service
 from app.services.exam_cycle import get_active_ticket, has_submitted_for_ticket
 from app.services.feature_periods import get_active_period
+from app.services.stats import avg_score_by_subject_all_time
 from app.services.student_access import get_student_for_staff_access
 from app.services.tz import MSK_TZ, msk_midnight
 from app.services.utils import compress_image, study_duration_text, group_works, has_case_growth
@@ -158,29 +159,6 @@ def _check_access(student_id: int, user: dict, db: DBSession) -> User:
         not_found_detail="Ученик не найден",
         forbidden_detail="Нет доступа к этому ученику",
     )
-
-
-def _avg_score_by_subject_all_time(db: DBSession, student_id: int) -> dict:
-    """Средний балл по пробникам за всю историю, отдельно по предметам —
-    для бейджей шапки ученика на всех вкладках карточки. Намеренно не учитывает
-    period_only: тот фильтр относится только к списку работ на вкладке mock-exams,
-    иначе бейджи шапки дёргались бы при переключении фильтра."""
-    scored = (
-        db.query(Work)
-        .filter(
-            Work.user_id == student_id,
-            Work.work_type == WORK_TYPE_MOCK_EXAM,
-            Work.status == "success",
-            Work.score.isnot(None),
-        )
-        .all()
-    )
-    result: dict = {}
-    for subj in MOCK_SUBJECTS:
-        subj_scored = [w for w in scored if w.subject == subj]
-        if subj_scored:
-            result[subj] = round(sum(float(w.score) for w in subj_scored) / len(subj_scored))
-    return result
 
 
 def _enrich(s: User, counts_by_user: dict, avg_by_user: dict,
@@ -517,7 +495,7 @@ def get_student_profile(
             "profile_completed": student.profile_completed,
             "curator_name": curator_name,
             "avg_score": avg_score,
-            "avg_score_by_subject": _avg_score_by_subject_all_time(db, student_id),
+            "avg_score_by_subject": avg_score_by_subject_all_time(db, student_id),
             "portfolio_count": portfolio_count,
             "mock_exam_count": len(mock_works),
             "retake_count": retake_count,
@@ -573,7 +551,7 @@ def get_portfolio(
             "tariff": student.tariff or "—",
             "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
             "avg_score": avg_score,
-            "avg_score_by_subject": _avg_score_by_subject_all_time(db, student_id),
+            "avg_score_by_subject": avg_score_by_subject_all_time(db, student_id),
             "photo_url": student.photo_url,
             "cohort_tag": student.cohort_tag,
         },
@@ -697,7 +675,7 @@ def get_mock_exams(
             "avg_score": avg_score,
             # Всегда за всю историю, не завязано на period_only — иначе бейджи шапки
             # дёргались бы при переключении фильтра «только за текущий период».
-            "avg_score_by_subject": _avg_score_by_subject_all_time(db, student_id),
+            "avg_score_by_subject": avg_score_by_subject_all_time(db, student_id),
             "photo_url": student.photo_url,
             "cohort_tag": student.cohort_tag,
         },
@@ -730,7 +708,7 @@ def get_statistics(
             "name": f"{student.last_name or ''} {student.first_name or student.name}".strip(),
             "tariff": student.tariff or "—",
             "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
-            "avg_score_by_subject": _avg_score_by_subject_all_time(db, student_id),
+            "avg_score_by_subject": avg_score_by_subject_all_time(db, student_id),
             "photo_url": student.photo_url,
             "cohort_tag": student.cohort_tag,
         },
@@ -799,7 +777,7 @@ def get_retakes(
             "name": f"{student.last_name or ''} {student.first_name or student.name}".strip(),
             "tariff": student.tariff or "—",
             "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
-            "avg_score_by_subject": _avg_score_by_subject_all_time(db, student_id),
+            "avg_score_by_subject": avg_score_by_subject_all_time(db, student_id),
             "photo_url": student.photo_url,
             "cohort_tag": student.cohort_tag,
         },
