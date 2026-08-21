@@ -10,7 +10,7 @@ FORM: Operate, список, а не карточка-витрина.
 #}
 {% block title %}Личный трекер{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=3">
+<link rel="stylesheet" href="/static/css/tracker.css?v=4">
 {% endblock %}
 {% block content %}
 <div class="trk-page">
@@ -21,8 +21,22 @@ FORM: Operate, список, а не карточка-витрина.
         </div>
     </div>
 
+    <div class="trk-weekstrip">
+        {% for day in week_days %}
+        <a href="#day-{{ day.date.isoformat() }}" class="trk-weekcell{{ ' is-today' if day.is_today }}">
+            <span class="trk-weekcell-dow">{{ day.label }}</span>
+            <span class="trk-weekcell-num">{{ day.date.day }}</span>
+            <span class="trk-marks">
+                {% for kind in day.kinds %}
+                <span class="trk-dot trk-dot--{{ kind }}"></span>
+                {% endfor %}
+            </span>
+        </a>
+        {% endfor %}
+    </div>
+
     {% for day in week_days %}
-    <div class="trk-day">{{ day.label }}, {{ day.date.strftime('%d.%m') }}</div>
+    <div class="trk-day" id="day-{{ day.date.isoformat() }}">{{ day.label }}, {{ day.date.strftime('%d.%m') }}</div>
     {% if day.tasks %}
         {% for entry in day.tasks %}
         <div class="trk-row trk-item trk-item--{{ entry.status }}">

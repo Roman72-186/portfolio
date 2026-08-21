@@ -102,10 +102,19 @@ def cabinet_tracker(
             "due_label": due_at.astimezone(MSK_TZ).strftime("%H:%M"),
         })
 
+    today = today_msk()
     # "tasks", не "items": Jinja резолвит атрибуты раньше subscript'а, и
     # day.items утянул бы встроенный dict.items вместо списка задач.
     week_days = [
-        {"date": day, "label": WEEKDAY_LABELS[day.weekday()], "tasks": items_by_day[day]}
+        {
+            "date": day,
+            "label": WEEKDAY_LABELS[day.weekday()],
+            "tasks": items_by_day[day],
+            "is_today": day == today,
+            # Порядок фиксированный (не set()) — иначе точки в полоске недели
+            # прыгали бы местами между перезагрузками страницы.
+            "kinds": list(dict.fromkeys(entry["task"].kind for entry in items_by_day[day])),
+        }
         for day in days
     ]
 

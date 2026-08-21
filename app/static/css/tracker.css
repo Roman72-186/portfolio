@@ -134,3 +134,39 @@
 }
 .trk-toggle-btn.is-done { color: var(--success); background: rgba(21,128,61,0.10); }
 .trk-toggle-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* Полоска недели: 7 ячеек-якорей на день ниже в списке, точки — какие типы
+   заданий в этот день есть. Только текущая неделя, без месяца и навигации —
+   решение владельца: прошлые недели уйдут в архив отдельным экраном,
+   будущие ученику пока не видны вовсе. */
+.trk-weekstrip {
+    display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px;
+    margin-bottom: 18px;
+}
+.trk-weekcell {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    min-height: 64px; padding: 8px 4px; text-decoration: none;
+    color: var(--text); background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--r-md);
+}
+.trk-weekcell:hover { border-color: var(--blue); }
+.trk-weekcell.is-today { outline: 2px solid var(--blue); outline-offset: -2px; }
+.trk-weekcell-dow {
+    font: 700 11px/1 var(--font-body); color: var(--muted);
+    text-transform: uppercase; letter-spacing: .04em;
+}
+.trk-weekcell-num { font: 700 16px/1 var(--font-display); }
+
+.trk-marks { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; min-height: 8px; }
+.trk-dot { width: 8px; height: 8px; border-radius: 50%; }
+.trk-dot--video { background: var(--blue); }
+.trk-dot--homework { background: var(--warning); }
+.trk-dot--mock_exam { background: var(--success); }
+.trk-dot--survey { background: var(--muted); }
+.trk-dot--lesson { background: var(--error); }
+.trk-dot--other { background: var(--dim); }
+
+@media (max-width: 480px) {
+    .trk-weekcell-dow { font-size: 9px; }
+    .trk-weekcell-num { font-size: 14px; }
+}
