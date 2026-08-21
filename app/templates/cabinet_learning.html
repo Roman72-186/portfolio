@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Образовательное пространство{% endblock %}
 {% block extra_styles %}
+<link rel="stylesheet" href="/static/css/tracker.css?v=4">
 <style>
 .lrn-page { max-width: 1080px; margin: 0 auto; padding: 22px 18px 110px; }
 .lrn-hero {
@@ -58,6 +59,49 @@
         <p>Видео, задание, обратная связь и занятие текущей недели — в одном месте.</p>
         {% endif %}
     </div>
+
+    {# Полоска недели и разбивка по дням — переиспользуют .trk-* из tracker.css,
+       тот же движок выборки, что у «Личного трекера» (accessible_task_entries). #}
+    <div class="trk-weekstrip">
+        {% for day in week_days %}
+        <a href="#lrn-day-{{ day.date.isoformat() }}" class="trk-weekcell{{ ' is-today' if day.is_today }}">
+            <span class="trk-weekcell-dow">{{ day.label }}</span>
+            <span class="trk-weekcell-num">{{ day.date.day }}</span>
+            <span class="trk-marks">
+                {% for kind in day.kinds %}
+                <span class="trk-dot trk-dot--{{ kind }}"></span>
+                {% endfor %}
+            </span>
+        </a>
+        {% endfor %}
+    </div>
+
+    {% for day in week_days if day.tasks %}
+    <div class="trk-day" id="lrn-day-{{ day.date.isoformat() }}">{{ day.label }}, {{ day.date.strftime('%d.%m') }}</div>
+    {% for entry in day.tasks %}
+    <div class="trk-row trk-item trk-item--{{ entry.status }}">
+        <div>
+            <div class="trk-meta" style="margin-bottom:6px;">
+                <span class="trk-badge trk-badge--kind">{{ entry.kind_label }}</span>
+                {% if entry.task.subject %}<span class="trk-badge trk-badge--kind">{{ entry.task.subject }}</span>{% endif %}
+            </div>
+            <h3>{{ entry.task.title }}</h3>
+            {% if entry.task.description %}<p>{{ entry.task.description }}</p>{% endif %}
+            <div class="trk-meta">
+                <span class="{{ 'is-overdue' if entry.status == 'overdue' }}">до {{ entry.due_label }}</span>
+            </div>
+        </div>
+        <div class="trk-row-actions">
+            <button
+                type="button"
+                class="trk-toggle-btn{{ ' is-done' if entry.status == 'done' }}"
+                data-toggle-task="{{ entry.task.id }}"
+                aria-pressed="{{ 'true' if entry.status == 'done' else 'false' }}"
+            >{{ 'Сделано' if entry.status == 'done' else 'Отметить' }}</button>
+        </div>
+    </div>
+    {% endfor %}
+    {% endfor %}
 
     {% if topic %}
     <div class="lrn-subject-toggle" role="tablist" aria-label="Направление">
@@ -119,6 +163,39 @@ function lrnSwitchSubject(btn) {
         b.classList.toggle('active', b === btn);
     });
 }
+
+(function () {
+    // Тот же обработчик, что у «Личного трекера» (cabinet_tracker.html) —
+    // отметка «сделано» ведёт на общий эндпоинт /cabinet/tracker/tasks/{id}/toggle
+    // независимо от того, с какого экрана её вызвали.
+    var csrfToken = {{ csrf_token(request)|tojson }};
+    document.querySelectorAll('[data-toggle-task]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var taskId = btn.getAttribute('data-toggle-task');
+            var row = btn.closest('.trk-item');
+            btn.disabled = true;
+            fetch('/cabinet/tracker/tasks/' + taskId + '/toggle', {
+                method: 'POST',
+                headers: {'X-CSRF-Token': csrfToken},
+                cache: 'no-store'
+            }).then(function (resp) {
+                if (!resp.ok) throw new Error();
+                return resp.json();
+            }).then(function (data) {
+                var done = data.status === 'done';
+                row.classList.remove('trk-item--overdue', 'trk-item--upcoming', 'trk-item--done');
+                row.classList.add('trk-item--' + data.status);
+                btn.classList.toggle('is-done', done);
+                btn.setAttribute('aria-pressed', done ? 'true' : 'false');
+                btn.textContent = done ? 'Сделано' : 'Отметить';
+            }).catch(function () {
+                btn.textContent = 'Не получилось, ещё раз';
+            }).finally(function () {
+                btn.disabled = false;
+            });
+        });
+    });
+})();
 </script>
 
 {% set active_tab = "learning" %}

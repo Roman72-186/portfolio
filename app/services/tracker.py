@@ -20,6 +20,7 @@ from app.models.learning_topic import LearningTopic
 from app.models.role import Role
 from app.models.tag import UserTag
 from app.models.tracker import (
+    ITEM_KIND_LABELS,
     ITEM_OTHER,
     SOURCE_HOMEWORK,
     SOURCE_LEARNING_TOPIC,
@@ -30,11 +31,14 @@ from app.models.tracker import (
     TrackerTaskTag,
 )
 from app.models.user import User
+from app.services.program import msk_date
 from app.services.tags import parse_usernames
+from app.services.tz import MSK_TZ, now_msk
 # Неделя программы — это тема недели видеомодуля: расписание, публикация и
 # адресация там уже обкатаны тестами. Второй сущности «неделя» не заводим,
 # поэтому управление темой берём из её владельца, а не дублируем здесь.
 from app.services.video_topics import (
+    accessible_topic_ids,
     count_topic_audience,
     create_topic,
     get_assignee_ids as topic_assignee_ids,
@@ -359,6 +363,66 @@ def task_status(
         if due_at < now:
             return "overdue"
     return "upcoming"
+
+
+def accessible_task_entries(
+    db: Session, user_id: int, *, start: datetime | None, end: datetime
+) -> list[dict]:
+    """Задачи ученика (программа + разовые) до `end` с личным статусом.
+
+    Общий движок для двух экранов, которые раньше собирали один и тот же
+    запрос по отдельности: «Личный трекер» зовёт с `start=None` — долг
+    копится, пока не закрыт, недели назад он никуда не девается; «Актуальное
+    образовательное пространство» передаёт границы текущей недели, для
+    разбивки по дням. Каждая запись — словарь с `task`/`kind_label`/`status`/
+    `due_label`/`day`, без похода в шаблон за вычислениями.
+    """
+    topic_ids = accessible_topic_ids(db, user_id)
+    task_ids = accessible_task_ids(db, user_id)
+    filters = [
+        TrackerTask.is_published.is_(True),
+        TrackerTask.deleted_at.is_(None),
+        TrackerTask.due_at < end,
+        or_(
+            TrackerTask.topic_id.in_(topic_ids),
+            TrackerTask.topic_id.is_(None) & TrackerTask.id.in_(task_ids),
+        ),
+    ]
+    if start is not None:
+        filters.insert(2, TrackerTask.due_at >= start)
+    tasks = (
+        db.query(TrackerTask)
+        .filter(*filters)
+        .order_by(TrackerTask.due_at.asc(), TrackerTask.sort_order.asc(), TrackerTask.id.asc())
+        .all()
+    )
+
+    states: dict[int, TrackerTaskState] = {}
+    if tasks:
+        rows = (
+            db.query(TrackerTaskState)
+            .filter(
+                TrackerTaskState.task_id.in_([t.id for t in tasks]),
+                TrackerTaskState.user_id == user_id,
+            )
+            .all()
+        )
+        states = {row.task_id: row for row in rows}
+
+    now = now_msk()
+    entries = []
+    for task in tasks:
+        due_at = task.due_at
+        if due_at.tzinfo is None:
+            due_at = due_at.replace(tzinfo=timezone.utc)
+        entries.append({
+            "task": task,
+            "kind_label": ITEM_KIND_LABELS.get(task.kind, task.kind),
+            "status": task_status(task, states.get(task.id), now=now),
+            "due_label": due_at.astimezone(MSK_TZ).strftime("%H:%M"),
+            "day": msk_date(task.due_at),
+        })
+    return entries
 
 
 def count_completed(db: Session, task_id: int) -> int:

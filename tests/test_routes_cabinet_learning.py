@@ -2,7 +2,9 @@
 from datetime import timedelta
 
 from app.models.learning_topic import LearningTopic
-from app.services.tz import now_msk
+from app.services.program import day_bounds, week_start
+from app.services.tracker import create_task
+from app.services.tz import now_msk, today_msk
 
 
 def _topic(db, owner, *, assign_to_all=True, opens_in_days=-1, is_published=True,
@@ -79,3 +81,32 @@ def test_learning_bottom_nav_highlights_learning_tab(auth_client, db):
     assert resp.status_code == 200
     assert 'href="/cabinet/learning"' in resp.text
     assert 'class="bottom-nav"' in resp.text
+
+
+# ── Полоска недели и разбивка по дням (21.08) ───────────────────────────────
+
+def test_learning_shows_current_week_task(auth_client, db):
+    client, user = auth_client
+    day = week_start(today_msk()) + timedelta(days=2)
+    due = day_bounds(day)[0] + timedelta(hours=10)
+    task = create_task(db, title="Сдать эскиз", user_id=user.id, due_at=due, assign_to_all=True)
+    task.is_published = True
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert "Сдать эскиз" in resp.text
+    assert 'class="trk-weekstrip"' in resp.text
+
+
+def test_learning_task_outside_current_week_not_shown(auth_client, db):
+    client, user = auth_client
+    day = week_start(today_msk()) + timedelta(days=14)
+    due = day_bounds(day)[0] + timedelta(hours=10)
+    task = create_task(db, title="Задача через две недели", user_id=user.id, due_at=due, assign_to_all=True)
+    task.is_published = True
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert "Задача через две недели" not in resp.text

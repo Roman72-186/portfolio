@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 {#
-THESIS: ученик за секунду видит, что горит на этой неделе, а что уже закрыто.
+THESIS: ученик за секунду видит, что горит, что в работе, что уже закрыто —
+       без календаря, плоским списком, как чеклист.
 OWN-WORLD: существующий Spark UI трекера (trk-*), без новой визуальной системы.
-STORY: открыл вкладку — семь дней, в каждом задачи с цветом дедлайна; отметил
-       галочкой — карточка гаснет, ничего никуда не переходит.
-FIRST VIEWPORT: заголовок недели, сразу под ним — сегодняшний день со своими
-       задачами.
+STORY: открыл вкладку — сверху просрочка, потом то, что ещё можно успеть,
+       внизу недавно сделанное. Отметил галочкой — карточка гаснет и уходит
+       в «Сделано», ничего никуда не переходит.
+FIRST VIEWPORT: заголовок, сразу под ним — просрочка, если она есть.
 FORM: Operate, список, а не карточка-витрина.
 #}
 {% block title %}Личный трекер{% endblock %}
@@ -17,54 +18,72 @@ FORM: Operate, список, а не карточка-витрина.
     <div class="trk-head">
         <div class="trk-head-copy">
             <h1>Личный трекер</h1>
-            <p>Неделя {{ week_start.strftime('%d.%m') }}&nbsp;—&nbsp;{{ week_end.strftime('%d.%m') }}, время московское.</p>
+            <p>Что не сдано и что горит — время московское.</p>
         </div>
     </div>
 
-    <div class="trk-weekstrip">
-        {% for day in week_days %}
-        <a href="#day-{{ day.date.isoformat() }}" class="trk-weekcell{{ ' is-today' if day.is_today }}">
-            <span class="trk-weekcell-dow">{{ day.label }}</span>
-            <span class="trk-weekcell-num">{{ day.date.day }}</span>
-            <span class="trk-marks">
-                {% for kind in day.kinds %}
-                <span class="trk-dot trk-dot--{{ kind }}"></span>
-                {% endfor %}
-            </span>
-        </a>
-        {% endfor %}
-    </div>
-
-    {% for day in week_days %}
-    <div class="trk-day" id="day-{{ day.date.isoformat() }}">{{ day.label }}, {{ day.date.strftime('%d.%m') }}</div>
-    {% if day.tasks %}
-        {% for entry in day.tasks %}
-        <div class="trk-row trk-item trk-item--{{ entry.status }}">
-            <div>
-                <div class="trk-meta" style="margin-bottom:6px;">
-                    <span class="trk-badge trk-badge--kind">{{ entry.kind_label }}</span>
-                    {% if entry.task.subject %}<span class="trk-badge trk-badge--kind">{{ entry.task.subject }}</span>{% endif %}
-                </div>
-                <h3>{{ entry.task.title }}</h3>
-                {% if entry.task.description %}<p>{{ entry.task.description }}</p>{% endif %}
-                <div class="trk-meta">
-                    <span class="{{ 'is-overdue' if entry.status == 'overdue' }}">до {{ entry.due_label }}</span>
-                </div>
-            </div>
-            <div class="trk-row-actions">
-                <button
-                    type="button"
-                    class="trk-toggle-btn{{ ' is-done' if entry.status == 'done' }}"
-                    data-toggle-task="{{ entry.task.id }}"
-                    aria-pressed="{{ 'true' if entry.status == 'done' else 'false' }}"
-                >{{ 'Сделано' if entry.status == 'done' else 'Отметить' }}</button>
-            </div>
-        </div>
-        {% endfor %}
-    {% else %}
-    <p class="trk-hint">Задач нет.</p>
+    {% if not overdue and not upcoming and not done %}
+    <p class="trk-empty">Задач нет.</p>
     {% endif %}
+
+    {% if overdue %}
+    <div class="trk-day">Просрочено</div>
+    {% for entry in overdue %}
+    <div class="trk-row trk-item trk-item--overdue">
+        <div>
+            <div class="trk-meta" style="margin-bottom:6px;">
+                <span class="trk-badge trk-badge--kind">{{ entry.kind_label }}</span>
+                {% if entry.task.subject %}<span class="trk-badge trk-badge--kind">{{ entry.task.subject }}</span>{% endif %}
+            </div>
+            <h3>{{ entry.task.title }}</h3>
+            {% if entry.task.description %}<p>{{ entry.task.description }}</p>{% endif %}
+            <div class="trk-meta"><span class="is-overdue">до {{ entry.day.strftime('%d.%m') }}, {{ entry.due_label }}</span></div>
+        </div>
+        <div class="trk-row-actions">
+            <button type="button" class="trk-toggle-btn" data-toggle-task="{{ entry.task.id }}" aria-pressed="false">Отметить</button>
+        </div>
+    </div>
     {% endfor %}
+    {% endif %}
+
+    {% if upcoming %}
+    <div class="trk-day">В работе</div>
+    {% for entry in upcoming %}
+    <div class="trk-row trk-item trk-item--upcoming">
+        <div>
+            <div class="trk-meta" style="margin-bottom:6px;">
+                <span class="trk-badge trk-badge--kind">{{ entry.kind_label }}</span>
+                {% if entry.task.subject %}<span class="trk-badge trk-badge--kind">{{ entry.task.subject }}</span>{% endif %}
+            </div>
+            <h3>{{ entry.task.title }}</h3>
+            {% if entry.task.description %}<p>{{ entry.task.description }}</p>{% endif %}
+            <div class="trk-meta"><span>до {{ entry.day.strftime('%d.%m') }}, {{ entry.due_label }}</span></div>
+        </div>
+        <div class="trk-row-actions">
+            <button type="button" class="trk-toggle-btn" data-toggle-task="{{ entry.task.id }}" aria-pressed="false">Отметить</button>
+        </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {% if done %}
+    <div class="trk-day">Сделано на этой неделе</div>
+    {% for entry in done %}
+    <div class="trk-row trk-item trk-item--done">
+        <div>
+            <div class="trk-meta" style="margin-bottom:6px;">
+                <span class="trk-badge trk-badge--kind">{{ entry.kind_label }}</span>
+                {% if entry.task.subject %}<span class="trk-badge trk-badge--kind">{{ entry.task.subject }}</span>{% endif %}
+            </div>
+            <h3>{{ entry.task.title }}</h3>
+            <div class="trk-meta"><span>{{ entry.day.strftime('%d.%m') }}</span></div>
+        </div>
+        <div class="trk-row-actions">
+            <button type="button" class="trk-toggle-btn is-done" data-toggle-task="{{ entry.task.id }}" aria-pressed="true">Сделано</button>
+        </div>
+    </div>
+    {% endfor %}
+    {% endif %}
 
     <div style="height:96px"></div>
 </div>
