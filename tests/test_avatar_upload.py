@@ -31,7 +31,7 @@ def test_upload_sets_custom_avatar_url(auth_client, db):
     assert user.custom_avatar_url == "https://s3.example/avatars/1.jpg"
 
 
-def test_second_upload_rejected_once_set(auth_client, db):
+def test_second_upload_replaces_existing(auth_client, db):
     client, user = auth_client
     user.custom_avatar_url = "https://s3.example/avatars/already-set.jpg"
     db.commit()
@@ -40,9 +40,13 @@ def test_second_upload_rejected_once_set(auth_client, db):
          patch(_MOCK_S3_UPLOAD, return_value="https://s3.example/avatars/new.jpg"):
         r = _upload(client)
 
-    assert r.status_code == 400
+    assert r.status_code == 200
+    body = r.json()
+    assert body["success"] is True
+    assert body["avatar_url"] == "https://s3.example/avatars/new.jpg"
+
     db.refresh(user)
-    assert user.custom_avatar_url == "https://s3.example/avatars/already-set.jpg"
+    assert user.custom_avatar_url == "https://s3.example/avatars/new.jpg"
 
 
 def test_upload_rejects_non_image_format(auth_client, db):

@@ -537,16 +537,15 @@ async def upload_avatar(
     _csrf: Annotated[None, Depends(require_csrf)],
     photo: UploadFile = File(...),
 ):
-    """Аватар в шапке кабинета — ученик загружает свою фотографию один раз.
+    """Аватар в шапке кабинета — ученик может загрузить и в любой момент сменить фото.
 
     В отличие от photo_url (приходит из Telegram и перезаписывается при каждом
-    входе, см. auth.py), custom_avatar_url ставится ровно один раз и дальше
-    не меняется отсюда — повторный вызов отклоняется."""
+    входе, см. auth.py), custom_avatar_url ставит и меняет сам ученик отсюда;
+    владелец 21.08.2026: ограничение «только один раз» снято, повторная
+    загрузка просто заменяет прежнее фото."""
     db_user = db.query(User).filter(User.id == user["user_id"]).first()
     if db_user is None:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
-    if db_user.custom_avatar_url:
-        raise HTTPException(status_code=400, detail="Фото уже загружено")
 
     files_data, err = await read_image_uploads(
         [photo],
