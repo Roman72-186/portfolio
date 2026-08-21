@@ -119,3 +119,18 @@
     .trk-grid, .trk-grid--two, .trk-row { grid-template-columns: 1fr; }
     .trk-row-actions { justify-content: flex-start; }
 }
+
+/* ── Экран ученика: неделя с днями и заданиями ──────────────────────── */
+
+.trk-item { border-left: 4px solid var(--line); }
+.trk-item--overdue { border-left-color: var(--error); }
+.trk-item--upcoming { border-left-color: var(--warning); }
+.trk-item--done { border-left-color: var(--success); opacity: 0.72; }
+
+.trk-toggle-btn {
+    min-height: 40px; padding: 8px 16px; font-size: 13px; font-weight: 700;
+    color: var(--blue); background: var(--blue-soft); border: none;
+    border-radius: var(--r-pill); cursor: pointer;
+}
+.trk-toggle-btn.is-done { color: var(--success); background: rgba(21,128,61,0.10); }
+.trk-toggle-btn:disabled { opacity: 0.6; cursor: default; }

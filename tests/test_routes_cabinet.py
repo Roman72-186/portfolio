@@ -16,8 +16,11 @@ def test_cabinet_with_valid_session_returns_200(auth_client):
 
 
 def test_cabinet_shows_student_name(auth_client, db):
-    # /cabinet теперь редиректит ученика на /cabinet/learning (тема недели,
-    # без личных данных) — имя/тариф смотрим на /cabinet/tracker, его личном трекере.
+    # /cabinet теперь редиректит ученика на /cabinet/learning (тема недели, без
+    # личных данных). Hero-карточка с именем/тарифом/баллами живёт в шаблоне
+    # cabinet_student.html, а с 21.08 /cabinet/tracker — отдельный экран
+    # «Личный трекер» (неделя с задачами), не alias дашборда. /cabinet/student
+    # сам маршрут не менялся — доступен любому рангу ≥1, здесь и проверяем.
     # Показывается имя, заполненное учеником при регистрации (first_name/last_name),
     # а не никнейм из Telegram (user.name) — см. TODO.md.
     client, user = auth_client
@@ -25,14 +28,14 @@ def test_cabinet_shows_student_name(auth_client, db):
     user.last_name = "Смирнова"
     db.commit()
 
-    resp = client.get("/cabinet/tracker")
+    resp = client.get("/cabinet/student")
     assert "Смирнова Анна" in resp.text
     assert user.name not in resp.text
 
 
 def test_cabinet_shows_tariff(auth_client):
     client, user = auth_client
-    resp = client.get("/cabinet/tracker")
+    resp = client.get("/cabinet/student")
     assert user.tariff in resp.text
 
 
@@ -58,7 +61,7 @@ def test_student_dashboard_has_mobile_logout_action(auth_client):
 def test_profile_hero_scores_show_dash_without_results(auth_client):
     """Р/К в шапке кабинета — прочерк, пока нет ни одной оценённой пробной работы."""
     client, _ = auth_client
-    resp = client.get("/cabinet/tracker")
+    resp = client.get("/cabinet/student")
     assert resp.status_code == 200
     assert '<span class="profile-score-value">-</span>' in resp.text
 
@@ -74,7 +77,7 @@ def test_profile_hero_scores_show_average_when_present(auth_client, db):
     ))
     db.commit()
 
-    resp = client.get("/cabinet/tracker")
+    resp = client.get("/cabinet/student")
     assert resp.status_code == 200
     assert '<span class="profile-score-value">72</span>' in resp.text
 

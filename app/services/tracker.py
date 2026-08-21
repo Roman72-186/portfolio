@@ -10,8 +10,9 @@ Source of truth по тому, кому адресована задача и к�
 """
 
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
-from sqlalchemy import case
+from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
 
 from app.models.homework import HomeworkAssignment, HomeworkImage
@@ -295,6 +296,69 @@ def count_task_audience(
         rows = students.filter(User.id.in_(assignee_ids)).all()
         reached.update(row[0] for row in rows)
     return len(reached)
+
+
+def accessible_task_ids(db: Session, user_id: int) -> set[int]:
+    """Разовые задачи, открытые ученику прямо сейчас — зеркало
+    `accessible_topic_ids` из video_topics.py, но по TrackerTaskTag/
+    TrackerTaskAssignee. Задача открыта, если опубликована, не удалена и
+    адресована ученику: флагом «всем», пересечением тегов или поимённо.
+
+    Только для задач вне программы (`topic_id IS NULL`) — у элемента недели
+    своей адресации нет, его аудиторию считает `week_audience()` по неделе.
+    Временных границ здесь нет: их накладывает вызывающий код по due_at.
+    """
+    user_tag_ids = (
+        db.query(UserTag.tag_id).filter(UserTag.user_id == user_id).scalar_subquery()
+    )
+    tagged_task_ids = (
+        db.query(TrackerTaskTag.task_id)
+        .filter(TrackerTaskTag.tag_id.in_(user_tag_ids))
+        .scalar_subquery()
+    )
+    assigned_task_ids = (
+        db.query(TrackerTaskAssignee.task_id)
+        .filter(TrackerTaskAssignee.user_id == user_id)
+        .scalar_subquery()
+    )
+    rows = (
+        db.query(TrackerTask.id)
+        .filter(
+            TrackerTask.deleted_at.is_(None),
+            TrackerTask.is_published.is_(True),
+            or_(
+                TrackerTask.assign_to_all.is_(True),
+                TrackerTask.id.in_(tagged_task_ids),
+                TrackerTask.id.in_(assigned_task_ids),
+            ),
+        )
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def task_status(
+    task: TrackerTask, state: TrackerTaskState | None, *, now: datetime
+) -> Literal["done", "overdue", "upcoming"]:
+    """Цвет строки у ученика: сделано → просрочено → есть время.
+
+    Чистая функция без обращения к БД — состояние передаётся уже прочитанным,
+    `now` передаётся явно (через `app/services/tz.py::now_msk()` у вызывающего
+    кода), чтобы не путать колонку без дедлайна с просроченной: задача без
+    `due_at` считается «есть время», пока её не закрыли.
+    """
+    if state is not None and state.status == STATUS_DONE:
+        return "done"
+    due_at = task.due_at
+    if due_at is not None:
+        # SQLite в тестах отдаёт наивное время; весь проект трактует такое
+        # значение как UTC (см. program.py::msk_date) — иначе naive < aware
+        # уронет сравнение TypeError'ом на движке с TIMESTAMPTZ.
+        if due_at.tzinfo is None:
+            due_at = due_at.replace(tzinfo=timezone.utc)
+        if due_at < now:
+            return "overdue"
+    return "upcoming"
 
 
 def count_completed(db: Session, task_id: int) -> int:

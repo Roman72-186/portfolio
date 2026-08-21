@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{#
+THESIS: ученик за секунду видит, что горит на этой неделе, а что уже закрыто.
+OWN-WORLD: существующий Spark UI трекера (trk-*), без новой визуальной системы.
+STORY: открыл вкладку — семь дней, в каждом задачи с цветом дедлайна; отметил
+       галочкой — карточка гаснет, ничего никуда не переходит.
+FIRST VIEWPORT: заголовок недели, сразу под ним — сегодняшний день со своими
+       задачами.
+FORM: Operate, список, а не карточка-витрина.
+#}
+{% block title %}Личный трекер{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/tracker.css?v=3">
+{% endblock %}
+{% block content %}
+<div class="trk-page">
+    <div class="trk-head">
+        <div class="trk-head-copy">
+            <h1>Личный трекер</h1>
+            <p>Неделя {{ week_start.strftime('%d.%m') }}&nbsp;—&nbsp;{{ week_end.strftime('%d.%m') }}, время московское.</p>
+        </div>
+    </div>
+
+    {% for day in week_days %}
+    <div class="trk-day">{{ day.label }}, {{ day.date.strftime('%d.%m') }}</div>
+    {% if day.tasks %}
+        {% for entry in day.tasks %}
+        <div class="trk-row trk-item trk-item--{{ entry.status }}">
+            <div>
+                <div class="trk-meta" style="margin-bottom:6px;">
+                    <span class="trk-badge trk-badge--kind">{{ entry.kind_label }}</span>
+                    {% if entry.task.subject %}<span class="trk-badge trk-badge--kind">{{ entry.task.subject }}</span>{% endif %}
+                </div>
+                <h3>{{ entry.task.title }}</h3>
+                {% if entry.task.description %}<p>{{ entry.task.description }}</p>{% endif %}
+                <div class="trk-meta">
+                    <span class="{{ 'is-overdue' if entry.status == 'overdue' }}">до {{ entry.due_label }}</span>
+                </div>
+            </div>
+            <div class="trk-row-actions">
+                <button
+                    type="button"
+                    class="trk-toggle-btn{{ ' is-done' if entry.status == 'done' }}"
+                    data-toggle-task="{{ entry.task.id }}"
+                    aria-pressed="{{ 'true' if entry.status == 'done' else 'false' }}"
+                >{{ 'Сделано' if entry.status == 'done' else 'Отметить' }}</button>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+    <p class="trk-hint">Задач нет.</p>
+    {% endif %}
+    {% endfor %}
+
+    <div style="height:96px"></div>
+</div>
+
+<script>
+(function () {
+    var csrfToken = {{ csrf_token(request)|tojson }};
+    document.querySelectorAll('[data-toggle-task]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var taskId = btn.getAttribute('data-toggle-task');
+            var row = btn.closest('.trk-item');
+            btn.disabled = true;
+            fetch('/cabinet/tracker/tasks/' + taskId + '/toggle', {
+                method: 'POST',
+                headers: {'X-CSRF-Token': csrfToken},
+                cache: 'no-store'
+            }).then(function (resp) {
+                if (!resp.ok) throw new Error();
+                return resp.json();
+            }).then(function (data) {
+                var done = data.status === 'done';
+                row.classList.remove('trk-item--overdue', 'trk-item--upcoming', 'trk-item--done');
+                row.classList.add('trk-item--' + data.status);
+                btn.classList.toggle('is-done', done);
+                btn.setAttribute('aria-pressed', done ? 'true' : 'false');
+                btn.textContent = done ? 'Сделано' : 'Отметить';
+            }).catch(function () {
+                btn.textContent = 'Не получилось, ещё раз';
+            }).finally(function () {
+                btn.disabled = false;
+            });
+        });
+    });
+})();
+</script>
+
+{% set active_tab = "tracker" %}
+{% include "partials/bottom_nav.html" %}
+{% endblock %}

@@ -6,7 +6,7 @@ app/templates/base.html: {% if user.role_rank >= 4 or settings.course_calculator
 
 def test_calculator_hidden_for_student(auth_client):
     client, _ = auth_client
-    resp = client.get("/cabinet/tracker")
+    resp = client.get("/cabinet/student")
     assert "course-calc-widget" not in resp.text
 
 

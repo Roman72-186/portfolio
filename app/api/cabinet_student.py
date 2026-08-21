@@ -76,7 +76,6 @@ def needs_profile_setup(user: dict) -> bool:
 
 
 @router.get("/student", response_class=HTMLResponse)
-@router.get("/tracker", response_class=HTMLResponse)
 def cabinet_student(
     request: Request,
     user: Annotated[dict, Depends(require_student)],
