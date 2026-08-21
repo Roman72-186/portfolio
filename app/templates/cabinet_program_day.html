@@ -52,6 +52,72 @@ FORM: Operate.
     </div>
     {% endif %}
 
+    {% if not is_past %}
+    <form class="prg-form" data-form="mock" hidden>
+        <h2>Пробник на {{ day.day }} число</h2>
+
+        <div data-step="tickets">
+            <p class="prg-hint">Отметьте предметы. В один день можно поставить оба.</p>
+            {% for subject in subjects %}
+            <div class="prg-subject" data-subject-block="{{ subject }}">
+                <label class="prg-field prg-field--row">
+                    <input type="checkbox" data-subject-toggle value="{{ subject }}">
+                    <span><strong>{{ subject }}</strong></span>
+                </label>
+                <div data-subject-body hidden>
+                    <label class="prg-field">Примечание к заданию, необязательно
+                        <input type="text" data-subject-note maxlength="200" autocomplete="off">
+                    </label>
+                    <div data-tickets></div>
+                    <div class="prg-actions">
+                        <button type="button" class="btn-outline" data-add-ticket>Добавить билет</button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            <div class="prg-actions">
+                <button type="button" class="btn-blue" data-tickets-done>Сохранить билеты</button>
+                <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
+            </div>
+        </div>
+
+        <div data-step="audience" hidden>
+            <h3>Кому доступен пробник</h3>
+            <label class="prg-field prg-field--row">
+                <input type="checkbox" data-audience-all>
+                <span>Всем ученикам</span>
+            </label>
+            <div data-audience-picker>
+                <div class="prg-hint">Тарифы:</div>
+                <div class="prg-tagpicker prg-tagpicker--tariff">
+                    {% for tag in tariff_tags %}
+                    <label><input type="checkbox" data-tag value="{{ tag.id }}">{{ tag.name }}</label>
+                    {% else %}
+                    <span class="prg-hint">Тарифных тегов пока нет.</span>
+                    {% endfor %}
+                </div>
+                <div class="prg-hint" style="margin-top: 10px;">Дополнительные теги:</div>
+                <div class="prg-tagpicker">
+                    {% for tag in other_tags %}
+                    <label><input type="checkbox" data-tag value="{{ tag.id }}">{{ tag.name }}</label>
+                    {% else %}
+                    <span class="prg-hint">Других тегов пока нет.</span>
+                    {% endfor %}
+                </div>
+                <label class="prg-field" style="margin-top: 10px;">Плюс отдельным ученикам: @username через запятую
+                    <input type="text" data-assignees autocomplete="off" placeholder="@ivanov, @petrova">
+                </label>
+            </div>
+            <div class="prg-actions">
+                <button type="button" class="btn-blue" data-mock-save>Сохранить</button>
+                <button type="button" class="btn-outline" data-back-to-tickets>Назад к билетам</button>
+            </div>
+        </div>
+
+        <p class="prg-message" data-form-message></p>
+    </form>
+    {% endif %}
+
     <section class="prg-items">
         <h2>Уже в этом дне</h2>
         {% if items %}
@@ -108,7 +174,190 @@ FORM: Operate.
     }
     window.PROGRAM_API = api;
 
+    // ── Пробник ─────────────────────────────────────────────────────────
+    var dayIso = document.querySelector('.prg-page').dataset.day;
+    var mockForm = document.querySelector('[data-form="mock"]');
+    var defaults = {{ mock_defaults|tojson }};
+
+    function ticketHTML(number) {
+        return ''
+            + '<div class="prg-ticket" data-ticket>'
+            + '  <div class="prg-ticket-head"><strong>Билет ' + number + '</strong>'
+            + '    <button type="button" class="btn-outline" data-remove-ticket>Убрать</button></div>'
+            + '  <label class="prg-field">Название<input type="text" data-t-title maxlength="200"></label>'
+            + '  <label class="prg-field">Описание<textarea data-t-description maxlength="2000"></textarea></label>'
+            + '  <label class="prg-field">Картинка билета<input type="file" data-t-image accept="image/*"></label>'
+            + '  <div class="prg-thumbs" data-t-thumb></div>'
+            + '  <div class="prg-grid3">'
+            + '    <label class="prg-field">Открывается (МСК)<input type="datetime-local" data-t-opens value="' + defaults.opens_at + '"></label>'
+            + '    <label class="prg-field">Закрывается (МСК)<input type="datetime-local" data-t-closes value="' + defaults.closes_at + '"></label>'
+            + '    <label class="prg-field">Минут на работу<input type="number" min="1" max="720" data-t-duration value="' + defaults.duration_minutes + '"></label>'
+            + '  </div>'
+            + '  <label class="prg-field prg-field--row"><input type="checkbox" data-t-restrict checked>'
+            + '    <span>Не выдавать билет, если до конца меньше времени на работу</span></label>'
+            + '</div>';
+    }
+
+    function setFormMessage(text, isError) {
+        var box = mockForm.querySelector('[data-form-message]');
+        box.textContent = text || '';
+        box.classList.toggle('is-error', !!isError);
+    }
+
+    function uploadTicketImage(input, holder) {
+        var file = input.files && input.files[0];
+        if (!file) return;
+        var data = new FormData();
+        data.append('file', file);
+        data.append('csrf_token', csrfToken);
+        holder.textContent = 'Загружаем…';
+        fetch('/cabinet/upload-ticket-image', {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'X-CSRF-Token': csrfToken}, body: data
+        }).then(function (r) { return r.json(); }).then(function (result) {
+            if (!result || !result.success) { holder.textContent = 'Не загрузилось'; return; }
+            holder.innerHTML = '';
+            var img = document.createElement('img');
+            img.src = result.url;
+            img.alt = 'Картинка билета';
+            holder.appendChild(img);
+            holder.dataset.url = result.url || '';
+            holder.dataset.path = result.path || '';
+        }).catch(function () { holder.textContent = 'Не загрузилось'; });
+    }
+
+    function collectSubjects() {
+        var blocks = [];
+        mockForm.querySelectorAll('[data-subject-block]').forEach(function (block) {
+            if (!block.querySelector('[data-subject-toggle]').checked) return;
+            var tickets = [];
+            block.querySelectorAll('[data-ticket]').forEach(function (row) {
+                var thumb = row.querySelector('[data-t-thumb]');
+                tickets.push({
+                    title: row.querySelector('[data-t-title]').value.trim(),
+                    description: row.querySelector('[data-t-description]').value,
+                    image_url: thumb.dataset.url || null,
+                    image_path: thumb.dataset.path || null,
+                    opens_at: row.querySelector('[data-t-opens]').value,
+                    closes_at: row.querySelector('[data-t-closes]').value,
+                    duration_minutes: Number(row.querySelector('[data-t-duration]').value || 90),
+                    restrict_start_by_duration: row.querySelector('[data-t-restrict]').checked
+                });
+            });
+            blocks.push({
+                subject: block.dataset.subjectBlock,
+                note: block.querySelector('[data-subject-note]').value || null,
+                tickets: tickets
+            });
+        });
+        return blocks;
+    }
+
+    if (mockForm) {
+        mockForm.addEventListener('change', function (event) {
+            if (event.target.hasAttribute('data-subject-toggle')) {
+                var block = event.target.closest('[data-subject-block]');
+                var body = block.querySelector('[data-subject-body]');
+                body.hidden = !event.target.checked;
+                if (event.target.checked && !block.querySelector('[data-ticket]')) {
+                    block.querySelector('[data-tickets]').insertAdjacentHTML('beforeend', ticketHTML(1));
+                }
+            }
+            if (event.target.hasAttribute('data-audience-all')) {
+                mockForm.querySelector('[data-audience-picker]').hidden = event.target.checked;
+            }
+            if (event.target.hasAttribute('data-t-image')) {
+                uploadTicketImage(event.target, event.target.closest('[data-ticket]').querySelector('[data-t-thumb]'));
+            }
+        });
+    }
+
     document.addEventListener('click', function (event) {
+        if (event.target.closest('[data-open-form="mock"]')) {
+            mockForm.hidden = false;
+            mockForm.scrollIntoView({behavior: 'smooth', block: 'start'});
+            return;
+        }
+        if (event.target.closest('[data-form-cancel]')) { mockForm.hidden = true; return; }
+
+        var addTicket = event.target.closest('[data-add-ticket]');
+        if (addTicket) {
+            var holder = addTicket.closest('[data-subject-body]').querySelector('[data-tickets]');
+            holder.insertAdjacentHTML('beforeend', ticketHTML(holder.children.length + 1));
+            return;
+        }
+
+        var removeTicket = event.target.closest('[data-remove-ticket]');
+        if (removeTicket) { removeTicket.closest('[data-ticket]').remove(); return; }
+
+        if (event.target.closest('[data-tickets-done]')) {
+            var blocks = collectSubjects();
+            if (!blocks.length) { setFormMessage('Отметьте хотя бы один предмет.', true); return; }
+            var empty = blocks.filter(function (b) {
+                return !b.tickets.length || b.tickets.some(function (t) { return !t.title; });
+            });
+            if (empty.length) {
+                setFormMessage('У предмета «' + empty[0].subject + '» есть билет без названия.', true);
+                return;
+            }
+            var missing = {{ subjects|tojson }}.filter(function (s) {
+                return !blocks.some(function (b) { return b.subject === s; });
+            });
+            if (missing.length && !window.confirm(
+                'Билеты по предмету «' + missing[0] + '» не добавлены. Пропустить и перейти к доступу?'
+            )) return;
+            setFormMessage('');
+            mockForm.querySelector('[data-step="tickets"]').hidden = true;
+            mockForm.querySelector('[data-step="audience"]').hidden = false;
+            return;
+        }
+
+        if (event.target.closest('[data-back-to-tickets]')) {
+            mockForm.querySelector('[data-step="tickets"]').hidden = false;
+            mockForm.querySelector('[data-step="audience"]').hidden = true;
+            return;
+        }
+
+        var saveMock = event.target.closest('[data-mock-save]');
+        if (saveMock) {
+            var tagIds = [];
+            mockForm.querySelectorAll('[data-tag]:checked').forEach(function (box) {
+                tagIds.push(Number(box.value));
+            });
+            var isForAll = mockForm.querySelector('[data-audience-all]').checked;
+            var assignees = mockForm.querySelector('[data-assignees]').value;
+            if (!isForAll && !tagIds.length && !assignees.trim()) {
+                setFormMessage('Выберите теги, добавьте учеников или отметьте «всем».', true);
+                return;
+            }
+            saveMock.disabled = true;
+            api('/cabinet/staff/program/' + dayIso + '/mock', {
+                subjects: collectSubjects(),
+                audience: {
+                    assign_to_all: isForAll,
+                    tag_ids: isForAll ? [] : tagIds,
+                    assignee_usernames: isForAll ? '' : assignees
+                }
+            }).then(function (data) {
+                if (data.not_found && data.not_found.length) {
+                    window.alert('Не нашлись ученики: @' + data.not_found.join(', @'));
+                }
+                if (data.audience_size === 0) {
+                    window.alert('Пробник сейчас никто не увидит: под выбранную аудиторию не подошёл ни один ученик.');
+                } else if (data.ambiguous_tags && data.ambiguous_tags.length) {
+                    window.alert('Сохранено, получат ' + data.audience_size + '. Проверьте теги '
+                        + data.ambiguous_tags.join(', ') + ': в базе это группа и уровень куратора.');
+                }
+                window.location.reload();
+            }).catch(function (error) {
+                saveMock.disabled = false;
+                setFormMessage(error.status === 422 && error.message !== 'request_failed'
+                    ? error.message
+                    : 'Не удалось сохранить пробник. Попробуйте ещё раз.', true);
+            });
+            return;
+        }
+
         var removeButton = event.target.closest('[data-item-delete]');
         if (!removeButton) return;
         var row = removeButton.closest('[data-item-id]');
