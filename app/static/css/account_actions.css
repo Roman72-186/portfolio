@@ -1,0 +1,35 @@
+/* Полноразмерные кнопки «Настройки» и «Выйти» — вкладка «Личное» (владелец
+   21.08.2026: раньше они были только маленькой шестерёнкой в шапке кабинета
+   ученика, которая на мобильном перестала показываться после разведения
+   экранов; теперь это подписанные кнопки внизу «Личного»).
+
+   .notif-gear-btn--labeled/.notif-gear-wrap--labeled — модификаторы того же
+   макроса partials/notif_gear.html (иконка+попап с переключателями
+   Telegram/push не дублируются, только другой внешний вид триггера).
+   Базовые .notif-gear-* — app/static/css/base.css. */
+
+.prs-actions { display: flex; flex-direction: column; gap: 10px; }
+
+.notif-gear-wrap--labeled { width: 100%; }
+.notif-gear-btn--labeled {
+    width: 100%; height: auto;
+    justify-content: center; gap: 8px;
+    background: transparent; color: var(--ink);
+    font-size: 14px; font-weight: 600;
+    padding: 12px 22px; border-radius: var(--r-pill);
+    border: 1.5px solid var(--line);
+}
+.notif-gear-btn--labeled:hover { background: transparent; border-color: var(--blue); color: var(--blue); }
+.notif-gear-btn-label { font-family: var(--font-body); }
+
+.prs-logout-form { width: 100%; }
+.prs-logout-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%;
+    background: transparent; color: var(--ink);
+    font-size: 14px; font-weight: 600;
+    padding: 12px 22px; border-radius: var(--r-pill);
+    border: 1.5px solid var(--line);
+    cursor: pointer; font-family: inherit;
+}
+.prs-logout-btn:hover { border-color: var(--error); color: var(--error); }
