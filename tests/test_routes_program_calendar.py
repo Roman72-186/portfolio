@@ -163,7 +163,10 @@ def test_past_day_is_read_only(client, db, user_factory, session_factory, monkey
 
     assert page.status_code == 200
     assert "Старый пробник" in page.text
-    assert 'data-open-form="mock"' not in page.text
+    # Плиток нет: проверяем разметку, а не строку — селектор с тем же именем
+    # встречается в обработчике на странице.
+    assert 'class="prg-tile"' not in page.text
+    assert 'class="prg-form"' not in page.text
     assert "не менять" in page.text
 
 

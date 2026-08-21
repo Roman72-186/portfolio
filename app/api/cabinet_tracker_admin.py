@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session as DBSession
 
@@ -565,6 +565,22 @@ def week_constructor_page(
     request: Request,
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
+):
+    """Конструктор недели снят с интерфейса 21.08 по решению владельца.
+
+    Программа собирается в календаре «Учебные программы». Экран оставлен в
+    репозитории до следующего этапа, но входа в него нет: ссылку из списка
+    задач убрали, а прямой заход уводит в календарь, чтобы человек не собирал
+    программу в двух местах сразу.
+    """
+    return RedirectResponse("/cabinet/staff/program", status_code=302)
+
+
+def _week_constructor_page_legacy(
+    topic_id: int,
+    request: Request,
+    user: dict,
+    db: DBSession,
 ):
     week = _get_week_or_404(db, topic_id)
     items = list_week_items(db, week.id)

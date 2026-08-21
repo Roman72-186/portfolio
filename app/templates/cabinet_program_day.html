@@ -118,6 +118,111 @@ FORM: Operate.
     </form>
     {% endif %}
 
+    {% if not is_past %}
+    {% macro audience_block(prefix) %}
+    <h3>Кому доступно</h3>
+    <label class="prg-field prg-field--row">
+        <input type="checkbox" data-audience-all>
+        <span>Всем ученикам</span>
+    </label>
+    <div data-audience-picker>
+        <div class="prg-hint">Тарифы:</div>
+        <div class="prg-tagpicker prg-tagpicker--tariff">
+            {% for tag in tariff_tags %}
+            <label><input type="checkbox" data-tag value="{{ tag.id }}">{{ tag.name }}</label>
+            {% else %}
+            <span class="prg-hint">Тарифных тегов пока нет.</span>
+            {% endfor %}
+        </div>
+        <div class="prg-hint" style="margin-top: 10px;">Дополнительные теги:</div>
+        <div class="prg-tagpicker">
+            {% for tag in other_tags %}
+            <label><input type="checkbox" data-tag value="{{ tag.id }}">{{ tag.name }}</label>
+            {% else %}
+            <span class="prg-hint">Других тегов пока нет.</span>
+            {% endfor %}
+        </div>
+        <label class="prg-field" style="margin-top: 10px;">Плюс отдельным ученикам: @username через запятую
+            <input type="text" data-assignees autocomplete="off" placeholder="@ivanov, @petrova">
+        </label>
+    </div>
+    {% endmacro %}
+
+    <form class="prg-form" data-form="video" hidden>
+        <h2>Видеоматериал на {{ day.day }} число</h2>
+        <div class="prg-grid2">
+            <label class="prg-field">Название
+                <input type="text" data-v-title maxlength="200" autocomplete="off">
+            </label>
+            <label class="prg-field">Предмет
+                <select data-v-subject>
+                    <option value="">Без предмета</option>
+                    {% for subject in subjects %}
+                    <option value="{{ subject }}">{{ subject }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+        <label class="prg-field">Описание, необязательно
+            <textarea data-v-description maxlength="5000"></textarea>
+        </label>
+        <label class="prg-field">Обложка видео
+            <input type="file" data-v-cover accept="image/*">
+        </label>
+        <div class="prg-thumbs" data-v-coverthumb></div>
+        <label class="prg-field">Файл видео
+            <input type="file" data-v-file accept="video/*,.mkv,.ts">
+        </label>
+        <div class="prg-progress" aria-hidden="true"><span data-v-bar></span></div>
+        <p class="prg-message" data-v-progress>Файл ещё не выбран</p>
+        {{ audience_block('video') }}
+        <div class="prg-actions">
+            <button type="button" class="btn-blue" data-video-save disabled>Сохранить</button>
+            <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
+        </div>
+        <p class="prg-message" data-form-message></p>
+    </form>
+
+    <form class="prg-form" data-form="homework" hidden>
+        <h2>Самостоятельная работа на {{ day.day }} число</h2>
+        <div class="prg-grid2">
+            <label class="prg-field">Название
+                <input type="text" data-h-title maxlength="200" autocomplete="off">
+            </label>
+            <label class="prg-field">Предмет
+                <select data-h-subject>
+                    <option value="">Без предмета</option>
+                    {% for subject in subjects %}
+                    <option value="{{ subject }}">{{ subject }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+        <label class="prg-field">Что нужно сделать
+            <textarea data-h-description maxlength="5000"></textarea>
+        </label>
+        <div class="prg-grid2">
+            <label class="prg-field prg-field--row">
+                <input type="checkbox" data-h-required checked>
+                <span>Ученик загружает работу</span>
+            </label>
+            <label class="prg-field">Сколько файлов ждём
+                <input type="number" min="0" max="20" value="1" data-h-files>
+            </label>
+        </div>
+        <label class="prg-field">Картинки-референсы
+            <input type="file" data-h-images accept="image/*" multiple>
+        </label>
+        <div class="prg-thumbs" data-h-thumbs></div>
+        {{ audience_block('homework') }}
+        <div class="prg-actions">
+            <button type="button" class="btn-blue" data-homework-save>Сохранить</button>
+            <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
+        </div>
+        <p class="prg-message" data-form-message></p>
+    </form>
+    {% endif %}
+
     <section class="prg-items">
         <h2>Уже в этом дне</h2>
         {% if items %}
@@ -149,6 +254,7 @@ FORM: Operate.
     </section>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js" integrity="sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1" crossorigin="anonymous"></script>
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};
@@ -253,6 +359,181 @@ FORM: Operate.
         return blocks;
     }
 
+    // ── Видео и самостоятельная работа ──────────────────────────────────
+    var videoForm = document.querySelector('[data-form="video"]');
+    var homeworkForm = document.querySelector('[data-form="homework"]');
+    var coverImage = {url: null, path: null};
+    var homeworkImages = [];
+    var uploadedVideoId = null;
+
+    function setMessage(form, text, isError) {
+        var box = form.querySelector('[data-form-message]');
+        box.textContent = text || '';
+        box.classList.toggle('is-error', !!isError);
+    }
+
+    function saveError(error, what) {
+        return error.status === 422 && error.message !== 'request_failed'
+            ? error.message
+            : 'Не удалось сохранить ' + what + '. Попробуйте ещё раз.';
+    }
+
+    function readAudience(form) {
+        var isForAll = form.querySelector('[data-audience-all]').checked;
+        var tagIds = [];
+        form.querySelectorAll('[data-tag]:checked').forEach(function (box) {
+            tagIds.push(Number(box.value));
+        });
+        var assignees = form.querySelector('[data-assignees]').value;
+        if (!isForAll && !tagIds.length && !assignees.trim()) {
+            setMessage(form, 'Выберите теги, добавьте учеников или отметьте «всем».', true);
+            return null;
+        }
+        return {
+            assign_to_all: isForAll,
+            tag_ids: isForAll ? [] : tagIds,
+            assignee_usernames: isForAll ? '' : assignees
+        };
+    }
+
+    function afterSave(data) {
+        if (data.not_found && data.not_found.length) {
+            window.alert('Не нашлись ученики: @' + data.not_found.join(', @'));
+        }
+        if (data.audience_size === 0) {
+            window.alert('Это сейчас никто не увидит: под выбранную аудиторию не подошёл ни один ученик.');
+        }
+        window.location.reload();
+    }
+
+    function uploadImage(file, url) {
+        var data = new FormData();
+        data.append('file', file);
+        data.append('csrf_token', csrfToken);
+        return fetch(url, {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'X-CSRF-Token': csrfToken}, body: data
+        }).then(function (r) { return r.json(); });
+    }
+
+    function renderHomeworkThumbs() {
+        var holder = homeworkForm.querySelector('[data-h-thumbs]');
+        holder.innerHTML = '';
+        homeworkImages.forEach(function (image, index) {
+            var wrap = document.createElement('span');
+            wrap.className = 'prg-thumb';
+            var img = document.createElement('img');
+            img.src = image.url;
+            img.alt = 'Референс задания';
+            var remove = document.createElement('button');
+            remove.type = 'button';
+            remove.textContent = '×';
+            remove.addEventListener('click', function () {
+                homeworkImages.splice(index, 1);
+                renderHomeworkThumbs();
+            });
+            wrap.appendChild(img);
+            wrap.appendChild(remove);
+            holder.appendChild(wrap);
+        });
+    }
+
+    // Ролик создаётся в каталоге сразу при выборе файла: строка нужна TUS-загрузке,
+    // которая шлёт файл в Bunny мимо нашего сервера.
+    function startVideoUpload(file) {
+        var title = videoForm.querySelector('[data-v-title]').value.trim();
+        if (!title) { setMessage(videoForm, 'Сначала укажите название.', true); return; }
+        if (!window.tus || !window.tus.Upload) {
+            setMessage(videoForm, 'Загрузчик не запустился. Обновите страницу.', true);
+            return;
+        }
+        var note = videoForm.querySelector('[data-v-progress]');
+        note.textContent = 'Готовим загрузку…';
+        api('/cabinet/admin/videos/create-upload', {
+            title: title,
+            description: videoForm.querySelector('[data-v-description]').value,
+            filename: file.name,
+            size_bytes: file.size,
+            mime_type: file.type || 'application/octet-stream'
+        }).then(function (credentials) {
+            uploadedVideoId = credentials.catalog_video_id;
+            var bar = videoForm.querySelector('[data-v-bar]');
+            var upload = new window.tus.Upload(file, {
+                endpoint: credentials.endpoint,
+                retryDelays: [0, 3000, 5000, 10000, 20000, 60000],
+                headers: {
+                    AuthorizationSignature: credentials.authorization_signature,
+                    AuthorizationExpire: String(credentials.authorization_expire),
+                    VideoId: credentials.video_id,
+                    LibraryId: String(credentials.library_id)
+                },
+                metadata: {filename: file.name, filetype: file.type || 'application/octet-stream', title: title},
+                onError: function () { note.textContent = 'Загрузка прервалась, попробуйте ещё раз.'; },
+                onProgress: function (uploaded, total) {
+                    var value = total ? Math.round(uploaded / total * 100) : 0;
+                    bar.style.width = value + '%';
+                    note.textContent = 'Загружаем в Bunny: ' + value + '%';
+                },
+                onSuccess: function () {
+                    bar.style.width = '100%';
+                    note.textContent = 'Файл загружен, идёт обработка. Можно сохранять.';
+                    videoForm.querySelector('[data-video-save]').disabled = false;
+                }
+            });
+            upload.start();
+        }).catch(function () {
+            note.textContent = 'Не удалось начать загрузку.';
+        });
+    }
+
+    if (videoForm) {
+        videoForm.addEventListener('change', function (event) {
+            if (event.target.hasAttribute('data-audience-all')) {
+                videoForm.querySelector('[data-audience-picker]').hidden = event.target.checked;
+            }
+            if (event.target.hasAttribute('data-v-cover')) {
+                var file = event.target.files && event.target.files[0];
+                if (!file) return;
+                uploadImage(file, '/cabinet/staff/program/upload-cover').then(function (result) {
+                    if (!result || !result.ok) { setMessage(videoForm, 'Обложка не загрузилась.', true); return; }
+                    coverImage = {url: result.url, path: result.path};
+                    var holder = videoForm.querySelector('[data-v-coverthumb]');
+                    holder.innerHTML = '';
+                    var img = document.createElement('img');
+                    img.src = result.url;
+                    img.alt = 'Обложка';
+                    holder.appendChild(img);
+                });
+            }
+            if (event.target.hasAttribute('data-v-file')) {
+                var video = event.target.files && event.target.files[0];
+                if (video) startVideoUpload(video);
+            }
+        });
+    }
+
+    if (homeworkForm) {
+        homeworkForm.addEventListener('change', function (event) {
+            if (event.target.hasAttribute('data-audience-all')) {
+                homeworkForm.querySelector('[data-audience-picker]').hidden = event.target.checked;
+            }
+            if (event.target.hasAttribute('data-h-images')) {
+                var files = Array.prototype.slice.call(event.target.files || []);
+                Promise.all(files.map(function (file) {
+                    return uploadImage(file, '/cabinet/staff/tracker/homework/upload-image');
+                })).then(function (results) {
+                    results.forEach(function (result) {
+                        if (result && result.ok && result.url) {
+                            homeworkImages.push({url: result.url, path: result.path || null});
+                        }
+                    });
+                    renderHomeworkThumbs();
+                    event.target.value = '';
+                });
+            }
+        });
+    }
+
     if (mockForm) {
         mockForm.addEventListener('change', function (event) {
             if (event.target.hasAttribute('data-subject-toggle')) {
@@ -278,7 +559,18 @@ FORM: Operate.
             mockForm.scrollIntoView({behavior: 'smooth', block: 'start'});
             return;
         }
-        if (event.target.closest('[data-form-cancel]')) { mockForm.hidden = true; return; }
+        if (event.target.closest('[data-open-form="video"]')) {
+            videoForm.hidden = false;
+            videoForm.scrollIntoView({behavior: 'smooth', block: 'start'});
+            return;
+        }
+        if (event.target.closest('[data-open-form="homework"]')) {
+            homeworkForm.hidden = false;
+            homeworkForm.scrollIntoView({behavior: 'smooth', block: 'start'});
+            return;
+        }
+        var cancel = event.target.closest('[data-form-cancel]');
+        if (cancel) { cancel.closest('.prg-form').hidden = true; return; }
 
         var addTicket = event.target.closest('[data-add-ticket]');
         if (addTicket) {
@@ -354,6 +646,52 @@ FORM: Operate.
                 setFormMessage(error.status === 422 && error.message !== 'request_failed'
                     ? error.message
                     : 'Не удалось сохранить пробник. Попробуйте ещё раз.', true);
+            });
+            return;
+        }
+
+        var saveVideo = event.target.closest('[data-video-save]');
+        if (saveVideo) {
+            var audienceVideo = readAudience(videoForm);
+            if (!audienceVideo) return;
+            if (!uploadedVideoId) {
+                setMessage(videoForm, 'Сначала выберите файл видео.', true);
+                return;
+            }
+            saveVideo.disabled = true;
+            api('/cabinet/staff/program/' + dayIso + '/video', {
+                catalog_video_id: uploadedVideoId,
+                title: videoForm.querySelector('[data-v-title]').value.trim(),
+                description: videoForm.querySelector('[data-v-description]').value,
+                cover_url: coverImage.url,
+                cover_path: coverImage.path,
+                subject: videoForm.querySelector('[data-v-subject]').value || null,
+                audience: audienceVideo
+            }).then(afterSave).catch(function (error) {
+                saveVideo.disabled = false;
+                setMessage(videoForm, saveError(error, 'видео'), true);
+            });
+            return;
+        }
+
+        var saveHomework = event.target.closest('[data-homework-save]');
+        if (saveHomework) {
+            var audienceHw = readAudience(homeworkForm);
+            if (!audienceHw) return;
+            var titleHw = homeworkForm.querySelector('[data-h-title]').value.trim();
+            if (!titleHw) { setMessage(homeworkForm, 'Укажите название.', true); return; }
+            saveHomework.disabled = true;
+            api('/cabinet/staff/program/' + dayIso + '/homework', {
+                title: titleHw,
+                description: homeworkForm.querySelector('[data-h-description]').value,
+                subject: homeworkForm.querySelector('[data-h-subject]').value || null,
+                submission_required: homeworkForm.querySelector('[data-h-required]').checked,
+                max_files: Number(homeworkForm.querySelector('[data-h-files]').value || 0),
+                images: homeworkImages,
+                audience: audienceHw
+            }).then(afterSave).catch(function (error) {
+                saveHomework.disabled = false;
+                setMessage(homeworkForm, saveError(error, 'задание'), true);
             });
             return;
         }

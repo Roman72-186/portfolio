@@ -9,20 +9,31 @@
 """
 
 import json
-from datetime import date, datetime
+import uuid
+from datetime import date, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session as DBSession
 
 from app.constants import MOCK_SUBJECTS
 from app.db.database import get_db
-from app.dependencies import require_admin_role, require_csrf_header
+from app.dependencies import require_admin_role, require_csrf, require_csrf_header
 from app.models.audit_log import AuditLog
 from app.models.exam_assignment import ExamAssignment
-from app.models.tracker import ITEM_KIND_LABELS, ITEM_MOCK_EXAM, SOURCE_EXAM_ASSIGNMENT
+from app.models.learning_video import LearningVideo
+from app.models.tracker import (
+    ITEM_HOMEWORK,
+    ITEM_KIND_LABELS,
+    ITEM_MOCK_EXAM,
+    ITEM_VIDEO,
+    SOURCE_EXAM_ASSIGNMENT,
+    SOURCE_HOMEWORK,
+    SOURCE_LEARNING_TOPIC,
+)
+from app.services import s3 as s3_service
 from app.services.exam_tickets import (
     compose_assignment_title,
     create_ticket,
@@ -35,6 +46,7 @@ from app.services.exam_tickets import (
 )
 from app.services.program import (
     WEEKDAY_LABELS,
+    day_bounds,
     ensure_item_topic,
     item_details,
     items_for_day,
@@ -44,12 +56,26 @@ from app.services.program import (
     shift_month,
     tags_split,
 )
-from app.services.tracker import create_task, delete_task, get_task, resolve_assignees
+from app.services.tracker import (
+    create_homework,
+    create_task,
+    delete_task,
+    get_task,
+    resolve_assignees,
+    set_homework_images,
+)
 from app.services.tz import today_msk
+from app.services.utils import compress_image
 from app.services.video_topics import ambiguous_tag_names, count_topic_audience
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/staff/program")
+
+ALLOWED_IMAGE_EXTENSIONS = {
+    ".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".avif", ".gif", ".bmp",
+    ".tif", ".tiff",
+}
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 MONTH_NAMES = (
     "январь", "февраль", "март", "апрель", "май", "июнь",
@@ -361,6 +387,238 @@ def create_mock_item(
             "ambiguous_tags": ambiguous_tag_names(db, tag_ids),
         }
     )
+
+
+class VideoPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    catalog_video_id: int = Field(ge=1)
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    cover_url: str | None = Field(default=None, max_length=500)
+    cover_path: str | None = Field(default=None, max_length=300)
+    subject: str | None = Field(default=None, max_length=50)
+    audience: AudiencePayload = Field(default_factory=AudiencePayload)
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Title cannot be empty")
+        return value
+
+    @field_validator("subject")
+    @classmethod
+    def validate_subject(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        if not value:
+            return None
+        if value not in MOCK_SUBJECTS:
+            raise ValueError("Unknown subject")
+        return value
+
+
+class HomeworkItemPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    subject: str | None = Field(default=None, max_length=50)
+    submission_required: bool = True
+    max_files: int = Field(default=1, ge=0, le=20)
+    images: list[dict] = Field(default_factory=list, max_length=20)
+    audience: AudiencePayload = Field(default_factory=AudiencePayload)
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Title cannot be empty")
+        return value
+
+    @field_validator("subject")
+    @classmethod
+    def validate_subject(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        if not value:
+            return None
+        if value not in MOCK_SUBJECTS:
+            raise ValueError("Unknown subject")
+        return value
+
+
+def _audience_reply(db: DBSession, audience: AudiencePayload, tag_ids, not_found) -> dict:
+    return {
+        "ok": True,
+        "not_found": not_found,
+        "audience_size": count_topic_audience(
+            db,
+            assign_to_all=audience.assign_to_all,
+            tag_ids=tag_ids,
+            assignee_ids=[],
+        ),
+        "ambiguous_tags": ambiguous_tag_names(db, tag_ids),
+    }
+
+
+@router.post("/upload-cover")
+async def upload_cover(
+    user: Annotated[dict, Depends(require_admin_role)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    file: UploadFile = File(...),
+):
+    """Обложка урока. Своя картинка в S3: thumbnail у Bunny не реализован."""
+    content_type = (file.content_type or "").lower()
+    filename = file.filename or "cover.jpg"
+    ext = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
+    if not content_type.startswith("image/") and ext not in ALLOWED_IMAGE_EXTENSIONS:
+        return JSONResponse(
+            {"ok": False, "error": "Файл не является изображением"}, status_code=422
+        )
+    data = await file.read()
+    if not data:
+        return JSONResponse({"ok": False, "error": "Пустой файл"}, status_code=422)
+    if len(data) > MAX_IMAGE_BYTES:
+        return JSONResponse(
+            {"ok": False, "error": "Файл слишком большой (макс. 10 МБ)"}, status_code=413
+        )
+
+    s3_path = f"Обложки видео/{uuid.uuid4().hex[:12]}.jpg"
+    url = s3_service.upload_to_s3(s3_path, compress_image(data), "image/jpeg")
+    if s3_service.is_configured() and not url:
+        return JSONResponse(
+            {"ok": False, "error": "Ошибка загрузки в хранилище"}, status_code=502
+        )
+    return JSONResponse({"ok": True, "url": url, "path": s3_path if url else None})
+
+
+@router.post("/{iso}/video", response_class=JSONResponse)
+def create_video_item(
+    iso: str,
+    payload: VideoPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Видеоматериал в дне: ролик уже создан загрузчиком, здесь его привязка.
+
+    Файл к этому моменту едет в Bunny напрямую из браузера, а строка каталога
+    создана существующим `/cabinet/admin/videos/create-upload`. Нам остаётся
+    завести служебную тему с аудиторией и поставить элемент в день.
+    """
+    day = _parse_day(iso)
+    _guard_future(day)
+    tag_ids, assignee_ids, not_found = _resolve_audience(db, payload.audience)
+
+    video = db.get(LearningVideo, payload.catalog_video_id)
+    if video is None or video.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Ролик не найден")
+
+    topic = ensure_item_topic(
+        db, title=f"Видео · {payload.title}", day=day, user_id=user["user_id"]
+    )
+    set_item_audience(
+        db,
+        topic,
+        assign_to_all=payload.audience.assign_to_all,
+        tag_ids=tag_ids,
+        assignee_ids=assignee_ids,
+    )
+    video.title = payload.title
+    video.description = payload.description
+    video.topic_id = topic.id
+    video.cover_s3_url = payload.cover_url
+    video.cover_s3_path = payload.cover_path
+
+    task = create_task(
+        db,
+        title=payload.title,
+        description=payload.description,
+        due_at=day_bounds(day)[0],
+        subject=payload.subject,
+        topic_id=topic.id,
+        kind=ITEM_VIDEO,
+        source_kind=SOURCE_LEARNING_TOPIC,
+        source_id=topic.id,
+        user_id=user["user_id"],
+    )
+    task.is_published = True
+    db.add(
+        AuditLog(
+            action="program_video_create",
+            performed_by_id=user["user_id"],
+            details=json.dumps(
+                {"day": iso, "video_id": video.id, "topic_id": topic.id},
+                ensure_ascii=False,
+            ),
+        )
+    )
+    db.commit()
+    return JSONResponse(_audience_reply(db, payload.audience, tag_ids, not_found))
+
+
+@router.post("/{iso}/homework", response_class=JSONResponse)
+def create_homework_item(
+    iso: str,
+    payload: HomeworkItemPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Самостоятельная работа: та же сущность домашки, что и в трекере."""
+    day = _parse_day(iso)
+    _guard_future(day)
+    tag_ids, assignee_ids, not_found = _resolve_audience(db, payload.audience)
+
+    topic = ensure_item_topic(
+        db, title=f"Самостоятельная · {payload.title}", day=day, user_id=user["user_id"]
+    )
+    set_item_audience(
+        db,
+        topic,
+        assign_to_all=payload.audience.assign_to_all,
+        tag_ids=tag_ids,
+        assignee_ids=assignee_ids,
+    )
+    homework = create_homework(
+        db,
+        title=payload.title,
+        description=payload.description,
+        subject=payload.subject,
+        submission_required=payload.submission_required,
+        max_files=payload.max_files,
+        user_id=user["user_id"],
+    )
+    set_homework_images(db, homework, payload.images)
+
+    task = create_task(
+        db,
+        title=payload.title,
+        description=payload.description,
+        # Конец дня минус минута: верхняя граница суток принадлежит уже
+        # следующему дню, и элемент уехал бы в соседнюю клетку календаря.
+        due_at=day_bounds(day)[1] - timedelta(minutes=1),
+        subject=payload.subject,
+        topic_id=topic.id,
+        kind=ITEM_HOMEWORK,
+        source_kind=SOURCE_HOMEWORK,
+        source_id=homework.id,
+        user_id=user["user_id"],
+    )
+    task.is_published = True
+    db.add(
+        AuditLog(
+            action="program_homework_create",
+            performed_by_id=user["user_id"],
+            details=json.dumps(
+                {"day": iso, "homework_id": homework.id}, ensure_ascii=False
+            ),
+        )
+    )
+    db.commit()
+    return JSONResponse(_audience_reply(db, payload.audience, tag_ids, not_found))
 
 
 @router.post("/items/{task_id}/delete", response_class=JSONResponse)

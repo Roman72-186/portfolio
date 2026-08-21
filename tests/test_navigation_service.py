@@ -64,6 +64,14 @@ def test_staff_nav_items_keep_admin_contract():
         ("cycles", "/cabinet/staff/cycles", "Цикл Пробника", "Цикл", "Цикл Пробника", "Цикл Пробника"),
         ("cases", "/cabinet/cases", "Кейсы", "Кейсы", "Кейсы", "Кейсы по пробникам"),
         (
+            "program",
+            "/cabinet/staff/program",
+            "Учебные программы",
+            "Программы",
+            "Учебные программы",
+            "Календарь учебных программ",
+        ),
+        (
             "tracker",
             "/cabinet/staff/tracker",
             "Задачи",
@@ -109,6 +117,9 @@ def test_staff_nav_items_keep_rank_specific_visibility_contract():
     assert "cases" not in [item.key for item in rank_3_items]
     assert "cases" in [item.key for item in rank_4_items]
     assert "cases" in [item.key for item in rank_5_items]
+    assert "program" not in [item.key for item in rank_3_items]
+    assert "program" in [item.key for item in rank_4_items]
+    assert "program" in [item.key for item in rank_5_items]
     assert "tracker" not in [item.key for item in rank_3_items]
     assert "tracker" in [item.key for item in rank_4_items]
     assert "tracker" in [item.key for item in rank_5_items]

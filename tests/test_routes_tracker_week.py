@@ -43,39 +43,34 @@ def _items_url(week: LearningTopic) -> str:
 
 # ── Экран ─────────────────────────────────────────────────────────────────
 
-def test_week_constructor_opens_for_admin_and_is_closed_for_student(
+def test_week_constructor_sends_to_the_program_calendar(
     client, db, user_factory, session_factory, auth_client
 ):
+    """Экран снят 21.08: программа собирается в «Учебных программах».
+
+    Роуты сохранения элементов пока живут — на них стоят тесты ниже, — но входа
+    в старый конструктор нет, чтобы человек не собирал программу в двух местах.
+    """
     week = _week(db)
     student_client, _ = auth_client
     assert student_client.get(f"{TRACKER}/weeks/{week.id}").status_code == 403
 
     student_client.cookies.clear()
     _staff_client(client, user_factory, session_factory)
-    page = client.get(f"{TRACKER}/weeks/{week.id}")
-    assert page.status_code == 200
-    assert "Программа недели" in page.text
-    assert "/static/css/tracker.css?v=2" in page.text
+    response = client.get(f"{TRACKER}/weeks/{week.id}", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["location"] == "/cabinet/staff/program"
 
 
-def test_missing_week_gives_404(client, user_factory, session_factory):
+def test_task_screen_no_longer_lists_weeks(client, db, user_factory, session_factory):
     _staff_client(client, user_factory, session_factory)
-    assert client.get(f"{TRACKER}/weeks/9999").status_code == 404
-
-
-def test_week_list_on_main_screen_counts_items_and_audience(
-    client, db, user_factory, session_factory
-):
-    _staff_client(client, user_factory, session_factory)
-    user_factory(vk_id=421_001, role_name="ученик")
-    week = _week(db, title="Неделя перспективы")
-    client.post(_items_url(week), json={"title": "Видео", "kind": "video"})
+    _week(db, title="Неделя перспективы")
 
     page = client.get(TRACKER)
 
-    assert "Неделя перспективы" in page.text
-    assert "Элементов: 1" in page.text
-    assert "Получат: 1" in page.text
+    assert "Недели программы" not in page.text
+    assert "Собрать программу" not in page.text
+    assert "Новая задача" in page.text      # разовые задачи остаются
 
 
 # ── Сборка недели ─────────────────────────────────────────────────────────
@@ -104,8 +99,7 @@ def test_admin_composes_week_day_by_day(client, db, user_factory, session_factor
     assert items[0].source_kind == "learning_topic" and items[0].source_id == week.id
     assert items[1].source_kind is None
 
-    page = client.get(f"{TRACKER}/weeks/{week.id}")
-    assert "21.08.2026" in page.text and "22.08.2026" in page.text
+    assert [i.due_at.strftime("%d.%m") for i in items if i.due_at] == ["21.08", "22.08", "23.08"]
 
 
 def test_week_items_do_not_show_up_among_standalone_tasks(
@@ -233,9 +227,6 @@ def test_homework_images_survive_a_plain_edit(client, db, user_factory, session_
     }
     task_id = client.post(_items_url(week), json=payload).json()["task_id"]
 
-    page = client.get(f"{TRACKER}/weeks/{week.id}")
-    assert 'data-homework-images="https://s3.example/ref.jpg"' in page.text
-
     client.post(f"{TRACKER}/weeks/{week.id}/items/{task_id}", json=payload)
     db.expire_all()
     assert db.query(HomeworkImage).count() == 1
@@ -355,5 +346,6 @@ def test_copied_week_audience_matches_the_original(
 
     copy_id = client.post(f"{TRACKER}/weeks/{week.id}/copy").json()["topic_id"]
 
-    page = client.get(f"{TRACKER}/weeks/{copy_id}")
-    assert "получат: 1" in page.text
+    from app.services.tracker import week_audience
+
+    assert week_audience(db, db.get(LearningTopic, copy_id)) == 1
