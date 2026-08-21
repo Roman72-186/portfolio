@@ -1,0 +1,392 @@
+{
+  "3dlab.html": {
+    "hex": 33,
+    "shadow": [
+      "active"
+    ],
+    "style_lines": 1052
+  },
+  "404.html": {
+    "hex": 1,
+    "shadow": [],
+    "style_lines": 95
+  },
+  "_curator_nav.html": {
+    "hex": 1,
+    "shadow": [
+      "main"
+    ],
+    "style_lines": 117
+  },
+  "blocked.html": {
+    "hex": 0,
+    "shadow": [],
+    "style_lines": 5
+  },
+  "cabinet_admin_mock_check.html": {
+    "hex": 8,
+    "shadow": [
+      "active",
+      "main",
+      "open",
+      "photo-zoom-button"
+    ],
+    "style_lines": 442
+  },
+  "cabinet_admin_retake_check.html": {
+    "hex": 6,
+    "shadow": [
+      "active",
+      "main",
+      "svg-icon"
+    ],
+    "style_lines": 296
+  },
+  "cabinet_cases.html": {
+    "hex": 2,
+    "shadow": [],
+    "style_lines": 67
+  },
+  "cabinet_curator_dashboard.html": {
+    "hex": 3,
+    "shadow": [
+      "dashboard-name-row",
+      "profile-hero"
+    ],
+    "style_lines": 128
+  },
+  "cabinet_curator_reports.html": {
+    "hex": 2,
+    "shadow": [
+      "alert-error",
+      "alert-success",
+      "field-label"
+    ],
+    "style_lines": 56
+  },
+  "cabinet_cycle.html": {
+    "hex": 7,
+    "shadow": [
+      "active",
+      "badge"
+    ],
+    "style_lines": 88
+  },
+  "cabinet_cycle_calendar.html": {
+    "hex": 1,
+    "shadow": [],
+    "style_lines": 24
+  },
+  "cabinet_feedback_detail.html": {
+    "hex": 21,
+    "shadow": [
+      "dlg-delete-btn"
+    ],
+    "style_lines": 218
+  },
+  "cabinet_guest_mode.html": {
+    "hex": 0,
+    "shadow": [
+      "active"
+    ],
+    "style_lines": 76
+  },
+  "cabinet_learning.html": {
+    "hex": 1,
+    "shadow": [
+      "active"
+    ],
+    "style_lines": 44
+  },
+  "cabinet_notifications.html": {
+    "hex": 2,
+    "shadow": [
+      "page-title",
+      "unread"
+    ],
+    "style_lines": 78
+  },
+  "cabinet_personal.html": {
+    "hex": 1,
+    "shadow": [],
+    "style_lines": 38
+  },
+  "cabinet_portfolio.html": {
+    "hex": 2,
+    "shadow": [
+      "empty-state",
+      "open"
+    ],
+    "style_lines": 143
+  },
+  "cabinet_staff.html": {
+    "hex": 9,
+    "shadow": [
+      "btn-outline",
+      "card",
+      "chip",
+      "stat-tile",
+      "tag-pill"
+    ],
+    "style_lines": 204
+  },
+  "cabinet_staff_cycles.html": {
+    "hex": 2,
+    "shadow": [
+      "active"
+    ],
+    "style_lines": 93
+  },
+  "cabinet_student.html": {
+    "hex": 15,
+    "shadow": [
+      "profile-hero"
+    ],
+    "style_lines": 376
+  },
+  "cabinet_students.html": {
+    "hex": 15,
+    "shadow": [
+      "active",
+      "css",
+      "empty-state",
+      "form-actions",
+      "main",
+      "open",
+      "photo-grid",
+      "svg-icon"
+    ],
+    "style_lines": 989
+  },
+  "cabinet_video.html": {
+    "hex": 7,
+    "shadow": [],
+    "style_lines": 145
+  },
+  "cabinet_videos.html": {
+    "hex": 0,
+    "shadow": [],
+    "style_lines": 24
+  },
+  "cabinet_videos_admin.html": {
+    "hex": 0,
+    "shadow": [],
+    "style_lines": 68
+  },
+  "course_calculator.html": {
+    "hex": 32,
+    "shadow": [],
+    "style_lines": 337
+  },
+  "denied.html": {
+    "hex": 2,
+    "shadow": [],
+    "style_lines": 19
+  },
+  "gallery.html": {
+    "hex": 2,
+    "shadow": [
+      "active",
+      "open"
+    ],
+    "style_lines": 101
+  },
+  "guest/guest_exam.html": {
+    "hex": 0,
+    "shadow": [],
+    "style_lines": 29
+  },
+  "guest/guest_landing.html": {
+    "hex": 0,
+    "shadow": [],
+    "style_lines": 38
+  },
+  "legacy_portfolio.html": {
+    "hex": 0,
+    "shadow": [
+      "open"
+    ],
+    "style_lines": 43
+  },
+  "login.html": {
+    "hex": 10,
+    "shadow": [],
+    "style_lines": 111
+  },
+  "partials/bottom_nav.html": {
+    "hex": 0,
+    "shadow": [
+      "bottom-nav"
+    ],
+    "style_lines": 27
+  },
+  "partials/course_calculator_widget.html": {
+    "hex": 4,
+    "shadow": [],
+    "style_lines": 165
+  },
+  "partials/cycle_calendar_lib.html": {
+    "hex": 6,
+    "shadow": [
+      "active",
+      "spinner"
+    ],
+    "style_lines": 80
+  },
+  "partials/lightbox.html": {
+    "hex": 1,
+    "shadow": [],
+    "style_lines": 13
+  },
+  "partials/staff_nav.html": {
+    "hex": 1,
+    "shadow": [
+      "main"
+    ],
+    "style_lines": 135
+  },
+  "periods_management.html": {
+    "hex": 0,
+    "shadow": [
+      "active",
+      "btn-danger",
+      "css",
+      "open"
+    ],
+    "style_lines": 66
+  },
+  "profile.html": {
+    "hex": 0,
+    "shadow": [],
+    "style_lines": 25
+  },
+  "staff_login.html": {
+    "hex": 0,
+    "shadow": [],
+    "style_lines": 49
+  },
+  "superadmin_activity.html": {
+    "hex": 0,
+    "shadow": [],
+    "style_lines": 53
+  },
+  "superadmin_assign_curator.html": {
+    "hex": 0,
+    "shadow": [
+      "btn-blue"
+    ],
+    "style_lines": 23
+  },
+  "superadmin_create_staff.html": {
+    "hex": 0,
+    "shadow": [
+      "btn-blue"
+    ],
+    "style_lines": 26
+  },
+  "superadmin_curators.html": {
+    "hex": 1,
+    "shadow": [
+      "btn-blue",
+      "btn-save"
+    ],
+    "style_lines": 25
+  },
+  "superadmin_exam_assignment_detail.html": {
+    "hex": 1,
+    "shadow": [
+      "btn-blue",
+      "btn-danger",
+      "btn-outline",
+      "css",
+      "open",
+      "page-header",
+      "page-title",
+      "photo-zoom-button"
+    ],
+    "style_lines": 70
+  },
+  "superadmin_exam_assignment_form.html": {
+    "hex": 3,
+    "shadow": [
+      "active"
+    ],
+    "style_lines": 146
+  },
+  "superadmin_exam_assignments.html": {
+    "hex": 3,
+    "shadow": [
+      "empty-icon",
+      "empty-state",
+      "empty-text",
+      "svg-icon"
+    ],
+    "style_lines": 35
+  },
+  "superadmin_exam_hub.html": {
+    "hex": 0,
+    "shadow": [
+      "active",
+      "page-header",
+      "svg-icon"
+    ],
+    "style_lines": 17
+  },
+  "superadmin_stats.html": {
+    "hex": 1,
+    "shadow": [],
+    "style_lines": 77
+  },
+  "superadmin_tags.html": {
+    "hex": 7,
+    "shadow": [
+      "open",
+      "tag-pill--blue",
+      "tag-pill--orange",
+      "tag-pill--pink",
+      "tag-pill--purple"
+    ],
+    "style_lines": 87
+  },
+  "superadmin_user_card.html": {
+    "hex": 0,
+    "shadow": [
+      "form-input"
+    ],
+    "style_lines": 24
+  },
+  "superadmin_users.html": {
+    "hex": 2,
+    "shadow": [
+      "btn-danger",
+      "css",
+      "modal-actions",
+      "open"
+    ],
+    "style_lines": 82
+  },
+  "upload.html": {
+    "hex": 2,
+    "shadow": [
+      "photo-grid"
+    ],
+    "style_lines": 101
+  },
+  "upload_mock.html": {
+    "hex": 8,
+    "shadow": [
+      "btn-blue",
+      "photo-grid"
+    ],
+    "style_lines": 131
+  },
+  "upload_retake.html": {
+    "hex": 14,
+    "shadow": [
+      "btn-blue",
+      "photo-grid",
+      "tag-pill--publish"
+    ],
+    "style_lines": 72
+  }
+}
