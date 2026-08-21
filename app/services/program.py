@@ -41,6 +41,32 @@ from app.services.video_topics import (
 
 WEEKDAY_LABELS = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
 
+MONTH_NAMES = (
+    "январь", "февраль", "март", "апрель", "май", "июнь",
+    "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
+)
+
+WEEKDAY_FULL = (
+    "понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье",
+)
+
+
+def weekday_full_ru(day: date) -> str:
+    return WEEKDAY_FULL[day.weekday()]
+
+
+def day_title_ru(day: date) -> str:
+    """«21 августа 2026, четверг» — общий заголовок дня для staff- и student-страниц."""
+    return f"{day.day} {MONTH_NAMES[day.month - 1]} {day.year}, {weekday_full_ru(day)}"
+
+
+def parse_day_iso(raw: str) -> date | None:
+    """`YYYY-MM-DD` → date, или None на мусоре. Исключение — забота вызывающего кода."""
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
 
 def week_start(day: date) -> date:
     """Понедельник недели, в которую попадает день."""

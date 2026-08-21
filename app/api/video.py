@@ -13,7 +13,9 @@ from app.config import settings
 from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_learning_content_access
 from app.models.learning_video import LearningVideo
+from app.models.tracker import ITEM_VIDEO, TrackerTask
 from app.services.bunny_stream import BunnyStreamConfigError, build_signed_embed_url
+from app.services.tracker import close_task_for_user
 from app.services.video_catalog import (
     get_published_video,
     legacy_pilot_video,
@@ -22,6 +24,7 @@ from app.services.video_catalog import (
 from app.services.video_progress import (
     get_resume_position,
     get_video_progress,
+    log_video_view,
     save_video_progress as persist_video_progress,
 )
 from app.tmpl import templates
@@ -184,6 +187,11 @@ def cabinet_video_by_id(
     video = _video_for_viewer(db, catalog_id=video_id, user=user)
     if video is None:
         return _not_found(request, user)
+    try:
+        log_video_view(db, user_id=user["user_id"], video_id=video.bunny_video_id)
+    except SQLAlchemyError:
+        logger.exception("Video view log failed for user_id=%s", user["user_id"])
+        db.rollback()
     return _render_player(
         request,
         user,
@@ -223,6 +231,7 @@ def save_catalog_video_progress(
         db=db,
         bunny_video_id=video.bunny_video_id,
         known_duration_seconds=video.duration_seconds,
+        topic_id=video.topic_id,
     )
 
 
@@ -269,6 +278,33 @@ def refresh_legacy_player_url(
     return _player_url_payload(legacy_pilot_video())
 
 
+def _close_video_task_once(db: DBSession, *, user_id: int, topic_id: int) -> None:
+    """Закрыть трекер-задачу недели по факту первого «досмотрел».
+
+    Отдельная транзакция от `persist_video_progress`: та уже закоммитила
+    прогресс, и сбой здесь не должен откатывать уже сохранённую позицию
+    просмотра — в худшем случае трекер останется «в работе» до ручной отметки.
+    """
+    task = (
+        db.query(TrackerTask)
+        .filter(
+            TrackerTask.topic_id == topic_id,
+            TrackerTask.kind == ITEM_VIDEO,
+            TrackerTask.deleted_at.is_(None),
+            TrackerTask.is_published.is_(True),
+        )
+        .first()
+    )
+    if task is None:
+        return
+    try:
+        close_task_for_user(db, task, user_id, source="auto")
+        db.commit()
+    except SQLAlchemyError:
+        logger.exception("Tracker auto-close failed for user_id=%s, task_id=%s", user_id, task.id)
+        db.rollback()
+
+
 def _save_progress(
     payload: VideoProgressUpdate,
     *,
@@ -277,6 +313,7 @@ def _save_progress(
     bunny_video_id: str,
     known_duration_seconds: float | None = None,
     allow_client_duration: bool = False,
+    topic_id: int | None = None,
 ):
     """Сохранить позицию просмотра. Факт «досмотрел» решает сервер.
 
@@ -293,6 +330,12 @@ def _save_progress(
 
     `allow_client_duration` включён лишь для легаси-маршрута пилотного ролика: у
     него записи в каталоге нет в принципе, и сравнивать не с чем.
+
+    `topic_id` — только у каталожных роликов (легаси пилотный ролик его не
+    передаёт, autoclose для него не срабатывает, это осознанно). Момент «стало
+    done впервые» ловится чтением состояния до апсерта: `persist_video_progress`
+    делает атомарный `INSERT … ON CONFLICT`, из его возврата «стало ли только
+    что true» не восстановить.
     """
     if known_duration_seconds is not None and known_duration_seconds > 0:
         duration = known_duration_seconds
@@ -304,6 +347,10 @@ def _save_progress(
         duration is not None
         and duration - payload.position_seconds <= 5
     )
+    was_completed = False
+    if completed and topic_id is not None:
+        existing = get_video_progress(db, user_id=user["user_id"], video_id=bunny_video_id)
+        was_completed = existing is not None and existing.completed_at is not None
     try:
         completed = persist_video_progress(
             db,
@@ -317,6 +364,10 @@ def _save_progress(
         logger.exception("Video progress save failed for user_id=%s", user["user_id"])
         db.rollback()
         return JSONResponse({"ok": False, "error": "save_failed"}, status_code=503)
+
+    if completed and not was_completed and topic_id is not None:
+        _close_video_task_once(db, user_id=user["user_id"], topic_id=topic_id)
+
     return JSONResponse({"ok": True, "completed": completed})
 
 

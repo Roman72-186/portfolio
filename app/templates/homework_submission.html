@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{#
+Общий шаблон для ученика (/cabinet/homework/{task_id}) и куратора
+(/cabinet/staff/homework/submissions/{submission_id}) — viewer_role разводит
+разметку, как в cabinet_feedback_detail.html. Свой блок <style> не заводим —
+только prg-* (program.css) и глобальные классы base.css (card/field-input/
+photo-grid/chip/empty-state): новый <style> в шаблоне запрещает
+tests/test_reuse_ratchet.py.
+#}
+{% block title %}{{ homework.title }}{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=2">
+{% endblock %}
+{% block content %}
+<div class="prg-page">
+    <div class="prg-head">
+        <div class="prg-head-copy">
+            <h1>{{ homework.title }}</h1>
+            {% if viewer_role != 'student' and student %}
+            <p>Ученик: <strong>{{ student.name }}</strong></p>
+            {% endif %}
+        </div>
+        <a class="btn-outline" href="{{ back_url }}">Назад</a>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+        <div class="card-title">Задание</div>
+        {% if homework.description %}<p class="card-desc">{{ homework.description }}</p>{% endif %}
+        {% if reference_images %}
+        <div class="photo-grid">
+            {% for img in reference_images %}
+            <img src="{{ img.image_s3_url }}" alt="Референс задания" loading="lazy">
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+        <div class="card-title">Ваша работа</div>
+        {% if final_image %}
+        <div class="photo-grid" style="grid-template-columns: minmax(0,220px);">
+            <img src="{{ final_image.image_s3_url }}" alt="Финальное фото">
+        </div>
+        {% else %}
+        <p class="card-desc">Финальное фото ещё не загружено.</p>
+        {% endif %}
+
+        {% if viewer_role == 'student' %}
+        <form class="hw-async-form" method="post" action="/cabinet/homework/{{ task.id }}/final" enctype="multipart/form-data" style="margin-top:14px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <label class="form-label" style="display:block;">{{ 'Пересдать финальное фото' if final_image else 'Загрузить финальное фото' }}</label>
+            <input type="file" class="field-input" name="photo" accept="image/*" required>
+            <button type="submit" class="btn-blue" style="margin-top:10px;">Отправить</button>
+            <p class="prg-message"></p>
+        </form>
+        {% endif %}
+
+        {% if intermediate_images %}
+        <div class="section-label" style="margin-top:18px;">Промежуточные фото</div>
+        <div class="photo-grid">
+            {% for img in intermediate_images %}
+            <img src="{{ img.image_s3_url }}" alt="Промежуточное фото" loading="lazy">
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if viewer_role == 'student' %}
+        <form class="hw-async-form" method="post" action="/cabinet/homework/{{ task.id }}/intermediate" enctype="multipart/form-data" style="margin-top:14px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <label class="form-label" style="display:block;">Добавить промежуточные фото (до {{ max_intermediate }})</label>
+            <input type="file" class="field-input" name="photos" accept="image/*" multiple required>
+            <button type="submit" class="btn-outline" style="margin-top:10px;">Добавить</button>
+            <p class="prg-message"></p>
+        </form>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <div class="card-title">Обратная связь</div>
+        {% if messages %}
+        <div style="display:flex;flex-direction:column;gap:10px;">
+            {% for m in messages %}
+            <div class="card" style="padding:12px 14px;">
+                <span class="chip">{{ m.sender_role_label }}{% if m.sender_name %} · {{ m.sender_name }}{% endif %}</span>
+                {% if m.text %}<p class="card-desc" style="margin-top:8px;">{{ m.text }}</p>{% endif %}
+                {% if m.photo_s3_url %}
+                <img src="{{ m.photo_s3_url }}" alt="" style="max-width:240px;width:100%;border-radius:8px;margin-top:8px;display:block;">
+                {% endif %}
+                <div class="card-desc" style="font-size:11px;margin-top:8px;">{{ m.created_at[:16].replace('T', ' ') if m.created_at }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-text">
+                {% if viewer_role == 'student' %}Куратор ещё не оставил обратную связь.
+                {% else %}Сообщений пока нет — напишите первым.{% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if viewer_role != 'student' %}
+        <form class="hw-async-form" method="post" action="/cabinet/staff/homework/submissions/{{ submission.id }}/message" enctype="multipart/form-data" style="margin-top:14px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <textarea class="field-input" name="text" rows="3" placeholder="Сообщение ученику"></textarea>
+            <label class="form-label" style="display:block;margin-top:10px;">Фото, необязательно</label>
+            <input type="file" class="field-input" name="photo" accept="image/*">
+            <button type="submit" class="btn-blue" style="margin-top:10px;">Отправить</button>
+            <p class="prg-message"></p>
+        </form>
+        {% elif messages %}
+        <form class="hw-async-form" method="post" action="/cabinet/homework/{{ task.id }}/message" enctype="multipart/form-data" style="margin-top:14px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <textarea class="field-input" name="text" rows="3" placeholder="Ваш ответ"></textarea>
+            <label class="form-label" style="display:block;margin-top:10px;">Фото, необязательно</label>
+            <input type="file" class="field-input" name="photo" accept="image/*">
+            <button type="submit" class="btn-blue" style="margin-top:10px;">Отправить</button>
+            <p class="prg-message"></p>
+        </form>
+        {% else %}
+        <p class="card-desc" style="margin-top:10px;">Ждите первое сообщение куратора — тогда сможете ответить.</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+(function () {
+    document.querySelectorAll('.hw-async-form').forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+            event.preventDefault();
+            var msg = form.querySelector('.prg-message');
+            var btn = form.querySelector('button[type=submit]');
+            var csrf = form.querySelector('[name=csrf_token]').value;
+            btn.disabled = true;
+            fetch(form.action, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {'X-CSRF-Token': csrf},
+                body: new FormData(form),
+            }).then(function (response) {
+                return response.json().catch(function () { return {}; }).then(function (data) {
+                    if (!response.ok || data.ok === false) {
+                        throw new Error(data.error || 'Не получилось отправить, попробуйте ещё раз.');
+                    }
+                    return data;
+                });
+            }).then(function () {
+                window.location.reload();
+            }).catch(function (error) {
+                btn.disabled = false;
+                if (msg) { msg.textContent = error.message; msg.classList.add('is-error'); }
+            });
+        });
+    });
+})();
+</script>
+
+{% if viewer_role == 'student' %}
+{% set active_tab = "learning" %}
+{% include "partials/bottom_nav.html" %}
+{% endif %}
+{% endblock %}

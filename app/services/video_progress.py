@@ -6,6 +6,26 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.models.video_progress import VideoProgress
+from app.models.video_view_log import VideoViewLog
+
+
+def log_video_view(db: DBSession, *, user_id: int, video_id: str) -> None:
+    """Insert-only отметка «открыл плеер» — источник счётчика возвратов.
+
+    Пишется на каждое открытие страницы, включая первое: «сколько раз
+    возвращался» читатель считает как `count - 1`, а «когда именно» видно по
+    `opened_at`, чего не даёт счётчик поверх VideoProgress.
+    """
+    db.add(VideoViewLog(user_id=user_id, video_id=video_id))
+    db.commit()
+
+
+def count_video_views(db: DBSession, *, user_id: int, video_id: str) -> int:
+    return (
+        db.query(VideoViewLog.id)
+        .filter(VideoViewLog.user_id == user_id, VideoViewLog.video_id == video_id)
+        .count()
+    )
 
 
 def get_video_progress(

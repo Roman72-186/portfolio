@@ -20,7 +20,7 @@
 from datetime import timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session as DBSession
 
@@ -28,7 +28,15 @@ from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_student
 from app.models.learning_topic import LearningTopic
-from app.services.program import WEEKDAY_LABELS, day_bounds, week_start
+from app.models.tracker import ITEM_KIND_LABELS
+from app.services.program import (
+    WEEKDAY_LABELS,
+    day_bounds,
+    day_title_ru,
+    item_details,
+    parse_day_iso,
+    week_start,
+)
 from app.services.tracker import accessible_task_entries
 from app.services.tz import today_msk
 from app.services.video_topics import accessible_topic_ids
@@ -86,4 +94,40 @@ def cabinet_learning(
         "user": user,
         "topic": current_topic,
         "week_days": week_days,
+    })
+
+
+@router.get("/learning/day/{iso}", response_class=HTMLResponse)
+def cabinet_learning_day(
+    iso: str,
+    request: Request,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """День недели глазами ученика — read-only мирроринг `cabinet_program.program_day`.
+
+    Тот же `accessible_task_entries`, что у обзора недели: ученик не может
+    попасть на день, элементы которого ему не адресованы, просто увидит
+    пустой день. Умные кнопки по `task.kind` — в шаблоне.
+    """
+    if needs_profile_setup(user):
+        return RedirectResponse("/cabinet/profile", status_code=302)
+
+    day = parse_day_iso(iso)
+    if day is None:
+        raise HTTPException(status_code=404, detail="Такого дня нет")
+
+    start, end = day_bounds(day)
+    entries = accessible_task_entries(db, user["user_id"], start=start, end=end)
+    details = item_details(db, [e["task"] for e in entries])
+
+    return templates.TemplateResponse("cabinet_learning_day.html", {
+        "request": request,
+        "user": user,
+        "day_iso": day.isoformat(),
+        "day_title": day_title_ru(day),
+        "back_href": f"/cabinet/learning#lrn-day-{day.isoformat()}",
+        "entries": entries,
+        "details": details,
+        "kind_labels": ITEM_KIND_LABELS,
     })

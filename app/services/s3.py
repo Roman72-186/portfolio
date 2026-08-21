@@ -109,6 +109,21 @@ def s3_path_otrabotka_cycle(vk_id: int, cycle_id: int, attempt: int, kind: str, 
     return f"otrabotki/{vk_id}/{cycle_id}/attempt-{attempt}/{kind}/{_make_filename(tariff or 'X', vk_id, filename)}"
 
 
+def s3_path_homework_submission(
+    vk_id: int, submission_id: int, kind: str, filename: str, tariff: str = ""
+) -> str:
+    """Сдача домашки: domashka/{vk_id}/{submission_id}/final|intermediate/{filename}."""
+    assert kind in ("final", "intermediate")
+    return f"domashka/{vk_id}/{submission_id}/{kind}/{_make_filename(tariff or 'X', vk_id, filename)}"
+
+
+def s3_path_homework_feedback(submission_id: int, filename: str) -> str:
+    """Файлы обратной связи по домашке: feedback-domashka/{submission_id}/{filename}."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpg"
+    rnd = uuid.uuid4().hex[:8]
+    return f"feedback-domashka/{submission_id}/{rnd}.{ext}"
+
+
 def s3_path_avatar(vk_id: int, filename: str) -> str:
     """Аватар, загруженный учеником вручную: Аватары/{vk_id}/{vk_id}_{random8}.ext."""
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpg"

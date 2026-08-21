@@ -47,11 +47,13 @@ from app.services.exam_tickets import (
 from app.services.program import (
     WEEKDAY_LABELS,
     day_bounds,
+    day_title_ru,
     ensure_item_topic,
     item_details,
     items_for_day,
     month_days,
     month_marks,
+    parse_day_iso,
     set_item_audience,
     shift_month,
     tags_split,
@@ -77,6 +79,8 @@ ALLOWED_IMAGE_EXTENSIONS = {
 }
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
+# Оставлено локально для `program_month` (строит `month_title`) — `day_title_ru`
+# в program.py закрывает формат заголовка дня, здесь другой формат ("Август 2026").
 MONTH_NAMES = (
     "январь", "февраль", "март", "апрель", "май", "июнь",
     "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
@@ -98,10 +102,10 @@ def _parse_month(raw: str | None, today: date) -> tuple[int, int]:
 
 
 def _parse_day(raw: str) -> date:
-    try:
-        return date.fromisoformat(raw)
-    except ValueError:
+    day = parse_day_iso(raw)
+    if day is None:
         raise HTTPException(status_code=404, detail="Такого дня нет")
+    return day
 
 
 @router.get("", response_class=HTMLResponse)
@@ -151,10 +155,7 @@ def program_day(
             "user": user,
             "day": day,
             "day_iso": day.isoformat(),
-            "day_title": (
-                f"{day.day} {MONTH_NAMES[day.month - 1]} {day.year}, "
-                f"{_weekday_full(day)}"
-            ),
+            "day_title": day_title_ru(day),
             # Прошлое только смотрим: элемент задним числом открылся бы ученикам
             # мгновенно, и «поставить на вчера» почти всегда опечатка.
             "is_past": day < today,
@@ -634,12 +635,3 @@ def delete_program_item(
     delete_task(task)
     db.commit()
     return JSONResponse({"ok": True})
-
-
-WEEKDAY_FULL = (
-    "понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье",
-)
-
-
-def _weekday_full(day: date) -> str:
-    return WEEKDAY_FULL[day.weekday()]

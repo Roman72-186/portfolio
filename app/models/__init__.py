@@ -22,6 +22,7 @@ from app.models.curator_report import CuratorReport
 from app.models.tag import Tag, UserTag
 from app.models.legacy_portfolio_photo import LegacyPortfolioPhoto
 from app.models.video_progress import VideoProgress
+from app.models.video_view_log import VideoViewLog
 from app.models.learning_video import LearningVideo
 from app.models.learning_topic import (
     LearningTopic,
@@ -36,6 +37,8 @@ from app.models.guest_exam import (
 )
 from app.models.push_subscription import PushSubscription
 from app.models.homework import HomeworkAssignment, HomeworkImage
+from app.models.homework_submission import HomeworkSubmission, HomeworkSubmissionImage
+from app.models.homework_feedback import HomeworkFeedback, HomeworkFeedbackMessage
 from app.models.tracker import (
     ScheduleDigest,
     ScheduleDigestAssignee,

@@ -64,7 +64,7 @@
        тот же движок выборки, что у «Личного трекера» (accessible_task_entries). #}
     <div class="trk-weekstrip">
         {% for day in week_days %}
-        <a href="#lrn-day-{{ day.date.isoformat() }}" class="trk-weekcell{{ ' is-today' if day.is_today }}">
+        <a href="/cabinet/learning/day/{{ day.date.isoformat() }}" class="trk-weekcell{{ ' is-today' if day.is_today }}">
             <span class="trk-weekcell-dow">{{ day.label }}</span>
             <span class="trk-weekcell-num">{{ day.date.day }}</span>
             <span class="trk-marks">
@@ -77,7 +77,10 @@
     </div>
 
     {% for day in week_days if day.tasks %}
-    <div class="trk-day" id="lrn-day-{{ day.date.isoformat() }}">{{ day.label }}, {{ day.date.strftime('%d.%m') }}</div>
+    <div class="trk-day" id="lrn-day-{{ day.date.isoformat() }}">
+        {{ day.label }}, {{ day.date.strftime('%d.%m') }}
+        <a href="/cabinet/learning/day/{{ day.date.isoformat() }}" class="lrn-card-cta">Открыть день →</a>
+    </div>
     {% for entry in day.tasks %}
     <div class="trk-row trk-item trk-item--{{ entry.status }}">
         <div>

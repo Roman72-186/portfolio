@@ -973,12 +973,17 @@ def mock_exam_form(
     request: Request,
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
+    subject: str | None = None,
 ):
     feature_available, feature_message = is_feature_available(db, FEATURE_MOCK_EXAM)
+    # Карточка дня уже знает предмет задачи — предвыбранный ?subject= сразу
+    # раскрывает билет через существующий "Auto-load ticket if subject
+    # pre-selected" в upload_mock.html, переспрашивать не нужно.
     return _render_mock(
         request,
         user,
         db,
+        selected_subject=subject if subject in MOCK_SUBJECTS else "",
         feature_available=feature_available,
         feature_message=feature_message,
     )

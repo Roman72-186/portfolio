@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{#
+Список сдач одной постановки домашки — кто из учеников уже прислал работу.
+Без своего <style>: только prg-* (program.css, уже используется на
+staff-странице дня) и глобальные классы base.css.
+#}
+{% block title %}Сдачи: {{ homework.title }}{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=2">
+{% endblock %}
+{% block content %}
+<div class="prg-page">
+    <div class="prg-head">
+        <div class="prg-head-copy">
+            <h1>{{ homework.title }}</h1>
+            <p>Кто из учеников уже сдал эту работу.</p>
+        </div>
+    </div>
+
+    <section class="prg-items">
+        {% if rows %}
+        {% for row in rows %}
+        <article class="prg-item">
+            <div>
+                <h3>{{ row.student.name if row.student else 'Ученик #' ~ row.submission.user_id }}</h3>
+                <div class="prg-meta">
+                    <span>{{ row.submission.status }}</span>
+                    {% if row.submission.submitted_at %}
+                    <span>сдано {{ row.submission.submitted_at.strftime('%d.%m %H:%M') }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="prg-item-actions">
+                <a class="btn-blue" href="/cabinet/staff/homework/submissions/{{ row.submission.id }}">Открыть</a>
+            </div>
+        </article>
+        {% endfor %}
+        {% else %}
+        <div class="prg-empty">Пока никто не сдал.</div>
+        {% endif %}
+    </section>
+</div>
+{% include "_curator_nav.html" %}
+{% if user.role_rank == 3 %}
+{% include "partials/staff_nav.html" %}
+{% endif %}
+{% endblock %}

@@ -25,6 +25,7 @@ from app.models.tracker import (
     SOURCE_HOMEWORK,
     SOURCE_LEARNING_TOPIC,
     STATUS_DONE,
+    STATUS_OPEN,
     TrackerTask,
     TrackerTaskAssignee,
     TrackerTaskState,
@@ -423,6 +424,33 @@ def accessible_task_entries(
             "day": msk_date(task.due_at),
         })
     return entries
+
+
+def close_task_for_user(
+    db: Session, task: TrackerTask, user_id: int, *, source: str
+) -> TrackerTaskState:
+    """Идемпотентно закрыть задачу по событию-источнику (видео досмотрено и т.п.).
+
+    Только open → done, никогда done → open: система не должна откатывать
+    задачу, которую ученик уже закрыл руками (или закрыла сама раньше —
+    повторный heartbeat плеера не первое событие «стало done»).
+    `completed_by_id` остаётся `None` — по докстроке `TrackerTaskState`
+    это и значит «закрыла система», `completion_source` несёт, каким событием.
+    """
+    state = (
+        db.query(TrackerTaskState)
+        .filter(TrackerTaskState.task_id == task.id, TrackerTaskState.user_id == user_id)
+        .one_or_none()
+    )
+    if state is None:
+        state = TrackerTaskState(task_id=task.id, user_id=user_id, status=STATUS_OPEN)
+        db.add(state)
+    if state.status != STATUS_DONE:
+        state.status = STATUS_DONE
+        state.completed_at = now_msk()
+        state.completed_by_id = None
+        state.completion_source = source
+    return state
 
 
 def count_completed(db: Session, task_id: int) -> int:
