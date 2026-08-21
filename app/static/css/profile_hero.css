@@ -3,9 +3,10 @@
    подключал его, а не копировал блок стилей — инлайновый рост запрещён
    храповиком переиспользования (scripts/reuse_check.py).
 
-   Раскладка (владелец 21.08.2026): аватар вверху слева, рядом имя в две
-   строки (имя / фамилия), ниже — баллы и год в одной плашке, под ней —
-   тариф. Роль отдельно не подписываем. */
+   Раскладка (владелец 21.08.2026): аватар вверху слева, между ним и правым
+   столбцом — имя в две строки (имя / фамилия); справа сверху баллы Р/К и
+   год поступления одной плашкой, под ней — тариф. Роль отдельно не
+   подписываем. */
 
 .profile-hero {
     background: linear-gradient(135deg, #1E2D6B 0%, #3B4FC8 100%);
@@ -80,11 +81,10 @@
     line-height: 1.25;
     overflow-wrap: break-word;
 }
-.profile-hero-bottom {
-    position: relative; z-index: 1;
-    margin-top: 14px;
-    display: flex; flex-direction: column; align-items: flex-start;
-    gap: 10px;
+.profile-hero-right {
+    flex: 0 0 auto;
+    display: flex; flex-direction: column; align-items: flex-end;
+    gap: 8px;
 }
 .profile-tariff {
     display: inline-flex; align-items: center; gap: 6px;

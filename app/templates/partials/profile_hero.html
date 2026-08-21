@@ -1,14 +1,14 @@
 {#
-Шапка профиля ученика: аватар (с загрузкой своего фото), имя в две строки,
-средний балл по Рисунку/Композиции, год поступления, тариф. Стили —
-app/static/css/profile_hero.css, подключить его в extra_styles экрана,
-который вставляет этот partial.
+Шапка профиля ученика: аватар вверху слева, имя в две строки между аватаром
+и правым блоком, справа сверху — баллы по Рисунку/Композиции и год
+поступления, под ними — тариф. Стили — app/static/css/profile_hero.css,
+подключить его в extra_styles экрана, который вставляет этот partial.
 
 Требует в контексте: user, avg_score_by_subject (dict вида {"Рисунок": 67, ...}).
 Владелец 21.08.2026: ученик видит здесь имя, баллы, год поступления и тариф —
 остальные личные данные (контакты, «уже учится», доступ) в шапку не выносить,
-им место во вкладке «Личное». Роль отдельно не подписываем (владелец 21.08:
-слово «Ученик» убрать).
+им место во вкладке «Личное». Роль отдельно не подписываем (слово «Ученик»
+убрано).
 #}
 <div class="profile-hero">
     <div class="profile-hero-top">
@@ -37,32 +37,32 @@ app/static/css/profile_hero.css, подключить его в extra_styles э�
             <div class="profile-name-line">{{ user.first_name }}</div>
             <div class="profile-name-line">{{ user.last_name }}</div>
         </div>
-    </div>
 
-    <div class="profile-hero-bottom">
-        <div class="profile-scores">
-            <div class="profile-score-cell">
-                <span class="profile-score-label" title="Рисунок">Р</span>
-                <span class="profile-score-value">{{ avg_score_by_subject.get('Рисунок', '-') }}</span>
+        <div class="profile-hero-right">
+            <div class="profile-scores">
+                <div class="profile-score-cell">
+                    <span class="profile-score-label" title="Рисунок">Р</span>
+                    <span class="profile-score-value">{{ avg_score_by_subject.get('Рисунок', '-') }}</span>
+                </div>
+                <div class="profile-score-divider"></div>
+                <div class="profile-score-cell">
+                    <span class="profile-score-label" title="Композиция">К</span>
+                    <span class="profile-score-value">{{ avg_score_by_subject.get('Композиция', '-') }}</span>
+                </div>
+                {% if user.university_year %}
+                <div class="profile-score-divider"></div>
+                <div class="profile-score-cell">
+                    <span class="profile-score-label" title="Год поступления">Год</span>
+                    <span class="profile-score-value">{{ user.university_year }}</span>
+                </div>
+                {% endif %}
             </div>
-            <div class="profile-score-divider"></div>
-            <div class="profile-score-cell">
-                <span class="profile-score-label" title="Композиция">К</span>
-                <span class="profile-score-value">{{ avg_score_by_subject.get('Композиция', '-') }}</span>
-            </div>
-            {% if user.university_year %}
-            <div class="profile-score-divider"></div>
-            <div class="profile-score-cell">
-                <span class="profile-score-label" title="Год поступления">Год</span>
-                <span class="profile-score-value">{{ user.university_year }}</span>
-            </div>
-            {% endif %}
+
+            <span class="profile-tariff">
+                <span class="profile-tariff-dot"></span>
+                {{ user.tariff }}
+            </span>
         </div>
-
-        <span class="profile-tariff">
-            <span class="profile-tariff-dot"></span>
-            {{ user.tariff }}
-        </span>
     </div>
 </div>
 {% if not user.custom_avatar_url %}
