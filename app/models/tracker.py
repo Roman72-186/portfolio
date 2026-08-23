@@ -354,6 +354,13 @@ EVENT_BROADCAST = "broadcast"    # общий эфир
 
 EVENT_KINDS = (EVENT_DEADLINE, EVENT_LESSON, EVENT_MOCK_EXAM, EVENT_BROADCAST)
 
+EVENT_KIND_LABELS = {
+    EVENT_DEADLINE: "Дедлайн",
+    EVENT_LESSON: "Занятие",
+    EVENT_MOCK_EXAM: "Пробник",
+    EVENT_BROADCAST: "Общий эфир",
+}
+
 
 class ScheduleEvent(Base):
     """Строка внутри дайджеста. Диапазон дат нужен для окон вроде пробника —

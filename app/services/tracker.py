@@ -32,6 +32,10 @@ from app.models.tracker import (
     TAB_KIND_FEEDBACK,
     WEEK_TAB_LABELS,
     WEEK_TAB_SEQUENCE,
+    ScheduleDigest,
+    ScheduleDigestAssignee,
+    ScheduleDigestTag,
+    ScheduleEvent,
     TrackerTask,
     TrackerTaskAssignee,
     TrackerTaskState,
@@ -849,3 +853,262 @@ def copy_homework(
         )
     db.flush()
     return duplicate
+
+
+# ---------------------------------------------------------------------------
+# Дайджест-расписание месяца (фаза 5, plans/2026-08-20-apparchi-tracker-and-digest.md)
+# ---------------------------------------------------------------------------
+
+def list_digests(db: Session, *, include_deleted: bool = False) -> list[ScheduleDigest]:
+    """Дайджесты для списка преподавателя: свежий месяц сверху."""
+    query = db.query(ScheduleDigest)
+    if not include_deleted:
+        query = query.filter(ScheduleDigest.deleted_at.is_(None))
+    return query.order_by(
+        ScheduleDigest.year.desc(), ScheduleDigest.month.desc(), ScheduleDigest.id.desc()
+    ).all()
+
+
+def get_digest(db: Session, digest_id: int) -> ScheduleDigest | None:
+    digest = db.get(ScheduleDigest, digest_id)
+    if digest is None or digest.deleted_at is not None:
+        return None
+    return digest
+
+
+def create_digest(
+    db: Session, *, title: str, year: int, month: int, assign_to_all: bool, user_id: int
+) -> ScheduleDigest:
+    digest = ScheduleDigest(
+        title=title,
+        year=year,
+        month=month,
+        assign_to_all=assign_to_all,
+        created_by_id=user_id,
+    )
+    db.add(digest)
+    db.flush()
+    return digest
+
+
+def update_digest(
+    digest: ScheduleDigest, *, title: str, year: int, month: int, assign_to_all: bool
+) -> None:
+    digest.title = title
+    digest.year = year
+    digest.month = month
+    digest.assign_to_all = assign_to_all
+
+
+def set_digest_tags(db: Session, digest: ScheduleDigest, tag_ids: list[int]) -> None:
+    db.query(ScheduleDigestTag).filter(
+        ScheduleDigestTag.digest_id == digest.id
+    ).delete(synchronize_session=False)
+    for tag_id in dict.fromkeys(tag_ids):
+        db.add(ScheduleDigestTag(digest_id=digest.id, tag_id=tag_id))
+    db.flush()
+
+
+def set_digest_assignees(db: Session, digest: ScheduleDigest, user_ids: list[int]) -> None:
+    db.query(ScheduleDigestAssignee).filter(
+        ScheduleDigestAssignee.digest_id == digest.id
+    ).delete(synchronize_session=False)
+    for user_id in dict.fromkeys(user_ids):
+        db.add(ScheduleDigestAssignee(digest_id=digest.id, user_id=user_id))
+    db.flush()
+
+
+def get_digest_tag_ids(db: Session, digest_id: int) -> list[int]:
+    rows = (
+        db.query(ScheduleDigestTag.tag_id)
+        .filter(ScheduleDigestTag.digest_id == digest_id)
+        .all()
+    )
+    return [row[0] for row in rows]
+
+
+def get_digest_assignee_ids(db: Session, digest_id: int) -> list[int]:
+    rows = (
+        db.query(ScheduleDigestAssignee.user_id)
+        .filter(ScheduleDigestAssignee.digest_id == digest_id)
+        .all()
+    )
+    return [row[0] for row in rows]
+
+
+def count_digest_audience(
+    db: Session, *, assign_to_all: bool, tag_ids: list[int], assignee_ids: list[int]
+) -> int:
+    """Сколько активных учеников увидят этот дайджест — тот же расчёт, что у
+    задач (`count_task_audience`), без фильтра по членству в группе по той же
+    причине: `/cabinet/tracker` закрыт `require_student`, а не
+    `require_learning_content_access`."""
+    students = (
+        db.query(User.id)
+        .join(Role, User.role_id == Role.id)
+        .filter(
+            Role.rank == STUDENT_ROLE_RANK,
+            User.is_active.is_(True),
+            User.deleted_at.is_(None),
+        )
+    )
+    if assign_to_all:
+        return students.count()
+
+    reached: set[int] = set()
+    if tag_ids:
+        rows = (
+            students.join(UserTag, UserTag.user_id == User.id)
+            .filter(UserTag.tag_id.in_(tag_ids))
+            .all()
+        )
+        reached.update(row[0] for row in rows)
+    if assignee_ids:
+        rows = students.filter(User.id.in_(assignee_ids)).all()
+        reached.update(row[0] for row in rows)
+    return len(reached)
+
+
+def publish_digest(digest: ScheduleDigest, *, user_id: int) -> None:
+    if digest.deleted_at is not None:
+        raise ValueError("Digest is deleted")
+    digest.is_published = True
+    digest.published_at = datetime.now(timezone.utc)
+    digest.published_by_id = user_id
+
+
+def unpublish_digest(digest: ScheduleDigest) -> None:
+    digest.is_published = False
+    digest.published_at = None
+    digest.published_by_id = None
+
+
+def delete_digest(digest: ScheduleDigest) -> None:
+    """Мягкое удаление, только со снятой публикации — тот же довод, что у
+    задач: опубликованный дайджест уже висит у учеников."""
+    digest.deleted_at = datetime.now(timezone.utc)
+    digest.is_published = False
+
+
+def list_events(db: Session, digest_id: int) -> list[ScheduleEvent]:
+    return (
+        db.query(ScheduleEvent)
+        .filter(ScheduleEvent.digest_id == digest_id)
+        .order_by(ScheduleEvent.starts_on.asc(), ScheduleEvent.sort_order.asc(), ScheduleEvent.id.asc())
+        .all()
+    )
+
+
+def get_event(db: Session, event_id: int) -> ScheduleEvent | None:
+    return db.get(ScheduleEvent, event_id)
+
+
+def create_event(
+    db: Session,
+    digest_id: int,
+    *,
+    kind: str,
+    title: str,
+    note: str | None,
+    starts_on: date,
+    ends_on: date,
+    meeting_url: str | None,
+    sort_order: int = 0,
+) -> ScheduleEvent:
+    event = ScheduleEvent(
+        digest_id=digest_id,
+        kind=kind,
+        title=title,
+        note=note,
+        starts_on=starts_on,
+        ends_on=ends_on,
+        meeting_url=meeting_url,
+        sort_order=sort_order,
+    )
+    db.add(event)
+    db.flush()
+    return event
+
+
+def update_event(
+    event: ScheduleEvent,
+    *,
+    kind: str,
+    title: str,
+    note: str | None,
+    starts_on: date,
+    ends_on: date,
+    meeting_url: str | None,
+    sort_order: int = 0,
+) -> None:
+    event.kind = kind
+    event.title = title
+    event.note = note
+    event.starts_on = starts_on
+    event.ends_on = ends_on
+    event.meeting_url = meeting_url
+    event.sort_order = sort_order
+
+
+def delete_event(db: Session, event: ScheduleEvent) -> None:
+    """Жёсткое удаление: в отличие от задачи, на событие расписания ничего не
+    ссылается — у него нет ни состояния ученика, ни истории выполнения."""
+    db.delete(event)
+    db.flush()
+
+
+def accessible_digest_ids(db: Session, user_id: int) -> set[int]:
+    """Опубликованные дайджесты, адресованные ученику — зеркало
+    `accessible_task_ids`, но по ScheduleDigestTag/ScheduleDigestAssignee."""
+    user_tag_ids = (
+        db.query(UserTag.tag_id).filter(UserTag.user_id == user_id).scalar_subquery()
+    )
+    tagged_ids = (
+        db.query(ScheduleDigestTag.digest_id)
+        .filter(ScheduleDigestTag.tag_id.in_(user_tag_ids))
+        .scalar_subquery()
+    )
+    assigned_ids = (
+        db.query(ScheduleDigestAssignee.digest_id)
+        .filter(ScheduleDigestAssignee.user_id == user_id)
+        .scalar_subquery()
+    )
+    rows = (
+        db.query(ScheduleDigest.id)
+        .filter(
+            ScheduleDigest.deleted_at.is_(None),
+            ScheduleDigest.is_published.is_(True),
+            or_(
+                ScheduleDigest.assign_to_all.is_(True),
+                ScheduleDigest.id.in_(tagged_ids),
+                ScheduleDigest.id.in_(assigned_ids),
+            ),
+        )
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def active_digest_for_student(
+    db: Session, user_id: int, *, year: int, month: int
+) -> ScheduleDigest | None:
+    """Дайджест месяца, который видит этот ученик.
+
+    Может подходить несколько (адресация по группам/тарифам, решение
+    владельца 20.08) — берём опубликованный последним: он точнее отражает
+    финальную версию расписания на случай, если преподаватель пересобирал
+    дайджест несколько раз.
+    """
+    digest_ids = accessible_digest_ids(db, user_id)
+    if not digest_ids:
+        return None
+    return (
+        db.query(ScheduleDigest)
+        .filter(
+            ScheduleDigest.id.in_(digest_ids),
+            ScheduleDigest.year == year,
+            ScheduleDigest.month == month,
+        )
+        .order_by(ScheduleDigest.published_at.desc())
+        .first()
+    )

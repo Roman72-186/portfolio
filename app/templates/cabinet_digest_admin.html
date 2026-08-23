@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+{#
+THESIS: преподаватель видит все дайджесты месяцев в одном списке и охват до публикации.
+OWN-WORLD: тот же Spark UI и trk-* классы, что у экрана «Задачи трекера».
+STORY: завёл дайджест на месяц, проверил охват, открыл «События», наполнил датами,
+       вернулся и опубликовал — до этого момента ученик ничего не видит.
+FIRST VIEWPORT: заголовок, кнопка «Новый дайджест», список месяцев.
+FORM: Operate, расширение существующего кабинета без новой визуальной системы.
+#}
+{% block title %}Дайджест-расписание{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/tracker.css?v=4">
+{% endblock %}
+{% block content %}
+<div class="trk-page">
+    <div class="trk-head">
+        <div class="trk-head-copy">
+            <h1>Дайджест-расписание</h1>
+            <p>Один дайджест — один месяц для одной аудитории. Пока не опубликован, ученик его не видит. После публикации весь месяц не меняется.</p>
+        </div>
+        <button type="button" class="btn-blue" data-digest-toggle>Новый дайджест</button>
+    </div>
+
+    <form class="trk-form" data-digest-form hidden>
+        <input type="hidden" data-digest-id value="">
+        <div class="trk-grid trk-grid--two">
+            <label class="trk-field">Название
+                <input data-digest-title type="text" maxlength="200" placeholder="Например: Сентябрь — топ-тариф" autocomplete="off">
+            </label>
+            <div class="trk-grid trk-grid--two" style="grid-column: span 1;">
+                <label class="trk-field">Год
+                    <input data-digest-year type="number" min="2020" max="2100">
+                </label>
+                <label class="trk-field">Месяц
+                    <select data-digest-month>
+                        {% for name in month_names %}
+                        {% if not loop.first %}<option value="{{ loop.index0 }}">{{ name }}</option>{% endif %}
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
+        </div>
+        <label class="trk-field trk-field--row">
+            <input data-digest-all type="checkbox">
+            <span>Выдать всем ученикам</span>
+        </label>
+        <div data-digest-audience>
+            <div class="trk-hint">Кому выдать — отметьте теги:</div>
+            <div class="trk-tag-picker">
+                {% for tag in all_tags %}
+                <label><input type="checkbox" data-digest-tag value="{{ tag.id }}"{% if tag.id in ambiguous_tag_ids|default([]) %} data-digest-tag-ambiguous{% endif %}>{{ tag.name }}</label>
+                {% else %}
+                <span class="trk-hint">Тегов пока нет — их заводят на странице «Теги».</span>
+                {% endfor %}
+            </div>
+            <p class="trk-message is-error" data-digest-tag-warning hidden></p>
+            <label class="trk-field" style="margin-top: 10px;">Плюс отдельным ученикам: @username через запятую или с новой строки
+                <input data-digest-assignees type="text" placeholder="@ivanov, @petrova" autocomplete="off">
+            </label>
+        </div>
+        <div class="trk-actions">
+            <button type="button" class="btn-blue" data-digest-save>Сохранить дайджест</button>
+            <button type="button" class="btn-outline" data-digest-cancel>Отмена</button>
+        </div>
+        <p class="trk-message" data-digest-message></p>
+    </form>
+
+    <div class="trk-list-head">
+        <h2>Все дайджесты</h2>
+    </div>
+
+    {% if digests %}
+    <div>
+        {% for digest in digests %}
+        <article class="trk-row" data-digest-row data-id="{{ digest.id }}"
+                 data-title="{{ digest.title }}"
+                 data-year="{{ digest.year }}"
+                 data-month="{{ digest.month }}"
+                 data-all="{{ '1' if digest.assign_to_all else '' }}"
+                 data-tags="{{ digest_tag_ids.get(digest.id, [])|join(',') }}"
+                 data-assignees="{{ digest_assignee_usernames.get(digest.id, '') }}">
+            <div>
+                <h3>{{ digest.title }}</h3>
+                <div class="trk-meta">
+                    <span>{{ month_names[digest.month] }} {{ digest.year }}</span>
+                    {% if digest.assign_to_all %}
+                    <span>Всем ученикам</span>
+                    {% else %}
+                    <span>Тегов: {{ digest_tag_ids.get(digest.id, [])|length }}</span>
+                    {% if digest_assignee_ids.get(digest.id) %}<span>Поимённо: {{ digest_assignee_ids.get(digest.id)|length }}</span>{% endif %}
+                    {% endif %}
+                    <span>Получат: {{ digest_audience.get(digest.id, 0) }}</span>
+                    <span>Событий: {{ digest_event_count.get(digest.id, 0) }}</span>
+                </div>
+                {% if digest_ambiguous_tags.get(digest.id) %}
+                <p class="trk-message is-error">
+                    Теги {{ digest_ambiguous_tags.get(digest.id)|join(', ') }} в проде означают группу и уровень куратора,
+                    а не предмет. Совпадение точное: ученики с тегом вида «Р+К» дайджест не получат.
+                </p>
+                {% endif %}
+            </div>
+            <div class="trk-row-actions">
+                {% if digest.is_published %}
+                <span class="trk-badge trk-badge--live">Опубликован</span>
+                <button type="button" class="btn-outline" data-digest-action="unpublish">Скрыть</button>
+                {% else %}
+                <span class="trk-badge trk-badge--draft">Черновик</span>
+                <button type="button" class="btn-blue" data-digest-action="publish">Опубликовать</button>
+                {% endif %}
+                <a class="btn-outline" href="/cabinet/staff/digest/{{ digest.id }}/events">События</a>
+                <button type="button" class="btn-outline" data-digest-edit>Изменить</button>
+                <button type="button" class="btn-danger" data-digest-action="delete">Удалить</button>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="trk-empty">Дайджестов пока нет. Первый появится у учеников после публикации.</div>
+    {% endif %}
+</div>
+
+<script>
+(function () {
+    var csrfToken = {{ csrf_token(request)|tojson }};
+    var form = document.querySelector('[data-digest-form]');
+    if (!form) return;
+    var message = form.querySelector('[data-digest-message]');
+
+    function field(name) { return form.querySelector('[data-digest-' + name + ']'); }
+
+    function setMessage(text, isError) {
+        if (!message) return;
+        message.textContent = text || '';
+        message.classList.toggle('is-error', !!isError);
+    }
+
+    function api(path, body) {
+        return fetch(path, {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Accept':'application/json', 'Content-Type':'application/json', 'X-CSRF-Token':csrfToken},
+            body: JSON.stringify(body || {})
+        }).then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (data) {
+                if (!response.ok) {
+                    var reason = data.error
+                        || (typeof data.detail === 'string' ? data.detail : '')
+                        || 'request_failed';
+                    var error = new Error(reason);
+                    error.status = response.status;
+                    throw error;
+                }
+                return data;
+            });
+        });
+    }
+
+    function syncAudienceVisibility() {
+        var audience = form.querySelector('[data-digest-audience]');
+        if (audience) audience.hidden = field('all').checked;
+        syncAmbiguousTagWarning();
+    }
+
+    function syncAmbiguousTagWarning() {
+        var warning = form.querySelector('[data-digest-tag-warning]');
+        if (!warning) return;
+        var names = [];
+        form.querySelectorAll('[data-digest-tag-ambiguous]:checked').forEach(function (box) {
+            names.push(box.parentElement.textContent.trim());
+        });
+        if (!names.length || field('all').checked) {
+            warning.hidden = true;
+            warning.textContent = '';
+            return;
+        }
+        warning.hidden = false;
+        warning.textContent = 'Теги ' + names.join(', ')
+            + ' в проде означают группу и уровень куратора, а не предмет.'
+            + ' Совпадение точное: ученики с тегом вида «Р+К» дайджест не получат.';
+    }
+
+    function openForm(row) {
+        form.hidden = false;
+        setMessage('');
+        var now = new Date();
+        field('id').value = row ? row.dataset.id : '';
+        field('title').value = row ? row.dataset.title : '';
+        field('year').value = row ? row.dataset.year : now.getFullYear();
+        field('month').value = row ? row.dataset.month : (now.getMonth() + 1);
+        field('all').checked = row ? row.dataset.all === '1' : false;
+        field('assignees').value = row ? (row.dataset.assignees || '') : '';
+        var selected = row && row.dataset.tags ? row.dataset.tags.split(',') : [];
+        form.querySelectorAll('[data-digest-tag]').forEach(function (box) {
+            box.checked = selected.indexOf(box.value) !== -1;
+        });
+        syncAudienceVisibility();
+        field('title').focus();
+    }
+
+    field('all').addEventListener('change', syncAudienceVisibility);
+    form.addEventListener('change', function (event) {
+        if (event.target.hasAttribute('data-digest-tag')) syncAmbiguousTagWarning();
+    });
+
+    document.addEventListener('click', function (event) {
+        if (event.target.closest('[data-digest-toggle]')) { openForm(null); return; }
+        if (event.target.closest('[data-digest-cancel]')) { form.hidden = true; return; }
+
+        var editButton = event.target.closest('[data-digest-edit]');
+        if (editButton) { openForm(editButton.closest('[data-digest-row]')); return; }
+
+        var saveButton = event.target.closest('[data-digest-save]');
+        if (saveButton) {
+            var title = field('title').value.trim();
+            if (!title) { setMessage('Укажите название дайджеста.', true); return; }
+
+            var tagIds = [];
+            form.querySelectorAll('[data-digest-tag]:checked').forEach(function (box) {
+                tagIds.push(Number(box.value));
+            });
+            var assignees = field('assignees').value;
+            var isForAll = field('all').checked;
+            if (!isForAll && !tagIds.length && !assignees.trim()) {
+                setMessage('Дайджест никто не увидит: отметьте теги, добавьте учеников или выдайте всем.', true);
+                return;
+            }
+
+            var digestId = field('id').value;
+            saveButton.disabled = true;
+            api('/cabinet/staff/digest' + (digestId ? '/' + digestId : ''), {
+                title: title,
+                year: Number(field('year').value),
+                month: Number(field('month').value),
+                assign_to_all: isForAll,
+                tag_ids: isForAll ? [] : tagIds,
+                assignee_usernames: isForAll ? '' : assignees
+            }).then(function (data) {
+                if (data && data.not_found && data.not_found.length) {
+                    window.alert('Не нашлись ученики: @' + data.not_found.join(', @'));
+                }
+                if (data && data.audience_size === 0) {
+                    window.alert('Дайджест сейчас никто не увидит: под выбранную аудиторию не подошёл ни один активный ученик.');
+                } else if (data && data.ambiguous_tags && data.ambiguous_tags.length) {
+                    window.alert('Дайджест сохранён и уйдёт ' + data.audience_size + ' ученикам.'
+                        + ' Проверьте теги ' + data.ambiguous_tags.join(', ')
+                        + ': в проде это группа и уровень куратора, а совпадение точное.');
+                }
+                window.location.reload();
+            }).catch(function (error) {
+                saveButton.disabled = false;
+                var explained = error.status === 422 && error.message !== 'request_failed';
+                setMessage(explained
+                    ? error.message
+                    : 'Не удалось сохранить дайджест. Попробуйте ещё раз.', true);
+            });
+            return;
+        }
+
+        var actionButton = event.target.closest('[data-digest-action]');
+        if (!actionButton) return;
+        var row = actionButton.closest('[data-digest-row]');
+        var action = actionButton.dataset.digestAction;
+        if (action === 'delete' && !window.confirm('Удалить дайджест «' + row.dataset.title + '»?')) return;
+
+        actionButton.disabled = true;
+        api('/cabinet/staff/digest/' + row.dataset.id + '/' + action).then(function () {
+            window.location.reload();
+        }).catch(function (error) {
+            actionButton.disabled = false;
+            window.alert(error.message === 'unpublish_first'
+                ? 'Дайджест опубликован и висит у учеников. Сначала скройте его.'
+                : 'Действие не выполнено. Попробуйте ещё раз.');
+        });
+    });
+})();
+</script>
+{% endblock %}

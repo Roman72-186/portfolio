@@ -32,6 +32,7 @@ from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
 from app.models.tracker import (
+    EVENT_KIND_LABELS,
     ITEM_HOMEWORK,
     ITEM_MOCK_EXAM,
     STATUS_DONE,
@@ -44,7 +45,9 @@ from app.services.stats import avg_score_by_subject_all_time
 from app.services.tracker import (
     accessible_task_entries,
     accessible_task_ids,
+    active_digest_for_student,
     effective_week_start,
+    list_events,
     task_status,
 )
 from app.services.tz import today_msk, now_msk
@@ -68,6 +71,10 @@ def cabinet_tracker(
     _, week_end = day_bounds(week_monday + timedelta(days=6))
 
     entries = accessible_task_entries(db, user["user_id"], start=None, end=week_end)
+
+    # Дайджест месяца — первый блок на экране (решение владельца 22.08).
+    digest = active_digest_for_student(db, user["user_id"], year=today.year, month=today.month)
+    digest_events = list_events(db, digest.id) if digest is not None else []
 
     overdue = [e for e in entries if e["status"] == "overdue"]
     upcoming = [e for e in entries if e["status"] == "upcoming"]
@@ -93,6 +100,9 @@ def cabinet_tracker(
         "overdue": overdue,
         "upcoming": upcoming,
         "done": done,
+        "digest": digest,
+        "digest_events": digest_events,
+        "event_kind_labels": EVENT_KIND_LABELS,
         # Красное предупреждение (решение владельца 23.08, гейт «блок → неделя
         # → месяц»): ученик застрял на прошлой неделе, а не идёт по текущей.
         "is_behind_schedule": effective_week_start(db, user["user_id"], today) < week_monday,

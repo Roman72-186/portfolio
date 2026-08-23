@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{#
+THESIS: события месяца видны одним списком по датам, форма добавления не требует ухода со страницы.
+OWN-WORLD: тот же Spark UI и trk-* классы, что у списка дайджестов и задач трекера.
+STORY: преподаватель открыл дайджест, добавил дедлайн/занятие/окно пробника/эфир,
+       вернулся к списку дайджестов и опубликовал, когда месяц собран целиком.
+FIRST VIEWPORT: заголовок дайджеста, кнопка «Новое событие», список по датам.
+FORM: Operate, расширение существующего кабинета без новой визуальной системы.
+#}
+{% block title %}События — {{ digest.title }}{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/tracker.css?v=4">
+{% endblock %}
+{% block content %}
+<div class="trk-page">
+    <div class="trk-head">
+        <div class="trk-head-copy">
+            <h1>{{ digest.title }}</h1>
+            <p>{{ month_names[digest.month] }} {{ digest.year }} — события внутри дайджеста. <a href="/cabinet/staff/digest">← ко всем дайджестам</a></p>
+        </div>
+        <button type="button" class="btn-blue" data-event-toggle>Новое событие</button>
+    </div>
+
+    <form class="trk-form" data-event-form hidden>
+        <input type="hidden" data-event-id value="">
+        <div class="trk-grid trk-grid--two">
+            <label class="trk-field">Название
+                <input data-event-title type="text" maxlength="200" placeholder="Например: сдать финал по композиции" autocomplete="off">
+            </label>
+            <label class="trk-field">Тип
+                <select data-event-kind>
+                    {% for kind in event_kinds %}
+                    <option value="{{ kind }}">{{ event_kind_labels.get(kind, kind) }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+        <div class="trk-grid trk-grid--two">
+            <label class="trk-field">Начало
+                <input data-event-starts type="date">
+            </label>
+            <label class="trk-field">Окончание
+                <input data-event-ends type="date">
+            </label>
+        </div>
+        <label class="trk-field">Заметка, необязательно
+            <input data-event-note type="text" maxlength="300" placeholder="Короткая подпись под событием">
+        </label>
+        <label class="trk-field">Ссылка на созвон, необязательно
+            <input data-event-url type="url" maxlength="500" placeholder="https://...">
+        </label>
+        <div class="trk-actions">
+            <button type="button" class="btn-blue" data-event-save>Сохранить событие</button>
+            <button type="button" class="btn-outline" data-event-cancel>Отмена</button>
+        </div>
+        <p class="trk-message" data-event-message></p>
+    </form>
+
+    {% if events %}
+    <div>
+        {% for event in events %}
+        <article class="trk-row" data-event-row data-id="{{ event.id }}"
+                 data-title="{{ event.title }}"
+                 data-kind="{{ event.kind }}"
+                 data-starts="{{ event.starts_on.isoformat() }}"
+                 data-ends="{{ event.ends_on.isoformat() }}"
+                 data-note="{{ event.note or '' }}"
+                 data-url="{{ event.meeting_url or '' }}">
+            <div>
+                <div class="trk-meta" style="margin-bottom:6px;">
+                    <span class="trk-badge trk-badge--kind">{{ event_kind_labels.get(event.kind, event.kind) }}</span>
+                </div>
+                <h3>{{ event.title }}</h3>
+                {% if event.note %}<p>{{ event.note }}</p>{% endif %}
+                <div class="trk-meta">
+                    {% if event.starts_on == event.ends_on %}
+                    <span>{{ event.starts_on.strftime('%d.%m.%Y') }}</span>
+                    {% else %}
+                    <span>{{ event.starts_on.strftime('%d.%m') }} — {{ event.ends_on.strftime('%d.%m.%Y') }}</span>
+                    {% endif %}
+                    {% if event.meeting_url %}<span><a href="{{ event.meeting_url }}" target="_blank" rel="noopener">Ссылка на созвон</a></span>{% endif %}
+                </div>
+            </div>
+            <div class="trk-row-actions">
+                <button type="button" class="btn-outline" data-event-edit>Изменить</button>
+                <button type="button" class="btn-danger" data-event-action="delete">Удалить</button>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="trk-empty">Событий пока нет.</div>
+    {% endif %}
+</div>
+
+<script>
+(function () {
+    var csrfToken = {{ csrf_token(request)|tojson }};
+    var digestId = {{ digest.id }};
+    var base = '/cabinet/staff/digest/' + digestId + '/events';
+    var form = document.querySelector('[data-event-form]');
+    if (!form) return;
+    var message = form.querySelector('[data-event-message]');
+
+    function field(name) { return form.querySelector('[data-event-' + name + ']'); }
+
+    function setMessage(text, isError) {
+        if (!message) return;
+        message.textContent = text || '';
+        message.classList.toggle('is-error', !!isError);
+    }
+
+    function api(path, body) {
+        return fetch(path, {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Accept':'application/json', 'Content-Type':'application/json', 'X-CSRF-Token':csrfToken},
+            body: JSON.stringify(body || {})
+        }).then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (data) {
+                if (!response.ok) {
+                    var reason = data.error
+                        || (typeof data.detail === 'string' ? data.detail : '')
+                        || 'request_failed';
+                    var error = new Error(reason);
+                    error.status = response.status;
+                    throw error;
+                }
+                return data;
+            });
+        });
+    }
+
+    function openForm(row) {
+        form.hidden = false;
+        setMessage('');
+        var today = new Date().toISOString().slice(0, 10);
+        field('id').value = row ? row.dataset.id : '';
+        field('title').value = row ? row.dataset.title : '';
+        field('kind').value = row ? row.dataset.kind : field('kind').options[0].value;
+        field('starts').value = row ? row.dataset.starts : today;
+        field('ends').value = row ? row.dataset.ends : today;
+        field('note').value = row ? row.dataset.note : '';
+        field('url').value = row ? row.dataset.url : '';
+        field('title').focus();
+    }
+
+    document.addEventListener('click', function (event) {
+        if (event.target.closest('[data-event-toggle]')) { openForm(null); return; }
+        if (event.target.closest('[data-event-cancel]')) { form.hidden = true; return; }
+
+        var editButton = event.target.closest('[data-event-edit]');
+        if (editButton) { openForm(editButton.closest('[data-event-row]')); return; }
+
+        var saveButton = event.target.closest('[data-event-save]');
+        if (saveButton) {
+            var title = field('title').value.trim();
+            if (!title) { setMessage('Укажите название события.', true); return; }
+            var startsOn = field('starts').value;
+            var endsOn = field('ends').value || startsOn;
+            if (!startsOn) { setMessage('Укажите дату начала.', true); return; }
+            if (endsOn < startsOn) { setMessage('Окончание раньше начала.', true); return; }
+
+            var eventId = field('id').value;
+            saveButton.disabled = true;
+            api(base + (eventId ? '/' + eventId : ''), {
+                title: title,
+                kind: field('kind').value,
+                note: field('note').value,
+                starts_on: startsOn,
+                ends_on: endsOn,
+                meeting_url: field('url').value
+            }).then(function () {
+                window.location.reload();
+            }).catch(function (error) {
+                saveButton.disabled = false;
+                var explained = error.status === 422 && error.message !== 'request_failed';
+                setMessage(explained
+                    ? error.message
+                    : 'Не удалось сохранить событие. Попробуйте ещё раз.', true);
+            });
+            return;
+        }
+
+        var actionButton = event.target.closest('[data-event-action]');
+        if (!actionButton) return;
+        var row = actionButton.closest('[data-event-row]');
+        if (!window.confirm('Удалить событие «' + row.dataset.title + '»?')) return;
+
+        actionButton.disabled = true;
+        api(base + '/' + row.dataset.id + '/delete').then(function () {
+            window.location.reload();
+        }).catch(function () {
+            actionButton.disabled = false;
+            window.alert('Действие не выполнено. Попробуйте ещё раз.');
+        });
+    });
+})();
+</script>
+{% endblock %}

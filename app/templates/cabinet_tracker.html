@@ -16,6 +16,35 @@ FORM: Operate, список, а не карточка-витрина.
 {% endblock %}
 {% block content %}
 <div class="trk-page">
+    {% if digest %}
+    <details class="trk-row" style="margin-bottom:14px;">
+        <summary style="cursor:pointer;">
+            <span class="trk-badge trk-badge--kind">Дайджест месяца</span>
+            <strong style="margin-left:8px;">{{ digest.title }}</strong>
+        </summary>
+        {% if digest_events %}
+        <div style="margin-top:12px;display:grid;gap:8px;">
+            {% for event in digest_events %}
+            <div class="trk-meta" style="justify-content:space-between;">
+                <span class="trk-badge trk-badge--kind">{{ event_kind_labels.get(event.kind, event.kind) }}</span>
+                <span>{{ event.title }}</span>
+                <span>
+                    {% if event.starts_on == event.ends_on %}
+                    {{ event.starts_on.strftime('%d.%m') }}
+                    {% else %}
+                    {{ event.starts_on.strftime('%d.%m') }}–{{ event.ends_on.strftime('%d.%m') }}
+                    {% endif %}
+                </span>
+                {% if event.meeting_url %}<a href="{{ event.meeting_url }}" target="_blank" rel="noopener">Ссылка</a>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="trk-hint" style="margin-top:10px;">В этом месяце пока нет событий.</p>
+        {% endif %}
+    </details>
+    {% endif %}
+
     {% include "partials/profile_hero.html" %}
 
     {% if is_behind_schedule %}
