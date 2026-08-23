@@ -1,52 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=4">
-<style>
-.lrn-page { max-width: 1080px; margin: 0 auto; padding: 22px 18px 110px; }
-.lrn-hero {
-    background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue-mid) 100%);
-    color: #fff; border-radius: var(--r-xl); padding: 18px 22px;
-    margin-bottom: 16px; box-shadow: var(--sh-blue);
-}
-.lrn-hero h1 {
-    font-family: var(--font-display); font-size: 22px; font-weight: 800;
-    letter-spacing: -0.02em; margin: 0 0 4px;
-}
-.lrn-hero p { margin: 0; opacity: 0.85; font-size: 13px; line-height: 1.4; }
-
-.lrn-subject-toggle {
-    display: flex; gap: 2px; padding: 4px; margin: 0 0 16px;
-    background: var(--surface-2); border: 1px solid var(--line);
-    border-radius: var(--r-pill);
-}
-.lrn-subject-btn {
-    flex: 1; text-align: center; padding: 10px 14px;
-    font-size: 14px; font-weight: 800; letter-spacing: 0.01em;
-    color: var(--muted); cursor: pointer; border: none; background: none;
-    border-radius: var(--r-pill); transition: background .15s, color .15s;
-    font-family: var(--font-body);
-}
-.lrn-subject-btn.active { background: var(--surface); color: var(--blue); box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-
-.lrn-cards { display: flex; flex-direction: column; gap: 12px; }
-.lrn-card {
-    display: block; padding: 16px 18px; border: 1px solid var(--line);
-    border-radius: var(--r-xl); background: var(--surface);
-    text-decoration: none; color: inherit; transition: border-color .15s;
-}
-.lrn-card:hover { border-color: var(--blue); }
-.lrn-card.is-disabled { opacity: 0.55; cursor: default; }
-.lrn-card.is-disabled:hover { border-color: var(--line); }
-.lrn-card-title { font-size: 15px; font-weight: 800; margin: 0 0 4px; }
-.lrn-card-note { font-size: 13px; color: var(--dim); margin: 0; line-height: 1.4; }
-.lrn-card-cta { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--blue); }
-.lrn-card.is-disabled .lrn-card-cta { color: var(--dim); }
-
-.lrn-empty {
-    text-align: center; padding: 48px 20px; color: var(--dim);
-}
-</style>
+<link rel="stylesheet" href="/static/css/tracker.css?v=5">
 {% endblock %}
 {% block content %}
 <div class="lrn-page">
@@ -60,6 +15,10 @@
         {% endif %}
     </div>
 
+    {% if not topic %}
+    <div class="lrn-empty">Пока нет ни одной доступной вам недели. Загляните позже.</div>
+    {% endif %}
+
     {# Переключатель направления стоит над тем, что фильтрует. Раньше он лежал
        ниже списка задач и ничего не делал вовсе — теперь прячет задачи чужого
        предмета по `task.subject`. #}
@@ -68,125 +27,141 @@
         <button type="button" class="lrn-subject-btn" data-subject="Композиция" onclick="lrnSwitchSubject(this)">Композиция</button>
     </div>
 
-    {# Полоска недели и разбивка по дням — переиспользуют .trk-* из tracker.css,
-       тот же движок выборки, что у «Личного трекера» (accessible_task_entries). #}
-    <div class="trk-weekstrip">
-        {% for day in week_days %}
-        <a href="/cabinet/learning/day/{{ day.date.isoformat() }}" class="trk-weekcell{{ ' is-today' if day.is_today }}">
-            <span class="trk-weekcell-dow">{{ day.label }}</span>
-            <span class="trk-weekcell-num">{{ day.date.day }}</span>
-            <span class="trk-marks">
-                {% for kind in day.kinds %}
-                <span class="trk-dot trk-dot--{{ kind }}"></span>
-                {% endfor %}
-            </span>
-        </a>
+    {# Восемь вкладок недели в фиксированном порядке (решение владельца
+       22.08/23.08) — каждая следующая открыта, только когда закрыта
+       предыдущая. Расчёт — `tracker.py::build_week_tabs`. Календаря по датам
+       у ученика больше нет: страница дня отменена тем же решением. #}
+    <div class="lrn-tabs nav-pill" role="tablist" aria-label="Вкладки недели">
+        {% for tab in tabs %}
+        <button
+            type="button"
+            class="nav-pill-item{{ ' active' if loop.first }}"
+            data-tab="{{ tab.kind }}"
+            role="tab"
+            aria-selected="{{ 'true' if loop.first else 'false' }}"
+            onclick="lrnActivateTab('{{ tab.kind }}')"
+        >{{ tab.label }}</button>
         {% endfor %}
     </div>
 
-    {% for day in week_days if day.tasks %}
-    <div class="lrn-daygroup">
-    <div class="trk-day" id="lrn-day-{{ day.date.isoformat() }}">
-        {{ day.label }}, {{ day.date.strftime('%d.%m') }}
-        <a href="/cabinet/learning/day/{{ day.date.isoformat() }}" class="lrn-card-cta">Открыть день →</a>
-    </div>
-    {% for entry in day.tasks %}
-    {# data-subject пустой у задач без предмета — такие видны в обоих
-       направлениях, прятать их переключателем нельзя. #}
-    <div class="trk-row trk-item trk-item--{{ entry.status }}" data-subject="{{ entry.task.subject or '' }}">
-        <div>
-            <div class="trk-meta" style="margin-bottom:6px;">
-                <span class="trk-badge trk-badge--kind">{{ entry.kind_label }}</span>
-                {% if entry.task.subject %}<span class="trk-badge trk-badge--kind">{{ entry.task.subject }}</span>{% endif %}
-            </div>
-            <h3>{{ entry.task.title }}</h3>
-            {% if entry.task.description %}<p>{{ entry.task.description }}</p>{% endif %}
-            <div class="trk-meta">
-                <span class="{{ 'is-overdue' if entry.status == 'overdue' }}">до {{ entry.due_label }}</span>
-            </div>
+    {% for tab in tabs %}
+    <div class="lrn-tabpanel" data-tabpanel="{{ tab.kind }}"{{ ' hidden' if not loop.first }}>
+        {% if tab.is_locked %}
+        <div class="lrn-card is-disabled">
+            <div class="lrn-card-title">{{ tab.label }}</div>
+            <p class="lrn-card-note">Сначала сделай «{{ tab.locked_reason }}».</p>
         </div>
-        <div class="trk-row-actions">
-            {% include "partials/task_action.html" %}
-        </div>
-    </div>
-    {% endfor %}
+        {% else %}
+
+            {% if tab.kind == 'lesson' %}
+                {% if topic and topic.meeting_url %}
+                <a class="lrn-card" href="{{ topic.meeting_url }}" target="_blank" rel="noopener">
+                    <div class="lrn-card-title">Занятие</div>
+                    <p class="lrn-card-note">Ссылка на созвон недели.</p>
+                    <span class="lrn-card-cta">Присоединиться →</span>
+                </a>
+                {% elif not tab.entries %}
+                <div class="lrn-card is-disabled">
+                    <div class="lrn-card-title">Занятие</div>
+                    <p class="lrn-card-note">Ссылка на созвон появится позже.</p>
+                </div>
+                {% endif %}
+            {% endif %}
+
+            {% if tab.entries %}
+            <div class="lrn-cards">
+                {% for entry in tab.entries %}
+                {# data-subject пустой у задач без предмета — такие видны в обоих
+                   направлениях, прятать их переключателем нельзя. #}
+                <div class="trk-row trk-item trk-item--{{ entry.status }}" data-subject="{{ entry.task.subject or '' }}">
+                    <div>
+                        <div class="trk-meta" style="margin-bottom:6px;">
+                            <span class="trk-badge trk-badge--kind">{{ entry.kind_label }}</span>
+                            {% if entry.task.subject %}<span class="trk-badge trk-badge--kind">{{ entry.task.subject }}</span>{% endif %}
+                        </div>
+                        <h3>{{ entry.task.title }}</h3>
+                        {% if entry.task.description %}<p>{{ entry.task.description }}</p>{% endif %}
+                        <div class="trk-meta">
+                            <span class="{{ 'is-overdue' if entry.status == 'overdue' }}">до {{ entry.due_label }}</span>
+                        </div>
+                    </div>
+                    <div class="trk-row-actions">
+                        {% include "partials/task_action.html" %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% elif tab.reserved %}
+            <p class="lrn-empty">Раздел «Обратная связь» скоро откроется здесь.</p>
+            {% elif tab.kind != 'lesson' %}
+            <p class="lrn-empty">Здесь пока ничего нет.</p>
+            {% endif %}
+
+        {% endif %}
     </div>
     {% endfor %}
 
     <p class="lrn-empty lrn-subject-empty" hidden>По этому направлению на этой неделе задач нет.</p>
 
-    {% if topic %}
-    <div class="lrn-cards">
-        {% if topic.meeting_url %}
-        <a class="lrn-card" href="{{ topic.meeting_url }}" target="_blank" rel="noopener">
-            <div class="lrn-card-title">Занятие</div>
-            <p class="lrn-card-note">Ссылка на созвон недели.</p>
-            <span class="lrn-card-cta">Присоединиться →</span>
-        </a>
-        {% else %}
-        <div class="lrn-card is-disabled">
-            <div class="lrn-card-title">Занятие</div>
-            <p class="lrn-card-note">Ссылка на созвон появится позже.</p>
-        </div>
-        {% endif %}
-
-        <div class="lrn-card is-disabled">
-            <div class="lrn-card-title">Задание</div>
-            <p class="lrn-card-note">Скоро здесь появится домашнее задание недели.</p>
-        </div>
-
-        <div class="lrn-card is-disabled">
-            <div class="lrn-card-title">Анкета</div>
-            <p class="lrn-card-note">Скоро здесь появится анкета недели.</p>
-        </div>
-    </div>
-    {% else %}
-    <div class="lrn-empty">Пока нет ни одной доступной вам недели. Загляните позже.</div>
-    {% endif %}
-
     <div style="height:96px"></div>
 </div>
 
 <script>
-function lrnSwitchSubject(btn) {
+function lrnActivateTab(kind) {
+    // Переключатель вкладок недели — восемь пунктов в фиксированном порядке,
+    // клиентский показ/скрытие панели, без перезагрузки страницы.
+    document.querySelectorAll('.lrn-tabs .nav-pill-item').forEach(function (btn) {
+        var active = btn.getAttribute('data-tab') === kind;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    document.querySelectorAll('.lrn-tabpanel').forEach(function (panel) {
+        panel.hidden = panel.getAttribute('data-tabpanel') !== kind;
+    });
+    // Смена вкладки меняет, какая панель видна, — фильтр предмета должен
+    // пересчитаться для новой активной панели, иначе «пусто по направлению»
+    // будет показывать состояние прошлой вкладки.
+    lrnApplySubjectFilter();
+}
+
+function lrnApplySubjectFilter() {
     // Разводка по направлению, о которой просили на созвоне 17.08 (00:08:30):
     // выбрал «Рисунок» — видишь только рисунок. Фильтруем по `task.subject`,
     // поле уже есть у задачи и выводится бейджем рядом с названием.
     //
-    // Задачи без предмета видны всегда: занятие или анкета недели относятся к
-    // обоим направлениям, и прятать их переключателем было бы враньём.
-    // Карточки «Занятие / Задание / Анкета» ниже — уровня недели, не предмета,
-    // их переключатель тоже не трогает.
-    var subject = btn.getAttribute('data-subject');
-    document.querySelectorAll('.lrn-subject-btn').forEach(function (b) {
-        b.classList.toggle('active', b === btn);
-        b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
-    });
-
-    var visible = 0;
-    document.querySelectorAll('.lrn-daygroup').forEach(function (group) {
-        var shown = 0;
-        group.querySelectorAll('.trk-item[data-subject]').forEach(function (row) {
+    // Задачи без предмета видны всегда: занятие/анкета/эфир без привязки к
+    // предмету относятся к обоим направлениям, и прятать их переключателем
+    // было бы враньём (решение владельца 22.08, элементы без предмета).
+    var activeBtn = document.querySelector('.lrn-subject-btn.active');
+    var subject = activeBtn ? activeBtn.getAttribute('data-subject') : null;
+    var panel = document.querySelector('.lrn-tabpanel:not([hidden])');
+    var totalRows = 0;
+    var shown = 0;
+    if (panel) {
+        panel.querySelectorAll('.trk-item[data-subject]').forEach(function (row) {
+            totalRows += 1;
             var rowSubject = row.getAttribute('data-subject');
             var show = !rowSubject || rowSubject === subject;
             row.hidden = !show;
             if (show) shown += 1;
         });
-        // День без единой видимой задачи прячем вместе с его заголовком,
-        // иначе на экране остаётся дата без содержимого.
-        group.hidden = shown === 0;
-        visible += shown;
-    });
-
+    }
     var empty = document.querySelector('.lrn-subject-empty');
-    if (empty) empty.hidden = visible > 0;
+    if (empty) empty.hidden = !(totalRows > 0 && shown === 0);
+}
+
+function lrnSwitchSubject(btn) {
+    document.querySelectorAll('.lrn-subject-btn').forEach(function (b) {
+        b.classList.toggle('active', b === btn);
+        b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
+    });
+    lrnApplySubjectFilter();
 }
 
 // Применяем фильтр сразу при загрузке: иначе кнопка «Рисунок» подсвечена, а в
-// списке лежат задачи обоих направлений — экран противоречит сам себе.
+// активной вкладке лежат задачи обоих направлений — экран противоречит сам себе.
 (function () {
-    var active = document.querySelector('.lrn-subject-btn.active');
-    if (active) lrnSwitchSubject(active);
+    lrnApplySubjectFilter();
 })();
 
 (function () {

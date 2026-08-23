@@ -170,3 +170,60 @@
     .trk-weekcell-dow { font-size: 9px; }
     .trk-weekcell-num { font-size: 14px; }
 }
+
+/* ── АОП: шапка, переключатель предмета, вкладки недели, карточки ────── */
+
+.lrn-page { max-width: 1080px; margin: 0 auto; padding: 22px 18px 110px; }
+.lrn-hero {
+    background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue-mid) 100%);
+    color: #fff; border-radius: var(--r-xl); padding: 18px 22px;
+    margin-bottom: 16px; box-shadow: var(--sh-blue);
+}
+.lrn-hero h1 {
+    font-family: var(--font-display); font-size: 22px; font-weight: 800;
+    letter-spacing: -0.02em; margin: 0 0 4px;
+}
+.lrn-hero p { margin: 0; opacity: 0.85; font-size: 13px; line-height: 1.4; }
+
+.lrn-subject-toggle {
+    display: flex; gap: 2px; padding: 4px; margin: 0 0 16px;
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: var(--r-pill);
+}
+.lrn-subject-btn {
+    flex: 1; text-align: center; padding: 10px 14px;
+    font-size: 14px; font-weight: 800; letter-spacing: 0.01em;
+    color: var(--muted); cursor: pointer; border: none; background: none;
+    border-radius: var(--r-pill); transition: background .15s, color .15s;
+    font-family: var(--font-body);
+}
+.lrn-subject-btn.active { background: var(--surface); color: var(--blue); box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+
+/* Вкладки недели — восемь пунктов в фиксированном порядке, .nav-pill из
+   base.css. Своя обёртка нужна только для горизонтального скролла на узких
+   экранах: восемь подписей в один ряд не помещаются на телефоне. */
+.lrn-tabs {
+    display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 4px;
+    margin: 0 0 16px; -webkit-overflow-scrolling: touch;
+}
+.lrn-tabs .nav-pill-item { flex: 0 0 auto; white-space: nowrap; }
+
+.lrn-tabpanel { display: flex; flex-direction: column; gap: 12px; }
+
+.lrn-cards { display: flex; flex-direction: column; gap: 12px; }
+.lrn-card {
+    display: block; padding: 16px 18px; border: 1px solid var(--line);
+    border-radius: var(--r-xl); background: var(--surface);
+    text-decoration: none; color: inherit; transition: border-color .15s;
+}
+.lrn-card:hover { border-color: var(--blue); }
+.lrn-card.is-disabled { opacity: 0.55; cursor: default; }
+.lrn-card.is-disabled:hover { border-color: var(--line); }
+.lrn-card-title { font-size: 15px; font-weight: 800; margin: 0 0 4px; }
+.lrn-card-note { font-size: 13px; color: var(--dim); margin: 0; line-height: 1.4; }
+.lrn-card-cta { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--blue); }
+.lrn-card.is-disabled .lrn-card-cta { color: var(--dim); }
+
+.lrn-empty {
+    text-align: center; padding: 48px 20px; color: var(--dim);
+}

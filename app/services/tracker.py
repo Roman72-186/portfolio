@@ -26,6 +26,9 @@ from app.models.tracker import (
     SOURCE_LEARNING_TOPIC,
     STATUS_DONE,
     STATUS_OPEN,
+    TAB_KIND_FEEDBACK,
+    WEEK_TAB_LABELS,
+    WEEK_TAB_SEQUENCE,
     TrackerTask,
     TrackerTaskAssignee,
     TrackerTaskState,
@@ -432,6 +435,41 @@ def accessible_task_entries(
             else None,
         })
     return entries
+
+
+def build_week_tabs(entries: list[dict]) -> list[dict]:
+    """Восемь вкладок недели АОП в фиксированном порядке `WEEK_TAB_SEQUENCE`,
+    с блокировкой «следующая вкладка открыта, только когда закрыта предыдущая»
+    (решение владельца 22.08/23.08).
+
+    Чистая функция без похода в БД: `entries` уже посчитаны
+    `accessible_task_entries` вместе со статусом. Вкладка без единой задачи
+    (сейчас так у «Материалов», «Теста по теории», «Чек-листа и проверок» —
+    для них ещё нет конструктора создания) блокировать нечем — она пропускает
+    цепочку дальше, не запирая следующую. Причина блокировки («Сначала
+    сделай …») держится на первой реально незакрытой вкладке и не сдвигается,
+    пока по ней не появится статус done у всех задач.
+    """
+    by_kind: dict[str, list[dict]] = {}
+    for entry in entries:
+        by_kind.setdefault(entry["task"].kind, []).append(entry)
+
+    tabs = []
+    locked_reason: str | None = None
+    for kind in WEEK_TAB_SEQUENCE:
+        tab_entries = by_kind.get(kind, [])
+        is_locked = locked_reason is not None
+        tabs.append({
+            "kind": kind,
+            "label": WEEK_TAB_LABELS[kind],
+            "entries": tab_entries,
+            "is_locked": is_locked,
+            "locked_reason": locked_reason,
+            "reserved": kind == TAB_KIND_FEEDBACK,
+        })
+        if not is_locked and tab_entries and any(e["status"] != "done" for e in tab_entries):
+            locked_reason = WEEK_TAB_LABELS[kind]
+    return tabs
 
 
 def close_task_for_user(

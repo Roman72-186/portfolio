@@ -55,10 +55,14 @@ ITEM_HOMEWORK = "homework"    # домашнее задание
 ITEM_MOCK_EXAM = "mock_exam"  # пробник
 ITEM_SURVEY = "survey"        # анкета
 ITEM_LESSON = "lesson"        # занятие или эфир
+ITEM_MATERIAL = "material"    # материалы недели
+ITEM_QUIZ = "quiz"            # тест по теории
+ITEM_CHECKLIST = "checklist"  # чек-лист и проверки
 ITEM_OTHER = "other"          # всё остальное, в том числе разовые задачи вне недели
 
 ITEM_KINDS = (
-    ITEM_VIDEO, ITEM_HOMEWORK, ITEM_MOCK_EXAM, ITEM_SURVEY, ITEM_LESSON, ITEM_OTHER,
+    ITEM_VIDEO, ITEM_HOMEWORK, ITEM_MOCK_EXAM, ITEM_SURVEY, ITEM_LESSON,
+    ITEM_MATERIAL, ITEM_QUIZ, ITEM_CHECKLIST, ITEM_OTHER,
 )
 
 # Подписи рядом с типами: их показывают и конструктор, и календарь программы, и
@@ -69,7 +73,36 @@ ITEM_KIND_LABELS = {
     ITEM_MOCK_EXAM: "Пробник",
     ITEM_SURVEY: "Анкета",
     ITEM_LESSON: "Занятие",
+    ITEM_MATERIAL: "Материал",
+    ITEM_QUIZ: "Тест по теории",
+    ITEM_CHECKLIST: "Чек-лист и проверки",
     ITEM_OTHER: "Другое",
+}
+
+# Порядок восьми вкладок недели на «Актуальном образовательном пространстве» —
+# решение владельца 22.08 (уточнено текстом и повторно в чате 23.08), см.
+# plans/2026-08-22-apparchi-student-cabinet-open-questions.md, п.7. Порядок
+# фиксирован, пока не появится конструктор последовательностей блоков (п.14,
+# отдельная будущая стройка) — тогда станет настраиваемым.
+#
+# TAB_KIND_FEEDBACK — виртуальная восьмая вкладка: у неё нет TrackerTask.kind,
+# это задел под шаг 4 (возврат «Обратной связи» поверх ExamCycle/Feedback).
+TAB_KIND_FEEDBACK = "feedback"
+
+WEEK_TAB_SEQUENCE = (
+    ITEM_MATERIAL, ITEM_VIDEO, ITEM_QUIZ, ITEM_LESSON,
+    ITEM_HOMEWORK, ITEM_CHECKLIST, ITEM_SURVEY, TAB_KIND_FEEDBACK,
+)
+
+WEEK_TAB_LABELS = {
+    ITEM_MATERIAL: "Материалы",
+    ITEM_VIDEO: "Видео",
+    ITEM_QUIZ: "Тест по теории",
+    ITEM_LESSON: "Занятие",
+    ITEM_HOMEWORK: "Задание",
+    ITEM_CHECKLIST: "Чек-лист и проверки",
+    ITEM_SURVEY: "Анкета",
+    TAB_KIND_FEEDBACK: "Обратная связь",
 }
 
 STATUS_OPEN = "open"

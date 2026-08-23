@@ -83,20 +83,85 @@ def test_learning_bottom_nav_highlights_learning_tab(auth_client, db):
     assert 'class="bottom-nav"' in resp.text
 
 
-# ── Полоска недели и разбивка по дням (21.08) ───────────────────────────────
+# ── Вкладки недели вместо календаря по датам (22.08/23.08) ──────────────────
 
 def test_learning_shows_current_week_task(auth_client, db):
     client, user = auth_client
     day = week_start(today_msk()) + timedelta(days=2)
     due = day_bounds(day)[0] + timedelta(hours=10)
-    task = create_task(db, title="Сдать эскиз", user_id=user.id, due_at=due, assign_to_all=True)
+    task = create_task(
+        db, title="Сдать эскиз", user_id=user.id, due_at=due,
+        assign_to_all=True, kind="homework",
+    )
     task.is_published = True
     db.commit()
 
     resp = client.get("/cabinet/learning")
     assert resp.status_code == 200
     assert "Сдать эскиз" in resp.text
-    assert 'class="trk-weekstrip"' in resp.text
+    assert 'class="lrn-tabs nav-pill"' in resp.text
+    assert 'data-tab="homework"' in resp.text
+
+
+def test_learning_shows_eight_tabs_in_fixed_order(auth_client, db):
+    client, _ = auth_client
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    order = [
+        "Материалы", "Видео", "Тест по теории", "Занятие",
+        "Задание", "Чек-лист и проверки", "Анкета", "Обратная связь",
+    ]
+    # Ищем именно подписи кнопок вкладок, а не любое вхождение слова —
+    # «Задание»/«Анкета»/«Занятие» встречаются ещё и во вступительном тексте
+    # шапки («Задание, анкета и занятие текущей недели — в одном месте»).
+    positions = [resp.text.index(f">{label}</button>") for label in order]
+    assert positions == sorted(positions)
+
+
+def test_learning_unfinished_task_locks_next_tab(auth_client, db):
+    client, user = auth_client
+    day = week_start(today_msk()) + timedelta(days=1)
+    due = day_bounds(day)[0] + timedelta(hours=10)
+    task = create_task(
+        db, title="Домашка недели", user_id=user.id, due_at=due,
+        assign_to_all=True, kind="homework",
+    )
+    task.is_published = True
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    # «Задание» (homework) не сдано — следующая по порядку вкладка «Чек-лист
+    # и проверки» заперта с указанием причины.
+    assert "Сначала сделай «Задание»." in resp.text
+
+
+def test_learning_empty_tab_does_not_lock_next(auth_client, db):
+    """На неделе нет ни материалов, ни видео, ни теста — эти вкладки пустые,
+    но не запирают «Занятие»: блокировать нечем (решение владельца 23.08).
+    Занятие ещё не сдано — оно само откроется, а уже дальше по цепочке
+    («Задание» и т.д.) закономерно запрётся, это не проверяем здесь."""
+    client, user = auth_client
+    day = week_start(today_msk()) + timedelta(days=1)
+    due = day_bounds(day)[0] + timedelta(hours=10)
+    task = create_task(
+        db, title="Эфир недели", user_id=user.id, due_at=due,
+        assign_to_all=True, kind="lesson",
+    )
+    task.is_published = True
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert "Эфир недели" in resp.text
+    # Пустые «Материалы»/«Видео»/«Тест по теории» не запирают «Занятие» —
+    # его контент виден, а не спрятан за карточкой «Сначала сделай …».
+    lesson_panel_start = resp.text.index('data-tabpanel="lesson"')
+    lesson_panel_end = resp.text.index('data-tabpanel="homework"')
+    lesson_panel = resp.text[lesson_panel_start:lesson_panel_end]
+    assert "Эфир недели" in lesson_panel
+    assert "Сначала сделай" not in lesson_panel
 
 
 def test_learning_task_outside_current_week_not_shown(auth_client, db):
@@ -182,4 +247,4 @@ def test_learning_marks_task_subject_for_the_switch(auth_client, db):
     assert resp.status_code == 200
     assert 'data-subject="Рисунок"' in resp.text
     # Переключатель обязан стоять выше списка, который фильтрует.
-    assert resp.text.index('class="lrn-subject-toggle"') < resp.text.index('class="trk-weekstrip"')
+    assert resp.text.index('class="lrn-subject-toggle"') < resp.text.index('class="lrn-tabs nav-pill"')
