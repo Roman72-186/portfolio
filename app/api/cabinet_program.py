@@ -24,14 +24,17 @@ from app.dependencies import require_admin_role, require_csrf, require_csrf_head
 from app.models.audit_log import AuditLog
 from app.models.exam_assignment import ExamAssignment
 from app.models.learning_video import LearningVideo
+from app.models.survey import QUESTION_TYPE_LABELS, QUESTION_TYPES
 from app.models.tracker import (
     ITEM_HOMEWORK,
     ITEM_KIND_LABELS,
     ITEM_MOCK_EXAM,
+    ITEM_SURVEY,
     ITEM_VIDEO,
     SOURCE_EXAM_ASSIGNMENT,
     SOURCE_HOMEWORK,
     SOURCE_LEARNING_TOPIC,
+    SOURCE_SURVEY,
 )
 from app.services import s3 as s3_service
 from app.services.exam_tickets import (
@@ -57,6 +60,12 @@ from app.services.program import (
     set_item_audience,
     shift_month,
     tags_split,
+)
+from app.services.survey import (
+    create_survey_with_questions,
+    get_survey,
+    list_surveys,
+    question_counts as survey_question_counts,
 )
 from app.services.tracker import (
     create_homework,
@@ -148,6 +157,8 @@ def program_day(
     today = today_msk()
     items = items_for_day(db, day)
     tariff_tags, other_tags = tags_split(db)
+    surveys = list_surveys(db)
+    survey_counts = survey_question_counts(db, [s.id for s in surveys])
     return templates.TemplateResponse(
         "cabinet_program_day.html",
         {
@@ -169,6 +180,16 @@ def program_day(
             "mock_defaults": default_schedule_for_day(day),
             "tariff_tags": tariff_tags,
             "other_tags": other_tags,
+            # Анкета — переиспользуемый шаблон (owner-решение 22–23.08): конструктор
+            # предлагает готовые анкеты, чтобы не набирать один и тот же опрос
+            # заново на каждой из восьми точек года.
+            "surveys": [
+                {"id": s.id, "title": s.title, "question_count": survey_counts.get(s.id, 0)}
+                for s in surveys
+            ],
+            "question_types": [
+                {"value": t, "label": QUESTION_TYPE_LABELS[t]} for t in QUESTION_TYPES
+            ],
         },
     )
 
@@ -450,6 +471,40 @@ class HomeworkItemPayload(BaseModel):
         return value
 
 
+class SurveyOptionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=300)
+    is_correct: bool = False
+
+
+class SurveyQuestionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=500)
+    question_type: str = Field(default="text")
+    options: list[SurveyOptionPayload] = Field(default_factory=list, max_length=20)
+
+    @field_validator("question_type")
+    @classmethod
+    def validate_question_type(cls, value: str) -> str:
+        if value not in QUESTION_TYPES:
+            raise ValueError("Unknown question type")
+        return value
+
+
+class SurveyItemPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Готовый шаблон вместо новой анкеты: survey_id задан — title/questions
+    # игнорируются, вопросы не копируются и не трогаются (owner-решение,
+    # анкета переиспользуется на восьми точках года).
+    survey_id: int | None = Field(default=None, ge=1)
+    title: str | None = Field(default=None, max_length=200)
+    questions: list[SurveyQuestionPayload] = Field(default_factory=list, max_length=50)
+    audience: AudiencePayload = Field(default_factory=AudiencePayload)
+
+
 def _audience_reply(db: DBSession, audience: AudiencePayload, tag_ids, not_found) -> dict:
     return {
         "ok": True,
@@ -615,6 +670,82 @@ def create_homework_item(
             performed_by_id=user["user_id"],
             details=json.dumps(
                 {"day": iso, "homework_id": homework.id}, ensure_ascii=False
+            ),
+        )
+    )
+    db.commit()
+    return JSONResponse(_audience_reply(db, payload.audience, tag_ids, not_found))
+
+
+@router.post("/{iso}/survey", response_class=JSONResponse)
+def create_survey_item(
+    iso: str,
+    payload: SurveyItemPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Анкета в дне: готовый шаблон из базы или новая, собранная на месте.
+
+    `survey_id` задан — переиспользуем анкету как есть (owner-решение:
+    анкета показывается несколько раз за год, вопросы не копируются). Иначе
+    заводим новую анкету с вопросами тем же конструктором.
+    """
+    day = _parse_day(iso)
+    _guard_future(day)
+    tag_ids, assignee_ids, not_found = _resolve_audience(db, payload.audience)
+
+    if payload.survey_id is not None:
+        survey = get_survey(db, payload.survey_id)
+        if survey is None:
+            raise HTTPException(status_code=404, detail="Анкета не найдена")
+    else:
+        title = (payload.title or "").strip()
+        if not title:
+            raise HTTPException(status_code=422, detail="Укажите название анкеты")
+        if not payload.questions:
+            raise HTTPException(status_code=422, detail="Добавьте хотя бы один вопрос")
+        survey = create_survey_with_questions(
+            db,
+            title=title,
+            questions=[q.model_dump() for q in payload.questions],
+            user_id=user["user_id"],
+        )
+
+    topic = ensure_item_topic(
+        db, title=f"Анкета · {survey.title}", day=day, user_id=user["user_id"]
+    )
+    set_item_audience(
+        db,
+        topic,
+        assign_to_all=payload.audience.assign_to_all,
+        tag_ids=tag_ids,
+        assignee_ids=assignee_ids,
+    )
+    task = create_task(
+        db,
+        title=survey.title,
+        # Конец дня минус минута — тот же приём, что у самостоятельной работы:
+        # верхняя граница суток принадлежит уже следующему дню.
+        due_at=day_bounds(day)[1] - timedelta(minutes=1),
+        topic_id=topic.id,
+        kind=ITEM_SURVEY,
+        source_kind=SOURCE_SURVEY,
+        source_id=survey.id,
+        user_id=user["user_id"],
+    )
+    task.is_published = True
+    db.add(
+        AuditLog(
+            action="program_survey_create",
+            performed_by_id=user["user_id"],
+            details=json.dumps(
+                {
+                    "day": iso,
+                    "survey_id": survey.id,
+                    "reused": payload.survey_id is not None,
+                },
+                ensure_ascii=False,
             ),
         )
     )

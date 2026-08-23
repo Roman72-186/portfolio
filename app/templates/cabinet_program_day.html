@@ -8,7 +8,7 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=2">
+<link rel="stylesheet" href="/static/css/program.css?v=3">
 {% endblock %}
 {% block content %}
 <div class="prg-page" data-day="{{ day_iso }}">
@@ -47,6 +47,13 @@ FORM: Operate.
             <span>
                 <strong>Самостоятельная работа</strong>
                 <small>Условие, референсы, сдача работы</small>
+            </span>
+        </button>
+        <button type="button" class="prg-tile" data-open-form="survey">
+            <span class="prg-tile-icon" aria-hidden="true">☑</span>
+            <span>
+                <strong>Анкета</strong>
+                <small>Готовый шаблон или новые вопросы</small>
             </span>
         </button>
     </div>
@@ -221,6 +228,53 @@ FORM: Operate.
         </div>
         <p class="prg-message" data-form-message></p>
     </form>
+
+    <form class="prg-form" data-form="survey" hidden>
+        <h2>Анкета на {{ day.day }} число</h2>
+        <p class="prg-hint">
+            Анкета — переиспользуемый шаблон: выберите готовую, если этот же
+            набор вопросов уже показывался раньше, или соберите новый.
+        </p>
+
+        <div class="prg-grid2">
+            <label class="prg-field prg-field--row">
+                <input type="radio" name="survey-mode" data-s-mode value="new" checked>
+                <span>Новая анкета</span>
+            </label>
+            <label class="prg-field prg-field--row">
+                <input type="radio" name="survey-mode" data-s-mode value="existing" {% if not surveys %}disabled{% endif %}>
+                <span>Уже есть в базе{% if not surveys %} — пока пусто{% endif %}</span>
+            </label>
+        </div>
+
+        <div data-survey-existing hidden>
+            <label class="prg-field">Какую анкету поставить в этот день
+                <select data-s-existing>
+                    <option value="">— выберите анкету —</option>
+                    {% for survey in surveys %}
+                    <option value="{{ survey.id }}">{{ survey.title }} — вопросов: {{ survey.question_count }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+
+        <div data-survey-new>
+            <label class="prg-field">Название анкеты
+                <input type="text" data-s-title maxlength="200" autocomplete="off">
+            </label>
+            <div data-s-questions></div>
+            <div class="prg-actions">
+                <button type="button" class="btn-outline" data-add-question>Добавить вопрос</button>
+            </div>
+        </div>
+
+        {{ audience_block('survey') }}
+        <div class="prg-actions">
+            <button type="button" class="btn-blue" data-survey-save>Сохранить</button>
+            <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
+        </div>
+        <p class="prg-message" data-form-message></p>
+    </form>
     {% endif %}
 
     <section class="prg-items">
@@ -239,6 +293,7 @@ FORM: Operate.
                     {% if detail.homework %}
                     <span>{% if detail.homework.submission_required %}со сдачей работы{% else %}без загрузки файлов{% endif %}</span>
                     {% endif %}
+                    {% if detail.survey %}<span>Вопросов: {{ detail.survey_question_count }}</span>{% endif %}
                 </div>
             </div>
             {% if not is_past %}
@@ -362,9 +417,11 @@ FORM: Operate.
     // ── Видео и самостоятельная работа ──────────────────────────────────
     var videoForm = document.querySelector('[data-form="video"]');
     var homeworkForm = document.querySelector('[data-form="homework"]');
+    var surveyForm = document.querySelector('[data-form="survey"]');
     var coverImage = {url: null, path: null};
     var homeworkImages = [];
     var uploadedVideoId = null;
+    var questionTypes = {{ question_types|tojson }};
 
     function setMessage(form, text, isError) {
         var box = form.querySelector('[data-form-message]');
@@ -530,6 +587,93 @@ FORM: Operate.
                     renderHomeworkThumbs();
                     event.target.value = '';
                 });
+            }
+        });
+    }
+
+    // ── Анкета ──────────────────────────────────────────────────────────
+    // Вопрос — карточка вида ticketHTML: своё поле текста, тип ответа и
+    // блок вариантов, который виден только для single/multiple.
+    function optionHTML() {
+        return ''
+            + '<div class="prg-option" data-option>'
+            + '  <input type="text" data-o-text maxlength="300" placeholder="Вариант ответа">'
+            + '  <label><input type="checkbox" data-o-correct> Верный</label>'
+            + '  <button type="button" class="btn-outline" data-remove-option>Убрать</button>'
+            + '</div>';
+    }
+
+    function questionTypeOptions() {
+        return questionTypes.map(function (qt) {
+            return '<option value="' + qt.value + '">' + qt.label + '</option>';
+        }).join('');
+    }
+
+    function questionHTML(number) {
+        return ''
+            + '<div class="prg-ticket" data-question>'
+            + '  <div class="prg-ticket-head"><strong>Вопрос ' + number + '</strong>'
+            + '    <button type="button" class="btn-outline" data-remove-question>Убрать</button></div>'
+            + '  <label class="prg-field">Текст вопроса<textarea data-q-text maxlength="500"></textarea></label>'
+            + '  <label class="prg-field">Тип ответа<select data-q-type>' + questionTypeOptions() + '</select></label>'
+            + '  <div data-q-options>'
+            + '    <div data-options-list></div>'
+            + '    <div class="prg-actions"><button type="button" class="btn-outline" data-add-option>Добавить вариант</button></div>'
+            + '  </div>'
+            + '</div>';
+    }
+
+    // Тип «свободный текст» не показывает варианты — гейт по значению select,
+    // синхронизируется при каждой смене типа и сразу после создания вопроса.
+    function syncQuestionOptions(card) {
+        var type = card.querySelector('[data-q-type]').value;
+        card.querySelector('[data-q-options]').hidden = type === 'text';
+    }
+
+    function addQuestion() {
+        var holder = surveyForm.querySelector('[data-s-questions]');
+        holder.insertAdjacentHTML('beforeend', questionHTML(holder.children.length + 1));
+        var card = holder.lastElementChild;
+        var optionsList = card.querySelector('[data-options-list]');
+        optionsList.insertAdjacentHTML('beforeend', optionHTML());
+        optionsList.insertAdjacentHTML('beforeend', optionHTML());
+        syncQuestionOptions(card);
+    }
+
+    function collectSurveyQuestions() {
+        var questions = [];
+        surveyForm.querySelectorAll('[data-question]').forEach(function (card) {
+            var text = card.querySelector('[data-q-text]').value.trim();
+            if (!text) return;
+            var type = card.querySelector('[data-q-type]').value;
+            var options = [];
+            if (type !== 'text') {
+                card.querySelectorAll('[data-option]').forEach(function (row) {
+                    var optionText = row.querySelector('[data-o-text]').value.trim();
+                    if (!optionText) return;
+                    options.push({
+                        text: optionText,
+                        is_correct: row.querySelector('[data-o-correct]').checked
+                    });
+                });
+            }
+            questions.push({text: text, question_type: type, options: options});
+        });
+        return questions;
+    }
+
+    if (surveyForm) {
+        surveyForm.addEventListener('change', function (event) {
+            if (event.target.hasAttribute('data-audience-all')) {
+                surveyForm.querySelector('[data-audience-picker]').hidden = event.target.checked;
+            }
+            if (event.target.hasAttribute('data-s-mode')) {
+                var isExisting = event.target.value === 'existing';
+                surveyForm.querySelector('[data-survey-existing]').hidden = !isExisting;
+                surveyForm.querySelector('[data-survey-new]').hidden = isExisting;
+            }
+            if (event.target.hasAttribute('data-q-type')) {
+                syncQuestionOptions(event.target.closest('[data-question]'));
             }
         });
     }
@@ -710,6 +854,51 @@ FORM: Operate.
             }).then(afterSave).catch(function (error) {
                 saveHomework.disabled = false;
                 setMessage(homeworkForm, saveError(error, 'задание'), true);
+            });
+            return;
+        }
+
+        if (event.target.closest('[data-add-question]')) { addQuestion(); return; }
+
+        var removeQuestion = event.target.closest('[data-remove-question]');
+        if (removeQuestion) { removeQuestion.closest('[data-question]').remove(); return; }
+
+        var addOption = event.target.closest('[data-add-option]');
+        if (addOption) {
+            addOption.closest('[data-question]')
+                .querySelector('[data-options-list]')
+                .insertAdjacentHTML('beforeend', optionHTML());
+            return;
+        }
+
+        var removeOption = event.target.closest('[data-remove-option]');
+        if (removeOption) { removeOption.closest('[data-option]').remove(); return; }
+
+        var saveSurvey = event.target.closest('[data-survey-save]');
+        if (saveSurvey) {
+            var audienceSurvey = readAudience(surveyForm);
+            if (!audienceSurvey) return;
+            var mode = surveyForm.querySelector('[data-s-mode]:checked').value;
+            var payload = {audience: audienceSurvey};
+            if (mode === 'existing') {
+                var surveyId = surveyForm.querySelector('[data-s-existing]').value;
+                if (!surveyId) { setMessage(surveyForm, 'Выберите анкету из списка.', true); return; }
+                payload.survey_id = Number(surveyId);
+            } else {
+                var titleSurvey = surveyForm.querySelector('[data-s-title]').value.trim();
+                if (!titleSurvey) { setMessage(surveyForm, 'Укажите название анкеты.', true); return; }
+                var questions = collectSurveyQuestions();
+                if (!questions.length) {
+                    setMessage(surveyForm, 'Добавьте хотя бы один вопрос с текстом.', true);
+                    return;
+                }
+                payload.title = titleSurvey;
+                payload.questions = questions;
+            }
+            saveSurvey.disabled = true;
+            api('/cabinet/staff/program/' + dayIso + '/survey', payload).then(afterSave).catch(function (error) {
+                saveSurvey.disabled = false;
+                setMessage(surveyForm, saveError(error, 'анкету'), true);
             });
             return;
         }

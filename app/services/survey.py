@@ -13,6 +13,7 @@
 
 from datetime import datetime, timezone
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.survey import (
@@ -34,6 +35,45 @@ def get_survey(db: Session, survey_id: int) -> Survey | None:
     if survey is None or survey.deleted_at is not None:
         return None
     return survey
+
+
+def list_surveys(db: Session) -> list[Survey]:
+    """Живые анкеты для конструктора: выбрать готовый шаблон вместо новой.
+
+    Анкета переиспользуется по всей карте (эмоциональный опрос на восемь точек
+    года), поэтому список нужен уже на первом шаге, до решения «новая или нет».
+    """
+    return (
+        db.query(Survey)
+        .filter(Survey.deleted_at.is_(None))
+        .order_by(Survey.title.asc())
+        .all()
+    )
+
+
+def get_surveys(db: Session, survey_ids: list[int]) -> dict[int, Survey]:
+    """Пакетная выборка анкет по id — для списков элементов дня, без N+1."""
+    if not survey_ids:
+        return {}
+    return {
+        s.id: s
+        for s in db.query(Survey)
+        .filter(Survey.id.in_(survey_ids), Survey.deleted_at.is_(None))
+        .all()
+    }
+
+
+def question_counts(db: Session, survey_ids: list[int]) -> dict[int, int]:
+    """Число вопросов на анкету — подписать пункт в списке готовых шаблонов."""
+    if not survey_ids:
+        return {}
+    rows = (
+        db.query(SurveyQuestion.survey_id, func.count(SurveyQuestion.id))
+        .filter(SurveyQuestion.survey_id.in_(survey_ids))
+        .group_by(SurveyQuestion.survey_id)
+        .all()
+    )
+    return {survey_id: count for survey_id, count in rows}
 
 
 def get_questions(db: Session, survey_id: int) -> list[SurveyQuestion]:

@@ -34,6 +34,12 @@ QUESTION_TEXT = "text"          # свободный текст, без вари
 
 QUESTION_TYPES = (QUESTION_SINGLE, QUESTION_MULTIPLE, QUESTION_TEXT)
 
+QUESTION_TYPE_LABELS = {
+    QUESTION_SINGLE: "Один вариант ответа",
+    QUESTION_MULTIPLE: "Несколько вариантов ответа",
+    QUESTION_TEXT: "Свободный текст",
+}
+
 
 class Survey(Base):
     """Сама анкета: заголовок и владелец конструктора."""
