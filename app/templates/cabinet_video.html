@@ -213,6 +213,27 @@ body.has-video-pseudo-fullscreen {
         Место просмотра сохраняется автоматически.
         {% endif %}
     </p>
+    {% if quiz_questions %}
+    <section id="video-quiz" class="card"{% if quiz_answers is none and not video_already_completed %} hidden{% endif %} aria-label="Мини-опрос по видео">
+        <h2 class="card-title">Пара вопросов о видео</h2>
+        {% if quiz_answers is not none %}
+        {% for question in quiz_questions %}
+        <p><span class="field-label">{{ question }}</span><span class="video-help">{{ quiz_answers[loop.index0] or '—' }}</span></p>
+        {% endfor %}
+        {% else %}
+        <form id="video-quiz-form" data-quiz-endpoint="{{ quiz_submit_endpoint }}">
+            {% for question in quiz_questions %}
+            <p>
+                <label class="field-label" for="video-quiz-q{{ loop.index }}">{{ question }}</label>
+                <textarea class="form-input" id="video-quiz-q{{ loop.index }}" rows="3" maxlength="2000"></textarea>
+            </p>
+            {% endfor %}
+            <button type="submit" class="btn-blue">Отправить</button>
+            <p id="video-quiz-status" class="video-progress-status" aria-live="polite"></p>
+        </form>
+        {% endif %}
+    </section>
+    {% endif %}
     <script>
     (function () {
         var frame = document.getElementById('bunny-stream-embed');
@@ -242,6 +263,45 @@ body.has-video-pseudo-fullscreen {
         function isStandaloneApp() {
             return window.navigator.standalone === true
                 || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+        }
+
+        var quizSection = document.getElementById('video-quiz');
+        function revealVideoQuiz() {
+            if (quizSection) quizSection.hidden = false;
+        }
+        var quizForm = document.getElementById('video-quiz-form');
+        if (quizForm) {
+            quizForm.addEventListener('submit', function (event) {
+                event.preventDefault();
+                var quizStatus = document.getElementById('video-quiz-status');
+                var textareas = quizForm.querySelectorAll('textarea');
+                var submitButton = quizForm.querySelector('button[type="submit"]');
+                var answers = Array.prototype.map.call(textareas, function (field) {
+                    return field.value;
+                });
+                submitButton.disabled = true;
+                fetch(quizForm.dataset.quizEndpoint, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: JSON.stringify({ answers: answers })
+                }).then(function (response) {
+                    if (!response.ok) throw new Error('quiz_save_failed');
+                    textareas.forEach(function (field) { field.disabled = true; });
+                    submitButton.hidden = true;
+                    if (quizStatus) quizStatus.textContent = 'Спасибо, ответ сохранён.';
+                }).catch(function () {
+                    submitButton.disabled = false;
+                    if (quizStatus) {
+                        quizStatus.textContent = 'Не удалось отправить ответ. Попробуйте ещё раз.';
+                        quizStatus.classList.add('is-error');
+                    }
+                });
+            });
         }
 
         if (iosInstallHint && isIosDevice() && !isStandaloneApp()) {
@@ -635,6 +695,13 @@ body.has-video-pseudo-fullscreen {
                 if (progress.completed) {
                     setStatus('Видео просмотрено. При следующем открытии начнём сначала.', false);
                 }
+                // Мини-опрос открывается по подтверждению сервера, а не по
+                // клиентской догадке (`progress.completed` выше — событие
+                // 'ended' плеера): досмотр считает сервер по своей длительности,
+                // и только его ответ достоверен.
+                return response.json().catch(function () { return null; });
+            }).then(function (data) {
+                if (data && data.completed) revealVideoQuiz();
             }).catch(function (error) {
                 if (error.message === 'session_expired') {
                     setStatus('Войдите заново, чтобы сохранять место просмотра.', true);

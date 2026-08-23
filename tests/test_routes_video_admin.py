@@ -770,3 +770,40 @@ def test_zero_server_duration_is_not_treated_as_known(auth_client, db, monkeypat
 
     assert response.json()["completed"] is False
     assert db.get(VideoProgress, (user.id, VIDEO_ID)).completed_at is None
+
+
+def test_metadata_update_saves_and_clears_quiz_questions(admin_client, db):
+    client, user = admin_client
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Урок",
+        status="ready",
+    )
+    db.add(video)
+    db.commit()
+
+    filled = client.post(
+        f"/cabinet/admin/videos/{video.id}/metadata",
+        json={
+            "title": "Урок",
+            "topic_id": None,
+            "quiz_question_1": "  Что было важным?  ",
+            "quiz_question_2": "",
+            "quiz_question_3": "Как применишь?",
+        },
+    )
+    assert filled.status_code == 200
+    db.refresh(video)
+    assert video.quiz_question_1 == "Что было важным?"
+    assert video.quiz_question_2 is None
+    assert video.quiz_question_3 == "Как применишь?"
+
+    cleared = client.post(
+        f"/cabinet/admin/videos/{video.id}/metadata",
+        json={"title": "Урок", "topic_id": None},
+    )
+    assert cleared.status_code == 200
+    db.refresh(video)
+    assert video.quiz_question_1 is None
+    assert video.quiz_question_3 is None

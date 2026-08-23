@@ -109,6 +109,11 @@ class UpdateVideoMetadata(BaseModel):
     description: str | None = Field(default=None, max_length=5000)
     # None — урок остаётся открытым всем ученикам; id — доступ идёт по теме.
     topic_id: int | None = Field(default=None, ge=1)
+    # Мини-опрос из трёх уточняющих вопросов после видео — каждый необязателен,
+    # пустой набор просто не показывает опрос ученику (app/services/video_quiz.py).
+    quiz_question_1: str | None = Field(default=None, max_length=300)
+    quiz_question_2: str | None = Field(default=None, max_length=300)
+    quiz_question_3: str | None = Field(default=None, max_length=300)
 
     @field_validator("title")
     @classmethod
@@ -118,7 +123,7 @@ class UpdateVideoMetadata(BaseModel):
             raise ValueError("Title cannot be empty")
         return value
 
-    @field_validator("description")
+    @field_validator("description", "quiz_question_1", "quiz_question_2", "quiz_question_3")
     @classmethod
     def strip_optional_description(cls, value: str | None) -> str | None:
         value = (value or "").strip()
@@ -362,6 +367,9 @@ def update_video_metadata(
     video.title = payload.title
     video.description = payload.description
     video.topic_id = payload.topic_id
+    video.quiz_question_1 = payload.quiz_question_1
+    video.quiz_question_2 = payload.quiz_question_2
+    video.quiz_question_3 = payload.quiz_question_3
     # Маршрут меняет привязку к теме, то есть кто вообще увидит урок. Без записи
     # переброс урока на «доступно всем» (topic_id=None) не оставлял следа.
     _audit(

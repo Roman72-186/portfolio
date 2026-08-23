@@ -31,6 +31,16 @@ class LearningVideo(Base):
         ForeignKey("learning_topics.id", ondelete="SET NULL"), nullable=True
     )
 
+    # Мини-опрос из трёх уточняющих вопросов, который встаёт сразу после
+    # просмотра (решение владельца 22.08, plans/2026-08-22-…, п.8.1). Каждый
+    # вопрос настраивает преподаватель в админке видео, пусто — вопрос не
+    # задан. Не путать с типом блока `survey`/анкетой недели — это отдельная
+    # небольшая стройка внутри видео-вкладки. Пустой набор — мини-опрос под
+    # роликом не показывается вовсе.
+    quiz_question_1: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    quiz_question_2: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    quiz_question_3: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="uploading")
     bunny_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
     encode_progress: Mapped[int | None] = mapped_column(Integer, nullable=True)

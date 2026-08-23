@@ -275,6 +275,9 @@ FORM: Operate, расширение существующего кабинета 
                                 {% endfor %}
                             </select>
                         </label>
+                        <label class="vam-field">Мини-опрос после видео — вопрос 1<input data-edit-quiz-q1 value="{{ video.quiz_question_1 or '' }}" maxlength="300" placeholder="Необязательно"></label>
+                        <label class="vam-field">Мини-опрос после видео — вопрос 2<input data-edit-quiz-q2 value="{{ video.quiz_question_2 or '' }}" maxlength="300" placeholder="Необязательно"></label>
+                        <label class="vam-field">Мини-опрос после видео — вопрос 3<input data-edit-quiz-q3 value="{{ video.quiz_question_3 or '' }}" maxlength="300" placeholder="Необязательно"></label>
                         <button type="button" class="btn-outline" data-video-action="metadata">Сохранить</button>
                     </div>
                 </details>
@@ -512,7 +515,10 @@ FORM: Operate, расширение существующего кабинета 
             body = {
                 title: row.querySelector('[data-edit-title]').value,
                 description: row.querySelector('[data-edit-description]').value,
-                topic_id: topicValue ? Number(topicValue) : null
+                topic_id: topicValue ? Number(topicValue) : null,
+                quiz_question_1: row.querySelector('[data-edit-quiz-q1]').value,
+                quiz_question_2: row.querySelector('[data-edit-quiz-q2]').value,
+                quiz_question_3: row.querySelector('[data-edit-quiz-q3]').value
             };
         }
         if (action === 'delete') {
