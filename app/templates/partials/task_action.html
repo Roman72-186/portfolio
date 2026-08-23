@@ -10,27 +10,32 @@
 просмотра, пробник без сдачи. Если на такие отметки повесят доступ к следующей
 неделе (решение Р1), это станет обходом в одно нажатие.
 
-**Галочку убираем только там, где задача закрывается сама.** Сегодня это один
-случай — видео с найденным роликом: `video.py::_close_video_task_once` закрывает
-задачу по первому «досмотрел». У домашки и пробника автозакрытия нет
-(`close_task_for_user` вызывается только из `video.py`), поэтому рядом с
-переходом на их экран остаётся и отметка — иначе такая задача не смогла бы
-уйти из «Просрочено» вообще и висела бы у ученика вечно. Когда сдача домашки и
-пробника начнут закрывать задачу сами, отметку отсюда можно убрать: условие
-одно, `autocloses`.
+**Галочку убираем только там, где задача закрывается сама.** Сегодня это два
+случая — видео с найденным роликом (`video.py::_close_video_task_once`
+закрывает задачу по первому «досмотрел») и анкета с живым `Survey`
+(`survey_submission.py::submit_student_survey` закрывает по факту отправки
+формы). У домашки и пробника автозакрытия нет (`close_task_for_user` вызывается
+только оттуда), поэтому рядом с переходом на их экран остаётся и отметка —
+иначе такая задача не смогла бы уйти из «Просрочено» вообще и висела бы у
+ученика вечно. Когда сдача домашки и пробника начнут закрывать задачу сами,
+отметку отсюда можно убрать: условие одно, `autocloses`.
 
 Требует в контексте: `entry` (запись из `accessible_task_entries`) и `details`
 (результат `program.py::item_details` — словарь по id задачи). Без `details`
-видео падает в обычную отметку, как и раньше.
+видео и анкета падают в обычную отметку, как и раньше.
 #}
 {% set task = entry.task %}
 {% set detail = (details or {}).get(task.id, {}) %}
-{% set autocloses = task.kind == 'video' and detail.video %}
+{% set video_autocloses = task.kind == 'video' and detail.video %}
+{% set survey_autocloses = task.kind == 'survey' and detail.survey %}
+{% set autocloses = video_autocloses or survey_autocloses %}
 
 {% if task.kind == 'mock_exam' %}
 <a class="btn-blue" href="/upload/mock-exam?subject={{ task.subject|urlencode }}">Начать пробник</a>
-{% elif autocloses %}
+{% elif video_autocloses %}
 <a class="btn-blue" href="/cabinet/videos/{{ detail.video.id }}">Смотреть</a>
+{% elif survey_autocloses %}
+<a class="btn-blue" href="/cabinet/survey/{{ task.id }}">Заполнить анкету</a>
 {% elif task.kind == 'homework' %}
 <a class="btn-blue" href="/cabinet/homework/{{ task.id }}">Открыть задание</a>
 {% endif %}

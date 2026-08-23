@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{#
+Заполнение анкеты учеником — вкладка «Анкета» в АОП. Свой блок <style> не
+заводим: разметка целиком на общих классах `program.css` (`.prg-page`,
+`.prg-head`, `.prg-option`) и `base.css` (`.card`, `.field-label`,
+`.form-input`, `.btn-blue`, `.btn-outline`) — новый <style> запрещает
+tests/test_reuse_ratchet.py.
+
+Ответ идемпотентен по task_id (см. докстроку `SurveyResponse`): форма не
+запирается после первой отправки, повторная отправка просто перезаписывает
+прошлый ответ — тот же принцип, что у пересдачи домашки.
+#}
+{% block title %}{{ survey.title }}{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=3">
+{% endblock %}
+{% block content %}
+<div class="prg-page">
+    <div class="prg-head">
+        <div class="prg-head-copy">
+            <h1>{{ survey.title }}</h1>
+            {% if already_answered %}
+            <p>Ответ уже сохранён — можно изменить и отправить снова.</p>
+            {% endif %}
+        </div>
+        <a class="btn-outline" href="{{ back_url }}">Назад</a>
+    </div>
+
+    <div class="card">
+        {% if not survey.questions %}
+        <p class="card-desc">В этой анкете пока нет вопросов.</p>
+        <button type="button" class="btn-blue" id="survey-submit" data-survey-endpoint="{{ submit_endpoint }}">Отметить как заполненную</button>
+        {% else %}
+        <form id="survey-form" data-survey-endpoint="{{ submit_endpoint }}">
+            {% for question in survey.questions %}
+            {% set saved = existing_answers.get(question.id, {}) %}
+            <div style="margin-bottom:22px;">
+                <label class="field-label">{{ question.text }}</label>
+
+                {% if question.question_type == 'text' %}
+                <textarea class="form-input" data-question="{{ question.id }}" data-type="text" rows="3" maxlength="2000">{{ saved.text or '' }}</textarea>
+
+                {% elif question.question_type == 'single' %}
+                {% for option in question.options %}
+                <div class="prg-option">
+                    <label>
+                        <input type="radio" name="q-{{ question.id }}" value="{{ option.id }}" data-question="{{ question.id }}" data-type="single"
+                            {% if option.id in (saved.option_ids or []) %}checked{% endif %}>
+                        <span>{{ option.text }}</span>
+                    </label>
+                </div>
+                {% endfor %}
+
+                {% elif question.question_type == 'multiple' %}
+                {% for option in question.options %}
+                <div class="prg-option">
+                    <label>
+                        <input type="checkbox" name="q-{{ question.id }}" value="{{ option.id }}" data-question="{{ question.id }}" data-type="multiple"
+                            {% if option.id in (saved.option_ids or []) %}checked{% endif %}>
+                        <span>{{ option.text }}</span>
+                    </label>
+                </div>
+                {% endfor %}
+                {% endif %}
+            </div>
+            {% endfor %}
+
+            <button type="submit" class="btn-blue">Отправить</button>
+            <p id="survey-status" class="video-progress-status" aria-live="polite"></p>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+(function () {
+    var csrfToken = {{ csrf_token(request)|tojson }};
+
+    function collectAnswers(root) {
+        var byQuestion = {};
+        root.querySelectorAll('[data-question]').forEach(function (field) {
+            var questionId = Number(field.getAttribute('data-question'));
+            var type = field.getAttribute('data-type');
+            if (!byQuestion[questionId]) {
+                byQuestion[questionId] = { question_id: questionId, text: null, option_ids: [] };
+            }
+            if (type === 'text') {
+                byQuestion[questionId].text = field.value;
+            } else if (field.checked) {
+                byQuestion[questionId].option_ids.push(Number(field.value));
+            }
+        });
+        return Object.keys(byQuestion).map(function (id) { return byQuestion[id]; });
+    }
+
+    function submitAnswers(endpoint, answers, statusEl, button) {
+        if (button) button.disabled = true;
+        return fetch(endpoint, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify({ answers: answers })
+        }).then(function (response) {
+            if (!response.ok) throw new Error('survey_submit_failed');
+            if (statusEl) statusEl.textContent = 'Спасибо, ответ сохранён.';
+            if (statusEl) statusEl.classList.remove('is-error');
+        }).catch(function () {
+            if (statusEl) {
+                statusEl.textContent = 'Не удалось отправить ответ. Попробуйте ещё раз.';
+                statusEl.classList.add('is-error');
+            }
+        }).finally(function () {
+            if (button) button.disabled = false;
+        });
+    }
+
+    var form = document.getElementById('survey-form');
+    if (form) {
+        form.addEventListener('submit', function (event) {
+            event.preventDefault();
+            var button = form.querySelector('button[type="submit"]');
+            var statusEl = document.getElementById('survey-status');
+            submitAnswers(form.dataset.surveyEndpoint, collectAnswers(form), statusEl, button);
+        });
+    }
+
+    var emptyButton = document.getElementById('survey-submit');
+    if (emptyButton) {
+        emptyButton.addEventListener('click', function () {
+            submitAnswers(emptyButton.dataset.surveyEndpoint, [], null, emptyButton).then(function () {
+                emptyButton.textContent = 'Готово';
+            });
+        });
+    }
+})();
+</script>
+{% endblock %}

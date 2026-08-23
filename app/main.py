@@ -21,6 +21,7 @@ from app.api import guest_exam, cabinet_guest_exam_admin
 from app.api import cabinet_learning, cabinet_personal, cabinet_tracker_admin, cabinet_program
 from app.api import cabinet_tracker
 from app.api import homework_submission
+from app.api import survey_submission
 from app.limiter import limiter
 from app.services.rbac import seed_roles_and_permissions
 from app.services import n8n as n8n_service
@@ -291,6 +292,7 @@ app.include_router(cabinet_tracker_admin.router)
 app.include_router(cabinet_program.router)
 app.include_router(cabinet_tracker.router)
 app.include_router(homework_submission.router)
+app.include_router(survey_submission.router)
 
 
 @app.get("/health")
