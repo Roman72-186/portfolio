@@ -68,7 +68,31 @@
                 {% endif %}
             {% endif %}
 
-            {% if tab.entries %}
+            {% if tab.kind == 'feedback' %}
+                {# Переиспользует код цикла Пробника (ExamCycle/Feedback) — решение
+                   владельца 22.08, новой сущности под вкладку не заводим. Каждая
+                   карточка ведёт в уже существующий диалог `/cabinet/feedback/{id}`
+                   (тот же экран, что открывает полный список на /cabinet/cycle). #}
+                {% if open_cycles %}
+                <div class="lrn-cards">
+                    {% for cycle in open_cycles %}
+                    <a class="lrn-card" href="/cabinet/feedback/{{ cycle.id }}" data-subject="{{ cycle.subject }}">
+                        <div class="trk-meta" style="margin-bottom:6px;">
+                            <span class="trk-badge trk-badge--kind">{{ cycle.subject }}</span>
+                            {% if cycle.unread_count and cycle.unread_count > 0 %}
+                            <span class="trk-badge trk-badge--draft">Новое · {{ cycle.unread_count }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="lrn-card-title">Обратная связь по Пробнику</div>
+                        <p class="lrn-card-note">Начат {{ cycle.started_at[:10] }}.</p>
+                        <span class="lrn-card-cta">Открыть диалог →</span>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="lrn-empty">Открытых циклов Пробника нет — обратная связь появится здесь после отправки работы на Пробник.</p>
+                {% endif %}
+            {% elif tab.entries %}
             <div class="lrn-cards">
                 {% for entry in tab.entries %}
                 {# data-subject пустой у задач без предмета — такие видны в обоих
@@ -91,8 +115,6 @@
                 </div>
                 {% endfor %}
             </div>
-            {% elif tab.reserved %}
-            <p class="lrn-empty">Раздел «Обратная связь» скоро откроется здесь.</p>
             {% elif tab.kind != 'lesson' %}
             <p class="lrn-empty">Здесь пока ничего нет.</p>
             {% endif %}

@@ -1,10 +1,22 @@
 """Tests for GET /cabinet/learning — «Актуальное образовательное пространство» (трек A)."""
-from datetime import timedelta
+from datetime import date, timedelta
 
+from app.models.exam_cycle import ExamCycle
 from app.models.learning_topic import LearningTopic
 from app.services.program import day_bounds, week_start
 from app.services.tracker import create_task
 from app.services.tz import now_msk, today_msk
+
+
+def _cycle(db, user, *, subject="Рисунок", closed=False):
+    cycle = ExamCycle(
+        user_id=user.id, subject=subject, started_at=date.today(),
+        closed_at=now_msk() if closed else None,
+    )
+    db.add(cycle)
+    db.commit()
+    db.refresh(cycle)
+    return cycle
 
 
 def _topic(db, owner, *, assign_to_all=True, opens_in_days=-1, is_published=True,
@@ -224,6 +236,39 @@ def test_learning_ignores_program_item_topics(auth_client, db):
     assert "Неделя 2" in resp.text
     assert "Видео недели" not in resp.text
     assert 'href="https://meet.example.com/week2"' in resp.text
+
+
+# ── Вкладка «Обратная связь» переиспользует ExamCycle/Feedback (23.08) ──────
+
+def test_learning_feedback_tab_shows_placeholder_without_open_cycle(auth_client):
+    client, _ = auth_client
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert "Открытых циклов Пробника нет" in resp.text
+
+
+def test_learning_feedback_tab_links_to_open_cycle_dialog(auth_client, db):
+    client, user = auth_client
+    cycle = _cycle(db, user, subject="Композиция")
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert f'href="/cabinet/feedback/{cycle.id}"' in resp.text
+    assert 'data-subject="Композиция"' in resp.text
+    assert "Открытых циклов Пробника нет" not in resp.text
+
+
+def test_learning_feedback_tab_hides_closed_cycles(auth_client, db):
+    """Закрытый цикл не требует действия прямо сейчас — вкладка АОП его не
+    показывает, полная история доступна на /cabinet/cycle."""
+    client, user = auth_client
+    closed = _cycle(db, user, closed=True)
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert f'href="/cabinet/feedback/{closed.id}"' not in resp.text
+    assert "Открытых циклов Пробника нет" in resp.text
 
 
 def test_learning_marks_task_subject_for_the_switch(auth_client, db):

@@ -34,6 +34,7 @@ from app.models.upload_log import UploadLog
 from app.models.user import User
 from app.services.exam_cycle import get_active_ticket
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
+from app.services import feedback as fb_service
 from app.services.feature_periods import is_feature_available
 from app.services import s3 as s3_service
 from app.services.upload_validation import read_image_uploads
@@ -586,72 +587,8 @@ def cabinet_cycle_hub(
     tab: str = Query(default="feedback"),
 ):
     """Экран ученика: только вкладка «Обратная связь» (диалог по циклам)."""
-    from app.models.exam_cycle import ExamCycle
-    from app.models.feedback import Feedback
-    from app.models.notification import Notification
-
-    # Все циклы пользователя — открытые (сверху) и закрытые (снизу).
-    cycles_q = (
-        db.query(ExamCycle)
-        .filter(ExamCycle.user_id == user["user_id"])
-        .order_by(ExamCycle.started_at.desc(), ExamCycle.id.desc())
-        .all()
-    )
-
-    open_cycles: list[dict] = []
-    closed_cycles: list[dict] = []
-    if cycles_q:
-        cycle_ids = [c.id for c in cycles_q]
-        finals_by_cycle: dict[int, list[Work]] = {}
-        for w in (
-            db.query(Work)
-            .filter(Work.cycle_id.in_(cycle_ids), Work.is_final == True)  # noqa: E712
-            .all()
-        ):
-            finals_by_cycle.setdefault(w.cycle_id, []).append(w)
-        all_work_ids = [w.id for ws in finals_by_cycle.values() for w in ws]
-        unread_work_ids: set[int] = set()
-        if all_work_ids:
-            unread_work_ids = {
-                row[0] for row in db.query(Notification.work_id).filter(
-                    Notification.user_id == user["user_id"],
-                    Notification.work_id.in_(all_work_ids),
-                    Notification.is_read == False,  # noqa: E712
-                ).all()
-            }
-        for c in cycles_q:
-            finals = finals_by_cycle.get(c.id, [])
-            scored_finals = [
-                w for w in finals
-                if w.work_type == WORK_TYPE_MOCK_EXAM and w.score is not None
-            ]
-            if not scored_finals:
-                scored_finals = [w for w in finals if w.score is not None]
-            close_score = None
-            if scored_finals:
-                close_work = max(
-                    scored_finals,
-                    key=lambda w: (
-                        w.scored_at or w.created_at or datetime.min,
-                        w.id or 0,
-                    ),
-                )
-                close_score = float(close_work.score)
-            item = {
-                "id": c.id,
-                "subject": c.subject,
-                "started_at": c.started_at.isoformat(),
-                "closed_at": c.closed_at.isoformat() if c.closed_at else None,
-                "close_score": close_score,
-                "attempts": len(finals),
-                "unread_count": sum(1 for w in finals if w.id in unread_work_ids),
-            }
-            if c.closed_at is None:
-                open_cycles.append(item)
-            else:
-                closed_cycles.append(item)
-
-    cycles_count = len(cycles_q)
+    open_cycles, closed_cycles = fb_service.list_student_cycle_cards(db, user["user_id"])
+    cycles_count = len(open_cycles) + len(closed_cycles)
     unread = _get_unread_count(user["user_id"], db)
 
     return templates.TemplateResponse("cabinet_cycle.html", {

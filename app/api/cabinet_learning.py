@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_student
+from app.services import feedback as fb_service
 from app.services.program import day_bounds, item_details, week_start
 from app.services.tracker import accessible_task_entries, build_week_tabs
 from app.services.tz import today_msk
@@ -57,11 +58,18 @@ def cabinet_learning(
     _, end = day_bounds(monday + timedelta(days=6))
     entries = accessible_task_entries(db, user["user_id"], start=start, end=end)
 
+    # Вкладка «Обратная связь» переиспользует код цикла Пробника (решение
+    # владельца 22.08) — тот же список открытых циклов, что и на полном экране
+    # /cabinet/cycle, только без закрытых: закрытый цикл не требует действия
+    # прямо сейчас, ему хватает полного экрана.
+    open_cycles, _ = fb_service.list_student_cycle_cards(db, user["user_id"])
+
     return templates.TemplateResponse("cabinet_learning.html", {
         "request": request,
         "user": user,
         "topic": current_topic,
         "tabs": build_week_tabs(entries),
+        "open_cycles": open_cycles,
         # Нужен partial'у `partials/task_action.html`: без него видео недели
         # получило бы кнопку «Отметить» вместо ссылки на плеер.
         "details": item_details(db, [e["task"] for e in entries]),
