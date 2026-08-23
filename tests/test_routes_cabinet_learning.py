@@ -2,10 +2,10 @@
 from datetime import date, timedelta
 
 from app.models.exam_cycle import ExamCycle
-from app.models.learning_topic import LearningTopic
+from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.services.program import day_bounds, week_start
 from app.services.tracker import create_task
-from app.services.tz import now_msk, today_msk
+from app.services.tz import msk_midnight, now_msk, today_msk
 
 
 def _cycle(db, user, *, subject="Рисунок", closed=False):
@@ -224,9 +224,14 @@ def test_learning_ignores_program_item_topics(auth_client, db):
 
     client, user = auth_client
     # Служебная тема открыта раньше недели — так бывает, когда неделю завели
-    # позже её элементов. Порядок важен: иначе тест прошёл бы и на старом коде.
+    # позже её элементов. Дата вне значения (после фильтра по kind она не
+    # участвует в подборе недели вовсе), важно только что она раньше.
     item = _topic(db, user, title="Видео недели", opens_in_days=-14)
-    _topic(db, user, title="Неделя 2", opens_in_days=-7,
+    # effective_week_start без долгов у ученика возвращает понедельник текущей
+    # календарной недели (гейт, решение владельца 23.08) — тему целим точно
+    # туда, а не «семь дней назад», чтобы тест не зависел от дня недели запуска.
+    monday_offset = -(today_msk() - week_start(today_msk())).days
+    _topic(db, user, title="Неделя 2", opens_in_days=monday_offset,
            meeting_url="https://meet.example.com/week2")
     item.kind = TOPIC_KIND_PROGRAM_ITEM
     db.commit()
@@ -239,6 +244,67 @@ def test_learning_ignores_program_item_topics(auth_client, db):
 
 
 # ── Вкладка «Обратная связь» переиспользует ExamCycle/Feedback (23.08) ──────
+
+# ── Гейт «блок → неделя → месяц» (23.08) ────────────────────────────────────
+
+def test_learning_shows_debt_week_not_the_current_one(auth_client, db):
+    """Ключевой регресс-тест: должник видит свою застрявшую неделю, не текущую.
+
+    До гейта (решение владельца 23.08) экран всегда показывал календарную
+    неделю независимо от долгов. После — ученик с незакрытым обязательным
+    элементом прошлой недели остаётся на ней, пока не закроет долг.
+    """
+    client, user = auth_client
+    today = today_msk()
+    monday = week_start(today)
+    last_monday = monday - timedelta(days=7)
+    user.created_at = msk_midnight(last_monday - timedelta(days=30))
+    db.commit()
+
+    db.add(LearningTopic(
+        title="Неделя с долгом", opens_at=msk_midnight(last_monday),
+        assign_to_all=True, is_published=True, kind=TOPIC_KIND_WEEK,
+        created_by_id=user.id,
+    ))
+    db.add(LearningTopic(
+        title="Текущая неделя", opens_at=msk_midnight(monday),
+        assign_to_all=True, is_published=True, kind=TOPIC_KIND_WEEK,
+        created_by_id=user.id,
+    ))
+    db.commit()
+
+    due = day_bounds(last_monday)[0] + timedelta(hours=10)
+    task = create_task(
+        db, title="Долг прошлой недели", user_id=user.id, due_at=due,
+        assign_to_all=True, kind="homework",
+    )
+    task.is_published = True
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert "Неделя с долгом" in resp.text
+    assert "Долг прошлой недели" in resp.text
+    assert "Текущая неделя" not in resp.text
+
+
+def test_learning_shows_current_week_when_no_debt(auth_client, db):
+    """Без долгов ученик по-прежнему видит текущую календарную неделю."""
+    client, user = auth_client
+    today = today_msk()
+    monday = week_start(today)
+
+    db.add(LearningTopic(
+        title="Текущая неделя", opens_at=msk_midnight(monday),
+        assign_to_all=True, is_published=True, kind=TOPIC_KIND_WEEK,
+        created_by_id=user.id,
+    ))
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert "Текущая неделя" in resp.text
+
 
 def test_learning_feedback_tab_shows_placeholder_without_open_cycle(auth_client):
     client, _ = auth_client

@@ -10,16 +10,16 @@ plans/2026-08-22-apparchi-student-cabinet-open-questions.md, п.7/п.8.1):
 ученик у Apparchi календаря по датам не видит вовсе.
 
 Какую именно неделю показывать (заголовок/описание/ссылка на созвон), решает
-`video_topics.py::current_week_topic` — там же записано, почему только
-`kind=week` и почему самая поздняя из открытых. Понятия «неделя пройдена» в
-схеме пока нет (video_progress.py — прогресс по видео, не по неделе целиком),
-поэтому вернуть должника на незакрытую неделю система не умеет — это отдельный
-нерешённый пункт Р1 в TODO.md, не путать с блокировкой вкладок внутри недели.
+`tracker.py::effective_week_start` — первая незакрытая неделя ученика, а не
+календарная (решение владельца 23.08, гейт «блок → неделя → месяц», Р1).
+Должник видит свою застрявшую неделю, а не текущую; тема к ней резолвится
+`tracker.py::week_topic_for_monday`.
 
 Список задач по-прежнему не привязан к `current_topic` жёстко: разовые задачи
 без `topic_id` (адресованные тегом/«всем») тоже показываются здесь, если их
-`due_at` попадает в текущую календарную неделю — тот же движок
-`accessible_task_entries`, что и у «Личного трекера» (`app/api/cabinet_tracker.py`).
+`due_at` попадает в показанную (не обязательно календарную) неделю — тот же
+движок `accessible_task_entries`, что и у «Личного трекера»
+(`app/api/cabinet_tracker.py`).
 """
 from datetime import timedelta
 from typing import Annotated
@@ -32,10 +32,14 @@ from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_student
 from app.services import feedback as fb_service
-from app.services.program import day_bounds, item_details, week_start
-from app.services.tracker import accessible_task_entries, build_week_tabs
+from app.services.program import day_bounds, item_details
+from app.services.tracker import (
+    accessible_task_entries,
+    build_week_tabs,
+    effective_week_start,
+    week_topic_for_monday,
+)
 from app.services.tz import today_msk
-from app.services.video_topics import current_week_topic
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet")
@@ -50,10 +54,10 @@ def cabinet_learning(
     if needs_profile_setup(user):
         return RedirectResponse("/cabinet/profile", status_code=302)
 
-    current_topic = current_week_topic(db, user["user_id"])
-
     today = today_msk()
-    monday = week_start(today)
+    monday = effective_week_start(db, user["user_id"], today)
+    current_topic = week_topic_for_monday(db, user["user_id"], monday)
+
     start, _ = day_bounds(monday)
     _, end = day_bounds(monday + timedelta(days=6))
     entries = accessible_task_entries(db, user["user_id"], start=start, end=end)
