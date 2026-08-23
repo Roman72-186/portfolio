@@ -2,11 +2,12 @@
 
 from datetime import timedelta
 
+from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.models.tag import Tag, UserTag
 from app.models.tracker import STATUS_DONE, STATUS_OPEN, TrackerTask, TrackerTaskState
 from app.services.program import day_bounds, week_start
 from app.services.tracker import create_task, set_task_assignees, set_task_tags, task_status
-from app.services.tz import today_msk
+from app.services.tz import msk_midnight, today_msk
 
 PAGE = "/cabinet/tracker"
 
@@ -345,11 +346,14 @@ def test_task_without_own_screen_keeps_checkbox(auth_client, db):
     assert f'data-toggle-task="{task.id}"' in resp.text
 
 
-def test_mock_exam_task_keeps_checkbox_next_to_the_link(auth_client, db):
-    """У пробника есть и переход, и отметка: сдача пробника задачу не закрывает.
+def test_mock_exam_task_has_no_manual_checkbox(auth_client, db):
+    """У пробника нет ручной отметки — только переход, задачу закрывает сдача.
 
-    `close_task_for_user` зовут только из `video.py`. Убрать отметку у пробника
-    и домашки значило бы, что такая задача не может уйти из «Просрочено» вообще.
+    Решение владельца 23.08 (гейт «блок → неделя → месяц»): раньше отметку
+    держали, потому что `close_task_for_user` для пробника нигде не вызывался
+    и задача не смогла бы уйти из «Просрочено». Теперь её закрывает
+    `close_cycle`/`close_cycle_auto` — ручная кнопка осталась бы обходом
+    гейта в одно нажатие.
     """
     from app.models.tracker import ITEM_MOCK_EXAM
 
@@ -364,4 +368,65 @@ def test_mock_exam_task_keeps_checkbox_next_to_the_link(auth_client, db):
 
     resp = client.get(PAGE)
     assert "Начать пробник" in resp.text
-    assert f'data-toggle-task="{task.id}"' in resp.text
+    assert f'data-toggle-task="{task.id}"' not in resp.text
+
+
+def test_student_cannot_toggle_mock_exam_or_homework_task(auth_client, db):
+    """Регрессия дыры: прямой POST /toggle на homework/mock_exam запрещён,
+    даже если кнопки в интерфейсе уже нет — раньше это закрывало задачу в
+    обход факта сдачи."""
+    from app.models.tracker import ITEM_HOMEWORK, ITEM_MOCK_EXAM
+
+    client, user = auth_client
+    _, due = _current_week_due(offset_days=1)
+    mock_task = create_task(
+        db, title="Пробник по рисунку", user_id=user.id, due_at=due,
+        assign_to_all=True, kind=ITEM_MOCK_EXAM, subject="Рисунок",
+    )
+    mock_task.is_published = True
+    homework_task = create_task(
+        db, title="Самостоятельная работа", user_id=user.id, due_at=due,
+        assign_to_all=True, kind=ITEM_HOMEWORK,
+    )
+    homework_task.is_published = True
+    db.commit()
+
+    for task in (mock_task, homework_task):
+        resp = client.post(f"{PAGE}/tasks/{task.id}/toggle")
+        assert resp.status_code == 403
+
+
+def test_tracker_shows_behind_schedule_warning_for_debtor(auth_client, db):
+    """Гейт «блок → неделя → месяц» (23.08): застрявший ученик видит красное
+    предупреждение в «Личном трекере» (АОП баннеров не показывает вовсе —
+    решение владельца, экран застрявшего ученика)."""
+    client, user = auth_client
+    monday = week_start(today_msk())
+    last_monday = monday - timedelta(days=7)
+    user.created_at = msk_midnight(last_monday - timedelta(days=30))
+    db.commit()
+
+    db.add(LearningTopic(
+        title="Неделя с долгом", opens_at=msk_midnight(last_monday),
+        assign_to_all=True, is_published=True, kind=TOPIC_KIND_WEEK,
+        created_by_id=user.id,
+    ))
+    db.commit()
+    due = day_bounds(last_monday)[0] + timedelta(hours=10)
+    task = create_task(
+        db, title="Долг прошлой недели", user_id=user.id, due_at=due,
+        assign_to_all=True, kind="homework",
+    )
+    task.is_published = True
+    db.commit()
+
+    resp = client.get(PAGE)
+    assert resp.status_code == 200
+    assert "Ты отстаёшь от текущей программы" in resp.text
+
+
+def test_tracker_hides_behind_schedule_warning_without_debt(auth_client):
+    client, _ = auth_client
+    resp = client.get(PAGE)
+    assert resp.status_code == 200
+    assert "Ты отстаёшь от текущей программы" not in resp.text

@@ -9,14 +9,17 @@ Source of truth по тому, кому адресована задача и к�
 Разбор решений владельца — plans/2026-08-20-apparchi-tracker-and-digest.md.
 """
 
-from datetime import datetime, timedelta, timezone
+import calendar
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
 from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
 
+from app.constants import MOCK_SUBJECTS
+from app.models.exam_cycle import ExamCycle
 from app.models.homework import HomeworkAssignment, HomeworkImage
-from app.models.learning_topic import LearningTopic
+from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.models.role import Role
 from app.models.tag import UserTag
 from app.models.tracker import (
@@ -35,7 +38,7 @@ from app.models.tracker import (
     TrackerTaskTag,
 )
 from app.models.user import User
-from app.services.program import msk_date
+from app.services.program import day_bounds, msk_date, week_start
 from app.services.tags import parse_usernames
 from app.services.tz import MSK_TZ, now_msk
 # Неделя программы — это тема недели видеомодуля: расписание, публикация и
@@ -124,6 +127,7 @@ def create_task(
     sort_order: int = 0,
     source_kind: str | None = None,
     source_id: int | None = None,
+    is_required: bool = True,
 ) -> TrackerTask:
     task = TrackerTask(
         title=title,
@@ -137,6 +141,7 @@ def create_task(
         sort_order=sort_order,
         source_kind=source_kind,
         source_id=source_id,
+        is_required=is_required,
         created_by_id=user_id,
     )
     db.add(task)
@@ -157,6 +162,7 @@ def update_task(
     assign_to_all: bool = False,
     kind: str | None = None,
     sort_order: int | None = None,
+    is_required: bool = True,
 ) -> None:
     task.title = title
     task.description = description
@@ -168,6 +174,7 @@ def update_task(
         task.kind = kind
     if sort_order is not None:
         task.sort_order = sort_order
+    task.is_required = is_required
 
 
 def set_task_tags(db: Session, task: TrackerTask, tag_ids: list[int]) -> None:
@@ -470,6 +477,133 @@ def build_week_tabs(entries: list[dict]) -> list[dict]:
         if not is_locked and tab_entries and any(e["status"] != "done" for e in tab_entries):
             locked_reason = WEEK_TAB_LABELS[kind]
     return tabs
+
+
+# ---------------------------------------------------------------------------
+# Гейт «блок → неделя → месяц» (решение владельца 23.08)
+# ---------------------------------------------------------------------------
+
+def is_week_complete(db: Session, user_id: int, week_monday: date) -> bool:
+    """Неделя пройдена: все обязательные опубликованные задачи недели,
+    доступные этому ученику, закрыты. Без разреза по предмету — оба предмета
+    в одной проверке (решение владельца 23.08).
+
+    Выборка задач — то же окно `[Monday, Monday+7)` по `due_at`, что видит
+    экран «Актуальное образовательное пространство» (`accessible_task_entries`):
+    у каждого элемента программы своя одноразовая служебная тема
+    (`program.py::ensure_item_topic` заводит новую при каждом добавлении в
+    день), общего `LearningTopic`, объединяющего все элементы недели по
+    `topic_id`, в схеме нет.
+    """
+    start, _ = day_bounds(week_monday)
+    _, end = day_bounds(week_monday + timedelta(days=6))
+    entries = accessible_task_entries(db, user_id, start=start, end=end)
+    return all(
+        entry["status"] == "done"
+        for entry in entries
+        if entry["task"].is_required
+    )
+
+
+def _enrollment_monday(created_at: datetime) -> date:
+    """Ближайший понедельник после регистрации — если регистрация ровно в
+    понедельник, это тот же день (решение владельца 23.08, п.3)."""
+    created_date = msk_date(created_at)
+    monday = week_start(created_date)
+    return monday if monday == created_date else monday + timedelta(days=7)
+
+
+def _accessible_week_mondays(
+    db: Session, user_id: int, *, start: date, end: date
+) -> list[date]:
+    """Понедельники доступных ученику недель (`LearningTopic(kind='week')`),
+    попадающих в `[start, end]`, по возрастанию, без дублей."""
+    topic_ids = accessible_topic_ids(db, user_id)
+    if not topic_ids:
+        return []
+    topics = (
+        db.query(LearningTopic)
+        .filter(LearningTopic.id.in_(topic_ids), LearningTopic.kind == TOPIC_KIND_WEEK)
+        .all()
+    )
+    mondays = {week_start(msk_date(topic.opens_at)) for topic in topics}
+    return sorted(m for m in mondays if start <= m <= end)
+
+
+def effective_week_start(db: Session, user_id: int, today: date) -> date:
+    """Первая незакрытая неделя ученика, ограниченная снизу его понедельником
+    (опоздавший не утаскивается на неделю месячной давности) и сверху
+    сегодняшней календарной неделей (без довыдачи вперёд). Если долгов нет —
+    возвращает текущую календарную неделю."""
+    user = db.get(User, user_id)
+    enrollment_monday = _enrollment_monday(user.created_at)
+    today_monday = week_start(today)
+    for monday in _accessible_week_mondays(db, user_id, start=enrollment_monday, end=today_monday):
+        if not is_week_complete(db, user_id, monday):
+            return monday
+    return today_monday
+
+
+def _mock_exams_closed_for_month(
+    db: Session, user_id: int, month_start: date, month_end: date
+) -> bool:
+    """Пробник закрыт по обоим предметам в границах месяца. Отсутствие цикла
+    по предмету в этом месяце тоже блокирует месяц — ждём (решение владельца
+    23.08, п.4)."""
+    for subject in MOCK_SUBJECTS:
+        cycle = (
+            db.query(ExamCycle)
+            .filter(
+                ExamCycle.user_id == user_id,
+                ExamCycle.subject == subject,
+                ExamCycle.started_at >= month_start,
+                ExamCycle.started_at <= month_end,
+            )
+            .order_by(ExamCycle.started_at.desc(), ExamCycle.id.desc())
+            .first()
+        )
+        if cycle is None or cycle.closed_at is None:
+            return False
+    return True
+
+
+def week_topic_for_monday(db: Session, user_id: int, monday: date) -> LearningTopic | None:
+    """Тема недели (`kind=week`), чей понедельник — `monday`, доступная ученику.
+
+    Резолвер для гейта: в отличие от `video_topics.py::current_week_topic`
+    («самая поздняя из открытых»), берёт ровно ту неделю, на которой стоит
+    ученик по `effective_week_start` — включая прошлую, если он на ней
+    застрял. `None`, если темы для этой недели нет вовсе — тот же случай, что
+    и раньше у `current_week_topic`.
+    """
+    topic_ids = accessible_topic_ids(db, user_id)
+    if not topic_ids:
+        return None
+    candidates = (
+        db.query(LearningTopic)
+        .filter(LearningTopic.id.in_(topic_ids), LearningTopic.kind == TOPIC_KIND_WEEK)
+        .all()
+    )
+    return next(
+        (topic for topic in candidates if week_start(msk_date(topic.opens_at)) == monday),
+        None,
+    )
+
+
+def is_month_complete(db: Session, user_id: int, year: int, month: int) -> bool:
+    """Месяц пройден: все недели месяца закрыты (то же правило недели,
+    применённое к каждой) плюс отдельно закрыт Пробник по обоим предметам —
+    он вне восьми вкладок недели (решение владельца 22.08), в понедельниках
+    недель не участвует."""
+    month_start = date(year, month, 1)
+    month_end = date(year, month, calendar.monthrange(year, month)[1])
+    weeks_done = all(
+        is_week_complete(db, user_id, monday)
+        for monday in _accessible_week_mondays(db, user_id, start=month_start, end=month_end)
+    )
+    if not weeks_done:
+        return False
+    return _mock_exams_closed_for_month(db, user_id, month_start, month_end)
 
 
 def close_task_for_user(

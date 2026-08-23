@@ -15,11 +15,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session as DBSession
 
+from app.constants import TARIFFS_WITH_FEEDBACK
 from app.db.database import get_db
 from app.dependencies import require_csrf, require_curator, require_student
 from app.models.homework import HomeworkAssignment
 from app.models.homework_feedback import HomeworkFeedback
-from app.models.homework_submission import HomeworkSubmission
+from app.models.homework_submission import STATUS_ACCEPTED, HomeworkSubmission
 from app.models.tracker import ITEM_HOMEWORK, SOURCE_HOMEWORK, TrackerTask
 from app.models.user import User
 from app.services import s3 as s3_service
@@ -40,7 +41,7 @@ from app.services.homework_submission import (
     list_submissions_for_task,
     set_final_image,
 )
-from app.services.tracker import accessible_task_ids
+from app.services.tracker import accessible_task_ids, close_task_for_user
 from app.services.tracker import homework_images as list_homework_reference_images
 from app.services.upload_validation import read_image_uploads
 from app.services.utils import compress_image
@@ -172,6 +173,11 @@ async def upload_homework_final(
         return JSONResponse({"ok": False, "error": "Ошибка загрузки в хранилище"}, status_code=502)
 
     set_final_image(db, submission, url=url or "", path=s3_path if url else None)
+    # Тариф без обратной связи — закрываем сразу по факту загрузки, как видео;
+    # с обратной связью — ждём, пока куратор нажмёт «Принять работу» (решение
+    # владельца 23.08, см. plans/2026-08-23-apparchi-week-month-gate-decisions.md).
+    if (user.get("tariff") or "") not in TARIFFS_WITH_FEEDBACK:
+        close_task_for_user(db, task, user["user_id"], source="auto")
     db.commit()
     return JSONResponse({"ok": True})
 
@@ -330,6 +336,30 @@ async def staff_homework_submission_detail(
         user=user, viewer_role=_viewer_role(user),
         back_url=f"/cabinet/staff/homework/{task.id}/submissions",
     )
+
+
+@router.post("/staff/homework/submissions/{submission_id}/accept", response_class=JSONResponse)
+async def accept_homework_submission(
+    submission_id: int,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    """Куратор принимает финальное фото — тариф с обратной связью закрывается
+    только здесь, не по факту загрузки (решение владельца 23.08)."""
+    submission = db.get(HomeworkSubmission, submission_id)
+    if submission is None:
+        raise HTTPException(status_code=404, detail="Сдача не найдена")
+    images = list_images(db, submission.id)
+    if not any(i.is_final for i in images):
+        raise HTTPException(status_code=409, detail="Финальное фото ещё не загружено")
+    if submission.status != STATUS_ACCEPTED:
+        submission.status = STATUS_ACCEPTED
+        task = db.get(TrackerTask, submission.tracker_task_id)
+        if task is not None:
+            close_task_for_user(db, task, submission.user_id, source="staff")
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 @router.post("/staff/homework/submissions/{submission_id}/message", response_class=JSONResponse)

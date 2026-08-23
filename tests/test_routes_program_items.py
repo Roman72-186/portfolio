@@ -288,6 +288,47 @@ def test_items_without_audience_are_rejected(
     ).status_code == 422
 
 
+# ── is_required (гейт «блок → неделя → месяц», решение 23.08) ──────────────
+
+def test_video_task_is_required_by_default(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    tag = _tag(db, "МАКСИМУМ")
+    video = _video(db)
+
+    client.post(
+        f"{PROGRAM}/{MONDAY}/video",
+        json={
+            "catalog_video_id": video.id,
+            "title": "Ролик",
+            "audience": {"assign_to_all": False, "tag_ids": [tag.id], "assignee_usernames": ""},
+        },
+    )
+    task = db.query(TrackerTask).one()
+    assert task.is_required is True
+
+
+def test_homework_task_can_be_marked_optional(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    tag = _tag(db, "МАКСИМУМ")
+
+    client.post(
+        f"{PROGRAM}/{MONDAY}/homework",
+        json={
+            "title": "Необязательная анкета-разминка",
+            "is_required": False,
+            "audience": {"assign_to_all": False, "tag_ids": [tag.id], "assignee_usernames": ""},
+        },
+    )
+    task = db.query(TrackerTask).one()
+    assert task.is_required is False
+
+
 def test_past_day_refuses_new_items(
     client, db, user_factory, session_factory, monkeypatch
 ):

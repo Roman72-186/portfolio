@@ -31,10 +31,22 @@ from sqlalchemy.orm import Session as DBSession
 from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
-from app.models.tracker import STATUS_DONE, STATUS_OPEN, TrackerTask, TrackerTaskState
+from app.models.tracker import (
+    ITEM_HOMEWORK,
+    ITEM_MOCK_EXAM,
+    STATUS_DONE,
+    STATUS_OPEN,
+    TrackerTask,
+    TrackerTaskState,
+)
 from app.services.program import day_bounds, item_details, week_start
 from app.services.stats import avg_score_by_subject_all_time
-from app.services.tracker import accessible_task_entries, accessible_task_ids, task_status
+from app.services.tracker import (
+    accessible_task_entries,
+    accessible_task_ids,
+    effective_week_start,
+    task_status,
+)
 from app.services.tz import today_msk, now_msk
 from app.services.video_topics import accessible_topic_ids
 from app.tmpl import templates
@@ -51,7 +63,8 @@ def cabinet_tracker(
     if needs_profile_setup(user):
         return RedirectResponse("/cabinet/profile", status_code=302)
 
-    week_monday = week_start(today_msk())
+    today = today_msk()
+    week_monday = week_start(today)
     _, week_end = day_bounds(week_monday + timedelta(days=6))
 
     entries = accessible_task_entries(db, user["user_id"], start=None, end=week_end)
@@ -80,6 +93,9 @@ def cabinet_tracker(
         "overdue": overdue,
         "upcoming": upcoming,
         "done": done,
+        # Красное предупреждение (решение владельца 23.08, гейт «блок → неделя
+        # → месяц»): ученик застрял на прошлой неделе, а не идёт по текущей.
+        "is_behind_schedule": effective_week_start(db, user["user_id"], today) < week_monday,
         "active_tab": "tracker",
         "avg_score_by_subject": avg_score_by_subject_all_time(db, user["user_id"]),
         # Нужен partial'у `partials/task_action.html`: видео, пробник и домашка
@@ -98,6 +114,13 @@ def cabinet_tracker_toggle(
     task = db.get(TrackerTask, task_id)
     if task is None or task.deleted_at is not None or not task.is_published:
         raise HTTPException(status_code=404, detail="Задача не найдена")
+
+    # Домашка и пробник закрываются только фактом сдачи (тариф без обратной
+    # связи) или кнопкой куратора «Принять работу»/«Закрыть цикл» (тариф с
+    # обратной связью, решение владельца 23.08) — ручная отметка была бы
+    # обходом гейта в одно нажатие.
+    if task.kind in (ITEM_HOMEWORK, ITEM_MOCK_EXAM):
+        raise HTTPException(status_code=403, detail="Эта задача закрывается автоматически")
 
     topic_ids = accessible_topic_ids(db, user["user_id"])
     task_ids = accessible_task_ids(db, user["user_id"])

@@ -420,6 +420,7 @@ class VideoPayload(BaseModel):
     cover_url: str | None = Field(default=None, max_length=500)
     cover_path: str | None = Field(default=None, max_length=300)
     subject: str | None = Field(default=None, max_length=50)
+    is_required: bool = True
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
 
     @field_validator("title")
@@ -450,6 +451,7 @@ class HomeworkItemPayload(BaseModel):
     submission_required: bool = True
     max_files: int = Field(default=1, ge=0, le=20)
     images: list[dict] = Field(default_factory=list, max_length=20)
+    is_required: bool = True
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
 
     @field_validator("title")
@@ -502,6 +504,7 @@ class SurveyItemPayload(BaseModel):
     survey_id: int | None = Field(default=None, ge=1)
     title: str | None = Field(default=None, max_length=200)
     questions: list[SurveyQuestionPayload] = Field(default_factory=list, max_length=50)
+    is_required: bool = True
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
 
 
@@ -598,6 +601,7 @@ def create_video_item(
         kind=ITEM_VIDEO,
         source_kind=SOURCE_LEARNING_TOPIC,
         source_id=topic.id,
+        is_required=payload.is_required,
         user_id=user["user_id"],
     )
     task.is_published = True
@@ -661,6 +665,7 @@ def create_homework_item(
         kind=ITEM_HOMEWORK,
         source_kind=SOURCE_HOMEWORK,
         source_id=homework.id,
+        is_required=payload.is_required,
         user_id=user["user_id"],
     )
     task.is_published = True
@@ -732,6 +737,7 @@ def create_survey_item(
         kind=ITEM_SURVEY,
         source_kind=SOURCE_SURVEY,
         source_id=survey.id,
+        is_required=payload.is_required,
         user_id=user["user_id"],
     )
     task.is_published = True

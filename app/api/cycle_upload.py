@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
-from app.constants import MONTHS, MOCK_SUBJECTS, FEATURE_RETAKE
+from app.constants import MONTHS, MOCK_SUBJECTS, FEATURE_RETAKE, TARIFFS_WITH_FEEDBACK
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
 from app.models.exam_assignment import ExamTicket
@@ -40,6 +40,7 @@ from app.services import s3 as s3_service
 from app.services.notify import notify
 from app.services.exam_cycle import (
     MAX_INTERMEDIATE_PER_FINAL,
+    close_cycle_auto,
     close_or_expire_mock_exam_attempts,
     count_cycle_intermediates,
     cycle_submission_state,
@@ -441,6 +442,13 @@ async def upload_probnik_final(
                 "error": "Финальное фото не подтверждено в базе. Проверьте соединение и попробуйте отправить ещё раз.",
                 **submission_state,
             }, status_code=500)
+
+        # Тариф без обратной связи — оценивать и жать «Закрыть цикл» некому,
+        # закрываем сразу по факту загрузки финального фото (решение владельца
+        # 23.08, зеркало автозакрытия домашки). Без score — close_cycle_auto,
+        # не close_cycle.
+        if (user.get("tariff") or "") not in TARIFFS_WITH_FEEDBACK:
+            close_cycle_auto(db, cycle)
 
         # Перезалив: оповестить вовлечённый staff о новом фото (балл сброшен →
         # нужна повторная проверка). На первой сдаче recipients пуст → тихо.

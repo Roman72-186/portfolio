@@ -23,12 +23,14 @@ from app.models.exam_cycle import ExamCycle
 from app.models.feedback import Feedback, FeedbackMessage, FeedbackPhoto
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
+from app.models.tracker import ITEM_MOCK_EXAM, SOURCE_EXAM_ASSIGNMENT, TrackerTask
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.mock_exam_access import (
     get_matching_target_tag_ids_for_student,
     is_mock_exam_ticket_submission_open,
     is_subject_allowed_for_student,
 )
+from app.services.tracker import close_task_for_user
 from app.services.tz import today_msk
 
 MAX_INTERMEDIATE_PER_FINAL = 10
@@ -455,6 +457,40 @@ def delete_open_cycle(db: DBSession, cycle: ExamCycle) -> list[str]:
     return s3_paths
 
 
+def _close_related_tracker_task(db: DBSession, cycle: ExamCycle, *, source: str) -> None:
+    """Закрыть `TrackerTask(kind=mock_exam)`, которую сдаёт этот цикл.
+
+    Косметика «Личного трекера» — месячный гейт (`is_month_complete`) проверяет
+    `ExamCycle.closed_at` напрямую, не эту задачу: Пробник вне восьми вкладок
+    недели (решение владельца 22.08). Резолвинг через
+    `ExamCycle.ticket_id → ExamTicket.assignment_id → TrackerTask.source_id`
+    (`source_kind=SOURCE_EXAM_ASSIGNMENT`) — так же, как задача создаётся в
+    `cabinet_program.py`. `ticket_id is None` бывает у части циклов (легаси/
+    гостевой режим) — тогда резолвить нечего, тихо выходим.
+    """
+    if cycle.ticket_id is None:
+        return
+    assignment_id = (
+        db.query(ExamTicket.assignment_id)
+        .filter(ExamTicket.id == cycle.ticket_id)
+        .scalar()
+    )
+    if assignment_id is None:
+        return
+    task = (
+        db.query(TrackerTask)
+        .filter(
+            TrackerTask.kind == ITEM_MOCK_EXAM,
+            TrackerTask.source_kind == SOURCE_EXAM_ASSIGNMENT,
+            TrackerTask.source_id == assignment_id,
+            TrackerTask.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if task is not None:
+        close_task_for_user(db, task, cycle.user_id, source=source)
+
+
 def close_cycle(db: DBSession, cycle: ExamCycle) -> bool:
     """Закрыть цикл вручную (куратор/главный преподаватель/SA после обратной связи).
 
@@ -497,6 +533,56 @@ def close_cycle(db: DBSession, cycle: ExamCycle) -> bool:
     if lock:
         lock.is_locked = False
         lock.unlocked_at = now
+    _close_related_tracker_task(db, cycle, source="staff")
+    db.flush()
+    return True
+
+
+def close_cycle_auto(db: DBSession, cycle: ExamCycle) -> bool:
+    """Закрыть цикл автоматически по факту сдачи (тариф «Я С ВАМИ», без ОС).
+
+    Зеркало `close_cycle`, но **без требования выставленного балла**: у тарифа
+    без обратной связи некому его ставить и некому нажать «Закрыть цикл» — без
+    этой отвязки месячный гейт для таких учеников не открылся бы никогда.
+    Осознанное отступление, `closed_at` и `score` уже ортогональны в системе
+    (см. докстроку `reopen_cycle` — «портфолио гейтится баллом, не закрытием»),
+    балл может быть выставлен позже.
+
+    Идемпотентна: если цикл уже закрыт — ничего не делает.
+    Returns True если цикл был закрыт этим вызовом.
+    """
+    if cycle.closed_at is not None:
+        return False
+    final = (
+        db.query(Work)
+        .filter(
+            Work.cycle_id == cycle.id,
+            Work.work_type == WORK_TYPE_MOCK_EXAM,
+            Work.is_final == True,  # noqa: E712
+            Work.status == "success",
+            Work.needs_revision == False,  # noqa: E712
+            _stored_work_file_filter(),
+        )
+        .order_by(Work.attempt_number.desc(), Work.id.desc())
+        .first()
+    )
+    if final is None:
+        return False
+    now = datetime.now(timezone.utc)
+    cycle.closed_at = now
+    lock = (
+        db.query(MockExamLock)
+        .filter(
+            MockExamLock.user_id == cycle.user_id,
+            MockExamLock.subject == cycle.subject,
+            MockExamLock.is_locked == True,  # noqa: E712
+        )
+        .first()
+    )
+    if lock:
+        lock.is_locked = False
+        lock.unlocked_at = now
+    _close_related_tracker_task(db, cycle, source="auto")
     db.flush()
     return True
 

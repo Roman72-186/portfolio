@@ -153,6 +153,13 @@ class TrackerTask(Base):
     # школе — та же дорогая ошибка, что у тем видеоуроков.
     assign_to_all: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # Блокирует ли элемент переход к следующей вкладке недели/следующей неделе
+    # (гейт «блок → неделя → месяц», решение владельца 23.08). default=True
+    # осознанно: `build_week_tabs` уже блокирует вкладки по факту закрытия —
+    # де-факто всё обязательно сегодня, чекбокс даёт возможность разрешить
+    # элемент, а не наоборот.
+    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
     is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_by_id: Mapped[int | None] = mapped_column(

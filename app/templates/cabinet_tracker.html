@@ -18,6 +18,10 @@ FORM: Operate, список, а не карточка-витрина.
 <div class="trk-page">
     {% include "partials/profile_hero.html" %}
 
+    {% if is_behind_schedule %}
+    <div class="alert alert-error" style="margin-bottom:14px;">Ты отстаёшь от текущей программы</div>
+    {% endif %}
+
     <div class="trk-head">
         <div class="trk-head-copy">
             <h1>Личный трекер</h1>

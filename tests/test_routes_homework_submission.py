@@ -9,7 +9,7 @@ from unittest.mock import patch
 from app.models.homework_feedback import HomeworkFeedback, HomeworkFeedbackMessage
 from app.models.homework_submission import HomeworkSubmission, HomeworkSubmissionImage
 from app.models.notification import Notification
-from app.models.tracker import ITEM_HOMEWORK, SOURCE_HOMEWORK
+from app.models.tracker import ITEM_HOMEWORK, SOURCE_HOMEWORK, STATUS_DONE, TrackerTaskState
 from app.services import s3 as s3_service
 from app.services.tracker import create_homework, create_task, set_homework_images
 
@@ -178,3 +178,84 @@ def test_student_cannot_open_staff_submissions_list(auth_client, db):
     task, _ = _homework_task(db, user.id)
     resp = client.get(f"/cabinet/staff/homework/{task.id}/submissions")
     assert resp.status_code == 403
+
+
+def _task_state(db, task_id: int, user_id: int) -> TrackerTaskState | None:
+    return (
+        db.query(TrackerTaskState)
+        .filter(TrackerTaskState.task_id == task_id, TrackerTaskState.user_id == user_id)
+        .one_or_none()
+    )
+
+
+def test_final_upload_closes_task_without_feedback_tariff(auth_client, db, user_factory, session_factory):
+    """Тариф «Я С ВАМИ» — задача закрывается сразу по факту загрузки фото."""
+    client, _ = auth_client
+    student = user_factory(vk_id=222_001, name="Ученик Я с вами", tariff="Я С ВАМИ")
+    task, _ = _homework_task(db, student.id)
+    client.cookies.set("session_id", session_factory(student).id)
+
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        resp = client.post(
+            f"/cabinet/homework/{task.id}/final",
+            files={"photo": ("work.jpg", b"fake-bytes", "image/jpeg")},
+        )
+    assert resp.status_code == 200
+
+    state = _task_state(db, task.id, student.id)
+    assert state is not None
+    assert state.status == STATUS_DONE
+    assert state.completion_source == "auto"
+
+
+def test_final_upload_does_not_close_task_with_feedback_tariff(auth_client, db):
+    """Тариф с обратной связью (по умолчанию УВЕРЕННЫЙ) — загрузка фото не
+    закрывает задачу, только кнопка куратора «Принять работу»."""
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        resp = client.post(
+            f"/cabinet/homework/{task.id}/final",
+            files={"photo": ("work.jpg", b"fake-bytes", "image/jpeg")},
+        )
+    assert resp.status_code == 200
+    assert _task_state(db, task.id, user.id) is None
+
+
+def test_curator_accept_closes_task(auth_client, db, user_factory, session_factory):
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        client.post(
+            f"/cabinet/homework/{task.id}/final",
+            files={"photo": ("work.jpg", b"fake-bytes", "image/jpeg")},
+        )
+    submission = db.query(HomeworkSubmission).one()
+    assert _task_state(db, task.id, user.id) is None
+
+    curator = user_factory(vk_id=333_001, name="Куратор Оля", role_name="куратор")
+    client.cookies.set("session_id", session_factory(curator).id)
+    resp = client.post(f"/cabinet/staff/homework/submissions/{submission.id}/accept")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+    db.refresh(submission)
+    assert submission.status == "accepted"
+    state = _task_state(db, task.id, user.id)
+    assert state is not None
+    assert state.status == STATUS_DONE
+    assert state.completion_source == "staff"
+
+
+def test_curator_cannot_accept_without_final_photo(auth_client, db, user_factory, session_factory):
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    client.get(f"/cabinet/homework/{task.id}")  # заводит submission лениво
+    submission = db.query(HomeworkSubmission).one()
+
+    curator = user_factory(vk_id=333_002, name="Куратор Ира", role_name="куратор")
+    client.cookies.set("session_id", session_factory(curator).id)
+    resp = client.post(f"/cabinet/staff/homework/submissions/{submission.id}/accept")
+    assert resp.status_code == 409

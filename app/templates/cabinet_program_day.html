@@ -89,6 +89,10 @@ FORM: Operate.
         </div>
 
         <div data-step="audience" hidden>
+            <label class="prg-field prg-field--row">
+                <input type="checkbox" checked disabled>
+                <span>Обязательный элемент — Пробник всегда учитывается в месячном гейте</span>
+            </label>
             <h3>Кому доступен пробник</h3>
             <label class="prg-field prg-field--row">
                 <input type="checkbox" data-audience-all>
@@ -182,6 +186,10 @@ FORM: Operate.
         </label>
         <div class="prg-progress" aria-hidden="true"><span data-v-bar></span></div>
         <p class="prg-message" data-v-progress>Файл ещё не выбран</p>
+        <label class="prg-field prg-field--row">
+            <input type="checkbox" data-v-required checked>
+            <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
+        </label>
         {{ audience_block('video') }}
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-video-save disabled>Сохранить</button>
@@ -221,6 +229,10 @@ FORM: Operate.
             <input type="file" data-h-images accept="image/*" multiple>
         </label>
         <div class="prg-thumbs" data-h-thumbs></div>
+        <label class="prg-field prg-field--row">
+            <input type="checkbox" data-h-gate-required checked>
+            <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
+        </label>
         {{ audience_block('homework') }}
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-homework-save>Сохранить</button>
@@ -268,6 +280,10 @@ FORM: Operate.
             </div>
         </div>
 
+        <label class="prg-field prg-field--row">
+            <input type="checkbox" data-s-required checked>
+            <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
+        </label>
         {{ audience_block('survey') }}
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-survey-save>Сохранить</button>
@@ -828,6 +844,7 @@ FORM: Operate.
                 cover_url: coverImage.url,
                 cover_path: coverImage.path,
                 subject: videoForm.querySelector('[data-v-subject]').value || null,
+                is_required: videoForm.querySelector('[data-v-required]').checked,
                 audience: audienceVideo
             }).then(afterSave).catch(function (error) {
                 saveVideo.disabled = false;
@@ -850,6 +867,7 @@ FORM: Operate.
                 submission_required: homeworkForm.querySelector('[data-h-required]').checked,
                 max_files: Number(homeworkForm.querySelector('[data-h-files]').value || 0),
                 images: homeworkImages,
+                is_required: homeworkForm.querySelector('[data-h-gate-required]').checked,
                 audience: audienceHw
             }).then(afterSave).catch(function (error) {
                 saveHomework.disabled = false;
@@ -879,7 +897,10 @@ FORM: Operate.
             var audienceSurvey = readAudience(surveyForm);
             if (!audienceSurvey) return;
             var mode = surveyForm.querySelector('[data-s-mode]:checked').value;
-            var payload = {audience: audienceSurvey};
+            var payload = {
+                audience: audienceSurvey,
+                is_required: surveyForm.querySelector('[data-s-required]').checked
+            };
             if (mode === 'existing') {
                 var surveyId = surveyForm.querySelector('[data-s-existing]').value;
                 if (!surveyId) { setMessage(surveyForm, 'Выберите анкету из списка.', true); return; }

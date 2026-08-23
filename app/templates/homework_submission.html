@@ -100,6 +100,15 @@ tests/test_reuse_ratchet.py.
         {% endif %}
 
         {% if viewer_role != 'student' %}
+        {% if final_image and submission.status != 'accepted' %}
+        <form class="hw-async-form" method="post" action="/cabinet/staff/homework/submissions/{{ submission.id }}/accept" style="margin-top:14px;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <button type="submit" class="btn-blue">Принять работу</button>
+            <p class="prg-message"></p>
+        </form>
+        {% elif submission.status == 'accepted' %}
+        <span class="chip" style="margin-top:14px;display:inline-block;">Работа принята</span>
+        {% endif %}
         <form class="hw-async-form" method="post" action="/cabinet/staff/homework/submissions/{{ submission.id }}/message" enctype="multipart/form-data" style="margin-top:14px;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
             <textarea class="field-input" name="text" rows="3" placeholder="Сообщение ученику"></textarea>
