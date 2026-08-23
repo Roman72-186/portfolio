@@ -36,6 +36,9 @@ from app.models.tracker import (
     ScheduleDigestAssignee,
     ScheduleDigestTag,
     ScheduleEvent,
+    TrackerGoal,
+    TrackerGoalAssignee,
+    TrackerGoalTag,
     TrackerTask,
     TrackerTaskAssignee,
     TrackerTaskState,
@@ -1110,5 +1113,209 @@ def active_digest_for_student(
             ScheduleDigest.month == month,
         )
         .order_by(ScheduleDigest.published_at.desc())
+        .first()
+    )
+
+
+# ---------------------------------------------------------------------------
+# «Ближайшая цель» — ручная карточка преподавателя (решение владельца 23.08)
+# ---------------------------------------------------------------------------
+
+def list_goals(db: Session, *, include_deleted: bool = False) -> list[TrackerGoal]:
+    """Цели для списка преподавателя: без даты начала — внизу, иначе по дате."""
+    query = db.query(TrackerGoal)
+    if not include_deleted:
+        query = query.filter(TrackerGoal.deleted_at.is_(None))
+    no_start_last = case((TrackerGoal.starts_on.is_(None), 1), else_=0)
+    return query.order_by(
+        no_start_last, TrackerGoal.starts_on.asc(), TrackerGoal.id.desc()
+    ).all()
+
+
+def get_goal(db: Session, goal_id: int) -> TrackerGoal | None:
+    goal = db.get(TrackerGoal, goal_id)
+    if goal is None or goal.deleted_at is not None:
+        return None
+    return goal
+
+
+def create_goal(
+    db: Session,
+    *,
+    title: str,
+    user_id: int,
+    description: str | None = None,
+    target_score: int | None = None,
+    starts_on: date | None = None,
+    ends_on: date | None = None,
+    assign_to_all: bool = False,
+) -> TrackerGoal:
+    goal = TrackerGoal(
+        title=title,
+        description=description,
+        target_score=target_score,
+        starts_on=starts_on,
+        ends_on=ends_on,
+        assign_to_all=assign_to_all,
+        created_by_id=user_id,
+    )
+    db.add(goal)
+    db.flush()
+    return goal
+
+
+def update_goal(
+    goal: TrackerGoal,
+    *,
+    title: str,
+    description: str | None = None,
+    target_score: int | None = None,
+    starts_on: date | None = None,
+    ends_on: date | None = None,
+    assign_to_all: bool = False,
+) -> None:
+    goal.title = title
+    goal.description = description
+    goal.target_score = target_score
+    goal.starts_on = starts_on
+    goal.ends_on = ends_on
+    goal.assign_to_all = assign_to_all
+
+
+def set_goal_tags(db: Session, goal: TrackerGoal, tag_ids: list[int]) -> None:
+    db.query(TrackerGoalTag).filter(TrackerGoalTag.goal_id == goal.id).delete(
+        synchronize_session=False
+    )
+    for tag_id in dict.fromkeys(tag_ids):
+        db.add(TrackerGoalTag(goal_id=goal.id, tag_id=tag_id))
+    db.flush()
+
+
+def set_goal_assignees(db: Session, goal: TrackerGoal, user_ids: list[int]) -> None:
+    db.query(TrackerGoalAssignee).filter(
+        TrackerGoalAssignee.goal_id == goal.id
+    ).delete(synchronize_session=False)
+    for user_id in dict.fromkeys(user_ids):
+        db.add(TrackerGoalAssignee(goal_id=goal.id, user_id=user_id))
+    db.flush()
+
+
+def get_goal_tag_ids(db: Session, goal_id: int) -> list[int]:
+    rows = db.query(TrackerGoalTag.tag_id).filter(TrackerGoalTag.goal_id == goal_id).all()
+    return [row[0] for row in rows]
+
+
+def get_goal_assignee_ids(db: Session, goal_id: int) -> list[int]:
+    rows = (
+        db.query(TrackerGoalAssignee.user_id)
+        .filter(TrackerGoalAssignee.goal_id == goal_id)
+        .all()
+    )
+    return [row[0] for row in rows]
+
+
+def count_goal_audience(
+    db: Session, *, assign_to_all: bool, tag_ids: list[int], assignee_ids: list[int]
+) -> int:
+    """Тот же расчёт охвата, что у задач и дайджеста — без фильтра по
+    членству в группе, по той же причине (`/cabinet/tracker` закрыт
+    `require_student`, не `require_learning_content_access`)."""
+    students = (
+        db.query(User.id)
+        .join(Role, User.role_id == Role.id)
+        .filter(
+            Role.rank == STUDENT_ROLE_RANK,
+            User.is_active.is_(True),
+            User.deleted_at.is_(None),
+        )
+    )
+    if assign_to_all:
+        return students.count()
+
+    reached: set[int] = set()
+    if tag_ids:
+        rows = (
+            students.join(UserTag, UserTag.user_id == User.id)
+            .filter(UserTag.tag_id.in_(tag_ids))
+            .all()
+        )
+        reached.update(row[0] for row in rows)
+    if assignee_ids:
+        rows = students.filter(User.id.in_(assignee_ids)).all()
+        reached.update(row[0] for row in rows)
+    return len(reached)
+
+
+def publish_goal(goal: TrackerGoal, *, user_id: int) -> None:
+    if goal.deleted_at is not None:
+        raise ValueError("Goal is deleted")
+    goal.is_published = True
+    goal.published_at = datetime.now(timezone.utc)
+    goal.published_by_id = user_id
+
+
+def unpublish_goal(goal: TrackerGoal) -> None:
+    goal.is_published = False
+    goal.published_at = None
+    goal.published_by_id = None
+
+
+def delete_goal(goal: TrackerGoal) -> None:
+    """Мягкое удаление, только со снятой публикации — тот же довод, что у
+    задач и дайджеста."""
+    goal.deleted_at = datetime.now(timezone.utc)
+    goal.is_published = False
+
+
+def accessible_goal_ids(db: Session, user_id: int) -> set[int]:
+    """Опубликованные цели, адресованные ученику — зеркало
+    `accessible_digest_ids`, но по TrackerGoalTag/TrackerGoalAssignee."""
+    user_tag_ids = (
+        db.query(UserTag.tag_id).filter(UserTag.user_id == user_id).scalar_subquery()
+    )
+    tagged_ids = (
+        db.query(TrackerGoalTag.goal_id)
+        .filter(TrackerGoalTag.tag_id.in_(user_tag_ids))
+        .scalar_subquery()
+    )
+    assigned_ids = (
+        db.query(TrackerGoalAssignee.goal_id)
+        .filter(TrackerGoalAssignee.user_id == user_id)
+        .scalar_subquery()
+    )
+    rows = (
+        db.query(TrackerGoal.id)
+        .filter(
+            TrackerGoal.deleted_at.is_(None),
+            TrackerGoal.is_published.is_(True),
+            or_(
+                TrackerGoal.assign_to_all.is_(True),
+                TrackerGoal.id.in_(tagged_ids),
+                TrackerGoal.id.in_(assigned_ids),
+            ),
+        )
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def active_goal_for_student(db: Session, user_id: int, *, today: date) -> TrackerGoal | None:
+    """Ближайшая ещё не завершившаяся цель, адресованная ученику.
+
+    «Ближайшая» — по дате начала, раньше вперёд; цели без даты начала идут
+    после датированных (их «близость» не определена, но прятать их совсем
+    было бы неверно). Уже прошедшие (`ends_on` в прошлом) не показываются.
+    """
+    goal_ids = accessible_goal_ids(db, user_id)
+    if not goal_ids:
+        return None
+    no_start_last = case((TrackerGoal.starts_on.is_(None), 1), else_=0)
+    return (
+        db.query(TrackerGoal)
+        .filter(
+            TrackerGoal.id.in_(goal_ids),
+            or_(TrackerGoal.ends_on.is_(None), TrackerGoal.ends_on >= today),
+        )
+        .order_by(no_start_last, TrackerGoal.starts_on.asc(), TrackerGoal.id.desc())
         .first()
     )

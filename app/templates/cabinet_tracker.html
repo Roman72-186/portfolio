@@ -121,6 +121,24 @@ FORM: Operate, список, а не карточка-витрина.
     {% endfor %}
     {% endif %}
 
+    {% if goal %}
+    <div class="trk-day">Ближайшая цель</div>
+    <div class="trk-row">
+        <div>
+            <h3>{{ goal.title }}</h3>
+            {% if goal.description %}<p>{{ goal.description }}</p>{% endif %}
+            <div class="trk-meta">
+                {% if goal.starts_on and goal.ends_on %}
+                <span>{{ goal.starts_on.strftime('%d.%m') }} — {{ goal.ends_on.strftime('%d.%m.%Y') }}</span>
+                {% elif goal.starts_on %}
+                <span>с {{ goal.starts_on.strftime('%d.%m.%Y') }}</span>
+                {% endif %}
+                {% if goal.target_score is not none %}<span>Цель: {{ goal.target_score }} баллов</span>{% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <div style="height:96px"></div>
 </div>
 

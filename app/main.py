@@ -19,7 +19,7 @@ from app.api import cycle_upload, feedback as feedback_router
 from app.api import legacy_portfolio, video, video_admin
 from app.api import guest_exam, cabinet_guest_exam_admin
 from app.api import cabinet_learning, cabinet_personal, cabinet_tracker_admin, cabinet_program
-from app.api import cabinet_digest_admin
+from app.api import cabinet_digest_admin, cabinet_goal_admin
 from app.api import cabinet_tracker
 from app.api import homework_submission
 from app.api import survey_submission
@@ -291,6 +291,7 @@ app.include_router(cabinet_learning.router)
 app.include_router(cabinet_personal.router)
 app.include_router(cabinet_tracker_admin.router)
 app.include_router(cabinet_digest_admin.router)
+app.include_router(cabinet_goal_admin.router)
 app.include_router(cabinet_program.router)
 app.include_router(cabinet_tracker.router)
 app.include_router(homework_submission.router)

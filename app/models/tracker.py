@@ -391,3 +391,87 @@ class ScheduleEvent(Base):
     __table_args__ = (
         Index("ix_schedule_events_digest_date", "digest_id", "starts_on"),
     )
+
+
+class TrackerGoal(Base):
+    """«Ближайшая цель» на Личном трекере — ручная карточка преподавателя
+    (решение владельца 23.08: не производная от гейта, отдельная небольшая
+    сущность). Пример: «Пробник по рисунку, с 25 по 30 число, цель 75 баллов».
+
+    Адресация та же тройка, что у задач и дайджеста: явный флаг «всем» + теги
+    + поимённые исключения. У ученика показывается ближайшая по `starts_on`
+    цель из адресованных ему и ещё не завершившихся (`ends_on` в будущем или
+    без даты вовсе).
+    """
+
+    __tablename__ = "tracker_goals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    starts_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    ends_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    assign_to_all: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    published_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_tracker_goals_public", "is_published", "starts_on"),
+    )
+
+
+class TrackerGoalTag(Base):
+    """Кому адресована цель по тегам. Строго по tag_id, как у задач и дайджеста."""
+
+    __tablename__ = "tracker_goal_tags"
+
+    goal_id: Mapped[int] = mapped_column(
+        ForeignKey("tracker_goals.id", ondelete="CASCADE"), primary_key=True
+    )
+    tag_id: Mapped[int] = mapped_column(
+        ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True
+    )
+
+    __table_args__ = (
+        Index("ix_tracker_goal_tags_tag", "tag_id"),
+    )
+
+
+class TrackerGoalAssignee(Base):
+    """Поимённое исключение: цель выдана ученику сверх тегов."""
+
+    __tablename__ = "tracker_goal_assignees"
+
+    goal_id: Mapped[int] = mapped_column(
+        ForeignKey("tracker_goals.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        Index("ix_tracker_goal_assignees_user", "user_id"),
+    )

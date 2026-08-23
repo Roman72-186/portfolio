@@ -190,6 +190,16 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         min_rank=4,
     ),
     StaffNavItem(
+        key="goals",
+        href="/cabinet/staff/goals",
+        sidebar_label="Цели",
+        pill_label="Цели",
+        aria_label="Ближайшая цель",
+        tooltip="Карточка ближайшей цели для Личного трекера",
+        icon="cases",
+        min_rank=4,
+    ),
+    StaffNavItem(
         key="videos",
         href="/cabinet/admin/videos",
         sidebar_label="Видео",

@@ -46,6 +46,7 @@ from app.services.tracker import (
     accessible_task_entries,
     accessible_task_ids,
     active_digest_for_student,
+    active_goal_for_student,
     effective_week_start,
     list_events,
     task_status,
@@ -75,6 +76,7 @@ def cabinet_tracker(
     # Дайджест месяца — первый блок на экране (решение владельца 22.08).
     digest = active_digest_for_student(db, user["user_id"], year=today.year, month=today.month)
     digest_events = list_events(db, digest.id) if digest is not None else []
+    goal = active_goal_for_student(db, user["user_id"], today=today)
 
     overdue = [e for e in entries if e["status"] == "overdue"]
     upcoming = [e for e in entries if e["status"] == "upcoming"]
@@ -103,6 +105,7 @@ def cabinet_tracker(
         "digest": digest,
         "digest_events": digest_events,
         "event_kind_labels": EVENT_KIND_LABELS,
+        "goal": goal,
         # Красное предупреждение (решение владельца 23.08, гейт «блок → неделя
         # → месяц»): ученик застрял на прошлой неделе, а не идёт по текущей.
         "is_behind_schedule": effective_week_start(db, user["user_id"], today) < week_monday,

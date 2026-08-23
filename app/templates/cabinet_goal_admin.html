@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+{#
+THESIS: преподаватель заводит одну карточку цели на аудиторию, ученик видит ближайшую из адресованных.
+OWN-WORLD: тот же Spark UI и trk-* классы, что у задач и дайджеста.
+STORY: завёл цель («Пробник по рисунку, 25–30, цель 75 баллов»), проверил охват, опубликовал.
+FIRST VIEWPORT: заголовок, кнопка «Новая цель», список целей.
+FORM: Operate, расширение существующего кабинета без новой визуальной системы.
+#}
+{% block title %}Ближайшая цель{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/tracker.css?v=4">
+{% endblock %}
+{% block content %}
+<div class="trk-page">
+    <div class="trk-head">
+        <div class="trk-head-copy">
+            <h1>Ближайшая цель</h1>
+            <p>Ученик видит на «Личном трекере» одну ближайшую из адресованных ему опубликованных целей — по дате начала.</p>
+        </div>
+        <button type="button" class="btn-blue" data-goal-toggle>Новая цель</button>
+    </div>
+
+    <form class="trk-form" data-goal-form hidden>
+        <input type="hidden" data-goal-id value="">
+        <div class="trk-grid">
+            <label class="trk-field">Название
+                <input data-goal-title type="text" maxlength="200" placeholder="Например: Пробник по рисунку" autocomplete="off">
+            </label>
+            <label class="trk-field">Начало
+                <input data-goal-starts type="date">
+            </label>
+            <label class="trk-field">Окончание
+                <input data-goal-ends type="date">
+            </label>
+        </div>
+        <div class="trk-grid trk-grid--two">
+            <label class="trk-field">Описание, необязательно
+                <input data-goal-description type="text" maxlength="2000" placeholder="Короткая подпись под карточкой">
+            </label>
+            <label class="trk-field">Целевой балл, необязательно
+                <input data-goal-score type="number" min="0" max="100">
+            </label>
+        </div>
+        <label class="trk-field trk-field--row">
+            <input data-goal-all type="checkbox">
+            <span>Выдать всем ученикам</span>
+        </label>
+        <div data-goal-audience>
+            <div class="trk-hint">Кому выдать — отметьте теги:</div>
+            <div class="trk-tag-picker">
+                {% for tag in all_tags %}
+                <label><input type="checkbox" data-goal-tag value="{{ tag.id }}"{% if tag.id in ambiguous_tag_ids|default([]) %} data-goal-tag-ambiguous{% endif %}>{{ tag.name }}</label>
+                {% else %}
+                <span class="trk-hint">Тегов пока нет — их заводят на странице «Теги».</span>
+                {% endfor %}
+            </div>
+            <p class="trk-message is-error" data-goal-tag-warning hidden></p>
+            <label class="trk-field" style="margin-top: 10px;">Плюс отдельным ученикам: @username через запятую или с новой строки
+                <input data-goal-assignees type="text" placeholder="@ivanov, @petrova" autocomplete="off">
+            </label>
+        </div>
+        <div class="trk-actions">
+            <button type="button" class="btn-blue" data-goal-save>Сохранить цель</button>
+            <button type="button" class="btn-outline" data-goal-cancel>Отмена</button>
+        </div>
+        <p class="trk-message" data-goal-message></p>
+    </form>
+
+    <div class="trk-list-head">
+        <h2>Все цели</h2>
+    </div>
+
+    {% if goals %}
+    <div>
+        {% for goal in goals %}
+        <article class="trk-row" data-goal-row data-id="{{ goal.id }}"
+                 data-title="{{ goal.title }}"
+                 data-description="{{ goal.description or '' }}"
+                 data-score="{{ goal.target_score if goal.target_score is not none else '' }}"
+                 data-starts="{{ goal.starts_on.isoformat() if goal.starts_on else '' }}"
+                 data-ends="{{ goal.ends_on.isoformat() if goal.ends_on else '' }}"
+                 data-all="{{ '1' if goal.assign_to_all else '' }}"
+                 data-tags="{{ goal_tag_ids.get(goal.id, [])|join(',') }}"
+                 data-assignees="{{ goal_assignee_usernames.get(goal.id, '') }}">
+            <div>
+                <h3>{{ goal.title }}</h3>
+                {% if goal.description %}<p>{{ goal.description }}</p>{% endif %}
+                <div class="trk-meta">
+                    {% if goal.starts_on and goal.ends_on %}
+                    <span>{{ goal.starts_on.strftime('%d.%m') }} — {{ goal.ends_on.strftime('%d.%m.%Y') }}</span>
+                    {% elif goal.starts_on %}
+                    <span>с {{ goal.starts_on.strftime('%d.%m.%Y') }}</span>
+                    {% else %}
+                    <span>Без дат</span>
+                    {% endif %}
+                    {% if goal.target_score is not none %}<span>Цель: {{ goal.target_score }} баллов</span>{% endif %}
+                    {% if goal.assign_to_all %}
+                    <span>Всем ученикам</span>
+                    {% else %}
+                    <span>Тегов: {{ goal_tag_ids.get(goal.id, [])|length }}</span>
+                    {% if goal_assignee_ids.get(goal.id) %}<span>Поимённо: {{ goal_assignee_ids.get(goal.id)|length }}</span>{% endif %}
+                    {% endif %}
+                    <span>Получат: {{ goal_audience.get(goal.id, 0) }}</span>
+                </div>
+                {% if goal_ambiguous_tags.get(goal.id) %}
+                <p class="trk-message is-error">
+                    Теги {{ goal_ambiguous_tags.get(goal.id)|join(', ') }} в проде означают группу и уровень куратора,
+                    а не предмет. Совпадение точное: ученики с тегом вида «Р+К» цель не получат.
+                </p>
+                {% endif %}
+            </div>
+            <div class="trk-row-actions">
+                {% if goal.is_published %}
+                <span class="trk-badge trk-badge--live">Опубликована</span>
+                <button type="button" class="btn-outline" data-goal-action="unpublish">Скрыть</button>
+                {% else %}
+                <span class="trk-badge trk-badge--draft">Черновик</span>
+                <button type="button" class="btn-blue" data-goal-action="publish">Опубликовать</button>
+                {% endif %}
+                <button type="button" class="btn-outline" data-goal-edit>Изменить</button>
+                <button type="button" class="btn-danger" data-goal-action="delete">Удалить</button>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="trk-empty">Целей пока нет.</div>
+    {% endif %}
+</div>
+
+<script>
+(function () {
+    var csrfToken = {{ csrf_token(request)|tojson }};
+    var form = document.querySelector('[data-goal-form]');
+    if (!form) return;
+    var message = form.querySelector('[data-goal-message]');
+
+    function field(name) { return form.querySelector('[data-goal-' + name + ']'); }
+
+    function setMessage(text, isError) {
+        if (!message) return;
+        message.textContent = text || '';
+        message.classList.toggle('is-error', !!isError);
+    }
+
+    function api(path, body) {
+        return fetch(path, {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Accept':'application/json', 'Content-Type':'application/json', 'X-CSRF-Token':csrfToken},
+            body: JSON.stringify(body || {})
+        }).then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (data) {
+                if (!response.ok) {
+                    var reason = data.error
+                        || (typeof data.detail === 'string' ? data.detail : '')
+                        || 'request_failed';
+                    var error = new Error(reason);
+                    error.status = response.status;
+                    throw error;
+                }
+                return data;
+            });
+        });
+    }
+
+    function syncAudienceVisibility() {
+        var audience = form.querySelector('[data-goal-audience]');
+        if (audience) audience.hidden = field('all').checked;
+        syncAmbiguousTagWarning();
+    }
+
+    function syncAmbiguousTagWarning() {
+        var warning = form.querySelector('[data-goal-tag-warning]');
+        if (!warning) return;
+        var names = [];
+        form.querySelectorAll('[data-goal-tag-ambiguous]:checked').forEach(function (box) {
+            names.push(box.parentElement.textContent.trim());
+        });
+        if (!names.length || field('all').checked) {
+            warning.hidden = true;
+            warning.textContent = '';
+            return;
+        }
+        warning.hidden = false;
+        warning.textContent = 'Теги ' + names.join(', ')
+            + ' в проде означают группу и уровень куратора, а не предмет.'
+            + ' Совпадение точное: ученики с тегом вида «Р+К» цель не получат.';
+    }
+
+    function openForm(row) {
+        form.hidden = false;
+        setMessage('');
+        field('id').value = row ? row.dataset.id : '';
+        field('title').value = row ? row.dataset.title : '';
+        field('description').value = row ? row.dataset.description : '';
+        field('score').value = row ? row.dataset.score : '';
+        field('starts').value = row ? row.dataset.starts : '';
+        field('ends').value = row ? row.dataset.ends : '';
+        field('all').checked = row ? row.dataset.all === '1' : false;
+        field('assignees').value = row ? (row.dataset.assignees || '') : '';
+        var selected = row && row.dataset.tags ? row.dataset.tags.split(',') : [];
+        form.querySelectorAll('[data-goal-tag]').forEach(function (box) {
+            box.checked = selected.indexOf(box.value) !== -1;
+        });
+        syncAudienceVisibility();
+        field('title').focus();
+    }
+
+    field('all').addEventListener('change', syncAudienceVisibility);
+    form.addEventListener('change', function (event) {
+        if (event.target.hasAttribute('data-goal-tag')) syncAmbiguousTagWarning();
+    });
+
+    document.addEventListener('click', function (event) {
+        if (event.target.closest('[data-goal-toggle]')) { openForm(null); return; }
+        if (event.target.closest('[data-goal-cancel]')) { form.hidden = true; return; }
+
+        var editButton = event.target.closest('[data-goal-edit]');
+        if (editButton) { openForm(editButton.closest('[data-goal-row]')); return; }
+
+        var saveButton = event.target.closest('[data-goal-save]');
+        if (saveButton) {
+            var title = field('title').value.trim();
+            if (!title) { setMessage('Укажите название цели.', true); return; }
+
+            var tagIds = [];
+            form.querySelectorAll('[data-goal-tag]:checked').forEach(function (box) {
+                tagIds.push(Number(box.value));
+            });
+            var assignees = field('assignees').value;
+            var isForAll = field('all').checked;
+            if (!isForAll && !tagIds.length && !assignees.trim()) {
+                setMessage('Цель никто не увидит: отметьте теги, добавьте учеников или выдайте всем.', true);
+                return;
+            }
+
+            var goalId = field('id').value;
+            var score = field('score').value;
+            saveButton.disabled = true;
+            api('/cabinet/staff/goals' + (goalId ? '/' + goalId : ''), {
+                title: title,
+                description: field('description').value,
+                target_score: score === '' ? null : Number(score),
+                starts_on: field('starts').value || null,
+                ends_on: field('ends').value || null,
+                assign_to_all: isForAll,
+                tag_ids: isForAll ? [] : tagIds,
+                assignee_usernames: isForAll ? '' : assignees
+            }).then(function (data) {
+                if (data && data.not_found && data.not_found.length) {
+                    window.alert('Не нашлись ученики: @' + data.not_found.join(', @'));
+                }
+                if (data && data.audience_size === 0) {
+                    window.alert('Цель сейчас никто не увидит: под выбранную аудиторию не подошёл ни один активный ученик.');
+                } else if (data && data.ambiguous_tags && data.ambiguous_tags.length) {
+                    window.alert('Цель сохранена и уйдёт ' + data.audience_size + ' ученикам.'
+                        + ' Проверьте теги ' + data.ambiguous_tags.join(', ')
+                        + ': в проде это группа и уровень куратора, а совпадение точное.');
+                }
+                window.location.reload();
+            }).catch(function (error) {
+                saveButton.disabled = false;
+                var explained = error.status === 422 && error.message !== 'request_failed';
+                setMessage(explained
+                    ? error.message
+                    : 'Не удалось сохранить цель. Попробуйте ещё раз.', true);
+            });
+            return;
+        }
+
+        var actionButton = event.target.closest('[data-goal-action]');
+        if (!actionButton) return;
+        var row = actionButton.closest('[data-goal-row]');
+        var action = actionButton.dataset.goalAction;
+        if (action === 'delete' && !window.confirm('Удалить цель «' + row.dataset.title + '»?')) return;
+
+        actionButton.disabled = true;
+        api('/cabinet/staff/goals/' + row.dataset.id + '/' + action).then(function () {
+            window.location.reload();
+        }).catch(function (error) {
+            actionButton.disabled = false;
+            window.alert(error.message === 'unpublish_first'
+                ? 'Цель опубликована и висит у учеников. Сначала скройте её.'
+                : 'Действие не выполнено. Попробуйте ещё раз.');
+        });
+    });
+})();
+</script>
+{% endblock %}
