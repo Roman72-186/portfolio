@@ -209,6 +209,7 @@
 .lrn-tabs .nav-pill-item { flex: 0 0 auto; white-space: nowrap; }
 
 .lrn-tabpanel { display: flex; flex-direction: column; gap: 12px; }
+.lrn-tabpanel[hidden] { display: none; }
 
 .lrn-cards { display: flex; flex-direction: column; gap: 12px; }
 .lrn-card {
