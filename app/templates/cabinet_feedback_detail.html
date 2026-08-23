@@ -406,6 +406,9 @@
                                 {%- if m.video_s3_url -%}
                                     <video class="dlg-msg-video" controls preload="metadata" src="{{ m.video_s3_url }}"></video>
                                 {%- endif -%}
+                                {%- if m.audio_s3_url -%}
+                                    <audio class="dlg-msg-audio" controls preload="metadata" src="{{ m.audio_s3_url }}"></audio>
+                                {%- endif -%}
                             </div>
                             <div class="dlg-msg-meta">
                                 {% if anon_staff %}
@@ -476,9 +479,14 @@
                             <span class="dlg-attach-text">Видео</span>
                             <input type="file" name="video" accept="video/*">
                         </label>
+                        <label class="dlg-attach">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                            <span class="dlg-attach-text">Голосовое</span>
+                            <input type="file" name="audio" accept="audio/*">
+                        </label>
                         <button type="submit" class="btn-blue dlg-send">Отправить обратную связь</button>
                     </div>
-                    <div class="dlg-form-hint">Заполните хотя бы один пункт или прикрепите фото до 25 МБ / видео до 500 МБ. Фото будет сжато автоматически.</div>
+                    <div class="dlg-form-hint">Заполните хотя бы один пункт или прикрепите фото до 25 МБ / видео до 500 МБ / голосовое до 25 МБ. Фото будет сжато автоматически.</div>
                 </form>
             {% else %}
                 <form class="dlg-form" method="post" action="/cabinet/feedback/{{ target_work_id }}/message" enctype="multipart/form-data" data-work-id="{{ target_work_id }}">
@@ -496,10 +504,15 @@
                                 <span class="dlg-attach-text">Видео</span>
                                 <input type="file" name="video" accept="video/*">
                             </label>
+                            <label class="dlg-attach">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                                <span class="dlg-attach-text">Голосовое</span>
+                                <input type="file" name="audio" accept="audio/*">
+                            </label>
                             <button type="submit" class="btn-blue dlg-send">Отправить</button>
                         </div>
                     </div>
-                    <div class="dlg-form-hint">Текст, фото до 25 МБ или видео до 500 МБ — хотя бы одно. Фото будет сжато автоматически.</div>
+                    <div class="dlg-form-hint">Текст, фото до 25 МБ, видео до 500 МБ или голосовое до 25 МБ — хотя бы одно. Фото будет сжато автоматически.</div>
                 </form>
             {% endif %}
         </section>
@@ -596,20 +609,23 @@ document.querySelectorAll('.dlg-messages').forEach(el => { el.scrollTop = el.scr
 
 const MAX_FEEDBACK_PHOTO_SIZE = 25 * 1024 * 1024;
 const MAX_FEEDBACK_VIDEO_SIZE = 500 * 1024 * 1024;
+const MAX_FEEDBACK_AUDIO_SIZE = 25 * 1024 * 1024;
 const FEEDBACK_TEXT_TIMEOUT_MS = 45 * 1000;
 const FEEDBACK_FILE_TIMEOUT_MS = 10 * 60 * 1000;
 
 document.querySelectorAll('.dlg-attach input[type="file"]').forEach(input => {
-    const isVideo = input.name === 'video';
-    const defaultLabel = isVideo ? 'Видео' : 'Фото';
-    const maxSize = isVideo ? MAX_FEEDBACK_VIDEO_SIZE : MAX_FEEDBACK_PHOTO_SIZE;
+    const kind = input.name; // photo | video | audio
+    const defaultLabel = kind === 'video' ? 'Видео' : kind === 'audio' ? 'Голосовое' : 'Фото';
+    const maxSize = kind === 'video' ? MAX_FEEDBACK_VIDEO_SIZE
+        : kind === 'audio' ? MAX_FEEDBACK_AUDIO_SIZE
+        : MAX_FEEDBACK_PHOTO_SIZE;
     input.addEventListener('change', () => {
         const wrap = input.closest('.dlg-attach');
         const label = wrap.querySelector('.dlg-attach-text');
         const f = input.files[0];
         if (f && f.size > maxSize) {
-            alert(isVideo
-                ? 'Видео больше 500 МБ. Выберите файл меньшего размера.'
+            alert(kind === 'video' ? 'Видео больше 500 МБ. Выберите файл меньшего размера.'
+                : kind === 'audio' ? 'Голосовое больше 25 МБ. Выберите файл меньшего размера.'
                 : 'Фото больше 25 МБ. Выберите файл меньшего размера.');
             input.value = '';
             if (label) label.textContent = defaultLabel;
@@ -775,7 +791,7 @@ document.querySelectorAll('form.dlg-form').forEach(form => {
         const btn = form.querySelector('.dlg-send');
         const anyText = Array.from(form.querySelectorAll('textarea')).some(t => (t.value || '').trim());
         const hasFile = Array.from(form.querySelectorAll('input[type="file"]')).some(i => i.files && i.files.length > 0);
-        if (!anyText && !hasFile) { alert('Заполните хотя бы один пункт или прикрепите фото/видео'); return; }
+        if (!anyText && !hasFile) { alert('Заполните хотя бы один пункт или прикрепите фото/видео/голосовое'); return; }
         btn.disabled = true;
         const origText = btn.textContent;
         btn.textContent = 'Отправка…';

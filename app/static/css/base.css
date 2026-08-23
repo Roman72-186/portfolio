@@ -478,6 +478,11 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 .photo-zoom-button > img { display: block; max-width: 100%; }
 .photo-zoom-button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
+/* Голосовые вложения в чатах (диалог обратной связи и подобные) — без этого
+   правила <audio controls> растягивается на всю ширину контейнера в некоторых
+   браузерах. Тег, не класс: любой чат может использовать без нового CSS. */
+audio { max-width: 100%; }
+
 /* Sticky mobile CTA (конвенция №5): обёртка вокруг primary-кнопки внизу
    главной формы экрана. position:sticky остаётся в потоке (не перекрывает
    контент), липнет над bottom-nav (высота ~72px, z-index 100) до своей

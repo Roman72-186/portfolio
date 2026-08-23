@@ -289,6 +289,7 @@ async def post_dialog_message(
     intermediate_score: str = Form(default=""),
     photo: UploadFile | None = File(default=None),
     video: UploadFile | None = File(default=None),
+    audio: UploadFile | None = File(default=None),
 ):
     work = db.query(Work).filter(Work.id == work_id).first()
     if not work:
@@ -414,8 +415,26 @@ async def post_dialog_message(
         if vdata:
             video_payload = (video.filename, vdata, content_type or "video/mp4")
 
-    if not text_clean and photo_payload is None and video_payload is None:
-        raise HTTPException(status_code=400, detail="Введи текст, прикрепи фото или видео")
+    audio_payload: tuple[str, bytes, str] | None = None
+    if audio and audio.filename:
+        ext = Path(audio.filename).suffix.lower()
+        audio_content_type = (audio.content_type or "").lower()
+        if (
+            audio_content_type not in fb_service.ALLOWED_FEEDBACK_AUDIO_TYPES
+            and ext not in fb_service.ALLOWED_FEEDBACK_AUDIO_EXTENSIONS
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Голосовое должно быть в формате mp3, ogg, opus, webm, wav, m4a, aac, amr или 3gp",
+            )
+        adata = await audio.read(fb_service.MAX_FEEDBACK_AUDIO_SIZE + 1)
+        if len(adata) > fb_service.MAX_FEEDBACK_AUDIO_SIZE:
+            raise HTTPException(status_code=413, detail="Голосовое больше 25 МБ")
+        if adata:
+            audio_payload = (audio.filename, adata, audio_content_type or "audio/mpeg")
+
+    if not text_clean and photo_payload is None and video_payload is None and audio_payload is None:
+        raise HTTPException(status_code=400, detail="Введи текст, прикрепи фото, видео или голосовое")
 
     try:
         msg = await fb_service.send_message(
@@ -426,6 +445,7 @@ async def post_dialog_message(
             text=text_clean or None,
             photo=photo_payload,
             video=video_payload,
+            audio=audio_payload,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -454,6 +474,7 @@ async def post_dialog_message(
                 "text": msg.text,
                 "photo_s3_url": msg.photo_s3_url,
                 "video_s3_url": msg.video_s3_url,
+                "audio_s3_url": msg.audio_s3_url,
                 "created_at": msg.created_at.isoformat() if msg.created_at else None,
             },
         })

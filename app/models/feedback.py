@@ -81,6 +81,8 @@ class FeedbackMessage(Base):
     photo_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     video_s3_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     video_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    audio_s3_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    audio_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -93,7 +95,8 @@ class FeedbackMessage(Base):
         Index("ix_feedback_messages_feedback_created", "feedback_id", "created_at"),
         CheckConstraint(
             "(text IS NOT NULL AND length(text) > 0) "
-            "OR (photo_s3_url IS NOT NULL) OR (video_s3_url IS NOT NULL)",
+            "OR (photo_s3_url IS NOT NULL) OR (video_s3_url IS NOT NULL) "
+            "OR (audio_s3_url IS NOT NULL)",
             name="ck_feedback_messages_text_or_photo",
         ),
     )

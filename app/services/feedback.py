@@ -52,6 +52,29 @@ ALLOWED_FEEDBACK_VIDEO_EXTENSIONS = {
     ".m4v",
 }
 
+# Голосовые сообщения — решение владельца 22.08 («вложения фото/видео/
+# голосовое/текст»), закрыто 23.08: типы охватывают и запись из браузера
+# (webm/ogg-opus), и голосовые из мессенджеров/диктофона телефона (m4a/aac/
+# amr/3gp), которыми ученики и кураторы реально пользуются.
+MAX_FEEDBACK_AUDIO_SIZE = 25 * 1024 * 1024
+ALLOWED_FEEDBACK_AUDIO_TYPES = {
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/ogg",
+    "audio/opus",
+    "audio/webm",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/mp4",
+    "audio/x-m4a",
+    "audio/aac",
+    "audio/amr",
+    "audio/3gpp",
+}
+ALLOWED_FEEDBACK_AUDIO_EXTENSIONS = {
+    ".mp3", ".ogg", ".oga", ".opus", ".webm", ".wav", ".m4a", ".aac", ".amr", ".3gp",
+}
+
 ROLE_STUDENT = "student"
 ROLE_CURATOR = "curator"
 ROLE_ADMIN = "admin"
@@ -144,6 +167,28 @@ async def _upload_video(
     return s3_path, (s3_url or "")
 
 
+async def _upload_audio(
+    work_id: int, filename: str, data: bytes, content_type: str
+) -> tuple[str, str] | None:
+    """Положить голосовое в S3 как есть (без перекодирования). Returns (s3_path, s3_url) или None."""
+    loop = asyncio.get_running_loop()
+    s3_path = s3_service.s3_path_feedback(work_id, filename)
+    ct = content_type or "audio/mpeg"
+
+    def _do() -> str | None:
+        return s3_service.upload_to_s3(s3_path, data, ct)
+
+    try:
+        s3_url = await loop.run_in_executor(None, _do)
+    except Exception as exc:
+        logger.warning("feedback audio upload exception for work_id=%s: %s", work_id, exc)
+        return None
+    if s3_service.is_configured() and not s3_url:
+        logger.warning("feedback audio upload failed for work_id=%s", work_id)
+        return None
+    return s3_path, (s3_url or "")
+
+
 async def send_message(
     db: DBSession,
     *,
@@ -153,8 +198,9 @@ async def send_message(
     text: str | None,
     photo: tuple[str, bytes] | None,
     video: tuple[str, bytes, str] | None = None,
+    audio: tuple[str, bytes, str] | None = None,
 ) -> FeedbackMessage:
-    """Создать новое сообщение в диалоге. Хотя бы одно из (text, photo, video).
+    """Создать новое сообщение в диалоге. Хотя бы одно из (text, photo, video, audio).
 
     Не делает commit — caller отвечает за транзакцию.
     """
@@ -173,8 +219,15 @@ async def send_message(
         uploaded = await _upload_video(feedback.work_id, vfilename, vdata, vcontent_type)
         if uploaded is not None:
             video_path, video_url = uploaded
-    if text_clean is None and photo_url is None and video_url is None:
-        raise ValueError("Сообщение должно содержать текст, фото или видео")
+    audio_path: str | None = None
+    audio_url: str | None = None
+    if audio is not None:
+        afilename, adata, acontent_type = audio
+        uploaded = await _upload_audio(feedback.work_id, afilename, adata, acontent_type)
+        if uploaded is not None:
+            audio_path, audio_url = uploaded
+    if text_clean is None and photo_url is None and video_url is None and audio_url is None:
+        raise ValueError("Сообщение должно содержать текст, фото, видео или голосовое")
 
     msg = FeedbackMessage(
         feedback_id=feedback.id,
@@ -185,6 +238,8 @@ async def send_message(
         photo_s3_url=photo_url,
         video_s3_path=video_path,
         video_s3_url=video_url,
+        audio_s3_path=audio_path,
+        audio_s3_url=audio_url,
     )
     db.add(msg)
     db.flush()
@@ -230,6 +285,7 @@ def serialize_messages(
             "text": m.text,
             "photo_s3_url": m.photo_s3_url,
             "video_s3_url": m.video_s3_url,
+            "audio_s3_url": m.audio_s3_url,
             "created_at": m.created_at.isoformat() if m.created_at else None,
         }
         for m in messages

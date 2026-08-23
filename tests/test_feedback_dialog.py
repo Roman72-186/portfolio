@@ -583,6 +583,82 @@ def test_feedback_video_bad_format_rejected(
     upload.assert_not_called()
 
 
+def test_feedback_audio_uploaded_without_compression(
+    client, db, user_factory, session_factory
+):
+    curator = user_factory(vk_id=951003, name="Curator2", role_name="куратор")
+    student = user_factory(vk_id=951004, name="Student2", role_name="ученик")
+    student.curator_id = curator.id
+    db.add(student)
+    db.commit()
+    cycle = _mk_cycle(db, student.id)
+    work = _mk_final_work(db, student.id, cycle.id)
+    session = session_factory(curator)
+    client.cookies.set("session_id", session.id)
+
+    source = b"\x00\x01\x02" * 1000
+    with (
+        patch.object(feedback_service, "compress_image") as compress,
+        patch.object(
+            feedback_service.s3_service,
+            "upload_to_s3",
+            return_value="https://s3.example.com/feedback/voice.m4a",
+        ) as upload,
+    ):
+        resp = client.post(
+            f"/cabinet/feedback/{work.id}/message",
+            files={"audio": ("voice.m4a", source, "audio/mp4")},
+            headers={"Accept": "application/json"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["message"]["audio_s3_url"] == "https://s3.example.com/feedback/voice.m4a"
+    # голосовое не сжимается и не перекодируется, уходит как есть
+    compress.assert_not_called()
+    assert upload.call_args.args[1] == source
+
+
+def test_feedback_audio_bad_format_rejected(
+    client, admin_user, regular_user, session_factory, db
+):
+    cycle = _mk_cycle(db, regular_user.id)
+    work = _mk_final_work(db, regular_user.id, cycle.id)
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+
+    with patch.object(feedback_service.s3_service, "upload_to_s3") as upload:
+        resp = client.post(
+            f"/cabinet/feedback/{work.id}/message",
+            files={"audio": ("notes.txt", b"hello", "text/plain")},
+            headers={"Accept": "application/json"},
+        )
+
+    assert resp.status_code == 422
+    upload.assert_not_called()
+
+
+def test_feedback_audio_over_size_limit_rejected(
+    client, admin_user, regular_user, session_factory, db
+):
+    cycle = _mk_cycle(db, regular_user.id)
+    work = _mk_final_work(db, regular_user.id, cycle.id)
+    admin_sess = session_factory(admin_user)
+    client.cookies.set("session_id", admin_sess.id)
+
+    with (
+        patch.object(feedback_service, "MAX_FEEDBACK_AUDIO_SIZE", 10),
+        patch.object(feedback_service.s3_service, "upload_to_s3") as upload,
+    ):
+        resp = client.post(
+            f"/cabinet/feedback/{work.id}/message",
+            files={"audio": ("voice.ogg", b"x" * 11, "audio/ogg")},
+            headers={"Accept": "application/json"},
+        )
+
+    assert resp.status_code == 413
+    upload.assert_not_called()
+
+
 def test_student_cannot_message_in_closed_cycle(
     client, admin_user, regular_user, session_factory, db
 ):
