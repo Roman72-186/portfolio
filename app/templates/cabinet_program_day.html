@@ -8,7 +8,7 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=4">
+<link rel="stylesheet" href="/static/css/program.css?v=5">
 {% endblock %}
 {% block content %}
 <div class="prg-page" data-day="{{ day_iso }}">
@@ -90,87 +90,37 @@ FORM: Operate.
     {% if not is_past %}
     <form class="prg-form" data-form="mock" hidden>
         <h2>Задание (Пробник) на {{ day.day }} число</h2>
-
-        <div data-step="tickets">
-            <p class="prg-hint">Отметьте предметы. В один день можно поставить оба.</p>
-            {% for subject in subjects %}
-            <div class="prg-subject" data-subject-block="{{ subject }}">
-                <label class="prg-field prg-field--row">
-                    <input type="checkbox" data-subject-toggle value="{{ subject }}">
-                    <span><strong>{{ subject }}</strong></span>
+        <p class="prg-hint">Отметьте предметы. В один день можно поставить оба.</p>
+        {% for subject in subjects %}
+        <div class="prg-subject" data-subject-block="{{ subject }}">
+            <label class="prg-field prg-field--row">
+                <input type="checkbox" data-subject-toggle value="{{ subject }}">
+                <span><strong>{{ subject }}</strong></span>
+            </label>
+            <div data-subject-body hidden>
+                <label class="prg-field">Примечание к заданию, необязательно
+                    <input type="text" data-subject-note maxlength="200" autocomplete="off">
                 </label>
-                <div data-subject-body hidden>
-                    <label class="prg-field">Примечание к заданию, необязательно
-                        <input type="text" data-subject-note maxlength="200" autocomplete="off">
-                    </label>
-                    <div data-tickets></div>
-                    <div class="prg-actions">
-                        <button type="button" class="btn-outline" data-add-ticket>Добавить билет</button>
-                    </div>
+                <div data-tickets></div>
+                <div class="prg-actions">
+                    <button type="button" class="btn-outline" data-add-ticket>Добавить билет</button>
                 </div>
             </div>
-            {% endfor %}
-            <div class="prg-actions">
-                <button type="button" class="btn-blue" data-tickets-done>Сохранить билеты</button>
-                <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
-            </div>
         </div>
-
-        <div data-step="audience" hidden>
-            <label class="prg-field prg-field--row">
-                <input type="checkbox" checked disabled>
-                <span>Обязательный элемент — Пробник всегда учитывается в месячном гейте</span>
-            </label>
-            <h3>Кому доступен пробник</h3>
-            <label class="prg-field prg-field--row">
-                <input type="checkbox" data-audience-all>
-                <span>Всем ученикам</span>
-            </label>
-            <div data-audience-picker>
-                <div class="prg-hint">Теги:</div>
-                <div class="prg-tagpicker">
-                    {% for tag in tags %}
-                    <label><input type="checkbox" data-tag value="{{ tag.id }}">{{ tag.name }}</label>
-                    {% else %}
-                    <span class="prg-hint">Тегов пока нет.</span>
-                    {% endfor %}
-                </div>
-                <label class="prg-field" style="margin-top: 10px;">Плюс отдельным ученикам: @username через запятую
-                    <input type="text" data-assignees autocomplete="off" placeholder="@ivanov, @petrova">
-                </label>
-            </div>
-            <div class="prg-actions">
-                <button type="button" class="btn-blue" data-mock-save>Сохранить</button>
-                <button type="button" class="btn-outline" data-back-to-tickets>Назад к билетам</button>
-            </div>
+        {% endfor %}
+        <label class="prg-field prg-field--row">
+            <input type="checkbox" checked disabled>
+            <span>Обязательный элемент — Пробник всегда учитывается в месячном гейте, доступен всем ученикам</span>
+        </label>
+        <div class="prg-actions">
+            <button type="button" class="btn-blue" data-mock-save>Сохранить</button>
+            <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
         </div>
-
         <p class="prg-message" data-form-message></p>
     </form>
     {% endif %}
 
     {% if not is_past %}
-    {% macro audience_block(prefix) %}
-    <h3>Кому доступно</h3>
-    <label class="prg-field prg-field--row">
-        <input type="checkbox" data-audience-all>
-        <span>Всем ученикам</span>
-    </label>
-    <div data-audience-picker>
-        <div class="prg-hint">Теги:</div>
-        <div class="prg-tagpicker">
-            {% for tag in tags %}
-            <label><input type="checkbox" data-tag value="{{ tag.id }}">{{ tag.name }}</label>
-            {% else %}
-            <span class="prg-hint">Тегов пока нет.</span>
-            {% endfor %}
-        </div>
-        <label class="prg-field" style="margin-top: 10px;">Плюс отдельным ученикам: @username через запятую
-            <input type="text" data-assignees autocomplete="off" placeholder="@ivanov, @petrova">
-        </label>
-    </div>
-    {% endmacro %}
-
     {% macro simple_form(kind, title, hint) %}
     <form class="prg-form" data-form="{{ kind }}" data-simple-kind="{{ kind }}" hidden>
         <h2>{{ title }} на {{ day.day }} число</h2>
@@ -195,7 +145,6 @@ FORM: Operate.
             <input type="checkbox" data-x-required checked>
             <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
         </label>
-        {{ audience_block(kind) }}
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-simple-save>Сохранить</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -235,7 +184,6 @@ FORM: Operate.
             <input type="checkbox" data-v-required checked>
             <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
         </label>
-        {{ audience_block('video') }}
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-video-save disabled>Сохранить</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -278,7 +226,6 @@ FORM: Operate.
             <input type="checkbox" data-h-gate-required checked>
             <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
         </label>
-        {{ audience_block('homework') }}
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-homework-save>Сохранить</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -329,7 +276,6 @@ FORM: Operate.
             <input type="checkbox" data-s-required checked>
             <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
         </label>
-        {{ audience_block('survey') }}
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-survey-save>Сохранить</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -501,24 +447,6 @@ FORM: Operate.
             : 'Не удалось сохранить ' + what + '. Попробуйте ещё раз.';
     }
 
-    function readAudience(form) {
-        var isForAll = form.querySelector('[data-audience-all]').checked;
-        var tagIds = [];
-        form.querySelectorAll('[data-tag]:checked').forEach(function (box) {
-            tagIds.push(Number(box.value));
-        });
-        var assignees = form.querySelector('[data-assignees]').value;
-        if (!isForAll && !tagIds.length && !assignees.trim()) {
-            setMessage(form, 'Выберите теги, добавьте учеников или отметьте «всем».', true);
-            return null;
-        }
-        return {
-            assign_to_all: isForAll,
-            tag_ids: isForAll ? [] : tagIds,
-            assignee_usernames: isForAll ? '' : assignees
-        };
-    }
-
     function afterSave(data) {
         if (data.not_found && data.not_found.length) {
             window.alert('Не нашлись ученики: @' + data.not_found.join(', @'));
@@ -611,9 +539,6 @@ FORM: Operate.
 
     if (videoForm) {
         videoForm.addEventListener('change', function (event) {
-            if (event.target.hasAttribute('data-audience-all')) {
-                videoForm.querySelector('[data-audience-picker]').hidden = event.target.checked;
-            }
             if (event.target.hasAttribute('data-v-cover')) {
                 var file = event.target.files && event.target.files[0];
                 if (!file) return;
@@ -637,9 +562,6 @@ FORM: Operate.
 
     if (homeworkForm) {
         homeworkForm.addEventListener('change', function (event) {
-            if (event.target.hasAttribute('data-audience-all')) {
-                homeworkForm.querySelector('[data-audience-picker]').hidden = event.target.checked;
-            }
             if (event.target.hasAttribute('data-h-images')) {
                 var files = Array.prototype.slice.call(event.target.files || []);
                 Promise.all(files.map(function (file) {
@@ -730,9 +652,6 @@ FORM: Operate.
 
     if (surveyForm) {
         surveyForm.addEventListener('change', function (event) {
-            if (event.target.hasAttribute('data-audience-all')) {
-                surveyForm.querySelector('[data-audience-picker]').hidden = event.target.checked;
-            }
             if (event.target.hasAttribute('data-s-mode')) {
                 var isExisting = event.target.value === 'existing';
                 surveyForm.querySelector('[data-survey-existing]').hidden = !isExisting;
@@ -744,14 +663,6 @@ FORM: Operate.
         });
     }
 
-    document.querySelectorAll('[data-simple-kind]').forEach(function (form) {
-        form.addEventListener('change', function (event) {
-            if (event.target.hasAttribute('data-audience-all')) {
-                form.querySelector('[data-audience-picker]').hidden = event.target.checked;
-            }
-        });
-    });
-
     if (mockForm) {
         mockForm.addEventListener('change', function (event) {
             if (event.target.hasAttribute('data-subject-toggle')) {
@@ -761,9 +672,6 @@ FORM: Operate.
                 if (event.target.checked && !block.querySelector('[data-ticket]')) {
                     block.querySelector('[data-tickets]').insertAdjacentHTML('beforeend', ticketHTML(1));
                 }
-            }
-            if (event.target.hasAttribute('data-audience-all')) {
-                mockForm.querySelector('[data-audience-picker]').hidden = event.target.checked;
             }
             if (event.target.hasAttribute('data-t-image')) {
                 uploadTicketImage(event.target, event.target.closest('[data-ticket]').querySelector('[data-t-thumb]'));
@@ -818,7 +726,8 @@ FORM: Operate.
         var removeTicket = event.target.closest('[data-remove-ticket]');
         if (removeTicket) { removeTicket.closest('[data-ticket]').remove(); return; }
 
-        if (event.target.closest('[data-tickets-done]')) {
+        var saveMock = event.target.closest('[data-mock-save]');
+        if (saveMock) {
             var blocks = collectSubjects();
             if (!blocks.length) { setFormMessage('Отметьте хотя бы один предмет.', true); return; }
             var empty = blocks.filter(function (b) {
@@ -832,52 +741,14 @@ FORM: Operate.
                 return !blocks.some(function (b) { return b.subject === s; });
             });
             if (missing.length && !window.confirm(
-                'Билеты по предмету «' + missing[0] + '» не добавлены. Пропустить и перейти к доступу?'
+                'Билеты по предмету «' + missing[0] + '» не добавлены. Сохранить как есть?'
             )) return;
             setFormMessage('');
-            mockForm.querySelector('[data-step="tickets"]').hidden = true;
-            mockForm.querySelector('[data-step="audience"]').hidden = false;
-            return;
-        }
-
-        if (event.target.closest('[data-back-to-tickets]')) {
-            mockForm.querySelector('[data-step="tickets"]').hidden = false;
-            mockForm.querySelector('[data-step="audience"]').hidden = true;
-            return;
-        }
-
-        var saveMock = event.target.closest('[data-mock-save]');
-        if (saveMock) {
-            var tagIds = [];
-            mockForm.querySelectorAll('[data-tag]:checked').forEach(function (box) {
-                tagIds.push(Number(box.value));
-            });
-            var isForAll = mockForm.querySelector('[data-audience-all]').checked;
-            var assignees = mockForm.querySelector('[data-assignees]').value;
-            if (!isForAll && !tagIds.length && !assignees.trim()) {
-                setFormMessage('Выберите теги, добавьте учеников или отметьте «всем».', true);
-                return;
-            }
             saveMock.disabled = true;
             api('/cabinet/staff/program/' + dayIso + '/mock', {
-                subjects: collectSubjects(),
-                audience: {
-                    assign_to_all: isForAll,
-                    tag_ids: isForAll ? [] : tagIds,
-                    assignee_usernames: isForAll ? '' : assignees
-                }
-            }).then(function (data) {
-                if (data.not_found && data.not_found.length) {
-                    window.alert('Не нашлись ученики: @' + data.not_found.join(', @'));
-                }
-                if (data.audience_size === 0) {
-                    window.alert('Пробник сейчас никто не увидит: под выбранную аудиторию не подошёл ни один ученик.');
-                } else if (data.ambiguous_tags && data.ambiguous_tags.length) {
-                    window.alert('Сохранено, получат ' + data.audience_size + '. Проверьте теги '
-                        + data.ambiguous_tags.join(', ') + ': в базе это группа и уровень куратора.');
-                }
-                window.location.reload();
-            }).catch(function (error) {
+                subjects: blocks,
+                audience: {assign_to_all: true, tag_ids: [], assignee_usernames: ''}
+            }).then(afterSave).catch(function (error) {
                 saveMock.disabled = false;
                 setFormMessage(error.status === 422 && error.message !== 'request_failed'
                     ? error.message
@@ -888,8 +759,7 @@ FORM: Operate.
 
         var saveVideo = event.target.closest('[data-video-save]');
         if (saveVideo) {
-            var audienceVideo = readAudience(videoForm);
-            if (!audienceVideo) return;
+            var audienceVideo = {assign_to_all: true, tag_ids: [], assignee_usernames: ''};
             if (!uploadedVideoId) {
                 setMessage(videoForm, 'Сначала выберите файл видео.', true);
                 return;
@@ -913,8 +783,7 @@ FORM: Operate.
 
         var saveHomework = event.target.closest('[data-homework-save]');
         if (saveHomework) {
-            var audienceHw = readAudience(homeworkForm);
-            if (!audienceHw) return;
+            var audienceHw = {assign_to_all: true, tag_ids: [], assignee_usernames: ''};
             var titleHw = homeworkForm.querySelector('[data-h-title]').value.trim();
             if (!titleHw) { setMessage(homeworkForm, 'Укажите название.', true); return; }
             saveHomework.disabled = true;
@@ -938,8 +807,7 @@ FORM: Operate.
         if (saveSimple) {
             var simpleForm = saveSimple.closest('[data-simple-kind]');
             var kind = simpleForm.dataset.simpleKind;
-            var audienceSimple = readAudience(simpleForm);
-            if (!audienceSimple) return;
+            var audienceSimple = {assign_to_all: true, tag_ids: [], assignee_usernames: ''};
             var titleSimple = simpleForm.querySelector('[data-x-title]').value.trim();
             if (!titleSimple) { setMessage(simpleForm, 'Укажите название.', true); return; }
             saveSimple.disabled = true;
@@ -974,8 +842,7 @@ FORM: Operate.
 
         var saveSurvey = event.target.closest('[data-survey-save]');
         if (saveSurvey) {
-            var audienceSurvey = readAudience(surveyForm);
-            if (!audienceSurvey) return;
+            var audienceSurvey = {assign_to_all: true, tag_ids: [], assignee_usernames: ''};
             var mode = surveyForm.querySelector('[data-s-mode]:checked').value;
             var payload = {
                 audience: audienceSurvey,
