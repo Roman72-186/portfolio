@@ -154,13 +154,18 @@ function lrnApplySubjectFilter() {
     // Задачи без предмета видны всегда: занятие/анкета/эфир без привязки к
     // предмету относятся к обоим направлениям, и прятать их переключателем
     // было бы враньём (решение владельца 22.08, элементы без предмета).
+    //
+    // Селектор — просто `[data-subject]`, не `.trk-item[data-subject]`:
+    // карточки цикла Пробника на вкладке «Обратная связь» (`.lrn-card`, не
+    // `.trk-item`) несут тот же атрибут и должны прятаться тем же
+    // переключателем — иначе оба предмета там видны всегда (найдено 24.08).
     var activeBtn = document.querySelector('.lrn-subject-btn.active');
     var subject = activeBtn ? activeBtn.getAttribute('data-subject') : null;
     var panel = document.querySelector('.lrn-tabpanel:not([hidden])');
     var totalRows = 0;
     var shown = 0;
     if (panel) {
-        panel.querySelectorAll('.trk-item[data-subject]').forEach(function (row) {
+        panel.querySelectorAll('[data-subject]').forEach(function (row) {
             totalRows += 1;
             var rowSubject = row.getAttribute('data-subject');
             var show = !rowSubject || rowSubject === subject;

@@ -400,3 +400,24 @@ def test_learning_marks_task_subject_for_the_switch(auth_client, db):
     assert 'data-subject="Рисунок"' in resp.text
     # Переключатель обязан стоять выше списка, который фильтрует.
     assert resp.text.index('class="lrn-subject-toggle"') < resp.text.index('class="lrn-tabs nav-pill"')
+
+
+def test_learning_subject_filter_also_covers_feedback_cards(auth_client, db):
+    """Переключатель направления должен прятать чужой предмет «везде» (решение
+    владельца 24.08), а не только у билетов «Задания» — карточки цикла
+    Пробника на вкладке «Обратная связь» несут `.lrn-card`, не `.trk-item`.
+
+    До фикса 24.08 JS-фильтр (`lrnApplySubjectFilter`) целился только в
+    `.trk-item[data-subject]` — карточки `.lrn-card[data-subject]` на вкладке
+    «Обратная связь» видны были всегда, независимо от переключателя. Сама
+    фильтрация живёт в JS и не проверяется тестом на PostgreSQL/SQLite,
+    здесь держим контракт: селектор фильтра должен ловить любой
+    `[data-subject]` внутри активной вкладки, а не только `.trk-item`.
+    """
+    client, user = auth_client
+    _cycle(db, user, subject="Композиция")
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert "querySelectorAll('[data-subject]')" in resp.text
+    assert "querySelectorAll('.trk-item[data-subject]')" not in resp.text
