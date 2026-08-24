@@ -8,7 +8,7 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=3">
+<link rel="stylesheet" href="/static/css/program.css?v=4">
 {% endblock %}
 {% block content %}
 <div class="prg-page" data-day="{{ day_iso }}">
@@ -127,20 +127,12 @@ FORM: Operate.
                 <span>Всем ученикам</span>
             </label>
             <div data-audience-picker>
-                <div class="prg-hint">Тарифы:</div>
-                <div class="prg-tagpicker prg-tagpicker--tariff">
-                    {% for tag in tariff_tags %}
-                    <label><input type="checkbox" data-tag value="{{ tag.id }}">{{ tag.name }}</label>
-                    {% else %}
-                    <span class="prg-hint">Тарифных тегов пока нет.</span>
-                    {% endfor %}
-                </div>
-                <div class="prg-hint" style="margin-top: 10px;">Дополнительные теги:</div>
+                <div class="prg-hint">Теги:</div>
                 <div class="prg-tagpicker">
-                    {% for tag in other_tags %}
+                    {% for tag in tags %}
                     <label><input type="checkbox" data-tag value="{{ tag.id }}">{{ tag.name }}</label>
                     {% else %}
-                    <span class="prg-hint">Других тегов пока нет.</span>
+                    <span class="prg-hint">Тегов пока нет.</span>
                     {% endfor %}
                 </div>
                 <label class="prg-field" style="margin-top: 10px;">Плюс отдельным ученикам: @username через запятую
@@ -165,20 +157,12 @@ FORM: Operate.
         <span>Всем ученикам</span>
     </label>
     <div data-audience-picker>
-        <div class="prg-hint">Тарифы:</div>
-        <div class="prg-tagpicker prg-tagpicker--tariff">
-            {% for tag in tariff_tags %}
-            <label><input type="checkbox" data-tag value="{{ tag.id }}">{{ tag.name }}</label>
-            {% else %}
-            <span class="prg-hint">Тарифных тегов пока нет.</span>
-            {% endfor %}
-        </div>
-        <div class="prg-hint" style="margin-top: 10px;">Дополнительные теги:</div>
+        <div class="prg-hint">Теги:</div>
         <div class="prg-tagpicker">
-            {% for tag in other_tags %}
+            {% for tag in tags %}
             <label><input type="checkbox" data-tag value="{{ tag.id }}">{{ tag.name }}</label>
             {% else %}
-            <span class="prg-hint">Других тегов пока нет.</span>
+            <span class="prg-hint">Тегов пока нет.</span>
             {% endfor %}
         </div>
         <label class="prg-field" style="margin-top: 10px;">Плюс отдельным ученикам: @username через запятую

@@ -180,7 +180,6 @@
     padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm);
 }
 .prg-tagpicker label { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text); }
-.prg-tagpicker--tariff { background: var(--blue-soft); border-color: var(--blue-tint); }
 
 .prg-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .prg-actions button { min-height: 44px; }

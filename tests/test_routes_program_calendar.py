@@ -49,7 +49,7 @@ def test_admin_opens_the_month(client, user_factory, session_factory, monkeypatc
     assert page.status_code == 200
     assert "Учебные программы" in page.text
     assert "Август 2026" in page.text
-    assert "/static/css/program.css?v=2" in page.text
+    assert "/static/css/program.css?v=4" in page.text
 
 
 # ── Сетка ─────────────────────────────────────────────────────────────────

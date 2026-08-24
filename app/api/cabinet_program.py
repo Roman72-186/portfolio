@@ -63,7 +63,6 @@ from app.services.program import (
     parse_day_iso,
     set_item_audience,
     shift_month,
-    tags_split,
 )
 from app.services.survey import (
     create_survey_with_questions,
@@ -71,6 +70,7 @@ from app.services.survey import (
     list_surveys,
     question_counts as survey_question_counts,
 )
+from app.services.tags import get_all_tags
 from app.services.tracker import (
     create_homework,
     create_task,
@@ -160,7 +160,7 @@ def program_day(
     day = _parse_day(iso)
     today = today_msk()
     items = items_for_day(db, day)
-    tariff_tags, other_tags = tags_split(db)
+    tags = get_all_tags(db)
     surveys = list_surveys(db)
     survey_counts = survey_question_counts(db, [s.id for s in surveys])
     return templates.TemplateResponse(
@@ -182,8 +182,7 @@ def program_day(
             # Окно по умолчанию — 11:45–18:30 самого дня, а не «сегодня/завтра»,
             # как в старой форме пробников: день здесь уже выбран человеком.
             "mock_defaults": default_schedule_for_day(day),
-            "tariff_tags": tariff_tags,
-            "other_tags": other_tags,
+            "tags": tags,
             # Анкета — переиспользуемый шаблон (owner-решение 22–23.08): конструктор
             # предлагает готовые анкеты, чтобы не набирать один и тот же опрос
             # заново на каждой из восьми точек года.

@@ -16,10 +16,8 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from app.constants import TARIFFS
 from app.models.homework import HomeworkAssignment
 from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, LearningTopic
-from app.models.tag import Tag
 from app.models.tracker import (
     ITEM_HOMEWORK,
     ITEM_MOCK_EXAM,
@@ -30,7 +28,6 @@ from app.models.tracker import (
 )
 from app.models.learning_video import LearningVideo
 from app.services.survey import get_surveys, question_counts as survey_question_counts
-from app.services.tags import get_all_tags
 from app.services.tz import MSK_TZ, msk_midnight, today_msk
 from app.services.video_topics import (
     count_topic_audience,
@@ -285,20 +282,3 @@ def item_details(db: Session, tasks: list[TrackerTask]) -> dict[int, dict]:
             "survey_question_count": survey_counts.get(survey.id, 0) if survey else 0,
         }
     return details
-
-
-def tags_split(db: Session) -> tuple[list[Tag], list[Tag]]:
-    """Теги двумя списками: тарифные и остальные.
-
-    Отдельной сущности тарифа в проекте нет — тариф лежит строкой у ученика, а
-    одноимённые теги заводит `ensure_profile_tags`. Поэтому деление тут по имени.
-    """
-    tariff_names = {name.strip().lower() for name in TARIFFS}
-    tariffs: list[Tag] = []
-    others: list[Tag] = []
-    for tag in get_all_tags(db):
-        if (tag.name or "").strip().lower() in tariff_names:
-            tariffs.append(tag)
-        else:
-            others.append(tag)
-    return tariffs, others

@@ -90,16 +90,6 @@ def test_month_marks_group_items_by_type(db, user_factory):
     assert marks["2026-08-24"]["total"] == 1
 
 
-def test_tags_split_separates_tariffs(db):
-    _tag(db, "МАКСИМУМ")
-    _tag(db, "Поток 1")
-
-    tariffs, others = program.tags_split(db)
-
-    assert [t.name for t in tariffs] == ["МАКСИМУМ"]
-    assert [t.name for t in others] == ["Поток 1"]
-
-
 # ── Служебная тема элемента ───────────────────────────────────────────────
 
 def test_item_topic_opens_at_the_start_of_its_week(db, user_factory):
