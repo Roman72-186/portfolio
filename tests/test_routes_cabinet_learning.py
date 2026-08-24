@@ -1,4 +1,5 @@
 """Tests for GET /cabinet/learning — «Актуальное образовательное пространство» (трек A)."""
+import pathlib
 from datetime import date, timedelta
 
 from app.models.exam_cycle import ExamCycle
@@ -6,6 +7,10 @@ from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.services.program import day_bounds, week_start
 from app.services.tracker import create_task
 from app.services.tz import msk_midnight, now_msk, today_msk
+
+TRACKER_CSS = (
+    pathlib.Path(__file__).parent.parent / "app" / "static" / "css" / "tracker.css"
+).read_text(encoding="utf-8")
 
 
 def _cycle(db, user, *, subject="Рисунок", closed=False):
@@ -421,3 +426,19 @@ def test_learning_subject_filter_also_covers_feedback_cards(auth_client, db):
     assert resp.status_code == 200
     assert "querySelectorAll('[data-subject]')" in resp.text
     assert "querySelectorAll('.trk-item[data-subject]')" not in resp.text
+
+
+def test_trk_row_and_lrn_card_respect_the_hidden_attribute():
+    """Живой проверкой 24.08 (production, headless-браузер) найдено: JS
+    `lrnApplySubjectFilter` выставлял атрибут `hidden` верно, но карточка
+    оставалась видна — `.trk-row { display: grid }` и `.lrn-card { display:
+    block }` в `tracker.css` не имеют исключения для `[hidden]`, а встроенное
+    браузерное правило `[hidden] { display: none }` живёт в UA-стилях с более
+    низким приоритетом происхождения, чем ЛЮБОЕ авторское правило того же
+    элемента — оно проигрывает даже при равной или меньшей специфичности.
+    `.lrn-tabpanel[hidden] { display: none; }` этот случай уже решал для
+    вкладок — здесь тот же паттерн для строк и карточек, которые прячет
+    переключатель предмета.
+    """
+    assert ".trk-row[hidden] { display: none; }" in TRACKER_CSS
+    assert ".lrn-card[hidden] { display: none; }" in TRACKER_CSS

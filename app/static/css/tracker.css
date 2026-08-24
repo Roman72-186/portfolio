@@ -78,6 +78,14 @@
 .trk-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .trk-row-actions button { min-height: 36px; padding: 7px 12px; font-size: 12px; }
 
+/* `display: grid` выше — своё правило автора, оно всегда перевешивает
+   встроенный браузерный `[hidden] { display: none }` из UA-стилей вне
+   зависимости от специфичности: у собственного display нет исключения для
+   hidden. Переключатель предмета (`cabinet_learning.html::
+   lrnApplySubjectFilter`) выставляет атрибут верно, но без этой строчки
+   карточка остаётся видна — баг, найденный живой проверкой 24.08. */
+.trk-row[hidden] { display: none; }
+
 /* ── Конструктор недели ─────────────────────────────────────────────── */
 
 .trk-weeks { margin-bottom: 28px; }
@@ -220,6 +228,10 @@
 .lrn-card:hover { border-color: var(--blue); }
 .lrn-card.is-disabled { opacity: 0.55; cursor: default; }
 .lrn-card.is-disabled:hover { border-color: var(--line); }
+/* Тот же перекрывающий [hidden] баг, что у .trk-row выше — карточки цикла
+   Пробника на вкладке «Обратная связь» тоже фильтруются переключателем
+   предмета через атрибут hidden. */
+.lrn-card[hidden] { display: none; }
 .lrn-card-title { font-size: 15px; font-weight: 800; margin: 0 0 4px; }
 .lrn-card-note { font-size: 13px; color: var(--dim); margin: 0; line-height: 1.4; }
 .lrn-card-cta { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--blue); }
