@@ -56,6 +56,34 @@ FORM: Operate.
                 <small>Готовый шаблон или новые вопросы</small>
             </span>
         </button>
+        <button type="button" class="prg-tile" data-open-form="material">
+            <span class="prg-tile-icon" aria-hidden="true">📄</span>
+            <span>
+                <strong>Материалы</strong>
+                <small>Текст и ссылки к неделе</small>
+            </span>
+        </button>
+        <button type="button" class="prg-tile" data-open-form="quiz">
+            <span class="prg-tile-icon" aria-hidden="true">?</span>
+            <span>
+                <strong>Тест по теории</strong>
+                <small>Задание на самопроверку</small>
+            </span>
+        </button>
+        <button type="button" class="prg-tile" data-open-form="lesson">
+            <span class="prg-tile-icon" aria-hidden="true">🎥</span>
+            <span>
+                <strong>Занятие</strong>
+                <small>Созвон или эфир</small>
+            </span>
+        </button>
+        <button type="button" class="prg-tile" data-open-form="checklist">
+            <span class="prg-tile-icon" aria-hidden="true">☰</span>
+            <span>
+                <strong>Чек-лист и проверки</strong>
+                <small>Список пунктов для самопроверки</small>
+            </span>
+        </button>
     </div>
     {% endif %}
 
@@ -157,6 +185,39 @@ FORM: Operate.
             <input type="text" data-assignees autocomplete="off" placeholder="@ivanov, @petrova">
         </label>
     </div>
+    {% endmacro %}
+
+    {% macro simple_form(kind, title, hint) %}
+    <form class="prg-form" data-form="{{ kind }}" data-simple-kind="{{ kind }}" hidden>
+        <h2>{{ title }} на {{ day.day }} число</h2>
+        {% if hint %}<p class="prg-hint">{{ hint }}</p>{% endif %}
+        <div class="prg-grid2">
+            <label class="prg-field">Название
+                <input type="text" data-x-title maxlength="200" autocomplete="off">
+            </label>
+            <label class="prg-field">Предмет
+                <select data-x-subject>
+                    <option value="">Без предмета</option>
+                    {% for subject in subjects %}
+                    <option value="{{ subject }}">{{ subject }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+        <label class="prg-field">Описание, необязательно
+            <textarea data-x-description maxlength="5000"></textarea>
+        </label>
+        <label class="prg-field prg-field--row">
+            <input type="checkbox" data-x-required checked>
+            <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
+        </label>
+        {{ audience_block(kind) }}
+        <div class="prg-actions">
+            <button type="button" class="btn-blue" data-simple-save>Сохранить</button>
+            <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
+        </div>
+        <p class="prg-message" data-form-message></p>
+    </form>
     {% endmacro %}
 
     <form class="prg-form" data-form="video" hidden>
@@ -291,6 +352,11 @@ FORM: Operate.
         </div>
         <p class="prg-message" data-form-message></p>
     </form>
+
+    {{ simple_form('material', 'Материалы', 'Текст, ссылки, файлы — ученик отмечает сам.') }}
+    {{ simple_form('quiz', 'Тест по теории', 'Задание на самопроверку — ученик отмечает сам, автоматической проверки нет. Не путать с мини-опросом после видео.') }}
+    {{ simple_form('lesson', 'Занятие', 'Тема и время созвона или эфира — ссылку пока указывайте в описании.') }}
+    {{ simple_form('checklist', 'Чек-лист и проверки', 'Список пунктов для самопроверки — ученик отмечает сам.') }}
     {% endif %}
 
     <section class="prg-items">
@@ -694,6 +760,14 @@ FORM: Operate.
         });
     }
 
+    document.querySelectorAll('[data-simple-kind]').forEach(function (form) {
+        form.addEventListener('change', function (event) {
+            if (event.target.hasAttribute('data-audience-all')) {
+                form.querySelector('[data-audience-picker]').hidden = event.target.checked;
+            }
+        });
+    });
+
     if (mockForm) {
         mockForm.addEventListener('change', function (event) {
             if (event.target.hasAttribute('data-subject-toggle')) {
@@ -872,6 +946,28 @@ FORM: Operate.
             }).then(afterSave).catch(function (error) {
                 saveHomework.disabled = false;
                 setMessage(homeworkForm, saveError(error, 'задание'), true);
+            });
+            return;
+        }
+
+        var saveSimple = event.target.closest('[data-simple-save]');
+        if (saveSimple) {
+            var simpleForm = saveSimple.closest('[data-simple-kind]');
+            var kind = simpleForm.dataset.simpleKind;
+            var audienceSimple = readAudience(simpleForm);
+            if (!audienceSimple) return;
+            var titleSimple = simpleForm.querySelector('[data-x-title]').value.trim();
+            if (!titleSimple) { setMessage(simpleForm, 'Укажите название.', true); return; }
+            saveSimple.disabled = true;
+            api('/cabinet/staff/program/' + dayIso + '/' + kind, {
+                title: titleSimple,
+                description: simpleForm.querySelector('[data-x-description]').value,
+                subject: simpleForm.querySelector('[data-x-subject]').value || null,
+                is_required: simpleForm.querySelector('[data-x-required]').checked,
+                audience: audienceSimple
+            }).then(afterSave).catch(function (error) {
+                saveSimple.disabled = false;
+                setMessage(simpleForm, saveError(error, 'элемент'), true);
             });
             return;
         }

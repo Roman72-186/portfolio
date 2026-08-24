@@ -26,9 +26,13 @@ from app.models.exam_assignment import ExamAssignment
 from app.models.learning_video import LearningVideo
 from app.models.survey import QUESTION_TYPE_LABELS, QUESTION_TYPES
 from app.models.tracker import (
+    ITEM_CHECKLIST,
     ITEM_HOMEWORK,
     ITEM_KIND_LABELS,
+    ITEM_LESSON,
+    ITEM_MATERIAL,
     ITEM_MOCK_EXAM,
+    ITEM_QUIZ,
     ITEM_SURVEY,
     ITEM_VIDEO,
     SOURCE_EXAM_ASSIGNMENT,
@@ -473,6 +477,39 @@ class HomeworkItemPayload(BaseModel):
         return value
 
 
+class SimpleItemPayload(BaseModel):
+    """Общая форма для «Материалов», «Теста по теории», «Занятия» и
+    «Чек-листа и проверок» — у них нет своей сущности (в отличие от видео,
+    домашки, пробника, анкеты), поэтому одни и те же поля на все четыре.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    subject: str | None = Field(default=None, max_length=50)
+    is_required: bool = True
+    audience: AudiencePayload = Field(default_factory=AudiencePayload)
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Title cannot be empty")
+        return value
+
+    @field_validator("subject")
+    @classmethod
+    def validate_subject(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        if not value:
+            return None
+        if value not in MOCK_SUBJECTS:
+            raise ValueError("Unknown subject")
+        return value
+
+
 class SurveyOptionPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -680,6 +717,114 @@ def create_homework_item(
     )
     db.commit()
     return JSONResponse(_audience_reply(db, payload.audience, tag_ids, not_found))
+
+
+_SIMPLE_ITEM_TOPIC_PREFIX = {
+    ITEM_MATERIAL: "Материал",
+    ITEM_QUIZ: "Тест по теории",
+    ITEM_LESSON: "Занятие",
+    ITEM_CHECKLIST: "Чек-лист",
+}
+
+
+def _create_simple_item(
+    iso: str,
+    kind: str,
+    payload: SimpleItemPayload,
+    user: dict,
+    db: DBSession,
+) -> JSONResponse:
+    """Материал, тест по теории, занятие, чек-лист — простые элементы без
+    своей сущности: только заголовок, описание и предмет. `source_kind` не
+    заводим, поэтому `task_action.html` рисует обычную галочку «Отметить»,
+    ученик закрывает такой элемент сам.
+    """
+    day = _parse_day(iso)
+    _guard_future(day)
+    tag_ids, assignee_ids, not_found = _resolve_audience(db, payload.audience)
+
+    prefix = _SIMPLE_ITEM_TOPIC_PREFIX[kind]
+    topic = ensure_item_topic(
+        db, title=f"{prefix} · {payload.title}", day=day, user_id=user["user_id"]
+    )
+    set_item_audience(
+        db,
+        topic,
+        assign_to_all=payload.audience.assign_to_all,
+        tag_ids=tag_ids,
+        assignee_ids=assignee_ids,
+    )
+    task = create_task(
+        db,
+        title=payload.title,
+        description=payload.description,
+        # Конец дня минус минута — тот же приём, что у самостоятельной работы и
+        # анкеты: верхняя граница суток принадлежит уже следующему дню.
+        due_at=day_bounds(day)[1] - timedelta(minutes=1),
+        subject=payload.subject,
+        topic_id=topic.id,
+        kind=kind,
+        is_required=payload.is_required,
+        user_id=user["user_id"],
+    )
+    task.is_published = True
+    db.add(
+        AuditLog(
+            action=f"program_{kind}_create",
+            performed_by_id=user["user_id"],
+            details=json.dumps({"day": iso, "topic_id": topic.id}, ensure_ascii=False),
+        )
+    )
+    db.commit()
+    return JSONResponse(_audience_reply(db, payload.audience, tag_ids, not_found))
+
+
+@router.post("/{iso}/material", response_class=JSONResponse)
+def create_material_item(
+    iso: str,
+    payload: SimpleItemPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    return _create_simple_item(iso, ITEM_MATERIAL, payload, user, db)
+
+
+@router.post("/{iso}/quiz", response_class=JSONResponse)
+def create_quiz_item(
+    iso: str,
+    payload: SimpleItemPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Тест по теории — отдельная вкладка недели, не путать с мини-опросом
+    из трёх вопросов после видео (`app/models/video_quiz.py`)."""
+    return _create_simple_item(iso, ITEM_QUIZ, payload, user, db)
+
+
+@router.post("/{iso}/lesson", response_class=JSONResponse)
+def create_lesson_item(
+    iso: str,
+    payload: SimpleItemPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Занятие или эфир. Ссылка на созвон как отдельная кнопка — не сделано
+    здесь (нужна колонка и решение владельца), пока в описании текстом."""
+    return _create_simple_item(iso, ITEM_LESSON, payload, user, db)
+
+
+@router.post("/{iso}/checklist", response_class=JSONResponse)
+def create_checklist_item(
+    iso: str,
+    payload: SimpleItemPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    return _create_simple_item(iso, ITEM_CHECKLIST, payload, user, db)
 
 
 @router.post("/{iso}/survey", response_class=JSONResponse)
