@@ -77,3 +77,38 @@ def test_feedback_tab_is_reserved():
     tabs = build_week_tabs([])
     feedback = next(t for t in tabs if t["kind"] == "feedback")
     assert feedback["reserved"] is True
+
+
+def test_mock_exam_entry_shows_up_inside_homework_tab():
+    # Решение владельца 24.08: билет Пробника — не отдельная карточка вне
+    # вкладок, а часть вкладки «Задание». У mock_exam своей позиции в
+    # WEEK_TAB_SEQUENCE нет и не появляется.
+    entries = [_entry("homework", "overdue"), _entry("mock_exam", "overdue")]
+    tabs = build_week_tabs(entries)
+    by_kind = {t["kind"]: t for t in tabs}
+
+    assert "mock_exam" not in by_kind
+    assert len(by_kind["homework"]["entries"]) == 2
+    assert {e["task"].kind for e in by_kind["homework"]["entries"]} == {"homework", "mock_exam"}
+
+
+def test_unfinished_mock_exam_does_not_lock_following_tabs():
+    # Пробник блокирует только переход на следующий месяц (is_month_complete),
+    # к недельной цепочке вкладок отношения не имеет — решение владельца 24.08.
+    entries = [_entry("homework", "done"), _entry("mock_exam", "overdue")]
+    tabs = build_week_tabs(entries)
+    by_kind = {t["kind"]: t for t in tabs}
+
+    assert not by_kind["homework"]["is_locked"]
+    assert not by_kind["checklist"]["is_locked"]
+
+
+def test_unfinished_homework_still_locks_even_with_open_mock_exam():
+    # Обычная домашка внутри той же вкладки продолжает запирать цепочку —
+    # ослабляем требование только для mock_exam, не для homework.
+    entries = [_entry("homework", "overdue"), _entry("mock_exam", "done")]
+    tabs = build_week_tabs(entries)
+    by_kind = {t["kind"]: t for t in tabs}
+
+    assert by_kind["checklist"]["is_locked"]
+    assert by_kind["checklist"]["locked_reason"] == "Задание"

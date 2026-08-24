@@ -23,7 +23,9 @@ from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.models.role import Role
 from app.models.tag import UserTag
 from app.models.tracker import (
+    ITEM_HOMEWORK,
     ITEM_KIND_LABELS,
+    ITEM_MOCK_EXAM,
     ITEM_OTHER,
     SOURCE_HOMEWORK,
     SOURCE_LEARNING_TOPIC,
@@ -462,10 +464,25 @@ def build_week_tabs(entries: list[dict]) -> list[dict]:
     нечем — она пропускает цепочку дальше, не запирая следующую. Причина
     блокировки («Сначала сделай …») держится на первой реально незакрытой
     вкладке и не сдвигается, пока по ней не появится статус done у всех задач.
+
+    Билет Пробника (`ITEM_MOCK_EXAM`) — отдельный от домашки механизм
+    (`ExamCycle`/`ExamTicket`, не сливается), но решением владельца 24.08
+    показывается ученику внутри вкладки «Задание», а не своей карточкой вне
+    вкладок (было решением 22.08). У `ITEM_MOCK_EXAM` своей позиции в
+    `WEEK_TAB_SEQUENCE` нет и не появляется — его записи просто досыпаются в
+    бакет `ITEM_HOMEWORK` перед раскладкой. Это только про отображение:
+    незакрытый билет не запирает следующие вкладки этой же недели и не
+    участвует в недельном гейте (см. `is_week_complete`, которая его тоже
+    исключает) — по решению владельца 24.08 Пробник продолжает блокировать
+    только переход на следующий месяц, к неделе отношения не имеет.
     """
     by_kind: dict[str, list[dict]] = {}
     for entry in entries:
         by_kind.setdefault(entry["task"].kind, []).append(entry)
+
+    mock_entries = by_kind.pop(ITEM_MOCK_EXAM, [])
+    if mock_entries:
+        by_kind[ITEM_HOMEWORK] = by_kind.get(ITEM_HOMEWORK, []) + mock_entries
 
     tabs = []
     locked_reason: str | None = None
@@ -480,7 +497,12 @@ def build_week_tabs(entries: list[dict]) -> list[dict]:
             "locked_reason": locked_reason,
             "reserved": kind == TAB_KIND_FEEDBACK,
         })
-        if not is_locked and tab_entries and any(e["status"] != "done" for e in tab_entries):
+        # Билет Пробника участвует в отображении вкладки «Задание», но не в
+        # проверке «закрыта ли вкладка» — иначе он запирал бы «Чек-лист» и
+        # всё, что после, хотя решение владельца отводит ему только месячный
+        # уровень блокировки.
+        lock_entries = [e for e in tab_entries if e["task"].kind != ITEM_MOCK_EXAM]
+        if not is_locked and lock_entries and any(e["status"] != "done" for e in lock_entries):
             locked_reason = WEEK_TAB_LABELS[kind]
     return tabs
 
@@ -500,6 +522,12 @@ def is_week_complete(db: Session, user_id: int, week_monday: date) -> bool:
     (`program.py::ensure_item_topic` заводит новую при каждом добавлении в
     день), общего `LearningTopic`, объединяющего все элементы недели по
     `topic_id`, в схеме нет.
+
+    Билет Пробника (`ITEM_MOCK_EXAM`) в эту проверку не входит намеренно: он
+    отображается внутри вкладки «Задание» (решение владельца 24.08), но
+    блокирует только переход на следующий месяц (`_mock_exams_closed_for_month`
+    ниже), к неделе отношения не имеет — так было решено ещё 23.08 и
+    подтверждено 24.08.
     """
     start, _ = day_bounds(week_monday)
     _, end = day_bounds(week_monday + timedelta(days=6))
@@ -507,7 +535,7 @@ def is_week_complete(db: Session, user_id: int, week_monday: date) -> bool:
     return all(
         entry["status"] == "done"
         for entry in entries
-        if entry["task"].is_required
+        if entry["task"].is_required and entry["task"].kind != ITEM_MOCK_EXAM
     )
 
 

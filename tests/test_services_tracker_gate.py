@@ -81,6 +81,18 @@ def test_both_subjects_checked_without_split(db, regular_user):
     assert is_week_complete(db, regular_user.id, monday) is False
 
 
+def test_unclosed_mock_exam_task_does_not_block_week(db, regular_user):
+    # Билет Пробника создаётся как is_required=True (cabinet_program.py), но
+    # по решению владельца 24.08 он показывается внутри вкладки «Задание» и
+    # блокирует только переход на следующий месяц — не неделю. До этого теста
+    # проверка не различала kind и посчитала бы открытый билет долгом недели.
+    monday = week_start(today_msk())
+    _week_topic(db, regular_user, monday)
+    _task(db, regular_user, kind="mock_exam", due_on=monday, subject="Рисунок")
+
+    assert is_week_complete(db, regular_user.id, monday) is True
+
+
 def test_week_complete_when_both_subjects_done(db, regular_user):
     monday = week_start(today_msk())
     _week_topic(db, regular_user, monday)
