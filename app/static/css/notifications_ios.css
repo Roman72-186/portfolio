@@ -1,0 +1,129 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   iOS-ре-скин экрана «Уведомления» (`/cabinet/notifications`) —
+   25.08.2026, тот же язык, что и .ios-tracker/.ios-learning/.ios-videos/
+   .ios-personal/.ios-feedback/.ios-portfolio/.ios-gallery/.ios-upload
+   (см. app/static/css/tracker.css, video_ios.css, personal_ios.css,
+   feedback_ios.css, portfolio_ios.css, gallery_ios.css, upload_ios.css).
+
+   Полностью заменяет инлайновый <style> шаблона — включая структурные
+   правила, не только цвета (правило сессий 4-6). `.page-title` — общий
+   класс из base.css (использован дюжиной экранов, включая staff), поэтому
+   переопределён только под скоупом `.ios-notifications`, как это уже
+   сделано в video_ios.css для того же класса; частная разметка страницы
+   (`.notif-*`/`.push-toggle-*`) grep подтвердил без пересечений с другими
+   шаблонами — лежит здесь же ради целостности: один экран — один источник
+   стилей.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ios-notifications {
+    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --ios-blue: #007AFF;
+    --ios-red: #FF3B30;
+    --ios-green: #34C759;
+    --ios-label: #1C1C1E;
+    --ios-label-2: rgba(60,60,67,0.60);
+    --ios-label-3: rgba(60,60,67,0.30);
+    --ios-sep: rgba(60,60,67,0.29);
+    --ios-grouped-bg: #F2F2F7;
+    --ios-card-bg: #FFFFFF;
+    position: relative;
+    isolation: isolate;
+    font-family: var(--ios-font);
+    color: var(--ios-label);
+}
+.ios-notifications::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: var(--ios-grouped-bg);
+    z-index: -1;
+}
+.ios-notifications.notif-page { max-width: 640px; margin: 0 auto; padding: 22px 18px 110px; }
+
+.ios-notifications .back-link {
+    color: var(--ios-blue); font: 400 17px/1 var(--ios-font);
+    min-height: 34px;
+}
+.ios-notifications .back-link:hover { color: var(--ios-blue); opacity: .6; }
+
+/* ── Заголовок — переопределение общего .page-title из base.css, только
+   внутри этого скоупа (тот же приём, что в video_ios.css). ── */
+.ios-notifications .page-title {
+    font: 700 28px/1.15 var(--ios-font); letter-spacing: -0.4px; color: var(--ios-label);
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 18px;
+}
+.ios-notifications .page-title svg.svg-icon { width: 26px; height: 26px; color: var(--ios-blue); }
+.ios-notifications .page-title-badge {
+    background: var(--ios-red); color: #fff;
+    font: 700 12px/1 var(--ios-font);
+    padding: 3px 10px; border-radius: 999px;
+}
+
+/* ── Тумблер push-уведомлений ── */
+.ios-notifications .push-toggle-card {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 16px; border-radius: 16px;
+    background: var(--ios-card-bg); box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    margin-bottom: 14px;
+}
+.ios-notifications .push-toggle-body { flex: 1; min-width: 0; }
+.ios-notifications .push-toggle-title { font: 600 15px/1.3 var(--ios-font); color: var(--ios-label); margin-bottom: 2px; }
+.ios-notifications .push-toggle-note { font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-2); }
+.ios-notifications .push-toggle-switch { position: relative; flex-shrink: 0; width: 44px; height: 26px; }
+.ios-notifications .push-toggle-switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.ios-notifications .push-toggle-track {
+    position: absolute; inset: 0; background: var(--ios-sep);
+    border-radius: 999px; transition: background 0.15s;
+}
+.ios-notifications .push-toggle-track::before {
+    content: ''; position: absolute; top: 3px; left: 3px;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: transform 0.15s;
+}
+.ios-notifications .push-toggle-switch input:checked + .push-toggle-track { background: var(--ios-green); }
+.ios-notifications .push-toggle-switch input:checked + .push-toggle-track::before { transform: translateX(18px); }
+.ios-notifications .push-toggle-switch input:disabled + .push-toggle-track { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Лента уведомлений ── */
+.ios-notifications .notif-list { display: flex; flex-direction: column; gap: 10px; }
+
+.ios-notifications .notif-card {
+    display: flex; align-items: flex-start; gap: 14px;
+    padding: 14px 16px; border-radius: 16px;
+    background: var(--ios-card-bg); box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    text-decoration: none; color: inherit;
+    transition: box-shadow 0.15s, background 0.15s;
+}
+.ios-notifications .notif-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.08); opacity: 1; }
+.ios-notifications .notif-card.unread { background: rgba(0,122,255,0.06); }
+
+.ios-notifications .notif-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; color: var(--ios-label-3); }
+.ios-notifications .notif-card.unread .notif-icon { color: #F59E0B; }
+
+.ios-notifications .notif-body { flex: 1; min-width: 0; }
+.ios-notifications .notif-title {
+    font: 600 15px/1.4 var(--ios-font); color: var(--ios-label);
+    margin-bottom: 3px;
+}
+.ios-notifications .notif-card.unread .notif-title { color: var(--ios-blue); }
+.ios-notifications .notif-text {
+    font: 400 13px/1.5 var(--ios-font); color: var(--ios-label-2);
+    white-space: pre-wrap; margin-bottom: 6px;
+}
+.ios-notifications .notif-meta { font: 400 11px/1.3 var(--ios-font); color: var(--ios-label-3); }
+
+.ios-notifications .notif-arrow {
+    flex-shrink: 0; align-self: center; margin-top: 2px;
+    width: 7px; height: 7px;
+    border-right: 1.6px solid var(--ios-label-3);
+    border-bottom: 1.6px solid var(--ios-label-3);
+    transform: rotate(-45deg);
+}
+
+.ios-notifications .notif-empty { text-align: center; padding: 64px 20px; color: var(--ios-label-2); }
+.ios-notifications .notif-empty-icon { font-size: 36px; margin-bottom: 12px; color: var(--ios-label-3); }
+.ios-notifications .notif-empty-text { font: 400 15px/1.4 var(--ios-font); }
+
+@media (max-width: 480px) {
+    .ios-notifications.notif-page { padding: 16px 14px 100px; }
+}

@@ -84,14 +84,6 @@
     ],
     "style_lines": 76
   },
-  "cabinet_notifications.html": {
-    "hex": 2,
-    "shadow": [
-      "page-title",
-      "unread"
-    ],
-    "style_lines": 78
-  },
   "cabinet_staff.html": {
     "hex": 9,
     "shadow": [
@@ -211,7 +203,7 @@
   "partials/program_tabs.html": {
     "hex": 0,
     "shadow": [],
-    "style_lines": 32
+    "style_lines": 41
   },
   "partials/staff_nav.html": {
     "hex": 1,

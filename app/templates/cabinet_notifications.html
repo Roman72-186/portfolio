@@ -1,88 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Уведомления{% endblock %}
 {% block extra_styles %}
-<style>
-.notif-page { max-width: 640px; margin: 0 auto; padding-bottom: 90px; }
-
-.page-title {
-    font-size: 22px; font-weight: 900; color: var(--ink); margin-bottom: 20px;
-    display: flex; align-items: center; gap: 10px;
-}
-.page-title-badge {
-    background: var(--error); color: #fff;
-    font-size: 12px; font-weight: 700;
-    padding: 2px 10px; border-radius: var(--r-pill);
-}
-
-.notif-list { display: flex; flex-direction: column; gap: 10px; }
-
-.notif-card {
-    display: flex; align-items: flex-start; gap: 14px;
-    padding: 16px 18px; border-radius: var(--r-lg);
-    background: var(--surface); border: 1px solid var(--line);
-    text-decoration: none; color: inherit;
-    transition: border-color 0.15s, box-shadow 0.15s;
-}
-.notif-card:hover { border-color: var(--blue); box-shadow: var(--sh-md); opacity: 1; }
-.notif-card.unread {
-    background: var(--blue-soft);
-    border-color: var(--blue-tint);
-}
-
-.notif-icon { font-size: 22px; flex-shrink: 0; margin-top: 1px; }
-
-.notif-body { flex: 1; min-width: 0; }
-.notif-title {
-    font-size: 14px; font-weight: 700; color: var(--ink);
-    margin-bottom: 4px; line-height: 1.4;
-}
-.notif-card.unread .notif-title { color: var(--blue); }
-.notif-text {
-    font-size: 13px; color: var(--muted); line-height: 1.5;
-    white-space: pre-wrap; margin-bottom: 6px;
-}
-.notif-meta { font-size: 11px; color: var(--dim); }
-
-.notif-arrow {
-    flex-shrink: 0; font-size: 16px; color: var(--dim); margin-top: 2px;
-    align-self: center;
-}
-
-.notif-empty {
-    text-align: center; padding: 64px 20px; color: var(--dim);
-}
-.notif-empty-icon { font-size: 40px; margin-bottom: 12px; }
-.notif-empty-text { font-size: 14px; }
-
-.push-toggle-card {
-    display: flex; align-items: center; gap: 14px;
-    padding: 14px 16px; border-radius: var(--r-lg);
-    background: var(--surface); border: 1px solid var(--line);
-    margin-bottom: 14px;
-}
-.push-toggle-body { flex: 1; min-width: 0; }
-.push-toggle-title { font-size: 14px; font-weight: 700; color: var(--ink); margin-bottom: 2px; }
-.push-toggle-note { font-size: 12px; color: var(--dim); line-height: 1.4; }
-.push-toggle-switch {
-    position: relative; flex-shrink: 0; width: 44px; height: 26px;
-}
-.push-toggle-switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
-.push-toggle-track {
-    position: absolute; inset: 0; background: var(--line);
-    border-radius: var(--r-pill); transition: background 0.15s;
-}
-.push-toggle-track::before {
-    content: ''; position: absolute; top: 3px; left: 3px;
-    width: 20px; height: 20px; border-radius: 50%;
-    background: #fff; box-shadow: var(--sh-md); transition: transform 0.15s;
-}
-.push-toggle-switch input:checked + .push-toggle-track { background: var(--blue); }
-.push-toggle-switch input:checked + .push-toggle-track::before { transform: translateX(18px); }
-.push-toggle-switch input:disabled + .push-toggle-track { opacity: 0.5; cursor: not-allowed; }
-</style>
+<link rel="stylesheet" href="/static/css/notifications_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="notif-page">
+<div class="notif-page ios-notifications">
     <a href="/cabinet/learning" class="back-link">← Кабинет</a>
 
     <h1 class="page-title">
@@ -111,7 +33,7 @@
         {% else %}
         <div class="notif-card {% if not n.is_read %}unread{% endif %}">
         {% endif %}
-            <div class="notif-icon">{% if not n.is_read %}<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true" style="color:#F59E0B"><circle cx="12" cy="12" r="8" fill="currentColor" stroke="none"/></svg>{% else %}<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>{% endif %}</div>
+            <div class="notif-icon">{% if not n.is_read %}<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="currentColor" stroke="none"/></svg>{% else %}<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>{% endif %}</div>
             <div class="notif-body">
                 <div class="notif-title">{{ n.title }}</div>
                 {% if n.text %}
@@ -120,7 +42,7 @@
                 <div class="notif-meta">{{ n.created_at.strftime('%d.%m.%Y %H:%M') if n.created_at else '' }}</div>
             </div>
             {% if n.work_id %}
-            <div class="notif-arrow">→</div>
+            <div class="notif-arrow" aria-hidden="true"></div>
             {% endif %}
         {% if n.work_id %}
         </a>
