@@ -169,46 +169,10 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         icon="program",
         min_rank=4,
     ),
-    StaffNavItem(
-        key="tracker",
-        href="/cabinet/staff/tracker",
-        sidebar_label="Задачи",
-        pill_label="Задачи",
-        aria_label="Задачи трекера",
-        tooltip="Задачи для личного трекера учеников",
-        icon="tracker",
-        min_rank=4,
-    ),
-    StaffNavItem(
-        key="digest",
-        href="/cabinet/staff/digest",
-        sidebar_label="Дайджест",
-        pill_label="Дайджест",
-        aria_label="Дайджест-расписание",
-        tooltip="Дайджест-расписание месяца",
-        icon="program",
-        min_rank=4,
-    ),
-    StaffNavItem(
-        key="goals",
-        href="/cabinet/staff/goals",
-        sidebar_label="Цели",
-        pill_label="Цели",
-        aria_label="Ближайшая цель",
-        tooltip="Карточка ближайшей цели для Личного трекера",
-        icon="cases",
-        min_rank=4,
-    ),
-    StaffNavItem(
-        key="videos",
-        href="/cabinet/admin/videos",
-        sidebar_label="Видео",
-        pill_label="Видео",
-        aria_label="Управление видео",
-        tooltip="Видеоуроки",
-        icon="video",
-        min_rank=4,
-    ),
+    # «Задачи», «Дайджест», «Цели» и «Видео» здесь больше не пункты меню.
+    # Задачи трекера убраны совсем (страница жива по прямой ссылке
+    # `/cabinet/staff/tracker`), остальные три стали вкладками раздела
+    # «Учебные программы» — `templates/partials/program_tabs.html`.
     StaffNavItem(
         key="3dlab",
         href="/3dlab",

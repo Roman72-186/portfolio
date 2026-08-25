@@ -81,6 +81,7 @@ FORM: Operate, расширение существующего кабинета 
 {% block content %}
 {% set status_labels = {'uploading':'Загрузка', 'processing':'Обработка', 'ready':'Готово', 'failed':'Ошибка', 'deleting':'Удаление', 'delete_failed':'Ошибка удаления'} %}
 <div class="vam-page">
+    {% include "partials/program_tabs.html" %}
     <div class="vam-head">
         <div class="vam-head-copy">
             <h1>Видео</h1>

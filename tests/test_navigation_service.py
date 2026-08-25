@@ -71,15 +71,6 @@ def test_staff_nav_items_keep_admin_contract():
             "Учебные программы",
             "Календарь учебных программ",
         ),
-        (
-            "tracker",
-            "/cabinet/staff/tracker",
-            "Задачи",
-            "Задачи",
-            "Задачи трекера",
-            "Задачи для личного трекера учеников",
-        ),
-        ("videos", "/cabinet/admin/videos", "Видео", "Видео", "Управление видео", "Видеоуроки"),
         ("3dlab", "/3dlab", "3D Лаб", "3D Лаб", "3D Лаб", "3D Лаборатория"),
         (
             "reports",
@@ -120,12 +111,12 @@ def test_staff_nav_items_keep_rank_specific_visibility_contract():
     assert "program" not in [item.key for item in rank_3_items]
     assert "program" in [item.key for item in rank_4_items]
     assert "program" in [item.key for item in rank_5_items]
-    assert "tracker" not in [item.key for item in rank_3_items]
-    assert "tracker" in [item.key for item in rank_4_items]
-    assert "tracker" in [item.key for item in rank_5_items]
-    assert "videos" not in [item.key for item in rank_3_items]
-    assert "videos" in [item.key for item in rank_4_items]
-    assert "videos" in [item.key for item in rank_5_items]
+    # Задачи, Дайджест, Цели и Видео ушли из меню: первое убрано совсем,
+    # остальные три — вкладки внутри «Учебных программ».
+    for gone in ("tracker", "digest", "goals", "videos"):
+        assert gone not in [item.key for item in rank_3_items]
+        assert gone not in [item.key for item in rank_4_items]
+        assert gone not in [item.key for item in rank_5_items]
     assert "reports" not in [item.key for item in rank_3_items]
     assert "reports" in [item.key for item in rank_4_items]
     assert "reports" in [item.key for item in rank_5_items]
