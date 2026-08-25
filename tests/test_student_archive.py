@@ -257,3 +257,11 @@ def test_archived_cycles_leave_staff_working_list(db, student, user_factory):
 
     ids = [row["id"] for row in _staff_cycles_data(db, staff)]
     assert cycle.id not in ids
+
+
+def test_archive_button_on_superadmin_dashboard(superadmin_client):
+    """Кнопка должна быть там, куда суперадмин попадает после входа."""
+    client, _ = superadmin_client
+    resp = client.get("/cabinet/superadmin")
+    assert resp.status_code == 200
+    assert "/cabinet/archive" in resp.text
