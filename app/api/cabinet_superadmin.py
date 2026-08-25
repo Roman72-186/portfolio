@@ -1631,6 +1631,7 @@ def superadmin_stats_export(
 # Управление пользователями
 # ═══════════════════════════════════════════════════════════════════════════════
 
+from app.services.contacts import find_student_by_tg_username
 from app.services.user_management import (
     archive_user,
     can_assign_role_rank,
@@ -1685,27 +1686,9 @@ def _split_tg_usernames(raw: str) -> list[str]:
 
 
 def _find_student_by_tg_username(db: DBSession, tg_username: str) -> User | None:
-    """Find an existing student profile by Telegram username.
-
-    tg_username is encrypted at rest, so equality filtering in SQL is not
-    reliable. Load student candidates and compare normalized plaintext values
-    after SQLAlchemy decrypts them.
-    """
-    username = _normalize_tg_username(tg_username)
-    if not username:
-        return None
-    candidates = (
-        db.query(User)
-        .join(Role, User.role_id == Role.id)
-        .filter(Role.rank == 1, User.deleted_at.is_(None), User.archived_at.is_(None))
-        .order_by(User.profile_completed.desc(), User.updated_at.desc(), User.id.desc())
-        .limit(5000)
-        .all()
-    )
-    for candidate in candidates:
-        if _normalize_tg_username(candidate.tg_username or "") == username:
-            return candidate
-    return None
+    """Ученик по нику в Telegram. Логика общая с экраном правки контактов —
+    живёт в `app/services/contacts.py`, здесь только вызов."""
+    return find_student_by_tg_username(db, tg_username)
 
 
 def _load_superadmin_curators(db: DBSession) -> list[User]:

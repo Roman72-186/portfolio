@@ -1,14 +1,10 @@
 import logging
-import re
 from datetime import datetime, timezone
 from typing import Annotated
 
 logger = logging.getLogger(__name__)
 
 from datetime import date
-
-_PHONE_RE = re.compile(r'^[\d\s\+\-\(\)]{7,20}$')
-_TG_RE = re.compile(r'^[A-Za-z0-9_]{4,32}$')
 
 from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query, Body, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -44,6 +40,7 @@ from app.services.mock_exam_access import (
     is_subject_allowed_for_student,
     mock_exam_deadline_for_started_at,
 )
+from app.services.contacts import normalize_phone, normalize_tg_username, validate_contacts
 from app.services.tz import MSK_TZ, today_msk
 from app.services.user_management import log_tariff_change
 from app.services.utils import group_works, compress_image
@@ -246,8 +243,10 @@ def profile_get(
     request: Request,
     user: Annotated[dict, Depends(require_student)],
 ):
+    # Анкета первого входа уже заполнена — ученику здесь менять нечего, его
+    # экран правок это «Контактные данные» (телефоны и Telegram).
     if user["profile_completed"]:
-        return RedirectResponse("/cabinet/learning", status_code=302)
+        return RedirectResponse("/cabinet/personal/contacts", status_code=302)
 
     return templates.TemplateResponse("profile.html", _profile_template_ctx(request, user))
 
@@ -270,13 +269,21 @@ def profile_post(
     about: Annotated[str, Form()] = "",
     past_tariffs: Annotated[list[str], Form()] = [],
 ):
+    # Анкета первого входа заполняется один раз. Дальше ученик правит только
+    # контакты (/cabinet/personal/contacts), а ФИО, тариф и даты — куратор
+    # через /cabinet/students/{id}/profile. Проверка стоит здесь, а не только
+    # на GET: иначе повторный POST этой же формы переписал бы установочные
+    # данные в обход правила.
+    if user["profile_completed"]:
+        return RedirectResponse("/cabinet/personal/contacts", status_code=302)
+
     errors = []
     first_name = first_name.strip()
     last_name = last_name.strip()
-    phone = phone.strip()
-    parent_phone = parent_phone.strip()
+    phone = normalize_phone(phone)
+    parent_phone = normalize_phone(parent_phone)
     tariff = tariff.strip().upper()
-    tg_username = tg_username.strip().lstrip("@")
+    tg_username = normalize_tg_username(tg_username)
 
     # university_year — required
     parsed_university_year: int | None = None
@@ -330,18 +337,7 @@ def profile_post(
         errors.append("Введите фамилию")
     elif len(last_name) > 50:
         errors.append("Фамилия слишком длинная (максимум 50 символов)")
-    if not phone:
-        errors.append("Введите номер телефона")
-    elif not _PHONE_RE.match(phone):
-        errors.append("Введите корректный номер телефона (только цифры, пробелы, +, -, скобки)")
-    if not parent_phone:
-        errors.append("Введите номер телефона родителя")
-    elif not _PHONE_RE.match(parent_phone):
-        errors.append("Введите корректный номер телефона родителя")
-    if not tg_username:
-        errors.append("Укажите ник в Telegram")
-    elif not _TG_RE.match(tg_username):
-        errors.append("Ник Telegram: только латиница, цифры, _ (4–32 символа)")
+    errors.extend(validate_contacts(phone, parent_phone, tg_username))
     if tariff not in TARIFFS:
         errors.append("Выберите тариф")
 

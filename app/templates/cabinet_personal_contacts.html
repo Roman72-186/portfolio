@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{#
+Правка контактов ученика (`/cabinet/personal/contacts`). Меняются три поля:
+телефон, телефон родителя, ник в Telegram. Установочные данные (ФИО, тариф,
+даты) показаны рядом заблокированными — их правит куратор, см. docstring
+`app/api/cabinet_personal.py`.
+
+Своего блока <style> здесь нет: экран говорит теми же `.prs-*` классами, что и
+`cabinet_personal.html`, стили формы дописаны в app/static/css/personal_ios.css.
+#}
+{% block title %}Контактные данные{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/account_actions.css?v=1">
+<link rel="stylesheet" href="/static/css/personal_ios.css?v=2">
+{% endblock %}
+{% block content %}
+<div class="prs-page ios-personal">
+
+    <div class="prs-hero">
+        <h1>Контактные данные</h1>
+        <p>По ним с вами связывается куратор.</p>
+    </div>
+
+    {% if errors %}
+    <div class="alert alert-error prs-alert">
+        {% for e in errors %}<div>{{ e }}</div>{% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" action="/cabinet/personal/contacts" class="prs-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+
+        <div class="prs-section-title">Контакты</div>
+        <div class="prs-group">
+            <div class="prs-field">
+                <label class="prs-field-label" for="contacts-phone">Телефон</label>
+                <input class="prs-field-input" type="tel" id="contacts-phone" name="phone" required
+                       value="{{ form.phone }}" placeholder="+7 (___) ___-__-__"
+                       maxlength="20" pattern="[\d\s\+\-\(\)]{7,20}">
+            </div>
+            <div class="prs-field">
+                <label class="prs-field-label" for="contacts-parent-phone">Телефон родителя</label>
+                <input class="prs-field-input" type="tel" id="contacts-parent-phone" name="parent_phone" required
+                       value="{{ form.parent_phone }}" placeholder="+7 (___) ___-__-__"
+                       maxlength="20" pattern="[\d\s\+\-\(\)]{7,20}">
+            </div>
+            <div class="prs-field">
+                <label class="prs-field-label" for="contacts-tg">Ник в Telegram</label>
+                <input class="prs-field-input" type="text" id="contacts-tg" name="tg_username" required
+                       value="{{ form.tg_username }}" placeholder="@username"
+                       maxlength="32" pattern="@?[A-Za-z0-9_]{4,31}">
+                <p class="prs-field-note">По этому нику ваши работы находятся в облаке. Меняете ник – скажите куратору, иначе загруженное раньше потеряется.</p>
+            </div>
+        </div>
+
+        <div class="prs-section-title">Данные анкеты</div>
+        <div class="prs-group">
+            <div class="prs-row">
+                <span class="prs-row-label">Фамилия и имя</span>
+                <span class="prs-row-value {{ '' if locked.name else 'empty' }}">{{ locked.name or 'Не указано' }}</span>
+            </div>
+            <div class="prs-row">
+                <span class="prs-row-label">Тариф</span>
+                <span class="prs-row-value {{ '' if locked.tariff else 'empty' }}">{{ locked.tariff or 'Не указано' }}</span>
+            </div>
+            <div class="prs-row">
+                <span class="prs-row-label">Начало обучения</span>
+                <span class="prs-row-value {{ '' if locked.enrollment_year else 'empty' }}">
+                    {%- if locked.enrollment_year -%}
+                        {{ locked.enrollment_month ~ ' ' if locked.enrollment_month }}{{ locked.enrollment_year }}
+                    {%- else -%}Не указано{%- endif -%}
+                </span>
+            </div>
+            <div class="prs-row">
+                <span class="prs-row-label">Год поступления в вуз</span>
+                <span class="prs-row-value {{ '' if locked.university_year else 'empty' }}">{{ locked.university_year or 'Не указано' }}</span>
+            </div>
+        </div>
+        <p class="prs-note">Эти данные вы заполнили при первом входе. Поменять их может куратор – напишите ему.</p>
+
+        <div class="prs-form-actions">
+            <button type="submit" class="prs-save-btn">Сохранить</button>
+            <a class="prs-cancel-link" href="/cabinet/personal">Отмена</a>
+        </div>
+    </form>
+
+    <div class="prs-bottom-gap"></div>
+</div>
+
+{% set active_tab = "personal" %}
+{% include "partials/bottom_nav.html" %}
+{% endblock %}

@@ -181,6 +181,61 @@
 .ios-personal .notif-gear-row-note { font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-2); }
 .ios-personal .notif-gear-switch input:checked + .notif-gear-track { background: var(--ios-green); }
 
+/* ── Экран правки контактов (`/cabinet/personal/contacts`) ──────────────
+   Та же карточка-группа, что и в просмотре, только строки внутри —
+   поля ввода. Общие `.form-input`/`.form-label` из base.css здесь не
+   переопределяются: у них другой ритм (рамка на каждом поле), а нужен
+   ряд таблицы без рамок. Поэтому свои `.prs-field-*`. ── */
+.ios-personal .prs-alert { margin-bottom: 12px; border-radius: 14px; font-family: var(--ios-font); }
+.ios-personal .prs-field { padding: 10px 16px; position: relative; }
+.ios-personal .prs-field:not(:last-child)::after {
+    content: ''; position: absolute; left: 16px; right: 0; bottom: 0; height: 0.5px;
+    background: var(--ios-sep);
+}
+.ios-personal .prs-field-label {
+    display: block; margin-bottom: 2px;
+    font: 400 13px/1.3 var(--ios-font); color: var(--ios-label-2);
+}
+.ios-personal .prs-field-input {
+    width: 100%; box-sizing: border-box;
+    padding: 0; border: none; background: transparent;
+    font: 400 16px/1.4 var(--ios-font); color: var(--ios-label);
+}
+.ios-personal .prs-field-input:focus { outline: none; }
+.ios-personal .prs-field-input:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 3px; border-radius: 4px; }
+.ios-personal .prs-field-input::placeholder { color: var(--ios-label-3); }
+.ios-personal .prs-field-note { margin: 4px 0 0; font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-2); }
+.ios-personal .prs-note { margin: 8px 4px 0; font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); }
+
+/* заблокированные ряды анкеты: значение серое, как в просмотре, нажатия нет */
+.ios-personal .prs-form .prs-row { cursor: default; }
+
+.ios-personal .prs-form-actions {
+    display: flex; align-items: center; gap: 16px;
+    margin-top: 22px;
+}
+.ios-personal .prs-save-btn {
+    flex: 1;
+    padding: 13px 18px; border: none; border-radius: 14px;
+    background: var(--ios-blue); color: #fff;
+    font: 600 16px/1.2 var(--ios-font); cursor: pointer;
+}
+.ios-personal .prs-save-btn:hover { background: #0069DB; }
+.ios-personal .prs-cancel-link {
+    color: var(--ios-blue); text-decoration: none;
+    font: 400 15px/1.2 var(--ios-font);
+}
+.ios-personal .prs-cancel-link:hover { text-decoration: underline; }
+
+/* «Сохранено» над списком контактов после возврата с формы */
+.ios-personal .prs-saved {
+    margin-bottom: 12px; padding: 10px 14px; border-radius: 14px;
+    background: rgba(52,199,89,0.12); color: #1B7F3B;
+    font: 500 14px/1.35 var(--ios-font);
+}
+
+.ios-personal .prs-bottom-gap { height: 96px; }
+
 @media (max-width: 480px) {
     .ios-personal.prs-page { padding: 16px 14px 100px; }
 }

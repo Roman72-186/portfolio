@@ -42,11 +42,41 @@ def test_profile_form_returns_200_when_incomplete(client, user_factory, session_
 
 
 def test_profile_form_redirects_when_already_complete(auth_client):
-    """GET /cabinet/profile redirects to dashboard if already complete."""
+    """GET /cabinet/profile → экран правки контактов, если анкета заполнена."""
     client, _ = auth_client
     resp = client.get("/cabinet/profile", follow_redirects=False)
     assert resp.status_code == 302
-    assert "/cabinet/learning" in resp.headers["location"]
+    assert "/cabinet/personal/contacts" in resp.headers["location"]
+
+
+def test_profile_post_ignored_when_already_complete(auth_client, db):
+    """Повторный POST анкеты не переписывает ФИО и тариф."""
+    from app.models.user import User
+    client, user = auth_client
+    user.first_name = "Анна"
+    user.last_name = "Смирнова"
+    user.name = "Анна Смирнова"
+    db.add(user)
+    db.commit()
+
+    resp = client.post("/cabinet/profile", data={
+        "first_name": "Взломщик",
+        "last_name": "Подменённый",
+        "phone": "+79001112233",
+        "parent_phone": "+79002223344",
+        "tariff": "Максимум",
+        "tg_username": "anna_art",
+        "enrollment_month": "9",
+        "enrollment_year": "2024",
+        "university_year": "2025",
+    }, follow_redirects=False)
+    assert resp.status_code == 302
+    assert "/cabinet/personal/contacts" in resp.headers["location"]
+
+    db.expire_all()
+    saved = db.query(User).filter(User.id == user.id).first()
+    assert saved.name == "Анна Смирнова"
+    assert saved.tariff == "УВЕРЕННЫЙ"
 
 
 def test_profile_form_shows_step_indicator(client, user_factory, session_factory):

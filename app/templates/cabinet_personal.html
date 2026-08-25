@@ -3,7 +3,7 @@
 {% block title %}Личная информация{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/account_actions.css?v=1">
-<link rel="stylesheet" href="/static/css/personal_ios.css?v=1">
+<link rel="stylesheet" href="/static/css/personal_ios.css?v=2">
 {% endblock %}
 {% block content %}
 <div class="prs-page ios-personal">
@@ -12,6 +12,10 @@
         <h1>Личная информация</h1>
         <p>Контакты, документы и правила обучения — в одном месте.</p>
     </div>
+
+    {% if saved %}
+    <div class="prs-saved">Контакты сохранены.</div>
+    {% endif %}
 
     <div class="prs-section-title">Контакты</div>
     <div class="prs-group">
@@ -31,7 +35,7 @@
             <span class="prs-row-label">Тариф</span>
             <span class="prs-row-value {{ '' if user.tariff else 'empty' }}">{{ user.tariff or 'Не указано' }}</span>
         </div>
-        <a class="prs-row prs-row-link" href="/cabinet/profile"><span>Изменить анкету</span></a>
+        <a class="prs-row prs-row-link" href="/cabinet/personal/contacts"><span>Изменить контакты</span></a>
     </div>
 
     <div class="prs-section-title">Документы</div>
@@ -69,7 +73,7 @@
         </form>
     </div>
 
-    <div style="height:96px"></div>
+    <div class="prs-bottom-gap"></div>
 </div>
 
 {% set active_tab = "personal" %}
