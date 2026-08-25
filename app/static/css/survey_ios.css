@@ -1,0 +1,149 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   iOS-ре-скин экрана «Анкета» (`/cabinet/survey/<task_id>`) — 25.08.2026,
+   тот же язык, что и .ios-tracker/.ios-learning/.ios-videos/.ios-personal/
+   .ios-feedback/.ios-portfolio/.ios-gallery/.ios-upload/.ios-notifications
+   (см. app/static/css/tracker.css, video_ios.css, personal_ios.css,
+   feedback_ios.css, portfolio_ios.css, gallery_ios.css, upload_ios.css,
+   notifications_ios.css).
+
+   Особенность экрана: своего инлайнового <style> у шаблона нет — вся
+   разметка сидит на общих классах `program.css` (`.prg-page`/`.prg-head`/
+   `.prg-option`) и `base.css` (`.card`/`.field-label`/`.form-input`/
+   `.btn-blue`/`.back-link`). Эти классы разделяют с конструктором анкет
+   персонала (`cabinet_program.html`, `require_admin_role`) и с «Домашкой»
+   (`homework_submission.html`, ещё не в скоупе инициативы) — трогать сам
+   `program.css` нельзя, переопределение целиком в этом файле под скоупом
+   `.ios-survey`, program.css не редактировался, ?v= поднимать не нужно.
+   `.video-progress-status` — тоже общее имя (см. video_ios.css, тот файл
+   этот шаблон не подключает, конфликта нет).
+
+   `.sv-question`/`.sv-form` — новые частные классы, добавлены в шаблон
+   вместо инлайнового `style="margin-bottom:22px;"` у каждого вопроса.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ios-survey {
+    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --ios-blue: #007AFF;
+    --ios-red: #FF3B30;
+    --ios-label: #1C1C1E;
+    --ios-label-2: rgba(60,60,67,0.60);
+    --ios-label-3: rgba(60,60,67,0.30);
+    --ios-sep: rgba(60,60,67,0.29);
+    --ios-grouped-bg: #F2F2F7;
+    --ios-card-bg: #FFFFFF;
+    position: relative;
+    isolation: isolate;
+    font-family: var(--ios-font);
+    color: var(--ios-label);
+}
+.ios-survey::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: var(--ios-grouped-bg);
+    z-index: -1;
+}
+.ios-survey.prg-page { max-width: 640px; margin: 0 auto; padding: 22px 18px 110px; }
+
+.ios-survey .back-link {
+    display: inline-block; margin-bottom: 14px;
+    color: var(--ios-blue); font: 400 17px/1 var(--ios-font);
+    min-height: 34px;
+}
+.ios-survey .back-link:hover { color: var(--ios-blue); opacity: .6; }
+
+/* ── Заголовок ── */
+.ios-survey .prg-head { display: block; margin-bottom: 18px; }
+.ios-survey .prg-head-copy { max-width: none; }
+.ios-survey .prg-head h1 {
+    font: 700 24px/1.25 var(--ios-font); letter-spacing: -0.3px; color: var(--ios-label);
+    margin: 0 0 6px;
+}
+.ios-survey .prg-head p { margin: 0; color: var(--ios-label-2); font: 400 13px/1.4 var(--ios-font); }
+
+/* ── Карточка формы ── */
+.ios-survey .card {
+    background: var(--ios-card-bg); border: none; border-radius: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05); padding: 20px 18px;
+    transition: none;
+}
+.ios-survey .card:hover { box-shadow: 0 1px 3px rgba(0,0,0,0.05); transform: none; border-color: transparent; }
+.ios-survey .card-desc { color: var(--ios-label-2); font: 400 14px/1.5 var(--ios-font); }
+.ios-survey .card > .btn-blue { margin-top: 14px; }
+
+.ios-survey .sv-form { display: flex; flex-direction: column; gap: 24px; }
+.ios-survey .sv-question { display: block; }
+
+.ios-survey .field-label {
+    display: block; margin: 0 0 12px;
+    font: 700 16px/1.35 var(--ios-font); color: var(--ios-label);
+}
+
+/* ── Открытый текстовый ответ ── */
+.ios-survey .form-input {
+    width: 100%; box-sizing: border-box; min-height: 88px; padding: 12px 14px;
+    border: none; border-radius: 14px; resize: vertical;
+    background: var(--ios-grouped-bg); color: var(--ios-label);
+    font: 400 15px/1.4 var(--ios-font);
+}
+.ios-survey .form-input::placeholder { color: var(--ios-label-3); }
+.ios-survey .form-input:focus {
+    background: var(--ios-grouped-bg);
+    outline: 2px solid var(--ios-blue); outline-offset: -1px; box-shadow: none;
+}
+
+/* ── Варианты ответа (single/multiple) — грид-строки в духе iOS Settings,
+   индикатор справа: кружок для radio, галочка для checkbox. ── */
+.ios-survey .prg-option { margin-bottom: 8px; }
+.ios-survey .prg-option:last-child { margin-bottom: 0; }
+.ios-survey .prg-option label {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px; border-radius: 14px;
+    background: var(--ios-grouped-bg);
+    font: 400 15px/1.4 var(--ios-font); color: var(--ios-label);
+    cursor: pointer; transition: background .12s;
+}
+.ios-survey .prg-option label:has(input:checked) { background: rgba(0,122,255,0.10); }
+.ios-survey .prg-option label span { flex: 1; min-width: 0; }
+
+.ios-survey .prg-option input[type="radio"],
+.ios-survey .prg-option input[type="checkbox"] {
+    appearance: none; -webkit-appearance: none; margin: 0; order: 2;
+    position: relative; flex-shrink: 0; width: 22px; height: 22px;
+    border: 1.5px solid var(--ios-label-3); background: var(--ios-card-bg);
+    cursor: pointer;
+}
+.ios-survey .prg-option input[type="radio"] { border-radius: 50%; }
+.ios-survey .prg-option input[type="checkbox"] { border-radius: 6px; }
+.ios-survey .prg-option input:checked { background: var(--ios-blue); border-color: var(--ios-blue); }
+.ios-survey .prg-option input:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 2px; }
+
+.ios-survey .prg-option input[type="radio"]::after {
+    content: ''; position: absolute; top: 50%; left: 50%;
+    width: 8px; height: 8px; border-radius: 50%; background: #fff;
+    transform: translate(-50%, -50%) scale(0); transition: transform .12s;
+}
+.ios-survey .prg-option input[type="radio"]:checked::after { transform: translate(-50%, -50%) scale(1); }
+
+.ios-survey .prg-option input[type="checkbox"]::after {
+    content: ''; position: absolute; top: 45%; left: 50%;
+    width: 11px; height: 6px; border-left: 2px solid #fff; border-bottom: 2px solid #fff;
+    transform: translate(-50%, -50%) rotate(-45deg) scale(0); transition: transform .12s;
+}
+.ios-survey .prg-option input[type="checkbox"]:checked::after { transform: translate(-50%, -50%) rotate(-45deg) scale(1); }
+
+/* ── Кнопка отправки (общая .btn-blue из base.css — переопределена
+   только в этом скоупе) ── */
+.ios-survey .btn-blue {
+    background: var(--ios-blue); box-shadow: none;
+    font: 700 14px/1 var(--ios-font); border-radius: 999px;
+    transition: transform 100ms ease-out, filter 100ms ease-out;
+}
+.ios-survey .btn-blue:hover { transform: none; filter: brightness(1.05); color: #fff; }
+.ios-survey .btn-blue:active { transform: scale(.97); filter: brightness(.92); }
+
+.ios-survey .video-progress-status { margin: 10px 0 0; font: 400 13px/1.5 var(--ios-font); color: var(--ios-label-2); }
+.ios-survey .video-progress-status.is-error { color: var(--ios-red); }
+
+@media (max-width: 480px) {
+    .ios-survey.prg-page { padding: 16px 14px 100px; }
+}

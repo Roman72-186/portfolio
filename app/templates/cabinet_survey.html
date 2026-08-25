@@ -3,8 +3,10 @@
 Заполнение анкеты учеником — вкладка «Анкета» в АОП. Свой блок <style> не
 заводим: разметка целиком на общих классах `program.css` (`.prg-page`,
 `.prg-head`, `.prg-option`) и `base.css` (`.card`, `.field-label`,
-`.form-input`, `.btn-blue`, `.btn-outline`) — новый <style> запрещает
-tests/test_reuse_ratchet.py.
+`.form-input`, `.btn-blue`) — новый <style> запрещает
+tests/test_reuse_ratchet.py. iOS-ре-скин (25.08.2026) переопределяет эти
+общие классы под скоупом `.ios-survey` во внешнем файле
+`survey_ios.css` — program.css не тронут, ?v= у него не поднимался.
 
 Ответ идемпотентен по task_id (см. докстроку `SurveyResponse`): форма не
 запирается после первой отправки, повторная отправка просто перезаписывает
@@ -13,9 +15,12 @@ tests/test_reuse_ratchet.py.
 {% block title %}{{ survey.title }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=5">
+<link rel="stylesheet" href="/static/css/survey_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="prg-page">
+<div class="prg-page ios-survey">
+    <a class="back-link" href="{{ back_url }}">← Кабинет</a>
+
     <div class="prg-head">
         <div class="prg-head-copy">
             <h1>{{ survey.title }}</h1>
@@ -23,7 +28,6 @@ tests/test_reuse_ratchet.py.
             <p>Ответ уже сохранён — можно изменить и отправить снова.</p>
             {% endif %}
         </div>
-        <a class="btn-outline" href="{{ back_url }}">Назад</a>
     </div>
 
     <div class="card">
@@ -31,10 +35,10 @@ tests/test_reuse_ratchet.py.
         <p class="card-desc">В этой анкете пока нет вопросов.</p>
         <button type="button" class="btn-blue" id="survey-submit" data-survey-endpoint="{{ submit_endpoint }}">Отметить как заполненную</button>
         {% else %}
-        <form id="survey-form" data-survey-endpoint="{{ submit_endpoint }}">
+        <form id="survey-form" class="sv-form" data-survey-endpoint="{{ submit_endpoint }}">
             {% for question in survey.questions %}
             {% set saved = existing_answers.get(question.id, {}) %}
-            <div style="margin-bottom:22px;">
+            <div class="sv-question">
                 <label class="field-label">{{ question.text }}</label>
 
                 {% if question.question_type == 'text' %}
