@@ -202,16 +202,21 @@
     "style_lines": 43
   },
   "login.html": {
-    "hex": 10,
-    "shadow": [],
-    "style_lines": 111
+    "hex": 8,
+    "shadow": [
+      "alert-error",
+      "css"
+    ],
+    "style_lines": 126
   },
   "partials/bottom_nav.html": {
-    "hex": 0,
+    "hex": 4,
     "shadow": [
-      "bottom-nav"
+      "app-sidebar",
+      "bottom-nav",
+      "css"
     ],
-    "style_lines": 27
+    "style_lines": 36
   },
   "partials/course_calculator_widget.html": {
     "hex": 4,

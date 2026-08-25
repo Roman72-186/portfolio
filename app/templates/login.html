@@ -2,95 +2,117 @@
 {% block title %}Вход{% endblock %}
 {% block extra_styles %}
 <style>
+/* ═══════════════════════════════════════════════════════════════════════
+   iOS-ре-скин экрана входа — 25.08.2026, продолжение решения владельца
+   по «Личному трекеру» (см. app/static/css/tracker.css, секция
+   «iOS-ре-скин "Личного трекера"»). Классы .login-*/.tg-*/.vk-*/
+   .staff-login-link нигде больше не используются (проверено grep по
+   app/templates/) — скоуп-обёртка вроде .ios-tracker тут не нужна,
+   но токены/паттерн палитры повторены для единообразия со следующими
+   экранами.
+   ═══════════════════════════════════════════════════════════════════════ */
 .login-wrap {
+    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --ios-blue: #007AFF;
+    --ios-red: #FF3B30;
+    --ios-label: #1C1C1E;
+    --ios-label-2: rgba(60,60,67,0.60);
+    --ios-label-3: rgba(60,60,67,0.30);
+    --ios-sep: rgba(60,60,67,0.29);
+    position: relative;
+    isolation: isolate;
+    font-family: var(--ios-font);
+    color: var(--ios-label);
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 40px 16px 60px;
-    gap: 20px;
-}
-
-/* ── Login card ── */
-.login-card {
+    justify-content: center;
+    min-height: calc(100vh - 104px);
+    min-height: calc(100dvh - 104px);
     width: 100%;
-    max-width: 540px;
-    background: var(--surface);
-    border-radius: var(--r-xl);
-    box-shadow: var(--sh-md);
-    border: 1px solid var(--line);
-    padding: 28px 32px;
+    padding: 48px 20px 40px;
+    gap: 32px;
 }
-.login-card-inner { display: flex; align-items: center; gap: 20px; }
-.login-avatar {
-    width: 56px; height: 56px;
-    flex-shrink: 0;
-    border-radius: var(--r-md);
-    background: var(--blue-soft);
-    display: flex; align-items: center; justify-content: center;
+.login-panel {
+    display: flex; flex-direction: column; align-items: center;
+    width: 100%; max-width: 360px; margin: 0 auto;
+    gap: 32px;
 }
-.login-text h1 {
-    font-family: var(--font-display);
-    font-size: 17px;
-    font-weight: 700;
-    color: var(--ink);
-    letter-spacing: -0.015em;
-    margin-bottom: 4px;
+/* Закрывает фирменные обои Spark плоским белым фоном экрана входа —
+   isolation:isolate держит эффект в пределах этого блока. */
+.login-wrap::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: #FFFFFF;
+    z-index: -1;
 }
-.login-text p { font-size: 13px; color: var(--muted); line-height: 1.5; }
 
-.vk-btn {
+.login-hero { display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+.login-icon {
+    width: 84px; height: 84px;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 28px rgba(28,28,30,0.12), 0 1px 3px rgba(28,28,30,0.06);
+}
+.login-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.login-hero h1 {
+    font: 700 26px/1.2 var(--ios-font);
+    letter-spacing: -0.4px;
+    color: var(--ios-label);
+}
+.login-hero p { font: 400 15px/1.4 var(--ios-font); color: var(--ios-label-2); max-width: 280px; }
+
+.login-wrap .alert-error {
+    width: 100%;
+    background: rgba(255,59,48,0.12); border: none; color: #D70015;
+    border-radius: 14px; padding: 14px 16px;
+    font: 600 14px/1.4 var(--ios-font); text-align: center;
+}
+
+.login-actions { display: flex; flex-direction: column; align-items: stretch; gap: 12px; width: 100%; }
+
+.tg-btn, .tg-support-btn {
     display: flex; align-items: center; justify-content: center; gap: 10px;
-    margin-top: 20px;
-    background: #0066CC;
-    color: #fff;
-    padding: 15px 28px;
-    border-radius: var(--r-pill);
-    font-size: 15px; font-weight: 700;
+    width: 100%;
+    height: 50px;
+    border-radius: 14px;
+    font: 600 16px/1 var(--ios-font);
     text-decoration: none;
-    transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
-    box-shadow: 0 6px 20px rgba(0,102,204,0.30);
+    transition: transform 100ms var(--ios-ease), filter 100ms var(--ios-ease), background 100ms var(--ios-ease);
 }
-.vk-btn:hover { background: #005BB8; transform: translateY(-1px); color: #fff; opacity: 1; box-shadow: 0 10px 28px rgba(0,102,204,0.38); }
-
 .tg-btn {
-    display: flex; align-items: center; justify-content: center; gap: 10px;
-    margin-top: 20px;
-    background: #0088cc;
+    background: #0088CC;
     color: #fff;
-    padding: 15px 28px;
-    border-radius: var(--r-pill);
-    font-size: 15px; font-weight: 700;
-    text-decoration: none;
-    transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
-    box-shadow: 0 6px 20px rgba(0,136,204,0.30);
 }
-.tg-btn:hover { background: #0077b3; transform: translateY(-1px); color: #fff; opacity: 1; box-shadow: 0 10px 28px rgba(0,136,204,0.38); }
+.tg-btn:hover { filter: brightness(1.05); color: #fff; opacity: 1; }
+.tg-btn:active { transform: scale(0.97); filter: brightness(0.94); }
 
 .tg-hint {
-    font-size: 12px; color: var(--dim); text-align: center;
-    margin-top: 6px; line-height: 1.4;
+    font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-3); text-align: center;
+    margin-top: -2px;
 }
 
 .tg-support-btn {
-    display: flex; align-items: center; justify-content: center; gap: 8px;
-    margin-top: 10px;
-    padding: 12px 28px;
-    border-radius: var(--r-pill);
-    font-size: 14px; font-weight: 600;
-    text-decoration: none;
-    color: var(--muted);
-    background: transparent;
-    border: 1.5px solid var(--line);
-    transition: color 0.15s, border-color 0.15s;
+    background: rgba(0,122,255,0.12);
+    color: var(--ios-blue);
+    height: 46px;
 }
-.tg-support-btn:hover { color: #0088cc; border-color: #0088cc; opacity: 1; }
+.tg-support-btn:hover { background: rgba(0,122,255,0.18); color: var(--ios-blue); opacity: 1; }
+.tg-support-btn:active { transform: scale(0.97); }
 
+.login-divider {
+    width: 100%;
+    padding-top: 20px;
+    border-top: 0.5px solid var(--ios-sep);
+    text-align: center;
+}
 .staff-login-link {
     display: inline-flex; align-items: center; justify-content: center;
     min-height: 44px;
-    font-size: 13px; color: var(--dim); text-decoration: none; transition: color 0.15s;
+    font: 590 15px/1 var(--ios-font); color: var(--ios-blue); text-decoration: none;
 }
-.staff-login-link:hover, .staff-login-link:focus-visible { color: var(--blue); }
+.staff-login-link:hover, .staff-login-link:focus-visible { opacity: 0.7; }
 
 {% if settings.course_calculator_all_roles %}
 .login-calculator {
@@ -99,40 +121,31 @@
 }
 
 .login-calculator-title {
-    font-family: var(--font-display);
-    font-size: 22px;
-    font-weight: 800;
-    color: var(--ink);
+    font: 700 20px/1.3 var(--ios-font);
+    color: var(--ios-label);
     text-align: center;
-    margin: 10px 0 16px;
+    margin: 4px 0 16px;
 }
 {% endif %}
-
-@media (max-width: 480px) {
-    .login-card { padding: 22px; }
-    .login-card-inner { flex-direction: column; text-align: center; }
-}
 </style>
 {% endblock %}
 {% block content %}
 <div class="login-wrap">
+    <div class="login-panel">
 
-    <!-- ═══ LOGIN ═══ -->
-    <div class="login-card">
-        <div class="login-card-inner">
-            <div class="login-avatar">
-                <img src="/static/img/logo.webp?v=2" alt="Логотип" width="40" height="40">
-            </div>
-            <div class="login-text">
-                <h1>Войдите в личный кабинет</h1>
-                <p>Доступ открыт только участникам закрытого сообщества</p>
-            </div>
+    <div class="login-hero">
+        <div class="login-icon">
+            <img src="/static/img/logo.webp?v=2" alt="Логотип" width="84" height="84">
         </div>
+        <h1>Войдите в личный кабинет</h1>
+        <p>Доступ открыт только участникам закрытого сообщества</p>
+    </div>
 
-        {% if error %}
-        <div class="alert alert-error" style="margin-top:16px">{{ error }}</div>
-        {% endif %}
+    {% if error %}
+    <div class="alert-error">{{ error }}</div>
+    {% endif %}
 
+    <div class="login-actions">
         {% if telegram_login_enabled %}
         <a href="/auth/telegram-login" class="tg-btn">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -144,7 +157,7 @@
         {% endif %}
 
         {% if not telegram_login_enabled %}
-        <div class="alert alert-error" style="margin-top:16px">Вход временно недоступен. Напишите в поддержку.</div>
+        <div class="alert-error">Вход временно недоступен. Напишите в поддержку.</div>
         {% endif %}
 
         <a href="https://t.me/roman_chatbots" target="_blank" rel="noopener noreferrer" class="tg-support-btn">
@@ -153,12 +166,14 @@
             </svg>
             Написать в поддержку
         </a>
+    </div>
 
-        <div style="text-align:center;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
-            <a href="/auth/staff/login" class="staff-login-link">
-                Войти по логину и паролю →
-            </a>
-        </div>
+    <div class="login-divider">
+        <a href="/auth/staff/login" class="staff-login-link">
+            Войти по логину и паролю →
+        </a>
+    </div>
+
     </div>
 
     {% if settings.course_calculator_all_roles %}
