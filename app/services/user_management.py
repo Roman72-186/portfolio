@@ -135,6 +135,54 @@ def soft_delete_user(db: DBSession, target_user_id: int, performed_by_id: int) -
     return True
 
 
+def archive_user(db: DBSession, target_user_id: int, performed_by_id: int, *, commit: bool = True) -> bool:
+    """
+    Отправляет пользователя в архив: ставит archived_at, гасит is_active,
+    выкидывает из активных сессий. Данные (работы, оценки, переписки) не трогаются.
+    Возвращает False, если пользователь не найден, уже в архиве, удалён
+    или недоступен актору по рангу.
+    """
+    user = db.query(User).filter(User.id == target_user_id).first()
+    if not user or user.archived_at is not None or user.deleted_at is not None:
+        return False
+    actor = db.query(User).filter(User.id == performed_by_id).first()
+    if not actor or not can_manage_user(actor, user):
+        return False
+
+    user.archived_at = datetime.now(timezone.utc)
+    user.is_active = False
+
+    _invalidate_user_sessions(db, target_user_id)
+    _log(db, "user_archive", performed_by_id, target_user_id,
+         f"В архив: {user.name} (id={user.id})")
+    if commit:
+        db.commit()
+    return True
+
+
+def unarchive_user(db: DBSession, target_user_id: int, performed_by_id: int, *, commit: bool = True) -> bool:
+    """
+    Возвращает пользователя из архива: снимает archived_at и включает is_active.
+    Возвращает False, если пользователь не найден, не в архиве, удалён
+    или недоступен актору по рангу.
+    """
+    user = db.query(User).filter(User.id == target_user_id).first()
+    if not user or user.archived_at is None or user.deleted_at is not None:
+        return False
+    actor = db.query(User).filter(User.id == performed_by_id).first()
+    if not actor or not can_manage_user(actor, user):
+        return False
+
+    user.archived_at = None
+    user.is_active = True
+
+    _log(db, "user_unarchive", performed_by_id, target_user_id,
+         f"Из архива: {user.name} (id={user.id})")
+    if commit:
+        db.commit()
+    return True
+
+
 def toggle_user_active(db: DBSession, target_user_id: int, performed_by_id: int) -> bool | None:
     """
     Блокирует или разблокирует пользователя (переключает is_active).
@@ -143,6 +191,11 @@ def toggle_user_active(db: DBSession, target_user_id: int, performed_by_id: int)
     """
     user = db.query(User).filter(User.id == target_user_id).first()
     if not user or user.deleted_at is not None:
+        return None
+    if user.archived_at is not None:
+        # У архивного is_active=False по определению. Разблокировка вернула бы его
+        # в рабочие списки, оставив в архиве — противоречивое состояние.
+        # Возврат из архива делается unarchive_user.
         return None
     actor = db.query(User).filter(User.id == performed_by_id).first()
     if not actor or not can_manage_user(actor, user):

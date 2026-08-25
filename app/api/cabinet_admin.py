@@ -48,7 +48,11 @@ def _load_dashboard_data(db: DBSession, now: datetime) -> dict:
     )
     role_breakdown = [{"name": r.display_name, "rank": r.rank, "count": r.cnt} for r in role_rows]
     total_active = sum(r["count"] for r in role_breakdown)
-    inactive_count = db.query(func.count(User.id)).filter(User.is_active == False).scalar() or 0
+    inactive_count = (
+        db.query(func.count(User.id))
+        .filter(User.is_active == False, User.archived_at.is_(None))  # noqa: E712
+        .scalar() or 0
+    )
     new_users_month = (
         db.query(func.count(User.id)).filter(User.created_at >= month_start).scalar() or 0
     )

@@ -175,6 +175,10 @@
             <span style="font-size:12px;font-weight:700;color:var(--error)">Только заблокированные</span>
         </label>
         <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" name="show_archived" value="1" {% if show_archived %}checked{% endif %} style="width:auto;padding:0">
+            <span style="font-size:12px;font-weight:700;color:var(--dim)">Только архив</span>
+        </label>
+        <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
             <input type="checkbox" name="show_hidden" value="1" {% if show_hidden %}checked{% endif %} style="width:auto;padding:0">
             <span style="font-size:12px;font-weight:700;color:var(--warning)">Без периодов</span>
         </label>
@@ -298,6 +302,8 @@
                 <td data-user-status="{{ u.id }}" data-label="Статус">
                     {% if u.deleted_at %}
                     <span style="font-size:12px;color:var(--dim)">Удалён</span>
+                    {% elif u.archived_at %}
+                    <span style="font-size:12px;color:var(--dim);font-weight:700">В архиве</span>
                     {% elif not u.is_active %}
                     <span style="font-size:12px;color:var(--error);font-weight:700">Заблокирован</span>
                     {% else %}
@@ -310,7 +316,9 @@
                          data-user-actions="{{ u.id }}"
                          data-can-access="{% if user.role_rank >= 4 and u_rank < user.role_rank %}1{% else %}0{% endif %}"
                          data-has-login="{% if u.staff_login %}1{% else %}0{% endif %}">
-                        {% if u.is_active %}
+                        {% if u.archived_at %}
+                        {# Архивному блокировка не нужна: он и так вне рабочих списков. #}
+                        {% elif u.is_active %}
                         <button type="button" class="action-btn btn-block"
                             onclick="openConfirm('toggle', {{ u.id }}, userNameFromRow({{ u.id }}), false)">
                             Заблокировать
@@ -325,6 +333,21 @@
                             onclick="openConfirm('delete', {{ u.id }}, userNameFromRow({{ u.id }}), false)">
                             Удалить
                         </button>
+                        {% if current_user_rank >= 5 and u_rank < current_user_rank %}
+                        {% if u.archived_at %}
+                        <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/unarchive" style="margin:0"
+                              onsubmit="return confirm('Вернуть ученика из архива? Он снова попадёт в рабочие списки и сможет войти.')">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                            <button type="submit" class="action-btn btn-unblock">Вернуть из архива</button>
+                        </form>
+                        {% else %}
+                        <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/archive" style="margin:0"
+                              onsubmit="return confirm('Отправить в архив? Работы и переписки сохранятся, но ученик уйдёт из рабочих списков и потеряет вход.')">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                            <button type="submit" class="action-btn">В архив</button>
+                        </form>
+                        {% endif %}
+                        {% endif %}
                         {% if user.role_rank >= 4 and u.is_active and u_rank < user.role_rank %}
                         <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/set-credentials" style="margin:0">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
@@ -370,7 +393,7 @@
         </div>
         <div style="display:flex;gap:8px">
             {% if page > 1 %}
-            <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&study_mode={{ study_mode }}&curator_id={{ curator_id }}&exam_subjects={{ exam_subjects }}&tag={{ tag }}&has_case={{ has_case }}&is_publishable={{ is_publishable }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&show_hidden={{ '1' if show_hidden else '' }}&page={{ page - 1 }}"
+            <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&study_mode={{ study_mode }}&curator_id={{ curator_id }}&exam_subjects={{ exam_subjects }}&tag={{ tag }}&has_case={{ has_case }}&is_publishable={{ is_publishable }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&show_archived={{ '1' if show_archived else '' }}&show_hidden={{ '1' if show_hidden else '' }}&page={{ page - 1 }}"
                style="padding:7px 14px;border-radius:var(--r-sm);background:var(--surface-2);border:1.5px solid var(--line);font-size:13px;font-weight:700;color:var(--text);text-decoration:none">
                 ‹ Назад
             </a>
@@ -379,7 +402,7 @@
                 {{ page }} / {{ total_pages }}
             </span>
             {% if page < total_pages %}
-            <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&study_mode={{ study_mode }}&curator_id={{ curator_id }}&exam_subjects={{ exam_subjects }}&has_case={{ has_case }}&is_publishable={{ is_publishable }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&show_hidden={{ '1' if show_hidden else '' }}&page={{ page + 1 }}"
+            <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&study_mode={{ study_mode }}&curator_id={{ curator_id }}&exam_subjects={{ exam_subjects }}&has_case={{ has_case }}&is_publishable={{ is_publishable }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&show_archived={{ '1' if show_archived else '' }}&show_hidden={{ '1' if show_hidden else '' }}&page={{ page + 1 }}"
                style="padding:7px 14px;border-radius:var(--r-sm);background:var(--surface-2);border:1.5px solid var(--line);font-size:13px;font-weight:700;color:var(--text);text-decoration:none">
                 Вперёд ›
             </a>

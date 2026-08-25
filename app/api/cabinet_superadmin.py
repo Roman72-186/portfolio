@@ -188,7 +188,11 @@ def _load_dashboard_data(db: DBSession, now: datetime) -> dict:
     )
     role_breakdown = [{"name": r.display_name, "rank": r.rank, "count": r.cnt} for r in role_rows]
     total_active = sum(r["count"] for r in role_breakdown)
-    inactive_count = db.query(func.count(User.id)).filter(User.is_active == False).scalar() or 0
+    inactive_count = (
+        db.query(func.count(User.id))
+        .filter(User.is_active == False, User.archived_at.is_(None))  # noqa: E712
+        .scalar() or 0
+    )
     new_users_month = (
         db.query(func.count(User.id)).filter(User.created_at >= month_start).scalar() or 0
     )
@@ -1628,6 +1632,7 @@ def superadmin_stats_export(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 from app.services.user_management import (
+    archive_user,
     can_assign_role_rank,
     can_manage_user_by_rank,
     get_curator_for_assignment,
@@ -1635,6 +1640,7 @@ from app.services.user_management import (
     log_tariff_change,
     soft_delete_user,
     toggle_user_active,
+    unarchive_user,
 )
 
 
@@ -1691,7 +1697,7 @@ def _find_student_by_tg_username(db: DBSession, tg_username: str) -> User | None
     candidates = (
         db.query(User)
         .join(Role, User.role_id == Role.id)
-        .filter(Role.rank == 1, User.deleted_at.is_(None))
+        .filter(Role.rank == 1, User.deleted_at.is_(None), User.archived_at.is_(None))
         .order_by(User.profile_completed.desc(), User.updated_at.desc(), User.id.desc())
         .limit(5000)
         .all()
@@ -1758,6 +1764,7 @@ def _render_superadmin_users(
     tariff: str = "",
     show_deleted: str = "",
     show_blocked: str = "",
+    show_archived: str = "",
     show_hidden: str = "",
     study_mode: str = "",
     is_publishable: str = "",
@@ -1780,6 +1787,7 @@ def _render_superadmin_users(
     role_rank_int: int | None = int(role_rank) if role_rank.strip() else None
     show_deleted_b: bool = show_deleted.strip() in ("1", "true", "on", "yes")
     show_blocked_b: bool = show_blocked.strip() in ("1", "true", "on", "yes")
+    show_archived_b: bool = show_archived.strip() in ("1", "true", "on", "yes")
     show_hidden_b: bool = show_hidden.strip() in ("1", "true", "on", "yes")
     is_publishable_b: bool = is_publishable.strip() in ("1", "true", "on", "yes")
     has_case_b: bool = has_case.strip() in ("1", "true", "on", "yes")
@@ -1806,10 +1814,21 @@ def _render_superadmin_users(
 
     page = max(1, page)
     query = db.query(User).outerjoin(Role, User.role_id == Role.id)
-    if show_blocked_b:
-        query = query.filter(User.is_active == False, User.deleted_at.is_(None))  # noqa: E712
+    if show_archived_b:
+        # Архив прошлых потоков — отдельная выборка: только те, кого убрали намеренно.
+        query = query.filter(User.archived_at.isnot(None), User.deleted_at.is_(None))
+    elif show_blocked_b:
+        # «Заблокированные» — это ручная блокировка. Архив сюда не подмешиваем,
+        # иначе после выпуска потока фильтр показывал бы всю прошлую школу.
+        query = query.filter(
+            User.is_active == False,  # noqa: E712
+            User.deleted_at.is_(None),
+            User.archived_at.is_(None),
+        )
     elif not show_deleted_b:
-        query = query.filter(User.deleted_at.is_(None))
+        query = query.filter(User.deleted_at.is_(None), User.archived_at.is_(None))
+    else:
+        query = query.filter(User.archived_at.is_(None))
     if not show_hidden_b:
         from sqlalchemy import or_ as _or
         query = query.filter(
@@ -1948,6 +1967,7 @@ def _render_superadmin_users(
         "tariff": tariff,
         "show_deleted": show_deleted,
         "show_blocked": show_blocked,
+        "show_archived": "1" if show_archived_b else "",
         "show_hidden": "1" if show_hidden_b else "",
         "study_mode": study_mode_clean,
         "is_publishable": "1" if is_publishable_b else "",
@@ -2002,6 +2022,7 @@ def superadmin_users(
     tariff: str = "",
     show_deleted: str = "",
     show_blocked: str = "",
+    show_archived: str = "",
     show_hidden: str = "",
     study_mode: str = "",
     is_publishable: str = "",
@@ -2020,6 +2041,7 @@ def superadmin_users(
         tariff=tariff,
         show_deleted=show_deleted,
         show_blocked=show_blocked,
+        show_archived=show_archived,
         show_hidden=show_hidden,
         study_mode=study_mode,
         is_publishable=is_publishable,
@@ -2625,6 +2647,40 @@ def superadmin_toggle_active(
     if _wants_json_response(request):
         return JSONResponse({"ok": True, "user_id": target_id, "is_active": result})
     return RedirectResponse("/cabinet/superadmin/users", status_code=303)
+
+
+@router.post("/superadmin/users/{target_id}/archive")
+def superadmin_archive_user(
+    target_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(require_superadmin)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    """В архив: ученик уходит из рабочих списков, данные остаются целыми."""
+    ok = archive_user(db, target_user_id=target_id, performed_by_id=user["user_id"])
+    if not ok:
+        raise HTTPException(status_code=400, detail="Невозможно отправить в архив")
+    if _wants_json_response(request):
+        return JSONResponse({"ok": True, "user_id": target_id, "archived": True})
+    return RedirectResponse("/cabinet/superadmin/users", status_code=303)
+
+
+@router.post("/superadmin/users/{target_id}/unarchive")
+def superadmin_unarchive_user(
+    target_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(require_superadmin)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    """Вернуть из архива: доступ и рабочие списки восстанавливаются."""
+    ok = unarchive_user(db, target_user_id=target_id, performed_by_id=user["user_id"])
+    if not ok:
+        raise HTTPException(status_code=400, detail="Невозможно вернуть из архива")
+    if _wants_json_response(request):
+        return JSONResponse({"ok": True, "user_id": target_id, "archived": False})
+    return RedirectResponse("/cabinet/superadmin/users?show_archived=1", status_code=303)
 
 
 # ── Drive-sync status & retry ────────────────────────────────────────────────

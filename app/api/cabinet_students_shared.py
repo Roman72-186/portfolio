@@ -91,6 +91,7 @@ def _get_accessible_students(
     has_unchecked_mocks: bool = False,
     mock_period_submitted: bool = False,
     show_hidden: bool = False,
+    archived: bool = False,
 ) -> list:
     """Возвращает список студентов доступных текущему пользователю.
 
@@ -100,8 +101,28 @@ def _get_accessible_students(
 
     По умолчанию скрыты студенты, не заполнившие анкету (profile_completed=False).
     Суперадмин может раскрыть их через show_hidden=True.
+
+    archived=True — режим архива для суперадмина: вместо действующих учеников
+    отдаются архивные (прошлые потоки), их данные открыты только на чтение.
     """
     hide_pre_cohort = not (show_hidden and user["role_rank"] >= 5)
+
+    if archived:
+        if user["role_rank"] < 5:
+            return []
+        student_role = db.query(Role).filter(Role.rank == 1).first()
+        if not student_role:
+            return []
+        return (
+            db.query(User)
+            .filter(
+                User.role_id == student_role.id,
+                User.archived_at.isnot(None),
+                User.deleted_at.is_(None),
+            )
+            .order_by(User.last_name, User.first_name)
+            .all()
+        )
 
     if user["role_rank"] == 2:
         # Куратор ВСЕГДА видит всех своих активных учеников, включая тех, кто
@@ -121,7 +142,7 @@ def _get_accessible_students(
     if not student_role:
         return []
 
-    q = db.query(User).filter(User.role_id == student_role.id, User.is_active == True)
+    q = db.query(User).filter(User.role_id == student_role.id, User.is_active == True)  # noqa: E712
     if hide_pre_cohort:
         q = q.filter(User.profile_completed == True)  # noqa: E712
 
@@ -150,15 +171,20 @@ def _parse_bool(s: str) -> bool:
     return s.lower() in ("1", "true", "yes", "on")
 
 
-def _check_access(student_id: int, user: dict, db: DBSession) -> User:
+def _check_access(student_id: int, user: dict, db: DBSession, *, read_archive: bool = False) -> User:
+    """read_archive=True открывает архивного ученика на чтение — только суперадмину
+    и только в GET-роутах панели. Мутации архива отсекаются сами: без этого флага
+    архивный ученик не находится вовсе, значит POST/PATCH/DELETE отвечают 404."""
     return get_student_for_staff_access(
         db,
         user,
         student_id,
         active_only=True,
+        allow_archived=read_archive and user["role_rank"] >= 5,
         not_found_detail="Ученик не найден",
         forbidden_detail="Нет доступа к этому ученику",
     )
+
 
 
 def _enrich(s: User, counts_by_user: dict, avg_by_user: dict,
@@ -197,6 +223,26 @@ def _enrich(s: User, counts_by_user: dict, avg_by_user: dict,
 
 # ── Main page ─────────────────────────────────────────────────────────────────
 
+# Архив идёт отдельным путём (а не флагом на /students), чтобы подсветка пункта
+# меню и возврат «к действующим» работали без разбора query-параметров.
+# Путь именно /cabinet/archive: /cabinet/students/archive перехватывает
+# legacy-редирект `/students/{student_id}` из cabinet_curator.py — его роутер
+# подключён раньше, и «archive» уходит в int-параметр (422).
+@router.get("/archive", response_class=HTMLResponse)
+def students_archive_panel(
+    request: Request,
+    user: Annotated[dict, Depends(_require_student_panel)],
+    db: Annotated[DBSession, Depends(get_db)],
+    student: int = Query(0),
+    tab: str = Query("portfolio"),
+):
+    if user["role_rank"] < 5:
+        raise HTTPException(status_code=403, detail="Архив доступен только суперадмину")
+    return _render_students_panel(
+        request, user, db, student=student, tab=tab, archived="1",
+    )
+
+
 @router.get("/students", response_class=HTMLResponse)
 def students_panel(
     request: Request,
@@ -208,16 +254,41 @@ def students_panel(
     mock_period_submitted: str = Query(""),
     show_hidden: str = Query(""),
 ):
+    return _render_students_panel(
+        request, user, db,
+        student=student,
+        tab=tab,
+        has_unchecked_mocks=has_unchecked_mocks,
+        mock_period_submitted=mock_period_submitted,
+        show_hidden=show_hidden,
+    )
+
+
+def _render_students_panel(
+    request: Request,
+    user: dict,
+    db: DBSession,
+    *,
+    student: int = 0,
+    tab: str = "portfolio",
+    has_unchecked_mocks: str = "",
+    mock_period_submitted: str = "",
+    show_hidden: str = "",
+    archived: str = "",
+):
     is_admin_panel = user["role_rank"] >= 4
     has_unchecked = is_admin_panel and _parse_bool(has_unchecked_mocks)
     mock_submitted = is_admin_panel and _parse_bool(mock_period_submitted)
     show_hidden_b = user["role_rank"] >= 5 and _parse_bool(show_hidden)
+    # Архив прошлых потоков — только суперадмину и только на чтение.
+    archived_b = user["role_rank"] >= 5 and _parse_bool(archived)
 
     students = _get_accessible_students(
         user, db,
         has_unchecked_mocks=has_unchecked,
         mock_period_submitted=mock_submitted,
         show_hidden=show_hidden_b,
+        archived=archived_b,
     )
 
     active_hard_filters: list[dict] = []
@@ -279,7 +350,7 @@ def students_panel(
         for uid, ws in works_by_uid.items():
             has_case_by_user[uid] = has_case_growth(ws)
 
-    can_score = user["role_rank"] >= 4
+    can_score = user["role_rank"] >= 4 and not archived_b
     if students and can_score:
         _ids = [s.id for s in students]
         mock_count_rows = (
@@ -374,6 +445,8 @@ def students_panel(
                 (not_submitted_students if pending_subjects else submitted_students).append(entry)
 
     sidebar_title = "Мои ученики" if user["role_rank"] == 2 else "Все ученики"
+    if archived_b:
+        sidebar_title = "Архив учеников"
     valid_tabs = ("portfolio", "mock-exams", "cycles", "statistics")
     show_curator_filter = user["role_rank"] >= 4
 
@@ -417,6 +490,7 @@ def students_panel(
         "active_hard_filters": active_hard_filters,
         "is_admin_panel": is_admin_panel,
         "is_superadmin": user["role_rank"] >= 5,
+        "is_archive_view": archived_b,
         "cohort_tag_labels": COHORT_TAG_LABELS,
         "mock_status_available": mock_status_available,
         "submitted_students": submitted_students,
@@ -432,7 +506,7 @@ def get_student_profile(
     user: Annotated[dict, Depends(_require_student_panel)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    student = _check_access(student_id, user, db)
+    student = _check_access(student_id, user, db, read_archive=True)
     enrolled_at = student.enrolled_at or student.created_at
 
     # Curator name — db.get() hits identity map first (no extra query if already loaded)
@@ -513,7 +587,7 @@ def get_portfolio(
     user: Annotated[dict, Depends(_require_student_panel)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    student = _check_access(student_id, user, db)
+    student = _check_access(student_id, user, db, read_archive=True)
     enrolled_at = student.enrolled_at or student.created_at
 
     before_works = (
@@ -583,7 +657,7 @@ def get_mock_exams(
     db: Annotated[DBSession, Depends(get_db)],
     period_only: str = Query(""),
 ):
-    student = _check_access(student_id, user, db)
+    student = _check_access(student_id, user, db, read_archive=True)
     enrolled_at = student.enrolled_at or student.created_at
 
     period_only_bool = period_only.lower() in ("1", "true", "yes", "on")
@@ -700,7 +774,7 @@ def get_statistics(
 ):
     from app.services.stats import student_score_curve
 
-    student = _check_access(student_id, user, db)
+    student = _check_access(student_id, user, db, read_archive=True)
     enrolled_at = student.enrolled_at or student.created_at
     return JSONResponse({
         "student": {
@@ -724,7 +798,7 @@ def get_retakes(
     user: Annotated[dict, Depends(_require_student_panel)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    student = _check_access(student_id, user, db)
+    student = _check_access(student_id, user, db, read_archive=True)
     enrolled_at = student.enrolled_at or student.created_at
 
     retake_works = (

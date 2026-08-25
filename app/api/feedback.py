@@ -504,7 +504,7 @@ def _staff_cycles_data(db: DBSession, user: dict, archived: bool = False) -> lis
     q = (
         db.query(ExamCycle, User)
         .join(User, ExamCycle.user_id == User.id)
-        .filter(User.deleted_at.is_(None))
+        .filter(User.deleted_at.is_(None), User.archived_at.is_(None))
     )
     if archived:
         q = q.filter(ExamCycle.closed_at.isnot(None))

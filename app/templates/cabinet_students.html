@@ -1007,7 +1007,17 @@
                    aria-label="Поиск ученика"
                    oninput="filterSidebar()" id="student-search">
         </div>
-        {% if mock_status_available %}
+        {% if is_archive_view %}
+        <div class="sidebar-hard-filters">
+            <span class="filter-pill">
+                <span class="filter-pill-label">Архив прошлых потоков — только просмотр</span>
+            </span>
+            <a class="filter-pill" href="/cabinet/students">
+                <span class="filter-pill-label">← К действующим ученикам</span>
+            </a>
+        </div>
+        {% endif %}
+        {% if mock_status_available and not is_archive_view %}
         <details class="mock-status-panel">
             <summary>
                 <span>Пробники: статус сдачи</span>
@@ -1058,7 +1068,7 @@
             {% endfor %}
         </div>
         {% endif %}
-        {% if is_admin_panel %}
+        {% if is_admin_panel and not is_archive_view %}
         <div class="sidebar-hard-filters-add">
             <details>
                 <summary>Добавить фильтр</summary>

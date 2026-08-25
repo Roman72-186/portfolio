@@ -229,6 +229,16 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         min_rank=4,
     ),
     StaffNavItem(
+        key="archive",
+        href="/cabinet/archive",
+        sidebar_label="Архив учеников",
+        pill_label="Архив",
+        aria_label="Архив учеников",
+        tooltip="Архив прошлых потоков: работы и переписки, только просмотр",
+        icon="students",
+        min_rank=5,
+    ),
+    StaffNavItem(
         key="guest_exam",
         href="/cabinet/staff/guest-exam",
         sidebar_label="Гостевой режим",

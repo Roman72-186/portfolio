@@ -55,6 +55,12 @@ class User(Base):
     curator_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     curator_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Архив прошлого потока: ученик убран из рабочих списков (вместе с is_active=False),
+    # но работы, оценки и переписки целы и открыты суперадмину. Отдельно от deleted_at,
+    # потому что тот снимается при любом входе (auth._upsert_user), а архив — нет.
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
