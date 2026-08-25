@@ -86,7 +86,7 @@
             {% if is_open %}
             <form method="post" action="/guest/{{ config.token }}/exam/{{ subject }}/upload" enctype="multipart/form-data">
                 <input type="hidden" name="csrf_token" value="{{ guest_csrf_token }}">
-                <input type="file" name="photo" accept="image/*" capture="environment" class="guest-file-input" required>
+                <input type="file" name="photo" accept="image/*" class="guest-file-input" required>
                 <button type="submit" class="btn-blue btn-full">Загрузить работу</button>
             </form>
             {% else %}
