@@ -26,9 +26,10 @@
     .video-row-state { justify-self: start; }
 }
 </style>
+<link rel="stylesheet" href="/static/css/video_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="videos-page">
+<div class="videos-page ios-videos">
     <a class="back-link" href="{{ back_url | default('/cabinet/student') }}">← Назад{% if back_url == '/cabinet/admin/videos' %} в управление видео{% else %} в кабинет{% endif %}</a>
     <header class="page-header page-header--stacked">
         <h1 class="page-title">Видеоуроки</h1>

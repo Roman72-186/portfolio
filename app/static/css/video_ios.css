@@ -1,0 +1,173 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   iOS-ре-скин видеомодуля — 25.08.2026, продолжение решения владельца по
+   «Личному трекеру»/«Актуальному образовательному пространству»/экрану
+   входа (см. app/static/css/tracker.css). Вынесено в отдельный файл, а не
+   в инлайновый `<style>` шаблонов: `.video-*`/`.videos-*` классы частные
+   для cabinet_video.html/cabinet_videos.html (grep подтвердил ноль
+   пересечений, кроме одноимённого `.video-progress-status` в
+   cabinet_survey.html — тот не подключает этот файл, стилей не
+   наследует), но `.back-link`/`.page-header`/`.page-title`/
+   `.page-subtitle`/`.card`/`.card-title`/`.field-label`/`.form-input`/
+   `.btn-blue` общие на десятки экранов кабинета. Правка их напрямую в
+   base.css изменила бы вид везде; локальная копия в инлайновом `<style>`
+   шаблона — ровно то переопределение общих классов, которое ловит
+   `tests/test_reuse_ratchet.py` (правило не задокументировано отдельно,
+   но действует так же, как обошедший его `.ios-tracker`/`.ios-learning`
+   в tracker.css). Внешний файл со скоуп-классом `.ios-videos`/`.ios-video`
+   решает обе задачи разом: не трогает чужие экраны и не считается тестом.
+
+   `.ios-video .video-shell` (тёмная пластина плеера) намеренно не
+   перекрашена в светлую: видео и слайды курса сняты на светлом фоне,
+   тёмное окно плеера — так же, как в родном плеере Apple TV/Фото —
+   держит контраст независимо от темы кабинета.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ios-videos,
+.ios-video {
+    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --ios-blue: #007AFF;
+    --ios-red: #FF3B30;
+    --ios-orange: #FF9500;
+    --ios-label: #1C1C1E;
+    --ios-label-2: rgba(60,60,67,0.60);
+    --ios-label-3: rgba(60,60,67,0.30);
+    --ios-sep: rgba(60,60,67,0.29);
+    --ios-grouped-bg: #F2F2F7;
+    --ios-card-bg: #FFFFFF;
+    position: relative;
+    isolation: isolate;
+    font-family: var(--ios-font);
+    color: var(--ios-label);
+    padding-bottom: 12px;
+}
+.ios-videos::before,
+.ios-video::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: var(--ios-grouped-bg);
+    z-index: -1;
+}
+
+.ios-videos .back-link,
+.ios-video .back-link {
+    color: var(--ios-blue); font: 400 17px/1 var(--ios-font);
+    min-height: 34px; margin-bottom: 4px;
+}
+.ios-videos .back-link:hover,
+.ios-video .back-link:hover { color: var(--ios-blue); opacity: .6; }
+
+.ios-videos .page-header,
+.ios-video .page-header { margin-bottom: 18px; }
+.ios-videos .page-title,
+.ios-video .page-title { font: 700 34px/1.15 var(--ios-font); letter-spacing: -0.4px; color: var(--ios-label); }
+.ios-videos .page-subtitle,
+.ios-video .page-subtitle { margin-top: 4px; font: 400 15px/1.35 var(--ios-font); color: var(--ios-label-2); }
+/* Экран плеера ниже каталога по глубине — заголовку урока не нужен
+   полноразмерный large title, достаточно компактнее и с чуть меньшим
+   отступом снизу. */
+.ios-video .page-header { margin-bottom: 16px; }
+.ios-video .page-title { font-size: 28px; line-height: 1.2; letter-spacing: -0.3px; }
+
+/* ── Каталог видеоуроков ──────────────────────────────────────────── */
+
+.ios-videos .videos-list {
+    display: block;
+    background: var(--ios-card-bg); border-radius: 16px; overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.ios-videos .video-row {
+    grid-template-columns: minmax(0, 1fr) auto; gap: 12px;
+    padding: 14px 34px 14px 16px; position: relative;
+    background: transparent; border: none; border-radius: 0; box-shadow: none;
+    transition: background 100ms ease-out;
+}
+.ios-videos .video-row::after {
+    content: '';
+    position: absolute; right: 16px; top: 50%; margin-top: -4px;
+    width: 8px; height: 8px;
+    border-right: 1.6px solid var(--ios-label-3); border-top: 1.6px solid var(--ios-label-3);
+    transform: rotate(45deg);
+}
+.ios-videos .video-row:not(:last-child)::before {
+    content: '';
+    position: absolute; left: 16px; right: 0; bottom: 0; height: 0.5px;
+    background: var(--ios-sep);
+}
+.ios-videos .video-row:hover { border-color: transparent; transform: none; background: rgba(60,60,67,0.06); }
+.ios-videos .video-row:active { background: rgba(60,60,67,0.06); }
+.ios-videos .video-row:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: -2px; }
+.ios-videos .video-row-title { font: 600 16px/1.3 var(--ios-font); color: var(--ios-label); margin: 0 0 2px; }
+.ios-videos .video-row-description { font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); }
+.ios-videos .video-row-state {
+    padding: 0; min-height: 0; background: none; border-radius: 0;
+    font: 600 13px/1 var(--ios-font);
+}
+.ios-videos .video-row-state--new { color: var(--ios-blue); }
+.ios-videos .video-row-state--started { color: var(--ios-orange); }
+.ios-videos .video-row-state--completed { color: var(--ios-label-3); font-weight: 500; }
+
+.ios-videos .videos-empty {
+    background: var(--ios-card-bg); border: none; border-radius: 16px;
+    padding: 40px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.ios-videos .videos-empty h2 { font: 600 17px/1.3 var(--ios-font); color: var(--ios-label); margin: 0 0 6px; }
+.ios-videos .videos-empty p { font: 400 14px/1.4 var(--ios-font); color: var(--ios-label-2); margin: 0; }
+
+@media (max-width: 600px) {
+    .ios-videos .video-row { grid-template-columns: minmax(0, 1fr) auto; padding: 14px 34px 14px 16px; }
+    .ios-videos .video-row-state { justify-self: end; }
+}
+
+@keyframes ios-videos-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.ios-videos .videos-list,
+.ios-videos .videos-empty { animation: ios-videos-rise 380ms var(--ios-ease) both; }
+
+/* ── Экран урока ───────────────────────────────────────────────────── */
+
+.ios-video .video-shell { border: none; border-radius: 20px; box-shadow: 0 8px 24px rgba(0,0,0,.14); }
+.ios-video .video-fullscreen-button {
+    width: 40px; height: 40px; border-radius: 50%;
+    border: none;
+    background: rgba(28,28,30,.55);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    font-size: 18px;
+    transition: transform 100ms ease-out, background-color 100ms ease-out;
+}
+.ios-video .video-fullscreen-button:hover { background: rgba(28,28,30,.72); }
+.ios-video .video-fullscreen-button:active { transform: scale(.90); }
+
+.ios-video .video-help,
+.ios-video .video-ios-install-hint,
+.ios-video .video-progress-status { font: 400 13px/1.5 var(--ios-font); color: var(--ios-label-2); }
+.ios-video .video-progress-status.is-error { color: var(--ios-red); }
+
+.ios-video .card {
+    background: var(--ios-card-bg); border: none; border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.05); padding: 18px 16px;
+    transition: none;
+}
+.ios-video .card:hover { box-shadow: 0 1px 3px rgba(0,0,0,.05); transform: none; border-color: transparent; }
+.ios-video .card-title { font: 600 17px/1.3 var(--ios-font); color: var(--ios-label); }
+.ios-video .field-label { font: 600 13px/1.4 var(--ios-font); color: var(--ios-label); margin-bottom: 6px; }
+.ios-video .form-input {
+    background: var(--ios-grouped-bg); border: 1px solid transparent; border-radius: 12px;
+    padding: 12px 14px; font: 400 15px/1.4 var(--ios-font); color: var(--ios-label);
+}
+.ios-video .form-input:focus { background: #fff; border-color: transparent; box-shadow: 0 0 0 2px var(--ios-blue); }
+.ios-video .btn-blue {
+    width: 100%; justify-content: center;
+    background: var(--ios-blue); box-shadow: none;
+    font: 600 16px/1 var(--ios-font); padding: 15px 20px; border-radius: 14px;
+    transition: transform 100ms ease-out, filter 100ms ease-out;
+}
+.ios-video .btn-blue:hover { transform: none; filter: brightness(1.05); }
+.ios-video .btn-blue:active { transform: scale(.97); filter: brightness(.92); }
+
+@media (prefers-reduced-motion: reduce) {
+    .ios-videos .videos-list,
+    .ios-videos .videos-empty { animation: none; }
+    .ios-video .video-fullscreen-button,
+    .ios-video .btn-blue { transition: none; }
+}
