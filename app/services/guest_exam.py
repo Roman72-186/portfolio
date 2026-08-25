@@ -464,6 +464,23 @@ def record_upload(
     return submission
 
 
+def cancel_upload(db: DBSession, submission: GuestSubmission) -> str | None:
+    """Откатить загруженную работу к состоянию «билет выдан».
+
+    Билет и его снимок (`ticket_*`) остаются за участником — он присылает работу
+    по тому же заданию, заново билет брать не нужно. Возвращает путь файла в S3,
+    чтобы чистку хранилища сделал роутер; сам файл участника (`s3_path`) удалять
+    можно, картинка билета не трогается — она общая (см. delete_participant)."""
+    s3_path = submission.s3_path
+    submission.s3_url = None
+    submission.s3_path = None
+    submission.submitted_at = None
+    submission.status = "issued"
+    db.commit()
+    db.refresh(submission)
+    return s3_path
+
+
 def score_submission(
     db: DBSession,
     submission: GuestSubmission,

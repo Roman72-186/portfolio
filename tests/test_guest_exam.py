@@ -893,3 +893,112 @@ def test_delete_unknown_participant_returns_404(
 
     resp = client.post("/cabinet/staff/guest-exam/participants/999999/delete")
     assert resp.status_code == 404
+
+# ---------------------------------------------------------------------------
+# Отмена загрузки — проверяющий возвращает работу гостю на перезагрузку
+# ---------------------------------------------------------------------------
+
+def test_cancel_upload_returns_submission_to_issued(
+    admin_client, db, guest_config_factory, guest_ticket_factory
+):
+    admin_ui_client, _ = admin_client
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок", title="Натюрморт")
+    participant = guest_exam_service.create_participant(db, config, "Гость")
+    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    guest_exam_service.record_upload(db, submission, "https://s3.example/x.jpg", "guest-exam/x.jpg")
+
+    resp = admin_ui_client.post(
+        f"/cabinet/staff/guest-exam/works/{submission.id}/cancel-upload",
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/cabinet/staff/guest-exam?tab=works"
+
+    db.refresh(submission)
+    assert submission.status == "issued"
+    assert submission.s3_url is None
+    assert submission.s3_path is None
+    assert submission.submitted_at is None
+    # Билет остаётся за участником — работу присылают по тому же заданию.
+    assert submission.ticket_title == "Натюрморт"
+
+
+def test_guest_can_upload_again_after_cancel(
+    client, admin_client, db, guest_config_factory, guest_ticket_factory
+):
+    """Ради этого всё и делается: после отмены гость снова видит форму и грузит."""
+    admin_ui_client, _ = admin_client
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = _login_guest(client, db, config)
+    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    guest_exam_service.record_upload(db, submission, "https://s3.example/x.jpg", "guest-exam/x.jpg")
+
+    admin_ui_client.post(f"/cabinet/staff/guest-exam/works/{submission.id}/cancel-upload")
+
+    client.cookies.set(GUEST_COOKIE_NAME, guest_exam_service.dump_guest_cookie(participant.id, config.token))
+    page = client.get(f"/guest/{config.token}/exam")
+    assert f'action="/guest/{config.token}/exam/Рисунок/upload"' in page.text
+
+    resp = client.post(
+        f"/guest/{config.token}/exam/Рисунок/upload",
+        data={"csrf_token": _guest_csrf(client)},
+        files={"photo": ("photo.jpg", _JPG_BYTES, "image/jpeg")},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    db.refresh(submission)
+    assert submission.status == "submitted"
+
+
+def test_cancel_upload_rejected_for_scored_work(
+    admin_client, db, guest_config_factory, guest_ticket_factory
+):
+    admin_ui_client, admin = admin_client
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = guest_exam_service.create_participant(db, config, "Гость")
+    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    guest_exam_service.record_upload(db, submission, "https://s3.example/x.jpg", "guest-exam/x.jpg")
+    guest_exam_service.score_submission(
+        db, submission, score=80, comment="Хорошо", scored_by_id=admin.id
+    )
+
+    resp = admin_ui_client.post(f"/cabinet/staff/guest-exam/works/{submission.id}/cancel-upload")
+    assert resp.status_code == 400
+
+    db.refresh(submission)
+    assert submission.status == "scored"
+    assert submission.s3_url == "https://s3.example/x.jpg"
+
+
+def test_cancel_upload_rejected_when_nothing_uploaded(
+    admin_client, db, guest_config_factory, guest_ticket_factory
+):
+    admin_ui_client, _ = admin_client
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = guest_exam_service.create_participant(db, config, "Гость")
+    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+
+    resp = admin_ui_client.post(f"/cabinet/staff/guest-exam/works/{submission.id}/cancel-upload")
+    assert resp.status_code == 400
+
+
+def test_cancel_upload_requires_admin_rank_not_curator(
+    client, db, guest_config_factory, guest_ticket_factory, user_factory, session_factory
+):
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = guest_exam_service.create_participant(db, config, "Гость")
+    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    guest_exam_service.record_upload(db, submission, "https://s3.example/x.jpg", "guest-exam/x.jpg")
+
+    curator = user_factory(vk_id=910_006, name="Куратор", role_name="куратор")
+    client.cookies.set("session_id", session_factory(curator).id)
+
+    resp = client.post(f"/cabinet/staff/guest-exam/works/{submission.id}/cancel-upload")
+    assert resp.status_code == 403
+    db.refresh(submission)
+    assert submission.status == "submitted"

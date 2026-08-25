@@ -189,6 +189,31 @@ def guest_mode_score(
     return RedirectResponse("/cabinet/staff/guest-exam?tab=works", status_code=303)
 
 
+@router.post("/works/{submission_id}/cancel-upload")
+def guest_mode_cancel_upload(
+    submission_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    """Вернуть работу гостю на перезагрузку: фото убирается, билет остаётся,
+    участник присылает работу заново по тому же заданию."""
+    submission = db.query(GuestSubmission).filter(GuestSubmission.id == submission_id).first()
+    if not submission:
+        raise HTTPException(status_code=404)
+    if submission.status == "issued":
+        raise HTTPException(status_code=400, detail="Работа ещё не загружена")
+    if submission.status == "scored":
+        # Балл выставлен — снимать работу нельзя, иначе оценка повиснет без той
+        # работы, к которой относилась. Сначала нужен пересмотр оценки.
+        raise HTTPException(status_code=400, detail="Работа уже оценена — отменить загрузку нельзя")
+
+    s3_path = guest_exam_service.cancel_upload(db, submission)
+    if s3_path:
+        s3_service.delete_from_s3(s3_path)
+    return RedirectResponse("/cabinet/staff/guest-exam?tab=works", status_code=303)
+
+
 # ── Вкладка «Участники» (только суперадмин) ──────────────────────────────────
 
 @router.post("/participants/{participant_id}/delete")
