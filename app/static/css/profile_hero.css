@@ -6,14 +6,21 @@
    Раскладка (владелец 21.08.2026): аватар вверху слева, между ним и правым
    столбцом — имя в две строки (имя / фамилия); справа сверху баллы Р/К и
    год поступления одной плашкой, под ней — тариф. Роль отдельно не
-   подписываем. */
+   подписываем.
+
+   25.08.2026 — полный ре-скин под нативный iOS (решение владельца): системный
+   шрифт вместо Manrope/Figtree, палитра iOS (systemBlue и т.д.), «стеклянные»
+   плашки на blur. Действует только здесь — partial сейчас подключён только
+   в cabinet_tracker.html, на другие экраны не влияет. */
 
 .profile-hero {
-    background: linear-gradient(135deg, #1E2D6B 0%, #3B4FC8 100%);
-    border-radius: 20px;
-    padding: 20px 20px 22px;
-    margin-bottom: 20px;
-    box-shadow: 0 8px 32px rgba(30,45,107,0.22);
+    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    font-family: var(--ios-font);
+    background: linear-gradient(160deg, #0A84FF 0%, #0040DD 100%);
+    border-radius: 26px;
+    padding: 18px 18px 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 14px 32px rgba(0,64,221,0.28);
     position: relative;
     overflow: hidden;
 }
@@ -22,16 +29,16 @@
     position: absolute;
     width: 300px; height: 300px;
     border-radius: 50%;
-    background: rgba(255,255,255,0.04);
-    top: -80px; right: -60px;
+    background: rgba(255,255,255,0.06);
+    top: -100px; right: -70px;
 }
 .profile-hero::after {
     content: '';
     position: absolute;
     width: 180px; height: 180px;
     border-radius: 50%;
-    background: rgba(255,255,255,0.04);
-    bottom: -60px; right: 100px;
+    background: rgba(255,255,255,0.05);
+    bottom: -70px; right: 90px;
 }
 .profile-hero-top {
     display: flex;
@@ -44,27 +51,28 @@
     width: 60px; height: 60px;
     border-radius: 50%;
     object-fit: cover;
-    border: 3px solid rgba(255,255,255,0.25);
+    border: 2px solid rgba(255,255,255,0.55);
+    box-shadow: 0 2px 10px rgba(0,20,80,0.25);
     display: block;
 }
 .profile-avatar-placeholder {
     width: 60px; height: 60px;
     border-radius: 50%;
-    background: rgba(255,255,255,0.12);
-    border: 3px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.14);
+    border: 2px solid rgba(255,255,255,0.4);
     display: flex; align-items: center; justify-content: center;
     font-size: 28px;
 }
 .profile-avatar-upload {
     position: absolute; right: -2px; bottom: -2px;
     width: 22px; height: 22px; border-radius: 50%;
-    background: var(--blue); color: #fff;
-    border: 2px solid #1E2D6B;
+    background: #fff; color: #0040DD;
+    border: 2px solid #0040DD;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer;
-    transition: background var(--duration-fast);
+    transition: transform 120ms cubic-bezier(0.34, 1.4, 0.64, 1);
 }
-.profile-avatar-upload:hover { background: var(--blue-deep); }
+.profile-avatar-upload:active { transform: scale(0.88); }
 .profile-avatar-input {
     position: absolute; inset: 0;
     opacity: 0; cursor: pointer;
@@ -72,13 +80,13 @@
 }
 .profile-name-stack {
     flex: 1 1 auto; min-width: 0;
-    display: flex; flex-direction: column; gap: 2px;
+    display: flex; flex-direction: column; gap: 1px;
 }
 .profile-name-line {
-    font-size: 18px; font-weight: 900;
+    font-size: 19px; font-weight: 600;
     color: #fff;
     letter-spacing: -0.2px;
-    line-height: 1.25;
+    line-height: 1.22;
     overflow-wrap: break-word;
 }
 .profile-hero-right {
@@ -88,21 +96,27 @@
 }
 .profile-tariff {
     display: inline-flex; align-items: center; gap: 6px;
-    background: rgba(255,255,255,0.12);
-    border: 1px solid rgba(255,255,255,0.18);
-    border-radius: 20px;
-    padding: 4px 14px;
-    font-size: 13px; font-weight: 700; color: #fff;
+    background: rgba(255,255,255,0.16);
+    backdrop-filter: blur(12px) saturate(160%);
+    -webkit-backdrop-filter: blur(12px) saturate(160%);
+    border: 0.5px solid rgba(255,255,255,0.3);
+    border-radius: 999px;
+    padding: 4px 13px;
+    font-size: 12px; font-weight: 600; color: #fff;
+    letter-spacing: -0.01em;
 }
 .profile-tariff-dot {
-    width: 7px; height: 7px;
-    border-radius: 50%; background: #6EE7B7;
+    width: 6px; height: 6px;
+    border-radius: 50%; background: #30D158;
+    box-shadow: 0 0 0 2px rgba(48,209,88,0.25);
 }
 .profile-scores {
     flex: 0 0 auto;
     display: flex; align-items: center; gap: 10px;
-    background: rgba(255,255,255,0.10);
-    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.14);
+    backdrop-filter: blur(12px) saturate(160%);
+    -webkit-backdrop-filter: blur(12px) saturate(160%);
+    border: 0.5px solid rgba(255,255,255,0.3);
     border-radius: 14px;
     padding: 8px 12px;
 }
@@ -111,11 +125,15 @@
     min-width: 22px;
 }
 .profile-score-label {
-    font-size: 11px; font-weight: 800; color: rgba(255,255,255,0.7);
-    letter-spacing: 0.03em;
+    font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.72);
+    letter-spacing: 0.02em;
 }
-.profile-score-value { font-size: 15px; font-weight: 900; color: #fff; line-height: 1; }
-.profile-score-divider { width: 1px; align-self: stretch; background: rgba(255,255,255,0.2); }
+.profile-score-value {
+    font-size: 16px; font-weight: 700; color: #fff; line-height: 1;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+}
+.profile-score-divider { width: 0.5px; align-self: stretch; background: rgba(255,255,255,0.28); }
 
 @media (max-width: 480px) {
     .profile-hero-top { gap: 10px; }
@@ -124,5 +142,5 @@
 @media (min-width: 1024px) {
     .profile-hero { padding: 28px 32px 30px; }
     .profile-avatar, .profile-avatar-placeholder { width: 76px; height: 76px; }
-    .profile-name-line { font-size: 22px; }
+    .profile-name-line { font-size: 23px; }
 }

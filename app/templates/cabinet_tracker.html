@@ -11,11 +11,15 @@ FORM: Operate, список, а не карточка-витрина.
 #}
 {% block title %}Личный трекер{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=7">
-<link rel="stylesheet" href="/static/css/profile_hero.css?v=3">
+<link rel="stylesheet" href="/static/css/tracker.css?v=8">
+<link rel="stylesheet" href="/static/css/profile_hero.css?v=4">
 {% endblock %}
 {% block content %}
-<div class="trk-page">
+<div class="trk-page ios-tracker">
+    <header class="ios-navbar" id="iosNavbar" aria-hidden="true">
+        <span class="ios-navbar-title">Личный трекер</span>
+    </header>
+
     {% if digest %}
     <details class="trk-row" style="margin-bottom:14px;">
         <summary style="cursor:pointer;">
@@ -64,10 +68,12 @@ FORM: Operate, список, а не карточка-витрина.
 
     {% if overdue %}
     <div class="trk-day">Просрочено</div>
+    <div class="trk-group">
     {% for entry in overdue %}
-    <div class="trk-row trk-item trk-item--overdue">
+    <div class="trk-row trk-item trk-item--overdue" data-kind="{{ entry.task.kind }}">
         <div>
             <div class="trk-meta" style="margin-bottom:6px;">
+                <span class="trk-kind-dot" aria-hidden="true"></span>
                 <span class="trk-badge trk-badge--kind">{{ entry.kind_label }}</span>
                 {% if entry.task.subject %}<span class="trk-badge trk-badge--kind">{{ entry.task.subject }}</span>{% endif %}
             </div>
@@ -80,14 +86,17 @@ FORM: Operate, список, а не карточка-витрина.
         </div>
     </div>
     {% endfor %}
+    </div>
     {% endif %}
 
     {% if upcoming %}
     <div class="trk-day">В работе</div>
+    <div class="trk-group">
     {% for entry in upcoming %}
-    <div class="trk-row trk-item trk-item--upcoming">
+    <div class="trk-row trk-item trk-item--upcoming" data-kind="{{ entry.task.kind }}">
         <div>
             <div class="trk-meta" style="margin-bottom:6px;">
+                <span class="trk-kind-dot" aria-hidden="true"></span>
                 <span class="trk-badge trk-badge--kind">{{ entry.kind_label }}</span>
                 {% if entry.task.subject %}<span class="trk-badge trk-badge--kind">{{ entry.task.subject }}</span>{% endif %}
             </div>
@@ -100,14 +109,17 @@ FORM: Operate, список, а не карточка-витрина.
         </div>
     </div>
     {% endfor %}
+    </div>
     {% endif %}
 
     {% if done %}
     <div class="trk-day">Сделано на этой неделе</div>
+    <div class="trk-group">
     {% for entry in done %}
-    <div class="trk-row trk-item trk-item--done">
+    <div class="trk-row trk-item trk-item--done" data-kind="{{ entry.task.kind }}">
         <div>
             <div class="trk-meta" style="margin-bottom:6px;">
+                <span class="trk-kind-dot" aria-hidden="true"></span>
                 <span class="trk-badge trk-badge--kind">{{ entry.kind_label }}</span>
                 {% if entry.task.subject %}<span class="trk-badge trk-badge--kind">{{ entry.task.subject }}</span>{% endif %}
             </div>
@@ -119,11 +131,12 @@ FORM: Operate, список, а не карточка-витрина.
         </div>
     </div>
     {% endfor %}
+    </div>
     {% endif %}
 
     {% if goal %}
     <div class="trk-day">Ближайшая цель</div>
-    <div class="trk-row">
+    <div class="trk-row trk-goal-card">
         <div>
             <h3>{{ goal.title }}</h3>
             {% if goal.description %}<p>{{ goal.description }}</p>{% endif %}
@@ -171,6 +184,20 @@ FORM: Operate, список, а не карточка-витрина.
             });
         });
     });
+})();
+</script>
+
+<script>
+(function () {
+    var head = document.querySelector('.ios-tracker .trk-head');
+    var bar = document.getElementById('iosNavbar');
+    if (!head || !bar || !('IntersectionObserver' in window)) return;
+    var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+            bar.classList.toggle('is-visible', !entry.isIntersecting);
+        });
+    }, {threshold: 0});
+    io.observe(head);
 })();
 </script>
 

@@ -240,3 +240,215 @@
 .lrn-empty {
     text-align: center; padding: 48px 20px; color: var(--dim);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   iOS-ре-скин «Личного трекера» — 25.08.2026, решение владельца.
+   Все правила намеренно висят на классе `.ios-tracker` (ставится только в
+   cabinet_tracker.html поверх общего `.trk-page`), а не на голых `.trk-*`:
+   те же имена классов переиспользуются в cabinet_tracker_admin.html,
+   cabinet_tracker_week.html, cabinet_goal_admin.html, cabinet_digest_*.html —
+   это staff/куратор-инструменты, их трогать не просили. `.ios-tracker`
+   держит эффект строго на ученическом экране.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ios-tracker {
+    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --ios-blue: #007AFF;
+    --ios-green: #34C759;
+    --ios-red: #FF3B30;
+    --ios-orange: #FF9500;
+    --ios-purple: #AF52DE;
+    --ios-label: #1C1C1E;
+    --ios-label-2: rgba(60,60,67,0.60);
+    --ios-label-3: rgba(60,60,67,0.30);
+    --ios-sep: rgba(60,60,67,0.29);
+    --ios-grouped-bg: #F2F2F7;
+    --ios-card-bg: #FFFFFF;
+    position: relative;
+    isolation: isolate;
+    font-family: var(--ios-font);
+    color: var(--ios-label);
+    padding-bottom: 12px;
+}
+/* Полностью закрывает фирменные обои Spark (body::background) флэт-серым
+   iOS-фоном настроек — только в пределах этого экрана, isolation:isolate
+   не даёт z-index просочиться выше в общий стек (шапка/нижняя навигация). */
+.ios-tracker::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: var(--ios-grouped-bg);
+    z-index: -1;
+}
+
+.ios-tracker .trk-head { display: block; padding: 4px 2px 6px; margin-bottom: 2px; }
+.ios-tracker .trk-head h1 {
+    font: 700 34px/1.15 var(--ios-font); letter-spacing: -0.4px;
+    color: var(--ios-label);
+}
+.ios-tracker .trk-head p { font: 400 15px/1.35 var(--ios-font); color: var(--ios-label-2); }
+
+/* Компактный «навбар», проявляется когда крупный заголовок уходит из
+   вьюпорта — collapsing large title, IntersectionObserver в шаблоне. */
+.ios-tracker .ios-navbar {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; justify-content: center;
+    height: 44px;
+    background: rgba(249,249,251,0);
+    border-bottom: 0.5px solid transparent;
+    opacity: 0; transform: translateY(-6px);
+    transition: opacity 200ms var(--ios-ease), transform 200ms var(--ios-ease),
+                background 200ms var(--ios-ease), border-color 200ms var(--ios-ease);
+    pointer-events: none;
+}
+.ios-tracker .ios-navbar-title { font: 600 17px/1 var(--ios-font); color: var(--ios-label); }
+.ios-tracker .ios-navbar.is-visible {
+    opacity: 1; transform: translateY(0);
+    background: rgba(249,249,251,0.82);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-bottom-color: var(--ios-sep);
+}
+
+.ios-tracker .alert-error {
+    background: rgba(255,59,48,0.12); border: none; color: #D70015;
+    border-radius: 14px; font: 600 14px/1.4 var(--ios-font);
+}
+
+/* Дайджест месяца — сворачиваемая iOS-строка со своим шевроном вместо
+   маркера <details> по умолчанию. */
+.ios-tracker details.trk-row {
+    background: var(--ios-card-bg); border: none; border-radius: 16px;
+    padding: 14px 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.ios-tracker details.trk-row summary {
+    list-style: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.ios-tracker details.trk-row summary::-webkit-details-marker { display: none; }
+.ios-tracker details.trk-row summary::after {
+    content: ''; flex-shrink: 0;
+    width: 8px; height: 8px;
+    border-right: 1.6px solid var(--ios-label-3); border-bottom: 1.6px solid var(--ios-label-3);
+    transform: rotate(45deg);
+    transition: transform 180ms var(--ios-ease);
+}
+.ios-tracker details.trk-row[open] summary::after { transform: rotate(-135deg); }
+.ios-tracker details.trk-row strong { font: 600 15px var(--ios-font); color: var(--ios-label); }
+
+.ios-tracker .trk-day {
+    margin: 22px 4px 8px; padding: 0 4px;
+    font: 600 13px/1.3 var(--ios-font); color: var(--ios-label-2);
+    text-transform: uppercase; letter-spacing: 0.02em;
+}
+
+/* ── Группа-карточка: строки внутри секции визуально сливаются в один
+   грид, как UITableView в режиме .grouped, с тонким инсет-разделителем
+   вместо отдельной рамки/тени на каждой строке. ── */
+.ios-tracker .trk-group {
+    background: var(--ios-card-bg);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    margin-bottom: 4px;
+}
+.ios-tracker .trk-group .trk-item {
+    background: transparent; border: none; border-left: none;
+    border-radius: 0; box-shadow: none; margin: 0;
+    padding: 12px 16px;
+    position: relative;
+    transition: background 100ms ease-out;
+}
+.ios-tracker .trk-group .trk-item:not(:last-child)::after {
+    content: ''; position: absolute; left: 16px; right: 0; bottom: 0; height: 0.5px;
+    background: var(--ios-sep);
+}
+.ios-tracker .trk-group .trk-item:active { background: rgba(60,60,67,0.06); }
+
+.ios-tracker .trk-item h3 { font: 600 16px/1.3 var(--ios-font); color: var(--ios-label); margin: 0 0 2px; }
+.ios-tracker .trk-item p { font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); margin: 0 0 4px; }
+.ios-tracker .trk-item--done h3 { text-decoration: line-through; color: var(--ios-label-2); font-weight: 500; }
+.ios-tracker .trk-item--done { opacity: 1; }
+
+.ios-tracker .trk-meta { font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-2); gap: 6px 10px; }
+.ios-tracker .trk-meta .is-overdue { color: var(--ios-red); font-weight: 600; }
+
+.ios-tracker .trk-badge {
+    border-radius: 999px; font: 600 11px/1 var(--ios-font); letter-spacing: 0;
+    padding: 3px 9px; min-height: 0;
+}
+.ios-tracker .trk-badge--kind { background: rgba(0,122,255,0.12); color: var(--ios-blue); }
+
+/* Цветной маркер вида задачи слева от заголовка — та же палитра, что у
+   .trk-dot--* в конструкторе недели, но кружком в строке трекера. */
+.ios-tracker .trk-kind-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    margin-right: 6px; flex-shrink: 0;
+}
+.ios-tracker .trk-item[data-kind="video"] .trk-kind-dot { background: var(--ios-blue); }
+.ios-tracker .trk-item[data-kind="homework"] .trk-kind-dot { background: var(--ios-orange); }
+.ios-tracker .trk-item[data-kind="mock_exam"] .trk-kind-dot { background: var(--ios-green); }
+.ios-tracker .trk-item[data-kind="survey"] .trk-kind-dot { background: var(--ios-purple); }
+.ios-tracker .trk-item[data-kind="lesson"] .trk-kind-dot { background: var(--ios-red); }
+.ios-tracker .trk-item[data-kind="other"] .trk-kind-dot { background: var(--ios-label-3); }
+
+.ios-tracker .trk-row-actions { align-items: center; gap: 10px; }
+.ios-tracker .trk-row-actions .btn-blue {
+    background: var(--ios-blue); box-shadow: none;
+    font: 600 13px/1 var(--ios-font); padding: 8px 14px; border-radius: 999px;
+    transition: transform 100ms ease-out, filter 100ms ease-out;
+}
+.ios-tracker .trk-row-actions .btn-blue:hover { transform: none; filter: brightness(1.05); }
+.ios-tracker .trk-row-actions .btn-blue:active { transform: scale(0.94); filter: brightness(0.92); }
+
+/* Кнопка «Отметить» → круглый чекбокс iOS вместо текстовой пилюли; текст
+   остаётся в DOM для скринридеров (text-indent прячет его только визуально). */
+.ios-tracker .trk-toggle-btn {
+    width: 26px; height: 26px; min-height: 26px; padding: 0;
+    border-radius: 50%; border: 1.5px solid var(--ios-sep); background: transparent;
+    text-indent: -999px; overflow: hidden; white-space: nowrap;
+    position: relative; flex-shrink: 0;
+    transition: transform 120ms cubic-bezier(0.34, 1.2, 0.64, 1),
+                background 120ms var(--ios-ease), border-color 120ms var(--ios-ease);
+}
+.ios-tracker .trk-toggle-btn::after {
+    content: ''; position: absolute; inset: 0; margin: auto;
+    width: 11px; height: 6px;
+    border-left: 2px solid #fff; border-bottom: 2px solid #fff;
+    transform: rotate(-45deg) scale(0); opacity: 0;
+    transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 100ms ease-out;
+}
+.ios-tracker .trk-toggle-btn.is-done { background: var(--ios-green); border-color: var(--ios-green); }
+.ios-tracker .trk-toggle-btn.is-done::after { transform: rotate(-45deg) scale(1); opacity: 1; }
+.ios-tracker .trk-toggle-btn:active { transform: scale(0.86); }
+.ios-tracker .trk-toggle-btn:disabled { opacity: 0.5; }
+
+.ios-tracker .trk-empty {
+    background: var(--ios-card-bg); border: none; border-radius: 16px;
+    font: 500 15px/1.4 var(--ios-font); color: var(--ios-label-2);
+    padding: 40px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+/* «Ближайшая цель» — не список, а отдельная акцентная карточка, как
+   виджет «Ближайшее событие» в Календаре/Напоминаниях iOS. */
+.ios-tracker .trk-goal-card {
+    background: linear-gradient(160deg, rgba(0,122,255,0.10), rgba(0,122,255,0.03));
+    border: 1px solid rgba(0,122,255,0.16);
+    border-radius: 18px; padding: 16px 18px;
+    grid-template-columns: 1fr;
+}
+.ios-tracker .trk-goal-card h3 { font: 600 17px/1.3 var(--ios-font); }
+.ios-tracker .trk-goal-card .trk-meta { color: var(--ios-blue); font-weight: 600; }
+
+@keyframes ios-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.ios-tracker .trk-day,
+.ios-tracker .trk-group,
+.ios-tracker .trk-empty,
+.ios-tracker .trk-goal-card,
+.ios-tracker details.trk-row {
+    animation: ios-rise 380ms var(--ios-ease) both;
+}
+
+@media (max-width: 760px) {
+    .ios-tracker .trk-head { grid-template-columns: none; }
+}

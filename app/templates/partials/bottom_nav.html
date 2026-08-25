@@ -1,28 +1,37 @@
 ﻿<style>
+/* 25.08.2026 — мобильный таб-бар (только он, не десктопный .app-sidebar
+   из base.css) переведён на нативный вид iOS: решение владельца, партиал
+   общий на все экраны кабинета ученика, поэтому эффект намеренно
+   глобальный. Системный шрифт, палитра iOS, стеклянная подложка. */
 .bottom-nav {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
-    background: var(--surface); border-top: 1px solid var(--line);
+    background: rgba(249,249,251,0.82);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-top: 0.5px solid rgba(60,60,67,0.29);
     display: flex; align-items: stretch;
-    box-shadow: 0 -4px 24px rgba(0,0,0,0.08);
     padding-bottom: env(safe-area-inset-bottom, 0);
 }
 .nav-btn {
     flex: 1; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 4px;
-    padding: 10px 4px 12px; text-decoration: none;
-    color: var(--dim); font-size: 10px; font-weight: 700;
-    letter-spacing: 0.02em; transition: color 0.15s, background 0.15s;
-    background: none; border: none; font-family: var(--font-body);
+    align-items: center; justify-content: center; gap: 2px;
+    padding: 7px 4px 4px; text-decoration: none;
+    color: rgba(60,60,67,0.6); font-size: 10px; font-weight: 500;
+    letter-spacing: 0; transition: color 120ms ease-out, transform 100ms ease-out;
+    background: none; border: none;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
     cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
-.nav-btn:hover { color: var(--blue); background: var(--blue-soft); opacity: 1; }
-.nav-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: -3px; border-radius: 8px; }
-.nav-btn.nav-active { color: var(--blue); }
-.nav-btn-icon { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }
+.nav-btn:hover { color: #007AFF; opacity: 1; }
+.nav-btn:active { transform: scale(0.90); }
+.nav-btn:focus-visible { outline: 2px solid #007AFF; outline-offset: -3px; border-radius: 8px; }
+.nav-btn.nav-active { color: #007AFF; }
+.nav-btn.nav-active .nav-btn-icon svg { stroke-width: 2.3; }
+.nav-btn-icon { width: 25px; height: 25px; display: flex; align-items: center; justify-content: center; }
 .nav-btn.nav-disabled { opacity: 0.35; cursor: default; pointer-events: none; }
 .nav-soon-badge {
-    font-size: 8px; font-weight: 700; letter-spacing: 0.05em;
-    background: var(--surface-2); color: var(--dim);
+    font-size: 8px; font-weight: 600; letter-spacing: 0.02em;
+    background: rgba(255,149,0,0.15); color: #C93400;
     border-radius: 6px; padding: 1px 5px; text-transform: uppercase;
 }
 </style>
