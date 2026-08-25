@@ -1,117 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Галерея работ{% endblock %}
 {% block extra_styles %}
-<style>
-.gallery-wrap { max-width: 640px; margin: 0 auto; }
-@media (min-width: 1024px) { .gallery-wrap { max-width: 960px; } }
-
-/* Filter tabs */
-.filter-tabs {
-    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px;
-}
-.filter-tab {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 7px 14px; border-radius: var(--r-pill);
-    border: 1px solid var(--line); background: var(--surface);
-    font-size: 13px; font-weight: 700; color: var(--dim);
-    cursor: pointer; font-family: inherit;
-    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
-    -webkit-tap-highlight-color: transparent;
-}
-.filter-tab:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-soft); }
-.filter-tab.active { background: var(--blue); color: #fff; border-color: var(--blue); }
-.filter-tab .tab-count {
-    font-size: 11px; font-weight: 700; opacity: 0.75;
-    background: rgba(255,255,255,0.2); border-radius: 20px; padding: 1px 6px;
-}
-.filter-tab:not(.active) .tab-count { background: var(--surface-2); color: var(--dim); opacity: 1; }
-
-/* Section */
-.gallery-section { margin-bottom: 32px; }
-.gallery-section.hidden { display: none; }
-
-/* Month accordion */
-.month-item {
-    border-radius: var(--r-md); border: 1px solid var(--line);
-    background: var(--surface); margin-bottom: 8px; overflow: hidden;
-}
-.month-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 16px; cursor: pointer; user-select: none;
-    width: 100%; text-align: left; background: none; border: none;
-    font-family: inherit; transition: background 0.15s;
-}
-.month-header:hover { background: var(--surface-2); }
-.month-header-left { display: flex; align-items: center; gap: 10px; }
-.month-name { font-size: 14px; font-weight: 700; color: var(--ink); text-transform: capitalize; }
-.month-count { font-size: 12px; color: var(--dim); }
-.month-chevron { font-size: 10px; color: var(--dim); transition: transform 0.2s; }
-.month-item.open .month-chevron { transform: rotate(180deg); }
-.month-body { display: none; padding: 0 16px 14px; }
-.month-item.open .month-body { display: block; }
-
-/* Photo grid */
-.works-grid {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
-    margin-bottom: 10px;
-}
-@media (min-width: 480px) { .works-grid { grid-template-columns: repeat(4, 1fr); } }
-@media (min-width: 1024px) { .works-grid { grid-template-columns: repeat(6, 1fr); } }
-.work-cell {
-    position: relative; border-radius: var(--r-sm); overflow: hidden;
-    display: block; width: 100%; padding: 0; border: 0; background: transparent;
-    font: inherit; color: inherit; text-align: inherit;
-}
-button.work-cell { cursor: zoom-in; -webkit-tap-highlight-color: transparent; }
-button.work-cell:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
-button.work-cell:disabled { cursor: default; }
-.work-cell img {
-    width: 100%; aspect-ratio: 1; object-fit: cover; display: block;
-    border: 1px solid var(--line);
-    transition: opacity 0.2s;
-}
-button.work-cell:hover img { opacity: 0.88; }
-.work-no-photo {
-    aspect-ratio: 1; background: var(--surface); border-radius: var(--r-sm);
-    border: 1px solid var(--line); display: flex; align-items: center;
-    justify-content: center; color: var(--dim); font-size: 11px;
-}
-.score-badge {
-    position: absolute; bottom: 4px; right: 4px;
-    background: rgba(0,0,0,0.62); color: #fff;
-    font-size: 10px; font-weight: 700; border-radius: 6px; padding: 2px 6px;
-    pointer-events: none;
-}
-
-/* Pagination */
-.pagination {
-    display: flex; align-items: center; justify-content: space-between; margin-top: 2px;
-}
-.pagination button {
-    font-size: 12px; font-weight: 700; color: var(--blue);
-    background: none; border: 1px solid var(--line); border-radius: var(--r-pill);
-    padding: 4px 12px; cursor: pointer; font-family: inherit;
-    transition: border-color 0.15s;
-}
-.pagination button:disabled { color: var(--dim); cursor: default; }
-.pagination button:not(:disabled):hover { border-color: var(--blue); }
-.pagination-info { font-size: 11px; color: var(--dim); }
-
-/* Empty state */
-.gallery-empty-cta {
-    justify-content: center;
-    min-width: 220px;
-}
-</style>
+<link rel="stylesheet" href="/static/css/gallery_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="gallery-wrap">
+<div class="gallery-wrap ios-gallery">
 
     <div style="margin-bottom:20px">
-        <h1 style="font-size:26px;font-weight:900;letter-spacing:-0.5px" class="text-accent">
+        <h1 class="text-accent">
             Галерея работ
         </h1>
-        <p style="color:var(--muted);font-size:14px;margin-top:6px">
+        <p class="gal-subtitle">
             {% if total %}Всего {{ total }} фото{% else %}Фото пока нет{% endif %}
         </p>
     </div>
@@ -157,7 +56,7 @@ button.work-cell:hover img { opacity: 0.88; }
             </svg>
         </div>
         <div style="font-size:17px;font-weight:700;margin-bottom:8px">Работ пока нет</div>
-        <div style="color:var(--dim);font-size:14px;margin-bottom:20px">Загрузите первые фото — они появятся здесь</div>
+        <div class="gal-empty-text" style="font-size:14px;margin-bottom:20px">Загрузите первые фото — они появятся здесь</div>
         <a href="/upload" class="btn-blue gallery-empty-cta">Загрузить фото</a>
     </div>
     {% else %}

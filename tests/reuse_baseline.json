@@ -156,14 +156,6 @@
     "shadow": [],
     "style_lines": 19
   },
-  "gallery.html": {
-    "hex": 2,
-    "shadow": [
-      "active",
-      "open"
-    ],
-    "style_lines": 101
-  },
   "guest/guest_exam.html": {
     "hex": 0,
     "shadow": [],
