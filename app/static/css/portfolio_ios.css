@@ -1,0 +1,141 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   iOS-ре-скин экрана «Моё портфолио» (`/cabinet/portfolio`) — 25.08.2026,
+   тот же язык, что и .ios-tracker/.ios-videos/.ios-personal/.ios-feedback
+   (см. app/static/css/tracker.css, video_ios.css, personal_ios.css,
+   feedback_ios.css).
+
+   Полностью заменяет инлайновый <style> шаблона (правило сессий 4-5:
+   даже приватные для одного шаблона классы уходят во внешний файл, не
+   только пересечения с base.css). `.pf-mblock`/`.pf-mhead`/`.pf-work-card`
+   и подобные объявлены здесь с нуля под скоупом `.ios-portfolio` — те же
+   имена классов разделяются с cabinet_students.html/
+   cabinet_admin_retake_check.html/legacy_portfolio.html (grep подтвердил),
+   но там своя копия CSS в собственном инлайновом <style>, эта страница на
+   неё не влияет (внешний файл подключён только здесь).
+
+   Старые `.month-item`/`.month-header`/`.works-grid`/`.work-cell`/
+   `.pagination` из прежнего инлайнового <style> в разметку уже не
+   рендерятся (мёртвый CSS, вытеснен макросом `pf_blocks` → `.pf-*`) —
+   сюда не перенесены намеренно.
+
+   Блок «Пробные экзамены» подключает общий виджет
+   partials/cycle_day_calendar.html + cycle_calendar_lib.html — тот же
+   виджет используется на cabinet_cycle_calendar.html (вне рамок этого
+   захода, экран «Пробник» не выбран владельцем). Внутренности виджета
+   не тронуты, остаются на Spark — см. NEXT-CHAT-PROMPT.md.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ios-portfolio {
+    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --ios-blue: #007AFF;
+    --ios-red: #FF3B30;
+    --ios-green: #34C759;
+    --ios-label: #1C1C1E;
+    --ios-label-2: rgba(60,60,67,0.60);
+    --ios-label-3: rgba(60,60,67,0.30);
+    --ios-sep: rgba(60,60,67,0.29);
+    --ios-grouped-bg: #F2F2F7;
+    --ios-card-bg: #FFFFFF;
+    position: relative;
+    isolation: isolate;
+    font-family: var(--ios-font);
+    color: var(--ios-label);
+}
+.ios-portfolio::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: var(--ios-grouped-bg);
+    z-index: -1;
+}
+
+.ios-portfolio.portfolio-wrap { max-width: 640px; margin: 0 auto; padding: 4px 0 0; }
+@media (min-width: 1024px) { .ios-portfolio.portfolio-wrap { max-width: 900px; } }
+
+/* ── Шапка ── */
+.ios-portfolio .portfolio-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 14px; margin-bottom: 22px;
+}
+.ios-portfolio .portfolio-head-copy { min-width: 0; }
+.ios-portfolio .portfolio-head-copy h1.text-accent {
+    font: 700 28px/1.15 var(--ios-font);
+    letter-spacing: -0.3px;
+    color: var(--ios-label);
+}
+.ios-portfolio .pf-subtitle {
+    margin-top: 4px;
+    font: 400 15px/1.4 var(--ios-font);
+    color: var(--ios-label-2);
+}
+@media (max-width: 640px) {
+    .ios-portfolio .portfolio-head { flex-direction: column; align-items: stretch; }
+}
+
+/* ── Заголовки секций ── */
+.ios-portfolio .section-title {
+    margin: 22px 4px 8px; padding: 0;
+    font: 600 13px/1.3 var(--ios-font); color: var(--ios-label-2);
+    text-transform: uppercase; letter-spacing: 0.02em;
+}
+
+/* ── Группа-карточка «До/После» (UITableView .grouped) ── */
+.ios-portfolio .pf-mblock {
+    background: var(--ios-card-bg); border-radius: 16px; overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 12px;
+}
+.ios-portfolio .pf-mhead {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 14px 16px; background: transparent; width: 100%; border: 0;
+    font-family: inherit; color: inherit; text-align: left;
+}
+.ios-portfolio .pf-mblock.open .pf-mhead { border-bottom: 0.5px solid var(--ios-sep); }
+.ios-portfolio .pf-mhead:hover { background: rgba(60,60,67,0.04); }
+.ios-portfolio .pf-mblock:not(.open) .pf-mgrid { display: none; }
+.ios-portfolio .pf-mtoggle {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: transparent; border: 0; padding: 0; font-family: inherit;
+    cursor: pointer; color: inherit;
+}
+.ios-portfolio .pf-mtoggle:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 3px; border-radius: 6px; }
+.ios-portfolio .pf-mchevron { font-size: 11px; color: var(--ios-label-3); transition: transform 0.18s; }
+.ios-portfolio .pf-mblock.open .pf-mchevron { transform: rotate(180deg); }
+.ios-portfolio .pf-mlabel { font: 600 15px/1.3 var(--ios-font); color: var(--ios-label); text-transform: capitalize; }
+.ios-portfolio .pf-mcount { font: 400 13px/1 var(--ios-font); color: var(--ios-label-2); white-space: nowrap; }
+.ios-portfolio .pf-mgrid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 6px; padding: 4px 12px 14px;
+}
+.ios-portfolio .pf-work-card {
+    display: block; width: 100%; padding: 0; border: 0; background: transparent;
+    border-radius: 10px; cursor: zoom-in; overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+}
+.ios-portfolio .pf-work-card:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 2px; }
+.ios-portfolio .pf-work-card img {
+    width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px;
+    display: block; transition: opacity 0.15s;
+}
+.ios-portfolio .pf-work-card:hover img { opacity: 0.85; }
+
+/* ── Пустое состояние ── */
+.ios-portfolio .empty-state { text-align: center; padding: 36px 20px; }
+.ios-portfolio .empty-state-icon { font-size: 34px; margin-bottom: 12px; }
+.ios-portfolio .empty-state-title { font: 600 15px/1.3 var(--ios-font); color: var(--ios-label); margin-bottom: 6px; }
+.ios-portfolio .empty-state-text { font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); margin-bottom: 16px; }
+
+/* ── Кнопка «Загрузить фото» ── */
+.ios-portfolio .portfolio-bottom-action { display: flex; justify-content: center; margin-top: 18px; padding-bottom: 8px; }
+.ios-portfolio .portfolio-upload-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    width: min(100%, 360px); padding: 14px 20px; border-radius: 14px;
+    background: var(--ios-blue); color: #fff; box-shadow: none;
+    font: 600 15px/1 var(--ios-font); text-decoration: none;
+    transition: transform 100ms ease-out, filter 100ms ease-out;
+}
+@media (max-width: 640px) { .ios-portfolio .portfolio-upload-btn { justify-content: center; } }
+.ios-portfolio .portfolio-upload-btn:hover { transform: none; filter: brightness(1.05); color: #fff; opacity: 1; }
+.ios-portfolio .portfolio-upload-btn:active { transform: scale(0.98); filter: brightness(0.94); }
+
+@media (prefers-reduced-motion: reduce) {
+    .ios-portfolio .portfolio-upload-btn { transition: none; }
+}

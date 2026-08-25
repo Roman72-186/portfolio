@@ -1,150 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Моё портфолио{% endblock %}
 {% block extra_styles %}
-<style>
-.portfolio-wrap { max-width: 640px; margin: 0 auto; }
-
-.portfolio-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 14px;
-    margin-bottom: 24px;
-}
-
-.portfolio-head-copy { min-width: 0; }
-
-.section-title {
-    font-size: 13px; font-weight: 700; letter-spacing: 0.7px; text-transform: uppercase;
-    color: var(--dim); margin: 28px 0 12px;
-}
-
-.month-item {
-    border-radius: var(--r-md); border: 1px solid var(--line);
-    background: var(--surface); margin-bottom: 10px; overflow: hidden;
-}
-.month-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 18px; cursor: pointer; user-select: none;
-    transition: background 0.15s;
-}
-.month-header:hover { background: var(--surface-2); }
-.month-header-left { display: flex; align-items: center; gap: 12px; }
-.month-name { font-size: 15px; font-weight: 700; color: var(--ink); text-transform: capitalize; }
-.month-count { font-size: 12px; color: var(--dim); }
-.month-chevron { font-size: 11px; color: var(--dim); transition: transform 0.2s; }
-.month-item.open .month-chevron { transform: rotate(180deg); }
-.month-body { display: none; padding: 0 18px 16px; }
-.month-item.open .month-body { display: block; }
-
-.works-grid {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
-    margin-bottom: 12px;
-}
-@media (min-width: 480px) { .works-grid { grid-template-columns: repeat(4, 1fr); } }
-@media (max-width: 640px) {
-    .portfolio-head { flex-direction: column; align-items: stretch; }
-    .portfolio-upload-btn { justify-content: center; }
-}
-@media (min-width: 1024px) {
-    .works-grid { grid-template-columns: repeat(6, 1fr); }
-    .portfolio-wrap { max-width: 900px; }
-}
-.work-cell { position: relative; border-radius: var(--r-sm); overflow: hidden; }
-.work-cell img {
-    width: 100%; aspect-ratio: 1; object-fit: cover; display: block;
-    border: 1px solid var(--line);
-}
-
-.pagination {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-top: 4px;
-}
-.pagination button {
-    font-size: 13px; font-weight: 700; color: var(--blue);
-    background: none; border: 1px solid var(--line); border-radius: var(--r-pill);
-    padding: 5px 14px; cursor: pointer; font-family: inherit;
-    transition: border-color 0.2s, color 0.2s, background 0.2s;
-}
-.pagination button:disabled { color: var(--dim); cursor: default; }
-.pagination button:not(:disabled):hover { border-color: var(--blue); }
-.pagination-info { font-size: 12px; color: var(--dim); }
-
-.empty-state {
-    text-align: center; padding: 40px 20px;
-    color: var(--dim); font-size: 14px;
-}
-.empty-state-icon { font-size: 36px; margin-bottom: 12px; }
-.empty-state-title { font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
-.empty-state-text { font-size: 13px; color: var(--dim); margin-bottom: 16px; }
-.empty-state-btn {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 10px 20px; border-radius: var(--r-pill);
-    background: var(--blue); color: #fff;
-    font-size: 14px; font-weight: 700; text-decoration: none;
-    box-shadow: var(--sh-blue);
-    transition: filter 0.15s, transform 0.15s;
-}
-.empty-state-btn:hover { filter: brightness(1.07); transform: translateY(-1px); opacity: 1; }
-
-.portfolio-bottom-action {
-    display: flex;
-    justify-content: center;
-    margin-top: 18px;
-    padding-bottom: 8px;
-}
-
-.portfolio-upload-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    width: min(100%, 360px);
-    padding: 13px 20px;
-    border-radius: var(--r-pill);
-    background: var(--blue);
-    color: #fff;
-    font-size: 14px;
-    font-weight: 800;
-    text-decoration: none;
-    box-shadow: var(--sh-blue);
-    transition: filter 0.15s, transform 0.15s;
-}
-
-.portfolio-upload-btn:hover {
-    filter: brightness(1.07);
-    transform: translateY(-1px);
-    opacity: 1;
-}
-
-/* ── Раскрывающиеся блоки по месяцам (До/После) — единый вид со staff-панелью.
-   Свой namespace pf-m*, чтобы не конфликтовать с .month-header/.month-count выше. ── */
-.pf-mblock { background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-md); overflow: hidden; margin-bottom: 16px; box-shadow: var(--sh-sm); }
-.pf-mhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; background: var(--surface-2); width: 100%; border: 0; font-family: inherit; color: inherit; text-align: left; }
-.pf-mblock.open .pf-mhead { border-bottom: 1px solid var(--line); }
-.pf-mblock:not(.open) .pf-mgrid { display: none; }
-.pf-mtoggle { display: inline-flex; align-items: center; gap: 10px; background: transparent; border: 0; padding: 0; font-family: inherit; cursor: pointer; color: inherit; }
-.pf-mtoggle:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; border-radius: 6px; }
-.pf-mchevron { font-size: 12px; color: var(--dim); transition: transform 0.18s; }
-.pf-mblock.open .pf-mchevron { transform: rotate(180deg); }
-.pf-mlabel { font-size: 13px; font-weight: 700; color: var(--text); text-transform: capitalize; }
-.pf-mcount { font-size: 12px; color: var(--dim); white-space: nowrap; }
-.pf-mgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 6px; padding: 12px; }
-.pf-work-card {
-    display: block;
-    width: 100%;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    border-radius: 8px;
-    cursor: zoom-in;
-    overflow: hidden;
-    -webkit-tap-highlight-color: transparent;
-}
-.pf-work-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
-.pf-work-card img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); transition: opacity 0.15s; display: block; }
-.pf-work-card:hover img { opacity: 0.85; }
-</style>
+<link rel="stylesheet" href="/static/css/portfolio_ios.css?v=1">
 {% endblock %}
 {% block content %}
 {% macro pf_blocks(key, groups, empty_title, empty_text) %}
@@ -179,14 +36,14 @@
     </div>
   {% endif %}
 {% endmacro %}
-<div class="portfolio-wrap">
+<div class="portfolio-wrap ios-portfolio">
 
     <div class="portfolio-head">
         <div class="portfolio-head-copy">
-        <h1 style="font-size:26px;font-weight:900;letter-spacing:-0.5px" class="text-accent">
+        <h1 class="text-accent">
             Моё портфолио
         </h1>
-        <p style="color:var(--muted);font-size:14px;margin-top:6px">
+        <p class="pf-subtitle">
             Работы сгруппированы по году и месяцу.
         </p>
         </div>
