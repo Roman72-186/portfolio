@@ -77,13 +77,6 @@
     "shadow": [],
     "style_lines": 24
   },
-  "cabinet_feedback_detail.html": {
-    "hex": 21,
-    "shadow": [
-      "dlg-delete-btn"
-    ],
-    "style_lines": 218
-  },
   "cabinet_guest_mode.html": {
     "hex": 0,
     "shadow": [

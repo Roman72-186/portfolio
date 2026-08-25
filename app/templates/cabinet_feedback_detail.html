@@ -1,228 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Диалог: {{ cycle.subject }}{% endblock %}
 {% block extra_styles %}
-<style>
-.dlg-page { max-width: 820px; margin: 0 auto; padding: 18px 16px 120px; }
-.dlg-head { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; margin-bottom: 14px; }
-.dlg-head h1 { font-family: var(--font-display); font-size: 22px; font-weight: 900; margin: 0; }
-.dlg-head .dlg-meta { color: var(--muted); font-size: 13px; font-weight: 700; }
-.dlg-head .dlg-closed { background: rgba(22,163,74,0.12); color: var(--success); padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
-.dlg-head-actions { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
-.dlg-delete-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 6px 12px; border: 1px solid var(--error); color: var(--error); background: transparent; border-radius: 10px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background .12s, color .12s; }
-.dlg-delete-btn:hover { background: var(--error); color: #fff; }
-.dlg-delete-btn:disabled { opacity: 0.5; cursor: default; }
-.dlg-reopen-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 6px 12px; border: 1px solid var(--blue); color: var(--blue); background: transparent; border-radius: 10px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background .12s, color .12s; }
-.dlg-reopen-btn:hover { background: var(--blue); color: #fff; }
-.dlg-reopen-btn:disabled { opacity: 0.5; cursor: default; }
-.dlg-revision-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 6px 12px; border: 1px solid var(--warning-deep); color: var(--warning-deep); background: transparent; border-radius: 10px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background .12s, color .12s; }
-.dlg-revision-btn:hover { background: var(--warning-deep); color: #fff; }
-.dlg-revision-btn:disabled { opacity: 0.5; cursor: default; }
-.dlg-revision-badge { background: rgba(245,158,11,0.16); color: var(--warning-deep); padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
-.dlg-student-return-badge { background: rgba(22,163,74,0.14); color: var(--success); padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
-
-@media (max-width: 640px) {
-    .dlg-head { align-items: center; gap: 8px 10px; }
-    .dlg-head-actions { flex: 1 0 100%; width: 100%; margin-left: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-    .dlg-head-actions button { width: 100%; min-height: 44px; }
-    .dlg-head-actions .dlg-delete-btn { grid-column: 1 / -1; }
-}
-
-/* Touch target ≥44px for the row layout too — tablet/touch users between 640-1024px
-   still see the inline row (not the stacked grid above), so the buttons themselves
-   need the taller hit area rather than relying on the grid override. */
-@media (min-width: 641px) and (max-width: 1024px), (hover: none) and (pointer: coarse) {
-    .dlg-delete-btn, .dlg-reopen-btn, .dlg-revision-btn { min-height: 44px; }
-}
-
-/* Баннер «на изменении» + действие «Завершить правку» */
-.dlg-revision-banner {
-    display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center;
-    padding: 12px 16px; margin-bottom: 16px;
-    border: 1px solid rgba(245,158,11,0.4); border-radius: 12px;
-    background: rgba(245,158,11,0.08); color: var(--warning-text); font-size: 13px; font-weight: 600;
-}
-.dlg-revision-banner .dlg-revision-done {
-    margin-left: auto; padding: 8px 14px; border: none; border-radius: 8px;
-    background: var(--warning-deep); color: #fff; font-size: 13px; font-weight: 800; cursor: pointer;
-}
-.dlg-revision-banner .dlg-revision-done:hover { opacity: 0.92; }
-.dlg-revision-banner .dlg-revision-done:disabled { opacity: 0.5; cursor: default; }
-
-/* Inline-правка своего сообщения ОС */
-.dlg-msg-edit { align-self: flex-end; background: none; border: none; cursor: pointer; color: var(--blue); font-size: 11px; font-weight: 800; padding: 2px 4px; }
-.dlg-msg-edit:hover { text-decoration: underline; }
-.dlg-msg.from-me .dlg-msg-edit { color: var(--blue); }
-.dlg-msg-edit-form { width: 100%; margin-top: 4px; }
-.dlg-msg-edit-form textarea {
-    width: 100%; min-height: 72px; max-height: 240px; padding: 10px 12px; box-sizing: border-box;
-    border: 1px solid var(--line); border-radius: 10px; font-family: inherit; font-size: 14px;
-    resize: vertical; background: var(--surface); color: var(--text);
-}
-.dlg-msg-edit-form textarea:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: var(--blue); }
-.dlg-msg-edit-actions { display: flex; gap: 8px; margin-top: 6px; }
-
-.dlg-attempt {
-    background: var(--surface); border: 1px solid var(--line);
-    border-radius: 14px; margin-bottom: 18px; overflow: hidden;
-}
-.dlg-attempt-head {
-    padding: 14px 18px; border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-}
-.dlg-attempt-title { font-size: 16px; font-weight: 800; margin: 0; }
-.dlg-attempt-score { background: var(--blue); color: #fff; font-size: 13px; font-weight: 900; padding: 3px 10px; border-radius: 999px; }
-.dlg-attempt-score.no-score { background: var(--dim); }
-.dlg-attempt-score.red { background: var(--error); }
-.dlg-attempt-score.orange { background: #F97316; }
-.dlg-attempt-score.lime { background: #84CC16; }
-.dlg-attempt-score.green { background: var(--success); }
-
-.dlg-context { padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
-.dlg-context-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
-.dlg-ticket {
-    display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px;
-    padding: 14px 16px; margin-bottom: 14px; border: 1px solid var(--line);
-    border-radius: 12px; background: var(--surface-2);
-}
-.dlg-ticket-meta { flex: 1 1 180px; font-size: 13px; color: var(--muted); }
-.dlg-ticket-label { display: block; margin-bottom: 4px; font-size: 11px; font-weight: 800; color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em; }
-.dlg-ticket-title { color: var(--text); font-weight: 800; }
-.dlg-ticket-image { flex: 0 0 180px; max-width: 100%; }
-.dlg-ticket-image img { display: block; width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); cursor: zoom-in; }
-.dlg-final-img { flex: 0 0 180px; max-width: 100%; }
-.dlg-final-img img { display: block; width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); cursor: zoom-in; }
-.dlg-stages { display: flex; gap: 6px; flex-wrap: wrap; }
-.dlg-stages img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); cursor: zoom-in; }
-.dlg-context-meta { font-size: 12px; color: var(--muted); flex: 1 1 200px; }
-
-.dlg-messages { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; max-height: 540px; overflow-y: auto; }
-.dlg-msg { display: flex; align-items: flex-start; gap: 8px; max-width: 82%; }
-.dlg-msg.from-them { align-self: flex-start; }
-.dlg-msg.from-me { align-self: flex-end; flex-direction: row-reverse; }
-.dlg-msg-avatar {
-    flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 800; letter-spacing: 0.02em; user-select: none;
-    background: var(--surface-2); border: 1px solid var(--line); color: var(--muted);
-}
-.dlg-msg.from-me .dlg-msg-avatar { background: var(--blue); border-color: var(--blue); color: #fff; }
-.dlg-msg-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.dlg-msg.from-me .dlg-msg-body { align-items: flex-end; }
-.dlg-msg-bubble {
-    padding: 10px 14px; border-radius: 14px;
-    background: var(--surface-2); border: 1px solid var(--line);
-    word-break: break-word; white-space: pre-wrap;
-    font-size: 14px; line-height: 1.45; color: var(--text);
-}
-.dlg-msg.from-them .dlg-msg-bubble { border-top-left-radius: 4px; }
-.dlg-msg.from-me .dlg-msg-bubble { background: var(--blue); border-color: var(--blue); color: #fff; border-top-right-radius: 4px; }
-@media (max-width: 640px) {
-    .dlg-msg { max-width: 94%; }
-    .dlg-msg-avatar { width: 28px; height: 28px; font-size: 11px; }
-}
-.dlg-msg-bubble img { display: block; max-width: 320px; width: 100%; border-radius: 8px; margin-top: 4px; cursor: zoom-in; }
-.dlg-msg.from-me .dlg-msg-bubble img { background: rgba(255,255,255,0.1); }
-.dlg-msg-bubble video { display: block; max-width: 320px; width: 100%; border-radius: 8px; margin-top: 4px; background: #000; }
-.dlg-msg-meta { font-size: 11px; color: var(--dim); padding: 0 4px; }
-.dlg-msg-author { font-weight: 800; }
-.dlg-msg-role { text-transform: uppercase; letter-spacing: 0.04em; }
-
-.dlg-empty-thread { text-align: center; color: var(--muted); font-size: 13px; padding: 30px 12px; }
-
-.dlg-form { padding: 14px 18px; border-top: 1px solid var(--line); background: var(--surface-2); }
-.dlg-form-row { display: flex; gap: 10px; align-items: flex-end; }
-.dlg-form textarea { flex: 1; min-height: 64px; max-height: 200px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font-family: inherit; font-size: 14px; resize: vertical; background: var(--surface); }
-.dlg-form textarea:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: var(--blue); }
-.dlg-form-actions { display: flex; flex-direction: column; gap: 8px; }
-.dlg-attach { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); cursor: pointer; font-size: 13px; color: var(--muted); font-weight: 700; }
-.dlg-attach:hover { color: var(--blue); border-color: var(--blue); }
-.dlg-attach input { display: none; }
-.dlg-attach-name { font-size: 12px; color: var(--blue); font-weight: 700; }
-.dlg-send { padding: 10px 18px; border-radius: 10px; font-weight: 800; font-size: 14px; }
-.dlg-form-hint { font-size: 11px; color: var(--dim); margin-top: 6px; }
-.dlg-waiting { padding: 16px; background: var(--surface-2); border-radius: 10px; color: var(--muted); font-size: 13px; text-align: center; }
-
-/* Структурная форма «Первая обратная связь» (4 пункта) */
-.dlg-form-structured .dlg-sf-title { font-size: 14px; font-weight: 800; color: var(--text); margin-bottom: 12px; }
-.dlg-sf-field { margin-bottom: 10px; }
-.dlg-sf-label { display: block; font-size: 11px; font-weight: 800; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
-.dlg-sf-score { margin: 4px 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
-.dlg-sf-score-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.dlg-sf-score input { width: 88px; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 8px; font: inherit; font-weight: 700; color: var(--text); background: var(--surface); }
-.dlg-sf-score input:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: var(--blue); }
-.dlg-sf-score-hint { font-size: 12px; color: var(--dim); }
-.dlg-intermediate-score { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 12px 16px; border: 1px solid rgba(59,91,255,.25); border-radius: 12px; background: rgba(59,91,255,.06); }
-.dlg-intermediate-score-label { font-size: 12px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-.dlg-intermediate-score-hint { margin-top: 3px; font-size: 12px; color: var(--dim); }
-.dlg-intermediate-score-value { flex: 0 0 auto; font-size: 20px; font-weight: 900; color: var(--blue); white-space: nowrap; }
-.dlg-form-structured textarea {
-    width: 100%; min-height: 48px; max-height: 200px; padding: 9px 12px;
-    border: 1px solid var(--line); border-radius: 10px; font-family: inherit;
-    font-size: 14px; resize: vertical; background: var(--surface); box-sizing: border-box;
-}
-.dlg-form-structured textarea:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: var(--blue); }
-.dlg-sf-bottom { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 6px; }
-
-/* Score panel (admin/superadmin only, open cycle) */
-.dlg-score { padding: 14px 18px; border-top: 1px solid var(--line); background: rgba(59,91,255,0.04); }
-.dlg-score-label { font-size: 12px; color: var(--muted); font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
-.dlg-score-row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
-.dlg-score input[type=number] {
-    width: 90px; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 8px;
-    font-size: 14px; font-weight: 700; color: var(--text); font-family: inherit; background: var(--surface); outline: none;
-    transition: border-color 0.15s;
-}
-.dlg-score input[type=number]:focus { border-color: var(--blue); }
-.dlg-score-hint { font-size: 12px; color: var(--dim); }
-.dlg-score textarea {
-    width: 100%; min-height: 60px; max-height: 180px; padding: 8px 10px; resize: vertical;
-    border: 1.5px solid var(--line); border-radius: 8px; font-size: 13px; color: var(--text);
-    font-family: inherit; background: var(--surface); outline: none; transition: border-color 0.15s;
-}
-.dlg-score textarea:focus { border-color: var(--blue); }
-.dlg-score-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-.dlg-score-btn { padding: 8px 14px; border-radius: 8px; font-size: 13px; }
-.dlg-score-msg { font-size: 12px; margin-top: 6px; }
-.dlg-score-msg.err { color: var(--error); }
-.dlg-score-msg.ok  { color: var(--ok); }
-.dlg-score-edit {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
-    background: var(--surface); color: var(--text); font-size: 13px; font-weight: 700;
-    cursor: pointer; font-family: inherit;
-}
-.dlg-score-edit:hover { border-color: var(--blue); color: var(--blue); }
-.dlg-score-current { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.dlg-score-current-comment { font-size: 13px; color: var(--muted); white-space: pre-wrap; margin-top: 6px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
-
-/* Выделенная зона закрытия цикла (внизу страницы) */
-.dlg-close-zone {
-    margin-top: 6px;
-    border: 1.5px solid var(--blue);
-    border-radius: 14px;
-    background: var(--blue);
-    box-shadow: 0 6px 20px rgba(59,91,255,0.22);
-    overflow: hidden;
-}
-.dlg-close-zone .dlg-score { border-top: none; background: transparent; }
-.dlg-close-zone .dlg-score-label { color: rgba(255,255,255,0.85); }
-.dlg-close-zone .dlg-score-hint { color: rgba(255,255,255,0.75); }
-.dlg-close-zone .dlg-score-current { color: #fff; }
-.dlg-close-zone .dlg-score-btn { background: #fff; color: var(--blue); }
-.dlg-close-zone .dlg-score-btn:hover { background: #fff; opacity: 0.92; }
-.dlg-close-zone .dlg-score-edit { background: transparent; color: #fff; border-color: rgba(255,255,255,0.55); }
-.dlg-close-zone .dlg-score-edit:hover { background: rgba(255,255,255,0.12); color: #fff; border-color: #fff; }
-.dlg-close-zone .dlg-score input[type=number],
-.dlg-close-zone .dlg-score textarea { background: #fff; border-color: rgba(255,255,255,0.4); }
-.dlg-close-zone .dlg-score input[type=number]:focus,
-.dlg-close-zone .dlg-score textarea:focus { border-color: #fff; }
-.dlg-close-zone .dlg-score-current-comment { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.3); color: #fff; }
-.dlg-close-zone .dlg-score-msg.ok { color: #fff; }
-.dlg-close-zone .dlg-score-msg.err { color: #FFD9D9; }
-</style>
+<link rel="stylesheet" href="/static/css/feedback_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="dlg-page">
+<div class="dlg-page ios-feedback">
     <a class="back-link" href="{{ back_url }}">‹ {{ back_label }}</a>
     <div class="dlg-head">
         <h1>{{ cycle.subject }}</h1>
@@ -294,7 +76,7 @@
     {% endif %}
 
     {% if not attempts %}
-        <div class="dlg-empty-thread" style="border:1px solid var(--line);border-radius:12px;">
+        <div class="dlg-empty-thread dlg-empty-thread--card">
             В этом цикле пока нет финальных работ.
         </div>
     {% endif %}
@@ -333,7 +115,7 @@
                         {% elif s < 85 %}{% set score_cls = 'lime' %}
                         {% else %}{% set score_cls = 'green' %}{% endif %}
                     {% endif %}
-                    <div class="dlg-context-row"{% if not loop.first %} style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);"{% endif %}>
+                    <div class="dlg-context-row{% if not loop.first %} dlg-context-row--sep{% endif %}">
                         {% if a.s3_url %}
                             <div class="dlg-final-img">
                                 <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото">
@@ -349,7 +131,7 @@
                                 </span>
                             </div>
                             {% if a.intermediates %}
-                                <div style="margin-top:8px;font-weight:800;color:var(--text);">Этапы:</div>
+                                <div class="dlg-stages-label">Этапы:</div>
                                 <div class="dlg-stages" style="margin-top:4px;">
                                     {% for i in a.intermediates %}
                                         <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото">
