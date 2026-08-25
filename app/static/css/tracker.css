@@ -452,3 +452,192 @@
 @media (max-width: 760px) {
     .ios-tracker .trk-head { grid-template-columns: none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   iOS-ре-скин «Актуального образовательного пространства» — 25.08.2026,
+   продолжение решения владельца по «Личному трекеру» выше. Класс
+   `.ios-learning` (ставится только в cabinet_learning.html поверх общего
+   `.lrn-page`) держит эффект строго на этом экране: `.trk-item`/
+   `.trk-badge`/`.trk-meta`/`.btn-blue`/`.trk-toggle-btn` переиспользуются
+   на staff-инструментах (cabinet_tracker_admin.html, cabinet_tracker_week.html,
+   cabinet_goal_admin.html, cabinet_digest_admin.html,
+   cabinet_digest_events.html) и на cabinet_tracker.html (уже под своим
+   `.ios-tracker`) — их трогать не просили. `.lrn-*`/`.nav-pill*` частные
+   для этого экрана (проверено grep), но тоже скоуплены для единообразия
+   и на случай, если их подключат ещё где-то. */
+
+.ios-learning {
+    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --ios-blue: #007AFF;
+    --ios-green: #34C759;
+    --ios-red: #FF3B30;
+    --ios-label: #1C1C1E;
+    --ios-label-2: rgba(60,60,67,0.60);
+    --ios-label-3: rgba(60,60,67,0.30);
+    --ios-sep: rgba(60,60,67,0.29);
+    --ios-grouped-bg: #F2F2F7;
+    --ios-card-bg: #FFFFFF;
+    position: relative;
+    isolation: isolate;
+    font-family: var(--ios-font);
+    color: var(--ios-label);
+}
+/* Тот же приём, что у .ios-tracker: плоский iOS-фон вместо обоев Spark,
+   не выходит за пределы экрана благодаря isolation:isolate. */
+.ios-learning::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: var(--ios-grouped-bg);
+    z-index: -1;
+}
+
+/* ── Шапка недели — тот же градиент, что у .profile-hero в profile_hero.css,
+   для визуальной переклички с «Личным трекером», хотя контент другой
+   (название/описание недели, не профиль ученика — владелец 21.08.2026
+   решил держать профиль-шапку только на трекере). ── */
+.ios-learning .lrn-hero {
+    background: linear-gradient(160deg, #0A84FF 0%, #0040DD 100%);
+    border-radius: 26px;
+    padding: 20px 22px 24px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 14px 32px rgba(0,64,221,0.28);
+    position: relative;
+    overflow: hidden;
+}
+.ios-learning .lrn-hero::before {
+    content: '';
+    position: absolute;
+    width: 260px; height: 260px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.06);
+    top: -90px; right: -60px;
+}
+.ios-learning .lrn-hero::after {
+    content: '';
+    position: absolute;
+    width: 160px; height: 160px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.05);
+    bottom: -60px; right: 80px;
+}
+.ios-learning .lrn-hero h1 {
+    position: relative; z-index: 1;
+    font: 700 24px/1.25 var(--ios-font); letter-spacing: -0.3px; color: #fff;
+}
+.ios-learning .lrn-hero p {
+    position: relative; z-index: 1;
+    font: 400 14px/1.4 var(--ios-font); color: rgba(255,255,255,0.82); opacity: 1;
+}
+
+.ios-learning .lrn-empty {
+    background: var(--ios-card-bg); border-radius: 16px;
+    font: 500 15px/1.4 var(--ios-font); color: var(--ios-label-2);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+/* ── Переключатель предмета → iOS segmented control ── */
+.ios-learning .lrn-subject-toggle {
+    background: rgba(118,118,128,0.12);
+    border: none; padding: 3px; border-radius: 9px;
+}
+.ios-learning .lrn-subject-btn {
+    font: 600 13px var(--ios-font); color: var(--ios-label-2);
+    border-radius: 7px;
+    transition: background 150ms var(--ios-ease), color 150ms var(--ios-ease);
+}
+.ios-learning .lrn-subject-btn.active {
+    background: var(--ios-card-bg); color: var(--ios-label);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 0 0.5px rgba(0,0,0,0.04);
+}
+
+/* ── Вкладки недели → капсулы-чипы, активная залита систем-синим ── */
+.ios-learning .lrn-tabs { scrollbar-width: none; }
+.ios-learning .lrn-tabs::-webkit-scrollbar { display: none; }
+.ios-learning .lrn-tabs .nav-pill-item {
+    font: 600 13px var(--ios-font); color: var(--ios-label-2);
+    background: var(--ios-card-bg);
+    border: none; border-radius: 999px;
+    padding: 8px 14px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    transition: background 120ms var(--ios-ease), color 120ms var(--ios-ease), transform 100ms var(--ios-ease);
+}
+.ios-learning .lrn-tabs .nav-pill-item:active { transform: scale(0.96); }
+.ios-learning .lrn-tabs .nav-pill-item.active {
+    background: var(--ios-blue); color: #fff; box-shadow: 0 2px 8px rgba(0,122,255,0.30);
+}
+
+/* ── Карточки вкладки (Занятие/Обратная связь/пустые состояния) ── */
+.ios-learning .lrn-card {
+    border: none; border-radius: 16px;
+    background: var(--ios-card-bg);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    transition: transform 100ms var(--ios-ease);
+}
+.ios-learning .lrn-card:hover { border-color: transparent; }
+.ios-learning .lrn-card:active { transform: scale(0.99); }
+.ios-learning .lrn-card.is-disabled { opacity: 1; background: rgba(120,120,128,0.08); box-shadow: none; }
+.ios-learning .lrn-card-title { font: 600 16px/1.3 var(--ios-font); color: var(--ios-label); }
+.ios-learning .lrn-card.is-disabled .lrn-card-title { color: var(--ios-label-2); }
+.ios-learning .lrn-card-note { font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); }
+.ios-learning .lrn-card-cta { font: 600 13px var(--ios-font); color: var(--ios-blue); }
+.ios-learning .lrn-card.is-disabled .lrn-card-cta { color: var(--ios-label-3); }
+
+/* ── Задачи внутри вкладок — своя карточка на каждую (нет .trk-group:
+   разметка cabinet_learning.html не оборачивает записи общей группой,
+   в отличие от трекера), поэтому у каждой .trk-item свой радиус/тень,
+   не инсет-разделитель. ── */
+.ios-learning .trk-item {
+    background: var(--ios-card-bg); border: none; border-left: none;
+    border-radius: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.ios-learning .trk-item h3 { font: 600 16px/1.3 var(--ios-font); color: var(--ios-label); margin: 0 0 2px; }
+.ios-learning .trk-item p { font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); margin: 0 0 4px; }
+.ios-learning .trk-item--done h3 { text-decoration: line-through; color: var(--ios-label-2); font-weight: 500; }
+
+.ios-learning .trk-meta { font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-2); gap: 6px 10px; }
+.ios-learning .trk-meta .is-overdue { color: var(--ios-red); font-weight: 600; }
+
+.ios-learning .trk-badge {
+    border-radius: 999px; font: 600 11px/1 var(--ios-font); letter-spacing: 0;
+    padding: 3px 9px; min-height: 0;
+}
+.ios-learning .trk-badge--kind { background: rgba(0,122,255,0.12); color: var(--ios-blue); }
+.ios-learning .trk-badge--draft { background: rgba(255,149,0,0.14); color: #B25000; }
+
+.ios-learning .trk-row-actions { align-items: center; gap: 10px; }
+.ios-learning .trk-row-actions .btn-blue,
+.ios-learning .lrn-card .btn-blue {
+    background: var(--ios-blue); box-shadow: none;
+    font: 600 13px/1 var(--ios-font); padding: 8px 14px; border-radius: 999px;
+    transition: transform 100ms ease-out, filter 100ms ease-out;
+}
+.ios-learning .trk-row-actions .btn-blue:hover { transform: none; filter: brightness(1.05); }
+.ios-learning .trk-row-actions .btn-blue:active { transform: scale(0.94); filter: brightness(0.92); }
+
+/* Кнопка «Отметить» → круглый чекбокс iOS, тот же паттерн, что у трекера. */
+.ios-learning .trk-toggle-btn {
+    width: 26px; height: 26px; min-height: 26px; padding: 0;
+    border-radius: 50%; border: 1.5px solid var(--ios-sep); background: transparent;
+    text-indent: -999px; overflow: hidden; white-space: nowrap;
+    position: relative; flex-shrink: 0;
+    transition: transform 120ms cubic-bezier(0.34, 1.2, 0.64, 1),
+                background 120ms var(--ios-ease), border-color 120ms var(--ios-ease);
+}
+.ios-learning .trk-toggle-btn::after {
+    content: ''; position: absolute; inset: 0; margin: auto;
+    width: 11px; height: 6px;
+    border-left: 2px solid #fff; border-bottom: 2px solid #fff;
+    transform: rotate(-45deg) scale(0); opacity: 0;
+    transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 100ms ease-out;
+}
+.ios-learning .trk-toggle-btn.is-done { background: var(--ios-green); border-color: var(--ios-green); }
+.ios-learning .trk-toggle-btn.is-done::after { transform: rotate(-45deg) scale(1); opacity: 1; }
+.ios-learning .trk-toggle-btn:active { transform: scale(0.86); }
+.ios-learning .trk-toggle-btn:disabled { opacity: 0.5; }
+
+@keyframes ios-learning-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.ios-learning .lrn-card,
+.ios-learning .trk-item {
+    animation: ios-learning-rise 380ms var(--ios-ease) both;
+}
