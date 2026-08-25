@@ -784,3 +784,112 @@ def test_score_flow_saves_feedback_image_and_redirects_to_works_tab(admin_client
     assert submission.feedback_image_url == "https://s3.example/feedback.jpg"
     assert submission.feedback_image_path == "guest-exam/feedback/feedback.jpg"
     assert submission.comment is None
+
+# ---------------------------------------------------------------------------
+# Вкладка «Участники» — удаление тестовых прохождений, только суперадмин
+# ---------------------------------------------------------------------------
+
+def test_participants_tab_hidden_from_admin_rank_four(
+    client, db, guest_config_factory, user_factory, session_factory
+):
+    """Ранг 4 не должен попасть на вкладку даже вручную набранным ?tab=
+    (фикстура admin_client — суперадмин, поэтому ранг 4 заводим явно)."""
+    config = guest_config_factory()
+    guest_exam_service.create_participant(db, config, "Гость без сдач")
+
+    admin = user_factory(vk_id=910_004, name="Главный преподаватель", role_name="админ")
+    client.cookies.set("session_id", session_factory(admin).id)
+
+    resp = client.get("/cabinet/staff/guest-exam?tab=participants")
+    assert resp.status_code == 200
+    assert "Гость без сдач" not in resp.text
+
+
+def test_participants_tab_lists_everyone_for_superadmin(
+    client, db, guest_config_factory, user_factory, session_factory
+):
+    """В отличие от «Работ», здесь видны и те, кто ничего не сдал."""
+    config = guest_config_factory()
+    guest_exam_service.create_participant(db, config, "Гость без сдач")
+
+    superadmin = user_factory(vk_id=910_001, name="Суперадмин", role_name="суперадмин")
+    client.cookies.set("session_id", session_factory(superadmin).id)
+
+    resp = client.get("/cabinet/staff/guest-exam?tab=participants")
+    assert resp.status_code == 200
+    assert "Гость без сдач" in resp.text
+
+
+def test_delete_participant_requires_superadmin(
+    client, db, guest_config_factory, guest_ticket_factory, user_factory, session_factory
+):
+    """Удаление — только ранг 5: главный преподаватель (4) получает 403."""
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = guest_exam_service.create_participant(db, config, "Гость")
+    guest_exam_service.issue_ticket(db, participant, "Рисунок")
+
+    admin = user_factory(vk_id=910_005, name="Главный преподаватель", role_name="админ")
+    client.cookies.set("session_id", session_factory(admin).id)
+
+    resp = client.post(f"/cabinet/staff/guest-exam/participants/{participant.id}/delete")
+    assert resp.status_code == 403
+    assert db.query(GuestParticipant).filter(GuestParticipant.id == participant.id).first() is not None
+
+
+def test_superadmin_deletes_participant_with_submissions_and_visits(
+    client, db, guest_config_factory, guest_ticket_factory, user_factory, session_factory
+):
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = guest_exam_service.create_participant(db, config, "Тестовое прохождение")
+    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    guest_exam_service.record_upload(db, submission, "https://s3.example/x.jpg", "guest-exam/x.jpg")
+    guest_exam_service.record_visit(db, config.id, participant.id)
+
+    superadmin = user_factory(vk_id=910_002, name="Суперадмин", role_name="суперадмин")
+    client.cookies.set("session_id", session_factory(superadmin).id)
+
+    resp = client.post(
+        f"/cabinet/staff/guest-exam/participants/{participant.id}/delete",
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/cabinet/staff/guest-exam?tab=participants"
+
+    assert db.query(GuestParticipant).filter(GuestParticipant.id == participant.id).first() is None
+    assert (
+        db.query(GuestSubmission).filter(GuestSubmission.participant_id == participant.id).count() == 0
+    )
+    # Визит остаётся как обезличенная строка статистики — счётчик заходов не проседает.
+    visit = db.query(GuestVisit).filter(GuestVisit.config_id == config.id).first()
+    assert visit is not None and visit.participant_id is None
+
+
+def test_delete_participant_keeps_shared_ticket_image(
+    client, db, guest_config_factory, guest_ticket_factory, user_factory, session_factory
+):
+    """Картинка билета общая — удаление участника не должно её задевать."""
+    config = guest_config_factory()
+    ticket = guest_ticket_factory(config, subject="Рисунок")
+    ticket.image_s3_path = "guest-exam/tickets/shared.jpg"
+    db.commit()
+
+    participant = guest_exam_service.create_participant(db, config, "Гость")
+    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    guest_exam_service.record_upload(db, submission, "https://s3.example/w.jpg", "guest-exam/w.jpg")
+
+    _, s3_paths = guest_exam_service.delete_participant(db, participant.id)
+    assert "guest-exam/w.jpg" in s3_paths
+    assert "guest-exam/tickets/shared.jpg" not in s3_paths
+    assert db.query(ExamTicket).filter(ExamTicket.id == ticket.id).first() is not None
+
+
+def test_delete_unknown_participant_returns_404(
+    client, db, user_factory, session_factory
+):
+    superadmin = user_factory(vk_id=910_003, name="Суперадмин", role_name="суперадмин")
+    client.cookies.set("session_id", session_factory(superadmin).id)
+
+    resp = client.post("/cabinet/staff/guest-exam/participants/999999/delete")
+    assert resp.status_code == 404

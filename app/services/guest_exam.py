@@ -123,6 +123,73 @@ def list_participants_board(db: DBSession) -> list[dict]:
     return board_list
 
 
+def list_all_participants(db: DBSession) -> list[dict]:
+    """Все участники по всем ссылкам — для вкладки «Участники» суперадмина.
+
+    В отличие от list_participants_board показывает и тех, кто только взял
+    билет и не сдал: без этого тестовые записи невозможно найти и удалить.
+    Вкладку «Работы» намеренно не расширяем — это очередь проверяющего, пустые
+    ряды ей мешают (см. test_works_tab_hides_participant_without_submission)."""
+    participants = (
+        db.query(GuestParticipant)
+        .order_by(GuestParticipant.created_at.desc())
+        .all()
+    )
+    submissions = db.query(GuestSubmission).all()
+    by_participant: dict[int, list[GuestSubmission]] = {}
+    for submission in submissions:
+        by_participant.setdefault(submission.participant_id, []).append(submission)
+
+    rows = []
+    for participant in participants:
+        subs = by_participant.get(participant.id, [])
+        rows.append({
+            "participant": participant,
+            "submissions": sorted(subs, key=lambda x: x.subject),
+            "issued": sum(1 for x in subs if x.status == "issued"),
+            "submitted": sum(1 for x in subs if x.status in ("submitted", "scored")),
+        })
+    return rows
+
+
+def delete_participant(db: DBSession, participant_id: int) -> tuple[bool, list[str]]:
+    """Удалить участника со всеми его сдачами. Возвращает (удалён, пути в S3).
+
+    Пути отдаются наружу, чтобы чистку хранилища делал роутер — сервис не тянет
+    зависимость от S3. В список попадают **только** файлы самого участника:
+    его работа и фото обратной связи. Картинку билета трогать нельзя — она
+    принадлежит общему ExamTicket и обслуживает всех, кому этот билет выпал
+    и ещё выпадет."""
+    participant = (
+        db.query(GuestParticipant).filter(GuestParticipant.id == participant_id).first()
+    )
+    if not participant:
+        return False, []
+
+    submissions = (
+        db.query(GuestSubmission)
+        .filter(GuestSubmission.participant_id == participant_id)
+        .all()
+    )
+    s3_paths = [
+        path
+        for submission in submissions
+        for path in (submission.s3_path, submission.feedback_image_path)
+        if path
+    ]
+
+    # Дети удаляются явно: каскад объявлен на уровне БД, но в тестах SQLite идёт
+    # без PRAGMA foreign_keys, и там он бы не сработал.
+    db.query(GuestVisit).filter(GuestVisit.participant_id == participant_id).update(
+        {GuestVisit.participant_id: None}, synchronize_session=False
+    )
+    for submission in submissions:
+        db.delete(submission)
+    db.delete(participant)
+    db.commit()
+    return True, s3_paths
+
+
 def record_visit(db: DBSession, config_id: int, participant_id: int | None = None) -> None:
     db.add(GuestVisit(config_id=config_id, participant_id=participant_id))
     db.commit()

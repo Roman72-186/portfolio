@@ -77,6 +77,9 @@
 .gwork-subject-btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
 .gwork-subject-btn:disabled { opacity: .4; cursor: not-allowed; }
 .gwork-detail { margin-top: 4px; }
+.gpart-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.gpart-main { flex: 1; min-width: 200px; }
+.gpart-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .gexam-feedback-img { max-width: 200px; border-radius: var(--r-md); margin-top: 8px; display: block; }
 </style>
 {% endblock %}
@@ -89,6 +92,9 @@
         <a href="?tab=tickets" class="gexam-tab{% if tab == 'tickets' %} active{% endif %}">Билеты</a>
         <a href="?tab=link" class="gexam-tab{% if tab == 'link' %} active{% endif %}">Ссылка</a>
         <a href="?tab=works" class="gexam-tab{% if tab == 'works' %} active{% endif %}">Работы</a>
+        {% if user.role_rank >= 5 %}
+        <a href="?tab=participants" class="gexam-tab{% if tab == 'participants' %} active{% endif %}">Участники</a>
+        {% endif %}
     </div>
 
     {% if tab == "tickets" %}
@@ -261,6 +267,35 @@
                 </div>
                 {% endif %}
                 {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+
+    {% elif tab == "participants" %}
+        <div class="gexam-subject" style="margin-bottom:14px">
+            Все, кто заходил по гостевой ссылке — включая тех, кто взял билет и не сдал работу.
+            Удаление снимает запись участника, его билеты, работы и загруженные файлы. Отменить нельзя.
+        </div>
+        {% if not participants %}
+        <div class="gexam-empty">Пока нет ни одного участника.</div>
+        {% endif %}
+        {% for row in participants %}
+        {% set p = row.participant %}
+        <div class="gexam-row">
+            <div class="gpart-row">
+                <div class="gpart-main">
+                    <span class="gexam-name">{{ p.display_name }} · {{ p.participant_code }}</span>
+                    <div class="gpart-meta">
+                        Зашёл {{ p.created_at.strftime('%d.%m %H:%M') }} ·
+                        {% if row.submitted %}сдал работ: {{ row.submitted }}{% else %}сданных работ нет{% endif %}
+                        {% if row.issued %} · билетов без работы: {{ row.issued }}{% endif %}
+                    </div>
+                </div>
+                <form method="post" action="/cabinet/staff/guest-exam/participants/{{ p.id }}/delete"
+                      onsubmit="return confirm('Удалить участника {{ p.display_name }} и все его работы? Отменить будет нельзя.')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    <button type="submit" class="btn-danger">Удалить</button>
+                </form>
             </div>
         </div>
         {% endfor %}

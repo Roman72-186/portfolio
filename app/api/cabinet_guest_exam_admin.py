@@ -26,9 +26,10 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.constants import MOCK_SUBJECTS
 from app.db.database import get_db
-from app.dependencies import require_admin_role, require_csrf
+from app.dependencies import require_admin_role, require_csrf, require_superadmin
 from app.models.guest_exam import GuestExamConfig, GuestSubmission
 from app.services import guest_exam as guest_exam_service
+from app.services import s3 as s3_service
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/staff/guest-exam")
@@ -41,7 +42,11 @@ def guest_mode_page(
     db: Annotated[DBSession, Depends(get_db)],
     tab: str = "tickets",
 ):
-    if tab not in ("tickets", "link", "works"):
+    if tab not in ("tickets", "link", "works", "participants"):
+        tab = "tickets"
+    # Вкладка «Участники» — только суперадмину. Гейт стоит здесь, а не только на
+    # ссылке в шапке: страница открыта рангу 4, и он может набрать ?tab= руками.
+    if tab == "participants" and user["role_rank"] < 5:
         tab = "tickets"
 
     config = guest_exam_service.get_primary_config(db)
@@ -49,6 +54,7 @@ def guest_mode_page(
     stats_by_config = {c.id: guest_exam_service.config_stats(db, c.id) for c in configs}
     tickets = guest_exam_service.list_guest_tickets(db)
     board = guest_exam_service.list_participants_board(db) if tab == "works" else []
+    participants = guest_exam_service.list_all_participants(db) if tab == "participants" else []
 
     return templates.TemplateResponse("cabinet_guest_mode.html", {
         "request": request,
@@ -60,6 +66,7 @@ def guest_mode_page(
         "tickets": tickets,
         "subjects": MOCK_SUBJECTS,
         "board": board,
+        "participants": participants,
         "public_url": (
             str(request.base_url).rstrip("/") + f"/guest/{config.token}" if config else None
         ),
@@ -180,3 +187,24 @@ def guest_mode_score(
         feedback_image_path=feedback_image_path.strip() or None,
     )
     return RedirectResponse("/cabinet/staff/guest-exam?tab=works", status_code=303)
+
+
+# ── Вкладка «Участники» (только суперадмин) ──────────────────────────────────
+
+@router.post("/participants/{participant_id}/delete")
+def guest_mode_delete_participant(
+    participant_id: int,
+    user: Annotated[dict, Depends(require_superadmin)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    """Снести запись гостя целиком — участник, его сдачи и его файлы. Нужно,
+    чтобы вычищать тестовые прохождения из боевой базы."""
+    deleted, s3_paths = guest_exam_service.delete_participant(db, participant_id)
+    if not deleted:
+        raise HTTPException(status_code=404)
+    # Файлы чистим после записи в БД: delete_from_s3 не бросает, а логирует и
+    # возвращает False, поэтому недоступное хранилище не оставит запись в базе.
+    for path in s3_paths:
+        s3_service.delete_from_s3(path)
+    return RedirectResponse("/cabinet/staff/guest-exam?tab=participants", status_code=303)
