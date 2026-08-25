@@ -60,6 +60,10 @@
         {% if not submission %}
             {% if not item.has_tickets %}
             <div style="font-size:14px;color:var(--muted)">Билеты по этому предмету пока не готовы.</div>
+            {% elif item.locked_by %}
+            <div style="font-size:14px;color:var(--muted)">
+                Сначала загрузите работу по предмету «{{ item.locked_by }}» – после этого откроется билет здесь.
+            </div>
             {% elif is_open %}
             <form method="post" action="/guest/{{ config.token }}/exam/{{ subject }}/ticket">
                 <input type="hidden" name="csrf_token" value="{{ guest_csrf_token }}">

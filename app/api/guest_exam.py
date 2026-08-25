@@ -134,11 +134,14 @@ def guest_exam_page(request: Request, token: str, db: Annotated[DBSession, Depen
         return RedirectResponse(f"/guest/{token}", status_code=302)
 
     guest_exam_service.touch_participant(db, participant)
+    # Билет по второму предмету закрыт, пока по первому не загружена работа.
+    pending = guest_exam_service.get_pending_submission(db, participant.id)
     subjects = [
         {
             "name": subject,
             "submission": guest_exam_service.get_submission(db, participant.id, subject),
             "has_tickets": guest_exam_service.has_available_tickets(db, subject),
+            "locked_by": pending.subject if pending and pending.subject != subject else None,
         }
         for subject in MOCK_SUBJECTS
     ]
@@ -175,6 +178,10 @@ def guest_issue_ticket(
         guest_exam_service.issue_ticket(db, participant, subject)
     except LookupError:
         raise HTTPException(status_code=409, detail="Билеты по этому предмету пока не готовы")
+    except guest_exam_service.TicketLockedError:
+        # Реальный сценарий — устаревшая вторая вкладка. Возвращаем на страницу,
+        # она перерисуется в актуальном состоянии, без страницы с ошибкой.
+        pass
 
     return RedirectResponse(f"/guest/{token}/exam", status_code=303)
 

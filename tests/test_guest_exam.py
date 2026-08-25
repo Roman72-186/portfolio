@@ -287,6 +287,93 @@ def test_ticket_issuance_without_active_tickets_returns_409(client, db, guest_co
 
 
 # ---------------------------------------------------------------------------
+# Второй билет открывается только после загрузки работы по первому
+# ---------------------------------------------------------------------------
+
+def test_second_subject_ticket_locked_until_first_uploaded(db, guest_config_factory, guest_ticket_factory):
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    guest_ticket_factory(config, subject="Композиция")
+    participant = guest_exam_service.create_participant(db, config, "Гость")
+
+    guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    with pytest.raises(guest_exam_service.TicketLockedError) as exc:
+        guest_exam_service.issue_ticket(db, participant, "Композиция")
+    assert exc.value.subject == "Рисунок"
+
+
+def test_second_subject_ticket_unlocks_after_upload(db, guest_config_factory, guest_ticket_factory):
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    guest_ticket_factory(config, subject="Композиция")
+    participant = guest_exam_service.create_participant(db, config, "Гость")
+
+    first = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    guest_exam_service.record_upload(db, first, "https://s3.example/r.jpg", "guest-exam/r.jpg")
+
+    second = guest_exam_service.issue_ticket(db, participant, "Композиция")
+    assert second.status == "issued"
+
+
+def test_reissue_of_same_subject_is_not_blocked_by_own_pending_ticket(
+    db, guest_config_factory, guest_ticket_factory
+):
+    """Гейт не должен блокировать сам себя: повторный клик по уже выданному
+    предмету по-прежнему возвращает тот же билет."""
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = guest_exam_service.create_participant(db, config, "Гость")
+
+    first = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    again = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    assert again.id == first.id
+
+
+def test_exam_page_replaces_second_ticket_button_with_lock_message(
+    client, db, guest_config_factory, guest_ticket_factory
+):
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    guest_ticket_factory(config, subject="Композиция")
+    participant = _login_guest(client, db, config)
+    guest_exam_service.issue_ticket(db, participant, "Рисунок")
+
+    resp = client.get(f"/guest/{config.token}/exam")
+    assert resp.status_code == 200
+    assert "Сначала загрузите работу по предмету" in resp.text
+    assert 'action="/guest/{}/exam/Композиция/ticket"'.format(config.token) not in resp.text
+
+
+def test_locked_second_ticket_post_redirects_without_creating_submission(
+    client, db, guest_config_factory, guest_ticket_factory
+):
+    """Устаревшая вторая вкладка: POST по закрытому предмету не создаёт сдачу,
+    а возвращает гостя на страницу в актуальном состоянии."""
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    guest_ticket_factory(config, subject="Композиция")
+    participant = _login_guest(client, db, config)
+    guest_exam_service.issue_ticket(db, participant, "Рисунок")
+
+    csrf = _guest_csrf(client)
+    resp = client.post(
+        f"/guest/{config.token}/exam/Композиция/ticket",
+        data={"csrf_token": csrf},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert (
+        db.query(GuestSubmission)
+        .filter(
+            GuestSubmission.participant_id == participant.id,
+            GuestSubmission.subject == "Композиция",
+        )
+        .count()
+        == 0
+    )
+
+
+# ---------------------------------------------------------------------------
 # Upload flow
 # ---------------------------------------------------------------------------
 

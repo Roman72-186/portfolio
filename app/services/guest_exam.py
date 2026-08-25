@@ -25,6 +25,17 @@ from app.models.guest_exam import (
 from app.services.tz import today_msk
 
 GUEST_ASSIGNMENT_KIND = "guest"
+
+
+class TicketLockedError(Exception):
+    """Гость взял билет по одному предмету и ещё не загрузил работу — билет по
+    второму предмету не выдаётся, пока первый не сдан (решение владельца,
+    25.08.2026). В атрибуте `subject` — предмет, который держит блокировку."""
+
+    def __init__(self, subject: str):
+        super().__init__(subject)
+        self.subject = subject
+
 # Билеты гостевого режима не имеют окна времени (решение владельца, 18.08.2026:
 # «билет всегда доступен, пока включена ссылка») — end_date подставляется на
 # 10 лет вперёд просто чтобы удовлетворить NOT NULL колонки ExamTicket,
@@ -199,6 +210,22 @@ def get_submission(db: DBSession, participant_id: int, subject: str) -> GuestSub
     )
 
 
+def get_pending_submission(
+    db: DBSession, participant_id: int, exclude_subject: str | None = None
+) -> GuestSubmission | None:
+    """Взятый, но ещё не сданный билет участника (status="issued").
+
+    Предметов всего два (MOCK_SUBJECTS), и пока такой билет висит, второй не
+    выдаётся — см. issue_ticket и TicketLockedError."""
+    query = db.query(GuestSubmission).filter(
+        GuestSubmission.participant_id == participant_id,
+        GuestSubmission.status == "issued",
+    )
+    if exclude_subject:
+        query = query.filter(GuestSubmission.subject != exclude_subject)
+    return query.first()
+
+
 def _get_or_create_guest_assignment(db: DBSession, subject: str, created_by_id: int) -> ExamAssignment:
     """Один ExamAssignment(kind="guest") на предмет — билеты копятся в нём же,
     как обычные билеты внутри реального задания."""
@@ -314,10 +341,20 @@ def has_available_tickets(db: DBSession, subject: str) -> bool:
 
 
 def issue_ticket(db: DBSession, participant: GuestParticipant, subject: str) -> GuestSubmission:
-    """Выдать билет по предмету — идемпотентно, один билет на предмет на участника."""
+    """Выдать билет по предмету — идемпотентно, один билет на предмет на участника.
+
+    Поднимает TicketLockedError, если по другому предмету билет уже взят, а
+    работа по нему ещё не загружена."""
     existing = get_submission(db, participant.id, subject)
     if existing:
         return existing
+
+    # Гейт: пока по другому предмету билет взят и работа не загружена, второй
+    # билет не выдаём. Проверка после идемпотентного возврата выше, иначе
+    # повторный клик по уже выданному предмету блокировал бы сам себя.
+    pending = get_pending_submission(db, participant.id, exclude_subject=subject)
+    if pending:
+        raise TicketLockedError(pending.subject)
 
     tickets = _published_tickets_query(db, subject).all()
     if not tickets:
