@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=10">
+<link rel="stylesheet" href="/static/css/tracker.css?v=11">
 {% endblock %}
 {% block content %}
 <div class="lrn-page ios-learning">
@@ -15,9 +15,14 @@
         {% endif %}
     </div>
 
-    {% if not topic %}
-    <div class="lrn-empty">Пока нет ни одной доступной вам недели. Загляните позже.</div>
-    {% endif %}
+    {# Баннер «Пока нет ни одной доступной недели» здесь раньше стоял на
+       `{% if not topic %}` — гас, только если для недели заведён LearningTopic,
+       и вводил в заблуждение: у ученика уже могли быть задачи без темы, а
+       баннер поверх них всё равно говорил «пока ничего нет» (решение
+       владельца 25.08.2026). Текущая неделя строится всегда — заголовок
+       падает на дефолтный текст выше, а восемь вкладок ниже показывают, что
+       реально есть; для пустой вкладки своя надпись — `«Здесь пока ничего
+       нет.»` — ниже по циклу. #}
 
     {# Переключатель направления стоит над тем, что фильтрует. Раньше он лежал
        ниже списка задач и ничего не делал вовсе — теперь прячет задачи чужого
@@ -33,6 +38,12 @@
        у ученика больше нет: страница дня отменена тем же решением. #}
     <div class="lrn-tabs nav-pill" role="tablist" aria-label="Вкладки недели">
         {% for tab in tabs %}
+        {# Точка-маркер как непрочитанное уведомление в iOS (решение владельца
+           25.08.2026): есть у вкладки хоть одна незакрытая задача —
+           `tab.has_unread` из `tracker.py::build_week_tabs`. Гасится сама —
+           статус задачи меняется на done, и при следующей загрузке страницы
+           точки уже нет; для вкладок без перезагрузки (тест/чек-лист/материал
+           с кнопкой «Отметить») её же на лету снимает `lrnUpdateTabBadge`. #}
         <button
             type="button"
             class="nav-pill-item{{ ' active' if loop.first }}"
@@ -40,7 +51,7 @@
             role="tab"
             aria-selected="{{ 'true' if loop.first else 'false' }}"
             onclick="lrnActivateTab('{{ tab.kind }}')"
-        >{{ tab.label }}</button>
+        >{{ tab.label }}{% if tab.has_unread %}<span class="lrn-tab-dot" aria-hidden="true"></span>{% endif %}</button>
         {% endfor %}
     </div>
 
@@ -191,6 +202,31 @@ function lrnSwitchSubject(btn) {
     lrnApplySubjectFilter();
 })();
 
+function lrnUpdateTabBadge(kind) {
+    // Снимает точку-маркер с кнопки вкладки, если внутри её панели больше
+    // нет незакрытых задач — считает по факту `.trk-item--done` в разметке,
+    // а не по сохранённому на загрузке `tab.has_unread`, иначе точка
+    // пережила бы отметку «сделано» до следующей перезагрузки страницы.
+    // Скрытые переключателем предмета строки (`hidden`) тоже считаются —
+    // маркер про факт незакрытости, а не про то, что сейчас видно.
+    var panel = document.querySelector('.lrn-tabpanel[data-tabpanel="' + kind + '"]');
+    var btn = document.querySelector('.lrn-tabs .nav-pill-item[data-tab="' + kind + '"]');
+    if (!panel || !btn) return;
+    var hasUnread = false;
+    panel.querySelectorAll('.trk-item').forEach(function (row) {
+        if (!row.classList.contains('trk-item--done')) hasUnread = true;
+    });
+    var dot = btn.querySelector('.lrn-tab-dot');
+    if (hasUnread && !dot) {
+        dot = document.createElement('span');
+        dot.className = 'lrn-tab-dot';
+        dot.setAttribute('aria-hidden', 'true');
+        btn.appendChild(dot);
+    } else if (!hasUnread && dot) {
+        dot.remove();
+    }
+}
+
 (function () {
     // Тот же обработчик, что у «Личного трекера» (cabinet_tracker.html) —
     // отметка «сделано» ведёт на общий эндпоинт /cabinet/tracker/tasks/{id}/toggle
@@ -200,6 +236,7 @@ function lrnSwitchSubject(btn) {
         btn.addEventListener('click', function () {
             var taskId = btn.getAttribute('data-toggle-task');
             var row = btn.closest('.trk-item');
+            var panel = btn.closest('.lrn-tabpanel');
             btn.disabled = true;
             fetch('/cabinet/tracker/tasks/' + taskId + '/toggle', {
                 method: 'POST',
@@ -215,6 +252,7 @@ function lrnSwitchSubject(btn) {
                 btn.classList.toggle('is-done', done);
                 btn.setAttribute('aria-pressed', done ? 'true' : 'false');
                 btn.textContent = done ? 'Сделано' : 'Отметить';
+                if (panel) lrnUpdateTabBadge(panel.getAttribute('data-tabpanel'));
             }).catch(function () {
                 btn.textContent = 'Не получилось, ещё раз';
             }).finally(function () {

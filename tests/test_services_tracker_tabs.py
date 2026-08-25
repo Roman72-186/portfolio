@@ -112,3 +112,45 @@ def test_unfinished_homework_still_locks_even_with_open_mock_exam():
 
     assert by_kind["checklist"]["is_locked"]
     assert by_kind["checklist"]["locked_reason"] == "Задание"
+
+
+# ── Точка-маркер незакрытой задачи на кнопке вкладки (решение владельца 25.08.2026) ──
+
+def test_tab_with_unfinished_entry_has_unread_marker():
+    entries = [_entry("material", "overdue")]
+    tabs = build_week_tabs(entries)
+    by_kind = {t["kind"]: t for t in tabs}
+
+    assert by_kind["material"]["has_unread"] is True
+
+
+def test_tab_with_all_entries_done_has_no_unread_marker():
+    entries = [_entry("material", "done")]
+    tabs = build_week_tabs(entries)
+    by_kind = {t["kind"]: t for t in tabs}
+
+    assert by_kind["material"]["has_unread"] is False
+
+
+def test_empty_tab_has_no_unread_marker():
+    tabs = build_week_tabs([])
+    assert all(t["has_unread"] is False for t in tabs)
+
+
+def test_locked_tab_has_no_unread_marker_even_with_unfinished_entries():
+    # Запертую вкладку раньше предыдущей открыть нельзя — точка про «есть что
+    # посмотреть», у запертой смотреть пока нечего.
+    entries = [_entry("homework", "overdue"), _entry("survey", "overdue")]
+    tabs = build_week_tabs(entries)
+    by_kind = {t["kind"]: t for t in tabs}
+
+    assert by_kind["survey"]["is_locked"]
+    assert by_kind["survey"]["has_unread"] is False
+
+
+def test_mock_exam_entry_counts_toward_homework_unread_marker():
+    entries = [_entry("homework", "done"), _entry("mock_exam", "overdue")]
+    tabs = build_week_tabs(entries)
+    by_kind = {t["kind"]: t for t in tabs}
+
+    assert by_kind["homework"]["has_unread"] is True

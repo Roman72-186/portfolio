@@ -475,6 +475,13 @@ def build_week_tabs(entries: list[dict]) -> list[dict]:
     участвует в недельном гейте (см. `is_week_complete`, которая его тоже
     исключает) — по решению владельца 24.08 Пробник продолжает блокировать
     только переход на следующий месяц, к неделе отношения не имеет.
+
+    `has_unread` — маркер-точка на кнопке вкладки (решение владельца
+    25.08.2026): есть хоть одна незакрытая задача вкладки и сама вкладка не
+    заперта (запертую нечем «просмотреть» раньше предыдущей). Кнопка
+    «Обратная связь» своих `entries` не получает (виртуальная вкладка поверх
+    ExamCycle) — её `has_unread` подставляет `cabinet_learning.py` поверх
+    результата этой функции, здесь всегда `False`.
     """
     by_kind: dict[str, list[dict]] = {}
     for entry in entries:
@@ -496,6 +503,7 @@ def build_week_tabs(entries: list[dict]) -> list[dict]:
             "is_locked": is_locked,
             "locked_reason": locked_reason,
             "reserved": kind == TAB_KIND_FEEDBACK,
+            "has_unread": not is_locked and any(e["status"] != "done" for e in tab_entries),
         })
         # Билет Пробника участвует в отображении вкладки «Задание», но не в
         # проверке «закрыта ли вкладка» — иначе он запирал бы «Чек-лист» и

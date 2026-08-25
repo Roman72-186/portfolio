@@ -19,7 +19,12 @@ plans/2026-08-22-apparchi-student-cabinet-open-questions.md, п.7/п.8.1):
 без `topic_id` (адресованные тегом/«всем») тоже показываются здесь, если их
 `due_at` попадает в показанную (не обязательно календарную) неделю — тот же
 движок `accessible_task_entries`, что и у «Личного трекера»
-(`app/api/cabinet_tracker.py`).
+(`app/api/cabinet_tracker.py`). Поэтому у экрана нет отдельного «пустого»
+состояния на случай отсутствия `LearningTopic`: заголовок/описание вкладки
+падают на дефолтный текст, а восемь вкладок и их задачи всё равно строятся
+по неделе (решение владельца 25.08.2026 — баннер «Пока нет ни одной доступной
+недели» вводил в заблуждение, когда задачи у ученика фактически есть, а
+`LearningTopic` на эту неделю просто не заведён).
 """
 from datetime import timedelta
 from typing import Annotated
@@ -31,6 +36,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_student
+from app.models.tracker import TAB_KIND_FEEDBACK
 from app.services import feedback as fb_service
 from app.services.program import day_bounds, item_details
 from app.services.tracker import (
@@ -68,11 +74,19 @@ def cabinet_learning(
     # прямо сейчас, ему хватает полного экрана.
     open_cycles, _ = fb_service.list_student_cycle_cards(db, user["user_id"])
 
+    tabs = build_week_tabs(entries)
+    for tab in tabs:
+        # `build_week_tabs` не знает про ExamCycle — маркер «Обратной связи»
+        # считаем здесь, тем же признаком, что красит карточку «Новое ·
+        # N» внутри вкладки (решение владельца 25.08.2026).
+        if tab["kind"] == TAB_KIND_FEEDBACK:
+            tab["has_unread"] = any((c.get("unread_count") or 0) > 0 for c in open_cycles)
+
     return templates.TemplateResponse("cabinet_learning.html", {
         "request": request,
         "user": user,
         "topic": current_topic,
-        "tabs": build_week_tabs(entries),
+        "tabs": tabs,
         "open_cycles": open_cycles,
         # Нужен partial'у `partials/task_action.html`: без него видео недели
         # получило бы кнопку «Отметить» вместо ссылки на плеер.

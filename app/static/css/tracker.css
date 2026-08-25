@@ -214,7 +214,20 @@
     display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 4px;
     margin: 0 0 16px; -webkit-overflow-scrolling: touch;
 }
-.lrn-tabs .nav-pill-item { flex: 0 0 auto; white-space: nowrap; }
+.lrn-tabs .nav-pill-item { flex: 0 0 auto; white-space: nowrap; position: relative; }
+
+/* Точка-маркер незакрытой задачи на кнопке вкладки, как непрочитанное
+   уведомление в iOS (решение владельца 25.08.2026) — рисуется только когда
+   в разметке есть `.lrn-tab-dot` (`tab.has_unread` из
+   `tracker.py::build_week_tabs`, снимается на лету `lrnUpdateTabBadge` в
+   cabinet_learning.html). `--ios-red` берётся у `.ios-learning` — своего
+   переменного блока странице не нужно. */
+.lrn-tab-dot {
+    position: absolute; top: 4px; right: 6px;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--ios-red);
+    box-shadow: 0 0 0 1.5px var(--ios-card-bg, #fff);
+}
 
 .lrn-tabpanel { display: flex; flex-direction: column; gap: 12px; }
 .lrn-tabpanel[hidden] { display: none; }

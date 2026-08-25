@@ -55,11 +55,17 @@ def test_learning_redirects_to_profile_when_incomplete(client, user_factory, ses
     assert resp.headers["location"] == "/cabinet/profile"
 
 
-def test_learning_shows_empty_state_without_accessible_topics(auth_client):
+def test_learning_never_shows_the_old_no_week_banner(auth_client):
+    """Решение владельца 25.08.2026: баннер вводил в заблуждение, когда задачи
+    у ученика фактически есть, а `LearningTopic` на неделю просто не заведён —
+    экран без единой доступной темы всё равно должен показывать текущую
+    неделю (дефолтный заголовок ниже), а не «пока ничего нет»."""
     client, _ = auth_client
     resp = client.get("/cabinet/learning")
     assert resp.status_code == 200
-    assert "Пока нет ни одной доступной вам недели" in resp.text
+    assert "Пока нет ни одной доступной вам недели" not in resp.text
+    assert "Актуальное образовательное пространство" in resp.text
+    assert 'class="lrn-tabs nav-pill"' in resp.text
 
 
 def test_learning_shows_current_topic_title(auth_client, db):
@@ -426,6 +432,56 @@ def test_learning_subject_filter_also_covers_feedback_cards(auth_client, db):
     assert resp.status_code == 200
     assert "querySelectorAll('[data-subject]')" in resp.text
     assert "querySelectorAll('.trk-item[data-subject]')" not in resp.text
+
+
+# ── Точка-маркер незакрытой задачи на кнопке вкладки (25.08.2026) ───────────
+
+def test_learning_tab_button_shows_unread_dot_for_unfinished_task(auth_client, db):
+    client, user = auth_client
+    day = week_start(today_msk()) + timedelta(days=1)
+    due = day_bounds(day)[0] + timedelta(hours=10)
+    task = create_task(
+        db, title="Эскиз композиции", user_id=user.id, due_at=due,
+        assign_to_all=True, kind="material",
+    )
+    task.is_published = True
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    material_btn_start = resp.text.index('data-tab="material"')
+    material_btn_end = resp.text.index("</button>", material_btn_start)
+    assert 'class="lrn-tab-dot"' in resp.text[material_btn_start:material_btn_end]
+
+
+def test_learning_tab_button_hides_dot_when_no_tasks(auth_client):
+    client, _ = auth_client
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert 'class="lrn-tab-dot"' not in resp.text
+
+
+def test_learning_feedback_tab_button_shows_unread_dot_for_unread_final(auth_client, db):
+    client, user = auth_client
+    cycle = _cycle(db, user, subject="Композиция")
+    from app.models.notification import Notification
+    from app.models.work import Work
+
+    work = Work(
+        user_id=user.id, cycle_id=cycle.id, is_final=True,
+        subject="Композиция", work_type="mock_exam",
+        month="август", year=2026, filename="final.jpg",
+    )
+    db.add(work)
+    db.commit()
+    db.add(Notification(user_id=user.id, title="Оценка выставлена", work_id=work.id, is_read=False))
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    feedback_btn_start = resp.text.index('data-tab="feedback"')
+    feedback_btn_end = resp.text.index("</button>", feedback_btn_start)
+    assert 'class="lrn-tab-dot"' in resp.text[feedback_btn_start:feedback_btn_end]
 
 
 def test_trk_row_and_lrn_card_respect_the_hidden_attribute():
