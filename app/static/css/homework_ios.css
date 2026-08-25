@@ -1,0 +1,152 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   iOS-ре-скин экрана «Домашка» (`/cabinet/homework/<task_id>` — ученик,
+   `/cabinet/staff/homework/submissions/<id>` — куратор/админ) —
+   25.08.2026, тот же язык, что и .ios-tracker/.ios-learning/.ios-videos/
+   .ios-personal/.ios-feedback/.ios-portfolio/.ios-gallery/.ios-upload/
+   .ios-notifications/.ios-survey (см. app/static/css/tracker.css,
+   video_ios.css, personal_ios.css, feedback_ios.css, portfolio_ios.css,
+   gallery_ios.css, upload_ios.css, notifications_ios.css, survey_ios.css).
+
+   Общий шаблон для ученика и куратора (viewer_role разводит разметку) —
+   владелец подтвердил (25.08.2026, AskUserQuestion): ре-скин один на всех,
+   как в своё время «Обратная связь». Десктопная навигация персонала сюда
+   не входит, как и в остальной части инициативы.
+
+   Особенность экрана: своего инлайнового <style> у шаблона не было —
+   вся разметка сидит на `program.css` (`.prg-page`/`.prg-head`) и
+   `base.css` (`.card`/`.card-title`/`.card-desc`/`.btn-blue`/
+   `.btn-outline`/`.chip`/`.photo-grid`/`.empty-state`/`.section-label`/
+   `.form-label`/`.field-input`/`.back-link`). Эти классы разделяются с
+   конструктором анкет персонала и «Анкетой» (уже переопределены в
+   `survey_ios.css` под своим скоупом) — program.css/base.css не
+   редактировались, program.css уже на `?v=5`, поднимать не нужно.
+
+   Список сообщений диалога переверстан из вложенных `.card` в `.card` (это
+   был мёртвый инлайн-приём из шаблона) в bubble-переписку по образцу
+   `.dlg-msg`/`.dlg-msg-bubble` из feedback_ios.css — align by sender
+   (`from-me`/`from-them`), не литеральный перенос вложенности.
+   `.hw-*` классы — частные для этого шаблона, замена точечных
+   `style="margin-top:...px"` (сессия 6: выносить структуру целиком, не
+   изобретать разовый класс на каждую строку — здесь набор `.hw-card`/
+   `.hw-form`/`.hw-submit`/`.hw-label-gap`/`.hw-section-label`/
+   `.hw-final-photo`/`.hw-messages`/`.hw-msg*`/`.hw-accepted`/`.hw-hint`
+   покрывает все инлайновые правила шаблона).
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ios-homework {
+    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --ios-blue: #007AFF;
+    --ios-red: #FF3B30;
+    --ios-green: #34C759;
+    --ios-label: #1C1C1E;
+    --ios-label-2: rgba(60,60,67,0.60);
+    --ios-label-3: rgba(60,60,67,0.30);
+    --ios-sep: rgba(60,60,67,0.29);
+    --ios-grouped-bg: #F2F2F7;
+    --ios-card-bg: #FFFFFF;
+    --ios-bubble-them: #E9E9EB;
+    position: relative;
+    isolation: isolate;
+    font-family: var(--ios-font);
+    color: var(--ios-label);
+}
+.ios-homework::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: var(--ios-grouped-bg);
+    z-index: -1;
+}
+.ios-homework.prg-page { max-width: 720px; margin: 0 auto; padding: 22px 18px 110px; }
+
+.ios-homework .back-link {
+    display: inline-block; margin-bottom: 10px;
+    color: var(--ios-blue); font: 400 17px/1 var(--ios-font);
+    min-height: 34px;
+}
+.ios-homework .back-link:hover { color: var(--ios-blue); opacity: .6; }
+
+/* ── Шапка ── */
+.ios-homework .prg-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-start; margin-bottom: 16px; }
+.ios-homework .prg-head-copy { max-width: none; }
+.ios-homework .prg-head h1 {
+    font: 700 22px/1.25 var(--ios-font); letter-spacing: -0.3px; color: var(--ios-label);
+    margin: 0 0 4px;
+}
+.ios-homework .prg-head-copy p { margin: 0; color: var(--ios-label-2); font: 400 13px/1.4 var(--ios-font); }
+
+/* ── Карточки ── */
+.ios-homework .card {
+    background: var(--ios-card-bg); border: none; border-radius: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05); padding: 20px 18px;
+    transition: none;
+}
+.ios-homework .card:hover { box-shadow: 0 1px 3px rgba(0,0,0,0.05); transform: none; border-color: transparent; }
+.ios-homework .card-title { font: 700 16px/1.3 var(--ios-font); color: var(--ios-label); margin-bottom: 6px; }
+.ios-homework .card-desc { color: var(--ios-label-2); font: 400 14px/1.5 var(--ios-font); }
+.ios-homework .hw-card { margin-bottom: 16px; }
+
+.ios-homework .photo-grid img { border-radius: 10px; border: none; }
+.ios-homework .hw-final-photo { grid-template-columns: minmax(0,220px); }
+
+.ios-homework .section-label { color: var(--ios-label-2); font: 700 11px/1.3 var(--ios-font); letter-spacing: 0.06em; }
+.ios-homework .hw-section-label { margin-top: 18px; }
+
+/* ── Формы загрузки ── */
+.ios-homework .hw-form { margin-top: 14px; }
+.ios-homework .form-label { font: 600 13px/1.4 var(--ios-font); color: var(--ios-label); }
+.ios-homework .hw-label-gap { margin-top: 10px; }
+.ios-homework .field-input {
+    background: var(--ios-grouped-bg); border: 1px solid transparent; border-radius: 12px;
+    padding: 12px 14px; font: 400 14px/1.4 var(--ios-font); color: var(--ios-label);
+}
+.ios-homework .field-input:focus { background: #fff; border-color: transparent; box-shadow: 0 0 0 2px var(--ios-blue); }
+.ios-homework textarea.field-input { resize: vertical; min-height: 64px; }
+.ios-homework .hw-submit { margin-top: 10px; }
+
+.ios-homework .btn-blue {
+    background: var(--ios-blue); box-shadow: none;
+    font: 700 14px/1 var(--ios-font); border-radius: 999px;
+    transition: transform 100ms ease-out, filter 100ms ease-out;
+}
+.ios-homework .btn-blue:hover { transform: none; filter: brightness(1.05); color: #fff; }
+.ios-homework .btn-blue:active { transform: scale(.97); filter: brightness(.92); }
+.ios-homework .btn-outline {
+    background: var(--ios-card-bg); border: 1.5px solid var(--ios-sep); color: var(--ios-label);
+    font: 700 14px/1 var(--ios-font); border-radius: 999px; box-shadow: none;
+}
+.ios-homework .btn-outline:hover { border-color: var(--ios-blue); color: var(--ios-blue); }
+
+.ios-homework .prg-message { color: var(--ios-label-2); font: 400 13px/1.4 var(--ios-font); }
+.ios-homework .prg-message.is-error { color: var(--ios-red); }
+
+.ios-homework .chip {
+    background: rgba(0,122,255,0.10); color: var(--ios-blue); border: none;
+    font: 700 11px/1 var(--ios-font); letter-spacing: 0.02em;
+}
+.ios-homework .hw-accepted { margin-top: 14px; background: rgba(52,199,89,0.15); color: #1a8a3d; }
+
+.ios-homework .empty-state { padding: 28px 12px; }
+.ios-homework .empty-text { color: var(--ios-label-2); font: 400 13px/1.4 var(--ios-font); }
+
+.ios-homework .hw-hint { margin-top: 10px; }
+
+/* ── Переписка — bubbles по образцу .dlg-msg/.dlg-msg-bubble
+   из feedback_ios.css, выровнены по отправителю (from-me/from-them). ── */
+.ios-homework .hw-messages { display: flex; flex-direction: column; gap: 12px; }
+.ios-homework .hw-msg { display: flex; max-width: 88%; }
+.ios-homework .hw-msg.from-them { align-self: flex-start; }
+.ios-homework .hw-msg.from-me { align-self: flex-end; }
+.ios-homework .hw-msg-bubble {
+    padding: 12px 14px; border-radius: 16px;
+    background: var(--ios-bubble-them); border: none;
+    display: flex; flex-direction: column; gap: 6px; min-width: 0;
+}
+.ios-homework .hw-msg.from-them .hw-msg-bubble { border-bottom-left-radius: 5px; }
+.ios-homework .hw-msg.from-me .hw-msg-bubble { background: rgba(0,122,255,0.10); border-bottom-right-radius: 5px; }
+.ios-homework .hw-msg-text { margin: 0; word-break: break-word; white-space: pre-wrap; font: 400 15px/1.4 var(--ios-font); color: var(--ios-label); }
+.ios-homework .hw-msg-photo { display: block; max-width: 240px; width: 100%; border-radius: 10px; cursor: zoom-in; }
+.ios-homework .hw-msg-meta { font: 400 11px/1.3 var(--ios-font); color: var(--ios-label-3); }
+@media (max-width: 480px) {
+    .ios-homework.prg-page { padding: 16px 14px 100px; }
+    .ios-homework .hw-msg { max-width: 96%; }
+}
