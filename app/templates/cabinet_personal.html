@@ -3,48 +3,10 @@
 {% block title %}Личная информация{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/account_actions.css?v=1">
-<style>
-.prs-page { max-width: 1080px; margin: 0 auto; padding: 22px 18px 110px; }
-.prs-hero {
-    background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue-mid) 100%);
-    color: #fff; border-radius: var(--r-xl); padding: 18px 22px;
-    margin-bottom: 16px; box-shadow: var(--sh-blue);
-}
-.prs-hero h1 {
-    font-family: var(--font-display); font-size: 22px; font-weight: 800;
-    letter-spacing: -0.02em; margin: 0 0 4px;
-}
-.prs-hero p { margin: 0; opacity: 0.85; font-size: 13px; line-height: 1.4; }
-
-.prs-section-title {
-    font-size: 11px; font-weight: 800; color: var(--dim);
-    text-transform: uppercase; letter-spacing: 0.08em;
-    margin: 22px 0 10px;
-}
-.prs-section-title:first-of-type { margin-top: 0; }
-
-.prs-fields {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 14px; padding: 16px 18px; border: 1px solid var(--line);
-    border-radius: var(--r-xl); background: var(--surface);
-}
-.prs-field-label { font-size: 11px; font-weight: 700; color: var(--dim); margin-bottom: 4px; }
-.prs-field-value { font-size: 14px; font-weight: 600; color: var(--ink); }
-.prs-field-value.empty { color: var(--dim); font-weight: 500; font-style: italic; }
-.prs-edit-link { display: inline-block; margin-top: 12px; font-size: 13px; font-weight: 700; color: var(--blue); text-decoration: none; }
-
-.prs-cards { display: flex; flex-direction: column; gap: 12px; }
-.prs-card {
-    padding: 16px 18px; border: 1px solid var(--line);
-    border-radius: var(--r-xl); background: var(--surface);
-    opacity: 0.55;
-}
-.prs-card-title { font-size: 15px; font-weight: 800; margin: 0 0 4px; }
-.prs-card-note { font-size: 13px; color: var(--dim); margin: 0; line-height: 1.4; }
-</style>
+<link rel="stylesheet" href="/static/css/personal_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="prs-page">
+<div class="prs-page ios-personal">
 
     <div class="prs-hero">
         <h1>Личная информация</h1>
@@ -52,43 +14,43 @@
     </div>
 
     <div class="prs-section-title">Контакты</div>
-    <div class="prs-fields">
-        <div>
-            <div class="prs-field-label">Телефон</div>
-            <div class="prs-field-value {{ '' if user.phone else 'empty' }}">{{ user.phone or 'Не указано' }}</div>
+    <div class="prs-group">
+        <div class="prs-row">
+            <span class="prs-row-label">Телефон</span>
+            <span class="prs-row-value {{ '' if user.phone else 'empty' }}">{{ user.phone or 'Не указано' }}</span>
         </div>
-        <div>
-            <div class="prs-field-label">Телефон родителя</div>
-            <div class="prs-field-value {{ '' if user.parent_phone else 'empty' }}">{{ user.parent_phone or 'Не указано' }}</div>
+        <div class="prs-row">
+            <span class="prs-row-label">Телефон родителя</span>
+            <span class="prs-row-value {{ '' if user.parent_phone else 'empty' }}">{{ user.parent_phone or 'Не указано' }}</span>
         </div>
-        <div>
-            <div class="prs-field-label">Telegram</div>
-            <div class="prs-field-value {{ '' if user.tg_username else 'empty' }}">{{ '@' + user.tg_username if user.tg_username else 'Не указано' }}</div>
+        <div class="prs-row">
+            <span class="prs-row-label">Telegram</span>
+            <span class="prs-row-value {{ '' if user.tg_username else 'empty' }}">{{ '@' + user.tg_username if user.tg_username else 'Не указано' }}</span>
         </div>
-        <div>
-            <div class="prs-field-label">Тариф</div>
-            <div class="prs-field-value {{ '' if user.tariff else 'empty' }}">{{ user.tariff or 'Не указано' }}</div>
+        <div class="prs-row">
+            <span class="prs-row-label">Тариф</span>
+            <span class="prs-row-value {{ '' if user.tariff else 'empty' }}">{{ user.tariff or 'Не указано' }}</span>
         </div>
+        <a class="prs-row prs-row-link" href="/cabinet/profile"><span>Изменить анкету</span></a>
     </div>
-    <a class="prs-edit-link" href="/cabinet/profile">Изменить анкету →</a>
 
     <div class="prs-section-title">Документы</div>
-    <div class="prs-cards">
-        <div class="prs-card">
-            <div class="prs-card-title">Оферта</div>
-            <p class="prs-card-note">Скоро появится здесь.</p>
+    <div class="prs-group">
+        <div class="prs-row prs-row--stacked">
+            <span class="prs-row-label">Оферта</span>
+            <div class="prs-row-note">Скоро появится здесь.</div>
         </div>
-        <div class="prs-card">
-            <div class="prs-card-title">Согласие на обработку персональных данных</div>
-            <p class="prs-card-note">Скоро появится здесь.</p>
+        <div class="prs-row prs-row--stacked">
+            <span class="prs-row-label">Согласие на обработку персональных данных</span>
+            <div class="prs-row-note">Скоро появится здесь.</div>
         </div>
-        <div class="prs-card">
-            <div class="prs-card-title">Оплата и чеки</div>
-            <p class="prs-card-note">Загрузка чеков — отдельная задача, скоро.</p>
+        <div class="prs-row prs-row--stacked">
+            <span class="prs-row-label">Оплата и чеки</span>
+            <div class="prs-row-note">Загрузка чеков — отдельная задача, скоро.</div>
         </div>
-        <div class="prs-card">
-            <div class="prs-card-title">Частые вопросы</div>
-            <p class="prs-card-note">Скоро появится здесь.</p>
+        <div class="prs-row prs-row--stacked">
+            <span class="prs-row-label">Частые вопросы</span>
+            <div class="prs-row-note">Скоро появится здесь.</div>
         </div>
     </div>
 

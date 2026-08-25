@@ -1,0 +1,186 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   iOS-ре-скин экрана «Личная информация» (`/cabinet/personal`) —
+   25.08.2026, тот же язык, что и .ios-tracker/.ios-learning/.ios-videos
+   (см. app/static/css/tracker.css, app/static/css/video_ios.css).
+
+   Вынесено во внешний файл, а не в инлайновый <style> шаблона: виджет
+   настроек уведомлений (`partials/notif_gear.html`) использует общие
+   классы `.notif-gear-*`, объявленные в base.css и разделяемые с
+   cabinet_student.html и bottom_nav.html. Переопределение таких классов
+   прямо в <style> шаблона поймал бы tests/test_reuse_ratchet.py (правило
+   не задокументировано отдельно, но действует так же, как в
+   .ios-videos/.ios-tracker). Здесь всё переопределение живёт под скоупом
+   `.ios-personal`, так что чужие экраны, где этот же попап открывается
+   не из .ios-personal-поддерева, не затронуты.
+
+   Остальные `.prs-*` классы частные для cabinet_personal.html (grep
+   подтвердил ноль пересечений с base.css) — лежат в этом же файле ради
+   целостности: один экран — один источник стилей.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ios-personal {
+    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --ios-blue: #007AFF;
+    --ios-red: #FF3B30;
+    --ios-green: #34C759;
+    --ios-label: #1C1C1E;
+    --ios-label-2: rgba(60,60,67,0.60);
+    --ios-label-3: rgba(60,60,67,0.30);
+    --ios-sep: rgba(60,60,67,0.29);
+    --ios-grouped-bg: #F2F2F7;
+    --ios-card-bg: #FFFFFF;
+    position: relative;
+    isolation: isolate;
+    font-family: var(--ios-font);
+    color: var(--ios-label);
+}
+.ios-personal::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: var(--ios-grouped-bg);
+    z-index: -1;
+}
+.ios-personal.prs-page { max-width: 1080px; margin: 0 auto; padding: 22px 18px 110px; }
+
+/* ── Шапка — тот же градиент, что у .lrn-hero/.profile-hero ── */
+.ios-personal .prs-hero {
+    background: linear-gradient(160deg, #0A84FF 0%, #0040DD 100%);
+    border-radius: 26px;
+    padding: 20px 22px 24px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 14px 32px rgba(0,64,221,0.28);
+    position: relative;
+    overflow: hidden;
+}
+.ios-personal .prs-hero::before {
+    content: '';
+    position: absolute;
+    width: 260px; height: 260px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.06);
+    top: -90px; right: -60px;
+}
+.ios-personal .prs-hero::after {
+    content: '';
+    position: absolute;
+    width: 160px; height: 160px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.05);
+    bottom: -60px; right: 80px;
+}
+.ios-personal .prs-hero h1 {
+    position: relative; z-index: 1;
+    font: 700 24px/1.25 var(--ios-font); letter-spacing: -0.3px; color: #fff;
+    margin: 0 0 4px;
+}
+.ios-personal .prs-hero p {
+    position: relative; z-index: 1;
+    margin: 0; font: 400 14px/1.4 var(--ios-font); color: rgba(255,255,255,0.82);
+}
+
+/* ── Заголовки секций ── */
+.ios-personal .prs-section-title {
+    margin: 22px 4px 8px; padding: 0 4px;
+    font: 600 13px/1.3 var(--ios-font); color: var(--ios-label-2);
+    text-transform: uppercase; letter-spacing: 0.02em;
+}
+.ios-personal .prs-section-title:first-of-type { margin-top: 0; }
+
+/* ── Группа-карточка (UITableView .grouped) — общий вид для всех трёх
+   секций: контакты, документы, аккаунт. Ряды сливаются в одну карточку с
+   тонким инсет-разделителем вместо рамки на каждом. ── */
+.ios-personal .prs-group,
+.ios-personal .prs-actions {
+    background: var(--ios-card-bg);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    margin-bottom: 4px;
+}
+.ios-personal .prs-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 12px 16px;
+    position: relative;
+    color: inherit; text-decoration: none;
+}
+.ios-personal .prs-row:not(:last-child)::after {
+    content: ''; position: absolute; left: 16px; right: 0; bottom: 0; height: 0.5px;
+    background: var(--ios-sep);
+}
+.ios-personal .prs-row-label { font: 400 15px/1.3 var(--ios-font); color: var(--ios-label); }
+.ios-personal .prs-row-value { font: 400 15px/1.3 var(--ios-font); color: var(--ios-label-2); text-align: right; }
+.ios-personal .prs-row-value.empty { color: var(--ios-label-3); }
+
+/* строка-ссылка «Изменить анкету» — тот же приём с псевдо-шевроном, что
+   и у виджета настроек ниже. */
+.ios-personal .prs-row-link { color: var(--ios-blue); cursor: pointer; }
+.ios-personal .prs-row-link:hover { background: rgba(60,60,67,0.06); }
+.ios-personal .prs-row-link span { font: 400 15px/1.3 var(--ios-font); font-weight: 500; }
+.ios-personal .prs-row-link::after {
+    content: '';
+    width: 7px; height: 7px; flex-shrink: 0;
+    border-right: 1.6px solid var(--ios-label-3);
+    border-bottom: 1.6px solid var(--ios-label-3);
+    transform: rotate(-45deg);
+}
+
+/* строки «Документы» — заголовок+подпись, недоступны для нажатия */
+.ios-personal .prs-row--stacked { display: block; cursor: default; }
+.ios-personal .prs-row-note { margin-top: 2px; font: 400 13px/1.35 var(--ios-font); color: var(--ios-label-3); }
+
+/* ── Аккаунт: переопределение общего .notif-gear-* из base.css — только
+   внутри .ios-personal, cabinet_student.html и bottom_nav.html не
+   затронуты (попап там открывается вне этого скоупа). ── */
+.ios-personal .notif-gear-wrap--labeled { position: relative; width: 100%; }
+.ios-personal .notif-gear-btn--labeled {
+    width: 100%; height: auto;
+    justify-content: flex-start; gap: 10px;
+    background: transparent; border: none; border-radius: 0;
+    padding: 12px 16px;
+    color: var(--ios-label);
+    font: 400 15px/1.3 var(--ios-font); font-weight: 400;
+}
+.ios-personal .notif-gear-btn--labeled:hover { background: rgba(60,60,67,0.06); border-color: transparent; color: var(--ios-label); }
+.ios-personal .notif-gear-btn--labeled svg { color: var(--ios-blue); flex-shrink: 0; }
+.ios-personal .notif-gear-btn-label { font-family: var(--ios-font); }
+.ios-personal .notif-gear-btn--labeled::after {
+    content: '';
+    width: 7px; height: 7px; flex-shrink: 0; margin-left: auto;
+    border-right: 1.6px solid var(--ios-label-3);
+    border-bottom: 1.6px solid var(--ios-label-3);
+    transform: rotate(-45deg);
+}
+.ios-personal .notif-gear-wrap--labeled::after {
+    content: ''; position: absolute; left: 16px; right: 0; bottom: 0; height: 0.5px;
+    background: var(--ios-sep);
+}
+
+.ios-personal .prs-logout-form { position: relative; width: 100%; }
+.ios-personal .prs-logout-btn {
+    width: 100%; justify-content: flex-start; gap: 10px;
+    background: transparent; border: none; border-radius: 0;
+    padding: 12px 16px;
+    color: var(--ios-red);
+    font: 400 15px/1.3 var(--ios-font);
+}
+.ios-personal .prs-logout-btn:hover { background: rgba(255,59,48,0.06); border-color: transparent; color: var(--ios-red); }
+
+/* попап настроек уведомлений — тот же .notif-gear-pop, что и на других
+   экранах, переопределён только когда открыт из-под .ios-personal. */
+.ios-personal .notif-gear-pop {
+    border-radius: 16px; border: none;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.18);
+    font-family: var(--ios-font);
+}
+.ios-personal .notif-gear-pop-title {
+    font: 600 13px/1.3 var(--ios-font); color: var(--ios-label-2);
+    text-transform: uppercase; letter-spacing: 0.02em;
+}
+.ios-personal .notif-gear-row + .notif-gear-row { border-color: var(--ios-sep); }
+.ios-personal .notif-gear-row-title { font: 400 15px/1.3 var(--ios-font); color: var(--ios-label); }
+.ios-personal .notif-gear-row-note { font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-2); }
+.ios-personal .notif-gear-switch input:checked + .notif-gear-track { background: var(--ios-green); }
+
+@media (max-width: 480px) {
+    .ios-personal.prs-page { padding: 16px 14px 100px; }
+}
