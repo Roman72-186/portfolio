@@ -391,6 +391,11 @@
 .ios-tracker .trk-item[data-kind="survey"] .trk-kind-dot { background: var(--ios-purple); }
 .ios-tracker .trk-item[data-kind="lesson"] .trk-kind-dot { background: var(--ios-red); }
 .ios-tracker .trk-item[data-kind="other"] .trk-kind-dot { background: var(--ios-label-3); }
+/* Просрочка всегда красная, независимо от цвета типа задачи — это
+   предупреждение о статусе, а не ярлык вида. Специфичность селектора
+   (.trk-item.trk-item--overdue) равна селекторам выше — правило должно
+   идти строго после них, чтобы порядок в файле решал перевес. */
+.ios-tracker .trk-item.trk-item--overdue .trk-kind-dot { background: var(--ios-red); }
 
 .ios-tracker .trk-row-actions { align-items: center; gap: 10px; }
 .ios-tracker .trk-row-actions .btn-blue {
