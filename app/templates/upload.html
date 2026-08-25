@@ -1,111 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Загрузка фото{% endblock %}
 {% block extra_styles %}
-<style>
-.upload-wrap { max-width: 480px; margin: 0 auto; }
-
-.mode-badge {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 5px 14px; border-radius: var(--r-pill);
-    font-size: 12px; font-weight: 700; letter-spacing: 0.4px;
-    margin-bottom: 8px;
-}
-.mode-before { background: rgba(220,38,38,0.09); color: var(--error); border: 1px solid rgba(220,38,38,0.2); }
-.mode-after  { background: rgba(5,150,105,0.09); color: var(--ok); border: 1px solid rgba(5,150,105,0.2); }
-
-.upload-drop {
-    border: 2px dashed var(--line);
-    border-radius: var(--r-xl);
-    padding: 44px 32px;
-    text-align: center;
-    cursor: pointer;
-    background: var(--surface);
-    transition: border-color 0.2s, background 0.2s;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-}
-.upload-drop:hover, .upload-drop.drag-over {
-    border-color: var(--blue);
-    background: var(--blue-soft);
-}
-.upload-drop input[type="file"] { display: none; }
-
-.upload-circle {
-    width: 96px; height: 96px;
-    border-radius: 50%;
-    background: var(--blue-soft);
-    border: 2px dashed var(--blue);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 42px; color: var(--blue); line-height: 1;
-    transition: background 0.2s, color 0.2s, transform 0.2s, box-shadow 0.2s;
-    flex-shrink: 0;
-}
-.upload-drop:hover .upload-circle, .upload-drop.drag-over .upload-circle {
-    background: var(--blue); color: #fff; border-color: var(--blue);
-    transform: scale(1.07); box-shadow: var(--sh-blue);
-}
-.upload-drop-title { font-size: 15px; font-weight: 700; color: var(--ink); }
-.upload-drop-hint  { font-size: 12px; color: var(--dim); line-height: 1.5; }
-
-.preview-area { display: none; }
-.preview-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.preview-count { font-size: 14px; font-weight: 700; color: var(--blue); }
-.btn-reselect {
-    font-size: 12px; font-weight: 500; color: var(--dim);
-    background: none; border: 1px solid var(--line);
-    border-radius: var(--r-pill); padding: 4px 12px; cursor: pointer;
-    font-family: inherit;
-    transition: border-color 0.2s, color 0.2s;
-}
-.btn-reselect:hover { border-color: var(--blue); color: var(--blue); }
-
-.photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.photo-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-sm); border: 1px solid var(--line); }
-.preview-cell { position: relative; }
-.preview-remove {
-    position: absolute; top: 4px; right: 4px;
-    width: 44px; height: 44px; border-radius: 50%;
-    background: rgba(0,0,0,0.6); color: #fff;
-    border: none; cursor: pointer; font-size: 14px;
-    display: flex; align-items: center; justify-content: center;
-    z-index: 2; line-height: 1;
-}
-.preview-remove:hover { background: rgba(220,38,38,0.85); }
-.btn-add-more {
-    font-size: 12px; font-weight: 500; color: var(--dim);
-    background: none; border: 1px dashed var(--line);
-    border-radius: var(--r-pill); padding: 4px 12px; cursor: pointer;
-    font-family: inherit;
-    transition: border-color 0.2s, color 0.2s;
-}
-.btn-add-more:hover { border-color: var(--blue); color: var(--blue); }
-
-@media (max-width: 480px) {
-    .upload-drop { padding: 28px 20px; }
-    .upload-circle { width: 76px; height: 76px; font-size: 34px; }
-}
-@media (min-width: 1024px) {
-    .upload-wrap { max-width: 900px; }
-    .upload-layout {
-        display: grid;
-        grid-template-columns: 1fr 320px;
-        gap: 32px;
-        align-items: start;
-    }
-    .upload-sidebar-panel {
-        position: sticky;
-        top: 32px;
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-    }
-}
-</style>
+<link rel="stylesheet" href="/static/css/upload_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="upload-wrap">
+<div class="upload-wrap ios-upload">
 
     <div style="margin-bottom:24px">
         <a href="/cabinet" class="back-link">← Кабинет</a>
@@ -114,29 +13,28 @@
         {% else %}
         <div class="mode-badge mode-after">Раздел «После»</div>
         {% endif %}
-        <h1 style="font-size:26px;font-weight:900;letter-spacing:-0.5px" class="text-accent">
+        <h1 class="text-accent">
             {% if mode == "before" %}Загрузка фото «До»{% else %}Загрузка фото «После»{% endif %}
         </h1>
         {% if mode == "before" %}
-        <p style="color:var(--muted);font-size:14px;margin-top:6px;line-height:1.5">
+        <p class="ios-subtitle">
             Добавьте фото работ до начала обучения. Месяц выбирать не нужно.
         </p>
         {% endif %}
     </div>
 
     {% if not feature_available and mode == "after" %}
-    <div style="background:rgba(239,68,68,0.06);border:1.5px solid rgba(239,68,68,0.2);
-                border-radius:14px;padding:20px 22px;margin-bottom:20px;text-align:center">
-        <div style="font-size:28px;margin-bottom:8px"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
-        <div style="font-size:15px;font-weight:700;color:var(--error);margin-bottom:6px">Загрузка закрыта</div>
-        <div style="font-size:13px;color:var(--muted);line-height:1.6">{{ feature_message }}</div>
+    <div class="ios-closed-banner">
+        <div class="ios-closed-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        <div class="ios-closed-title">Загрузка закрыта</div>
+        <div class="ios-closed-text">{{ feature_message }}</div>
     </div>
     {% else %}
 
     {% if success %}
     <div class="alert alert-success" role="status" aria-live="polite" style="margin-bottom:20px">
         Загружено {{ success_count }} фото!
-        {% if fail_count %}<br><span style="color:#fbbf24">Не удалось: {{ fail_count }}</span>{% endif %}
+        {% if fail_count %}<br><span class="ios-warn-text">Не удалось: {{ fail_count }}</span>{% endif %}
         <a href="/upload?section={{ mode }}" style="margin-left:8px;font-weight:700">Загрузить ещё →</a>
     </div>
     {% endif %}
@@ -157,7 +55,7 @@
                 <!-- Месяц -->
                 <div class="card" style="padding:20px">
                     <label class="form-label" style="margin-bottom:10px">
-                        Выберите месяц <span style="color:var(--error)" aria-hidden="true">*</span>
+                        Выберите месяц <span class="ios-required" aria-hidden="true">*</span>
                     </label>
                     <select name="month" required class="form-select" aria-required="true">
                         <option value="">— выберите месяц —</option>
@@ -203,34 +101,34 @@
         <!-- ── Правая панель (видна только на десктопе) ── -->
         <div class="upload-sidebar-panel">
             <div class="card" style="padding:20px">
-                <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:14px">Как загружать</div>
+                <div class="ios-eyebrow" style="margin-bottom:14px">Как загружать</div>
                 <div style="display:flex;flex-direction:column;gap:12px">
-                    <div style="display:flex;gap:12px;align-items:flex-start">
-                        <span style="flex-shrink:0;color:var(--blue);margin-top:1px" aria-hidden="true">
+                    <div class="ios-tip-row">
+                        <span aria-hidden="true">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                             </svg>
                         </span>
-                        <div style="font-size:13px;color:var(--muted);line-height:1.5">Перетащите фото в область загрузки или нажмите на неё</div>
+                        <div class="ios-tip-text">Перетащите фото в область загрузки или нажмите на неё</div>
                     </div>
-                    <div style="display:flex;gap:12px;align-items:flex-start">
-                        <span style="flex-shrink:0;color:var(--blue);margin-top:1px" aria-hidden="true">
+                    <div class="ios-tip-row">
+                        <span aria-hidden="true">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
                                 <circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
                             </svg>
                         </span>
-                        <div style="font-size:13px;color:var(--muted);line-height:1.5">Любые фото (в т.ч. HEIC с iPhone) · до 10 МБ каждый · до {{ max_files }} штук за раз</div>
+                        <div class="ios-tip-text">Любые фото (в т.ч. HEIC с iPhone) · до 10 МБ каждый · до {{ max_files }} штук за раз</div>
                     </div>
-                    <div style="display:flex;gap:12px;align-items:flex-start">
-                        <span style="flex-shrink:0;color:var(--blue);margin-top:1px" aria-hidden="true">
+                    <div class="ios-tip-row">
+                        <span aria-hidden="true">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
                                 <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
                                 <line x1="3" y1="10" x2="21" y2="10"/>
                             </svg>
                         </span>
-                        <div style="font-size:13px;color:var(--muted);line-height:1.5">
+                        <div class="ios-tip-text">
                             {% if mode == "before" %}
                             Просто загрузите фото: для раздела «До» месяц выбирать не нужно
                             {% else %}
@@ -241,14 +139,14 @@
                 </div>
             </div>
             {% if mode == "before" %}
-            <div class="card" style="padding:20px;background:rgba(220,38,38,0.04);border-color:rgba(220,38,38,0.15)">
-                <div style="font-size:13px;font-weight:700;color:var(--error);margin-bottom:8px">Раздел «До»</div>
-                <div style="font-size:13px;color:var(--muted);line-height:1.5">Сюда загружаются работы до начала обучения. Раздел доступен в любое время.</div>
+            <div class="card ios-note-card ios-note-card--before" style="padding:20px">
+                <div class="ios-note-title">Раздел «До»</div>
+                <div class="ios-note-text">Сюда загружаются работы до начала обучения. Раздел доступен в любое время.</div>
             </div>
             {% else %}
-            <div class="card" style="padding:20px;background:rgba(5,150,105,0.04);border-color:rgba(5,150,105,0.15)">
-                <div style="font-size:13px;font-weight:700;color:var(--ok);margin-bottom:8px">Раздел «После»</div>
-                <div style="font-size:13px;color:var(--muted);line-height:1.5">Здесь загружаются работы, которые вы создали во время обучения.</div>
+            <div class="card ios-note-card ios-note-card--after" style="padding:20px">
+                <div class="ios-note-title">Раздел «После»</div>
+                <div class="ios-note-text">Здесь загружаются работы, которые вы создали во время обучения.</div>
             </div>
             {% endif %}
         </div>

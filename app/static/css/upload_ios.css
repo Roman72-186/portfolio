@@ -1,0 +1,391 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   iOS-ре-скин трёх экранов загрузки — 25.08.2026, тот же язык, что и
+   .ios-tracker/.ios-videos/.ios-personal/.ios-portfolio/.ios-gallery:
+
+     .ios-upload         — upload.html (загрузка «До»/«После»), синий акцент
+     .ios-upload-mock    — upload_mock.html (сдача пробника), янтарный акцент
+     .ios-upload-retake  — upload_retake.html (сдача отработки), фиолетовый акцент
+
+   Один файл на три экрана (как .ios-videos/.ios-video в video_ios.css):
+   структура (`.upload-drop`/`.photo-grid`/`.preview-*` и т.п.) у них общая
+   на 90%, отличается только акцентный цвет.
+
+   Полностью заменяет инлайновые <style> всех трёх шаблонов (правило
+   сессий 4-5) — включая структурные правила (padding/grid/position), не
+   только цвета: в base.css эти классы не объявлены вообще, каждый шаблон
+   раньше носил полную копию в своём <style>. `.upload-drop`/
+   `.upload-circle`/`.photo-grid`/`.preview-*` разделяются с
+   cabinet_students.html (grep подтвердил, там свой инлайновый <style> —
+   не затронут). `.card`/`.btn-blue`/`.form-label`/`.form-select`/`.alert`/
+   `.cta-sticky`/`.back-link` — общие классы base.css, переопределены
+   только под своим скоупом.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ios-upload,
+.ios-upload-mock,
+.ios-upload-retake {
+    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --ios-blue: #007AFF;
+    --ios-red: #FF3B30;
+    --ios-green: #34C759;
+    --ios-orange: #FF9500;
+    --ios-purple: #AF52DE;
+    --ios-label: #1C1C1E;
+    --ios-label-2: rgba(60,60,67,0.60);
+    --ios-label-3: rgba(60,60,67,0.30);
+    --ios-sep: rgba(60,60,67,0.29);
+    --ios-grouped-bg: #F2F2F7;
+    --ios-card-bg: #FFFFFF;
+    position: relative;
+    isolation: isolate;
+    font-family: var(--ios-font);
+    color: var(--ios-label);
+    padding-bottom: 12px;
+}
+.ios-upload::before,
+.ios-upload-mock::before,
+.ios-upload-retake::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: var(--ios-grouped-bg);
+    z-index: -1;
+}
+.ios-upload { --ios-accent: var(--ios-blue); }
+.ios-upload-mock { --ios-accent: var(--ios-orange); }
+.ios-upload-retake { --ios-accent: var(--ios-purple); }
+
+.ios-upload.upload-wrap,
+.ios-upload-mock.upload-wrap,
+.ios-upload-retake.upload-wrap { max-width: 480px; margin: 0 auto; padding-top: 4px; }
+@media (min-width: 1024px) { .ios-upload.upload-wrap { max-width: 900px; } }
+@media (max-width: 480px) {
+    .ios-upload-mock.upload-wrap,
+    .ios-upload-retake.upload-wrap { padding-left: 4px; padding-right: 4px; }
+}
+
+/* ── Шапка ── */
+.ios-upload .back-link {
+    display: inline-block;
+    color: var(--ios-blue); font: 400 17px/1 var(--ios-font);
+    min-height: 34px; margin-bottom: 4px;
+}
+.ios-upload .back-link:hover { color: var(--ios-blue); opacity: .6; }
+
+.ios-upload h1.text-accent,
+.ios-upload-mock h1.text-accent,
+.ios-upload-retake h1.text-accent {
+    font: 700 26px/1.2 var(--ios-font); letter-spacing: -0.3px; color: var(--ios-label);
+}
+.ios-upload .ios-subtitle,
+.ios-upload-mock .ios-subtitle,
+.ios-upload-retake .ios-subtitle {
+    margin-top: 4px; font: 400 15px/1.4 var(--ios-font); color: var(--ios-label-2);
+}
+.ios-upload .ios-hint-strong,
+.ios-upload-mock .ios-hint-strong,
+.ios-upload-retake .ios-hint-strong { font: 700 15px/1.3 var(--ios-font); margin-bottom: 6px; }
+.ios-upload .ios-hint-text,
+.ios-upload-mock .ios-hint-text,
+.ios-upload-retake .ios-hint-text { font: 400 13px/1.6 var(--ios-font); color: var(--ios-label-2); }
+.ios-upload .ios-required,
+.ios-upload-mock .ios-required,
+.ios-upload-retake .ios-required { color: var(--ios-red); }
+.ios-upload .ios-warn-text,
+.ios-upload-mock .ios-warn-text,
+.ios-upload-retake .ios-warn-text { color: var(--ios-orange); }
+
+/* ── Тональные бейджи режима «До»/«После» (upload.html) ── */
+.ios-upload .mode-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 14px; border-radius: 999px; margin-bottom: 8px;
+    border: none; font: 700 12px/1 var(--ios-font); letter-spacing: 0.2px;
+}
+.ios-upload .mode-before { background: rgba(255,59,48,0.12); color: var(--ios-red); }
+.ios-upload .mode-after { background: rgba(52,199,89,0.12); color: var(--ios-green); }
+
+/* ── Карточка-предупреждение «раздел закрыт» ── */
+.ios-upload .ios-closed-banner,
+.ios-upload-mock .ios-closed-banner,
+.ios-upload-retake .ios-closed-banner {
+    background: rgba(255,59,48,0.06); border: none; border-radius: 16px;
+    padding: 20px 22px; margin-bottom: 20px; text-align: center;
+}
+.ios-upload .ios-closed-banner .ios-closed-title,
+.ios-upload-mock .ios-closed-banner .ios-closed-title,
+.ios-upload-retake .ios-closed-banner .ios-closed-title { font: 700 15px/1.3 var(--ios-font); color: var(--ios-red); margin-bottom: 6px; }
+.ios-upload .ios-closed-banner .ios-closed-text,
+.ios-upload-mock .ios-closed-banner .ios-closed-text,
+.ios-upload-retake .ios-closed-banner .ios-closed-text { font: 400 13px/1.6 var(--ios-font); color: var(--ios-label-2); }
+.ios-upload .ios-closed-banner .ios-closed-icon,
+.ios-upload-mock .ios-closed-banner .ios-closed-icon,
+.ios-upload-retake .ios-closed-banner .ios-closed-icon { color: var(--ios-red); margin-bottom: 8px; font-size: 26px; }
+.ios-upload .ios-closed-banner .ios-closed-icon svg { display: inline-block; }
+
+/* ── Карточка (общий базовый компонент) ── */
+.ios-upload .card,
+.ios-upload-mock .card,
+.ios-upload-retake .card {
+    background: var(--ios-card-bg); border: none; border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: none;
+}
+.ios-upload .card:hover,
+.ios-upload-mock .card:hover,
+.ios-upload-retake .card:hover { box-shadow: 0 1px 3px rgba(0,0,0,0.05); transform: none; border-color: transparent; }
+.ios-upload .card .ios-eyebrow,
+.ios-upload-mock .card .ios-eyebrow,
+.ios-upload-retake .card .ios-eyebrow { font: 700 11px/1.3 var(--ios-font); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ios-label-2); }
+.ios-upload .card .ios-eyebrow-value,
+.ios-upload-mock .card .ios-eyebrow-value,
+.ios-upload-retake .card .ios-eyebrow-value { font: 700 15px/1.3 var(--ios-font); color: var(--ios-label); }
+
+/* ── Форма: селекты, лейблы ── */
+.ios-upload .form-label,
+.ios-upload-mock .form-label,
+.ios-upload-retake .form-label { font: 600 13px/1.4 var(--ios-font); color: var(--ios-label); }
+.ios-upload .form-select {
+    background: var(--ios-grouped-bg); border: 1px solid transparent; border-radius: 12px;
+    padding: 12px 14px; font: 400 15px/1.4 var(--ios-font); color: var(--ios-label);
+}
+.ios-upload .form-select:focus { background: #fff; border-color: transparent; box-shadow: 0 0 0 2px var(--ios-blue); }
+
+/* ── Оповещения ── */
+.ios-upload .alert,
+.ios-upload-mock .alert,
+.ios-upload-retake .alert { border: none; border-radius: 14px; font: 400 14px/1.5 var(--ios-font); }
+.ios-upload .alert-success,
+.ios-upload-mock .alert-success,
+.ios-upload-retake .alert-success { background: rgba(52,199,89,0.10); color: #1F7A34; }
+.ios-upload .alert-error,
+.ios-upload-mock .alert-error,
+.ios-upload-retake .alert-error { background: rgba(255,59,48,0.08); color: var(--ios-red); }
+
+/* ── Drop zone ── */
+.ios-upload .upload-drop,
+.ios-upload-mock .upload-drop,
+.ios-upload-retake .upload-drop {
+    border: 1.5px dashed var(--ios-sep); border-radius: 18px;
+    padding: 40px 28px; text-align: center; cursor: pointer;
+    background: var(--ios-card-bg);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    transition: border-color 150ms ease-out, background 150ms ease-out;
+}
+.ios-upload .upload-drop input[type="file"],
+.ios-upload-mock .upload-drop input[type="file"],
+.ios-upload-retake .upload-drop input[type="file"] { display: none; }
+.ios-upload .upload-drop:hover, .ios-upload .upload-drop.drag-over,
+.ios-upload-mock .upload-drop:hover, .ios-upload-mock .upload-drop.drag-over,
+.ios-upload-retake .upload-drop:hover, .ios-upload-retake .upload-drop.drag-over {
+    border-color: var(--ios-accent); background: var(--ios-card-bg);
+}
+.ios-upload .upload-circle,
+.ios-upload-mock .upload-circle,
+.ios-upload-retake .upload-circle {
+    width: 88px; height: 88px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 38px; line-height: 1;
+    background: color-mix(in srgb, var(--ios-accent) 12%, transparent);
+    border: none; color: var(--ios-accent);
+    transition: background 150ms ease-out, color 150ms ease-out, transform 150ms ease-out;
+}
+.ios-upload .upload-drop:hover .upload-circle,
+.ios-upload-mock .upload-drop:hover .upload-circle,
+.ios-upload-retake .upload-drop:hover .upload-circle {
+    background: var(--ios-accent); color: #fff; transform: scale(1.06);
+}
+.ios-upload .upload-drop-title,
+.ios-upload-mock .upload-drop-title,
+.ios-upload-retake .upload-drop-title { font: 600 15px/1.3 var(--ios-font); color: var(--ios-label); }
+.ios-upload .upload-drop-hint,
+.ios-upload-mock .upload-drop-hint,
+.ios-upload-retake .upload-drop-hint { font: 400 12px/1.5 var(--ios-font); color: var(--ios-label-2); }
+@media (max-width: 480px) {
+    .ios-upload .upload-drop, .ios-upload-mock .upload-drop, .ios-upload-retake .upload-drop { padding: 26px 18px; }
+    .ios-upload .upload-circle, .ios-upload-mock .upload-circle, .ios-upload-retake .upload-circle { width: 72px; height: 72px; font-size: 32px; }
+}
+
+/* ── Превью выбранных фото ── */
+.ios-upload .preview-area,
+.ios-upload-mock .preview-area,
+.ios-upload-retake .preview-area { display: none; }
+.ios-upload .preview-header,
+.ios-upload-mock .preview-header,
+.ios-upload-retake .preview-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.ios-upload .preview-count,
+.ios-upload-mock .preview-count,
+.ios-upload-retake .preview-count { font: 700 14px/1 var(--ios-font); color: var(--ios-accent); }
+.ios-upload .btn-reselect,
+.ios-upload-mock .btn-reselect,
+.ios-upload-retake .btn-reselect {
+    font: 500 12px/1 var(--ios-font); color: var(--ios-label-2);
+    background: rgba(60,60,67,0.08); border: none; border-radius: 999px; padding: 5px 12px;
+    cursor: pointer; transition: background 150ms ease-out;
+}
+.ios-upload .btn-reselect:hover,
+.ios-upload-mock .btn-reselect:hover,
+.ios-upload-retake .btn-reselect:hover { background: rgba(60,60,67,0.14); color: var(--ios-label-2); border-color: transparent; }
+.ios-upload .btn-add-more,
+.ios-upload-mock .btn-add-more,
+.ios-upload-retake .btn-add-more {
+    font: 500 12px/1 var(--ios-font); color: var(--ios-accent);
+    background: color-mix(in srgb, var(--ios-accent) 10%, transparent);
+    border: none; border-radius: 999px; padding: 5px 12px;
+    cursor: pointer; transition: background 150ms ease-out;
+}
+.ios-upload .btn-add-more:hover,
+.ios-upload-mock .btn-add-more:hover,
+.ios-upload-retake .btn-add-more:hover { border-color: transparent; color: var(--ios-accent); background: color-mix(in srgb, var(--ios-accent) 18%, transparent); }
+
+.ios-upload .photo-grid,
+.ios-upload-mock .photo-grid,
+.ios-upload-retake .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.ios-upload .photo-grid img,
+.ios-upload-mock .photo-grid img,
+.ios-upload-retake .photo-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; border: none; }
+.ios-upload .preview-cell,
+.ios-upload-mock .preview-cell,
+.ios-upload-retake .preview-cell { position: relative; }
+.ios-upload .preview-remove,
+.ios-upload-mock .preview-remove,
+.ios-upload-retake .preview-remove {
+    position: absolute; top: 4px; right: 4px;
+    width: 32px; height: 32px; border-radius: 50%;
+    background: rgba(28,28,30,0.6); color: #fff;
+    border: none; cursor: pointer; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 2; line-height: 1;
+}
+.ios-upload .preview-remove:hover,
+.ios-upload-mock .preview-remove:hover,
+.ios-upload-retake .preview-remove:hover { background: var(--ios-red); }
+
+/* ── Основная кнопка отправки ── */
+.ios-upload .btn-blue {
+    background: var(--ios-blue); box-shadow: none;
+    font: 600 16px/1 var(--ios-font); padding: 15px 20px; border-radius: 14px;
+    transition: transform 100ms ease-out, filter 100ms ease-out;
+}
+.ios-upload .btn-blue:hover { transform: none; filter: brightness(1.05); }
+.ios-upload .btn-blue:active { transform: scale(.97); filter: brightness(.92); }
+
+.ios-upload-mock .btn-mock-primary,
+.ios-upload-retake .btn-retake-primary {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    background: var(--ios-accent); color: #fff; box-shadow: none;
+    font: 600 16px/1 var(--ios-font); padding: 15px 20px; border-radius: 14px;
+    border: none; cursor: pointer; font-family: var(--ios-font);
+    transition: transform 100ms ease-out, filter 100ms ease-out;
+}
+.ios-upload-mock .btn-mock-primary:hover,
+.ios-upload-retake .btn-retake-primary:hover { transform: none; filter: brightness(1.05); color: #fff; opacity: 1; }
+.ios-upload-mock .btn-mock-primary:active,
+.ios-upload-retake .btn-retake-primary:active { transform: scale(.97); filter: brightness(.92); }
+.ios-upload-mock .btn-mock-primary:disabled,
+.ios-upload-retake .btn-retake-primary:disabled { opacity: 0.38; cursor: not-allowed; filter: none; transform: none; }
+.ios-upload-mock .btn-mock-primary:focus-visible,
+.ios-upload-retake .btn-retake-primary:focus-visible { outline: 2px solid var(--ios-accent); outline-offset: 2px; }
+
+/* ── upload.html: layout + правая справочная панель (десктоп) ── */
+@media (min-width: 1024px) {
+    .ios-upload .upload-layout { display: grid; grid-template-columns: 1fr 320px; gap: 32px; align-items: start; }
+    .ios-upload .upload-sidebar-panel { position: sticky; top: 32px; display: flex; flex-direction: column; gap: 16px; }
+}
+.ios-upload .upload-sidebar-panel .card { padding: 20px; }
+.ios-upload .ios-tip-row { display: flex; gap: 12px; align-items: flex-start; }
+.ios-upload .ios-tip-row svg { flex-shrink: 0; color: var(--ios-blue); margin-top: 1px; }
+.ios-upload .ios-tip-row .ios-tip-text { font: 400 13px/1.5 var(--ios-font); color: var(--ios-label-2); }
+.ios-upload .ios-note-card--before { background: rgba(255,59,48,0.05); }
+.ios-upload .ios-note-card--before .ios-note-title { color: var(--ios-red); }
+.ios-upload .ios-note-card--after { background: rgba(52,199,89,0.05); }
+.ios-upload .ios-note-card--after .ios-note-title { color: #1F7A34; }
+.ios-upload .ios-note-title { font: 700 13px/1.3 var(--ios-font); margin-bottom: 8px; }
+.ios-upload .ios-note-text { font: 400 13px/1.5 var(--ios-font); color: var(--ios-label-2); }
+
+/* ═══════════════ upload_mock.html — предметы, билет, таймер ═══════════════ */
+
+.ios-upload-mock .subject-btn {
+    text-align: center; padding: 12px 16px; border-radius: 12px;
+    border: 1.5px solid var(--ios-sep); background: var(--ios-card-bg); color: var(--ios-label-2);
+    font: 600 14px/1.3 var(--ios-font);
+    transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
+}
+.ios-upload-mock .subject-radio:checked + .subject-btn,
+.ios-upload-mock .subject-btn.subject-active {
+    border-color: transparent; background: var(--ios-orange); color: #fff;
+}
+.ios-upload-mock label:hover .subject-btn { border-color: var(--ios-orange); color: var(--ios-orange); }
+.ios-upload-mock .subject-btn.subject-locked { opacity: 0.4; cursor: not-allowed; pointer-events: none; border-style: dashed; }
+.ios-upload-mock .subject-locked-hint { font: 500 10px/1.4 var(--ios-font); color: var(--ios-label-2); margin-top: 4px; display: block; text-align: center; }
+.ios-upload-mock .subject-locked-hint--active { color: var(--ios-orange); }
+
+/* Круг «Промежуточные фото» — синий, визуально отличается от янтарного
+   круга «Финальное фото» (обязательное), тот же приём, что был в Spark. */
+.ios-upload-mock .upload-circle.upload-circle--stage { background: rgba(0,122,255,0.12); color: var(--ios-blue); }
+.ios-upload-mock .upload-drop:hover .upload-circle.upload-circle--stage { background: var(--ios-blue); color: #fff; }
+
+.ios-upload-mock .ios-prep-card {
+    background: rgba(255,149,0,0.06); border: none; border-radius: 16px; padding: 18px 20px;
+}
+.ios-upload-mock .ios-prep-title { font: 800 16px/1.3 var(--ios-font); color: var(--ios-orange); margin-bottom: 8px; }
+.ios-upload-mock .ios-prep-text { font: 400 14px/1.6 var(--ios-font); color: var(--ios-label-2); }
+
+.ios-upload-mock .ticket-card {
+    border-radius: 16px; border: none; padding: 16px 18px; margin-top: 16px;
+    background: rgba(255,149,0,0.08);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    animation: ios-upload-fade-in 0.3s ease;
+}
+@keyframes ios-upload-fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.ios-upload-mock .ticket-title { font: 700 15px/1.3 var(--ios-font); color: var(--ios-orange); margin-bottom: 6px; }
+.ios-upload-mock .ticket-desc { font: 400 13px/1.55 var(--ios-font); color: var(--ios-label-2); white-space: pre-wrap; }
+.ios-upload-mock .ticket-img { width: 100%; border-radius: 12px; margin-top: 12px; border: none; display: block; }
+.ios-upload-mock .ticket-img-holder { margin-top: 12px; }
+.ios-upload-mock .ticket-img-loading {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 120px; border-radius: 12px;
+    border: 1.5px dashed rgba(255,149,0,0.35); background: rgba(255,149,0,0.05);
+    color: var(--ios-label-2); font-size: 13px;
+}
+.ios-upload-mock .ticket-img-error {
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    padding: 18px 16px; border-radius: 12px;
+    border: none; background: rgba(255,59,48,0.06); text-align: center;
+}
+.ios-upload-mock .ticket-img-error-text { font-size: 13px; color: var(--ios-red); line-height: 1.5; }
+.ios-upload-mock .ticket-img-retry {
+    font: 700 13px/1 var(--ios-font); color: #fff;
+    background: var(--ios-orange); border: none; border-radius: 999px;
+    padding: 9px 18px; cursor: pointer; transition: opacity 0.15s;
+}
+.ios-upload-mock .ticket-img-retry:hover { opacity: 0.88; }
+.ios-upload-mock .ticket-img-retry:disabled { opacity: 0.6; cursor: default; }
+
+.ios-upload-mock .exam-timer {
+    position: fixed; bottom: calc(132px + env(safe-area-inset-bottom, 0px)); right: 16px; z-index: 90;
+    color: #fff; border-radius: 16px; padding: 10px 16px;
+    display: none; flex-direction: column; align-items: center; gap: 2px; min-width: 110px;
+    background: rgba(28,28,30,0.82); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.22);
+}
+.ios-upload-mock .exam-timer.visible { display: flex; }
+.ios-upload-mock .timer-label { font: 700 10px/1 var(--ios-font); letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.5); }
+.ios-upload-mock .timer-value { font: 900 22px/1 var(--ios-font); letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
+.ios-upload-mock .timer-value.expired { color: var(--ios-green); font-size: 14px; }
+@media (min-width: 1024px) { .ios-upload-mock .exam-timer { bottom: 80px; } }
+
+/* ═══════════════ upload_retake.html — балл ═══════════════ */
+
+.ios-upload-retake .score-input {
+    width: 100%; padding: 14px 16px; font: 700 20px/1 var(--ios-font); text-align: center;
+    background: var(--ios-grouped-bg); border: 1px solid transparent; border-radius: 14px; color: var(--ios-label);
+    transition: box-shadow 150ms ease-out;
+}
+.ios-upload-retake .score-input:focus { outline: none; border-color: transparent; background: #fff; box-shadow: 0 0 0 2px var(--ios-purple); }
+
+@media (prefers-reduced-motion: reduce) {
+    .ios-upload .upload-circle, .ios-upload-mock .upload-circle, .ios-upload-retake .upload-circle,
+    .ios-upload .btn-blue, .ios-upload-mock .btn-mock-primary, .ios-upload-retake .btn-retake-primary {
+        transition: none;
+    }
+    .ios-upload-mock .ticket-card { animation: none; }
+}

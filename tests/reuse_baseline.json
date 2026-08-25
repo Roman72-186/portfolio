@@ -339,29 +339,5 @@
       "open"
     ],
     "style_lines": 82
-  },
-  "upload.html": {
-    "hex": 2,
-    "shadow": [
-      "photo-grid"
-    ],
-    "style_lines": 101
-  },
-  "upload_mock.html": {
-    "hex": 8,
-    "shadow": [
-      "btn-blue",
-      "photo-grid"
-    ],
-    "style_lines": 131
-  },
-  "upload_retake.html": {
-    "hex": 14,
-    "shadow": [
-      "btn-blue",
-      "photo-grid",
-      "tag-pill--publish"
-    ],
-    "style_lines": 72
   }
 }
