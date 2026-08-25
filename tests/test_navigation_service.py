@@ -62,7 +62,6 @@ def test_staff_nav_items_keep_admin_contract():
         ("dashboard", "/cabinet", "Кабинет", "Кабинет", "Кабинет", "Кабинет"),
         ("students", "/cabinet/students", "Ученики", "Ученики", "Ученики", "Ученики"),
         ("cycles", "/cabinet/staff/cycles", "Цикл Пробника", "Цикл", "Цикл Пробника", "Цикл Пробника"),
-        ("cases", "/cabinet/cases", "Кейсы", "Кейсы", "Кейсы", "Кейсы по пробникам"),
         (
             "program",
             "/cabinet/staff/program",
@@ -105,15 +104,12 @@ def test_staff_nav_items_keep_rank_specific_visibility_contract():
     ]
     assert "mock_check" not in [item.key for item in rank_4_items]
     assert "mock_check" not in [item.key for item in rank_5_items]
-    assert "cases" not in [item.key for item in rank_3_items]
-    assert "cases" in [item.key for item in rank_4_items]
-    assert "cases" in [item.key for item in rank_5_items]
     assert "program" not in [item.key for item in rank_3_items]
     assert "program" in [item.key for item in rank_4_items]
     assert "program" in [item.key for item in rank_5_items]
-    # Задачи, Дайджест, Цели и Видео ушли из меню: первое убрано совсем,
-    # остальные три — вкладки внутри «Учебных программ».
-    for gone in ("tracker", "digest", "goals", "videos"):
+    # Задачи, Кейсы, Дайджест, Цели и Видео ушли из меню: первые два скрыты
+    # совсем, остальные три — вкладки внутри «Учебных программ».
+    for gone in ("tracker", "cases", "digest", "goals", "videos"):
         assert gone not in [item.key for item in rank_3_items]
         assert gone not in [item.key for item in rank_4_items]
         assert gone not in [item.key for item in rank_5_items]

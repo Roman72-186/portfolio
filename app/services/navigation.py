@@ -150,16 +150,6 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         icon="cycle",
     ),
     StaffNavItem(
-        key="cases",
-        href="/cabinet/cases",
-        sidebar_label="Кейсы",
-        pill_label="Кейсы",
-        aria_label="Кейсы",
-        tooltip="Кейсы по пробникам",
-        icon="cases",
-        min_rank=4,
-    ),
-    StaffNavItem(
         key="program",
         href="/cabinet/staff/program",
         sidebar_label="Учебные программы",
@@ -169,10 +159,11 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         icon="program",
         min_rank=4,
     ),
-    # «Задачи», «Дайджест», «Цели» и «Видео» здесь больше не пункты меню.
-    # Задачи трекера убраны совсем (страница жива по прямой ссылке
-    # `/cabinet/staff/tracker`), остальные три стали вкладками раздела
-    # «Учебные программы» — `templates/partials/program_tabs.html`.
+    # «Задачи», «Кейсы», «Дайджест», «Цели» и «Видео» здесь больше не пункты
+    # меню. Задачи трекера и Кейсы скрыты совсем — страницы живут по прямым
+    # ссылкам `/cabinet/staff/tracker` и `/cabinet/cases`; остальные три стали
+    # вкладками раздела «Учебные программы» —
+    # `templates/partials/program_tabs.html`.
     StaffNavItem(
         key="3dlab",
         href="/3dlab",
