@@ -74,6 +74,7 @@
     cursor: pointer; font-family: inherit;
 }
 .gwork-subject-btn.scored { border-color: var(--blue); color: var(--blue); }
+.gwork-subject-btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
 .gwork-subject-btn:disabled { opacity: .4; cursor: not-allowed; }
 .gwork-detail { margin-top: 4px; }
 .gexam-feedback-img { max-width: 200px; border-radius: var(--r-md); margin-top: 8px; display: block; }
@@ -212,6 +213,7 @@
                 {% for subject in subjects %}
                 {% set sub = entry.subs.get(subject) %}
                 <button type="button" class="gwork-subject-btn{% if sub and sub.status == 'scored' %} scored{% endif %}"
+                        data-subject="{{ subject }}"
                         {% if not sub %}disabled{% endif %}
                         onclick="toggleSubject({{ p.id }}, '{{ subject }}')">
                     {{ subject }}{% if sub and sub.status == "scored" %} ✓{% endif %}
@@ -318,9 +320,22 @@ function toggleParticipant(id){
 }
 
 function toggleSubject(participantId, subject){
-    var el = document.getElementById('gwork-detail-' + participantId + '-' + subject);
-    if (!el) return;
-    el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
+    var wrap = document.getElementById('gwork-subjects-' + participantId);
+    var target = document.getElementById('gwork-detail-' + participantId + '-' + subject);
+    if (!wrap || !target) return;
+
+    // Предметы работают именно переключателем: открыт всегда один. Раньше блоки
+    // раскрывались независимо, и работы по двум предметам показывались разом —
+    // проверяющий терял, к какому предмету относится форма оценки под фото.
+    var wasOpen = target.style.display === 'block';
+    wrap.querySelectorAll('.gwork-detail').forEach(function(el){ el.style.display = 'none'; });
+    wrap.querySelectorAll('.gwork-subject-btn').forEach(function(btn){ btn.classList.remove('active'); });
+
+    if (!wasOpen) {
+        target.style.display = 'block';
+        var btn = wrap.querySelector('.gwork-subject-btn[data-subject="' + subject + '"]');
+        if (btn) btn.classList.add('active');
+    }
 }
 
 function dropFeedbackImage(e, subId){
