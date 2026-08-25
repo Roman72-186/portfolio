@@ -1,98 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Цикл Пробника{% endblock %}
 {% block extra_styles %}
-<style>
-.cyc-page { max-width: 1080px; margin: 0 auto; padding: 22px 18px 110px; }
-.cyc-hero {
-    background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue-mid) 100%);
-    color: #fff; border-radius: var(--r-xl); padding: 18px 22px;
-    margin-bottom: 14px; box-shadow: var(--sh-blue);
-}
-.cyc-hero h1 {
-    font-family: var(--font-display); font-size: 22px; font-weight: 800;
-    letter-spacing: -0.02em; margin: 0 0 4px;
-}
-.cyc-hero p { margin: 0; opacity: 0.85; font-size: 13px; line-height: 1.4; }
-.cyc-hero .badge {
-    display: inline-block; margin-top: 8px;
-    background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.22);
-    border-radius: var(--r-pill); padding: 2px 10px;
-    font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
-}
-
-.cyc-tabs {
-    display: flex; gap: 2px; padding: 4px; margin: 0 0 16px;
-    background: var(--surface-2); border: 1px solid var(--line);
-    border-radius: var(--r-pill);
-}
-.cyc-tab {
-    flex: 1; text-align: center; padding: 10px 14px;
-    font-size: 14px; font-weight: 800; letter-spacing: 0.01em;
-    color: var(--muted); cursor: pointer; border: none; background: none;
-    border-radius: var(--r-pill); transition: background .15s, color .15s;
-    position: relative;
-}
-.cyc-tab.active { background: var(--surface); color: var(--blue); box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-.cyc-tab .tab-badge {
-    display: inline-block; margin-left: 6px;
-    background: var(--warning); color: #fff; font-size: 10px; font-weight: 800;
-    padding: 1px 7px; border-radius: 999px; letter-spacing: 0.04em;
-}
-
-.cyc-panel { display: none; }
-.cyc-panel.active { display: block; }
-
-.fb-group-title {
-    font-size: 11px; font-weight: 800; color: var(--dim);
-    text-transform: uppercase; letter-spacing: 0.08em;
-    margin: 18px 0 8px;
-}
-.fb-group-title:first-child { margin-top: 0; }
-.fb-list { display: flex; flex-direction: column; gap: 10px; list-style: none; padding: 0; margin: 0; }
-.fb-list a {
-    display: flex; justify-content: space-between; align-items: center;
-    gap: 10px; padding: 14px 16px;
-    border: 1px solid var(--line); border-radius: 12px;
-    text-decoration: none; color: inherit; background: var(--surface);
-}
-.fb-list a.has-unread { border-color: rgba(245,158,11,0.4); background: rgba(245,158,11,0.05); }
-.fb-list a.is-closed { background: var(--surface-2); opacity: 0.78; }
-.fb-list a:hover { border-color: var(--blue); }
-.fb-list .fb-sub { font-weight: 800; }
-.fb-list .fb-meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
-.fb-list .fb-unread {
-    flex-shrink: 0; background: var(--warning); color: #fff;
-    font-size: 11px; font-weight: 800; padding: 3px 10px;
-    border-radius: 999px; letter-spacing: 0.04em;
-}
-.fb-list .fb-closed-badge {
-    flex-shrink: 0; background: var(--dim); color: #fff;
-    font-size: 11px; font-weight: 800; padding: 3px 10px;
-    border-radius: 999px; letter-spacing: 0.04em;
-}
-.fb-list .fb-cycle-actions {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-}
-.fb-list .fb-score-badge {
-    flex-shrink: 0; background: var(--blue); color: #fff;
-    font-size: 11px; font-weight: 900; padding: 3px 10px;
-    border-radius: 999px; letter-spacing: 0.04em;
-}
-.fb-list .fb-score-badge.score-red { background: var(--error); }
-.fb-list .fb-score-badge.score-orange { background: #F97316; }
-.fb-list .fb-score-badge.score-lime { background: #84CC16; }
-.fb-list .fb-score-badge.score-green { background: var(--success); }
-.fb-empty { padding: 30px 18px; text-align: center; color: var(--muted); font-size: 14px; border: 1px dashed var(--line); border-radius: 12px; }
-
-</style>
+<link rel="stylesheet" href="/static/css/cycle_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="cyc-page">
+<div class="cyc-page ios-cycle">
     <section class="cyc-hero">
         <h1>Цикл Пробника</h1>
         <p>Здесь хранится диалог с куратором и статус проверки работ.</p>
@@ -118,7 +30,7 @@
                     {% for c in open_cycles %}
                         <li>
                             <a href="/cabinet/feedback/{{ c.id }}" class="{% if c.unread_count and c.unread_count > 0 %}has-unread{% endif %}">
-                                <div style="min-width:0;">
+                                <div class="fb-item-info">
                                     <div class="fb-sub">{{ c.subject }}</div>
                                     <div class="fb-meta">Начат: {{ c.started_at[:10] }}</div>
                                 </div>
@@ -136,7 +48,7 @@
                     {% for c in closed_cycles %}
                         <li>
                             <a href="/cabinet/feedback/{{ c.id }}" class="is-closed">
-                                <div style="min-width:0;">
+                                <div class="fb-item-info">
                                     <div class="fb-sub">{{ c.subject }}</div>
                                     <div class="fb-meta">Начат: {{ c.started_at[:10] }} · Закрыт: {{ c.closed_at[:10] }}</div>
                                 </div>

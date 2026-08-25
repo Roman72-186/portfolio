@@ -64,14 +64,6 @@
     ],
     "style_lines": 56
   },
-  "cabinet_cycle.html": {
-    "hex": 7,
-    "shadow": [
-      "active",
-      "badge"
-    ],
-    "style_lines": 88
-  },
   "cabinet_cycle_calendar.html": {
     "hex": 1,
     "shadow": [],
