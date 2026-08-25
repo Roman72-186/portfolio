@@ -85,7 +85,7 @@ def test_profile_form_shows_step_indicator(client, user_factory, session_factory
                       vk_id=100_107, profile_completed=False)
     resp = client.get("/cabinet/profile")
     assert resp.status_code == 200
-    assert resp.text.count('class="form-step-header"') == 5
+    assert resp.text.count('class="prf-section-title"') == 5
     assert "Шаг 5 из 5" in resp.text
 
 

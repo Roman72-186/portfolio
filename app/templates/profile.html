@@ -1,146 +1,115 @@
 {% extends "base.html" %}
 {% block title %}Профиль{% endblock %}
 {% block extra_styles %}
-<style>
-/* Visual-only step markers — form stays one flat POST, no JS gating
-   (hiding required fields via JS steps trips native browser validation:
-   "An invalid form control is not focusable"). Just orients the user. */
-.form-step-header {
-    display: flex; align-items: center; gap: 10px;
-    margin: 28px 0 14px;
-    padding-top: 20px;
-    border-top: 1px solid var(--line);
-}
-.form-step-header:first-of-type { margin-top: 0; padding-top: 0; border-top: none; }
-.form-step-num {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 22px; height: 22px; border-radius: 50%;
-    background: var(--blue-soft); color: var(--blue);
-    font-size: 12px; font-weight: 800; flex-shrink: 0;
-}
-.form-step-label {
-    font-size: 12px; font-weight: 700; color: var(--muted);
-    text-transform: uppercase; letter-spacing: 0.05em;
-}
-.profile-card { padding: 32px; }
-@media (max-width: 480px) {
-    .profile-card { padding: 18px; }
-}
-</style>
+<link rel="stylesheet" href="/static/css/profile_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div style="max-width:520px;margin:0 auto">
-    <div style="margin-bottom:28px">
-        <p style="font-size:13px;font-weight:500;color:var(--muted);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px">Один раз</p>
-        <h1 style="font-size:26px;font-weight:700;letter-spacing:-0.5px;margin-bottom:6px" class="text-accent">Расскажите о себе</h1>
-        <p style="color:var(--muted);font-size:15px">Заполните пару полей — и кабинет сразу откроется.</p>
+<div class="prf-page ios-profile">
+    <div class="prf-top">
+        <p class="prf-eyebrow">Один раз</p>
+        <h1>Расскажите о себе</h1>
+        <p>Заполните пару полей — и кабинет сразу откроется.</p>
     </div>
 
+    {% if user.photo_url %}
+    <div class="prf-avatar-wrap">
+        <img src="{{ user.photo_url }}" alt="Фото" width="72" height="72" class="prf-avatar">
+        <p class="prf-avatar-note">Фото из ВКонтакте</p>
+    </div>
+    {% endif %}
+
     {% if errors %}
-    <div class="alert alert-error" style="margin-bottom:20px">
+    <div class="alert alert-error prf-alert">
         {% for e in errors %}<div>{{ e }}</div>{% endfor %}
     </div>
     {% endif %}
 
-    <div class="card profile-card">
-        <!-- Avatar from VK -->
-        {% if user.photo_url %}
-        <div style="text-align:center;margin-bottom:28px">
-            <img src="{{ user.photo_url }}" alt="Фото" width="88" height="88"
-                 style="width:88px;height:88px;border-radius:50%;object-fit:cover;border:3px solid var(--line)">
-            <p style="color:var(--dim);font-size:12px;margin-top:8px">Фото из ВКонтакте</p>
-        </div>
-        {% endif %}
+    <form method="post" action="/cabinet/profile">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
 
-        <form method="post" action="/cabinet/profile">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-
-            <div class="form-step-header">
-                <span class="form-step-num">1</span>
-                <span class="form-step-label" role="heading" aria-level="2">Шаг 1 из 5 · Основные данные</span>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-                <div>
-                    <label class="form-label" for="profile-first-name">Имя *</label>
-                    <input class="form-input" type="text" id="profile-first-name" name="first_name" required
+        <div class="prf-section-title">Шаг 1 из 5 · Основные данные</div>
+        <div class="prf-group">
+            <div class="prf-row prf-row--pair">
+                <div class="prf-field">
+                    <label class="prf-field-label" for="profile-first-name">Имя <span class="prf-required">*</span></label>
+                    <input class="prf-field-input" type="text" id="profile-first-name" name="first_name" required
                            value="{{ form.first_name if form else (user.first_name or '') }}"
                            placeholder="Имя" maxlength="50">
                 </div>
-                <div>
-                    <label class="form-label" for="profile-last-name">Фамилия *</label>
-                    <input class="form-input" type="text" id="profile-last-name" name="last_name" required
+                <div class="prf-field">
+                    <label class="prf-field-label" for="profile-last-name">Фамилия <span class="prf-required">*</span></label>
+                    <input class="prf-field-input" type="text" id="profile-last-name" name="last_name" required
                            value="{{ form.last_name if form else (user.last_name or '') }}"
                            placeholder="Фамилия" maxlength="50">
                 </div>
             </div>
+        </div>
 
-            <div class="form-step-header">
-                <span class="form-step-num">2</span>
-                <span class="form-step-label" role="heading" aria-level="2">Шаг 2 из 5 · Начало обучения</span>
-            </div>
-            <div style="margin-bottom:16px">
-                <label class="form-label">Месяц и год присоединения к курсу *</label>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-                    <select class="form-select" name="enrollment_month" aria-label="Месяц присоединения" required>
-                        <option value="" disabled {% if not (form and form.enrollment_month) and not user.enrolled_at %}selected{% endif %}>Месяц</option>
-                        {% for m in months %}
-                        <option value="{{ loop.index }}"
-                            {% if form and form.enrollment_month == loop.index %}selected
-                            {% elif not form and user.enrolled_at and user.enrolled_at.month == loop.index %}selected{% endif %}>
-                            {{ m | capitalize }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                    <select class="form-select" name="enrollment_year" aria-label="Год присоединения" required>
-                        <option value="" disabled {% if not (form and form.enrollment_year) and not user.enrollment_year %}selected{% endif %}>Год</option>
-                        {% for y in enrollment_years %}
-                        <option value="{{ y }}"
-                            {% if form and form.enrollment_year == y %}selected
-                            {% elif not form and user.enrollment_year == y %}selected{% endif %}>
-                            {{ y }}
-                        </option>
-                        {% endfor %}
-                    </select>
+        <div class="prf-section-title">Шаг 2 из 5 · Начало обучения</div>
+        <div class="prf-group">
+            <div class="prf-row prf-row--single">
+                <label class="prf-field-label">Месяц и год присоединения к курсу <span class="prf-required">*</span></label>
+                <div class="prf-select-row">
+                    <div class="prf-select-cell">
+                        <select class="prf-field-input" name="enrollment_month" aria-label="Месяц присоединения" required>
+                            <option value="" disabled {% if not (form and form.enrollment_month) and not user.enrolled_at %}selected{% endif %}>Месяц</option>
+                            {% for m in months %}
+                            <option value="{{ loop.index }}"
+                                {% if form and form.enrollment_month == loop.index %}selected
+                                {% elif not form and user.enrolled_at and user.enrolled_at.month == loop.index %}selected{% endif %}>
+                                {{ m | capitalize }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="prf-select-cell">
+                        <select class="prf-field-input" name="enrollment_year" aria-label="Год присоединения" required>
+                            <option value="" disabled {% if not (form and form.enrollment_year) and not user.enrollment_year %}selected{% endif %}>Год</option>
+                            {% for y in enrollment_years %}
+                            <option value="{{ y }}"
+                                {% if form and form.enrollment_year == y %}selected
+                                {% elif not form and user.enrollment_year == y %}selected{% endif %}>
+                                {{ y }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
                 </div>
             </div>
+        </div>
 
-            <div class="form-step-header">
-                <span class="form-step-num">3</span>
-                <span class="form-step-label" role="heading" aria-level="2">Шаг 3 из 5 · Контакты</span>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-                <div>
-                    <label class="form-label" for="profile-phone">Номер телефона *</label>
-                    <input class="form-input" type="tel" id="profile-phone" name="phone" required
+        <div class="prf-section-title">Шаг 3 из 5 · Контакты</div>
+        <div class="prf-group">
+            <div class="prf-row prf-row--pair">
+                <div class="prf-field">
+                    <label class="prf-field-label" for="profile-phone">Номер телефона <span class="prf-required">*</span></label>
+                    <input class="prf-field-input" type="tel" id="profile-phone" name="phone" required
                            value="{{ form.phone if form else (user.phone or '') }}"
                            placeholder="+7 (___) ___-__-__"
                            maxlength="20" pattern="[\d\s\+\-\(\)]{7,20}">
                 </div>
-                <div>
-                    <label class="form-label" for="profile-parent-phone">Телефон родителя *</label>
-                    <input class="form-input" type="tel" id="profile-parent-phone" name="parent_phone" required
+                <div class="prf-field">
+                    <label class="prf-field-label" for="profile-parent-phone">Телефон родителя <span class="prf-required">*</span></label>
+                    <input class="prf-field-input" type="tel" id="profile-parent-phone" name="parent_phone" required
                            value="{{ form.parent_phone if form else (user.parent_phone or '') }}"
                            placeholder="+7 (___) ___-__-__"
                            maxlength="20" pattern="[\d\s\+\-\(\)]{7,20}">
                 </div>
             </div>
-
-            <div style="margin-bottom:16px">
-                <label class="form-label" for="profile-tg">Ник в Telegram *</label>
-                <input class="form-input" type="text" id="profile-tg" name="tg_username" required
+            <div class="prf-row prf-row--single">
+                <label class="prf-field-label" for="profile-tg">Ник в Telegram <span class="prf-required">*</span></label>
+                <input class="prf-field-input" type="text" id="profile-tg" name="tg_username" required
                        value="{{ form.tg_username if form else (user.tg_username or '') }}"
                        placeholder="@username" maxlength="32"
                        pattern="@?[A-Za-z0-9_]{4,31}">
             </div>
+        </div>
 
-            <div class="form-step-header">
-                <span class="form-step-num">4</span>
-                <span class="form-step-label" role="heading" aria-level="2">Шаг 4 из 5 · Тариф обучения</span>
-            </div>
-            <!-- Текущий тариф -->
-            <div style="margin-bottom:16px">
-                <label class="form-label" for="tariff-select">Текущий тариф *</label>
-                <select class="form-select" name="tariff" id="tariff-select" required
+        <div class="prf-section-title">Шаг 4 из 5 · Тариф обучения</div>
+        <div class="prf-group">
+            <div class="prf-row prf-row--single">
+                <label class="prf-field-label" for="tariff-select">Текущий тариф <span class="prf-required">*</span></label>
+                <select class="prf-field-input" name="tariff" id="tariff-select" required
                         onchange="updatePastTariffs()">
                     <option value="" disabled {% if not (form and form.tariff) and not user.tariff %}selected{% endif %}>Выберите тариф</option>
                     {% for t in tariffs %}
@@ -152,47 +121,36 @@
                     {% endfor %}
                 </select>
             </div>
-
-            <!-- Прошлые тарифы -->
-            <div style="margin-bottom:24px">
-                <label class="form-label">
+            <div class="prf-row prf-row--single">
+                <label class="prf-field-label">
                     Ранее учился(-ась) на тарифе
-                    <span style="color:var(--dim);font-weight:500">(кроме текущего)</span>
+                    <span class="prf-field-note-inline">(кроме текущего)</span>
                 </label>
-                <div id="past-tariffs-wrap"
-                     style="display:flex;flex-direction:column;gap:10px;padding:16px;
-                            background:var(--surface-2);border:1.5px solid var(--line);
-                            border-radius:10px;min-height:60px">
+                <div id="past-tariffs-wrap" class="prf-tariff-list">
                     {% set current = (form.tariff if form and form.tariff else user.tariff) or '' %}
                     {% set checked = (form.past_tariffs if form and form.past_tariffs is defined else
                                       (user.past_tariffs.split(',') if user.past_tariffs else [])) %}
                     {% for t in tariffs %}
-                    <label class="past-tariff-item" data-tariff="{{ t }}"
-                           style="display:{% if t == current %}none{% else %}flex{% endif %};
-                                  align-items:center;gap:10px;cursor:pointer;
-                                  padding:10px 14px;border-radius:8px;
-                                  border:1.5px solid var(--line);background:var(--surface);
-                                  transition:border-color var(--duration-base),background var(--duration-base)">
+                    <label class="prf-tariff-item" data-tariff="{{ t }}"
+                           style="display:{% if t == current %}none{% else %}flex{% endif %}">
                         <input type="checkbox" name="past_tariffs" value="{{ t }}"
-                               {% if t in checked %}checked{% endif %}
-                               style="width:17px;height:17px;accent-color:var(--blue);cursor:pointer">
-                        <span style="font-size:14px;font-weight:500">{{ t }}</span>
+                               {% if t in checked %}checked{% endif %}>
+                        <span>{{ t }}</span>
                     </label>
                     {% endfor %}
-                    <p id="past-no-choice" style="font-size:13px;color:var(--dim);margin:0;
-                       display:{% if tariffs|length - 1 == 0 or not current %}flex{% else %}none{% endif %}">
+                    <p id="past-no-choice" class="prf-tariff-empty"
+                       style="display:{% if tariffs|length - 1 == 0 or not current %}block{% else %}none{% endif %}">
                         Выберите текущий тариф выше
                     </p>
                 </div>
             </div>
+        </div>
 
-            <div class="form-step-header">
-                <span class="form-step-num">5</span>
-                <span class="form-step-label" role="heading" aria-level="2">Шаг 5 из 5 · Учёба</span>
-            </div>
-            <div style="margin-bottom:28px">
-                <label class="form-label" for="university-year-select">Год поступления в вуз *</label>
-                <select class="form-select" name="university_year" id="university-year-select" required>
+        <div class="prf-section-title">Шаг 5 из 5 · Учёба</div>
+        <div class="prf-group">
+            <div class="prf-row prf-row--single">
+                <label class="prf-field-label" for="university-year-select">Год поступления в вуз <span class="prf-required">*</span></label>
+                <select class="prf-field-input" name="university_year" id="university-year-select" required>
                     <option value="" disabled {% if not (form and form.university_year) and not user.university_year %}selected{% endif %}>Выберите год</option>
                     {% for y in university_years %}
                     <option value="{{ y }}"
@@ -203,17 +161,17 @@
                     {% endfor %}
                 </select>
             </div>
+        </div>
 
-            <div class="cta-sticky cta-sticky--bare">
-                <button type="submit" id="profile-submit-btn" class="btn-blue btn-full">Сохранить и продолжить →</button>
-            </div>
-        </form>
-    </div>
+        <div class="cta-sticky cta-sticky--bare prf-cta">
+            <button type="submit" id="profile-submit-btn" class="btn-blue btn-full">Сохранить и продолжить →</button>
+        </div>
+    </form>
 </div>
 <script>
 function updatePastTariffs() {
     const current = document.getElementById('tariff-select').value;
-    const items = document.querySelectorAll('.past-tariff-item');
+    const items = document.querySelectorAll('.prf-tariff-item');
     let visibleCount = 0;
 
     items.forEach(function(item) {
@@ -231,30 +189,10 @@ function updatePastTariffs() {
         (!current) ? 'block' : 'none';
 }
 
-document.addEventListener('change', function(e) {
-    if (e.target.name === 'past_tariffs') {
-        const label = e.target.closest('label');
-        if (e.target.checked) {
-            label.style.borderColor = 'var(--blue)';
-            label.style.background = 'var(--blue-soft)';
-        } else {
-            label.style.borderColor = 'var(--line)';
-            label.style.background = 'var(--surface)';
-        }
-    }
-});
-
-document.querySelectorAll('input[name="past_tariffs"]:checked').forEach(function(cb) {
-    const label = cb.closest('label');
-    label.style.borderColor = 'var(--blue)';
-    label.style.background = 'var(--blue-soft)';
-});
-
 document.querySelector('form').addEventListener('submit', function() {
     var btn = document.getElementById('profile-submit-btn');
     btn.disabled = true;
     btn.textContent = 'Сохраняем…';
 });
-
 </script>
 {% endblock %}

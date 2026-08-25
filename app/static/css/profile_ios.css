@@ -1,0 +1,223 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   iOS-ре-скин экрана «Анкета первого входа» (`/cabinet/profile`) —
+   25.08.2026, тот же язык, что и .ios-tracker/.ios-learning/.ios-videos/
+   .ios-personal/.ios-feedback/.ios-portfolio/.ios-gallery/.ios-upload/
+   .ios-notifications/.ios-survey/.ios-homework/.ios-cycle.
+
+   Экран показывается один раз до заполнения профиля, дальше редиректит на
+   уже переделанный `/cabinet/personal/contacts` (personal_ios.css). Своего
+   инлайнового <style> у шаблона было мало — почти вся разметка сидела на
+   `style="..."` атрибутах прямо в HTML, вынесены в этот файл целиком.
+
+   Префикс `.prf-*` — НЕ то же самое, что `.profile-hero` из base.css/
+   profile_hero.css (виджет аватар+имя+баллы+тариф в шапке трекера/дашборда
+   куратора/cabinet_student.html) — разные компоненты, разные экраны,
+   совпадения имён нет (проверено grep).
+
+   Checkbox-приём для «прошлых тарифов» — тот же `:has(input:checked)`,
+   что уже в survey_ios.css (.prg-option). JS-обработчик, который раньше
+   красил рамку/фон инлайновым style.borderColor/style.background, убран —
+   CSS :has() делает то же самое декларативно, скрытие текущего тарифа из
+   списка (реальная бизнес-логика) осталось в JS без изменений.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ios-profile {
+    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --ios-blue: #007AFF;
+    --ios-red: #FF3B30;
+    --ios-green: #34C759;
+    --ios-label: #1C1C1E;
+    --ios-label-2: rgba(60,60,67,0.60);
+    --ios-label-3: rgba(60,60,67,0.30);
+    --ios-sep: rgba(60,60,67,0.29);
+    --ios-grouped-bg: #F2F2F7;
+    --ios-card-bg: #FFFFFF;
+    position: relative;
+    isolation: isolate;
+    font-family: var(--ios-font);
+    color: var(--ios-label);
+}
+.ios-profile::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: var(--ios-grouped-bg);
+    z-index: -1;
+}
+.ios-profile.prf-page { max-width: 560px; margin: 0 auto; padding: 22px 18px 40px; }
+
+/* ── Шапка — тот же градиент, что у .prs-hero/.lrn-hero ── */
+.ios-profile .prf-top {
+    background: linear-gradient(160deg, #0A84FF 0%, #0040DD 100%);
+    border-radius: 26px;
+    padding: 20px 22px 44px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 14px 32px rgba(0,64,221,0.28);
+    position: relative;
+    overflow: hidden;
+}
+.ios-profile .prf-top::before {
+    content: '';
+    position: absolute;
+    width: 260px; height: 260px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.06);
+    top: -90px; right: -60px;
+}
+.ios-profile .prf-top::after {
+    content: '';
+    position: absolute;
+    width: 160px; height: 160px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.05);
+    bottom: -60px; right: 80px;
+}
+.ios-profile .prf-eyebrow {
+    position: relative; z-index: 1;
+    margin: 0 0 6px;
+    font: 700 11px/1.3 var(--ios-font); letter-spacing: 0.08em; text-transform: uppercase;
+    color: rgba(255,255,255,0.75);
+}
+.ios-profile .prf-top h1 {
+    position: relative; z-index: 1;
+    font: 700 24px/1.25 var(--ios-font); letter-spacing: -0.3px; color: #fff;
+    margin: 0 0 4px;
+}
+.ios-profile .prf-top p {
+    position: relative; z-index: 1;
+    margin: 0; font: 400 14px/1.4 var(--ios-font); color: rgba(255,255,255,0.82);
+}
+
+/* ── Аватар — наполовину поверх нижнего края шапки ── */
+.ios-profile .prf-avatar-wrap {
+    position: relative; z-index: 2;
+    text-align: center;
+    margin: -36px 0 8px;
+}
+.ios-profile .prf-avatar {
+    width: 72px; height: 72px; border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid var(--ios-grouped-bg);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+    display: block; margin: 0 auto;
+}
+.ios-profile .prf-avatar-note {
+    margin: 6px 0 0;
+    font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-3);
+}
+
+.ios-profile .prf-alert {
+    margin-bottom: 12px; border-radius: 14px; font-family: var(--ios-font);
+}
+
+/* ── Секции формы — заголовок + сгруппированная карточка, тот же приём,
+   что .prs-section-title/.prs-group в personal_ios.css. ── */
+.ios-profile .prf-section-title {
+    margin: 20px 4px 8px; padding: 0 4px;
+    font: 600 13px/1.3 var(--ios-font); color: var(--ios-label-2);
+    text-transform: uppercase; letter-spacing: 0.02em;
+}
+.ios-profile .prf-section-title:first-of-type { margin-top: 0; }
+
+.ios-profile .prf-group {
+    background: var(--ios-card-bg);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+/* ── Строка формы: одиночная или пара из двух половин с вертикальным
+   разделителем, горизонтальный разделитель — между строками группы. ── */
+.ios-profile .prf-row { position: relative; }
+.ios-profile .prf-row:not(:last-child)::after {
+    content: ''; position: absolute; left: 16px; right: 0; bottom: 0; height: 0.5px;
+    background: var(--ios-sep);
+}
+.ios-profile .prf-row--single { padding: 10px 16px; }
+.ios-profile .prf-row--pair { display: grid; grid-template-columns: 1fr 1fr; }
+.ios-profile .prf-row--pair .prf-field { padding: 10px 16px; }
+.ios-profile .prf-row--pair .prf-field:first-child { border-right: 0.5px solid var(--ios-sep); }
+
+.ios-profile .prf-field-label {
+    display: block; margin-bottom: 2px;
+    font: 400 13px/1.3 var(--ios-font); color: var(--ios-label-2);
+}
+.ios-profile .prf-required { color: var(--ios-red); }
+
+.ios-profile .prf-field-input,
+.ios-profile select.prf-field-input {
+    width: 100%; box-sizing: border-box;
+    padding: 0; border: none; background: transparent;
+    font: 400 16px/1.4 var(--ios-font); color: var(--ios-label);
+}
+.ios-profile .prf-field-input:focus { outline: none; }
+.ios-profile .prf-field-input:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 3px; border-radius: 4px; }
+.ios-profile .prf-field-input::placeholder { color: var(--ios-label-3); }
+
+/* select — та же безрамочная строка, но с шевроном вместо системной стрелки */
+.ios-profile select.prf-field-input {
+    appearance: none; -webkit-appearance: none;
+    padding-right: 20px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23AEAEB2' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right center;
+}
+.ios-profile select.prf-field-input option { background: var(--ios-card-bg); color: var(--ios-label); }
+
+/* пара селектов (месяц/год) под одним общим лейблом */
+.ios-profile .prf-select-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    margin-top: 4px;
+}
+.ios-profile .prf-select-row .prf-select-cell { padding-right: 12px; }
+.ios-profile .prf-select-row .prf-select-cell:last-child {
+    padding-right: 0; padding-left: 12px; border-left: 0.5px solid var(--ios-sep);
+}
+
+.ios-profile .prf-field-note-inline { color: var(--ios-label-3); font-weight: 400; text-transform: none; }
+
+/* ── Прошлые тарифы — список строк с чекбоксом, тот же приём, что
+   .prg-option в survey_ios.css (radio/checkbox appearance:none + ::after). ── */
+.ios-profile .prf-tariff-list { padding: 8px 16px 12px; display: flex; flex-direction: column; gap: 8px; }
+.ios-profile .prf-tariff-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; border-radius: 12px;
+    background: var(--ios-grouped-bg);
+    font: 400 15px/1.4 var(--ios-font); color: var(--ios-label);
+    cursor: pointer; transition: background .12s;
+}
+.ios-profile .prf-tariff-item:has(input:checked) { background: rgba(0,122,255,0.10); }
+.ios-profile .prf-tariff-item span { flex: 1; min-width: 0; }
+.ios-profile .prf-tariff-item input[type="checkbox"] {
+    appearance: none; -webkit-appearance: none; margin: 0; order: 2;
+    position: relative; flex-shrink: 0; width: 22px; height: 22px;
+    border: 1.5px solid var(--ios-label-3); border-radius: 6px; background: var(--ios-card-bg);
+    cursor: pointer;
+}
+.ios-profile .prf-tariff-item input:checked { background: var(--ios-blue); border-color: var(--ios-blue); }
+.ios-profile .prf-tariff-item input:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 2px; }
+.ios-profile .prf-tariff-item input[type="checkbox"]::after {
+    content: ''; position: absolute; top: 45%; left: 50%;
+    width: 11px; height: 6px; border-left: 2px solid #fff; border-bottom: 2px solid #fff;
+    transform: translate(-50%, -50%) rotate(-45deg) scale(0); transition: transform .12s;
+}
+.ios-profile .prf-tariff-item input[type="checkbox"]:checked::after { transform: translate(-50%, -50%) rotate(-45deg) scale(1); }
+.ios-profile .prf-tariff-empty {
+    margin: 0; padding: 4px 2px;
+    font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-3);
+}
+
+/* ── Кнопка сохранения (общая .btn-blue/.cta-sticky из base.css —
+   переопределена только в этом скоупе, как в survey_ios.css/homework_ios.css) ── */
+.ios-profile .prf-cta { margin-top: 20px; }
+.ios-profile .btn-blue {
+    background: var(--ios-blue); box-shadow: none;
+    font: 700 16px/1.2 var(--ios-font); border-radius: 14px; padding: 14px 18px;
+    transition: transform 100ms ease-out, filter 100ms ease-out;
+}
+.ios-profile .btn-blue:hover { transform: none; filter: brightness(1.05); color: #fff; }
+.ios-profile .btn-blue:active { transform: scale(.98); filter: brightness(.92); }
+.ios-profile .btn-blue:disabled { opacity: 0.5; }
+
+@media (max-width: 480px) {
+    .ios-profile.prf-page { padding: 16px 14px 32px; }
+}
