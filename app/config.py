@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     lab3d_internal_token: str = ""   # shared secret for /auth/internal/sso/verify
 
     # Course calculator
-    course_calculator_all_roles: bool = False  # set true to show calculator on login and widget to all logged-in users
+    course_calculator_all_roles: bool = False  # выключено везде: калькулятор скрыт на всех ролях и экранах; true возвращает его на логин и в виджет
 
     # Bunny Stream pilot video
     bunny_stream_enabled: bool = False

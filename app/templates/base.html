@@ -177,7 +177,7 @@
         <span class="notif-bell-badge" id="notifBellBadge" aria-hidden="true"
               {% if not _unread %}hidden{% endif %}>{{ _unread }}</span>
         </button>
-        {% if user.role_rank >= 4 or settings.course_calculator_all_roles %}
+        {% if settings.course_calculator_all_roles %}
         {% include "partials/course_calculator_widget.html" %}
         {% endif %}
     </div>
