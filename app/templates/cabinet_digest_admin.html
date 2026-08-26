@@ -10,9 +10,10 @@ FORM: Operate, расширение существующего кабинета 
 {% block title %}Дайджест-расписание{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/tracker.css?v=10">
+<link rel="stylesheet" href="/static/css/digest_goal_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="trk-page">
+<div class="trk-page ios-digest">
     {% include "partials/program_tabs.html" %}
     <div class="trk-head">
         <div class="trk-head-copy">
@@ -28,7 +29,7 @@ FORM: Operate, расширение существующего кабинета 
             <label class="trk-field">Название
                 <input data-digest-title type="text" maxlength="200" placeholder="Например: Сентябрь — топ-тариф" autocomplete="off">
             </label>
-            <div class="trk-grid trk-grid--two" style="grid-column: span 1;">
+            <div class="trk-grid trk-grid--two dg-year-month">
                 <label class="trk-field">Год
                     <input data-digest-year type="number" min="2020" max="2100">
                 </label>
@@ -55,7 +56,7 @@ FORM: Operate, расширение существующего кабинета 
                 {% endfor %}
             </div>
             <p class="trk-message is-error" data-digest-tag-warning hidden></p>
-            <label class="trk-field" style="margin-top: 10px;">Плюс отдельным ученикам: @username через запятую или с новой строки
+            <label class="trk-field dg-assignees-field">Плюс отдельным ученикам: @username через запятую или с новой строки
                 <input data-digest-assignees type="text" placeholder="@ivanov, @petrova" autocomplete="off">
             </label>
         </div>

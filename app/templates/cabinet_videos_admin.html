@@ -8,79 +8,11 @@ FORM: Operate, расширение существующего кабинета 
 #}
 {% block title %}Управление видео{% endblock %}
 {% block extra_styles %}
-<style>
-.vam-page { max-width: 1040px; margin: 0 auto; }
-.vam-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
-.vam-head-copy { max-width: 65ch; }
-.vam-head h1 { margin: 0 0 6px; font: 800 24px/1.25 var(--font-display); color: var(--text); }
-.vam-head p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
-.vam-upload {
-    display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, .7fr); gap: 20px;
-    padding: 20px; margin-bottom: 18px; background: var(--surface); border: 1px solid var(--line);
-    border-radius: var(--r-md); box-shadow: var(--sh-sm);
-}
-.vam-upload h2, .vam-queue h2 { margin: 0 0 12px; font: 700 17px/1.3 var(--font-display); color: var(--text); }
-.vam-fields { display: grid; gap: 12px; }
-.vam-field { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
-.vam-field input, .vam-field textarea {
-    width: 100%; box-sizing: border-box; padding: 10px 12px; color: var(--text); background: var(--bg);
-    border: 1px solid var(--line); border-radius: 10px; font: 500 14px/1.4 var(--font-body);
-}
-.vam-field textarea { min-height: 82px; resize: vertical; }
-.vam-field input:focus, .vam-field textarea:focus { outline: 2px solid var(--blue); outline-offset: 1px; }
-.vam-file-note { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
-.vam-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
-.vam-actions button { min-height: 44px; }
-.vam-upload-state { display: grid; align-content: center; gap: 10px; padding: 16px; background: var(--bg); border-radius: var(--r-md); }
-.vam-upload-state strong { font-size: 14px; color: var(--text); }
-.vam-upload-state p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-.vam-progress { height: 10px; overflow: hidden; background: var(--surface-2); border-radius: var(--r-pill); }
-.vam-progress > span { display: block; width: 0; height: 100%; background: var(--blue); }
-.vam-progress-value { font: 700 13px/1 var(--font-body); color: var(--text); }
-.vam-message { min-height: 20px; margin: 10px 0 0; color: var(--muted); font-size: 13px; }
-.vam-message.is-error { color: var(--error); }
-.vam-config-warning { padding: 14px 16px; margin-bottom: 18px; color: var(--warning); background: var(--warning-soft); border-radius: var(--r-md); font-size: 13px; line-height: 1.5; }
-.vam-list { display: grid; gap: 10px; }
-.vam-row { padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); }
-.vam-row-main { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: start; }
-.vam-title { margin: 0 0 5px; font: 700 15px/1.35 var(--font-display); color: var(--text); }
-.vam-meta { display: flex; flex-wrap: wrap; gap: 7px 12px; color: var(--muted); font-size: 12px; }
-.vam-badge { display: inline-flex; align-items: center; min-height: 28px; padding: 4px 9px; border-radius: var(--r-pill); font-size: 11px; font-weight: 700; }
-.vam-badge--ready { color: var(--ok-strong); background: rgba(4,120,87,.10); }
-.vam-badge--active { color: var(--blue-on-soft); background: var(--blue-soft); }
-.vam-badge--working { color: var(--warning); background: var(--warning-soft); }
-.vam-badge--failed { color: var(--error); background: rgba(220,38,38,.08); }
-.vam-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; margin-top: 13px; }
-.vam-row-actions button, .vam-row-actions a { min-height: 36px; padding: 7px 12px; font-size: 12px; }
-.vam-edit { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
-.vam-edit summary { cursor: pointer; color: var(--blue); font-size: 12px; font-weight: 700; }
-.vam-edit-fields { display: grid; grid-template-columns: 1fr 1.4fr auto; gap: 8px; align-items: end; margin-top: 10px; }
-.vam-empty { padding: 28px 20px; text-align: center; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); }
-.vam-topics { margin-bottom: 26px; }
-.vam-topics-head { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.vam-topics-head h2 { margin: 0; }
-.vam-hint { margin: 0 0 12px; color: var(--muted); font-size: 13px; line-height: 1.5; }
-.vam-topic-form { display: grid; gap: 10px; padding: 16px 18px; margin-bottom: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); }
-.vam-topic-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 10px; }
-.vam-tag-picker { display: flex; flex-wrap: wrap; gap: 6px 12px; max-height: 132px; overflow-y: auto; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); }
-.vam-tag-picker label { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text); }
-.vam-topic-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.vam-topic-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 13px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); }
-.vam-topic-row + .vam-topic-row { margin-top: 8px; }
-@media (max-width: 760px) {
-    .vam-topic-grid, .vam-topic-row { grid-template-columns: 1fr; }
-}
-@media (max-width: 760px) {
-    .vam-head, .vam-row-main { grid-template-columns: 1fr; display: grid; }
-    .vam-upload { grid-template-columns: 1fr; padding: 16px; }
-    .vam-edit-fields { grid-template-columns: 1fr; }
-    .vam-row-actions { justify-content: flex-start; }
-}
-</style>
+<link rel="stylesheet" href="/static/css/videos_admin_ios.css?v=1">
 {% endblock %}
 {% block content %}
 {% set status_labels = {'uploading':'Загрузка', 'processing':'Обработка', 'ready':'Готово', 'failed':'Ошибка', 'deleting':'Удаление', 'delete_failed':'Ошибка удаления'} %}
-<div class="vam-page">
+<div class="vam-page ios-videos-admin">
     {% include "partials/program_tabs.html" %}
     <div class="vam-head">
         <div class="vam-head-copy">
@@ -148,7 +80,7 @@ FORM: Operate, расширение существующего кабинета 
             <label class="vam-field">Описание, необязательно
                 <input data-topic-description type="text" maxlength="5000" autocomplete="off">
             </label>
-            <label class="vam-field" style="flex-direction: row; align-items: center; gap: 8px;">
+            <label class="vam-field vt-all-row">
                 <input data-topic-all type="checkbox">
                 <span>Открыть всем ученикам</span>
             </label>
@@ -162,7 +94,7 @@ FORM: Operate, расширение существующего кабинета 
                     {% endfor %}
                 </div>
                 <p class="vam-message is-error" data-topic-tag-warning hidden></p>
-                <label class="vam-field" style="margin-top: 10px;">Плюс отдельным ученикам: @username через запятую или с новой строки
+                <label class="vam-field vt-assignees-field">Плюс отдельным ученикам: @username через запятую или с новой строки
                     <input data-topic-assignees type="text" placeholder="@ivanov, @petrova" autocomplete="off">
                 </label>
             </div>
@@ -202,7 +134,7 @@ FORM: Operate, расширение существующего кабинета 
                     </p>
                     {% endif %}
                 </div>
-                <div class="vam-row-actions" style="margin-top: 0;">
+                <div class="vam-row-actions vt-actions-row">
                     {% if topic.is_published %}
                     <span class="vam-badge vam-badge--active">Опубликована</span>
                     <button type="button" class="btn-outline" data-topic-action="unpublish">Скрыть</button>

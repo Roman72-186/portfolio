@@ -10,9 +10,10 @@ FORM: Operate, расширение существующего кабинета 
 {% block title %}События — {{ digest.title }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/tracker.css?v=10">
+<link rel="stylesheet" href="/static/css/digest_goal_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="trk-page">
+<div class="trk-page ios-digest-events">
     <div class="trk-head">
         <div class="trk-head-copy">
             <h1>{{ digest.title }}</h1>
@@ -67,7 +68,7 @@ FORM: Operate, расширение существующего кабинета 
                  data-note="{{ event.note or '' }}"
                  data-url="{{ event.meeting_url or '' }}">
             <div>
-                <div class="trk-meta" style="margin-bottom:6px;">
+                <div class="trk-meta de-kind-row">
                     <span class="trk-badge trk-badge--kind">{{ event_kind_labels.get(event.kind, event.kind) }}</span>
                 </div>
                 <h3>{{ event.title }}</h3>

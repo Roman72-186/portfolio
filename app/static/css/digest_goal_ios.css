@@ -1,0 +1,210 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   iOS-ре-скин трёх экранов раздела «Учебные программы» под require_admin_role
+   (ГП/СА): «Дайджест» (cabinet_digest_admin.html), «События» дайджеста
+   (cabinet_digest_events.html) и «Цели» (cabinet_goal_admin.html). Три
+   скоупа в одном файле — экраны почти идентичны структурно (один и тот же
+   набор `.trk-*` классов из tracker.css, тот же приём формы-конструктора):
+   `.ios-digest` / `.ios-digest-events` / `.ios-goals`.
+
+   `tracker.css` НЕ редактировался: его классы разделяет ещё и студенческий
+   «Личный трекер» (`.ios-tracker`) — переопределение только через скоуп.
+   `partials/program_tabs.html` (вкладки раздела) переопределён здесь же под
+   `.ios-digest`/`.ios-goals` — те же правила продублированы в
+   `program_ios.css` (`.ios-prg-cal`) и `videos_admin_ios.css`
+   (`.ios-videos-admin`), не вынесены в общий файл: каждый экран раздела
+   подключает свой собственный `_ios.css`, а `program_ios.css` на страницах
+   Дайджеста/Целей/Видео не грузится — общий селектор в чужом файле просто
+   не сработал бы. `cabinet_digest_events.html` вкладок не подключает
+   (подэкран «Событий», как день у календаря).
+
+   Найдена и не тронута (вне охвата, чужой файл): `tracker.css` для
+   `.trk-form{display:grid}` не имеет компаньона `[hidden]{display:none}` —
+   тот же класс бага, что уже чинили у `.prg-form`/`.trk-row`/`.lrn-card`
+   в этом кодбейзе, просто здесь не долечен. Внутри своих скоупов чиним
+   через `.trk-form[hidden]{display:none}` — работает для этих трёх
+   экранов, но не для остальных потребителей `.trk-form` за пределами этой
+   инициативы (если такие есть — отдельная задача, не эта).
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ios-digest, .ios-digest-events, .ios-goals {
+    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --ios-blue: #007AFF;
+    --ios-green: #34C759;
+    --ios-red: #FF3B30;
+    --ios-orange: #FF9500;
+    --ios-label: #1C1C1E;
+    --ios-label-2: rgba(60,60,67,0.60);
+    --ios-label-3: rgba(60,60,67,0.30);
+    --ios-sep: rgba(60,60,67,0.29);
+    --ios-grouped-bg: #F2F2F7;
+    --ios-card-bg: #FFFFFF;
+    position: relative;
+    isolation: isolate;
+    font-family: var(--ios-font);
+    color: var(--ios-label);
+    padding-bottom: 24px;
+}
+.ios-digest::before, .ios-digest-events::before, .ios-goals::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: var(--ios-grouped-bg);
+    z-index: -1;
+}
+.ios-digest.trk-page, .ios-goals.trk-page { max-width: 860px; margin: 0 auto; }
+.ios-digest-events.trk-page { max-width: 780px; margin: 0 auto; }
+
+/* ── Вкладки раздела (partials/program_tabs.html — не подключает
+   digest-events, это подэкран) ── */
+.ios-digest .prg-tabs, .ios-goals .prg-tabs { border-bottom: 0.5px solid var(--ios-sep); margin-bottom: 20px; gap: 2px; }
+.ios-digest .prg-tab, .ios-goals .prg-tab {
+    font: 600 14px/1 var(--ios-font); color: var(--ios-label-2); padding: 10px 16px; border-bottom-width: 2px;
+}
+.ios-digest .prg-tab:hover, .ios-goals .prg-tab:hover { color: var(--ios-blue); }
+.ios-digest .prg-tab.is-active, .ios-goals .prg-tab.is-active { color: var(--ios-blue); border-bottom-color: var(--ios-blue); }
+.ios-digest .prg-tabs-sep, .ios-goals .prg-tabs-sep { background: var(--ios-sep); }
+
+/* ── Шапка ── */
+.ios-digest .trk-head, .ios-digest-events .trk-head, .ios-goals .trk-head { margin-bottom: 18px; }
+.ios-digest .trk-head h1, .ios-digest-events .trk-head h1, .ios-goals .trk-head h1 {
+    font: 700 24px/1.25 var(--ios-font); letter-spacing: -0.3px; color: var(--ios-label); margin: 0 0 4px;
+}
+.ios-digest .trk-head p, .ios-digest-events .trk-head p, .ios-goals .trk-head p {
+    margin: 0; color: var(--ios-label-2); font: 400 14px/1.45 var(--ios-font);
+}
+.ios-digest-events .trk-head p a { color: var(--ios-blue); }
+
+/* ── Кнопки ── */
+.ios-digest .btn-blue, .ios-digest-events .btn-blue, .ios-goals .btn-blue {
+    background: var(--ios-blue); box-shadow: none; border-radius: 999px;
+    font: 600 13px/1 var(--ios-font); padding: 10px 18px;
+    transition: transform 100ms var(--ios-ease), filter 100ms var(--ios-ease);
+}
+.ios-digest .btn-blue:hover, .ios-digest-events .btn-blue:hover, .ios-goals .btn-blue:hover { transform: none; filter: brightness(1.05); color: #fff; }
+.ios-digest .btn-blue:active, .ios-digest-events .btn-blue:active, .ios-goals .btn-blue:active { transform: scale(.97); filter: brightness(.92); }
+.ios-digest .btn-outline, .ios-digest-events .btn-outline, .ios-goals .btn-outline {
+    background: var(--ios-grouped-bg); color: var(--ios-label); border: none;
+    border-radius: 999px; font: 600 13px/1 var(--ios-font); padding: 10px 18px;
+}
+.ios-digest .btn-outline:hover, .ios-digest-events .btn-outline:hover, .ios-goals .btn-outline:hover { background: rgba(0,122,255,0.12); color: var(--ios-blue); }
+.ios-digest .btn-danger, .ios-digest-events .btn-danger, .ios-goals .btn-danger {
+    border-radius: 999px; border: none; color: var(--ios-red);
+    background: rgba(255,59,48,0.12); font: 600 12px/1 var(--ios-font); padding: 7px 13px;
+}
+.ios-digest .btn-danger:hover, .ios-digest-events .btn-danger:hover, .ios-goals .btn-danger:hover { background: var(--ios-red); color: #fff; }
+
+/* ── Форма-конструктор ── */
+.ios-digest .trk-form, .ios-digest-events .trk-form, .ios-goals .trk-form {
+    padding: 20px; gap: 14px; margin-bottom: 20px;
+    background: var(--ios-card-bg); border: none; border-radius: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.ios-digest .trk-form[hidden], .ios-digest-events .trk-form[hidden], .ios-goals .trk-form[hidden] { display: none; }
+.ios-digest .trk-hint, .ios-digest-events .trk-hint, .ios-goals .trk-hint { color: var(--ios-label-2); font: 400 13px/1.45 var(--ios-font); }
+
+.ios-digest .trk-field, .ios-digest-events .trk-field, .ios-goals .trk-field {
+    gap: 6px; color: var(--ios-label-2); font: 700 11px/1.3 var(--ios-font); text-transform: uppercase; letter-spacing: 0.03em;
+}
+.ios-digest .trk-field input, .ios-digest .trk-field textarea, .ios-digest .trk-field select,
+.ios-digest-events .trk-field input, .ios-digest-events .trk-field textarea, .ios-digest-events .trk-field select,
+.ios-goals .trk-field input, .ios-goals .trk-field textarea, .ios-goals .trk-field select {
+    background: var(--ios-grouped-bg); border: none; border-radius: 12px;
+    padding: 11px 13px; color: var(--ios-label); font: 400 14px/1.4 var(--ios-font);
+    text-transform: none; letter-spacing: normal;
+}
+.ios-digest .trk-field input::placeholder, .ios-goals .trk-field input::placeholder { color: var(--ios-label-3); }
+.ios-digest .trk-field input:focus, .ios-digest .trk-field textarea:focus, .ios-digest .trk-field select:focus,
+.ios-digest-events .trk-field input:focus, .ios-digest-events .trk-field textarea:focus, .ios-digest-events .trk-field select:focus,
+.ios-goals .trk-field input:focus, .ios-goals .trk-field textarea:focus, .ios-goals .trk-field select:focus {
+    outline: none; box-shadow: 0 0 0 2px var(--ios-blue);
+}
+.ios-digest .trk-field--row, .ios-digest-events .trk-field--row, .ios-goals .trk-field--row {
+    flex-direction: row; align-items: center; gap: 10px; text-transform: none; letter-spacing: normal;
+    color: var(--ios-label); font: 400 14px/1.4 var(--ios-font);
+}
+.ios-digest .trk-grid--two > .trk-grid, .ios-goals .trk-grid--two > .trk-grid { gap: 10px; }
+
+/* Кастомный чекбокс в духе iOS (тот же приём, что program_ios.css). */
+.ios-digest input[type="checkbox"], .ios-digest-events input[type="checkbox"], .ios-goals input[type="checkbox"] {
+    appearance: none; -webkit-appearance: none; margin: 0; flex-shrink: 0;
+    position: relative; width: 20px; height: 20px;
+    border: 1.5px solid var(--ios-label-3); border-radius: 6px; background: var(--ios-card-bg); cursor: pointer;
+}
+.ios-digest input[type="checkbox"]:checked, .ios-digest-events input[type="checkbox"]:checked, .ios-goals input[type="checkbox"]:checked {
+    background: var(--ios-blue); border-color: var(--ios-blue);
+}
+.ios-digest input[type="checkbox"]:checked::after, .ios-digest-events input[type="checkbox"]:checked::after, .ios-goals input[type="checkbox"]:checked::after {
+    content: ''; position: absolute; top: 44%; left: 50%;
+    width: 10px; height: 5px; border-left: 2px solid #fff; border-bottom: 2px solid #fff;
+    transform: translate(-50%, -50%) rotate(-45deg);
+}
+.ios-digest input[type="checkbox"]:focus-visible, .ios-digest-events input[type="checkbox"]:focus-visible, .ios-goals input[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--ios-blue); outline-offset: 2px;
+}
+
+/* ── Пикер тегов — чипы ── */
+.ios-digest .trk-tag-picker, .ios-goals .trk-tag-picker {
+    background: transparent; border: none; padding: 0; gap: 8px; max-height: none;
+}
+.ios-digest .trk-tag-picker label, .ios-goals .trk-tag-picker label {
+    padding: 8px 13px; border-radius: 999px; background: var(--ios-grouped-bg);
+    color: var(--ios-label); font: 600 12px/1 var(--ios-font); cursor: pointer;
+    transition: background 100ms var(--ios-ease), color 100ms var(--ios-ease);
+}
+.ios-digest .trk-tag-picker label:has(input:checked), .ios-goals .trk-tag-picker label:has(input:checked) {
+    background: rgba(0,122,255,0.14); color: var(--ios-blue);
+}
+.ios-digest .trk-tag-picker input, .ios-goals .trk-tag-picker input { width: 15px; height: 15px; }
+
+.ios-digest .trk-message, .ios-digest-events .trk-message, .ios-goals .trk-message {
+    color: var(--ios-label-2); font: 400 13px/1.45 var(--ios-font);
+}
+.ios-digest .trk-message.is-error, .ios-digest-events .trk-message.is-error, .ios-goals .trk-message.is-error { color: var(--ios-red); }
+
+/* ── Список карточек ── */
+.ios-digest .trk-list-head h2, .ios-goals .trk-list-head h2 {
+    font: 700 17px/1.3 var(--ios-font); letter-spacing: -0.2px; color: var(--ios-label);
+}
+.ios-digest .trk-row, .ios-digest-events .trk-row, .ios-goals .trk-row {
+    display: flex; flex-direction: column;
+    padding: 16px 18px; gap: 10px;
+    background: var(--ios-card-bg); border: none; border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.ios-digest .trk-row + .trk-row, .ios-digest-events .trk-row + .trk-row, .ios-goals .trk-row + .trk-row { margin-top: 10px; }
+.ios-digest .trk-row h3, .ios-digest-events .trk-row h3, .ios-goals .trk-row h3 {
+    font: 600 15px/1.3 var(--ios-font); color: var(--ios-label); margin: 0 0 4px;
+}
+.ios-digest .trk-row p, .ios-digest-events .trk-row p, .ios-goals .trk-row p {
+    color: var(--ios-label-2); font: 400 13px/1.5 var(--ios-font);
+}
+.ios-digest .trk-meta, .ios-digest-events .trk-meta, .ios-goals .trk-meta {
+    color: var(--ios-label-2); font: 400 12px/1.3 var(--ios-font);
+}
+
+.ios-digest .trk-badge, .ios-digest-events .trk-badge, .ios-goals .trk-badge {
+    border-radius: 999px; font: 700 11px/1.3 var(--ios-font);
+}
+.ios-digest .trk-badge--live, .ios-goals .trk-badge--live { background: rgba(52,199,89,0.14); color: #1E9147; }
+.ios-digest .trk-badge--draft, .ios-goals .trk-badge--draft { background: rgba(255,149,0,0.14); color: var(--ios-orange); }
+.ios-digest-events .trk-badge--kind { background: rgba(0,122,255,0.12); color: var(--ios-blue); }
+
+.ios-digest .trk-row-actions, .ios-digest-events .trk-row-actions, .ios-goals .trk-row-actions {
+    gap: 8px; margin-top: 4px; padding-top: 12px; border-top: 0.5px solid var(--ios-sep);
+}
+.ios-digest .trk-row-actions a.btn-outline, .ios-digest-events .trk-row-actions a.btn-outline { text-decoration: none; }
+
+.ios-digest .trk-empty, .ios-digest-events .trk-empty, .ios-goals .trk-empty {
+    padding: 32px 20px; color: var(--ios-label-2); background: var(--ios-card-bg);
+    border: none; border-radius: 14px; font: 400 14px/1.4 var(--ios-font); text-align: center;
+}
+
+/* ── Точечные замены инлайновых style="" из шаблонов ── */
+.ios-digest .dg-year-month { grid-column: span 1; }
+.ios-digest .dg-assignees-field, .ios-goals .gl-assignees-field { margin-top: 10px; }
+.ios-digest-events .de-kind-row { margin-bottom: 6px; }
+
+@media (max-width: 760px) {
+    .ios-digest .trk-head, .ios-digest-events .trk-head, .ios-goals .trk-head { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .ios-digest .trk-row, .ios-digest-events .trk-row, .ios-goals .trk-row { grid-template-columns: 1fr; }
+}
