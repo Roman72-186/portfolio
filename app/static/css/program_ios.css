@@ -1,0 +1,301 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   iOS-ре-скин раздела «Учебные программы» — вкладка «Календарь»
+   (cabinet_program.html) и экран дня (cabinet_program_day.html), обе под
+   require_admin_role (ГП/СА). Общий язык с остальной инициативой — см.
+   app/static/css/dashboard_staff_ios.css, superadmin_*_ios.css,
+   tracker.css/survey_ios.css/homework_ios.css (студенческая сторона).
+
+   Особенность экрана: своего инлайнового <style> у шаблонов нет — вся
+   разметка сидит на общих классах program.css (`.prg-*`). Эти же классы
+   (`.prg-page`/`.prg-head`/`.prg-option`/`.prg-message`/`.prg-field`)
+   разделяются со студенческими «Анкетой» (survey_ios.css, скоуп
+   `.ios-survey`) и «Домашкой» (homework_ios.css, скоуп `.ios-homework`) —
+   program.css НЕ редактировался и не будет: всё переопределение только
+   здесь, под своими скоупами. Два скоупа в одном файле:
+   `.ios-prg-cal` — календарь месяца (cabinet_program.html),
+   `.ios-prg-day` — сборка дня (cabinet_program_day.html, конструктор
+   пробника/видео/самостоятельной/анкеты/материалов/теста/занятия/чек-листа).
+   `.prg-tabs`/`.prg-tab` (partials/program_tabs.html) переопределены только
+   внутри `.ios-prg-cal` — «Дайджест»/«Цели»/«Видео» ещё не в этой инициативе,
+   сам partial не трогаем, чтобы не перекрасить их вкладки раньше времени.
+
+   JS в cabinet_program_day.html переключает видимость через нативный
+   `element.hidden` (не `style.display`) почти везде — конфликта с
+   `[hidden]{display:none}` браузера нет, кроме `.prg-form`, у которого
+   program.css уже держит явный `.prg-form[hidden]{display:none}` (иначе
+   наш `display` в этом файле его перебьёт) — override сохранён и здесь.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ios-prg-cal, .ios-prg-day {
+    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --ios-blue: #007AFF;
+    --ios-green: #34C759;
+    --ios-red: #FF3B30;
+    --ios-orange: #FF9500;
+    --ios-purple: #AF52DE;
+    --ios-label: #1C1C1E;
+    --ios-label-2: rgba(60,60,67,0.60);
+    --ios-label-3: rgba(60,60,67,0.30);
+    --ios-sep: rgba(60,60,67,0.29);
+    --ios-grouped-bg: #F2F2F7;
+    --ios-card-bg: #FFFFFF;
+    position: relative;
+    isolation: isolate;
+    font-family: var(--ios-font);
+    color: var(--ios-label);
+    padding-bottom: 24px;
+}
+.ios-prg-cal::before, .ios-prg-day::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: var(--ios-grouped-bg);
+    z-index: -1;
+}
+.ios-prg-cal.prg-page { max-width: 900px; margin: 0 auto; }
+.ios-prg-day.prg-page { max-width: 720px; margin: 0 auto; }
+
+/* ── Шапка, общая для обоих экранов ─────────────────────────────────── */
+.ios-prg-cal .prg-head, .ios-prg-day .prg-head { margin-bottom: 20px; }
+.ios-prg-cal .prg-head h1, .ios-prg-day .prg-head h1 {
+    font: 700 24px/1.25 var(--ios-font); letter-spacing: -0.3px; color: var(--ios-label);
+    margin: 0 0 4px;
+}
+.ios-prg-cal .prg-head p, .ios-prg-day .prg-head p {
+    margin: 0; color: var(--ios-label-2); font: 400 14px/1.45 var(--ios-font);
+}
+.ios-prg-cal .btn-outline, .ios-prg-day .btn-outline {
+    background: var(--ios-grouped-bg); color: var(--ios-label); border: none;
+    border-radius: 999px; font: 600 13px/1 var(--ios-font); padding: 10px 18px;
+    transition: background 120ms var(--ios-ease), color 120ms var(--ios-ease);
+}
+.ios-prg-cal .btn-outline:hover, .ios-prg-day .btn-outline:hover {
+    background: rgba(0,122,255,0.12); color: var(--ios-blue);
+}
+
+/* ═══════════════════════════ Вкладки раздела (только календарь) ═══════ */
+
+.ios-prg-cal .prg-tabs { border-bottom: 0.5px solid var(--ios-sep); margin-bottom: 20px; gap: 2px; }
+.ios-prg-cal .prg-tab {
+    font: 600 14px/1 var(--ios-font); color: var(--ios-label-2);
+    padding: 10px 16px; border-bottom-width: 2px;
+}
+.ios-prg-cal .prg-tab:hover { color: var(--ios-blue); }
+.ios-prg-cal .prg-tab.is-active { color: var(--ios-blue); border-bottom-color: var(--ios-blue); }
+.ios-prg-cal .prg-tabs-sep { background: var(--ios-sep); }
+
+/* ═══════════════════════════ cabinet_program.html — календарь ═════════ */
+
+.ios-prg-cal .prg-monthbar { margin-bottom: 16px; gap: 10px; }
+.ios-prg-cal .prg-monthbar h2 {
+    font: 700 17px/1.3 var(--ios-font); letter-spacing: -0.2px; color: var(--ios-label);
+}
+.ios-prg-cal .prg-nav {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 36px; min-height: 36px; padding: 0; border-radius: 50%;
+    background: var(--ios-grouped-bg); color: var(--ios-blue); font-weight: 700;
+}
+.ios-prg-cal .prg-nav:hover { background: rgba(0,122,255,0.14); }
+
+.ios-prg-cal .prg-grid { gap: 5px; }
+.ios-prg-cal .prg-dowhead {
+    color: var(--ios-label-3); font: 700 11px/1 var(--ios-font); text-transform: uppercase; letter-spacing: 0.05em;
+}
+.ios-prg-cal .prg-day {
+    min-height: 76px; padding: 8px 9px; gap: 5px;
+    color: var(--ios-label); background: var(--ios-card-bg);
+    border: none; border-radius: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    transition: transform 100ms var(--ios-ease), box-shadow 100ms var(--ios-ease);
+}
+.ios-prg-cal .prg-day:hover { border-color: transparent; box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-1px); }
+.ios-prg-cal .prg-daynum { font: 700 14px/1 var(--ios-font); }
+.ios-prg-cal .prg-day[data-dow="6"], .ios-prg-cal .prg-day[data-dow="7"] {
+    color: rgba(255,255,255,0.92); background: #2C2C2E; border-color: transparent;
+}
+.ios-prg-cal .prg-day[data-dow="6"]:hover, .ios-prg-cal .prg-day[data-dow="7"]:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.28); }
+.ios-prg-cal .prg-day.is-outside { opacity: .38; }
+.ios-prg-cal .prg-day.is-past { opacity: .55; }
+.ios-prg-cal .prg-day.is-today { outline: 2px solid var(--ios-blue); outline-offset: -2px; }
+
+.ios-prg-cal .prg-dot { font: 700 10px/1 var(--ios-font); min-width: 18px; height: 18px; }
+.ios-prg-cal .prg-dot--mock { color: #fff; background: var(--ios-blue); }
+.ios-prg-cal .prg-dot--video { color: var(--ios-blue); background: rgba(0,122,255,0.16); }
+.ios-prg-cal .prg-dot--homework { color: #b8620a; background: rgba(255,149,0,0.18); }
+.ios-prg-cal .prg-dot--other { color: var(--ios-label-2); background: rgba(60,60,67,0.10); }
+
+.ios-prg-cal .prg-legend { color: var(--ios-label-2); font: 400 12px/1.4 var(--ios-font); }
+
+@media (max-width: 760px) {
+    .ios-prg-cal .prg-head { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .ios-prg-cal .prg-day { min-height: 58px; padding: 6px 7px; }
+    .ios-prg-cal .prg-monthbar h2 { font-size: 15px; }
+}
+
+/* ═══════════════════════════ cabinet_program_day.html — сборка дня ════ */
+
+.ios-prg-day .prg-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-start; }
+
+/* ── Плитки выбора типа элемента ── */
+.ios-prg-day .prg-tiles { gap: 10px; margin-bottom: 20px; }
+.ios-prg-day .prg-tile {
+    padding: 16px; gap: 13px;
+    background: var(--ios-card-bg); border: 1.5px solid transparent; border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    transition: transform 100ms var(--ios-ease), border-color 100ms var(--ios-ease), background 100ms var(--ios-ease);
+}
+.ios-prg-day .prg-tile:hover { border-color: transparent; box-shadow: 0 4px 14px rgba(0,0,0,0.08); transform: translateY(-1px); }
+.ios-prg-day .prg-tile:active { transform: scale(0.99); }
+.ios-prg-day .prg-tile.is-active {
+    border-color: var(--ios-blue); background: rgba(0,122,255,0.07); box-shadow: none; transform: none;
+}
+.ios-prg-day .prg-tile.is-active .prg-tile-icon { background: var(--ios-blue); color: #fff; }
+.ios-prg-day .prg-tile-icon {
+    width: 42px; height: 42px; border-radius: 12px;
+    color: var(--ios-blue); background: rgba(0,122,255,0.12); font-size: 17px;
+}
+.ios-prg-day .prg-tile strong { font: 600 14px/1.3 var(--ios-font); color: var(--ios-label); }
+.ios-prg-day .prg-tile small { color: var(--ios-label-2); font: 400 12px/1.4 var(--ios-font); margin-top: 2px; }
+
+/* ── Форма сборки (открывается под плитками) ── */
+.ios-prg-day .prg-form {
+    padding: 20px; gap: 14px; margin-bottom: 22px;
+    background: var(--ios-card-bg); border: none; border-radius: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.ios-prg-day .prg-form[hidden] { display: none; }
+.ios-prg-day .prg-form h2 { font: 700 17px/1.3 var(--ios-font); letter-spacing: -0.2px; color: var(--ios-label); }
+.ios-prg-day .prg-hint { margin: -6px 0 0; color: var(--ios-label-2); font: 400 13px/1.45 var(--ios-font); }
+
+.ios-prg-day .prg-grid2, .ios-prg-day .prg-grid3 { gap: 10px; }
+
+.ios-prg-day .prg-field { gap: 6px; color: var(--ios-label-2); font: 700 11px/1.3 var(--ios-font); text-transform: uppercase; letter-spacing: 0.03em; }
+.ios-prg-day .prg-field input,
+.ios-prg-day .prg-field textarea,
+.ios-prg-day .prg-field select {
+    background: var(--ios-grouped-bg); border: none; border-radius: 12px;
+    padding: 11px 13px; color: var(--ios-label);
+    font: 400 14px/1.4 var(--ios-font); text-transform: none; letter-spacing: normal;
+}
+.ios-prg-day .prg-field input::placeholder, .ios-prg-day .prg-field textarea::placeholder { color: var(--ios-label-3); }
+.ios-prg-day .prg-field textarea { min-height: 76px; }
+.ios-prg-day .prg-field input:focus,
+.ios-prg-day .prg-field textarea:focus,
+.ios-prg-day .prg-field select:focus {
+    outline: none; box-shadow: 0 0 0 2px var(--ios-blue);
+}
+.ios-prg-day .prg-field--row { flex-direction: row; align-items: center; gap: 10px; text-transform: none; letter-spacing: normal; color: var(--ios-label); font: 400 14px/1.4 var(--ios-font); }
+.ios-prg-day .prg-field--row input[type="number"] { width: 72px; }
+
+/* Кастомный чекбокс/радио в духе iOS (тот же приём, что survey_ios.css). */
+.ios-prg-day input[type="checkbox"],
+.ios-prg-day input[type="radio"] {
+    appearance: none; -webkit-appearance: none; margin: 0; flex-shrink: 0;
+    position: relative; width: 20px; height: 20px;
+    border: 1.5px solid var(--ios-label-3); background: var(--ios-card-bg); cursor: pointer;
+}
+.ios-prg-day input[type="checkbox"] { border-radius: 6px; }
+.ios-prg-day input[type="radio"] { border-radius: 50%; }
+.ios-prg-day input[type="checkbox"]:checked, .ios-prg-day input[type="radio"]:checked {
+    background: var(--ios-blue); border-color: var(--ios-blue);
+}
+.ios-prg-day input[type="checkbox"]:disabled { opacity: .5; }
+.ios-prg-day input[type="checkbox"]:checked::after {
+    content: ''; position: absolute; top: 44%; left: 50%;
+    width: 10px; height: 5px; border-left: 2px solid #fff; border-bottom: 2px solid #fff;
+    transform: translate(-50%, -50%) rotate(-45deg);
+}
+.ios-prg-day input[type="radio"]:checked::after {
+    content: ''; position: absolute; top: 50%; left: 50%;
+    width: 7px; height: 7px; border-radius: 50%; background: #fff;
+    transform: translate(-50%, -50%);
+}
+.ios-prg-day input[type="checkbox"]:focus-visible, .ios-prg-day input[type="radio"]:focus-visible {
+    outline: 2px solid var(--ios-blue); outline-offset: 2px;
+}
+
+/* ── Предметы пробника (сворачиваемые блоки) ── */
+.ios-prg-day .prg-subject {
+    padding: 14px 16px; background: var(--ios-grouped-bg); border: none; border-radius: 14px;
+}
+.ios-prg-day .prg-subject + .prg-subject { margin-top: 10px; }
+.ios-prg-day .prg-subject h3 { font: 700 14px/1.3 var(--ios-font); color: var(--ios-label); }
+.ios-prg-day [data-subject-body] { margin-top: 12px; }
+.ios-prg-day [data-subject-body]:not([hidden]) { display: grid; gap: 12px; }
+
+/* ── Билеты и вопросы анкеты (общая карточка-строка) ── */
+.ios-prg-day .prg-ticket {
+    gap: 10px; padding: 14px 16px; margin-top: 10px;
+    background: var(--ios-card-bg); border: none; border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.ios-prg-day .prg-ticket-head strong { font: 700 13px/1 var(--ios-font); color: var(--ios-label); }
+
+/* ── Варианты анкеты — строка «текст + верный + убрать» ── */
+.ios-prg-day .prg-option { gap: 8px; }
+.ios-prg-day .prg-option input[type="text"] {
+    background: var(--ios-grouped-bg); border: none; border-radius: 10px;
+    padding: 9px 11px; color: var(--ios-label); font: 400 13px/1.4 var(--ios-font);
+}
+.ios-prg-day .prg-option label {
+    color: var(--ios-label-2); font: 600 12px/1 var(--ios-font);
+}
+
+.ios-prg-day .prg-actions { gap: 8px; }
+.ios-prg-day .prg-actions .btn-outline { min-height: 40px; padding: 9px 16px; font-size: 12px; }
+
+.ios-prg-day .prg-message { color: var(--ios-label-2); font: 400 13px/1.45 var(--ios-font); }
+.ios-prg-day .prg-message.is-error { color: var(--ios-red); }
+
+/* ── Превью изображений ── */
+.ios-prg-day .prg-thumbs img { border: none; border-radius: 10px; }
+.ios-prg-day .prg-thumb button {
+    top: -7px; right: -7px; width: 20px; height: 20px;
+    background: var(--ios-red); box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+/* ── Прогресс загрузки видео ── */
+.ios-prg-day .prg-progress { background: var(--ios-grouped-bg); }
+.ios-prg-day .prg-progress > span { background: var(--ios-blue); transition: width 160ms var(--ios-ease); }
+
+/* ── Кнопки ── */
+.ios-prg-day .btn-blue {
+    background: var(--ios-blue); box-shadow: none;
+    font: 700 14px/1 var(--ios-font); border-radius: 999px;
+    transition: transform 100ms var(--ios-ease), filter 100ms var(--ios-ease);
+}
+.ios-prg-day .btn-blue:hover { transform: none; filter: brightness(1.05); color: #fff; }
+.ios-prg-day .btn-blue:active { transform: scale(.97); filter: brightness(.92); }
+.ios-prg-day .btn-blue:disabled { opacity: .45; filter: none; transform: none; }
+.ios-prg-day .btn-danger {
+    border-radius: 999px; border: none; color: var(--ios-red);
+    background: rgba(255,59,48,0.12); font: 600 12px/1 var(--ios-font);
+}
+.ios-prg-day .btn-danger:hover { background: var(--ios-red); color: #fff; }
+
+/* ── «Уже в этом дне» ── */
+.ios-prg-day .prg-items h2 { font: 700 17px/1.3 var(--ios-font); letter-spacing: -0.2px; color: var(--ios-label); }
+.ios-prg-day .prg-item {
+    padding: 14px 16px; gap: 10px;
+    background: var(--ios-card-bg); border: none; border-radius: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.ios-prg-day .prg-item + .prg-item { margin-top: 8px; }
+.ios-prg-day .prg-item h3 { font: 700 14px/1.35 var(--ios-font); color: var(--ios-label); margin: 5px 0 3px; }
+.ios-prg-day .prg-item p { color: var(--ios-label-2); font: 400 13px/1.5 var(--ios-font); }
+.ios-prg-day .prg-meta { color: var(--ios-label-2); font: 400 12px/1.3 var(--ios-font); }
+.ios-prg-day .prg-item-actions button { min-height: 32px; padding: 7px 12px; font-size: 12px; }
+
+.ios-prg-day .prg-badge {
+    color: var(--ios-blue); background: rgba(0,122,255,0.12);
+    font: 700 11px/1 var(--ios-font);
+}
+
+.ios-prg-day .prg-empty {
+    padding: 32px 20px; color: var(--ios-label-2); background: var(--ios-card-bg);
+    border: none; border-radius: 14px; font: 400 14px/1.4 var(--ios-font);
+}
+
+@media (max-width: 760px) {
+    .ios-prg-day .prg-tiles, .ios-prg-day .prg-grid2, .ios-prg-day .prg-grid3, .ios-prg-day .prg-item { grid-template-columns: 1fr; }
+    .ios-prg-day .prg-form { padding: 16px; }
+}

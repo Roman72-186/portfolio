@@ -9,9 +9,10 @@ FORM: Operate, расширение кабинета.
 {% block title %}Учебные программы{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=5">
+<link rel="stylesheet" href="/static/css/program_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="prg-page">
+<div class="prg-page ios-prg-cal">
     {% include "partials/program_tabs.html" %}
     <div class="prg-head">
         <div class="prg-head-copy">

@@ -9,9 +9,10 @@ FORM: Operate.
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=5">
+<link rel="stylesheet" href="/static/css/program_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="prg-page" data-day="{{ day_iso }}">
+<div class="prg-page ios-prg-day" data-day="{{ day_iso }}">
     <div class="prg-head">
         <div class="prg-head-copy">
             <h1>{{ day_title }}</h1>
