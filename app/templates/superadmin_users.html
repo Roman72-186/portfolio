@@ -1,95 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Управление пользователями{% endblock %}
 {% block extra_styles %}
-<style>
-.su-wrap { max-width: 960px; margin: 0 auto; }
-
-.su-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
-.su-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
-.su-filters { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
-.su-filters input, .su-filters select { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: var(--r-sm); background: var(--bg); color: var(--text); outline: none; }
-.su-filters input:focus, .su-filters select:focus { border-color: var(--blue); }
-.su-filters label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
-
-.creds-panel { background: rgba(59,91,255,0.06); border: 1px solid rgba(59,91,255,0.2); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; }
-.creds-title { font-size: 14px; font-weight: 900; color: var(--blue); margin-bottom: 10px; }
-.creds-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-.creds-label { font-size: 11px; font-weight: 800; color: var(--dim); width: 54px; flex-shrink: 0; }
-.creds-value { font-family: monospace; font-size: 13px; font-weight: 800; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 9px; word-break: break-all; }
-.creds-copy { padding: 6px 10px; border: 1px solid rgba(59,91,255,0.24); border-radius: var(--r-sm); background: transparent; color: var(--blue); font-size: 11px; font-weight: 800; cursor: pointer; font-family: inherit; }
-.creds-note { font-size: 12px; color: var(--dim); line-height: 1.45; }
-.access-link-panel { background: rgba(5,150,105,0.06); border: 1px solid rgba(5,150,105,0.22); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; }
-.access-link-title { font-size: 14px; font-weight: 900; color: var(--ok); margin-bottom: 10px; }
-.access-link-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.access-link-value { flex: 1; min-width: 240px; font-size: 12px; font-family: monospace; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 10px; word-break: break-all; }
-.access-link-copy { padding: 7px 12px; border: 1px solid rgba(5,150,105,0.24); border-radius: var(--r-sm); background: transparent; color: var(--ok); font-size: 11px; font-weight: 800; cursor: pointer; font-family: inherit; }
-.access-link-note { font-size: 12px; color: var(--dim); margin-top: 8px; }
-
-.role-form select { font-family: inherit; font-size: 12px; padding: 5px 8px; border: 1.5px solid var(--line); border-radius: var(--r-sm); background: var(--bg); color: var(--text); outline: none; max-width: 150px; }
-
-.su-table-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; box-shadow: var(--sh-sm); }
-.su-table { width: 100%; border-collapse: collapse; }
-.su-table th { text-align: left; padding: 11px 14px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); border-bottom: 1px solid var(--line); background: var(--bg); }
-.su-table td { padding: 10px 14px; font-size: 13px; color: var(--text); border-bottom: 1px solid var(--line); vertical-align: middle; }
-.su-table tr:last-child td { border-bottom: none; }
-.su-table tr:hover td { background: var(--bg); }
-
-.u-name { font-weight: 700; }
-.u-meta { font-size: 11px; color: var(--dim); margin-top: 2px; }
-.u-role { display: inline-block; padding: 2px 9px; border-radius: 6px; font-size: 11px; font-weight: 700; }
-.r1 { background: rgba(16,185,129,0.1); color: var(--ok); }
-.r2 { background: rgba(59,91,255,0.1); color: var(--blue); }
-.r3 { background: rgba(217,119,6,0.1); color: var(--warning); }
-.r4 { background: rgba(124,58,237,0.1); color: #7C3AED; }
-.r5 { background: rgba(220,38,38,0.1); color: var(--error); }
-.u-inactive { opacity: 0.45; }
-.u-deleted { background: rgba(107,114,128,0.05); }
-.u-deleted td { color: var(--dim); }
-
-.action-btn { padding: 5px 12px; border-radius: var(--r-sm); font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; border: 1.5px solid transparent; transition: opacity 0.15s; }
-.btn-block { background: rgba(220,38,38,0.07); color: var(--error); border-color: rgba(220,38,38,0.2); }
-.btn-block:hover { opacity: 0.75; }
-.btn-unblock { background: rgba(5,150,105,0.07); color: var(--ok); border-color: rgba(5,150,105,0.2); }
-.btn-unblock:hover { opacity: 0.75; }
-.actions-cell { display: flex; gap: 6px; flex-wrap: wrap; }
-/* Канонический .btn-danger (base.css) в размере строчных действий таблицы;
-   доп. отступ отделяет деструктивное действие от нейтральных в строке */
-.actions-cell .btn-danger { padding: 5px 12px; font-size: 11px; font-weight: 700; border-radius: var(--r-sm); margin-left: 6px; }
-
-.btn-tags { background: rgba(59,91,255,0.08); color: var(--blue); border-color: rgba(59,91,255,0.2); padding: 7px 14px; font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; }
-.btn-tags:hover { opacity: 0.75; }
-
-/* Confirm modal */
-.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1000; align-items:center; justify-content:center; }
-.modal-overlay.open { display:flex; }
-.modal { background: var(--surface); border-radius: var(--r-lg); padding: 28px 30px; max-width: 380px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
-.modal-title { font-size: 17px; font-weight: 900; color: var(--text); margin-bottom: 10px; }
-.modal-text { font-size: 13px; color: var(--dim); line-height: 1.5; }
-/* Раскладка кнопок — канонический .modal-actions из base.css (Cancel слева → Confirm справа) */
-.modal-cancel, .modal-confirm { padding: 10px 18px; border-radius: var(--r-sm); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; border: none; }
-.modal-cancel { background: var(--surface-2); color: var(--text); }
-.modal-confirm { background: var(--error); color: #fff; }
-.modal-confirm.green { background: var(--ok); }
-
-.su-empty { padding: 40px; text-align: center; color: var(--dim); font-size: 14px; }
-
-@media (max-width: 820px) {
-    .su-table-wrap { border: none; background: transparent; box-shadow: none; }
-    .su-table, .su-table tbody, .su-table tr, .su-table td { display: block; width: 100%; }
-    .su-table thead { display: none; }
-    .su-table tr { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 10px; overflow: hidden; }
-    .su-table tr:last-child { margin-bottom: 0; }
-    .su-table td { padding: 8px 14px; border-bottom: 1px solid var(--line); box-sizing: border-box; }
-    .su-table tr td:last-child { border-bottom: none; }
-    .su-table td::before { content: attr(data-label); display: block; margin-bottom: 4px; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; }
-}
-</style>
+<link rel="stylesheet" href="/static/css/superadmin_users_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="su-wrap">
+<div class="su-wrap ios-su-users">
 
     <div class="su-header">
-        <a href="/cabinet" class="back-link" style="margin-bottom:0">← Дашборд</a>
+        <a href="/cabinet" class="back-link">← Дашборд</a>
         <h1 class="su-title">Управление пользователями</h1>
         {% if user.role_rank >= 5 %}
         <a href="/cabinet/superadmin/create-staff" class="action-btn btn-tags">👤 Создать сотрудника</a>
@@ -102,7 +20,7 @@
     <form method="get" action="/cabinet/superadmin/users" class="su-filters">
         <label>
             Поиск
-            <input type="text" name="q" value="{{ q }}" placeholder="Имя, @username..." style="min-width:180px">
+            <input type="text" name="q" value="{{ q }}" placeholder="Имя, @username..." class="su-input--search">
         </label>
         <label>
             Роль
@@ -142,7 +60,7 @@
         </label>
         <label>
             Предметы
-            <input type="text" name="exam_subjects" list="filter-exam-subject-hints" value="{{ exam_subjects }}" placeholder="Р+К" style="min-width:80px;max-width:120px">
+            <input type="text" name="exam_subjects" list="filter-exam-subject-hints" value="{{ exam_subjects }}" placeholder="Р+К" class="su-input--subject">
             <datalist id="filter-exam-subject-hints">
                 {% for hint in exam_subject_hints %}
                 <option value="{{ hint }}">
@@ -158,35 +76,35 @@
                 {% endfor %}
             </select>
         </label>
-        <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
-            <input type="checkbox" name="has_case" value="1" {% if has_case %}checked{% endif %} style="width:auto;padding:0">
-            <span style="font-size:12px;font-weight:700;color:#92590A">КЕЙС</span>
+        <label class="su-check-pill su-check-pill--amber">
+            <input type="checkbox" name="has_case" value="1" {% if has_case %}checked{% endif %}>
+            <span>КЕЙС</span>
         </label>
-        <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
-            <input type="checkbox" name="is_publishable" value="1" {% if is_publishable %}checked{% endif %} style="width:auto;padding:0">
-            <span style="font-size:12px;font-weight:700;color:#7C3AED">PUBLISH</span>
+        <label class="su-check-pill su-check-pill--purple">
+            <input type="checkbox" name="is_publishable" value="1" {% if is_publishable %}checked{% endif %}>
+            <span>PUBLISH</span>
         </label>
-        <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
-            <input type="checkbox" name="show_deleted" value="1" {% if show_deleted %}checked{% endif %} style="width:auto;padding:0">
-            <span style="font-size:12px;font-weight:700;color:var(--dim)">Показать удалённых</span>
+        <label class="su-check-pill su-check-pill--dim">
+            <input type="checkbox" name="show_deleted" value="1" {% if show_deleted %}checked{% endif %}>
+            <span>Показать удалённых</span>
         </label>
-        <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
-            <input type="checkbox" name="show_blocked" value="1" {% if show_blocked %}checked{% endif %} style="width:auto;padding:0">
-            <span style="font-size:12px;font-weight:700;color:var(--error)">Только заблокированные</span>
+        <label class="su-check-pill su-check-pill--red">
+            <input type="checkbox" name="show_blocked" value="1" {% if show_blocked %}checked{% endif %}>
+            <span>Только заблокированные</span>
         </label>
-        <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
-            <input type="checkbox" name="show_archived" value="1" {% if show_archived %}checked{% endif %} style="width:auto;padding:0">
-            <span style="font-size:12px;font-weight:700;color:var(--dim)">Только архив</span>
+        <label class="su-check-pill su-check-pill--dim">
+            <input type="checkbox" name="show_archived" value="1" {% if show_archived %}checked{% endif %}>
+            <span>Только архив</span>
         </label>
-        <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
-            <input type="checkbox" name="show_hidden" value="1" {% if show_hidden %}checked{% endif %} style="width:auto;padding:0">
-            <span style="font-size:12px;font-weight:700;color:var(--warning)">Без периодов</span>
+        <label class="su-check-pill su-check-pill--warn">
+            <input type="checkbox" name="show_hidden" value="1" {% if show_hidden %}checked{% endif %}>
+            <span>Без периодов</span>
         </label>
         <button type="submit" class="btn-blue btn-save">Найти</button>
     </form>
 
     {% if page_error %}
-    <div class="alert alert-error" style="margin-bottom:18px">{{ page_error }}</div>
+    <div class="alert alert-error su-alert-gap">{{ page_error }}</div>
     {% endif %}
 
     {% if issued_creds %}
@@ -202,7 +120,7 @@
             <span class="creds-value" id="cred-password">{{ issued_creds.password }}</span>
             <button type="button" class="creds-copy" onclick="copyText('cred-password', this)">Копировать</button>
         </div>
-        <div class="creds-note">Страница входа: <a href="{{ issued_creds.url }}" target="_blank" style="color:var(--blue)">{{ issued_creds.url }}</a>. Пароль показывается только сейчас.</div>
+        <div class="creds-note">Страница входа: <a href="{{ issued_creds.url }}" target="_blank" class="su-link-inline">{{ issued_creds.url }}</a>. Пароль показывается только сейчас.</div>
     </div>
     {% endif %}
 
@@ -235,11 +153,11 @@
     </div>
     {% endif %}
 
-    <div style="margin-bottom:14px">
+    <div class="su-toggle-wrap">
         <button type="button" id="usersToggleBtn" class="action-btn btn-tags" onclick="toggleUsersList()">Показать пользователей</button>
     </div>
 
-    <div id="usersListSection" style="display:none">
+    <div id="usersListSection" class="su-collapsible is-collapsed">
 
     <!-- Table -->
     <div class="su-table-wrap">
@@ -259,7 +177,7 @@
                 data-user-row="{{ u.id }}"
                 data-user-name="{{ ((u.last_name or '') ~ ' ' ~ (u.first_name or u.name))|trim }}">
                 <td data-label="Пользователь">
-                    <a href="/cabinet/superadmin/users/{{ u.id }}" class="u-name" style="color:inherit;text-decoration:none">{{ u.last_name or '' }} {{ u.first_name or u.name }}</a>
+                    <a href="/cabinet/superadmin/users/{{ u.id }}" class="u-name">{{ u.last_name or '' }} {{ u.first_name or u.name }}</a>
                     <div class="u-meta">id={{ u.id }} · {{ u.tariff or '—' }}{% if u.tg_username %} · @{{ u.tg_username }}{% endif %}</div>
                     {% set s_has_case = has_case_by_user.get(u.id, False) if has_case_by_user else False %}
                     {% set s = {
@@ -272,7 +190,7 @@
                         'lessons_count': u.lessons_count,
                         'curator_tag': u.curator_tag,
                     } %}
-                    <div class="student-tag-pills" style="margin-top:5px">
+                    <div class="student-tag-pills su-tag-pills-gap">
                         {% include "_includes/student_tag_pills.html" %}
                     </div>
                 </td>
@@ -296,18 +214,18 @@
                     {% elif u.role %}
                     <span class="u-role r{{ u.role.rank }}">{{ u.role.display_name }}</span>
                     {% else %}
-                    <span style="color:var(--dim);font-size:12px">нет роли</span>
+                    <span class="su-dim-text">нет роли</span>
                     {% endif %}
                 </td>
                 <td data-user-status="{{ u.id }}" data-label="Статус">
                     {% if u.deleted_at %}
-                    <span style="font-size:12px;color:var(--dim)">Удалён</span>
+                    <span class="su-status su-status--dim">Удалён</span>
                     {% elif u.archived_at %}
-                    <span style="font-size:12px;color:var(--dim);font-weight:700">В архиве</span>
+                    <span class="su-status su-status--muted">В архиве</span>
                     {% elif not u.is_active %}
-                    <span style="font-size:12px;color:var(--error);font-weight:700">Заблокирован</span>
+                    <span class="su-status su-status--error">Заблокирован</span>
                     {% else %}
-                    <span style="font-size:12px;color:var(--ok);font-weight:700">Активен</span>
+                    <span class="su-status su-status--ok">Активен</span>
                     {% endif %}
                 </td>
                 <td data-label="Действия">
@@ -335,13 +253,13 @@
                         </button>
                         {% if current_user_rank >= 5 and u_rank < current_user_rank %}
                         {% if u.archived_at %}
-                        <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/unarchive" style="margin:0"
+                        <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/unarchive" class="su-inline-form"
                               onsubmit="return confirm('Вернуть ученика из архива? Он снова попадёт в рабочие списки и сможет войти.')">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                             <button type="submit" class="action-btn btn-unblock">Вернуть из архива</button>
                         </form>
                         {% else %}
-                        <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/archive" style="margin:0"
+                        <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/archive" class="su-inline-form"
                               onsubmit="return confirm('Отправить в архив? Работы и переписки сохранятся, но ученик уйдёт из рабочих списков и потеряет вход.')">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                             <button type="submit" class="action-btn">В архив</button>
@@ -349,25 +267,25 @@
                         {% endif %}
                         {% endif %}
                         {% if user.role_rank >= 4 and u.is_active and u_rank < user.role_rank %}
-                        <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/set-credentials" style="margin:0">
+                        <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/set-credentials" class="su-inline-form">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                             <button type="submit" class="action-btn">
                                 {{ 'Сбросить доступ' if u.staff_login else 'Выдать доступ' }}
                             </button>
                         </form>
-                        <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/issue-link" style="margin:0">
+                        <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/issue-link" class="su-inline-form">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                             <button type="submit" class="action-btn">
                                 Ссылка входа
                             </button>
                         </form>
-                        <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/issue-telegram-link" style="margin:0">
+                        <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/issue-telegram-link" class="su-inline-form">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                             <button type="submit" class="action-btn">
                                 Telegram-привязка
                             </button>
                         </form>
-                        <form method="post" action="/cabinet/superadmin/impersonate/{{ u.id }}" style="margin:0">
+                        <form method="post" action="/cabinet/superadmin/impersonate/{{ u.id }}" class="su-inline-form">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                             <button type="submit" class="action-btn">
                                 🔓 Войти в кабинет
@@ -387,23 +305,23 @@
     </div>
 
     {% if total_pages > 1 %}
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;flex-wrap:wrap;gap:10px">
-        <div style="font-size:13px;color:var(--dim)">
+    <div class="su-pagination">
+        <div class="su-page-info">
             Показано {{ users|length }} из {{ total }}
         </div>
-        <div style="display:flex;gap:8px">
+        <div class="su-page-nav">
             {% if page > 1 %}
             <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&study_mode={{ study_mode }}&curator_id={{ curator_id }}&exam_subjects={{ exam_subjects }}&tag={{ tag }}&has_case={{ has_case }}&is_publishable={{ is_publishable }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&show_archived={{ '1' if show_archived else '' }}&show_hidden={{ '1' if show_hidden else '' }}&page={{ page - 1 }}"
-               style="padding:7px 14px;border-radius:var(--r-sm);background:var(--surface-2);border:1.5px solid var(--line);font-size:13px;font-weight:700;color:var(--text);text-decoration:none">
+               class="su-page-link">
                 ‹ Назад
             </a>
             {% endif %}
-            <span style="padding:7px 14px;border-radius:var(--r-sm);background:var(--blue-soft);color:var(--blue);font-size:13px;font-weight:700">
+            <span class="su-page-current">
                 {{ page }} / {{ total_pages }}
             </span>
             {% if page < total_pages %}
             <a href="?q={{ q }}&role_rank={{ role_rank }}&tariff={{ tariff }}&study_mode={{ study_mode }}&curator_id={{ curator_id }}&exam_subjects={{ exam_subjects }}&has_case={{ has_case }}&is_publishable={{ is_publishable }}&show_deleted={{ '1' if show_deleted else '' }}&show_blocked={{ '1' if show_blocked else '' }}&show_archived={{ '1' if show_archived else '' }}&show_hidden={{ '1' if show_hidden else '' }}&page={{ page + 1 }}"
-               style="padding:7px 14px;border-radius:var(--r-sm);background:var(--surface-2);border:1.5px solid var(--line);font-size:13px;font-weight:700;color:var(--text);text-decoration:none">
+               class="su-page-link">
                 Вперёд ›
             </a>
             {% endif %}
@@ -412,8 +330,6 @@
     {% endif %}
 
     </div>
-
-</div>
 
 <!-- Confirm modal -->
 <div class="modal-overlay" id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
@@ -427,9 +343,11 @@
     </div>
 </div>
 
-<form id="actionForm" method="post" style="display:none">
+<form id="actionForm" method="post" class="su-hidden-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
 </form>
+
+</div>
 
 <script>
 let _action = null, _userId = null;
@@ -440,14 +358,14 @@ const USERS_LIST_EXPANDED_KEY = 'superadminUsersListExpanded';
 function toggleUsersList() {
     const section = document.getElementById('usersListSection');
     const btn = document.getElementById('usersToggleBtn');
-    const expand = section.style.display === 'none';
-    section.style.display = expand ? '' : 'none';
+    const expand = section.classList.contains('is-collapsed');
+    section.classList.toggle('is-collapsed', !expand);
     btn.textContent = expand ? 'Скрыть пользователей' : 'Показать пользователей';
     sessionStorage.setItem(USERS_LIST_EXPANDED_KEY, expand ? '1' : '');
 }
 
 if (sessionStorage.getItem(USERS_LIST_EXPANDED_KEY) === '1') {
-    document.getElementById('usersListSection').style.display = '';
+    document.getElementById('usersListSection').classList.remove('is-collapsed');
     document.getElementById('usersToggleBtn').textContent = 'Скрыть пользователей';
 }
 
@@ -554,7 +472,7 @@ function renderUserActions(userId, isActive) {
         const credsForm = document.createElement('form');
         credsForm.method = 'post';
         credsForm.action = `/cabinet/superadmin/users/${userId}/set-credentials`;
-        credsForm.style.margin = '0';
+        credsForm.className = 'su-inline-form';
         credsForm.innerHTML =
             '<input type="hidden" name="csrf_token" value="' + csrfToken + '">' +
             '<button type="submit" class="action-btn">' +
@@ -565,7 +483,7 @@ function renderUserActions(userId, isActive) {
         const linkForm = document.createElement('form');
         linkForm.method = 'post';
         linkForm.action = `/cabinet/superadmin/users/${userId}/issue-link`;
-        linkForm.style.margin = '0';
+        linkForm.className = 'su-inline-form';
         linkForm.innerHTML =
             '<input type="hidden" name="csrf_token" value="' + csrfToken + '">' +
             '<button type="submit" class="action-btn">Ссылка входа</button>';
@@ -581,8 +499,8 @@ function applyUserStatus(userId, isActive) {
     row.classList.remove('u-deleted');
     row.classList.toggle('u-inactive', !isActive);
     status.innerHTML = isActive
-        ? '<span style="font-size:12px;color:var(--ok);font-weight:700">Активен</span>'
-        : '<span style="font-size:12px;color:var(--error);font-weight:700">Заблокирован</span>';
+        ? '<span class="su-status su-status--ok">Активен</span>'
+        : '<span class="su-status su-status--error">Заблокирован</span>';
     renderUserActions(userId, isActive);
 
     const nextFocus = row.querySelector('.action-btn');

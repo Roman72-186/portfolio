@@ -290,22 +290,5 @@
       "tag-pill--purple"
     ],
     "style_lines": 87
-  },
-  "superadmin_user_card.html": {
-    "hex": 0,
-    "shadow": [
-      "form-input"
-    ],
-    "style_lines": 24
-  },
-  "superadmin_users.html": {
-    "hex": 2,
-    "shadow": [
-      "btn-danger",
-      "css",
-      "modal-actions",
-      "open"
-    ],
-    "style_lines": 82
   }
 }
