@@ -1,104 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Цикл Пробника — {% if status == 'archive' %}архив{% else %}открытые{% endif %}{% endblock %}
 {% block extra_styles %}
-<style>
-.cycles-page { max-width: 980px; margin: 0 auto; padding: 24px 18px 110px; }
-.cycles-head {
-    display: flex; align-items: baseline; justify-content: space-between;
-    gap: 12px; margin-bottom: 14px;
-}
-.cycles-title { font-family: var(--font-display); font-size: 24px; font-weight: 900; letter-spacing: -0.02em; margin: 0; }
-.cycles-meta { font-size: 13px; color: var(--muted); font-weight: 700; }
-.cycles-tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
-.cyc-tab {
-    padding: 8px 16px; font-size: 14px; font-weight: 800; color: var(--muted);
-    text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
-    transition: color .12s, border-color .12s;
-}
-.cyc-tab:hover { color: var(--blue); }
-.cyc-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
-.cycles-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
-.cyc-subj-pills { display: flex; gap: 6px; flex-wrap: wrap; }
-.cyc-subj-pill {
-    padding: 6px 14px; border: 1px solid var(--line); border-radius: var(--r-pill);
-    background: var(--surface); color: var(--muted); font-size: 13px; font-weight: 800;
-    cursor: pointer; transition: background-color .12s, border-color .12s, color .12s;
-}
-.cyc-subj-pill:hover { border-color: var(--blue); color: var(--blue); }
-.cyc-subj-pill.active { background: var(--blue); border-color: var(--blue); color: #fff; }
-.cyc-fb-pills { position: relative; padding-left: 12px; }
-.cyc-fb-pills::before {
-    content: ""; position: absolute; left: 0; top: 4px; bottom: 4px;
-    width: 1px; background: var(--line);
-}
-.cyc-search {
-    flex: 1; min-width: 180px; padding: 8px 12px; border: 1px solid var(--line);
-    border-radius: var(--r-sm); font-size: 14px; background: var(--surface); font-family: inherit;
-}
-.cyc-search:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: var(--blue); }
-.cyc-copy-btn {
-    padding: 8px 14px; border: 1px solid var(--line); border-radius: var(--r-sm);
-    background: var(--surface); color: var(--ink); font-size: 13px; font-weight: 800;
-    cursor: pointer; transition: background-color .12s, border-color .12s, color .12s; font-family: inherit; white-space: nowrap;
-}
-.cyc-copy-btn:hover { border-color: var(--blue); color: var(--blue); }
-.cyc-copy-btn.copied { background: rgba(22,163,74,0.14); color: var(--success); border-color: transparent; }
-.cyc-noresults { padding: 24px; text-align: center; color: var(--muted); font-size: 13px; display: none; }
-.cycles-empty {
-    padding: 28px 22px; border: 1px dashed var(--line);
-    border-radius: var(--r-lg); color: var(--muted); text-align: center;
-}
-.cycles-list {
-    background: var(--surface); border: 1px solid var(--line);
-    border-radius: var(--r-lg); overflow: hidden;
-}
-/* Компактная строка: одна на каждый открытый цикл, идентификация на месте. */
-.cyc-row {
-    display: flex; align-items: center; gap: 12px;
-    padding: 10px 16px; border-top: 1px solid var(--line);
-    text-decoration: none; color: inherit; transition: background .12s;
-}
-.cyc-row:first-child { border-top: none; }
-.cyc-row:hover { background: var(--blue-soft); }
-.cyc-row-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
-.cyc-ident { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
-.cyc-name { font-size: 14px; font-weight: 800; color: var(--ink); }
-.cyc-user { font-size: 12px; font-weight: 600; color: var(--muted); }
-.cyc-meta-line { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
-.cyc-subject { font-weight: 700; color: var(--ink); }
-/* Теги — единый стиль чипа (как пилюли в списке учеников). */
-.cyc-chip {
-    font-size: 10px; font-weight: 800; letter-spacing: 0.02em;
-    padding: 2px 7px; border-radius: var(--r-pill);
-    background: var(--surface-2); color: var(--muted); white-space: nowrap;
-}
-.cyc-chip--period { background: rgba(59,130,246,0.12); color: var(--blue); }
-.cyc-chip--cohort { background: rgba(168,85,247,0.14); color: #7C3AED; }
-.cyc-chip--case   { background: rgba(22,163,74,0.14); color: var(--success); }
-.cyc-row-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.cyc-pill {
-    font-size: 11px; font-weight: 800; letter-spacing: 0.03em;
-    padding: 3px 9px; border-radius: var(--r-pill);
-    background: var(--surface-2); color: var(--muted); white-space: nowrap;
-}
-.cyc-pill.has-fb { background: rgba(22,163,74,0.12); color: var(--success); }
-.cyc-pill.no-fb { background: rgba(245,158,11,0.12); color: var(--warning-deep); }
-.cyc-pill.score { background: rgba(59,130,246,0.12); color: var(--blue); }
-.cyc-pill.no-score { background: var(--surface-2); color: var(--muted); }
-.cyc-pill.revision { background: rgba(245,158,11,0.16); color: var(--warning-deep); }
-.cyc-chev { color: var(--dim); }
-.cyc-load-more-wrap { padding: 16px; text-align: center; }
-.cyc-load-more-btn {
-    padding: 10px 22px; border: 1px solid var(--line); border-radius: var(--r-pill);
-    background: var(--surface); color: var(--blue); font-size: 13px; font-weight: 800;
-    cursor: pointer; transition: background-color .12s, border-color .12s, color .12s; font-family: inherit;
-}
-.cyc-load-more-btn:hover { border-color: var(--blue); background: var(--blue-soft); }
-</style>
+<link rel="stylesheet" href="/static/css/staff_cycles_ios.css?v=1">
 {% endblock %}
 {% block content %}
 {% include "_curator_nav.html" %}
-<div class="cycles-page">
+<div class="cycles-page ios-staff-cycles">
     <div class="cycles-head">
         <h1 class="cycles-title">Цикл Пробника</h1>
         <span class="cycles-meta">{% if status == 'archive' %}В архиве{% else %}Открытых{% endif %}: <span id="cyc-count">{{ total_cycles }}</span></span>
