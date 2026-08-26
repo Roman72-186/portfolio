@@ -81,13 +81,25 @@ def pop_vk_pkce(state: str) -> dict[str, Any] | None:
         return None
 
 
-def set_telegram_oidc_pkce(state: str, code_verifier: str, ttl: int = 600) -> bool:
-    """Store Telegram Login (OIDC) PKCE verifier server-side, mirrors set_vk_pkce."""
+def set_telegram_oidc_pkce(
+    state: str,
+    code_verifier: str,
+    ttl: int = 600,
+    extra: dict[str, Any] | None = None,
+) -> bool:
+    """Store Telegram Login (OIDC) PKCE verifier server-side, mirrors set_vk_pkce.
+
+    `extra` кладётся в тот же payload — так через state переносится назначение
+    входа (`purpose`: обычный вход или гостевой пробник) и токен гостевой
+    ссылки. Callback у обоих сценариев один и тот же — redirect_uri
+    зарегистрирован в Telegram ровно один, второй туда не добавить.
+    """
     if not _client:
         return False
     payload = json.dumps({
         "code_verifier": code_verifier,
         "created_at": datetime.now(timezone.utc).isoformat(),
+        **(extra or {}),
     })
     try:
         _client.setex(f"tg_oidc_pkce:{state}", ttl, payload)

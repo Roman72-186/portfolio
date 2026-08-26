@@ -39,6 +39,17 @@
     color: var(--blue); background: none; border: 1px solid var(--line);
     border-radius: var(--r-md); cursor: pointer;
 }
+.guest-tg-btn {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; padding: 14px; box-sizing: border-box;
+    font-size: 15px; font-weight: 600; text-decoration: none;
+    color: #fff; background: #2AABEE; border-radius: var(--r-md);
+}
+.guest-tg-btn:hover { background: #229ED9; }
+.guest-tg-hint {
+    font-size: 12px; color: var(--muted); line-height: 1.5;
+    margin: 10px 0 0; text-align: center;
+}
 </style>
 {% endblock %}
 {% block content %}
@@ -56,6 +67,15 @@
             Приём работ сейчас закрыт — ссылка временно отключена.
         </div>
         {% else %}
+        {% if telegram_login_enabled %}
+        <a href="/guest/{{ config.token }}/auth/telegram" class="guest-tg-btn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8-1.7 8.01c-.12.55-.46.68-.93.43l-2.57-1.9-1.24 1.2c-.14.14-.26.26-.52.26l.18-2.62 4.74-4.28c.2-.18-.05-.28-.32-.1L7.95 14.4 5.41 13.6c-.55-.18-.56-.55.12-.81l8.97-3.46c.45-.17.85.11.14.47z"/>
+            </svg>
+            Войти через Telegram
+        </a>
+        <p class="guest-tg-hint">Если Telegram предложит на выбор способ входа – выбирайте вариант «по номеру телефона», а не «продолжить через приложение».</p>
+        {% else %}
         <form method="post" action="/guest/{{ config.token }}/start">
             <div class="guest-field">
                 <label for="guest-name" style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px">Ваше имя</label>
@@ -64,6 +84,7 @@
             </div>
             <button type="submit" class="btn-blue btn-full">Начать</button>
         </form>
+        {% endif %}
 
         <div class="guest-divider">уже участвовали</div>
 

@@ -77,6 +77,23 @@ def load_guest_cookie(raw: str) -> dict | None:
     return payload
 
 
+def set_guest_cookie(response, participant_id: int, config_token: str) -> None:
+    """Поставить подписанный cookie гостевой сессии.
+
+    Живёт в сервисе, а не в роутере, потому что гостевую сессию открывают из
+    двух мест: форма кода (app/api/guest_exam.py) и callback Telegram-входа
+    (app/api/auth.py), а импорт роутера из роутера дал бы цикл."""
+    response.set_cookie(
+        key=GUEST_COOKIE_NAME,
+        value=dump_guest_cookie(participant_id, config_token),
+        httponly=True,
+        samesite="lax",
+        secure=True,
+        max_age=COOKIE_MAX_AGE,
+        path="/",
+    )
+
+
 def get_config_by_token(db: DBSession, token: str) -> GuestExamConfig | None:
     return db.query(GuestExamConfig).filter(GuestExamConfig.token == token).first()
 
@@ -255,6 +272,85 @@ def create_participant(db: DBSession, config: GuestExamConfig, display_name: str
             db.commit()
         except IntegrityError:
             db.rollback()
+            continue
+        db.refresh(participant)
+        return participant
+    raise RuntimeError("Не удалось сгенерировать уникальный код участника")
+
+
+def get_participant_by_telegram(
+    db: DBSession, config_id: int, chat_id: int
+) -> GuestParticipant | None:
+    return (
+        db.query(GuestParticipant)
+        .filter(
+            GuestParticipant.config_id == config_id,
+            GuestParticipant.telegram_chat_id == chat_id,
+        )
+        .first()
+    )
+
+
+def telegram_display_name(first_name: str | None, last_name: str | None, username: str | None) -> str:
+    """Имя участника из данных Telegram. Пустым не бывает: у аккаунта всегда
+    есть хотя бы имя, но если Telegram его не отдал — подставляем username, а в
+    последнюю очередь заглушку, потому что display_name NOT NULL."""
+    parts = [p for p in (first_name, last_name) if p]
+    name = " ".join(parts).strip()
+    return (name or (username or "").strip() or "Участник")[:200]
+
+
+def upsert_telegram_participant(
+    db: DBSession,
+    config: GuestExamConfig,
+    *,
+    chat_id: int,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    username: str | None = None,
+    existing: GuestParticipant | None = None,
+) -> GuestParticipant:
+    """Найти или завести участника по Telegram-аккаунту.
+
+    `existing` — участник, узнанный по cookie в этом же браузере. Если он ещё не
+    привязан к Telegram, chat_id дописывается ему, а не создаётся вторая запись:
+    иначе тот, кто начал пробник до появления входа через Telegram, потерял бы
+    уже взятый билет.
+    """
+    display_name = telegram_display_name(first_name, last_name, username)
+    username_clean = (username or "").strip() or None
+
+    participant = get_participant_by_telegram(db, config.id, chat_id)
+    if not participant and existing is not None and existing.telegram_chat_id is None:
+        participant = existing
+
+    if participant:
+        participant.telegram_chat_id = chat_id
+        participant.telegram_username = username_clean
+        participant.display_name = display_name
+        participant.last_seen_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(participant)
+        return participant
+
+    for _ in range(_CODE_GENERATION_ATTEMPTS):
+        participant = GuestParticipant(
+            config_id=config.id,
+            display_name=display_name,
+            participant_code=_generate_code(),
+            telegram_chat_id=chat_id,
+            telegram_username=username_clean,
+        )
+        db.add(participant)
+        try:
+            db.commit()
+        except IntegrityError:
+            # Либо совпал сгенерированный код, либо параллельная вкладка успела
+            # завести того же участника — во втором случае возвращаем его.
+            db.rollback()
+            existing_by_tg = get_participant_by_telegram(db, config.id, chat_id)
+            if existing_by_tg:
+                return existing_by_tg
             continue
         db.refresh(participant)
         return participant

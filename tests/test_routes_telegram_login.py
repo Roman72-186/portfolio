@@ -40,10 +40,11 @@ def test_telegram_login_stores_pkce_in_redis(client, monkeypatch):
 
     captured = {}
 
-    def fake_set_pkce(state: str, code_verifier: str, ttl: int = 300) -> bool:
+    def fake_set_pkce(state: str, code_verifier: str, ttl: int = 300, extra=None) -> bool:
         captured["state"] = state
         captured["code_verifier"] = code_verifier
         captured["ttl"] = ttl
+        captured["extra"] = extra or {}
         return True
 
     monkeypatch.setattr(auth_module, "set_telegram_oidc_pkce", fake_set_pkce)
@@ -55,11 +56,16 @@ def test_telegram_login_stores_pkce_in_redis(client, monkeypatch):
     assert captured["state"] == state
     assert captured["code_verifier"]
     assert captured["ttl"] == 600
+    # Назначение входа переносится через state — иначе гость с гостевой ссылки
+    # уехал бы в ветку проверки членства в закрытом канале.
+    assert captured["extra"]["purpose"] == auth_module.TG_PURPOSE_LOGIN
 
     pkce_cookie = resp.cookies.get("tg_pkce_cv")
     assert pkce_cookie
     cookie_data = auth_module._signer.loads(pkce_cookie, max_age=600)
     assert cookie_data["st"] == state
+    # То же самое дублируется в cookie: при промахе Redis назначение не теряется.
+    assert cookie_data["purpose"] == auth_module.TG_PURPOSE_LOGIN
 
 
 def test_telegram_login_callback_creates_new_user_and_session(client, db, monkeypatch):

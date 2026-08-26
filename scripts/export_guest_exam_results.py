@@ -43,12 +43,13 @@ def main() -> None:
         with open(args.out, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
             writer.writerow([
-                "Имя", "Код участника", "Предмет", "Билет", "Статус",
+                "Имя", "Telegram", "Код участника", "Предмет", "Билет", "Статус",
                 "Отправлено", "Балл", "Комментарий", "Фото",
             ])
             for submission, participant in rows:
                 writer.writerow([
                     participant.display_name,
+                    f"@{participant.telegram_username}" if participant.telegram_username else "",
                     participant.participant_code,
                     submission.subject,
                     submission.ticket_title,

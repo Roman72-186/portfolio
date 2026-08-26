@@ -10,10 +10,11 @@ plans/2026-08-18-apparchi-student-cabinet-and-guest-trial.md, трек B.
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session as DBSession
 
+from app.api.auth import TG_PURPOSE_GUEST, telegram_login_enabled, telegram_oauth_redirect
 from app.constants import MOCK_SUBJECTS
 from app.csrf import generate_csrf_token, validate_csrf_token
 from app.db.database import get_db
@@ -46,18 +47,6 @@ def _get_participant_from_cookie(request: Request, db: DBSession, config):
     return guest_exam_service.get_participant(db, payload.get("participant_id"), config.id)
 
 
-def _set_guest_cookie(response: Response, participant_id: int, config_token: str) -> None:
-    response.set_cookie(
-        key=GUEST_COOKIE_NAME,
-        value=guest_exam_service.dump_guest_cookie(participant_id, config_token),
-        httponly=True,
-        samesite="lax",
-        secure=True,
-        max_age=guest_exam_service.COOKIE_MAX_AGE,
-        path="/",
-    )
-
-
 def require_guest_csrf(
     request: Request,
     csrf_token: Annotated[str, Form(alias="csrf_token")] = "",
@@ -82,7 +71,33 @@ def guest_landing(request: Request, token: str, db: Annotated[DBSession, Depends
         "request": request,
         "config": config,
         "is_open": config.is_active,
+        "telegram_login_enabled": telegram_login_enabled(),
     })
+
+
+@router.get("/guest/{token}/auth/telegram")
+@limiter.limit("20/minute")
+def guest_telegram_login(request: Request, token: str, db: Annotated[DBSession, Depends(get_db)]):
+    """Вход гостя через Telegram — тот же OIDC-флоу, что и у учеников.
+
+    Callback общий (`/auth/telegram-login/callback`, redirect_uri в Telegram
+    один), гостевая ветка узнаётся по `purpose` в state — см.
+    app/api/auth.py::telegram_oauth_redirect. Проверка членства в закрытом
+    канале к гостю не применяется."""
+    config = _get_config_or_404(db, token)
+    if not config.is_active:
+        return templates.TemplateResponse("guest/guest_landing.html", {
+            "request": request, "config": config, "is_open": False,
+            "telegram_login_enabled": telegram_login_enabled(),
+        }, status_code=403)
+    if not telegram_login_enabled():
+        return templates.TemplateResponse("guest/guest_landing.html", {
+            "request": request, "config": config, "is_open": True,
+            "telegram_login_enabled": False,
+            "error": "Вход через Telegram пока не настроен.",
+        }, status_code=503)
+
+    return telegram_oauth_redirect(purpose=TG_PURPOSE_GUEST, guest_token=config.token)
 
 
 @router.post("/guest/{token}/start")
@@ -101,6 +116,7 @@ def guest_start(
     if not config.is_active:
         return templates.TemplateResponse("guest/guest_landing.html", {
             "request": request, "config": config, "is_open": False,
+            "telegram_login_enabled": telegram_login_enabled(),
         }, status_code=403)
 
     error = None
@@ -108,6 +124,12 @@ def guest_start(
         participant = guest_exam_service.get_participant_by_code(db, config.id, code)
         if not participant:
             error = "Код не найден. Проверьте и попробуйте снова."
+    elif telegram_login_enabled():
+        # Когда вход через Telegram включён, свободный ввод имени на лендинге не
+        # показывается — и через прямой POST тоже не работает, иначе личность
+        # участника обходилась бы одним запросом мимо Telegram.
+        participant = None
+        error = "Войдите через Telegram или продолжите по коду участника."
     else:
         try:
             participant = guest_exam_service.create_participant(db, config, display_name)
@@ -118,11 +140,12 @@ def guest_start(
     if not participant:
         return templates.TemplateResponse("guest/guest_landing.html", {
             "request": request, "config": config, "is_open": True, "error": error,
+            "telegram_login_enabled": telegram_login_enabled(),
         }, status_code=400)
 
     guest_exam_service.touch_participant(db, participant)
     redirect = RedirectResponse(f"/guest/{token}/exam", status_code=302)
-    _set_guest_cookie(redirect, participant.id, config.token)
+    guest_exam_service.set_guest_cookie(redirect, participant.id, config.token)
     return redirect
 
 

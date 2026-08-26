@@ -24,11 +24,12 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
-    Integer, String, Boolean, DateTime, Text, Numeric,
+    BigInteger, Integer, String, Boolean, DateTime, Text, Numeric,
     ForeignKey, Index, UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.crypto import EncryptedString
 from app.db.database import Base
 
 
@@ -73,7 +74,15 @@ class GuestVisit(Base):
 
 
 class GuestParticipant(Base):
-    """Гость. От него собирается только имя — никакого телефона/telegram/email."""
+    """Гость. Основной вход — Telegram (тот же OIDC-флоу, что и у настоящих
+    учеников, но без проверки членства в закрытом канале): от участника
+    собираются chat_id, имя и username. Телефон и email не собираются.
+
+    Гостем участник при этом быть не перестаёт: `User`/`Session` не заводятся,
+    сессия по-прежнему живёт в подписанном cookie `guest_session`.
+    `participant_code` остаётся у всех — по нему заходят те, кто начал до
+    появления входа через Telegram, и он же работает, когда вход через
+    Telegram не настроен."""
 
     __tablename__ = "guest_participants"
 
@@ -85,11 +94,22 @@ class GuestParticipant(Base):
     # Короткий код для повторного входа с другого устройства/браузера — единственная
     # «учётная запись» гостя, алфавит без спутываемых символов (см. guest_exam.py).
     participant_code: Mapped[str] = mapped_column(String(8), unique=True, nullable=False, index=True)
+    # Telegram-личность участника. Уникальность — в паре с config_id, а не
+    # глобально: ссылок может быть несколько, и один человек имеет право пройти
+    # пробник по каждой отдельно (весь гостевой модуль скоупится по config_id).
+    telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    telegram_username: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "config_id", "telegram_chat_id", name="uq_guest_participant_config_telegram"
+        ),
     )
 
 

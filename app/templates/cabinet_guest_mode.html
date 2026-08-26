@@ -295,6 +295,7 @@
                 <div class="gpart-main">
                     <span class="gexam-name">{{ p.display_name }} · {{ p.participant_code }}</span>
                     <div class="gpart-meta">
+                        {% if p.telegram_username %}@{{ p.telegram_username }} · {% endif %}
                         Зашёл {{ p.created_at.strftime('%d.%m %H:%M') }} ·
                         {% if row.submitted %}сдал работ: {{ row.submitted }}{% else %}сданных работ нет{% endif %}
                         {% if row.issued %} · билетов без работы: {{ row.issued }}{% endif %}

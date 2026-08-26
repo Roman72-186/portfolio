@@ -1002,3 +1002,345 @@ def test_cancel_upload_requires_admin_rank_not_curator(
     assert resp.status_code == 403
     db.refresh(submission)
     assert submission.status == "submitted"
+
+
+# ---------------------------------------------------------------------------
+# Вход гостя через Telegram
+# ---------------------------------------------------------------------------
+#
+# Callback у гостя и ученика общий (`/auth/telegram-login/callback`) — в Telegram
+# зарегистрирован один redirect_uri. Гостевая ветка узнаётся по `purpose` в
+# state и НЕ должна ни проверять членство в закрытом канале, ни заводить
+# User/Session. Обмен кода и проверка id_token моканы, как в
+# test_routes_telegram_login.py.
+
+
+def _enable_telegram_login(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "telegram_login_client_id", "123456")
+    monkeypatch.setattr(settings, "telegram_login_client_secret", "secret")
+
+
+def _mock_telegram_callback(monkeypatch, *, chat_id: int, extra: dict, claims: dict | None = None):
+    """Мокает обмен кода/проверку id_token и подсовывает PKCE из Redis с
+    заданным `extra` (purpose + guest_token)."""
+    import app.api.auth as auth_module
+
+    async def fake_exchange_code(*_a, **_k) -> dict:
+        return {"id_token": "fake.jwt.token"}
+
+    def fake_verify_id_token(_id_token: str) -> dict:
+        return claims or {
+            "id": chat_id,
+            "preferred_username": "guest_tg",
+            "given_name": "Гостевой",
+            "family_name": "Участник",
+        }
+
+    monkeypatch.setattr(auth_module, "pop_telegram_oidc_pkce", lambda state: {
+        "code_verifier": "redis-verifier", **extra,
+    } if state == "redis-state" else None)
+    monkeypatch.setattr(auth_module, "tg_exchange_code", fake_exchange_code)
+    monkeypatch.setattr(auth_module, "tg_verify_id_token", fake_verify_id_token)
+    return auth_module
+
+
+def test_guest_landing_shows_telegram_button(client, guest_config_factory, monkeypatch):
+    _enable_telegram_login(monkeypatch)
+    config = guest_config_factory()
+
+    resp = client.get(f"/guest/{config.token}")
+
+    assert resp.status_code == 200
+    assert f"/guest/{config.token}/auth/telegram" in resp.text
+    # Форма имени — только фолбэк на случай, когда вход через Telegram выключен.
+    assert 'name="display_name"' not in resp.text
+    assert 'name="code"' in resp.text
+
+
+def test_guest_landing_falls_back_to_name_form_without_telegram(
+    client, guest_config_factory, monkeypatch
+):
+    from app.config import settings
+    monkeypatch.setattr(settings, "telegram_login_client_id", "")
+    monkeypatch.setattr(settings, "telegram_login_client_secret", "")
+    config = guest_config_factory()
+
+    resp = client.get(f"/guest/{config.token}")
+
+    assert resp.status_code == 200
+    assert 'name="display_name"' in resp.text
+
+
+def test_guest_telegram_start_redirects_with_guest_purpose(
+    client, guest_config_factory, monkeypatch
+):
+    import app.api.auth as auth_module
+    _enable_telegram_login(monkeypatch)
+    config = guest_config_factory()
+
+    captured = {}
+
+    def fake_set_pkce(state, code_verifier, ttl=300, extra=None):
+        captured.update(extra or {})
+        return True
+
+    monkeypatch.setattr(auth_module, "set_telegram_oidc_pkce", fake_set_pkce)
+
+    resp = client.get(f"/guest/{config.token}/auth/telegram", follow_redirects=False)
+
+    assert resp.status_code == 302
+    assert "oauth.telegram.org" in resp.headers["location"]
+    assert captured["purpose"] == auth_module.TG_PURPOSE_GUEST
+    assert captured["guest_token"] == config.token
+    # Тот же маркер в cookie — на случай промаха Redis.
+    cookie_data = auth_module._signer.loads(resp.cookies.get("tg_pkce_cv"), max_age=600)
+    assert cookie_data["purpose"] == auth_module.TG_PURPOSE_GUEST
+    assert cookie_data["guest_token"] == config.token
+
+
+def test_guest_telegram_start_blocked_when_link_off(client, guest_config_factory, monkeypatch):
+    _enable_telegram_login(monkeypatch)
+    config = guest_config_factory(is_active=False)
+
+    resp = client.get(f"/guest/{config.token}/auth/telegram", follow_redirects=False)
+
+    assert resp.status_code == 403
+
+
+def test_guest_telegram_callback_creates_participant_without_user(
+    client, db, guest_config_factory, monkeypatch
+):
+    import app.api.auth as auth_module
+    config = guest_config_factory()
+    _mock_telegram_callback(
+        monkeypatch,
+        chat_id=880_001,
+        extra={"purpose": auth_module.TG_PURPOSE_GUEST, "guest_token": config.token},
+    )
+
+    resp = client.get(
+        "/auth/telegram-login/callback?code=good-code&state=redis-state",
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"/guest/{config.token}/exam"
+    assert resp.cookies.get(GUEST_COOKIE_NAME)
+    assert "session_id" not in resp.cookies
+
+    participant = (
+        db.query(GuestParticipant)
+        .filter(GuestParticipant.telegram_chat_id == 880_001)
+        .one()
+    )
+    assert participant.config_id == config.id
+    assert participant.display_name == "Гостевой Участник"
+    assert participant.telegram_username == "guest_tg"
+    assert participant.participant_code
+
+    from app.models.user import User
+    assert db.query(User).filter(User.telegram_chat_id == 880_001).count() == 0
+
+
+def test_guest_telegram_callback_skips_channel_membership_check(
+    client, db, guest_config_factory, monkeypatch
+):
+    """Гость по определению не состоит в закрытом канале — проверка членства не
+    должна вызываться вообще, иначе он получит denied.html."""
+    import app.api.auth as auth_module
+    config = guest_config_factory()
+    _mock_telegram_callback(
+        monkeypatch,
+        chat_id=880_002,
+        extra={"purpose": auth_module.TG_PURPOSE_GUEST, "guest_token": config.token},
+    )
+
+    called = {"membership": False}
+
+    async def fake_check_membership(_chat_id: int):
+        called["membership"] = True
+        return False
+
+    monkeypatch.setattr(
+        auth_module.telegram_service, "check_channel_membership", fake_check_membership
+    )
+
+    resp = client.get(
+        "/auth/telegram-login/callback?code=good-code&state=redis-state",
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 302
+    assert called["membership"] is False
+
+
+def test_guest_telegram_callback_returns_same_participant(
+    client, db, guest_config_factory, monkeypatch
+):
+    import app.api.auth as auth_module
+    config = guest_config_factory()
+    _mock_telegram_callback(
+        monkeypatch,
+        chat_id=880_003,
+        extra={"purpose": auth_module.TG_PURPOSE_GUEST, "guest_token": config.token},
+    )
+
+    for _ in range(2):
+        client.cookies.clear()
+        resp = client.get(
+            "/auth/telegram-login/callback?code=good-code&state=redis-state",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+
+    assert db.query(GuestParticipant).filter(
+        GuestParticipant.telegram_chat_id == 880_003
+    ).count() == 1
+
+
+def test_guest_telegram_callback_attaches_to_cookie_participant(
+    client, db, guest_config_factory, guest_ticket_factory, monkeypatch
+):
+    """Тот, кто начал пробник до появления входа через Telegram, не должен
+    потерять уже взятый билет: chat_id дописывается его же записи."""
+    import app.api.auth as auth_module
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = _login_guest(client, db, config, name="Старый Гость")
+    guest_exam_service.issue_ticket(db, participant, "Рисунок")
+
+    _mock_telegram_callback(
+        monkeypatch,
+        chat_id=880_004,
+        extra={"purpose": auth_module.TG_PURPOSE_GUEST, "guest_token": config.token},
+    )
+
+    resp = client.get(
+        "/auth/telegram-login/callback?code=good-code&state=redis-state",
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 302
+    assert db.query(GuestParticipant).filter(GuestParticipant.config_id == config.id).count() == 1
+    db.refresh(participant)
+    assert participant.telegram_chat_id == 880_004
+    assert guest_exam_service.get_submission(db, participant.id, "Рисунок") is not None
+
+
+def test_guest_telegram_callback_survives_redis_miss_via_cookie(
+    client, db, guest_config_factory, monkeypatch
+):
+    """Промах Redis — штатный сценарий (есть cookie-фолбэк). Назначение входа
+    должно пережить его, иначе гость уедет в ветку ученика."""
+    import app.api.auth as auth_module
+    config = guest_config_factory()
+    _mock_telegram_callback(monkeypatch, chat_id=880_005, extra={})
+    monkeypatch.setattr(auth_module, "pop_telegram_oidc_pkce", lambda _state: None)
+
+    signed = auth_module._signer.dumps({
+        "cv": "cookie-verifier",
+        "st": "cookie-state",
+        "purpose": auth_module.TG_PURPOSE_GUEST,
+        "guest_token": config.token,
+    })
+    client.cookies.set("tg_pkce_cv", signed)
+
+    resp = client.get(
+        "/auth/telegram-login/callback?code=good-code&state=cookie-state",
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"/guest/{config.token}/exam"
+    assert db.query(GuestParticipant).filter(
+        GuestParticipant.telegram_chat_id == 880_005
+    ).count() == 1
+
+
+def test_guest_telegram_callback_error_renders_guest_landing(
+    client, db, guest_config_factory, monkeypatch
+):
+    """Ошибку гость должен увидеть на своей странице, а не на /login кабинета."""
+    import app.api.auth as auth_module
+    config = guest_config_factory(title="Пробник для гостей")
+
+    signed = auth_module._signer.dumps({
+        "cv": "cookie-verifier",
+        "st": "cookie-state",
+        "purpose": auth_module.TG_PURPOSE_GUEST,
+        "guest_token": config.token,
+    })
+    client.cookies.set("tg_pkce_cv", signed)
+
+    resp = client.get(
+        "/auth/telegram-login/callback?error=access_denied&state=cookie-state",
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 200
+    assert "Пробник для гостей" in resp.text
+    assert "Авторизация через Telegram отменена" in resp.text
+
+
+def test_guest_telegram_callback_scopes_participant_per_config(
+    client, db, guest_config_factory, monkeypatch
+):
+    """Один человек по двум разным ссылкам — два независимых участника."""
+    import app.api.auth as auth_module
+    first = guest_config_factory(token="trial-one")
+    second = guest_config_factory(token="trial-two")
+
+    for config in (first, second):
+        _mock_telegram_callback(
+            monkeypatch,
+            chat_id=880_006,
+            extra={"purpose": auth_module.TG_PURPOSE_GUEST, "guest_token": config.token},
+        )
+        client.cookies.clear()
+        resp = client.get(
+            "/auth/telegram-login/callback?code=good-code&state=redis-state",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+
+    assert db.query(GuestParticipant).filter(
+        GuestParticipant.telegram_chat_id == 880_006
+    ).count() == 2
+
+
+def test_guest_name_start_rejected_when_telegram_login_on(
+    client, db, guest_config_factory, monkeypatch
+):
+    """Форму имени не видно, но POST прошёл бы напрямую — тогда личность
+    участника обходилась бы мимо Telegram одним запросом."""
+    _enable_telegram_login(monkeypatch)
+    config = guest_config_factory()
+
+    resp = client.post(
+        f"/guest/{config.token}/start",
+        data={"display_name": "Мимо Телеграма"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 400
+    assert db.query(GuestParticipant).filter(GuestParticipant.config_id == config.id).count() == 0
+
+
+def test_guest_code_start_still_works_with_telegram_login_on(
+    client, db, guest_config_factory, monkeypatch
+):
+    """Код участника остаётся рабочим входом: по нему заходят те, кто начал
+    пробник до появления Telegram-входа."""
+    _enable_telegram_login(monkeypatch)
+    config = guest_config_factory()
+    participant = guest_exam_service.create_participant(db, config, "Старый Гость")
+
+    resp = client.post(
+        f"/guest/{config.token}/start",
+        data={"code": participant.participant_code},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"/guest/{config.token}/exam"

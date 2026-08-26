@@ -43,6 +43,7 @@ from app.services.telegram_login import (
     verify_id_token as tg_verify_id_token,
 )
 from app.services import drive as drive_service
+from app.services import guest_exam as guest_exam_service
 from app.services import telegram as telegram_service
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,19 @@ def _vk_login_enabled() -> bool:
 
 def _telegram_login_enabled() -> bool:
     return bool(settings.telegram_login_client_id and settings.telegram_login_client_secret)
+
+
+# Тот же вход обслуживает два сценария: кабинет и гостевой пробник. redirect_uri
+# в Telegram зарегистрирован ровно один, второй туда не добавить, поэтому
+# callback общий, а сценарий переносится через state (Redis + подписанный
+# cookie-фолбэк) — см. telegram_oauth_redirect ниже.
+TG_PURPOSE_LOGIN = "login"
+TG_PURPOSE_GUEST = "guest"
+
+
+def telegram_login_enabled() -> bool:
+    """Публичный алиас для других роутеров (гостевой модуль)."""
+    return _telegram_login_enabled()
 
 
 def _now() -> datetime:
@@ -391,6 +405,75 @@ async def vk_callback(
     return _create_session_response(db, user)
 
 
+def telegram_oauth_redirect(
+    purpose: str = TG_PURPOSE_LOGIN, guest_token: str | None = None
+) -> RedirectResponse:
+    """Собрать редирект на oauth.telegram.org с PKCE.
+
+    `purpose`/`guest_token` кладутся и в Redis, и в подписанный cookie: если
+    Redis промахнётся (обычный фолбэк, см. callback), назначение входа должно
+    пережить промах, иначе гость уедет в ветку проверки членства в канале и
+    получит отказ.
+    """
+    state = secrets.token_urlsafe(32)
+    code_verifier = generate_code_verifier()
+    code_challenge = generate_code_challenge(code_verifier)
+
+    extra: dict[str, str] = {"purpose": purpose}
+    if guest_token:
+        extra["guest_token"] = guest_token
+
+    # TTL 10 минут (не 5, как у VK) — путь через Telegram может уводить в
+    # приложение для подтверждения телефона/2FA-пароля и обратно, это дольше,
+    # чем чистый OAuth-редирект.
+    stored_in_redis = set_telegram_oidc_pkce(state, code_verifier, ttl=600, extra=extra)
+    if not stored_in_redis:
+        logger.warning("Telegram login: failed to store PKCE in Redis for state=%s", state[:12])
+
+    pkce_signed = _signer.dumps({"cv": code_verifier, "st": state, **extra})
+    url = tg_get_authorize_url(state, code_challenge)
+    response = RedirectResponse(url, status_code=302)
+    response.set_cookie(
+        "tg_pkce_cv", pkce_signed,
+        httponly=True, secure=True, samesite="lax",
+        max_age=600, path="/",
+    )
+    return response
+
+
+def _peek_telegram_purpose(request: Request) -> tuple[str, str | None]:
+    """Назначение входа из cookie, без списания PKCE.
+
+    Нужно только чтобы показать ошибку на правильной странице до того, как
+    state проверен (отмена авторизации, отсутствующий state). Решение о самой
+    ветке принимается позже — по источнику, который отдал code_verifier."""
+    raw = request.cookies.get("tg_pkce_cv")
+    if not raw:
+        return TG_PURPOSE_LOGIN, None
+    try:
+        data = _signer.loads(raw, max_age=600)
+    except (BadSignature, SignatureExpired):
+        return TG_PURPOSE_LOGIN, None
+    if not isinstance(data, dict):
+        return TG_PURPOSE_LOGIN, None
+    return data.get("purpose") or TG_PURPOSE_LOGIN, data.get("guest_token")
+
+
+def _render_guest_landing(request: Request, db: DBSession, guest_token: str | None, error: str):
+    """Ошибка входа для гостя — на его же странице, а не на главном /login,
+    который ведёт в кабинет и гостю ничего не объясняет."""
+    config = guest_exam_service.get_config_by_token(db, guest_token) if guest_token else None
+    if not config:
+        return _render_login(request, error)
+    return templates.TemplateResponse("guest/guest_landing.html", {
+        "request": request,
+        "config": config,
+        "is_open": config.is_active,
+        "telegram_login_enabled": _telegram_login_enabled(),
+        "error": error,
+    })
+
+
 @router.get("/auth/telegram-login")
 @limiter.limit("20/minute")
 async def telegram_login_start(request: Request):
@@ -400,25 +483,53 @@ async def telegram_login_start(request: Request):
     if not _telegram_login_enabled():
         return RedirectResponse("/?error=Вход через Telegram пока не настроен", status_code=302)
 
-    state = secrets.token_urlsafe(32)
-    code_verifier = generate_code_verifier()
-    code_challenge = generate_code_challenge(code_verifier)
+    return telegram_oauth_redirect()
 
-    # TTL 10 минут (не 5, как у VK) — путь через Telegram может уводить в
-    # приложение для подтверждения телефона/2FA-пароля и обратно, это дольше,
-    # чем чистый OAuth-редирект.
-    stored_in_redis = set_telegram_oidc_pkce(state, code_verifier, ttl=600)
-    if not stored_in_redis:
-        logger.warning("Telegram login: failed to store PKCE in Redis for state=%s", state[:12])
 
-    pkce_signed = _signer.dumps({"cv": code_verifier, "st": state})
-    url = tg_get_authorize_url(state, code_challenge)
-    response = RedirectResponse(url, status_code=302)
-    response.set_cookie(
-        "tg_pkce_cv", pkce_signed,
-        httponly=True, secure=True, samesite="lax",
-        max_age=600, path="/",
+def _guest_telegram_session(
+    request: Request,
+    db: DBSession,
+    guest_token: str | None,
+    chat_id: int,
+    claims: dict,
+):
+    """Гостевая ветка callback: заводим/находим GuestParticipant и открываем
+    гостевую сессию в подписанном cookie. Ни User, ни Session не создаются."""
+    config = guest_exam_service.get_config_by_token(db, guest_token) if guest_token else None
+    if not config:
+        logger.warning("Telegram guest login: config not found for token=%r", guest_token)
+        return _render_login(request, "Ссылка пробного экзамена не найдена.")
+    if not config.is_active:
+        return templates.TemplateResponse("guest/guest_landing.html", {
+            "request": request,
+            "config": config,
+            "is_open": False,
+            "telegram_login_enabled": _telegram_login_enabled(),
+        }, status_code=403)
+
+    # Участник этого же браузера, начавший пробник до входа через Telegram —
+    # ему дописывается chat_id, чтобы не потерять уже взятый билет.
+    existing = None
+    raw_cookie = request.cookies.get(guest_exam_service.GUEST_COOKIE_NAME)
+    if raw_cookie:
+        payload = guest_exam_service.load_guest_cookie(raw_cookie)
+        if payload and payload.get("config_token") == config.token:
+            existing = guest_exam_service.get_participant(
+                db, payload.get("participant_id"), config.id
+            )
+
+    participant = guest_exam_service.upsert_telegram_participant(
+        db,
+        config,
+        chat_id=chat_id,
+        first_name=claims.get("given_name"),
+        last_name=claims.get("family_name"),
+        username=claims.get("preferred_username"),
+        existing=existing,
     )
+
+    response = RedirectResponse(f"/guest/{config.token}/exam", status_code=302)
+    guest_exam_service.set_guest_cookie(response, participant.id, config.token)
     return response
 
 
@@ -431,13 +542,23 @@ async def telegram_login_callback(
     state: str | None = None,
     error: str | None = None,
 ):
+    # До проверки state назначение известно только приблизительно — из cookie,
+    # не списывая PKCE. Нужно ровно для того, чтобы ошибку увидел тот, кто её
+    # вызвал: гость на своей странице, ученик на /login.
+    purpose, guest_token = _peek_telegram_purpose(request)
+
+    def fail(message: str):
+        if purpose == TG_PURPOSE_GUEST:
+            return _render_guest_landing(request, db, guest_token, message)
+        return _render_login(request, message)
+
     if error or not code:
         logger.warning("Telegram login callback error: %s", error)
-        return _render_login(request, "Авторизация через Telegram отменена")
+        return fail("Авторизация через Telegram отменена")
 
     if not state:
         logger.warning("Telegram login callback: state missing")
-        return _render_login(request, "Ошибка безопасности. Попробуйте снова.")
+        return fail("Ошибка безопасности. Попробуйте снова.")
 
     code_verifier: str | None = None
     stored_state: str | None = None
@@ -446,40 +567,50 @@ async def telegram_login_callback(
     if redis_pkce:
         code_verifier = redis_pkce.get("code_verifier")
         stored_state = state
+        purpose = redis_pkce.get("purpose") or TG_PURPOSE_LOGIN
+        guest_token = redis_pkce.get("guest_token")
     else:
         logger.warning("Telegram login callback: PKCE missing in Redis for state=%s", state[:12])
         cookie_pkce, cookie_error = _load_telegram_pkce_cookie(request)
         if not cookie_pkce:
-            return _render_login(request, cookie_error)
+            return fail(cookie_error)
         code_verifier = cookie_pkce["cv"]
         stored_state = cookie_pkce["st"]
+        purpose = cookie_pkce.get("purpose") or TG_PURPOSE_LOGIN
+        guest_token = cookie_pkce.get("guest_token")
 
     if not code_verifier or not stored_state:
-        return _render_login(request, "Ошибка сессии. Попробуйте снова или очистите cookies.")
+        return fail("Ошибка сессии. Попробуйте снова или очистите cookies.")
 
     if stored_state != state:
         logger.warning("Telegram login callback: state mismatch stored=%r url=%r", stored_state[:20], state[:20])
-        return _render_login(request, "Ошибка безопасности. Попробуйте снова.")
+        return fail("Ошибка безопасности. Попробуйте снова.")
 
     try:
         token_data = await tg_exchange_code(code, code_verifier)
     except Exception as exc:
         logger.error("Telegram login token exchange failed: %s", exc)
-        return _render_login(request, "Ошибка авторизации Telegram. Попробуйте позже.")
+        return fail("Ошибка авторизации Telegram. Попробуйте позже.")
 
     id_token = token_data.get("id_token")
     if not id_token:
-        return _render_login(request, "Telegram не вернул данные авторизации.")
+        return fail("Telegram не вернул данные авторизации.")
 
     try:
         claims = await asyncio.to_thread(tg_verify_id_token, id_token)
     except Exception as exc:
         logger.error("Telegram login id_token verification failed: %s", exc)
-        return _render_login(request, "Не удалось проверить данные Telegram. Попробуйте позже.")
+        return fail("Не удалось проверить данные Telegram. Попробуйте позже.")
 
     chat_id = claims.get("id")
     if not chat_id:
-        return _render_login(request, "Telegram не вернул идентификатор пользователя.")
+        return fail("Telegram не вернул идентификатор пользователя.")
+
+    # Развилка: гость дальше не идёт ни в User, ни в Session, ни в проверку
+    # членства в закрытом канале — он посторонний по определению, в этом весь
+    # смысл гостевого пробника.
+    if purpose == TG_PURPOSE_GUEST:
+        return _guest_telegram_session(request, db, guest_token, chat_id, claims)
 
     is_member = await telegram_service.check_channel_membership(chat_id)
     if is_member is None:
