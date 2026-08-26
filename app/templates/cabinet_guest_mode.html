@@ -25,6 +25,7 @@
 .gexam-img { max-width: 100%; border-radius: var(--r-md); margin-bottom: 10px; display: block; }
 .gexam-scored { font-size: 13px; color: var(--dim); }
 .gexam-form-row { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+.gexam-form-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .gexam-form-row input[type=number] {
     width: 90px; padding: 10px 12px; border: 1.5px solid var(--line);
     border-radius: var(--r-md); background: var(--surface-2); color: var(--ink); font-size: 14px;
@@ -261,13 +262,15 @@
                             <input type="hidden" name="feedback_image_url" id="fb-image-url-{{ sub.id }}">
                             <input type="hidden" name="feedback_image_path" id="fb-image-path-{{ sub.id }}">
                         </div>
-                        <button type="submit" class="btn-blue">Оценить</button>
-                    </form>
-                    <form method="post" action="/cabinet/staff/guest-exam/works/{{ sub.id }}/cancel-upload"
-                          style="margin-top:10px"
-                          onsubmit="return confirm('Убрать работу и вернуть участнику возможность загрузить заново? Фото будет удалено, билет останется.')">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                        <button type="submit" class="btn-danger">Отменить загрузку</button>
+                        <div class="gexam-form-actions">
+                            <button type="submit" class="btn-blue">Оценить</button>
+                            <button type="submit" class="btn-danger"
+                                    formaction="/cabinet/staff/guest-exam/works/{{ sub.id }}/cancel-upload"
+                                    formnovalidate
+                                    onclick="return confirm('Убрать работу и вернуть участнику возможность загрузить заново? Фото будет удалено, билет останется.')">
+                                Отменить загрузку
+                            </button>
+                        </div>
                     </form>
                     {% endif %}
                 </div>
