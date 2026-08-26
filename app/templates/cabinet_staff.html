@@ -1,214 +1,10 @@
 {% extends "base.html" %}
 {% block title %}{% if user.role_rank >= 5 %}Суперадмин{% else %}Главный преподаватель{% endif %} — дашборд{% endblock %}
 {% block extra_styles %}
-<style>
-.staff-wrap { max-width: 900px; margin: 0 auto; }
-
-/* ── Hero ── */
-.staff-hero {
-    background: linear-gradient(135deg, var(--ink) 0%, var(--blue-deep) 60%, var(--blue-mid) 100%);
-    border-radius: var(--r-lg); padding: 28px 32px; margin-bottom: 20px;
-    display: flex; align-items: center; justify-content: space-between; gap: 20px;
-    box-shadow: 0 8px 32px rgba(15,23,42,0.3); position: relative; overflow: hidden;
-}
-.staff-hero::before {
-    content: ''; position: absolute; width: 360px; height: 360px; border-radius: 50%;
-    background: rgba(255,255,255,0.03); top: -120px; right: -80px; pointer-events: none;
-}
-.staff-hero-info { position: relative; z-index: 1; }
-.staff-role-tag {
-    display: inline-flex; align-items: center; gap: 6px;
-    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18);
-    border-radius: var(--r-pill); padding: 4px 14px;
-    font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
-    color: rgba(255,255,255,0.85); margin-bottom: 10px;
-}
-.staff-hero-name { font-size: 26px; font-weight: 900; color: #fff; letter-spacing: -0.5px; margin-bottom: 0; }
-.staff-hero-sub  { font-size: 13px; color: rgba(255,255,255,0.72); font-weight: 500; }
-
-/* ── Очередь на проверку (главный CTA) ── */
-/* Карточка-развилка кликабельна целиком (конвенция №6 плана 2, паттерн .hub-card);
-   .next-card-cta внутри — визуальный аффорданс (span), не отдельная ссылка. */
-.next-card {
-    display: block;
-    border-radius: var(--r-lg);
-    padding: 22px 24px;
-    margin-bottom: 20px;
-    text-decoration: none;
-    cursor: pointer;
-    transition: transform var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out);
-}
-a.next-card:hover { transform: translateY(-2px); opacity: 1; }
-a.next-card--blue, a.next-card--blue:hover { color: #fff; }
-a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
-@media (hover: none), (pointer: coarse) {
-    a.next-card:hover { transform: none; }
-}
-.next-card--blue {
-    background: linear-gradient(165deg, #6F8BFF 0%, var(--blue) 100%);
-    box-shadow: var(--sh-blue);
-    color: #fff;
-}
-.next-card-title {
-    font-family: var(--font-display);
-    font-size: 17px; font-weight: 700;
-    letter-spacing: -0.015em;
-    margin-bottom: 10px;
-}
-.next-card-note {
-    font-size: 13px; line-height: 1.55;
-    color: rgba(255,255,255,0.85);
-    margin-bottom: 14px;
-}
-.next-card-cta {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 10px 20px; border-radius: var(--r-pill);
-    font-size: 13px; font-weight: 700; text-decoration: none;
-    background: rgba(255,255,255,0.16);
-    border: 1px solid rgba(255,255,255,0.28);
-    color: #fff;
-    transition: background var(--duration-fast) var(--ease-out);
-}
-a.next-card:hover .next-card-cta { background: rgba(255,255,255,0.26); }
-
-/* ── Banners ── */
-.info-banner { border-radius: var(--r-md); padding: 16px 20px; margin-bottom: 20px; }
-.info-banner.green { background: rgba(5,150,105,0.07); border: 1.5px solid rgba(5,150,105,0.25); }
-.info-banner.blue  { background: rgba(59,91,255,0.06); border: 1.5px solid rgba(59,91,255,0.2); }
-.banner-title { font-size: 13px; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
-.info-banner.green .banner-title { color: var(--ok); }
-.info-banner.blue  .banner-title { color: var(--blue); }
-.banner-row {
-    display: flex; align-items: center; gap: 10px;
-    background: #fff; border: 1px solid rgba(0,0,0,0.07);
-    border-radius: var(--r-sm); padding: 10px 14px; margin-bottom: 8px;
-}
-.banner-row:last-of-type { margin-bottom: 0; }
-.banner-row-text { flex: 1; font-size: 12px; color: var(--text); word-break: break-all; font-family: monospace; line-height: 1.4; }
-.banner-row-label { font-size: 11px; font-weight: 700; color: var(--dim); width: 60px; flex-shrink: 0; }
-.copy-btn { flex-shrink: 0; padding: 6px 14px; border: none; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: var(--font-body); transition: opacity 0.15s; }
-.copy-btn.green { background: var(--ok-strong); color: #fff; }
-.copy-btn.blue  { background: var(--blue); color: #fff; }
-.copy-btn:hover { opacity: 0.85; }
-.banner-meta { font-size: 11px; margin-top: 8px; opacity: 0.7; }
-.info-banner.green .banner-meta { color: var(--ok); }
-.info-banner.blue  .banner-meta { color: var(--blue); }
-
-/* ── Stats grid ── */
-.stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
-.stat-tile-sub { font-size: 11px; font-weight: 700; color: var(--blue-on-soft); margin-top: 6px; }
-
-/* ── Quick tools ── */
-.qt-grid { margin-bottom: 20px; }
-a.card.qt-card { text-decoration: none; color: inherit; display: block; }
-
-/* ── Two-col grid ── */
-.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
-
-/* ── Panel card ── */
-.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-sm); overflow: hidden; }
-.panel-header { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
-.panel-title { font-size: 13px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.07em; }
-
-/* Roles list */
-.role-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 18px; border-bottom: 1px solid var(--line); }
-.role-row:last-child { border-bottom: none; }
-.role-name { font-size: 14px; color: var(--text); display: flex; align-items: center; gap: 8px; }
-.role-count { font-size: 15px; font-weight: 900; color: var(--blue-on-soft); background: var(--blue-soft); border-radius: 8px; padding: 2px 10px; }
-
-/* Staff rows (curators, admins) */
-.staff-row { display: flex; align-items: center; gap: 12px; padding: 9px 18px; border-bottom: 1px solid var(--line); }
-.staff-row:last-child { border-bottom: none; }
-.staff-ava { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line); flex-shrink: 0; }
-.staff-ava-ph { width: 32px; height: 32px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
-.staff-info { flex: 1; min-width: 0; }
-.staff-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.staff-meta { font-size: 11px; color: var(--dim); margin-top: 1px; }
-/* Мелкая outline-кнопка строчных действий — шкала Spark (.btn-outline
-   в компактном размере: pill-радиус, контур var(--line) → blue на hover).
-   Размер держим прежним (11px / 5px 11px): в two-col панелях три кнопки в
-   строке, более крупная шкала сжимает колонку имени куратора/главного преподавателя. */
-.issue-link-btn {
-    display: inline-flex; align-items: center; gap: 4px;
-    flex-shrink: 0; background: transparent; border: 1.5px solid var(--line);
-    border-radius: var(--r-pill); padding: 5px 11px;
-    font-size: 11px; font-weight: 700; color: var(--muted); cursor: pointer;
-    font-family: var(--font-body);
-    transition: border-color var(--duration-fast), color var(--duration-fast);
-    white-space: nowrap;
-}
-.issue-link-btn:hover { border-color: var(--blue); color: var(--blue); }
-.issue-link-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
-
-/* Toggle периода сдачи — пилюля в шкале .chip/.tag-pill (замена inline style) */
-.period-toggle-btn {
-    font-size: 12px; font-weight: 700; padding: 6px 16px;
-    border-radius: var(--r-pill); border: none; cursor: pointer;
-    font-family: var(--font-body);
-    transition: background var(--duration-fast);
-}
-.period-toggle-btn--close { background: rgba(220,38,38,0.1); color: var(--error); }
-.period-toggle-btn--close:hover { background: rgba(220,38,38,0.18); }
-.period-toggle-btn--open { background: rgba(5,150,105,0.1); color: var(--ok-strong); }
-.period-toggle-btn--open:hover { background: rgba(5,150,105,0.18); }
-.period-toggle-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
-
-/* Works by type */
-.type-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; }
-.type-cell { padding: 14px 18px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.type-cell:nth-child(2n) { border-right: none; }
-.type-cell:nth-last-child(-n+2) { border-bottom: none; }
-.type-label { font-size: 11px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
-.type-val { font-size: 22px; font-weight: 900; color: var(--text); }
-
-/* ── Recent feed ── */
-.feed-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--sh-sm); margin-bottom: 20px; overflow: hidden; }
-.feed-header { padding: 14px 18px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.07em; display: flex; align-items: center; justify-content: space-between; }
-.feed-item { display: flex; align-items: center; gap: 14px; padding: 11px 18px; border-bottom: 1px solid var(--line); transition: background 0.15s; }
-.feed-item:last-child { border-bottom: none; }
-.feed-item:hover { background: var(--bg); }
-.feed-thumb { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; border: 1px solid var(--line); flex-shrink: 0; }
-.feed-thumb-ph { width: 40px; height: 40px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; }
-.feed-info { flex: 1; min-width: 0; }
-.feed-student { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.feed-meta { font-size: 11px; color: var(--dim); margin-top: 2px; }
-.feed-right { flex-shrink: 0; text-align: right; }
-.feed-date { font-size: 11px; color: var(--dim); }
-.feed-score { font-size: 12px; font-weight: 700; color: var(--warning); background: rgba(217,119,6,0.1); border-radius: 6px; padding: 2px 8px; margin-top: 3px; }
-.feed-pending { font-size: 11px; color: var(--dim); margin-top: 3px; }
-
-.type-badge { display: inline-flex; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
-.tb-before { background: rgba(220,38,38,0.08);  color: var(--error); }
-.tb-after  { background: rgba(5,150,105,0.08);  color: var(--ok); }
-.tb-mock   { background: rgba(217,119,6,0.1);   color: var(--warning); }
-.tb-retake { background: rgba(124,58,237,0.08); color: #7C3AED; }
-
-@media (max-width: 768px) {
-    .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .two-col { grid-template-columns: 1fr; }
-    .staff-hero { flex-direction: column; align-items: flex-start; }
-    .staff-hero-name { font-size: 22px; }
-}
-@media (max-width: 480px) {
-    .staff-hero { padding: 20px; }
-    .staff-hero-name { font-size: 20px; }
-    .banner-row { flex-direction: column; gap: 6px; align-items: stretch; }
-    .banner-row-label { width: auto; }
-    .staff-row { flex-wrap: wrap; }
-    /* min-width:0 (base rule) lets flexbox crush this column to near-zero
-       instead of wrapping the fixed-width action buttons to a new line —
-       that's what made curator/admin names invisible on mobile. Scoped to
-       this breakpoint only: at desktop panel widths, 130px pushes the
-       buttons past the panel's right edge (.two-col panels are narrower
-       than the row's natural content width). */
-    .staff-info { min-width: 130px; }
-    .stats-grid { gap: 10px; }
-    .stat-tile { padding: 14px; }
-}
-</style>
+<link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="staff-wrap">
+<div class="staff-wrap ios-staff-dashboard">
 
     <!-- Hero -->
     <div class="staff-hero">
@@ -247,7 +43,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
             <span class="banner-row-text" id="cred-pwd">{{ issued_creds.password }}</span>
             <button class="copy-btn blue" onclick="copyText('cred-pwd', this)">Копировать</button>
         </div>
-        <div class="banner-meta">Страница входа: <a href="{{ issued_creds.url }}" target="_blank" style="color:var(--blue)">{{ issued_creds.url }}</a></div>
+        <div class="banner-meta">Страница входа: <a href="{{ issued_creds.url }}" target="_blank" class="sfd-link-inline">{{ issued_creds.url }}</a></div>
     </div>
     {% endif %}
 
@@ -353,22 +149,22 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
 
     <!-- Feature periods toggle panel -->
     {% if feature_statuses %}
-    <div class="panel" style="margin-bottom:20px">
+    <div class="panel panel--periods">
         <div class="panel-header">
             <h2 class="panel-title">Периоды сдачи</h2>
-            <a href="/cabinet/periods" style="font-size:12px;color:var(--blue);font-weight:700;text-decoration:none;opacity:1">Настроить →</a>
+            <a href="/cabinet/periods" class="sfd-link">Настроить →</a>
         </div>
         {% set feat_icons = {'portfolio_upload': '🖼', 'mock_exam': '📝', 'retake': '🔄'} %}
         {% for feat_key, feat in feature_statuses.items() if feat_key == 'portfolio_upload' %}
-        <div style="display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--line){% if loop.last %};border-bottom:none{% endif %}">
-            <span style="font-size:20px;flex-shrink:0">{{ feat_icons.get(feat_key, '📌') }}</span>
-            <div style="flex:1;min-width:0">
-                <div style="font-size:14px;font-weight:700;color:var(--text)">{{ feat.label }}</div>
-                <div style="font-size:12px;margin-top:2px;{% if feat.open %}color:var(--ok);{% else %}color:var(--dim);{% endif %}">
+        <div class="sfd-feature-row">
+            <span class="sfd-feature-icon">{{ feat_icons.get(feat_key, '📌') }}</span>
+            <div class="sfd-feature-body">
+                <div class="sfd-feature-name">{{ feat.label }}</div>
+                <div class="sfd-feature-status {% if feat.open %}is-open{% else %}is-closed{% endif %}">
                     {% if feat.open %}Открыто{% else %}Закрыто{% endif %}
                 </div>
             </div>
-            <form method="post" action="/cabinet/periods/quick-toggle" style="margin:0">
+            <form method="post" action="/cabinet/periods/quick-toggle" class="sfd-inline-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                 <input type="hidden" name="feature" value="{{ feat_key }}">
                 <input type="hidden" name="redirect_to" value="/cabinet">
@@ -382,7 +178,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
     {% endif %}
 
     <!-- Roles + Works by type -->
-    <div class="{% if user.role_rank >= 4 %}two-col{% endif %}" style="{% if user.role_rank < 4 %}margin-bottom:20px{% endif %}">
+    <div class="{% if user.role_rank >= 4 %}two-col{% else %}sfd-single-col{% endif %}">
         {% if user.role_rank >= 4 %}
         <div class="panel">
             <div class="panel-header"><h2 class="panel-title">Пользователи по ролям</h2></div>
@@ -398,7 +194,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
         <div class="panel">
             <div class="panel-header">
                 <h2 class="panel-title">Работы по типам</h2>
-                <span style="font-size:12px;color:var(--dim)">всего {{ total_works }}</span>
+                <span class="sfd-meta-text">всего {{ total_works }}</span>
             </div>
             <div class="type-grid">
                 <div class="type-cell"><div class="type-label">До обучения</div><div class="type-val">{{ works_by_type.get('before', 0) }}</div></div>
@@ -415,12 +211,12 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
         <div class="panel">
             <div class="panel-header">
                 <h2 class="panel-title">Кураторы</h2>
-                <div style="display:flex;align-items:center;gap:10px">
-                    <span style="font-size:12px;color:var(--dim)">{{ curators | length }} чел.</span>
+                <div class="sfd-row-actions">
+                    <span class="sfd-meta-text">{{ curators | length }} чел.</span>
                     <button type="button" id="staffToggleBtn-curators" class="issue-link-btn" onclick="toggleStaffList('curators')">Показать</button>
                 </div>
             </div>
-            <div id="staffListBody-curators" style="display:none">
+            <div id="staffListBody-curators" class="sfd-list-body is-collapsed">
             {% if curators %}
             {% for c in curators %}
             <div class="staff-row">
@@ -429,18 +225,18 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
                     <div class="staff-name">{{ c.name }}</div>
                     <div class="staff-meta">{{ c.student_count }} учеников</div>
                 </div>
-                <div style="display:flex;gap:6px;flex-shrink:0">
-                    <form method="post" action="/cabinet/superadmin/set-credentials" style="margin:0">
+                <div class="sfd-btn-group">
+                    <form method="post" action="/cabinet/superadmin/set-credentials" class="sfd-inline-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <input type="hidden" name="target_user_id" value="{{ c.id }}">
                         <button type="submit" class="issue-link-btn">🔑 Пароль</button>
                     </form>
-                    <form method="post" action="/cabinet/superadmin/issue-link" style="margin:0">
+                    <form method="post" action="/cabinet/superadmin/issue-link" class="sfd-inline-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <input type="hidden" name="target_user_id" value="{{ c.id }}">
                         <button type="submit" class="issue-link-btn">🔗 Ссылка</button>
                     </form>
-                    <form method="post" action="/cabinet/superadmin/impersonate/{{ c.id }}" style="margin:0">
+                    <form method="post" action="/cabinet/superadmin/impersonate/{{ c.id }}" class="sfd-inline-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <button type="submit" class="issue-link-btn">🔓 Войти</button>
                     </form>
@@ -448,7 +244,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
             </div>
             {% endfor %}
             {% else %}
-            <div style="padding:20px 18px;font-size:13px;color:var(--dim)">Кураторы не назначены</div>
+            <div class="sfd-empty-row">Кураторы не назначены</div>
             {% endif %}
             </div>
         </div>
@@ -456,12 +252,12 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
         <div class="panel">
             <div class="panel-header">
                 <h2 class="panel-title">Главные преподаватели</h2>
-                <div style="display:flex;align-items:center;gap:10px">
-                    <span style="font-size:12px;color:var(--dim)">{{ admins | length }} чел.</span>
+                <div class="sfd-row-actions">
+                    <span class="sfd-meta-text">{{ admins | length }} чел.</span>
                     <button type="button" id="staffToggleBtn-admins" class="issue-link-btn" onclick="toggleStaffList('admins')">Показать</button>
                 </div>
             </div>
-            <div id="staffListBody-admins" style="display:none">
+            <div id="staffListBody-admins" class="sfd-list-body is-collapsed">
             {% if admins %}
             {% for a in admins %}
             <div class="staff-row">
@@ -471,13 +267,13 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
                     <div class="staff-meta">Главный преподаватель</div>
                 </div>
                 {% if user.role_rank >= 5 %}
-                <div style="display:flex;gap:6px;flex-shrink:0">
-                    <form method="post" action="/cabinet/superadmin/issue-link" style="margin:0">
+                <div class="sfd-btn-group">
+                    <form method="post" action="/cabinet/superadmin/issue-link" class="sfd-inline-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <input type="hidden" name="target_user_id" value="{{ a.id }}">
                         <button type="submit" class="issue-link-btn">🔗 Ссылка</button>
                     </form>
-                    <form method="post" action="/cabinet/superadmin/impersonate/{{ a.id }}" style="margin:0">
+                    <form method="post" action="/cabinet/superadmin/impersonate/{{ a.id }}" class="sfd-inline-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <button type="submit" class="issue-link-btn">🔓 Войти</button>
                     </form>
@@ -486,7 +282,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
             </div>
             {% endfor %}
             {% else %}
-            <div style="padding:20px 18px;font-size:13px;color:var(--dim)">Главные преподаватели не найдены</div>
+            <div class="sfd-empty-row">Главные преподаватели не найдены</div>
             {% endif %}
             </div>
         </div>
@@ -499,7 +295,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
             if (sessionStorage.getItem(KEY_PREFIX + kind) === '1') {
                 var body = document.getElementById('staffListBody-' + kind);
                 var btn = document.getElementById('staffToggleBtn-' + kind);
-                if (body) body.style.display = '';
+                if (body) body.classList.remove('is-collapsed');
                 if (btn) btn.textContent = 'Скрыть';
             }
         });
@@ -507,8 +303,8 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
     function toggleStaffList(kind) {
         var body = document.getElementById('staffListBody-' + kind);
         var btn = document.getElementById('staffToggleBtn-' + kind);
-        var expand = body.style.display === 'none';
-        body.style.display = expand ? '' : 'none';
+        var expand = body.classList.contains('is-collapsed');
+        body.classList.toggle('is-collapsed', !expand);
         btn.textContent = expand ? 'Скрыть' : 'Показать';
         sessionStorage.setItem('staffDashboardListExpanded_' + kind, expand ? '1' : '');
     }
@@ -520,7 +316,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
     <div class="feed-wrap">
         <div class="feed-header">
             <span>Последние загрузки</span>
-            <a href="/cabinet/students" style="font-size:12px;color:var(--blue);font-weight:700;text-decoration:none;opacity:1">Все ученики →</a>
+            <a href="/cabinet/students" class="sfd-link">Все ученики →</a>
         </div>
         {% if recent_works %}
         {% set type_labels = {'before': 'До', 'after': 'После', 'mock_exam': 'Пробник', 'retake': 'Отработка'} %}
@@ -530,7 +326,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
             {% if w.s3_url %}<img src="{{ w.s3_url }}" class="feed-thumb" alt="" loading="lazy" width="40" height="40">{% else %}<div class="feed-thumb-ph">🖼</div>{% endif %}
             <div class="feed-info">
                 <div class="feed-student">
-                    <a href="/cabinet/students?student={{ w.student_id }}&tab=mock-exams" style="color:var(--text);text-decoration:none;opacity:1">{{ w.student_name }}</a>
+                    <a href="/cabinet/students?student={{ w.student_id }}&tab=mock-exams" class="sfd-feed-student-link">{{ w.student_name }}</a>
                 </div>
                 <div class="feed-meta">
                     <span class="type-badge {{ type_classes.get(w.work_type, '') }}">{{ type_labels.get(w.work_type, w.work_type) }}</span>
@@ -548,7 +344,7 @@ a.card.qt-card { text-decoration: none; color: inherit; display: block; }
         </div>
         {% endfor %}
         {% else %}
-        <div style="padding:32px;text-align:center;color:var(--dim);font-size:13px">Загрузок пока нет</div>
+        <div class="sfd-empty-row sfd-empty-row--center">Загрузок пока нет</div>
         {% endif %}
     </div>
     {% endif %}

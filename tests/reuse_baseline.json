@@ -70,22 +70,11 @@
     "style_lines": 24
   },
   "cabinet_guest_mode.html": {
-    "hex": 0,
+    "hex": 1,
     "shadow": [
       "active"
     ],
-    "style_lines": 76
-  },
-  "cabinet_staff.html": {
-    "hex": 9,
-    "shadow": [
-      "btn-outline",
-      "card",
-      "chip",
-      "stat-tile",
-      "tag-pill"
-    ],
-    "style_lines": 204
+    "style_lines": 81
   },
   "cabinet_staff_cycles.html": {
     "hex": 2,

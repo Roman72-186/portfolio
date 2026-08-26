@@ -1,0 +1,353 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   iOS-ре-скин общего дашборда «Главного преподавателя» и «Суперадмина»
+   (cabinet_staff.html, /cabinet/admin-panel и /cabinet/superadmin — оба
+   маршрута рендерят один и тот же шаблон под require_admin_role).
+   Все правила висят на классе `.ios-staff-dashboard` (ставится только на
+   `.staff-wrap` в cabinet_staff.html), а не на голых `.staff-*`/`.panel`/
+   `.stat-tile`/`.card`: `.stat-tile`/`.card`/`.grid-3` — общие классы
+   base.css, используются десятками экранов; `.staff-hero`/`.next-card`/
+   `.info-banner`/`.panel`/`.role-row`/`.staff-row`/`.issue-link-btn`/
+   `.period-toggle-btn`/`.type-grid`/`.feed-wrap`/`.type-badge` совпадают
+   по имени только с cabinet_students.html, cabinet_student.html и
+   superadmin_stats.html — каждый носит свою копию инлайн-CSS, конфликта
+   нет (grep подтвердил). Десктопный `partials/staff_nav.html` (сайдбар,
+   role_rank>=4) не тронут — вне охвата инициативы.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ios-staff-dashboard {
+    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --ios-blue: #007AFF;
+    --ios-green: #34C759;
+    --ios-red: #FF3B30;
+    --ios-orange: #FF9500;
+    --ios-purple: #AF52DE;
+    --ios-label: #1C1C1E;
+    --ios-label-2: rgba(60,60,67,0.60);
+    --ios-label-3: rgba(60,60,67,0.30);
+    --ios-sep: rgba(60,60,67,0.29);
+    --ios-grouped-bg: #F2F2F7;
+    --ios-card-bg: #FFFFFF;
+    position: relative;
+    isolation: isolate;
+    font-family: var(--ios-font);
+    color: var(--ios-label);
+    padding-bottom: 12px;
+}
+.ios-staff-dashboard::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: var(--ios-grouped-bg);
+    z-index: -1;
+}
+
+/* ── Hero ── тёмный градиент сохраняет визуальный смысл «повышенных прав»
+   (отличает от светло-синей .lrn-hero ученика), но исполнен в iOS-грамматике:
+   26px радиус, декоративные круги, крупный заголовок. */
+.ios-staff-dashboard .staff-hero {
+    background: linear-gradient(135deg, #1C1C1E 0%, #0040DD 62%, #0A84FF 100%);
+    border-radius: 26px;
+    padding: 22px 24px 26px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.16) inset, 0 14px 32px rgba(0,64,221,0.26);
+    position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+}
+.ios-staff-dashboard .staff-hero::before {
+    content: ''; position: absolute; width: 300px; height: 300px; border-radius: 50%;
+    background: rgba(255,255,255,0.05); top: -110px; right: -70px; pointer-events: none;
+}
+.ios-staff-dashboard .staff-hero::after {
+    content: ''; position: absolute; width: 160px; height: 160px; border-radius: 50%;
+    background: rgba(255,255,255,0.04); bottom: -60px; right: 70px; pointer-events: none;
+}
+.ios-staff-dashboard .staff-hero-info { position: relative; z-index: 1; }
+.ios-staff-dashboard .staff-role-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,0.14); border: none;
+    border-radius: 999px; padding: 4px 12px;
+    font: 700 11px/1.3 var(--ios-font); letter-spacing: 0.02em;
+    color: rgba(255,255,255,0.92); margin-bottom: 10px;
+}
+.ios-staff-dashboard .staff-hero-name {
+    font: 700 26px/1.2 var(--ios-font); letter-spacing: -0.4px; color: #fff; margin-bottom: 0;
+}
+.ios-staff-dashboard .staff-hero-sub {
+    font: 400 13px/1.4 var(--ios-font); color: rgba(255,255,255,0.72);
+}
+
+/* ── Очередь на проверку — главный CTA ── */
+.ios-staff-dashboard .next-card {
+    border-radius: 20px;
+    padding: 20px 22px;
+    margin-bottom: 16px;
+    transition: transform 120ms var(--ios-ease);
+}
+.ios-staff-dashboard a.next-card:hover { transform: none; opacity: 1; }
+.ios-staff-dashboard a.next-card:active { transform: scale(0.985); }
+.ios-staff-dashboard a.next-card:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 3px; }
+.ios-staff-dashboard .next-card--blue {
+    background: linear-gradient(160deg, #0A84FF 0%, #0040DD 100%);
+    box-shadow: 0 10px 26px rgba(0,64,221,0.28);
+    color: #fff;
+}
+.ios-staff-dashboard .next-card-title {
+    font: 700 17px/1.3 var(--ios-font); letter-spacing: -0.2px; margin-bottom: 8px;
+}
+.ios-staff-dashboard .next-card-note {
+    font: 400 13px/1.5 var(--ios-font); color: rgba(255,255,255,0.85); margin-bottom: 14px;
+}
+.ios-staff-dashboard .next-card-cta {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 18px; border-radius: 999px;
+    font: 700 13px/1 var(--ios-font);
+    background: rgba(255,255,255,0.18); border: none; color: #fff;
+    transition: background 120ms var(--ios-ease);
+}
+.ios-staff-dashboard a.next-card:active .next-card-cta { background: rgba(255,255,255,0.28); }
+
+/* ── Banners (учётные данные / одноразовая ссылка) ── */
+.ios-staff-dashboard .info-banner {
+    border-radius: 16px; padding: 16px 18px; margin-bottom: 16px;
+    background: var(--ios-card-bg); border: none;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.ios-staff-dashboard .banner-title {
+    font: 600 13px/1.4 var(--ios-font); margin-bottom: 10px;
+    display: flex; align-items: center; gap: 8px; color: var(--ios-label);
+}
+.ios-staff-dashboard .info-banner.green .banner-title { color: #1E9147; }
+.ios-staff-dashboard .info-banner.blue  .banner-title { color: var(--ios-blue); }
+.ios-staff-dashboard .banner-row {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--ios-grouped-bg); border: none;
+    border-radius: 12px; padding: 10px 14px; margin-bottom: 8px;
+}
+.ios-staff-dashboard .banner-row:last-of-type { margin-bottom: 0; }
+.ios-staff-dashboard .banner-row-text {
+    flex: 1; font: 400 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--ios-label); word-break: break-all;
+}
+.ios-staff-dashboard .banner-row-label {
+    font: 700 11px/1 var(--ios-font); color: var(--ios-label-2); width: 60px; flex-shrink: 0;
+}
+.ios-staff-dashboard .copy-btn {
+    flex-shrink: 0; padding: 6px 13px; border: none; border-radius: 999px;
+    font: 700 12px/1 var(--ios-font); cursor: pointer; transition: opacity 120ms var(--ios-ease);
+}
+.ios-staff-dashboard .copy-btn.green { background: var(--ios-green); color: #fff; }
+.ios-staff-dashboard .copy-btn.blue  { background: var(--ios-blue); color: #fff; }
+.ios-staff-dashboard .copy-btn:active { opacity: 0.75; }
+.ios-staff-dashboard .banner-meta {
+    font: 400 11px/1.4 var(--ios-font); margin-top: 8px; color: var(--ios-label-2); opacity: 1;
+}
+.ios-staff-dashboard .sfd-link-inline { color: var(--ios-blue); }
+
+/* ── Stats grid — виджет-плитки ── */
+.ios-staff-dashboard .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.ios-staff-dashboard .stat-tile {
+    background: var(--ios-card-bg); border-radius: 16px; padding: 14px 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.ios-staff-dashboard .stat-tile-head { font: 500 12px/1.3 var(--ios-font); color: var(--ios-label-2); gap: 6px; }
+.ios-staff-dashboard .stat-tile-head .ico {
+    width: 24px; height: 24px; border-radius: 7px;
+    background: rgba(0,122,255,0.12); color: var(--ios-blue);
+}
+.ios-staff-dashboard .stat-tile-value {
+    font: 700 26px/1.15 var(--ios-font); letter-spacing: -0.3px; color: var(--ios-label); margin-top: 14px;
+}
+.ios-staff-dashboard .stat-tile-sub { font: 600 11px/1.3 var(--ios-font); color: var(--ios-blue); margin-top: 5px; }
+
+/* ── Quick tools ── */
+.ios-staff-dashboard .qt-grid { margin-bottom: 16px; }
+.ios-staff-dashboard a.card.qt-card {
+    background: var(--ios-card-bg); border: none; border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    padding: 18px; transition: transform 120ms var(--ios-ease);
+    text-decoration: none; color: inherit; display: block;
+}
+.ios-staff-dashboard a.card.qt-card:hover { box-shadow: 0 1px 3px rgba(0,0,0,0.05); transform: none; border-color: transparent; }
+.ios-staff-dashboard a.card.qt-card:active { transform: scale(0.98); }
+.ios-staff-dashboard .qt-card .card-icon-wrap {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: rgba(0,122,255,0.12); color: var(--ios-blue); margin-bottom: 12px;
+}
+.ios-staff-dashboard .qt-card .card-title { font: 600 15px/1.3 var(--ios-font); letter-spacing: -0.1px; color: var(--ios-label); margin-bottom: 4px; }
+.ios-staff-dashboard .qt-card .card-desc { font: 400 12px/1.45 var(--ios-font); color: var(--ios-label-2); }
+
+/* ── Two-col grid ── */
+.ios-staff-dashboard .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.ios-staff-dashboard .sfd-single-col { margin-bottom: 16px; }
+
+/* ── Panel (grouped list card) ── */
+.ios-staff-dashboard .panel {
+    background: var(--ios-card-bg); border: none; border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow: hidden;
+}
+.ios-staff-dashboard .panel--periods { margin-bottom: 16px; }
+.ios-staff-dashboard .panel-header {
+    padding: 13px 16px; border-bottom: none; position: relative;
+    display: flex; align-items: center; justify-content: space-between;
+}
+.ios-staff-dashboard .panel-header::after {
+    content: ''; position: absolute; left: 16px; right: 0; bottom: 0; height: 0.5px; background: var(--ios-sep);
+}
+.ios-staff-dashboard .panel-title {
+    font: 600 13px/1.3 var(--ios-font); color: var(--ios-label-2);
+    text-transform: uppercase; letter-spacing: 0.03em;
+}
+
+/* ── Roles list ── */
+.ios-staff-dashboard .role-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 11px 16px; border-bottom: none; position: relative;
+}
+.ios-staff-dashboard .role-row:not(:last-child)::after {
+    content: ''; position: absolute; left: 16px; right: 0; bottom: 0; height: 0.5px; background: var(--ios-sep);
+}
+.ios-staff-dashboard .role-name { font: 400 14px/1.3 var(--ios-font); color: var(--ios-label); display: flex; align-items: center; gap: 8px; }
+.ios-staff-dashboard .role-count {
+    font: 700 13px/1 var(--ios-font); color: var(--ios-blue);
+    background: rgba(0,122,255,0.12); border-radius: 999px; padding: 3px 11px;
+}
+
+/* ── Staff rows (curators, admins) ── */
+.ios-staff-dashboard .staff-row {
+    display: flex; align-items: center; gap: 12px; padding: 9px 16px;
+    border-bottom: none; position: relative;
+}
+.ios-staff-dashboard .staff-row:not(:last-child)::after {
+    content: ''; position: absolute; left: 60px; right: 0; bottom: 0; height: 0.5px; background: var(--ios-sep);
+}
+.ios-staff-dashboard .staff-ava { width: 32px; height: 32px; border-radius: 50%; border: none; }
+.ios-staff-dashboard .staff-ava-ph {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--ios-grouped-bg); border: none;
+}
+.ios-staff-dashboard .staff-info { flex: 1; min-width: 0; }
+.ios-staff-dashboard .staff-name { font: 600 13px/1.3 var(--ios-font); color: var(--ios-label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ios-staff-dashboard .staff-meta { font: 400 11px/1.3 var(--ios-font); color: var(--ios-label-2); margin-top: 1px; }
+
+/* Список свёрнут по умолчанию, класс переключается JS-ом вместо inline style.display */
+.ios-staff-dashboard .sfd-list-body.is-collapsed { display: none; }
+
+.ios-staff-dashboard .sfd-row-actions { display: flex; align-items: center; gap: 10px; }
+.ios-staff-dashboard .sfd-meta-text { font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-2); }
+.ios-staff-dashboard .sfd-btn-group { display: flex; gap: 6px; flex-shrink: 0; }
+.ios-staff-dashboard .sfd-inline-form { margin: 0; }
+.ios-staff-dashboard .sfd-empty-row { padding: 20px 16px; font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); }
+.ios-staff-dashboard .sfd-empty-row--center { padding: 32px; text-align: center; }
+
+/* Мелкая outline-кнопка строчных действий («Пароль»/«Ссылка»/«Войти»/«Показать») */
+.ios-staff-dashboard .issue-link-btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    flex-shrink: 0; background: transparent; border: 1.5px solid var(--ios-sep);
+    border-radius: 999px; padding: 5px 11px;
+    font: 700 11px/1 var(--ios-font); color: var(--ios-label-2); cursor: pointer;
+    transition: border-color 120ms var(--ios-ease), color 120ms var(--ios-ease), transform 100ms var(--ios-ease);
+    white-space: nowrap;
+}
+.ios-staff-dashboard .issue-link-btn:hover { border-color: var(--ios-blue); color: var(--ios-blue); }
+.ios-staff-dashboard .issue-link-btn:active { transform: scale(0.94); }
+.ios-staff-dashboard .issue-link-btn:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 2px; }
+
+/* Тумблер периода сдачи */
+.ios-staff-dashboard .period-toggle-btn {
+    font: 700 12px/1 var(--ios-font); padding: 6px 15px;
+    border-radius: 999px; border: none; cursor: pointer;
+    transition: background 120ms var(--ios-ease), transform 100ms var(--ios-ease);
+}
+.ios-staff-dashboard .period-toggle-btn:active { transform: scale(0.95); }
+.ios-staff-dashboard .period-toggle-btn--close { background: rgba(255,59,48,0.12); color: var(--ios-red); }
+.ios-staff-dashboard .period-toggle-btn--close:hover { background: rgba(255,59,48,0.2); }
+.ios-staff-dashboard .period-toggle-btn--open { background: rgba(52,199,89,0.14); color: #1E9147; }
+.ios-staff-dashboard .period-toggle-btn--open:hover { background: rgba(52,199,89,0.22); }
+.ios-staff-dashboard .period-toggle-btn:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 2px; }
+
+/* Строка периода сдачи (иконка/название/статус) — заменяет инлайновую
+   разметку шаблона, .is-open/.is-closed вместо инлайнового style=color */
+.ios-staff-dashboard .sfd-feature-row {
+    display: flex; align-items: center; gap: 14px; padding: 12px 16px; position: relative;
+}
+.ios-staff-dashboard .sfd-feature-row:not(:last-child)::after {
+    content: ''; position: absolute; left: 16px; right: 0; bottom: 0; height: 0.5px; background: var(--ios-sep);
+}
+.ios-staff-dashboard .sfd-feature-icon { font-size: 20px; flex-shrink: 0; }
+.ios-staff-dashboard .sfd-feature-body { flex: 1; min-width: 0; }
+.ios-staff-dashboard .sfd-feature-name { font: 600 14px/1.3 var(--ios-font); color: var(--ios-label); }
+.ios-staff-dashboard .sfd-feature-status { font: 400 12px/1.3 var(--ios-font); margin-top: 2px; }
+.ios-staff-dashboard .sfd-feature-status.is-open   { color: #1E9147; }
+.ios-staff-dashboard .sfd-feature-status.is-closed { color: var(--ios-label-2); }
+
+/* ── Works by type ── */
+.ios-staff-dashboard .type-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; }
+.ios-staff-dashboard .type-cell {
+    padding: 14px 16px; border-right: 0.5px solid var(--ios-sep); border-bottom: 0.5px solid var(--ios-sep);
+}
+.ios-staff-dashboard .type-cell:nth-child(2n) { border-right: none; }
+.ios-staff-dashboard .type-cell:nth-last-child(-n+2) { border-bottom: none; }
+.ios-staff-dashboard .type-label { font: 600 11px/1.3 var(--ios-font); color: var(--ios-label-2); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 4px; }
+.ios-staff-dashboard .type-val { font: 700 22px/1.2 var(--ios-font); color: var(--ios-label); }
+
+/* ── Recent feed (role_rank < 4 — недостижимо через текущие маршруты
+   ГП/СА, но остаётся в шаблоне: стилизуем для полноты, без удаления) ── */
+.ios-staff-dashboard .feed-wrap {
+    background: var(--ios-card-bg); border: none; border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 16px; overflow: hidden;
+}
+.ios-staff-dashboard .feed-header {
+    padding: 13px 16px; border-bottom: none; position: relative;
+    font: 600 13px/1.3 var(--ios-font); color: var(--ios-label-2);
+    text-transform: uppercase; letter-spacing: 0.03em;
+    display: flex; align-items: center; justify-content: space-between;
+}
+.ios-staff-dashboard .feed-header::after {
+    content: ''; position: absolute; left: 16px; right: 0; bottom: 0; height: 0.5px; background: var(--ios-sep);
+}
+.ios-staff-dashboard .feed-item {
+    display: flex; align-items: center; gap: 14px; padding: 10px 16px; position: relative;
+    transition: background 100ms ease-out;
+}
+.ios-staff-dashboard .feed-item:not(:last-child)::after {
+    content: ''; position: absolute; left: 16px; right: 0; bottom: 0; height: 0.5px; background: var(--ios-sep);
+}
+.ios-staff-dashboard .feed-item:active { background: rgba(60,60,67,0.06); }
+.ios-staff-dashboard .feed-thumb { width: 40px; height: 40px; border-radius: 9px; border: none; }
+.ios-staff-dashboard .feed-thumb-ph { width: 40px; height: 40px; border-radius: 9px; background: var(--ios-grouped-bg); border: none; }
+.ios-staff-dashboard .feed-info { flex: 1; min-width: 0; }
+.ios-staff-dashboard .feed-student { font: 600 13px/1.3 var(--ios-font); color: var(--ios-label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ios-staff-dashboard .feed-meta { font: 400 11px/1.3 var(--ios-font); color: var(--ios-label-2); margin-top: 2px; }
+.ios-staff-dashboard .feed-right { flex-shrink: 0; text-align: right; }
+.ios-staff-dashboard .feed-date { font: 400 11px/1.3 var(--ios-font); color: var(--ios-label-2); }
+.ios-staff-dashboard .feed-score {
+    font: 700 12px/1 var(--ios-font); color: var(--ios-orange);
+    background: rgba(255,149,0,0.12); border-radius: 999px; padding: 2px 9px; margin-top: 3px;
+}
+.ios-staff-dashboard .feed-pending { font: 400 11px/1.3 var(--ios-font); color: var(--ios-label-2); margin-top: 3px; }
+
+.ios-staff-dashboard .type-badge { display: inline-flex; padding: 2px 8px; border-radius: 999px; font: 700 11px/1.3 var(--ios-font); }
+.ios-staff-dashboard .tb-before { background: rgba(255,59,48,0.1);  color: var(--ios-red); }
+.ios-staff-dashboard .tb-after  { background: rgba(52,199,89,0.12); color: #1E9147; }
+.ios-staff-dashboard .tb-mock   { background: rgba(255,149,0,0.12); color: var(--ios-orange); }
+.ios-staff-dashboard .tb-retake { background: rgba(175,82,222,0.12); color: var(--ios-purple); }
+
+.ios-staff-dashboard .sfd-link { font: 700 12px/1 var(--ios-font); color: var(--ios-blue); text-decoration: none; opacity: 1; }
+.ios-staff-dashboard .sfd-feed-student-link { color: var(--ios-label); text-decoration: none; opacity: 1; }
+
+@media (max-width: 768px) {
+    .ios-staff-dashboard .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ios-staff-dashboard .two-col { grid-template-columns: 1fr; }
+    .ios-staff-dashboard .staff-hero { flex-direction: column; align-items: flex-start; }
+    .ios-staff-dashboard .staff-hero-name { font-size: 22px; }
+}
+@media (max-width: 480px) {
+    .ios-staff-dashboard .staff-hero { padding: 18px; }
+    .ios-staff-dashboard .staff-hero-name { font-size: 20px; }
+    .ios-staff-dashboard .banner-row { flex-direction: column; gap: 6px; align-items: stretch; }
+    .ios-staff-dashboard .banner-row-label { width: auto; }
+    .ios-staff-dashboard .staff-row { flex-wrap: wrap; }
+    .ios-staff-dashboard .staff-info { min-width: 130px; }
+    .ios-staff-dashboard .stats-grid { gap: 10px; }
+    .ios-staff-dashboard .stat-tile { padding: 12px 14px; }
+}
