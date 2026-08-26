@@ -235,45 +235,12 @@
     ],
     "style_lines": 25
   },
-  "superadmin_exam_assignment_detail.html": {
-    "hex": 1,
-    "shadow": [
-      "btn-blue",
-      "btn-danger",
-      "btn-outline",
-      "css",
-      "open",
-      "page-header",
-      "page-title",
-      "photo-zoom-button"
-    ],
-    "style_lines": 70
-  },
   "superadmin_exam_assignment_form.html": {
     "hex": 3,
     "shadow": [
       "active"
     ],
     "style_lines": 146
-  },
-  "superadmin_exam_assignments.html": {
-    "hex": 3,
-    "shadow": [
-      "empty-icon",
-      "empty-state",
-      "empty-text",
-      "svg-icon"
-    ],
-    "style_lines": 35
-  },
-  "superadmin_exam_hub.html": {
-    "hex": 0,
-    "shadow": [
-      "active",
-      "page-header",
-      "svg-icon"
-    ],
-    "style_lines": 17
   },
   "superadmin_stats.html": {
     "hex": 1,

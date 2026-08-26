@@ -1,48 +1,13 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Активные пробники' if mode == 'active' else 'Архив пробников' }}{% endblock %}
 {% block extra_styles %}
-<style>
-.ea-wrap { max-width: 860px; margin: 0 auto; }
-
-.assignments-list { display: flex; flex-direction: column; gap: 12px; }
-.assignment-card { background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-lg); padding: 18px 20px; box-shadow: var(--sh-sm); }
-.ac-top { display: flex; align-items: center; gap: 16px; }
-.ac-icon { width: 44px; height: 44px; border-radius: var(--r-md); background: var(--blue-soft); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
-.ac-info { flex: 1; min-width: 0; }
-.ac-title { font-size: 15px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ac-meta { font-size: 12px; color: var(--dim); margin-top: 3px; }
-.ac-right { flex-shrink: 0; text-align: right; }
-
-.status-badge { display: inline-flex; padding: 3px 10px; border-radius: var(--r-sm); font-size: 11px; font-weight: 700; }
-.status-on  { background: rgba(5,150,105,0.08); color: var(--ok); }
-.status-off { background: rgba(234,88,12,0.08); color: #C2410C; }
-.status-archived { background: rgba(156,163,175,0.10); color: var(--muted); }
-
-.ac-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
-.ac-actions form { display: inline; margin: 0; }
-.btn-sm { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: var(--r-sm); font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; text-decoration: none; border: 1.5px solid var(--line); background: var(--surface); color: var(--text); transition: border-color 0.15s, background 0.15s; }
-.btn-sm:hover { border-color: rgba(59,91,255,0.30); color: var(--text); opacity: 1; }
-.btn-sm .svg-icon { width: 15px; height: 15px; }
-.btn-on  { background: rgba(5,150,105,0.08); color: var(--ok); border-color: rgba(5,150,105,0.25); }
-.btn-on:hover  { background: rgba(5,150,105,0.15); color: var(--ok); border-color: rgba(5,150,105,0.45); }
-.btn-off { background: rgba(234,88,12,0.08); color: #C2410C; border-color: rgba(234,88,12,0.22); }
-.btn-off:hover { background: rgba(234,88,12,0.15); color: #C2410C; border-color: rgba(234,88,12,0.42); }
-.btn-edit { background: var(--blue-soft); color: var(--blue); border-color: rgba(59,91,255,0.25); }
-.btn-edit:hover { background: rgba(59,91,255,0.14); color: var(--blue); border-color: rgba(59,91,255,0.45); }
-.btn-arch { background: rgba(156,163,175,0.10); color: var(--muted); border-color: rgba(156,163,175,0.25); }
-.btn-arch:hover { background: rgba(156,163,175,0.18); color: var(--muted); }
-.ac-actions .spacer { flex: 1; }
-
-.empty-state { padding: 64px 20px; }
-.empty-icon { font-size: 48px; margin-bottom: 14px; }
-.empty-text { font-size: 15px; margin-bottom: 20px; }
-</style>
+<link rel="stylesheet" href="/static/css/superadmin_exam_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="ea-wrap">
+<div class="ea-wrap ios-ea-list">
     <div class="page-header">
         <div>
-            <a href="/cabinet/exam-assignments" class="back-link" style="margin-bottom:0">← Билеты для пробников</a>
+            <a href="/cabinet/exam-assignments" class="back-link">← Билеты для пробников</a>
             <h1 class="page-title">{{ 'Активные пробники' if mode == 'active' else 'Архив пробников' }}</h1>
         </div>
         {% if mode == 'active' %}

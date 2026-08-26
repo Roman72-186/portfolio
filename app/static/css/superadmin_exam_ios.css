@@ -1,0 +1,267 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   iOS-ре-скин «Билеты для пробников»: хаб, список (активные/архив), карточка
+   задания — все три под require_admin_role, доступны ГП и СА. Три скоупа
+   в одном файле: `.ios-ea-hub` / `.ios-ea-list` / `.ios-ea-detail`.
+   `.page-header`/`.page-title`/`.page-subtitle`/`.back-link` — общие классы
+   base.css на десятках экранов, переопределены только внутри этих трёх
+   скоупов (тот же приём, что video_ios.css/homework_ios.css). `.status-badge`
+   рендерится общим макросом partials/exam_assignment_status.html — скоуп
+   не даёт правилам просочиться на другие экраны, которые его используют.
+   `superadmin_exam_assignment_form.html` (конструктор билетов, много
+   функциональных style.display в JS) — вне этого захода, отдельная задача.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ios-ea-hub, .ios-ea-list, .ios-ea-detail {
+    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --ios-blue: #007AFF;
+    --ios-green: #34C759;
+    --ios-red: #FF3B30;
+    --ios-orange: #FF9500;
+    --ios-purple: #AF52DE;
+    --ios-label: #1C1C1E;
+    --ios-label-2: rgba(60,60,67,0.60);
+    --ios-label-3: rgba(60,60,67,0.30);
+    --ios-sep: rgba(60,60,67,0.29);
+    --ios-grouped-bg: #F2F2F7;
+    --ios-card-bg: #FFFFFF;
+    position: relative;
+    isolation: isolate;
+    font-family: var(--ios-font);
+    color: var(--ios-label);
+    padding-bottom: 12px;
+}
+.ios-ea-hub::before, .ios-ea-list::before, .ios-ea-detail::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: var(--ios-grouped-bg);
+    z-index: -1;
+}
+
+/* ── Общие переопределения base.css (back-link/page-header/page-title) ── */
+.ios-ea-hub .back-link, .ios-ea-list .back-link, .ios-ea-detail .back-link {
+    color: var(--ios-blue); font: 400 17px/1 var(--ios-font);
+    min-height: 34px; margin-bottom: 4px;
+}
+.ios-ea-hub .back-link:hover, .ios-ea-list .back-link:hover, .ios-ea-detail .back-link:hover {
+    color: var(--ios-blue); opacity: .6;
+}
+.ios-ea-hub .page-header, .ios-ea-list .page-header, .ios-ea-detail .page-header { margin-bottom: 18px; }
+.ios-ea-hub .page-title, .ios-ea-list .page-title, .ios-ea-detail .page-title {
+    font: 700 30px/1.2 var(--ios-font); letter-spacing: -0.4px; color: var(--ios-label);
+}
+.ios-ea-hub .page-subtitle, .ios-ea-list .page-subtitle, .ios-ea-detail .page-subtitle {
+    margin-top: 4px; font: 400 15px/1.35 var(--ios-font); color: var(--ios-label-2);
+}
+
+/* ═══════════════════════════ superadmin_exam_hub.html ═══════════════════════════ */
+
+.ios-ea-hub .ea-wrap { max-width: 760px; margin: 0 auto; }
+.ios-ea-hub .hub-grid { display: flex; flex-direction: column; gap: 12px; }
+.ios-ea-hub .hub-card {
+    background: var(--ios-card-bg); border: none; border-radius: 16px;
+    padding: 18px 20px; display: flex; align-items: center; gap: 16px;
+    text-decoration: none; color: inherit;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    transition: transform 100ms var(--ios-ease);
+}
+.ios-ea-hub .hub-card:hover { border-color: transparent; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transform: none; color: inherit; }
+.ios-ea-hub .hub-card:active { transform: scale(0.99); }
+.ios-ea-hub .hub-icon {
+    width: 46px; height: 46px; border-radius: 13px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.ios-ea-hub .hub-icon .svg-icon { width: 23px; height: 23px; }
+.ios-ea-hub .hub-icon.create  { background: rgba(0,122,255,0.12); color: var(--ios-blue); }
+.ios-ea-hub .hub-icon.active  { background: rgba(52,199,89,0.14); color: #1E9147; }
+.ios-ea-hub .hub-icon.archive { background: rgba(60,60,67,0.08);  color: var(--ios-label-2); }
+.ios-ea-hub .hub-info { flex: 1; min-width: 0; }
+.ios-ea-hub .hub-name { font: 600 15px/1.3 var(--ios-font); color: var(--ios-label); }
+.ios-ea-hub .hub-desc { font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-2); margin-top: 3px; }
+.ios-ea-hub .hub-count {
+    flex-shrink: 0; font: 700 12px/1 var(--ios-font); color: var(--ios-blue);
+    background: rgba(0,122,255,0.12); border: none; border-radius: 999px; padding: 4px 11px;
+}
+.ios-ea-hub .hub-arrow { flex-shrink: 0; color: var(--ios-label-3); }
+
+/* ═══════════════════════════ superadmin_exam_assignments.html ═══════════════════════════ */
+
+.ios-ea-list .ea-wrap { max-width: 860px; margin: 0 auto; }
+.ios-ea-list .page-header .back-link { margin-bottom: 0; }
+.ios-ea-list .btn-blue {
+    background: var(--ios-blue); box-shadow: none; border-radius: 999px;
+    font: 600 13px/1 var(--ios-font); padding: 10px 18px;
+}
+
+.ios-ea-list .assignments-list { display: flex; flex-direction: column; gap: 10px; }
+.ios-ea-list .assignment-card {
+    background: var(--ios-card-bg); border: none; border-radius: 16px;
+    padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.ios-ea-list .ac-top { display: flex; align-items: center; gap: 14px; }
+.ios-ea-list .ac-icon {
+    width: 40px; height: 40px; border-radius: 11px;
+    background: rgba(0,122,255,0.12); display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0; color: var(--ios-blue);
+}
+.ios-ea-list .ac-icon .svg-icon { width: 19px; height: 19px; }
+.ios-ea-list .ac-info { flex: 1; min-width: 0; }
+.ios-ea-list .ac-title { font: 600 14px/1.3 var(--ios-font); color: var(--ios-label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ios-ea-list .ac-meta { font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-2); margin-top: 3px; }
+.ios-ea-list .ac-right { flex-shrink: 0; text-align: right; }
+
+.ios-ea-list .status-badge { display: inline-flex; padding: 3px 10px; border-radius: 999px; font: 700 11px/1.3 var(--ios-font); }
+.ios-ea-list .status-on       { background: rgba(52,199,89,0.14); color: #1E9147; }
+.ios-ea-list .status-off      { background: rgba(255,149,0,0.14); color: var(--ios-orange); }
+.ios-ea-list .status-archived { background: rgba(60,60,67,0.08);  color: var(--ios-label-2); }
+
+.ios-ea-list .ac-actions {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    margin-top: 12px; padding-top: 12px; border-top: 0.5px solid var(--ios-sep);
+}
+.ios-ea-list .ac-actions form { display: inline; margin: 0; }
+.ios-ea-list .ac-actions .spacer { flex: 1; }
+.ios-ea-list .btn-sm {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 7px 13px; border-radius: 999px; font: 700 12px/1 var(--ios-font);
+    cursor: pointer; text-decoration: none; border: none;
+    background: var(--ios-grouped-bg); color: var(--ios-label-2);
+    transition: transform 100ms var(--ios-ease), opacity 120ms var(--ios-ease);
+}
+.ios-ea-list .btn-sm:hover { color: var(--ios-label-2); opacity: 1; }
+.ios-ea-list .btn-sm:active { transform: scale(0.95); }
+.ios-ea-list .btn-sm .svg-icon { width: 14px; height: 14px; }
+.ios-ea-list .btn-on   { background: rgba(52,199,89,0.14); color: #1E9147; }
+.ios-ea-list .btn-on:hover   { background: rgba(52,199,89,0.22); color: #1E9147; }
+.ios-ea-list .btn-off  { background: rgba(255,149,0,0.14); color: var(--ios-orange); }
+.ios-ea-list .btn-off:hover  { background: rgba(255,149,0,0.22); color: var(--ios-orange); }
+.ios-ea-list .btn-edit { background: rgba(0,122,255,0.12); color: var(--ios-blue); }
+.ios-ea-list .btn-edit:hover { background: rgba(0,122,255,0.2); color: var(--ios-blue); }
+.ios-ea-list .btn-arch { background: var(--ios-grouped-bg); color: var(--ios-label-2); }
+.ios-ea-list .btn-arch:hover { background: rgba(60,60,67,0.12); color: var(--ios-label-2); }
+
+.ios-ea-list .empty-state { padding: 56px 20px; text-align: center; }
+.ios-ea-list .empty-icon { font-size: 40px; margin-bottom: 12px; color: var(--ios-label-3); }
+.ios-ea-list .empty-text { font: 400 15px/1.4 var(--ios-font); color: var(--ios-label-2); margin-bottom: 20px; }
+
+/* ═══════════════════════════ superadmin_exam_assignment_detail.html ═══════════════════════════ */
+
+.ios-ea-detail .ea-wrap { max-width: 860px; margin: 0 auto; }
+.ios-ea-detail .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.ios-ea-detail .page-header > div:first-child { flex: 1; min-width: 0; }
+.ios-ea-detail .page-header .back-link { margin-bottom: 4px; }
+.ios-ea-detail .page-title { margin-top: 2px; }
+.ios-ea-detail .page-meta {
+    font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2);
+    margin-top: 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+
+.ios-ea-detail .status-badge { display: inline-flex; padding: 3px 10px; border-radius: 999px; font: 700 11px/1.3 var(--ios-font); }
+.ios-ea-detail .status-published { background: rgba(52,199,89,0.14); color: #1E9147; }
+.ios-ea-detail .status-draft     { background: rgba(60,60,67,0.08); color: var(--ios-label-2); }
+.ios-ea-detail .status-archived  { background: rgba(60,60,67,0.06); color: var(--ios-label-3); }
+
+.ios-ea-detail .header-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+.ios-ea-detail .ea-inline-form { display: inline; margin: 0; }
+.ios-ea-detail .header-actions .btn-danger { margin-left: 8px; }
+.ios-ea-detail .btn-blue {
+    background: var(--ios-blue); box-shadow: none; border-radius: 999px;
+    font: 600 13px/1 var(--ios-font); padding: 10px 18px;
+}
+.ios-ea-detail .btn-outline {
+    background: var(--ios-grouped-bg); color: var(--ios-label); border: none;
+    border-radius: 999px; font: 600 13px/1 var(--ios-font); padding: 10px 18px;
+}
+.ios-ea-detail .btn-outline:hover { background: rgba(0,122,255,0.12); color: var(--ios-blue); }
+.ios-ea-detail .btn-danger {
+    border-radius: 999px; border: 1.5px solid var(--ios-red); color: var(--ios-red);
+    font: 600 13px/1 var(--ios-font); background: transparent;
+}
+.ios-ea-detail .btn-danger:hover { background: var(--ios-red); color: #fff; }
+
+.ios-ea-detail .tickets-section { display: flex; flex-direction: column; gap: 16px; }
+.ios-ea-detail .ticket-card {
+    background: var(--ios-card-bg); border: none; border-radius: 18px;
+    overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.ios-ea-detail .ticket-header {
+    display: flex; align-items: center; gap: 12px; padding: 14px 18px;
+    border-bottom: 0.5px solid var(--ios-sep);
+}
+.ios-ea-detail .ticket-num {
+    width: 32px; height: 32px; border-radius: 10px;
+    background: rgba(0,122,255,0.12); color: var(--ios-blue);
+    font: 700 14px/1 var(--ios-font); display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.ios-ea-detail .ticket-htitle { font: 600 15px/1.3 var(--ios-font); color: var(--ios-label); flex: 1; min-width: 0; }
+.ios-ea-detail .ticket-dates {
+    font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-2); flex-shrink: 0;
+    display: flex; align-items: center; gap: 5px;
+}
+.ios-ea-detail .ticket-dates .svg-icon { width: 14px; height: 14px; }
+.ios-ea-detail .ticket-dates span { white-space: nowrap; }
+
+.ios-ea-detail .ticket-body { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+.ios-ea-detail .ticket-desc { padding: 16px 18px; }
+.ios-ea-detail .ticket-desc-label {
+    font: 700 11px/1.3 var(--ios-font); color: var(--ios-label-2);
+    text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 8px;
+}
+.ios-ea-detail .ticket-desc-text { font: 400 14px/1.6 var(--ios-font); color: var(--ios-label); white-space: pre-wrap; word-break: break-word; }
+.ios-ea-detail .ticket-desc-none { font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-3); font-style: italic; }
+
+.ios-ea-detail .ticket-img-col {
+    border-left: 0.5px solid var(--ios-sep); display: flex; align-items: center; justify-content: center;
+    background: var(--ios-grouped-bg); min-height: 150px;
+}
+.ios-ea-detail .ticket-img-col > .photo-zoom-button { width: 100%; }
+.ios-ea-detail .ticket-img { width: 100%; max-height: 270px; object-fit: contain; display: block; }
+.ios-ea-detail .ticket-no-img { font-size: 30px; color: var(--ios-label-3); text-align: center; }
+
+.ios-ea-detail .ticket-assignees { padding: 14px 18px; border-top: 0.5px solid var(--ios-sep); }
+.ios-ea-detail .assignees-label {
+    font: 700 11px/1.3 var(--ios-font); color: var(--ios-label-2);
+    text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 8px;
+    display: flex; align-items: center; gap: 8px;
+}
+.ios-ea-detail .assign-all-chip {
+    display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px;
+    background: rgba(0,122,255,0.12); color: var(--ios-blue); border-radius: 999px;
+    font: 700 11px/1.3 var(--ios-font);
+}
+.ios-ea-detail .assignees-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.ios-ea-detail .assignee-chip {
+    display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
+    border-radius: 999px; font: 500 12px/1.3 var(--ios-font);
+    background: var(--ios-grouped-bg); color: var(--ios-label); border: none;
+}
+.ios-ea-detail .assignee-chip.notified { background: rgba(52,199,89,0.14); color: #1E9147; }
+.ios-ea-detail .notif-dot { width: 6px; height: 6px; border-radius: 50%; background: #1E9147; flex-shrink: 0; }
+.ios-ea-detail .notif-dot-pending { background: var(--ios-label-3); }
+.ios-ea-detail .assignees-empty { font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-3); font-style: italic; }
+.ios-ea-detail .assignees-count { font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-2); margin-top: 8px; }
+.ios-ea-detail .assignees-count-inline { font: 500 11px/1 var(--ios-font); color: var(--ios-label-2); text-transform: none; letter-spacing: 0; }
+
+.ios-ea-detail .empty-tickets { text-align: center; padding: 48px 20px; color: var(--ios-label-2); font: 400 15px var(--ios-font); }
+
+/* ── Archive confirm modal → iOS alert sheet ── */
+.ios-ea-detail .modal-overlay {
+    display: none; position: fixed; inset: 0; z-index: 2000;
+    align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.32); backdrop-filter: blur(2px);
+}
+.ios-ea-detail .modal-overlay.open { display: flex; }
+.ios-ea-detail .modal-box {
+    background: var(--ios-card-bg); border-radius: 20px; padding: 22px 22px 18px;
+    max-width: 400px; width: 90%; box-shadow: 0 24px 60px rgba(0,0,0,0.24);
+}
+.ios-ea-detail .modal-title { font: 700 17px/1.3 var(--ios-font); color: var(--ios-label); margin-bottom: 6px; }
+.ios-ea-detail .modal-text { font: 400 14px/1.45 var(--ios-font); color: var(--ios-label-2); }
+
+@media (max-width: 768px) {
+    .ios-ea-detail .page-header { flex-direction: column; }
+    .ios-ea-detail .ticket-body { grid-template-columns: 1fr; }
+    .ios-ea-detail .ticket-img-col { border-left: none; border-top: 0.5px solid var(--ios-sep); }
+    .ios-ea-detail .ticket-header { flex-wrap: wrap; gap: 8px; }
+    .ios-ea-detail .ticket-dates { width: 100%; }
+}

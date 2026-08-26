@@ -1,89 +1,19 @@
 {% extends "base.html" %}
 {% block title %}{{ assignment.title }} — Задание{% endblock %}
 {% block extra_styles %}
-<style>
-.ea-wrap { max-width: 860px; margin: 0 auto; }
-
-/* ── Header ── */
-.page-header { align-items: flex-start; margin-bottom: 28px; }
-.page-title { margin-top: 6px; }
-.page-meta { font-size: 13px; color: var(--dim); margin-top: 6px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-
-/* ── Status badge ── */
-.status-badge { display: inline-flex; padding: 3px 10px; border-radius: var(--r-sm); font-size: 11px; font-weight: 700; }
-.status-published { background: rgba(5,150,105,0.08); color: var(--ok); }
-.status-draft     { background: rgba(107,114,128,0.08); color: var(--muted); }
-.status-archived  { background: rgba(156,163,175,0.06); color: #9CA3AF; }
-
-/* ── Actions ── */
-/* Кнопки — канонические .btn-blue/.btn-outline/.btn-danger из base.css;
-   деструктивная отделена дополнительным отступом от остальных (конвенция №3) */
-.header-actions { display: flex; gap: 10px; flex-shrink: 0; flex-wrap: wrap; }
-.header-actions .btn-danger { margin-left: 10px; }
-
-/* ── Ticket card ── */
-.tickets-section { display: flex; flex-direction: column; gap: 20px; }
-.ticket-card { background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-xl); overflow: hidden; box-shadow: var(--sh-sm); }
-.ticket-header { display: flex; align-items: center; gap: 14px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
-.ticket-num { width: 36px; height: 36px; border-radius: var(--r-sm); background: var(--blue-soft); color: var(--blue); font-size: 15px; font-weight: 900; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.ticket-htitle { font-size: 16px; font-weight: 700; color: var(--text); flex: 1; min-width: 0; }
-.ticket-dates { font-size: 12px; color: var(--dim); flex-shrink: 0; display: flex; align-items: center; gap: 5px; }
-.ticket-dates span { white-space: nowrap; }
-
-.ticket-body { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
-.ticket-desc { padding: 20px 22px; }
-.ticket-desc-label { font-size: 11px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
-.ticket-desc-text { font-size: 14px; color: var(--text); line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
-.ticket-desc-none { font-size: 13px; color: var(--dim); font-style: italic; }
-
-.ticket-img-col { border-left: 1px solid var(--line); display: flex; align-items: center; justify-content: center; background: var(--surface-2); min-height: 160px; }
-.ticket-img-col > .photo-zoom-button { width: 100%; }
-.ticket-img { width: 100%; max-height: 280px; object-fit: contain; display: block; }
-.ticket-no-img { font-size: 32px; color: var(--dim); text-align: center; }
-
-/* ── Assignees ── */
-.ticket-assignees { padding: 16px 22px; border-top: 1px solid var(--line); }
-.assignees-label { font-size: 11px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
-.assign-all-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: rgba(59,91,255,0.08); color: var(--blue); border-radius: 8px; font-size: 11px; font-weight: 700; }
-.assignees-grid { display: flex; flex-wrap: wrap; gap: 6px; }
-.assignee-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: var(--r-xl); font-size: 12px; font-weight: 500; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); }
-.assignee-chip.notified { background: rgba(5,150,105,0.07); border-color: rgba(5,150,105,0.2); color: var(--ok); }
-.notif-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
-.notif-dot-pending { background: var(--dim); }
-.assignees-empty { font-size: 13px; color: var(--dim); font-style: italic; }
-.assignees-count { font-size: 12px; color: var(--dim); margin-top: 8px; }
-
-/* ── No tickets ── */
-.empty-tickets { text-align: center; padding: 48px 20px; color: var(--dim); font-size: 15px; }
-
-/* ── Archive confirm modal ── */
-.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.45); z-index: 2000; align-items: center; justify-content: center; }
-.modal-overlay.open { display: flex; }
-.modal-box { background: var(--surface); border-radius: var(--r-xl); padding: 30px 28px; max-width: 400px; width: 90%; box-shadow: var(--sh-md); }
-.modal-title { font-size: 18px; font-weight: 900; color: var(--text); margin-bottom: 10px; }
-.modal-text { font-size: 14px; color: var(--muted); line-height: 1.55; }
-/* Раскладка кнопок модалки — канонический .modal-actions из base.css */
-
-@media (max-width: 768px) {
-    .page-header { flex-direction: column; }
-    .ticket-body { grid-template-columns: 1fr; }
-    .ticket-img-col { border-left: none; border-top: 1px solid var(--line); }
-    .ticket-header { flex-wrap: wrap; gap: 10px; }
-    .ticket-dates { width: 100%; }
-}
-</style>
+<link rel="stylesheet" href="/static/css/superadmin_exam_ios.css?v=1">
 {% endblock %}
 
 {% block content %}
 {% from "partials/exam_assignment_status.html" import exam_assignment_status_badge %}
-<div class="ea-wrap">
+<div class="ea-wrap ios-ea-detail">
 
     {% set subject_icons = {'Рисунок': '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 5a2 2 0 0 0-2.83 0L3 19.17V22h2.83L20 7.83A2 2 0 0 0 20 5z"/><path d="M14.5 5.5l4 4"/></svg>', 'Композиция': '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.97 12.64 11.36 3.03a2 2 0 0 0-2.83 0L3.03 8.53a2 2 0 0 0 0 2.83l9.61 9.61a2 2 0 0 0 2.83 0l5.5-5.5a2 2 0 0 0 0-2.83z"/><line x1="5" y1="10" x2="7" y2="12"/><line x1="8" y1="7" x2="10" y2="9"/><line x1="11" y1="4" x2="13" y2="6"/><line x1="12" y1="17" x2="14" y2="15"/></svg>'} %}
 
     <!-- Header -->
     <div class="page-header">
-        <div style="flex:1; min-width:0;">
-            <a href="/cabinet/exam-assignments/{{ 'archive' if assignment.status == 'archived' else 'active' }}" class="back-link" style="margin-bottom:0">← {{ 'Архив пробников' if assignment.status == 'archived' else 'Активные пробники' }}</a>
+        <div>
+            <a href="/cabinet/exam-assignments/{{ 'archive' if assignment.status == 'archived' else 'active' }}" class="back-link">← {{ 'Архив пробников' if assignment.status == 'archived' else 'Активные пробники' }}</a>
             <h1 class="page-title">{{ assignment.title }}</h1>
             <div class="page-meta">
                 {{ exam_assignment_status_badge(assignment.status) }}
@@ -106,7 +36,7 @@
                 <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg> Редактировать
             </a>
             {% endif %}
-            <form method="post" action="/cabinet/exam-assignments/{{ assignment.id }}/duplicate" style="display:inline;">
+            <form method="post" action="/cabinet/exam-assignments/{{ assignment.id }}/duplicate" class="ea-inline-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                 <button type="submit" class="btn-outline" title="Создать копию для новых настроек">
                     <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Дублировать
@@ -176,7 +106,7 @@
                 {% set ticket_assignees = assignees_by_ticket.get(ticket.id, []) %}
                 <div class="assignees-label">
                     Назначено ученикам
-                    <span style="font-weight:500; color: var(--dim); font-size:11px; text-transform:none; letter-spacing:0;">
+                    <span class="assignees-count-inline">
                         ({{ ticket_assignees|length }})
                     </span>
                 </div>
@@ -207,8 +137,6 @@
     </div>
     {% endif %}
 
-</div>
-
 <!-- Archive confirm modal -->
 <div class="modal-overlay" id="archiveModal">
     <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="archiveModalTitle">
@@ -222,12 +150,14 @@
             <button class="btn-outline" id="archiveCancelBtn" onclick="closeArchiveModal()">
                 Отмена
             </button>
-            <form method="post" action="/cabinet/exam-assignments/{{ assignment.id }}/archive" style="display:inline;">
+            <form method="post" action="/cabinet/exam-assignments/{{ assignment.id }}/archive" class="ea-inline-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                 <button type="submit" class="btn-danger">Архивировать</button>
             </form>
         </div>
     </div>
+</div>
+
 </div>
 
 <script>

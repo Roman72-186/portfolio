@@ -1,27 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Билеты для пробников{% endblock %}
 {% block extra_styles %}
-<style>
-.ea-wrap { max-width: 760px; margin: 0 auto; }
-.page-header { margin-bottom: 28px; }
-
-.hub-grid { display: flex; flex-direction: column; gap: 14px; }
-.hub-card { background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-lg); padding: 22px 24px; display: flex; align-items: center; gap: 18px; text-decoration: none; color: inherit; transition: border-color 0.2s, box-shadow 0.2s, transform 0.12s; box-shadow: var(--sh-sm); }
-.hub-card:hover { border-color: rgba(59,91,255,0.30); box-shadow: var(--sh-md); transform: translateY(-1px); color: inherit; }
-.hub-icon { width: 52px; height: 52px; border-radius: var(--r-md); background: var(--blue-soft); color: var(--blue); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.hub-icon .svg-icon { width: 26px; height: 26px; }
-.hub-icon.create { background: rgba(59,91,255,0.10); color: var(--blue); }
-.hub-icon.active  { background: rgba(5,150,105,0.10); color: var(--ok); }
-.hub-icon.archive { background: rgba(156,163,175,0.12); color: var(--muted); }
-.hub-info { flex: 1; min-width: 0; }
-.hub-name { font-size: 16px; font-weight: 800; color: var(--text); }
-.hub-desc { font-size: 13px; color: var(--dim); margin-top: 3px; }
-.hub-count { flex-shrink: 0; font-size: 13px; font-weight: 700; color: var(--muted); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-xl); padding: 4px 12px; }
-.hub-arrow { flex-shrink: 0; color: var(--dim); }
-</style>
+<link rel="stylesheet" href="/static/css/superadmin_exam_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="ea-wrap">
+<div class="ea-wrap ios-ea-hub">
     <div class="page-header page-header--stacked">
         <a href="/cabinet" class="back-link">← Кабинет</a>
         <h1 class="page-title">Билеты для пробников</h1>
