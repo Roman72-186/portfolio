@@ -155,14 +155,16 @@ def cabinet_tracker_toggle(
         state = TrackerTaskState(task_id=task_id, user_id=user["user_id"], status=STATUS_OPEN)
         db.add(state)
 
-    if state.status == STATUS_DONE:
-        state.status = STATUS_OPEN
-        state.completed_at = None
-        state.completed_by_id = None
-    else:
+    # Отметка одноразовая, назад её снять нельзя (решение владельца
+    # 26.08.2026): ученик должен быть уверен перед нажатием, а не полагаться
+    # на то, что галочку можно снять и поставить заново. Повторный вызов на
+    # уже закрытой задаче — не ошибка, а no-op: фронтенд блокирует кнопку
+    # после первой отметки, но сам эндпоинт не должен откатывать состояние,
+    # даже если запрос всё же прилетит повторно.
+    if state.status != STATUS_DONE:
         state.status = STATUS_DONE
         state.completed_at = now_msk()
         state.completed_by_id = user["user_id"]
+        db.commit()
 
-    db.commit()
     return JSONResponse({"status": task_status(task, state, now=now_msk())})

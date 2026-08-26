@@ -170,7 +170,9 @@ def test_task_outside_current_week_not_shown(auth_client, db):
 
 # ── Отметка выполнения ──────────────────────────────────────────────────────
 
-def test_toggle_creates_state_lazily_and_flips(auth_client, db):
+def test_toggle_creates_state_lazily_and_is_one_way(auth_client, db):
+    """Отметка выполнения необратима (решение владельца 26.08.2026): повторный
+    вызов на уже закрытой задаче — no-op, а не откат в открытое состояние."""
     client, user = auth_client
     _, due = _current_week_due(offset_days=2)
     task = _standalone_task(db, user_id=user.id, due_at=due, assign_to_all=True)
@@ -183,13 +185,15 @@ def test_toggle_creates_state_lazily_and_flips(auth_client, db):
     state = db.query(TrackerTaskState).filter(TrackerTaskState.task_id == task.id).one()
     assert state.status == STATUS_DONE
     assert state.completed_by_id == user.id
+    completed_at = state.completed_at
 
     resp = client.post(f"{PAGE}/tasks/{task.id}/toggle")
     assert resp.status_code == 200
-    assert resp.json()["status"] != "done"
+    assert resp.json()["status"] == "done"
     db.refresh(state)
-    assert state.status == STATUS_OPEN
-    assert state.completed_by_id is None
+    assert state.status == STATUS_DONE
+    assert state.completed_by_id == user.id
+    assert state.completed_at == completed_at
 
 
 def test_toggle_state_is_per_student(auth_client, db, user_factory, session_factory):

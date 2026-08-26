@@ -658,7 +658,28 @@
 .ios-learning .trk-toggle-btn.is-done { background: var(--ios-green); border-color: var(--ios-green); }
 .ios-learning .trk-toggle-btn.is-done::after { transform: rotate(-45deg) scale(1); opacity: 1; }
 .ios-learning .trk-toggle-btn:active { transform: scale(0.86); }
-.ios-learning .trk-toggle-btn:disabled { opacity: 0.5; }
+/* `:disabled` без `.is-done` — запрос в полёте (полсекунды после клика,
+   пока не пришёл ответ сервера). Готовую сделанной задачу гасить нельзя:
+   отметка необратима (решение владельца 26.08.2026), и полупрозрачная
+   зелёная галочка выглядела бы как «недоступно», а не «выполнено». */
+.ios-learning .trk-toggle-btn:disabled:not(.is-done) { opacity: 0.5; }
+
+/* На телефоне карточка сужается до одной колонки (`.trk-row` ловит общий
+   `@media (max-width: 760px)` выше) и кружок «Отметить» уезжал отдельной
+   строкой под текст — было неочевидно, что вообще нужно что-то нажимать
+   (владелец, 26.08.2026). На мобильном кружок встаёт в правый верхний угол
+   самой карточки, рядом с заголовком; кнопки-ссылки (пробник/домашка/видео/
+   анкета) в `.trk-row-actions` этот блок не трогает — у них есть текст, им
+   спускаться под контент нормально. */
+@media (max-width: 760px) {
+    .ios-learning .trk-item { position: relative; }
+    .ios-learning .trk-row-actions:has(.trk-toggle-btn) {
+        position: absolute; top: 13px; right: 16px;
+    }
+    .ios-learning .trk-row:has(.trk-toggle-btn) > div:first-child {
+        padding-right: 40px;
+    }
+}
 
 @keyframes ios-learning-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .ios-learning .lrn-card,

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=12">
+<link rel="stylesheet" href="/static/css/tracker.css?v=13">
 {% endblock %}
 {% block content %}
 <div class="lrn-page ios-learning">
@@ -234,6 +234,9 @@ function lrnUpdateTabBadge(kind) {
     var csrfToken = {{ csrf_token(request)|tojson }};
     document.querySelectorAll('[data-toggle-task]').forEach(function (btn) {
         btn.addEventListener('click', function () {
+            // Отметка необратима (решение владельца 26.08.2026) — спрашиваем
+            // явное подтверждение перед отправкой, отменить потом будет нельзя.
+            if (!window.confirm('Отметить как выполнено? Отменить будет нельзя.')) return;
             var taskId = btn.getAttribute('data-toggle-task');
             var row = btn.closest('.trk-item');
             var panel = btn.closest('.lrn-tabpanel');
@@ -252,10 +255,12 @@ function lrnUpdateTabBadge(kind) {
                 btn.classList.toggle('is-done', done);
                 btn.setAttribute('aria-pressed', done ? 'true' : 'false');
                 btn.textContent = done ? 'Сделано' : 'Отметить';
+                // Кнопка остаётся задизейбленной навсегда — отжать обратно
+                // нельзя, ниже в .finally() она включится только при ошибке.
+                btn.disabled = done;
                 if (panel) lrnUpdateTabBadge(panel.getAttribute('data-tabpanel'));
             }).catch(function () {
                 btn.textContent = 'Не получилось, ещё раз';
-            }).finally(function () {
                 btn.disabled = false;
             });
         });

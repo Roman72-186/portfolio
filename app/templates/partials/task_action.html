@@ -39,10 +39,14 @@
 {% endif %}
 
 {% if not autocloses %}
+{# Отметка необратима (решение владельца 26.08.2026): уже закрытую задачу
+   нельзя переоткрыть кликом, поэтому кнопка на сделанной задаче рисуется
+   сразу задизейбленной — только посмотреть, не отжать обратно. #}
 <button
     type="button"
     class="trk-toggle-btn{{ ' is-done' if entry.status == 'done' }}"
     data-toggle-task="{{ task.id }}"
     aria-pressed="{{ 'true' if entry.status == 'done' else 'false' }}"
+    {{ 'disabled' if entry.status == 'done' }}
 >{{ 'Сделано' if entry.status == 'done' else 'Отметить' }}</button>
 {% endif %}
