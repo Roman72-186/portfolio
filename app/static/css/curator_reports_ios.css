@@ -1,0 +1,102 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   iOS-ре-скин «Видео-отчёты» (`cabinet_curator_reports.html`,
+   `/cabinet/curator/reports`). Один шаблон на два разных вида: куратор
+   (rank == 2, своя форма отправки + своя история) и ГП/СА (rank >= 4,
+   список всех присланных отчётов без формы). Экран общий с куратором —
+   ре-скин подтверждён владельцем прямо (см. NEXT-CHAT-PROMPT-STAFF-IOS.md).
+
+   Навигация (`_curator_nav.html`/`partials/staff_nav.html`) — вне мандата
+   этой ветки, не тронута. Скоуп — `.ios-reports`, навешен на `.reports-page`.
+
+   Экран самодостаточный, без JS-переключателей display/hidden — только
+   `confirm()` на форме удаления. Класс бага «display без [hidden]» здесь
+   не воспроизводится.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ios-reports {
+    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --ios-blue: #007AFF;
+    --ios-green: #34C759;
+    --ios-red: #FF3B30;
+    --ios-orange: #FF9500;
+    --ios-label: #1C1C1E;
+    --ios-label-2: rgba(60,60,67,0.60);
+    --ios-label-3: rgba(60,60,67,0.30);
+    --ios-sep: rgba(60,60,67,0.29);
+    --ios-grouped-bg: #F2F2F7;
+    --ios-card-bg: #FFFFFF;
+    position: relative;
+    isolation: isolate;
+    font-family: var(--ios-font);
+    color: var(--ios-label);
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 18px 16px 80px;
+}
+.ios-reports::before {
+    content: '';
+    position: fixed; inset: 0;
+    background: var(--ios-grouped-bg);
+    z-index: -1;
+}
+
+.ios-reports .reports-head { margin: 0 0 20px; }
+.ios-reports .reports-title { font: 700 24px/1.2 var(--ios-font); letter-spacing: -0.3px; color: var(--ios-label); }
+.ios-reports .reports-sub { font: 400 14px/1.5 var(--ios-font); color: var(--ios-label-2); margin-top: 4px; }
+
+.ios-reports .alert { padding: 12px 16px; border-radius: 12px; font: 700 13px/1.4 var(--ios-font); margin-bottom: 18px; }
+.ios-reports .alert-success { background: rgba(52,199,89,0.14); color: #1E9147; }
+.ios-reports .alert-error { background: rgba(255,59,48,0.12); color: var(--ios-red); }
+
+.ios-reports .report-card {
+    background: var(--ios-card-bg); border: none;
+    border-radius: 20px; padding: 20px; margin-bottom: 22px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.ios-reports .field-label { font: 700 13px/1.3 var(--ios-font); color: var(--ios-label); margin-bottom: 7px; display: block; }
+.ios-reports .field-hint { font: 400 12px/1.45 var(--ios-font); color: var(--ios-label-2); margin-top: 5px; }
+
+.ios-reports .report-input, .ios-reports .report-file, .ios-reports .report-textarea {
+    width: 100%; box-sizing: border-box;
+    background: var(--ios-grouped-bg); border: none;
+    border-radius: 12px; padding: 11px 14px;
+    font: 400 14px/1.4 var(--ios-font); color: var(--ios-label); font-family: inherit;
+    outline: none; transition: box-shadow 120ms var(--ios-ease);
+}
+.ios-reports .report-input:focus, .ios-reports .report-file:focus, .ios-reports .report-textarea:focus {
+    box-shadow: 0 0 0 2px var(--ios-blue);
+}
+.ios-reports .report-file { cursor: pointer; }
+.ios-reports .report-textarea { resize: vertical; min-height: 96px; line-height: 1.5; }
+.ios-reports .report-field + .report-field { margin-top: 16px; }
+
+.ios-reports .report-submit {
+    margin-top: 20px;
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--ios-blue); color: #fff; border: none;
+    border-radius: 999px; padding: 11px 22px;
+    font: 700 14px/1 var(--ios-font); cursor: pointer; font-family: inherit;
+    transition: filter 120ms var(--ios-ease), transform 100ms var(--ios-ease);
+}
+.ios-reports .report-submit:hover { filter: brightness(1.05); }
+.ios-reports .report-submit:active { transform: translateY(1px); }
+
+.ios-reports .history-title { font: 700 15px/1.3 var(--ios-font); color: var(--ios-label); margin: 6px 0 14px; }
+.ios-reports .history-item {
+    border: none; border-radius: 16px;
+    padding: 16px 18px; margin-bottom: 12px; background: var(--ios-card-bg);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.ios-reports .history-date { font: 700 12px/1.3 var(--ios-font); color: var(--ios-label-2); margin-bottom: 6px; }
+.ios-reports .history-text { font: 400 14px/1.5 var(--ios-font); color: var(--ios-label); white-space: pre-wrap; margin-bottom: 8px; }
+.ios-reports .history-video { display: block; width: 100%; max-height: 360px; border-radius: 12px; background: #000; }
+.ios-reports .history-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.ios-reports .delete-report-btn {
+    border: none; background: rgba(255,59,48,0.10); color: var(--ios-red);
+    border-radius: 999px; padding: 8px 14px; font: 700 13px/1 var(--ios-font);
+    cursor: pointer; font-family: inherit; transition: background 120ms var(--ios-ease);
+}
+.ios-reports .delete-report-btn:hover { background: rgba(255,59,48,0.18); }
+.ios-reports .history-empty { font: 400 14px/1.4 var(--ios-font); color: var(--ios-label-2); padding: 8px 2px; }

@@ -55,33 +55,10 @@
     ],
     "style_lines": 128
   },
-  "cabinet_curator_reports.html": {
-    "hex": 2,
-    "shadow": [
-      "alert-error",
-      "alert-success",
-      "field-label"
-    ],
-    "style_lines": 56
-  },
   "cabinet_cycle_calendar.html": {
     "hex": 1,
     "shadow": [],
     "style_lines": 24
-  },
-  "cabinet_guest_mode.html": {
-    "hex": 1,
-    "shadow": [
-      "active"
-    ],
-    "style_lines": 81
-  },
-  "cabinet_staff_cycles.html": {
-    "hex": 2,
-    "shadow": [
-      "active"
-    ],
-    "style_lines": 93
   },
   "cabinet_student.html": {
     "hex": 15,
