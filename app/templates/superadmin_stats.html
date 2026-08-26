@@ -1,93 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Статистика пробников{% endblock %}
 {% block extra_styles %}
-<style>
-.ss-wrap { max-width: 960px; margin: 0 auto; }
-.ss-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
-.ss-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
-.ss-filters { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
-.ss-filters select { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; min-width: 220px; }
-.ss-filters select:focus { border-color: var(--blue); }
-.ss-filters label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
-.ss-since { font-size: 12px; color: var(--dim); margin-left: auto; align-self: center; }
-
-/* Поиск по ученику (имя / telegram) — клиентский, по всем секциям */
-.ss-search { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 18px; margin-bottom: 18px; display: flex; align-items: center; gap: 10px; }
-.ss-search-icon { color: var(--dim); font-size: 15px; flex-shrink: 0; }
-.ss-search input { flex: 1; font-family: inherit; font-size: 14px; padding: 9px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; }
-.ss-search input:focus { border-color: var(--blue); }
-.ss-search-clear { background: none; border: none; color: var(--dim); font-size: 18px; cursor: pointer; padding: 0 6px; line-height: 1; display: none; }
-.ss-search-clear:hover { color: var(--text); }
-.ss-search.has-query .ss-search-clear { display: inline-block; }
-.ss-noresults { display: none; padding: 28px; text-align: center; color: var(--dim); font-size: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 14px; }
-
-.ss-stats-strip { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; margin: 0 0 14px; }
-.ss-stat { padding: 16px 18px; border-right: 1px solid var(--line); }
-.ss-stat:last-child { border-right: none; }
-.ss-stat-val { font-size: 28px; font-weight: 900; color: var(--text); line-height: 1; margin-bottom: 4px; }
-.ss-stat-lbl { font-size: 12px; color: var(--dim); font-weight: 500; }
-
-.ss-table-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; margin-bottom: 14px; }
-.ss-table { width: 100%; border-collapse: collapse; }
-.ss-table th { text-align: left; padding: 11px 14px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); border-bottom: 1px solid var(--line); background: var(--bg); }
-.ss-table td { padding: 9px 14px; font-size: 13px; color: var(--text); border-bottom: 1px solid var(--line); }
-.ss-table tr:last-child td { border-bottom: none; }
-.ss-table tr:hover td { background: var(--bg); }
-
-.type-badge { display: inline-flex; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
-.tb-mock { background: rgba(217,119,6,0.1); color: var(--warning); }
-
-.ss-export-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 8px 16px; background: var(--ok-strong); color: #fff; border: none; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; text-decoration: none; }
-.ss-export-btn:hover { opacity: 0.88; }
-
-.ss-empty { padding: 28px; text-align: center; color: var(--dim); font-size: 14px; }
-
-/* Нативные сворачиваемые секции (<details>) — раскрытие только по клику */
-.ss-acc { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 14px; overflow: hidden; box-shadow: var(--sh-sm); }
-.ss-acc > summary { list-style: none; cursor: pointer; padding: 15px 18px; display: flex; align-items: center; gap: 11px; font-size: 14px; font-weight: 800; color: var(--text); user-select: none; }
-.ss-acc > summary::-webkit-details-marker { display: none; }
-.ss-acc > summary::before { content: "▸"; color: var(--dim); font-size: 11px; transition: transform 0.15s; }
-.ss-acc[open] > summary::before { transform: rotate(90deg); }
-.ss-acc > summary:hover { color: var(--blue); }
-.ss-acc-title { font: inherit; color: inherit; letter-spacing: inherit; }
-.ss-acc-badge { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--dim); }
-.ss-acc-body { border-top: 1px solid var(--line); padding: 14px; }
-.ss-acc-body > .ss-table-wrap:last-child,
-.ss-acc-body > .ss-sub:last-child { margin-bottom: 0; }
-
-.ss-sub { margin-bottom: 14px; }
-.ss-sub-head { padding: 10px 14px; font-size: 12px; font-weight: 800; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-bottom: none; border-radius: var(--r-md) var(--r-md) 0 0; display: flex; align-items: center; justify-content: space-between; }
-.ss-sub-head .ss-sub-count { font-size: 11px; font-weight: 700; color: var(--dim); }
-.ss-sub .ss-table { border: 1px solid var(--line); border-radius: 0 0 var(--r-md) var(--r-md); }
-
-@media (max-width: 768px) {
-    .ss-stats-strip { grid-template-columns: 1fr 1fr; }
-    .ss-stat:nth-child(2) { border-right: none; }
-    .ss-stat:nth-child(1), .ss-stat:nth-child(2) { border-bottom: 1px solid var(--line); }
-}
-
-@media (max-width: 820px) {
-    .ss-table-wrap { border: none; background: transparent; overflow: visible; }
-    .ss-sub .ss-table { border: none; border-radius: 0; }
-    .ss-sub-head { border-radius: var(--r-md); border-bottom: 1px solid var(--line); margin-bottom: 8px; }
-    .ss-table, .ss-table tbody, .ss-table tr, .ss-table td { display: block; width: 100%; }
-    .ss-table thead { display: none; }
-    .ss-table tr { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 10px; overflow: hidden; }
-    .ss-table tr:last-child { margin-bottom: 0; }
-    .ss-table td { padding: 8px 14px !important; border-bottom: 1px solid var(--line); box-sizing: border-box; text-align: left !important; max-width: none !important; }
-    .ss-table tr td:last-child { border-bottom: none; }
-    .ss-table td::before { content: attr(data-label); display: block; margin-bottom: 4px; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; }
-}
-</style>
+<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=1">
 {% endblock %}
 {% block content %}
 {% set tariff_keys = (tariffs if tariffs else []) %}
 {% set status_total = status.by_tariff_mock_status.values() | map('length') | sum %}
 {% set ns_total = status.not_submitted_by_tariff.values() | map('length') | sum %}
-<div class="ss-wrap">
+<div class="ss-wrap ios-ss">
 
     <div class="ss-header">
-        <a href="/cabinet" class="back-link" style="margin-bottom:0">← Дашборд</a>
+        <a href="/cabinet" class="back-link">← Дашборд</a>
         <h1 class="ss-title">Статистика пробников</h1>
     </div>
 
@@ -134,18 +57,18 @@
                             <th>Ученик</th>
                             <th>VK ID</th>
                             <th>Telegram</th>
-                            <th style="text-align:center">Рисунок</th>
-                            <th style="text-align:center">Композиция</th>
+                            <th class="ss-ta-c">Рисунок</th>
+                            <th class="ss-ta-c">Композиция</th>
                         </tr>
                     </thead>
                     <tbody>
                     {% for s in students %}
                     <tr data-search="{{ (s.student_name ~ ' ' ~ (s.tg_username | default('') | replace('@', ''))) | lower }}">
-                        <td data-label="Ученик"><a href="/cabinet/superadmin/users?q={{ s.student_name }}" style="color:var(--blue);text-decoration:none;font-weight:700">{{ s.student_name }}</a></td>
-                        <td data-label="VK ID" style="color:var(--dim);font-size:12px;font-family:monospace">{{ s.vk_id }}</td>
-                        <td data-label="Telegram" style="color:var(--dim);font-size:12px">{% if s.tg_username %}{% if not s.tg_username.startswith('@') %}@{% endif %}{{ s.tg_username }}{% else %}—{% endif %}</td>
-                        <td data-label="Рисунок" style="text-align:center">{% if s.risunok %}<span style="color:var(--ok);font-weight:700;font-size:15px">✓</span>{% else %}<span style="color:var(--error);font-weight:700;font-size:15px">✗</span>{% endif %}</td>
-                        <td data-label="Композиция" style="text-align:center">{% if s.kompoziciya %}<span style="color:var(--ok);font-weight:700;font-size:15px">✓</span>{% else %}<span style="color:var(--error);font-weight:700;font-size:15px">✗</span>{% endif %}</td>
+                        <td data-label="Ученик"><a href="/cabinet/superadmin/users?q={{ s.student_name }}" class="ss-link">{{ s.student_name }}</a></td>
+                        <td data-label="VK ID" class="ss-mono-dim">{{ s.vk_id }}</td>
+                        <td data-label="Telegram" class="ss-dim-sm">{% if s.tg_username %}{% if not s.tg_username.startswith('@') %}@{% endif %}{{ s.tg_username }}{% else %}—{% endif %}</td>
+                        <td data-label="Рисунок" class="ss-ta-c">{% if s.risunok %}<span class="ss-check-ok">✓</span>{% else %}<span class="ss-check-err">✗</span>{% endif %}</td>
+                        <td data-label="Композиция" class="ss-ta-c">{% if s.kompoziciya %}<span class="ss-check-ok">✓</span>{% else %}<span class="ss-check-err">✗</span>{% endif %}</td>
                     </tr>
                     {% endfor %}
                     </tbody>
@@ -176,18 +99,18 @@
                             <th>Ученик</th>
                             <th>VK ID</th>
                             <th>Telegram</th>
-                            <th style="text-align:center">Рисунок</th>
-                            <th style="text-align:center">Композиция</th>
+                            <th class="ss-ta-c">Рисунок</th>
+                            <th class="ss-ta-c">Композиция</th>
                         </tr>
                     </thead>
                     <tbody>
                     {% for s in ns_students %}
                     <tr data-search="{{ (s.student_name ~ ' ' ~ (s.tg_username | default('') | replace('@', ''))) | lower }}">
-                        <td data-label="Ученик"><a href="/cabinet/superadmin/users?q={{ s.student_name }}" style="color:var(--blue);text-decoration:none;font-weight:700">{{ s.student_name }}</a></td>
-                        <td data-label="VK ID" style="color:var(--dim);font-size:12px;font-family:monospace">{{ s.vk_id }}</td>
-                        <td data-label="Telegram" style="color:var(--dim);font-size:12px">{% if s.tg_username %}{% if not s.tg_username.startswith('@') %}@{% endif %}{{ s.tg_username }}{% else %}—{% endif %}</td>
-                        <td data-label="Рисунок" style="text-align:center">{% if s.risunok %}<span style="color:var(--ok);font-weight:700;font-size:15px">✓</span>{% else %}<span style="color:var(--error);font-weight:700;font-size:15px">✗</span>{% endif %}</td>
-                        <td data-label="Композиция" style="text-align:center">{% if s.kompoziciya %}<span style="color:var(--ok);font-weight:700;font-size:15px">✓</span>{% else %}<span style="color:var(--error);font-weight:700;font-size:15px">✗</span>{% endif %}</td>
+                        <td data-label="Ученик"><a href="/cabinet/superadmin/users?q={{ s.student_name }}" class="ss-link">{{ s.student_name }}</a></td>
+                        <td data-label="VK ID" class="ss-mono-dim">{{ s.vk_id }}</td>
+                        <td data-label="Telegram" class="ss-dim-sm">{% if s.tg_username %}{% if not s.tg_username.startswith('@') %}@{% endif %}{{ s.tg_username }}{% else %}—{% endif %}</td>
+                        <td data-label="Рисунок" class="ss-ta-c">{% if s.risunok %}<span class="ss-check-ok">✓</span>{% else %}<span class="ss-check-err">✗</span>{% endif %}</td>
+                        <td data-label="Композиция" class="ss-ta-c">{% if s.kompoziciya %}<span class="ss-check-ok">✓</span>{% else %}<span class="ss-check-err">✗</span>{% endif %}</td>
                     </tr>
                     {% endfor %}
                     </tbody>
@@ -208,25 +131,25 @@
             {% if ticket_stats and ticket_stats.applicable and ticket_stats.total_receipts > 0 %}
             <!-- Агрегат: сколько учеников получили каждый билет -->
             <div class="ss-table-wrap ss-hide-on-search">
-                <h3 style="margin:0;padding:11px 14px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.06em">Сколько учеников получили каждый билет</h3>
+                <h3 class="ss-table-title">Сколько учеников получили каждый билет</h3>
                 <table class="ss-table">
                     <thead>
                         <tr>
                             <th>Билет</th>
                             <th>Предмет</th>
-                            <th style="text-align:center">Учеников</th>
-                            <th style="text-align:center">Выдач</th>
+                            <th class="ss-ta-c">Учеников</th>
+                            <th class="ss-ta-c">Выдач</th>
                             <th>Последняя выдача</th>
                         </tr>
                     </thead>
                     <tbody>
                     {% for t in ticket_stats.by_ticket %}
                     <tr>
-                        <td data-label="Билет" style="font-weight:700">{{ t.ticket_title }}{% if t.deleted %} <span style="color:var(--dim);font-weight:500;font-size:11px">(удалён)</span>{% endif %}</td>
-                        <td data-label="Предмет">{% if t.subject %}<span class="type-badge tb-mock">{{ t.subject }}</span>{% else %}<span style="color:var(--dim)">—</span>{% endif %}</td>
-                        <td data-label="Учеников" style="text-align:center;font-weight:900;color:var(--blue)">{{ t.student_count }}</td>
-                        <td data-label="Выдач" style="text-align:center;color:var(--dim)">{{ t.attempt_count }}</td>
-                        <td data-label="Последняя выдача" style="color:var(--dim);font-size:12px">{{ t.last_at.strftime('%d.%m.%Y %H:%M') if t.last_at else '—' }}</td>
+                        <td data-label="Билет" class="ss-bold">{{ t.ticket_title }}{% if t.deleted %} <span class="ss-deleted-note">(удалён)</span>{% endif %}</td>
+                        <td data-label="Предмет">{% if t.subject %}<span class="type-badge tb-mock">{{ t.subject }}</span>{% else %}<span class="ss-dim">—</span>{% endif %}</td>
+                        <td data-label="Учеников" class="ss-num-strong">{{ t.student_count }}</td>
+                        <td data-label="Выдач" class="ss-ta-c ss-dim">{{ t.attempt_count }}</td>
+                        <td data-label="Последняя выдача" class="ss-dim-sm">{{ t.last_at.strftime('%d.%m.%Y %H:%M') if t.last_at else '—' }}</td>
                     </tr>
                     {% endfor %}
                     </tbody>
@@ -234,9 +157,9 @@
             </div>
             <!-- Детально: кто, какой билет и когда получил -->
             <div class="ss-table-wrap">
-                <h3 style="margin:0;padding:11px 14px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.06em;display:flex;justify-content:space-between;align-items:center">
+                <h3 class="ss-table-title ss-table-title--flex">
                     Кто и когда получил билет
-                    <span style="font-weight:500;text-transform:none;font-size:12px">первые {{ ticket_stats.receipts | length }} записей · время МСК</span>
+                    <span class="ss-note-inline">первые {{ ticket_stats.receipts | length }} записей · время МСК</span>
                 </h3>
                 <table class="ss-table">
                     <thead>
@@ -245,10 +168,10 @@
                     <tbody>
                     {% for r in ticket_stats.receipts %}
                     <tr data-search="{{ r.student_name | lower }}">
-                        <td data-label="Ученик"><a href="/cabinet/superadmin/users?q={{ r.student_name }}" style="color:var(--blue);text-decoration:none;font-weight:700">{{ r.student_name }}</a></td>
+                        <td data-label="Ученик"><a href="/cabinet/superadmin/users?q={{ r.student_name }}" class="ss-link">{{ r.student_name }}</a></td>
                         <td data-label="Билет">{{ r.ticket_title }}</td>
-                        <td data-label="Предмет">{% if r.subject %}<span class="type-badge tb-mock">{{ r.subject }}</span>{% else %}<span style="color:var(--dim)">—</span>{% endif %}</td>
-                        <td data-label="Дата и время" style="color:var(--dim);font-size:12px">{{ r.started_at.strftime('%d.%m.%Y %H:%M') if r.started_at else '—' }}</td>
+                        <td data-label="Предмет">{% if r.subject %}<span class="type-badge tb-mock">{{ r.subject }}</span>{% else %}<span class="ss-dim">—</span>{% endif %}</td>
+                        <td data-label="Дата и время" class="ss-dim-sm">{{ r.started_at.strftime('%d.%m.%Y %H:%M') if r.started_at else '—' }}</td>
                     </tr>
                     {% endfor %}
                     </tbody>
@@ -265,7 +188,7 @@
         <summary><h2 class="ss-acc-title">Пробники и обратная связь</h2></summary>
         <div class="ss-acc-body">
             {% if feedback_table and feedback_table.applicable and feedback_table.total > 0 %}
-            <div class="ss-stats-strip ss-hide-on-search">
+            <div class="ss-stats-strip ss-strip-3 ss-hide-on-search">
                 <div class="ss-stat">
                     <div class="ss-stat-val">{{ feedback_table.total }}</div>
                     <div class="ss-stat-lbl">Сдач пробников</div>
@@ -280,9 +203,9 @@
                 </div>
             </div>
             <div class="ss-table-wrap">
-                <h3 style="margin:0;padding:11px 14px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.06em;display:flex;justify-content:space-between;align-items:center">
+                <h3 class="ss-table-title ss-table-title--flex">
                     Таблица сдач и ОС
-                    <span style="font-weight:500;text-transform:none;font-size:12px">первые {{ feedback_table.rows | length }} из {{ feedback_table.total }} · время МСК · полная таблица и текст ОС — в Excel</span>
+                    <span class="ss-note-inline">первые {{ feedback_table.rows | length }} из {{ feedback_table.total }} · время МСК · полная таблица и текст ОС — в Excel</span>
                 </h3>
                 <table class="ss-table">
                     <thead>
@@ -290,7 +213,7 @@
                             <th>Ученик</th>
                             <th>Предмет</th>
                             <th>Билет</th>
-                            <th style="text-align:center">Балл</th>
+                            <th class="ss-ta-c">Балл</th>
                             <th>Куратор</th>
                             <th>Сдача</th>
                             <th>ОС</th>
@@ -300,17 +223,17 @@
                     <tbody>
                     {% for r in feedback_table.rows %}
                     <tr data-search="{{ r.student_name | lower }}">
-                        <td data-label="Ученик"><a href="/cabinet/superadmin/users?q={{ r.student_name }}" style="color:var(--blue);text-decoration:none;font-weight:700">{{ r.student_name }}</a></td>
-                        <td data-label="Предмет">{% if r.subject %}<span class="type-badge tb-mock">{{ r.subject }}</span>{% else %}<span style="color:var(--dim)">—</span>{% endif %}</td>
+                        <td data-label="Ученик"><a href="/cabinet/superadmin/users?q={{ r.student_name }}" class="ss-link">{{ r.student_name }}</a></td>
+                        <td data-label="Предмет">{% if r.subject %}<span class="type-badge tb-mock">{{ r.subject }}</span>{% else %}<span class="ss-dim">—</span>{% endif %}</td>
                         <td data-label="Билет">{{ r.ticket_title or '—' }}</td>
-                        <td data-label="Балл" style="text-align:center">{% if r.score is not none %}<span style="font-weight:700;color:var(--warning)">{{ r.score | int }}</span>{% else %}<span style="color:var(--dim)">—</span>{% endif %}</td>
-                        <td data-label="Куратор" style="color:var(--dim);font-size:12px">{{ r.curator_name or '—' }}</td>
-                        <td data-label="Сдача" style="color:var(--dim);font-size:12px">{{ r.submitted_at.strftime('%d.%m.%Y %H:%M') if r.submitted_at else '—' }}</td>
-                        <td data-label="ОС" style="color:var(--dim);font-size:12px">{{ r.feedback_at.strftime('%d.%m.%Y %H:%M') if r.feedback_at else '—' }}</td>
-                        <td data-label="Обратная связь" style="max-width:280px">
+                        <td data-label="Балл" class="ss-ta-c">{% if r.score is not none %}<span class="ss-score-warn">{{ r.score | int }}</span>{% else %}<span class="ss-dim">—</span>{% endif %}</td>
+                        <td data-label="Куратор" class="ss-dim-sm">{{ r.curator_name or '—' }}</td>
+                        <td data-label="Сдача" class="ss-dim-sm">{{ r.submitted_at.strftime('%d.%m.%Y %H:%M') if r.submitted_at else '—' }}</td>
+                        <td data-label="ОС" class="ss-dim-sm">{{ r.feedback_at.strftime('%d.%m.%Y %H:%M') if r.feedback_at else '—' }}</td>
+                        <td data-label="Обратная связь" class="ss-feedback-cell">
                             {% if r.feedback_text %}
-                            <span title="{{ r.feedback_text }}" style="display:block;max-height:3.2em;overflow:hidden;color:var(--text);font-size:12px;white-space:pre-line">{{ r.feedback_text }}</span>
-                            {% else %}<span style="color:var(--dim)">—</span>{% endif %}
+                            <span title="{{ r.feedback_text }}" class="ss-feedback-text">{{ r.feedback_text }}</span>
+                            {% else %}<span class="ss-dim">—</span>{% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -334,12 +257,12 @@
                 <table class="ss-table">
                     <thead>
                         <tr>
-                            {% for r in data.ranges %}<th style="text-align:center">{{ r.label }}</th>{% endfor %}
+                            {% for r in data.ranges %}<th class="ss-ta-c">{{ r.label }}</th>{% endfor %}
                         </tr>
                     </thead>
                     <tbody>
                         <tr>
-                            {% for r in data.ranges %}<td data-label="{{ r.label }}" style="text-align:center;font-weight:900;color:var(--blue)">{{ r.count }}</td>{% endfor %}
+                            {% for r in data.ranges %}<td data-label="{{ r.label }}" class="ss-num-strong">{{ r.count }}</td>{% endfor %}
                         </tr>
                     </tbody>
                 </table>

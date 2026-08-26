@@ -208,11 +208,6 @@
     "shadow": [],
     "style_lines": 49
   },
-  "superadmin_activity.html": {
-    "hex": 0,
-    "shadow": [],
-    "style_lines": 53
-  },
   "superadmin_assign_curator.html": {
     "hex": 0,
     "shadow": [
@@ -241,11 +236,6 @@
       "active"
     ],
     "style_lines": 146
-  },
-  "superadmin_stats.html": {
-    "hex": 1,
-    "shadow": [],
-    "style_lines": 77
   },
   "superadmin_tags.html": {
     "hex": 7,
