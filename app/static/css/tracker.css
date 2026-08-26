@@ -633,10 +633,16 @@
 .ios-learning .trk-row-actions .btn-blue:hover { transform: none; filter: brightness(1.05); }
 .ios-learning .trk-row-actions .btn-blue:active { transform: scale(0.94); filter: brightness(0.92); }
 
-/* Кнопка «Отметить» → круглый чекбокс iOS, тот же паттерн, что у трекера. */
+/* Кнопка «Отметить» → круглый чекбокс iOS, тот же паттерн, что у трекера.
+   Непрочитанное состояние раньше рисовалось почти невидимой рамкой
+   (`--ios-sep` на прозрачном фоне) — на белой карточке она сливалась с
+   фоном, и было непонятно, что кружок вообще нужно нажать (владелец,
+   26.08.2026). Незакрытое состояние теперь заливается акцентным синим
+   тоном и рамкой того же цвета — тот же единственный акцент, что и у
+   активной вкладки/CTA на этом экране, а не новый оттенок. */
 .ios-learning .trk-toggle-btn {
-    width: 26px; height: 26px; min-height: 26px; padding: 0;
-    border-radius: 50%; border: 1.5px solid var(--ios-sep); background: transparent;
+    width: 28px; height: 28px; min-height: 28px; padding: 0;
+    border-radius: 50%; border: 2px solid rgba(0,122,255,0.55); background: rgba(0,122,255,0.10);
     text-indent: -999px; overflow: hidden; white-space: nowrap;
     position: relative; flex-shrink: 0;
     transition: transform 120ms cubic-bezier(0.34, 1.2, 0.64, 1),
