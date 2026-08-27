@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session as DBSession
 from sqlalchemy import func
 
 from app.config import settings
+from app.constants import MOCK_SUBJECTS
 from app.models.exam_assignment import ExamAssignment, ExamTicket
 from app.models.guest_exam import (
     GuestExamConfig,
@@ -22,7 +23,7 @@ from app.models.guest_exam import (
     GuestSubmission,
     GuestVisit,
 )
-from app.services.tz import today_msk
+from app.services.tz import MSK_TZ, today_msk
 
 GUEST_ASSIGNMENT_KIND = "guest"
 
@@ -597,3 +598,164 @@ def score_submission(
     db.commit()
     db.refresh(submission)
     return submission
+
+
+# ── Статистика гостевой ссылки ───────────────────────────────────────────────
+#
+# Считаем в Python, а не в SQL: даты нужно резать по Москве (в контейнере UTC),
+# а диалекты Postgres и SQLite делают это по-разному — тесты бы разошлись с
+# продом. Модуль временный и объёмы маленькие (сотни строк на ссылку), так что
+# цена выборки в память ничтожна по сравнению с риском разного поведения.
+
+STATS_DEFAULT_DAYS = 30
+# Сколько дней показываем всегда, даже если все они пустые — чтобы таблица не
+# схлопывалась в одну строку на свежей ссылке.
+STATS_MIN_DAYS = 7
+
+
+def _as_utc(value: datetime) -> datetime:
+    """SQLite отдаёт наивные datetime, Postgres — aware. Приводим к UTC.
+    Зеркалит app/dependencies.py::_as_utc, но сервис не тащит зависимость от
+    слоя аутентификации ради двух строк."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _msk_date(value: datetime):
+    return _as_utc(value).astimezone(MSK_TZ).date()
+
+
+def _percent(part: int, whole: int) -> int | None:
+    """Доля в процентах или None, если делить не на что. None означает
+    «показывать нечего» — шаблон рисует прочерк, а не «0%», иначе пустая ссылка
+    выглядит как ссылка с нулевой конверсией."""
+    if not whole:
+        return None
+    return round(part * 100 / whole)
+
+
+def config_statistics(db: DBSession, config_id: int, days: int = STATS_DEFAULT_DAYS) -> dict:
+    """Полная статистика одной гостевой ссылки: воронка, разрез по предметам,
+    динамика по дням.
+
+    Воронка считает **людей**, а не сдачи: «сдали работу» — это участники, у
+    которых есть хоть одна сданная работа. Число сдач отдельно лежит в разрезе
+    по предметам и в `submissions_total` — на вкладке «Ссылка» показано именно
+    оно, поэтому цифры там и здесь по смыслу разные и подписаны по-разному.
+    """
+    visits_total = (
+        db.query(func.count(GuestVisit.id)).filter(GuestVisit.config_id == config_id).scalar() or 0
+    )
+
+    participants = (
+        db.query(GuestParticipant)
+        .filter(GuestParticipant.config_id == config_id)
+        .all()
+    )
+    participant_ids = [p.id for p in participants]
+
+    submissions = (
+        db.query(GuestSubmission)
+        .filter(GuestSubmission.participant_id.in_(participant_ids))
+        .all()
+        if participant_ids else []
+    )
+
+    by_participant: dict[int, list[GuestSubmission]] = {}
+    for submission in submissions:
+        by_participant.setdefault(submission.participant_id, []).append(submission)
+
+    took_ticket = len(by_participant)
+    handed_in = sum(
+        1 for subs in by_participant.values()
+        if any(s.status in ("submitted", "scored") for s in subs)
+    )
+    scored = sum(
+        1 for subs in by_participant.values() if any(s.status == "scored" for s in subs)
+    )
+
+    funnel = [
+        {"label": "Заходов на страницу", "value": visits_total, "percent": None},
+        {"label": "Вошли и назвались", "value": len(participants),
+         "percent": _percent(len(participants), visits_total)},
+        {"label": "Взяли билет", "value": took_ticket,
+         "percent": _percent(took_ticket, len(participants))},
+        {"label": "Сдали работу", "value": handed_in, "percent": _percent(handed_in, took_ticket)},
+        {"label": "Получили оценку", "value": scored, "percent": _percent(scored, handed_in)},
+    ]
+
+    # Разрез по предметам: здесь единица — сдача, а не человек.
+    by_subject = []
+    for subject in MOCK_SUBJECTS:
+        subject_subs = [s for s in submissions if s.subject == subject]
+        done = [s for s in subject_subs if s.status in ("submitted", "scored")]
+        rated = [s for s in subject_subs if s.status == "scored" and s.score is not None]
+        avg = (sum(float(s.score) for s in rated) / len(rated)) if rated else None
+        by_subject.append({
+            "subject": subject,
+            "issued": len(subject_subs),
+            "submitted": len(done),
+            "scored": len(rated),
+            "avg_score": round(avg, 1) if avg is not None else None,
+        })
+
+    pending_review = sum(1 for s in submissions if s.status == "submitted")
+
+    # Динамика по дням. Пустые дни заполняем нулями: без этого таблица
+    # «схлопывает» провалы и врёт про равномерный поток.
+    today = today_msk()
+    window_start = today - timedelta(days=days - 1)
+    buckets = {
+        window_start + timedelta(days=offset): {"visits": 0, "joined": 0, "submitted": 0}
+        for offset in range(days)
+    }
+
+    visit_times = (
+        db.query(GuestVisit.created_at).filter(GuestVisit.config_id == config_id).all()
+    )
+    for (created_at,) in visit_times:
+        day = _msk_date(created_at)
+        if day in buckets:
+            buckets[day]["visits"] += 1
+
+    for participant in participants:
+        day = _msk_date(participant.created_at)
+        if day in buckets:
+            buckets[day]["joined"] += 1
+
+    for submission in submissions:
+        if not submission.submitted_at:
+            continue
+        day = _msk_date(submission.submitted_at)
+        if day in buckets:
+            buckets[day]["submitted"] += 1
+
+    by_day = [
+        {"date": day, **counts}
+        for day, counts in sorted(buckets.items(), reverse=True)
+    ]
+    # Хвост из пустых дней обрезаем: у недельной ссылки в 30-дневном окне 23
+    # строки нулей — это шум, за которым не видно живых дней. Дыры **внутри**
+    # периода остаются нулями (см. STATS_MIN_DAYS и тест на заполнение),
+    # иначе таблица врала бы про равномерный поток.
+    last_active = max(
+        (i for i, d in enumerate(by_day) if d["visits"] or d["joined"] or d["submitted"]),
+        default=-1,
+    )
+    by_day = by_day[: max(last_active + 1, STATS_MIN_DAYS)]
+    day_peak = max((d["visits"] for d in by_day), default=0)
+
+    return {
+        "visits": visits_total,
+        "participants": len(participants),
+        "submissions_total": sum(1 for s in submissions if s.status in ("submitted", "scored")),
+        "pending_review": pending_review,
+        "funnel": funnel,
+        "by_subject": by_subject,
+        "by_day": by_day,
+        "day_peak": day_peak,
+        "days": days,
+        "days_shown": len(by_day),
+        "has_data": bool(visits_total or participants),
+    }

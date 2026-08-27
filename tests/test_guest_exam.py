@@ -16,6 +16,7 @@ from app.models.guest_exam import (
     GuestVisit,
 )
 from app.services import guest_exam as guest_exam_service
+from app.services.tz import today_msk
 
 _JPG_BYTES = b"\xff\xd8\xff\xe0" + b"\x00" * 16  # minimal JPEG header, same as test_routes_upload.py
 
@@ -1344,3 +1345,184 @@ def test_guest_code_start_still_works_with_telegram_login_on(
 
     assert resp.status_code == 302
     assert resp.headers["location"] == f"/guest/{config.token}/exam"
+
+
+# ---------------------------------------------------------------------------
+# Вкладка «Статистика»
+# ---------------------------------------------------------------------------
+#
+# Воронка считает людей, разрез по предметам — работы. Дни режутся по Москве
+# (в контейнере UTC) и считаются в Python, а не в SQL: диалекты Postgres и
+# SQLite резали бы даты по-разному, и тесты разошлись бы с продом.
+
+
+def test_stats_funnel_counts_people_not_submissions(
+    db, guest_config_factory, guest_ticket_factory
+):
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    guest_ticket_factory(config, subject="Композиция")
+
+    # Один участник сдал оба предмета — в воронке он остаётся одним человеком.
+    both = guest_exam_service.create_participant(db, config, "Сдал оба")
+    for subject in ("Рисунок", "Композиция"):
+        submission = guest_exam_service.issue_ticket(db, both, subject)
+        guest_exam_service.record_upload(db, submission, "https://s3/x.jpg", "guest-exam/x.jpg")
+
+    # Второй только взял билет.
+    only_ticket = guest_exam_service.create_participant(db, config, "Только билет")
+    guest_exam_service.issue_ticket(db, only_ticket, "Рисунок")
+
+    # Третий вошёл и остановился.
+    guest_exam_service.create_participant(db, config, "Просто вошёл")
+
+    guest_exam_service.record_visit(db, config.id)
+    guest_exam_service.record_visit(db, config.id)
+
+    st = guest_exam_service.config_statistics(db, config.id)
+    steps = {step["label"]: step["value"] for step in st["funnel"]}
+
+    assert steps["Вошли и назвались"] == 3
+    assert steps["Взяли билет"] == 2
+    assert steps["Сдали работу"] == 1
+    assert steps["Получили оценку"] == 0
+    # А работ при этом сдано две — это уже другая единица счёта.
+    assert st["submissions_total"] == 2
+    assert st["pending_review"] == 2
+
+
+def test_stats_percent_is_none_without_base(db, guest_config_factory):
+    """Пустая ссылка не должна выглядеть как ссылка с нулевой конверсией —
+    шаблон рисует прочерк там, где делить не на что."""
+    config = guest_config_factory()
+
+    st = guest_exam_service.config_statistics(db, config.id)
+
+    assert st["has_data"] is False
+    assert all(step["value"] == 0 for step in st["funnel"])
+    assert all(step["percent"] is None for step in st["funnel"])
+
+
+def test_stats_percent_counts_from_previous_step(
+    db, guest_config_factory, guest_ticket_factory
+):
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    for _ in range(4):
+        guest_exam_service.record_visit(db, config.id)
+    first = guest_exam_service.create_participant(db, config, "Первый")
+    guest_exam_service.create_participant(db, config, "Второй")
+    guest_exam_service.issue_ticket(db, first, "Рисунок")
+
+    st = guest_exam_service.config_statistics(db, config.id)
+    steps = {step["label"]: step for step in st["funnel"]}
+
+    assert steps["Заходов на страницу"]["percent"] is None  # первому шагу не от чего считать
+    assert steps["Вошли и назвались"]["percent"] == 50       # 2 из 4 заходов
+    assert steps["Взяли билет"]["percent"] == 50             # 1 из 2 участников
+
+
+def test_stats_by_subject_average_score(db, guest_config_factory, guest_ticket_factory, user_factory):
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    admin = user_factory(vk_id=920_001, name="Проверяющий", role_name="админ")
+
+    for name, score in (("A", 80), ("B", 70)):
+        participant = guest_exam_service.create_participant(db, config, name)
+        submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+        guest_exam_service.record_upload(db, submission, "https://s3/x.jpg", "guest-exam/x.jpg")
+        guest_exam_service.score_submission(
+            db, submission, score=score, comment=None, scored_by_id=admin.id
+        )
+
+    st = guest_exam_service.config_statistics(db, config.id)
+    drawing = next(row for row in st["by_subject"] if row["subject"] == "Рисунок")
+    composition = next(row for row in st["by_subject"] if row["subject"] == "Композиция")
+
+    assert drawing["scored"] == 2
+    assert drawing["avg_score"] == 75.0
+    # Предмет без единой сдачи остаётся в таблице с прочерком вместо нуля.
+    assert composition["issued"] == 0
+    assert composition["avg_score"] is None
+
+
+def test_stats_by_day_fills_gaps_and_covers_window(db, guest_config_factory):
+    """Пустые дни должны остаться в таблице нулями, иначе провалы в потоке
+    схлопываются и график врёт про равномерность."""
+    config = guest_config_factory()
+    guest_exam_service.record_visit(db, config.id)
+
+    st = guest_exam_service.config_statistics(db, config.id, days=7)
+
+    assert len(st["by_day"]) == 7
+    dates = [day["date"] for day in st["by_day"]]
+    assert dates == sorted(dates, reverse=True)  # свежее сверху
+    assert dates[0] == today_msk()
+    assert st["by_day"][0]["visits"] == 1
+    assert sum(day["visits"] for day in st["by_day"]) == 1
+
+
+def test_stats_scoped_to_one_link(db, guest_config_factory):
+    """Ссылки считаются раздельно — иначе владелец не увидит отдачу конкретной
+    рассылки."""
+    first = guest_config_factory(token="stats-one")
+    second = guest_config_factory(token="stats-two")
+    guest_exam_service.record_visit(db, first.id)
+    guest_exam_service.create_participant(db, first, "Гость первой ссылки")
+
+    st_second = guest_exam_service.config_statistics(db, second.id)
+
+    assert st_second["visits"] == 0
+    assert st_second["participants"] == 0
+    assert st_second["has_data"] is False
+
+
+def test_stats_tab_renders_for_admin(admin_client, db, guest_config_factory, guest_ticket_factory):
+    admin_ui_client, _ = admin_client
+    config = guest_config_factory(title="Пробник августа")
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = guest_exam_service.create_participant(db, config, "Гость")
+    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    guest_exam_service.record_upload(db, submission, "https://s3/x.jpg", "guest-exam/x.jpg")
+    guest_exam_service.record_visit(db, config.id)
+
+    resp = admin_ui_client.get("/cabinet/staff/guest-exam?tab=stats")
+
+    assert resp.status_code == 200
+    assert "Путь участника" in resp.text
+    assert "По предметам" in resp.text
+    assert "По дням" in resp.text
+    assert "Пробник августа" in resp.text
+
+
+def test_stats_tab_closed_for_curator(client, db, guest_config_factory, user_factory, session_factory):
+    """Страница открыта рангу 4+, куратор (ранг 2) не должен видеть цифры."""
+    guest_config_factory()
+    curator = user_factory(vk_id=920_002, name="Куратор", role_name="куратор")
+    client.cookies.set("session_id", session_factory(curator).id)
+
+    resp = client.get("/cabinet/staff/guest-exam?tab=stats")
+
+    assert resp.status_code == 403
+
+
+def test_stats_not_computed_on_other_tabs(admin_client, db, guest_config_factory, monkeypatch):
+    """Статистика выгребает все визиты и сдачи — на остальных вкладках это
+    холостой ход, и считаться она там не должна."""
+    admin_ui_client, _ = admin_client
+    guest_config_factory()
+
+    calls = {"n": 0}
+    original = guest_exam_service.config_statistics
+
+    def counting(*args, **kwargs):
+        calls["n"] += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(guest_exam_service, "config_statistics", counting)
+
+    admin_ui_client.get("/cabinet/staff/guest-exam?tab=tickets")
+    assert calls["n"] == 0
+
+    admin_ui_client.get("/cabinet/staff/guest-exam?tab=stats")
+    assert calls["n"] == 1

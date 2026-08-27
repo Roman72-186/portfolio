@@ -47,7 +47,15 @@
 .ios-gexam .gexam-sub { font: 400 14px/1.4 var(--ios-font); color: var(--ios-label-2); margin-bottom: 20px; }
 
 /* ── Вкладки ── */
-.ios-gexam .gexam-tabs { display: flex; gap: 2px; margin-bottom: 20px; border-bottom: 0.5px solid var(--ios-sep); }
+.ios-gexam .gexam-tabs {
+    display: flex; gap: 2px; margin-bottom: 20px;
+    border-bottom: 0.5px solid var(--ios-sep);
+    /* Пять вкладок не влезают в узкий экран: раньше строка растягивала всю
+       страницу по горизонтали. Скроллим саму строку, не документ. */
+    overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.ios-gexam .gexam-tabs::-webkit-scrollbar { display: none; }
+.ios-gexam .gexam-tab { flex: 0 0 auto; white-space: nowrap; }
 .ios-gexam .gexam-tab {
     padding: 10px 16px; font: 600 14px/1 var(--ios-font); color: var(--ios-label-2);
     text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
@@ -184,4 +192,111 @@
 
 @media (max-width: 600px) {
     .ios-gexam .gexam-form-row textarea { min-width: 100%; }
+}
+
+/* ── Вкладка «Статистика» ──
+   Воронка, разрез по предметам и динамика по дням. Числа выровнены по правому
+   краю и набраны табличными цифрами: столбец читается сверху вниз, разряды не
+   пляшут. Полоски — единственная графика на экране, отдельной библиотеки под
+   график здесь не заводим: длина = доля от первого шага воронки (или от
+   самого людного дня), само число всегда стоит рядом, поэтому полоска
+   остаётся подсказкой, а не единственным носителем значения. */
+
+.ios-gexam .gstat-block { margin-bottom: 26px; }
+.ios-gexam .gstat-block .gexam-row-head { padding: 0 4px; margin-bottom: 10px; }
+
+.ios-gexam .gstat-head {
+    font: 700 15px/1.3 var(--ios-font); color: var(--ios-label);
+    margin: 0 0 2px; letter-spacing: -0.1px;
+}
+
+.ios-gexam .gstat-funnel { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.ios-gexam .gstat-step-top {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 12px; margin-bottom: 5px;
+}
+.ios-gexam .gstat-step-label { font: 400 14px/1.3 var(--ios-font); color: var(--ios-label-2); }
+.ios-gexam .gstat-step-value {
+    font: 700 15px/1.3 var(--ios-font); color: var(--ios-label);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.ios-gexam .gstat-step-pct {
+    font-weight: 400; font-size: 13px; color: var(--ios-label-2); margin-left: 6px;
+}
+
+.ios-gexam .gstat-bar {
+    height: 6px; border-radius: 3px; overflow: hidden;
+    background: rgba(120,120,128,0.14);
+}
+.ios-gexam .gstat-bar--slim { height: 4px; min-width: 40px; }
+.ios-gexam .gstat-bar-fill {
+    height: 100%; border-radius: 3px; background: var(--ios-blue);
+    transition: width 240ms var(--ios-ease);
+    /* Полоску рисуем только для ненулевых значений (условие в шаблоне), поэтому
+       минимум безопасен: он не даст «6 из 480» превратиться в невидимую нить. */
+    min-width: 3px;
+}
+
+.ios-gexam .gstat-note {
+    margin-top: 14px; padding-top: 12px;
+    border-top: 0.5px solid var(--ios-sep);
+    font: 400 13px/1.35 var(--ios-font); color: var(--ios-label-2);
+}
+.ios-gexam .gstat-note b { color: var(--ios-orange); font-weight: 700; }
+
+/* Таблицы. Обёртка со своим скроллом: узкий телефон не должен растягивать
+   страницу по горизонтали. */
+.ios-gexam .gstat-table-wrap { overflow-x: auto; margin-top: 12px; }
+.ios-gexam .gstat-table {
+    width: 100%; border-collapse: collapse;
+    font: 400 14px/1.35 var(--ios-font); color: var(--ios-label);
+}
+.ios-gexam .gstat-table th,
+.ios-gexam .gstat-table td { padding: 9px 8px; text-align: left; }
+.ios-gexam .gstat-table th:first-child,
+.ios-gexam .gstat-table td:first-child { padding-left: 0; }
+.ios-gexam .gstat-table th:last-child,
+.ios-gexam .gstat-table td:last-child { padding-right: 0; }
+.ios-gexam .gstat-table thead th {
+    font: 600 11px/1.2 var(--ios-font); color: var(--ios-label-2);
+    text-transform: uppercase; letter-spacing: 0.04em;
+    border-bottom: 0.5px solid var(--ios-sep); white-space: nowrap;
+}
+.ios-gexam .gstat-table tbody th {
+    font: 600 14px/1.35 var(--ios-font); color: var(--ios-label); white-space: nowrap;
+}
+.ios-gexam .gstat-table tbody tr + tr th,
+.ios-gexam .gstat-table tbody tr + tr td { border-top: 0.5px solid rgba(60,60,67,0.12); }
+.ios-gexam .gstat-num {
+    text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.ios-gexam .gstat-table .gstat-num b { font-weight: 700; }
+.ios-gexam .gstat-row-empty th,
+.ios-gexam .gstat-row-empty td { color: var(--ios-label-3); }
+
+/* Колонка с полоской: тянется, числа рядом не двигаются. */
+.ios-gexam .gstat-day-bar-head { width: 40%; }
+.ios-gexam .gstat-day-bar-cell { width: 40%; min-width: 60px; }
+
+.ios-gexam .gstat-legend { margin: 12px 0 0; }
+
+/* Подпись только для скринридера: колонка с полоской не должна дублировать
+   заголовок «Заходы» глазами, но и безымянной в разметке остаться не может. */
+.ios-gexam .gstat-sr {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+
+@media (max-width: 420px) {
+    .ios-gexam .gstat-day-bar-head,
+    .ios-gexam .gstat-day-bar-cell { display: none; }
+    .ios-gexam .gstat-table { font-size: 13px; }
+    .ios-gexam .gstat-table th,
+    .ios-gexam .gstat-table td { padding: 8px 5px; }
+    .ios-gexam .gstat-table tbody th { font-size: 13px; }
+    .ios-gexam .gstat-table thead th { font-size: 10px; letter-spacing: 0.02em; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ios-gexam .gstat-bar-fill { transition: none; }
 }

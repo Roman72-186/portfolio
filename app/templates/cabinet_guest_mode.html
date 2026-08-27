@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Гостевой режим{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/guest_mode_ios.css?v=1">
+<link rel="stylesheet" href="/static/css/guest_mode_ios.css?v=2">
 {% endblock %}
 {% block content %}
 <div class="gexam-page ios-gexam">
@@ -11,6 +11,7 @@
     <div class="gexam-tabs">
         <a href="?tab=tickets" class="gexam-tab{% if tab == 'tickets' %} active{% endif %}">Билеты</a>
         <a href="?tab=link" class="gexam-tab{% if tab == 'link' %} active{% endif %}">Ссылка</a>
+        <a href="?tab=stats" class="gexam-tab{% if tab == 'stats' %} active{% endif %}">Статистика</a>
         <a href="?tab=works" class="gexam-tab{% if tab == 'works' %} active{% endif %}">Работы</a>
         {% if user.role_rank >= 5 %}
         <a href="?tab=participants" class="gexam-tab{% if tab == 'participants' %} active{% endif %}">Участники</a>
@@ -93,7 +94,7 @@
             <div class="gexam-stats">
                 <span>Входов: <b>{{ s.get('visits', 0) }}</b></span>
                 <span>Участников: <b>{{ s.get('participants', 0) }}</b></span>
-                <span>Сдано работ: <b>{{ s.get('submitted', 0) }}</b></span>
+                <span>Работ сдано: <b>{{ s.get('submitted', 0) }}</b></span>
             </div>
             <form method="post" action="/cabinet/staff/guest-exam/link/{{ c.id }}/toggle" class="gexam-toggle-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
@@ -121,6 +122,130 @@
                 <button type="submit" class="btn-blue">Создать ссылку</button>
             </form>
         </div>
+
+    {% elif tab == "stats" %}
+        {% for c, st in stats_full %}
+        <div class="gstat-block">
+            <div class="gexam-row-head">
+                <span class="gexam-name">{{ c.title }}</span>
+                <span class="gexam-badge{% if c.is_active %} active{% endif %}">
+                    {{ "активна" if c.is_active else "отключена" }}
+                </span>
+            </div>
+
+            {% if not st.has_data %}
+            <div class="gexam-row">
+                <div class="gexam-empty">По этой ссылке ещё никто не заходил.</div>
+            </div>
+            {% else %}
+
+            <div class="gexam-row">
+                <h2 class="gstat-head">Путь участника</h2>
+                <div class="gexam-subject gexam-subject--tight">
+                    В каждой строке люди, а не работы. Процент — доля от предыдущего шага,
+                    видно, на каком месте отваливаются.
+                </div>
+                <div class="gstat-funnel">
+                    {% for step in st.funnel %}
+                    <div class="gstat-step">
+                        <div class="gstat-step-top">
+                            <span class="gstat-step-label">{{ step.label }}</span>
+                            <span class="gstat-step-value">
+                                {{ step.value }}
+                                {% if step.percent is not none %}
+                                <span class="gstat-step-pct">{{ step.percent }}%</span>
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div class="gstat-bar">
+                            {% if step.value %}
+                            <div class="gstat-bar-fill" style="width: {{ (step.value * 100 / st.funnel[0].value) if st.funnel[0].value else 0 }}%"></div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% if st.pending_review %}
+                <div class="gstat-note">Ждут проверки: <b>{{ st.pending_review }}</b></div>
+                {% endif %}
+            </div>
+
+            <div class="gexam-row">
+                <h2 class="gstat-head">По предметам</h2>
+                <div class="gstat-table-wrap">
+                    <table class="gstat-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Предмет</th>
+                                <th scope="col" class="gstat-num">Билет</th>
+                                <th scope="col" class="gstat-num">Сдано</th>
+                                <th scope="col" class="gstat-num">Оценка</th>
+                                <th scope="col" class="gstat-num">Балл</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in st.by_subject %}
+                            <tr>
+                                <th scope="row">{{ row.subject }}</th>
+                                <td class="gstat-num">{{ row.issued }}</td>
+                                <td class="gstat-num">{{ row.submitted }}</td>
+                                <td class="gstat-num">{{ row.scored }}</td>
+                                <td class="gstat-num">
+                                    {% if row.avg_score is not none %}<b>{{ row.avg_score }}</b>{% else %}—{% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="gexam-subject gstat-legend">
+                    Здесь считаются работы, а не люди: один участник может сдать оба предмета. «Балл» — средний по оценённым работам предмета.
+                </div>
+            </div>
+
+            <div class="gexam-row">
+                <h2 class="gstat-head">По дням</h2>
+                <div class="gexam-subject gexam-subject--tight">
+                    Время московское. Показаны {{ st.days_shown }} дней до сегодня —
+                    пустой хвост за ними скрыт, провалы внутри периода оставлены нулями.
+                </div>
+                <div class="gstat-table-wrap">
+                    <table class="gstat-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Дата</th>
+                                <th scope="col" class="gstat-day-bar-head"><span class="gstat-sr">Заходы, полоска</span></th>
+                                <th scope="col" class="gstat-num">Заходы</th>
+                                <th scope="col" class="gstat-num">Вошли</th>
+                                <th scope="col" class="gstat-num">Сдали</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for day in st.by_day %}
+                            <tr{% if not (day.visits or day.joined or day.submitted) %} class="gstat-row-empty"{% endif %}>
+                                <th scope="row">{{ day.date.strftime('%d.%m') }}</th>
+                                <td class="gstat-day-bar-cell">
+                                    <div class="gstat-bar gstat-bar--slim">
+                                        {% if day.visits %}
+                                        <div class="gstat-bar-fill" style="width: {{ (day.visits * 100 / st.day_peak) if st.day_peak else 0 }}%"></div>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td class="gstat-num">{{ day.visits }}</td>
+                                <td class="gstat-num">{{ day.joined }}</td>
+                                <td class="gstat-num">{{ day.submitted }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="gexam-empty">Пока нет ни одной ссылки — считать нечего.</div>
+        {% endfor %}
 
     {% elif tab == "works" %}
         {% if not board %}

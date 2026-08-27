@@ -2,7 +2,8 @@
 
 Отдельная кнопка «Гостевой режим» только у главного преподавателя и суперадмина
 (rank >= 4), одна
-страница с тремя вкладками: Билеты (форма создания — та же логика, что у реальных
+страница с вкладками: Статистика (воронка, разрез по предметам, динамика
+по дням), Билеты (форма создания — та же логика, что у реальных
 билетов пробника: поля + фото через уже существующий /cabinet/upload-ticket-image,
 но билет пишется в настоящую ExamTicket/ExamAssignment(kind="guest") — см.
 app/services/guest_exam.py), Ссылка (бессрочная, только вкл/выкл вручную +
@@ -42,7 +43,7 @@ def guest_mode_page(
     db: Annotated[DBSession, Depends(get_db)],
     tab: str = "tickets",
 ):
-    if tab not in ("tickets", "link", "works", "participants"):
+    if tab not in ("tickets", "link", "works", "participants", "stats"):
         tab = "tickets"
     # Вкладка «Участники» — только суперадмину. Гейт стоит здесь, а не только на
     # ссылке в шапке: страница открыта рангу 4, и он может набрать ?tab= руками.
@@ -55,6 +56,12 @@ def guest_mode_page(
     tickets = guest_exam_service.list_guest_tickets(db)
     board = guest_exam_service.list_participants_board(db) if tab == "works" else []
     participants = guest_exam_service.list_all_participants(db) if tab == "participants" else []
+    # Статистика считается только на своей вкладке: она выгребает все визиты и
+    # сдачи каждой ссылки, и на остальных вкладках это чистый холостой ход.
+    stats_full = (
+        [(c, guest_exam_service.config_statistics(db, c.id)) for c in configs]
+        if tab == "stats" else []
+    )
 
     return templates.TemplateResponse("cabinet_guest_mode.html", {
         "request": request,
@@ -67,6 +74,7 @@ def guest_mode_page(
         "subjects": MOCK_SUBJECTS,
         "board": board,
         "participants": participants,
+        "stats_full": stats_full,
         "public_url": (
             str(request.base_url).rstrip("/") + f"/guest/{config.token}" if config else None
         ),
