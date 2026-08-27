@@ -642,9 +642,18 @@
    держать размер и вместо этого менять цвет. Белая/плашечная кнопка темнеет
    фоном (тот же приём, что `.trk-item:active` у «Личного трекера» выше по
    файлу); уже открытая синяя — темнеет фильтром (тот же приём, что
-   `.btn-blue:active` в этом же файле), фон трогать незачем. */
-.ios-learning .lrn-tabs .nav-pill-item:active:not(.active) { background: rgba(120,120,128,0.18); }
-.ios-learning .lrn-tabs .nav-pill-item.active:active { filter: brightness(0.88); }
+   `.btn-blue:active` в этом же файле), фон трогать незачем.
+
+   `.is-pressed` — тот же эффект от pointerdown/pointerup в
+   cabinet_learning.html, не только нативный `:active`: без обработчика
+   касания на странице WebKit на iPhone вообще не включает `:active` по тапу
+   (owner 27.08.2026 сообщил «нет изменений» — деплой дошёл до прода
+   без ошибок, значит дело было именно в этом). `:active` остаётся для
+   мыши/клавиатуры, `.is-pressed` — гарантия на touch. */
+.ios-learning .lrn-tabs .nav-pill-item:active:not(.active),
+.ios-learning .lrn-tabs .nav-pill-item.is-pressed:not(.active) { background: rgba(120,120,128,0.18); }
+.ios-learning .lrn-tabs .nav-pill-item.active:active,
+.ios-learning .lrn-tabs .nav-pill-item.active.is-pressed { filter: brightness(0.88); }
 .ios-learning .lrn-tabs .nav-pill-item.active {
     background: var(--ios-blue); color: #fff; box-shadow: 0 2px 8px rgba(0,122,255,0.30);
 }

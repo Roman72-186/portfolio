@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=17">
+<link rel="stylesheet" href="/static/css/tracker.css?v=18">
 {% endblock %}
 {% block content %}
 <div class="lrn-page ios-learning">
@@ -285,6 +285,20 @@ function lrnSwitchSubject(btn) {
         requestAnimationFrame(function () { lrnUpdateCenteredTab(); ticking = false; });
     }, { passive: true });
     window.addEventListener('resize', lrnUpdateCenteredTab);
+
+    // Смена цвета при нажатии (владелец 27.08.2026) через .is-pressed, не
+    // только нативный CSS `:active` — на iPhone WebKit включает `:active`
+    // по тапу, только если где-то на странице есть обработчик касания;
+    // без него цвет при нажатии просто не появлялся («нет изменений»).
+    // pointerdown/up/cancel/leave — единый API для мыши, пальца и стилуса.
+    track.querySelectorAll('.nav-pill-item').forEach(function (btn) {
+        var press = function () { btn.classList.add('is-pressed'); };
+        var release = function () { btn.classList.remove('is-pressed'); };
+        btn.addEventListener('pointerdown', press);
+        btn.addEventListener('pointerup', release);
+        btn.addEventListener('pointercancel', release);
+        btn.addEventListener('pointerleave', release);
+    });
 })();
 
 function lrnUpdateTabBadge(kind) {
