@@ -202,6 +202,41 @@
    самого людного дня), само число всегда стоит рядом, поэтому полоска
    остаётся подсказкой, а не единственным носителем значения. */
 
+/* Период. Пробник идёт коротким окном (26–28.08), поэтому даты — основной
+   орган управления вкладкой, а не мелкая настройка: держим их наверху,
+   в одной строке с кнопкой. */
+.ios-gexam .gstat-period {
+    display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px;
+    background: var(--ios-card-bg); border-radius: 16px;
+    padding: 14px 18px; margin-bottom: 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.ios-gexam .gstat-period-field { display: flex; flex-direction: column; gap: 4px; }
+.ios-gexam .gstat-period-field label {
+    font: 600 11px/1.2 var(--ios-font); color: var(--ios-label-2);
+    text-transform: uppercase; letter-spacing: 0.04em;
+}
+.ios-gexam .gstat-period input[type="date"] {
+    font: 400 15px/1.2 var(--ios-font); color: var(--ios-label);
+    padding: 9px 10px; border: 0.5px solid var(--ios-sep);
+    border-radius: 10px; background: #fff; min-width: 150px;
+}
+.ios-gexam .gstat-period input[type="date"]:focus {
+    outline: none; border-color: var(--ios-blue);
+    box-shadow: 0 0 0 3px rgba(0,122,255,0.15);
+}
+.ios-gexam .gstat-period-reset {
+    font: 400 13px/1.2 var(--ios-font); color: var(--ios-label-2);
+    text-decoration: none; padding-bottom: 10px;
+}
+.ios-gexam .gstat-period-reset:hover { color: var(--ios-blue); }
+
+.ios-gexam .gstat-period-label {
+    font: 400 13px/1.3 var(--ios-font); color: var(--ios-label-2);
+    padding: 0 4px; margin-bottom: 10px;
+}
+.ios-gexam .gstat-period-days { color: var(--ios-label-3); margin-left: 6px; }
+
 .ios-gexam .gstat-block { margin-bottom: 26px; }
 .ios-gexam .gstat-block .gexam-row-head { padding: 0 4px; margin-bottom: 10px; }
 

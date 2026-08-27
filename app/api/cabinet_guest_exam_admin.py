@@ -19,6 +19,7 @@ app/services/guest_exam.py), Ссылка (бессрочная, только в
 См. app/services/guest_exam.py и
 plans/2026-08-18-apparchi-student-cabinet-and-guest-trial.md, трек B.
 """
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -36,12 +37,25 @@ from app.tmpl import templates
 router = APIRouter(prefix="/cabinet/staff/guest-exam")
 
 
+def _parse_date(raw: str | None) -> date | None:
+    """Дата из строки запроса. Мусор молча превращается в None — период тогда
+    берётся по умолчанию (окно жизни ссылки), а не роняет страницу 422-й."""
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw.strip())
+    except ValueError:
+        return None
+
+
 @router.get("", response_class=HTMLResponse)
 def guest_mode_page(
     request: Request,
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     tab: str = "tickets",
+    date_from: str | None = None,
+    date_to: str | None = None,
 ):
     if tab not in ("tickets", "link", "works", "participants", "stats"):
         tab = "tickets"
@@ -58,8 +72,13 @@ def guest_mode_page(
     participants = guest_exam_service.list_all_participants(db) if tab == "participants" else []
     # Статистика считается только на своей вкладке: она выгребает все визиты и
     # сдачи каждой ссылки, и на остальных вкладках это чистый холостой ход.
+    period_from = _parse_date(date_from)
+    period_to = _parse_date(date_to)
     stats_full = (
-        [(c, guest_exam_service.config_statistics(db, c.id)) for c in configs]
+        [
+            (c, guest_exam_service.config_statistics(db, c.id, period_from, period_to))
+            for c in configs
+        ]
         if tab == "stats" else []
     )
 
@@ -75,6 +94,8 @@ def guest_mode_page(
         "board": board,
         "participants": participants,
         "stats_full": stats_full,
+        "period_from": period_from,
+        "period_to": period_to,
         "public_url": (
             str(request.base_url).rstrip("/") + f"/guest/{config.token}" if config else None
         ),

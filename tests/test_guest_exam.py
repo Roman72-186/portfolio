@@ -16,6 +16,8 @@ from app.models.guest_exam import (
     GuestVisit,
 )
 from app.services import guest_exam as guest_exam_service
+from datetime import datetime, timedelta, timezone
+
 from app.services.tz import today_msk
 
 _JPG_BYTES = b"\xff\xd8\xff\xe0" + b"\x00" * 16  # minimal JPEG header, same as test_routes_upload.py
@@ -1446,20 +1448,143 @@ def test_stats_by_subject_average_score(db, guest_config_factory, guest_ticket_f
     assert composition["avg_score"] is None
 
 
-def test_stats_by_day_fills_gaps_and_covers_window(db, guest_config_factory):
-    """Пустые дни должны остаться в таблице нулями, иначе провалы в потоке
-    схлопываются и график врёт про равномерность."""
+def test_stats_by_day_fills_gaps_inside_period(db, guest_config_factory):
+    """Пустые дни внутри периода остаются нулями, иначе провалы в потоке
+    схлопываются и таблица врёт про равномерность."""
     config = guest_config_factory()
     guest_exam_service.record_visit(db, config.id)
+    today = today_msk()
 
-    st = guest_exam_service.config_statistics(db, config.id, days=7)
+    st = guest_exam_service.config_statistics(
+        db, config.id, today - timedelta(days=6), today
+    )
 
     assert len(st["by_day"]) == 7
     dates = [day["date"] for day in st["by_day"]]
     assert dates == sorted(dates, reverse=True)  # свежее сверху
-    assert dates[0] == today_msk()
+    assert dates[0] == today
     assert st["by_day"][0]["visits"] == 1
     assert sum(day["visits"] for day in st["by_day"]) == 1
+
+
+def test_stats_default_period_is_link_lifetime(db, guest_config_factory):
+    """Период по умолчанию — от первого дня активности до сегодня. Окно пробника
+    короткое (26–28.08), и фиксированные «последние 30 дней» утопили бы его в
+    нулях — см. plans/2026-08-27-apparchi-guest-to-student-carryover.md."""
+    config = guest_config_factory()
+    today = today_msk()
+    old_visit = GuestVisit(
+        config_id=config.id,
+        created_at=datetime.now(timezone.utc) - timedelta(days=4),
+    )
+    db.add(old_visit)
+    db.commit()
+
+    st = guest_exam_service.config_statistics(db, config.id)
+
+    assert st["date_from"] == today - timedelta(days=4)
+    assert st["date_to"] == today
+    assert st["days"] == 5
+
+
+def test_stats_period_cuts_off_outside_days(db, guest_config_factory, guest_ticket_factory):
+    """Заход и участник вне периода в цифры не попадают."""
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    today = today_msk()
+
+    inside = guest_exam_service.create_participant(db, config, "Внутри окна")
+    guest_exam_service.issue_ticket(db, inside, "Рисунок")
+    guest_exam_service.record_visit(db, config.id)
+
+    outside = guest_exam_service.create_participant(db, config, "До окна")
+    outside.created_at = datetime.now(timezone.utc) - timedelta(days=10)
+    db.add(GuestVisit(
+        config_id=config.id, created_at=datetime.now(timezone.utc) - timedelta(days=10)
+    ))
+    db.commit()
+
+    st = guest_exam_service.config_statistics(db, config.id, today, today)
+    steps = {step["label"]: step["value"] for step in st["funnel"]}
+
+    assert steps["Заходов на страницу"] == 1
+    assert steps["Вошли и назвались"] == 1
+    assert steps["Взяли билет"] == 1
+    assert len(st["by_day"]) == 1
+
+    # А за десять дней видно обоих.
+    wide = guest_exam_service.config_statistics(db, config.id, today - timedelta(days=10), today)
+    wide_steps = {step["label"]: step["value"] for step in wide["funnel"]}
+    assert wide_steps["Заходов на страницу"] == 2
+    assert wide_steps["Вошли и назвались"] == 2
+
+
+def test_stats_period_keeps_late_scoring_in_cohort(
+    db, guest_config_factory, guest_ticket_factory, user_factory
+):
+    """Период режет людей по дню захода, а не работы по дню сдачи: участник,
+    которому балл поставили после окна, остаётся в своей когорте — иначе
+    воронка сама себе противоречила бы."""
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    admin = user_factory(vk_id=920_003, name="Проверяющий", role_name="админ")
+    today = today_msk()
+
+    participant = guest_exam_service.create_participant(db, config, "Зашёл вчера")
+    participant.created_at = datetime.now(timezone.utc) - timedelta(days=1)
+    db.commit()
+    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    guest_exam_service.record_upload(db, submission, "https://s3/x.jpg", "guest-exam/x.jpg")
+    guest_exam_service.score_submission(
+        db, submission, score=90, comment=None, scored_by_id=admin.id
+    )
+
+    # Окно — только вчерашний день, а оценку поставили сегодня.
+    st = guest_exam_service.config_statistics(
+        db, config.id, today - timedelta(days=1), today - timedelta(days=1)
+    )
+    steps = {step["label"]: step["value"] for step in st["funnel"]}
+
+    assert steps["Вошли и назвались"] == 1
+    assert steps["Сдали работу"] == 1
+    assert steps["Получили оценку"] == 1
+
+
+def test_stats_period_from_query_params(admin_client, db, guest_config_factory):
+    admin_ui_client, _ = admin_client
+    config = guest_config_factory()
+    guest_exam_service.record_visit(db, config.id)
+
+    resp = admin_ui_client.get(
+        "/cabinet/staff/guest-exam?tab=stats&date_from=2026-08-26&date_to=2026-08-28"
+    )
+
+    assert resp.status_code == 200
+    assert "26.08.2026 – 28.08.2026" in resp.text
+    assert "3 дн." in resp.text
+
+
+def test_stats_broken_date_falls_back_to_default(admin_client, db, guest_config_factory):
+    """Мусор в адресе не должен ронять страницу — период берётся по умолчанию."""
+    admin_ui_client, _ = admin_client
+    guest_config_factory()
+
+    resp = admin_ui_client.get("/cabinet/staff/guest-exam?tab=stats&date_from=не-дата")
+
+    assert resp.status_code == 200
+    assert "Путь участника" in resp.text or "никто не заходил" in resp.text
+
+
+def test_stats_reversed_period_is_swapped(db, guest_config_factory):
+    """Даты наоборот — меняем местами, а не показываем пустоту."""
+    config = guest_config_factory()
+    today = today_msk()
+
+    st = guest_exam_service.config_statistics(db, config.id, today, today - timedelta(days=3))
+
+    assert st["date_from"] == today - timedelta(days=3)
+    assert st["date_to"] == today
+    assert st["days"] == 4
 
 
 def test_stats_scoped_to_one_link(db, guest_config_factory):

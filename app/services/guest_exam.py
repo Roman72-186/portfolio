@@ -6,7 +6,7 @@ cookie (guest-v1), отдельный CSRF-контекст (переиспол�
 """
 import random
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from itsdangerous import URLSafeTimedSerializer, BadData
 from sqlalchemy.exc import IntegrityError
@@ -607,10 +607,12 @@ def score_submission(
 # продом. Модуль временный и объёмы маленькие (сотни строк на ссылку), так что
 # цена выборки в память ничтожна по сравнению с риском разного поведения.
 
-STATS_DEFAULT_DAYS = 30
-# Сколько дней показываем всегда, даже если все они пустые — чтобы таблица не
-# схлопывалась в одну строку на свежей ссылке.
-STATS_MIN_DAYS = 7
+# Период по умолчанию — окно жизни самой ссылки: от первого дня, когда по ней
+# был хоть один заход или участник, до сегодня. Пробник идёт коротким окном
+# (26–28.08.2026 у ссылки «proba»), и «последние 30 дней» показывали бы три
+# живых дня в стене нулей. Даты в запросе перекрывают это значение.
+# См. plans/2026-08-27-apparchi-guest-to-student-carryover.md.
+STATS_MAX_DAYS_RENDERED = 120
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -635,24 +637,69 @@ def _percent(part: int, whole: int) -> int | None:
     return round(part * 100 / whole)
 
 
-def config_statistics(db: DBSession, config_id: int, days: int = STATS_DEFAULT_DAYS) -> dict:
-    """Полная статистика одной гостевой ссылки: воронка, разрез по предметам,
-    динамика по дням.
+def config_activity_range(db: DBSession, config_id: int) -> tuple[date, date]:
+    """Окно жизни ссылки: первый день с активностью → сегодня.
+
+    Это период по умолчанию для вкладки «Статистика». У пробника окно короткое
+    (26–28.08.2026), и фиксированные «последние 30 дней» утопили бы его в нулях.
+    Если активности не было вовсе — отдаём сегодняшний день, чтобы период не
+    оказался пустым.
+    """
+    today = today_msk()
+    first_visit = (
+        db.query(func.min(GuestVisit.created_at))
+        .filter(GuestVisit.config_id == config_id).scalar()
+    )
+    first_participant = (
+        db.query(func.min(GuestParticipant.created_at))
+        .filter(GuestParticipant.config_id == config_id).scalar()
+    )
+    candidates = [_msk_date(v) for v in (first_visit, first_participant) if v]
+    return (min(candidates) if candidates else today), today
+
+
+def config_statistics(
+    db: DBSession,
+    config_id: int,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict:
+    """Полная статистика одной гостевой ссылки за период: воронка, разрез по
+    предметам, динамика по дням. Границы включаются обе, даты московские.
+
+    **Период режет людей по дню захода, а не работы по дню сдачи.** То есть это
+    когорта: «из тех, кто зашёл в эти дни, столько-то дошло до оценки» — даже
+    если оценку куратор поставил позже. Иначе на трёхдневном окне пробника
+    воронка сама себе противоречила бы: человек попадал бы в «вошли», но
+    выпадал из «сдали», потому что сдал в ночь на четвёртый день.
 
     Воронка считает **людей**, а не сдачи: «сдали работу» — это участники, у
     которых есть хоть одна сданная работа. Число сдач отдельно лежит в разрезе
     по предметам и в `submissions_total` — на вкладке «Ссылка» показано именно
     оно, поэтому цифры там и здесь по смыслу разные и подписаны по-разному.
     """
-    visits_total = (
-        db.query(func.count(GuestVisit.id)).filter(GuestVisit.config_id == config_id).scalar() or 0
-    )
+    if date_from is None or date_to is None:
+        default_from, default_to = config_activity_range(db, config_id)
+        date_from = date_from or default_from
+        date_to = date_to or default_to
+    if date_from > date_to:
+        date_from, date_to = date_to, date_from
 
-    participants = (
-        db.query(GuestParticipant)
-        .filter(GuestParticipant.config_id == config_id)
-        .all()
-    )
+    def _in_period(value) -> bool:
+        return value is not None and date_from <= _msk_date(value) <= date_to
+
+    visit_times = [
+        created_at for (created_at,) in
+        db.query(GuestVisit.created_at).filter(GuestVisit.config_id == config_id).all()
+    ]
+    visit_times = [t for t in visit_times if _in_period(t)]
+    visits_total = len(visit_times)
+
+    participants = [
+        p for p in db.query(GuestParticipant)
+        .filter(GuestParticipant.config_id == config_id).all()
+        if _in_period(p.created_at)
+    ]
     participant_ids = [p.id for p in participants]
 
     submissions = (
@@ -702,19 +749,17 @@ def config_statistics(db: DBSession, config_id: int, days: int = STATS_DEFAULT_D
 
     pending_review = sum(1 for s in submissions if s.status == "submitted")
 
-    # Динамика по дням. Пустые дни заполняем нулями: без этого таблица
-    # «схлопывает» провалы и врёт про равномерный поток.
-    today = today_msk()
-    window_start = today - timedelta(days=days - 1)
+    # Динамика по дням — ровно выбранный период. Пустые дни внутри заполняем
+    # нулями: без этого таблица «схлопывает» провалы и врёт про равномерный поток.
+    total_days = (date_to - date_from).days + 1
+    render_days = min(total_days, STATS_MAX_DAYS_RENDERED)
+    render_from = date_to - timedelta(days=render_days - 1)
     buckets = {
-        window_start + timedelta(days=offset): {"visits": 0, "joined": 0, "submitted": 0}
-        for offset in range(days)
+        render_from + timedelta(days=offset): {"visits": 0, "joined": 0, "submitted": 0}
+        for offset in range(render_days)
     }
 
-    visit_times = (
-        db.query(GuestVisit.created_at).filter(GuestVisit.config_id == config_id).all()
-    )
-    for (created_at,) in visit_times:
+    for created_at in visit_times:
         day = _msk_date(created_at)
         if day in buckets:
             buckets[day]["visits"] += 1
@@ -735,15 +780,6 @@ def config_statistics(db: DBSession, config_id: int, days: int = STATS_DEFAULT_D
         {"date": day, **counts}
         for day, counts in sorted(buckets.items(), reverse=True)
     ]
-    # Хвост из пустых дней обрезаем: у недельной ссылки в 30-дневном окне 23
-    # строки нулей — это шум, за которым не видно живых дней. Дыры **внутри**
-    # периода остаются нулями (см. STATS_MIN_DAYS и тест на заполнение),
-    # иначе таблица врала бы про равномерный поток.
-    last_active = max(
-        (i for i, d in enumerate(by_day) if d["visits"] or d["joined"] or d["submitted"]),
-        default=-1,
-    )
-    by_day = by_day[: max(last_active + 1, STATS_MIN_DAYS)]
     day_peak = max((d["visits"] for d in by_day), default=0)
 
     return {
@@ -755,7 +791,12 @@ def config_statistics(db: DBSession, config_id: int, days: int = STATS_DEFAULT_D
         "by_subject": by_subject,
         "by_day": by_day,
         "day_peak": day_peak,
-        "days": days,
+        "date_from": date_from,
+        "date_to": date_to,
+        "days": total_days,
         "days_shown": len(by_day),
+        # Период длиннее лимита рисуем не целиком — числа выше при этом
+        # посчитаны по всему периоду, обрезана только таблица дней.
+        "days_truncated": render_days < total_days,
         "has_data": bool(visits_total or participants),
     }

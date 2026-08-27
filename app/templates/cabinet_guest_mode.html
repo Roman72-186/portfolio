@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Гостевой режим{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/guest_mode_ios.css?v=2">
+<link rel="stylesheet" href="/static/css/guest_mode_ios.css?v=3">
 {% endblock %}
 {% block content %}
 <div class="gexam-page ios-gexam">
@@ -124,6 +124,24 @@
         </div>
 
     {% elif tab == "stats" %}
+        <form method="get" class="gstat-period">
+            <input type="hidden" name="tab" value="stats">
+            <div class="gstat-period-field">
+                <label for="gs-from">С какого дня</label>
+                <input id="gs-from" type="date" name="date_from"
+                       value="{{ (period_from or (stats_full[0][1].date_from if stats_full else None)).isoformat() if (period_from or stats_full) else '' }}">
+            </div>
+            <div class="gstat-period-field">
+                <label for="gs-to">По какой</label>
+                <input id="gs-to" type="date" name="date_to"
+                       value="{{ (period_to or (stats_full[0][1].date_to if stats_full else None)).isoformat() if (period_to or stats_full) else '' }}">
+            </div>
+            <button type="submit" class="btn-blue">Показать</button>
+            {% if period_from or period_to %}
+            <a class="gstat-period-reset" href="?tab=stats">сбросить</a>
+            {% endif %}
+        </form>
+
         {% for c, st in stats_full %}
         <div class="gstat-block">
             <div class="gexam-row-head">
@@ -132,18 +150,23 @@
                     {{ "активна" if c.is_active else "отключена" }}
                 </span>
             </div>
+            <div class="gstat-period-label">
+                {{ st.date_from.strftime('%d.%m.%Y') }} – {{ st.date_to.strftime('%d.%m.%Y') }}
+                <span class="gstat-period-days">{{ st.days }} дн.</span>
+            </div>
 
             {% if not st.has_data %}
             <div class="gexam-row">
-                <div class="gexam-empty">По этой ссылке ещё никто не заходил.</div>
+                <div class="gexam-empty">За эти дни по ссылке никто не заходил.</div>
             </div>
             {% else %}
 
             <div class="gexam-row">
                 <h2 class="gstat-head">Путь участника</h2>
                 <div class="gexam-subject gexam-subject--tight">
-                    В каждой строке люди, а не работы. Процент — доля от предыдущего шага,
-                    видно, на каком месте отваливаются.
+                    Считаются те, кто зашёл в выбранные дни — вместе со всем, что они
+                    сделали дальше, даже если оценку поставили позже. В каждой строке
+                    люди, а не работы; процент — доля от предыдущего шага.
                 </div>
                 <div class="gstat-funnel">
                     {% for step in st.funnel %}
@@ -177,10 +200,10 @@
                         <thead>
                             <tr>
                                 <th scope="col">Предмет</th>
-                                <th scope="col" class="gstat-num">Билет</th>
+                                <th scope="col" class="gstat-num">Билетов</th>
                                 <th scope="col" class="gstat-num">Сдано</th>
-                                <th scope="col" class="gstat-num">Оценка</th>
-                                <th scope="col" class="gstat-num">Балл</th>
+                                <th scope="col" class="gstat-num">Проверено</th>
+                                <th scope="col" class="gstat-num">Ср. балл</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -199,15 +222,17 @@
                     </table>
                 </div>
                 <div class="gexam-subject gstat-legend">
-                    Здесь считаются работы, а не люди: один участник может сдать оба предмета. «Балл» — средний по оценённым работам предмета.
+                    Здесь считаются работы, а не люди: один участник может сдать оба предмета. «Билетов» — сколько работ начали, «Сдано» — прислали фото, «Проверено» — куратор поставил балл, «Ср. балл» — среднее по проверенным.
                 </div>
             </div>
 
             <div class="gexam-row">
                 <h2 class="gstat-head">По дням</h2>
                 <div class="gexam-subject gexam-subject--tight">
-                    Время московское. Показаны {{ st.days_shown }} дней до сегодня —
-                    пустой хвост за ними скрыт, провалы внутри периода оставлены нулями.
+                    Время московское. Дни без активности показаны нулями, чтобы провалы
+                    в потоке были видны.{% if st.days_truncated %} Период длиннее
+                    {{ st.days_shown }} дней — в таблице последние {{ st.days_shown }},
+                    числа выше посчитаны по всему периоду.{% endif %}
                 </div>
                 <div class="gstat-table-wrap">
                     <table class="gstat-table">
