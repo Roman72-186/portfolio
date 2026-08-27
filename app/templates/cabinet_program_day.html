@@ -524,7 +524,7 @@ FORM: Operate.
                 onProgress: function (uploaded, total) {
                     var value = total ? Math.round(uploaded / total * 100) : 0;
                     bar.style.width = value + '%';
-                    note.textContent = 'Загружаем в Bunny: ' + value + '%';
+                    note.textContent = 'Загружаем: ' + value + '%';
                 },
                 onSuccess: function () {
                     bar.style.width = '100%';

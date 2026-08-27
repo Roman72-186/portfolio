@@ -17,7 +17,7 @@ FORM: Operate, расширение существующего кабинета 
     <div class="vam-head">
         <div class="vam-head-copy">
             <h1>Видео</h1>
-            <p>Загрузка идёт напрямую в Bunny. После обработки проверьте ролик и опубликуйте его для учеников.</p>
+            <p>Файл уходит в видеохранилище напрямую из браузера. После обработки проверьте ролик и опубликуйте его для учеников.</p>
         </div>
         <a class="btn-outline" href="/cabinet/videos">Открыть каталог</a>
     </div>
@@ -42,7 +42,7 @@ FORM: Operate, расширение существующего кабинета 
                     <input id="video-file" type="file" accept="video/*,.mkv,.ts" required>
                 </label>
             </form>
-            <p class="vam-file-note">Поддерживаются MP4, MOV, MKV, WebM и другие видеоформаты Bunny. Файл не сохраняется на сервере Apparchi.</p>
+            <p class="vam-file-note">Поддерживаются MP4, MOV, MKV, WebM и другие распространённые форматы. Файл не сохраняется на сервере Apparchi.</p>
             <div class="vam-actions">
                 <button id="video-upload-start" type="submit" form="video-upload-form" class="btn-blue" {% if not upload_available %}disabled{% endif %}>Начать загрузку</button>
                 <button id="video-upload-pause" type="button" class="btn-outline" hidden>Пауза</button>
@@ -163,7 +163,7 @@ FORM: Operate, расширение существующего кабинета 
                     <div>
                         <h3 class="vam-title">{{ video.title }}</h3>
                         <div class="vam-meta">
-                            <span>{{ video.original_filename or 'Добавлено из Bunny' }}</span>
+                            <span>{{ video.original_filename or 'Добавлено из хранилища' }}</span>
                             {% if video.duration_seconds %}<span>{{ (video.duration_seconds / 60)|round(1) }} мин.</span>{% endif %}
                             {% if video.encode_progress is not none %}<span>Обработка: {{ video.encode_progress }}%</span>{% endif %}
                             {% if video.topic_id %}<span>Тема: {{ topic_titles.get(video.topic_id, 'тема удалена') }}</span>{% else %}<span>Доступно всем ученикам</span>{% endif %}
@@ -317,7 +317,7 @@ FORM: Operate, расширение существующего кабинета 
                     return;
                 }
                 if (own) {
-                    stateTitle.textContent = 'Bunny обрабатывает видео…';
+                    stateTitle.textContent = 'Видео обрабатывается…';
                     if (data.video && data.video.encode_progress !== null) {
                         percent.textContent = data.video.encode_progress + '% обработки';
                     }
@@ -392,7 +392,7 @@ FORM: Operate, расширение существующего кабинета 
                 onProgress: function (uploaded, total) {
                     var value = total ? Math.round(uploaded / total * 100) : 0;
                     bar.style.width = value + '%'; percent.textContent = value + '%';
-                    stateTitle.textContent = 'Загружаем напрямую в Bunny';
+                    stateTitle.textContent = 'Загружаем файл';
                 },
                 onSuccess: function () {
                     uploadInFlight = false;
@@ -420,9 +420,9 @@ FORM: Operate, расширение существующего кабинета 
             if (error.message === 'upload_not_configured') {
                 setMessage('Stream API Key ещё не добавлен.', true);
             } else if (error.message === 'provider_create_uncertain') {
-                setMessage('Bunny не подтвердил создание. Не повторяйте загрузку сразу: сначала проверьте библиотеку Bunny на дубликат.', true);
+                setMessage('Хранилище не подтвердило создание. Не повторяйте загрузку сразу: сначала проверьте библиотеку на дубликат.', true);
             } else {
-                setMessage('Не удалось создать видео в Bunny.', true);
+                setMessage('Не удалось создать видео в хранилище.', true);
             }
         });
     });
