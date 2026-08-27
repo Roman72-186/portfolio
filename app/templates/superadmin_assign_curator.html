@@ -1,36 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Привязка учеников к куратору{% endblock %}
 {% block extra_styles %}
-<style>
-.su-wrap { max-width: 960px; margin: 0 auto; }
-
-.su-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
-.su-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
-.bulk-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px 18px; margin-bottom: 18px; box-shadow: var(--sh-sm); }
-.bulk-title { font-size: 14px; font-weight: 900; color: var(--text); margin-bottom: 4px; }
-.bulk-sub { font-size: 12px; color: var(--dim); margin-bottom: 12px; line-height: 1.45; }
-.bulk-grid { display: grid; grid-template-columns: minmax(180px, 240px) minmax(150px, 210px) 1fr auto; gap: 10px; align-items: flex-end; }
-.bulk-panel label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
-.bulk-panel select, .bulk-panel textarea { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; }
-.bulk-panel textarea { min-height: 78px; resize: vertical; }
-.bulk-panel select:focus, .bulk-panel textarea:focus { border-color: var(--blue); }
-.bulk-result { border-radius: 10px; padding: 12px 14px; margin-bottom: 18px; font-size: 13px; line-height: 1.45; }
-.bulk-result.ok { background: rgba(5,150,105,0.08); border: 1px solid rgba(5,150,105,0.24); color: var(--ok); }
-.bulk-result.warn { background: rgba(217,119,6,0.08); border: 1px solid rgba(217,119,6,0.24); color: var(--warning); }
-.bulk-result strong { color: inherit; }
-.bulk-missing { margin-top: 6px; color: var(--dim); word-break: break-word; }
-
-@media (max-width: 760px) {
-    .bulk-grid { grid-template-columns: 1fr; }
-    .bulk-panel .btn-blue { width: 100%; justify-content: center; }
-}
-</style>
+<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="su-wrap">
+<div class="su-wrap ios-sa-assign-curator">
 
     <div class="su-header">
-        <a href="/cabinet/superadmin/users" class="back-link" style="margin-bottom:0">← Управление пользователями</a>
+        <a href="/cabinet/superadmin/users" class="back-link">← Управление пользователями</a>
         <div class="su-title">Массовая привязка учеников к куратору</div>
     </div>
 
@@ -66,8 +43,8 @@
                     <option value="{{ c.id }}" data-curator-tag="{{ ((c.last_name or '') ~ ' ' ~ (c.first_name or c.name))|trim }}">{{ c.last_name or '' }} {{ c.first_name or c.name }}</option>
                     {% endfor %}
                 </select>
-                <span id="sa-curator-tag-preview" style="display:none;margin-top:6px;font-size:12px;color:var(--dim)">
-                    Тег: <span id="sa-curator-tag-badge" class="tag-pill tag-pill--curator-tag" style="font-size:11px"></span>
+                <span id="sa-curator-tag-preview" class="sa-curator-tag-preview">
+                    Тег: <span id="sa-curator-tag-badge" class="tag-pill tag-pill--curator-tag sa-curator-tag-badge"></span>
                 </span>
             </label>
             <label>
@@ -93,7 +70,7 @@
                 Username учеников
                 <textarea name="student_usernames" placeholder="@student_one&#10;student_two&#10;@student_three" required></textarea>
             </label>
-            <button type="submit" class="btn-blue" style="white-space:nowrap">Привязать списком</button>
+            <button type="submit" class="btn-blue sa-nowrap-btn">Привязать списком</button>
         </div>
     </form>
     <script>

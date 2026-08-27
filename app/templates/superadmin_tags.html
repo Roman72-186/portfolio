@@ -1,94 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Назначить теги{% endblock %}
 {% block extra_styles %}
-<style>
-.su-wrap { max-width: 960px; margin: 0 auto; }
-
-.su-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
-.su-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
-.su-filters { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
-.su-filters input { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; }
-.su-filters input:focus { border-color: var(--blue); }
-.su-filters label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
-
-.tags-table-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--sh-sm); }
-.tags-table { width: 100%; border-collapse: collapse; }
-.tags-table th { text-align: left; padding: 11px 14px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); border-bottom: 1px solid var(--line); background: var(--bg); }
-.tags-table td { padding: 10px 14px; font-size: 13px; color: var(--text); border-bottom: 1px solid var(--line); vertical-align: top; }
-.tags-table tr:last-child td { border-bottom: none; }
-.tags-table tr:hover td { background: var(--bg); }
-
-.u-name { font-weight: 700; }
-.u-username { font-size: 12px; font-weight: 600; color: var(--blue); margin-top: 1px; }
-.u-username--empty { color: var(--dim); font-weight: 500; font-style: italic; }
-.u-meta { font-size: 11px; color: var(--dim); margin-top: 2px; }
-
-.tags-cell { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; position: relative; }
-
-.tag-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 10px; border-radius: var(--r-pill); font-size: 11px; font-weight: 800; background: rgba(59,91,255,0.08); color: var(--blue); white-space: nowrap; }
-.tag-chip__remove { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; border: none; background: rgba(59,91,255,0.15); color: inherit; cursor: pointer; font-size: 16px; line-height: 1; padding: 0; font-family: inherit; flex-shrink: 0; }
-.tag-chip__remove:hover { background: rgba(220,38,38,0.18); color: var(--error); }
-
-.tag-chip.tag-pill--pink   { background: rgba(236,72,153,0.12); color: #be185d; }
-.tag-chip.tag-pill--blue   { background: rgba(59,91,255,0.12);  color: var(--blue); }
-.tag-chip.tag-pill--purple { background: rgba(168,85,247,0.12); color: #6b21a8; }
-.tag-chip.tag-pill--orange { background: rgba(249,115,22,0.14); color: #c2410c; }
-.tag-chip.tag-pill--pink .tag-chip__remove   { background: rgba(190,24,93,0.15); }
-.tag-chip.tag-pill--blue .tag-chip__remove   { background: rgba(59,91,255,0.15); }
-.tag-chip.tag-pill--purple .tag-chip__remove { background: rgba(107,33,168,0.15); }
-.tag-chip.tag-pill--orange .tag-chip__remove { background: rgba(194,65,12,0.15); }
-
-.tag-add-btn { width: 44px; height: 44px; border-radius: 50%; border: 1.5px dashed var(--line); background: transparent; color: var(--dim); font-size: 14px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; line-height: 1; font-family: inherit; }
-.tag-add-btn:hover { border-color: var(--blue); color: var(--blue); }
-
-.tag-add-popover { display: none; position: absolute; top: 100%; left: 0; margin-top: 6px; z-index: 250; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: 0 10px 30px rgba(0,0,0,0.14); padding: 10px; min-width: 220px; max-width: 280px; }
-.tag-add-popover.open { display: block; }
-.tag-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.tag-suggestion-btn { padding: 3px 10px; border-radius: var(--r-pill); font-size: 11px; font-weight: 700; background: var(--bg); border: 1px solid var(--line); color: var(--text); cursor: pointer; font-family: inherit; }
-.tag-suggestion-btn:hover { border-color: var(--blue); color: var(--blue); }
-.tag-suggestion-btn.tag-hidden { display: none; }
-
-.tag-suggestion-btn.tag-pill--pink   { background: rgba(236,72,153,0.12); color: #be185d; border-color: transparent; }
-.tag-suggestion-btn.tag-pill--blue   { background: rgba(59,91,255,0.12);  color: var(--blue); border-color: transparent; }
-.tag-suggestion-btn.tag-pill--purple { background: rgba(168,85,247,0.12); color: #6b21a8; border-color: transparent; }
-.tag-suggestion-btn.tag-pill--orange { background: rgba(249,115,22,0.14); color: #c2410c; border-color: transparent; }
-.tag-custom-row { display: flex; gap: 6px; }
-.tag-custom-row input { flex: 1; font-family: inherit; font-size: 12px; padding: 6px 8px; border: 1.5px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); outline: none; min-width: 0; }
-.tag-custom-row input:focus { border-color: var(--blue); }
-.tag-custom-row button { padding: 6px 10px; background: var(--blue); color: #fff; border: none; border-radius: 8px; font-size: 12px; font-weight: 800; cursor: pointer; font-family: inherit; white-space: nowrap; }
-.tag-custom-row button:hover { opacity: 0.88; }
-
-.tags-empty { padding: 40px; text-align: center; color: var(--dim); font-size: 14px; }
-
-.bulk-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; }
-.bulk-title { font-size: 14px; font-weight: 800; color: var(--text); margin-bottom: 10px; }
-.bulk-input-row { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
-.bulk-input-row textarea { flex: 1; min-width: 220px; font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; resize: vertical; }
-.bulk-input-row textarea:focus { border-color: var(--blue); }
-.bulk-result { margin-top: 14px; }
-.bulk-table { width: 100%; border-collapse: collapse; }
-.bulk-table th { text-align: left; padding: 9px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); border-bottom: 1px solid var(--line); background: var(--bg); }
-.bulk-table td { padding: 8px 12px; font-size: 13px; color: var(--text); border-bottom: 1px solid var(--line); vertical-align: middle; }
-.bulk-table th:not(:first-child), .bulk-table td:not(:first-child) { text-align: center; }
-.bulk-table tr:last-child td { border-bottom: none; }
-.bulk-table tr:hover td { background: var(--bg); }
-.bulk-table input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
-.bulk-not-found { margin-top: 10px; font-size: 12px; color: var(--dim); }
-
-@media (max-width: 640px) {
-    .tags-table thead { display: none; }
-    .tags-table, .tags-table tbody, .tags-table tr, .tags-table td { display: block; width: 100%; }
-    .tags-table tr { padding: 12px 14px; }
-    .tags-table td { padding: 4px 0; border-bottom: none; }
-    .tags-table tr:not(:last-child) { border-bottom: 1px solid var(--line); }
-    .tags-table td:first-child { padding-bottom: 10px; }
-    .tags-table td:last-child::before { content: "Теги"; display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); margin-bottom: 6px; }
-
-    .tag-chip { padding: 6px 8px 6px 12px; font-size: 12px; }
-    .tag-add-btn { font-size: 18px; }
-    .tag-add-popover { left: auto; right: 0; max-width: calc(100vw - 56px); }
-}
-</style>
+<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=1">
 {% endblock %}
 {% macro tag_color_cls(name, curator_names=[]) -%}
 {%- if name in ('10-14', '6') -%}tag-pill--pink
@@ -98,22 +11,22 @@
 {%- endif -%}
 {%- endmacro %}
 {% block content %}
-<div class="su-wrap">
+<div class="su-wrap ios-sa-tags">
 
     <div class="su-header">
-        <a href="/cabinet/superadmin/users" class="back-link" style="margin-bottom:0">← Управление пользователями</a>
+        <a href="/cabinet/superadmin/users" class="back-link">← Управление пользователями</a>
         <h1 class="su-title">Назначить теги</h1>
     </div>
 
     <form method="get" action="/cabinet/superadmin/tags" class="su-filters">
         <label>
             Поиск
-            <input type="text" name="q" value="{{ q }}" placeholder="Имя, фамилия, @telegram..." style="min-width:200px">
+            <input type="text" name="q" value="{{ q }}" placeholder="Имя, фамилия, @telegram..." class="su-input--search">
         </label>
         {% if is_superadmin %}
-        <label style="flex-direction:row;align-items:center;gap:6px;cursor:pointer">
-            <input type="checkbox" name="show_hidden" value="1" {% if show_hidden %}checked{% endif %} style="width:auto;padding:0">
-            <span style="font-size:12px;font-weight:700;color:var(--warning-deep)">Без периодов</span>
+        <label class="su-check-pill">
+            <input type="checkbox" name="show_hidden" value="1" {% if show_hidden %}checked{% endif %}>
+            <span class="su-check-pill--warn">Без периодов</span>
         </label>
         {% endif %}
         <button type="submit" class="btn-blue btn-save">Найти</button>

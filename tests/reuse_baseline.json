@@ -180,44 +180,11 @@
     "shadow": [],
     "style_lines": 49
   },
-  "superadmin_assign_curator.html": {
-    "hex": 0,
-    "shadow": [
-      "btn-blue"
-    ],
-    "style_lines": 23
-  },
-  "superadmin_create_staff.html": {
-    "hex": 0,
-    "shadow": [
-      "btn-blue"
-    ],
-    "style_lines": 26
-  },
-  "superadmin_curators.html": {
-    "hex": 1,
-    "shadow": [
-      "btn-blue",
-      "btn-save"
-    ],
-    "style_lines": 25
-  },
   "superadmin_exam_assignment_form.html": {
     "hex": 3,
     "shadow": [
       "active"
     ],
     "style_lines": 146
-  },
-  "superadmin_tags.html": {
-    "hex": 7,
-    "shadow": [
-      "open",
-      "tag-pill--blue",
-      "tag-pill--orange",
-      "tag-pill--pink",
-      "tag-pill--purple"
-    ],
-    "style_lines": 87
   }
 }

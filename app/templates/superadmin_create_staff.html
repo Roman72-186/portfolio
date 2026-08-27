@@ -1,39 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Создать сотрудника{% endblock %}
 {% block extra_styles %}
-<style>
-.su-wrap { max-width: 720px; margin: 0 auto; }
-
-.su-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
-.su-title { font-size: 22px; font-weight: 900; color: var(--text); flex: 1; }
-.creds-panel { background: rgba(59,91,255,0.06); border: 1px solid rgba(59,91,255,0.2); border-radius: var(--r-md); padding: 14px 18px; margin-bottom: 18px; }
-.creds-title { font-size: 14px; font-weight: 900; color: var(--blue); margin-bottom: 10px; }
-.creds-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-.creds-label { font-size: 11px; font-weight: 800; color: var(--dim); width: 54px; flex-shrink: 0; }
-.creds-value { font-family: monospace; font-size: 13px; font-weight: 800; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; word-break: break-all; }
-.creds-copy { padding: 6px 10px; border: 1px solid rgba(59,91,255,0.24); border-radius: 8px; background: transparent; color: var(--blue); font-size: 11px; font-weight: 800; cursor: pointer; font-family: inherit; }
-.creds-note { font-size: 12px; color: var(--dim); line-height: 1.45; }
-.alert-panel { border-radius: 10px; padding: 12px 14px; margin-bottom: 18px; font-size: 13px; line-height: 1.45; background: rgba(220,38,38,0.07); border: 1px solid rgba(220,38,38,0.2); color: var(--error); }
-
-.create-student-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px 18px; margin-bottom: 18px; box-shadow: var(--sh-sm); }
-.create-student-title { font-size: 14px; font-weight: 900; color: var(--text); margin-bottom: 4px; }
-.create-student-sub { font-size: 12px; color: var(--dim); margin-bottom: 12px; line-height: 1.45; }
-.create-student-panel label { font-size: 11px; font-weight: 700; color: var(--dim); display: flex; flex-direction: column; gap: 4px; }
-.create-student-panel input, .create-student-panel select { font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); outline: none; }
-.create-student-panel input:focus, .create-student-panel select:focus { border-color: var(--blue); }
-.create-staff-grid { display: grid; grid-template-columns: repeat(3, minmax(140px, 1fr)) auto; gap: 10px; align-items: flex-end; }
-
-@media (max-width: 760px) {
-    .create-staff-grid { grid-template-columns: 1fr; }
-    .create-student-panel .btn-blue { width: 100%; justify-content: center; }
-}
-</style>
+<link rel="stylesheet" href="/static/css/superadmin_forms_ios.css?v=1">
 {% endblock %}
 {% block content %}
-<div class="su-wrap">
+<div class="su-wrap ios-sa-create-staff">
 
     <div class="su-header">
-        <a href="/cabinet/superadmin/users" class="back-link" style="margin-bottom:0">← Управление пользователями</a>
+        <a href="/cabinet/superadmin/users" class="back-link">← Управление пользователями</a>
         <div class="su-title">Создать аккаунт сотрудника</div>
     </div>
 
@@ -54,7 +28,7 @@
             <span class="creds-value" id="cred-password">{{ issued_creds.password }}</span>
             <button type="button" class="creds-copy" onclick="copyText('cred-password', this)">Копировать</button>
         </div>
-        <div class="creds-note">Страница входа: <a href="{{ issued_creds.url }}" target="_blank" style="color:var(--blue)">{{ issued_creds.url }}</a>. Пароль показывается только сейчас.</div>
+        <div class="creds-note">Страница входа: <a href="{{ issued_creds.url }}" target="_blank" class="su-link-inline">{{ issued_creds.url }}</a>. Пароль показывается только сейчас.</div>
     </div>
     {% endif %}
 
@@ -82,7 +56,7 @@
                     {% endfor %}
                 </select>
             </label>
-            <button type="submit" class="btn-blue" style="white-space:nowrap">Создать сотрудника</button>
+            <button type="submit" class="btn-blue sa-nowrap-btn">Создать сотрудника</button>
         </div>
     </form>
 
