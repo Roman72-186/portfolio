@@ -179,12 +179,5 @@
     "hex": 0,
     "shadow": [],
     "style_lines": 49
-  },
-  "superadmin_exam_assignment_form.html": {
-    "hex": 3,
-    "shadow": [
-      "active"
-    ],
-    "style_lines": 146
   }
 }

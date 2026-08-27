@@ -1,17 +1,36 @@
 /* ═══════════════════════════════════════════════════════════════════════
    iOS-ре-скин «Билеты для пробников»: хаб, список (активные/архив), карточка
-   задания — все три под require_admin_role, доступны ГП и СА. Три скоупа
-   в одном файле: `.ios-ea-hub` / `.ios-ea-list` / `.ios-ea-detail`.
+   задания, конструктор билета — все четыре под require_admin_role, доступны
+   ГП и СА. Четыре скоупа в одном файле: `.ios-ea-hub` / `.ios-ea-list` /
+   `.ios-ea-detail` / `.ios-ea-form`.
    `.page-header`/`.page-title`/`.page-subtitle`/`.back-link` — общие классы
-   base.css на десятках экранов, переопределены только внутри этих трёх
-   скоупов (тот же приём, что video_ios.css/homework_ios.css). `.status-badge`
+   base.css на десятках экранов, переопределены только внутри этих скоупов
+   (тот же приём, что video_ios.css/homework_ios.css). `.status-badge`
    рендерится общим макросом partials/exam_assignment_status.html — скоуп
    не даёт правилам просочиться на другие экраны, которые его используют.
-   `superadmin_exam_assignment_form.html` (конструктор билетов, много
-   функциональных style.display в JS) — вне этого захода, отдельная задача.
+
+   `.ios-ea-form` (superadmin_exam_assignment_form.html, 941 строка,
+   конструктор билета) — самый рискованный экран инициативы: JS
+   функционально читает/меняет `style.display` в десятках мест (прогресс
+   загрузки фото по XHR, live-превью билета, переключение режимов выдачи
+   «Всем/По тегу/Конкретным»). Ни один вызов `element.style.display = …` в
+   JS не тронут — все они безусловно ЗАДАЮТ значение (не читают текущее для
+   ветвления), поэтому инлайновый `style="display:none"` в исходной разметке
+   можно безопасно перенести в дефолт CSS-класса: инлайн-стиль, который JS
+   ставит через `.style.display`, всегда перебивает любое авторское
+   CSS-правило класса независимо от специфичности — в отличие от паттерна
+   `[hidden]` (UA-стиль vs авторский), который здесь нигде не используется.
+   Затронутые элементы: `.assign-mode-wrap` (обёртки «По тегу»/«Конкретным»),
+   `.assign-all-checkbox` (скрытый чекбокс), `.ea-preview-desc` (описание в
+   live-превью) — у всех default `display:none` теперь в классе, JS как и
+   раньше пишет `el.style.display = 'block'/'none'` по id, ничего в JS не
+   менялось. Мёртвые CSS-классы прежнего инлайн-`<style>`
+   (`.assign-all-row`/`.assign-all-label`/`.ea-preview-empty`/
+   `.activate-hint`/`.scheduled-date-wrap` — не встречались в разметке уже
+   до этой правки) в новый файл не перенесены.
    ═══════════════════════════════════════════════════════════════════════ */
 
-.ios-ea-hub, .ios-ea-list, .ios-ea-detail {
+.ios-ea-hub, .ios-ea-list, .ios-ea-detail, .ios-ea-form {
     --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
     --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
     --ios-blue: #007AFF;
@@ -31,7 +50,7 @@
     color: var(--ios-label);
     padding-bottom: 12px;
 }
-.ios-ea-hub::before, .ios-ea-list::before, .ios-ea-detail::before {
+.ios-ea-hub::before, .ios-ea-list::before, .ios-ea-detail::before, .ios-ea-form::before {
     content: '';
     position: fixed; inset: 0;
     background: var(--ios-grouped-bg);
@@ -39,15 +58,16 @@
 }
 
 /* ── Общие переопределения base.css (back-link/page-header/page-title) ── */
-.ios-ea-hub .back-link, .ios-ea-list .back-link, .ios-ea-detail .back-link {
+.ios-ea-hub .back-link, .ios-ea-list .back-link, .ios-ea-detail .back-link, .ios-ea-form .back-link {
     color: var(--ios-blue); font: 400 17px/1 var(--ios-font);
-    min-height: 34px; margin-bottom: 4px;
+    min-height: 34px; margin-bottom: 4px; display: inline-block;
 }
-.ios-ea-hub .back-link:hover, .ios-ea-list .back-link:hover, .ios-ea-detail .back-link:hover {
+.ios-ea-hub .back-link:hover, .ios-ea-list .back-link:hover, .ios-ea-detail .back-link:hover, .ios-ea-form .back-link:hover {
     color: var(--ios-blue); opacity: .6;
 }
+.ios-ea-form .page-title--standalone { margin-top: 4px; }
 .ios-ea-hub .page-header, .ios-ea-list .page-header, .ios-ea-detail .page-header { margin-bottom: 18px; }
-.ios-ea-hub .page-title, .ios-ea-list .page-title, .ios-ea-detail .page-title {
+.ios-ea-hub .page-title, .ios-ea-list .page-title, .ios-ea-detail .page-title, .ios-ea-form .page-title {
     font: 700 30px/1.2 var(--ios-font); letter-spacing: -0.4px; color: var(--ios-label);
 }
 .ios-ea-hub .page-subtitle, .ios-ea-list .page-subtitle, .ios-ea-detail .page-subtitle {
@@ -264,4 +284,177 @@
     .ios-ea-detail .ticket-img-col { border-left: none; border-top: 0.5px solid var(--ios-sep); }
     .ios-ea-detail .ticket-header { flex-wrap: wrap; gap: 8px; }
     .ios-ea-detail .ticket-dates { width: 100%; }
+}
+
+/* ═══════════════════════════ superadmin_exam_assignment_form.html ═══════════════════════════ */
+
+.ios-ea-form .ea-form-wrap { max-width: 820px; margin: 0 auto; }
+
+.ios-ea-form .form-card {
+    background: var(--ios-card-bg); border: none; border-radius: 20px;
+    padding: 22px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.ios-ea-form .form-card-title {
+    font: 700 11px/1.3 var(--ios-font); text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--ios-label-2); margin-bottom: 16px;
+}
+
+.ios-ea-form .field { margin-bottom: 16px; }
+.ios-ea-form .form-card .field:last-child { margin-bottom: 0; }
+.ios-ea-form .field label { display: block; font: 700 13px/1.3 var(--ios-font); color: var(--ios-label); margin-bottom: 6px; }
+.ios-ea-form .field-checkbox-label { display: flex; align-items: center; gap: 8px; font-weight: 400; cursor: pointer; }
+.ios-ea-form .field-checkbox-label input[type=checkbox] { width: auto; }
+.ios-ea-form .ea-required { color: var(--ios-red); }
+.ios-ea-form .ea-optional { color: var(--ios-label-2); font-weight: 400; }
+.ios-ea-form .field input[type=text], .ios-ea-form .field input[type=date], .ios-ea-form .field input[type=datetime-local],
+.ios-ea-form .field input[type=number], .ios-ea-form .field select, .ios-ea-form .field textarea {
+    width: 100%; padding: 11px 14px; border: none; border-radius: 12px;
+    font: 400 14px/1.4 var(--ios-font); color: var(--ios-label); background: var(--ios-grouped-bg);
+    font-family: inherit; box-sizing: border-box;
+}
+.ios-ea-form .field input:focus, .ios-ea-form .field select:focus, .ios-ea-form .field textarea:focus {
+    outline: none; box-shadow: 0 0 0 2px var(--ios-blue);
+}
+.ios-ea-form .field textarea { resize: vertical; min-height: 90px; }
+.ios-ea-form .field-error { box-shadow: 0 0 0 2px var(--ios-red) !important; }
+.ios-ea-form .field-error-msg { font: 700 11px/1.3 var(--ios-font); color: var(--ios-red); margin-top: 4px; display: none; }
+.ios-ea-form .field-error-msg.visible { display: block; }
+.ios-ea-form .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ios-ea-form .field-hint { font: 400 11px/1.4 var(--ios-font); color: var(--ios-label-2); margin-top: 4px; }
+
+.ios-ea-form .ticket-block {
+    background: var(--ios-grouped-bg); border: none; border-radius: 16px;
+    padding: 18px; margin-bottom: 14px; position: relative;
+}
+.ios-ea-form .ticket-block-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.ios-ea-form .ticket-num { font: 700 14px/1.3 var(--ios-font); color: var(--ios-label); }
+.ios-ea-form .ticket-remove-btn {
+    background: none; border: none; border-radius: 999px; padding: 5px 12px;
+    color: var(--ios-red); font: 700 12px/1.3 var(--ios-font); cursor: pointer; font-family: inherit;
+    background: rgba(255,59,48,0.1); transition: background 120ms var(--ios-ease);
+}
+.ios-ea-form .ticket-remove-btn:hover { background: rgba(255,59,48,0.18); }
+
+/* ── Загрузка фото билета ── */
+.ios-ea-form .img-upload-area {
+    border: 1.5px dashed var(--ios-label-3); border-radius: 14px; padding: 24px;
+    text-align: center; cursor: pointer; transition: border-color 120ms var(--ios-ease), background 120ms var(--ios-ease);
+    background: var(--ios-card-bg); position: relative;
+}
+.ios-ea-form .img-upload-area:hover, .ios-ea-form .img-upload-area.dragover { border-color: var(--ios-blue); background: rgba(0,122,255,0.06); }
+.ios-ea-form .img-upload-area input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.ios-ea-form .img-upload-icon { font-size: 24px; margin-bottom: 8px; color: var(--ios-label-3); }
+.ios-ea-form .img-upload-text { font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); }
+.ios-ea-form .img-upload-progress { font: 400 12px/1.3 var(--ios-font); color: var(--ios-blue); margin-top: 6px; display: none; }
+.ios-ea-form .img-preview { display: none; margin-top: 10px; }
+.ios-ea-form .img-preview img { max-height: 160px; border-radius: 12px; }
+.ios-ea-form .img-change-btn {
+    font: 400 11px/1.3 var(--ios-font); color: var(--ios-label-2); text-decoration: underline;
+    cursor: pointer; background: none; border: none; font-family: inherit; margin-top: 6px;
+}
+
+/* ── Выбор конкретных учеников ── */
+.ios-ea-form .students-selector { border: none; border-radius: 14px; overflow: hidden; background: var(--ios-card-bg); }
+.ios-ea-form .students-search {
+    width: 100%; padding: 9px 12px; border: none; border-bottom: 0.5px solid var(--ios-sep);
+    font: 400 13px/1.3 var(--ios-font); color: var(--ios-label); background: var(--ios-card-bg);
+    font-family: inherit; outline: none; box-sizing: border-box;
+}
+.ios-ea-form .students-list { max-height: 180px; overflow-y: auto; }
+.ios-ea-form .student-option { display: flex; align-items: center; gap: 10px; padding: 7px 12px; cursor: pointer; transition: background 100ms var(--ios-ease); }
+.ios-ea-form .student-option:hover { background: rgba(60,60,67,0.04); }
+.ios-ea-form .student-option input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--ios-blue); flex-shrink: 0; }
+.ios-ea-form .student-option-name { font: 400 13px/1.3 var(--ios-font); color: var(--ios-label); }
+.ios-ea-form .student-option-uname { font: 600 11px/1.3 var(--ios-font); color: var(--ios-label-2); }
+.ios-ea-form .students-selected-count {
+    font: 700 11px/1.3 var(--ios-font); color: var(--ios-blue); padding: 6px 12px;
+    border-top: 0.5px solid var(--ios-sep); background: var(--ios-grouped-bg);
+}
+
+.ios-ea-form .add-ticket-btn {
+    width: 100%; padding: 12px; border: 1.5px dashed var(--ios-label-3); border-radius: 14px;
+    background: none; font: 700 14px/1.3 var(--ios-font); color: var(--ios-label-2);
+    cursor: pointer; font-family: inherit; transition: border-color 120ms var(--ios-ease), color 120ms var(--ios-ease);
+    margin-bottom: 18px;
+}
+.ios-ea-form .add-ticket-btn:hover { border-color: var(--ios-blue); color: var(--ios-blue); }
+.ios-ea-form .add-ticket-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.ios-ea-form .btn-blue {
+    background: var(--ios-blue); box-shadow: none; border-radius: 999px; border: none;
+    font: 700 14px/1 var(--ios-font); padding: 11px 22px; color: #fff; cursor: pointer;
+}
+.ios-ea-form .btn-outline {
+    background: var(--ios-grouped-bg); color: var(--ios-label); border: none;
+    border-radius: 999px; font: 700 14px/1 var(--ios-font); padding: 11px 22px; text-decoration: none; display: inline-flex; align-items: center;
+}
+.ios-ea-form .btn-outline:hover { background: rgba(0,122,255,0.12); color: var(--ios-blue); }
+
+/* ── Live-превью билета ── */
+.ios-ea-form .ea-preview-wrap { margin-top: 16px; padding-top: 16px; border-top: 0.5px dashed var(--ios-sep); }
+.ios-ea-form .ea-preview-label {
+    font: 700 11px/1.3 var(--ios-font); letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--ios-label-2); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+}
+.ios-ea-form .ea-preview-card { border-radius: 14px; border: none; background: rgba(255,149,0,0.08); padding: 16px 18px; }
+.ios-ea-form .ea-preview-title { font: 700 15px/1.3 var(--ios-font); color: #92590A; margin-bottom: 6px; }
+.ios-ea-form .ea-preview-desc { font: 400 13px/1.5 var(--ios-font); color: #92590A; white-space: pre-wrap; display: none; }
+.ios-ea-form .ea-preview-img { width: 100%; border-radius: 12px; margin-top: 12px; display: block; }
+
+/* ── Тумблер «Тип задания» / «Кому выдать билет» ── */
+.ios-ea-form .activate-toggle { display: flex; gap: 8px; margin-bottom: 10px; }
+.ios-ea-form .activate-opt {
+    flex: 1; cursor: pointer; padding: 10px 14px; border-radius: 12px;
+    border: none; background: var(--ios-grouped-bg);
+    font: 700 13px/1.3 var(--ios-font); color: var(--ios-label-2);
+    text-align: center; transition: background-color 120ms var(--ios-ease), color 120ms var(--ios-ease);
+    user-select: none; display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.ios-ea-form .activate-opt:hover { color: var(--ios-blue); }
+.ios-ea-form .activate-opt input[type=radio] { display: none; }
+.ios-ea-form .activate-opt.active { background: rgba(0,122,255,0.14); color: var(--ios-blue); }
+
+/* Обёртки режима «По тегу»/«Конкретным» — JS переключает el.style.display
+   по id (см. комментарий в шапке файла), default здесь только начальное
+   состояние «скрыто». */
+.ios-ea-form .assign-mode-wrap { display: none; }
+.ios-ea-form .assign-all-checkbox { display: none; }
+
+.ios-ea-form .auto-title-preview {
+    padding: 10px 14px; border: 1.5px dashed var(--ios-label-3); border-radius: 12px;
+    background: var(--ios-grouped-bg); font: 700 14px/1.3 var(--ios-font); color: var(--ios-label);
+}
+
+/* ── Конструктор подбора получателей ── */
+.ios-ea-form .recipient-filter {
+    border: none; border-radius: 14px; background: var(--ios-card-bg); padding: 14px; margin-bottom: 12px;
+}
+.ios-ea-form .rf-title { font: 700 11px/1.3 var(--ios-font); text-transform: uppercase; letter-spacing: 0.04em; color: var(--ios-label-2); margin-bottom: 12px; }
+.ios-ea-form .rf-dim { margin-bottom: 12px; }
+.ios-ea-form .recipient-filter .rf-dim:last-child { margin-bottom: 0; }
+.ios-ea-form .rf-dim-label { font: 700 12px/1.3 var(--ios-font); color: var(--ios-label); margin-bottom: 6px; }
+.ios-ea-form .rf-chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 124px; overflow-y: auto; }
+.ios-ea-form .rf-chip {
+    display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+    padding: 5px 12px; border: none; border-radius: 999px;
+    font: 600 12px/1.3 var(--ios-font); color: var(--ios-label-2); background: var(--ios-grouped-bg);
+    transition: background-color 120ms var(--ios-ease), color 120ms var(--ios-ease);
+}
+.ios-ea-form .rf-chip:hover { color: var(--ios-blue); }
+.ios-ea-form .rf-chip input { display: none; }
+.ios-ea-form .rf-chip.on { background: rgba(0,122,255,0.14); color: var(--ios-blue); }
+.ios-ea-form .rf-empty { font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-3); font-style: italic; }
+.ios-ea-form .rf-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 0.5px dashed var(--ios-sep); }
+.ios-ea-form .rf-count { font: 700 13px/1.3 var(--ios-font); color: var(--ios-blue); margin-right: auto; }
+.ios-ea-form .rf-btn {
+    font: 700 12px/1.3 var(--ios-font); padding: 6px 13px; border-radius: 999px; border: none;
+    background: var(--ios-grouped-bg); color: var(--ios-label); cursor: pointer; font-family: inherit;
+    transition: background-color 120ms var(--ios-ease);
+}
+.ios-ea-form .rf-btn:hover { color: var(--ios-blue); }
+.ios-ea-form .rf-btn-primary { background: var(--ios-blue); color: #fff; }
+.ios-ea-form .rf-btn-primary:hover { color: #fff; filter: brightness(1.08); }
+
+@media (max-width: 768px) {
+    .ios-ea-form .field-row { grid-template-columns: 1fr; }
 }
