@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=13">
+<link rel="stylesheet" href="/static/css/tracker.css?v=14">
 {% endblock %}
 {% block content %}
 <div class="lrn-page ios-learning">
@@ -35,24 +35,41 @@
     {# Восемь вкладок недели в фиксированном порядке (решение владельца
        22.08/23.08) — каждая следующая открыта, только когда закрыта
        предыдущая. Расчёт — `tracker.py::build_week_tabs`. Календаря по датам
-       у ученика больше нет: страница дня отменена тем же решением. #}
-    <div class="lrn-tabs nav-pill" role="tablist" aria-label="Вкладки недели">
-        {% for tab in tabs %}
-        {# Точка-маркер как непрочитанное уведомление в iOS (решение владельца
-           25.08.2026): есть у вкладки хоть одна незакрытая задача —
-           `tab.has_unread` из `tracker.py::build_week_tabs`. Гасится сама —
-           статус задачи меняется на done, и при следующей загрузке страницы
-           точки уже нет; для вкладок без перезагрузки (тест/чек-лист/материал
-           с кнопкой «Отметить») её же на лету снимает `lrnUpdateTabBadge`. #}
-        <button
-            type="button"
-            class="nav-pill-item{{ ' active' if loop.first }}"
-            data-tab="{{ tab.kind }}"
-            role="tab"
-            aria-selected="{{ 'true' if loop.first else 'false' }}"
-            onclick="lrnActivateTab('{{ tab.kind }}')"
-        >{{ tab.label }}{% if tab.has_unread %}<span class="lrn-tab-dot" aria-hidden="true"></span>{% endif %}</button>
-        {% endfor %}
+       у ученика больше нет: страница дня отменена тем же решением.
+
+       Стрелки листают фокус между кнопками (класс .is-focused — визуальная
+       «лупа», см. tracker.css), не открывая панель — открытие остаётся
+       отдельным явным кликом по самой кнопке (решение владельца 27.08.2026,
+       разбор созвона 26.08 упоминал стрелки только как идею без деталей
+       взаимодействия). Прокрутка (`.lrn-tabs { overflow-x: auto }`) работает
+       как раньше, стрелки — альтернативный способ поверх неё. #}
+    <div class="lrn-tabs-row">
+        <button type="button" class="lrn-tab-arrow lrn-tab-arrow--prev" aria-label="Предыдущий раздел" onclick="lrnFocusTab(-1)" disabled>‹</button>
+        <div class="lrn-tabs nav-pill" role="tablist" aria-label="Вкладки недели">
+            {% for tab in tabs %}
+            {# Точка-маркер как непрочитанное уведомление в iOS (решение владельца
+               25.08.2026): есть у вкладки хоть одна незакрытая задача —
+               `tab.has_unread` из `tracker.py::build_week_tabs`. Гасится сама —
+               статус задачи меняется на done, и при следующей загрузке страницы
+               точки уже нет; для вкладок без перезагрузки (тест/чек-лист/материал
+               с кнопкой «Отметить») её же на лету снимает `lrnUpdateTabBadge`.
+
+               .is-locked гасит кнопку визуально для вкладок, запертых
+               последовательностью (`tab.is_locked`) — раньше это было видно
+               только после клика, в самой панели (решение владельца
+               27.08.2026). Не путать с тарифной невидимостью — та по решению
+               созвона 26.08 полностью убирает элемент, а не гасит его. #}
+            <button
+                type="button"
+                class="nav-pill-item{{ ' active' if loop.first }}{{ ' is-focused' if loop.first }}{{ ' is-locked' if tab.is_locked }}"
+                data-tab="{{ tab.kind }}"
+                role="tab"
+                aria-selected="{{ 'true' if loop.first else 'false' }}"
+                onclick="lrnActivateTab('{{ tab.kind }}')"
+            >{{ tab.label }}{% if tab.has_unread %}<span class="lrn-tab-dot" aria-hidden="true"></span>{% endif %}</button>
+            {% endfor %}
+        </div>
+        <button type="button" class="lrn-tab-arrow lrn-tab-arrow--next" aria-label="Следующий раздел" onclick="lrnFocusTab(1)"{{ ' disabled' if tabs|length < 2 }}>›</button>
     </div>
 
     {% for tab in tabs %}
@@ -143,9 +160,14 @@
 function lrnActivateTab(kind) {
     // Переключатель вкладок недели — восемь пунктов в фиксированном порядке,
     // клиентский показ/скрытие панели, без перезагрузки страницы.
+    // Прямой клик по кнопке — это и есть «явное нажатие»: открывает панель
+    // сразу, независимо от того, была кнопка перед этим в фокусе от стрелок
+    // или нет, и переносит фокус-лупу на неё же, чтобы следующая стрелка
+    // считала именно от открытой вкладки.
     document.querySelectorAll('.lrn-tabs .nav-pill-item').forEach(function (btn) {
         var active = btn.getAttribute('data-tab') === kind;
         btn.classList.toggle('active', active);
+        btn.classList.toggle('is-focused', active);
         btn.setAttribute('aria-selected', active ? 'true' : 'false');
     });
     document.querySelectorAll('.lrn-tabpanel').forEach(function (panel) {
@@ -155,6 +177,35 @@ function lrnActivateTab(kind) {
     // пересчитаться для новой активной панели, иначе «пусто по направлению»
     // будет показывать состояние прошлой вкладки.
     lrnApplySubjectFilter();
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('.lrn-tabs .nav-pill-item'));
+    lrnUpdateArrowState(buttons, buttons.findIndex(function (b) { return b.getAttribute('data-tab') === kind; }));
+}
+
+function lrnFocusTab(direction) {
+    // Стрелка двигает фокус-лупу (.is-focused) на соседнюю кнопку, не открывая
+    // её панель — открытие остаётся отдельным явным кликом по кнопке
+    // (двухшаговый режим, решение владельца 27.08.2026). Локальный вопрос
+    // «что дальше по списку» решается позицией в DOM — она совпадает с
+    // порядком вкладок из `tracker.py::build_week_tabs`.
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('.lrn-tabs .nav-pill-item'));
+    if (!buttons.length) return;
+    var current = buttons.findIndex(function (b) { return b.classList.contains('is-focused'); });
+    if (current === -1) current = buttons.findIndex(function (b) { return b.classList.contains('active'); });
+    var next = current + direction;
+    if (next < 0 || next >= buttons.length) return;
+    buttons.forEach(function (b) { b.classList.remove('is-focused'); });
+    buttons[next].classList.add('is-focused');
+    buttons[next].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    lrnUpdateArrowState(buttons, next);
+}
+
+function lrnUpdateArrowState(buttons, index) {
+    // Стрелки гаснут на краях списка вместо зацикливания — так пользователь
+    // видит, что дальше листать некуда, без отдельного текста об этом.
+    var prevBtn = document.querySelector('.lrn-tab-arrow--prev');
+    var nextBtn = document.querySelector('.lrn-tab-arrow--next');
+    if (prevBtn) prevBtn.disabled = index <= 0;
+    if (nextBtn) nextBtn.disabled = index === -1 || index >= buttons.length - 1;
 }
 
 function lrnApplySubjectFilter() {

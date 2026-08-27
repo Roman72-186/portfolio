@@ -193,28 +193,53 @@
 }
 .lrn-hero p { margin: 0; opacity: 0.85; font-size: 13px; line-height: 1.4; }
 
+/* Переключатель предмета — вспомогательный уровень относительно вкладок
+   недели ниже (решение владельца, разбор созвона 26.08: «рисунок и
+   композиция — это вспомогательная часть, которая просто помогает
+   переключаться между предметами»). Поэтому compact/inline-flex, а не
+   flex:1 на всю ширину — вкладки недели ниже нарочно крупнее. */
 .lrn-subject-toggle {
-    display: flex; gap: 2px; padding: 4px; margin: 0 0 16px;
+    display: inline-flex; gap: 2px; padding: 3px; margin: 0 0 14px;
     background: var(--surface-2); border: 1px solid var(--line);
     border-radius: var(--r-pill);
 }
 .lrn-subject-btn {
-    flex: 1; text-align: center; padding: 10px 14px;
-    font-size: 14px; font-weight: 800; letter-spacing: 0.01em;
+    text-align: center; padding: 6px 12px;
+    font-size: 12px; font-weight: 800; letter-spacing: 0.01em;
     color: var(--muted); cursor: pointer; border: none; background: none;
     border-radius: var(--r-pill); transition: background .15s, color .15s;
     font-family: var(--font-body);
 }
-.lrn-subject-btn.active { background: var(--surface); color: var(--blue); box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+/* Свой цвет на предмет (решение владельца, разбор созвона 26.08: у Рисунка
+   и Композиции уже есть цвета, используются и в обложках видео) — HEX здесь
+   ад-хок, в коде не было готового токена под это (см. .ios-learning ниже,
+   там то же самое через --ios-pink). */
+.lrn-subject-btn[data-subject="Рисунок"].active { background: var(--surface); color: #0A84FF; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+.lrn-subject-btn[data-subject="Композиция"].active { background: var(--surface); color: #FF2D55; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
 
-/* Вкладки недели — восемь пунктов в фиксированном порядке, .nav-pill из
-   base.css. Своя обёртка нужна только для горизонтального скролла на узких
-   экранах: восемь подписей в один ряд не помещаются на телефоне. */
+/* Вкладки недели — восемь-девять пунктов в фиксированном порядке, .nav-pill
+   из base.css. Своя обёртка нужна только для горизонтального скролла на
+   узких экранах: подписи в один ряд не помещаются на телефоне. Обёрнута в
+   .lrn-tabs-row вместе со стрелками-переключателями (решение владельца
+   27.08.2026) — прокрутка остаётся, стрелки просто альтернативный способ
+   поверх неё. */
+.lrn-tabs-row { display: flex; align-items: center; gap: 6px; margin: 0 0 16px; }
+.lrn-tabs-row .lrn-tabs { margin: 0; flex: 1 1 auto; min-width: 0; }
 .lrn-tabs {
     display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 4px;
-    margin: 0 0 16px; -webkit-overflow-scrolling: touch;
+    -webkit-overflow-scrolling: touch;
 }
 .lrn-tabs .nav-pill-item { flex: 0 0 auto; white-space: nowrap; position: relative; }
+
+/* Стрелки — 44px минимум по стороне для touch-target (WCAG AA), гаснут на
+   краях списка вместо зацикливания (lrnUpdateArrowState в cabinet_learning.html). */
+.lrn-tab-arrow {
+    flex: 0 0 auto; width: 44px; height: 44px; border-radius: 50%;
+    border: none; background: var(--surface-2); color: var(--ink);
+    font-size: 20px; line-height: 1; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+}
+.lrn-tab-arrow:disabled { opacity: 0.3; cursor: default; }
 
 /* Точка-маркер незакрытой задачи на кнопке вкладки, как непрочитанное
    уведомление в iOS (решение владельца 25.08.2026) — рисуется только когда
@@ -490,6 +515,11 @@
     --ios-blue: #007AFF;
     --ios-green: #34C759;
     --ios-red: #FF3B30;
+    /* Системный iOS pink — под цвет предмета «Композиция» (решение владельца
+       27.08.2026, разбор созвона 26.08: у Рисунка и Композиции уже есть свои
+       цвета, готового HEX в коде не нашлось, взят системный аналог того же
+       семейства, что --ios-blue/--ios-red/--ios-green). */
+    --ios-pink: #FF2D55;
     --ios-label: #1C1C1E;
     --ios-label-2: rgba(60,60,67,0.60);
     --ios-label-3: rgba(60,60,67,0.30);
@@ -554,36 +584,80 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
-/* ── Переключатель предмета → iOS segmented control ── */
+/* ── Переключатель предмета → iOS segmented control, вспомогательный
+   уровень (решение владельца, разбор созвона 26.08) — компактнее вкладок
+   недели ниже, поэтому inline-flex и меньший шрифт/паддинги, а не растяжка
+   на всю ширину. Активная кнопка красится в цвет своего предмета вместо
+   общего systemBlue — тот же принцип, что и в необёрнутом блоке выше. ── */
 .ios-learning .lrn-subject-toggle {
+    display: inline-flex;
     background: rgba(118,118,128,0.12);
-    border: none; padding: 3px; border-radius: 9px;
+    border: none; padding: 2px; border-radius: 8px;
 }
 .ios-learning .lrn-subject-btn {
-    font: 600 13px var(--ios-font); color: var(--ios-label-2);
-    border-radius: 7px;
+    font: 600 11px var(--ios-font); color: var(--ios-label-2);
+    padding: 5px 11px;
+    border-radius: 6px;
     transition: background 150ms var(--ios-ease), color 150ms var(--ios-ease);
 }
-.ios-learning .lrn-subject-btn.active {
-    background: var(--ios-card-bg); color: var(--ios-label);
+.ios-learning .lrn-subject-btn[data-subject="Рисунок"].active {
+    background: var(--ios-card-bg); color: var(--ios-blue);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 0 0.5px rgba(0,0,0,0.04);
+}
+.ios-learning .lrn-subject-btn[data-subject="Композиция"].active {
+    background: var(--ios-card-bg); color: var(--ios-pink);
     box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 0 0.5px rgba(0,0,0,0.04);
 }
 
-/* ── Вкладки недели → капсулы-чипы, активная залита систем-синим ── */
+/* ── Вкладки недели → капсулы-чипы, главный уровень иерархии (решение
+   владельца, разбор созвона 26.08) — крупнее и жирнее переключателя
+   предмета выше, минимум 44px по высоте под touch-target (WCAG AA). ── */
 .ios-learning .lrn-tabs { scrollbar-width: none; }
 .ios-learning .lrn-tabs::-webkit-scrollbar { display: none; }
 .ios-learning .lrn-tabs .nav-pill-item {
-    font: 600 13px var(--ios-font); color: var(--ios-label-2);
+    font: 700 14px var(--ios-font); color: var(--ios-label-2);
     background: var(--ios-card-bg);
     border: none; border-radius: 999px;
-    padding: 8px 14px;
+    padding: 10px 18px; min-height: 44px;
+    display: inline-flex; align-items: center;
     box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-    transition: background 120ms var(--ios-ease), color 120ms var(--ios-ease), transform 100ms var(--ios-ease);
+    transition: background 120ms var(--ios-ease), color 120ms var(--ios-ease), transform 160ms var(--ios-ease), box-shadow 160ms var(--ios-ease);
 }
 .ios-learning .lrn-tabs .nav-pill-item:active { transform: scale(0.96); }
 .ios-learning .lrn-tabs .nav-pill-item.active {
     background: var(--ios-blue); color: #fff; box-shadow: 0 2px 8px rgba(0,122,255,0.30);
 }
+
+/* Кнопка вкладки, запертой последовательностью (`tab.is_locked`) — раньше
+   это было видно только после клика внутри панели, теперь гаснет сама
+   кнопка (решение владельца 27.08.2026). `:not(.active)` — на случай если
+   почему-то заперта первая вкладка, она всё равно открыта по умолчанию и
+   не должна выглядеть противоречиво (активна, но погашена). */
+.ios-learning .lrn-tabs .nav-pill-item.is-locked:not(.active) { opacity: 0.42; }
+
+/* Фокус-«лупа» от стрелок (двухшаговый режим, решение владельца 27.08.2026):
+   кнопка визуально увеличивается и подсвечивается синим контуром, но её
+   панель ещё не открыта — открытие остаётся отдельным явным кликом.
+   `:not(.active)` — у уже открытой вкладки свой стиль (залита синим), лупу
+   поверх нет смысла показывать. */
+.ios-learning .lrn-tabs .nav-pill-item.is-focused:not(.active) {
+    transform: scale(1.14);
+    color: var(--ios-label);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.16), 0 0 0 2px var(--ios-blue) inset;
+    z-index: 1;
+}
+
+/* ── Стрелки-переключатели по бокам от .lrn-tabs (решение владельца
+   27.08.2026) — гаснут на краях списка (lrnUpdateArrowState в
+   cabinet_learning.html) вместо зацикливания. ── */
+.ios-learning .lrn-tab-arrow {
+    width: 44px; height: 44px;
+    background: var(--ios-card-bg); color: var(--ios-blue);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+    transition: transform 120ms var(--ios-ease), opacity 120ms var(--ios-ease);
+}
+.ios-learning .lrn-tab-arrow:active:not(:disabled) { transform: scale(0.88); }
+.ios-learning .lrn-tab-arrow:disabled { opacity: 0.25; box-shadow: none; }
 
 /* ── Карточки вкладки (Занятие/Обратная связь/пустые состояния) ── */
 .ios-learning .lrn-card {
