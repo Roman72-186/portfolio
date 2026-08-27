@@ -94,6 +94,140 @@ def test_video_item_binds_topic_cover_and_task(
     assert task.kind == "video" and task.topic_id == topic.id
 
 
+def test_video_picked_from_catalog_keeps_its_own_title_and_cover(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Календарь только выбирает ролик: карточку он не переписывает.
+
+    Название и обложку задают на вкладке «Загрузка видео», и форма дня их не
+    присылает. Без подстановки из каталога день встал бы в трекер безымянным.
+    """
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    video = _video(db)
+    video.title = "Перспектива, часть 1"
+    video.cover_s3_url = "https://s3.example/cover.jpg"
+    db.commit()
+
+    response = client.post(
+        f"{PROGRAM}/{MONDAY}/video",
+        json={
+            "catalog_video_id": video.id,
+            "subject": "Рисунок",
+            "audience": {"assign_to_all": True, "tag_ids": [], "assignee_usernames": ""},
+        },
+    )
+
+    assert response.status_code == 200
+    db.expire_all()
+    video = db.get(LearningVideo, video.id)
+    assert video.title == "Перспектива, часть 1"
+    assert video.cover_s3_url == "https://s3.example/cover.jpg"
+    task = db.query(TrackerTask).one()
+    assert task.title == "Перспектива, часть 1"
+    assert task.topic_id == video.topic_id
+
+
+def test_video_already_standing_in_a_day_cannot_be_taken_by_another(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Один ролик — один день.
+
+    Привязка живёт в единственной колонке `LearningVideo.topic_id`: второй день
+    отобрал бы ролик у первого, и там осталась бы задача трекера без видео.
+    """
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    video = _video(db)
+    everyone = {"assign_to_all": True, "tag_ids": [], "assignee_usernames": ""}
+
+    first = client.post(
+        f"{PROGRAM}/{MONDAY}/video",
+        json={"catalog_video_id": video.id, "audience": everyone},
+    )
+    assert first.status_code == 200
+
+    second = client.post(
+        f"{PROGRAM}/2026-08-25/video",
+        json={"catalog_video_id": video.id, "audience": everyone},
+    )
+
+    assert second.status_code == 422
+    assert "24.08.2026" in second.json()["detail"]
+    assert db.query(TrackerTask).count() == 1
+
+
+def test_deleted_day_item_frees_its_video_for_another_day(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Удалили элемент дня — ролик снова свободен.
+
+    Задача помечается `deleted_at`, а `topic_id` у ролика остаётся. Если считать
+    занятость по одной этой колонке, ролик выпал бы из выбора навсегда: снять
+    тему на вкладке загрузки больше нечем.
+    """
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    video = _video(db)
+    everyone = {"assign_to_all": True, "tag_ids": [], "assignee_usernames": ""}
+
+    client.post(
+        f"{PROGRAM}/{MONDAY}/video",
+        json={"catalog_video_id": video.id, "audience": everyone},
+    )
+    task = db.query(TrackerTask).one()
+    removed = client.post(f"{PROGRAM}/items/{task.id}/delete", json={})
+    assert removed.status_code == 200
+
+    again = client.post(
+        f"{PROGRAM}/2026-08-25/video",
+        json={"catalog_video_id": video.id, "audience": everyone},
+    )
+
+    assert again.status_code == 200
+    db.expire_all()
+    live = (
+        db.query(TrackerTask)
+        .filter(TrackerTask.deleted_at.is_(None), TrackerTask.kind == "video")
+        .one()
+    )
+    assert db.get(LearningVideo, video.id).topic_id == live.topic_id
+
+
+def test_catalog_videos_are_offered_on_the_day_page(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Форма дня показывает загруженные ролики, а занятые помечает."""
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    free = _video(db)
+    free.title = "Свободный ролик"
+    taken = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id="guid-program-2",
+        title="Занятый ролик",
+        status="ready",
+    )
+    db.add(taken)
+    db.commit()
+    client.post(
+        f"{PROGRAM}/{MONDAY}/video",
+        json={
+            "catalog_video_id": taken.id,
+            "audience": {"assign_to_all": True, "tag_ids": [], "assignee_usernames": ""},
+        },
+    )
+
+    page = client.get(f"{PROGRAM}/2026-08-25")
+
+    assert page.status_code == 200
+    assert "Свободный ролик" in page.text
+    assert "Занятый ролик" in page.text
+    assert "Уже стоит в программе на 24.08.2026" in page.text
+    # Занятая строка не выбирается — иначе отказ сервера был бы сюрпризом.
+    assert 'data-v-pick disabled' in page.text
+
+
 def test_video_opens_with_its_week_and_only_for_its_audience(
     client, db, user_factory, session_factory, monkeypatch
 ):

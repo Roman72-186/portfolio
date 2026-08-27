@@ -31,7 +31,7 @@ from app.services.bunny_stream import (
     is_bunny_upload_available,
     normalize_bunny_status,
 )
-from app.services.tags import get_all_tags, parse_usernames
+from app.services.tags import parse_usernames
 from app.services.tz import MSK_TZ
 from app.services.video_catalog import list_all_videos, publish_video, unpublish_video
 from app.services.video_topics import (
@@ -39,8 +39,6 @@ from app.services.video_topics import (
     count_topic_audience,
     create_topic,
     delete_topic,
-    get_assignee_ids,
-    get_tag_ids,
     get_topic,
     list_topics,
     publish_topic,
@@ -67,6 +65,10 @@ class CreateVideoUpload(BaseModel):
 
     title: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
+    # Обложка уже лежит в S3: браузер заливает её отдельным запросом на
+    # `/cabinet/staff/program/upload-cover` и присылает сюда готовые url и путь.
+    cover_url: str | None = Field(default=None, max_length=500)
+    cover_path: str | None = Field(default=None, max_length=300)
     filename: str = Field(min_length=1, max_length=255)
     size_bytes: int = Field(gt=0, le=MAX_VIDEO_SIZE_BYTES)
     mime_type: str = Field(min_length=1, max_length=100)
@@ -107,7 +109,11 @@ class UpdateVideoMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
-    # None — урок остаётся открытым всем ученикам; id — доступ идёт по теме.
+    # Поле не прислали — привязка урока к теме не трогается. Прислали `null` —
+    # урок открывается всем ученикам, id — доступ идёт по теме. Разница важна:
+    # форма на странице загрузки темы больше не показывает, и «не прислали»
+    # молча отвязало бы ролик от его элемента учебной программы, а вместе с
+    # привязкой отвалились бы и адресность, и автозакрытие задачи в трекере.
     topic_id: int | None = Field(default=None, ge=1)
     # Мини-опрос из трёх уточняющих вопросов после видео — каждый необязателен,
     # пустой набор просто не показывает опрос ученику (app/services/video_quiz.py).
@@ -185,50 +191,17 @@ def video_admin_page(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    topics = list_topics(db)
-    topic_tag_ids = {t.id: get_tag_ids(db, t.id) for t in topics}
-    topic_assignee_ids = {t.id: get_assignee_ids(db, t.id) for t in topics}
-    all_tags = get_all_tags(db)
-    ambiguous_names = set(ambiguous_tag_names(db, [tag.id for tag in all_tags]))
+    # Названия тем берём всех видов: у ролика из учебной программы тема
+    # служебная (`program_item`), и фильтр по неделям показывал бы «тема
+    # удалена» на живой привязке.
+    topics = list_topics(db, kinds=None)
     return templates.TemplateResponse(
         "cabinet_videos_admin.html",
         {
             "request": request,
             "user": user,
             "videos": list_all_videos(db),
-            "topics": topics,
             "topic_titles": {t.id: t.title for t in topics},
-            "topic_tag_ids": topic_tag_ids,
-            "topic_assignee_ids": topic_assignee_ids,
-            # Время открытия форматируется здесь, а не в шаблоне: колонка
-            # TIMESTAMPTZ приезжает в таймзоне сессии, а форма трактует ввод как
-            # МСК — расхождение уводило бы тему на три часа за каждую правку.
-            "topic_opens_form": {t.id: _format_msk_datetime_local(t.opens_at) for t in topics},
-            "topic_opens_display": {t.id: _format_msk_display(t.opens_at) for t in topics},
-            # Поимённые ученики возвращаются в форму, иначе сохранение стирает их.
-            "topic_assignee_usernames": {
-                t.id: _assignee_usernames(db, topic_assignee_ids.get(t.id, []))
-                for t in topics
-            },
-            # Аудитория и спорные теги считаются на сервере, чтобы главный преподаватель видел
-            # охват темы до того, как ученики не увидят урок.
-            "topic_audience": {
-                t.id: count_topic_audience(
-                    db,
-                    assign_to_all=t.assign_to_all,
-                    tag_ids=topic_tag_ids.get(t.id, []),
-                    assignee_ids=topic_assignee_ids.get(t.id, []),
-                )
-                for t in topics
-            },
-            "topic_ambiguous_tags": {
-                t.id: ambiguous_tag_names(db, topic_tag_ids.get(t.id, []))
-                for t in topics
-            },
-            "all_tags": all_tags,
-            "ambiguous_tag_ids": {
-                tag.id for tag in all_tags if tag.name in ambiguous_names
-            },
             "upload_available": is_bunny_upload_available(),
         },
     )
@@ -253,6 +226,8 @@ def create_video_upload(
             bunny_video_id=bunny_video_id,
             title=payload.title,
             description=payload.description,
+            cover_s3_url=payload.cover_url,
+            cover_s3_path=payload.cover_path,
             original_filename=payload.filename,
             original_size_bytes=payload.size_bytes,
             original_mime_type=payload.mime_type,
@@ -366,7 +341,9 @@ def update_video_metadata(
     previous_topic_id = video.topic_id
     video.title = payload.title
     video.description = payload.description
-    video.topic_id = payload.topic_id
+    # Ключ отсутствует в теле — привязку не трогаем (см. докстринг поля).
+    if "topic_id" in payload.model_fields_set:
+        video.topic_id = payload.topic_id
     video.quiz_question_1 = payload.quiz_question_1
     video.quiz_question_2 = payload.quiz_question_2
     video.quiz_question_3 = payload.quiz_question_3
@@ -377,7 +354,7 @@ def update_video_metadata(
         action="video_metadata_update",
         user_id=user["user_id"],
         video=video,
-        extra={"topic_id_before": previous_topic_id, "topic_id_after": payload.topic_id},
+        extra={"topic_id_before": previous_topic_id, "topic_id_after": video.topic_id},
     )
     db.commit()
     return JSONResponse({"ok": True})
@@ -495,27 +472,6 @@ def _parse_opens_at(raw: str) -> datetime:
     return parsed
 
 
-def _format_msk_datetime_local(value: datetime) -> str:
-    """`opens_at` → строка для `<input type="datetime-local">` в МСК.
-
-    Колонка `TIMESTAMPTZ`, и Postgres отдаёт её в таймзоне сессии — в контейнере
-    UTC. Отдать это значение в форму как есть нельзя: `_parse_opens_at` трактует
-    ввод как московское время, поэтому каждое повторное сохранение темы уводило
-    бы её открытие на три часа назад. Формат тот же, что у пробников
-    (`cabinet_superadmin.py`), — обе формы обязаны понимать время одинаково.
-    """
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M")
-
-
-def _format_msk_display(value: datetime) -> str:
-    """`opens_at` → человекочитаемое московское время для списка тем."""
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(MSK_TZ).strftime("%d.%m.%Y %H:%M")
-
-
 def _resolve_assignees(db: DBSession, raw: str) -> tuple[list[int], list[str]]:
     """@username → id учеников. Возвращает найденных и ненайденных.
 
@@ -546,22 +502,6 @@ def _resolve_assignees(db: DBSession, raw: str) -> tuple[list[int], list[str]]:
             found[uname] = candidate.id
     not_found = [u for u in requested if u not in found]
     return list(found.values()), not_found
-
-
-def _assignee_usernames(db: DBSession, user_ids: list[int]) -> str:
-    """id учеников → строка «@user1, @user2» для предзаполнения формы.
-
-    Без неё форма редактирования открывалась с пустым полем, а сохранение
-    переписывало список поимённых целиком — любая правка темы снимала доступ у
-    догоняющих. `tg_username` зашифрован, поэтому читаем объекты и расшифровываем
-    в Python, как в `_resolve_assignees`.
-    """
-    if not user_ids:
-        return ""
-    users = db.query(User).filter(User.id.in_(user_ids)).all()
-    by_id = {u.id: (u.tg_username or "").strip().lstrip("@") for u in users}
-    names = [by_id.get(uid, "") for uid in user_ids]
-    return ", ".join(f"@{name}" for name in names if name)
 
 
 def _audit_topic(db: DBSession, *, action: str, user_id: int, topic) -> None:

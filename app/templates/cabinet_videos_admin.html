@@ -6,9 +6,9 @@ STORY: сотрудник загружает файл, видит реальны
 FIRST VIEWPORT: заголовок и загрузка слева, сводка состояний справа; ниже единая очередь видео.
 FORM: Operate, расширение существующего кабинета без новой визуальной системы.
 #}
-{% block title %}Управление видео{% endblock %}
+{% block title %}Загрузка видео{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/videos_admin_ios.css?v=1">
+<link rel="stylesheet" href="/static/css/videos_admin_ios.css?v=2">
 {% endblock %}
 {% block content %}
 {% set status_labels = {'uploading':'Загрузка', 'processing':'Обработка', 'ready':'Готово', 'failed':'Ошибка', 'deleting':'Удаление', 'delete_failed':'Ошибка удаления'} %}
@@ -16,8 +16,8 @@ FORM: Operate, расширение существующего кабинета 
     {% include "partials/program_tabs.html" %}
     <div class="vam-head">
         <div class="vam-head-copy">
-            <h1>Видео</h1>
-            <p>Файл уходит в видеохранилище напрямую из браузера. После обработки проверьте ролик и опубликуйте его для учеников.</p>
+            <h1>Загрузка видео</h1>
+            <p>Название, описание, обложка и файл – и ролик встаёт в общий список ниже. Файл уходит в видеохранилище напрямую из браузера. После обработки проверьте ролик и опубликуйте его для учеников.</p>
         </div>
         <a class="btn-outline" href="/cabinet/videos">Открыть каталог</a>
     </div>
@@ -38,6 +38,10 @@ FORM: Operate, расширение существующего кабинета 
                 <label class="vam-field">Описание
                     <textarea id="video-description" maxlength="5000" placeholder="Коротко: о чём этот урок"></textarea>
                 </label>
+                <label class="vam-field">Обложка, необязательно
+                    <input id="video-cover" type="file" accept="image/*">
+                </label>
+                <div class="vam-cover-thumb" id="video-cover-thumb"></div>
                 <label class="vam-field">Видеофайл
                     <input id="video-file" type="file" accept="video/*,.mkv,.ts" required>
                 </label>
@@ -57,116 +61,25 @@ FORM: Operate, расширение существующего кабинета 
         </div>
     </section>
 
-    <section class="vam-topics" aria-labelledby="vam-topics-title">
-        <div class="vam-topics-head">
-            <h2 id="vam-topics-title">Темы недели</h2>
-            <button type="button" class="btn-outline" data-topic-toggle>Новая тема</button>
-        </div>
-        <p class="vam-hint">
-            Тема открывается в указанное время по Москве и дальше остаётся у учеников —
-            прошедший материал не пропадает. Урок без темы виден всем.
-        </p>
-
-        <form class="vam-topic-form" data-topic-form hidden>
-            <input type="hidden" data-topic-id value="">
-            <div class="vam-topic-grid">
-                <label class="vam-field">Название темы
-                    <input data-topic-title type="text" maxlength="200" placeholder="Например: Архитектура США" autocomplete="off">
-                </label>
-                <label class="vam-field">Открыть с (МСК)
-                    <input data-topic-opens type="datetime-local">
-                </label>
-            </div>
-            <label class="vam-field">Описание, необязательно
-                <input data-topic-description type="text" maxlength="5000" autocomplete="off">
-            </label>
-            <label class="vam-field vt-all-row">
-                <input data-topic-all type="checkbox">
-                <span>Открыть всем ученикам</span>
-            </label>
-            <div data-topic-audience>
-                <div class="vam-hint">Кому открыть — отметьте теги:</div>
-                <div class="vam-tag-picker">
-                    {% for tag in all_tags %}
-                    <label><input type="checkbox" data-topic-tag value="{{ tag.id }}"{% if tag.id in ambiguous_tag_ids|default([]) %} data-topic-tag-ambiguous{% endif %}>{{ tag.name }}</label>
-                    {% else %}
-                    <span class="vam-hint">Тегов пока нет — их заводят на странице «Теги».</span>
-                    {% endfor %}
-                </div>
-                <p class="vam-message is-error" data-topic-tag-warning hidden></p>
-                <label class="vam-field vt-assignees-field">Плюс отдельным ученикам: @username через запятую или с новой строки
-                    <input data-topic-assignees type="text" placeholder="@ivanov, @petrova" autocomplete="off">
-                </label>
-            </div>
-            <div class="vam-topic-actions">
-                <button type="button" class="btn-blue" data-topic-save>Сохранить тему</button>
-                <button type="button" class="btn-outline" data-topic-cancel>Отмена</button>
-            </div>
-            <p class="vam-message" data-topic-message></p>
-        </form>
-
-        {% if topics %}
-        <div>
-            {% for topic in topics %}
-            <article class="vam-topic-row" data-topic-row data-id="{{ topic.id }}"
-                     data-title="{{ topic.title }}"
-                     data-description="{{ topic.description or '' }}"
-                     data-opens="{{ topic_opens_form.get(topic.id, '') }}"
-                     data-all="{{ '1' if topic.assign_to_all else '' }}"
-                     data-tags="{{ topic_tag_ids.get(topic.id, [])|join(',') }}"
-                     data-assignees="{{ topic_assignee_usernames.get(topic.id, '') }}">
-                <div>
-                    <h3 class="vam-title">{{ topic.title }}</h3>
-                    <div class="vam-meta">
-                        <span>Открыта с {{ topic_opens_display.get(topic.id, '') }} МСК</span>
-                        {% if topic.assign_to_all %}
-                        <span>Всем ученикам</span>
-                        {% else %}
-                        <span>Тегов: {{ topic_tag_ids.get(topic.id, [])|length }}</span>
-                        {% if topic_assignee_ids.get(topic.id) %}<span>Поимённо: {{ topic_assignee_ids.get(topic.id)|length }}</span>{% endif %}
-                        {% endif %}
-                        <span>Получат доступ: {{ topic_audience.get(topic.id, 0) }}</span>
-                    </div>
-                    {% if topic_ambiguous_tags.get(topic.id) %}
-                    <p class="vam-message is-error">
-                        Теги {{ topic_ambiguous_tags.get(topic.id)|join(', ') }} в проде означают группу и уровень куратора,
-                        а не предмет. Совпадение точное: ученики с тегом вида «Р+К» тему не получат.
-                    </p>
-                    {% endif %}
-                </div>
-                <div class="vam-row-actions vt-actions-row">
-                    {% if topic.is_published %}
-                    <span class="vam-badge vam-badge--active">Опубликована</span>
-                    <button type="button" class="btn-outline" data-topic-action="unpublish">Скрыть</button>
-                    {% else %}
-                    <span class="vam-badge vam-badge--working">Черновик</span>
-                    <button type="button" class="btn-blue" data-topic-action="publish">Опубликовать</button>
-                    {% endif %}
-                    <button type="button" class="btn-outline" data-topic-edit>Изменить</button>
-                    <button type="button" class="btn-danger" data-topic-action="delete">Удалить</button>
-                </div>
-            </article>
-            {% endfor %}
-        </div>
-        {% else %}
-        <div class="vam-empty">Тем пока нет. Пока их нет, уроки без темы видны всем ученикам.</div>
-        {% endif %}
-    </section>
-
     <section class="vam-queue" aria-labelledby="vam-queue-title">
-        <h2 id="vam-queue-title">Все видео</h2>
+        <h2 id="vam-queue-title">Уже загруженные видео</h2>
         {% if videos %}
         <div class="vam-list">
             {% for video in videos %}
             <article class="vam-row" data-video-id="{{ video.id }}" data-status="{{ video.status }}">
                 <div class="vam-row-main">
-                    <div>
+                    <div class="vam-row-copy">
+                        {% if video.cover_s3_url %}
+                        <img class="vam-row-cover" src="{{ video.cover_s3_url }}" alt="" loading="lazy">
+                        {% endif %}
+                        <div>
                         <h3 class="vam-title">{{ video.title }}</h3>
                         <div class="vam-meta">
                             <span>{{ video.original_filename or 'Добавлено из хранилища' }}</span>
                             {% if video.duration_seconds %}<span>{{ (video.duration_seconds / 60)|round(1) }} мин.</span>{% endif %}
                             {% if video.encode_progress is not none %}<span>Обработка: {{ video.encode_progress }}%</span>{% endif %}
                             {% if video.topic_id %}<span>Тема: {{ topic_titles.get(video.topic_id, 'тема удалена') }}</span>{% else %}<span>Доступно всем ученикам</span>{% endif %}
+                        </div>
                         </div>
                     </div>
                     {% if video.is_published %}
@@ -200,14 +113,6 @@ FORM: Operate, расширение существующего кабинета 
                     <div class="vam-edit-fields">
                         <label class="vam-field">Название<input data-edit-title value="{{ video.title }}" maxlength="200"></label>
                         <label class="vam-field">Описание<input data-edit-description value="{{ video.description or '' }}" maxlength="5000"></label>
-                        <label class="vam-field">Тема
-                            <select data-edit-topic>
-                                <option value="">Доступно всем ученикам</option>
-                                {% for topic in topics %}
-                                <option value="{{ topic.id }}"{% if video.topic_id == topic.id %} selected{% endif %}>{{ topic.title }}{% if not topic.is_published %} — черновик{% endif %}</option>
-                                {% endfor %}
-                            </select>
-                        </label>
                         <label class="vam-field">Мини-опрос после видео — вопрос 1<input data-edit-quiz-q1 value="{{ video.quiz_question_1 or '' }}" maxlength="300" placeholder="Необязательно"></label>
                         <label class="vam-field">Мини-опрос после видео — вопрос 2<input data-edit-quiz-q2 value="{{ video.quiz_question_2 or '' }}" maxlength="300" placeholder="Необязательно"></label>
                         <label class="vam-field">Мини-опрос после видео — вопрос 3<input data-edit-quiz-q3 value="{{ video.quiz_question_3 or '' }}" maxlength="300" placeholder="Необязательно"></label>
@@ -218,7 +123,7 @@ FORM: Operate, расширение существующего кабинета 
             {% endfor %}
         </div>
         {% else %}
-        <div class="vam-empty">Видео ещё не добавлены. Загрузите первый файл выше.</div>
+        <div class="vam-empty">Видео ещё не загружены. Заполните форму выше – ролик появится здесь.</div>
         {% endif %}
     </section>
 </div>
@@ -235,6 +140,11 @@ FORM: Operate, расширение существующего кабинета 
     var bar = document.getElementById('video-upload-bar');
     var percent = document.getElementById('video-upload-percent');
     var activeUpload = null;
+    var coverImage = {url: null, path: null};
+    var coverInput = document.getElementById('video-cover');
+    // Без Stream API Key кнопка выключена изначально — заливка обложки не
+    // имеет права её включить: видео всё равно некуда отправлять.
+    var uploadAvailable = {{ (upload_available | default(false)) | tojson }};
     // Идёт ли прямо сейчас передача файла в Bunny. Отдельно от activeUpload:
     // объект загрузки живёт и после успеха, а фоновому поллеру важен именно факт
     // «файл ещё летит» — перезагружать страницу в этот момент нельзя.
@@ -264,6 +174,36 @@ FORM: Operate, расширение существующего кабинета 
         });
     }
 
+    // Картинка уходит на сервер сразу при выборе: к моменту «Начать загрузку»
+    // у нас уже есть её адрес в S3, и видеофайл не ждёт вторую заливку.
+    if (coverInput) coverInput.addEventListener('change', function () {
+        var file = coverInput.files && coverInput.files[0];
+        var holder = document.getElementById('video-cover-thumb');
+        if (!file) { coverImage = {url: null, path: null}; holder.innerHTML = ''; return; }
+        var data = new FormData();
+        data.append('file', file);
+        data.append('csrf_token', csrfToken);
+        startButton.disabled = true;
+        setMessage('Загружаем обложку…', false);
+        fetch('/cabinet/staff/program/upload-cover', {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'X-CSRF-Token': csrfToken}, body: data
+        }).then(function (response) { return response.json(); }).then(function (result) {
+            startButton.disabled = !uploadAvailable;
+            if (!result || !result.ok) { setMessage('Обложка не загрузилась. Выберите другой файл.', true); return; }
+            coverImage = {url: result.url, path: result.path};
+            setMessage('', false);
+            holder.innerHTML = '';
+            var img = document.createElement('img');
+            img.src = result.url;
+            img.alt = 'Обложка видео';
+            holder.appendChild(img);
+        }).catch(function () {
+            startButton.disabled = !uploadAvailable;
+            setMessage('Обложка не загрузилась. Попробуйте ещё раз.', true);
+        });
+    });
+
     function uploadStorageKey(file) {
         return 'apparchi:bunny-upload:' + [file.name, file.size, file.lastModified].join(':');
     }
@@ -288,8 +228,7 @@ FORM: Operate, расширение существующего кабинета 
     }
 
     function isAdminBusy() {
-        // Открытая форма темы или выбранный файл — признак несохранённого ввода.
-        if (topicForm && !topicForm.hidden) return true;
+        // Выбранный файл или набранное название — признак несохранённого ввода.
         var fileInput = document.getElementById('video-file');
         if (fileInput && fileInput.files && fileInput.files.length) return true;
         var titleInput = document.getElementById('video-title');
@@ -307,8 +246,8 @@ FORM: Operate, расширение существующего кабинета 
                 var status = data.video && data.video.status;
                 if (status === 'ready' || status === 'failed') {
                     // Фоновый поллер не имеет права перезагружать страницу, пока
-                    // человек занят: своя загрузка оборвётся, а введённые название
-                    // темы, дата и список @username пропадут без следа.
+                    // человек занят: своя загрузка оборвётся, а набранные название
+                    // и описание пропадут без следа.
                     if (!own && (uploadInFlight || isAdminBusy())) {
                         pollUntilReady(videoId, attempts - 1, own);
                         return;
@@ -340,6 +279,8 @@ FORM: Operate, расширение существующего кабинета 
         var createPayload = {
             title: title,
             description: document.getElementById('video-description').value,
+            cover_url: coverImage.url,
+            cover_path: coverImage.path,
             filename: file.name,
             size_bytes: file.size,
             mime_type: file.type || 'application/octet-stream'
@@ -444,11 +385,11 @@ FORM: Operate, расширение существующего кабинета 
         var action = button.dataset.videoAction;
         var body = {};
         if (action === 'metadata') {
-            var topicValue = row.querySelector('[data-edit-topic]').value;
+            // topic_id намеренно не отправляем: ключ отсутствует — сервер
+            // оставляет привязку урока к теме как есть.
             body = {
                 title: row.querySelector('[data-edit-title]').value,
                 description: row.querySelector('[data-edit-description]').value,
-                topic_id: topicValue ? Number(topicValue) : null,
                 quiz_question_1: row.querySelector('[data-edit-quiz-q1]').value,
                 quiz_question_2: row.querySelector('[data-edit-quiz-q2]').value,
                 quiz_question_3: row.querySelector('[data-edit-quiz-q3]').value
@@ -468,140 +409,6 @@ FORM: Operate, расширение существующего кабинета 
             window.alert(error.message === 'unpublish_first' ? 'Сначала скройте видео.' : 'Действие не выполнено. Попробуйте ещё раз.');
         });
     });
-
-    // ── Темы недели ────────────────────────────────────────────────────────
-    var topicForm = document.querySelector('[data-topic-form]');
-    var topicMessage = topicForm ? topicForm.querySelector('[data-topic-message]') : null;
-
-    function topicField(name) { return topicForm.querySelector('[data-topic-' + name + ']'); }
-
-    function setTopicMessage(text, isError) {
-        if (!topicMessage) return;
-        topicMessage.textContent = text || '';
-        topicMessage.classList.toggle('is-error', !!isError);
-    }
-
-    function syncAudienceVisibility() {
-        var audience = topicForm.querySelector('[data-topic-audience]');
-        if (audience) audience.hidden = topicField('all').checked;
-        syncAmbiguousTagWarning();
-    }
-
-    // Однобуквенные «Р» и «К» в проде значат группу и уровень куратора, хотя на
-    // пробниках такие же имена читаются как предмет. Совпадение здесь точное,
-    // поэтому предупреждаем до сохранения, а не после жалоб учеников.
-    function syncAmbiguousTagWarning() {
-        var warning = topicForm.querySelector('[data-topic-tag-warning]');
-        if (!warning) return;
-        var names = [];
-        topicForm.querySelectorAll('[data-topic-tag-ambiguous]:checked').forEach(function (box) {
-            names.push(box.parentElement.textContent.trim());
-        });
-        if (!names.length || topicField('all').checked) {
-            warning.hidden = true;
-            warning.textContent = '';
-            return;
-        }
-        warning.hidden = false;
-        warning.textContent = 'Теги ' + names.join(', ')
-            + ' в проде означают группу и уровень куратора, а не предмет.'
-            + ' Совпадение точное: ученики с тегом вида «Р+К» тему не получат.';
-    }
-
-    function openTopicForm(row) {
-        topicForm.hidden = false;
-        setTopicMessage('');
-        topicField('id').value = row ? row.dataset.id : '';
-        topicField('title').value = row ? row.dataset.title : '';
-        topicField('description').value = row ? row.dataset.description : '';
-        topicField('opens').value = row ? row.dataset.opens : '';
-        topicField('all').checked = row ? row.dataset.all === '1' : false;
-        // Возвращаем в форму уже назначенных: сохранение переписывает список
-        // целиком, и пустое поле сняло бы доступ у всех поимённых.
-        topicField('assignees').value = row ? (row.dataset.assignees || '') : '';
-        var selected = row && row.dataset.tags ? row.dataset.tags.split(',') : [];
-        topicForm.querySelectorAll('[data-topic-tag]').forEach(function (box) {
-            box.checked = selected.indexOf(box.value) !== -1;
-        });
-        syncAudienceVisibility();
-        topicField('title').focus();
-    }
-
-    if (topicForm) {
-        topicField('all').addEventListener('change', syncAudienceVisibility);
-        topicForm.addEventListener('change', function (event) {
-            if (event.target.hasAttribute('data-topic-tag')) syncAmbiguousTagWarning();
-        });
-
-        document.addEventListener('click', function (event) {
-            if (event.target.closest('[data-topic-toggle]')) { openTopicForm(null); return; }
-            if (event.target.closest('[data-topic-cancel]')) { topicForm.hidden = true; return; }
-
-            var editButton = event.target.closest('[data-topic-edit]');
-            if (editButton) { openTopicForm(editButton.closest('[data-topic-row]')); return; }
-
-            var saveButton = event.target.closest('[data-topic-save]');
-            if (saveButton) {
-                var title = topicField('title').value.trim();
-                var opensAt = topicField('opens').value;
-                if (!title || !opensAt) { setTopicMessage('Укажите название и дату открытия.', true); return; }
-
-                var tagIds = [];
-                topicForm.querySelectorAll('[data-topic-tag]:checked').forEach(function (box) {
-                    tagIds.push(Number(box.value));
-                });
-                var assignees = topicField('assignees').value;
-                var isForAll = topicField('all').checked;
-                if (!isForAll && !tagIds.length && !assignees.trim()) {
-                    setTopicMessage('Тему никто не увидит: отметьте теги, добавьте учеников или откройте всем.', true);
-                    return;
-                }
-
-                var topicId = topicField('id').value;
-                saveButton.disabled = true;
-                api('/cabinet/admin/videos/topics' + (topicId ? '/' + topicId : ''), {
-                    title: title,
-                    description: topicField('description').value,
-                    opens_at: opensAt,
-                    assign_to_all: isForAll,
-                    tag_ids: isForAll ? [] : tagIds,
-                    assignee_usernames: isForAll ? '' : assignees
-                }).then(function (data) {
-                    if (data && data.not_found && data.not_found.length) {
-                        window.alert('Не нашлись ученики: @' + data.not_found.join(', @'));
-                    }
-                    if (data && data.audience_size === 0) {
-                        window.alert('Тему сейчас никто не увидит: под выбранную аудиторию не подошёл ни один активный ученик.');
-                    } else if (data && data.ambiguous_tags && data.ambiguous_tags.length) {
-                        window.alert('Тема сохранена и уйдёт ' + data.audience_size + ' ученикам.'
-                            + ' Проверьте теги ' + data.ambiguous_tags.join(', ')
-                            + ': в проде это группа и уровень куратора, а совпадение точное.');
-                    }
-                    window.location.reload();
-                }).catch(function () {
-                    saveButton.disabled = false;
-                    setTopicMessage('Не удалось сохранить тему. Попробуйте ещё раз.', true);
-                });
-                return;
-            }
-
-            var actionButton = event.target.closest('[data-topic-action]');
-            if (!actionButton) return;
-            var topicRow = actionButton.closest('[data-topic-row]');
-            var topicAction = actionButton.dataset.topicAction;
-            if (topicAction === 'delete' && !window.confirm('Удалить тему «' + topicRow.dataset.title + '»?')) return;
-
-            actionButton.disabled = true;
-            api('/cabinet/admin/videos/topics/' + topicRow.dataset.id + '/' + topicAction).then(function () {
-                window.location.reload();
-            }).catch(function (error) {
-                actionButton.disabled = false;
-                window.alert(error.message === 'topic_has_videos'
-                    ? 'К теме привязаны уроки. Сначала переназначьте их.'
-                    : 'Действие не выполнено. Попробуйте ещё раз.');
-            });
-        });
-    }
 
     // Фоном опрашиваем только то, что Bunny двигает само. Строки в статусе
     // uploading ждут файла из чьей-то вкладки: опрашивать их бессмысленно, а

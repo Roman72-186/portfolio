@@ -8,8 +8,8 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=5">
-<link rel="stylesheet" href="/static/css/program_ios.css?v=1">
+<link rel="stylesheet" href="/static/css/program.css?v=6">
+<link rel="stylesheet" href="/static/css/program_ios.css?v=2">
 {% endblock %}
 {% block content %}
 <div class="prg-page ios-prg-day" data-day="{{ day_iso }}">
@@ -40,7 +40,7 @@ FORM: Operate.
             <span class="prg-tile-icon" aria-hidden="true">▶</span>
             <span>
                 <strong>Видеоматериал</strong>
-                <small>Название, обложка, файл ролика</small>
+                <small>Выбрать ролик из загруженных</small>
             </span>
         </button>
         <button type="button" class="prg-tile" data-open-form="homework">
@@ -156,10 +156,39 @@ FORM: Operate.
 
     <form class="prg-form" data-form="video" hidden>
         <h2>Видеоматериал на {{ day.day }} число</h2>
-        <div class="prg-grid2">
-            <label class="prg-field">Название
-                <input type="text" data-v-title maxlength="200" autocomplete="off">
+        {# Загрузка живёт на вкладке «Загрузка видео»: здесь ролик только
+           выбирают. Название и обложка приезжают вместе с ним из каталога. #}
+        <p class="prg-hint">
+            Ролики загружаются на вкладке
+            <a href="/cabinet/admin/videos">«Загрузка видео»</a>. Здесь выбираем готовый.
+        </p>
+        {% if catalog_videos %}
+        <div class="prg-videopick" role="radiogroup" aria-label="Загруженные ролики">
+            {% for item in catalog_videos %}
+            <label class="prg-videopick-item{% if item.taken %} is-taken{% endif %}">
+                <input type="radio" name="catalog-video" value="{{ item.id }}" data-v-pick{% if item.taken %} disabled{% endif %}>
+                {% if item.cover_url %}
+                <img class="prg-videopick-cover" src="{{ item.cover_url }}" alt="" loading="lazy">
+                {% else %}
+                <span class="prg-videopick-cover prg-videopick-cover--empty" aria-hidden="true">▶</span>
+                {% endif %}
+                <span class="prg-videopick-copy">
+                    <strong>{{ item.title }}</strong>
+                    <small>
+                        {% if item.status != 'ready' %}Обработка ещё идёт · {% endif %}
+                        {% if item.duration_seconds %}{{ (item.duration_seconds / 60)|round(1) }} мин.{% else %}Длительность появится после обработки{% endif %}
+                    </small>
+                    {% if item.note %}<small class="prg-videopick-note">{{ item.note }}</small>{% endif %}
+                </span>
             </label>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="prg-message is-error">
+            Загруженных роликов пока нет. Сначала загрузите видео на вкладке «Загрузка видео».
+        </p>
+        {% endif %}
+        <div class="prg-grid2">
             <label class="prg-field">Предмет
                 <select data-v-subject>
                     <option value="">Без предмета</option>
@@ -169,24 +198,12 @@ FORM: Operate.
                 </select>
             </label>
         </div>
-        <label class="prg-field">Описание, необязательно
-            <textarea data-v-description maxlength="5000"></textarea>
-        </label>
-        <label class="prg-field">Обложка видео
-            <input type="file" data-v-cover accept="image/*">
-        </label>
-        <div class="prg-thumbs" data-v-coverthumb></div>
-        <label class="prg-field">Файл видео
-            <input type="file" data-v-file accept="video/*,.mkv,.ts">
-        </label>
-        <div class="prg-progress" aria-hidden="true"><span data-v-bar></span></div>
-        <p class="prg-message" data-v-progress>Файл ещё не выбран</p>
         <label class="prg-field prg-field--row">
             <input type="checkbox" data-v-required checked>
             <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
         </label>
         <div class="prg-actions">
-            <button type="button" class="btn-blue" data-video-save disabled>Сохранить</button>
+            <button type="button" class="btn-blue" data-video-save>Поставить в день</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
         </div>
         <p class="prg-message" data-form-message></p>
@@ -322,7 +339,6 @@ FORM: Operate.
     </section>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js" integrity="sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1" crossorigin="anonymous"></script>
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};
@@ -431,9 +447,9 @@ FORM: Operate.
     var videoForm = document.querySelector('[data-form="video"]');
     var homeworkForm = document.querySelector('[data-form="homework"]');
     var surveyForm = document.querySelector('[data-form="survey"]');
-    var coverImage = {url: null, path: null};
     var homeworkImages = [];
-    var uploadedVideoId = null;
+    // Ролик для дня выбирают из каталога — id отмеченной радиокнопки.
+    var selectedVideoId = null;
     var questionTypes = {{ question_types|tojson }};
 
     function setMessage(form, text, isError) {
@@ -490,73 +506,11 @@ FORM: Operate.
         });
     }
 
-    // Ролик создаётся в каталоге сразу при выборе файла: строка нужна TUS-загрузке,
-    // которая шлёт файл в Bunny мимо нашего сервера.
-    function startVideoUpload(file) {
-        var title = videoForm.querySelector('[data-v-title]').value.trim();
-        if (!title) { setMessage(videoForm, 'Сначала укажите название.', true); return; }
-        if (!window.tus || !window.tus.Upload) {
-            setMessage(videoForm, 'Загрузчик не запустился. Обновите страницу.', true);
-            return;
-        }
-        var note = videoForm.querySelector('[data-v-progress]');
-        note.textContent = 'Готовим загрузку…';
-        api('/cabinet/admin/videos/create-upload', {
-            title: title,
-            description: videoForm.querySelector('[data-v-description]').value,
-            filename: file.name,
-            size_bytes: file.size,
-            mime_type: file.type || 'application/octet-stream'
-        }).then(function (credentials) {
-            uploadedVideoId = credentials.catalog_video_id;
-            var bar = videoForm.querySelector('[data-v-bar]');
-            var upload = new window.tus.Upload(file, {
-                endpoint: credentials.endpoint,
-                retryDelays: [0, 3000, 5000, 10000, 20000, 60000],
-                headers: {
-                    AuthorizationSignature: credentials.authorization_signature,
-                    AuthorizationExpire: String(credentials.authorization_expire),
-                    VideoId: credentials.video_id,
-                    LibraryId: String(credentials.library_id)
-                },
-                metadata: {filename: file.name, filetype: file.type || 'application/octet-stream', title: title},
-                onError: function () { note.textContent = 'Загрузка прервалась, попробуйте ещё раз.'; },
-                onProgress: function (uploaded, total) {
-                    var value = total ? Math.round(uploaded / total * 100) : 0;
-                    bar.style.width = value + '%';
-                    note.textContent = 'Загружаем: ' + value + '%';
-                },
-                onSuccess: function () {
-                    bar.style.width = '100%';
-                    note.textContent = 'Файл загружен, идёт обработка. Можно сохранять.';
-                    videoForm.querySelector('[data-video-save]').disabled = false;
-                }
-            });
-            upload.start();
-        }).catch(function () {
-            note.textContent = 'Не удалось начать загрузку.';
-        });
-    }
-
     if (videoForm) {
         videoForm.addEventListener('change', function (event) {
-            if (event.target.hasAttribute('data-v-cover')) {
-                var file = event.target.files && event.target.files[0];
-                if (!file) return;
-                uploadImage(file, '/cabinet/staff/program/upload-cover').then(function (result) {
-                    if (!result || !result.ok) { setMessage(videoForm, 'Обложка не загрузилась.', true); return; }
-                    coverImage = {url: result.url, path: result.path};
-                    var holder = videoForm.querySelector('[data-v-coverthumb]');
-                    holder.innerHTML = '';
-                    var img = document.createElement('img');
-                    img.src = result.url;
-                    img.alt = 'Обложка';
-                    holder.appendChild(img);
-                });
-            }
-            if (event.target.hasAttribute('data-v-file')) {
-                var video = event.target.files && event.target.files[0];
-                if (video) startVideoUpload(video);
+            if (event.target.hasAttribute('data-v-pick')) {
+                selectedVideoId = Number(event.target.value);
+                setMessage(videoForm, '', false);
             }
         });
     }
@@ -761,17 +715,15 @@ FORM: Operate.
         var saveVideo = event.target.closest('[data-video-save]');
         if (saveVideo) {
             var audienceVideo = {assign_to_all: true, tag_ids: [], assignee_usernames: ''};
-            if (!uploadedVideoId) {
-                setMessage(videoForm, 'Сначала выберите файл видео.', true);
+            if (!selectedVideoId) {
+                setMessage(videoForm, 'Сначала выберите ролик из списка.', true);
                 return;
             }
             saveVideo.disabled = true;
+            // Название, описание и обложку не шлём: они берутся у ролика в
+            // каталоге, и день не должен переименовывать чужую карточку.
             api('/cabinet/staff/program/' + dayIso + '/video', {
-                catalog_video_id: uploadedVideoId,
-                title: videoForm.querySelector('[data-v-title]').value.trim(),
-                description: videoForm.querySelector('[data-v-description]').value,
-                cover_url: coverImage.url,
-                cover_path: coverImage.path,
+                catalog_video_id: selectedVideoId,
                 subject: videoForm.querySelector('[data-v-subject]').value || null,
                 is_required: videoForm.querySelector('[data-v-required]').checked,
                 audience: audienceVideo

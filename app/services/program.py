@@ -237,6 +237,104 @@ def items_for_day(db: Session, day: date) -> list[TrackerTask]:
     )
 
 
+def video_bindings(db: Session) -> dict[int, dict]:
+    """Где уже занят ролик: `video_id` → чем и на какой день.
+
+    Календарь выбирает видео из общего списка, и один ролик нельзя поставить
+    в два дня: привязка живёт в единственной колонке `LearningVideo.topic_id`,
+    и второй день просто отобрал бы ролик у первого. Поэтому занятые строки
+    показываются занятыми, а сервер отказывает.
+    """
+    bound = (
+        db.query(LearningVideo)
+        .filter(LearningVideo.deleted_at.is_(None), LearningVideo.topic_id.isnot(None))
+        .all()
+    )
+    if not bound:
+        return {}
+    topic_ids = [v.topic_id for v in bound]
+    topics = {
+        t.id: t
+        for t in db.query(LearningTopic).filter(LearningTopic.id.in_(topic_ids)).all()
+    }
+    days = {
+        t.topic_id: msk_date(t.due_at)
+        for t in db.query(TrackerTask)
+        .filter(
+            TrackerTask.topic_id.in_(topic_ids),
+            TrackerTask.kind == ITEM_VIDEO,
+            TrackerTask.deleted_at.is_(None),
+        )
+        .all()
+    }
+    bindings: dict[int, dict] = {}
+    for video in bound:
+        topic = topics.get(video.topic_id)
+        if topic is None:
+            continue
+        day = days.get(video.topic_id)
+        if topic.kind == TOPIC_KIND_PROGRAM_ITEM:
+            # `day` пуст, когда элемент дня удалили: задача помечена
+            # `deleted_at`, а `topic_id` у ролика остался. Такая привязка
+            # ничего не держит, и ролик снова свободен — иначе он выпал бы из
+            # выбора навсегда, ведь снимать тему на странице загрузки больше
+            # нечем.
+            bindings[video.id] = {
+                "kind": TOPIC_KIND_PROGRAM_ITEM,
+                "day": day,
+                "label": (
+                    f"Уже стоит в программе на {day.strftime('%d.%m.%Y')}"
+                    if day
+                    else "Освободился: элемент дня удалили"
+                ),
+            }
+        else:
+            # Тема недели — наследство блока, который убрали со страницы
+            # загрузки. Ставить такой ролик в день можно, но человек должен
+            # видеть, что доступ к нему переедет на аудиторию дня.
+            bindings[video.id] = {
+                "kind": topic.kind,
+                "day": day,
+                "label": f"Сейчас в теме «{topic.title}» – доступ переедет на аудиторию дня",
+            }
+    return bindings
+
+
+def videos_for_picker(db: Session) -> list[dict]:
+    """Общий список роликов для выбора в дне программы.
+
+    Показываем всё, что не удалено, вместе со статусом обработки: ролик,
+    залитый минуту назад, дойдёт до «Готово» сам, и прятать его из выбора
+    значило бы заставлять человека ждать у страницы.
+    """
+    bindings = video_bindings(db)
+    picked = []
+    for video in (
+        db.query(LearningVideo)
+        .filter(LearningVideo.deleted_at.is_(None))
+        .order_by(LearningVideo.created_at.desc())
+        .all()
+    ):
+        binding = bindings.get(video.id)
+        picked.append({
+            "id": video.id,
+            "title": video.title,
+            "description": video.description,
+            "cover_url": video.cover_s3_url,
+            "status": video.status,
+            "is_published": video.is_published,
+            "duration_seconds": video.duration_seconds,
+            # Занят только тот ролик, за которым стоит живая задача дня.
+            "taken": bool(
+                binding
+                and binding["kind"] == TOPIC_KIND_PROGRAM_ITEM
+                and binding["day"]
+            ),
+            "note": binding["label"] if binding else None,
+        })
+    return picked
+
+
 def item_details(db: Session, tasks: list[TrackerTask]) -> dict[int, dict]:
     """Подробности элементов для экрана дня: домашка и ролик.
 

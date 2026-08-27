@@ -256,6 +256,16 @@
     background: var(--ios-red); box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
+/* ── Выбор ролика из каталога ── */
+.ios-prg-day .prg-videopick { border: none; background: var(--ios-grouped-bg); border-radius: 14px; padding: 6px; }
+.ios-prg-day .prg-videopick-item { border-radius: 12px; }
+.ios-prg-day .prg-videopick-item:hover { background: rgba(120,120,128,0.08); }
+.ios-prg-day .prg-videopick-item:has(input:checked) { background: rgba(0,122,255,0.14); }
+.ios-prg-day .prg-videopick-cover { border-radius: 10px; }
+.ios-prg-day .prg-videopick-copy strong { font: 600 14px/1.35 var(--ios-font); color: var(--ios-label); }
+.ios-prg-day .prg-videopick-copy small { color: var(--ios-label-2); font: 400 12px/1.35 var(--ios-font); }
+.ios-prg-day .prg-videopick-note { color: var(--ios-orange); }
+
 /* ── Прогресс загрузки видео ── */
 .ios-prg-day .prg-progress { background: var(--ios-grouped-bg); }
 .ios-prg-day .prg-progress > span { background: var(--ios-blue); transition: width 160ms var(--ios-ease); }

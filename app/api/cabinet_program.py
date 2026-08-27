@@ -23,6 +23,7 @@ from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf, require_csrf_header
 from app.models.audit_log import AuditLog
 from app.models.exam_assignment import ExamAssignment
+from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM
 from app.models.learning_video import LearningVideo
 from app.models.survey import QUESTION_TYPE_LABELS, QUESTION_TYPES
 from app.models.tracker import (
@@ -63,6 +64,8 @@ from app.services.program import (
     parse_day_iso,
     set_item_audience,
     shift_month,
+    video_bindings,
+    videos_for_picker,
 )
 from app.services.survey import (
     create_survey_with_questions,
@@ -190,6 +193,9 @@ def program_day(
             "question_types": [
                 {"value": t, "label": QUESTION_TYPE_LABELS[t]} for t in QUESTION_TYPES
             ],
+            # Ролики в календаре только выбираются: загрузка живёт на своей
+            # вкладке, а один ролик занимает ровно один день (см. video_bindings).
+            "catalog_videos": videos_for_picker(db),
         },
     )
 
@@ -412,10 +418,18 @@ def create_mock_item(
 
 
 class VideoPayload(BaseModel):
+    """Постановка ролика в день. Сам ролик уже лежит в каталоге.
+
+    Название, описание и обложка — необязательные: календарь их больше не
+    показывает и не присылает, они берутся у выбранного ролика. Поля оставлены
+    ради прежних вызовов, и присланное значение по-прежнему переписывает
+    карточку ролика в каталоге.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     catalog_video_id: int = Field(ge=1)
-    title: str = Field(min_length=1, max_length=200)
+    title: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
     cover_url: str | None = Field(default=None, max_length=500)
     cover_path: str | None = Field(default=None, max_length=300)
@@ -425,11 +439,9 @@ class VideoPayload(BaseModel):
 
     @field_validator("title")
     @classmethod
-    def strip_title(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("Title cannot be empty")
-        return value
+    def strip_title(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        return value or None
 
     @field_validator("subject")
     @classmethod
@@ -594,11 +606,11 @@ def create_video_item(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
-    """Видеоматериал в дне: ролик уже создан загрузчиком, здесь его привязка.
+    """Видеоматериал в дне: ролик выбран из каталога, здесь его привязка.
 
-    Файл к этому моменту едет в Bunny напрямую из браузера, а строка каталога
-    создана существующим `/cabinet/admin/videos/create-upload`. Нам остаётся
-    завести служебную тему с аудиторией и поставить элемент в день.
+    Файл заливают на вкладке «Загрузка видео», строку каталога создаёт
+    `/cabinet/admin/videos/create-upload`. Нам остаётся завести служебную тему с
+    аудиторией и поставить элемент в день.
     """
     day = _parse_day(iso)
     _guard_future(day)
@@ -608,8 +620,16 @@ def create_video_item(
     if video is None or video.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Ролик не найден")
 
+    # Один ролик — один день: привязка лежит в единственной колонке
+    # `topic_id`, и постановка занятого ролика отобрала бы его у прежнего дня
+    # вместе с автозакрытием задачи в трекере.
+    binding = video_bindings(db).get(video.id)
+    if binding and binding["kind"] == TOPIC_KIND_PROGRAM_ITEM and binding["day"]:
+        raise HTTPException(status_code=422, detail=binding["label"])
+
+    title = payload.title or video.title
     topic = ensure_item_topic(
-        db, title=f"Видео · {payload.title}", day=day, user_id=user["user_id"]
+        db, title=f"Видео · {title}", day=day, user_id=user["user_id"]
     )
     set_item_audience(
         db,
@@ -618,16 +638,21 @@ def create_video_item(
         tag_ids=tag_ids,
         assignee_ids=assignee_ids,
     )
-    video.title = payload.title
-    video.description = payload.description
     video.topic_id = topic.id
-    video.cover_s3_url = payload.cover_url
-    video.cover_s3_path = payload.cover_path
+    # Карточку ролика переписываем только тем, что реально прислали: календарь
+    # берёт название и обложку из каталога и ничего о них не сообщает.
+    if payload.title:
+        video.title = payload.title
+    if payload.description is not None:
+        video.description = payload.description
+    if payload.cover_url is not None:
+        video.cover_s3_url = payload.cover_url
+        video.cover_s3_path = payload.cover_path
 
     task = create_task(
         db,
-        title=payload.title,
-        description=payload.description,
+        title=title,
+        description=payload.description if payload.description is not None else video.description,
         due_at=day_bounds(day)[0],
         subject=payload.subject,
         topic_id=topic.id,

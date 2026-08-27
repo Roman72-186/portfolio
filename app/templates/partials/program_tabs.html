@@ -1,7 +1,7 @@
 {#
 Общая шапка раздела «Учебные программы».
 
-Дайджест, Цели и Видео раньше были отдельными пунктами меню персонала. Теперь
+Дайджест, Цели и Загрузка видео раньше были отдельными пунктами меню персонала. Теперь
 это вкладки одного раздела: слева календарь программы, за вертикальной чертой —
 справочники, из которых программа собирается. URL-ы остались прежними, чтобы
 не переписывать роутеры и тесты: `/cabinet/staff/program` не может отдать
@@ -21,7 +21,7 @@
        {% if _prg_p.startswith('/cabinet/staff/goals') %}aria-current="page"{% endif %}>Цели</a>
     <a class="prg-tab{% if _prg_p.startswith('/cabinet/admin/videos') %} is-active{% endif %}"
        href="/cabinet/admin/videos"
-       {% if _prg_p.startswith('/cabinet/admin/videos') %}aria-current="page"{% endif %}>Видео</a>
+       {% if _prg_p.startswith('/cabinet/admin/videos') %}aria-current="page"{% endif %}>Загрузка видео</a>
 </nav>
 <style>
 .prg-tabs {
@@ -60,7 +60,7 @@
    иначе он накрывает «Цели» и «Видео». */
 @media (max-width: 767px) {
     .prg-tabs { margin-top: 40px; }
-    /* Ужимаем поля, чтобы четыре вкладки влезли в 360 px без прокрутки. */
+    /* Четыре вкладки в 360 px не влезают («Загрузка видео» длиннее прежнего «Видео») — полоса прокручивается, поля ужаты. */
     .prg-tab { padding: 8px 10px; font-size: 13px; }
     .prg-tabs-sep { margin: 8px 4px; }
 }

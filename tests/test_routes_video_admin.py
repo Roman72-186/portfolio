@@ -1,5 +1,8 @@
+from datetime import datetime, timezone
+
 from app.config import settings
 from app.models.learning_video import LearningVideo
+from app.services.video_topics import get_topic
 
 
 VIDEO_ID = "35ed80ae-8103-4528-a700-3f69ec56957d"
@@ -298,8 +301,12 @@ def test_publish_and_student_catalogue_use_local_source_of_truth(
     assert "Опубликованный урок" not in catalogue.text
 
 
-def test_admin_creates_topic_and_page_renders_it(admin_client, db, monkeypatch):
-    """Заодно покрывает ветку шаблона со списком тем: там форматируется opens_at."""
+def test_admin_creates_and_publishes_topic(admin_client, db, monkeypatch):
+    """Блок «Темы недели» убран со страницы 27.08.2026, маршруты остались.
+
+    Проверяем только их: страница загрузки тем больше не показывает, а
+    служебные темы элементов учебной программы заводит календарь.
+    """
     client, _ = admin_client
     _configure_upload(monkeypatch)
     created = client.post(
@@ -313,14 +320,9 @@ def test_admin_creates_topic_and_page_renders_it(admin_client, db, monkeypatch):
     assert created.status_code == 200
     topic_id = created.json()["topic_id"]
 
-    page = client.get("/cabinet/admin/videos")
-    assert page.status_code == 200
-    assert "Архитектура США" in page.text
-    assert "Черновик" in page.text
-
     published = client.post(f"/cabinet/admin/videos/topics/{topic_id}/publish", json={})
     assert published.status_code == 200
-    assert "Опубликована" in client.get("/cabinet/admin/videos").text
+    assert get_topic(db, topic_id).is_published is True
 
 
 def test_topic_with_attached_lesson_cannot_be_deleted(admin_client, db, monkeypatch):
@@ -385,11 +387,6 @@ def test_topic_response_reports_audience_and_ambiguous_tags(
     assert created.json()["audience_size"] == 1
     assert created.json()["ambiguous_tags"] == ["Р"]
 
-    page = client.get("/cabinet/admin/videos")
-    assert page.status_code == 200
-    assert "Получат доступ: 1" in page.text
-    assert "означают группу и уровень куратора" in page.text
-
 
 def test_topic_for_everyone_reports_full_student_audience(
     admin_client, db, user_factory, monkeypatch
@@ -423,44 +420,12 @@ def test_student_cannot_manage_topics(auth_client):
     assert response.status_code == 403
 
 
-def test_topic_opens_at_is_rendered_in_msk(admin_client, db, monkeypatch):
-    """Список и форма обязаны показывать московское время, а не время сессии БД.
-
-    `opens_at` — `TIMESTAMPTZ`, и Postgres отдаёт его в таймзоне сессии, в
-    контейнере это UTC. Форма же трактует ввод как МСК (`_parse_opens_at`), и
-    рассинхрон делал каждое повторное сохранение темы сдвигом на три часа назад:
-    тема открывалась ученикам раньше объявленного.
-
-    Значение кладём напрямую aware-UTC — так, как его вернул бы Postgres. Прогон
-    через форму ничего бы не доказал: SQLite отбрасывает смещение, и round-trip
-    остаётся зелёным при любой ошибке в приведении.
-    """
-    from datetime import datetime, timezone
-
-    from app.models.learning_topic import LearningTopic
-
-    client, _ = admin_client
-    _configure_upload(monkeypatch)
-    db.add(LearningTopic(
-        title="Тема с точным временем",
-        opens_at=datetime(2026, 8, 10, 7, 0, tzinfo=timezone.utc),
-        assign_to_all=True,
-    ))
-    db.commit()
-
-    page = client.get("/cabinet/admin/videos")
-
-    assert page.status_code == 200
-    assert 'data-opens="2026-08-10T10:00"' in page.text
-    assert "Открыта с 10.08.2026 10:00 МСК" in page.text
-
-
 def test_topic_edit_keeps_named_students(admin_client, db, user_factory, monkeypatch):
     """Правка темы не должна снимать доступ у назначенных поимённо.
 
-    Сохранение переписывает список целиком, поэтому форму обязана предзаполнять
-    страница. Пока она этого не делала, любое изменение названия или даты молча
-    отбирало тему у догоняющих, а в аудите оставалась запись без состава.
+    Сохранение переписывает список целиком: вызов без `assignee_usernames`
+    молча отберёт тему у догоняющих. Форма темы со страницы убрана, но сам
+    маршрут остался, и договор о полном составе в запросе действует.
     """
     from app.services.video_topics import get_assignee_ids
 
@@ -480,9 +445,6 @@ def test_topic_edit_keeps_named_students(admin_client, db, user_factory, monkeyp
     )
     topic_id = created.json()["topic_id"]
     assert created.json()["audience_size"] == 1
-
-    page = client.get("/cabinet/admin/videos")
-    assert 'data-assignees="@catchup"' in page.text
 
     renamed = client.post(
         f"/cabinet/admin/videos/topics/{topic_id}",
@@ -562,6 +524,46 @@ def test_video_topic_change_is_audited(admin_client, db, monkeypatch):
     assert entry is not None
     assert f'"topic_id_before": {topic_id}' in entry.details
     assert '"topic_id_after": null' in entry.details
+
+
+def test_metadata_without_topic_id_keeps_the_binding(admin_client, db, monkeypatch):
+    """Правка названия не должна отвязывать урок от темы.
+
+    Страница загрузки больше не показывает выбор темы и ключ `topic_id` не
+    шлёт. Раньше отсутствующий ключ читался как «открыть всем»: ролик учебной
+    программы терял и адресность, и автозакрытие задачи в трекере.
+    """
+    from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, LearningTopic
+
+    client, _ = admin_client
+    _configure_upload(monkeypatch)
+    topic = LearningTopic(
+        title="Видео · Перспектива",
+        kind=TOPIC_KIND_PROGRAM_ITEM,
+        opens_at=datetime(2026, 8, 24, 0, 0, tzinfo=timezone.utc),
+    )
+    db.add(topic)
+    db.flush()
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id="guid-keep-topic",
+        title="Старое название",
+        status="ready",
+        topic_id=topic.id,
+    )
+    db.add(video)
+    db.commit()
+
+    saved = client.post(
+        f"/cabinet/admin/videos/{video.id}/metadata",
+        json={"title": "Новое название"},
+    )
+
+    assert saved.status_code == 200
+    db.expire_all()
+    video = db.get(LearningVideo, video.id)
+    assert video.title == "Новое название"
+    assert video.topic_id == topic.id
 
 
 def test_completion_uses_server_duration_not_client_claim(

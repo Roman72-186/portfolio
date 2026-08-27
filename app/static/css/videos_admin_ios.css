@@ -6,10 +6,9 @@
    перенесены как есть, поверх — палитра и типографика iOS). Скоуп —
    `.ios-videos-admin`.
 
-   `.vam-topic-form[hidden]` — в старом инлайновом `<style>` не было
-   компаньона `[hidden]{display:none}` при `display:grid` (тот же класс
-   бага, что у `.prg-form`/`.trk-form`) — здесь, раз файл переписывается
-   целиком, сразу с исправлением.
+   Блок «Темы недели» (`.vam-topic*`, `.vam-tag-picker`, `.vt-*`) убран из
+   шаблона 27.08.2026 вместе со своими правилами: страница стала экраном
+   загрузки, адресность задаётся аудиторией элемента учебной программы.
 
    `<details class="vam-edit">` — нативный disclosure, браузер сам скрывает
    `.vam-edit-fields` через UA-правило `details:not([open]) > *`, пока
@@ -139,33 +138,7 @@
     border: none; border-radius: 14px; font: 400 14px/1.4 var(--ios-font);
 }
 
-.ios-videos-admin .vam-topics { margin-bottom: 26px; }
-.ios-videos-admin .vam-topics-head { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.ios-videos-admin .vam-topics-head h2 { margin: 0; font: 700 17px/1.3 var(--ios-font); letter-spacing: -0.2px; color: var(--ios-label); }
 .ios-videos-admin .vam-hint { margin: 0 0 12px; color: var(--ios-label-2); font: 400 13px/1.5 var(--ios-font); }
-.ios-videos-admin .vam-topic-form {
-    display: grid; gap: 14px; padding: 20px; margin-bottom: 14px;
-    background: var(--ios-card-bg); border: none; border-radius: 20px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-.ios-videos-admin .vam-topic-form[hidden] { display: none; }
-.ios-videos-admin .vam-topic-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 10px; }
-.ios-videos-admin .vam-tag-picker {
-    display: flex; flex-wrap: wrap; gap: 8px; max-height: 132px; overflow-y: auto; padding: 0; border: none;
-}
-.ios-videos-admin .vam-tag-picker label {
-    display: inline-flex; align-items: center; gap: 5px; padding: 8px 13px; border-radius: 999px;
-    background: var(--ios-grouped-bg); color: var(--ios-label); font: 600 12px/1 var(--ios-font); cursor: pointer;
-    transition: background 100ms var(--ios-ease), color 100ms var(--ios-ease);
-}
-.ios-videos-admin .vam-tag-picker label:has(input:checked) { background: rgba(0,122,255,0.14); color: var(--ios-blue); }
-.ios-videos-admin .vam-topic-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.ios-videos-admin .vam-topic-row {
-    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start;
-    padding: 16px 18px; background: var(--ios-card-bg); border: none; border-radius: 16px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-.ios-videos-admin .vam-topic-row + .vam-topic-row { margin-top: 10px; }
 
 .ios-videos-admin input[type="checkbox"] {
     appearance: none; -webkit-appearance: none; margin: 0; flex-shrink: 0;
@@ -180,15 +153,25 @@
 }
 .ios-videos-admin input[type="checkbox"]:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 2px; }
 
-/* ── Точечная замена инлайновых style="" ── */
-.ios-videos-admin .vt-all-row { flex-direction: row; align-items: center; gap: 8px; }
-.ios-videos-admin .vt-assignees-field { margin-top: 10px; }
-.ios-videos-admin .vt-actions-row { margin-top: 0; }
+/* ── Обложка урока ── */
+/* Превью выбранной картинки под полем и миниатюра в строке списка: обложка —
+   единственное, что отличает ролики друг от друга в длинном перечне. */
+.ios-videos-admin .vam-cover-thumb:not(:empty) { margin: -4px 0 2px; }
+.ios-videos-admin .vam-cover-thumb img {
+    display: block; width: 160px; height: 90px; object-fit: cover; border-radius: 10px;
+    background: var(--ios-grouped-bg);
+}
+.ios-videos-admin .vam-row-copy { display: flex; gap: 14px; align-items: start; min-width: 0; }
+.ios-videos-admin .vam-row-copy > div { min-width: 0; }
+.ios-videos-admin .vam-row-cover {
+    flex: 0 0 auto; width: 104px; height: 59px; object-fit: cover; border-radius: 8px;
+    background: var(--ios-grouped-bg);
+}
 
 @media (max-width: 760px) {
-    .ios-videos-admin .vam-topic-grid, .ios-videos-admin .vam-topic-row { grid-template-columns: 1fr; }
     .ios-videos-admin .vam-head, .ios-videos-admin .vam-row-main { grid-template-columns: 1fr; display: grid; }
     .ios-videos-admin .vam-upload { grid-template-columns: 1fr; padding: 16px; }
     .ios-videos-admin .vam-edit-fields { grid-template-columns: 1fr; }
     .ios-videos-admin .vam-row-actions { justify-content: flex-start; }
+    .ios-videos-admin .vam-row-cover { width: 80px; height: 45px; }
 }
