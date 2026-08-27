@@ -224,7 +224,11 @@
    27.08.2026) — прокрутка остаётся, стрелки просто альтернативный способ
    поверх неё. */
 .lrn-tabs-row { display: flex; align-items: center; gap: 6px; margin: 0 0 16px; }
-.lrn-tabs-row .lrn-tabs { margin: 0; flex: 1 1 auto; min-width: 0; }
+/* Вертикальный паддинг — запас под подъём + блюр-ореол кнопки при наведении
+   (решение владельца 27.08.2026, ниже .nav-pill-item:hover в .ios-learning);
+   без него `overflow-x: auto` заодно считает overflow-y как auto по спеке и
+   обрезает вылет эффекта сверху/снизу. */
+.lrn-tabs-row .lrn-tabs { margin: 0; flex: 1 1 auto; min-width: 0; padding: 8px 2px; }
 .lrn-tabs {
     display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 4px;
     -webkit-overflow-scrolling: touch;
@@ -645,6 +649,32 @@
     color: var(--ios-label);
     box-shadow: 0 3px 10px rgba(0,0,0,0.16), 0 0 0 2px var(--ios-blue) inset;
     z-index: 1;
+}
+
+/* Наведение мышью (владелец 27.08.2026: «плашка, на которую идёт наведение,
+   должна как бы выдвинуться на передний план, вокруг небольшой блюр») —
+   отдельный от .is-focused канал: работает всегда, даже когда лупа-фокус от
+   стрелок стоит на другой кнопке. `(hover: hover) and (pointer: fine)` —
+   только устройства с настоящим курсором; без этого условия тап по кнопке
+   на телефоне «залипает» в hover-состоянии до следующего тапа в другое
+   место экрана. `::before` даёт мягкое блюр-свечение того же цвета, что и
+   сама кнопка (`background: inherit` копирует её текущий фон — белый в
+   покое, systemBlue у активной), а не готовый градиент — своего нового
+   акцента тут не заводим. */
+@media (hover: hover) and (pointer: fine) {
+    .ios-learning .lrn-tabs .nav-pill-item:hover {
+        transform: translateY(-2px) scale(1.06);
+        z-index: 1;
+    }
+    .ios-learning .lrn-tabs .nav-pill-item:hover::before {
+        content: '';
+        position: absolute; inset: -6px;
+        border-radius: inherit;
+        background: inherit;
+        filter: blur(10px);
+        opacity: 0.55;
+        z-index: -1;
+    }
 }
 
 /* ── Стрелки-переключатели по бокам от .lrn-tabs (решение владельца
