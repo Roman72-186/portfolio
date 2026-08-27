@@ -19,6 +19,12 @@ plans/2026-08-18-apparchi-student-cabinet-and-guest-trial.md, трек B: гос
 Снести после того, как результаты экспортированы (scripts/export_guest_exam_
 results.py) и владелец подтвердил, что данные больше не нужны — отдельной
 alembic-миграцией, не автоматически.
+
+СНОС ЗАБЛОКИРОВАН с 27.08.2026: владелец решает, переносить ли гостевые работы
+в «точку А» ученика при зачислении на годовую программу. До этого решения не
+сносить ни таблицы, ни объекты в S3 (s3_path работы и feedback_image_path) —
+экспорт результатов сохранности работ не заменяет. План —
+plans/2026-08-27-apparchi-guest-to-student-carryover.md.
 """
 from datetime import datetime, timezone
 from decimal import Decimal
