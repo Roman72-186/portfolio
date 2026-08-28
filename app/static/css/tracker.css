@@ -193,18 +193,18 @@
 }
 .lrn-hero p { margin: 0; opacity: 0.85; font-size: 13px; line-height: 1.4; }
 
-/* Переключатель предмета — вспомогательный уровень относительно вкладок
-   недели ниже (решение владельца, разбор созвона 26.08: «рисунок и
-   композиция — это вспомогательная часть, которая просто помогает
-   переключаться между предметами»). Поэтому compact/inline-flex, а не
-   flex:1 на всю ширину — вкладки недели ниже нарочно крупнее. */
+/* Переключатель предмета — базовое (не-iOS) правило, на практике нигде не
+   рендерится: единственный шаблон (`cabinet_learning.html`) всегда несёт
+   класс `.ios-learning`, и растяжка на всю ширину задана там (см. ниже).
+   Оставлено flex:1/width:100%, чтобы совпадать с фактическим поведением,
+   если правило когда-нибудь понадобится без iOS-скоупа. */
 .lrn-subject-toggle {
-    display: inline-flex; gap: 2px; padding: 3px; margin: 0 0 14px;
+    display: flex; width: 100%; gap: 2px; padding: 3px; margin: 0 0 14px;
     background: var(--surface-2); border: 1px solid var(--line);
     border-radius: var(--r-pill);
 }
 .lrn-subject-btn {
-    text-align: center; padding: 6px 12px;
+    flex: 1; text-align: center; padding: 6px 12px;
     font-size: 12px; font-weight: 800; letter-spacing: 0.01em;
     color: var(--muted); cursor: pointer; border: none; background: none;
     border-radius: var(--r-pill); transition: background .15s, color .15s;
@@ -598,17 +598,19 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
-/* ── Переключатель предмета → iOS segmented control, вспомогательный
-   уровень (решение владельца, разбор созвона 26.08) — компактнее вкладок
-   недели ниже, поэтому inline-flex и меньший шрифт/паддинги, а не растяжка
-   на всю ширину. Активная кнопка красится в цвет своего предмета вместо
-   общего systemBlue — тот же принцип, что и в необёрнутом блоке выше. ── */
+/* ── Переключатель предмета → iOS segmented control, растянут на всю
+   ширину экрана (правка владельца 28.08.2026 — отменяет прежнее решение
+   созвона 26.08 держать переключатель компактным). Обе кнопки flex:1,
+   делят ширину поровну. Активная кнопка красится в цвет своего предмета
+   вместо общего systemBlue — тот же принцип, что и в необёрнутом блоке
+   выше. ── */
 .ios-learning .lrn-subject-toggle {
-    display: inline-flex;
+    display: flex; width: 100%;
     background: rgba(118,118,128,0.12);
     border: none; padding: 2px; border-radius: 8px;
 }
 .ios-learning .lrn-subject-btn {
+    flex: 1;
     font: 600 11px var(--ios-font); color: var(--ios-label-2);
     padding: 5px 11px;
     border-radius: 6px;
