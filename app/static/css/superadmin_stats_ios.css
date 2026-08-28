@@ -11,11 +11,6 @@
 .ios-ss {
     --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
     --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
-    --ios-blue: #AF52DE;
-    --ios-green: #34C759;
-    --ios-red: #FF3B30;
-    --ios-orange: #FF9500;
-    --ios-purple: #AF52DE;
     --ios-label: #1C1C1E;
     --ios-label-2: rgba(60,60,67,0.60);
     --ios-label-3: rgba(60,60,67,0.30);

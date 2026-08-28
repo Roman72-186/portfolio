@@ -31,10 +31,6 @@
 
 .ios-cycle {
     --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
-    --ios-blue: #AF52DE;
-    --ios-red: #FF3B30;
-    --ios-orange: #FF9500;
-    --ios-green: #34C759;
     --ios-lime: #8BC34A;
     --ios-label: #1C1C1E;
     --ios-label-2: rgba(60,60,67,0.60);
