@@ -180,7 +180,14 @@ function lrnScrollButtonToCenter(track, btn, animate) {
     var delta = target - start;
     if (Math.abs(delta) < 1) return;
     var startTime = null;
-    var duration = 320;
+    // Длительность от дистанции, а не фикс (владелец 28.08.2026: «проверь
+    // скорость срабатывания анимации перехода») — соседний шаг стрелкой
+    // (~84px, ширина кнопки + gap) раньше ехал те же 320мс, что и дальний
+    // прыжок кликом по вкладке через весь ряд: первое выходило вяло,
+    // второе — рывком на той же формальной длительности. 0.6мс/px, зажато
+    // между 180мс (короткий шаг не должен быть быстрее почти-мгновенного) и
+    // 600мс (даже самый длинный прыжок не должен ощущаться вязким).
+    var duration = Math.min(600, Math.max(180, Math.abs(delta) * 0.6));
     function step(ts) {
         if (startTime === null) startTime = ts;
         var t = Math.min((ts - startTime) / duration, 1);
