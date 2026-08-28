@@ -162,17 +162,47 @@
 </div>
 
 <script>
+function lrnScrollButtonToCenter(track, btn, animate) {
+    // Своя анимация scrollLeft вместо нативного `scrollIntoView({behavior:
+    // 'smooth'})` (владелец 28.08.2026: «не работает» после прошлой правки
+    // со стрелками) — у `scroll-snap-type: x mandatory` на .lrn-tabs есть
+    // известный конфликт с нативным плавным скроллом в части браузеров:
+    // snap «спорит» с анимацией и скролл зависает, не доезжая до цели.
+    // requestAnimationFrame поверх scrollLeft не зависит от этого механизма
+    // вообще — снапу нечего перехватывать, мы сами двигаем позицию.
+    var trackRect = track.getBoundingClientRect();
+    var btnRect = btn.getBoundingClientRect();
+    var target = track.scrollLeft + (btnRect.left + btnRect.width / 2) - (trackRect.left + trackRect.width / 2);
+    var max = track.scrollWidth - track.clientWidth;
+    target = Math.max(0, Math.min(target, max));
+    if (!animate) { track.scrollLeft = target; return; }
+    var start = track.scrollLeft;
+    var delta = target - start;
+    if (Math.abs(delta) < 1) return;
+    var startTime = null;
+    var duration = 320;
+    function step(ts) {
+        if (startTime === null) startTime = ts;
+        var t = Math.min((ts - startTime) / duration, 1);
+        var eased = 1 - Math.pow(1 - t, 3); // easeOutCubic — то же смягчение, что и у остальных iOS-переходов на этом экране
+        track.scrollLeft = start + delta * eased;
+        if (t < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+}
+
 function lrnActivateTab(kind) {
     // Переключатель вкладок недели — восемь пунктов в фиксированном порядке,
     // клиентский показ/скрытие панели, без перезагрузки страницы. Прямой
     // клик по кнопке — «явное нажатие»: открывает панель сразу и скроллит
     // кнопку в центр карусели (та же логика центрирования, что и при
     // свайпе, — её подхватит lrnUpdateCenteredTab по событию scroll).
+    var track = document.querySelector('.lrn-tabs');
     document.querySelectorAll('.lrn-tabs .nav-pill-item').forEach(function (btn) {
         var active = btn.getAttribute('data-tab') === kind;
         btn.classList.toggle('active', active);
         btn.setAttribute('aria-selected', active ? 'true' : 'false');
-        if (active) btn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        if (active && track) lrnScrollButtonToCenter(track, btn, true);
     });
     document.querySelectorAll('.lrn-tabpanel').forEach(function (panel) {
         panel.hidden = panel.getAttribute('data-tabpanel') !== kind;
@@ -198,7 +228,7 @@ function lrnFocusTab(direction) {
     if (current === -1) current = buttons.findIndex(function (b) { return b.classList.contains('active'); });
     if (current === -1) current = 0;
     var next = (current + direction + buttons.length) % buttons.length;
-    buttons[next].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    lrnScrollButtonToCenter(track, buttons[next], true);
 }
 
 function lrnUpdateCenteredTab() {
@@ -269,14 +299,14 @@ function lrnSwitchSubject(btn) {
 })();
 
 // Карусель вкладок недели (владелец 27.08.2026) — при загрузке докручиваем
-// активную кнопку в центр без анимации (behavior: 'auto'), иначе она стоит
-// у левого края, а не там, где .is-centered её ожидает увидеть; дальше
-// scroll и resize держат .is-centered в актуальном состоянии сами.
+// активную кнопку в центр без анимации, иначе она стоит у левого края, а не
+// там, где .is-centered её ожидает увидеть; дальше scroll и resize держат
+// .is-centered в актуальном состоянии сами.
 (function () {
     var track = document.querySelector('.lrn-tabs');
     if (!track) return;
     var activeBtn = track.querySelector('.nav-pill-item.active');
-    if (activeBtn) activeBtn.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
+    if (activeBtn) lrnScrollButtonToCenter(track, activeBtn, false);
     lrnUpdateCenteredTab();
     var ticking = false;
     track.addEventListener('scroll', function () {
