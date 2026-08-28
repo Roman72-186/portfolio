@@ -637,20 +637,14 @@
     box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     transition: background 120ms var(--ios-ease), color 120ms var(--ios-ease), transform 160ms var(--ios-ease), box-shadow 160ms var(--ios-ease), filter 120ms var(--ios-ease);
 }
-/* Нажатие — сначала убирали сжатие в пользу одного только цвета (владелец
-   27.08.2026: «остаётся в том же размере, но меняем цвет»), затем владелец
-   попросил вернуть уменьшение размера обратно, вместе с цветом, а не вместо
-   него («кнопку меняем размер при нажатии на маленький»). Белая/плашечная
-   кнопка темнеет фоном (тот же приём, что `.trk-item:active` у «Личного
-   трекера» выше по файлу) и сжимается; уже открытая синяя — темнеет
-   фильтром (тот же приём, что `.btn-blue:active`) и тоже сжимается.
-
-   `.is-centered` (кнопка, пойманная по центру карусели, ниже по файлу)
-   увеличивает её до scale(1.2) — отдельное правило `.is-centered:active`/
-   `.is-centered.is-pressed` нужно, чтобы нажатие пересиливало это увеличение
-   своей специфичностью (4 класс-уровня против 3 у одного `.is-centered`),
-   а не спорило с ним по порядку в файле: кнопку в центре тоже должно
-   ощутимо сжимать при нажатии, а не только гасить прирост от лупы до 1×.
+/* Нажатие — владелец 28.08.2026 зафиксировал финально: «не меняет размер,
+   а только меняет цвет» (был промежуточный заход с уменьшением scale(0.92),
+   владелец его отменил тем же сообщением, где расписал экран целиком).
+   Белая/плашечная кнопка темнеет фоном (тот же приём, что `.trk-item:active`
+   у «Личного трекера» выше по файлу); уже открытая синяя — темнеет фильтром
+   (тот же приём, что `.btn-blue:active`). Transform здесь не трогаем вообще
+   — размер, если кнопка ещё и `.is-centered` (ниже по файлу), остаётся от
+   неё, спорить не с чем.
 
    `.is-pressed` — тот же эффект от pointerdown/pointerup в
    cabinet_learning.html, не только нативный `:active`: без обработчика
@@ -661,16 +655,10 @@
 .ios-learning .lrn-tabs .nav-pill-item:active:not(.active),
 .ios-learning .lrn-tabs .nav-pill-item.is-pressed:not(.active) {
     background: rgba(120,120,128,0.18);
-    transform: scale(0.92);
-}
-.ios-learning .lrn-tabs .nav-pill-item.is-centered:active:not(.active),
-.ios-learning .lrn-tabs .nav-pill-item.is-centered.is-pressed:not(.active) {
-    transform: scale(0.92);
 }
 .ios-learning .lrn-tabs .nav-pill-item.active:active,
 .ios-learning .lrn-tabs .nav-pill-item.active.is-pressed {
     filter: brightness(0.88);
-    transform: scale(0.92);
 }
 .ios-learning .lrn-tabs .nav-pill-item.active {
     background: var(--ios-blue); color: #fff; box-shadow: 0 2px 8px rgba(0,122,255,0.30);
@@ -684,20 +672,25 @@
 .ios-learning .lrn-tabs .nav-pill-item.is-locked:not(.active) { opacity: 0.42; }
 
 /* Кнопка, пойманная по центру поля прокрутки — при свайпе и при переходе
-   стрелкой одинаково (владелец 27.08.2026, мобильная правка: «при
-   перелистовании ловить кнопку по центру и она должна стать больше и на
-   отдельной полупрозрачной плашке»). `lrnUpdateCenteredTab` в
-   cabinet_learning.html вешает/снимает класс по событию scroll — сам показ
-   декларативный, здесь только стили. `::after` — сама плашка: отдельный
-   полупрозрачный слой позади увеличенной кнопки, не смена её собственного
-   фона. `:not(.active)` — у уже открытой вкладки свой стиль (залита синим),
-   плашку поверх него не показываем, чтобы не спорили друг с другом. */
-.ios-learning .lrn-tabs .nav-pill-item.is-centered:not(.active) {
+   стрелкой одинаково (владелец 27.08.2026: «при перелистовании ловить
+   кнопку по центру и она должна стать больше и на отдельной полупрозрачной
+   плашке»). Владелец 28.08.2026 уточнил: это касается и уже открытой
+   (синей) вкладки тоже — «по умолчанию стоит первая кнопка синяя и она уже
+   должна быть на полупрозрачной плашке и уже синего цвета», без
+   `:not(.active)`. Цвет текста (`.is-centered:not(.active)`) трогаем только
+   у неактивных — у активной он и так белый на синей заливке, менять
+   незачем. `lrnUpdateCenteredTab` в cabinet_learning.html вешает/снимает
+   класс по событию scroll — сам показ декларативный, здесь только стили.
+   `::after` — сама плашка: отдельный полупрозрачный слой позади увеличенной
+   кнопки, не смена её собственного фона. */
+.ios-learning .lrn-tabs .nav-pill-item.is-centered {
     transform: scale(1.2);
-    color: var(--ios-label);
     z-index: 2;
 }
-.ios-learning .lrn-tabs .nav-pill-item.is-centered:not(.active)::after {
+.ios-learning .lrn-tabs .nav-pill-item.is-centered:not(.active) {
+    color: var(--ios-label);
+}
+.ios-learning .lrn-tabs .nav-pill-item.is-centered::after {
     content: '';
     position: absolute; inset: -8px;
     border-radius: 999px;

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=20">
+<link rel="stylesheet" href="/static/css/tracker.css?v=21">
 {% endblock %}
 {% block content %}
 <div class="lrn-page ios-learning">
@@ -65,7 +65,7 @@
                созвона 26.08 полностью убирает элемент, а не гасит его. #}
             <button
                 type="button"
-                class="nav-pill-item{{ ' active' if loop.first }}{{ ' is-locked' if tab.is_locked }}"
+                class="nav-pill-item{{ ' active is-centered' if loop.first }}{{ ' is-locked' if tab.is_locked }}"
                 data-tab="{{ tab.kind }}"
                 role="tab"
                 aria-selected="{{ 'true' if loop.first else 'false' }}"
