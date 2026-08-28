@@ -29,7 +29,7 @@
 .ios-digest, .ios-digest-events, .ios-goals {
     --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
     --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
-    --ios-blue: #007AFF;
+    --ios-blue: #AF52DE;
     --ios-green: #34C759;
     --ios-red: #FF3B30;
     --ios-orange: #FF9500;
@@ -86,7 +86,7 @@
     background: var(--ios-grouped-bg); color: var(--ios-label); border: none;
     border-radius: 999px; font: 600 13px/1 var(--ios-font); padding: 10px 18px;
 }
-.ios-digest .btn-outline:hover, .ios-digest-events .btn-outline:hover, .ios-goals .btn-outline:hover { background: rgba(0,122,255,0.12); color: var(--ios-blue); }
+.ios-digest .btn-outline:hover, .ios-digest-events .btn-outline:hover, .ios-goals .btn-outline:hover { background: rgba(175,82,222,0.12); color: var(--ios-blue); }
 .ios-digest .btn-danger, .ios-digest-events .btn-danger, .ios-goals .btn-danger {
     border-radius: 999px; border: none; color: var(--ios-red);
     background: rgba(255,59,48,0.12); font: 600 12px/1 var(--ios-font); padding: 7px 13px;
@@ -152,7 +152,7 @@
     transition: background 100ms var(--ios-ease), color 100ms var(--ios-ease);
 }
 .ios-digest .trk-tag-picker label:has(input:checked), .ios-goals .trk-tag-picker label:has(input:checked) {
-    background: rgba(0,122,255,0.14); color: var(--ios-blue);
+    background: rgba(175,82,222,0.14); color: var(--ios-blue);
 }
 .ios-digest .trk-tag-picker input, .ios-goals .trk-tag-picker input { width: 15px; height: 15px; }
 
@@ -187,7 +187,7 @@
 }
 .ios-digest .trk-badge--live, .ios-goals .trk-badge--live { background: rgba(52,199,89,0.14); color: #1E9147; }
 .ios-digest .trk-badge--draft, .ios-goals .trk-badge--draft { background: rgba(255,149,0,0.14); color: var(--ios-orange); }
-.ios-digest-events .trk-badge--kind { background: rgba(0,122,255,0.12); color: var(--ios-blue); }
+.ios-digest-events .trk-badge--kind { background: rgba(175,82,222,0.12); color: var(--ios-blue); }
 
 .ios-digest .trk-row-actions, .ios-digest-events .trk-row-actions, .ios-goals .trk-row-actions {
     gap: 8px; margin-top: 4px; padding-top: 12px; border-top: 0.5px solid var(--ios-sep);

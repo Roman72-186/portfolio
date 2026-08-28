@@ -32,7 +32,7 @@
 .ios-prg-cal, .ios-prg-day {
     --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
     --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
-    --ios-blue: #007AFF;
+    --ios-blue: #AF52DE;
     --ios-green: #34C759;
     --ios-red: #FF3B30;
     --ios-orange: #FF9500;
@@ -73,7 +73,7 @@
     transition: background 120ms var(--ios-ease), color 120ms var(--ios-ease);
 }
 .ios-prg-cal .btn-outline:hover, .ios-prg-day .btn-outline:hover {
-    background: rgba(0,122,255,0.12); color: var(--ios-blue);
+    background: rgba(175,82,222,0.12); color: var(--ios-blue);
 }
 
 /* ═══════════════════════════ Вкладки раздела (только календарь) ═══════ */
@@ -98,7 +98,7 @@
     min-width: 36px; min-height: 36px; padding: 0; border-radius: 50%;
     background: var(--ios-grouped-bg); color: var(--ios-blue); font-weight: 700;
 }
-.ios-prg-cal .prg-nav:hover { background: rgba(0,122,255,0.14); }
+.ios-prg-cal .prg-nav:hover { background: rgba(175,82,222,0.14); }
 
 .ios-prg-cal .prg-grid { gap: 5px; }
 .ios-prg-cal .prg-dowhead {
@@ -122,7 +122,7 @@
 
 .ios-prg-cal .prg-dot { font: 700 10px/1 var(--ios-font); min-width: 18px; height: 18px; }
 .ios-prg-cal .prg-dot--mock { color: #fff; background: var(--ios-blue); }
-.ios-prg-cal .prg-dot--video { color: var(--ios-blue); background: rgba(0,122,255,0.16); }
+.ios-prg-cal .prg-dot--video { color: var(--ios-blue); background: rgba(175,82,222,0.16); }
 .ios-prg-cal .prg-dot--homework { color: #b8620a; background: rgba(255,149,0,0.18); }
 .ios-prg-cal .prg-dot--other { color: var(--ios-label-2); background: rgba(60,60,67,0.10); }
 
@@ -149,12 +149,12 @@
 .ios-prg-day .prg-tile:hover { border-color: transparent; box-shadow: 0 4px 14px rgba(0,0,0,0.08); transform: translateY(-1px); }
 .ios-prg-day .prg-tile:active { transform: scale(0.99); }
 .ios-prg-day .prg-tile.is-active {
-    border-color: var(--ios-blue); background: rgba(0,122,255,0.07); box-shadow: none; transform: none;
+    border-color: var(--ios-blue); background: rgba(175,82,222,0.07); box-shadow: none; transform: none;
 }
 .ios-prg-day .prg-tile.is-active .prg-tile-icon { background: var(--ios-blue); color: #fff; }
 .ios-prg-day .prg-tile-icon {
     width: 42px; height: 42px; border-radius: 12px;
-    color: var(--ios-blue); background: rgba(0,122,255,0.12); font-size: 17px;
+    color: var(--ios-blue); background: rgba(175,82,222,0.12); font-size: 17px;
 }
 .ios-prg-day .prg-tile strong { font: 600 14px/1.3 var(--ios-font); color: var(--ios-label); }
 .ios-prg-day .prg-tile small { color: var(--ios-label-2); font: 400 12px/1.4 var(--ios-font); margin-top: 2px; }
@@ -260,7 +260,7 @@
 .ios-prg-day .prg-videopick { border: none; background: var(--ios-grouped-bg); border-radius: 14px; padding: 6px; }
 .ios-prg-day .prg-videopick-item { border-radius: 12px; }
 .ios-prg-day .prg-videopick-item:hover { background: rgba(120,120,128,0.08); }
-.ios-prg-day .prg-videopick-item:has(input:checked) { background: rgba(0,122,255,0.14); }
+.ios-prg-day .prg-videopick-item:has(input:checked) { background: rgba(175,82,222,0.14); }
 .ios-prg-day .prg-videopick-cover { border-radius: 10px; }
 .ios-prg-day .prg-videopick-copy strong { font: 600 14px/1.35 var(--ios-font); color: var(--ios-label); }
 .ios-prg-day .prg-videopick-copy small { color: var(--ios-label-2); font: 400 12px/1.35 var(--ios-font); }
@@ -299,7 +299,7 @@
 .ios-prg-day .prg-item-actions button { min-height: 32px; padding: 7px 12px; font-size: 12px; }
 
 .ios-prg-day .prg-badge {
-    color: var(--ios-blue); background: rgba(0,122,255,0.12);
+    color: var(--ios-blue); background: rgba(175,82,222,0.12);
     font: 700 11px/1 var(--ios-font);
 }
 

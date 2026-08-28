@@ -20,7 +20,7 @@
 
 .ios-personal {
     --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
-    --ios-blue: #007AFF;
+    --ios-blue: #AF52DE;
     --ios-red: #FF3B30;
     --ios-green: #34C759;
     --ios-label: #1C1C1E;
@@ -44,11 +44,11 @@
 
 /* ── Шапка — тот же градиент, что у .lrn-hero/.profile-hero ── */
 .ios-personal .prs-hero {
-    background: linear-gradient(160deg, #0A84FF 0%, #0040DD 100%);
+    background: linear-gradient(160deg, #BF5AF2 0%, #7B1FA2 100%);
     border-radius: 26px;
     padding: 20px 22px 24px;
     margin-bottom: 16px;
-    box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 14px 32px rgba(0,64,221,0.28);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 14px 32px rgba(123,31,162,0.28);
     position: relative;
     overflow: hidden;
 }

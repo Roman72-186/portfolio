@@ -17,7 +17,7 @@
 
 .ios-notifications {
     --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
-    --ios-blue: #007AFF;
+    --ios-blue: #AF52DE;
     --ios-red: #FF3B30;
     --ios-green: #34C759;
     --ios-label: #1C1C1E;
@@ -95,7 +95,7 @@
     transition: box-shadow 0.15s, background 0.15s;
 }
 .ios-notifications .notif-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.08); opacity: 1; }
-.ios-notifications .notif-card.unread { background: rgba(0,122,255,0.06); }
+.ios-notifications .notif-card.unread { background: rgba(175,82,222,0.06); }
 
 .ios-notifications .notif-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; color: var(--ios-label-3); }
 .ios-notifications .notif-card.unread .notif-icon { color: #F59E0B; }

@@ -23,7 +23,7 @@
 
 .ios-survey {
     --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
-    --ios-blue: #007AFF;
+    --ios-blue: #AF52DE;
     --ios-red: #FF3B30;
     --ios-label: #1C1C1E;
     --ios-label-2: rgba(60,60,67,0.60);
@@ -102,7 +102,7 @@
     font: 400 15px/1.4 var(--ios-font); color: var(--ios-label);
     cursor: pointer; transition: background .12s;
 }
-.ios-survey .prg-option label:has(input:checked) { background: rgba(0,122,255,0.10); }
+.ios-survey .prg-option label:has(input:checked) { background: rgba(175,82,222,0.10); }
 .ios-survey .prg-option label span { flex: 1; min-width: 0; }
 
 .ios-survey .prg-option input[type="radio"],

@@ -306,7 +306,7 @@
 .ios-tracker {
     --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
     --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
-    --ios-blue: #007AFF;
+    --ios-blue: #AF52DE;
     --ios-green: #34C759;
     --ios-red: #FF3B30;
     --ios-orange: #FF9500;
@@ -429,7 +429,7 @@
     border-radius: 999px; font: 600 11px/1 var(--ios-font); letter-spacing: 0;
     padding: 3px 9px; min-height: 0;
 }
-.ios-tracker .trk-badge--kind { background: rgba(0,122,255,0.12); color: var(--ios-blue); }
+.ios-tracker .trk-badge--kind { background: rgba(175,82,222,0.12); color: var(--ios-blue); }
 
 /* Цветной маркер вида задачи слева от заголовка — та же палитра, что у
    .trk-dot--* в конструкторе недели, но кружком в строке трекера. */
@@ -489,8 +489,8 @@
 /* «Ближайшая цель» — не список, а отдельная акцентная карточка, как
    виджет «Ближайшее событие» в Календаре/Напоминаниях iOS. */
 .ios-tracker .trk-goal-card {
-    background: linear-gradient(160deg, rgba(0,122,255,0.10), rgba(0,122,255,0.03));
-    border: 1px solid rgba(0,122,255,0.16);
+    background: linear-gradient(160deg, rgba(175,82,222,0.10), rgba(175,82,222,0.03));
+    border: 1px solid rgba(175,82,222,0.16);
     border-radius: 18px; padding: 16px 18px;
     grid-template-columns: 1fr;
 }
@@ -526,7 +526,7 @@
 .ios-learning {
     --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
     --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
-    --ios-blue: #007AFF;
+    --ios-blue: #AF52DE;
     --ios-green: #34C759;
     --ios-red: #FF3B30;
     /* Системный iOS pink — под цвет предмета «Композиция» (решение владельца
@@ -559,11 +559,11 @@
    (название/описание недели, не профиль ученика — владелец 21.08.2026
    решил держать профиль-шапку только на трекере). ── */
 .ios-learning .lrn-hero {
-    background: linear-gradient(160deg, #0A84FF 0%, #0040DD 100%);
+    background: linear-gradient(160deg, #BF5AF2 0%, #7B1FA2 100%);
     border-radius: 26px;
     padding: 20px 22px 24px;
     margin-bottom: 16px;
-    box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 14px 32px rgba(0,64,221,0.28);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 14px 32px rgba(123,31,162,0.28);
     position: relative;
     overflow: hidden;
 }
@@ -617,7 +617,10 @@
     transition: background 150ms var(--ios-ease), color 150ms var(--ios-ease);
 }
 .ios-learning .lrn-subject-btn[data-subject="Рисунок"].active {
-    background: var(--ios-card-bg); color: var(--ios-blue);
+    /* Цвет предмета «Рисунок» (см. комментарий у .lrn-subject-btn выше по
+       файлу), не общий акцент экрана — жёстко blue, не через --ios-blue,
+       который с 28.08.2026 перекрашен в фиолетовый под общий акцент. */
+    background: var(--ios-card-bg); color: #0A84FF;
     box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 0 0 0.5px rgba(0,0,0,0.04);
 }
 .ios-learning .lrn-subject-btn[data-subject="Композиция"].active {
@@ -663,7 +666,7 @@
     filter: brightness(0.88);
 }
 .ios-learning .lrn-tabs .nav-pill-item.active {
-    background: var(--ios-blue); color: #fff; box-shadow: 0 2px 8px rgba(0,122,255,0.30);
+    background: var(--ios-blue); color: #fff; box-shadow: 0 2px 8px rgba(175,82,222,0.30);
 }
 
 /* Кнопка вкладки, запертой последовательностью (`tab.is_locked`) — раньше
@@ -706,7 +709,7 @@
 /* Наведение мышью — владелец 27.08.2026 сначала попросил подъём + блюр
    вокруг, потом передумал в пользу того же принципа, что и у нажатия чуть
    выше: размер не трогаем, вместо этого красим. Синий тон — не новый, тот
-   же `rgba(0,122,255,0.12)`, что уже красит `.trk-badge--kind` в этом же
+   же `rgba(175,82,222,0.12)`, что уже красит `.trk-badge--kind` в этом же
    файле. `(hover: hover) and (pointer: fine)` — только устройства с
    настоящим курсором; без этого условия тап по кнопке на телефоне
    «залипает» в hover-состоянии до следующего тапа в другое место экрана.
@@ -714,7 +717,7 @@
    его тем же тоном не нужно. */
 @media (hover: hover) and (pointer: fine) {
     .ios-learning .lrn-tabs .nav-pill-item:hover:not(.active) {
-        background: rgba(0,122,255,0.12);
+        background: rgba(175,82,222,0.12);
         color: var(--ios-blue);
     }
 }
@@ -767,7 +770,7 @@
     border-radius: 999px; font: 600 11px/1 var(--ios-font); letter-spacing: 0;
     padding: 3px 9px; min-height: 0;
 }
-.ios-learning .trk-badge--kind { background: rgba(0,122,255,0.12); color: var(--ios-blue); }
+.ios-learning .trk-badge--kind { background: rgba(175,82,222,0.12); color: var(--ios-blue); }
 .ios-learning .trk-badge--draft { background: rgba(255,149,0,0.14); color: #B25000; }
 
 .ios-learning .trk-row-actions { align-items: center; gap: 10px; }
@@ -789,7 +792,7 @@
    активной вкладки/CTA на этом экране, а не новый оттенок. */
 .ios-learning .trk-toggle-btn {
     width: 28px; height: 28px; min-height: 28px; padding: 0;
-    border-radius: 50%; border: 2px solid rgba(0,122,255,0.55); background: rgba(0,122,255,0.10);
+    border-radius: 50%; border: 2px solid rgba(175,82,222,0.55); background: rgba(175,82,222,0.10);
     text-indent: -999px; overflow: hidden; white-space: nowrap;
     position: relative; flex-shrink: 0;
     transition: transform 120ms cubic-bezier(0.34, 1.2, 0.64, 1),

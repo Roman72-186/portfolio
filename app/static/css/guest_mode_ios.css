@@ -17,7 +17,7 @@
 .ios-gexam {
     --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
     --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
-    --ios-blue: #007AFF;
+    --ios-blue: #AF52DE;
     --ios-green: #34C759;
     --ios-red: #FF3B30;
     --ios-orange: #FF9500;
@@ -179,7 +179,7 @@
     border-radius: 999px; background: var(--ios-grouped-bg); color: var(--ios-label-2);
     font: 700 13px/1 var(--ios-font); cursor: pointer; font-family: inherit;
 }
-.ios-gexam .gwork-subject-btn.scored { background: rgba(0,122,255,0.12); color: var(--ios-blue); }
+.ios-gexam .gwork-subject-btn.scored { background: rgba(175,82,222,0.12); color: var(--ios-blue); }
 .ios-gexam .gwork-subject-btn.active { background: var(--ios-blue); color: #fff; }
 .ios-gexam .gwork-subject-btn:disabled { opacity: .4; cursor: not-allowed; }
 .ios-gexam .gwork-detail { display: none; margin-top: 4px; }
@@ -223,7 +223,7 @@
 }
 .ios-gexam .gstat-period input[type="date"]:focus {
     outline: none; border-color: var(--ios-blue);
-    box-shadow: 0 0 0 3px rgba(0,122,255,0.15);
+    box-shadow: 0 0 0 3px rgba(175,82,222,0.15);
 }
 .ios-gexam .gstat-period-reset {
     font: 400 13px/1.2 var(--ios-font); color: var(--ios-label-2);

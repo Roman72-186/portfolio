@@ -25,7 +25,7 @@
 .ios-upload-mock,
 .ios-upload-retake {
     --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
-    --ios-blue: #007AFF;
+    --ios-blue: #AF52DE;
     --ios-red: #FF3B30;
     --ios-green: #34C759;
     --ios-orange: #FF9500;
@@ -320,7 +320,7 @@
 
 /* Круг «Промежуточные фото» — синий, визуально отличается от янтарного
    круга «Финальное фото» (обязательное), тот же приём, что был в Spark. */
-.ios-upload-mock .upload-circle.upload-circle--stage { background: rgba(0,122,255,0.12); color: var(--ios-blue); }
+.ios-upload-mock .upload-circle.upload-circle--stage { background: rgba(175,82,222,0.12); color: var(--ios-blue); }
 .ios-upload-mock .upload-drop:hover .upload-circle.upload-circle--stage { background: var(--ios-blue); color: #fff; }
 
 .ios-upload-mock .ios-prep-card {

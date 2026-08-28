@@ -14,7 +14,7 @@
 .ios-su-users, .ios-uc {
     --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
     --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
-    --ios-blue: #007AFF;
+    --ios-blue: #AF52DE;
     --ios-green: #34C759;
     --ios-red: #FF3B30;
     --ios-orange: #FF9500;
@@ -49,7 +49,7 @@
 .ios-su-users .action-btn:active { transform: scale(0.95); }
 .ios-su-users .btn-tags {
     display: inline-flex; align-items: center;
-    background: rgba(0,122,255,0.12); color: var(--ios-blue);
+    background: rgba(175,82,222,0.12); color: var(--ios-blue);
     text-decoration: none; padding: 9px 16px; font-size: 13px;
 }
 .ios-su-users .btn-block { background: rgba(255,59,48,0.12); color: var(--ios-red); }
@@ -111,7 +111,7 @@
 .ios-su-users .creds-panel, .ios-su-users .access-link-panel {
     border-radius: 16px; padding: 14px 16px; margin-bottom: 14px; border: none;
 }
-.ios-su-users .creds-panel { background: rgba(0,122,255,0.07); }
+.ios-su-users .creds-panel { background: rgba(175,82,222,0.07); }
 .ios-su-users .access-link-panel { background: rgba(52,199,89,0.08); }
 .ios-su-users .creds-title { font: 700 14px/1.3 var(--ios-font); color: var(--ios-blue); margin-bottom: 8px; }
 .ios-su-users .access-link-title { font: 700 14px/1.3 var(--ios-font); color: #1E9147; margin-bottom: 8px; }
@@ -129,7 +129,7 @@
     border: none; border-radius: 999px; padding: 6px 12px;
     font: 700 11px/1 var(--ios-font); cursor: pointer;
 }
-.ios-su-users .creds-copy { background: rgba(0,122,255,0.14); color: var(--ios-blue); }
+.ios-su-users .creds-copy { background: rgba(175,82,222,0.14); color: var(--ios-blue); }
 .ios-su-users .access-link-copy { background: rgba(52,199,89,0.16); color: #1E9147; }
 .ios-su-users .creds-note, .ios-su-users .access-link-note {
     font: 400 12px/1.45 var(--ios-font); color: var(--ios-label-2); margin-top: 6px;
@@ -168,7 +168,7 @@
 .ios-su-users .u-meta { font: 400 11px/1.3 var(--ios-font); color: var(--ios-label-2); }
 .ios-su-users .u-role { display: inline-block; padding: 2px 9px; border-radius: 999px; font: 700 11px/1.3 var(--ios-font); }
 .ios-su-users .r1 { background: rgba(52,199,89,0.14); color: #1E9147; }
-.ios-su-users .r2 { background: rgba(0,122,255,0.12); color: var(--ios-blue); }
+.ios-su-users .r2 { background: rgba(175,82,222,0.12); color: var(--ios-blue); }
 .ios-su-users .r3 { background: rgba(255,149,0,0.14); color: var(--ios-orange); }
 .ios-su-users .r4 { background: rgba(175,82,222,0.14); color: var(--ios-purple); }
 .ios-su-users .r5 { background: rgba(255,59,48,0.12); color: var(--ios-red); }
@@ -205,7 +205,7 @@
     font: 700 13px/1 var(--ios-font); color: var(--ios-label); text-decoration: none;
 }
 .ios-su-users .su-page-current {
-    padding: 8px 16px; border-radius: 999px; background: rgba(0,122,255,0.12);
+    padding: 8px 16px; border-radius: 999px; background: rgba(175,82,222,0.12);
     color: var(--ios-blue); font: 700 13px/1 var(--ios-font);
 }
 
@@ -269,7 +269,7 @@
     background: var(--ios-grouped-bg); color: var(--ios-label); border: none;
     border-radius: 999px; font: 600 13px/1 var(--ios-font); padding: 10px 18px;
 }
-.ios-uc .btn-outline:hover { background: rgba(0,122,255,0.12); color: var(--ios-blue); }
+.ios-uc .btn-outline:hover { background: rgba(175,82,222,0.12); color: var(--ios-blue); }
 .ios-uc .btn-blue {
     background: var(--ios-blue); box-shadow: none; border-radius: 999px;
     font: 600 13px/1 var(--ios-font); padding: 10px 18px;
