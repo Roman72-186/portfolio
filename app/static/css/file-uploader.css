@@ -69,7 +69,7 @@
 }
 .fu-card:hover {
   box-shadow: var(--sh-md);
-  border-color: rgba(59,91,255,.18);
+  border-color: rgba(168,85,247,.18);
   transform: translateY(-1px);
 }
 .fu-card-preview {
