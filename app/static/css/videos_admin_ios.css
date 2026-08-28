@@ -98,6 +98,18 @@
 .ios-videos-admin .vam-progress-value { font: 700 13px/1 var(--ios-font); color: var(--ios-label); }
 .ios-videos-admin .vam-message { min-height: 20px; margin: 10px 0 0; color: var(--ios-label-2); font: 400 13px/1.4 var(--ios-font); }
 .ios-videos-admin .vam-message.is-error { color: var(--ios-red); }
+
+/* ── Очередь параллельных загрузок (несколько файлов сразу) ── */
+.ios-videos-admin .vam-upload-queue { display: grid; gap: 10px; margin: 10px 0; }
+.ios-videos-admin .vam-upload-item { display: grid; gap: 8px; padding: 12px; background: var(--ios-card-bg); border-radius: 12px; }
+.ios-videos-admin .vam-upload-item-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.ios-videos-admin .vam-upload-item-name {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: 600 13px/1.3 var(--ios-font); color: var(--ios-label);
+}
+.ios-videos-admin .vam-upload-item-status { flex: 0 0 auto; color: var(--ios-label-2); font: 400 12px/1.3 var(--ios-font); }
+.ios-videos-admin .vam-upload-item-actions { display: flex; gap: 8px; }
+.ios-videos-admin .vam-upload-item-actions button { min-height: 32px; padding: 6px 12px; font-size: 12px; }
 .ios-videos-admin .vam-config-warning {
     padding: 14px 16px; margin-bottom: 18px; color: var(--ios-orange);
     background: rgba(255,149,0,0.12); border-radius: 14px; font: 400 13px/1.5 var(--ios-font);

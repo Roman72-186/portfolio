@@ -8,7 +8,7 @@ FORM: Operate, расширение существующего кабинета 
 #}
 {% block title %}Загрузка видео{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/videos_admin_ios.css?v=3">
+<link rel="stylesheet" href="/static/css/videos_admin_ios.css?v=4">
 {% endblock %}
 {% block content %}
 {% set status_labels = {'uploading':'Загрузка', 'processing':'Обработка', 'ready':'Готово', 'failed':'Ошибка', 'deleting':'Удаление', 'delete_failed':'Ошибка удаления'} %}
@@ -17,7 +17,7 @@ FORM: Operate, расширение существующего кабинета 
     <div class="vam-head">
         <div class="vam-head-copy">
             <h1>Загрузка видео</h1>
-            <p>Название, описание, обложка и файл – и ролик встаёт в общий список ниже. Файл уходит в видеохранилище напрямую из браузера. После обработки проверьте ролик и опубликуйте его для учеников.</p>
+            <p>Название, описание, обложка и файл – и ролик встаёт в общий список ниже. Файл уходит в видеохранилище напрямую из браузера. После обработки проверьте ролик и опубликуйте его для учеников. Можно выбрать сразу несколько файлов – до трёх грузятся одновременно, остальные встают в очередь, а название каждому дадим по имени файла.</p>
         </div>
         <a class="btn-outline" href="/cabinet/videos">Открыть каталог</a>
     </div>
@@ -33,7 +33,7 @@ FORM: Operate, расширение существующего кабинета 
             <h2 id="vam-upload-title">Загрузить новое видео</h2>
             <form id="video-upload-form" class="vam-fields">
                 <label class="vam-field">Название
-                    <input id="video-title" type="text" maxlength="200" required autocomplete="off">
+                    <input id="video-title" type="text" maxlength="200" autocomplete="off">
                 </label>
                 <label class="vam-field">Описание
                     <textarea id="video-description" maxlength="5000" placeholder="Коротко: о чём этот урок"></textarea>
@@ -43,21 +43,19 @@ FORM: Operate, расширение существующего кабинета 
                 </label>
                 <div class="vam-cover-thumb" id="video-cover-thumb"></div>
                 <label class="vam-field">Видеофайл
-                    <input id="video-file" type="file" accept="video/*,.mkv,.ts" required>
+                    <input id="video-file" type="file" accept="video/*,.mkv,.ts" multiple required>
                 </label>
             </form>
-            <p class="vam-file-note">Поддерживаются MP4, MOV, MKV, WebM и другие распространённые форматы. Файл не сохраняется на сервере Apparchi.</p>
+            <p class="vam-file-note">Поддерживаются MP4, MOV, MKV, WebM и другие распространённые форматы. Файл не сохраняется на сервере Apparchi. Выбрали один файл – действуют название, описание и обложка выше; выбрали несколько – название берётся из имени файла, описание и обложку можно добавить позже в списке ниже.</p>
             <div class="vam-actions">
                 <button id="video-upload-start" type="submit" form="video-upload-form" class="btn-blue" {% if not upload_available %}disabled{% endif %}>Начать загрузку</button>
-                <button id="video-upload-pause" type="button" class="btn-outline" hidden>Пауза</button>
             </div>
             <p id="video-upload-message" class="vam-message" aria-live="polite"></p>
         </div>
         <div class="vam-upload-state" aria-live="polite">
-            <strong id="video-upload-state-title">Файл ещё не выбран</strong>
-            <div class="vam-progress" aria-hidden="true"><span id="video-upload-bar"></span></div>
-            <div id="video-upload-percent" class="vam-progress-value">0%</div>
-            <p>Окно можно оставить открытым. При временном разрыве соединения загрузчик попробует продолжить автоматически.</p>
+            <strong id="video-upload-state-title">Активных загрузок нет</strong>
+            <div id="video-upload-queue" class="vam-upload-queue"></div>
+            <p>Окно можно оставить открытым или перейти на другую вкладку кабинета – загрузка идёт в этой вкладке браузера независимо от неё. При временном разрыве соединения загрузчик попробует продолжить автоматически.</p>
         </div>
     </section>
 
@@ -134,23 +132,21 @@ FORM: Operate, расширение существующего кабинета 
     var csrfToken = {{ csrf_token(request)|tojson }};
     var form = document.getElementById('video-upload-form');
     var startButton = document.getElementById('video-upload-start');
-    var pauseButton = document.getElementById('video-upload-pause');
     var message = document.getElementById('video-upload-message');
     var stateTitle = document.getElementById('video-upload-state-title');
-    var bar = document.getElementById('video-upload-bar');
-    var percent = document.getElementById('video-upload-percent');
-    var activeUpload = null;
+    var queueList = document.getElementById('video-upload-queue');
     var coverImage = {url: null, path: null};
     var coverInput = document.getElementById('video-cover');
     // Без Stream API Key кнопка выключена изначально — заливка обложки не
     // имеет права её включить: видео всё равно некуда отправлять.
     var uploadAvailable = {{ (upload_available | default(false)) | tojson }};
-    // Идёт ли прямо сейчас передача файла в Bunny. Отдельно от activeUpload:
-    // объект загрузки живёт и после успеха, а фоновому поллеру важен именно факт
-    // «файл ещё летит» — перезагружать страницу в этот момент нельзя.
-    var uploadInFlight = false;
-    var paused = false;
-    var activeStorageKey = null;
+    // Сколько файлов льётся в Bunny одновременно. Каждый — отдельный
+    // tus.Upload с собственным XHR, ограничение не техническое (мимо VPS),
+    // а чтобы не открывать браузеру произвольное число параллельных потоков
+    // на несколько гигабайт каждый.
+    var MAX_PARALLEL_UPLOADS = 3;
+    var queueItems = [];
+    var nextItemId = 1;
 
     function setMessage(text, isError) {
         message.textContent = text;
@@ -215,16 +211,15 @@ FORM: Operate, расширение существующего кабинета 
         } catch (error) { return null; }
     }
 
-    function rememberUpload(file, credentials) {
-        activeStorageKey = uploadStorageKey(file);
+    function rememberUpload(storageKey, credentials) {
         try {
-            window.localStorage.setItem(activeStorageKey, JSON.stringify({catalog_video_id: credentials.catalog_video_id}));
+            window.localStorage.setItem(storageKey, JSON.stringify({catalog_video_id: credentials.catalog_video_id}));
         } catch (error) {}
     }
 
-    function forgetUpload() {
-        if (!activeStorageKey) return;
-        try { window.localStorage.removeItem(activeStorageKey); } catch (error) {}
+    function forgetUpload(storageKey) {
+        if (!storageKey) return;
+        try { window.localStorage.removeItem(storageKey); } catch (error) {}
     }
 
     function isAdminBusy() {
@@ -235,75 +230,170 @@ FORM: Operate, расширение существующего кабинета 
         return Boolean(titleInput && titleInput.value.trim());
     }
 
-    // `own` отделяет ролик, который главный преподаватель грузит прямо сейчас, от чужих строк,
-    // которые страница опрашивает фоном. Панель загрузчика принадлежит своей
-    // загрузке, а перезагрузка страницы посреди чужой оборвала бы файл на
-    // несколько гигабайт — поэтому фоновый поллер ждёт, пока своя закончится.
-    function pollUntilReady(videoId, attempts, own) {
+    // Держит ли вкладка прямо сейчас File-объект живым: сама передача байтов
+    // (uploading/на паузе) и то, что ещё ждёт свободного слота в очереди
+    // (pending) — всё это переживёт только эта вкладка, перезагрузка страницы
+    // их оборвёт. «processing» сюда не входит: файл уже долетел до Bunny,
+    // кодирование идёт на их стороне и само продолжится после перезагрузки.
+    function hasActiveUploads() {
+        return queueItems.some(function (item) {
+            return item.state === 'pending' || item.state === 'creating' ||
+                item.state === 'uploading' || item.state === 'paused';
+        });
+    }
+
+    function updateSummary() {
+        var visible = queueItems.filter(function (item) { return item.state !== 'done'; });
+        if (!visible.length) { stateTitle.textContent = 'Активных загрузок нет'; return; }
+        var uploading = visible.filter(function (i) { return i.state === 'uploading' || i.state === 'creating'; }).length;
+        var pending = visible.filter(function (i) { return i.state === 'pending'; }).length;
+        var processing = visible.filter(function (i) { return i.state === 'processing'; }).length;
+        var parts = [];
+        if (uploading) parts.push(uploading + ' грузится');
+        if (pending) parts.push(pending + ' в очереди');
+        if (processing) parts.push(processing + ' обрабатывается');
+        stateTitle.textContent = parts.join(', ') || 'Активных загрузок нет';
+    }
+
+    function setItemStatus(item, text) {
+        if (item.statusEl) item.statusEl.textContent = text;
+    }
+
+    function setItemProgress(item, value) {
+        if (item.barEl) item.barEl.style.width = value + '%';
+    }
+
+    function removeItem(item) {
+        queueItems = queueItems.filter(function (i) { return i !== item; });
+        if (item.row && item.row.parentNode) item.row.parentNode.removeChild(item.row);
+        updateSummary();
+        runQueue();
+    }
+
+    function renderItemActions(item) {
+        item.actionsEl.innerHTML = '';
+        function addButton(label, handler) {
+            var button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'btn-outline';
+            button.textContent = label;
+            button.addEventListener('click', handler);
+            item.actionsEl.appendChild(button);
+        }
+        if (item.state === 'pending') {
+            // Видео в Bunny ещё не создано — отменить можно без следа.
+            addButton('Отменить', function () { removeItem(item); });
+        } else if (item.state === 'uploading') {
+            addButton('Пауза', function () {
+                if (!item.tusUpload) return;
+                item.tusUpload.abort();
+                item.state = 'paused';
+                setItemStatus(item, 'На паузе');
+                renderItemActions(item);
+                updateSummary();
+            });
+        } else if (item.state === 'paused') {
+            addButton('Продолжить', function () {
+                item.state = 'uploading';
+                setItemStatus(item, 'Загружаем файл');
+                renderItemActions(item);
+                updateSummary();
+                item.tusUpload.start();
+            });
+        } else if (item.state === 'error') {
+            addButton('Повторить', function () {
+                item.state = 'pending';
+                setItemStatus(item, 'Ожидает очереди…');
+                renderItemActions(item);
+                updateSummary();
+                runQueue();
+            });
+        }
+    }
+
+    function renderItem(item) {
+        var row = document.createElement('div');
+        row.className = 'vam-upload-item';
+        row.innerHTML =
+            '<div class="vam-upload-item-head">' +
+                '<span class="vam-upload-item-name"></span>' +
+                '<span class="vam-upload-item-status"></span>' +
+            '</div>' +
+            '<div class="vam-progress" aria-hidden="true"><span></span></div>' +
+            '<div class="vam-upload-item-actions"></div>';
+        row.querySelector('.vam-upload-item-name').textContent = item.file.name;
+        item.row = row;
+        item.statusEl = row.querySelector('.vam-upload-item-status');
+        item.barEl = row.querySelector('.vam-progress > span');
+        item.actionsEl = row.querySelector('.vam-upload-item-actions');
+        queueList.appendChild(row);
+        renderItemActions(item);
+    }
+
+    function finishItem(item, finalState, text) {
+        item.state = finalState;
+        setItemStatus(item, text);
+        renderItemActions(item);
+        updateSummary();
+        runQueue();
+    }
+
+    // Общий поллер и для «своих» видео (передан item — обновляет его строку в
+    // очереди), и для чужих, подхваченных страницей в статусе processing
+    // (item = null, только следит за перезагрузкой). Перезагружать страницу,
+    // пока в очереди есть хоть одна активная загрузка или человек набирает
+    // следующую, нельзя — иначе оборвётся чужой файл на несколько гигабайт.
+    function pollUntilReady(videoId, attempts, item) {
         if (attempts <= 0) return;
         window.setTimeout(function () {
             api('/cabinet/admin/videos/' + videoId + '/refresh').then(function (data) {
                 var status = data.video && data.video.status;
                 if (status === 'ready' || status === 'failed') {
-                    // Фоновый поллер не имеет права перезагружать страницу, пока
-                    // человек занят: своя загрузка оборвётся, а набранные название
-                    // и описание пропадут без следа.
-                    if (!own && (uploadInFlight || isAdminBusy())) {
-                        pollUntilReady(videoId, attempts - 1, own);
+                    if (hasActiveUploads() || isAdminBusy()) {
+                        pollUntilReady(videoId, attempts - 1, item);
                         return;
                     }
                     window.location.reload();
                     return;
                 }
-                if (own) {
-                    stateTitle.textContent = 'Видео обрабатывается…';
-                    if (data.video && data.video.encode_progress !== null) {
-                        percent.textContent = data.video.encode_progress + '% обработки';
-                    }
+                if (item) {
+                    setItemStatus(item, data.video && data.video.encode_progress !== null
+                        ? data.video.encode_progress + '% обработки'
+                        : 'Видео обрабатывается…');
                 }
-                pollUntilReady(videoId, attempts - 1, own);
-            }).catch(function () { pollUntilReady(videoId, attempts - 1, own); });
+                pollUntilReady(videoId, attempts - 1, item);
+            }).catch(function () { pollUntilReady(videoId, attempts - 1, item); });
         }, 15000);
     }
 
-    if (form) form.addEventListener('submit', function (event) {
-        event.preventDefault();
-        var file = document.getElementById('video-file').files[0];
-        var title = document.getElementById('video-title').value.trim();
-        if (!file || !title) { setMessage('Укажите название и выберите видеофайл.', true); return; }
-        if (!window.tus || !window.tus.Upload) { setMessage('Загрузчик не запустился. Обновите страницу.', true); return; }
+    function startItem(item) {
+        item.state = 'creating';
+        setItemStatus(item, 'Подготавливаем загрузку…');
+        renderItemActions(item);
+        updateSummary();
 
-        startButton.disabled = true;
-        stateTitle.textContent = 'Подготавливаем загрузку…';
-        setMessage('', false);
-        var createPayload = {
-            title: title,
-            description: document.getElementById('video-description').value,
-            cover_url: coverImage.url,
-            cover_path: coverImage.path,
-            filename: file.name,
-            size_bytes: file.size,
-            mime_type: file.type || 'application/octet-stream'
-        };
-        var stored = readStoredUpload(file);
+        var stored = readStoredUpload(item.file);
         var credentialsRequest;
         if (stored && stored.catalog_video_id) {
-            activeStorageKey = uploadStorageKey(file);
+            item.storageKey = uploadStorageKey(item.file);
             credentialsRequest = api('/cabinet/admin/videos/' + stored.catalog_video_id + '/upload-credentials')
                 .then(function (credentials) { credentials.resume_existing = true; return credentials; })
                 .catch(function (error) {
                     if (error.status === 404 || error.status === 409) {
-                        forgetUpload();
-                        return api('/cabinet/admin/videos/create-upload', createPayload);
+                        forgetUpload(item.storageKey);
+                        return api('/cabinet/admin/videos/create-upload', item.createPayload);
                     }
                     throw error;
                 });
         } else {
-            credentialsRequest = api('/cabinet/admin/videos/create-upload', createPayload);
+            credentialsRequest = api('/cabinet/admin/videos/create-upload', item.createPayload);
         }
+
         credentialsRequest.then(function (credentials) {
-            rememberUpload(file, credentials);
-            activeUpload = new window.tus.Upload(file, {
+            item.storageKey = uploadStorageKey(item.file);
+            item.catalogVideoId = credentials.catalog_video_id;
+            rememberUpload(item.storageKey, credentials);
+            item.tusUpload = new window.tus.Upload(item.file, {
                 endpoint: credentials.endpoint,
                 retryDelays: [0, 3000, 5000, 10000, 20000, 60000],
                 removeFingerprintOnSuccess: true,
@@ -322,59 +412,120 @@ FORM: Operate, расширение существующего кабинета 
                     VideoId: credentials.video_id,
                     LibraryId: String(credentials.library_id)
                 },
-                metadata: {filename: file.name, filetype: file.type || 'application/octet-stream', title: title},
+                metadata: {
+                    filename: item.file.name,
+                    filetype: item.file.type || 'application/octet-stream',
+                    title: item.createPayload.title
+                },
                 onError: function () {
-                    uploadInFlight = false;
-                    startButton.disabled = false;
-                    pauseButton.hidden = true;
-                    setMessage('Загрузка прервалась. Попробуйте продолжить тем же файлом.', true);
-                    stateTitle.textContent = 'Загрузка остановлена';
+                    finishItem(item, 'error', 'Загрузка прервалась. Можно повторить тем же файлом.');
                 },
                 onProgress: function (uploaded, total) {
                     var value = total ? Math.round(uploaded / total * 100) : 0;
-                    bar.style.width = value + '%'; percent.textContent = value + '%';
-                    stateTitle.textContent = 'Загружаем файл';
+                    setItemProgress(item, value);
+                    if (item.state === 'uploading') setItemStatus(item, 'Загружаем файл: ' + value + '%');
                 },
                 onSuccess: function () {
-                    uploadInFlight = false;
-                    forgetUpload();
-                    bar.style.width = '100%'; percent.textContent = '100%';
-                    stateTitle.textContent = 'Файл загружен. Началась обработка';
-                    pauseButton.hidden = true;
-                    setMessage('Можно дождаться готовности на этой странице или вернуться позже.', false);
-                    pollUntilReady(credentials.catalog_video_id, 120, true);
+                    forgetUpload(item.storageKey);
+                    setItemProgress(item, 100);
+                    finishItem(item, 'processing', 'Файл загружен. Началась обработка');
+                    pollUntilReady(item.catalogVideoId, 120, item);
                 }
             });
-            pauseButton.hidden = false;
-            uploadInFlight = true;
+            item.state = 'uploading';
+            setItemStatus(item, 'Загружаем файл');
+            renderItemActions(item);
+            updateSummary();
             if (credentials.resume_existing) {
-                activeUpload.findPreviousUploads().then(function (previous) {
-                    if (previous.length) activeUpload.resumeFromPreviousUpload(previous[0]);
-                    activeUpload.start();
+                item.tusUpload.findPreviousUploads().then(function (previous) {
+                    if (previous.length) item.tusUpload.resumeFromPreviousUpload(previous[0]);
+                    item.tusUpload.start();
                 });
             } else {
-                activeUpload.start();
+                item.tusUpload.start();
             }
         }).catch(function (error) {
-            startButton.disabled = false;
-            stateTitle.textContent = 'Не удалось начать загрузку';
+            var text = 'Не удалось создать видео в хранилище.';
             if (error.message === 'upload_not_configured') {
-                setMessage('Stream API Key ещё не добавлен.', true);
+                text = 'Stream API Key ещё не добавлен.';
             } else if (error.message === 'provider_create_uncertain') {
-                setMessage('Хранилище не подтвердило создание. Не повторяйте загрузку сразу: сначала проверьте библиотеку на дубликат.', true);
-            } else {
-                setMessage('Не удалось создать видео в хранилище.', true);
+                text = 'Хранилище не подтвердило создание. Не повторяйте загрузку сразу: сначала проверьте библиотеку на дубликат.';
             }
+            finishItem(item, 'error', text);
         });
-    });
+    }
 
-    if (pauseButton) pauseButton.addEventListener('click', function () {
-        if (!activeUpload) return;
-        if (!paused) {
-            activeUpload.abort(); paused = true; pauseButton.textContent = 'Продолжить'; stateTitle.textContent = 'Загрузка на паузе';
-        } else {
-            activeUpload.start(); paused = false; pauseButton.textContent = 'Пауза'; stateTitle.textContent = 'Продолжаем загрузку';
+    // Заполняет свободные слоты параллельной загрузки из очереди. Вызывается
+    // и после добавления новых файлов, и после того как какой-то слот
+    // освободился (успех, ошибка, отмена) — рекурсивный вызов внутри
+    // добирает сразу несколько слотов, если файлов добавили больше, чем один.
+    function runQueue() {
+        var activeCount = queueItems.filter(function (item) {
+            return item.state === 'creating' || item.state === 'uploading';
+        }).length;
+        if (activeCount >= MAX_PARALLEL_UPLOADS) return;
+        var next = null;
+        for (var i = 0; i < queueItems.length; i += 1) {
+            if (queueItems[i].state === 'pending') { next = queueItems[i]; break; }
         }
+        if (!next) return;
+        startItem(next);
+        runQueue();
+    }
+
+    function deriveTitle(filename) {
+        var index = filename.lastIndexOf('.');
+        var stripped = (index > 0 ? filename.slice(0, index) : filename).trim();
+        return (stripped || filename).slice(0, 200);
+    }
+
+    function enqueueFiles(files, sharedTitle, sharedDescription, sharedCover) {
+        // Один файл — используем то, что человек заполнил в форме (название,
+        // описание, обложка). Несколько сразу — заполнять эти поля на каждый
+        // файл было бы отдельной формой на каждый ролик, поэтому берём
+        // название из имени файла, а описание и обложку оставляем пустыми:
+        // их можно дозаполнить позже через «Изменить» в списке ниже.
+        var isBatch = files.length > 1;
+        Array.prototype.forEach.call(files, function (file) {
+            var item = {
+                id: 'itm-' + (nextItemId += 1),
+                file: file,
+                state: 'pending',
+                createPayload: {
+                    title: isBatch ? deriveTitle(file.name) : sharedTitle,
+                    description: isBatch ? null : sharedDescription,
+                    cover_url: isBatch ? null : sharedCover.url,
+                    cover_path: isBatch ? null : sharedCover.path,
+                    filename: file.name,
+                    size_bytes: file.size,
+                    mime_type: file.type || 'application/octet-stream'
+                }
+            };
+            queueItems.push(item);
+            renderItem(item);
+            setItemStatus(item, 'Ожидает очереди…');
+        });
+        updateSummary();
+        runQueue();
+    }
+
+    if (form) form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        var files = document.getElementById('video-file').files;
+        var title = document.getElementById('video-title').value.trim();
+        if (!files || !files.length) { setMessage('Выберите хотя бы один видеофайл.', true); return; }
+        if (files.length === 1 && !title) { setMessage('Укажите название и выберите видеофайл.', true); return; }
+        if (!window.tus || !window.tus.Upload) { setMessage('Загрузчик не запустился. Обновите страницу.', true); return; }
+
+        setMessage('', false);
+        enqueueFiles(files, title, document.getElementById('video-description').value, coverImage);
+
+        // Форму освобождаем сразу: следующую пачку файлов можно добавлять,
+        // не дожидаясь текущей — очередь хранит нужные данные у себя, полям
+        // формы они больше не нужны.
+        form.reset();
+        coverImage = {url: null, path: null};
+        document.getElementById('video-cover-thumb').innerHTML = '';
     });
 
     document.addEventListener('click', function (event) {
@@ -414,7 +565,7 @@ FORM: Operate, расширение существующего кабинета 
     // uploading ждут файла из чьей-то вкладки: опрашивать их бессмысленно, а
     // брошенная загрузка так и висела бы, дёргая API по 120 раз за каждый заход.
     document.querySelectorAll('[data-status="processing"]').forEach(function (row) {
-        pollUntilReady(row.dataset.videoId, 120, false);
+        pollUntilReady(row.dataset.videoId, 120, null);
     });
 })();
 </script>
