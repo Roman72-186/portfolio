@@ -493,6 +493,12 @@ class VideoPayload(BaseModel):
         value = (value or "").strip()
         return value or None
 
+    @field_validator("description")
+    @classmethod
+    def strip_description(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        return value or None
+
     @field_validator("subject")
     @classmethod
     def validate_subject(cls, value: str | None) -> str | None:
@@ -702,10 +708,14 @@ def create_video_item(
     else:
         video.auto_publish_on_ready = True
     # Карточку ролика переписываем только тем, что реально прислали: календарь
-    # берёт название и обложку из каталога и ничего о них не сообщает.
+    # берёт название и обложку из каталога и ничего о них не сообщает. Ключ
+    # `description` в теле — а не просто «не None» — иначе прислать пустую
+    # строку, чтобы стереть описание, было бы невозможно (`""` после
+    # `strip_description` тоже превращается в `None`, как и «не прислали»).
+    description_provided = "description" in payload.model_fields_set
     if payload.title:
         video.title = payload.title
-    if payload.description is not None:
+    if description_provided:
         video.description = payload.description
     if payload.cover_url is not None:
         video.cover_s3_url = payload.cover_url
@@ -714,7 +724,7 @@ def create_video_item(
     task = create_task(
         db,
         title=title,
-        description=payload.description if payload.description is not None else video.description,
+        description=payload.description if description_provided else video.description,
         due_at=day_bounds(day)[0],
         subject=payload.subject,
         topic_id=topic.id,
@@ -1171,9 +1181,13 @@ def update_video_item(
             new_video.auto_publish_on_ready = True
 
     title = payload.title or new_video.title
+    # Ключ `description` в теле, а не просто «не None» — иначе прислать
+    # пустую строку, чтобы стереть описание, было бы невозможно (`""` после
+    # `strip_description` тоже превращается в `None`, как и «не прислали»).
+    description_provided = "description" in payload.model_fields_set
     if payload.title:
         new_video.title = payload.title
-    if payload.description is not None:
+    if description_provided:
         new_video.description = payload.description
     if payload.cover_url is not None:
         new_video.cover_s3_url = payload.cover_url
@@ -1187,7 +1201,7 @@ def update_video_item(
     update_task(
         task,
         title=title,
-        description=payload.description if payload.description is not None else new_video.description,
+        description=payload.description if description_provided else new_video.description,
         due_at=task.due_at,
         subject=payload.subject,
         assign_to_all=task.assign_to_all,

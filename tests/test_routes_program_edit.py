@@ -209,6 +209,57 @@ def test_video_edit_keeps_same_video_without_taken_conflict(
     assert task.topic_id == video.topic_id
 
 
+def test_video_edit_updates_description_and_can_clear_it(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Название и описание ролика — то же, что указано при загрузке, и их
+    можно менять прямо из дня программы (владелец 29.08.2026, второй заход)."""
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    video = _video(db)
+    video.description = "Старое описание"
+    db.commit()
+
+    client.post(
+        f"{PROGRAM}/{MONDAY}/video",
+        json={"catalog_video_id": video.id, "audience": EVERYONE},
+    )
+    task = db.query(TrackerTask).one()
+
+    # Ключ вовсе не прислан — описание не трогаем.
+    response = client.post(
+        f"{PROGRAM}/items/{task.id}/video",
+        json={"catalog_video_id": video.id, "audience": EVERYONE},
+    )
+    assert response.status_code == 200, response.text
+    db.expire_all()
+    assert db.get(LearningVideo, video.id).description == "Старое описание"
+
+    # Прислали пустую строку — это осознанная очистка (форма всегда шлёт
+    # текущее значение поля, включая пустое).
+    response = client.post(
+        f"{PROGRAM}/items/{task.id}/video",
+        json={"catalog_video_id": video.id, "description": "", "audience": EVERYONE},
+    )
+    assert response.status_code == 200, response.text
+    db.expire_all()
+    assert db.get(LearningVideo, video.id).description is None
+
+
+def test_day_page_video_form_has_title_and_description_fields(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Поля видны на форме дня — редактировать ролик можно, не уходя на
+    вкладку «Загрузка видео» (владелец 29.08.2026, второй заход)."""
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+
+    page = client.get(f"{PROGRAM}/{MONDAY}").text
+
+    assert 'data-v-title' in page
+    assert 'data-v-description' in page
+
+
 def test_video_edit_swaps_to_another_free_video(
     client, db, user_factory, session_factory, monkeypatch
 ):

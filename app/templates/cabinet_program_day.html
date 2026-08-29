@@ -156,8 +156,9 @@ FORM: Operate.
 
     <form class="prg-form" data-form="video" hidden>
         <h2>Видеоматериал на {{ day.day }} число</h2>
-        {# Загрузка живёт на вкладке «Загрузка видео»: здесь ролик только
-           выбирают. Название и обложка приезжают вместе с ним из каталога. #}
+        {# Загрузка живёт на вкладке «Загрузка видео»: здесь ролик выбирают
+           из уже загруженных. Название и описание — то же, что указано при
+           загрузке, — можно поменять сразу тут же (владелец 29.08.2026). #}
         <p class="prg-hint">
             Ролики загружаются на вкладке
             <a href="/cabinet/admin/videos">«Загрузка видео»</a>. Здесь выбираем готовый.
@@ -188,12 +189,18 @@ FORM: Operate.
             Загруженных роликов пока нет. Сначала загрузите видео на вкладке «Загрузка видео».
         </p>
         {% endif %}
+        <label class="prg-field">Название ролика
+            <input type="text" data-v-title maxlength="200" autocomplete="off">
+        </label>
+        <label class="prg-field">Описание ролика, необязательно
+            <textarea data-v-description maxlength="5000"></textarea>
+        </label>
         <div class="prg-quiz" data-quiz-questions-wrap hidden>
             <h3>Мини-опрос после выбранного видео</h3>
+            <p class="prg-hint">Вопросы сохраняются сами по мере того, как вы печатаете.</p>
             <div data-quiz-questions></div>
             <div class="prg-actions">
                 <button type="button" class="btn-outline" data-add-quiz-question>Добавить вопрос</button>
-                <button type="button" class="btn-outline" data-save-quiz-questions>Сохранить вопросы</button>
             </div>
             <p class="prg-message" data-quiz-message></p>
         </div>
@@ -472,7 +479,13 @@ FORM: Operate.
     // возвращает реальные id новых строк, без этого повторное сохранение
     // приняло бы их за новые и удвоило.
     var catalogVideoQuestions = {};
-    ({{ catalog_videos|tojson }}).forEach(function (v) { catalogVideoQuestions[v.id] = v.questions || []; });
+    // Название и описание уже загруженного ролика — чтобы при выборе из
+    // списка подставить их в поля правки, не отдельным походом за данными.
+    var catalogVideoMeta = {};
+    ({{ catalog_videos|tojson }}).forEach(function (v) {
+        catalogVideoQuestions[v.id] = v.questions || [];
+        catalogVideoMeta[v.id] = {title: v.title, description: v.description || ''};
+    });
 
     // Правка вместо удаления-и-пересоздания (владелец 29.08.2026): данные
     // уже стоящих в дне элементов — по task_id, чтобы «Изменить» на карточке
@@ -575,12 +588,69 @@ FORM: Operate.
         return items;
     }
 
+    // Автосохранение вопросов (владелец 29.08.2026: не нужна отдельная кнопка
+    // «Сохранить вопросы» — печатаешь, через паузу само сохраняется).
+    var quizSaveTimer = null;
+
+    function syncQuizQuestionIds(freshQuestions) {
+        // Строки не перерисовываем — только проставляем настоящие id новых
+        // вопросов взамен временных `null`. Полная перерисовка на каждое
+        // автосохранение сбивала бы курсор прямо во время печати.
+        var rows = videoForm.querySelectorAll('[data-quiz-question]');
+        rows.forEach(function (row, index) {
+            var fresh = freshQuestions[index];
+            if (fresh) row.setAttribute('data-quiz-question-id', fresh.id);
+        });
+        catalogVideoQuestions[selectedVideoId] = freshQuestions;
+    }
+
+    function saveQuizQuestionsNow(rerenderAfter) {
+        var quizMessage = videoForm.querySelector('[data-quiz-message]');
+        if (!selectedVideoId) {
+            quizMessage.textContent = 'Сначала выберите ролик из списка.';
+            quizMessage.classList.add('is-error');
+            return;
+        }
+        quizMessage.textContent = 'Сохраняем…';
+        quizMessage.classList.remove('is-error');
+        var savingVideoId = selectedVideoId;
+        api('/cabinet/admin/videos/' + savingVideoId + '/quiz-questions', {
+            quiz_questions: collectQuizQuestions()
+        }).then(function (data) {
+            // Пока запрос шёл, могли успеть выбрать другой ролик — тогда эти
+            // строки в форме уже не про него, применять ответ некуда.
+            if (selectedVideoId !== savingVideoId) return;
+            syncQuizQuestionIds(data.questions);
+            // Перерисовка (сброс нумерации «Вопрос N») только после явного
+            // удаления строки — во время печати она сбила бы курсор.
+            if (rerenderAfter) renderQuizQuestions(selectedVideoId);
+            quizMessage.textContent = 'Вопросы сохранены.';
+        }).catch(function (error) {
+            if (selectedVideoId !== savingVideoId) return;
+            quizMessage.textContent = saveError(error, 'вопросы');
+            quizMessage.classList.add('is-error');
+        });
+    }
+
+    function scheduleQuizSave() {
+        clearTimeout(quizSaveTimer);
+        quizSaveTimer = setTimeout(saveQuizQuestionsNow, 800);
+    }
+
     if (videoForm) {
+        videoForm.addEventListener('input', function (event) {
+            if (event.target.hasAttribute('data-qq-text')) scheduleQuizSave();
+        });
         videoForm.addEventListener('change', function (event) {
             if (event.target.hasAttribute('data-v-pick')) {
                 selectedVideoId = Number(event.target.value);
                 setMessage(videoForm, '', false);
                 renderQuizQuestions(selectedVideoId);
+                var picked = catalogVideoMeta[selectedVideoId];
+                if (picked) {
+                    videoForm.querySelector('[data-v-title]').value = picked.title || '';
+                    videoForm.querySelector('[data-v-description]').value = picked.description || '';
+                }
             }
         });
     }
@@ -746,6 +816,8 @@ FORM: Operate.
         selectedVideoId = null;
         videoForm.querySelectorAll('[data-v-pick]').forEach(function (input) { input.checked = false; });
         videoForm.querySelector('[data-quiz-questions-wrap]').hidden = true;
+        videoForm.querySelector('[data-v-title]').value = '';
+        videoForm.querySelector('[data-v-description]').value = '';
         videoForm.querySelector('[data-v-subject]').value = '';
         videoForm.querySelector('[data-v-required]').checked = true;
         setMessage(videoForm, '', false);
@@ -776,6 +848,8 @@ FORM: Operate.
 
     function openVideoEdit(taskId, data) {
         videoForm.dataset.editingTaskId = String(taskId);
+        videoForm.querySelector('[data-v-title]').value = data.title || '';
+        videoForm.querySelector('[data-v-description]').value = data.description || '';
         videoForm.querySelector('[data-v-subject]').value = data.subject || '';
         videoForm.querySelector('[data-v-required]').checked = data.is_required !== false;
         if (data.catalog_video_id) {
@@ -900,10 +974,14 @@ FORM: Operate.
                 return;
             }
             saveVideo.disabled = true;
-            // Название, описание и обложку не шлём: они берутся у ролика в
-            // каталоге, и день не должен переименовывать чужую карточку.
+            // Название и описание — то же, что указывалось при загрузке
+            // ролика: пустое поле ничего не стирает (сервер не трогает то,
+            // что не прислали непустым), заполненное переписывает карточку
+            // ролика в каталоге (владелец 29.08.2026).
             api(itemUrl('video', videoForm), {
                 catalog_video_id: selectedVideoId,
+                title: videoForm.querySelector('[data-v-title]').value.trim() || null,
+                description: videoForm.querySelector('[data-v-description]').value.trim() || null,
                 subject: videoForm.querySelector('[data-v-subject]').value || null,
                 is_required: videoForm.querySelector('[data-v-required]').checked,
                 audience: audienceVideo
@@ -924,32 +1002,10 @@ FORM: Operate.
         var removeQuizQuestion = event.target.closest('[data-remove-quiz-question]');
         if (removeQuizQuestion) {
             removeQuizQuestion.closest('[data-quiz-question]').remove();
-            return;
-        }
-
-        var saveQuizQuestions = event.target.closest('[data-save-quiz-questions]');
-        if (saveQuizQuestions) {
-            var quizMessage = videoForm.querySelector('[data-quiz-message]');
-            if (!selectedVideoId) {
-                quizMessage.textContent = 'Сначала выберите ролик из списка.';
-                quizMessage.classList.add('is-error');
-                return;
-            }
-            quizMessage.textContent = '';
-            quizMessage.classList.remove('is-error');
-            saveQuizQuestions.disabled = true;
-            api('/cabinet/admin/videos/' + selectedVideoId + '/quiz-questions', {
-                quiz_questions: collectQuizQuestions()
-            }).then(function (data) {
-                saveQuizQuestions.disabled = false;
-                catalogVideoQuestions[selectedVideoId] = data.questions;
-                renderQuizQuestions(selectedVideoId);
-                quizMessage.textContent = 'Вопросы сохранены.';
-            }).catch(function (error) {
-                saveQuizQuestions.disabled = false;
-                quizMessage.textContent = saveError(error, 'вопросы');
-                quizMessage.classList.add('is-error');
-            });
+            // Убрали строку — сохраняем сразу же, без ожидания: это осознанный
+            // клик, а не набор текста, который стоит подождать перед отправкой.
+            clearTimeout(quizSaveTimer);
+            saveQuizQuestionsNow(true);
             return;
         }
 

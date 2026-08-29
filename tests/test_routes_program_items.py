@@ -284,7 +284,9 @@ def test_day_page_embeds_configured_quiz_questions_for_picker(
 ):
     """Владелец 29.08.2026: конструктор вопросов должен появляться прямо там,
     где выбирают ролик на день — форма читает вопросы из JS-данных страницы,
-    без отдельного похода на /cabinet/admin/videos."""
+    без отдельного похода на /cabinet/admin/videos. Кнопки «Сохранить вопросы»
+    больше нет (владелец 29.08.2026, второй заход) — сохраняется по мере
+    печати, см. `data-qq-text`/input-обработчик в скрипте."""
     import json
 
     from app.services.video_quiz import sync_questions
@@ -302,7 +304,7 @@ def test_day_page_embeds_configured_quiz_questions_for_picker(
     # же представлением, а не с сырой кириллицей.
     assert json.dumps("Что было важным?")[1:-1] in page.text
     assert 'data-add-quiz-question' in page.text
-    assert 'data-save-quiz-questions' in page.text
+    assert 'data-save-quiz-questions' not in page.text
 
 
 def test_video_opens_with_its_week_and_only_for_its_audience(
