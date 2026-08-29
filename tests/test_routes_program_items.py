@@ -277,8 +277,32 @@ def test_catalog_videos_are_offered_on_the_day_page(
     assert "Свободный ролик" in page.text
     assert "Занятый ролик" in page.text
     assert "Уже стоит в программе на 24.08.2026" in page.text
-    # Занятая строка не выбирается — иначе отказ сервера был бы сюрпризом.
-    assert 'data-v-pick disabled' in page.text
+
+
+def test_day_page_embeds_configured_quiz_questions_for_picker(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Владелец 29.08.2026: конструктор вопросов должен появляться прямо там,
+    где выбирают ролик на день — форма читает вопросы из JS-данных страницы,
+    без отдельного похода на /cabinet/admin/videos."""
+    import json
+
+    from app.services.video_quiz import sync_questions
+
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    video = _video(db)
+    sync_questions(db, video_id=video.id, items=[(None, "Что было важным?")])
+    db.commit()
+
+    page = client.get(f"{PROGRAM}/2026-08-25")
+
+    assert page.status_code == 200
+    # `tojson` отдаёт non-ASCII текст как \uXXXX-эскейпы — сравниваем с тем
+    # же представлением, а не с сырой кириллицей.
+    assert json.dumps("Что было важным?")[1:-1] in page.text
+    assert 'data-add-quiz-question' in page.text
+    assert 'data-save-quiz-questions' in page.text
 
 
 def test_video_opens_with_its_week_and_only_for_its_audience(

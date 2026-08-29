@@ -14,7 +14,7 @@
 import calendar
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.homework import HomeworkAssignment
 from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, LearningTopic
@@ -311,6 +311,7 @@ def videos_for_picker(db: Session) -> list[dict]:
     picked = []
     for video in (
         db.query(LearningVideo)
+        .options(selectinload(LearningVideo.questions))
         .filter(LearningVideo.deleted_at.is_(None))
         .order_by(LearningVideo.created_at.desc())
         .all()
@@ -331,6 +332,12 @@ def videos_for_picker(db: Session) -> list[dict]:
                 and binding["day"]
             ),
             "note": binding["label"] if binding else None,
+            # Мини-опрос настраивается прямо здесь же (владелец 29.08.2026:
+            # выбрал ролик на день — тут же и вопросы), не только на
+            # /cabinet/admin/videos. Сохраняет отдельная ручка
+            # (video_admin.py::update_video_quiz_questions), эта форма не
+            # знает title/description ролика и не должна их трогать.
+            "questions": [{"id": q.id, "text": q.text} for q in video.questions],
         })
     return picked
 

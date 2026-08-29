@@ -156,6 +156,17 @@ class UpdateVideoMetadata(BaseModel):
         return value or None
 
 
+class UpdateQuizQuestions(BaseModel):
+    """Payload отдельной ручки `/{video_id}/quiz-questions` — та же форма
+    строк, что в `UpdateVideoMetadata.quiz_questions`, но без title/description:
+    конструктор дня программы выбирает уже загруженный ролик и настраивает
+    его вопросы тут же, не открывая страницу «Загрузка видео» и не трогая
+    название ролика."""
+
+    model_config = ConfigDict(extra="forbid")
+    quiz_questions: list[QuizQuestionInput] = Field(max_length=MAX_QUIZ_QUESTIONS)
+
+
 class DeleteVideoConfirmation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     confirmation: str = Field(min_length=1, max_length=200)
@@ -352,6 +363,35 @@ def update_video_metadata(
     )
     db.commit()
     return JSONResponse({"ok": True})
+
+
+@router.post("/{video_id}/quiz-questions", response_class=JSONResponse)
+def update_video_quiz_questions(
+    video_id: int,
+    payload: UpdateQuizQuestions,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Настроить вопросы мини-опроса отдельно от `update_video_metadata` —
+    вызывается из конструктора дня программы, где ролик уже выбран из
+    каталога и его title/description трогать не нужно (в отличие от
+    `UpdateVideoMetadata`, где `title` обязателен)."""
+    video = _get_video_or_404(db, video_id)
+    questions = sync_questions(
+        db,
+        video_id=video.id,
+        items=[(item.id, item.text) for item in payload.quiz_questions],
+    )
+    _audit(db, action="video_quiz_questions_update", user_id=user["user_id"], video=video)
+    db.commit()
+    # Отдаём id новых строк обратно: клиент хранит вопросы в памяти (форма
+    # не перезагружает страницу после сохранения) и следующей правке нужны
+    # настоящие id, а не null — иначе sync_questions примет их за новые
+    # строки и удвоит.
+    return JSONResponse(
+        {"ok": True, "questions": [{"id": q.id, "text": q.text} for q in questions]}
+    )
 
 
 @router.post("/{video_id}/publish", response_class=JSONResponse)

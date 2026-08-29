@@ -9,7 +9,7 @@ FORM: Operate.
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=6">
-<link rel="stylesheet" href="/static/css/program_ios.css?v=3">
+<link rel="stylesheet" href="/static/css/program_ios.css?v=4">
 {% endblock %}
 {% block content %}
 <div class="prg-page ios-prg-day" data-day="{{ day_iso }}">
@@ -188,6 +188,15 @@ FORM: Operate.
             Загруженных роликов пока нет. Сначала загрузите видео на вкладке «Загрузка видео».
         </p>
         {% endif %}
+        <div class="prg-quiz" data-quiz-questions-wrap hidden>
+            <h3>Мини-опрос после выбранного видео</h3>
+            <div data-quiz-questions></div>
+            <div class="prg-actions">
+                <button type="button" class="btn-outline" data-add-quiz-question>Добавить вопрос</button>
+                <button type="button" class="btn-outline" data-save-quiz-questions>Сохранить вопросы</button>
+            </div>
+            <p class="prg-message" data-quiz-message></p>
+        </div>
         <div class="prg-grid2">
             <label class="prg-field">Предмет
                 <select data-v-subject>
@@ -451,6 +460,13 @@ FORM: Operate.
     // Ролик для дня выбирают из каталога — id отмеченной радиокнопки.
     var selectedVideoId = null;
     var questionTypes = {{ question_types|tojson }};
+    // Мини-опрос каждого ролика (владелец 29.08.2026: вопросы настраиваются
+    // тут же, где ролик выбирают на день, а не только на «Загрузке видео»).
+    // Локальная копия обновляется после каждого сохранения — сервер
+    // возвращает реальные id новых строк, без этого повторное сохранение
+    // приняло бы их за новые и удвоило.
+    var catalogVideoQuestions = {};
+    ({{ catalog_videos|tojson }}).forEach(function (v) { catalogVideoQuestions[v.id] = v.questions || []; });
 
     function setMessage(form, text, isError) {
         var box = form.querySelector('[data-form-message]');
@@ -506,11 +522,47 @@ FORM: Operate.
         });
     }
 
+    function quizQuestionRowHTML(number) {
+        return ''
+            + '<div class="prg-ticket" data-quiz-question>'
+            + '  <div class="prg-ticket-head"><strong>Вопрос ' + number + '</strong>'
+            + '    <button type="button" class="btn-outline" data-remove-quiz-question>Убрать</button></div>'
+            + '  <label class="prg-field">Текст вопроса<textarea data-qq-text maxlength="300"></textarea></label>'
+            + '</div>';
+    }
+
+    function renderQuizQuestions(videoId) {
+        var holder = videoForm.querySelector('[data-quiz-questions]');
+        holder.innerHTML = '';
+        (catalogVideoQuestions[videoId] || []).forEach(function (question, index) {
+            holder.insertAdjacentHTML('beforeend', quizQuestionRowHTML(index + 1));
+            var row = holder.lastElementChild;
+            row.setAttribute('data-quiz-question-id', question.id);
+            // Текст ставим через .value, не в собранную HTML-строку — вопрос
+            // мог быть заполнен раньше и содержать `<`/`&`/кавычки.
+            row.querySelector('[data-qq-text]').value = question.text;
+        });
+        videoForm.querySelector('[data-quiz-questions-wrap]').hidden = false;
+        videoForm.querySelector('[data-quiz-message]').textContent = '';
+    }
+
+    function collectQuizQuestions() {
+        var items = [];
+        videoForm.querySelectorAll('[data-quiz-question]').forEach(function (row) {
+            var text = row.querySelector('[data-qq-text]').value.trim();
+            if (!text) return;
+            var idAttr = row.getAttribute('data-quiz-question-id');
+            items.push({id: idAttr ? Number(idAttr) : null, text: text});
+        });
+        return items;
+    }
+
     if (videoForm) {
         videoForm.addEventListener('change', function (event) {
             if (event.target.hasAttribute('data-v-pick')) {
                 selectedVideoId = Number(event.target.value);
                 setMessage(videoForm, '', false);
+                renderQuizQuestions(selectedVideoId);
             }
         });
     }
@@ -730,6 +782,45 @@ FORM: Operate.
             }).then(afterSave).catch(function (error) {
                 saveVideo.disabled = false;
                 setMessage(videoForm, saveError(error, 'видео'), true);
+            });
+            return;
+        }
+
+        var addQuizQuestion = event.target.closest('[data-add-quiz-question]');
+        if (addQuizQuestion) {
+            var quizHolder = videoForm.querySelector('[data-quiz-questions]');
+            quizHolder.insertAdjacentHTML('beforeend', quizQuestionRowHTML(quizHolder.children.length + 1));
+            return;
+        }
+
+        var removeQuizQuestion = event.target.closest('[data-remove-quiz-question]');
+        if (removeQuizQuestion) {
+            removeQuizQuestion.closest('[data-quiz-question]').remove();
+            return;
+        }
+
+        var saveQuizQuestions = event.target.closest('[data-save-quiz-questions]');
+        if (saveQuizQuestions) {
+            var quizMessage = videoForm.querySelector('[data-quiz-message]');
+            if (!selectedVideoId) {
+                quizMessage.textContent = 'Сначала выберите ролик из списка.';
+                quizMessage.classList.add('is-error');
+                return;
+            }
+            quizMessage.textContent = '';
+            quizMessage.classList.remove('is-error');
+            saveQuizQuestions.disabled = true;
+            api('/cabinet/admin/videos/' + selectedVideoId + '/quiz-questions', {
+                quiz_questions: collectQuizQuestions()
+            }).then(function (data) {
+                saveQuizQuestions.disabled = false;
+                catalogVideoQuestions[selectedVideoId] = data.questions;
+                renderQuizQuestions(selectedVideoId);
+                quizMessage.textContent = 'Вопросы сохранены.';
+            }).catch(function (error) {
+                saveQuizQuestions.disabled = false;
+                quizMessage.textContent = saveError(error, 'вопросы');
+                quizMessage.classList.add('is-error');
             });
             return;
         }

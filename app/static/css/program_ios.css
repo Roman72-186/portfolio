@@ -228,6 +228,13 @@
 }
 .ios-prg-day .prg-ticket-head strong { font: 700 13px/1 var(--ios-font); color: var(--ios-label); }
 
+/* ── Мини-опрос выбранного ролика (форма «Видеоматериал», владелец
+   29.08.2026 — конструктор вопросов тут же, где выбирают ролик на день, не
+   только на «Загрузке видео»). Карточки вопроса — те же `.prg-ticket`, что
+   у билетов и вопросов анкеты выше, поэтому своих правил под них не нужно. */
+.ios-prg-day .prg-quiz { margin: 4px 0 0; }
+.ios-prg-day .prg-quiz h3 { margin: 0 0 8px; font: 700 14px/1.3 var(--ios-font); color: var(--ios-label); }
+
 /* ── Варианты анкеты — строка «текст + верный + убрать» ── */
 .ios-prg-day .prg-option { gap: 8px; }
 .ios-prg-day .prg-option input[type="text"] {

@@ -891,3 +891,62 @@ def test_metadata_update_editing_question_by_id_keeps_student_answers(admin_clie
         .one()
     )
     assert get_answers_map(db, response_id=saved.id) == {question_id: "Ответ ученика"}
+
+
+def test_quiz_questions_endpoint_does_not_require_title(admin_client, db):
+    """Отдельная ручка для конструктора дня программы — тот экран не знает
+    title/description ролика и не должен быть обязан их присылать."""
+    client, user = admin_client
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Урок",
+        status="ready",
+    )
+    db.add(video)
+    db.commit()
+
+    response = client.post(
+        f"/cabinet/admin/videos/{video.id}/quiz-questions",
+        json={"quiz_questions": [{"id": None, "text": "Вопрос про свет"}]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    db.refresh(video)
+    assert [q.text for q in video.questions] == ["Вопрос про свет"]
+    # Название ролика не тронуто — ручка про него ничего не знает.
+    assert video.title == "Урок"
+
+
+def test_quiz_questions_endpoint_returns_ids_for_the_next_save(admin_client, db):
+    """Форма дня хранит вопросы в памяти без перезагрузки страницы — вернуть
+    id новых строк обязательно, иначе следующее сохранение примет их за
+    новые и удвоит (см. app/services/video_quiz.py::sync_questions)."""
+    client, user = admin_client
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Урок",
+        status="ready",
+    )
+    db.add(video)
+    db.commit()
+
+    first = client.post(
+        f"/cabinet/admin/videos/{video.id}/quiz-questions",
+        json={"quiz_questions": [{"id": None, "text": "Первый вопрос"}]},
+    )
+    assert first.status_code == 200
+    returned_id = first.json()["questions"][0]["id"]
+
+    second = client.post(
+        f"/cabinet/admin/videos/{video.id}/quiz-questions",
+        json={"quiz_questions": [{"id": returned_id, "text": "Первый вопрос, правка"}]},
+    )
+
+    assert second.status_code == 200
+    db.refresh(video)
+    assert len(video.questions) == 1
+    assert video.questions[0].id == returned_id
+    assert video.questions[0].text == "Первый вопрос, правка"
