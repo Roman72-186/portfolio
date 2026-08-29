@@ -23,7 +23,7 @@ from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf, require_csrf_header
 from app.models.audit_log import AuditLog
 from app.models.exam_assignment import ExamAssignment
-from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM
+from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, LearningTopic
 from app.models.learning_video import LearningVideo
 from app.models.survey import QUESTION_TYPE_LABELS, QUESTION_TYPES
 from app.services.video_catalog import publish_video
@@ -41,6 +41,7 @@ from app.models.tracker import (
     SOURCE_HOMEWORK,
     SOURCE_LEARNING_TOPIC,
     SOURCE_SURVEY,
+    TrackerTask,
 )
 from app.services import s3 as s3_service
 from app.services.exam_tickets import (
@@ -62,6 +63,7 @@ from app.services.program import (
     items_for_day,
     month_days,
     month_marks,
+    msk_date,
     parse_day_iso,
     set_item_audience,
     shift_month,
@@ -78,9 +80,13 @@ from app.services.tracker import (
     create_homework,
     create_task,
     delete_task,
+    get_homework,
     get_task,
+    homework_images,
     resolve_assignees,
     set_homework_images,
+    update_homework,
+    update_task,
 )
 from app.services.tz import today_msk
 from app.services.utils import compress_image
@@ -124,6 +130,41 @@ def _parse_day(raw: str) -> date:
     return day
 
 
+def _edit_payloads(
+    db: DBSession, items: list[TrackerTask], details: dict
+) -> dict[int, dict]:
+    """Данные для предзаполнения формы правки — по одному элементу на карточку.
+
+    Только для видов из `editable_kinds`: пробник и анкета правкой пока не
+    покрыты, им здесь делать нечего.
+    """
+    payloads: dict[int, dict] = {}
+    for item in items:
+        if item.kind not in (
+            ITEM_VIDEO, ITEM_HOMEWORK, ITEM_MATERIAL, ITEM_QUIZ, ITEM_LESSON, ITEM_CHECKLIST,
+        ):
+            continue
+        detail = details.get(item.id, {})
+        payload: dict = {
+            "title": item.title,
+            "description": item.description or "",
+            "subject": item.subject,
+            "is_required": item.is_required,
+        }
+        if item.kind == ITEM_VIDEO and detail.get("video"):
+            payload["catalog_video_id"] = detail["video"].id
+        if item.kind == ITEM_HOMEWORK and detail.get("homework"):
+            hw = detail["homework"]
+            payload["submission_required"] = hw.submission_required
+            payload["max_files"] = hw.max_files
+            payload["images"] = [
+                {"url": img.image_s3_url, "path": img.image_s3_path}
+                for img in homework_images(db, hw.id)
+            ]
+        payloads[item.id] = payload
+    return payloads
+
+
 @router.get("", response_class=HTMLResponse)
 def program_month(
     request: Request,
@@ -163,6 +204,7 @@ def program_day(
     day = _parse_day(iso)
     today = today_msk()
     items = items_for_day(db, day)
+    details = item_details(db, items)
     surveys = list_surveys(db)
     survey_counts = survey_question_counts(db, [s.id for s in surveys])
     return templates.TemplateResponse(
@@ -178,7 +220,14 @@ def program_day(
             "is_past": day < today,
             "month_href": f"/cabinet/staff/program?month={day.year}-{day.month:02d}",
             "items": items,
-            "details": item_details(db, items),
+            "details": details,
+            # Правка вместо удаления-и-пересоздания (владелец 29.08.2026):
+            # пробник и анкету пока не трогаем — билеты и переиспользуемые
+            # шаблоны устроены сложнее, решение по ним отдельное.
+            "editable_kinds": [
+                ITEM_VIDEO, ITEM_HOMEWORK, ITEM_MATERIAL, ITEM_QUIZ, ITEM_LESSON, ITEM_CHECKLIST,
+            ],
+            "edit_payloads": _edit_payloads(db, items, details),
             "kind_labels": ITEM_KIND_LABELS,
             "subjects": MOCK_SUBJECTS,
             # Окно по умолчанию — 11:45–18:30 самого дня, а не «сегодня/завтра»,
@@ -936,6 +985,226 @@ def create_survey_item(
     )
     db.commit()
     return JSONResponse(_audience_reply(db, payload.audience, tag_ids, not_found))
+
+
+def _get_editable_task(db: DBSession, task_id: int, kind: str) -> TrackerTask:
+    """Найти элемент дня для правки: тот же вид, ещё не прошедший день.
+
+    День берём из `task.due_at`, а не из URL — правка идёт по id элемента,
+    и клиентский `iso` здесь не участвует и подделать его нельзя.
+    """
+    task = get_task(db, task_id)
+    if task is None or task.kind != kind:
+        raise HTTPException(status_code=404, detail="Элемент не найден")
+    _guard_future(msk_date(task.due_at))
+    return task
+
+
+def _update_simple_item(
+    task_id: int,
+    kind: str,
+    payload: SimpleItemPayload,
+    user: dict,
+    db: DBSession,
+) -> JSONResponse:
+    task = _get_editable_task(db, task_id, kind)
+
+    if task.topic_id:
+        topic = db.get(LearningTopic, task.topic_id)
+        if topic is not None:
+            topic.title = f"{_SIMPLE_ITEM_TOPIC_PREFIX[kind]} · {payload.title}"[:200]
+
+    update_task(
+        task,
+        title=payload.title,
+        description=payload.description,
+        due_at=task.due_at,
+        subject=payload.subject,
+        assign_to_all=task.assign_to_all,
+        kind=kind,
+        is_required=payload.is_required,
+    )
+    db.add(
+        AuditLog(
+            action=f"program_{kind}_update",
+            performed_by_id=user["user_id"],
+            details=json.dumps({"task_id": task_id}, ensure_ascii=False),
+        )
+    )
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/items/{task_id}/material", response_class=JSONResponse)
+def update_material_item(
+    task_id: int,
+    payload: SimpleItemPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    return _update_simple_item(task_id, ITEM_MATERIAL, payload, user, db)
+
+
+@router.post("/items/{task_id}/quiz", response_class=JSONResponse)
+def update_quiz_item(
+    task_id: int,
+    payload: SimpleItemPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    return _update_simple_item(task_id, ITEM_QUIZ, payload, user, db)
+
+
+@router.post("/items/{task_id}/lesson", response_class=JSONResponse)
+def update_lesson_item(
+    task_id: int,
+    payload: SimpleItemPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    return _update_simple_item(task_id, ITEM_LESSON, payload, user, db)
+
+
+@router.post("/items/{task_id}/checklist", response_class=JSONResponse)
+def update_checklist_item(
+    task_id: int,
+    payload: SimpleItemPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    return _update_simple_item(task_id, ITEM_CHECKLIST, payload, user, db)
+
+
+@router.post("/items/{task_id}/homework", response_class=JSONResponse)
+def update_homework_item(
+    task_id: int,
+    payload: HomeworkItemPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    task = _get_editable_task(db, task_id, ITEM_HOMEWORK)
+    homework = get_homework(db, task.source_id) if task.source_id else None
+    if homework is None:
+        raise HTTPException(status_code=404, detail="Задание не найдено")
+
+    update_homework(
+        homework,
+        title=payload.title,
+        description=payload.description,
+        subject=payload.subject,
+        submission_required=payload.submission_required,
+        max_files=payload.max_files,
+    )
+    set_homework_images(db, homework, payload.images)
+
+    if task.topic_id:
+        topic = db.get(LearningTopic, task.topic_id)
+        if topic is not None:
+            topic.title = f"Самостоятельная · {payload.title}"[:200]
+
+    update_task(
+        task,
+        title=payload.title,
+        description=payload.description,
+        due_at=task.due_at,
+        subject=payload.subject,
+        assign_to_all=task.assign_to_all,
+        kind=ITEM_HOMEWORK,
+        is_required=payload.is_required,
+    )
+    db.add(
+        AuditLog(
+            action="program_homework_update",
+            performed_by_id=user["user_id"],
+            details=json.dumps(
+                {"task_id": task_id, "homework_id": homework.id}, ensure_ascii=False
+            ),
+        )
+    )
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/items/{task_id}/video", response_class=JSONResponse)
+def update_video_item(
+    task_id: int,
+    payload: VideoPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    task = _get_editable_task(db, task_id, ITEM_VIDEO)
+
+    new_video = db.get(LearningVideo, payload.catalog_video_id)
+    if new_video is None or new_video.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Ролик не найден")
+
+    old_video = (
+        db.query(LearningVideo)
+        .filter(
+            LearningVideo.topic_id == task.topic_id,
+            LearningVideo.deleted_at.is_(None),
+        )
+        .first()
+        if task.topic_id
+        else None
+    )
+
+    # Ролик меняем, только если реально выбрали другой — свой же ролик не
+    # конфликт с самим собой, а `video_bindings` без исключения принял бы
+    # его за занятый этим же днём.
+    if old_video is None or new_video.id != old_video.id:
+        binding = video_bindings(db).get(new_video.id)
+        if binding and binding["kind"] == TOPIC_KIND_PROGRAM_ITEM and binding["day"]:
+            raise HTTPException(status_code=422, detail=binding["label"])
+        if old_video is not None:
+            old_video.topic_id = None
+        new_video.topic_id = task.topic_id
+        if new_video.status == "ready":
+            publish_video(new_video, user_id=user["user_id"])
+        else:
+            new_video.auto_publish_on_ready = True
+
+    title = payload.title or new_video.title
+    if payload.title:
+        new_video.title = payload.title
+    if payload.description is not None:
+        new_video.description = payload.description
+    if payload.cover_url is not None:
+        new_video.cover_s3_url = payload.cover_url
+        new_video.cover_s3_path = payload.cover_path
+
+    if task.topic_id:
+        topic = db.get(LearningTopic, task.topic_id)
+        if topic is not None:
+            topic.title = f"Видео · {title}"[:200]
+
+    update_task(
+        task,
+        title=title,
+        description=payload.description if payload.description is not None else new_video.description,
+        due_at=task.due_at,
+        subject=payload.subject,
+        assign_to_all=task.assign_to_all,
+        kind=ITEM_VIDEO,
+        is_required=payload.is_required,
+    )
+    db.add(
+        AuditLog(
+            action="program_video_update",
+            performed_by_id=user["user_id"],
+            details=json.dumps(
+                {"task_id": task_id, "video_id": new_video.id}, ensure_ascii=False
+            ),
+        )
+    )
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 @router.post("/items/{task_id}/delete", response_class=JSONResponse)

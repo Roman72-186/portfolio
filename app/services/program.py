@@ -372,6 +372,7 @@ def item_details(db: Session, tasks: list[TrackerTask]) -> dict[int, dict]:
         # был произвольным (баг, найден при подготовке инлайн-показа на АОП).
         for video in (
             db.query(LearningVideo)
+            .options(selectinload(LearningVideo.questions))
             .filter(
                 LearningVideo.topic_id.in_(topic_ids),
                 LearningVideo.deleted_at.is_(None),

@@ -328,7 +328,10 @@ FORM: Operate.
                 {% if item.description %}<p>{{ item.description }}</p>{% endif %}
                 <div class="prg-meta">
                     {% if item.subject %}<span>{{ item.subject }}</span>{% endif %}
-                    {% if detail.video %}<span>Ролик: {{ detail.video.status }}</span>{% endif %}
+                    {% if detail.video %}
+                    <span>Ролик: {{ detail.video.status }}</span>
+                    <span>Вопросов после видео: {{ detail.video.questions|length }}</span>
+                    {% endif %}
                     {% if detail.homework %}
                     <span>{% if detail.homework.submission_required %}со сдачей работы{% else %}без загрузки файлов{% endif %}</span>
                     {% endif %}
@@ -337,6 +340,9 @@ FORM: Operate.
             </div>
             {% if not is_past %}
             <div class="prg-item-actions">
+                {% if item.kind in editable_kinds %}
+                <button type="button" class="btn-outline" data-item-edit data-item-kind="{{ item.kind }}">Изменить</button>
+                {% endif %}
                 <button type="button" class="btn-danger" data-item-delete>Удалить</button>
             </div>
             {% endif %}
@@ -467,6 +473,18 @@ FORM: Operate.
     // приняло бы их за новые и удвоило.
     var catalogVideoQuestions = {};
     ({{ catalog_videos|tojson }}).forEach(function (v) { catalogVideoQuestions[v.id] = v.questions || []; });
+
+    // Правка вместо удаления-и-пересоздания (владелец 29.08.2026): данные
+    // уже стоящих в дне элементов — по task_id, чтобы «Изменить» на карточке
+    // могло заново открыть ту же форму с текущими значениями.
+    var programEditData = {{ edit_payloads|tojson }};
+
+    function itemUrl(kind, form) {
+        var editingId = form.dataset.editingTaskId;
+        return editingId
+            ? '/cabinet/staff/program/items/' + editingId + '/' + kind
+            : '/cabinet/staff/program/' + dayIso + '/' + kind;
+    }
 
     function setMessage(form, text, isError) {
         var box = form.querySelector('[data-form-message]');
@@ -717,11 +735,121 @@ FORM: Operate.
 
     hideForms();
 
+    // ── Правка вместо удаления-и-пересоздания ────────────────────────────
+    // «Изменить» на карточке открывает ту же форму, что и плитка создания,
+    // предзаполненную текущими значениями. Сохранение идёт по task_id
+    // (itemUrl выше), а не по dayIso — день элемента не меняется.
+    var simpleEditableKinds = ['material', 'quiz', 'lesson', 'checklist'];
+
+    function resetVideoFormForCreate() {
+        delete videoForm.dataset.editingTaskId;
+        selectedVideoId = null;
+        videoForm.querySelectorAll('[data-v-pick]').forEach(function (input) { input.checked = false; });
+        videoForm.querySelector('[data-quiz-questions-wrap]').hidden = true;
+        videoForm.querySelector('[data-v-subject]').value = '';
+        videoForm.querySelector('[data-v-required]').checked = true;
+        setMessage(videoForm, '', false);
+    }
+
+    function resetHomeworkFormForCreate() {
+        delete homeworkForm.dataset.editingTaskId;
+        homeworkForm.querySelector('[data-h-title]').value = '';
+        homeworkForm.querySelector('[data-h-description]').value = '';
+        homeworkForm.querySelector('[data-h-subject]').value = '';
+        homeworkForm.querySelector('[data-h-required]').checked = true;
+        homeworkForm.querySelector('[data-h-files]').value = 1;
+        homeworkForm.querySelector('[data-h-gate-required]').checked = true;
+        homeworkImages = [];
+        renderHomeworkThumbs();
+        setMessage(homeworkForm, '', false);
+    }
+
+    function resetSimpleFormForCreate(kind) {
+        var form = document.querySelector('[data-form="' + kind + '"]');
+        delete form.dataset.editingTaskId;
+        form.querySelector('[data-x-title]').value = '';
+        form.querySelector('[data-x-description]').value = '';
+        form.querySelector('[data-x-subject]').value = '';
+        form.querySelector('[data-x-required]').checked = true;
+        setMessage(form, '', false);
+    }
+
+    function openVideoEdit(taskId, data) {
+        videoForm.dataset.editingTaskId = String(taskId);
+        videoForm.querySelector('[data-v-subject]').value = data.subject || '';
+        videoForm.querySelector('[data-v-required]').checked = data.is_required !== false;
+        if (data.catalog_video_id) {
+            var radio = videoForm.querySelector('[data-v-pick][value="' + data.catalog_video_id + '"]');
+            if (radio) {
+                // Ролик уже стоит в этом же дне — своей же привязкой он не
+                // занят, снимаем «занято», выставленное сервером для чужих дней.
+                radio.disabled = false;
+                var label = radio.closest('.prg-videopick-item');
+                if (label) label.classList.remove('is-taken');
+                radio.checked = true;
+                selectedVideoId = data.catalog_video_id;
+                renderQuizQuestions(selectedVideoId);
+            }
+        }
+        setMessage(videoForm, 'Правка элемента — измените поля и сохраните.', false);
+        showForm('video');
+    }
+
+    function openHomeworkEdit(taskId, data) {
+        homeworkForm.dataset.editingTaskId = String(taskId);
+        homeworkForm.querySelector('[data-h-title]').value = data.title || '';
+        homeworkForm.querySelector('[data-h-description]').value = data.description || '';
+        homeworkForm.querySelector('[data-h-subject]').value = data.subject || '';
+        homeworkForm.querySelector('[data-h-required]').checked = data.submission_required !== false;
+        homeworkForm.querySelector('[data-h-files]').value = data.max_files != null ? data.max_files : 1;
+        homeworkForm.querySelector('[data-h-gate-required]').checked = data.is_required !== false;
+        homeworkImages = (data.images || []).slice();
+        renderHomeworkThumbs();
+        setMessage(homeworkForm, 'Правка элемента — измените поля и сохраните.', false);
+        showForm('homework');
+    }
+
+    function openSimpleEdit(kind, taskId, data) {
+        var form = document.querySelector('[data-form="' + kind + '"]');
+        form.dataset.editingTaskId = String(taskId);
+        form.querySelector('[data-x-title]').value = data.title || '';
+        form.querySelector('[data-x-description]').value = data.description || '';
+        form.querySelector('[data-x-subject]').value = data.subject || '';
+        form.querySelector('[data-x-required]').checked = data.is_required !== false;
+        setMessage(form, 'Правка элемента — измените поля и сохраните.', false);
+        showForm(kind);
+    }
+
     document.addEventListener('click', function (event) {
         var opener = event.target.closest('[data-open-form]');
-        if (opener) { showForm(opener.dataset.openForm); return; }
+        if (opener) {
+            var openKind = opener.dataset.openForm;
+            var openForm = document.querySelector('[data-form="' + openKind + '"]');
+            // Сброс только при выходе из правки: обычное переключение вкладок
+            // при создании не должно стирать уже набранное (см. комментарий выше).
+            if (openForm && openForm.dataset.editingTaskId) {
+                if (openKind === 'video') resetVideoFormForCreate();
+                else if (openKind === 'homework') resetHomeworkFormForCreate();
+                else if (simpleEditableKinds.indexOf(openKind) !== -1) resetSimpleFormForCreate(openKind);
+            }
+            showForm(openKind);
+            return;
+        }
 
         if (event.target.closest('[data-form-cancel]')) { hideForms(); return; }
+
+        var editButton = event.target.closest('[data-item-edit]');
+        if (editButton) {
+            var editRow = editButton.closest('[data-item-id]');
+            var editTaskId = Number(editRow.dataset.itemId);
+            var editKind = editButton.dataset.itemKind;
+            var editData = programEditData[editTaskId];
+            if (!editData) return;
+            if (editKind === 'video') openVideoEdit(editTaskId, editData);
+            else if (editKind === 'homework') openHomeworkEdit(editTaskId, editData);
+            else openSimpleEdit(editKind, editTaskId, editData);
+            return;
+        }
 
         var addTicket = event.target.closest('[data-add-ticket]');
         if (addTicket) {
@@ -774,7 +902,7 @@ FORM: Operate.
             saveVideo.disabled = true;
             // Название, описание и обложку не шлём: они берутся у ролика в
             // каталоге, и день не должен переименовывать чужую карточку.
-            api('/cabinet/staff/program/' + dayIso + '/video', {
+            api(itemUrl('video', videoForm), {
                 catalog_video_id: selectedVideoId,
                 subject: videoForm.querySelector('[data-v-subject]').value || null,
                 is_required: videoForm.querySelector('[data-v-required]').checked,
@@ -831,7 +959,7 @@ FORM: Operate.
             var titleHw = homeworkForm.querySelector('[data-h-title]').value.trim();
             if (!titleHw) { setMessage(homeworkForm, 'Укажите название.', true); return; }
             saveHomework.disabled = true;
-            api('/cabinet/staff/program/' + dayIso + '/homework', {
+            api(itemUrl('homework', homeworkForm), {
                 title: titleHw,
                 description: homeworkForm.querySelector('[data-h-description]').value,
                 subject: homeworkForm.querySelector('[data-h-subject]').value || null,
@@ -855,7 +983,7 @@ FORM: Operate.
             var titleSimple = simpleForm.querySelector('[data-x-title]').value.trim();
             if (!titleSimple) { setMessage(simpleForm, 'Укажите название.', true); return; }
             saveSimple.disabled = true;
-            api('/cabinet/staff/program/' + dayIso + '/' + kind, {
+            api(itemUrl(kind, simpleForm), {
                 title: titleSimple,
                 description: simpleForm.querySelector('[data-x-description]').value,
                 subject: simpleForm.querySelector('[data-x-subject]').value || null,
