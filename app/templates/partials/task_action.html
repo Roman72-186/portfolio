@@ -21,17 +21,44 @@
 Требует в контексте: `entry` (запись из `accessible_task_entries`) и `details`
 (результат `program.py::item_details` — словарь по id задачи). Без `details`
 видео и анкета падают в обычную отметку, как и раньше.
+
+`inline_expand` (передаёт только `cabinet_learning.html`, «Личный трекер»
+продолжает работать по-старому — параметр там не задают): вместо перехода на
+отдельную страницу кнопка раскрывает контент карточки на месте, `<details>`.
+Раскрывается по типам постепенно (решение владельца 29.08.2026, «все карточки
+задач на АОП», реализация поэтапно от риска к риску) — сейчас только видео
+(`partials/inline/video.html`); пробник/домашка/анкета пока остаются ссылкой
+на отдельную страницу и переедут в инлайн следующими шагами.
 #}
 {% set task = entry.task %}
 {% set detail = (details or {}).get(task.id, {}) %}
-{% set video_autocloses = task.kind == 'video' and detail.video %}
 {% set survey_autocloses = task.kind == 'survey' and detail.survey %}
-{% set autocloses = video_autocloses or survey_autocloses or task.kind in ('homework', 'mock_exam') %}
+{# `detail.video` у program.py::item_details — любой прикреплённый ролик,
+   включая черновик (staff-экран дня читает тот же `detail.video.status`).
+   Ученику показываем ссылку/плеер только на готовый — is_published+ready, та
+   же проверка, что у video_catalog.py::list_published_videos/`_video_for_viewer`. #}
+{% set video = detail.video %}
+{% set video_ready = video and video.is_published and video.status == 'ready' %}
+{# Видео закрывается только просмотром — независимо от того, готов ли ролик
+   прямо сейчас (нет темы, нет ролика на неделю, ролик ещё не опубликован).
+   Раньше отсутствие готового видео сбрасывало задачу в общую ветку ниже, и
+   она рисовала кнопку «Отметить» — ровно тот обход в одно нажатие, от
+   которого этот partial существует (см. шапку файла). #}
+{% set autocloses = task.kind == 'video' or survey_autocloses or task.kind in ('homework', 'mock_exam') %}
 
 {% if task.kind == 'mock_exam' %}
 <a class="btn-blue" href="/upload/mock-exam?subject={{ task.subject|urlencode }}">Начать пробник</a>
-{% elif video_autocloses %}
-<a class="btn-blue" href="/cabinet/videos/{{ detail.video.id }}">Смотреть</a>
+{% elif task.kind == 'video' and video_ready and inline_expand %}
+<details class="trk-row-expand" data-task-kind="video">
+    <summary class="btn-blue">Смотреть</summary>
+    <div class="trk-expand-body" data-video-embed-endpoint="/cabinet/videos/{{ video.id }}/embed">
+        {% include "partials/inline/video.html" %}
+    </div>
+</details>
+{% elif task.kind == 'video' and video_ready %}
+<a class="btn-blue" href="/cabinet/videos/{{ video.id }}">Смотреть</a>
+{% elif task.kind == 'video' %}
+<span class="trk-pending-note">Видео скоро появится</span>
 {% elif survey_autocloses %}
 <a class="btn-blue" href="/cabinet/survey/{{ task.id }}">Заполнить анкету</a>
 {% elif task.kind == 'homework' %}

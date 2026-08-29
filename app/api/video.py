@@ -103,8 +103,7 @@ def _player_url_payload(video) -> JSONResponse:
     )
 
 
-def _render_player(
-    request: Request,
+def _player_payload(
     user: dict,
     db: DBSession,
     *,
@@ -112,7 +111,10 @@ def _render_player(
     progress_endpoint: str,
     player_url_endpoint: str,
     quiz_submit_endpoint: str | None = None,
-):
+) -> tuple[dict, bool]:
+    """Данные плеера — общие для страницы `/cabinet/videos/{id}` и инлайн-эндпоинта
+    АОП (`/cabinet/videos/{id}/embed`). Второй элемент — признак ошибки конфигурации
+    Bunny (тот же путь, что раньше возвращал 503 сразу из `_render_player`)."""
     viewer_name = " ".join(
         str(user.get(field) or "").strip()
         for field in ("first_name", "last_name")
@@ -123,15 +125,12 @@ def _render_player(
     viewer_username = str(user.get("tg_username") or "").strip().lstrip("@")
     viewer_phone = str(user.get("phone") or "").strip()
     quiz_questions = get_quiz_questions(video) if quiz_submit_endpoint else []
-    context = {
-        "request": request,
-        "user": user,
+    payload = {
         "video_title": video.title,
         "video_description": getattr(video, "description", None),
         "progress_endpoint": progress_endpoint,
         "player_url_endpoint": player_url_endpoint,
         "player_url_ttl_seconds": settings.bunny_stream_token_ttl_seconds,
-        "back_url": "/cabinet/admin/videos" if user.get("role_rank", 0) >= 4 else "/cabinet/videos",
         "viewer_watermark": {
             "name": viewer_name,
             "username": f"@{viewer_username}" if viewer_username else "Username не указан",
@@ -142,34 +141,63 @@ def _render_player(
         "quiz_answers": None,
     }
     try:
-        context["player_url"] = build_signed_embed_url(
+        payload["player_url"] = build_signed_embed_url(
             video.bunny_video_id, library_id=getattr(video, "bunny_library_id", None)
         )
     except BunnyStreamConfigError as exc:
         logger.error("Bunny Stream playback configuration error: %s", exc)
-        context["player_url"] = None
-        return templates.TemplateResponse("cabinet_video.html", context, status_code=503)
+        payload["player_url"] = None
+        return payload, True
 
     try:
         progress = get_video_progress(db, user_id=user["user_id"], video_id=video.bunny_video_id)
-        context["resume_position_seconds"] = get_resume_position(progress)
-        context["video_already_completed"] = bool(progress and progress.completed_at)
+        payload["resume_position_seconds"] = get_resume_position(progress)
+        payload["video_already_completed"] = bool(progress and progress.completed_at)
     except SQLAlchemyError:
         logger.exception("Video progress read failed for user_id=%s", user["user_id"])
         db.rollback()
-        context["resume_position_seconds"] = 0.0
-        context["video_already_completed"] = False
+        payload["resume_position_seconds"] = 0.0
+        payload["video_already_completed"] = False
 
     if quiz_questions:
         try:
             existing = get_quiz_response(db, video_id=video.id, user_id=user["user_id"])
             if existing is not None:
-                context["quiz_answers"] = [
+                payload["quiz_answers"] = [
                     existing.answer_1 or "", existing.answer_2 or "", existing.answer_3 or "",
                 ][: len(quiz_questions)]
         except SQLAlchemyError:
             logger.exception("Video quiz response read failed for user_id=%s", user["user_id"])
             db.rollback()
+    return payload, False
+
+
+def _render_player(
+    request: Request,
+    user: dict,
+    db: DBSession,
+    *,
+    video,
+    progress_endpoint: str,
+    player_url_endpoint: str,
+    quiz_submit_endpoint: str | None = None,
+):
+    payload, has_error = _player_payload(
+        user,
+        db,
+        video=video,
+        progress_endpoint=progress_endpoint,
+        player_url_endpoint=player_url_endpoint,
+        quiz_submit_endpoint=quiz_submit_endpoint,
+    )
+    context = {
+        "request": request,
+        "user": user,
+        "back_url": "/cabinet/admin/videos" if user.get("role_rank", 0) >= 4 else "/cabinet/videos",
+        **payload,
+    }
+    if has_error:
+        return templates.TemplateResponse("cabinet_video.html", context, status_code=503)
     return templates.TemplateResponse("cabinet_video.html", context)
 
 
@@ -234,6 +262,37 @@ def cabinet_video_by_id(
         player_url_endpoint=f"/cabinet/videos/{video_id}/player-url",
         quiz_submit_endpoint=f"/cabinet/videos/{video_id}/quiz",
     )
+
+
+@router.get("/videos/{video_id}/embed", response_class=JSONResponse)
+def cabinet_video_embed(
+    video_id: int,
+    user: Annotated[dict, Depends(require_learning_content_access)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """JSON-вариант `_render_player` для инлайн-карточки на АОП (без перехода
+    на `/cabinet/videos/{id}`). Та же проверка доступа (`require_learning_content_access`
+    — заворачивает ученика вне группы 403-м с понятным сообщением), тот же
+    `_video_for_viewer`, только без полного рендера страницы."""
+    video = _video_for_viewer(db, catalog_id=video_id, user=user)
+    if video is None:
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+    try:
+        log_video_view(db, user_id=user["user_id"], video_id=video.bunny_video_id)
+    except SQLAlchemyError:
+        logger.exception("Video view log failed for user_id=%s", user["user_id"])
+        db.rollback()
+    payload, has_error = _player_payload(
+        user,
+        db,
+        video=video,
+        progress_endpoint=f"/cabinet/videos/{video_id}/progress",
+        player_url_endpoint=f"/cabinet/videos/{video_id}/player-url",
+        quiz_submit_endpoint=f"/cabinet/videos/{video_id}/quiz",
+    )
+    if has_error:
+        return JSONResponse({"ok": False, "error": "player_unavailable"}, status_code=503)
+    return JSONResponse({"ok": True, **payload})
 
 
 @router.get("/videos/{video_id}/player-url", response_class=JSONResponse)

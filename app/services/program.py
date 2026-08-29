@@ -354,15 +354,25 @@ def item_details(db: Session, tasks: list[TrackerTask]) -> dict[int, dict]:
     topic_ids = [t.topic_id for t in tasks if t.topic_id]
     videos: dict[int, LearningVideo] = {}
     if topic_ids:
+        # Без фильтра по публикации: staff-экран дня (cabinet_program_day.html)
+        # читает этот же `detail.video` для статуса черновика («Ролик:
+        # processing») — отфильтровать неопубликованные здесь означало бы
+        # ослепить staff именно на том, что ему нужно увидеть. Готовность к
+        # просмотру ученику (`is_published`/`status == 'ready'`) проверяет
+        # тот, кто решает, показывать ли ссылку/плеер — task_action.html.
+        # При нескольких видео на одну неделю (TODO.md:295) берём первое по
+        # сортировке каталога, а не последнее из выдачи БД — раньше порядок
+        # был произвольным (баг, найден при подготовке инлайн-показа на АОП).
         for video in (
             db.query(LearningVideo)
             .filter(
                 LearningVideo.topic_id.in_(topic_ids),
                 LearningVideo.deleted_at.is_(None),
             )
+            .order_by(LearningVideo.sort_order.asc(), LearningVideo.created_at.asc())
             .all()
         ):
-            videos[video.topic_id] = video
+            videos.setdefault(video.topic_id, video)
 
     survey_ids = [
         t.source_id for t in tasks if t.source_kind == SOURCE_SURVEY and t.source_id

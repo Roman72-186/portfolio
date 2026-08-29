@@ -828,3 +828,106 @@
 .ios-learning .trk-item {
     animation: ios-learning-rise 380ms var(--ios-ease) both;
 }
+
+/* ── АОП: инлайн-раскрытие карточки задачи (task_action.html, inline_expand,
+   решение владельца 29.08.2026) — контент задания разворачивается под кнопкой,
+   без перехода на отдельную страницу. `<details>` — тот же паттерн disclosure,
+   что уже есть в cabinet_tracker.html/admin-экранах, своего JS на
+   открытие/закрытие не требует. */
+.trk-row-expand { width: 100%; }
+.trk-row-expand > summary {
+    display: inline-flex; align-items: center; gap: 8px;
+    list-style: none; cursor: pointer;
+}
+.trk-row-expand > summary::-webkit-details-marker { display: none; }
+.trk-row-expand > summary::after {
+    content: '▾'; font-size: 11px; transition: transform var(--duration-fast) var(--ease-out);
+}
+.trk-row-expand[open] > summary::after { transform: rotate(180deg); }
+.trk-expand-body { margin-top: 12px; }
+
+/* Открытая панель живёт внутри `.trk-row-actions` — `auto`-колонка
+   `.trk-row { grid-template-columns: minmax(0, 1fr) auto }`. Без этого
+   правила её ширина (до 640px у видео) раздувает `auto`-колонку и на
+   десктопе сжимает текст задачи в узкую первую колонку. Решение — та же
+   раскладка в один столбец, что уже стоит на мобильном брейкпоинте, только
+   по факту открытой панели, а не по ширине экрана. */
+.trk-row:has(.trk-row-expand[open]) { grid-template-columns: 1fr; }
+.trk-row:has(.trk-row-expand[open]) .trk-row-actions { justify-content: flex-start; }
+
+.trk-pending-note { color: var(--muted); font-size: 13px; }
+
+/* Инлайн-видео — тот же плеер, что на /cabinet/videos/{id}
+   (cabinet_video.html), встроенный в карточку. Не `.ios-video` из
+   video_ios.css: тот скоуп несёт полноэкранный fixed-фон и разметку
+   отдельной страницы (back-link/page-header), которых здесь нет и не
+   должно быть — сюда перенесена только нужная часть его правил. */
+.lrn-inline-video { max-width: 640px; }
+.lrn-inline-video .video-shell {
+    overflow: hidden; background: #0f121c; border: none;
+    border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.14);
+}
+.lrn-inline-video .video-frame {
+    position: relative; width: 100%; aspect-ratio: 16 / 9; background: #0f121c;
+}
+.lrn-inline-video .video-frame:fullscreen,
+.lrn-inline-video .video-frame:-webkit-full-screen {
+    width: 100vw; height: 100vh; aspect-ratio: auto; background: #0f121c;
+}
+html.has-video-pseudo-fullscreen,
+body.has-video-pseudo-fullscreen { overflow: hidden; overscroll-behavior: none; }
+.lrn-inline-video .video-frame.is-pseudo-fullscreen {
+    position: fixed; inset: 0; z-index: 10000;
+    width: 100vw; height: 100vh; height: 100dvh;
+    max-width: none; aspect-ratio: auto; background: #0f121c;
+}
+.lrn-inline-video .video-frame iframe {
+    position: absolute; inset: 0; z-index: 2;
+    width: 100%; height: 100%; border: 0;
+    opacity: 0; transition: opacity var(--duration-base) var(--ease-out);
+}
+.lrn-inline-video .video-frame.is-ready iframe { opacity: 1; }
+.lrn-inline-video .video-watermark {
+    position: absolute; inset: 0; z-index: 3; overflow: hidden;
+    pointer-events: none; user-select: none;
+}
+.lrn-inline-video .video-watermark-copy {
+    position: absolute; right: 16px; bottom: 64px; width: min(76%, 310px);
+    color: rgba(255, 255, 255, .58); font-size: clamp(10px, 1.35vw, 13px);
+    font-weight: 600; line-height: 1.45; text-align: right;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .85), 0 0 1px rgba(0, 0, 0, .9), 1px 1px 0 rgba(0, 0, 0, .35);
+    transform: rotate(-8deg); transform-origin: right bottom;
+}
+.lrn-inline-video .video-watermark-copy.is-orbiting {
+    top: 0; left: 0; right: auto; bottom: auto; will-change: transform;
+}
+.lrn-inline-video .video-watermark-copy span { display: block; }
+.lrn-inline-video .video-fullscreen-button {
+    position: absolute; right: 8px; bottom: 8px; z-index: 4;
+    display: grid; width: 40px; height: 40px; padding: 0; place-items: center;
+    border: none; border-radius: 50%;
+    background: rgba(28,28,30,.55);
+    backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%);
+    color: #fff; font: inherit; font-size: 18px; line-height: 1; cursor: pointer;
+    transition: background-color 100ms ease-out, transform 100ms ease-out;
+}
+.lrn-inline-video .video-fullscreen-button:hover { background: rgba(28,28,30,.72); }
+.lrn-inline-video .video-fullscreen-button:active { transform: scale(.90); }
+.lrn-inline-video .video-fullscreen-button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.lrn-inline-video .video-frame.is-pseudo-fullscreen .video-fullscreen-button {
+    right: max(8px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom));
+}
+.lrn-inline-video .video-loading {
+    position: absolute; inset: 0; z-index: 1; display: grid; place-items: center;
+    color: rgba(255,255,255,.72); font-size: 13px;
+}
+.lrn-inline-video .video-frame.is-ready .video-loading { display: none; }
+.lrn-inline-video .video-progress-status {
+    min-height: 20px; margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.5;
+}
+.lrn-inline-video .video-progress-status.is-error { color: var(--error); }
+.lrn-inline-video .card { margin-top: 14px; padding: 16px 18px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .lrn-inline-video .video-fullscreen-button { transition: none; }
+}

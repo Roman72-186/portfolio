@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=23">
+<link rel="stylesheet" href="/static/css/tracker.css?v=24">
 {% endblock %}
 {% block content %}
 <div class="lrn-page ios-learning">
@@ -143,6 +143,7 @@
                         </div>
                     </div>
                     <div class="trk-row-actions">
+                        {% set inline_expand = true %}
                         {% include "partials/task_action.html" %}
                     </div>
                 </div>
@@ -162,6 +163,8 @@
 </div>
 
 <script>
+var csrfToken = {{ csrf_token(request)|tojson }};
+
 function lrnScrollButtonToCenter(track, btn, animate) {
     // Своя анимация scrollLeft вместо нативного `scrollIntoView({behavior:
     // 'smooth'})` (владелец 28.08.2026: «не работает» после прошлой правки
@@ -367,7 +370,6 @@ function lrnUpdateTabBadge(kind) {
     // Тот же обработчик, что у «Личного трекера» (cabinet_tracker.html) —
     // отметка «сделано» ведёт на общий эндпоинт /cabinet/tracker/tasks/{id}/toggle
     // независимо от того, с какого экрана её вызвали.
-    var csrfToken = {{ csrf_token(request)|tojson }};
     document.querySelectorAll('[data-toggle-task]').forEach(function (btn) {
         btn.addEventListener('click', function () {
             // Отметка необратима (решение владельца 26.08.2026) — спрашиваем
@@ -399,6 +401,26 @@ function lrnUpdateTabBadge(kind) {
                 btn.textContent = 'Не получилось, ещё раз';
                 btn.disabled = false;
             });
+        });
+    });
+})();
+
+(function () {
+    // Инлайн-раскрытие карточки задачи (task_action.html, inline_expand) —
+    // общий на все типы: конкретный `init` регистрирует partial
+    // partials/inline/{kind}.html в window.lrnPanelInit по своему task.kind.
+    // Ленивая инициализация по первому открытию, не при загрузке страницы —
+    // сигнатуру Bunny-ссылки/CSRF-заголовки видео получают только по факту
+    // клика, не для всех карточек недели сразу.
+    document.querySelectorAll('.trk-row-expand[data-task-kind]').forEach(function (details) {
+        details.addEventListener('toggle', function () {
+            if (!details.open || details.dataset.inited) return;
+            var kind = details.getAttribute('data-task-kind');
+            var initFn = window.lrnPanelInit && window.lrnPanelInit[kind];
+            var body = details.querySelector('.trk-expand-body');
+            if (!initFn || !body) return;
+            details.dataset.inited = '1';
+            initFn(body, csrfToken);
         });
     });
 })();

@@ -1,0 +1,608 @@
+{#
+Инлайн-видео на АОП (cabinet_learning.html) — тот же плеер, что на
+`/cabinet/videos/{id}` (cabinet_video.html), встроенный прямо в карточку
+задачи без перехода на отдельную страницу (решение владельца 29.08.2026).
+
+Разметка — скелет, данные (подписанный player_url, прогресс, квиз) приходят
+JSON-эндпоинтом `/cabinet/videos/{id}/embed` (app/api/video.py) только по факту
+открытия `<details>` — доступ по группе проверяет сам эндпоинт
+(`require_learning_content_access`, тот же гейт, что у отдельной страницы),
+здесь достаточно показать его сообщение об ошибке при 403.
+
+Инициализация — `window.lrnPanelInit.video` (см. `<script>` ниже), вызывается
+один раз общим обработчиком `toggle` в cabinet_learning.html. Все узлы найдены
+через `data-role` в пределах контейнера, а не `getElementById`: карточка может
+быть не одна на странице (несколько видео за неделю), синглтон-id столкнулись
+бы друг с другом.
+#}
+<div class="lrn-inline-video" data-role="root">
+    <p class="video-progress-status" data-role="status" aria-live="polite">Загружаем видео…</p>
+    <div class="video-shell" data-role="shell" hidden aria-label="Видеоурок">
+        <div class="video-frame" data-role="frame-wrap">
+            <div class="video-loading" role="status">Загружаем видео...</div>
+            <iframe
+                data-role="iframe"
+                title=""
+                loading="eager"
+                allow="accelerometer; gyroscope; autoplay; encrypted-media"
+                referrerpolicy="strict-origin-when-cross-origin"></iframe>
+            <div class="video-watermark" aria-hidden="true">
+                <div class="video-watermark-copy" data-role="watermark"></div>
+            </div>
+            <button
+                type="button"
+                class="video-fullscreen-button"
+                data-role="fullscreen-btn"
+                aria-label="На весь экран"
+                title="На весь экран">⛶</button>
+        </div>
+    </div>
+    <p class="video-progress-status" data-role="progress-status" aria-live="polite" hidden></p>
+    <section class="card" data-role="quiz" hidden aria-label="Мини-опрос по видео">
+        <h2 class="card-title">Пара вопросов о видео</h2>
+        <div data-role="quiz-body"></div>
+    </section>
+</div>
+
+<script>
+(function () {
+    // Скрипт грузится с каждым вхождением партиала, но переопределение той же
+    // функции идемпотентно — в отличие от top-level `const`, здесь это не ошибка.
+    window.lrnPanelInit = window.lrnPanelInit || {};
+
+    function loadPlayerJs() {
+        if (window.playerjs && window.playerjs.Player) return Promise.resolve();
+        if (window.__lrnPlayerJsPromise) return window.__lrnPlayerJsPromise;
+        window.__lrnPlayerJsPromise = new Promise(function (resolve, reject) {
+            var script = document.createElement('script');
+            script.src = 'https://assets.mediadelivery.net/playerjs/player-0.1.0.min.js';
+            script.integrity = 'sha384-FzNVGZdy6ImmE/3LFewUFSxAVlmjM0wP4aKlUJYalPvzGkIEva94s2WZgmeQPVvC';
+            script.crossOrigin = 'anonymous';
+            script.onload = function () { resolve(); };
+            script.onerror = function () { reject(new Error('playerjs_load_failed')); };
+            document.head.appendChild(script);
+        });
+        return window.__lrnPlayerJsPromise;
+    }
+
+    window.lrnPanelInit.video = function (root, csrfToken) {
+        var statusEl = root.querySelector('[data-role="status"]');
+        var shell = root.querySelector('[data-role="shell"]');
+        var frameWrap = root.querySelector('[data-role="frame-wrap"]');
+        var iframe = root.querySelector('[data-role="iframe"]');
+        var watermark = root.querySelector('[data-role="watermark"]');
+        var fullscreenButton = root.querySelector('[data-role="fullscreen-btn"]');
+        var progressStatus = root.querySelector('[data-role="progress-status"]');
+        var quizSection = root.querySelector('[data-role="quiz"]');
+        var quizBody = root.querySelector('[data-role="quiz-body"]');
+        var wrapper = root.closest('.trk-expand-body');
+        var endpoint = wrapper ? wrapper.getAttribute('data-video-embed-endpoint') : null;
+        if (!endpoint) return;
+
+        function showError(message) {
+            statusEl.hidden = false;
+            statusEl.textContent = message;
+            statusEl.classList.add('is-error');
+        }
+
+        fetch(endpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function (resp) {
+                if (resp.status === 403) {
+                    return resp.json().then(function (body) {
+                        throw new Error((body && body.detail) || 'Видео недоступно.');
+                    });
+                }
+                if (!resp.ok) throw new Error('Не удалось загрузить видео. Попробуйте позже.');
+                return resp.json();
+            })
+            .then(function (data) {
+                if (!data.ok || !data.player_url) {
+                    showError('Видео временно недоступно.');
+                    return;
+                }
+                statusEl.hidden = true;
+                shell.hidden = false;
+                populatePlayer(data);
+            })
+            .catch(function (err) {
+                showError(err.message || 'Не удалось загрузить видео.');
+            });
+
+        function populatePlayer(data) {
+            watermark.innerHTML = '';
+            [data.viewer_watermark.name, data.viewer_watermark.username, data.viewer_watermark.phone].forEach(function (line) {
+                var span = document.createElement('span');
+                span.textContent = line;
+                watermark.appendChild(span);
+            });
+            iframe.title = data.video_title || '';
+            iframe.addEventListener('load', function () { frameWrap.classList.add('is-ready'); }, { once: true });
+
+            progressStatus.hidden = false;
+            progressStatus.textContent = (data.resume_position_seconds || 0) >= 5
+                ? 'Продолжим с сохранённого места.'
+                : 'Место просмотра сохраняется автоматически.';
+
+            if (data.quiz_questions && data.quiz_questions.length) {
+                renderQuiz(data);
+            }
+
+            loadPlayerJs().then(function () {
+                attachPlayerBehaviour(data);
+            }).catch(function () {
+                progressStatus.textContent = 'Автосохранение временно недоступно. Видео продолжит работать.';
+                progressStatus.classList.add('is-error');
+                iframe.src = data.player_url;
+            });
+        }
+
+        function renderQuiz(data) {
+            quizBody.innerHTML = '';
+            if (data.quiz_answers) {
+                data.quiz_questions.forEach(function (question, i) {
+                    var p = document.createElement('p');
+                    var label = document.createElement('span');
+                    label.className = 'field-label';
+                    label.textContent = question;
+                    var value = document.createElement('span');
+                    value.className = 'video-help';
+                    value.textContent = data.quiz_answers[i] || '—';
+                    p.appendChild(label);
+                    p.appendChild(value);
+                    quizBody.appendChild(p);
+                });
+                quizSection.hidden = false;
+                return;
+            }
+            var form = document.createElement('form');
+            data.quiz_questions.forEach(function (question, i) {
+                var p = document.createElement('p');
+                var label = document.createElement('label');
+                label.className = 'field-label';
+                label.setAttribute('for', 'lrn-video-quiz-q' + i + '-' + Math.random().toString(36).slice(2));
+                label.textContent = question;
+                var textarea = document.createElement('textarea');
+                textarea.className = 'form-input';
+                textarea.id = label.getAttribute('for');
+                textarea.rows = 3;
+                textarea.maxLength = 2000;
+                p.appendChild(label);
+                p.appendChild(textarea);
+                form.appendChild(p);
+            });
+            var submitBtn = document.createElement('button');
+            submitBtn.type = 'submit';
+            submitBtn.className = 'btn-blue';
+            submitBtn.textContent = 'Отправить';
+            var quizStatus = document.createElement('p');
+            quizStatus.className = 'video-progress-status';
+            quizStatus.setAttribute('aria-live', 'polite');
+            form.appendChild(submitBtn);
+            form.appendChild(quizStatus);
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+                var textareas = form.querySelectorAll('textarea');
+                var answers = Array.prototype.map.call(textareas, function (t) { return t.value; });
+                submitBtn.disabled = true;
+                fetch(data.quiz_submit_endpoint, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: JSON.stringify({ answers: answers })
+                }).then(function (resp) {
+                    if (!resp.ok) throw new Error();
+                    textareas.forEach(function (t) { t.disabled = true; });
+                    submitBtn.hidden = true;
+                    quizStatus.textContent = 'Спасибо, ответ сохранён.';
+                }).catch(function () {
+                    submitBtn.disabled = false;
+                    quizStatus.textContent = 'Не удалось отправить ответ. Попробуйте ещё раз.';
+                    quizStatus.classList.add('is-error');
+                });
+            });
+            quizBody.appendChild(form);
+            quizSection.hidden = !data.video_already_completed;
+        }
+
+        function attachPlayerBehaviour(data) {
+            var playerContainer = frameWrap;
+            var watermarkCopy = watermark;
+            var watermarkAnimationFrame = null;
+            var watermarkStepTimer = null;
+            var watermarkResizeObserver = null;
+            var orbitMetrics = null;
+            var lastWatermarkAngle = -Math.PI / 2;
+            var pseudoFullscreen = false;
+
+            function measureWatermarkOrbit() {
+                if (!watermarkCopy) return;
+                var containerWidth = playerContainer.clientWidth;
+                var containerHeight = playerContainer.clientHeight;
+                var watermarkWidth = watermarkCopy.offsetWidth;
+                var watermarkHeight = watermarkCopy.offsetHeight;
+                var sidePadding = Math.max(12, Math.min(24, containerWidth * 0.025));
+                var topPadding = Math.max(12, Math.min(24, containerHeight * 0.04));
+                var bottomPadding = Math.max(58, Math.min(72, containerHeight * 0.1));
+                var minX = sidePadding;
+                var maxX = Math.max(minX, containerWidth - watermarkWidth - sidePadding);
+                var minY = topPadding;
+                var maxY = Math.max(minY, containerHeight - watermarkHeight - bottomPadding);
+                orbitMetrics = {
+                    centerX: (minX + maxX) / 2,
+                    centerY: (minY + maxY) / 2,
+                    radiusX: (maxX - minX) / 2,
+                    radiusY: (maxY - minY) / 2
+                };
+                positionWatermark(lastWatermarkAngle);
+            }
+
+            function positionWatermark(angle) {
+                if (!watermarkCopy || !orbitMetrics) return;
+                lastWatermarkAngle = angle;
+                var x = orbitMetrics.centerX + orbitMetrics.radiusX * Math.cos(angle);
+                var y = orbitMetrics.centerY + orbitMetrics.radiusY * Math.sin(angle);
+                watermarkCopy.style.transform =
+                    'translate3d(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px,0) rotate(-8deg)';
+            }
+
+            function startWatermarkOrbit() {
+                if (!watermarkCopy) return;
+                stopWatermarkOrbit();
+                watermarkCopy.classList.add('is-orbiting');
+                measureWatermarkOrbit();
+                var reduceMotion = window.matchMedia
+                    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                var startAngle = -Math.PI / 2;
+                if (reduceMotion) {
+                    var step = 0;
+                    positionWatermark(startAngle);
+                    watermarkStepTimer = window.setInterval(function () {
+                        step = (step + 1) % 8;
+                        positionWatermark(startAngle + step * Math.PI / 4);
+                    }, 4500);
+                } else {
+                    var orbitStartedAt = performance.now();
+                    var orbitDuration = 20000;
+                    function animateWatermark(now) {
+                        var progress = ((now - orbitStartedAt) % orbitDuration) / orbitDuration;
+                        positionWatermark(startAngle + progress * Math.PI * 2);
+                        watermarkAnimationFrame = window.requestAnimationFrame(animateWatermark);
+                    }
+                    watermarkAnimationFrame = window.requestAnimationFrame(animateWatermark);
+                }
+                if ('ResizeObserver' in window) {
+                    watermarkResizeObserver = new ResizeObserver(measureWatermarkOrbit);
+                    watermarkResizeObserver.observe(playerContainer);
+                } else {
+                    window.addEventListener('resize', measureWatermarkOrbit);
+                }
+            }
+
+            function stopWatermarkOrbit() {
+                if (watermarkAnimationFrame !== null) {
+                    window.cancelAnimationFrame(watermarkAnimationFrame);
+                    watermarkAnimationFrame = null;
+                }
+                if (watermarkStepTimer !== null) {
+                    window.clearInterval(watermarkStepTimer);
+                    watermarkStepTimer = null;
+                }
+                if (watermarkResizeObserver) {
+                    watermarkResizeObserver.disconnect();
+                    watermarkResizeObserver = null;
+                } else {
+                    window.removeEventListener('resize', measureWatermarkOrbit);
+                }
+            }
+
+            startWatermarkOrbit();
+
+            function fullscreenElement() {
+                return document.fullscreenElement || document.webkitFullscreenElement || null;
+            }
+            function isFullscreenActive() {
+                return pseudoFullscreen || fullscreenElement() === playerContainer;
+            }
+            function enterPseudoFullscreen() {
+                if (pseudoFullscreen) return;
+                pseudoFullscreen = true;
+                playerContainer.classList.add('is-pseudo-fullscreen');
+                document.documentElement.classList.add('has-video-pseudo-fullscreen');
+                document.body.classList.add('has-video-pseudo-fullscreen');
+                updateFullscreenButton();
+            }
+            function exitPseudoFullscreen(restoreFocus) {
+                if (!pseudoFullscreen) return;
+                pseudoFullscreen = false;
+                playerContainer.classList.remove('is-pseudo-fullscreen');
+                document.documentElement.classList.remove('has-video-pseudo-fullscreen');
+                document.body.classList.remove('has-video-pseudo-fullscreen');
+                updateFullscreenButton();
+                if (restoreFocus !== false && fullscreenButton) fullscreenButton.focus();
+            }
+            function updateFullscreenButton() {
+                if (!fullscreenButton) return;
+                var isFullscreen = isFullscreenActive();
+                var label = isFullscreen ? 'Выйти из полноэкранного режима' : 'На весь экран';
+                fullscreenButton.setAttribute('aria-label', label);
+                fullscreenButton.setAttribute('title', label);
+                fullscreenButton.setAttribute('aria-pressed', String(isFullscreen));
+                window.requestAnimationFrame(measureWatermarkOrbit);
+                window.setTimeout(measureWatermarkOrbit, 250);
+            }
+            function reportFullscreenError() {
+                showStatus('Не удалось включить полноэкранный режим. Разрешите его в настройках браузера.', true);
+            }
+
+            if (fullscreenButton) {
+                var requestFullscreen = playerContainer.requestFullscreen
+                    || playerContainer.webkitRequestFullscreen;
+                var exitFullscreen = document.exitFullscreen
+                    || document.webkitExitFullscreen;
+                function shouldUsePseudoFullscreen() {
+                    if (!requestFullscreen || !exitFullscreen) return true;
+                    return window.matchMedia
+                        && window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
+                }
+                fullscreenButton.addEventListener('click', function () {
+                    if (pseudoFullscreen) { exitPseudoFullscreen(); return; }
+                    if (fullscreenElement() === playerContainer) {
+                        try {
+                            var exitResult = exitFullscreen.call(document);
+                            if (exitResult && typeof exitResult.catch === 'function') exitResult.catch(reportFullscreenError);
+                        } catch (error) { reportFullscreenError(); }
+                        return;
+                    }
+                    if (shouldUsePseudoFullscreen()) { enterPseudoFullscreen(); return; }
+                    try {
+                        var requestResult = requestFullscreen.call(playerContainer);
+                        if (requestResult && typeof requestResult.catch === 'function') requestResult.catch(enterPseudoFullscreen);
+                    } catch (error) { enterPseudoFullscreen(); }
+                });
+                document.addEventListener('fullscreenchange', updateFullscreenButton);
+                document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
+                document.addEventListener('keydown', function (event) {
+                    if (event.key === 'Escape' && pseudoFullscreen) exitPseudoFullscreen();
+                });
+                updateFullscreenButton();
+            }
+
+            window.addEventListener('pagehide', function () {
+                stopWatermarkOrbit();
+                exitPseudoFullscreen(false);
+            });
+
+            var playerUrlEndpoint = data.player_url_endpoint || '';
+            var playerUrlTtlSeconds = data.player_url_ttl_seconds || 300;
+            var playerUrlMintedAt = Date.now();
+            var playerUrlRefreshInFlight = false;
+            var playerUrlRefreshDisabled = false;
+            var reattachPlayer = null;
+            var playerGeneration = 0;
+            var isPlaying = false;
+            var hasEverPlayed = false;
+
+            function showStatus(message, isError) {
+                progressStatus.hidden = false;
+                progressStatus.textContent = message;
+                progressStatus.classList.toggle('is-error', Boolean(isError));
+            }
+
+            function isPlayerUrlStale() {
+                var safeLifetimeMs = Math.max(30, playerUrlTtlSeconds - 60) * 1000;
+                return Date.now() - playerUrlMintedAt > safeLifetimeMs;
+            }
+
+            function refreshPlayerUrl() {
+                if (!playerUrlEndpoint || playerUrlRefreshInFlight || playerUrlRefreshDisabled) return;
+                playerUrlRefreshInFlight = true;
+                fetch(playerUrlEndpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                    .then(function (response) {
+                        if (response.status === 401) { playerUrlRefreshDisabled = true; throw new Error('session_expired'); }
+                        if (response.status === 403 || response.status === 404) { playerUrlRefreshDisabled = true; throw new Error('access_closed'); }
+                        if (!response.ok) throw new Error('refresh_failed');
+                        return response.json();
+                    })
+                    .then(function (body) {
+                        if (!body || !body.player_url) throw new Error('refresh_failed');
+                        if (body.ttl_seconds) playerUrlTtlSeconds = body.ttl_seconds;
+                        playerUrlMintedAt = Date.now();
+                        frameWrap.classList.remove('is-ready');
+                        iframe.addEventListener('load', function () {
+                            frameWrap.classList.add('is-ready');
+                            if (reattachPlayer) reattachPlayer();
+                        }, { once: true });
+                        iframe.src = body.player_url;
+                    })
+                    .catch(function (error) {
+                        if (error.message === 'access_closed') showStatus('Доступ к уроку закрыт. Обновите страницу.', true);
+                        else if (error.message === 'session_expired') showStatus('Войдите заново, чтобы продолжить просмотр.', true);
+                    })
+                    .finally(function () { playerUrlRefreshInFlight = false; });
+            }
+
+            function refreshPlayerUrlIfStale() {
+                if (isPlaying || !isPlayerUrlStale()) return;
+                refreshPlayerUrl();
+            }
+
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'visible') refreshPlayerUrlIfStale();
+            });
+            window.setInterval(function () {
+                if (document.visibilityState !== 'visible' || hasEverPlayed) return;
+                refreshPlayerUrlIfStale();
+            }, 60000);
+
+            if (!window.playerjs || !window.playerjs.Player) {
+                playerUrlRefreshDisabled = true;
+                showStatus('Автосохранение временно недоступно. Видео продолжит работать.', true);
+                iframe.src = data.player_url;
+                return;
+            }
+
+            var resumeSeconds = data.resume_position_seconds || 0;
+            var currentSeconds = resumeSeconds;
+            var durationSeconds = null;
+            var lastSavedSeconds = resumeSeconds;
+            var lastAutomaticSaveAt = Date.now();
+            var saveInFlight = false;
+            var pendingProgress = null;
+            var savingDisabled = false;
+            var hasReportedSaved = false;
+
+            function finiteNumber(value) {
+                var number = Number(value);
+                return Number.isFinite(number) ? number : null;
+            }
+            function timingData(raw) {
+                if (typeof raw === 'string') {
+                    try { raw = JSON.parse(raw); } catch (error) { return null; }
+                }
+                if (!raw || typeof raw !== 'object') return null;
+                return { seconds: finiteNumber(raw.seconds), duration: finiteNumber(raw.duration) };
+            }
+            function formatTime(seconds) {
+                var whole = Math.max(0, Math.floor(seconds));
+                var hours = Math.floor(whole / 3600);
+                var minutes = Math.floor((whole % 3600) / 60);
+                var remainder = whole % 60;
+                if (hours > 0) return hours + ':' + String(minutes).padStart(2, '0') + ':' + String(remainder).padStart(2, '0');
+                return minutes + ':' + String(remainder).padStart(2, '0');
+            }
+            function setStatus(message, isError) {
+                if (progressStatus.textContent.trim() === message) return;
+                showStatus(message, isError);
+            }
+
+            function sendProgress(progress, keepalive) {
+                if (savingDisabled) return;
+                if (saveInFlight) { pendingProgress = progress; return; }
+                saveInFlight = true;
+                fetch(data.progress_endpoint, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    keepalive: Boolean(keepalive),
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: JSON.stringify({
+                        position_seconds: progress.position_seconds,
+                        duration_seconds: progress.duration_seconds
+                    })
+                }).then(function (response) {
+                    if (response.status === 401) { savingDisabled = true; throw new Error('session_expired'); }
+                    if (response.status === 403) { savingDisabled = true; throw new Error('session_expired'); }
+                    if (!response.ok) throw new Error('save_failed');
+                    lastSavedSeconds = progress.position_seconds;
+                    if (!hasReportedSaved && !progress.completed) {
+                        hasReportedSaved = true;
+                        setStatus('Место просмотра сохранено.', false);
+                    }
+                    if (progress.completed) setStatus('Видео просмотрено. При следующем открытии начнём сначала.', false);
+                    return response.json().catch(function () { return null; });
+                }).then(function (respData) {
+                    if (respData && respData.completed) quizSection.hidden = false;
+                }).catch(function (error) {
+                    if (error.message === 'session_expired') setStatus('Войдите заново, чтобы сохранять место просмотра.', true);
+                    else setStatus('Не удалось сохранить место. Видео продолжит работать.', true);
+                }).finally(function () {
+                    saveInFlight = false;
+                    if (pendingProgress) {
+                        var nextProgress = pendingProgress;
+                        pendingProgress = null;
+                        sendProgress(nextProgress, false);
+                    }
+                });
+            }
+
+            function saveProgress(force, completed, keepalive) {
+                if (savingDisabled || currentSeconds === null || currentSeconds < 0) return;
+                if (!force && Math.abs(currentSeconds - lastSavedSeconds) < 2) return;
+                sendProgress({
+                    position_seconds: Math.max(0, currentSeconds),
+                    duration_seconds: durationSeconds && durationSeconds > 0 ? durationSeconds : null,
+                    completed: Boolean(completed)
+                }, keepalive);
+            }
+
+            function attachPlayer() {
+                var generation = ++playerGeneration;
+                var player = new window.playerjs.Player(iframe);
+
+                player.on('ready', function () {
+                    if (generation !== playerGeneration) return;
+                    frameWrap.classList.add('is-ready');
+                    player.getDuration(function (value) {
+                        durationSeconds = finiteNumber(value);
+                        if (resumeSeconds >= 5 && (!durationSeconds || resumeSeconds < durationSeconds - 10)) {
+                            player.setCurrentTime(resumeSeconds);
+                            currentSeconds = resumeSeconds;
+                            setStatus('Продолжили с ' + formatTime(resumeSeconds) + '.', false);
+                        } else {
+                            currentSeconds = 0;
+                            setStatus('Место просмотра сохраняется автоматически.', false);
+                        }
+                    });
+                });
+                player.on('timeupdate', function (raw) {
+                    if (generation !== playerGeneration) return;
+                    var timing = timingData(raw);
+                    if (!timing || timing.seconds === null) return;
+                    currentSeconds = timing.seconds;
+                    if (timing.duration !== null && timing.duration > 0) durationSeconds = timing.duration;
+                    if (Date.now() - lastAutomaticSaveAt >= 10000) {
+                        lastAutomaticSaveAt = Date.now();
+                        saveProgress(false, false, false);
+                    }
+                });
+                player.on('play', function () {
+                    if (generation !== playerGeneration) return;
+                    isPlaying = true;
+                    hasEverPlayed = true;
+                });
+                player.on('pause', function () {
+                    if (generation !== playerGeneration) return;
+                    isPlaying = false;
+                    saveProgress(true, false, false);
+                });
+                player.on('seeked', function () {
+                    if (generation !== playerGeneration) return;
+                    player.getCurrentTime(function (value) {
+                        var seconds = finiteNumber(value);
+                        if (seconds !== null) currentSeconds = seconds;
+                        saveProgress(true, false, false);
+                    });
+                });
+                player.on('ended', function () {
+                    if (generation !== playerGeneration) return;
+                    isPlaying = false;
+                    if (durationSeconds !== null) currentSeconds = durationSeconds;
+                    saveProgress(true, true, false);
+                });
+            }
+
+            iframe.src = data.player_url;
+            attachPlayer();
+            reattachPlayer = function () {
+                resumeSeconds = currentSeconds;
+                isPlaying = false;
+                attachPlayer();
+            };
+
+            document.addEventListener('visibilitychange', function () {
+                if (document.visibilityState === 'hidden') saveProgress(true, false, true);
+            });
+            window.addEventListener('pagehide', function () {
+                saveProgress(true, false, true);
+            });
+        }
+    };
+})();
+</script>

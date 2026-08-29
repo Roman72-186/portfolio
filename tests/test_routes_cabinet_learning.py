@@ -4,6 +4,7 @@ from datetime import date, timedelta
 
 from app.models.exam_cycle import ExamCycle
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
+from app.models.learning_video import LearningVideo
 from app.services.program import day_bounds, week_start
 from app.services.tracker import create_task
 from app.services.tz import msk_midnight, now_msk, today_msk
@@ -185,6 +186,56 @@ def test_learning_empty_tab_does_not_lock_next(auth_client, db):
     lesson_panel = resp.text[lesson_panel_start:lesson_panel_end]
     assert "Эфир недели" in lesson_panel
     assert "Сначала сделай" not in lesson_panel
+
+
+# ── Инлайн-раскрытие видео вместо перехода на /cabinet/videos/{id} (29.08) ──
+
+def test_learning_video_card_expands_inline_instead_of_linking_away(auth_client, db):
+    client, user = auth_client
+    topic = _topic(db, user, title="Неделя 1")
+    day = week_start(today_msk()) + timedelta(days=1)
+    due = day_bounds(day)[0] + timedelta(hours=10)
+    task = create_task(
+        db, title="Видео недели", user_id=user.id, due_at=due,
+        assign_to_all=True, kind="video", topic_id=topic.id,
+    )
+    task.is_published = True
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id="35ed80ae-8103-4528-a700-3f69ec56957d",
+        title="Видео недели", topic_id=topic.id,
+        status="ready", is_published=True,
+    )
+    db.add(video)
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert f'data-video-embed-endpoint="/cabinet/videos/{video.id}/embed"' in resp.text
+    assert f'href="/cabinet/videos/{video.id}"' not in resp.text
+    assert 'class="trk-row-expand" data-task-kind="video"' in resp.text
+
+
+def test_learning_video_card_shows_pending_note_without_falling_back_to_toggle(auth_client, db):
+    """Регресс-тест: до фикса `detail.video is None` (тема без ролика, ролик
+    ещё не опубликован) сбрасывало карточку в общую ветку `{% if not
+    autocloses %}`, и она рисовала кнопку «Отметить» — обход в одно нажатие,
+    от которого этот partial существует (task_action.html, шапка файла)."""
+    client, user = auth_client
+    topic = _topic(db, user, title="Неделя 1")
+    day = week_start(today_msk()) + timedelta(days=1)
+    due = day_bounds(day)[0] + timedelta(hours=10)
+    task = create_task(
+        db, title="Видео недели", user_id=user.id, due_at=due,
+        assign_to_all=True, kind="video", topic_id=topic.id,
+    )
+    task.is_published = True
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert "Видео скоро появится" in resp.text
+    assert 'data-toggle-task="{}"'.format(task.id) not in resp.text
 
 
 # ── Билет Пробника внутри вкладки «Задание» (решение владельца 24.08) ───────
@@ -498,3 +549,10 @@ def test_trk_row_and_lrn_card_respect_the_hidden_attribute():
     """
     assert ".trk-row[hidden] { display: none; }" in TRACKER_CSS
     assert ".lrn-card[hidden] { display: none; }" in TRACKER_CSS
+
+
+def test_tracker_css_has_no_stray_jinja_comment_terminator():
+    """Живой баг 29.08.2026: комментарий CSS-блока аккордеона `<details>` был
+    закрыт `#}` (jinja) вместо `*/` (CSS) — весь блок стилей до следующего `*/`
+    молча проглотился парсером как часть комментария, без единой ошибки."""
+    assert "#}" not in TRACKER_CSS
