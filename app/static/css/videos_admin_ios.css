@@ -141,6 +141,19 @@
 .ios-videos-admin .vam-edit { margin-top: 12px; border-top: 0.5px solid var(--ios-sep); padding-top: 12px; }
 .ios-videos-admin .vam-edit summary { cursor: pointer; color: var(--ios-blue); font: 600 12px/1 var(--ios-font); }
 .ios-videos-admin .vam-edit-fields { display: grid; grid-template-columns: 1fr 1.4fr auto; gap: 10px; align-items: end; margin-top: 10px; }
+/* Конструктор мини-опроса — вопросы прибавляются по одному кнопкой «+»
+   (владелец 29.08.2026, было ровно три фиксированных поля). Растягивается на
+   всю ширину `.vam-edit-fields`, иначе его строкам некуда деться внутри
+   трёхколоночной сетки полей выше. */
+.ios-videos-admin .vam-quiz-field { grid-column: 1 / -1; align-items: start; }
+.ios-videos-admin .vam-quiz-questions { display: grid; gap: 8px; text-transform: none; }
+.ios-videos-admin .vam-quiz-question { display: flex; gap: 8px; align-items: center; }
+.ios-videos-admin .vam-quiz-question input { flex: 1 1 auto; min-width: 0; }
+.ios-videos-admin .vam-quiz-question [data-remove-quiz-question] {
+    flex: 0 0 auto; min-height: 34px; min-width: 34px; padding: 0; font-size: 16px; line-height: 1;
+}
+.ios-videos-admin .vam-quiz-field > [data-add-quiz-question] { justify-self: start; margin-top: 2px; }
+.ios-videos-admin .vam-edit-fields > [data-video-action="metadata"] { grid-column: 1 / -1; justify-self: start; }
 .ios-videos-admin .vam-empty {
     padding: 32px 20px; text-align: center; color: var(--ios-label-2); background: var(--ios-card-bg);
     border: none; border-radius: 14px; font: 400 14px/1.4 var(--ios-font);

@@ -20,6 +20,7 @@ from app.models.audit_log import AuditLog
 from app.models.learning_video import LearningVideo
 from app.models.role import Role
 from app.models.user import User
+from app.models.video_quiz import MAX_QUIZ_QUESTIONS
 from app.services.bunny_stream import (
     BunnyStreamAPIError,
     BunnyStreamCreateUncertainError,
@@ -32,6 +33,7 @@ from app.services.bunny_stream import (
 from app.services.tags import parse_usernames
 from app.services.tz import MSK_TZ
 from app.services.video_catalog import list_all_videos, publish_video, sync_status_from_bunny, unpublish_video
+from app.services.video_quiz import sync_questions
 from app.services.video_topics import (
     ambiguous_tag_names,
     count_topic_audience,
@@ -103,6 +105,24 @@ class CreateVideoUpload(BaseModel):
         return value
 
 
+class QuizQuestionInput(BaseModel):
+    """Одна строка конструктора мини-опроса. `id` — существующий вопрос
+    (правится на месте, ответы учеников сохраняются), `None` — новая строка,
+    добавленная кнопкой «+»."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: int | None = Field(default=None, ge=1)
+    text: str = Field(min_length=1, max_length=300)
+
+    @field_validator("text")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Question text cannot be empty")
+        return value
+
+
 class UpdateVideoMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=200)
@@ -113,11 +133,13 @@ class UpdateVideoMetadata(BaseModel):
     # молча отвязало бы ролик от его элемента учебной программы, а вместе с
     # привязкой отвалились бы и адресность, и автозакрытие задачи в трекере.
     topic_id: int | None = Field(default=None, ge=1)
-    # Мини-опрос из трёх уточняющих вопросов после видео — каждый необязателен,
-    # пустой набор просто не показывает опрос ученику (app/services/video_quiz.py).
-    quiz_question_1: str | None = Field(default=None, max_length=300)
-    quiz_question_2: str | None = Field(default=None, max_length=300)
-    quiz_question_3: str | None = Field(default=None, max_length=300)
+    # Мини-опрос после видео — произвольный список вопросов (было ровно три
+    # фиксированных поля до 29.08.2026, см. app/services/video_quiz.py).
+    # Поле не прислали — вопросы не трогаем; прислали пустой список — опрос
+    # убран целиком. Тот же принцип, что у topic_id выше.
+    quiz_questions: list[QuizQuestionInput] | None = Field(
+        default=None, max_length=MAX_QUIZ_QUESTIONS
+    )
 
     @field_validator("title")
     @classmethod
@@ -127,7 +149,7 @@ class UpdateVideoMetadata(BaseModel):
             raise ValueError("Title cannot be empty")
         return value
 
-    @field_validator("description", "quiz_question_1", "quiz_question_2", "quiz_question_3")
+    @field_validator("description")
     @classmethod
     def strip_optional_description(cls, value: str | None) -> str | None:
         value = (value or "").strip()
@@ -313,9 +335,12 @@ def update_video_metadata(
     # Ключ отсутствует в теле — привязку не трогаем (см. докстринг поля).
     if "topic_id" in payload.model_fields_set:
         video.topic_id = payload.topic_id
-    video.quiz_question_1 = payload.quiz_question_1
-    video.quiz_question_2 = payload.quiz_question_2
-    video.quiz_question_3 = payload.quiz_question_3
+    if "quiz_questions" in payload.model_fields_set:
+        sync_questions(
+            db,
+            video_id=video.id,
+            items=[(item.id, item.text) for item in (payload.quiz_questions or [])],
+        )
     # Маршрут меняет привязку к теме, то есть кто вообще увидит урок. Без записи
     # переброс урока на «доступно всем» (topic_id=None) не оставлял следа.
     _audit(

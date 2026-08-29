@@ -1,4 +1,4 @@
-"""Мини-опрос из трёх уточняющих вопросов после видео — маршруты ученика.
+"""Мини-опрос из уточняющих вопросов после видео — маршруты ученика.
 
 Досмотр решает сервер (`VideoProgress.completed_at`), не клиент — тот же
 принцип, что у автозакрытия трекер-задачи в
@@ -7,7 +7,8 @@
 
 from app.config import settings
 from app.models.learning_video import LearningVideo
-from app.models.video_quiz import VideoQuizResponse
+from app.models.video_quiz import VideoQuizAnswer, VideoQuizResponse
+from app.services.video_quiz import sync_questions
 
 VIDEO_ID = "35ed80ae-8103-4528-a700-3f69ec56957d"
 
@@ -28,12 +29,13 @@ def _video_with_quiz(db, *, duration_seconds: float = 600.0, questions=("Что 
         is_published=True,
         duration_seconds=duration_seconds,
     )
-    fields = ["quiz_question_1", "quiz_question_2", "quiz_question_3"]
-    for field, question in zip(fields, questions):
-        setattr(video, field, question)
     db.add(video)
     db.commit()
     db.refresh(video)
+    if questions:
+        sync_questions(db, video_id=video.id, items=[(None, q) for q in questions])
+        db.commit()
+        db.refresh(video)
     return video
 
 
@@ -120,9 +122,45 @@ def test_submit_saves_answers_after_watching(auth_client, db, monkeypatch):
         .filter(VideoQuizResponse.video_id == video.id, VideoQuizResponse.user_id == user.id)
         .one()
     )
-    assert saved.answer_1 == "Про свет и тень"
-    assert saved.answer_2 == "Пропорции лица"
-    assert saved.answer_3 is None
+    answers = {
+        answer.question_id: answer.text
+        for answer in db.query(VideoQuizAnswer)
+        .filter(VideoQuizAnswer.response_id == saved.id)
+        .all()
+    }
+    question_ids = [q.id for q in video.questions]
+    assert answers[question_ids[0]] == "Про свет и тень"
+    assert answers[question_ids[1]] == "Пропорции лица"
+
+
+def test_submit_supports_more_than_three_questions(auth_client, db, monkeypatch):
+    """Ровно то отличие от старой реализации, ради которого делали
+    перенормализацию 29.08.2026 — раньше упёрлись бы в третье фиксированное
+    поле."""
+    client, user = auth_client
+    _configure_bunny(monkeypatch)
+    video = _video_with_quiz(
+        db, questions=("Вопрос 1", "Вопрос 2", "Вопрос 3", "Вопрос 4", "Вопрос 5")
+    )
+    client.post(
+        f"/cabinet/videos/{video.id}/progress",
+        json={"position_seconds": 598, "duration_seconds": 600},
+    )
+
+    response = client.post(
+        f"/cabinet/videos/{video.id}/quiz",
+        json={"answers": ["1", "2", "3", "4", "5"]},
+    )
+
+    assert response.status_code == 200
+    saved = (
+        db.query(VideoQuizResponse)
+        .filter(VideoQuizResponse.video_id == video.id, VideoQuizResponse.user_id == user.id)
+        .one()
+    )
+    assert (
+        db.query(VideoQuizAnswer).filter(VideoQuizAnswer.response_id == saved.id).count() == 5
+    )
 
 
 def test_submit_wrong_answer_count_is_rejected(auth_client, db, monkeypatch):

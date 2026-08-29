@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
 from app.models.learning_video import LearningVideo
@@ -15,8 +15,12 @@ STAFF_PREVIEW_RANK = 2
 
 
 def list_all_videos(db: Session) -> list[LearningVideo]:
+    # Единственный вызывающий — админский список (video_admin_page): он
+    # рендерит конструктор вопросов на каждую строку, а без selectinload это
+    # был бы отдельный SELECT на видео вместо одного общего.
     return (
         db.query(LearningVideo)
+        .options(selectinload(LearningVideo.questions))
         .filter(LearningVideo.deleted_at.is_(None))
         .order_by(LearningVideo.sort_order.asc(), LearningVideo.created_at.desc())
         .all()

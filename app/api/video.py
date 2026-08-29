@@ -27,7 +27,10 @@ from app.services.video_progress import (
     log_video_view,
     save_video_progress as persist_video_progress,
 )
+from app.models.video_quiz import MAX_QUIZ_QUESTIONS
 from app.services.video_quiz import (
+    get_answers_map,
+    get_quiz_question_rows,
     get_quiz_questions,
     get_response as get_quiz_response,
     save_response as save_quiz_response,
@@ -53,7 +56,7 @@ class VideoProgressUpdate(BaseModel):
 
 class VideoQuizSubmit(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    answers: list[str] = Field(min_length=1, max_length=3)
+    answers: list[str] = Field(min_length=1, max_length=MAX_QUIZ_QUESTIONS)
 
     @field_validator("answers")
     @classmethod
@@ -163,9 +166,11 @@ def _player_payload(
         try:
             existing = get_quiz_response(db, video_id=video.id, user_id=user["user_id"])
             if existing is not None:
+                question_rows = get_quiz_question_rows(video)
+                answers_map = get_answers_map(db, response_id=existing.id)
                 payload["quiz_answers"] = [
-                    existing.answer_1 or "", existing.answer_2 or "", existing.answer_3 or "",
-                ][: len(quiz_questions)]
+                    answers_map.get(question.id, "") for question in question_rows
+                ]
         except SQLAlchemyError:
             logger.exception("Video quiz response read failed for user_id=%s", user["user_id"])
             db.rollback()
@@ -345,16 +350,22 @@ def submit_video_quiz(
     video = _video_for_viewer(db, catalog_id=video_id, user=user)
     if video is None:
         raise HTTPException(status_code=404, detail="Видео не найдено")
-    questions = get_quiz_questions(video)
-    if not questions:
+    question_rows = get_quiz_question_rows(video)
+    if not question_rows:
         raise HTTPException(status_code=404, detail="Мини-опрос не настроен")
-    if len(payload.answers) != len(questions):
+    if len(payload.answers) != len(question_rows):
         raise HTTPException(status_code=422, detail="Число ответов не совпадает с числом вопросов")
     progress = get_video_progress(db, user_id=user["user_id"], video_id=video.bunny_video_id)
     if progress is None or progress.completed_at is None:
         raise HTTPException(status_code=409, detail="Сначала досмотрите видео")
     try:
-        save_quiz_response(db, video_id=video.id, user_id=user["user_id"], answers=payload.answers)
+        save_quiz_response(
+            db,
+            video_id=video.id,
+            user_id=user["user_id"],
+            question_rows=question_rows,
+            answers=payload.answers,
+        )
         db.commit()
     except SQLAlchemyError:
         logger.exception("Video quiz response save failed for user_id=%s", user["user_id"])

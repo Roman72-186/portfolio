@@ -774,7 +774,7 @@ def test_zero_server_duration_is_not_treated_as_known(auth_client, db, monkeypat
     assert db.get(VideoProgress, (user.id, VIDEO_ID)).completed_at is None
 
 
-def test_metadata_update_saves_and_clears_quiz_questions(admin_client, db):
+def test_metadata_update_creates_reorders_and_clears_quiz_questions(admin_client, db):
     client, user = admin_client
     video = LearningVideo(
         bunny_library_id=720058,
@@ -785,27 +785,109 @@ def test_metadata_update_saves_and_clears_quiz_questions(admin_client, db):
     db.add(video)
     db.commit()
 
+    # Пустые строки формы («+» без текста) до сервера не доходят — их
+    # отсеивает клиентский JS, а payload-модель требует непустой text.
     filled = client.post(
         f"/cabinet/admin/videos/{video.id}/metadata",
         json={
             "title": "Урок",
             "topic_id": None,
-            "quiz_question_1": "  Что было важным?  ",
-            "quiz_question_2": "",
-            "quiz_question_3": "Как применишь?",
+            "quiz_questions": [
+                {"id": None, "text": "  Что было важным?  "},
+                {"id": None, "text": "Как применишь?"},
+            ],
         },
     )
     assert filled.status_code == 200
     db.refresh(video)
-    assert video.quiz_question_1 == "Что было важным?"
-    assert video.quiz_question_2 is None
-    assert video.quiz_question_3 == "Как применишь?"
+    assert [q.text for q in video.questions] == ["Что было важным?", "Как применишь?"]
 
     cleared = client.post(
         f"/cabinet/admin/videos/{video.id}/metadata",
-        json={"title": "Урок", "topic_id": None},
+        json={"title": "Урок", "topic_id": None, "quiz_questions": []},
     )
     assert cleared.status_code == 200
     db.refresh(video)
-    assert video.quiz_question_1 is None
-    assert video.quiz_question_3 is None
+    assert video.questions == []
+
+
+def test_metadata_update_without_quiz_questions_key_leaves_them_untouched(admin_client, db):
+    """Ключ `quiz_questions` не прислали — тот же принцип, что у `topic_id`:
+    поле не трогаем. Иначе правка одного названия видео молча стирала бы весь
+    настроенный мини-опрос вместе с ответами учеников."""
+    client, user = admin_client
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Урок",
+        status="ready",
+    )
+    db.add(video)
+    db.commit()
+    client.post(
+        f"/cabinet/admin/videos/{video.id}/metadata",
+        json={"title": "Урок", "topic_id": None, "quiz_questions": [{"id": None, "text": "Вопрос"}]},
+    )
+    db.refresh(video)
+    question_id = video.questions[0].id
+
+    response = client.post(
+        f"/cabinet/admin/videos/{video.id}/metadata",
+        json={"title": "Новое название", "topic_id": None},
+    )
+
+    assert response.status_code == 200
+    db.refresh(video)
+    assert video.title == "Новое название"
+    assert len(video.questions) == 1
+    assert video.questions[0].id == question_id
+
+
+def test_metadata_update_editing_question_by_id_keeps_student_answers(admin_client, db):
+    from app.models.video_quiz import VideoQuizResponse
+    from app.services.video_quiz import get_answers_map, get_quiz_question_rows, save_response
+
+    client, user = admin_client
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Урок",
+        status="ready",
+    )
+    db.add(video)
+    db.commit()
+    client.post(
+        f"/cabinet/admin/videos/{video.id}/metadata",
+        json={"title": "Урок", "topic_id": None, "quiz_questions": [{"id": None, "text": "Черновой текст"}]},
+    )
+    db.refresh(video)
+    question_id = video.questions[0].id
+    save_response(
+        db,
+        video_id=video.id,
+        user_id=user.id,
+        question_rows=get_quiz_question_rows(video),
+        answers=["Ответ ученика"],
+    )
+    db.commit()
+
+    response = client.post(
+        f"/cabinet/admin/videos/{video.id}/metadata",
+        json={
+            "title": "Урок",
+            "topic_id": None,
+            "quiz_questions": [{"id": question_id, "text": "Финальный текст"}],
+        },
+    )
+
+    assert response.status_code == 200
+    db.refresh(video)
+    assert len(video.questions) == 1
+    assert video.questions[0].id == question_id
+    assert video.questions[0].text == "Финальный текст"
+    saved = (
+        db.query(VideoQuizResponse)
+        .filter(VideoQuizResponse.video_id == video.id, VideoQuizResponse.user_id == user.id)
+        .one()
+    )
+    assert get_answers_map(db, response_id=saved.id) == {question_id: "Ответ ученика"}

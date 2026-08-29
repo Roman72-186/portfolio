@@ -8,7 +8,7 @@ FORM: Operate, расширение существующего кабинета 
 #}
 {% block title %}Загрузка видео{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/videos_admin_ios.css?v=4">
+<link rel="stylesheet" href="/static/css/videos_admin_ios.css?v=5">
 {% endblock %}
 {% block content %}
 {% set status_labels = {'uploading':'Загрузка', 'processing':'Обработка', 'ready':'Готово', 'failed':'Ошибка', 'deleting':'Удаление', 'delete_failed':'Ошибка удаления'} %}
@@ -111,9 +111,18 @@ FORM: Operate, расширение существующего кабинета 
                     <div class="vam-edit-fields">
                         <label class="vam-field">Название<input data-edit-title value="{{ video.title }}" maxlength="200"></label>
                         <label class="vam-field">Описание<input data-edit-description value="{{ video.description or '' }}" maxlength="5000"></label>
-                        <label class="vam-field">Мини-опрос после видео — вопрос 1<input data-edit-quiz-q1 value="{{ video.quiz_question_1 or '' }}" maxlength="300" placeholder="Необязательно"></label>
-                        <label class="vam-field">Мини-опрос после видео — вопрос 2<input data-edit-quiz-q2 value="{{ video.quiz_question_2 or '' }}" maxlength="300" placeholder="Необязательно"></label>
-                        <label class="vam-field">Мини-опрос после видео — вопрос 3<input data-edit-quiz-q3 value="{{ video.quiz_question_3 or '' }}" maxlength="300" placeholder="Необязательно"></label>
+                        <div class="vam-field vam-quiz-field">
+                            <span>Мини-опрос после видео</span>
+                            <div class="vam-quiz-questions" data-quiz-questions>
+                                {% for question in video.questions %}
+                                <div class="vam-quiz-question" data-quiz-question data-quiz-question-id="{{ question.id }}">
+                                    <input data-qq-text value="{{ question.text }}" maxlength="300" placeholder="Текст вопроса">
+                                    <button type="button" class="btn-outline" data-remove-quiz-question aria-label="Убрать вопрос">×</button>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <button type="button" class="btn-outline" data-add-quiz-question>Добавить вопрос</button>
+                        </div>
                         <button type="button" class="btn-outline" data-video-action="metadata">Сохранить</button>
                     </div>
                 </details>
@@ -528,7 +537,28 @@ FORM: Operate, расширение существующего кабинета 
         document.getElementById('video-cover-thumb').innerHTML = '';
     });
 
+    function quizQuestionRowHTML() {
+        return ''
+            + '<div class="vam-quiz-question" data-quiz-question>'
+            + '  <input data-qq-text maxlength="300" placeholder="Текст вопроса">'
+            + '  <button type="button" class="btn-outline" data-remove-quiz-question aria-label="Убрать вопрос">×</button>'
+            + '</div>';
+    }
+
     document.addEventListener('click', function (event) {
+        var addQuestion = event.target.closest('[data-add-quiz-question]');
+        if (addQuestion) {
+            addQuestion.closest('.vam-quiz-field')
+                .querySelector('[data-quiz-questions]')
+                .insertAdjacentHTML('beforeend', quizQuestionRowHTML());
+            return;
+        }
+        var removeQuestion = event.target.closest('[data-remove-quiz-question]');
+        if (removeQuestion) {
+            removeQuestion.closest('[data-quiz-question]').remove();
+            return;
+        }
+
         var button = event.target.closest('[data-video-action]');
         if (!button) return;
         var row = button.closest('[data-video-id]');
@@ -537,13 +567,20 @@ FORM: Operate, расширение существующего кабинета 
         var body = {};
         if (action === 'metadata') {
             // topic_id намеренно не отправляем: ключ отсутствует — сервер
-            // оставляет привязку урока к теме как есть.
+            // оставляет привязку урока к теме как есть. Вопрос с
+            // data-quiz-question-id — правка существующей строки (сервер
+            // сохранит её id и ответы учеников), без атрибута — новая строка.
+            var quizQuestions = [];
+            row.querySelectorAll('[data-quiz-question]').forEach(function (card) {
+                var text = card.querySelector('[data-qq-text]').value.trim();
+                if (!text) return;
+                var idAttr = card.getAttribute('data-quiz-question-id');
+                quizQuestions.push({id: idAttr ? Number(idAttr) : null, text: text});
+            });
             body = {
                 title: row.querySelector('[data-edit-title]').value,
                 description: row.querySelector('[data-edit-description]').value,
-                quiz_question_1: row.querySelector('[data-edit-quiz-q1]').value,
-                quiz_question_2: row.querySelector('[data-edit-quiz-q2]').value,
-                quiz_question_3: row.querySelector('[data-edit-quiz-q3]').value
+                quiz_questions: quizQuestions
             };
         }
         if (action === 'delete') {
