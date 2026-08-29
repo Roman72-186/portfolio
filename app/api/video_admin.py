@@ -27,13 +27,11 @@ from app.services.bunny_stream import (
     build_tus_credentials,
     create_video,
     delete_video,
-    get_video,
     is_bunny_upload_available,
-    normalize_bunny_status,
 )
 from app.services.tags import parse_usernames
 from app.services.tz import MSK_TZ
-from app.services.video_catalog import list_all_videos, publish_video, unpublish_video
+from app.services.video_catalog import list_all_videos, publish_video, sync_status_from_bunny, unpublish_video
 from app.services.video_topics import (
     ambiguous_tag_names,
     count_topic_audience,
@@ -271,39 +269,10 @@ def refresh_video_status(
 ):
     video = _get_video_or_404(db, video_id)
     try:
-        remote = get_video(video.bunny_video_id)
+        sync_status_from_bunny(db, video)
     except (BunnyStreamAPIError, BunnyStreamConfigError):
         logger.exception("Bunny video status refresh failed for video_id=%s", video.id)
         return JSONResponse({"ok": False, "error": "provider_status_failed"}, status_code=502)
-
-    bunny_status = remote.get("status")
-    video.bunny_status = bunny_status if isinstance(bunny_status, int) else None
-    video.status = normalize_bunny_status(video.bunny_status)
-    # Форме ответа провайдера не доверяем: NaN в числе или не-словарь в списке
-    # сообщений дали бы 500 вместо аккуратного 502, хотя остальной маршрут отказы
-    # Bunny обрабатывает. Статус при этом уже разобран и сохранён.
-    encode_progress = remote.get("encodeProgress")
-    try:
-        video.encode_progress = (
-            max(0, min(100, int(encode_progress)))
-            if isinstance(encode_progress, (int, float))
-            else None
-        )
-    except (ValueError, OverflowError):
-        video.encode_progress = None
-    duration = remote.get("length")
-    try:
-        video.duration_seconds = (
-            float(duration) if isinstance(duration, (int, float)) and duration >= 0 else None
-        )
-    except (ValueError, OverflowError):
-        video.duration_seconds = None
-    messages = remote.get("transcodingMessages")
-    last_message = messages[-1] if isinstance(messages, list) and messages else None
-    if isinstance(last_message, dict):
-        video.status_message = str(last_message.get("message", ""))[:500] or None
-    else:
-        video.status_message = None
     db.commit()
     db.refresh(video)
     return JSONResponse({"ok": True, "video": _serialize_video(video)})

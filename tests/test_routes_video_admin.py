@@ -258,7 +258,7 @@ def test_refresh_normalizes_bunny_status(admin_client, db, monkeypatch):
     db.add(video)
     db.commit()
     monkeypatch.setattr(
-        "app.api.video_admin.get_video",
+        "app.services.video_catalog.get_video",
         lambda video_id: {"status": 3, "encodeProgress": 100, "length": 615},
     )
 

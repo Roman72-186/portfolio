@@ -26,6 +26,7 @@ from app.models.exam_assignment import ExamAssignment
 from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM
 from app.models.learning_video import LearningVideo
 from app.models.survey import QUESTION_TYPE_LABELS, QUESTION_TYPES
+from app.services.video_catalog import publish_video
 from app.models.tracker import (
     ITEM_CHECKLIST,
     ITEM_HOMEWORK,
@@ -639,6 +640,18 @@ def create_video_item(
         assignee_ids=assignee_ids,
     )
     video.topic_id = topic.id
+    # Постановка в день — это и есть решение куратора «показать ученикам»:
+    # второго отдельного клика «Опубликовать» требовать не нужно (владелец
+    # 29.08.2026, живой баг — куратор поставил ролик в день, обработка на Bunny
+    # ещё не закончилась, и видео зависло неопубликованным без отдельного
+    # напоминания вернуться и нажать кнопку на другой странице). Если ролик уже
+    # готов — публикуем сразу; если ещё обрабатывается — `auto_publish_on_ready`
+    # заставит фоновую проверку (exam_scheduler.py::_run_video_status_sync)
+    # опубликовать его самостоятельно, как только Bunny закончит.
+    if video.status == "ready":
+        publish_video(video, user_id=user["user_id"])
+    else:
+        video.auto_publish_on_ready = True
     # Карточку ролика переписываем только тем, что реально прислали: календарь
     # берёт название и обложку из каталога и ничего о них не сообщает.
     if payload.title:

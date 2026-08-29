@@ -14,6 +14,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.cache import invalidate_unread
+from app.config import settings
 from app.db.database import SessionLocal
 from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
 from app.models.login_token import LoginToken
@@ -299,6 +300,57 @@ def _run_mock_exam_progress_check() -> None:
     return
 
 
+def _run_video_status_sync() -> None:
+    """Каждые пару минут подтягивает статус необработанных видео с Bunny и
+    публикует те, что куратор уже поставил в день (`auto_publish_on_ready`).
+
+    Раньше статус обновлялся только пока была открыта страница «Загрузка
+    видео» — JS-опрос на ней сам дёргал Bunny (cabinet_videos_admin.html).
+    Если куратор закрывал вкладку до конца обработки длинного ролика, статус
+    навсегда зависал на `processing`, публикация вручную была недоступна
+    (требует status == 'ready'), а ученик видел «Видео скоро появится» сколько
+    угодно долго (живой баг, найден 29.08.2026: куратор поставил в день
+    полуторачасовое видео и ушёл, обработка на Bunny успела завершиться, а
+    локальная запись — нет). Решение владельца 29.08.2026: «после загрузки
+    видео сразу отправлять на обработку и на публикацию без всяких вторых,
+    третьих, четвёртых действий» — эта job и есть отказ от того, чтобы
+    свежесть статуса зависела от того, держит ли кто-то нужную вкладку открытой.
+    """
+    if not settings.bunny_stream_enabled:
+        return
+    from app.models.learning_video import LearningVideo
+    from app.services.bunny_stream import BunnyStreamAPIError, BunnyStreamConfigError
+    from app.services.video_catalog import sync_status_from_bunny
+
+    db = SessionLocal()
+    try:
+        pending = (
+            db.query(LearningVideo)
+            .filter(
+                LearningVideo.status.in_(("uploading", "processing")),
+                LearningVideo.deleted_at.is_(None),
+            )
+            .all()
+        )
+        published = 0
+        for video in pending:
+            try:
+                if sync_status_from_bunny(db, video):
+                    published += 1
+            except (BunnyStreamAPIError, BunnyStreamConfigError):
+                logger.exception("Video status sync failed for video_id=%s", video.id)
+                continue
+        if pending:
+            db.commit()
+        if published:
+            logger.info("Video status sync: опубликовано %d видео", published)
+    except Exception:
+        logger.exception("Ошибка в video status sync job")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def _run_cleanup() -> None:
     """Каждые 6 часов удаляет протухшие сессии и login-токены."""
     db = SessionLocal()
@@ -363,10 +415,20 @@ def start_scheduler() -> None:
         max_instances=1,
         misfire_grace_time=600,
     )
+    _scheduler.add_job(
+        _run_video_status_sync,
+        trigger="interval",
+        minutes=2,
+        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=30),
+        id="video_status_sync",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=120,
+    )
     _scheduler.start()
     logger.info(
         "Exam scheduler started (exam_notifications=1h, mock_exam_progress=1min, "
-        "mock_exam_expiry=5min, cleanup=6h)"
+        "mock_exam_expiry=5min, cleanup=6h, video_status_sync=2min)"
     )
 
 

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.learning_video import LearningVideo
-from app.services.bunny_stream import is_bunny_stream_available
+from app.services.bunny_stream import get_video, is_bunny_stream_available, normalize_bunny_status
 from app.services.video_topics import accessible_topic_ids
 
 # Ранг, с которого сотрудник видит все уроки независимо от тем (preview куратора).
@@ -124,3 +124,55 @@ def unpublish_video(video: LearningVideo) -> None:
     video.is_published = False
     video.published_at = None
     video.published_by_id = None
+
+
+def sync_status_from_bunny(db: Session, video: LearningVideo) -> bool:
+    """Подтянуть статус видео с Bunny и опубликовать, если куратор уже попросил
+    (`auto_publish_on_ready`) и оно только что стало готовым.
+
+    Общая логика для ручного «Обновить статус» (video_admin.py::refresh_video_status)
+    и фоновой проверки (exam_scheduler.py::_run_video_status_sync). Раньше эта
+    логика жила только внутри HTTP-обработчика и не запускалась, пока куратор
+    не открыл страницу «Загрузка видео» — на часовом ролике куратор успевал
+    закрыть вкладку до конца обработки, и статус зависал на `processing`
+    навсегда (живой баг, найден 29.08.2026).
+
+    Не коммитит и не ловит BunnyStreamAPIError/BunnyStreamConfigError — это
+    обязанность вызывающего (у HTTP-обработчика и джобы разная реакция на сбой).
+    Возвращает True, если видео только что стало опубликованным.
+    """
+    remote = get_video(video.bunny_video_id)
+    bunny_status = remote.get("status")
+    video.bunny_status = bunny_status if isinstance(bunny_status, int) else None
+    was_ready = video.status == "ready"
+    video.status = normalize_bunny_status(video.bunny_status)
+
+    encode_progress = remote.get("encodeProgress")
+    try:
+        video.encode_progress = (
+            max(0, min(100, int(encode_progress)))
+            if isinstance(encode_progress, (int, float)) else None
+        )
+    except (ValueError, OverflowError):
+        video.encode_progress = None
+
+    duration = remote.get("length")
+    try:
+        video.duration_seconds = (
+            float(duration) if isinstance(duration, (int, float)) and duration >= 0 else None
+        )
+    except (ValueError, OverflowError):
+        video.duration_seconds = None
+
+    messages = remote.get("transcodingMessages")
+    last_message = messages[-1] if isinstance(messages, list) and messages else None
+    video.status_message = (
+        str(last_message.get("message", ""))[:500] or None
+        if isinstance(last_message, dict) else None
+    )
+
+    just_became_ready = video.status == "ready" and not was_ready
+    if just_became_ready and video.auto_publish_on_ready and not video.is_published:
+        publish_video(video, user_id=video.created_by_id)
+        return True
+    return False

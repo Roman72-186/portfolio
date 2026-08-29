@@ -94,6 +94,59 @@ def test_video_item_binds_topic_cover_and_task(
     assert task.kind == "video" and task.topic_id == topic.id
 
 
+def test_video_item_publishes_immediately_when_already_ready(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Постановка в день — это и есть решение «показать ученикам»: второго
+    клика «Опубликовать» на отдельной странице требовать не нужно (владелец
+    29.08.2026)."""
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    video = _video(db)
+    video.status = "ready"
+    db.commit()
+
+    response = client.post(
+        f"{PROGRAM}/{MONDAY}/video",
+        json={
+            "catalog_video_id": video.id,
+            "audience": {"assign_to_all": True, "tag_ids": [], "assignee_usernames": ""},
+        },
+    )
+
+    assert response.status_code == 200
+    db.expire_all()
+    video = db.get(LearningVideo, video.id)
+    assert video.is_published is True
+    assert video.published_at is not None
+
+
+def test_video_item_flags_auto_publish_when_still_processing(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Ролик ещё обрабатывается на Bunny в момент постановки в день — публикация
+    откладывается до готовности (exam_scheduler.py::_run_video_status_sync),
+    но не требует, чтобы куратор вернулся и нажал «Опубликовать» вручную."""
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    video = _video(db)
+    assert video.status == "processing"
+
+    response = client.post(
+        f"{PROGRAM}/{MONDAY}/video",
+        json={
+            "catalog_video_id": video.id,
+            "audience": {"assign_to_all": True, "tag_ids": [], "assignee_usernames": ""},
+        },
+    )
+
+    assert response.status_code == 200
+    db.expire_all()
+    video = db.get(LearningVideo, video.id)
+    assert video.auto_publish_on_ready is True
+    assert video.is_published is False
+
+
 def test_video_picked_from_catalog_keeps_its_own_title_and_cover(
     client, db, user_factory, session_factory, monkeypatch
 ):

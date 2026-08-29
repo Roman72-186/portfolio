@@ -8,6 +8,7 @@ from app.services.video_catalog import (
     get_published_video,
     list_published_videos,
     publish_video,
+    sync_status_from_bunny,
     unpublish_video,
 )
 
@@ -104,6 +105,74 @@ def test_publish_requires_ready_and_unpublish_clears_publication(db, regular_use
     unpublish_video(video)
     assert video.is_published is False
     assert video.published_at is None
+
+
+# ---------------------------------------------------------------------------
+# sync_status_from_bunny — автопубликация по факту готовности (29.08.2026)
+# ---------------------------------------------------------------------------
+
+def _stub_remote(monkeypatch, **fields):
+    payload = {"status": 4, "encodeProgress": 100, "length": 120.0, "transcodingMessages": []}
+    payload.update(fields)
+    monkeypatch.setattr("app.services.video_catalog.get_video", lambda video_id: payload)
+    return payload
+
+
+def test_sync_publishes_video_flagged_for_auto_publish_on_ready(db, regular_user, monkeypatch):
+    video = _video(status="processing", is_published=False)
+    video.auto_publish_on_ready = True
+    video.created_by_id = regular_user.id
+    db.add(video)
+    db.commit()
+    _stub_remote(monkeypatch)
+
+    became_published = sync_status_from_bunny(db, video)
+
+    assert became_published is True
+    assert video.status == "ready"
+    assert video.is_published is True
+    assert video.published_by_id == regular_user.id
+
+
+def test_sync_does_not_publish_without_the_flag(db, monkeypatch):
+    video = _video(status="processing", is_published=False)
+    db.add(video)
+    db.commit()
+    _stub_remote(monkeypatch)
+
+    became_published = sync_status_from_bunny(db, video)
+
+    assert became_published is False
+    assert video.status == "ready"
+    assert video.is_published is False
+
+
+def test_sync_does_not_republish_already_ready_video(db, monkeypatch):
+    """Флаг срабатывает только в момент перехода в ready — иначе повторный
+    sync уже готового ролика откатил бы ручную «Отменить публикацию»."""
+    video = _video(status="ready", is_published=False)
+    video.auto_publish_on_ready = True
+    db.add(video)
+    db.commit()
+    _stub_remote(monkeypatch)
+
+    became_published = sync_status_from_bunny(db, video)
+
+    assert became_published is False
+    assert video.is_published is False
+
+
+def test_sync_updates_progress_and_duration_from_remote(db, monkeypatch):
+    video = _video(status="processing")
+    db.add(video)
+    db.commit()
+    _stub_remote(monkeypatch, status=2, encodeProgress=42, length=5376.0)
+
+    sync_status_from_bunny(db, video)
+
+    assert video.status == "processing"
+    assert video.encode_progress == 42
+    assert video.duration_seconds == 5376.0
 
 
 # ---------------------------------------------------------------------------

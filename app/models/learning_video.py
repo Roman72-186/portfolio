@@ -48,6 +48,13 @@ class LearningVideo(Base):
     status_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Куратор поставил ролик в день ДО того, как Bunny закончил обработку —
+    # публикация не ждёт отдельного клика «Опубликовать»: как только фоновая
+    # проверка (app/services/exam_scheduler.py::_run_video_status_sync) увидит
+    # status == 'ready', она опубликует ролик сама (решение владельца 29.08.2026:
+    # «нужно после загрузки видео сразу отправлять на обработку и на публикацию
+    # без всяких вторых, третьих, четвёртых действий»).
+    auto_publish_on_ready: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_by_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
