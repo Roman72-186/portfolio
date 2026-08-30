@@ -134,6 +134,10 @@
 .prg-form[hidden] { display: none; }
 .prg-form h2 { margin: 0; font: 700 17px/1.3 var(--font-display); color: var(--text); }
 .prg-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* Тот же перекрывающий [hidden] баг, что у .prg-form выше (владелец
+   30.08.2026: пикер «Новая анкета / Уже есть в базе» на правке Анкеты
+   оставался виден, JS-то верно ставил .hidden = true). */
+.prg-grid2[hidden] { display: none; }
 .prg-grid3 { display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 10px; }
 
 .prg-field { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }

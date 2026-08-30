@@ -14,6 +14,62 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # `exam_assignments`/`exam_tickets` не заводятся ни одной миграцией в
+    # этой цепочке — на проде обе таблицы когда-то создали вручную мимо
+    # Alembic, той же исходной формы, что сейчас в моделях (та же история,
+    # что и `users.parent_phone` в b2c3d4e5f6a7, найдено 30.08.2026 при
+    # попытке поднять чистый docker-compose). На проде уже есть — no-op; на
+    # свежей базе — стаб с базовыми колонками, которые сама история миграций
+    # никогда не добавляла. Поздние узкие поля (opens_at/closes_at/
+    # duration_minutes/target_tag_id — e6f7a8b9c0d1, restrict_start_by_duration
+    # — f1a2b3c4d5e6, kind/seq_number/note у assignments — b2f3e4d5c6a7)
+    # по-прежнему навешивают их собственные ADD COLUMN, как и раньше.
+    op.execute(
+        "CREATE TABLE IF NOT EXISTS exam_assignments ("
+        "id SERIAL PRIMARY KEY, "
+        "title VARCHAR(200) NOT NULL, "
+        "subject VARCHAR(50) NOT NULL, "
+        "status VARCHAR(20) NOT NULL DEFAULT 'draft', "
+        "created_by_id INTEGER NOT NULL REFERENCES users(id), "
+        "created_at TIMESTAMPTZ DEFAULT now(), "
+        "updated_at TIMESTAMPTZ DEFAULT now()"
+        ")"
+    )
+    op.execute(
+        "CREATE TABLE IF NOT EXISTS exam_tickets ("
+        "id SERIAL PRIMARY KEY, "
+        "assignment_id INTEGER NOT NULL REFERENCES exam_assignments(id), "
+        "ticket_number INTEGER NOT NULL, "
+        "title VARCHAR(200) NOT NULL, "
+        "description TEXT, "
+        "image_s3_url VARCHAR(500), "
+        "image_s3_path VARCHAR(300), "
+        "start_date DATE NOT NULL, "
+        "end_date DATE NOT NULL, "
+        "assign_to_all BOOLEAN NOT NULL DEFAULT false, "
+        "created_at TIMESTAMPTZ DEFAULT now()"
+        ")"
+    )
+    # exam_ticket_assignees — тот же пробел, что exam_tickets/exam_assignments
+    # выше, здесь потому что раньше exam_tickets в цепочке не существовало.
+    op.execute(
+        "CREATE TABLE IF NOT EXISTS exam_ticket_assignees ("
+        "id SERIAL PRIMARY KEY, "
+        "ticket_id INTEGER NOT NULL REFERENCES exam_tickets(id) ON DELETE CASCADE, "
+        "user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, "
+        "assigned_at TIMESTAMPTZ DEFAULT now(), "
+        "notified_at TIMESTAMPTZ"
+        ")"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_exam_ticket_assignees_ticket_id "
+        "ON exam_ticket_assignees (ticket_id)"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_exam_ticket_assignees_user_id "
+        "ON exam_ticket_assignees (user_id)"
+    )
+
     # exam_cycles
     op.create_table(
         'exam_cycles',

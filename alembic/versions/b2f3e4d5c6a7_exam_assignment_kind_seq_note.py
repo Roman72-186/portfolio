@@ -15,6 +15,12 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # `exam_assignments` не заводится ни одной миграцией — тот же пробел,
+    # что у exam_tickets/mock_exam_attempts/users.parent_phone, найдено
+    # 30.08.2026 при поднятии чистого docker-compose. На проде уже есть —
+    # no-op, на свежей базе — минимальный стаб.
+    op.execute("CREATE TABLE IF NOT EXISTS exam_assignments (id SERIAL PRIMARY KEY)")
+
     # kind: тип задания — "mock" (Пробник) | "control" (Контрольная).
     # server_default гарантирует валидное значение для существующих строк.
     op.add_column(
