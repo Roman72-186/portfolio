@@ -22,12 +22,12 @@ from app.constants import MOCK_SUBJECTS
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf, require_csrf_header
 from app.models.audit_log import AuditLog
-from app.models.exam_assignment import ExamAssignment
+from app.models.exam_assignment import ExamAssignment, ExamTicket
+from app.models.exam_cycle import ExamCycle
 from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, LearningTopic
 from app.models.learning_video import LearningVideo
 from app.models.task_quiz import MAX_QUIZ_QUESTIONS
 from app.services.task_quiz import (
-    create_questions as create_mock_quiz_questions,
     get_quiz_question_rows as get_task_quiz_question_rows,
     sync_questions as sync_task_quiz_questions,
 )
@@ -96,7 +96,12 @@ from app.services.tracker import (
 )
 from app.services.tz import today_msk
 from app.services.utils import compress_image
-from app.services.video_topics import ambiguous_tag_names, count_topic_audience
+from app.services.video_topics import (
+    ambiguous_tag_names,
+    count_topic_audience,
+    get_assignee_ids,
+    get_tag_ids,
+)
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/staff/program")
@@ -141,13 +146,15 @@ def _edit_payloads(
 ) -> dict[int, dict]:
     """Данные для предзаполнения формы правки — по одному элементу на карточку.
 
-    Только для видов из `editable_kinds`: пробник и анкета правкой пока не
-    покрыты, им здесь делать нечего.
+    Только для видов из `editable_kinds`: анкета правкой пока не покрыта
+    (общий переиспользуемый шаблон — отдельное решение), ей здесь делать
+    нечего.
     """
     payloads: dict[int, dict] = {}
     for item in items:
         if item.kind not in (
             ITEM_VIDEO, ITEM_HOMEWORK, ITEM_MATERIAL, ITEM_QUIZ, ITEM_LESSON, ITEM_CHECKLIST,
+            ITEM_MOCK_EXAM,
         ):
             continue
         detail = details.get(item.id, {})
@@ -166,6 +173,17 @@ def _edit_payloads(
             payload["images"] = [
                 {"url": img.image_s3_url, "path": img.image_s3_path}
                 for img in homework_images(db, hw.id)
+            ]
+        if item.kind == ITEM_MOCK_EXAM and item.source_id:
+            payload["tickets"] = [
+                {
+                    "id": t.id, "title": t.title, "description": t.description or "",
+                    "image_url": t.image_s3_url, "image_path": t.image_s3_path,
+                }
+                for t in db.query(ExamTicket)
+                .filter(ExamTicket.assignment_id == item.source_id)
+                .order_by(ExamTicket.ticket_number)
+                .all()
             ]
         # Мини-опрос (владелец 30.08.2026) — у видео своя правка вопросов
         # (video_admin.py, экран «Загрузка видео»), сюда его не тащим, чтобы
@@ -239,11 +257,11 @@ def program_day(
             "month_href": f"/cabinet/staff/program?month={day.year}-{day.month:02d}",
             "items": items,
             "details": details,
-            # Пробник и анкету включим сюда отдельным шагом, когда для них
-            # появится реальная правка (владелец 30.08.2026: остальные виды —
-            # строго будущее, эти два — следующая часть той же задачи).
+            # Анкету включим отдельным шагом — общий переиспользуемый шаблон,
+            # решение по правке отдельное (владелец 30.08.2026).
             "editable_kinds": [
                 ITEM_VIDEO, ITEM_HOMEWORK, ITEM_MATERIAL, ITEM_QUIZ, ITEM_LESSON, ITEM_CHECKLIST,
+                ITEM_MOCK_EXAM,
             ],
             "edit_payloads": _edit_payloads(db, items, details),
             "kind_labels": ITEM_KIND_LABELS,
@@ -292,6 +310,49 @@ class TicketPayload(BaseModel):
         return value or None
 
 
+class QuizQuestionItem(BaseModel):
+    """Одна строка конструктора мини-опроса (владелец 30.08.2026, общий на
+    все виды — см. `app/models/task_quiz.py`). `id` — существующий вопрос
+    (правится на месте, ответы учеников сохраняются), `None` — новая строка,
+    добавленная кнопкой «+». Та же форма, что у видео (`video_admin.py`,
+    `QuizQuestionInput`), локальная копия — конструктор дня не тянет модуль
+    каталога видео ради одного класса."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: int | None = Field(default=None, ge=1)
+    text: str = Field(min_length=1, max_length=300)
+
+    @field_validator("text")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Question text cannot be empty")
+        return value
+
+
+class MockTicketEditPayload(TicketPayload):
+    """Билет на правке — та же форма, что у создания (`TicketPayload`), плюс
+    `id`: существующий билет правится на месте (текст меняется даже если
+    ученик уже сдаёт по нему — снимок билета уже лежит в `MockExamAttempt`,
+    владелец подтвердил 30.08.2026), `None` — новый билет, добавленный
+    кнопкой «+»."""
+
+    id: int | None = Field(default=None, ge=1)
+
+
+class MockEditPayload(BaseModel):
+    """Правка Пробника (владелец 30.08.2026): билеты, обязательность,
+    мини-опрос. Предмет и адресация не меняются — предмет зашит в задание,
+    аудитория переносится с уже существующей темы дня."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tickets: list[MockTicketEditPayload] = Field(min_length=1, max_length=10)
+    is_required: bool = True
+    quiz_questions: list[QuizQuestionItem] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
+
+
 class SubjectPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -322,16 +383,12 @@ class MockPayload(BaseModel):
     subjects: list[SubjectPayload] = Field(min_length=1, max_length=len(MOCK_SUBJECTS))
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
     is_required: bool = True
-    # Мини-опрос после сдачи (решение владельца 30.08.2026, та же конструкция,
-    # что у видео) — один набор вопросов на все выбранные предметы сразу:
-    # у Пробника нет экрана правки, поэтому не нужна id-сохраняющая развязка
-    # video_quiz.py::sync_questions, только чистое создание при сохранении.
-    quiz_questions: list[str] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
-
-    @field_validator("quiz_questions")
-    @classmethod
-    def strip_quiz_questions(cls, value: list[str]) -> list[str]:
-        return [item.strip() for item in value if item and item.strip()]
+    # Мини-опрос после сдачи (владелец 30.08.2026) — один набор вопросов на
+    # все выбранные предметы сразу, каждый предмет получает свою копию строк.
+    # `QuizQuestionItem` (id/None), не голый текст — та же форма, что у
+    # правки (`MockEditPayload` ниже), id на создании всегда None, но так
+    # payload един на оба эндпоинта и не нужно два разных JS-сборщика.
+    quiz_questions: list[QuizQuestionItem] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
 
 
 def _guard_future(day: date) -> None:
@@ -476,8 +533,8 @@ def create_mock_item(
         task.is_published = True
         db.flush()
         if payload.quiz_questions:
-            create_mock_quiz_questions(
-                db, task_id=task.id, texts=payload.quiz_questions
+            sync_task_quiz_questions(
+                db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
             )
         db.add(
             AuditLog(
@@ -555,27 +612,6 @@ class VideoPayload(BaseModel):
             return None
         if value not in MOCK_SUBJECTS:
             raise ValueError("Unknown subject")
-        return value
-
-
-class QuizQuestionItem(BaseModel):
-    """Одна строка конструктора мини-опроса (владелец 30.08.2026, общий на
-    все виды — см. `app/models/task_quiz.py`). `id` — существующий вопрос
-    (правится на месте, ответы учеников сохраняются), `None` — новая строка,
-    добавленная кнопкой «+». Та же форма, что у видео (`video_admin.py`,
-    `QuizQuestionInput`), локальная копия — конструктор дня не тянет модуль
-    каталога видео ради одного класса."""
-
-    model_config = ConfigDict(extra="forbid")
-    id: int | None = Field(default=None, ge=1)
-    text: str = Field(min_length=1, max_length=300)
-
-    @field_validator("text")
-    @classmethod
-    def strip_text(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("Question text cannot be empty")
         return value
 
 
@@ -1099,6 +1135,159 @@ def _get_editable_task(db: DBSession, task_id: int, kind: str) -> TrackerTask:
         raise HTTPException(status_code=404, detail="Элемент не найден")
     _guard_editable(msk_date(task.due_at))
     return task
+
+
+def _sync_mock_tickets(
+    db: DBSession,
+    *,
+    assignment: ExamAssignment,
+    day: date,
+    tickets: list[MockTicketEditPayload],
+    assign_to_all: bool,
+    tag_ids: list[int],
+    assignee_ids: list[int],
+) -> None:
+    """Развести билеты из формы правки с уже сохранёнными — id-сохраняющая
+    логика, как у мини-опроса (владелец 30.08.2026: править билет можно
+    всегда, даже если ученик уже сдаёт по нему — снимок текста уже лежит в
+    `MockExamAttempt.ticket_title`/`ticket_description`/`ticket_image_url`,
+    правка билета его не трогает).
+
+    Новый билет получает то же окно, что и остальные билеты этого дня
+    (`default_schedule_for_day` — окно одно на весь `ExamAssignment`,
+    `ticket_number` только для текста ошибок), и ту же адресацию, что уже
+    стоит на теме элемента.
+
+    Билет с открытым/сданным циклом (`ExamCycle`) убрать нельзя — проверяем
+    явно перед удалением (не полагаемся на FK: в тестах SQLite внешние
+    ключи не исполняет, см. video_quiz.py::sync_questions).
+    """
+    existing = {
+        t.id: t
+        for t in db.query(ExamTicket).filter(ExamTicket.assignment_id == assignment.id).all()
+    }
+    next_number = max((t.ticket_number for t in existing.values()), default=0) + 1
+    schedule = default_schedule_for_day(day)
+    duration_minutes = schedule["duration_minutes"]
+    restrict_start_by_duration = True
+
+    matched_ids: set[int] = set()
+    for item in tickets:
+        ticket = existing.get(item.id) if item.id is not None else None
+        if ticket is not None:
+            ticket.title = item.title
+            ticket.description = item.description
+            ticket.image_s3_url = item.image_url
+            ticket.image_s3_path = item.image_path
+            matched_ids.add(ticket.id)
+        else:
+            opens_at = parse_msk_datetime(
+                schedule["opens_at"], ticket_number=next_number, field_label="открывается"
+            )
+            closes_at = parse_msk_datetime(
+                schedule["closes_at"], ticket_number=next_number, field_label="закрывается"
+            )
+            start_date, end_date = validate_window(
+                ticket_number=next_number,
+                opens_at=opens_at,
+                closes_at=closes_at,
+                duration_minutes=duration_minutes,
+                restrict_start_by_duration=restrict_start_by_duration,
+            )
+            create_ticket(
+                db,
+                assignment,
+                number=next_number,
+                title=item.title,
+                description=item.description,
+                image_url=item.image_url,
+                image_path=item.image_path,
+                opens_at=opens_at,
+                closes_at=closes_at,
+                duration_minutes=duration_minutes,
+                restrict_start_by_duration=restrict_start_by_duration,
+                start_date=start_date,
+                end_date=end_date,
+                assign_to_all=assign_to_all,
+                tag_ids=tag_ids,
+                assignee_ids=assignee_ids,
+            )
+            next_number += 1
+
+    removed_ids = [ticket_id for ticket_id in existing if ticket_id not in matched_ids]
+    if removed_ids:
+        # Явная проверка, а не расчёт на IntegrityError от FK: SQLite в
+        # тестах внешние ключи не исполняет вовсе (см. docstring
+        # video_quiz.py::sync_questions), проверка должна работать одинаково
+        # в тестах и на боевом Postgres.
+        busy = (
+            db.query(ExamCycle.ticket_id)
+            .filter(ExamCycle.ticket_id.in_(removed_ids))
+            .distinct()
+            .all()
+        )
+        if busy:
+            raise HTTPException(
+                status_code=409,
+                detail="Нельзя убрать билет — по нему уже есть сдача (открытый или завершённый цикл)",
+            )
+        for ticket_id in removed_ids:
+            db.delete(existing[ticket_id])
+
+    db.flush()
+
+
+@router.post("/items/{task_id}/mock", response_class=JSONResponse)
+def update_mock_item(
+    task_id: int,
+    payload: MockEditPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Правка Пробника (владелец 30.08.2026) — билеты, обязательность,
+    мини-опрос. Предмет и адресация не меняются."""
+    task = _get_editable_task(db, task_id, ITEM_MOCK_EXAM)
+    assignment = db.get(ExamAssignment, task.source_id) if task.source_id else None
+    if assignment is None:
+        raise HTTPException(status_code=404, detail="Задание не найдено")
+
+    day = msk_date(task.due_at)
+    assign_to_all = task.topic_id and db.get(LearningTopic, task.topic_id).assign_to_all or False
+    tag_ids = get_tag_ids(db, task.topic_id) if task.topic_id else []
+    assignee_ids = get_assignee_ids(db, task.topic_id) if task.topic_id else []
+
+    _sync_mock_tickets(
+        db,
+        assignment=assignment,
+        day=day,
+        tickets=payload.tickets,
+        assign_to_all=assign_to_all,
+        tag_ids=tag_ids,
+        assignee_ids=assignee_ids,
+    )
+    sync_task_quiz_questions(
+        db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
+    )
+    update_task(
+        task,
+        title=task.title,
+        description=task.description,
+        due_at=task.due_at,
+        subject=task.subject,
+        assign_to_all=task.assign_to_all,
+        kind=ITEM_MOCK_EXAM,
+        is_required=payload.is_required,
+    )
+    db.add(
+        AuditLog(
+            action="program_mock_update",
+            performed_by_id=user["user_id"],
+            details=json.dumps({"task_id": task_id}, ensure_ascii=False),
+        )
+    )
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 def _update_simple_item(

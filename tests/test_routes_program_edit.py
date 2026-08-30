@@ -371,8 +371,9 @@ def test_video_edit_rejects_video_taken_by_another_day(
 def test_day_page_offers_edit_only_for_editable_kinds(
     client, db, user_factory, session_factory, monkeypatch
 ):
-    """Пробник и анкета правкой пока не покрыты (owner-решение 29.08.2026) —
-    у их карточек должна остаться только «Удалить»."""
+    """Анкета правкой пока не покрыта (общий переиспользуемый шаблон,
+    отдельное решение владельца 30.08.2026) — у её карточки должна остаться
+    только «Удалить». Пробник теперь редактируется — см. test_routes_task_quiz.py."""
     _freeze(monkeypatch)
     _staff_client(client, user_factory, session_factory)
 

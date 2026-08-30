@@ -226,9 +226,9 @@ def test_day_page_renders_quiz_block_for_simple_and_homework_forms(client, db, u
     resp = client.get(f"{PROGRAM}/{day_iso}")
     assert resp.status_code == 200
     # Раскрывашка вопросов есть у каждого из четырёх простых видов, у
-    # самостоятельной и у анкеты — ровно 6 карточек на пустой день (видео —
-    # своя, седьмая, тут не считается: у неё другой текст подсказки).
-    assert resp.text.count('class="prg-quiz" data-quiz-questions-wrap>') == 6
+    # самостоятельной, у анкеты и у Пробника — 7 карточек на пустой день
+    # (видео — восьмая, свой другой текст подсказки, не считается).
+    assert resp.text.count('class="prg-quiz" data-quiz-questions-wrap>') == 7
 
 
 def test_edit_payload_includes_quiz_questions_for_prefill(client, db, user_factory, session_factory, monkeypatch):

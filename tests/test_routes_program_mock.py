@@ -364,7 +364,11 @@ def test_quiz_questions_duplicated_into_every_selected_assignment(
                 ],
                 tag_ids=[tag.id],
             ),
-            "quiz_questions": ["Как прошла сдача?", "  ", "Что было сложно?"],
+            # Та же строгая форма {id, text}, что у остальных семи видов
+            # (владелец 30.08.2026: правка потребовала общего QuizQuestionItem,
+            # у него нет отдельного молчаливого фильтра пустых строк — те
+            # отсекает JS до отправки, как у всех остальных).
+            "quiz_questions": [{"text": "Как прошла сдача?"}, {"text": "Что было сложно?"}],
         },
     )
 
@@ -386,7 +390,6 @@ def test_quiz_questions_duplicated_into_every_selected_assignment(
             .order_by(TaskQuizQuestion.sort_order)
             .all()
         )
-        # Пустая строка ("  ") отсеяна валидатором payload.
         assert [r.text for r in rows] == ["Как прошла сдача?", "Что было сложно?"]
 
 

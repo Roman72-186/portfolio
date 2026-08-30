@@ -114,12 +114,12 @@ FORM: Operate.
             <span>Обязательно для сдачи</span>
         </label>
         <p class="prg-hint">Билет автоматически доступен всем ученикам, окно сдачи система выставляет сама.</p>
-        <div class="prg-quiz" data-mock-quiz-questions-wrap>
+        <div class="prg-quiz" data-quiz-questions-wrap>
             <h3>Мини-опрос после сдачи</h3>
-            <p class="prg-hint">Ответы свободные, без проверки. Один набор вопросов на все отмеченные предметы сразу.</p>
-            <div data-mock-quiz-questions></div>
+            <p class="prg-hint">Ответы свободные, без проверки. Один набор вопросов на все отмеченные предметы сразу (на создании) или на этот билет (на правке).</p>
+            <div data-quiz-questions></div>
             <div class="prg-actions">
-                <button type="button" class="btn-outline" data-add-mock-quiz-question>Добавить вопрос</button>
+                <button type="button" class="btn-outline" data-add-quiz-question>Добавить вопрос</button>
             </div>
         </div>
         <div class="prg-actions">
@@ -489,15 +489,21 @@ FORM: Operate.
         return blocks;
     }
 
-    // Мини-опрос после сдачи (владелец 30.08.2026) — та же конструкция
-    // «плюс — новая строка», что у видео, но собирается разом на «Сохранить»:
-    // у Пробника нет отдельного экрана правки, автосохранение по клавише не
-    // на чем строить (задания ещё не существует, пока форма не отправлена).
-    function collectMockQuizQuestions() {
+    // Правка (владелец 30.08.2026) — предмет уже известен из карточки,
+    // билеты собираем только из его блока (остальные блоки скрыты целиком,
+    // см. openMockEdit), id-сохраняющая пара, как у мини-опроса.
+    function collectMockEditTickets() {
         var items = [];
-        mockForm.querySelectorAll('[data-mock-quiz-questions] [data-quiz-question]').forEach(function (row) {
-            var text = row.querySelector('[data-qq-text]').value.trim();
-            if (text) items.push(text);
+        mockForm.querySelectorAll('[data-subject-block]:not([hidden]) [data-ticket]').forEach(function (row) {
+            var thumb = row.querySelector('[data-t-thumb]');
+            var idAttr = row.getAttribute('data-ticket-id');
+            items.push({
+                id: idAttr ? Number(idAttr) : null,
+                title: row.querySelector('[data-t-title]').value.trim(),
+                description: row.querySelector('[data-t-description]').value,
+                image_url: thumb.dataset.url || null,
+                image_path: thumb.dataset.path || null
+            });
         });
         return items;
     }
@@ -543,7 +549,7 @@ FORM: Operate.
     }
 
     function saveError(error, what) {
-        return error.status === 422 && error.message !== 'request_failed'
+        return (error.status === 422 || error.status === 409) && error.message !== 'request_failed'
             ? error.message
             : 'Не удалось сохранить ' + what + '. Попробуйте ещё раз.';
     }
@@ -875,6 +881,23 @@ FORM: Operate.
     // (itemUrl выше), а не по dayIso — день элемента не меняется.
     var simpleEditableKinds = ['material', 'quiz', 'lesson', 'checklist'];
 
+    function resetMockFormForCreate() {
+        delete mockForm.dataset.editingTaskId;
+        mockForm.querySelectorAll('[data-subject-block]').forEach(function (block) {
+            block.hidden = false;
+            var toggle = block.querySelector('[data-subject-toggle]');
+            toggle.checked = false;
+            toggle.disabled = false;
+            block.querySelector('[data-subject-body]').hidden = true;
+            block.querySelector('[data-subject-note]').value = '';
+            block.querySelector('[data-subject-note]').closest('.prg-field').hidden = false;
+            block.querySelector('[data-tickets]').innerHTML = '';
+        });
+        mockForm.querySelector('[data-m-required]').checked = true;
+        renderFormQuizQuestions(mockForm, []);
+        setFormMessage('');
+    }
+
     function resetVideoFormForCreate() {
         delete videoForm.dataset.editingTaskId;
         selectedVideoId = null;
@@ -910,6 +933,51 @@ FORM: Operate.
         form.querySelector('[data-x-required]').checked = true;
         renderFormQuizQuestions(form, []);
         setMessage(form, '', false);
+    }
+
+    function openMockEdit(taskId, data) {
+        // Правка (владелец 30.08.2026): предмет не меняется — показываем
+        // только блок этого предмета, остальные скрываем целиком, чтобы
+        // billet не собрался по второму предмету случайно.
+        mockForm.dataset.editingTaskId = String(taskId);
+        mockForm.querySelectorAll('[data-subject-block]').forEach(function (block) {
+            var isThis = block.dataset.subjectBlock === data.subject;
+            var toggle = block.querySelector('[data-subject-toggle]');
+            var body = block.querySelector('[data-subject-body]');
+            block.hidden = !isThis;
+            if (!isThis) {
+                toggle.checked = false;
+                toggle.disabled = false;
+                body.hidden = true;
+                return;
+            }
+            toggle.checked = true;
+            toggle.disabled = true;
+            body.hidden = false;
+            block.querySelector('[data-subject-note]').closest('.prg-field').hidden = true;
+            var holder = block.querySelector('[data-tickets]');
+            holder.innerHTML = '';
+            (data.tickets || []).forEach(function (ticket, index) {
+                holder.insertAdjacentHTML('beforeend', ticketHTML(index + 1));
+                var row = holder.lastElementChild;
+                row.setAttribute('data-ticket-id', ticket.id);
+                row.querySelector('[data-t-title]').value = ticket.title || '';
+                row.querySelector('[data-t-description]').value = ticket.description || '';
+                if (ticket.image_url) {
+                    var thumb = row.querySelector('[data-t-thumb]');
+                    thumb.dataset.url = ticket.image_url;
+                    thumb.dataset.path = ticket.image_path || '';
+                    var img = document.createElement('img');
+                    img.src = ticket.image_url;
+                    img.alt = 'Картинка билета';
+                    thumb.appendChild(img);
+                }
+            });
+        });
+        mockForm.querySelector('[data-m-required]').checked = data.is_required !== false;
+        renderFormQuizQuestions(mockForm, data.quiz_questions || []);
+        setFormMessage('Правка Пробника — измените билеты и сохраните.', false);
+        showForm('mock');
     }
 
     function openVideoEdit(taskId, data) {
@@ -972,6 +1040,7 @@ FORM: Operate.
             if (openForm && openForm.dataset.editingTaskId) {
                 if (openKind === 'video') resetVideoFormForCreate();
                 else if (openKind === 'homework') resetHomeworkFormForCreate();
+                else if (openKind === 'mock') resetMockFormForCreate();
                 else if (simpleEditableKinds.indexOf(openKind) !== -1) resetSimpleFormForCreate(openKind);
             }
             showForm(openKind);
@@ -989,6 +1058,7 @@ FORM: Operate.
             if (!editData) return;
             if (editKind === 'video') openVideoEdit(editTaskId, editData);
             else if (editKind === 'homework') openHomeworkEdit(editTaskId, editData);
+            else if (editKind === 'mock_exam') openMockEdit(editTaskId, editData);
             else openSimpleEdit(editKind, editTaskId, editData);
             return;
         }
@@ -1003,15 +1073,28 @@ FORM: Operate.
         var removeTicket = event.target.closest('[data-remove-ticket]');
         if (removeTicket) { removeTicket.closest('[data-ticket]').remove(); return; }
 
-        var addMockQuizQuestion = event.target.closest('[data-add-mock-quiz-question]');
-        if (addMockQuizQuestion) {
-            var mockQuizHolder = mockForm.querySelector('[data-mock-quiz-questions]');
-            mockQuizHolder.insertAdjacentHTML('beforeend', quizQuestionRowHTML(mockQuizHolder.children.length + 1));
-            return;
-        }
-
         var saveMock = event.target.closest('[data-mock-save]');
         if (saveMock) {
+            if (mockForm.dataset.editingTaskId) {
+                // Правка (владелец 30.08.2026) — один предмет, уже известный
+                // из карточки, билеты собираем только из его блока.
+                var editTickets = collectMockEditTickets();
+                if (!editTickets.length || editTickets.some(function (t) { return !t.title; })) {
+                    setFormMessage('Есть билет без названия.', true);
+                    return;
+                }
+                setFormMessage('');
+                saveMock.disabled = true;
+                api(itemUrl('mock', mockForm), {
+                    tickets: editTickets,
+                    is_required: mockForm.querySelector('[data-m-required]').checked,
+                    quiz_questions: collectFormQuizQuestions(mockForm)
+                }).then(afterSave).catch(function (error) {
+                    saveMock.disabled = false;
+                    setFormMessage(saveError(error, 'пробник'), true);
+                });
+                return;
+            }
             var blocks = collectSubjects();
             if (!blocks.length) { setFormMessage('Отметьте хотя бы один предмет.', true); return; }
             var empty = blocks.filter(function (b) {
@@ -1033,12 +1116,10 @@ FORM: Operate.
                 subjects: blocks,
                 audience: {assign_to_all: true, tag_ids: [], assignee_usernames: ''},
                 is_required: mockForm.querySelector('[data-m-required]').checked,
-                quiz_questions: collectMockQuizQuestions()
+                quiz_questions: collectFormQuizQuestions(mockForm)
             }).then(afterSave).catch(function (error) {
                 saveMock.disabled = false;
-                setFormMessage(error.status === 422 && error.message !== 'request_failed'
-                    ? error.message
-                    : 'Не удалось сохранить пробник. Попробуйте ещё раз.', true);
+                setFormMessage(saveError(error, 'пробник'), true);
             });
             return;
         }
