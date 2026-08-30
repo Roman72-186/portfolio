@@ -40,11 +40,12 @@ from app.models.exam_assignment import ExamTicket
 from app.models.exam_cycle import ExamCycle
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
-from app.models.mock_exam_quiz import MAX_QUIZ_QUESTIONS
+from app.models.task_quiz import MAX_QUIZ_QUESTIONS
+from app.models.tracker import SOURCE_EXAM_ASSIGNMENT, TrackerTask
 from app.models.upload_log import UploadLog
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
-from app.services.mock_exam_quiz import (
+from app.services.task_quiz import (
     get_answers_map as get_mock_quiz_answers_map,
     get_quiz_question_rows as get_mock_quiz_question_rows,
     get_quiz_questions as get_mock_quiz_questions,
@@ -182,6 +183,22 @@ def _submitted_assignment_id(db: DBSession, user_id: int, subject: str) -> int |
             Work.needs_revision == False,  # noqa: E712
         )
         .order_by(ExamCycle.started_at.desc())
+        .first()
+    )
+    return row[0] if row else None
+
+
+def _task_id_for_assignment(db: DBSession, assignment_id: int) -> int | None:
+    """`TrackerTask.id` элемента дня, из которого родилось это задание —
+    мини-опрос Пробника хранится на общем со всеми видами столе
+    `task_quiz_questions` (владелец 30.08.2026, см. `app/models/task_quiz.py`),
+    ключ там `task_id`, а не `assignment_id`."""
+    row = (
+        db.query(TrackerTask.id)
+        .filter(
+            TrackerTask.source_kind == SOURCE_EXAM_ASSIGNMENT,
+            TrackerTask.source_id == assignment_id,
+        )
         .first()
     )
     return row[0] if row else None
@@ -1092,14 +1109,15 @@ def mock_exam_embed(
     quiz_answers: list[str] | None = None
     if subject in locked_reasons:
         assignment_id = _submitted_assignment_id(db, user["user_id"], subject)
-        if assignment_id is not None:
-            quiz_questions = get_mock_quiz_questions(db, assignment_id)
+        task_id = _task_id_for_assignment(db, assignment_id) if assignment_id is not None else None
+        if task_id is not None:
+            quiz_questions = get_mock_quiz_questions(db, task_id)
             if quiz_questions:
                 response = get_mock_quiz_response(
-                    db, assignment_id=assignment_id, user_id=user["user_id"]
+                    db, task_id=task_id, user_id=user["user_id"]
                 )
                 if response is not None:
-                    question_rows = get_mock_quiz_question_rows(db, assignment_id)
+                    question_rows = get_mock_quiz_question_rows(db, task_id)
                     answers_map = get_mock_quiz_answers_map(db, response_id=response.id)
                     quiz_answers = [answers_map.get(q.id, "") for q in question_rows]
 
@@ -1147,16 +1165,17 @@ def submit_mock_exam_quiz(
     if payload.subject not in MOCK_SUBJECTS:
         raise HTTPException(status_code=422, detail="Выберите предмет")
     assignment_id = _submitted_assignment_id(db, user["user_id"], payload.subject)
-    if assignment_id is None:
+    task_id = _task_id_for_assignment(db, assignment_id) if assignment_id is not None else None
+    if task_id is None:
         raise HTTPException(status_code=409, detail="Сначала сдайте финальное фото")
-    question_rows = get_mock_quiz_question_rows(db, assignment_id)
+    question_rows = get_mock_quiz_question_rows(db, task_id)
     if not question_rows:
         raise HTTPException(status_code=404, detail="Мини-опрос не настроен")
     if len(payload.answers) != len(question_rows):
         raise HTTPException(status_code=422, detail="Число ответов не совпадает с числом вопросов")
     save_mock_quiz_response(
         db,
-        assignment_id=assignment_id,
+        task_id=task_id,
         user_id=user["user_id"],
         question_rows=question_rows,
         answers=payload.answers,

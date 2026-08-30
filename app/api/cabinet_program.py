@@ -25,8 +25,8 @@ from app.models.audit_log import AuditLog
 from app.models.exam_assignment import ExamAssignment
 from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, LearningTopic
 from app.models.learning_video import LearningVideo
-from app.models.mock_exam_quiz import MAX_QUIZ_QUESTIONS
-from app.services.mock_exam_quiz import create_questions as create_mock_quiz_questions
+from app.models.task_quiz import MAX_QUIZ_QUESTIONS
+from app.services.task_quiz import create_questions as create_mock_quiz_questions
 from app.models.survey import QUESTION_TYPE_LABELS, QUESTION_TYPES
 from app.services.video_catalog import publish_video
 from app.models.tracker import (
@@ -395,11 +395,6 @@ def create_mock_item(
         db.add(assignment)
         db.flush()
 
-        if payload.quiz_questions:
-            create_mock_quiz_questions(
-                db, assignment_id=assignment.id, texts=payload.quiz_questions
-            )
-
         # Окно билета больше не настраивается в конструкторе (решение
         # владельца 30.08.2026) — одно и то же для всех билетов дня.
         schedule = default_schedule_for_day(day)
@@ -467,6 +462,11 @@ def create_mock_item(
             is_required=payload.is_required,
         )
         task.is_published = True
+        db.flush()
+        if payload.quiz_questions:
+            create_mock_quiz_questions(
+                db, task_id=task.id, texts=payload.quiz_questions
+            )
         db.add(
             AuditLog(
                 action="program_mock_create",

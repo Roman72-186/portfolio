@@ -24,7 +24,12 @@ def _create_active_period(db, user, feature="mock_exam"):
 
 
 def _create_active_ticket(db, user, subject="Рисунок"):
+    """Билет + связанный `TrackerTask` — мини-опрос ключуется по `task_id`
+    (владелец 30.08.2026, см. `app/models/task_quiz.py`), без него
+    `_task_id_for_assignment` не найдёт задание."""
     from app.models.exam_assignment import ExamAssignment, ExamTicket
+    from app.models.tracker import SOURCE_EXAM_ASSIGNMENT, ITEM_MOCK_EXAM
+    from app.services.tracker import create_task
     today = date.today()
     assignment = ExamAssignment(
         title=f"Тест {subject}", subject=subject,
@@ -40,8 +45,30 @@ def _create_active_ticket(db, user, subject="Рисунок"):
         assign_to_all=True,
     )
     db.add(ticket)
+    db.flush()
+    create_task(
+        db,
+        title=f"Пробник по предмету «{subject}»",
+        user_id=user.id,
+        subject=subject,
+        kind=ITEM_MOCK_EXAM,
+        source_kind=SOURCE_EXAM_ASSIGNMENT,
+        source_id=assignment.id,
+    )
     db.commit()
     return ticket
+
+
+def _task_for_ticket(db, ticket):
+    from app.models.tracker import SOURCE_EXAM_ASSIGNMENT, TrackerTask
+    return (
+        db.query(TrackerTask)
+        .filter(
+            TrackerTask.source_kind == SOURCE_EXAM_ASSIGNMENT,
+            TrackerTask.source_id == ticket.assignment_id,
+        )
+        .one()
+    )
 
 
 def _embed(client, subject="Рисунок"):
@@ -166,13 +193,14 @@ def test_embed_locked_without_quiz_questions_omits_quiz(auth_client, db):
 
 
 def test_embed_locked_with_quiz_questions_exposes_them_unanswered(auth_client, db):
-    from app.models.mock_exam_quiz import ExamAssignmentQuestion
+    from app.models.task_quiz import TaskQuizQuestion
 
     client, user = auth_client
     _create_active_period(db, user)
     ticket = _create_active_ticket(db, user, "Рисунок")
-    db.add(ExamAssignmentQuestion(assignment_id=ticket.assignment_id, text="Как прошла сдача?", sort_order=0))
-    db.add(ExamAssignmentQuestion(assignment_id=ticket.assignment_id, text="Что было сложно?", sort_order=1))
+    task = _task_for_ticket(db, ticket)
+    db.add(TaskQuizQuestion(task_id=task.id, text="Как прошла сдача?", sort_order=0))
+    db.add(TaskQuizQuestion(task_id=task.id, text="Что было сложно?", sort_order=1))
     db.commit()
     _submit_final(db, user, ticket, "Рисунок")
 
@@ -187,12 +215,13 @@ def test_embed_locked_with_quiz_questions_exposes_them_unanswered(auth_client, d
 def test_embed_unlocked_omits_quiz_even_if_configured(auth_client, db):
     """Мини-опрос виден только после сдачи финала — билет без активной
     попытки не должен его показывать заранее."""
-    from app.models.mock_exam_quiz import ExamAssignmentQuestion
+    from app.models.task_quiz import TaskQuizQuestion
 
     client, user = auth_client
     _create_active_period(db, user)
     ticket = _create_active_ticket(db, user, "Рисунок")
-    db.add(ExamAssignmentQuestion(assignment_id=ticket.assignment_id, text="Как прошла сдача?", sort_order=0))
+    task = _task_for_ticket(db, ticket)
+    db.add(TaskQuizQuestion(task_id=task.id, text="Как прошла сдача?", sort_order=0))
     db.commit()
 
     resp = _embed(client, "Рисунок")
@@ -203,12 +232,13 @@ def test_embed_unlocked_omits_quiz_even_if_configured(auth_client, db):
 
 
 def test_submit_quiz_requires_submitted_final(auth_client, db):
-    from app.models.mock_exam_quiz import ExamAssignmentQuestion
+    from app.models.task_quiz import TaskQuizQuestion
 
     client, user = auth_client
     _create_active_period(db, user)
     ticket = _create_active_ticket(db, user, "Рисунок")
-    db.add(ExamAssignmentQuestion(assignment_id=ticket.assignment_id, text="Вопрос", sort_order=0))
+    task = _task_for_ticket(db, ticket)
+    db.add(TaskQuizQuestion(task_id=task.id, text="Вопрос", sort_order=0))
     db.commit()
 
     resp = client.post("/upload/mock-exam/quiz", json={"subject": "Рисунок", "answers": ["ответ"]})
@@ -226,13 +256,14 @@ def test_submit_quiz_requires_configured_questions(auth_client, db):
 
 
 def test_submit_quiz_rejects_answer_count_mismatch(auth_client, db):
-    from app.models.mock_exam_quiz import ExamAssignmentQuestion
+    from app.models.task_quiz import TaskQuizQuestion
 
     client, user = auth_client
     _create_active_period(db, user)
     ticket = _create_active_ticket(db, user, "Рисунок")
-    db.add(ExamAssignmentQuestion(assignment_id=ticket.assignment_id, text="Вопрос 1", sort_order=0))
-    db.add(ExamAssignmentQuestion(assignment_id=ticket.assignment_id, text="Вопрос 2", sort_order=1))
+    task = _task_for_ticket(db, ticket)
+    db.add(TaskQuizQuestion(task_id=task.id, text="Вопрос 1", sort_order=0))
+    db.add(TaskQuizQuestion(task_id=task.id, text="Вопрос 2", sort_order=1))
     db.commit()
     _submit_final(db, user, ticket, "Рисунок")
 
@@ -241,13 +272,14 @@ def test_submit_quiz_rejects_answer_count_mismatch(auth_client, db):
 
 
 def test_submit_quiz_success_saves_answers_and_embed_returns_them(auth_client, db):
-    from app.models.mock_exam_quiz import ExamAssignmentQuestion, MockQuizResponse
+    from app.models.task_quiz import TaskQuizQuestion, TaskQuizResponse
 
     client, user = auth_client
     _create_active_period(db, user)
     ticket = _create_active_ticket(db, user, "Рисунок")
-    db.add(ExamAssignmentQuestion(assignment_id=ticket.assignment_id, text="Как прошла сдача?", sort_order=0))
-    db.add(ExamAssignmentQuestion(assignment_id=ticket.assignment_id, text="Что было сложно?", sort_order=1))
+    task = _task_for_ticket(db, ticket)
+    db.add(TaskQuizQuestion(task_id=task.id, text="Как прошла сдача?", sort_order=0))
+    db.add(TaskQuizQuestion(task_id=task.id, text="Что было сложно?", sort_order=1))
     db.commit()
     _submit_final(db, user, ticket, "Рисунок")
 
@@ -257,9 +289,9 @@ def test_submit_quiz_success_saves_answers_and_embed_returns_them(auth_client, d
     )
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}
-    assert db.query(MockQuizResponse).filter(
-        MockQuizResponse.assignment_id == ticket.assignment_id,
-        MockQuizResponse.user_id == user.id,
+    assert db.query(TaskQuizResponse).filter(
+        TaskQuizResponse.task_id == task.id,
+        TaskQuizResponse.user_id == user.id,
     ).count() == 1
 
     # Повторный embed отдаёт уже сохранённые ответы, не пустую форму.

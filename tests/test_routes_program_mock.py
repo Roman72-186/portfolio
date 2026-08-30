@@ -346,7 +346,8 @@ def test_is_required_defaults_to_true(client, db, user_factory, session_factory,
 def test_quiz_questions_duplicated_into_every_selected_assignment(
     client, db, user_factory, session_factory, monkeypatch
 ):
-    from app.models.mock_exam_quiz import ExamAssignmentQuestion
+    from app.models.task_quiz import TaskQuizQuestion
+    from app.models.tracker import SOURCE_EXAM_ASSIGNMENT, TrackerTask
 
     _freeze(monkeypatch, value=date.today())
     _staff_client(client, user_factory, session_factory)
@@ -371,10 +372,18 @@ def test_quiz_questions_duplicated_into_every_selected_assignment(
     assignments = db.query(ExamAssignment).order_by(ExamAssignment.id).all()
     assert len(assignments) == 2
     for assignment in assignments:
+        task = (
+            db.query(TrackerTask)
+            .filter(
+                TrackerTask.source_kind == SOURCE_EXAM_ASSIGNMENT,
+                TrackerTask.source_id == assignment.id,
+            )
+            .one()
+        )
         rows = (
-            db.query(ExamAssignmentQuestion)
-            .filter(ExamAssignmentQuestion.assignment_id == assignment.id)
-            .order_by(ExamAssignmentQuestion.sort_order)
+            db.query(TaskQuizQuestion)
+            .filter(TaskQuizQuestion.task_id == task.id)
+            .order_by(TaskQuizQuestion.sort_order)
             .all()
         )
         # Пустая строка ("  ") отсеяна валидатором payload.
@@ -382,7 +391,7 @@ def test_quiz_questions_duplicated_into_every_selected_assignment(
 
 
 def test_no_quiz_questions_by_default(client, db, user_factory, session_factory, monkeypatch):
-    from app.models.mock_exam_quiz import ExamAssignmentQuestion
+    from app.models.task_quiz import TaskQuizQuestion
 
     _freeze(monkeypatch, value=date.today())
     _staff_client(client, user_factory, session_factory)
@@ -395,4 +404,4 @@ def test_no_quiz_questions_by_default(client, db, user_factory, session_factory,
     )
 
     assert response.status_code == 200
-    assert db.query(ExamAssignmentQuestion).count() == 0
+    assert db.query(TaskQuizQuestion).count() == 0
