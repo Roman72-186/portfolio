@@ -220,12 +220,16 @@ def program_day(
             # Прошлое только смотрим: элемент задним числом открылся бы ученикам
             # мгновенно, и «поставить на вчера» почти всегда опечатка.
             "is_past": day < today,
+            # Правка закрывается строже создания (владелец 30.08.2026): как
+            # только наступил день элемента, он уже мог уйти ученикам —
+            # редактировать можно только строго будущее (`_guard_editable`).
+            "can_edit_items": day > today,
             "month_href": f"/cabinet/staff/program?month={day.year}-{day.month:02d}",
             "items": items,
             "details": details,
-            # Правка вместо удаления-и-пересоздания (владелец 29.08.2026):
-            # пробник и анкету пока не трогаем — билеты и переиспользуемые
-            # шаблоны устроены сложнее, решение по ним отдельное.
+            # Пробник и анкету включим сюда отдельным шагом, когда для них
+            # появится реальная правка (владелец 30.08.2026: остальные виды —
+            # строго будущее, эти два — следующая часть той же задачи).
             "editable_kinds": [
                 ITEM_VIDEO, ITEM_HOMEWORK, ITEM_MATERIAL, ITEM_QUIZ, ITEM_LESSON, ITEM_CHECKLIST,
             ],
@@ -322,6 +326,16 @@ def _guard_future(day: date) -> None:
     if day < today_msk():
         raise HTTPException(
             status_code=422, detail="Прошедший день можно только смотреть"
+        )
+
+
+def _guard_editable(day: date) -> None:
+    """Правка закрывается строже создания (владелец 30.08.2026): как только
+    наступил день элемента, контент уже мог уйти ученикам — редактировать
+    можно только то, что ещё строго в будущем."""
+    if day <= today_msk():
+        raise HTTPException(
+            status_code=422, detail="Сегодняшний и прошедший день можно только смотреть"
         )
 
 
@@ -1028,7 +1042,7 @@ def _get_editable_task(db: DBSession, task_id: int, kind: str) -> TrackerTask:
     task = get_task(db, task_id)
     if task is None or task.kind != kind:
         raise HTTPException(status_code=404, detail="Элемент не найден")
-    _guard_future(msk_date(task.due_at))
+    _guard_editable(msk_date(task.due_at))
     return task
 
 

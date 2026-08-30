@@ -356,7 +356,7 @@ FORM: Operate.
             </div>
             {% if not is_past %}
             <div class="prg-item-actions">
-                {% if item.kind in editable_kinds %}
+                {% if can_edit_items and item.kind in editable_kinds %}
                 <button type="button" class="btn-outline" data-item-edit data-item-kind="{{ item.kind }}">Изменить</button>
                 {% endif %}
                 <button type="button" class="btn-danger" data-item-delete>Удалить</button>

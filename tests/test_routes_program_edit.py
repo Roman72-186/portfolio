@@ -131,6 +131,50 @@ def test_simple_item_edit_refuses_once_day_has_passed(
     assert response.status_code == 422
 
 
+def test_simple_item_edit_refuses_on_the_day_itself(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Владелец 30.08.2026: правка строже создания — как только наступил
+    день элемента (сегодня), он уже мог уйти ученикам, редактировать
+    нельзя, даже если день ещё не прошёл."""
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+
+    client.post(
+        f"{PROGRAM}/{MONDAY}/checklist",
+        json={"title": "Чек-лист", "audience": EVERYONE},
+    )
+    task = db.query(TrackerTask).one()
+
+    _freeze(monkeypatch, date(2026, 8, 24))
+    response = client.post(
+        f"{PROGRAM}/items/{task.id}/checklist",
+        json={"title": "Сегодня уже нельзя", "audience": EVERYONE},
+    )
+
+    assert response.status_code == 422
+
+
+def test_day_page_hides_edit_button_on_the_day_itself(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+
+    client.post(
+        f"{PROGRAM}/{MONDAY}/material",
+        json={"title": "Материал", "audience": EVERYONE},
+    )
+    task = db.query(TrackerTask).one()
+
+    _freeze(monkeypatch, date(2026, 8, 24))
+    page = client.get(f"{PROGRAM}/{MONDAY}").text
+
+    article = page[page.index(f'data-item-id="{task.id}"'):]
+    assert 'data-item-edit' not in article[:article.index('</article>')]
+    assert 'data-item-delete' in article[:article.index('</article>')]
+
+
 # ── Самостоятельная работа ───────────────────────────────────────────────────
 
 def test_homework_edit_updates_entity_and_replaces_images(
