@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=24">
+<link rel="stylesheet" href="/static/css/tracker.css?v=25">
 {% endblock %}
 {% block content %}
 <div class="lrn-page ios-learning">
@@ -428,4 +428,7 @@ function lrnUpdateTabBadge(kind) {
 
 {% set active_tab = "learning" %}
 {% include "partials/bottom_nav.html" %}
+{# Билет Пробника (partials/inline/mock_exam.html) открывается по клику через
+   openLightbox — тот же приём, что был на отдельной странице /upload/mock-exam. #}
+{% include "partials/lightbox.html" %}
 {% endblock %}

@@ -989,6 +989,83 @@ def mock_exam_form(
     )
 
 
+# ── GET /upload/mock-exam/embed ──────────────────────────────────────────────
+
+@router.get("/upload/mock-exam/embed")
+def mock_exam_embed(
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    subject: str = "",
+):
+    """Состояние Пробника по одному предмету как JSON — для инлайн-карточки
+    на АОП (`partials/inline/mock_exam.html`), по аналогии с
+    `/cabinet/videos/{id}/embed` у видео (решение владельца 30.08.2026:
+    перенести весь механизм пробника — билет, таймер, этапные, финал — в
+    карточку вкладки «Задание», без перехода на отдельную страницу).
+
+    Карточка уже привязана к предмету через `TrackerTask.subject`, поэтому
+    выбора предмета (как на отдельной странице `/upload/mock-exam`) здесь не
+    нужно — эндпоинт пересказывает то же состояние, что `_render_mock` считает
+    для одного subject, в виде JSON вместо HTML.
+    """
+    if subject not in MOCK_SUBJECTS:
+        return JSONResponse({"error": "invalid_subject"}, status_code=422)
+
+    feature_available, feature_message = is_feature_available(db, FEATURE_MOCK_EXAM)
+    if not feature_available:
+        return JSONResponse({
+            "feature_available": False,
+            "feature_message": feature_message,
+        })
+
+    if not is_subject_allowed_for_student(db, user["user_id"], subject):
+        return JSONResponse({"error": "subject_forbidden"}, status_code=403)
+
+    from app.services.exam_cycle import get_active_tickets, get_unsubmitted_active_tickets
+
+    locked_reasons = _locked_mock_subjects(db, user["user_id"])
+    active_tickets = get_active_tickets(db, user["user_id"], subject)
+    unsubmitted_tickets = get_unsubmitted_active_tickets(db, user["user_id"], subject)
+    start_open = (
+        any(is_mock_exam_ticket_start_open(t) for t in unsubmitted_tickets)
+        if unsubmitted_tickets else False
+    )
+    window_message = (
+        mock_exam_window_error(for_start=not start_open, ticket=unsubmitted_tickets[0])
+        if unsubmitted_tickets else None
+    )
+
+    active_attempt = next(
+        (pair for pair in _get_active_attempts(db, user["user_id"]) if pair[0].subject == subject),
+        None,
+    )
+    attempt_data = None
+    stage_state = None
+    if active_attempt is not None:
+        attempt, ticket = active_attempt
+        attempt_data = _serialize_attempt(attempt, ticket)
+        cycle = find_open_cycle_for_ticket(
+            db, user_id=user["user_id"], subject=subject,
+            ticket_id=ticket.id if ticket is not None else attempt.ticket_id,
+        )
+        existing = count_cycle_intermediates(db, cycle_id=cycle.id) if cycle is not None else 0
+        stage_state = intermediate_upload_state(existing)
+
+    return JSONResponse({
+        "feature_available": True,
+        "subject": subject,
+        "locked": subject in locked_reasons,
+        "locked_reason": locked_reasons.get(subject),
+        "has_ticket": bool(active_tickets),
+        "start_open": start_open,
+        "window_message": window_message,
+        "attempt": attempt_data,
+        "stage_state": stage_state,
+        "duration_sec": MOCK_EXAM_DURATION_SEC,
+        "max_stage_files": MAX_INTERMEDIATE_PER_FINAL,
+    })
+
+
 # ── GET /upload/mock-exam/csrf ───────────────────────────────────────────────
 
 @router.get("/upload/mock-exam/csrf")

@@ -1,0 +1,637 @@
+{#
+Инлайн-пробник на АОП (`cabinet_learning.html`) — тот же механизм, что на
+`/upload/mock-exam` (получение билета, таймер, этапные и финальное фото),
+встроенный прямо в карточку задачи «Задание» без перехода на отдельную
+страницу (решение владельца 30.08.2026, по образцу видео от 29.08.2026).
+
+Разметка — скелет, состояние (билет/попытка/таймер/лимит этапных) приходит
+JSON-эндпоинтом `/upload/mock-exam/embed?subject=…` (app/api/upload.py) только
+по факту открытия `<details>` — карточка уже привязана к предмету через
+`TrackerTask.subject`, поэтому выбора предмета, в отличие от отдельной
+страницы, здесь нет. Отправка фото идёт на те же эндпоинты, что использует
+отдельная страница: `POST /upload/mock-exam/start` (билет),
+`GET /upload/mock-exam/csrf` (продление токена на долгую сдачу),
+`POST /upload/probnik/intermediate`/`POST /upload/probnik/final`
+(app/api/cycle_upload.py) — бэкенд не менялся, разница только в разметке и
+in-place UI вместо навигации.
+
+Инициализация — `window.lrnPanelInit.mock_exam` (см. `<script>` ниже),
+вызывается один раз общим обработчиком `toggle` в cabinet_learning.html. Все
+узлы найдены через `data-role` в пределах контейнера, а не `getElementById`:
+карточка может быть не одна на странице (Рисунок и Композиция — два разных
+mock_exam-задания одной недели), синглтон-id столкнулись бы друг с другом.
+#}
+<div class="lrn-inline-mock" data-role="root">
+    <p class="video-progress-status" data-role="status" aria-live="polite">Загружаем пробник…</p>
+
+    <div data-role="closed" hidden>
+        <div class="ios-closed-banner">
+            <div class="ios-closed-title">Пробники закрыты</div>
+            <div class="ios-closed-text" data-role="closed-text"></div>
+        </div>
+    </div>
+
+    <div data-role="locked" hidden>
+        <p class="trk-pending-note" data-role="locked-text"></p>
+    </div>
+
+    <div data-role="body" hidden>
+        <div class="ios-prep-card" data-role="prep" hidden>
+            <div class="ios-prep-title">📝 Подготовьтесь</div>
+            <p class="ios-prep-text">
+                Приготовьте карандаш и всё необходимое для выполнения пробного экзамена.
+                После нажатия кнопки «Начать» вам будет выдан билет и запущен таймер сдачи.
+            </p>
+            <div class="alert alert-error" data-role="start-window-msg" hidden></div>
+            <button type="button" class="btn-mock-primary" data-role="start-btn">▶ Начать пробник</button>
+        </div>
+
+        <div data-role="ticket-wrap" hidden>
+            <div class="lrn-mock-timer" data-role="timer">
+                <span class="timer-label">Время на сдачу</span>
+                <span class="timer-value" data-role="timer-value">—</span>
+            </div>
+            <div data-role="ticket-block"></div>
+
+            <div data-role="upload-section">
+                <div>
+                    <label class="form-label">
+                        Промежуточные фото
+                        <span class="ios-hint-text">· по желанию, до <span data-role="stage-limit"></span> штук</span>
+                    </label>
+                    <label class="upload-drop" data-role="stage-drop">
+                        <input type="file" accept="image/*" multiple data-role="stage-input">
+                        <div class="upload-circle upload-circle--stage">☆</div>
+                        <div class="upload-drop-title">Добавь этапы работы</div>
+                        <div class="upload-drop-hint">Промежуточные фото · до 10 МБ</div>
+                    </label>
+                    <div class="upload-drop-hint" data-role="stage-existing-hint" hidden></div>
+                    <div class="preview-area" data-role="stage-preview-area">
+                        <div class="preview-header">
+                            <span class="preview-count" data-role="stage-count"></span>
+                            <div style="display:flex;gap:8px">
+                                <button type="button" class="btn-add-more" data-role="stage-add-more">+ Добавить</button>
+                                <button type="button" class="btn-reselect" data-role="stage-reselect">✕ Сбросить</button>
+                            </div>
+                        </div>
+                        <div class="photo-grid" data-role="stage-grid"></div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="form-label">
+                        Финальное фото <span class="ios-required">· обязательно</span>
+                    </label>
+                    <label class="upload-drop" data-role="final-drop">
+                        <input type="file" accept="image/*" data-role="final-input">
+                        <div class="upload-circle">★</div>
+                        <div class="upload-drop-title">Загрузи финальную работу</div>
+                        <div class="upload-drop-hint">Одно фото · до 10 МБ</div>
+                    </label>
+                    <div class="preview-area" data-role="final-preview-area">
+                        <div class="preview-header">
+                            <span class="preview-count">Финальное фото</span>
+                            <button type="button" class="btn-reselect" data-role="final-reselect">✕ Заменить</button>
+                        </div>
+                        <div class="photo-grid" data-role="final-grid" style="grid-template-columns:repeat(2,1fr)"></div>
+                    </div>
+                </div>
+
+                <button type="button" class="btn-mock-primary btn-full" data-role="submit-btn" disabled>Отправить на проверку</button>
+                <div data-role="upload-msg" hidden></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    // Скрипт грузится с каждым вхождением партиала (Рисунок + Композиция на
+    // одной неделе — два инстанса), переопределение той же функции идемпотентно.
+    window.lrnPanelInit = window.lrnPanelInit || {};
+
+    window.lrnPanelInit.mock_exam = function (root, csrfToken) {
+        var wrapper = root.closest('.trk-expand-body');
+        var endpoint = wrapper ? wrapper.getAttribute('data-mock-exam-embed-endpoint') : null;
+        if (!endpoint) return;
+        var subjectMatch = /subject=([^&]+)/.exec(endpoint);
+        var subject = subjectMatch ? decodeURIComponent(subjectMatch[1]) : '';
+
+        var MAX_SIZE = 10 * 1024 * 1024;
+        var CSRF_TOKEN = csrfToken;
+
+        var statusEl = root.querySelector('[data-role="status"]');
+        var closedEl = root.querySelector('[data-role="closed"]');
+        var closedTextEl = root.querySelector('[data-role="closed-text"]');
+        var lockedEl = root.querySelector('[data-role="locked"]');
+        var lockedTextEl = root.querySelector('[data-role="locked-text"]');
+        var bodyEl = root.querySelector('[data-role="body"]');
+        var prepEl = root.querySelector('[data-role="prep"]');
+        var startBtn = root.querySelector('[data-role="start-btn"]');
+        var startWindowMsgEl = root.querySelector('[data-role="start-window-msg"]');
+        var ticketWrapEl = root.querySelector('[data-role="ticket-wrap"]');
+        var ticketBlockEl = root.querySelector('[data-role="ticket-block"]');
+        var timerEl = root.querySelector('[data-role="timer"]');
+        var timerValueEl = root.querySelector('[data-role="timer-value"]');
+        var stageLimitEl = root.querySelector('[data-role="stage-limit"]');
+        var stageDropEl = root.querySelector('[data-role="stage-drop"]');
+        var stageInputEl = root.querySelector('[data-role="stage-input"]');
+        var stagePreviewAreaEl = root.querySelector('[data-role="stage-preview-area"]');
+        var stageGridEl = root.querySelector('[data-role="stage-grid"]');
+        var stageCountEl = root.querySelector('[data-role="stage-count"]');
+        var stageExistingHintEl = root.querySelector('[data-role="stage-existing-hint"]');
+        var stageAddMoreBtn = root.querySelector('[data-role="stage-add-more"]');
+        var stageReselectBtn = root.querySelector('[data-role="stage-reselect"]');
+        var finalDropEl = root.querySelector('[data-role="final-drop"]');
+        var finalInputEl = root.querySelector('[data-role="final-input"]');
+        var finalPreviewAreaEl = root.querySelector('[data-role="final-preview-area"]');
+        var finalGridEl = root.querySelector('[data-role="final-grid"]');
+        var finalReselectBtn = root.querySelector('[data-role="final-reselect"]');
+        var submitBtn = root.querySelector('[data-role="submit-btn"]');
+        var uploadMsgEl = root.querySelector('[data-role="upload-msg"]');
+
+        var stageState = { existing: 0, remaining: 0, limit: 0 };
+        var stageLimitDefault = 10;
+        var finalFile = null;
+        var stageFiles = [];
+        var stageUploaded = false;
+        var _timerInterval = null;
+        var _csrfHeartbeat = null;
+
+        function showError(message) {
+            statusEl.hidden = false;
+            statusEl.textContent = message;
+            statusEl.classList.add('is-error');
+        }
+
+        // ── Загрузка состояния ──────────────────────────────────────────────
+        fetch(endpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function (resp) {
+                if (resp.status === 403) {
+                    return resp.json().then(function (body) {
+                        throw new Error((body && body.error) === 'subject_forbidden'
+                            ? 'Этот предмет недоступен для вашей группы.'
+                            : 'Пробник недоступен.');
+                    });
+                }
+                if (!resp.ok) throw new Error('Не удалось загрузить пробник. Попробуйте позже.');
+                return resp.json();
+            })
+            .then(function (data) {
+                statusEl.hidden = true;
+                if (!data.feature_available) {
+                    closedTextEl.textContent = data.feature_message || 'Пробники сейчас закрыты.';
+                    closedEl.hidden = false;
+                    return;
+                }
+                if (data.locked) {
+                    lockedTextEl.textContent = data.locked_reason === 'waiting'
+                        ? 'Работа сдана · ждите обратную связь куратора.'
+                        : 'Работа сдана · ждите следующий пробник.';
+                    lockedEl.hidden = false;
+                    return;
+                }
+                stageLimitDefault = data.max_stage_files || stageLimitDefault;
+                stageLimitEl.textContent = stageLimitDefault;
+                bodyEl.hidden = false;
+                if (data.attempt) {
+                    applyStageState(data.stage_state);
+                    renderTicket(data.attempt);
+                    startTimer(data.attempt.started_at, data.attempt.expires_at);
+                    ticketWrapEl.hidden = false;
+                } else {
+                    prepEl.hidden = false;
+                    var canStart = data.start_open !== false;
+                    startBtn.disabled = !canStart;
+                    startBtn.innerHTML = canStart ? '▶ Начать пробник' : 'Получение билета закрыто';
+                    if (!canStart && data.window_message) {
+                        startWindowMsgEl.textContent = data.window_message;
+                        startWindowMsgEl.hidden = false;
+                    }
+                }
+            })
+            .catch(function (err) {
+                showError(err.message || 'Не удалось загрузить пробник.');
+            });
+
+        function applyStageState(raw) {
+            stageState = {
+                existing: Number((raw && raw.existing) || 0),
+                remaining: Number.isFinite(Number(raw && raw.remaining)) ? Number(raw.remaining) : stageLimitDefault,
+                limit: Number((raw && raw.limit) || stageLimitDefault),
+            };
+            updateStageExistingHint();
+        }
+
+        function updateStageExistingHint() {
+            var afterSelected = Math.max(stageState.remaining - stageFiles.length, 0);
+            if (stageState.existing > 0) {
+                stageExistingHintEl.textContent = stageState.remaining <= 0
+                    ? 'Этапные уже загружены: ' + stageState.existing + ' из ' + stageState.limit + '. Теперь загрузите финальное фото.'
+                    : 'Уже загружено этапных: ' + stageState.existing +
+                        ' из ' + stageState.limit + '. Можно добавить ещё ' + afterSelected + '.';
+                stageExistingHintEl.hidden = false;
+            } else {
+                stageExistingHintEl.hidden = true;
+            }
+        }
+
+        function syncStageStateFromResponse(body) {
+            if (!body) return stageState;
+            var hasLimitState = body.existing !== undefined || body.remaining !== undefined || body.limit !== undefined;
+            if (!hasLimitState) return stageState;
+            stageState = {
+                existing: Number.isFinite(Number(body.existing)) ? Number(body.existing) : stageState.existing,
+                remaining: Number.isFinite(Number(body.remaining)) ? Number(body.remaining) : stageState.remaining,
+                limit: Number.isFinite(Number(body.limit)) ? Number(body.limit) : stageState.limit,
+            };
+            updateStageExistingHint();
+            return stageState;
+        }
+
+        // ── Билет ────────────────────────────────────────────────────────────
+        function renderTicket(attempt) {
+            ticketBlockEl.innerHTML = '';
+            var card = document.createElement('div');
+            card.className = 'ticket-card';
+
+            var title = document.createElement('div');
+            title.className = 'ticket-title';
+            title.textContent = '📋 ' + attempt.ticket_title;
+            card.appendChild(title);
+
+            if (attempt.ticket_description) {
+                var desc = document.createElement('div');
+                desc.className = 'ticket-desc';
+                desc.innerHTML = attempt.ticket_description;  // сервер уже форматирует
+                card.appendChild(desc);
+            }
+            if (attempt.ticket_image_url) {
+                card.appendChild(buildTicketImage(attempt.ticket_image_url));
+            }
+            ticketBlockEl.appendChild(card);
+        }
+
+        function buildTicketImage(url) {
+            var holder = document.createElement('div');
+            holder.className = 'ticket-img-holder';
+
+            var loading = document.createElement('div');
+            loading.className = 'ticket-img-loading';
+            loading.innerHTML = '<span class="spinner"></span> Загружаем изображение билета…';
+
+            var img = document.createElement('img');
+            img.className = 'ticket-img';
+            img.alt = 'Билет';
+            img.style.display = 'none';
+            img.style.cursor = 'zoom-in';
+            img.setAttribute('fetchpriority', 'high');
+            img.onclick = function () { if (window.openLightbox) window.openLightbox(img.src, img.alt); };
+
+            var errBox = document.createElement('div');
+            errBox.className = 'ticket-img-error';
+            errBox.style.display = 'none';
+            var errText = document.createElement('div');
+            errText.className = 'ticket-img-error-text';
+            errText.textContent = 'Не удалось загрузить изображение билета — проверьте интернет и попробуйте снова.';
+            var retryBtn = document.createElement('button');
+            retryBtn.type = 'button';
+            retryBtn.className = 'ticket-img-retry';
+            retryBtn.textContent = '↻ Повторить загрузку';
+            errBox.appendChild(errText);
+            errBox.appendChild(retryBtn);
+
+            var attempts = 0;
+            function load() {
+                attempts++;
+                loading.style.display = 'flex';
+                errBox.style.display = 'none';
+                img.style.display = 'none';
+                retryBtn.disabled = false;
+                img.src = url + (attempts > 1 ? (url.indexOf('?') === -1 ? '?' : '&') + 'r=' + Date.now() : '');
+            }
+            img.onload = function () { loading.style.display = 'none'; errBox.style.display = 'none'; img.style.display = 'block'; };
+            img.onerror = function () { loading.style.display = 'none'; img.style.display = 'none'; errBox.style.display = 'flex'; };
+            retryBtn.onclick = function () { retryBtn.disabled = true; load(); };
+
+            holder.appendChild(loading);
+            holder.appendChild(img);
+            holder.appendChild(errBox);
+            load();
+            return holder;
+        }
+
+        // ── Таймер ───────────────────────────────────────────────────────────
+        function stopTimer() {
+            if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
+            stopCsrfHeartbeat();
+            timerEl.classList.remove('visible');
+        }
+
+        function startTimer(startedAtIso, expiresAtIso) {
+            if (_timerInterval) clearInterval(_timerInterval);
+            startCsrfHeartbeat();
+            var expiresAtMs = expiresAtIso ? Date.parse(expiresAtIso) : null;
+            timerEl.classList.remove('expired');
+            timerEl.classList.add('visible');
+
+            function pad(n) { return n < 10 ? '0' + n : n; }
+            function tick() {
+                var remaining = expiresAtMs ? Math.floor((expiresAtMs - Date.now()) / 1000) : 0;
+                if (remaining <= 0) {
+                    timerValueEl.textContent = 'Можно сдавать';
+                    timerValueEl.classList.add('expired');
+                    clearInterval(_timerInterval);
+                    return;
+                }
+                var h = Math.floor(remaining / 3600);
+                var m = Math.floor((remaining % 3600) / 60);
+                var s = remaining % 60;
+                timerValueEl.textContent = h + ':' + pad(m) + ':' + pad(s);
+            }
+            tick();
+            _timerInterval = setInterval(tick, 1000);
+        }
+
+        // ── Свежий CSRF-токен для долгой сдачи ─────────────────────────────
+        function refreshCsrf() {
+            return window.fetchWithTimeout('/upload/mock-exam/csrf', {
+                headers: { 'Accept': 'application/json' }, cache: 'no-store', credentials: 'same-origin'
+            })
+                .then(function (r) {
+                    if (r.status !== 200) throw new Error('auth');
+                    return r.json();
+                })
+                .then(function (j) {
+                    if (j && j.csrf_token) CSRF_TOKEN = j.csrf_token;
+                    return CSRF_TOKEN;
+                });
+        }
+        function startCsrfHeartbeat() {
+            if (_csrfHeartbeat) return;
+            _csrfHeartbeat = setInterval(function () { refreshCsrf().catch(function () {}); }, 10 * 60 * 1000);
+        }
+        function stopCsrfHeartbeat() {
+            if (_csrfHeartbeat) { clearInterval(_csrfHeartbeat); _csrfHeartbeat = null; }
+        }
+
+        function showSessionExpired() {
+            showUploadMsg('Сессия истекла. Обновите страницу и войдите снова — выбранные фото не потеряются.', true);
+        }
+
+        // ── Начать пробник ──────────────────────────────────────────────────
+        startBtn.addEventListener('click', function () {
+            startBtn.disabled = true;
+            startBtn.textContent = 'Выдаём билет…';
+            refreshCsrf().then(function () {
+                var fd = new FormData();
+                fd.append('subject', subject);
+                fd.append('csrf_token', CSRF_TOKEN);
+                return window.fetchWithTimeout('/upload/mock-exam/start', {
+                    method: 'POST', body: fd, credentials: 'same-origin', headers: { 'Accept': 'application/json' }
+                });
+            })
+                .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+                .then(function (res) {
+                    startBtn.disabled = false;
+                    startBtn.innerHTML = '▶ Начать пробник';
+                    if (res.status !== 200) {
+                        var msg = {
+                            'no_active_ticket': 'Сдача пробника сейчас недоступна',
+                            'already_submitted': 'Пробник уже сдан. Дождитесь следующего пробника.',
+                            'feature_closed': 'Раздел пробников сейчас закрыт',
+                            'invalid_subject': 'Выберите корректный предмет',
+                            'subject_forbidden': 'Этот предмет недоступен для вашей группы',
+                            'start_window_closed': res.body.message || 'Получение билета сейчас закрыто',
+                        }[res.body.error] || res.body.message || 'Не удалось начать пробник';
+                        alert(msg);
+                        return;
+                    }
+                    var attempt = {
+                        ticket_title: res.body.ticket.title,
+                        ticket_description: res.body.ticket.description,
+                        ticket_image_url: res.body.ticket.image_url,
+                        started_at: res.body.started_at,
+                        expires_at: res.body.expires_at,
+                    };
+                    applyStageState({ existing: 0, remaining: stageLimitDefault, limit: stageLimitDefault });
+                    prepEl.hidden = true;
+                    renderTicket(attempt);
+                    startTimer(attempt.started_at, attempt.expires_at);
+                    ticketWrapEl.hidden = false;
+                })
+                .catch(function (err) {
+                    startBtn.disabled = false;
+                    startBtn.innerHTML = '▶ Начать пробник';
+                    alert(err && err.message === 'auth'
+                        ? 'Сессия истекла. Обновите страницу и войдите снова.'
+                        : 'Не удалось связаться с сервером');
+                });
+        });
+
+        // ── Промежуточные фото ──────────────────────────────────────────────
+        function renderStage() {
+            stageGridEl.innerHTML = '';
+            stageCountEl.textContent = stageState.existing > 0
+                ? 'Уже загружено: ' + stageState.existing + ' · выбрано: ' + stageFiles.length + ' · лимит ' + stageState.limit
+                : 'Выбрано: ' + stageFiles.length + ' из ' + stageState.limit;
+            updateStageExistingHint();
+            stageFiles.forEach(function (f, i) {
+                var wrap = document.createElement('div');
+                wrap.className = 'preview-cell';
+                var btn = document.createElement('button');
+                btn.type = 'button'; btn.className = 'preview-remove'; btn.textContent = '✕';
+                btn.onclick = function () {
+                    stageFiles.splice(i, 1); renderStage();
+                    if (!stageFiles.length) { stagePreviewAreaEl.style.display = 'none'; stageDropEl.style.display = 'flex'; }
+                };
+                wrap.appendChild(btn);
+                var reader = new FileReader();
+                reader.onload = function (e) { var img = document.createElement('img'); img.src = e.target.result; wrap.appendChild(img); };
+                reader.readAsDataURL(f);
+                stageGridEl.appendChild(wrap);
+            });
+        }
+
+        function addStage(newFiles) {
+            var files = Array.from(newFiles);
+            for (var j = 0; j < files.length; j++) {
+                if (files[j].size > MAX_SIZE) { alert(files[j].name + ' — слишком большой'); continue; }
+                var remainingForSelection = stageState.remaining - stageFiles.length;
+                if (remainingForSelection <= 0) {
+                    alert('Лимит этапных фото исчерпан: уже загружено ' + stageState.existing + ' из ' + stageState.limit + '.');
+                    break;
+                }
+                stageFiles.push(files[j]);
+            }
+            renderStage();
+            if (stageFiles.length) { stageDropEl.style.display = 'none'; stagePreviewAreaEl.style.display = 'block'; }
+        }
+
+        stageInputEl.addEventListener('change', function () { addStage(stageInputEl.files); stageInputEl.value = ''; });
+        stageReselectBtn.addEventListener('click', function () {
+            stageFiles = []; stageGridEl.innerHTML = '';
+            updateStageExistingHint();
+            stagePreviewAreaEl.style.display = 'none'; stageDropEl.style.display = 'flex';
+        });
+        stageAddMoreBtn.addEventListener('click', function () {
+            var tmp = document.createElement('input'); tmp.type = 'file'; tmp.accept = 'image/*'; tmp.multiple = true;
+            tmp.onchange = function () { addStage(tmp.files); }; tmp.click();
+        });
+        stageDropEl.addEventListener('dragover', function (e) { e.preventDefault(); stageDropEl.classList.add('drag-over'); });
+        stageDropEl.addEventListener('dragleave', function () { stageDropEl.classList.remove('drag-over'); });
+        stageDropEl.addEventListener('drop', function (e) {
+            e.preventDefault(); stageDropEl.classList.remove('drag-over');
+            if (e.dataTransfer && e.dataTransfer.files.length) addStage(e.dataTransfer.files);
+        });
+
+        // ── Финальное фото ──────────────────────────────────────────────────
+        function renderFinal() {
+            finalGridEl.innerHTML = '';
+            if (!finalFile) return;
+            var wrap = document.createElement('div');
+            wrap.className = 'preview-cell';
+            var reader = new FileReader();
+            reader.onload = function (e) { var img = document.createElement('img'); img.src = e.target.result; wrap.appendChild(img); };
+            reader.readAsDataURL(finalFile);
+            finalGridEl.appendChild(wrap);
+        }
+        function setFinal(file) {
+            if (file.size > MAX_SIZE) { alert(file.name + ' — слишком большой'); return; }
+            finalFile = file;
+            finalDropEl.style.display = 'none';
+            finalPreviewAreaEl.style.display = 'block';
+            renderFinal();
+            submitBtn.disabled = false;
+        }
+        finalInputEl.addEventListener('change', function () { if (finalInputEl.files[0]) setFinal(finalInputEl.files[0]); });
+        finalReselectBtn.addEventListener('click', function () {
+            finalFile = null; finalInputEl.value = ''; finalGridEl.innerHTML = '';
+            finalPreviewAreaEl.style.display = 'none'; finalDropEl.style.display = 'flex'; submitBtn.disabled = true;
+        });
+        finalDropEl.addEventListener('dragover', function (e) { e.preventDefault(); finalDropEl.classList.add('drag-over'); });
+        finalDropEl.addEventListener('dragleave', function () { finalDropEl.classList.remove('drag-over'); });
+        finalDropEl.addEventListener('drop', function (e) {
+            e.preventDefault(); finalDropEl.classList.remove('drag-over');
+            if (e.dataTransfer && e.dataTransfer.files[0]) setFinal(e.dataTransfer.files[0]);
+        });
+
+        // ── Отправка: сначала этапные, затем финальное ─────────────────────
+        function showUploadMsg(text, isError) {
+            uploadMsgEl.hidden = false;
+            uploadMsgEl.className = 'alert ' + (isError ? 'alert-error' : 'alert-success');
+            uploadMsgEl.innerHTML = text;
+        }
+        function showUploadError(text) {
+            showUploadMsg(text + ' Если ошибка повторится — обновите страницу и попробуйте снова.', true);
+        }
+        function stageWord(n) { return (n % 10 === 1 && n % 100 !== 11) ? 'этапное фото' : 'этапных фото'; }
+
+        function parseUploadResponse(response) {
+            return response.json()
+                .then(function (body) { return { status: response.status, body: body }; })
+                .catch(function () {
+                    return { status: response.status, body: { success: false, error: 'Не удалось получить ответ. Обновите страницу и попробуйте снова.' } };
+                });
+        }
+
+        function doUploadIntermediate() {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner"></span>Загружаем этапные…';
+            uploadMsgEl.hidden = true;
+            refreshCsrf().then(function () {
+                var fd = new FormData();
+                stageFiles.forEach(function (f) { fd.append('photos', f); });
+                fd.append('subject', subject);
+                fd.append('csrf_token', CSRF_TOKEN);
+                return fetch('/upload/probnik/intermediate', {
+                    method: 'POST', body: fd, credentials: 'same-origin', headers: { 'Accept': 'application/json' }
+                });
+            })
+                .then(parseUploadResponse)
+                .then(function (res) {
+                    var j = res.body;
+                    if (res.status !== 200 || !j.success) {
+                        var synced = syncStageStateFromResponse(j);
+                        if (finalFile && Number.isFinite(Number(j.remaining))) {
+                            if (synced.remaining <= 0) {
+                                stageFiles = []; stageUploaded = true; renderStage();
+                                showUploadMsg('Лимит этапных фото уже заполнен. Загружаем финальную работу.', false);
+                                doUploadFinal();
+                                return;
+                            }
+                            if (stageFiles.length > synced.remaining) {
+                                stageFiles = stageFiles.slice(0, synced.remaining); renderStage();
+                                showUploadMsg('Часть этапных уже загружена ранее. Отправляем только оставшиеся ' + synced.remaining + '.', false);
+                                doUploadIntermediate();
+                                return;
+                            }
+                        }
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = 'Повторить загрузку этапных';
+                        showUploadError('Не удалось загрузить этапные: ' + (j.error || j.detail || 'ошибка') + '.');
+                        return;
+                    }
+                    stageUploaded = true;
+                    syncStageStateFromResponse(j);
+                    doUploadFinal();
+                })
+                .catch(function (err) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = 'Повторить загрузку этапных';
+                    if (err && err.message === 'auth') showSessionExpired();
+                    else showUploadError('Этапные не отправились (нет связи).');
+                });
+        }
+
+        function doUploadFinal() {
+            if (!finalFile) return;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner"></span>Загружаем финальное…';
+            uploadMsgEl.hidden = true;
+            refreshCsrf().then(function () {
+                var fd = new FormData();
+                fd.append('photos', finalFile);
+                fd.append('subject', subject);
+                fd.append('csrf_token', CSRF_TOKEN);
+                return fetch('/upload/probnik/final', {
+                    method: 'POST', body: fd, credentials: 'same-origin', headers: { 'Accept': 'application/json' }
+                });
+            })
+                .then(parseUploadResponse)
+                .then(function (res) {
+                    var j = res.body;
+                    if (res.status !== 200 || !j.success || !j.verified || !j.final_work_id) {
+                        syncStageStateFromResponse(j);
+                        showUploadError(j.error || 'Не удалось загрузить финальное фото.');
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = stageUploaded ? 'Повторить загрузку финального' : 'Отправить на проверку';
+                        return;
+                    }
+                    syncStageStateFromResponse(j);
+                    finishOk();
+                })
+                .catch(function (err) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = stageUploaded ? 'Повторить загрузку финального' : 'Отправить на проверку';
+                    if (err && err.message === 'auth') showSessionExpired();
+                    else showUploadError('Не удалось связаться с сервером.');
+                });
+        }
+
+        submitBtn.addEventListener('click', function () {
+            if (!stageUploaded && stageFiles.length > 0) doUploadIntermediate();
+            else doUploadFinal();
+        });
+
+        function finishOk() {
+            stopTimer();
+            submitBtn.innerHTML = 'Готово ✓';
+            var msg = 'Сдано одно финальное фото';
+            if (stageState.existing > 0) msg += ' и ' + stageState.existing + ' ' + stageWord(stageState.existing);
+            msg += '. Ожидайте обратной связи от куратора.';
+            showUploadMsg(msg, false);
+        }
+    };
+})();
+</script>

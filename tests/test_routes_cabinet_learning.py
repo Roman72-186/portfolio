@@ -238,9 +238,10 @@ def test_learning_video_card_shows_pending_note_without_falling_back_to_toggle(a
     assert 'data-toggle-task="{}"'.format(task.id) not in resp.text
 
 
-# ── Билет Пробника внутри вкладки «Задание» (решение владельца 24.08) ───────
+# ── Билет Пробника внутри вкладки «Задание» (решение владельца 24.08),
+#    инлайн-раскрытие вместо перехода на /upload/mock-exam (30.08) ───────────
 
-def test_learning_mock_exam_ticket_shows_inside_homework_tab(auth_client, db):
+def test_learning_mock_exam_card_expands_inline_instead_of_linking_away(auth_client, db):
     client, user = auth_client
     day = week_start(today_msk()) + timedelta(days=2)
     due = day_bounds(day)[0] + timedelta(hours=10)
@@ -256,8 +257,9 @@ def test_learning_mock_exam_ticket_shows_inside_homework_tab(auth_client, db):
     homework_start = resp.text.index('data-tabpanel="homework"')
     homework_end = resp.text.index('data-tabpanel="checklist"')
     homework_panel = resp.text[homework_start:homework_end]
-    assert "Начать пробник" in homework_panel
-    assert 'href="/upload/mock-exam?subject=' in homework_panel
+    assert 'class="trk-row-expand" data-task-kind="mock_exam"' in homework_panel
+    assert 'data-mock-exam-embed-endpoint="/upload/mock-exam/embed?subject=%D0%A0%D0%B8%D1%81%D1%83%D0%BD%D0%BE%D0%BA"' in homework_panel
+    assert 'href="/upload/mock-exam?subject=' not in homework_panel
     assert 'data-subject="Рисунок"' in homework_panel
 
 

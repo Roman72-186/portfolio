@@ -26,9 +26,11 @@
 продолжает работать по-старому — параметр там не задают): вместо перехода на
 отдельную страницу кнопка раскрывает контент карточки на месте, `<details>`.
 Раскрывается по типам постепенно (решение владельца 29.08.2026, «все карточки
-задач на АОП», реализация поэтапно от риска к риску) — сейчас только видео
-(`partials/inline/video.html`); пробник/домашка/анкета пока остаются ссылкой
-на отдельную страницу и переедут в инлайн следующими шагами.
+задач на АОП», реализация поэтапно от риска к риску) — видео
+(`partials/inline/video.html`) и пробник (`partials/inline/mock_exam.html`,
+решение владельца 30.08.2026: весь механизм — билет, таймер, этапные,
+финал — прямо в карточке) уже инлайн; домашка/анкета пока остаются ссылкой
+на отдельную страницу и переедут следующими шагами.
 #}
 {% set task = entry.task %}
 {% set detail = (details or {}).get(task.id, {}) %}
@@ -46,7 +48,14 @@
    которого этот partial существует (см. шапку файла). #}
 {% set autocloses = task.kind == 'video' or survey_autocloses or task.kind in ('homework', 'mock_exam') %}
 
-{% if task.kind == 'mock_exam' %}
+{% if task.kind == 'mock_exam' and inline_expand %}
+<details class="trk-row-expand" data-task-kind="mock_exam">
+    <summary class="btn-blue">Пробник</summary>
+    <div class="trk-expand-body" data-mock-exam-embed-endpoint="/upload/mock-exam/embed?subject={{ task.subject|urlencode }}">
+        {% include "partials/inline/mock_exam.html" %}
+    </div>
+</details>
+{% elif task.kind == 'mock_exam' %}
 <a class="btn-blue" href="/upload/mock-exam?subject={{ task.subject|urlencode }}">Начать пробник</a>
 {% elif task.kind == 'video' and video_ready and inline_expand %}
 <details class="trk-row-expand" data-task-kind="video">

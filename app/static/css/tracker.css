@@ -930,4 +930,123 @@ body.has-video-pseudo-fullscreen { overflow: hidden; overscroll-behavior: none; 
 
 @media (prefers-reduced-motion: reduce) {
     .lrn-inline-video .video-fullscreen-button { transition: none; }
+    .lrn-inline-mock .ticket-card { animation: none; }
+}
+
+/* Инлайн-пробник — тот же билет/таймер/загрузка, что на /upload/mock-exam
+   (upload_mock.html, стили в upload_ios.css под `.ios-upload-mock`),
+   встроенный в карточку задачи вместо отдельной страницы (решение владельца
+   30.08.2026). Не переиспользует `.ios-upload-mock` напрямую: тот скоуп несёт
+   полноэкранный fixed-фон и разметку отдельной страницы (h1/back-link),
+   которых здесь нет — только визуальный язык компонентов, свои классы. */
+.lrn-inline-mock { --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif; }
+.lrn-inline-mock .video-progress-status { min-height: 20px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.lrn-inline-mock .video-progress-status.is-error { color: var(--error); }
+.lrn-inline-mock .trk-pending-note { margin: 0; }
+
+.lrn-inline-mock .ios-closed-banner {
+    background: rgba(255,59,48,0.06); border-radius: 16px; padding: 18px 20px; text-align: center;
+}
+.lrn-inline-mock .ios-closed-title { font: 700 15px/1.3 var(--ios-font); color: var(--ios-red); margin-bottom: 6px; }
+.lrn-inline-mock .ios-closed-text { font: 400 13px/1.6 var(--ios-font); color: var(--muted); }
+
+.lrn-inline-mock .ios-prep-card { background: rgba(255,149,0,0.06); border-radius: 16px; padding: 18px 20px; }
+.lrn-inline-mock .ios-prep-title { font: 800 16px/1.3 var(--ios-font); color: var(--ios-orange); margin-bottom: 8px; }
+.lrn-inline-mock .ios-prep-text { font: 400 14px/1.6 var(--ios-font); color: var(--muted); margin: 0 0 12px; }
+.lrn-inline-mock .ios-hint-text { font: 400 12px/1.5 var(--ios-font); color: var(--muted); }
+.lrn-inline-mock .ios-required { color: var(--ios-red); }
+
+.lrn-inline-mock .btn-mock-primary {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    background: var(--ios-orange); color: #fff; font: 600 15px/1 var(--ios-font);
+    padding: 13px 18px; border-radius: 14px; border: none; cursor: pointer;
+    transition: transform 100ms ease-out, filter 100ms ease-out;
+}
+.lrn-inline-mock .btn-mock-primary.btn-full { width: 100%; }
+.lrn-inline-mock .btn-mock-primary:hover { filter: brightness(1.05); color: #fff; }
+.lrn-inline-mock .btn-mock-primary:active { transform: scale(.97); filter: brightness(.92); }
+.lrn-inline-mock .btn-mock-primary:disabled { opacity: .38; cursor: not-allowed; filter: none; transform: none; }
+
+.lrn-inline-mock .lrn-mock-timer {
+    display: none; flex-direction: column; align-items: center; gap: 2px;
+    width: fit-content; margin-bottom: 14px; padding: 8px 16px; border-radius: 14px;
+    background: rgba(28,28,30,0.82); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+.lrn-inline-mock .lrn-mock-timer.visible { display: flex; }
+.lrn-inline-mock .lrn-mock-timer .timer-label { font: 700 10px/1 var(--ios-font); letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.5); }
+.lrn-inline-mock .lrn-mock-timer .timer-value { font: 900 20px/1 var(--ios-font); color: #fff; font-variant-numeric: tabular-nums; }
+.lrn-inline-mock .lrn-mock-timer .timer-value.expired { color: var(--ios-green); font-size: 13px; }
+
+.lrn-inline-mock .ticket-card {
+    border-radius: 16px; padding: 16px 18px; margin-bottom: 16px;
+    background: rgba(255,149,0,0.08); animation: ios-upload-fade-in 0.3s ease;
+}
+@keyframes ios-upload-fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.lrn-inline-mock .ticket-title { font: 700 15px/1.3 var(--ios-font); color: var(--ios-orange); margin-bottom: 6px; }
+.lrn-inline-mock .ticket-desc { font: 400 13px/1.55 var(--ios-font); color: var(--muted); white-space: pre-wrap; }
+.lrn-inline-mock .ticket-img { width: 100%; border-radius: 12px; margin-top: 12px; display: block; }
+.lrn-inline-mock .ticket-img-holder { margin-top: 12px; }
+.lrn-inline-mock .ticket-img-loading {
+    display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 120px; border-radius: 12px;
+    border: 1.5px dashed rgba(255,149,0,0.35); background: rgba(255,149,0,0.05); color: var(--muted); font-size: 13px;
+}
+.lrn-inline-mock .ticket-img-error {
+    display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 16px; border-radius: 12px;
+    background: rgba(255,59,48,0.06); text-align: center;
+}
+.lrn-inline-mock .ticket-img-error-text { font-size: 13px; color: var(--ios-red); line-height: 1.5; }
+.lrn-inline-mock .ticket-img-retry {
+    font: 700 13px/1 var(--ios-font); color: #fff; background: var(--ios-orange); border: none;
+    border-radius: 999px; padding: 9px 18px; cursor: pointer; transition: opacity 0.15s;
+}
+.lrn-inline-mock .ticket-img-retry:hover { opacity: .88; }
+.lrn-inline-mock .ticket-img-retry:disabled { opacity: .6; cursor: default; }
+
+.lrn-inline-mock .form-label { display: block; font: 600 13px/1.4 var(--ios-font); color: inherit; margin-bottom: 10px; }
+.lrn-inline-mock [data-role="upload-section"] > div { margin-bottom: 20px; }
+
+.lrn-inline-mock .upload-drop {
+    border: 1.5px dashed var(--border); border-radius: 18px; padding: 28px 20px; text-align: center; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    transition: border-color 150ms ease-out;
+}
+.lrn-inline-mock .upload-drop input[type="file"] { display: none; }
+.lrn-inline-mock .upload-drop:hover, .lrn-inline-mock .upload-drop.drag-over { border-color: var(--ios-orange); }
+.lrn-inline-mock .upload-circle {
+    width: 64px; height: 64px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 30px; line-height: 1;
+    background: color-mix(in srgb, var(--ios-orange) 12%, transparent); color: var(--ios-orange);
+    transition: background 150ms ease-out, color 150ms ease-out;
+}
+.lrn-inline-mock .upload-drop:hover .upload-circle { background: var(--ios-orange); color: #fff; }
+.lrn-inline-mock .upload-circle.upload-circle--stage { background: color-mix(in srgb, var(--ios-blue) 12%, transparent); color: var(--ios-blue); }
+.lrn-inline-mock .upload-drop:hover .upload-circle.upload-circle--stage { background: var(--ios-blue); color: #fff; }
+.lrn-inline-mock .upload-drop-title { font: 600 14px/1.3 var(--ios-font); }
+.lrn-inline-mock .upload-drop-hint { font: 400 12px/1.5 var(--ios-font); color: var(--muted); }
+
+.lrn-inline-mock .preview-area { display: none; margin-top: 10px; }
+.lrn-inline-mock .preview-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.lrn-inline-mock .preview-count { font: 700 13px/1 var(--ios-font); color: var(--ios-orange); }
+.lrn-inline-mock .btn-reselect,
+.lrn-inline-mock .btn-add-more {
+    font: 500 12px/1 var(--ios-font); border: none; border-radius: 999px; padding: 5px 12px; cursor: pointer;
+    transition: background 150ms ease-out;
+}
+.lrn-inline-mock .btn-reselect { color: var(--muted); background: rgba(60,60,67,0.08); }
+.lrn-inline-mock .btn-reselect:hover { background: rgba(60,60,67,0.14); }
+.lrn-inline-mock .btn-add-more { color: var(--ios-orange); background: color-mix(in srgb, var(--ios-orange) 10%, transparent); }
+.lrn-inline-mock .btn-add-more:hover { background: color-mix(in srgb, var(--ios-orange) 18%, transparent); }
+
+.lrn-inline-mock .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.lrn-inline-mock .photo-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; }
+.lrn-inline-mock .preview-cell { position: relative; }
+.lrn-inline-mock .preview-remove {
+    position: absolute; top: 4px; right: 4px; width: 30px; height: 30px; border-radius: 50%;
+    background: rgba(28,28,30,0.6); color: #fff; border: none; cursor: pointer; font-size: 12px;
+    display: flex; align-items: center; justify-content: center; z-index: 2; line-height: 1;
+}
+.lrn-inline-mock .preview-remove:hover { background: var(--ios-red); }
+
+@media (prefers-reduced-motion: reduce) {
+    .lrn-inline-mock .upload-circle, .lrn-inline-mock .btn-mock-primary { transition: none; }
 }
