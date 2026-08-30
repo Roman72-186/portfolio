@@ -194,6 +194,41 @@ def test_submit_quiz_requires_done_task(client, db, user_factory, session_factor
     assert resp.status_code == 409
 
 
+# ── Конструктор: разметка дня несёт форму и данные для правки ───────────────
+
+def test_day_page_renders_quiz_block_for_simple_and_homework_forms(client, db, user_factory, session_factory, monkeypatch):
+    _freeze(monkeypatch, date.today())
+    _staff_client(client, user_factory, session_factory)
+    day_iso = _future_day_iso()
+
+    resp = client.get(f"{PROGRAM}/{day_iso}")
+    assert resp.status_code == 200
+    # Раскрывашка вопросов есть у каждого из четырёх простых видов и у
+    # самостоятельной — ровно 5 карточек на пустой день (видео — своя,
+    # шестая, тут не считается: у неё другой текст подсказки).
+    assert resp.text.count('class="prg-quiz" data-quiz-questions-wrap>') == 5
+
+
+def test_edit_payload_includes_quiz_questions_for_prefill(client, db, user_factory, session_factory, monkeypatch):
+    _freeze(monkeypatch, date.today())
+    _staff_client(client, user_factory, session_factory)
+    day_iso = _future_day_iso()
+
+    client.post(
+        f"{PROGRAM}/{day_iso}/quiz",
+        json={"title": "Тест", "audience": EVERYONE, "quiz_questions": [{"text": "Вопрос?"}]},
+    )
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "quiz").one()
+
+    resp = client.get(f"{PROGRAM}/{day_iso}")
+    assert resp.status_code == 200
+    edit_data_json = resp.text.split("programEditData = ")[1].split(";\n")[0]
+    import json as _json
+    payload = _json.loads(edit_data_json)[str(task.id)]
+    assert payload["quiz_questions"][0]["text"] == "Вопрос?"
+    assert isinstance(payload["quiz_questions"][0]["id"], int)
+
+
 def test_submit_quiz_success_round_trips(client, db, user_factory, session_factory):
     staff = user_factory(vk_id=550_304, name="Стафф", is_admin=True, role_name="админ")
     task = _material_task_with_quiz(db, staff.id)

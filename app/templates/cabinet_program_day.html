@@ -155,6 +155,14 @@ FORM: Operate.
             <input type="checkbox" data-x-required checked>
             <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
         </label>
+        <div class="prg-quiz" data-quiz-questions-wrap>
+            <h3>Мини-опрос после сдачи</h3>
+            <p class="prg-hint">Ответы свободные, без проверки. Показывается ученику, когда он отметит элемент сделанным.</p>
+            <div data-quiz-questions></div>
+            <div class="prg-actions">
+                <button type="button" class="btn-outline" data-add-quiz-question>Добавить вопрос</button>
+            </div>
+        </div>
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-simple-save>Сохранить</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -269,6 +277,14 @@ FORM: Operate.
             <input type="checkbox" data-h-gate-required checked>
             <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
         </label>
+        <div class="prg-quiz" data-quiz-questions-wrap>
+            <h3>Мини-опрос после сдачи</h3>
+            <p class="prg-hint">Ответы свободные, без проверки. Показывается ученику после того, как работа принята.</p>
+            <div data-quiz-questions></div>
+            <div class="prg-actions">
+                <button type="button" class="btn-outline" data-add-quiz-question>Добавить вопрос</button>
+            </div>
+        </div>
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-homework-save>Сохранить</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -575,6 +591,33 @@ FORM: Operate.
             + '</div>';
     }
 
+    // Мини-опрос у материалов/теста/занятия/чек-листа/самостоятельной
+    // (владелец 30.08.2026) — та же строка `quizQuestionRowHTML`, что у
+    // видео, но без автосохранения по клавише: у этих видов, как и у
+    // Пробника, нет отдельного экрана правки, вопросы уходят вместе с
+    // остальными полями формы по кнопке «Сохранить».
+    function renderFormQuizQuestions(form, rows) {
+        var holder = form.querySelector('[data-quiz-questions]');
+        holder.innerHTML = '';
+        (rows || []).forEach(function (question, index) {
+            holder.insertAdjacentHTML('beforeend', quizQuestionRowHTML(index + 1));
+            var row = holder.lastElementChild;
+            if (question.id) row.setAttribute('data-quiz-question-id', question.id);
+            row.querySelector('[data-qq-text]').value = question.text;
+        });
+    }
+
+    function collectFormQuizQuestions(form) {
+        var items = [];
+        form.querySelectorAll('[data-quiz-questions] [data-quiz-question]').forEach(function (row) {
+            var text = row.querySelector('[data-qq-text]').value.trim();
+            if (!text) return;
+            var idAttr = row.getAttribute('data-quiz-question-id');
+            items.push({id: idAttr ? Number(idAttr) : null, text: text});
+        });
+        return items;
+    }
+
     function renderQuizQuestions(videoId) {
         var holder = videoForm.querySelector('[data-quiz-questions]');
         holder.innerHTML = '';
@@ -846,6 +889,7 @@ FORM: Operate.
         homeworkForm.querySelector('[data-h-gate-required]').checked = true;
         homeworkImages = [];
         renderHomeworkThumbs();
+        renderFormQuizQuestions(homeworkForm, []);
         setMessage(homeworkForm, '', false);
     }
 
@@ -856,6 +900,7 @@ FORM: Operate.
         form.querySelector('[data-x-description]').value = '';
         form.querySelector('[data-x-subject]').value = '';
         form.querySelector('[data-x-required]').checked = true;
+        renderFormQuizQuestions(form, []);
         setMessage(form, '', false);
     }
 
@@ -892,6 +937,7 @@ FORM: Operate.
         homeworkForm.querySelector('[data-h-gate-required]').checked = data.is_required !== false;
         homeworkImages = (data.images || []).slice();
         renderHomeworkThumbs();
+        renderFormQuizQuestions(homeworkForm, data.quiz_questions || []);
         setMessage(homeworkForm, 'Правка элемента — измените поля и сохраните.', false);
         showForm('homework');
     }
@@ -903,6 +949,7 @@ FORM: Operate.
         form.querySelector('[data-x-description]').value = data.description || '';
         form.querySelector('[data-x-subject]').value = data.subject || '';
         form.querySelector('[data-x-required]').checked = data.is_required !== false;
+        renderFormQuizQuestions(form, data.quiz_questions || []);
         setMessage(form, 'Правка элемента — измените поля и сохраните.', false);
         showForm(kind);
     }
@@ -1016,19 +1063,23 @@ FORM: Operate.
 
         var addQuizQuestion = event.target.closest('[data-add-quiz-question]');
         if (addQuizQuestion) {
-            var quizHolder = videoForm.querySelector('[data-quiz-questions]');
+            // Атрибут общий на видео и на пять других видов (владелец
+            // 30.08.2026) — держим текущую форму, а не хардкодим videoForm,
+            // иначе клик в чужой форме добавлял бы строку в видео.
+            var quizHolder = addQuizQuestion.closest('[data-form]').querySelector('[data-quiz-questions]');
             quizHolder.insertAdjacentHTML('beforeend', quizQuestionRowHTML(quizHolder.children.length + 1));
             return;
         }
 
         var removeQuizQuestion = event.target.closest('[data-remove-quiz-question]');
         if (removeQuizQuestion) {
-            // Общая строка на видео и Пробник (quizQuestionRowHTML переиспользуется
-            // целиком), но автосохранение по клику — только у видео: у Пробника
-            // задания ещё нет, пока форму целиком не отправили «Сохранить».
-            var isMockQuizRow = !!removeQuizQuestion.closest('[data-mock-quiz-questions]');
+            // Строка общая на все виды (quizQuestionRowHTML переиспользуется
+            // целиком), но автосохранение по клику — только у видео: у
+            // остальных нет отдельного экрана правки, вопросы уходят вместе
+            // с формой по кнопке «Сохранить».
+            var isVideoQuizRow = videoForm.contains(removeQuizQuestion);
             removeQuizQuestion.closest('[data-quiz-question]').remove();
-            if (!isMockQuizRow) {
+            if (isVideoQuizRow) {
                 // Убрали строку — сохраняем сразу же, без ожидания: это осознанный
                 // клик, а не набор текста, который стоит подождать перед отправкой.
                 clearTimeout(quizSaveTimer);
@@ -1051,6 +1102,7 @@ FORM: Operate.
                 max_files: Number(homeworkForm.querySelector('[data-h-files]').value || 0),
                 images: homeworkImages,
                 is_required: homeworkForm.querySelector('[data-h-gate-required]').checked,
+                quiz_questions: collectFormQuizQuestions(homeworkForm),
                 audience: audienceHw
             }).then(afterSave).catch(function (error) {
                 saveHomework.disabled = false;
@@ -1072,6 +1124,7 @@ FORM: Operate.
                 description: simpleForm.querySelector('[data-x-description]').value,
                 subject: simpleForm.querySelector('[data-x-subject]').value || null,
                 is_required: simpleForm.querySelector('[data-x-required]').checked,
+                quiz_questions: collectFormQuizQuestions(simpleForm),
                 audience: audienceSimple
             }).then(afterSave).catch(function (error) {
                 saveSimple.disabled = false;
