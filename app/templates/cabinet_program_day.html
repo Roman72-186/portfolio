@@ -335,6 +335,14 @@ FORM: Operate.
             <input type="checkbox" data-s-required checked>
             <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
         </label>
+        <div class="prg-quiz" data-quiz-questions-wrap>
+            <h3>Мини-опрос после заполнения</h3>
+            <p class="prg-hint">Отдельно от вопросов анкеты выше — короткая рефлексия, показывается сразу после отправки. Ответы свободные, без проверки.</p>
+            <div data-quiz-questions></div>
+            <div class="prg-actions">
+                <button type="button" class="btn-outline" data-add-quiz-question>Добавить вопрос</button>
+            </div>
+        </div>
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-survey-save>Сохранить</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -1155,7 +1163,8 @@ FORM: Operate.
             var mode = surveyForm.querySelector('[data-s-mode]:checked').value;
             var payload = {
                 audience: audienceSurvey,
-                is_required: surveyForm.querySelector('[data-s-required]').checked
+                is_required: surveyForm.querySelector('[data-s-required]').checked,
+                quiz_questions: collectFormQuizQuestions(surveyForm)
             };
             if (mode === 'existing') {
                 var surveyId = surveyForm.querySelector('[data-s-existing]').value;

@@ -85,6 +85,28 @@ def test_create_without_quiz_questions_leaves_none(client, db, user_factory, ses
     assert db.query(TaskQuizQuestion).count() == 0
 
 
+def test_create_survey_with_quiz_questions(client, db, user_factory, session_factory, monkeypatch):
+    """Мини-опрос после заполнения — отдельно от вопросов самой анкеты
+    (владелец 30.08.2026: все восемь видов, анкета не исключение)."""
+    _freeze(monkeypatch, date.today())
+    _staff_client(client, user_factory, session_factory)
+    day_iso = _future_day_iso()
+
+    resp = client.post(
+        f"{PROGRAM}/{day_iso}/survey",
+        json={
+            "title": "Анкета недели",
+            "questions": [{"text": "Как настроение?", "question_type": "text", "options": []}],
+            "audience": EVERYONE,
+            "quiz_questions": [{"text": "Что было полезно?"}],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "survey").one()
+    rows = db.query(TaskQuizQuestion).filter(TaskQuizQuestion.task_id == task.id).all()
+    assert [r.text for r in rows] == ["Что было полезно?"]
+
+
 # ── Конструктор: правка сохраняет id, чистит удалённые ──────────────────────
 
 def test_edit_preserves_question_ids_and_removes_missing(client, db, user_factory, session_factory, monkeypatch):
@@ -203,10 +225,10 @@ def test_day_page_renders_quiz_block_for_simple_and_homework_forms(client, db, u
 
     resp = client.get(f"{PROGRAM}/{day_iso}")
     assert resp.status_code == 200
-    # Раскрывашка вопросов есть у каждого из четырёх простых видов и у
-    # самостоятельной — ровно 5 карточек на пустой день (видео — своя,
-    # шестая, тут не считается: у неё другой текст подсказки).
-    assert resp.text.count('class="prg-quiz" data-quiz-questions-wrap>') == 5
+    # Раскрывашка вопросов есть у каждого из четырёх простых видов, у
+    # самостоятельной и у анкеты — ровно 6 карточек на пустой день (видео —
+    # своя, седьмая, тут не считается: у неё другой текст подсказки).
+    assert resp.text.count('class="prg-quiz" data-quiz-questions-wrap>') == 6
 
 
 def test_edit_payload_includes_quiz_questions_for_prefill(client, db, user_factory, session_factory, monkeypatch):

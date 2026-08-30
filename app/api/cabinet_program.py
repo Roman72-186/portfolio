@@ -677,6 +677,11 @@ class SurveyItemPayload(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     questions: list[SurveyQuestionPayload] = Field(default_factory=list, max_length=50)
     is_required: bool = True
+    # Мини-опрос после заполнения (владелец 30.08.2026) — не вопросы самой
+    # анкеты (`questions` выше), а короткая рефлексия после отправки, та же
+    # конструкция, что у остальных семи видов. Анкета пока не входит в
+    # editable_kinds, поэтому только создание.
+    quiz_questions: list[QuizQuestionItem] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
 
 
@@ -1060,6 +1065,11 @@ def create_survey_item(
         user_id=user["user_id"],
     )
     task.is_published = True
+    db.flush()
+    if payload.quiz_questions:
+        sync_task_quiz_questions(
+            db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
+        )
     db.add(
         AuditLog(
             action="program_survey_create",
