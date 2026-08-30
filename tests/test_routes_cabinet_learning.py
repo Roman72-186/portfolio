@@ -263,6 +263,71 @@ def test_learning_mock_exam_card_expands_inline_instead_of_linking_away(auth_cli
     assert 'data-subject="Рисунок"' in homework_panel
 
 
+# ── Мини-опрос после сдачи (владелец 30.08.2026) — общий на material/quiz/
+#    lesson/checklist/homework/survey, раскрывашка в разметке скрыта, пока
+#    задача не отмечена сделанной ────────────────────────────────────────────
+
+def test_learning_quiz_card_hidden_until_task_done(auth_client, db):
+    from app.models.task_quiz import TaskQuizQuestion
+
+    client, user = auth_client
+    day = week_start(today_msk()) + timedelta(days=1)
+    due = day_bounds(day)[0] + timedelta(hours=10)
+    task = create_task(
+        db, title="Материал недели", user_id=user.id, due_at=due,
+        assign_to_all=True, kind="material",
+    )
+    task.is_published = True
+    db.add(TaskQuizQuestion(task_id=task.id, text="Как прошло?", sort_order=0))
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert 'class="trk-row-expand" data-task-kind="task_quiz"' in resp.text
+    card_start = resp.text.index('class="trk-row-expand" data-task-kind="task_quiz"')
+    card = resp.text[card_start:card_start + 80]
+    assert "hidden" in card
+
+
+def test_learning_quiz_card_visible_once_task_done(auth_client, db):
+    from app.models.task_quiz import TaskQuizQuestion
+    from app.models.tracker import STATUS_DONE, TrackerTaskState
+
+    client, user = auth_client
+    day = week_start(today_msk()) + timedelta(days=1)
+    due = day_bounds(day)[0] + timedelta(hours=10)
+    task = create_task(
+        db, title="Материал недели", user_id=user.id, due_at=due,
+        assign_to_all=True, kind="material",
+    )
+    task.is_published = True
+    db.add(TaskQuizQuestion(task_id=task.id, text="Как прошло?", sort_order=0))
+    db.add(TrackerTaskState(task_id=task.id, user_id=user.id, status=STATUS_DONE))
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    card_start = resp.text.index('class="trk-row-expand" data-task-kind="task_quiz"')
+    card = resp.text[card_start:card_start + 80]
+    assert "hidden" not in card
+
+
+def test_learning_quiz_card_absent_without_configured_questions(auth_client, db):
+    client, user = auth_client
+    day = week_start(today_msk()) + timedelta(days=1)
+    due = day_bounds(day)[0] + timedelta(hours=10)
+    task = create_task(
+        db, title="Материал недели", user_id=user.id, due_at=due,
+        assign_to_all=True, kind="material",
+    )
+    task.is_published = True
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert 'class="trk-row-expand" data-task-kind="task_quiz"' not in resp.text
+
+
 def test_learning_unfinished_mock_exam_does_not_lock_next_tab(auth_client, db):
     """Пробник блокирует только переход на следующий месяц — решение владельца
     24.08. Внутри недели он не должен запирать «Чек-лист» и вкладки после."""

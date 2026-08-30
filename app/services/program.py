@@ -14,10 +14,12 @@
 import calendar
 from datetime import date, datetime, timedelta, timezone
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.homework import HomeworkAssignment
 from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, LearningTopic
+from app.models.task_quiz import TaskQuizQuestion
 from app.models.tracker import (
     ITEM_HOMEWORK,
     ITEM_MOCK_EXAM,
@@ -388,6 +390,18 @@ def item_details(db: Session, tasks: list[TrackerTask]) -> dict[int, dict]:
     surveys = get_surveys(db, survey_ids)
     survey_counts = survey_question_counts(db, list(surveys.keys()))
 
+    # Мини-опрос после сдачи (владелец 30.08.2026) — общий на все виды,
+    # см. app/models/task_quiz.py. Счётчик, а не сами вопросы: карточка
+    # решает, рисовать ли раскрывашку, сами тексты приходят по запросу с
+    # `/cabinet/tracker/tasks/{id}/quiz`, как у видео и Пробника.
+    task_ids = [t.id for t in tasks]
+    quiz_counts: dict[int, int] = dict(
+        db.query(TaskQuizQuestion.task_id, func.count(TaskQuizQuestion.id))
+        .filter(TaskQuizQuestion.task_id.in_(task_ids))
+        .group_by(TaskQuizQuestion.task_id)
+        .all()
+    ) if task_ids else {}
+
     details: dict[int, dict] = {}
     for task in tasks:
         survey = surveys.get(task.source_id) if task.source_kind == SOURCE_SURVEY else None
@@ -396,5 +410,6 @@ def item_details(db: Session, tasks: list[TrackerTask]) -> dict[int, dict]:
             "video": videos.get(task.topic_id),
             "survey": survey,
             "survey_question_count": survey_counts.get(survey.id, 0) if survey else 0,
+            "quiz_question_count": quiz_counts.get(task.id, 0),
         }
     return details

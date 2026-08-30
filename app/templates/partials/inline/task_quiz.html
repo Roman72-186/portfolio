@@ -1,0 +1,122 @@
+{#
+Мини-опрос после сдачи элемента дня (владелец 30.08.2026, см. докстринг
+`app/models/task_quiz.py`) — общий на material/quiz/lesson/checklist/
+homework/survey. Видео (`inline/video.html`) и Пробник (`inline/mock_exam.html`)
+рисуют мини-опрос сами, у них есть что показывать до него (плеер, билет);
+здесь раскрывашка — целиком про опрос, содержимого до него нет.
+
+Раскрывается только когда задача уже отмечена сделанной (`task_action.html`
+держит `<details>` скрытым до этого момента) — сервер всё равно проверяет
+`TrackerTaskState.status` заново на бэкенде, клиенту здесь не доверяют.
+#}
+<div class="lrn-inline-mock" data-role="root">
+    <p class="video-progress-status" data-role="status" aria-live="polite">Загружаем вопросы…</p>
+    <section class="card" data-role="quiz" hidden aria-label="Мини-опрос">
+        <div data-role="quiz-body"></div>
+    </section>
+</div>
+
+<script>
+(function () {
+    window.lrnPanelInit = window.lrnPanelInit || {};
+
+    window.lrnPanelInit.task_quiz = function (root, csrfToken) {
+        var wrapper = root.closest('.trk-expand-body');
+        var endpoint = wrapper ? wrapper.getAttribute('data-task-quiz-embed-endpoint') : null;
+        if (!endpoint) return;
+        var CSRF_TOKEN = csrfToken;
+
+        var statusEl = root.querySelector('[data-role="status"]');
+        var quizSectionEl = root.querySelector('[data-role="quiz"]');
+        var quizBodyEl = root.querySelector('[data-role="quiz-body"]');
+
+        function renderQuiz(data) {
+            if (!data.quiz_questions || !data.quiz_questions.length) {
+                statusEl.textContent = 'Мини-опрос пока недоступен.';
+                return;
+            }
+            statusEl.hidden = true;
+            quizBodyEl.innerHTML = '';
+            if (data.quiz_answers) {
+                data.quiz_questions.forEach(function (question, i) {
+                    var p = document.createElement('p');
+                    var label = document.createElement('span');
+                    label.className = 'field-label';
+                    label.textContent = question;
+                    var value = document.createElement('span');
+                    value.className = 'video-help';
+                    value.textContent = data.quiz_answers[i] || '—';
+                    p.appendChild(label);
+                    p.appendChild(value);
+                    quizBodyEl.appendChild(p);
+                });
+                quizSectionEl.hidden = false;
+                return;
+            }
+            var form = document.createElement('form');
+            data.quiz_questions.forEach(function (question, i) {
+                var p = document.createElement('p');
+                var label = document.createElement('label');
+                label.className = 'field-label';
+                label.setAttribute('for', 'lrn-task-quiz-q' + i + '-' + Math.random().toString(36).slice(2));
+                label.textContent = question;
+                var textarea = document.createElement('textarea');
+                textarea.className = 'form-input';
+                textarea.id = label.getAttribute('for');
+                textarea.rows = 3;
+                textarea.maxLength = 2000;
+                p.appendChild(label);
+                p.appendChild(textarea);
+                form.appendChild(p);
+            });
+            var quizSubmitBtn = document.createElement('button');
+            quizSubmitBtn.type = 'submit';
+            quizSubmitBtn.className = 'btn-blue';
+            quizSubmitBtn.textContent = 'Отправить';
+            var quizStatus = document.createElement('p');
+            quizStatus.className = 'video-progress-status';
+            quizStatus.setAttribute('aria-live', 'polite');
+            form.appendChild(quizSubmitBtn);
+            form.appendChild(quizStatus);
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+                var textareas = form.querySelectorAll('textarea');
+                var quizAnswers = Array.prototype.map.call(textareas, function (t) { return t.value; });
+                quizSubmitBtn.disabled = true;
+                fetch(data.quiz_submit_endpoint, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': CSRF_TOKEN
+                    },
+                    body: JSON.stringify({ answers: quizAnswers })
+                }).then(function (resp) {
+                    if (!resp.ok) throw new Error();
+                    textareas.forEach(function (t) { t.disabled = true; });
+                    quizSubmitBtn.hidden = true;
+                    quizStatus.textContent = 'Спасибо, ответ сохранён.';
+                }).catch(function () {
+                    quizSubmitBtn.disabled = false;
+                    quizStatus.textContent = 'Не удалось отправить ответ. Попробуйте ещё раз.';
+                    quizStatus.classList.add('is-error');
+                });
+            });
+            quizBodyEl.appendChild(form);
+            quizSectionEl.hidden = false;
+        }
+
+        fetch(endpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function (resp) {
+                if (!resp.ok) throw new Error();
+                return resp.json();
+            })
+            .then(renderQuiz)
+            .catch(function () {
+                statusEl.textContent = 'Не удалось загрузить вопросы. Попробуйте позже.';
+                statusEl.classList.add('is-error');
+            });
+    };
+})();
+</script>

@@ -26,7 +26,11 @@ from app.models.exam_assignment import ExamAssignment
 from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, LearningTopic
 from app.models.learning_video import LearningVideo
 from app.models.task_quiz import MAX_QUIZ_QUESTIONS
-from app.services.task_quiz import create_questions as create_mock_quiz_questions
+from app.services.task_quiz import (
+    create_questions as create_mock_quiz_questions,
+    get_quiz_question_rows as get_task_quiz_question_rows,
+    sync_questions as sync_task_quiz_questions,
+)
 from app.models.survey import QUESTION_TYPE_LABELS, QUESTION_TYPES
 from app.services.video_catalog import publish_video
 from app.models.tracker import (
@@ -162,6 +166,14 @@ def _edit_payloads(
             payload["images"] = [
                 {"url": img.image_s3_url, "path": img.image_s3_path}
                 for img in homework_images(db, hw.id)
+            ]
+        # Мини-опрос (владелец 30.08.2026) — у видео своя правка вопросов
+        # (video_admin.py, экран «Загрузка видео»), сюда его не тащим, чтобы
+        # не было двух мест редактирования одного и того же.
+        if item.kind != ITEM_VIDEO:
+            payload["quiz_questions"] = [
+                {"id": q.id, "text": q.text}
+                for q in get_task_quiz_question_rows(db, item.id)
             ]
         payloads[item.id] = payload
     return payloads
@@ -546,6 +558,27 @@ class VideoPayload(BaseModel):
         return value
 
 
+class QuizQuestionItem(BaseModel):
+    """Одна строка конструктора мини-опроса (владелец 30.08.2026, общий на
+    все виды — см. `app/models/task_quiz.py`). `id` — существующий вопрос
+    (правится на месте, ответы учеников сохраняются), `None` — новая строка,
+    добавленная кнопкой «+». Та же форма, что у видео (`video_admin.py`,
+    `QuizQuestionInput`), локальная копия — конструктор дня не тянет модуль
+    каталога видео ради одного класса."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: int | None = Field(default=None, ge=1)
+    text: str = Field(min_length=1, max_length=300)
+
+    @field_validator("text")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Question text cannot be empty")
+        return value
+
+
 class HomeworkItemPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -556,6 +589,7 @@ class HomeworkItemPayload(BaseModel):
     max_files: int = Field(default=1, ge=0, le=20)
     images: list[dict] = Field(default_factory=list, max_length=20)
     is_required: bool = True
+    quiz_questions: list[QuizQuestionItem] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
 
     @field_validator("title")
@@ -589,6 +623,7 @@ class SimpleItemPayload(BaseModel):
     description: str | None = Field(default=None, max_length=5000)
     subject: str | None = Field(default=None, max_length=50)
     is_required: bool = True
+    quiz_questions: list[QuizQuestionItem] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
 
     @field_validator("title")
@@ -835,6 +870,11 @@ def create_homework_item(
         user_id=user["user_id"],
     )
     task.is_published = True
+    db.flush()
+    if payload.quiz_questions:
+        sync_task_quiz_questions(
+            db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
+        )
     db.add(
         AuditLog(
             action="program_homework_create",
@@ -897,6 +937,11 @@ def _create_simple_item(
         user_id=user["user_id"],
     )
     task.is_published = True
+    db.flush()
+    if payload.quiz_questions:
+        sync_task_quiz_questions(
+            db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
+        )
     db.add(
         AuditLog(
             action=f"program_{kind}_create",
@@ -1070,6 +1115,11 @@ def _update_simple_item(
         kind=kind,
         is_required=payload.is_required,
     )
+    # Полный текущий список, не дельта (та же семантика, что у остальных
+    # полей формы) — пустой список на правке чистит мини-опрос целиком.
+    sync_task_quiz_questions(
+        db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
+    )
     db.add(
         AuditLog(
             action=f"program_{kind}_update",
@@ -1162,6 +1212,9 @@ def update_homework_item(
         assign_to_all=task.assign_to_all,
         kind=ITEM_HOMEWORK,
         is_required=payload.is_required,
+    )
+    sync_task_quiz_questions(
+        db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
     )
     db.add(
         AuditLog(

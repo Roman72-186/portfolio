@@ -397,6 +397,12 @@ function lrnUpdateTabBadge(kind) {
                 // нельзя, ниже в .finally() она включится только при ошибке.
                 btn.disabled = done;
                 if (panel) lrnUpdateTabBadge(panel.getAttribute('data-tabpanel'));
+                // Мини-опрос (владелец 30.08.2026) уже в разметке, просто скрыт —
+                // открылся сразу после отметки, без перезагрузки страницы.
+                if (done) {
+                    var quizDetails = row.querySelector('.trk-row-expand[data-task-kind="task_quiz"]');
+                    if (quizDetails) quizDetails.hidden = false;
+                }
             }).catch(function () {
                 btn.textContent = 'Не получилось, ещё раз';
                 btn.disabled = false;

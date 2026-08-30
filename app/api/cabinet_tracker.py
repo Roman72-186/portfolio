@@ -26,11 +26,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session as DBSession
 
 from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
+from app.models.task_quiz import MAX_QUIZ_QUESTIONS
 from app.models.tracker import (
     EVENT_KIND_LABELS,
     ITEM_HOMEWORK,
@@ -42,6 +44,13 @@ from app.models.tracker import (
 )
 from app.services.program import day_bounds, item_details, week_start
 from app.services.stats import avg_score_by_subject_all_time
+from app.services.task_quiz import (
+    get_answers_map as get_task_quiz_answers_map,
+    get_quiz_question_rows as get_task_quiz_question_rows,
+    get_quiz_questions as get_task_quiz_questions,
+    get_response as get_task_quiz_response,
+    save_response as save_task_quiz_response,
+)
 from app.services.tracker import (
     accessible_task_entries,
     accessible_task_ids,
@@ -168,3 +177,102 @@ def cabinet_tracker_toggle(
         db.commit()
 
     return JSONResponse({"status": task_status(task, state, now=now_msk())})
+
+
+def _accessible_task_or_404(db: DBSession, user_id: int, task_id: int) -> TrackerTask:
+    task = db.get(TrackerTask, task_id)
+    if task is None or task.deleted_at is not None or not task.is_published:
+        raise HTTPException(status_code=404, detail="Задача не найдена")
+    topic_ids = accessible_topic_ids(db, user_id)
+    task_ids = accessible_task_ids(db, user_id)
+    accessible = (task.topic_id is not None and task.topic_id in topic_ids) or (
+        task.topic_id is None and task.id in task_ids
+    )
+    if not accessible:
+        raise HTTPException(status_code=404, detail="Задача не найдена")
+    return task
+
+
+def _is_task_done(db: DBSession, task_id: int, user_id: int) -> bool:
+    state = (
+        db.query(TrackerTaskState)
+        .filter(TrackerTaskState.task_id == task_id, TrackerTaskState.user_id == user_id)
+        .one_or_none()
+    )
+    return state is not None and state.status == STATUS_DONE
+
+
+# ── GET /cabinet/tracker/tasks/{id}/quiz ─────────────────────────────────────
+
+@router.get("/tracker/tasks/{task_id}/quiz")
+def cabinet_tracker_task_quiz(
+    task_id: int,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Мини-опрос после сдачи любого элемента (владелец 30.08.2026, см.
+    докстринг `app/models/task_quiz.py`) — тот же контракт JSON, что у
+    видео и Пробника (`quiz_questions`/`quiz_answers`/`quiz_submit_endpoint`),
+    но общий на material/quiz/lesson/checklist/homework/survey. Видео и
+    Пробник сюда не ходят — у них свой embed-эндпоинт и свой гейт видимости
+    (см. докстринг `app/models/task_quiz.py`)."""
+    _accessible_task_or_404(db, user["user_id"], task_id)
+
+    quiz_questions: list[str] = []
+    quiz_answers: list[str] | None = None
+    if _is_task_done(db, task_id, user["user_id"]):
+        quiz_questions = get_task_quiz_questions(db, task_id)
+        if quiz_questions:
+            response = get_task_quiz_response(db, task_id=task_id, user_id=user["user_id"])
+            if response is not None:
+                question_rows = get_task_quiz_question_rows(db, task_id)
+                answers_map = get_task_quiz_answers_map(db, response_id=response.id)
+                quiz_answers = [answers_map.get(q.id, "") for q in question_rows]
+
+    return JSONResponse({
+        "quiz_questions": quiz_questions,
+        "quiz_answers": quiz_answers,
+        "quiz_submit_endpoint": f"/cabinet/tracker/tasks/{task_id}/quiz" if quiz_questions else None,
+    })
+
+
+class TrackerTaskQuizSubmit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    answers: list[str] = Field(min_length=1, max_length=MAX_QUIZ_QUESTIONS)
+
+    @field_validator("answers")
+    @classmethod
+    def strip_answers(cls, value: list[str]) -> list[str]:
+        return [item.strip()[:2000] for item in value]
+
+
+# ── POST /cabinet/tracker/tasks/{id}/quiz ────────────────────────────────────
+
+@router.post("/tracker/tasks/{task_id}/quiz", response_class=JSONResponse)
+def submit_cabinet_tracker_task_quiz(
+    task_id: int,
+    payload: TrackerTaskQuizSubmit,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Сохранить ответы — только по факту уже закрытой задачи (сервер
+    проверяет сам, клиенту не доверяет — та же дисциплина, что у
+    `submit_mock_exam_quiz`)."""
+    _accessible_task_or_404(db, user["user_id"], task_id)
+    if not _is_task_done(db, task_id, user["user_id"]):
+        raise HTTPException(status_code=409, detail="Сначала закройте задачу")
+    question_rows = get_task_quiz_question_rows(db, task_id)
+    if not question_rows:
+        raise HTTPException(status_code=404, detail="Мини-опрос не настроен")
+    if len(payload.answers) != len(question_rows):
+        raise HTTPException(status_code=422, detail="Число ответов не совпадает с числом вопросов")
+    save_task_quiz_response(
+        db,
+        task_id=task_id,
+        user_id=user["user_id"],
+        question_rows=question_rows,
+        answers=payload.answers,
+    )
+    db.commit()
+    return JSONResponse({"ok": True})

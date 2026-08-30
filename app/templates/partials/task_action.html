@@ -86,3 +86,17 @@
     {{ 'disabled' if entry.status == 'done' }}
 >{{ 'Сделано' if entry.status == 'done' else 'Отметить' }}</button>
 {% endif %}
+
+{# Мини-опрос после сдачи (владелец 30.08.2026) — общий на material/quiz/
+   lesson/checklist/homework/survey, видео и Пробник рисуют свой (см. ветки
+   выше). Раскрывашка живёт в разметке сразу, даже пока задача не сделана
+   (`hidden`), чтобы обработчик toggle из cabinet_learning.html нашёл её при
+   загрузке страницы и снял `hidden` сразу после отметки, без перезагрузки. #}
+{% if inline_expand and task.kind in ('material', 'quiz', 'lesson', 'checklist', 'homework', 'survey') and detail.quiz_question_count %}
+<details class="trk-row-expand" data-task-kind="task_quiz" {{ '' if entry.status == 'done' else 'hidden' }}>
+    <summary class="btn-outline">Мини-опрос</summary>
+    <div class="trk-expand-body" data-task-quiz-embed-endpoint="/cabinet/tracker/tasks/{{ task.id }}/quiz">
+        {% include "partials/inline/task_quiz.html" %}
+    </div>
+</details>
+{% endif %}
