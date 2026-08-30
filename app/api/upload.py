@@ -7,6 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Request, Depends, UploadFile, File, Form, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session
@@ -34,13 +35,22 @@ from app.services.mock_exam_access import (
 )
 from app.csrf import generate_csrf_token
 from app.db.database import get_db
-from app.dependencies import require_student, require_csrf, get_current_user
+from app.dependencies import require_student, require_csrf, require_csrf_header, get_current_user
 from app.models.exam_assignment import ExamTicket
+from app.models.exam_cycle import ExamCycle
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
+from app.models.mock_exam_quiz import MAX_QUIZ_QUESTIONS
 from app.models.upload_log import UploadLog
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
+from app.services.mock_exam_quiz import (
+    get_answers_map as get_mock_quiz_answers_map,
+    get_quiz_question_rows as get_mock_quiz_question_rows,
+    get_quiz_questions as get_mock_quiz_questions,
+    get_response as get_mock_quiz_response,
+    save_response as save_mock_quiz_response,
+)
 from app.services.n8n import send_photo_to_n8n
 from app.services import s3 as s3_service
 from app.services.upload_validation import (
@@ -151,6 +161,30 @@ def _locked_mock_subjects(db: DBSession, user_id: int) -> dict[str, str]:
             else "waiting"
         )
     return reasons
+
+
+def _submitted_assignment_id(db: DBSession, user_id: int, subject: str) -> int | None:
+    """`ExamAssignment.id` того билета, по которому уже сдан финал — источник
+    мини-опроса после Пробника (решение владельца 30.08.2026). Та же связка
+    ExamCycle→Work, что даёт `has_submitted_for_ticket`, но без привязки к
+    конкретному `ticket_id`: подойдёт любой сданный билет этого предмета,
+    самый свежий цикл."""
+    row = (
+        db.query(ExamTicket.assignment_id)
+        .join(ExamCycle, ExamCycle.ticket_id == ExamTicket.id)
+        .join(Work, Work.cycle_id == ExamCycle.id)
+        .filter(
+            ExamCycle.user_id == user_id,
+            ExamCycle.subject == subject,
+            Work.work_type == WORK_TYPE_MOCK_EXAM,
+            Work.is_final == True,  # noqa: E712
+            Work.status == "success",
+            Work.needs_revision == False,  # noqa: E712
+        )
+        .order_by(ExamCycle.started_at.desc())
+        .first()
+    )
+    return row[0] if row else None
 
 
 def _render_mock(request, user, db, *, error=None, success=False, success_count=0, selected_subject="",
@@ -1051,6 +1085,24 @@ def mock_exam_embed(
         existing = count_cycle_intermediates(db, cycle_id=cycle.id) if cycle is not None else 0
         stage_state = intermediate_upload_state(existing)
 
+    # Мини-опрос после сдачи (решение владельца 30.08.2026, та же конструкция,
+    # что у видео) — виден только когда финал уже сдан, тот же признак, что
+    # разблокировывает подсказку «работа сдана».
+    quiz_questions: list[str] = []
+    quiz_answers: list[str] | None = None
+    if subject in locked_reasons:
+        assignment_id = _submitted_assignment_id(db, user["user_id"], subject)
+        if assignment_id is not None:
+            quiz_questions = get_mock_quiz_questions(db, assignment_id)
+            if quiz_questions:
+                response = get_mock_quiz_response(
+                    db, assignment_id=assignment_id, user_id=user["user_id"]
+                )
+                if response is not None:
+                    question_rows = get_mock_quiz_question_rows(db, assignment_id)
+                    answers_map = get_mock_quiz_answers_map(db, response_id=response.id)
+                    quiz_answers = [answers_map.get(q.id, "") for q in question_rows]
+
     return JSONResponse({
         "feature_available": True,
         "subject": subject,
@@ -1063,7 +1115,54 @@ def mock_exam_embed(
         "stage_state": stage_state,
         "duration_sec": MOCK_EXAM_DURATION_SEC,
         "max_stage_files": MAX_INTERMEDIATE_PER_FINAL,
+        "quiz_questions": quiz_questions,
+        "quiz_answers": quiz_answers,
+        "quiz_submit_endpoint": "/upload/mock-exam/quiz" if quiz_questions else None,
     })
+
+
+class MockQuizSubmit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    subject: str = Field(min_length=1, max_length=50)
+    answers: list[str] = Field(min_length=1, max_length=MAX_QUIZ_QUESTIONS)
+
+    @field_validator("answers")
+    @classmethod
+    def strip_answers(cls, value: list[str]) -> list[str]:
+        return [item.strip()[:2000] for item in value]
+
+
+# ── POST /upload/mock-exam/quiz ──────────────────────────────────────────────
+
+@router.post("/upload/mock-exam/quiz", response_class=JSONResponse)
+def submit_mock_exam_quiz(
+    payload: MockQuizSubmit,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Сохранить ответы мини-опроса после Пробника — только по факту уже
+    сданного финала (сервер проверяет сам, как и у видео: `submit_video_quiz`
+    доверяет не клиенту, а `VideoProgress.completed_at`)."""
+    if payload.subject not in MOCK_SUBJECTS:
+        raise HTTPException(status_code=422, detail="Выберите предмет")
+    assignment_id = _submitted_assignment_id(db, user["user_id"], payload.subject)
+    if assignment_id is None:
+        raise HTTPException(status_code=409, detail="Сначала сдайте финальное фото")
+    question_rows = get_mock_quiz_question_rows(db, assignment_id)
+    if not question_rows:
+        raise HTTPException(status_code=404, detail="Мини-опрос не настроен")
+    if len(payload.answers) != len(question_rows):
+        raise HTTPException(status_code=422, detail="Число ответов не совпадает с числом вопросов")
+    save_mock_quiz_response(
+        db,
+        assignment_id=assignment_id,
+        user_id=user["user_id"],
+        question_rows=question_rows,
+        answers=payload.answers,
+    )
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 # ── GET /upload/mock-exam/csrf ───────────────────────────────────────────────

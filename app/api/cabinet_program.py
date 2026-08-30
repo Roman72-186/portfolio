@@ -25,6 +25,8 @@ from app.models.audit_log import AuditLog
 from app.models.exam_assignment import ExamAssignment
 from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, LearningTopic
 from app.models.learning_video import LearningVideo
+from app.models.mock_exam_quiz import MAX_QUIZ_QUESTIONS
+from app.services.mock_exam_quiz import create_questions as create_mock_quiz_questions
 from app.models.survey import QUESTION_TYPE_LABELS, QUESTION_TYPES
 from app.services.video_catalog import publish_video
 from app.models.tracker import (
@@ -304,6 +306,16 @@ class MockPayload(BaseModel):
     subjects: list[SubjectPayload] = Field(min_length=1, max_length=len(MOCK_SUBJECTS))
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
     is_required: bool = True
+    # Мини-опрос после сдачи (решение владельца 30.08.2026, та же конструкция,
+    # что у видео) — один набор вопросов на все выбранные предметы сразу:
+    # у Пробника нет экрана правки, поэтому не нужна id-сохраняющая развязка
+    # video_quiz.py::sync_questions, только чистое создание при сохранении.
+    quiz_questions: list[str] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
+
+    @field_validator("quiz_questions")
+    @classmethod
+    def strip_quiz_questions(cls, value: list[str]) -> list[str]:
+        return [item.strip() for item in value if item and item.strip()]
 
 
 def _guard_future(day: date) -> None:
@@ -368,6 +380,11 @@ def create_mock_item(
         )
         db.add(assignment)
         db.flush()
+
+        if payload.quiz_questions:
+            create_mock_quiz_questions(
+                db, assignment_id=assignment.id, texts=payload.quiz_questions
+            )
 
         # Окно билета больше не настраивается в конструкторе (решение
         # владельца 30.08.2026) — одно и то же для всех билетов дня.

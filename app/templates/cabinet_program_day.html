@@ -114,6 +114,14 @@ FORM: Operate.
             <span>Обязательно для сдачи</span>
         </label>
         <p class="prg-hint">Билет автоматически доступен всем ученикам, окно сдачи система выставляет сама.</p>
+        <div class="prg-quiz" data-mock-quiz-questions-wrap>
+            <h3>Мини-опрос после сдачи</h3>
+            <p class="prg-hint">Ответы свободные, без проверки. Один набор вопросов на все отмеченные предметы сразу.</p>
+            <div data-mock-quiz-questions></div>
+            <div class="prg-actions">
+                <button type="button" class="btn-outline" data-add-mock-quiz-question>Добавить вопрос</button>
+            </div>
+        </div>
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-mock-save>Сохранить</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -455,6 +463,19 @@ FORM: Operate.
             });
         });
         return blocks;
+    }
+
+    // Мини-опрос после сдачи (владелец 30.08.2026) — та же конструкция
+    // «плюс — новая строка», что у видео, но собирается разом на «Сохранить»:
+    // у Пробника нет отдельного экрана правки, автосохранение по клавише не
+    // на чем строить (задания ещё не существует, пока форма не отправлена).
+    function collectMockQuizQuestions() {
+        var items = [];
+        mockForm.querySelectorAll('[data-mock-quiz-questions] [data-quiz-question]').forEach(function (row) {
+            var text = row.querySelector('[data-qq-text]').value.trim();
+            if (text) items.push(text);
+        });
+        return items;
     }
 
     // ── Видео и самостоятельная работа ──────────────────────────────────
@@ -927,6 +948,13 @@ FORM: Operate.
         var removeTicket = event.target.closest('[data-remove-ticket]');
         if (removeTicket) { removeTicket.closest('[data-ticket]').remove(); return; }
 
+        var addMockQuizQuestion = event.target.closest('[data-add-mock-quiz-question]');
+        if (addMockQuizQuestion) {
+            var mockQuizHolder = mockForm.querySelector('[data-mock-quiz-questions]');
+            mockQuizHolder.insertAdjacentHTML('beforeend', quizQuestionRowHTML(mockQuizHolder.children.length + 1));
+            return;
+        }
+
         var saveMock = event.target.closest('[data-mock-save]');
         if (saveMock) {
             var blocks = collectSubjects();
@@ -949,7 +977,8 @@ FORM: Operate.
             api('/cabinet/staff/program/' + dayIso + '/mock', {
                 subjects: blocks,
                 audience: {assign_to_all: true, tag_ids: [], assignee_usernames: ''},
-                is_required: mockForm.querySelector('[data-m-required]').checked
+                is_required: mockForm.querySelector('[data-m-required]').checked,
+                quiz_questions: collectMockQuizQuestions()
             }).then(afterSave).catch(function (error) {
                 saveMock.disabled = false;
                 setFormMessage(error.status === 422 && error.message !== 'request_failed'
@@ -994,11 +1023,17 @@ FORM: Operate.
 
         var removeQuizQuestion = event.target.closest('[data-remove-quiz-question]');
         if (removeQuizQuestion) {
+            // Общая строка на видео и Пробник (quizQuestionRowHTML переиспользуется
+            // целиком), но автосохранение по клику — только у видео: у Пробника
+            // задания ещё нет, пока форму целиком не отправили «Сохранить».
+            var isMockQuizRow = !!removeQuizQuestion.closest('[data-mock-quiz-questions]');
             removeQuizQuestion.closest('[data-quiz-question]').remove();
-            // Убрали строку — сохраняем сразу же, без ожидания: это осознанный
-            // клик, а не набор текста, который стоит подождать перед отправкой.
-            clearTimeout(quizSaveTimer);
-            saveQuizQuestionsNow(true);
+            if (!isMockQuizRow) {
+                // Убрали строку — сохраняем сразу же, без ожидания: это осознанный
+                // клик, а не набор текста, который стоит подождать перед отправкой.
+                clearTimeout(quizSaveTimer);
+                saveQuizQuestionsNow(true);
+            }
             return;
         }
 

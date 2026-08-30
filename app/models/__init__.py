@@ -25,6 +25,11 @@ from app.models.video_progress import VideoProgress
 from app.models.video_view_log import VideoViewLog
 from app.models.learning_video import LearningVideo
 from app.models.video_quiz import VideoQuizResponse
+from app.models.mock_exam_quiz import (
+    ExamAssignmentQuestion,
+    MockQuizAnswer,
+    MockQuizResponse,
+)
 from app.models.learning_topic import (
     LearningTopic,
     LearningTopicAssignee,

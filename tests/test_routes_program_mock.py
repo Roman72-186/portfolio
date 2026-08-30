@@ -284,23 +284,6 @@ def test_same_subject_twice_is_rejected(
     assert response.status_code == 422
 
 
-def test_window_shorter_than_work_time_is_rejected(
-    client, db, user_factory, session_factory, monkeypatch
-):
-    _freeze(monkeypatch)
-    _staff_client(client, user_factory, session_factory)
-    tag = _tag(db, "МАКСИМУМ")
-    ticket = _ticket()
-    ticket["closes_at"] = f"{MONDAY}T12:00"
-
-    response = client.post(
-        f"{PROGRAM}/{MONDAY}/mock",
-        json=_payload([{"subject": "Рисунок", "tickets": [ticket]}], tag_ids=[tag.id]),
-    )
-
-    assert response.status_code == 422
-
-
 def test_student_cannot_create_a_mock(auth_client):
     client, _ = auth_client
     response = client.post(
@@ -308,3 +291,108 @@ def test_student_cannot_create_a_mock(auth_client):
         json=_payload([{"subject": "Рисунок", "tickets": [_ticket()]}], assign_to_all=True),
     )
     assert response.status_code == 403
+
+
+# ── Обязательность + мини-опрос (владелец 30.08.2026) ───────────────────────
+#
+# `_freeze`/`MONDAY` в тестах выше жёстко зашивают "сегодня" на 21.08.2026 —
+# уже в прошлом относительно реального datetime.now(), которым сверяется
+# validate_window (см. коммит с чисткой окна билета). Эти тесты новые и не
+# завязаны на старые фикстуры — держат "сегодня" настоящим и день на неделю
+# вперёд, чтобы не унаследовать тот же дрейф дат.
+
+
+def _future_day_iso():
+    return (date.today() + timedelta(days=7)).isoformat()
+
+
+def test_is_required_flows_into_tracker_task(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    _freeze(monkeypatch, value=date.today())
+    _staff_client(client, user_factory, session_factory)
+    tag = _tag(db, "МАКСИМУМ")
+    day_iso = _future_day_iso()
+
+    response = client.post(
+        f"{PROGRAM}/{day_iso}/mock",
+        json={
+            **_payload([{"subject": "Рисунок", "tickets": [_ticket()]}], tag_ids=[tag.id]),
+            "is_required": False,
+        },
+    )
+
+    assert response.status_code == 200
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "mock_exam").one()
+    assert task.is_required is False
+
+
+def test_is_required_defaults_to_true(client, db, user_factory, session_factory, monkeypatch):
+    _freeze(monkeypatch, value=date.today())
+    _staff_client(client, user_factory, session_factory)
+    tag = _tag(db, "МАКСИМУМ")
+    day_iso = _future_day_iso()
+
+    response = client.post(
+        f"{PROGRAM}/{day_iso}/mock",
+        json=_payload([{"subject": "Рисунок", "tickets": [_ticket()]}], tag_ids=[tag.id]),
+    )
+
+    assert response.status_code == 200
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "mock_exam").one()
+    assert task.is_required is True
+
+
+def test_quiz_questions_duplicated_into_every_selected_assignment(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    from app.models.mock_exam_quiz import ExamAssignmentQuestion
+
+    _freeze(monkeypatch, value=date.today())
+    _staff_client(client, user_factory, session_factory)
+    tag = _tag(db, "МАКСИМУМ")
+    day_iso = _future_day_iso()
+
+    response = client.post(
+        f"{PROGRAM}/{day_iso}/mock",
+        json={
+            **_payload(
+                [
+                    {"subject": "Рисунок", "tickets": [_ticket("Натюрморт")]},
+                    {"subject": "Композиция", "tickets": [_ticket("Композиция с аркой")]},
+                ],
+                tag_ids=[tag.id],
+            ),
+            "quiz_questions": ["Как прошла сдача?", "  ", "Что было сложно?"],
+        },
+    )
+
+    assert response.status_code == 200
+    assignments = db.query(ExamAssignment).order_by(ExamAssignment.id).all()
+    assert len(assignments) == 2
+    for assignment in assignments:
+        rows = (
+            db.query(ExamAssignmentQuestion)
+            .filter(ExamAssignmentQuestion.assignment_id == assignment.id)
+            .order_by(ExamAssignmentQuestion.sort_order)
+            .all()
+        )
+        # Пустая строка ("  ") отсеяна валидатором payload.
+        assert [r.text for r in rows] == ["Как прошла сдача?", "Что было сложно?"]
+
+
+def test_no_quiz_questions_by_default(client, db, user_factory, session_factory, monkeypatch):
+    from app.models.mock_exam_quiz import ExamAssignmentQuestion
+
+    _freeze(monkeypatch, value=date.today())
+    _staff_client(client, user_factory, session_factory)
+    tag = _tag(db, "МАКСИМУМ")
+    day_iso = _future_day_iso()
+
+    response = client.post(
+        f"{PROGRAM}/{day_iso}/mock",
+        json=_payload([{"subject": "Рисунок", "tickets": [_ticket()]}], tag_ids=[tag.id]),
+    )
+
+    assert response.status_code == 200
+    assert db.query(ExamAssignmentQuestion).count() == 0
