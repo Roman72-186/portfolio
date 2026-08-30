@@ -230,9 +230,6 @@ def program_day(
             "edit_payloads": _edit_payloads(db, items, details),
             "kind_labels": ITEM_KIND_LABELS,
             "subjects": MOCK_SUBJECTS,
-            # Окно по умолчанию — 11:45–18:30 самого дня, а не «сегодня/завтра»,
-            # как в старой форме пробников: день здесь уже выбран человеком.
-            "mock_defaults": default_schedule_for_day(day),
             # Анкета — переиспользуемый шаблон (owner-решение 22–23.08): конструктор
             # предлагает готовые анкеты, чтобы не набирать один и тот же опрос
             # заново на каждой из восьми точек года.
@@ -251,16 +248,16 @@ def program_day(
 
 
 class TicketPayload(BaseModel):
+    """Окно билета (открывается/закрывается/минут на работу) сюда не входит —
+    решение владельца 30.08.2026: убрать настройку периода и времени из
+    конструктора, окно всегда берётся из `default_schedule_for_day(day)`
+    (11:45–18:30 дня, 90 минут), день уже известен из `iso` в пути."""
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
     image_url: str | None = Field(default=None, max_length=500)
     image_path: str | None = Field(default=None, max_length=300)
-    opens_at: str = Field(min_length=1, max_length=32)
-    closes_at: str = Field(min_length=1, max_length=32)
-    duration_minutes: int = Field(default=90, ge=1, le=720)
-    restrict_start_by_duration: bool = True
 
     @field_validator("title")
     @classmethod
@@ -306,6 +303,7 @@ class MockPayload(BaseModel):
 
     subjects: list[SubjectPayload] = Field(min_length=1, max_length=len(MOCK_SUBJECTS))
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
+    is_required: bool = True
 
 
 def _guard_future(day: date) -> None:
@@ -371,20 +369,26 @@ def create_mock_item(
         db.add(assignment)
         db.flush()
 
+        # Окно билета больше не настраивается в конструкторе (решение
+        # владельца 30.08.2026) — одно и то же для всех билетов дня.
+        schedule = default_schedule_for_day(day)
+        duration_minutes = schedule["duration_minutes"]
+        restrict_start_by_duration = True
+
         latest_close: datetime | None = None
         for number, ticket in enumerate(block.tickets, start=1):
             opens_at = parse_msk_datetime(
-                ticket.opens_at, ticket_number=number, field_label="открывается"
+                schedule["opens_at"], ticket_number=number, field_label="открывается"
             )
             closes_at = parse_msk_datetime(
-                ticket.closes_at, ticket_number=number, field_label="закрывается"
+                schedule["closes_at"], ticket_number=number, field_label="закрывается"
             )
             start_date, end_date = validate_window(
                 ticket_number=number,
                 opens_at=opens_at,
                 closes_at=closes_at,
-                duration_minutes=ticket.duration_minutes,
-                restrict_start_by_duration=ticket.restrict_start_by_duration,
+                duration_minutes=duration_minutes,
+                restrict_start_by_duration=restrict_start_by_duration,
             )
             create_ticket(
                 db,
@@ -396,8 +400,8 @@ def create_mock_item(
                 image_path=ticket.image_path,
                 opens_at=opens_at,
                 closes_at=closes_at,
-                duration_minutes=ticket.duration_minutes,
-                restrict_start_by_duration=ticket.restrict_start_by_duration,
+                duration_minutes=duration_minutes,
+                restrict_start_by_duration=restrict_start_by_duration,
                 start_date=start_date,
                 end_date=end_date,
                 assign_to_all=payload.audience.assign_to_all,
@@ -429,6 +433,7 @@ def create_mock_item(
             source_kind=SOURCE_EXAM_ASSIGNMENT,
             source_id=assignment.id,
             user_id=user["user_id"],
+            is_required=payload.is_required,
         )
         task.is_published = True
         db.add(

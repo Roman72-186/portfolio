@@ -110,9 +110,10 @@ FORM: Operate.
         </div>
         {% endfor %}
         <label class="prg-field prg-field--row">
-            <input type="checkbox" checked disabled>
-            <span>Обязательный элемент — Пробник всегда учитывается в месячном гейте, доступен всем ученикам</span>
+            <input type="checkbox" data-m-required checked>
+            <span>Обязательно для сдачи</span>
         </label>
+        <p class="prg-hint">Билет автоматически доступен всем ученикам, окно сдачи система выставляет сама.</p>
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-mock-save>Сохранить</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -389,9 +390,11 @@ FORM: Operate.
     // ── Пробник ─────────────────────────────────────────────────────────
     var dayIso = document.querySelector('.prg-page').dataset.day;
     var mockForm = document.querySelector('[data-form="mock"]');
-    var defaults = {{ mock_defaults|tojson }};
 
     function ticketHTML(number) {
+        // Окно билета (открывается/закрывается/минут на работу) больше не
+        // настраивается здесь — решение владельца 30.08.2026, сервер сам
+        // берёт `default_schedule_for_day(day)` по дню конструктора.
         return ''
             + '<div class="prg-ticket" data-ticket>'
             + '  <div class="prg-ticket-head"><strong>Билет ' + number + '</strong>'
@@ -400,13 +403,6 @@ FORM: Operate.
             + '  <label class="prg-field">Описание<textarea data-t-description maxlength="2000"></textarea></label>'
             + '  <label class="prg-field">Картинка билета<input type="file" data-t-image accept="image/*"></label>'
             + '  <div class="prg-thumbs" data-t-thumb></div>'
-            + '  <div class="prg-grid3">'
-            + '    <label class="prg-field">Открывается (МСК)<input type="datetime-local" data-t-opens value="' + defaults.opens_at + '"></label>'
-            + '    <label class="prg-field">Закрывается (МСК)<input type="datetime-local" data-t-closes value="' + defaults.closes_at + '"></label>'
-            + '    <label class="prg-field">Минут на работу<input type="number" min="1" max="720" data-t-duration value="' + defaults.duration_minutes + '"></label>'
-            + '  </div>'
-            + '  <label class="prg-field prg-field--row"><input type="checkbox" data-t-restrict checked>'
-            + '    <span>Не выдавать билет, если до конца меньше времени на работу</span></label>'
             + '</div>';
     }
 
@@ -449,11 +445,7 @@ FORM: Operate.
                     title: row.querySelector('[data-t-title]').value.trim(),
                     description: row.querySelector('[data-t-description]').value,
                     image_url: thumb.dataset.url || null,
-                    image_path: thumb.dataset.path || null,
-                    opens_at: row.querySelector('[data-t-opens]').value,
-                    closes_at: row.querySelector('[data-t-closes]').value,
-                    duration_minutes: Number(row.querySelector('[data-t-duration]').value || 90),
-                    restrict_start_by_duration: row.querySelector('[data-t-restrict]').checked
+                    image_path: thumb.dataset.path || null
                 });
             });
             blocks.push({
@@ -956,7 +948,8 @@ FORM: Operate.
             saveMock.disabled = true;
             api('/cabinet/staff/program/' + dayIso + '/mock', {
                 subjects: blocks,
-                audience: {assign_to_all: true, tag_ids: [], assignee_usernames: ''}
+                audience: {assign_to_all: true, tag_ids: [], assignee_usernames: ''},
+                is_required: mockForm.querySelector('[data-m-required]').checked
             }).then(afterSave).catch(function (error) {
                 saveMock.disabled = false;
                 setFormMessage(error.status === 422 && error.message !== 'request_failed'

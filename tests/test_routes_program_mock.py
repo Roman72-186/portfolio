@@ -42,14 +42,13 @@ def _tag(db, name: str) -> Tag:
     return tag
 
 
-def _ticket(title="Натюрморт", day=MONDAY):
+def _ticket(title="Натюрморт"):
+    # Окно билета (opens_at/closes_at/duration_minutes) больше не приходит с
+    # клиента (решение владельца 30.08.2026) — сервер сам берёт
+    # `default_schedule_for_day(day)` по дню из URL.
     return {
         "title": title,
         "description": "Два листа",
-        "opens_at": f"{day}T11:45",
-        "closes_at": f"{day}T18:30",
-        "duration_minutes": 90,
-        "restrict_start_by_duration": True,
     }
 
 
@@ -191,7 +190,7 @@ def test_ticket_is_closed_until_its_window_opens(
     client.post(
         f"{PROGRAM}/{future}/mock",
         json=_payload(
-            [{"subject": "Рисунок", "tickets": [_ticket(day=future)]}], tag_ids=[tag.id]
+            [{"subject": "Рисунок", "tickets": [_ticket()]}], tag_ids=[tag.id]
         ),
     )
 
@@ -256,7 +255,7 @@ def test_past_day_refuses_new_mock(client, db, user_factory, session_factory, mo
     response = client.post(
         f"{PROGRAM}/2026-08-17/mock",
         json=_payload(
-            [{"subject": "Рисунок", "tickets": [_ticket(day="2026-08-17")]}],
+            [{"subject": "Рисунок", "tickets": [_ticket()]}],
             tag_ids=[tag.id],
         ),
     )
