@@ -79,8 +79,13 @@ from app.services.program import (
 from app.services.survey import (
     create_survey_with_questions,
     get_survey,
+    get_questions as get_survey_questions,
+    has_responses as survey_has_responses,
     list_surveys,
+    options_by_question as survey_options_by_question,
     question_counts as survey_question_counts,
+    set_questions as set_survey_questions,
+    update_survey_title,
 )
 from app.services.tracker import (
     create_homework,
@@ -146,15 +151,20 @@ def _edit_payloads(
 ) -> dict[int, dict]:
     """Данные для предзаполнения формы правки — по одному элементу на карточку.
 
-    Только для видов из `editable_kinds`: анкета правкой пока не покрыта
-    (общий переиспользуемый шаблон — отдельное решение), ей здесь делать
-    нечего.
+    Анкета — не по виду `editable_kinds`, а по месту: строку добавляем,
+    только если этот переиспользуемый шаблон сейчас стоит ровно в этом одном
+    дне (см. `_survey_usage_count` — та же проверка стоит и на самом
+    эндпоинте правки, здесь только чтобы не рисовать кнопку впустую).
     """
     payloads: dict[int, dict] = {}
     for item in items:
         if item.kind not in (
             ITEM_VIDEO, ITEM_HOMEWORK, ITEM_MATERIAL, ITEM_QUIZ, ITEM_LESSON, ITEM_CHECKLIST,
-            ITEM_MOCK_EXAM,
+            ITEM_MOCK_EXAM, ITEM_SURVEY,
+        ):
+            continue
+        if item.kind == ITEM_SURVEY and (
+            not item.source_id or _survey_usage_count(db, item.source_id) > 1
         ):
             continue
         detail = details.get(item.id, {})
@@ -185,6 +195,22 @@ def _edit_payloads(
                 .order_by(ExamTicket.ticket_number)
                 .all()
             ]
+        if item.kind == ITEM_SURVEY and item.source_id:
+            survey = get_survey(db, item.source_id)
+            payload["title"] = survey.title if survey else ""
+            questions = get_survey_questions(db, item.source_id)
+            options = survey_options_by_question(db, [q.id for q in questions])
+            payload["questions"] = [
+                {
+                    "id": q.id, "text": q.text, "question_type": q.question_type,
+                    "options": [
+                        {"id": o.id, "text": o.text, "is_correct": o.is_correct}
+                        for o in options.get(q.id, [])
+                    ],
+                }
+                for q in questions
+            ]
+            payload["survey_locked"] = survey_has_responses(db, item.source_id)
         # Мини-опрос (владелец 30.08.2026) — у видео своя правка вопросов
         # (video_admin.py, экран «Загрузка видео»), сюда его не тащим, чтобы
         # не было двух мест редактирования одного и того же.
@@ -257,11 +283,12 @@ def program_day(
             "month_href": f"/cabinet/staff/program?month={day.year}-{day.month:02d}",
             "items": items,
             "details": details,
-            # Анкету включим отдельным шагом — общий переиспользуемый шаблон,
-            # решение по правке отдельное (владелец 30.08.2026).
+            # Анкета в списке видов, но кнопка «Изменить» рисуется только
+            # если для неё есть запись в edit_payloads — она условная (см.
+            # _edit_payloads: только пока шаблон стоит ровно в одном дне).
             "editable_kinds": [
                 ITEM_VIDEO, ITEM_HOMEWORK, ITEM_MATERIAL, ITEM_QUIZ, ITEM_LESSON, ITEM_CHECKLIST,
-                ITEM_MOCK_EXAM,
+                ITEM_MOCK_EXAM, ITEM_SURVEY,
             ],
             "edit_payloads": _edit_payloads(db, items, details),
             "kind_labels": ITEM_KIND_LABELS,
@@ -715,10 +742,25 @@ class SurveyItemPayload(BaseModel):
     is_required: bool = True
     # Мини-опрос после заполнения (владелец 30.08.2026) — не вопросы самой
     # анкеты (`questions` выше), а короткая рефлексия после отправки, та же
-    # конструкция, что у остальных семи видов. Анкета пока не входит в
-    # editable_kinds, поэтому только создание.
+    # конструкция, что у остальных семи видов.
     quiz_questions: list[QuizQuestionItem] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
+
+
+class SurveyEditPayload(BaseModel):
+    """Правка Анкеты (владелец 30.08.2026) — доступна, только пока анкета не
+    используется больше нигде в году и никто ещё не ответил (обе проверки —
+    `_edit_payloads`/`update_survey_item`, вторая уже стояла в
+    `survey.py::set_questions` до этой стройки). Полная перезапись вопросов,
+    не id-сохраняющая правка — безопасно ровно потому, что ответов ещё нет
+    (иначе `set_questions` сама откажет)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    questions: list[SurveyQuestionPayload] = Field(default_factory=list, max_length=50)
+    is_required: bool = True
+    quiz_questions: list[QuizQuestionItem] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
 
 
 def _audience_reply(db: DBSession, audience: AudiencePayload, tag_ids, not_found) -> dict:
@@ -1284,6 +1326,79 @@ def update_mock_item(
             action="program_mock_update",
             performed_by_id=user["user_id"],
             details=json.dumps({"task_id": task_id}, ensure_ascii=False),
+        )
+    )
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+def _survey_usage_count(db: DBSession, survey_id: int) -> int:
+    """Сколько живых элементов дня ссылаются на эту анкету — переиспользуемый
+    шаблон правится, только пока он стоит ровно в одном дне (владелец
+    30.08.2026): изменение из карточки одного дня не должно молча менять
+    анкету во всех остальных, где она уже показывалась."""
+    return (
+        db.query(TrackerTask.id)
+        .filter(
+            TrackerTask.source_kind == SOURCE_SURVEY,
+            TrackerTask.source_id == survey_id,
+            TrackerTask.deleted_at.is_(None),
+        )
+        .count()
+    )
+
+
+@router.post("/items/{task_id}/survey", response_class=JSONResponse)
+def update_survey_item(
+    task_id: int,
+    payload: SurveyEditPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    task = _get_editable_task(db, task_id, ITEM_SURVEY)
+    survey = get_survey(db, task.source_id) if task.source_id else None
+    if survey is None:
+        raise HTTPException(status_code=404, detail="Анкета не найдена")
+
+    if _survey_usage_count(db, survey.id) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail="Эта анкета используется ещё в других днях — правка недоступна, заведите новую",
+        )
+
+    update_survey_title(survey, title=payload.title)
+    # Кто-то уже ответил — вопросы не трогаем вовсе (не сверяем на совпадение
+    # с уже сохранёнными: `set_questions` в любом случае откажет). Остальные
+    # поля (title/is_required/мини-опрос) правке не мешают.
+    if not survey_has_responses(db, survey.id):
+        set_survey_questions(
+            db, survey, [q.model_dump() for q in payload.questions]
+        )
+
+    if task.topic_id:
+        topic = db.get(LearningTopic, task.topic_id)
+        if topic is not None:
+            topic.title = f"Анкета · {survey.title}"[:200]
+
+    sync_task_quiz_questions(
+        db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
+    )
+    update_task(
+        task,
+        title=survey.title,
+        description=task.description,
+        due_at=task.due_at,
+        subject=task.subject,
+        assign_to_all=task.assign_to_all,
+        kind=ITEM_SURVEY,
+        is_required=payload.is_required,
+    )
+    db.add(
+        AuditLog(
+            action="program_survey_update",
+            performed_by_id=user["user_id"],
+            details=json.dumps({"task_id": task_id, "survey_id": survey.id}, ensure_ascii=False),
         )
     )
     db.commit()

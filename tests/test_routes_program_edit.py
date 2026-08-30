@@ -1,9 +1,11 @@
 """Правка элементов дня программы вместо удаления-и-пересоздания.
 
-Владелец 29.08.2026: пока день не наступил, видео/самостоятельную/материалы/
-тест по теории/занятие/чек-лист можно менять на месте — «Изменить» рядом с
-«Удалить». Пробник и анкету эта правка не покрывает (owner-решение: билеты и
-переиспользуемый шаблон анкеты устроены сложнее, решение по ним отдельное).
+Владелец 29.08.2026: пока день не наступил (с 30.08 — строго будущее, см.
+test_simple_item_edit_refuses_on_the_day_itself), видео/самостоятельную/
+материалы/тест по теории/занятие/чек-лист можно менять на месте — «Изменить»
+рядом с «Удалить». Пробник (билеты, test_routes_program_mock_edit.py) и
+Анкета (вопросы, ниже — только пока шаблон стоит ровно в одном дне) теперь
+тоже редактируются, каждый своей отдельной стройкой 30.08.2026.
 """
 
 import json
@@ -371,9 +373,6 @@ def test_video_edit_rejects_video_taken_by_another_day(
 def test_day_page_offers_edit_only_for_editable_kinds(
     client, db, user_factory, session_factory, monkeypatch
 ):
-    """Анкета правкой пока не покрыта (общий переиспользуемый шаблон,
-    отдельное решение владельца 30.08.2026) — у её карточки должна остаться
-    только «Удалить». Пробник теперь редактируется — см. test_routes_task_quiz.py."""
     _freeze(monkeypatch)
     _staff_client(client, user_factory, session_factory)
 
@@ -381,25 +380,79 @@ def test_day_page_offers_edit_only_for_editable_kinds(
         f"{PROGRAM}/{MONDAY}/material",
         json={"title": "Материал для правки", "audience": EVERYONE},
     )
-    client.post(
-        f"{PROGRAM}/{MONDAY}/survey",
-        json={
-            "title": "Анкета без правки",
-            "questions": [{"text": "Как прошла неделя?", "question_type": "text", "options": []}],
-            "audience": EVERYONE,
-        },
-    )
     material_task = db.query(TrackerTask).filter(TrackerTask.kind == "material").one()
-    survey_task = db.query(TrackerTask).filter(TrackerTask.kind == "survey").one()
 
     page = client.get(f"{PROGRAM}/{MONDAY}").text
 
     material_article = page[page.index(f'data-item-id="{material_task.id}"'):]
     assert 'data-item-edit' in material_article[:material_article.index('</article>')]
-    survey_article = page[page.index(f'data-item-id="{survey_task.id}"'):]
-    assert 'data-item-edit' not in survey_article[:survey_article.index('</article>')]
 
     edit_data_json = page.split('programEditData = ')[1].split(';\n')[0]
     edit_data = json.loads(edit_data_json)
     assert str(material_task.id) in edit_data
-    assert str(survey_task.id) not in edit_data
+
+
+def test_day_page_offers_edit_for_survey_used_in_only_one_day(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Владелец 30.08.2026: анкету, которая пока стоит только в этом одном
+    дне, править можно — обе кнопки на месте."""
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+
+    client.post(
+        f"{PROGRAM}/{MONDAY}/survey",
+        json={
+            "title": "Анкета одного дня",
+            "questions": [{"text": "Как прошла неделя?", "question_type": "text", "options": []}],
+            "audience": EVERYONE,
+        },
+    )
+    survey_task = db.query(TrackerTask).filter(TrackerTask.kind == "survey").one()
+
+    page = client.get(f"{PROGRAM}/{MONDAY}").text
+    survey_article = page[page.index(f'data-item-id="{survey_task.id}"'):]
+    assert 'data-item-edit' in survey_article[:survey_article.index('</article>')]
+
+    edit_data_json = page.split('programEditData = ')[1].split(';\n')[0]
+    edit_data = json.loads(edit_data_json)
+    payload = edit_data[str(survey_task.id)]
+    assert payload["title"] == "Анкета одного дня"
+    assert payload["questions"][0]["text"] == "Как прошла неделя?"
+
+
+def test_day_page_hides_edit_for_survey_reused_on_another_day(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Владелец 30.08.2026: анкета — переиспользуемый шаблон, правка из
+    карточки одного дня не должна молча менять её во всех остальных, где
+    она уже стоит — правку скрываем целиком, обе кнопки становятся только
+    «Удалить»."""
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+
+    client.post(
+        f"{PROGRAM}/{MONDAY}/survey",
+        json={
+            "title": "Общая анкета",
+            "questions": [{"text": "Как настроение?", "question_type": "text", "options": []}],
+            "audience": EVERYONE,
+        },
+    )
+    from app.models.survey import Survey
+    survey = db.query(Survey).one()
+
+    client.post(
+        f"{PROGRAM}/{TUESDAY}/survey",
+        json={"survey_id": survey.id, "audience": EVERYONE},
+    )
+    survey_tasks = db.query(TrackerTask).filter(TrackerTask.kind == "survey").order_by(TrackerTask.id).all()
+    assert len(survey_tasks) == 2
+    monday_task = survey_tasks[0]
+
+    page = client.get(f"{PROGRAM}/{MONDAY}").text
+    edit_data_json = page.split('programEditData = ')[1].split(';\n')[0]
+    edit_data = json.loads(edit_data_json)
+    assert str(monday_task.id) not in edit_data
+    survey_article = page[page.index(f'data-item-id="{monday_task.id}"'):]
+    assert 'data-item-edit' not in survey_article[:survey_article.index('</article>')]
