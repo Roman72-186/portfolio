@@ -50,7 +50,9 @@ def test_embed_returns_player_data_for_group_member(auth_client, db, monkeypatch
     assert body["ok"] is True
     assert f"https://iframe.mediadelivery.net/embed/720058/{VIDEO_ID}" in body["player_url"]
     assert body["progress_endpoint"] == f"/cabinet/videos/{video.id}/progress"
-    assert body["quiz_submit_endpoint"] == f"/cabinet/videos/{video.id}/quiz"
+    # Мини-опрос из плеера убран 31.08.2026: вопросы к ролику стали блоками
+    # задания и показываются общей панелью содержимого на карточке.
+    assert "quiz_submit_endpoint" not in body
 
 
 def test_embed_logs_a_view(auth_client, db, monkeypatch):
