@@ -496,18 +496,36 @@ body.has-video-pseudo-fullscreen {
             status.classList.add('is-error');
         }
 
-        if (fullscreenButton) {
-            var requestFullscreen = playerContainer.requestFullscreen
-                || playerContainer.webkitRequestFullscreen;
-            var exitFullscreen = document.exitFullscreen
-                || document.webkitExitFullscreen;
+        var requestFullscreen = playerContainer.requestFullscreen
+            || playerContainer.webkitRequestFullscreen;
+        var exitFullscreen = document.exitFullscreen
+            || document.webkitExitFullscreen;
 
-            function shouldUsePseudoFullscreen() {
-                if (!requestFullscreen || !exitFullscreen) return true;
-                return window.matchMedia
-                    && window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
+        function shouldUsePseudoFullscreen() {
+            if (!requestFullscreen || !exitFullscreen) return true;
+            return window.matchMedia
+                && window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
+        }
+        // Общая логика входа в полноэкранный режим — и по клику на кнопку, и
+        // автоматически при открытии видео (владелец 31.08.2026, «сразу в
+        // полный экран»). Нативный requestFullscreen() без прямого клика
+        // браузер обычно тихо отклоняет — .catch(enterPseudoFullscreen)/
+        // try…catch уже переключают на свой псевдо-полноэкранный режим,
+        // которому разрешение не нужно, так что автовызов безопасен.
+        function activateFullscreen() {
+            if (pseudoFullscreen || fullscreenElement() === playerContainer) return;
+            if (shouldUsePseudoFullscreen()) { enterPseudoFullscreen(); return; }
+            try {
+                var requestResult = requestFullscreen.call(playerContainer);
+                if (requestResult && typeof requestResult.catch === 'function') {
+                    requestResult.catch(enterPseudoFullscreen);
+                }
+            } catch (error) {
+                enterPseudoFullscreen();
             }
+        }
 
+        if (fullscreenButton) {
             fullscreenButton.addEventListener('click', function () {
                 if (pseudoFullscreen) {
                     exitPseudoFullscreen();
@@ -526,19 +544,7 @@ body.has-video-pseudo-fullscreen {
                     return;
                 }
 
-                if (shouldUsePseudoFullscreen()) {
-                    enterPseudoFullscreen();
-                    return;
-                }
-
-                try {
-                    var requestResult = requestFullscreen.call(playerContainer);
-                    if (requestResult && typeof requestResult.catch === 'function') {
-                        requestResult.catch(enterPseudoFullscreen);
-                    }
-                } catch (error) {
-                    enterPseudoFullscreen();
-                }
+                activateFullscreen();
             });
             document.addEventListener('fullscreenchange', updateFullscreenButton);
             document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
@@ -854,6 +860,7 @@ body.has-video-pseudo-fullscreen {
         }
 
         attachPlayer();
+        activateFullscreen();
         reattachPlayer = function () {
             // Ученик должен вернуться на то же место, а не в начало урока.
             resumeSeconds = currentSeconds;

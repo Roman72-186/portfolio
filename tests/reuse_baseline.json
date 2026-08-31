@@ -83,7 +83,9 @@
   },
   "cabinet_video.html": {
     "hex": 7,
-    "shadow": [],
+    "shadow": [
+      "has-video-pseudo-fullscreen"
+    ],
     "style_lines": 145
   },
   "cabinet_videos.html": {
@@ -119,12 +121,12 @@
     "style_lines": 43
   },
   "login.html": {
-    "hex": 8,
+    "hex": 6,
     "shadow": [
       "alert-error",
       "css"
     ],
-    "style_lines": 126
+    "style_lines": 124
   },
   "partials/bottom_nav.html": {
     "hex": 4,

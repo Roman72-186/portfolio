@@ -176,6 +176,16 @@ a:hover { color: var(--blue-deep); }
     gap: 10px;
     pointer-events: none;
 }
+/* Полноэкранное видео (плеер урока, z-index 10000) рисуется в body, вне
+   сайдбара/боттом-нава — колокольчик уведомлений (z-index:250) сидит там же,
+   на любой ширине экрана, и вылезал поверх видео, накрывая кнопку выхода
+   снизу справа (владелец 31.08.2026, живая проверка на планшете). Прячем на
+   время полноэкранного режима — тем же классом-флагом на html/body, что уже
+   блокирует скролл (заведён в шаблонах видео, не здесь). */
+html.has-video-pseudo-fullscreen .floating-widget-tray,
+body.has-video-pseudo-fullscreen .floating-widget-tray,
+html.has-video-pseudo-fullscreen .notif-pop,
+body.has-video-pseudo-fullscreen .notif-pop { display: none; }
 .notif-bell {
     position: relative;
     flex: 0 0 auto;
