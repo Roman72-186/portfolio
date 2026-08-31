@@ -113,7 +113,13 @@ def build_signed_embed_url(
         {
             "token": token,
             "expires": expires,
-            "autoplay": "false",
+            # Открытие видео уже само по себе клик ученика (карточка
+            # раскрывается по «Смотреть») — автостарт экономит второй клик по
+            # play внутри плеера (владелец 31.08.2026). На iPhone Safari
+            # автовоспроизведение со звуком браузер всё равно блокирует
+            # независимо от этого параметра (жёсткое правило ОС, не Bunny) —
+            # там ролик как и раньше стартует по клику на сам плеер.
+            "autoplay": "true",
             # Keep iPhone playback inside the iframe. Native iOS fullscreen
             # would detach the video from our per-viewer watermark layer.
             #
