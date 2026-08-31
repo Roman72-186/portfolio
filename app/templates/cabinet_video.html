@@ -147,7 +147,7 @@ body.has-video-pseudo-fullscreen {
     .video-help { font-size: 12px; }
 }
 </style>
-<link rel="stylesheet" href="/static/css/video_ios.css?v=3">
+<link rel="stylesheet" href="/static/css/video_ios.css?v=4">
 {% endblock %}
 {% block content %}
 <div class="video-page ios-video">
@@ -186,6 +186,13 @@ body.has-video-pseudo-fullscreen {
                     <span>{{ viewer_watermark.phone }}</span>
                 </div>
             </div>
+            <button
+                id="video-mute-button"
+                class="video-mute-button"
+                type="button"
+                hidden
+                aria-label="Включить звук"
+                title="Включить звук">🔇 Включить звук</button>
             <button
                 id="video-fullscreen-button"
                 class="video-fullscreen-button"
@@ -240,8 +247,22 @@ body.has-video-pseudo-fullscreen {
         var frame = document.getElementById('bunny-stream-embed');
         var status = document.getElementById('video-progress-status');
         var fullscreenButton = document.getElementById('video-fullscreen-button');
+        var muteButton = document.getElementById('video-mute-button');
         var iosInstallHint = document.getElementById('video-ios-install-hint');
         if (!frame) return;
+        var currentPlayer = null;
+        // Сервер отдаёт player_url с muted=true (звуковой автостарт в чужом
+        // iframe браузер разрешает не всегда, беззвучный — всегда, владелец
+        // 31.08.2026): видео стартует само, но без звука, кнопка — явный
+        // призыв его включить.
+        if (muteButton) {
+            muteButton.hidden = false;
+            muteButton.addEventListener('click', function () {
+                if (!currentPlayer) return;
+                currentPlayer.unmute();
+                muteButton.hidden = true;
+            });
+        }
         var playerContainer = frame.parentElement;
         var watermarkCopy = playerContainer.querySelector('.video-watermark-copy');
         var watermarkAnimationFrame = null;
@@ -636,6 +657,9 @@ body.has-video-pseudo-fullscreen {
             playerUrlRefreshDisabled = true;
             status.textContent = 'Автосохранение временно недоступно. Видео продолжит работать.';
             status.classList.add('is-error');
+            // Без playerjs звонить unmute() некому — родная кнопка звука
+            // самого плеера Bunny внутри iframe остаётся, наша прячется.
+            if (muteButton) muteButton.hidden = true;
             return;
         }
 
@@ -767,6 +791,7 @@ body.has-video-pseudo-fullscreen {
             // события нового плеера и сохранять прогресс дважды.
             var generation = ++playerGeneration;
             var player = new window.playerjs.Player(frame);
+            currentPlayer = player;
 
             player.on('ready', function () {
                 if (generation !== playerGeneration) return;

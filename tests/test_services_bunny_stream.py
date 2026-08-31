@@ -42,7 +42,7 @@ def test_build_signed_embed_url_uses_bunny_sha256_contract(monkeypatch):
 
     assert url == (
         f"https://iframe.mediadelivery.net/embed/720058/{VIDEO_ID}"
-        f"?token={expected_token}&expires={expires}&autoplay=true"
+        f"?token={expected_token}&expires={expires}&autoplay=true&muted=true"
         "&playsinline=true&disableIosPlayer=true"
     )
     assert "private-test-key" not in url

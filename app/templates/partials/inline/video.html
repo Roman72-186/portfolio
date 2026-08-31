@@ -31,6 +31,13 @@ JSON-эндпоинтом `/cabinet/videos/{id}/embed` (app/api/video.py) тол
             </div>
             <button
                 type="button"
+                class="video-mute-button"
+                data-role="mute-btn"
+                hidden
+                aria-label="Включить звук"
+                title="Включить звук">🔇 Включить звук</button>
+            <button
+                type="button"
                 class="video-fullscreen-button"
                 data-role="fullscreen-btn"
                 aria-label="На весь экран"
@@ -70,6 +77,7 @@ JSON-эндпоинтом `/cabinet/videos/{id}/embed` (app/api/video.py) тол
         var iframe = root.querySelector('[data-role="iframe"]');
         var watermark = root.querySelector('[data-role="watermark"]');
         var fullscreenButton = root.querySelector('[data-role="fullscreen-btn"]');
+        var muteButton = root.querySelector('[data-role="mute-btn"]');
         var progressStatus = root.querySelector('[data-role="progress-status"]');
         var wrapper = root.closest('.trk-expand-body');
         var endpoint = wrapper ? wrapper.getAttribute('data-video-embed-endpoint') : null;
@@ -137,6 +145,21 @@ JSON-эндпоинтом `/cabinet/videos/{id}/embed` (app/api/video.py) тол
             var orbitMetrics = null;
             var lastWatermarkAngle = -Math.PI / 2;
             var pseudoFullscreen = false;
+            var currentPlayer = null;
+
+            // Сервер отдаёт player_url с muted=true (звуковой автостарт в
+            // чужом iframe браузер разрешает не всегда, беззвучный — всегда,
+            // владелец 31.08.2026): видео стартует само, но без звука, эта
+            // кнопка — явный призыв его включить, а не мелкая иконка внутри
+            // плеера, которую легко не заметить.
+            if (muteButton) {
+                muteButton.hidden = false;
+                muteButton.addEventListener('click', function () {
+                    if (!currentPlayer) return;
+                    currentPlayer.unmute();
+                    muteButton.hidden = true;
+                });
+            }
 
             function measureWatermarkOrbit() {
                 if (!watermarkCopy) return;
@@ -391,6 +414,10 @@ JSON-эндпоинтом `/cabinet/videos/{id}/embed` (app/api/video.py) тол
             if (!window.playerjs || !window.playerjs.Player) {
                 playerUrlRefreshDisabled = true;
                 showStatus('Автосохранение временно недоступно. Видео продолжит работать.', true);
+                // Без playerjs звонить unmute() некому — родная кнопка звука
+                // самого плеера Bunny внутри iframe остаётся, наша прячется,
+                // чтобы не висеть нерабочей.
+                if (muteButton) muteButton.hidden = true;
                 iframe.src = data.player_url;
                 return;
             }
@@ -484,6 +511,7 @@ JSON-эндпоинтом `/cabinet/videos/{id}/embed` (app/api/video.py) тол
             function attachPlayer() {
                 var generation = ++playerGeneration;
                 var player = new window.playerjs.Player(iframe);
+                currentPlayer = player;
 
                 player.on('ready', function () {
                     if (generation !== playerGeneration) return;
