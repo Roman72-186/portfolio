@@ -343,7 +343,7 @@ def test_submit_blocks_round_trips(client, db, user_factory, session_factory):
         json={"answers": [{"block_id": block.id, "text": "Хорошо"}]},
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json() == {"ok": True}
+    assert resp.json()["ok"] is True
     assert db.query(TaskBlockResponse).filter(
         TaskBlockResponse.task_id == task.id, TaskBlockResponse.user_id == student.id,
     ).count() == 1
@@ -509,3 +509,124 @@ def test_gallery_and_hidden_flag_round_trip(client, db, user_factory, session_fa
     payload = _json.loads(page.text.split("programEditData = ")[1].split(";\n")[0])[str(task.id)]
     assert len(payload["blocks"][0]["images"]) == 2
     assert payload["blocks"][1]["hidden_until_done"] is True
+
+
+# ── Вердикт, одна попытка, скрытые вопросы, гейт ────────────────────────────
+
+
+def test_verdict_comes_back_with_the_answer_and_on_reload(client, db, user_factory, session_factory):
+    """Владелец 31.08.2026: ученик сразу видит результат. И при повторном
+    заходе на следующий день — тоже, а не только в момент отправки."""
+    staff = user_factory(vk_id=550_401, name="Стафф", is_admin=True, role_name="админ")
+    task = _material_task_with_blocks(
+        db, staff.id,
+        blocks=[{"block_type": BLOCK_QUESTION, "question_type": QUESTION_SINGLE, "body": "Сколько?"}],
+    )
+    [block] = _blocks_of(db, task.id)
+    right = TaskBlockOption(block_id=block.id, text="Одна", is_correct=True, sort_order=0)
+    db.add(right)
+    db.add(TaskBlockOption(block_id=block.id, text="Две", is_correct=False, sort_order=1))
+    db.commit()
+    _student_client(client, user_factory, session_factory)
+
+    resp = client.post(
+        f"/cabinet/tracker/tasks/{task.id}/blocks",
+        json={"answers": [{"block_id": block.id, "option_ids": [right.id]}]},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["correct_count"] == 1
+    assert resp.json()["gradable_count"] == 1
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert body["correct_count"] == 1
+    assert body["blocks"][0]["is_correct"] is True
+
+
+def test_verdict_is_not_leaked_before_answering(client, db, user_factory, session_factory):
+    """До ответа сервер не должен подсказывать верный вариант."""
+    staff = user_factory(vk_id=550_402, name="Стафф", is_admin=True, role_name="админ")
+    task = _material_task_with_blocks(
+        db, staff.id,
+        blocks=[{"block_type": BLOCK_QUESTION, "question_type": QUESTION_SINGLE, "body": "Сколько?"}],
+    )
+    [block] = _blocks_of(db, task.id)
+    db.add(TaskBlockOption(block_id=block.id, text="Одна", is_correct=True, sort_order=0))
+    db.commit()
+    _student_client(client, user_factory, session_factory)
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert body["answered"] is False
+    assert body["correct_count"] is None
+    assert body["blocks"][0]["is_correct"] is None
+    assert all("is_correct" not in o for o in body["blocks"][0]["options"])
+
+
+def test_second_attempt_is_rejected(client, db, user_factory, session_factory):
+    """Одна попытка: иначе, увидев «неверно», можно было бы переотправить до
+    победы, и счёт перестал бы что-либо значить."""
+    staff = user_factory(vk_id=550_403, name="Стафф", is_admin=True, role_name="админ")
+    task = _material_task_with_blocks(db, staff.id)
+    [block] = _blocks_of(db, task.id)
+    _student_client(client, user_factory, session_factory)
+
+    first = client.post(
+        f"/cabinet/tracker/tasks/{task.id}/blocks",
+        json={"answers": [{"block_id": block.id, "text": "Раз"}]},
+    )
+    assert first.status_code == 200
+    second = client.post(
+        f"/cabinet/tracker/tasks/{task.id}/blocks",
+        json={"answers": [{"block_id": block.id, "text": "Два"}]},
+    )
+    assert second.status_code == 409
+    # И форма больше не предлагается.
+    assert client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()["submit_endpoint"] is None
+
+
+def test_hidden_question_is_invisible_until_task_is_done(client, db, user_factory, session_factory):
+    from app.models.tracker import STATUS_DONE, TrackerTaskState
+
+    staff = user_factory(vk_id=550_404, name="Стафф", is_admin=True, role_name="админ")
+    task = _material_task_with_blocks(db, staff.id, blocks=[
+        {"block_type": BLOCK_TEXT, "body": "Материал"},
+        {"block_type": BLOCK_QUESTION, "question_type": QUESTION_TEXT,
+         "body": "Как прошло?", "hidden_until_done": True},
+    ])
+    student = _student_client(client, user_factory, session_factory)
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert [b["body"] for b in body["blocks"]] == ["Материал"]
+
+    db.add(TrackerTaskState(task_id=task.id, user_id=student.id, status=STATUS_DONE))
+    db.commit()
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert [b["body"] for b in body["blocks"]] == ["Материал", "Как прошло?"]
+
+
+def test_task_cannot_be_closed_until_visible_questions_answered(client, db, user_factory, session_factory):
+    staff = user_factory(vk_id=550_405, name="Стафф", is_admin=True, role_name="админ")
+    task = _material_task_with_blocks(db, staff.id)
+    [block] = _blocks_of(db, task.id)
+    _student_client(client, user_factory, session_factory)
+
+    blocked = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
+    assert blocked.status_code == 409
+
+    client.post(
+        f"/cabinet/tracker/tasks/{task.id}/blocks",
+        json={"answers": [{"block_id": block.id, "text": "Ответ"}]},
+    )
+    assert client.post(f"/cabinet/tracker/tasks/{task.id}/toggle").status_code == 200
+
+
+def test_hidden_question_does_not_block_closing(client, db, user_factory, session_factory):
+    """Развязка тупика: скрытый вопрос не участвует в гейте, иначе задание
+    нельзя было бы закрыть никогда — и неделя встала бы за ним."""
+    staff = user_factory(vk_id=550_406, name="Стафф", is_admin=True, role_name="админ")
+    task = _material_task_with_blocks(db, staff.id, blocks=[
+        {"block_type": BLOCK_QUESTION, "question_type": QUESTION_TEXT,
+         "body": "Только после сдачи", "hidden_until_done": True},
+    ])
+    _student_client(client, user_factory, session_factory)
+
+    assert client.post(f"/cabinet/tracker/tasks/{task.id}/toggle").status_code == 200

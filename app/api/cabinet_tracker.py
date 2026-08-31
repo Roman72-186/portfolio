@@ -32,7 +32,9 @@ from sqlalchemy.orm import Session as DBSession
 from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
-from app.models.task_block import BLOCK_QUESTION, BLOCK_VIDEO, MAX_BLOCKS, QUESTION_TEXT
+from app.models.task_block import (
+    BLOCK_PHOTO, BLOCK_QUESTION, BLOCK_VIDEO, MAX_BLOCKS, QUESTION_TEXT,
+)
 from app.models.tracker import (
     EVENT_KIND_LABELS,
     ITEM_HOMEWORK,
@@ -47,6 +49,8 @@ from app.services.stats import avg_score_by_subject_all_time
 from app.services.task_blocks import (
     get_answers_map as get_task_block_answers_map,
     get_blocks as get_task_blocks,
+    get_images as get_task_block_images,
+    grade_response as grade_task_blocks,
     get_options as get_task_block_options,
     get_response as get_task_block_response,
     get_selected_options as get_task_block_selected_options,
@@ -154,6 +158,21 @@ def cabinet_tracker_toggle(
     if not accessible:
         raise HTTPException(status_code=404, detail="Задача не найдена")
 
+    # Гейт «нельзя закрыть, пока не отвечены вопросы» (владелец 31.08.2026).
+    # Считаем только **видимые сейчас** вопросы: скрытые до сдачи в проверку
+    # не входят, иначе выходил бы тупик — вопрос не виден, ответить нельзя,
+    # задание не закрыть, и вся неделя встала бы за ним.
+    pending = [
+        block for block in task_question_blocks(get_task_blocks(db, task_id))
+        if not block.hidden_until_done
+    ]
+    if pending and get_task_block_response(
+        db, task_id=task_id, user_id=user["user_id"]
+    ) is None:
+        raise HTTPException(
+            status_code=409, detail="Сначала ответьте на вопросы задания"
+        )
+
     state = (
         db.query(TrackerTaskState)
         .filter(
@@ -229,16 +248,33 @@ def cabinet_tracker_task_blocks(
     """
     _accessible_task_or_404(db, user["user_id"], task_id)
 
-    blocks = get_task_blocks(db, task_id)
+    task_done = _is_task_done(db, task_id, user["user_id"])
+    # Скрытый вопрос появляется только после закрытия задания — и весь блок
+    # целиком, а не одна форма ответа: до сдачи ученик о нём не знает.
+    blocks = [
+        b for b in get_task_blocks(db, task_id)
+        if not (b.block_type == BLOCK_QUESTION and b.hidden_until_done and not task_done)
+    ]
     questions = task_question_blocks(blocks)
     options = get_task_block_options(db, [b.id for b in questions])
 
     answers_map: dict[int, str] = {}
     selected: dict[int, set[int]] = {}
     response = get_task_block_response(db, task_id=task_id, user_id=user["user_id"])
+    answered = response is not None
     if response is not None:
         answers_map = get_task_block_answers_map(db, response_id=response.id)
         selected = get_task_block_selected_options(db, response_id=response.id)
+    images = get_task_block_images(db, [b.id for b in blocks])
+    # Вердикт отдаём, только когда ученик уже ответил. Иначе `is_correct` в
+    # теле ответа подсказал бы верный вариант до отправки.
+    verdict = (
+        grade_task_blocks(db, blocks=blocks, response_id=response.id)
+        if answered else None
+    )
+    correct_by_block = (
+        {r["block_id"]: r["is_correct"] for r in verdict["results"]} if verdict else {}
+    )
 
     payload = []
     for block in blocks:
@@ -253,8 +289,10 @@ def cabinet_tracker_task_blocks(
             item["video_embed_endpoint"] = (
                 f"/cabinet/videos/{block.video_id}/embed" if block.video_id else None
             )
-        elif block.block_type == "photo":
-            item["image_url"] = block.image_s3_url
+        elif block.block_type == BLOCK_PHOTO:
+            item["images"] = [
+                {"url": i.image_s3_url} for i in images.get(block.id, [])
+            ]
         elif block.block_type == "link":
             item["url"] = block.url
         elif block.block_type == BLOCK_QUESTION:
@@ -267,14 +305,22 @@ def cabinet_tracker_task_blocks(
             ]
             item["answer_text"] = answers_map.get(block.id, "")
             item["answer_option_ids"] = sorted(selected.get(block.id, set()))
+            item["is_correct"] = correct_by_block.get(block.id)
         payload.append(item)
 
     return JSONResponse({
         "blocks": payload,
         "has_questions": bool(questions),
+        # Одна попытка (владелец 31.08.2026): ответил — форма закрывается.
+        # Иначе, увидев «неверно», можно было бы переотправить до победы, и
+        # счёт перестал бы что-либо значить.
+        "answered": answered,
         "submit_endpoint": (
-            f"/cabinet/tracker/tasks/{task_id}/blocks" if questions else None
+            f"/cabinet/tracker/tasks/{task_id}/blocks"
+            if questions and not answered else None
         ),
+        "correct_count": verdict["correct_count"] if verdict else None,
+        "gradable_count": verdict["gradable_count"] if verdict else None,
     })
 
 
@@ -317,14 +363,22 @@ def submit_cabinet_tracker_task_blocks(
     требуется — сохраняется то, что прислали.
     """
     _accessible_task_or_404(db, user["user_id"], task_id)
-    questions = task_question_blocks(get_task_blocks(db, task_id))
+    # Одна попытка: сервер проверяет сам, кнопку на экране мало.
+    if get_task_block_response(db, task_id=task_id, user_id=user["user_id"]) is not None:
+        raise HTTPException(status_code=409, detail="Вы уже отвечали на это задание")
+    task_done = _is_task_done(db, task_id, user["user_id"])
+    all_blocks = get_task_blocks(db, task_id)
+    questions = [
+        b for b in task_question_blocks(all_blocks)
+        if task_done or not b.hidden_until_done
+    ]
     if not questions:
         raise HTTPException(status_code=404, detail="У задачи нет вопросов")
     known = {block.id for block in questions}
     unknown = [a.block_id for a in payload.answers if a.block_id not in known]
     if unknown:
         raise HTTPException(status_code=422, detail="Ответ на чужой вопрос")
-    save_task_block_response(
+    response = save_task_block_response(
         db,
         task_id=task_id,
         user_id=user["user_id"],
@@ -334,5 +388,9 @@ def submit_cabinet_tracker_task_blocks(
             for a in payload.answers
         },
     )
+    db.flush()
+    verdict = grade_task_blocks(db, blocks=questions, response_id=response.id)
     db.commit()
-    return JSONResponse({"ok": True})
+    # Результат сразу в ответе (владелец 31.08.2026): ученик видит, где прав,
+    # не перезагружая страницу.
+    return JSONResponse({"ok": True, **verdict})
