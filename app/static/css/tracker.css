@@ -888,6 +888,15 @@
 }
 html.has-video-pseudo-fullscreen,
 body.has-video-pseudo-fullscreen { overflow: hidden; overscroll-behavior: none; }
+/* `.ios-learning` держит `isolation: isolate` ради декоративного ::before
+   (см. его комментарий выше по файлу) — но это заодно запирает z-index
+   видео (10000) в СВОЁМ стек-контексте: сайдбар (z-index:50) и нижняя
+   навигация (z-index:100) живут вне этого контекста и на полном экране
+   оказывались поверх видео, закрывая кнопку выхода (баг владельца
+   31.08.2026, поймано вживую). Пока активен псевдо-полноэкранный режим —
+   опаковый фон видео и так закрывает ::before целиком, снимать изоляцию
+   в этот момент безопасно. */
+body.has-video-pseudo-fullscreen .ios-learning { isolation: auto; }
 .lrn-inline-video .video-frame.is-pseudo-fullscreen {
     position: fixed; inset: 0; z-index: 10000;
     width: 100vw; height: 100vh; height: 100dvh;
