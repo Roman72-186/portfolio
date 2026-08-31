@@ -1,7 +1,8 @@
 """ACL-переключатель S3: TimeWeb требует Object ACL, Selectel его отвергает.
 
-Тумблер S3_USE_ACL переключается на проде во время миграции, поэтому обе ветки
-должны быть зафиксированы: что именно уходит в boto3 при True и при False.
+Прод переехал на Selectel (S3_USE_ACL=false), TimeWeb отключён 2026-08 —
+тумблер остаётся в коде и в тестах на случай отката, обе ветки зафиксированы:
+что именно уходит в boto3 при True и при False.
 """
 from unittest.mock import MagicMock
 
@@ -18,15 +19,18 @@ def s3_client(monkeypatch):
     monkeypatch.setattr(settings, "s3_bucket", "test-bucket")
     monkeypatch.setattr(settings, "s3_access_key", "key")
     monkeypatch.setattr(settings, "s3_secret_key", "secret")
+    # Иначе на Selectel-окружении (S3_PUBLIC_BASE_URL задан в .env) публичный URL
+    # строился бы из боевого домена, а не из mock-эндпоинта выше.
+    monkeypatch.setattr(settings, "s3_public_base_url", "")
 
     client = MagicMock()
     monkeypatch.setattr(s3_module, "_get_client", lambda: client)
     return client
 
 
-def test_acl_kwargs_default_is_public_read():
-    """Дефолт сохраняет поведение TimeWeb — иначе прод-фото станут приватными."""
-    assert settings.s3_use_acl is True
+def test_acl_kwargs_enabled_sends_public_read(monkeypatch):
+    """Включённый тумблер (боевой режим TimeWeb, пока бакет не удалён) шлёт ACL."""
+    monkeypatch.setattr(settings, "s3_use_acl", True)
     assert s3_module._acl_kwargs() == {"ACL": "public-read"}
 
 
