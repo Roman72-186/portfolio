@@ -59,8 +59,19 @@
 .fan-item:active { transform: scale(.92); }
 .fan-item:focus-visible { outline: 2px solid #AF52DE; outline-offset: 2px; }
 .fan-item.nav-disabled { opacity: .4; pointer-events: none; }
-/* Трекер — первый пункт веера, обводку убираем по просьбе владельца. */
-.fan-item-wrap[data-key="tracker"] .fan-item { border-color: transparent; }
+/* Трекер — первый пункт веера, обводку убираем по просьбе владельца.
+   border-color:transparent само по себе не хватало — по краю круга
+   всё равно проступал ободок от backdrop-filter (известная особенность
+   blur на border-radius:50%), поэтому здесь убираем и сам blur, заменяя
+   полупрозрачный фон на непрозрачный того же оттенка. */
+.fan-item-wrap[data-key="tracker"] .fan-item {
+    border: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+.fan-item-wrap[data-key="tracker"] .fan-item:not(:hover):not(:active):not(.fan-item-active) {
+    background: #f9f9fb;
+}
 
 .fan-item-label {
     display: none;
