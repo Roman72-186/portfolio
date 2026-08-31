@@ -15,7 +15,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session as DBSession
 
 from app.constants import MOCK_SUBJECTS, TARIFFS
@@ -30,10 +30,13 @@ from app.models.task_block import (
     BLOCK_QUESTION,
     BLOCK_TYPE_LABELS,
     BLOCK_TYPES,
+    MAX_BLOCK_IMAGES,
     MAX_BLOCKS,
+    QUESTION_TEXT,
 )
 from app.services.task_blocks import (
     get_blocks as get_task_blocks,
+    get_images as get_task_block_images,
     get_options as get_task_block_options,
     sync_blocks as sync_task_blocks,
 )
@@ -236,6 +239,7 @@ def _edit_payloads(
         # двух мест редактирования одного и того же.
         blocks = get_task_blocks(db, item.id)
         block_options = get_task_block_options(db, [b.id for b in blocks])
+        block_images = get_task_block_images(db, [b.id for b in blocks])
         payload["blocks"] = [
             {
                 "id": b.id,
@@ -243,10 +247,13 @@ def _edit_payloads(
                 "title": b.title,
                 "body": b.body,
                 "video_id": b.video_id,
-                "image_url": b.image_s3_url,
-                "image_path": b.image_s3_path,
+                "images": [
+                    {"url": i.image_s3_url, "path": i.image_s3_path}
+                    for i in block_images.get(b.id, [])
+                ],
                 "url": b.url,
                 "question_type": b.question_type,
+                "hidden_until_done": b.hidden_until_done,
                 "options": [
                     {"id": o.id, "text": o.text, "is_correct": o.is_correct}
                     for o in block_options.get(b.id, [])
@@ -348,6 +355,7 @@ def program_day(
             # Кнопки «что добавить» в редакторе блоков. Порядок здесь и есть
             # порядок кнопок в форме.
             "block_types": [(t, BLOCK_TYPE_LABELS[t]) for t in BLOCK_TYPES],
+            "max_block_images": MAX_BLOCK_IMAGES,
         },
     )
 
@@ -377,6 +385,15 @@ class TicketPayload(BaseModel):
     def strip_description(cls, value: str | None) -> str | None:
         value = (value or "").strip()
         return value or None
+
+
+class BlockImageItem(BaseModel):
+    """Одна картинка блока-галереи. Файл уже лежит в S3: форма шлёт только
+    ссылку и путь, как это делают обложки видео и картинки самостоятельной."""
+
+    model_config = ConfigDict(extra="forbid")
+    url: str = Field(min_length=1, max_length=500)
+    path: str | None = Field(default=None, max_length=300)
 
 
 class BlockOptionItem(BaseModel):
@@ -416,11 +433,34 @@ class BlockItem(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     body: str | None = Field(default=None, max_length=5000)
     video_id: int | None = Field(default=None, ge=1)
-    image_url: str | None = Field(default=None, max_length=500)
-    image_path: str | None = Field(default=None, max_length=300)
+    images: list[BlockImageItem] = Field(
+        default_factory=list, max_length=MAX_BLOCK_IMAGES
+    )
     url: str | None = Field(default=None, max_length=500)
     question_type: str | None = Field(default=None, max_length=20)
     options: list[BlockOptionItem] = Field(default_factory=list, max_length=20)
+    # Вопрос-рефлексия: показывается только после того, как ученик закрыл
+    # задание. В проверку «ответил ли на всё» не входит — иначе задание нельзя
+    # было бы закрыть никогда (развязка согласована владельцем 31.08.2026).
+    hidden_until_done: bool = False
+
+    @model_validator(mode="after")
+    def choice_question_needs_a_right_answer(self) -> "BlockItem":
+        """Вопрос с вариантами нельзя сохранить, не отметив верный.
+
+        Решение владельца 31.08.2026: лучше не пустить кривой тест в базу, чем
+        потом объяснять, почему у ученика вопрос не засчитался. Система без
+        отметки просто не знает, с чем сравнивать ответ.
+        """
+        if self.block_type != BLOCK_QUESTION:
+            return self
+        if self.question_type in (None, QUESTION_TEXT):
+            return self
+        if not any(option.is_correct for option in self.options):
+            raise ValueError(
+                "У вопроса с вариантами отметьте хотя бы один верный ответ"
+            )
+        return self
 
     @field_validator("block_type")
     @classmethod

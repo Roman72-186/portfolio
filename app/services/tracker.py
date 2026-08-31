@@ -794,7 +794,7 @@ def copy_task_blocks(db: Session, *, from_task_id: int, to_task_id: int) -> None
     """
     # Локальный импорт: `task_blocks` ничего из `tracker` не тянет, но
     # держать зависимость на уровне модуля незачем — она нужна одной функции.
-    from app.models.task_block import TaskBlock, TaskBlockOption
+    from app.models.task_block import TaskBlock, TaskBlockImage, TaskBlockOption
 
     source_blocks = (
         db.query(TaskBlock)
@@ -810,10 +810,9 @@ def copy_task_blocks(db: Session, *, from_task_id: int, to_task_id: int) -> None
             title=block.title,
             body=block.body,
             video_id=block.video_id,
-            image_s3_url=block.image_s3_url,
-            image_s3_path=block.image_s3_path,
             url=block.url,
             question_type=block.question_type,
+            hidden_until_done=block.hidden_until_done,
         )
         db.add(clone)
         db.flush()
@@ -830,6 +829,23 @@ def copy_task_blocks(db: Session, *, from_task_id: int, to_task_id: int) -> None
                     text=option.text,
                     is_correct=option.is_correct,
                     sort_order=option.sort_order,
+                )
+            )
+        images = (
+            db.query(TaskBlockImage)
+            .filter(TaskBlockImage.block_id == block.id)
+            .order_by(TaskBlockImage.sort_order, TaskBlockImage.id)
+            .all()
+        )
+        for image in images:
+            # Ссылки на те же объекты в S3, копий файлов не делаем: копия
+            # недели и оригинал показывают одну и ту же картинку.
+            db.add(
+                TaskBlockImage(
+                    block_id=clone.id,
+                    image_s3_url=image.image_s3_url,
+                    image_s3_path=image.image_s3_path,
+                    sort_order=image.sort_order,
                 )
             )
     db.flush()

@@ -25,6 +25,7 @@ from app.services.task_blocks import (
     get_answers_map,
     get_blocks,
     get_blocks_for_tasks,
+    get_images,
     get_options,
     get_response,
     get_selected_options,
@@ -87,7 +88,7 @@ def test_sync_blocks_accepts_every_type_in_one_task(db):
         task_id=task.id,
         items=[
             _text("Прочитай перед началом"),
-            {"block_type": BLOCK_PHOTO, "image_url": "https://s3/a.jpg", "image_path": "p/a.jpg"},
+            {"block_type": BLOCK_PHOTO, "images": [{"url": "https://s3/a.jpg", "path": "p/a.jpg"}]},
             {"block_type": BLOCK_VIDEO, "video_id": video.id, "title": "Разбор"},
             {"block_type": BLOCK_LINK, "url": "https://example.org", "title": "Читать"},
             _question("Что было главным?"),
@@ -99,7 +100,7 @@ def test_sync_blocks_accepts_every_type_in_one_task(db):
     assert [b.block_type for b in blocks] == [
         BLOCK_TEXT, BLOCK_PHOTO, BLOCK_VIDEO, BLOCK_LINK, BLOCK_QUESTION
     ]
-    assert blocks[1].image_s3_url == "https://s3/a.jpg"
+    assert [i.image_s3_url for i in get_images(db, [blocks[1].id])[blocks[1].id]] == ["https://s3/a.jpg"]
     assert blocks[2].video_id == video.id
     assert blocks[3].url == "https://example.org"
 
@@ -114,7 +115,7 @@ def test_sync_blocks_skips_empty_drafts(db):
         task_id=task.id,
         items=[
             _text("   "),
-            {"block_type": BLOCK_PHOTO, "image_url": ""},
+            {"block_type": BLOCK_PHOTO, "images": []},
             {"block_type": BLOCK_VIDEO, "video_id": None},
             {"block_type": BLOCK_LINK, "url": "  "},
             _text("Единственный настоящий"),
@@ -581,3 +582,125 @@ def test_pruning_keeps_answers_that_still_have_content(db, user_factory):
 
     response = get_response(db, task_id=task.id, user_id=student.id)
     assert get_selected_options(db, response_id=response.id) == {block.id: {kept.id}}
+
+
+# --- галерея, скрытые вопросы, проверка ------------------------------------
+
+
+def _photo(*urls):
+    return {"block_type": BLOCK_PHOTO, "images": [{"url": u, "path": None} for u in urls]}
+
+
+def test_gallery_keeps_order_and_caps_at_limit(db):
+    from app.models.task_block import MAX_BLOCK_IMAGES
+
+    task = _task(db)
+    urls = [f"https://s3/{i}.jpg" for i in range(MAX_BLOCK_IMAGES + 3)]
+    [block] = sync_blocks(db, task_id=task.id, items=[_photo(*urls)])
+    db.commit()
+
+    saved = get_images(db, [block.id])[block.id]
+    assert [i.image_s3_url for i in saved] == urls[:MAX_BLOCK_IMAGES]
+    assert [i.sort_order for i in saved] == list(range(MAX_BLOCK_IMAGES))
+
+
+def test_switching_photo_block_to_text_drops_images(db):
+    task = _task(db)
+    [block] = sync_blocks(db, task_id=task.id, items=[_photo("https://s3/a.jpg")])
+    db.commit()
+    assert len(get_images(db, [block.id])[block.id]) == 1
+
+    sync_blocks(db, task_id=task.id, items=[_text("Теперь текст", id=block.id)])
+    db.commit()
+
+    assert get_images(db, [block.id]) == {}
+
+
+def test_hidden_question_appears_only_after_task_is_done(db):
+    """Развязка тупика: скрытый вопрос не участвует в проверке «ответил ли»,
+    иначе задание нельзя было бы закрыть никогда."""
+    from app.services.task_blocks import visible_question_blocks
+
+    task = _task(db)
+    sync_blocks(
+        db,
+        task_id=task.id,
+        items=[
+            _question("Виден сразу"),
+            _question("Только после сдачи", hidden_until_done=True),
+        ],
+    )
+    db.commit()
+    blocks = get_blocks(db, task.id)
+
+    assert [b.body for b in visible_question_blocks(blocks, task_done=False)] == ["Виден сразу"]
+    assert [b.body for b in visible_question_blocks(blocks, task_done=True)] == [
+        "Виден сразу", "Только после сдачи",
+    ]
+
+
+def test_grade_counts_only_questions_with_a_right_answer(db, user_factory):
+    from app.services.task_blocks import grade_response
+
+    task = _task(db)
+    student = user_factory(vk_id=700_201, name="Ученик")
+    verny, bez_klyucha, svobodny = sync_blocks(
+        db,
+        task_id=task.id,
+        items=[
+            _question("С ключом", question_type=QUESTION_SINGLE,
+                      options=[{"text": "Да", "is_correct": True}, {"text": "Нет"}]),
+            _question("Без ключа", question_type=QUESTION_SINGLE,
+                      options=[{"text": "А"}, {"text": "Б"}]),
+            _question("Свободный"),
+        ],
+    )
+    db.commit()
+    right = [o for o in get_options(db, [verny.id])[verny.id] if o.is_correct][0]
+
+    save_response(
+        db, task_id=task.id, user_id=student.id, blocks=[verny],
+        answers={verny.id: {"option_ids": [right.id]}},
+    )
+    db.commit()
+    response = get_response(db, task_id=task.id, user_id=student.id)
+
+    verdict = grade_response(db, blocks=get_blocks(db, task.id), response_id=response.id)
+    assert verdict["correct_count"] == 1
+    assert verdict["gradable_count"] == 1  # свободный и «без ключа» не считаются
+    by_block = {r["block_id"]: r["is_correct"] for r in verdict["results"]}
+    assert by_block[verny.id] is True
+    assert by_block[bez_klyucha.id] is None
+
+
+def test_grade_multiple_requires_full_match(db, user_factory):
+    from app.services.task_blocks import grade_response
+
+    task = _task(db)
+    student = user_factory(vk_id=700_202, name="Ученик")
+    [block] = sync_blocks(
+        db,
+        task_id=task.id,
+        items=[
+            _question("Выбери всё верное", question_type=QUESTION_MULTIPLE,
+                      options=[
+                          {"text": "А", "is_correct": True},
+                          {"text": "Б", "is_correct": True},
+                          {"text": "В"},
+                      ])
+        ],
+    )
+    db.commit()
+    a, b, v = get_options(db, [block.id])[block.id]
+
+    # Угадал только половину — засчитывать нельзя.
+    save_response(db, task_id=task.id, user_id=student.id, blocks=[block],
+                  answers={block.id: {"option_ids": [a.id]}})
+    db.commit()
+    response = get_response(db, task_id=task.id, user_id=student.id)
+    assert grade_response(db, blocks=[block], response_id=response.id)["correct_count"] == 0
+
+    save_response(db, task_id=task.id, user_id=student.id, blocks=[block],
+                  answers={block.id: {"option_ids": [a.id, b.id]}})
+    db.commit()
+    assert grade_response(db, blocks=[block], response_id=response.id)["correct_count"] == 1

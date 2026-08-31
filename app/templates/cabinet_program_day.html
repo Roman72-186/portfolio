@@ -8,7 +8,7 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=8">
+<link rel="stylesheet" href="/static/css/program.css?v=9">
 <link rel="stylesheet" href="/static/css/program_ios.css?v=4">
 {% endblock %}
 {% block content %}
@@ -457,8 +457,10 @@ FORM: Operate.
             syncBlockOptions(event.target.closest('[data-block]'));
             return;
         }
-        if (event.target.hasAttribute('data-b-photo-file') && event.target.files[0]) {
-            uploadBlockPhoto(event.target.closest('[data-block]'), event.target.files[0]);
+        if (event.target.hasAttribute('data-b-photo-file') && event.target.files.length) {
+            uploadBlockPhotos(event.target.closest('[data-block]'), event.target.files);
+            // Сбрасываем, иначе повторный выбор тех же файлов не даст change.
+            event.target.value = '';
         }
     });
 
@@ -684,6 +686,8 @@ FORM: Operate.
     // ответа анкеты; обработчики не вешаются на строку, всё через делегирование
     // по `data-*` на форме.
 
+    var MAX_BLOCK_IMAGES = {{ max_block_images|tojson }};
+
     var BLOCK_LABELS = {{ block_types|tojson }}.reduce(function (acc, pair) {
         acc[pair[0]] = pair[1];
         return acc;
@@ -706,10 +710,12 @@ FORM: Operate.
             return '<label class="prg-field">Текст<textarea data-b-body maxlength="5000"></textarea></label>';
         }
         if (type === 'photo') {
+            // multiple: владелец 31.08.2026 — выбрал десять файлов разом, а не
+            // жал «+ Фото» десять раз. Потолок держат и сервер, и этот скрипт.
             return ''
-                + '<label class="prg-field">Файл<input type="file" accept="image/*" data-b-photo-file></label>'
+                + '<label class="prg-field">Файлы<input type="file" accept="image/*" multiple data-b-photo-file></label>'
                 + '<p class="prg-hint" data-b-photo-status></p>'
-                + '<img class="prg-blk-preview" data-b-photo-preview hidden alt="">'
+                + '<div class="prg-blk-gallery" data-b-images></div>'
                 + '<label class="prg-field">Подпись, необязательно<input type="text" data-b-title maxlength="200"></label>';
         }
         if (type === 'video') {
@@ -730,9 +736,14 @@ FORM: Operate.
             + '{% for qt in question_types %}<option value="{{ qt.value }}">{{ qt.label }}</option>{% endfor %}'
             + '</select></label>'
             + '<div class="prg-blk-options" data-b-options-wrap hidden>'
+            + '  <p class="prg-hint">Отметьте верный вариант — без него вопрос не сохранится.</p>'
             + '  <div data-b-options></div>'
             + '  <div class="prg-actions"><button type="button" class="btn-outline" data-add-b-option>Добавить вариант</button></div>'
-            + '</div>';
+            + '</div>'
+            + '<label class="prg-field prg-field--row">'
+            + '  <input type="checkbox" data-b-hidden-until-done>'
+            + '  <span>Показать только после того, как ученик закроет задание</span>'
+            + '</label>';
     }
 
     function blockRowHTML(type) {
@@ -777,12 +788,13 @@ FORM: Operate.
         if (url) url.value = block.url || '';
         var video = row.querySelector('[data-b-video]');
         if (video) video.value = block.video_id || '';
-        if (block.image_url) {
-            row.setAttribute('data-image-url', block.image_url);
-            row.setAttribute('data-image-path', block.image_path || '');
-            var preview = row.querySelector('[data-b-photo-preview]');
-            if (preview) { preview.src = block.image_url; preview.hidden = false; }
+        if (row.querySelector('[data-b-images]')) {
+            (block.images || []).forEach(function (image) {
+                addImageThumb(row, image.url, image.path);
+            });
         }
+        var hiddenBox = row.querySelector('[data-b-hidden-until-done]');
+        if (hiddenBox) hiddenBox.checked = !!block.hidden_until_done;
         var qType = row.querySelector('[data-b-question-type]');
         if (qType) {
             qType.value = block.question_type || 'text';
@@ -830,13 +842,19 @@ FORM: Operate.
                 item.video_id = Number(picked);
             }
             if (type === 'photo') {
-                item.image_url = row.getAttribute('data-image-url') || '';
-                item.image_path = row.getAttribute('data-image-path') || '';
-                if (!item.image_url) return;
+                item.images = [];
+                row.querySelectorAll('[data-b-image]').forEach(function (thumb) {
+                    item.images.push({
+                        url: thumb.getAttribute('data-url'),
+                        path: thumb.getAttribute('data-path') || null
+                    });
+                });
+                if (!item.images.length) return;
             }
             if (type === 'question') {
                 if (!item.body) return;
                 item.question_type = row.querySelector('[data-b-question-type]').value;
+                item.hidden_until_done = !!row.querySelector('[data-b-hidden-until-done]:checked');
                 item.options = [];
                 if (item.question_type !== 'text') {
                     row.querySelectorAll('[data-b-option]').forEach(function (optionRow) {
@@ -860,21 +878,59 @@ FORM: Operate.
     // Фото уходит на сервер сразу при выборе — форма несёт только {url, path},
     // тот же контракт, что у обложек видео и картинок самостоятельной работы.
     // Переиспользует общий `uploadImage` и готовую ручку `/upload-cover`.
-    function uploadBlockPhoto(row, file) {
+    function addImageThumb(row, url, path) {
+        var holder = row.querySelector('[data-b-images]');
+        if (!holder) return;
+        var cell = document.createElement('span');
+        cell.className = 'prg-blk-thumb';
+        cell.setAttribute('data-b-image', '');
+        cell.setAttribute('data-url', url);
+        cell.setAttribute('data-path', path || '');
+        var img = document.createElement('img');
+        img.src = url;
+        img.alt = '';
+        img.loading = 'lazy';
+        var drop = document.createElement('button');
+        drop.type = 'button';
+        drop.className = 'prg-blk-thumb-remove';
+        drop.setAttribute('data-remove-b-image', '');
+        drop.setAttribute('aria-label', 'Убрать фото');
+        drop.textContent = '×';
+        cell.appendChild(img);
+        cell.appendChild(drop);
+        holder.appendChild(cell);
+    }
+
+    function uploadBlockPhotos(row, files) {
         var status = row.querySelector('[data-b-photo-status]');
-        status.textContent = 'Загружаем…';
+        var room = MAX_BLOCK_IMAGES - row.querySelectorAll('[data-b-image]').length;
         status.classList.remove('is-error');
-        uploadImage(file, '/cabinet/staff/program/upload-cover').then(function (result) {
-            if (!result || !result.ok) throw new Error();
-            row.setAttribute('data-image-url', result.url);
-            row.setAttribute('data-image-path', result.path || '');
-            var preview = row.querySelector('[data-b-photo-preview]');
-            preview.src = result.url;
-            preview.hidden = false;
-            status.textContent = 'Готово.';
-        }).catch(function () {
-            status.textContent = 'Не удалось загрузить фото. Попробуйте ещё раз.';
+        if (room <= 0) {
+            status.textContent = 'В одном блоке не больше ' + MAX_BLOCK_IMAGES + ' фото.';
             status.classList.add('is-error');
+            return;
+        }
+        var queue = Array.prototype.slice.call(files, 0, room);
+        var skipped = files.length - queue.length;
+        status.textContent = 'Загружаем ' + queue.length + '…';
+        var done = 0;
+        var failed = 0;
+        queue.forEach(function (file) {
+            uploadImage(file, '/cabinet/staff/program/upload-cover').then(function (result) {
+                if (!result || !result.ok) throw new Error();
+                addImageThumb(row, result.url, result.path);
+            }).catch(function () {
+                failed += 1;
+            }).then(function () {
+                done += 1;
+                if (done < queue.length) return;
+                var parts = [];
+                if (done - failed) parts.push('Загружено: ' + (done - failed) + '.');
+                if (failed) parts.push('Не удалось: ' + failed + '.');
+                if (skipped) parts.push('Лишние ' + skipped + ' не влезли в лимит.');
+                status.textContent = parts.join(' ');
+                if (failed) status.classList.add('is-error');
+            });
         });
     }
 
@@ -1521,6 +1577,12 @@ FORM: Operate.
                 .closest('[data-block]')
                 .querySelector('[data-b-options]')
                 .insertAdjacentHTML('beforeend', blockOptionHTML());
+            return;
+        }
+
+        var removeImage = event.target.closest('[data-remove-b-image]');
+        if (removeImage) {
+            removeImage.closest('[data-b-image]').remove();
             return;
         }
 

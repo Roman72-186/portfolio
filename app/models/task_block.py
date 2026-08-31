@@ -67,6 +67,9 @@ BLOCK_TYPE_LABELS = {
 # конструктора, не повод для отдельной константы.
 MAX_BLOCKS = 50
 
+# Сколько картинок влезает в один блок-галерею (владелец 31.08.2026).
+MAX_BLOCK_IMAGES = 10
+
 
 class TaskBlock(Base):
     """Один блок содержимого элемента дня.
@@ -97,13 +100,21 @@ class TaskBlock(Base):
     video_id: Mapped[int | None] = mapped_column(
         ForeignKey("learning_videos.id", ondelete="SET NULL"), nullable=True
     )
-    # Пара url + path — конвенция всех моделей проекта: по path потом удаляют
-    # или переносят объект в S3.
-    image_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    image_s3_path: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Картинки блока — в отдельной таблице `TaskBlockImage`: блок «фото» стал
+    # галереей до MAX_BLOCK_IMAGES снимков (владелец 31.08.2026). Раньше пара
+    # колонок url+path лежала прямо здесь, по одной картинке на блок.
     url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     question_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # Показывать вопрос только после того, как ученик закрыл задание
+    # (владелец 31.08.2026). Скрытый вопрос — рефлексия по факту сдачи, поэтому
+    # он **не участвует** в проверке «ответил ли на все вопросы»: иначе выходил
+    # бы тупик — вопрос не виден, ответить нельзя, задание не закрыть, неделя
+    # встала. Развязка согласована владельцем 31.08.
+    hidden_until_done: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
@@ -118,6 +129,30 @@ class TaskBlock(Base):
     __table_args__ = (
         Index("ix_task_blocks_order", "task_id", "sort_order"),
         Index("ix_task_blocks_video", "video_id"),
+    )
+
+
+class TaskBlockImage(Base):
+    """Одна картинка блока-галереи. Порядок — `sort_order`.
+
+    Отдельная таблица, а не пара колонок у блока: владелец 31.08.2026 попросил
+    класть в один блок несколько снимков. Та же конструкция, что у
+    `HomeworkImage`, вплоть до пары url+path — по `path` объект потом удаляют
+    или переносят в S3.
+    """
+
+    __tablename__ = "task_block_images"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    block_id: Mapped[int] = mapped_column(
+        ForeignKey("task_blocks.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    image_s3_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    image_s3_path: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    __table_args__ = (
+        Index("ix_task_block_images_order", "block_id", "sort_order"),
     )
 
 
@@ -170,6 +205,10 @@ class TaskBlockResponse(Base):
     __table_args__ = (
         UniqueConstraint("task_id", "user_id", name="uq_task_block_response_task_user"),
         Index("ix_task_block_responses_task", "task_id"),
+        # Под будущий экран «ответы одного ученика по всем заданиям»: без него
+        # такое чтение шло бы перебором. Заводим сразу, чтобы не возвращаться
+        # к схеме второй раз.
+        Index("ix_task_block_responses_user", "user_id"),
     )
 
 
@@ -191,10 +230,22 @@ class TaskBlockAnswer(Base):
     )
     text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # «Просмотрено» в очереди проверки (владелец 31.08.2026): преподаватель или
+    # куратор отметил, что разобрал ответ, и тот ушёл из очереди. Отметку
+    # ставит и снимает только staff; ученик её видит, но снять не может.
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reviewed_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
     __table_args__ = (
         UniqueConstraint(
             "response_id", "block_id", name="uq_task_block_answer_response_block"
         ),
+        # Очередь читает «непросмотренные» — отбор идёт по этой колонке.
+        Index("ix_task_block_answers_reviewed", "reviewed_at"),
     )
 
 

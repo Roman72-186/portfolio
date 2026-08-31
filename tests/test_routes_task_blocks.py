@@ -97,7 +97,7 @@ def test_material_accepts_every_block_type(client, db, user_factory, session_fac
             "audience": EVERYONE,
             "blocks": [
                 {"block_type": BLOCK_TEXT, "body": "Прочитай перед началом"},
-                {"block_type": BLOCK_PHOTO, "image_url": "https://s3/x.jpg", "image_path": "p/x.jpg"},
+                {"block_type": BLOCK_PHOTO, "images": [{"url": "https://s3/x.jpg", "path": "p/x.jpg"}]},
                 {"block_type": BLOCK_VIDEO, "video_id": video.id, "title": "Разбор"},
                 {"block_type": BLOCK_LINK, "url": "https://example.org", "title": "Читать"},
                 _question("Что было главным?"),
@@ -437,3 +437,75 @@ def test_link_block_accepts_http_and_https(client, db, user_factory, session_fac
     assert [b.url for b in _blocks_of(db, task.id)] == [
         "https://example.org", "http://example.org",
     ]
+
+
+# ── Вторая очередь: галерея, скрытые вопросы, обязательный верный ответ ─────
+
+
+def test_choice_question_without_right_answer_is_rejected(client, db, user_factory, session_factory, monkeypatch):
+    """Владелец 31.08.2026: лучше не пустить кривой тест в базу, чем потом
+    объяснять, почему вопрос не засчитался."""
+    _freeze(monkeypatch, date.today())
+    _staff_client(client, user_factory, session_factory)
+
+    resp = client.post(
+        f"{PROGRAM}/{_future_day_iso()}/material",
+        json={
+            "title": "Материал",
+            "audience": EVERYONE,
+            "blocks": [
+                _question("Выбери", question_type=QUESTION_SINGLE,
+                          options=[{"text": "А"}, {"text": "Б"}])
+            ],
+        },
+    )
+    assert resp.status_code == 422
+    assert db.query(TaskBlock).count() == 0
+
+
+def test_free_text_question_needs_no_right_answer(client, db, user_factory, session_factory, monkeypatch):
+    _freeze(monkeypatch, date.today())
+    _staff_client(client, user_factory, session_factory)
+
+    resp = client.post(
+        f"{PROGRAM}/{_future_day_iso()}/material",
+        json={"title": "Материал", "audience": EVERYONE, "blocks": [_question("Свободный")]},
+    )
+    assert resp.status_code == 200, resp.text
+
+
+def test_gallery_and_hidden_flag_round_trip(client, db, user_factory, session_factory, monkeypatch):
+    from app.services.task_blocks import get_images
+
+    _freeze(monkeypatch, date.today())
+    _staff_client(client, user_factory, session_factory)
+    day_iso = _future_day_iso()
+
+    resp = client.post(
+        f"{PROGRAM}/{day_iso}/material",
+        json={
+            "title": "Материал",
+            "audience": EVERYONE,
+            "blocks": [
+                {"block_type": BLOCK_PHOTO, "images": [
+                    {"url": "https://s3/1.jpg", "path": "p/1.jpg"},
+                    {"url": "https://s3/2.jpg", "path": "p/2.jpg"},
+                ]},
+                dict(_question("Как прошло?"), hidden_until_done=True),
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "material").one()
+    photo, question = _blocks_of(db, task.id)
+    assert [i.image_s3_url for i in get_images(db, [photo.id])[photo.id]] == [
+        "https://s3/1.jpg", "https://s3/2.jpg",
+    ]
+    assert question.hidden_until_done is True
+
+    # Правка читает всё обратно в форму, ничего не теряя.
+    page = client.get(f"{PROGRAM}/{day_iso}")
+    payload = _json.loads(page.text.split("programEditData = ")[1].split(";\n")[0])[str(task.id)]
+    assert len(payload["blocks"][0]["images"]) == 2
+    assert payload["blocks"][1]["hidden_until_done"] is True

@@ -13,11 +13,13 @@ from app.models.task_block import (
     BLOCK_QUESTION,
     BLOCK_TYPES,
     BLOCK_VIDEO,
+    MAX_BLOCK_IMAGES,
     QUESTION_TEXT,
     QUESTION_TYPES,
     TaskBlock,
     TaskBlockAnswer,
     TaskBlockAnswerOption,
+    TaskBlockImage,
     TaskBlockOption,
     TaskBlockResponse,
 )
@@ -150,6 +152,104 @@ def _prune_empty_answers(db: DBSession, block_id: int) -> None:
             db.delete(answer)
 
 
+def get_images(db: DBSession, block_ids: list[int]) -> dict[int, list[TaskBlockImage]]:
+    """Картинки блоков-галерей, сгруппированные по блоку."""
+    if not block_ids:
+        return {}
+    rows = (
+        db.query(TaskBlockImage)
+        .filter(TaskBlockImage.block_id.in_(block_ids))
+        .order_by(TaskBlockImage.block_id, TaskBlockImage.sort_order, TaskBlockImage.id)
+        .all()
+    )
+    grouped: dict[int, list[TaskBlockImage]] = {}
+    for row in rows:
+        grouped.setdefault(row.block_id, []).append(row)
+    return grouped
+
+
+def _sync_images(db: DBSession, block: TaskBlock, items: list[dict] | None) -> None:
+    """Картинки одного блока-галереи.
+
+    Полная пересборка, а не правка по id: у картинки нет ничего, что стоило бы
+    сохранять между сохранениями формы — ни ответов учеников, ни ссылок извне.
+    Файлы в S3 при этом не трогаем, как и везде в проекте: та же картинка может
+    стоять в копии задания в другой неделе.
+    """
+    db.query(TaskBlockImage).filter(
+        TaskBlockImage.block_id == block.id
+    ).delete(synchronize_session=False)
+    for order, raw in enumerate((items or [])[:MAX_BLOCK_IMAGES]):
+        url = (raw.get("url") or "").strip()
+        if not url:
+            continue
+        db.add(
+            TaskBlockImage(
+                block_id=block.id,
+                image_s3_url=url[:500],
+                image_s3_path=(raw.get("path") or None),
+                sort_order=order,
+            )
+        )
+
+
+def visible_question_blocks(blocks: list[TaskBlock], *, task_done: bool) -> list[TaskBlock]:
+    """Вопросы, которые ученик видит прямо сейчас.
+
+    Вопрос с `hidden_until_done` появляется только после закрытия задания. Эта
+    же выборка задаёт гейт «нельзя закрыть, пока не отвечены вопросы»: считаем
+    только видимые, иначе скрытый вопрос сделал бы задание незакрываемым
+    навсегда (решение владельца 31.08.2026).
+    """
+    return [
+        block
+        for block in question_blocks(blocks)
+        if task_done or not block.hidden_until_done
+    ]
+
+
+def grade_response(
+    db: DBSession, *, blocks: list[TaskBlock], response_id: int | None
+) -> dict:
+    """Результат проверки: что верно, что нет, и счёт.
+
+    В счёт идут только вопросы с вариантами, у которых преподаватель отметил
+    хотя бы один верный. Свободный текст не проверяется машиной. Вопрос без
+    отмеченного верного варианта завести нельзя (форма не даёт сохранить), но
+    в базе он может остаться от старых данных — такой считаем непроверяемым,
+    а не заваленным.
+
+    У `multiple` — совпадение множеств целиком, без частичных баллов.
+    """
+    graded = [
+        block
+        for block in question_blocks(blocks)
+        if block.question_type != QUESTION_TEXT
+    ]
+    options = get_options(db, [block.id for block in graded])
+    chosen = (
+        get_selected_options(db, response_id=response_id) if response_id else {}
+    )
+    results: list[dict] = []
+    correct_count = 0
+    gradable_count = 0
+    for block in graded:
+        right = {o.id for o in options.get(block.id, []) if o.is_correct}
+        if not right:
+            results.append({"block_id": block.id, "is_correct": None})
+            continue
+        gradable_count += 1
+        is_correct = chosen.get(block.id, set()) == right
+        if is_correct:
+            correct_count += 1
+        results.append({"block_id": block.id, "is_correct": is_correct})
+    return {
+        "correct_count": correct_count,
+        "gradable_count": gradable_count,
+        "results": results,
+    }
+
+
 def _drop_block(db: DBSession, block: TaskBlock) -> None:
     """Удалить блок вместе со всем, что на него ссылается.
 
@@ -192,7 +292,10 @@ def _is_empty(block_type: str, item: dict) -> bool:
     if block_type == BLOCK_VIDEO:
         return item.get("video_id") is None
     if block_type == BLOCK_PHOTO:
-        return not (item.get("image_url") or "").strip()
+        return not [
+            image for image in (item.get("images") or [])
+            if (image.get("url") or "").strip()
+        ]
     if block_type == BLOCK_LINK:
         return not (item.get("url") or "").strip()
     # text и question: без текста блок бессмысленен.
@@ -238,13 +341,10 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         # Специализированные поля чистим у чужих типов: блок могли переключить
         # с видео на текст, и старый video_id тянул бы за собой плеер.
         row.video_id = item.get("video_id") if block_type == BLOCK_VIDEO else None
-        row.image_s3_url = (
-            _clean(item.get("image_url"), 500) if block_type == BLOCK_PHOTO else None
-        )
-        row.image_s3_path = (
-            _clean(item.get("image_path"), 300) if block_type == BLOCK_PHOTO else None
-        )
         row.url = _clean(item.get("url"), 500) if block_type == BLOCK_LINK else None
+        row.hidden_until_done = bool(
+            item.get("hidden_until_done") if block_type == BLOCK_QUESTION else False
+        )
         if block_type == BLOCK_QUESTION:
             question_type = (item.get("question_type") or "").strip()
             row.question_type = (
@@ -261,6 +361,8 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
             _sync_options(db, row, item.get("options") or [])
         else:
             _sync_options(db, row, [])
+        # Картинки — только у галереи; блок могли переключить с фото на текст.
+        _sync_images(db, row, item.get("images") if row.block_type == BLOCK_PHOTO else [])
     for block_id, row in existing.items():
         if block_id in matched_ids:
             continue
