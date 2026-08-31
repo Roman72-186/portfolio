@@ -35,10 +35,10 @@ mock_exam-задания одной недели), синглтон-id стол�
         <p class="trk-pending-note" data-role="locked-text"></p>
     </div>
 
-    <section class="card" data-role="quiz" hidden aria-label="Мини-опрос о пробнике">
-        <h2 class="card-title">Пара вопросов о пробнике</h2>
-        <div data-role="quiz-body"></div>
-    </section>
+    {# Мини-опрос отсюда убран 31.08.2026: вопросы стали блоками элемента и
+       показываются общей панелью содержимого (`inline/task_blocks.html`) на
+       той же карточке. Держать их и здесь значило бы один вопрос дважды, с
+       двумя разными кнопками «Отправить». #}
 
     <div data-role="body" hidden>
         <div class="ios-prep-card" data-role="prep" hidden>
@@ -154,8 +154,6 @@ mock_exam-задания одной недели), синглтон-id стол�
         var finalReselectBtn = root.querySelector('[data-role="final-reselect"]');
         var submitBtn = root.querySelector('[data-role="submit-btn"]');
         var uploadMsgEl = root.querySelector('[data-role="upload-msg"]');
-        var quizSectionEl = root.querySelector('[data-role="quiz"]');
-        var quizBodyEl = root.querySelector('[data-role="quiz-body"]');
 
         var stageState = { existing: 0, remaining: 0, limit: 0 };
         var stageLimitDefault = 10;
@@ -196,7 +194,6 @@ mock_exam-задания одной недели), синглтон-id стол�
                         ? 'Работа сдана · ждите обратную связь куратора.'
                         : 'Работа сдана · ждите следующий пробник.';
                     lockedEl.hidden = false;
-                    if (data.quiz_questions && data.quiz_questions.length) renderQuiz(data);
                     return;
                 }
                 stageLimitDefault = data.max_stage_files || stageLimitDefault;
@@ -327,80 +324,6 @@ mock_exam-задания одной недели), синглтон-id стол�
             holder.appendChild(errBox);
             load();
             return holder;
-        }
-
-        // ── Мини-опрос после сдачи (та же конструкция, что у видео) ─────────
-        function renderQuiz(data) {
-            if (!data.quiz_questions || !data.quiz_questions.length) return;
-            quizBodyEl.innerHTML = '';
-            if (data.quiz_answers) {
-                data.quiz_questions.forEach(function (question, i) {
-                    var p = document.createElement('p');
-                    var label = document.createElement('span');
-                    label.className = 'field-label';
-                    label.textContent = question;
-                    var value = document.createElement('span');
-                    value.className = 'video-help';
-                    value.textContent = data.quiz_answers[i] || '—';
-                    p.appendChild(label);
-                    p.appendChild(value);
-                    quizBodyEl.appendChild(p);
-                });
-                quizSectionEl.hidden = false;
-                return;
-            }
-            var form = document.createElement('form');
-            data.quiz_questions.forEach(function (question, i) {
-                var p = document.createElement('p');
-                var label = document.createElement('label');
-                label.className = 'field-label';
-                label.setAttribute('for', 'lrn-mock-quiz-q' + i + '-' + Math.random().toString(36).slice(2));
-                label.textContent = question;
-                var textarea = document.createElement('textarea');
-                textarea.className = 'form-input';
-                textarea.id = label.getAttribute('for');
-                textarea.rows = 3;
-                textarea.maxLength = 2000;
-                p.appendChild(label);
-                p.appendChild(textarea);
-                form.appendChild(p);
-            });
-            var quizSubmitBtn = document.createElement('button');
-            quizSubmitBtn.type = 'submit';
-            quizSubmitBtn.className = 'btn-blue';
-            quizSubmitBtn.textContent = 'Отправить';
-            var quizStatus = document.createElement('p');
-            quizStatus.className = 'video-progress-status';
-            quizStatus.setAttribute('aria-live', 'polite');
-            form.appendChild(quizSubmitBtn);
-            form.appendChild(quizStatus);
-            form.addEventListener('submit', function (event) {
-                event.preventDefault();
-                var textareas = form.querySelectorAll('textarea');
-                var quizAnswers = Array.prototype.map.call(textareas, function (t) { return t.value; });
-                quizSubmitBtn.disabled = true;
-                fetch(data.quiz_submit_endpoint, {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: {
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': CSRF_TOKEN
-                    },
-                    body: JSON.stringify({ subject: subject, answers: quizAnswers })
-                }).then(function (resp) {
-                    if (!resp.ok) throw new Error();
-                    textareas.forEach(function (t) { t.disabled = true; });
-                    quizSubmitBtn.hidden = true;
-                    quizStatus.textContent = 'Спасибо, ответ сохранён.';
-                }).catch(function () {
-                    quizSubmitBtn.disabled = false;
-                    quizStatus.textContent = 'Не удалось отправить ответ. Попробуйте ещё раз.';
-                    quizStatus.classList.add('is-error');
-                });
-            });
-            quizBodyEl.appendChild(form);
-            quizSectionEl.hidden = false;
         }
 
         // ── Таймер ───────────────────────────────────────────────────────────
@@ -713,12 +636,6 @@ mock_exam-задания одной недели), синглтон-id стол�
             if (stageState.existing > 0) msg += ' и ' + stageState.existing + ' ' + stageWord(stageState.existing);
             msg += '. Ожидайте обратной связи от куратора.';
             showUploadMsg(msg, false);
-            // Мини-опрос виден только когда финал уже сдан (`locked`) — в
-            // первом фетче при открытии карточки его ещё не было, перечитываем.
-            fetch(endpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
-                .then(function (resp) { return resp.ok ? resp.json() : null; })
-                .then(function (data) { if (data && data.quiz_questions && data.quiz_questions.length) renderQuiz(data); })
-                .catch(function () {});
         }
     };
 })();

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=25">
+<link rel="stylesheet" href="/static/css/tracker.css?v=26">
 {% endblock %}
 {% block content %}
 <div class="lrn-page ios-learning">
@@ -397,12 +397,6 @@ function lrnUpdateTabBadge(kind) {
                 // нельзя, ниже в .finally() она включится только при ошибке.
                 btn.disabled = done;
                 if (panel) lrnUpdateTabBadge(panel.getAttribute('data-tabpanel'));
-                // Мини-опрос (владелец 30.08.2026) уже в разметке, просто скрыт —
-                // открылся сразу после отметки, без перезагрузки страницы.
-                if (done) {
-                    var quizDetails = row.querySelector('.trk-row-expand[data-task-kind="task_quiz"]');
-                    if (quizDetails) quizDetails.hidden = false;
-                }
             }).catch(function () {
                 btn.textContent = 'Не получилось, ещё раз';
                 btn.disabled = false;
@@ -411,26 +405,8 @@ function lrnUpdateTabBadge(kind) {
     });
 })();
 
-(function () {
-    // Инлайн-раскрытие карточки задачи (task_action.html, inline_expand) —
-    // общий на все типы: конкретный `init` регистрирует partial
-    // partials/inline/{kind}.html в window.lrnPanelInit по своему task.kind.
-    // Ленивая инициализация по первому открытию, не при загрузке страницы —
-    // сигнатуру Bunny-ссылки/CSRF-заголовки видео получают только по факту
-    // клика, не для всех карточек недели сразу.
-    document.querySelectorAll('.trk-row-expand[data-task-kind]').forEach(function (details) {
-        details.addEventListener('toggle', function () {
-            if (!details.open || details.dataset.inited) return;
-            var kind = details.getAttribute('data-task-kind');
-            var initFn = window.lrnPanelInit && window.lrnPanelInit[kind];
-            var body = details.querySelector('.trk-expand-body');
-            if (!initFn || !body) return;
-            details.dataset.inited = '1';
-            initFn(body, csrfToken);
-        });
-    });
-})();
 </script>
+{% include "partials/inline/panels_init.html" %}
 
 {% set active_tab = "learning" %}
 {% include "partials/bottom_nav.html" %}

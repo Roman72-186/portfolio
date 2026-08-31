@@ -761,7 +761,7 @@ def copy_week(
         elif item.source_kind == SOURCE_LEARNING_TOPIC:
             # Видео привязано к своей неделе, иначе копия вела бы на прошлую.
             source_id = copy.id
-        create_task(
+        new_task = create_task(
             db,
             title=item.title,
             description=item.description,
@@ -775,8 +775,64 @@ def copy_week(
             source_id=source_id,
             user_id=user_id,
         )
+        db.flush()
+        copy_task_blocks(db, from_task_id=item.id, to_task_id=new_task.id)
     db.flush()
     return copy
+
+
+def copy_task_blocks(db: Session, *, from_task_id: int, to_task_id: int) -> None:
+    """Перенести содержимое элемента в его копию (владелец 31.08.2026).
+
+    Ролики теперь переезжают вместе с элементом: привязка живёт в
+    `task_blocks.video_id`, а не в единственной колонке `LearningVideo.topic_id`,
+    поэтому один ролик спокойно стоит и в исходной неделе, и в копии. Раньше
+    «Скопировать неделю» видео не переносила именно из-за той колонки.
+
+    Ответы учеников не копируются — копия это новое задание, отвечать на него
+    предстоит заново.
+    """
+    # Локальный импорт: `task_blocks` ничего из `tracker` не тянет, но
+    # держать зависимость на уровне модуля незачем — она нужна одной функции.
+    from app.models.task_block import TaskBlock, TaskBlockOption
+
+    source_blocks = (
+        db.query(TaskBlock)
+        .filter(TaskBlock.task_id == from_task_id)
+        .order_by(TaskBlock.sort_order, TaskBlock.id)
+        .all()
+    )
+    for block in source_blocks:
+        clone = TaskBlock(
+            task_id=to_task_id,
+            block_type=block.block_type,
+            sort_order=block.sort_order,
+            title=block.title,
+            body=block.body,
+            video_id=block.video_id,
+            image_s3_url=block.image_s3_url,
+            image_s3_path=block.image_s3_path,
+            url=block.url,
+            question_type=block.question_type,
+        )
+        db.add(clone)
+        db.flush()
+        options = (
+            db.query(TaskBlockOption)
+            .filter(TaskBlockOption.block_id == block.id)
+            .order_by(TaskBlockOption.sort_order, TaskBlockOption.id)
+            .all()
+        )
+        for option in options:
+            db.add(
+                TaskBlockOption(
+                    block_id=clone.id,
+                    text=option.text,
+                    is_correct=option.is_correct,
+                    sort_order=option.sort_order,
+                )
+            )
+    db.flush()
 
 
 # ---------------------------------------------------------------------------

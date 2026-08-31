@@ -346,7 +346,7 @@ def test_is_required_defaults_to_true(client, db, user_factory, session_factory,
 def test_quiz_questions_duplicated_into_every_selected_assignment(
     client, db, user_factory, session_factory, monkeypatch
 ):
-    from app.models.task_quiz import TaskQuizQuestion
+    from app.models.task_block import BLOCK_QUESTION, TaskBlock
     from app.models.tracker import SOURCE_EXAM_ASSIGNMENT, TrackerTask
 
     _freeze(monkeypatch, value=date.today())
@@ -368,7 +368,7 @@ def test_quiz_questions_duplicated_into_every_selected_assignment(
             # (владелец 30.08.2026: правка потребовала общего QuizQuestionItem,
             # у него нет отдельного молчаливого фильтра пустых строк — те
             # отсекает JS до отправки, как у всех остальных).
-            "quiz_questions": [{"text": "Как прошла сдача?"}, {"text": "Что было сложно?"}],
+            "blocks": [{"block_type": "question", "question_type": "text", "body": "Как прошла сдача?"}, {"block_type": "question", "question_type": "text", "body": "Что было сложно?"}],
         },
     )
 
@@ -385,16 +385,16 @@ def test_quiz_questions_duplicated_into_every_selected_assignment(
             .one()
         )
         rows = (
-            db.query(TaskQuizQuestion)
-            .filter(TaskQuizQuestion.task_id == task.id)
-            .order_by(TaskQuizQuestion.sort_order)
+            db.query(TaskBlock)
+            .filter(TaskBlock.task_id == task.id)
+            .order_by(TaskBlock.sort_order)
             .all()
         )
-        assert [r.text for r in rows] == ["Как прошла сдача?", "Что было сложно?"]
+        assert [r.body for r in rows] == ["Как прошла сдача?", "Что было сложно?"]
 
 
 def test_no_quiz_questions_by_default(client, db, user_factory, session_factory, monkeypatch):
-    from app.models.task_quiz import TaskQuizQuestion
+    from app.models.task_block import BLOCK_QUESTION, TaskBlock
 
     _freeze(monkeypatch, value=date.today())
     _staff_client(client, user_factory, session_factory)
@@ -407,4 +407,4 @@ def test_no_quiz_questions_by_default(client, db, user_factory, session_factory,
     )
 
     assert response.status_code == 200
-    assert db.query(TaskQuizQuestion).count() == 0
+    assert db.query(TaskBlock).count() == 0

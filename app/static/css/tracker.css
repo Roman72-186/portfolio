@@ -1050,3 +1050,36 @@ body.has-video-pseudo-fullscreen { overflow: hidden; overscroll-behavior: none; 
 @media (prefers-reduced-motion: reduce) {
     .lrn-inline-mock .upload-circle, .lrn-inline-mock .btn-mock-primary { transition: none; }
 }
+
+/* ── Блоки конструктора задания (partials/inline/task_blocks.html) ──────────
+   Универсальное содержимое элемента дня: текст, фото, видео, ссылка, вопрос.
+   Живёт здесь, а не инлайном в шаблоне — за ростом <style> в шаблонах следит
+   tests/test_reuse_ratchet.py. Только токены из base.css, своих цветов нет. */
+
+.lrn-blk-list { display: flex; flex-direction: column; gap: var(--s-4); }
+
+.lrn-blk { display: flex; flex-direction: column; gap: var(--s-2); }
+.lrn-blk-body { margin: 0; color: var(--text); line-height: 1.55; white-space: pre-wrap; }
+
+.lrn-blk-image {
+    width: 100%; max-width: 100%; height: auto; display: block;
+    border-radius: var(--r-md); border: 1px solid var(--line);
+}
+
+.lrn-blk-link .btn-outline { align-self: flex-start; }
+
+.lrn-blk-player {
+    width: 100%; aspect-ratio: 16 / 9; border: 0;
+    border-radius: var(--r-md); background: var(--surface-2);
+}
+
+.lrn-blk-option {
+    display: flex; align-items: center; gap: var(--s-2);
+    padding: var(--s-2) var(--s-3);
+    border: 1px solid var(--line); border-radius: var(--r-sm);
+    color: var(--text); cursor: pointer;
+}
+.lrn-blk-option:hover { background: var(--surface-2); }
+.lrn-blk-option input { flex: none; margin: 0; }
+
+.lrn-blk-submit { display: flex; flex-direction: column; gap: var(--s-2); align-items: flex-start; }

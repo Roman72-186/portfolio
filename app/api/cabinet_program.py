@@ -26,10 +26,16 @@ from app.models.exam_assignment import ExamAssignment, ExamTicket
 from app.models.exam_cycle import ExamCycle
 from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, LearningTopic
 from app.models.learning_video import LearningVideo
-from app.models.task_quiz import MAX_QUIZ_QUESTIONS
-from app.services.task_quiz import (
-    get_quiz_question_rows as get_task_quiz_question_rows,
-    sync_questions as sync_task_quiz_questions,
+from app.models.task_block import (
+    BLOCK_QUESTION,
+    BLOCK_TYPE_LABELS,
+    BLOCK_TYPES,
+    MAX_BLOCKS,
+)
+from app.services.task_blocks import (
+    get_blocks as get_task_blocks,
+    get_options as get_task_block_options,
+    sync_blocks as sync_task_blocks,
 )
 from app.models.survey import QUESTION_TYPE_LABELS, QUESTION_TYPES
 from app.services.video_catalog import publish_video
@@ -223,14 +229,33 @@ def _edit_payloads(
                 for q in questions
             ]
             payload["survey_locked"] = survey_has_responses(db, item.source_id)
-        # Мини-опрос (владелец 30.08.2026) — у видео своя правка вопросов
-        # (video_admin.py, экран «Загрузка видео»), сюда его не тащим, чтобы
-        # не было двух мест редактирования одного и того же.
-        if item.kind != ITEM_VIDEO:
-            payload["quiz_questions"] = [
-                {"id": q.id, "text": q.text}
-                for q in get_task_quiz_question_rows(db, item.id)
-            ]
+        # Блоки конструктора — у всех видов элемента без исключения, включая
+        # видеоматериал: в этом и смысл универсального конструктора. Не путать
+        # с мини-опросом самого ролика (`video_quiz`, экран «Загрузка видео») —
+        # тот привязан к `LearningVideo` и правится только там, чтобы не было
+        # двух мест редактирования одного и того же.
+        blocks = get_task_blocks(db, item.id)
+        block_options = get_task_block_options(db, [b.id for b in blocks])
+        payload["blocks"] = [
+            {
+                "id": b.id,
+                "block_type": b.block_type,
+                "title": b.title,
+                "body": b.body,
+                "video_id": b.video_id,
+                "image_url": b.image_s3_url,
+                "image_path": b.image_s3_path,
+                "url": b.url,
+                "question_type": b.question_type,
+                "options": [
+                    {"id": o.id, "text": o.text, "is_correct": o.is_correct}
+                    for o in block_options.get(b.id, [])
+                ]
+                if b.block_type == BLOCK_QUESTION
+                else [],
+            }
+            for b in blocks
+        ]
         payloads[item.id] = payload
     return payloads
 
@@ -317,8 +342,12 @@ def program_day(
                 {"value": t, "label": QUESTION_TYPE_LABELS[t]} for t in QUESTION_TYPES
             ],
             # Ролики в календаре только выбираются: загрузка живёт на своей
-            # вкладке, а один ролик занимает ровно один день (см. video_bindings).
+            # вкладке. Занятость больше не блокирует выбор — один ролик можно
+            # поставить блоком в несколько заданий (владелец 31.08.2026).
             "catalog_videos": videos_for_picker(db),
+            # Кнопки «что добавить» в редакторе блоков. Порядок здесь и есть
+            # порядок кнопок в форме.
+            "block_types": [(t, BLOCK_TYPE_LABELS[t]) for t in BLOCK_TYPES],
         },
     )
 
@@ -350,25 +379,72 @@ class TicketPayload(BaseModel):
         return value or None
 
 
-class QuizQuestionItem(BaseModel):
-    """Одна строка конструктора мини-опроса (владелец 30.08.2026, общий на
-    все виды — см. `app/models/task_quiz.py`). `id` — существующий вопрос
-    (правится на месте, ответы учеников сохраняются), `None` — новая строка,
-    добавленная кнопкой «+». Та же форма, что у видео (`video_admin.py`,
-    `QuizQuestionInput`), локальная копия — конструктор дня не тянет модуль
-    каталога видео ради одного класса."""
+class BlockOptionItem(BaseModel):
+    """Вариант ответа у блока-вопроса. `id` — существующий вариант (правится
+    на месте, выбор учеников сохраняется), `None` — новый."""
 
     model_config = ConfigDict(extra="forbid")
     id: int | None = Field(default=None, ge=1)
     text: str = Field(min_length=1, max_length=300)
+    is_correct: bool = False
 
     @field_validator("text")
     @classmethod
     def strip_text(cls, value: str) -> str:
         value = value.strip()
         if not value:
-            raise ValueError("Question text cannot be empty")
+            raise ValueError("Option text cannot be empty")
         return value
+
+
+class BlockItem(BaseModel):
+    """Один блок содержимого элемента (владелец 31.08.2026, универсальный
+    конструктор — см. `app/models/task_block.py`).
+
+    Один класс на все пять типов: специализированные поля не обязательны и
+    заполняются только под свой тип, лишние сервис вычищает сам
+    (`task_blocks.sync_blocks`). `id` — существующий блок, правится на месте
+    вместе с уже сохранёнными ответами учеников; `None` — новый.
+
+    Сюда переехал прежний мини-опрос: блок с `block_type="question"` и
+    `question_type="text"` — это ровно то, чем был `QuizQuestionItem`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    id: int | None = Field(default=None, ge=1)
+    block_type: str = Field(min_length=1, max_length=20)
+    title: str | None = Field(default=None, max_length=200)
+    body: str | None = Field(default=None, max_length=5000)
+    video_id: int | None = Field(default=None, ge=1)
+    image_url: str | None = Field(default=None, max_length=500)
+    image_path: str | None = Field(default=None, max_length=300)
+    url: str | None = Field(default=None, max_length=500)
+    question_type: str | None = Field(default=None, max_length=20)
+    options: list[BlockOptionItem] = Field(default_factory=list, max_length=20)
+
+    @field_validator("block_type")
+    @classmethod
+    def validate_block_type(cls, value: str) -> str:
+        value = (value or "").strip()
+        if value not in BLOCK_TYPES:
+            raise ValueError(f"Неизвестный тип блока: {value}")
+        return value
+
+    @field_validator("question_type")
+    @classmethod
+    def validate_question_type(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        if not value:
+            return None
+        if value not in QUESTION_TYPES:
+            raise ValueError(f"Неизвестный тип вопроса: {value}")
+        return value
+
+    @field_validator("title", "body", "url")
+    @classmethod
+    def strip_optional(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        return value or None
 
 
 class MockTicketEditPayload(TicketPayload):
@@ -392,7 +468,7 @@ class MockEditPayload(BaseModel):
 
     tickets: list[MockTicketEditPayload] = Field(min_length=1, max_length=10)
     is_required: bool = True
-    quiz_questions: list[QuizQuestionItem] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
+    blocks: list[BlockItem] = Field(default_factory=list, max_length=MAX_BLOCKS)
     tariff_restricted: bool = False
     tariffs: list[str] = Field(default_factory=list, max_length=len(TARIFFS))
 
@@ -455,12 +531,12 @@ class MockPayload(BaseModel):
     subjects: list[SubjectPayload] = Field(min_length=1, max_length=len(MOCK_SUBJECTS))
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
     is_required: bool = True
-    # Мини-опрос после сдачи (владелец 30.08.2026) — один набор вопросов на
-    # все выбранные предметы сразу, каждый предмет получает свою копию строк.
-    # `QuizQuestionItem` (id/None), не голый текст — та же форма, что у
-    # правки (`MockEditPayload` ниже), id на создании всегда None, но так
-    # payload един на оба эндпоинта и не нужно два разных JS-сборщика.
-    quiz_questions: list[QuizQuestionItem] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
+    # Блоки содержимого — один набор на все выбранные предметы сразу, каждый
+    # предмет получает свою копию строк. `BlockItem` (id/None), не голая
+    # строка — та же форма, что у правки (`MockEditPayload` ниже), id на
+    # создании всегда None, но так payload един на оба эндпоинта и не нужно
+    # два разных JS-сборщика.
+    blocks: list[BlockItem] = Field(default_factory=list, max_length=MAX_BLOCKS)
 
 
 def _apply_element_tariff(
@@ -638,10 +714,9 @@ def create_mock_item(
         )
         task.is_published = True
         db.flush()
-        if payload.quiz_questions:
-            sync_task_quiz_questions(
-                db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
-            )
+        sync_task_blocks(
+            db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
+        )
         db.add(
             AuditLog(
                 action="program_mock_create",
@@ -733,7 +808,7 @@ class HomeworkItemPayload(BaseModel):
     max_files: int = Field(default=1, ge=0, le=20)
     images: list[dict] = Field(default_factory=list, max_length=20)
     is_required: bool = True
-    quiz_questions: list[QuizQuestionItem] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
+    blocks: list[BlockItem] = Field(default_factory=list, max_length=MAX_BLOCKS)
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
 
     @field_validator("title")
@@ -767,7 +842,7 @@ class SimpleItemPayload(BaseModel):
     description: str | None = Field(default=None, max_length=5000)
     subject: str | None = Field(default=None, max_length=50)
     is_required: bool = True
-    quiz_questions: list[QuizQuestionItem] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
+    blocks: list[BlockItem] = Field(default_factory=list, max_length=MAX_BLOCKS)
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
 
     @field_validator("title")
@@ -824,7 +899,7 @@ class SurveyItemPayload(BaseModel):
     # Мини-опрос после заполнения (владелец 30.08.2026) — не вопросы самой
     # анкеты (`questions` выше), а короткая рефлексия после отправки, та же
     # конструкция, что у остальных семи видов.
-    quiz_questions: list[QuizQuestionItem] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
+    blocks: list[BlockItem] = Field(default_factory=list, max_length=MAX_BLOCKS)
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
 
 
@@ -841,7 +916,7 @@ class SurveyEditPayload(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     questions: list[SurveyQuestionPayload] = Field(default_factory=list, max_length=50)
     is_required: bool = True
-    quiz_questions: list[QuizQuestionItem] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
+    blocks: list[BlockItem] = Field(default_factory=list, max_length=MAX_BLOCKS)
     tariff_restricted: bool = False
     tariffs: list[str] = Field(default_factory=list, max_length=len(TARIFFS))
 
@@ -1054,10 +1129,9 @@ def create_homework_item(
     )
     task.is_published = True
     db.flush()
-    if payload.quiz_questions:
-        sync_task_quiz_questions(
-            db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
-        )
+    sync_task_blocks(
+        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
+    )
     db.add(
         AuditLog(
             action="program_homework_create",
@@ -1126,10 +1200,9 @@ def _create_simple_item(
     )
     task.is_published = True
     db.flush()
-    if payload.quiz_questions:
-        sync_task_quiz_questions(
-            db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
-        )
+    sync_task_blocks(
+        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
+    )
     db.add(
         AuditLog(
             action=f"program_{kind}_create",
@@ -1254,10 +1327,9 @@ def create_survey_item(
     )
     task.is_published = True
     db.flush()
-    if payload.quiz_questions:
-        sync_task_quiz_questions(
-            db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
-        )
+    sync_task_blocks(
+        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
+    )
     db.add(
         AuditLog(
             action="program_survey_create",
@@ -1437,8 +1509,8 @@ def update_mock_item(
                 tariff_restricted=payload.tariff_restricted,
                 tariffs=payload.tariffs,
             )
-    sync_task_quiz_questions(
-        db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
+    sync_task_blocks(
+        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
     )
     update_task(
         task,
@@ -1515,8 +1587,8 @@ def update_survey_item(
                 tariffs=payload.tariffs,
             )
 
-    sync_task_quiz_questions(
-        db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
+    sync_task_blocks(
+        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
     )
     update_task(
         task,
@@ -1570,8 +1642,8 @@ def _update_simple_item(
     )
     # Полный текущий список, не дельта (та же семантика, что у остальных
     # полей формы) — пустой список на правке чистит мини-опрос целиком.
-    sync_task_quiz_questions(
-        db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
+    sync_task_blocks(
+        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
     )
     db.add(
         AuditLog(
@@ -1671,8 +1743,8 @@ def update_homework_item(
         kind=ITEM_HOMEWORK,
         is_required=payload.is_required,
     )
-    sync_task_quiz_questions(
-        db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
+    sync_task_blocks(
+        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
     )
     db.add(
         AuditLog(

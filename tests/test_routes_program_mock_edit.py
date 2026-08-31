@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta, timezone
 from app.models.exam_assignment import ExamAssignment, ExamTicket
 from app.models.exam_cycle import ExamCycle
 from app.models.learning_topic import LearningTopic
-from app.models.task_quiz import TaskQuizQuestion
+from app.models.task_block import BLOCK_QUESTION, TaskBlock
 from app.models.tracker import TrackerTask
 from app.services.exam_tickets import get_ticket_tariffs
 from app.services.video_topics import get_topic_tariffs
@@ -50,13 +50,13 @@ def _ticket(title="Натюрморт"):
     return {"title": title, "description": "Два листа"}
 
 
-def _create_mock(client, day_iso, *, subject="Рисунок", tickets=None, quiz_questions=None):
+def _create_mock(client, day_iso, *, subject="Рисунок", tickets=None, blocks=None):
     payload = {
         "subjects": [{"subject": subject, "tickets": tickets or [_ticket()]}],
         "audience": EVERYONE,
     }
-    if quiz_questions is not None:
-        payload["quiz_questions"] = quiz_questions
+    if blocks is not None:
+        payload["blocks"] = blocks
     return client.post(f"{PROGRAM}/{day_iso}/mock", json=payload)
 
 
@@ -246,25 +246,25 @@ def test_edit_title_stays_safe_while_attempt_in_progress(client, db, user_factor
 def test_edit_is_required_and_quiz_questions(client, db, user_factory, session_factory, monkeypatch):
     _freeze(monkeypatch)
     _staff_client(client, user_factory, session_factory)
-    _create_mock(client, _future_day_iso(), quiz_questions=[{"text": "Как прошло?"}])
+    _create_mock(client, _future_day_iso(), blocks=[{"block_type": "question", "question_type": "text", "body": "Как прошло?"}])
     ticket = db.query(ExamTicket).one()
     task = db.query(TrackerTask).filter(TrackerTask.kind == "mock_exam").one()
-    old_question = db.query(TaskQuizQuestion).filter(TaskQuizQuestion.task_id == task.id).one()
+    old_question = db.query(TaskBlock).filter(TaskBlock.task_id == task.id).one()
 
     resp = client.post(
         f"{PROGRAM}/items/{task.id}/mock",
         json={
             "tickets": [{"id": ticket.id, "title": ticket.title, "description": ticket.description}],
             "is_required": False,
-            "quiz_questions": [{"id": old_question.id, "text": "Как прошло? (правка)"}, {"text": "Ещё вопрос"}],
+            "blocks": [{"id": old_question.id, "block_type": "question", "question_type": "text", "body": "Как прошло? (правка)"}, {"block_type": "question", "question_type": "text", "body": "Ещё вопрос"}],
         },
     )
     assert resp.status_code == 200, resp.text
     db.expire_all()
     task = db.get(TrackerTask, task.id)
     assert task.is_required is False
-    rows = db.query(TaskQuizQuestion).filter(TaskQuizQuestion.task_id == task.id).order_by(TaskQuizQuestion.sort_order).all()
-    assert [r.text for r in rows] == ["Как прошло? (правка)", "Ещё вопрос"]
+    rows = db.query(TaskBlock).filter(TaskBlock.task_id == task.id).order_by(TaskBlock.sort_order).all()
+    assert [r.body for r in rows] == ["Как прошло? (правка)", "Ещё вопрос"]
     assert rows[0].id == old_question.id
 
 

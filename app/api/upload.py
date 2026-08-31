@@ -40,18 +40,10 @@ from app.models.exam_assignment import ExamTicket
 from app.models.exam_cycle import ExamCycle
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
-from app.models.task_quiz import MAX_QUIZ_QUESTIONS
 from app.models.tracker import SOURCE_EXAM_ASSIGNMENT, TrackerTask
 from app.models.upload_log import UploadLog
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
-from app.services.task_quiz import (
-    get_answers_map as get_mock_quiz_answers_map,
-    get_quiz_question_rows as get_mock_quiz_question_rows,
-    get_quiz_questions as get_mock_quiz_questions,
-    get_response as get_mock_quiz_response,
-    save_response as save_mock_quiz_response,
-)
 from app.services.n8n import send_photo_to_n8n
 from app.services import s3 as s3_service
 from app.services.upload_validation import (
@@ -190,9 +182,9 @@ def _submitted_assignment_id(db: DBSession, user_id: int, subject: str) -> int |
 
 def _task_id_for_assignment(db: DBSession, assignment_id: int) -> int | None:
     """`TrackerTask.id` элемента дня, из которого родилось это задание —
-    мини-опрос Пробника хранится на общем со всеми видами столе
-    `task_quiz_questions` (владелец 30.08.2026, см. `app/models/task_quiz.py`),
-    ключ там `task_id`, а не `assignment_id`."""
+    блоки Пробника хранятся на общем со всеми видами столе `task_blocks`
+    (владелец 31.08.2026, см. `app/models/task_block.py`), ключ там `task_id`,
+    а не `assignment_id`."""
     row = (
         db.query(TrackerTask.id)
         .filter(
@@ -1102,24 +1094,12 @@ def mock_exam_embed(
         existing = count_cycle_intermediates(db, cycle_id=cycle.id) if cycle is not None else 0
         stage_state = intermediate_upload_state(existing)
 
-    # Мини-опрос после сдачи (решение владельца 30.08.2026, та же конструкция,
-    # что у видео) — виден только когда финал уже сдан, тот же признак, что
-    # разблокировывает подсказку «работа сдана».
-    quiz_questions: list[str] = []
-    quiz_answers: list[str] | None = None
-    if subject in locked_reasons:
-        assignment_id = _submitted_assignment_id(db, user["user_id"], subject)
-        task_id = _task_id_for_assignment(db, assignment_id) if assignment_id is not None else None
-        if task_id is not None:
-            quiz_questions = get_mock_quiz_questions(db, task_id)
-            if quiz_questions:
-                response = get_mock_quiz_response(
-                    db, task_id=task_id, user_id=user["user_id"]
-                )
-                if response is not None:
-                    question_rows = get_mock_quiz_question_rows(db, task_id)
-                    answers_map = get_mock_quiz_answers_map(db, response_id=response.id)
-                    quiz_answers = [answers_map.get(q.id, "") for q in question_rows]
+    # Вопросы отсюда убраны 31.08.2026: они стали блоками элемента и
+    # показываются общей панелью содержимого (`partials/inline/task_blocks.html`)
+    # на карточке Пробника — и на АОП, и в «Личном трекере». Держать их ещё и
+    # здесь значило бы показывать один и тот же вопрос дважды, с двумя разными
+    # кнопками сохранения. Ключи в ответе остаются пустыми, чтобы старый
+    # закэшированный фронтенд не упал на их отсутствии.
 
     return JSONResponse({
         "feature_available": True,
@@ -1133,55 +1113,10 @@ def mock_exam_embed(
         "stage_state": stage_state,
         "duration_sec": MOCK_EXAM_DURATION_SEC,
         "max_stage_files": MAX_INTERMEDIATE_PER_FINAL,
-        "quiz_questions": quiz_questions,
-        "quiz_answers": quiz_answers,
-        "quiz_submit_endpoint": "/upload/mock-exam/quiz" if quiz_questions else None,
+        "quiz_questions": [],
+        "quiz_answers": None,
+        "quiz_submit_endpoint": None,
     })
-
-
-class MockQuizSubmit(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    subject: str = Field(min_length=1, max_length=50)
-    answers: list[str] = Field(min_length=1, max_length=MAX_QUIZ_QUESTIONS)
-
-    @field_validator("answers")
-    @classmethod
-    def strip_answers(cls, value: list[str]) -> list[str]:
-        return [item.strip()[:2000] for item in value]
-
-
-# ── POST /upload/mock-exam/quiz ──────────────────────────────────────────────
-
-@router.post("/upload/mock-exam/quiz", response_class=JSONResponse)
-def submit_mock_exam_quiz(
-    payload: MockQuizSubmit,
-    user: Annotated[dict, Depends(require_student)],
-    db: Annotated[DBSession, Depends(get_db)],
-    _csrf: Annotated[None, Depends(require_csrf_header)],
-):
-    """Сохранить ответы мини-опроса после Пробника — только по факту уже
-    сданного финала (сервер проверяет сам, как и у видео: `submit_video_quiz`
-    доверяет не клиенту, а `VideoProgress.completed_at`)."""
-    if payload.subject not in MOCK_SUBJECTS:
-        raise HTTPException(status_code=422, detail="Выберите предмет")
-    assignment_id = _submitted_assignment_id(db, user["user_id"], payload.subject)
-    task_id = _task_id_for_assignment(db, assignment_id) if assignment_id is not None else None
-    if task_id is None:
-        raise HTTPException(status_code=409, detail="Сначала сдайте финальное фото")
-    question_rows = get_mock_quiz_question_rows(db, task_id)
-    if not question_rows:
-        raise HTTPException(status_code=404, detail="Мини-опрос не настроен")
-    if len(payload.answers) != len(question_rows):
-        raise HTTPException(status_code=422, detail="Число ответов не совпадает с числом вопросов")
-    save_mock_quiz_response(
-        db,
-        task_id=task_id,
-        user_id=user["user_id"],
-        question_rows=question_rows,
-        answers=payload.answers,
-    )
-    db.commit()
-    return JSONResponse({"ok": True})
 
 
 # ── GET /upload/mock-exam/csrf ───────────────────────────────────────────────

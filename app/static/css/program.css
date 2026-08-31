@@ -235,3 +235,19 @@
     .prg-monthbar h2 { min-width: 0; font-size: 16px; }
     .prg-grid { gap: 4px; }
 }
+
+/* ── Редактор блоков конструктора (владелец 31.08.2026) ─────────────────────
+   Переиспользует .prg-ticket как рамку строки и .prg-option как строку
+   варианта ответа — здесь только то, чего у них нет. Токены из base.css. */
+
+.prg-blocks { margin-top: 16px; }
+.prg-blocks-add { flex-wrap: wrap; gap: 8px; }
+
+.prg-blk-move { display: inline-flex; gap: 6px; }
+
+.prg-blk-preview {
+    max-width: 220px; width: 100%; height: auto; display: block;
+    border-radius: 10px; border: 1px solid var(--line); margin-bottom: 8px;
+}
+
+.prg-blk-options { margin-top: 8px; }

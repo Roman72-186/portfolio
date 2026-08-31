@@ -1,0 +1,32 @@
+{#
+Запуск инлайн-панелей карточки задачи — общий на АОП и «Личный трекер».
+
+Конкретная панель (`partials/inline/{kind}.html`) регистрирует свою функцию в
+`window.lrnPanelInit` по ключу `data-task-kind`; этот блок только зовёт её при
+первом раскрытии `<details>`.
+
+Ленивая инициализация по первому открытию, а не при загрузке страницы:
+подписанные ссылки Bunny и CSRF-заголовки нужны по факту клика, а не сразу
+всем карточкам недели.
+
+Вынесен из `cabinet_learning.html` 31.08.2026: блоки конструктора рисуются на
+обоих экранах, и второй копии этого кода заводить незачем. Токен берёт сам, а
+не из окружающей области видимости: на «Личном трекере» `csrfToken` объявлен
+внутри своей IIFE и снаружи не виден.
+#}
+<script>
+(function () {
+    var csrfToken = {{ csrf_token(request)|tojson }};
+    document.querySelectorAll('.trk-row-expand[data-task-kind]').forEach(function (details) {
+        details.addEventListener('toggle', function () {
+            if (!details.open || details.dataset.inited) return;
+            var kind = details.getAttribute('data-task-kind');
+            var initFn = window.lrnPanelInit && window.lrnPanelInit[kind];
+            var body = details.querySelector('.trk-expand-body');
+            if (!initFn || !body) return;
+            details.dataset.inited = '1';
+            initFn(body, csrfToken);
+        });
+    });
+})();
+</script>

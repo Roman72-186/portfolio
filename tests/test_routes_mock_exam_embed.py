@@ -24,9 +24,9 @@ def _create_active_period(db, user, feature="mock_exam"):
 
 
 def _create_active_ticket(db, user, subject="Рисунок"):
-    """Билет + связанный `TrackerTask` — мини-опрос ключуется по `task_id`
-    (владелец 30.08.2026, см. `app/models/task_quiz.py`), без него
-    `_task_id_for_assignment` не найдёт задание."""
+    """Билет + связанный `TrackerTask`: блоки элемента ключуются по `task_id`
+    (см. `app/models/task_block.py`), а `_task_id_for_assignment` без задачи
+    не найдёт задание."""
     from app.models.exam_assignment import ExamAssignment, ExamTicket
     from app.models.tracker import SOURCE_EXAM_ASSIGNMENT, ITEM_MOCK_EXAM
     from app.services.tracker import create_task
@@ -179,122 +179,57 @@ def test_embed_locks_subject_after_final_submitted(auth_client, db):
 
 # ── Мини-опрос после сдачи (владелец 30.08.2026) ─────────────────────────────
 
-def test_embed_locked_without_quiz_questions_omits_quiz(auth_client, db):
+
+# ── Вопросы Пробника переехали в блоки (владелец 31.08.2026) ────────────────
+#    Панель Пробника их больше не рисует и не сохраняет: тот же вопрос
+#    показывался бы дважды — здесь и в общей панели содержимого
+#    (`partials/inline/task_blocks.html`) на той же карточке.
+
+
+def test_embed_never_exposes_quiz_even_with_questions_configured(auth_client, db):
+    """Ключи остались в ответе пустыми — чтобы старый закэшированный фронтенд
+    не упал на их отсутствии."""
+    from app.models.task_block import BLOCK_QUESTION, TaskBlock
+
     client, user = auth_client
     _create_active_period(db, user)
     ticket = _create_active_ticket(db, user, "Рисунок")
+    task = _task_for_ticket(db, ticket)
+    db.add(TaskBlock(
+        task_id=task.id, block_type=BLOCK_QUESTION, question_type="text",
+        body="Как прошла сдача?", sort_order=0,
+    ))
+    db.commit()
     _submit_final(db, user, ticket, "Рисунок")
 
-    resp = _embed(client, "Рисунок")
-    assert resp.status_code == 200
-    body = resp.json()
+    body = _embed(client, "Рисунок").json()
     assert body["quiz_questions"] == []
+    assert body["quiz_answers"] is None
     assert body["quiz_submit_endpoint"] is None
 
 
-def test_embed_locked_with_quiz_questions_exposes_them_unanswered(auth_client, db):
-    from app.models.task_quiz import TaskQuizQuestion
+def test_old_mock_quiz_endpoint_is_gone(auth_client, db):
+    client, _ = auth_client
+    resp = client.post("/upload/mock-exam/quiz", json={"subject": "Рисунок", "answers": ["x"]})
+    assert resp.status_code == 405 or resp.status_code == 404
+
+
+def test_mock_questions_are_served_by_the_blocks_endpoint(auth_client, db):
+    """Вопросы Пробника доступны там, где теперь живут все вопросы."""
+    from app.models.task_block import BLOCK_QUESTION, TaskBlock
 
     client, user = auth_client
     _create_active_period(db, user)
     ticket = _create_active_ticket(db, user, "Рисунок")
     task = _task_for_ticket(db, ticket)
-    db.add(TaskQuizQuestion(task_id=task.id, text="Как прошла сдача?", sort_order=0))
-    db.add(TaskQuizQuestion(task_id=task.id, text="Что было сложно?", sort_order=1))
-    db.commit()
-    _submit_final(db, user, ticket, "Рисунок")
-
-    resp = _embed(client, "Рисунок")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["quiz_questions"] == ["Как прошла сдача?", "Что было сложно?"]
-    assert body["quiz_answers"] is None
-    assert body["quiz_submit_endpoint"] == "/upload/mock-exam/quiz"
-
-
-def test_embed_unlocked_omits_quiz_even_if_configured(auth_client, db):
-    """Мини-опрос виден только после сдачи финала — билет без активной
-    попытки не должен его показывать заранее."""
-    from app.models.task_quiz import TaskQuizQuestion
-
-    client, user = auth_client
-    _create_active_period(db, user)
-    ticket = _create_active_ticket(db, user, "Рисунок")
-    task = _task_for_ticket(db, ticket)
-    db.add(TaskQuizQuestion(task_id=task.id, text="Как прошла сдача?", sort_order=0))
+    task.assign_to_all = True
+    task.is_published = True
+    db.add(TaskBlock(
+        task_id=task.id, block_type=BLOCK_QUESTION, question_type="text",
+        body="Как прошла сдача?", sort_order=0,
+    ))
     db.commit()
 
-    resp = _embed(client, "Рисунок")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["locked"] is False
-    assert body["quiz_questions"] == []
-
-
-def test_submit_quiz_requires_submitted_final(auth_client, db):
-    from app.models.task_quiz import TaskQuizQuestion
-
-    client, user = auth_client
-    _create_active_period(db, user)
-    ticket = _create_active_ticket(db, user, "Рисунок")
-    task = _task_for_ticket(db, ticket)
-    db.add(TaskQuizQuestion(task_id=task.id, text="Вопрос", sort_order=0))
-    db.commit()
-
-    resp = client.post("/upload/mock-exam/quiz", json={"subject": "Рисунок", "answers": ["ответ"]})
-    assert resp.status_code == 409
-
-
-def test_submit_quiz_requires_configured_questions(auth_client, db):
-    client, user = auth_client
-    _create_active_period(db, user)
-    ticket = _create_active_ticket(db, user, "Рисунок")
-    _submit_final(db, user, ticket, "Рисунок")
-
-    resp = client.post("/upload/mock-exam/quiz", json={"subject": "Рисунок", "answers": ["ответ"]})
-    assert resp.status_code == 404
-
-
-def test_submit_quiz_rejects_answer_count_mismatch(auth_client, db):
-    from app.models.task_quiz import TaskQuizQuestion
-
-    client, user = auth_client
-    _create_active_period(db, user)
-    ticket = _create_active_ticket(db, user, "Рисунок")
-    task = _task_for_ticket(db, ticket)
-    db.add(TaskQuizQuestion(task_id=task.id, text="Вопрос 1", sort_order=0))
-    db.add(TaskQuizQuestion(task_id=task.id, text="Вопрос 2", sort_order=1))
-    db.commit()
-    _submit_final(db, user, ticket, "Рисунок")
-
-    resp = client.post("/upload/mock-exam/quiz", json={"subject": "Рисунок", "answers": ["только один ответ"]})
-    assert resp.status_code == 422
-
-
-def test_submit_quiz_success_saves_answers_and_embed_returns_them(auth_client, db):
-    from app.models.task_quiz import TaskQuizQuestion, TaskQuizResponse
-
-    client, user = auth_client
-    _create_active_period(db, user)
-    ticket = _create_active_ticket(db, user, "Рисунок")
-    task = _task_for_ticket(db, ticket)
-    db.add(TaskQuizQuestion(task_id=task.id, text="Как прошла сдача?", sort_order=0))
-    db.add(TaskQuizQuestion(task_id=task.id, text="Что было сложно?", sort_order=1))
-    db.commit()
-    _submit_final(db, user, ticket, "Рисунок")
-
-    resp = client.post(
-        "/upload/mock-exam/quiz",
-        json={"subject": "Рисунок", "answers": ["Нормально", "Свет"]},
-    )
-    assert resp.status_code == 200
-    assert resp.json() == {"ok": True}
-    assert db.query(TaskQuizResponse).filter(
-        TaskQuizResponse.task_id == task.id,
-        TaskQuizResponse.user_id == user.id,
-    ).count() == 1
-
-    # Повторный embed отдаёт уже сохранённые ответы, не пустую форму.
-    resp = _embed(client, "Рисунок")
-    body = resp.json()
-    assert body["quiz_answers"] == ["Нормально", "Свет"]
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert [b["body"] for b in body["blocks"]] == ["Как прошла сдача?"]
+    assert body["submit_endpoint"] == f"/cabinet/tracker/tasks/{task.id}/blocks"

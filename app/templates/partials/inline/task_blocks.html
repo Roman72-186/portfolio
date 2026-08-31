@@ -1,0 +1,231 @@
+{#
+Содержимое элемента дня: блоки универсального конструктора (владелец
+31.08.2026, см. докстринг `app/models/task_block.py`). Общая панель на все
+виды `TrackerTask.kind` — в этом и смысл: что положил преподаватель, то ученик
+и видит, независимо от типа кнопки.
+
+Заменила прежнюю `inline/task_quiz.html`. Отличие в поведении: мини-опрос
+раскрывался только после отметки «сделано» (он был рефлексией по факту сдачи),
+а блоки — это содержимое самой задачи, и они доступны сразу: без них ученику
+нечего смотреть, чтобы задачу выполнить.
+
+Видео тянется через существующий `/cabinet/videos/{id}/embed` — ключи Bunny
+на сервере, в браузер приходит подписанный URL с TTL.
+
+Стили — в `tracker.css` (`.lrn-blk-*`), своего `<style>` здесь нет: за ростом
+инлайнового CSS в шаблонах следит `tests/test_reuse_ratchet.py`.
+#}
+<div class="lrn-blocks" data-role="root">
+    <p class="video-progress-status" data-role="status" aria-live="polite">Загружаем…</p>
+    <div class="lrn-blk-list" data-role="list" hidden></div>
+</div>
+
+<script>
+(function () {
+    window.lrnPanelInit = window.lrnPanelInit || {};
+
+    window.lrnPanelInit.task_blocks = function (root, csrfToken) {
+        var wrapper = root.closest('.trk-expand-body');
+        var endpoint = wrapper ? wrapper.getAttribute('data-task-blocks-endpoint') : null;
+        if (!endpoint) return;
+
+        var statusEl = root.querySelector('[data-role="status"]');
+        var listEl = root.querySelector('[data-role="list"]');
+        var uid = Math.random().toString(36).slice(2);
+
+        function el(tag, className, text) {
+            var node = document.createElement(tag);
+            if (className) node.className = className;
+            if (text !== undefined && text !== null) node.textContent = text;
+            return node;
+        }
+
+        function withTitle(wrap, block) {
+            if (block.title) wrap.appendChild(el('p', 'field-label', block.title));
+            return wrap;
+        }
+
+        function renderText(block) {
+            var wrap = withTitle(el('div', 'lrn-blk lrn-blk-text'), block);
+            wrap.appendChild(el('p', 'lrn-blk-body', block.body || ''));
+            return wrap;
+        }
+
+        function renderPhoto(block) {
+            var wrap = withTitle(el('div', 'lrn-blk lrn-blk-photo'), block);
+            var img = el('img', 'lrn-blk-image');
+            img.src = block.image_url;
+            img.alt = block.title || 'Изображение к заданию';
+            img.loading = 'lazy';
+            wrap.appendChild(img);
+            if (block.body) wrap.appendChild(el('p', 'video-help', block.body));
+            return wrap;
+        }
+
+        function renderLink(block) {
+            var wrap = withTitle(el('div', 'lrn-blk lrn-blk-link'), block);
+            // Ссылка кнопкой, а не текстом для копирования — решение 17.08 по
+            // ссылке на созвон, здесь тот же приём.
+            var a = el('a', 'btn-outline', block.title || 'Открыть ссылку');
+            a.href = block.url;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            wrap.appendChild(a);
+            if (block.body) wrap.appendChild(el('p', 'video-help', block.body));
+            return wrap;
+        }
+
+        function renderVideo(block) {
+            var wrap = withTitle(el('div', 'lrn-blk lrn-blk-video'), block);
+            var slot = el('p', 'video-progress-status', 'Загружаем видео…');
+            wrap.appendChild(slot);
+            if (!block.video_embed_endpoint) {
+                slot.textContent = 'Ролик недоступен.';
+                return wrap;
+            }
+            fetch(block.video_embed_endpoint, {
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' }
+            }).then(function (resp) {
+                if (!resp.ok) throw new Error();
+                return resp.json();
+            }).then(function (data) {
+                if (!data.ok || !data.player_url) throw new Error();
+                var frame = el('iframe', 'lrn-blk-player');
+                frame.src = data.player_url;
+                frame.allow = 'accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen';
+                frame.allowFullscreen = true;
+                frame.loading = 'lazy';
+                frame.title = block.title || 'Видео к заданию';
+                wrap.replaceChild(frame, slot);
+            }).catch(function () {
+                slot.textContent = 'Не удалось загрузить видео. Попробуйте позже.';
+                slot.classList.add('is-error');
+            });
+            return wrap;
+        }
+
+        function renderQuestion(block, index) {
+            var wrap = withTitle(el('div', 'lrn-blk lrn-blk-question'), block);
+            var fieldId = 'lrn-blk-' + uid + '-' + index;
+            var label = el('label', 'field-label', block.body || '');
+            label.setAttribute('for', fieldId);
+            wrap.appendChild(label);
+
+            if (block.question_type === 'text') {
+                var textarea = el('textarea', 'form-input');
+                textarea.id = fieldId;
+                textarea.rows = 3;
+                textarea.maxLength = 2000;
+                textarea.value = block.answer_text || '';
+                textarea.setAttribute('data-answer-text', block.id);
+                wrap.appendChild(textarea);
+                return wrap;
+            }
+
+            var multiple = block.question_type === 'multiple';
+            var chosen = block.answer_option_ids || [];
+            (block.options || []).forEach(function (option, oi) {
+                var row = el('label', 'lrn-blk-option');
+                var input = el('input');
+                input.type = multiple ? 'checkbox' : 'radio';
+                input.name = fieldId + (multiple ? '-' + oi : '');
+                input.value = option.id;
+                input.checked = chosen.indexOf(option.id) !== -1;
+                input.setAttribute('data-answer-option', block.id);
+                row.appendChild(input);
+                row.appendChild(el('span', null, option.text));
+                wrap.appendChild(row);
+            });
+            return wrap;
+        }
+
+        var RENDERERS = {
+            text: renderText,
+            photo: renderPhoto,
+            video: renderVideo,
+            link: renderLink,
+            question: renderQuestion
+        };
+
+        function collectAnswers(data) {
+            var answers = [];
+            (data.blocks || []).forEach(function (block) {
+                if (block.block_type !== 'question') return;
+                var answer = { block_id: block.id, option_ids: [] };
+                var textField = listEl.querySelector('[data-answer-text="' + block.id + '"]');
+                if (textField) answer.text = textField.value;
+                var options = listEl.querySelectorAll('[data-answer-option="' + block.id + '"]');
+                Array.prototype.forEach.call(options, function (input) {
+                    if (input.checked) answer.option_ids.push(Number(input.value));
+                });
+                answers.push(answer);
+            });
+            return answers;
+        }
+
+        function appendSubmit(data) {
+            var form = el('form', 'lrn-blk-submit');
+            var button = el('button', 'btn-blue', 'Отправить ответы');
+            button.type = 'submit';
+            var note = el('p', 'video-progress-status');
+            note.setAttribute('aria-live', 'polite');
+            form.appendChild(button);
+            form.appendChild(note);
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+                button.disabled = true;
+                fetch(data.submit_endpoint, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: JSON.stringify({ answers: collectAnswers(data) })
+                }).then(function (resp) {
+                    if (!resp.ok) throw new Error();
+                    button.disabled = false;
+                    note.classList.remove('is-error');
+                    note.textContent = 'Спасибо, ответ сохранён.';
+                }).catch(function () {
+                    button.disabled = false;
+                    note.textContent = 'Не удалось отправить ответ. Попробуйте ещё раз.';
+                    note.classList.add('is-error');
+                });
+            });
+            listEl.appendChild(form);
+        }
+
+        function render(data) {
+            var blocks = data.blocks || [];
+            if (!blocks.length) {
+                statusEl.textContent = 'Здесь пока пусто.';
+                return;
+            }
+            blocks.forEach(function (block, index) {
+                var renderer = RENDERERS[block.block_type];
+                // Неизвестный тип пропускаем молча: старый браузер с
+                // закэшированным шаблоном не должен ронять всю панель, когда
+                // на сервере появится шестой тип блока.
+                if (renderer) listEl.appendChild(renderer(block, index));
+            });
+            if (data.has_questions && data.submit_endpoint) appendSubmit(data);
+            statusEl.hidden = true;
+            listEl.hidden = false;
+        }
+
+        fetch(endpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function (resp) {
+                if (!resp.ok) throw new Error();
+                return resp.json();
+            })
+            .then(render)
+            .catch(function () {
+                statusEl.textContent = 'Не удалось загрузить содержимое. Попробуйте позже.';
+                statusEl.classList.add('is-error');
+            });
+    };
+})();
+</script>

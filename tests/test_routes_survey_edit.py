@@ -8,7 +8,7 @@ from datetime import date
 
 from app.models.learning_topic import LearningTopic
 from app.models.survey import Survey, SurveyQuestion
-from app.models.task_quiz import TaskQuizQuestion
+from app.models.task_block import BLOCK_QUESTION, TaskBlock
 from app.models.tracker import TrackerTask
 from app.services.video_topics import get_topic_tariffs
 
@@ -104,9 +104,9 @@ def test_edit_sets_tariff_restriction(client, db, user_factory, session_factory,
 def test_edit_updates_quiz_questions(client, db, user_factory, session_factory, monkeypatch):
     _freeze(monkeypatch)
     _staff_client(client, user_factory, session_factory)
-    _create_survey(client, MONDAY, quiz_questions=[{"text": "Было полезно?"}])
+    _create_survey(client, MONDAY, blocks=[{"block_type": "question", "question_type": "text", "body": "Было полезно?"}])
     task = db.query(TrackerTask).filter(TrackerTask.kind == "survey").one()
-    old_question = db.query(TaskQuizQuestion).filter(TaskQuizQuestion.task_id == task.id).one()
+    old_question = db.query(TaskBlock).filter(TaskBlock.task_id == task.id).one()
 
     resp = client.post(
         f"{PROGRAM}/items/{task.id}/survey",
@@ -114,15 +114,15 @@ def test_edit_updates_quiz_questions(client, db, user_factory, session_factory, 
             "title": "Анкета недели",
             "questions": [{"text": "Как настроение?", "question_type": "text", "options": []}],
             "is_required": True,
-            "quiz_questions": [{"id": old_question.id, "text": "Было полезно? (правка)"}],
+            "blocks": [{"id": old_question.id, "block_type": "question", "question_type": "text", "body": "Было полезно? (правка)"}],
         },
     )
     assert resp.status_code == 200, resp.text
     db.expire_all()
-    rows = db.query(TaskQuizQuestion).filter(TaskQuizQuestion.task_id == task.id).all()
+    rows = db.query(TaskBlock).filter(TaskBlock.task_id == task.id).all()
     assert len(rows) == 1
     assert rows[0].id == old_question.id
-    assert rows[0].text == "Было полезно? (правка)"
+    assert rows[0].body == "Было полезно? (правка)"
 
 
 def test_edit_refused_when_survey_used_in_another_day(client, db, user_factory, session_factory, monkeypatch):

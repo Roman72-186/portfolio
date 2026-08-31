@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.homework import HomeworkAssignment
 from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, LearningTopic
-from app.models.task_quiz import TaskQuizQuestion
+from app.models.task_block import BLOCK_QUESTION, TaskBlock
 from app.models.tracker import (
     ITEM_HOMEWORK,
     ITEM_MOCK_EXAM,
@@ -327,12 +327,14 @@ def videos_for_picker(db: Session) -> list[dict]:
             "status": video.status,
             "is_published": video.is_published,
             "duration_seconds": video.duration_seconds,
-            # Занят только тот ролик, за которым стоит живая задача дня.
-            "taken": bool(
-                binding
-                and binding["kind"] == TOPIC_KIND_PROGRAM_ITEM
-                and binding["day"]
-            ),
+            # Занятых роликов больше нет (владелец 31.08.2026, универсальный
+            # конструктор): ролик ставится блоком `task_blocks.video_id`, а
+            # блоков у одного ролика может быть сколько угодно. Прежняя
+            # блокировка держалась на единственной колонке
+            # `LearningVideo.topic_id` — она осталась только у роликов,
+            # привязанных к теме недели до этой стройки. Подпись оставляем
+            # как справку «где ещё стоит», кликать по строке она не мешает.
+            "taken": False,
             "note": binding["label"] if binding else None,
             # Мини-опрос настраивается прямо здесь же (владелец 29.08.2026:
             # выбрал ролик на день — тут же и вопросы), не только на
@@ -390,15 +392,25 @@ def item_details(db: Session, tasks: list[TrackerTask]) -> dict[int, dict]:
     surveys = get_surveys(db, survey_ids)
     survey_counts = survey_question_counts(db, list(surveys.keys()))
 
-    # Мини-опрос после сдачи (владелец 30.08.2026) — общий на все виды,
-    # см. app/models/task_quiz.py. Счётчик, а не сами вопросы: карточка
-    # решает, рисовать ли раскрывашку, сами тексты приходят по запросу с
-    # `/cabinet/tracker/tasks/{id}/quiz`, как у видео и Пробника.
+    # Блоки конструктора (владелец 31.08.2026) — счётчики, а не содержимое:
+    # карточка решает, рисовать ли раскрывашку, сами блоки приходят по запросу
+    # с `/cabinet/tracker/tasks/{id}/blocks`, как раньше делал мини-опрос.
+    # `block_count` — есть ли вообще что показать, `quiz_question_count` —
+    # сколько среди них вопросов (на них ученик отвечает формой).
     task_ids = [t.id for t in tasks]
+    block_counts: dict[int, int] = dict(
+        db.query(TaskBlock.task_id, func.count(TaskBlock.id))
+        .filter(TaskBlock.task_id.in_(task_ids))
+        .group_by(TaskBlock.task_id)
+        .all()
+    ) if task_ids else {}
     quiz_counts: dict[int, int] = dict(
-        db.query(TaskQuizQuestion.task_id, func.count(TaskQuizQuestion.id))
-        .filter(TaskQuizQuestion.task_id.in_(task_ids))
-        .group_by(TaskQuizQuestion.task_id)
+        db.query(TaskBlock.task_id, func.count(TaskBlock.id))
+        .filter(
+            TaskBlock.task_id.in_(task_ids),
+            TaskBlock.block_type == BLOCK_QUESTION,
+        )
+        .group_by(TaskBlock.task_id)
         .all()
     ) if task_ids else {}
 
@@ -411,5 +423,6 @@ def item_details(db: Session, tasks: list[TrackerTask]) -> dict[int, dict]:
             "survey": survey,
             "survey_question_count": survey_counts.get(survey.id, 0) if survey else 0,
             "quiz_question_count": quiz_counts.get(task.id, 0),
+            "block_count": block_counts.get(task.id, 0),
         }
     return details

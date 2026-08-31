@@ -3,10 +3,13 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
 from app.models.learning_video import LearningVideo
+from app.models.task_block import BLOCK_VIDEO, TaskBlock
+from app.models.tracker import TrackerTask
 from app.services.bunny_stream import get_video, is_bunny_stream_available, normalize_bunny_status
 from app.services.video_topics import accessible_topic_ids
 
@@ -31,15 +34,71 @@ def _is_staff_viewer(viewer: dict | None) -> bool:
     return bool(viewer) and viewer.get("role_rank", 0) >= STAFF_PREVIEW_RANK
 
 
+def block_bound_video_ids(db: Session) -> set[int]:
+    """Ролики, поставленные в элементы дня блоком конструктора.
+
+    Такой ролик перестаёт быть «ничьим»: правило «нет темы значит открыт всем»
+    к нему больше не применяется (см. `_accessible_block_video_ids`).
+    """
+    rows = (
+        db.query(TaskBlock.video_id)
+        .filter(TaskBlock.block_type == BLOCK_VIDEO, TaskBlock.video_id.isnot(None))
+        .distinct()
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
+def _accessible_block_video_ids(db: Session, user_id: int) -> set[int]:
+    """Ролики из блоков тех элементов, что открыты этому ученику.
+
+    Достаточно одного доступного элемента: один и тот же ролик конструктор
+    разрешает ставить в несколько заданий.
+    """
+    # Локальный импорт: `tracker` тянет `video_topics`, и импорт на уровне
+    # модуля замкнул бы кольцо через этот файл.
+    from app.services.tracker import accessible_task_ids
+
+    topic_ids = accessible_topic_ids(db, user_id)
+    task_ids = accessible_task_ids(db, user_id)
+    rows = (
+        db.query(TaskBlock.video_id)
+        .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
+        .filter(
+            TaskBlock.block_type == BLOCK_VIDEO,
+            TaskBlock.video_id.isnot(None),
+            TrackerTask.is_published.is_(True),
+            TrackerTask.deleted_at.is_(None),
+            or_(
+                TrackerTask.topic_id.in_(topic_ids),
+                TrackerTask.topic_id.is_(None) & TrackerTask.id.in_(task_ids),
+            ),
+        )
+        .distinct()
+        .all()
+    )
+    return {row[0] for row in rows}
+
+
 def is_video_accessible(db: Session, video, viewer: dict) -> bool:
     """Открыт ли конкретный урок этому зрителю.
 
-    Урок без темы (topic_id IS NULL) открыт всем ученикам — так вели себя
-    все ролики до появления тем, и молча закрывать их при выкатке нельзя.
-    Привязанный урок открыт вместе со своей темой.
+    Три случая, в этом порядке:
+
+    1. Ролик стоит блоком в элементе дня — доступ считается **только по
+       блокам**: открыт, если открыт хотя бы один элемент, где он стоит.
+       Правило «нет темы значит открыт всем» здесь не применяется намеренно:
+       конструктор не пишет `topic_id`, и без этой ветки каждый поставленный
+       ролик утёк бы всей школе через каталог `/cabinet/videos`.
+    2. Урок без темы и без блоков открыт всем ученикам — так вели себя все
+       ролики до появления тем, и молча закрывать их при выкатке нельзя.
+    3. Привязанный к теме урок открыт вместе со своей темой.
     """
     if _is_staff_viewer(viewer):
         return True
+    video_id = getattr(video, "id", None)
+    if video_id and video_id in block_bound_video_ids(db):
+        return video_id in _accessible_block_video_ids(db, viewer["user_id"])
     topic_id = getattr(video, "topic_id", None)
     if topic_id is None:
         return True
@@ -62,12 +121,22 @@ def list_published_videos(db: Session, *, viewer: dict) -> list[LearningVideo]:
     if videos:
         if _is_staff_viewer(viewer):
             return videos
-        # Один расчёт доступных тем на весь каталог, а не по ролику.
+        # Один расчёт на весь каталог, а не по ролику. Порядок проверок тот же,
+        # что в `is_video_accessible` — прямой заход по ссылке и список обязаны
+        # решать одинаково, иначе ссылка обходит фильтр.
         allowed = accessible_topic_ids(db, viewer["user_id"])
+        in_blocks = block_bound_video_ids(db)
+        allowed_by_block = (
+            _accessible_block_video_ids(db, viewer["user_id"]) if in_blocks else set()
+        )
         return [
             video
             for video in videos
-            if video.topic_id is None or video.topic_id in allowed
+            if (
+                video.id in allowed_by_block
+                if video.id in in_blocks
+                else (video.topic_id is None or video.topic_id in allowed)
+            )
         ]
     if db.query(LearningVideo.id).first() or not is_bunny_stream_available():
         return []

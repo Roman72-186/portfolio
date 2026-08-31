@@ -263,69 +263,91 @@ def test_learning_mock_exam_card_expands_inline_instead_of_linking_away(auth_cli
     assert 'data-subject="Рисунок"' in homework_panel
 
 
-# ── Мини-опрос после сдачи (владелец 30.08.2026) — общий на material/quiz/
-#    lesson/checklist/homework/survey, раскрывашка в разметке скрыта, пока
-#    задача не отмечена сделанной ────────────────────────────────────────────
+# ── Блоки конструктора (владелец 31.08.2026) — общая раскрывашка на все виды
+#    элемента. Прежний мини-опрос был рефлексией и открывался только после
+#    отметки «сделано»; блоки — это содержимое задания, и они видны сразу,
+#    иначе ученику нечего смотреть, чтобы задание выполнить ────────────────
 
-def test_learning_quiz_card_hidden_until_task_done(auth_client, db):
-    from app.models.task_quiz import TaskQuizQuestion
+CARD_MARKER = 'class="trk-row-expand" data-task-kind="task_blocks"'
 
-    client, user = auth_client
+
+def _material_task(db, user, *, title="Материал недели"):
     day = week_start(today_msk()) + timedelta(days=1)
     due = day_bounds(day)[0] + timedelta(hours=10)
     task = create_task(
-        db, title="Материал недели", user_id=user.id, due_at=due,
+        db, title=title, user_id=user.id, due_at=due,
         assign_to_all=True, kind="material",
     )
     task.is_published = True
-    db.add(TaskQuizQuestion(task_id=task.id, text="Как прошло?", sort_order=0))
+    return task
+
+
+def _card_around(text: str) -> str:
+    start = text.index(CARD_MARKER)
+    return text[start:start + 80]
+
+
+def test_learning_blocks_card_visible_before_task_is_done(auth_client, db):
+    """Смена поведения: раскрывашка больше не ждёт отметки «сделано»."""
+    from app.models.task_block import BLOCK_QUESTION, TaskBlock
+
+    client, user = auth_client
+    task = _material_task(db, user)
+    db.add(TaskBlock(
+        task_id=task.id, block_type=BLOCK_QUESTION, question_type="text",
+        body="Как прошло?", sort_order=0,
+    ))
     db.commit()
 
     resp = client.get("/cabinet/learning")
     assert resp.status_code == 200
-    assert 'class="trk-row-expand" data-task-kind="task_quiz"' in resp.text
-    card_start = resp.text.index('class="trk-row-expand" data-task-kind="task_quiz"')
-    card = resp.text[card_start:card_start + 80]
-    assert "hidden" in card
+    assert CARD_MARKER in resp.text
+    assert "hidden" not in _card_around(resp.text)
 
 
-def test_learning_quiz_card_visible_once_task_done(auth_client, db):
-    from app.models.task_quiz import TaskQuizQuestion
+def test_learning_blocks_card_still_visible_when_task_done(auth_client, db):
+    from app.models.task_block import BLOCK_QUESTION, TaskBlock
     from app.models.tracker import STATUS_DONE, TrackerTaskState
 
     client, user = auth_client
-    day = week_start(today_msk()) + timedelta(days=1)
-    due = day_bounds(day)[0] + timedelta(hours=10)
-    task = create_task(
-        db, title="Материал недели", user_id=user.id, due_at=due,
-        assign_to_all=True, kind="material",
-    )
-    task.is_published = True
-    db.add(TaskQuizQuestion(task_id=task.id, text="Как прошло?", sort_order=0))
+    task = _material_task(db, user)
+    db.add(TaskBlock(
+        task_id=task.id, block_type=BLOCK_QUESTION, question_type="text",
+        body="Как прошло?", sort_order=0,
+    ))
     db.add(TrackerTaskState(task_id=task.id, user_id=user.id, status=STATUS_DONE))
     db.commit()
 
     resp = client.get("/cabinet/learning")
     assert resp.status_code == 200
-    card_start = resp.text.index('class="trk-row-expand" data-task-kind="task_quiz"')
-    card = resp.text[card_start:card_start + 80]
-    assert "hidden" not in card
+    assert "hidden" not in _card_around(resp.text)
 
 
-def test_learning_quiz_card_absent_without_configured_questions(auth_client, db):
+def test_learning_blocks_card_shows_for_content_without_questions(auth_client, db):
+    """Универсальность: карточку открывает любой блок, не только вопрос."""
+    from app.models.task_block import BLOCK_TEXT, TaskBlock
+
     client, user = auth_client
-    day = week_start(today_msk()) + timedelta(days=1)
-    due = day_bounds(day)[0] + timedelta(hours=10)
-    task = create_task(
-        db, title="Материал недели", user_id=user.id, due_at=due,
-        assign_to_all=True, kind="material",
-    )
-    task.is_published = True
+    task = _material_task(db, user)
+    db.add(TaskBlock(
+        task_id=task.id, block_type=BLOCK_TEXT,
+        body="Прочитай перед началом", sort_order=0,
+    ))
     db.commit()
 
     resp = client.get("/cabinet/learning")
     assert resp.status_code == 200
-    assert 'class="trk-row-expand" data-task-kind="task_quiz"' not in resp.text
+    assert CARD_MARKER in resp.text
+
+
+def test_learning_blocks_card_absent_without_any_blocks(auth_client, db):
+    client, user = auth_client
+    _material_task(db, user)
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert CARD_MARKER not in resp.text
 
 
 def test_learning_unfinished_mock_exam_does_not_lock_next_tab(auth_client, db):

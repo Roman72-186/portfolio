@@ -8,7 +8,7 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=7">
+<link rel="stylesheet" href="/static/css/program.css?v=8">
 <link rel="stylesheet" href="/static/css/program_ios.css?v=4">
 {% endblock %}
 {% block content %}
@@ -25,6 +25,30 @@ FORM: Operate.
         <span>{{ tariff }}</span>
     </label>
     {% endfor %}
+</div>
+{% endmacro %}
+
+{# Универсальный конструктор содержимого (владелец 31.08.2026, см. докстринг
+   `app/models/task_block.py`). Один и тот же редактор во всех формах: тип
+   элемента больше не решает, что в него можно положить — это решает
+   преподаватель. Сюда же переехал прежний мини-опрос, вопрос стал одним из
+   пяти типов блока.
+
+   Разметка пустая, строки рисует JS (`renderFormBlocks`) — как у билетов
+   Пробника и вариантов ответа анкеты. Стили — в `program.css`. #}
+{% macro blocks_editor() %}
+<div class="prg-blocks" data-blocks-wrap>
+    <h3>Содержимое задания</h3>
+    <p class="prg-hint">
+        Добавьте, что должен увидеть ученик: текст, фото, видео из загруженных,
+        ссылку, вопрос. Порядок — как расставите, стрелками ↑ ↓.
+    </p>
+    <div data-blocks></div>
+    <div class="prg-actions prg-blocks-add">
+        {% for kind, label in block_types %}
+        <button type="button" class="btn-outline" data-add-block="{{ kind }}">+ {{ label }}</button>
+        {% endfor %}
+    </div>
 </div>
 {% endmacro %}
 <div class="prg-page ios-prg-day" data-day="{{ day_iso }}">
@@ -130,14 +154,7 @@ FORM: Operate.
         </label>
         <p class="prg-hint">Билет автоматически доступен всем ученикам, окно сдачи система выставляет сама.</p>
         {{ tariff_fields() }}
-        <div class="prg-quiz" data-quiz-questions-wrap>
-            <h3>Мини-опрос после сдачи</h3>
-            <p class="prg-hint">Ответы свободные, без проверки. Один набор вопросов на все отмеченные предметы сразу (на создании) или на этот билет (на правке).</p>
-            <div data-quiz-questions></div>
-            <div class="prg-actions">
-                <button type="button" class="btn-outline" data-add-quiz-question>Добавить вопрос</button>
-            </div>
-        </div>
+        {{ blocks_editor() }}
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-mock-save>Сохранить</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -172,14 +189,7 @@ FORM: Operate.
             <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
         </label>
         {{ tariff_fields() }}
-        <div class="prg-quiz" data-quiz-questions-wrap>
-            <h3>Мини-опрос после сдачи</h3>
-            <p class="prg-hint">Ответы свободные, без проверки. Показывается ученику, когда он отметит элемент сделанным.</p>
-            <div data-quiz-questions></div>
-            <div class="prg-actions">
-                <button type="button" class="btn-outline" data-add-quiz-question>Добавить вопрос</button>
-            </div>
-        </div>
+        {{ blocks_editor() }}
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-simple-save>Сохранить</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -200,8 +210,11 @@ FORM: Operate.
         {% if catalog_videos %}
         <div class="prg-videopick" role="radiogroup" aria-label="Загруженные ролики">
             {% for item in catalog_videos %}
-            <label class="prg-videopick-item{% if item.taken %} is-taken{% endif %}">
-                <input type="radio" name="catalog-video" value="{{ item.id }}" data-v-pick{% if item.taken %} disabled{% endif %}>
+            {# Занятых роликов больше нет (владелец 31.08.2026): ролик ставится
+               блоком, и один и тот же можно поставить в несколько заданий.
+               `item.note` осталась справкой «где ещё стоит», выбор не блокирует. #}
+            <label class="prg-videopick-item">
+                <input type="radio" name="catalog-video" value="{{ item.id }}" data-v-pick>
                 {% if item.cover_url %}
                 <img class="prg-videopick-cover" src="{{ item.cover_url }}" alt="" loading="lazy">
                 {% else %}
@@ -238,6 +251,7 @@ FORM: Operate.
             </div>
             <p class="prg-message" data-quiz-message></p>
         </div>
+        {{ blocks_editor() }}
         <div class="prg-grid2">
             <label class="prg-field">Предмет
                 <select data-v-subject>
@@ -296,14 +310,7 @@ FORM: Operate.
             <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
         </label>
         {{ tariff_fields() }}
-        <div class="prg-quiz" data-quiz-questions-wrap>
-            <h3>Мини-опрос после сдачи</h3>
-            <p class="prg-hint">Ответы свободные, без проверки. Показывается ученику после того, как работа принята.</p>
-            <div data-quiz-questions></div>
-            <div class="prg-actions">
-                <button type="button" class="btn-outline" data-add-quiz-question>Добавить вопрос</button>
-            </div>
-        </div>
+        {{ blocks_editor() }}
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-homework-save>Сохранить</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -355,14 +362,7 @@ FORM: Operate.
             <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
         </label>
         {{ tariff_fields() }}
-        <div class="prg-quiz" data-quiz-questions-wrap>
-            <h3>Мини-опрос после заполнения</h3>
-            <p class="prg-hint">Отдельно от вопросов анкеты выше — короткая рефлексия, показывается сразу после отправки. Ответы свободные, без проверки.</p>
-            <div data-quiz-questions></div>
-            <div class="prg-actions">
-                <button type="button" class="btn-outline" data-add-quiz-question>Добавить вопрос</button>
-            </div>
-        </div>
+        {{ blocks_editor() }}
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-survey-save>Сохранить</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -445,10 +445,21 @@ FORM: Operate.
     // существующих `data-quiz-questions-wrap`/`data-form-message`, поэтому
     // префикс здесь не нужен.
     document.addEventListener('change', function (event) {
-        if (!event.target.hasAttribute('data-tariff-restricted')) return;
-        var form = event.target.closest('form');
-        var wrap = form && form.querySelector('[data-tariffs-wrap]');
-        if (wrap) wrap.hidden = !event.target.checked;
+        if (event.target.hasAttribute('data-tariff-restricted')) {
+            var form = event.target.closest('form');
+            var wrap = form && form.querySelector('[data-tariffs-wrap]');
+            if (wrap) wrap.hidden = !event.target.checked;
+            return;
+        }
+        // Редактор блоков: тип ответа решает, нужны ли варианты, а выбранный
+        // файл уходит на сервер сразу — форма несёт только {url, path}.
+        if (event.target.hasAttribute('data-b-question-type')) {
+            syncBlockOptions(event.target.closest('[data-block]'));
+            return;
+        }
+        if (event.target.hasAttribute('data-b-photo-file') && event.target.files[0]) {
+            uploadBlockPhoto(event.target.closest('[data-block]'), event.target.files[0]);
+        }
     });
 
     function collectTariffFields(form) {
@@ -666,31 +677,205 @@ FORM: Operate.
             + '</div>';
     }
 
-    // Мини-опрос у материалов/теста/занятия/чек-листа/самостоятельной
-    // (владелец 30.08.2026) — та же строка `quizQuestionRowHTML`, что у
-    // видео, но без автосохранения по клавише: у этих видов, как и у
-    // Пробника, нет отдельного экрана правки, вопросы уходят вместе с
-    // остальными полями формы по кнопке «Сохранить».
-    function renderFormQuizQuestions(form, rows) {
-        var holder = form.querySelector('[data-quiz-questions]');
+    // ── Универсальный конструктор содержимого (владелец 31.08.2026) ────────
+    // Один редактор во всех формах: тип элемента больше не решает, что в него
+    // можно положить. Строки собираются HTML-строкой и вставляются
+    // `insertAdjacentHTML` — тот же приём, что у билетов Пробника и вариантов
+    // ответа анкеты; обработчики не вешаются на строку, всё через делегирование
+    // по `data-*` на форме.
+
+    var BLOCK_LABELS = {{ block_types|tojson }}.reduce(function (acc, pair) {
+        acc[pair[0]] = pair[1];
+        return acc;
+    }, {});
+
+    function videoOptionsHTML() {
+        return ({{ catalog_videos|tojson }}).map(function (v) {
+            return '<option value="' + v.id + '">' + escapeHTML(v.title) + '</option>';
+        }).join('');
+    }
+
+    function escapeHTML(value) {
+        var div = document.createElement('div');
+        div.textContent = value == null ? '' : String(value);
+        return div.innerHTML;
+    }
+
+    function blockBodyHTML(type) {
+        if (type === 'text') {
+            return '<label class="prg-field">Текст<textarea data-b-body maxlength="5000"></textarea></label>';
+        }
+        if (type === 'photo') {
+            return ''
+                + '<label class="prg-field">Файл<input type="file" accept="image/*" data-b-photo-file></label>'
+                + '<p class="prg-hint" data-b-photo-status></p>'
+                + '<img class="prg-blk-preview" data-b-photo-preview hidden alt="">'
+                + '<label class="prg-field">Подпись, необязательно<input type="text" data-b-title maxlength="200"></label>';
+        }
+        if (type === 'video') {
+            return ''
+                + '<label class="prg-field">Ролик<select data-b-video>'
+                + '<option value="">— выберите —</option>' + videoOptionsHTML() + '</select></label>'
+                + '<label class="prg-field">Заголовок, необязательно<input type="text" data-b-title maxlength="200"></label>';
+        }
+        if (type === 'link') {
+            return ''
+                + '<label class="prg-field">Адрес<input type="url" data-b-url maxlength="500" placeholder="https://"></label>'
+                + '<label class="prg-field">Надпись на кнопке<input type="text" data-b-title maxlength="200"></label>';
+        }
+        // question
+        return ''
+            + '<label class="prg-field">Текст вопроса<textarea data-b-body maxlength="5000"></textarea></label>'
+            + '<label class="prg-field">Тип ответа<select data-b-question-type>'
+            + '{% for qt in question_types %}<option value="{{ qt.value }}">{{ qt.label }}</option>{% endfor %}'
+            + '</select></label>'
+            + '<div class="prg-blk-options" data-b-options-wrap hidden>'
+            + '  <div data-b-options></div>'
+            + '  <div class="prg-actions"><button type="button" class="btn-outline" data-add-b-option>Добавить вариант</button></div>'
+            + '</div>';
+    }
+
+    function blockRowHTML(type) {
+        return ''
+            + '<div class="prg-ticket prg-blk" data-block data-block-type="' + type + '">'
+            + '  <div class="prg-ticket-head"><strong>' + escapeHTML(BLOCK_LABELS[type] || type) + '</strong>'
+            + '    <span class="prg-blk-move">'
+            + '      <button type="button" class="btn-outline" data-move-block="-1" aria-label="Выше">↑</button>'
+            + '      <button type="button" class="btn-outline" data-move-block="1" aria-label="Ниже">↓</button>'
+            + '      <button type="button" class="btn-outline" data-remove-block>Убрать</button>'
+            + '    </span>'
+            + '  </div>'
+            + blockBodyHTML(type)
+            + '</div>';
+    }
+
+    function blockOptionHTML() {
+        return ''
+            + '<div class="prg-option" data-b-option>'
+            + '  <input type="text" data-b-option-text maxlength="300" placeholder="Вариант ответа">'
+            + '  <label class="prg-field--row"><input type="checkbox" data-b-option-correct><span>Верный</span></label>'
+            + '  <button type="button" class="btn-outline" data-remove-b-option>Убрать</button>'
+            + '</div>';
+    }
+
+    // Варианты ответа нужны только выбору из вариантов — у свободного текста
+    // блок вариантов прячем, сервер их всё равно вычистит.
+    function syncBlockOptions(row) {
+        var select = row.querySelector('[data-b-question-type]');
+        var wrap = row.querySelector('[data-b-options-wrap]');
+        if (!select || !wrap) return;
+        wrap.hidden = select.value === 'text';
+    }
+
+    function fillBlockRow(row, block) {
+        if (block.id) row.setAttribute('data-block-id', block.id);
+        var body = row.querySelector('[data-b-body]');
+        if (body) body.value = block.body || '';
+        var title = row.querySelector('[data-b-title]');
+        if (title) title.value = block.title || '';
+        var url = row.querySelector('[data-b-url]');
+        if (url) url.value = block.url || '';
+        var video = row.querySelector('[data-b-video]');
+        if (video) video.value = block.video_id || '';
+        if (block.image_url) {
+            row.setAttribute('data-image-url', block.image_url);
+            row.setAttribute('data-image-path', block.image_path || '');
+            var preview = row.querySelector('[data-b-photo-preview]');
+            if (preview) { preview.src = block.image_url; preview.hidden = false; }
+        }
+        var qType = row.querySelector('[data-b-question-type]');
+        if (qType) {
+            qType.value = block.question_type || 'text';
+            var holder = row.querySelector('[data-b-options]');
+            (block.options || []).forEach(function (option) {
+                holder.insertAdjacentHTML('beforeend', blockOptionHTML());
+                var optionRow = holder.lastElementChild;
+                if (option.id) optionRow.setAttribute('data-b-option-id', option.id);
+                optionRow.querySelector('[data-b-option-text]').value = option.text;
+                optionRow.querySelector('[data-b-option-correct]').checked = !!option.is_correct;
+            });
+            syncBlockOptions(row);
+        }
+    }
+
+    function renderFormBlocks(form, rows) {
+        var holder = form.querySelector('[data-blocks]');
+        if (!holder) return;
         holder.innerHTML = '';
-        (rows || []).forEach(function (question, index) {
-            holder.insertAdjacentHTML('beforeend', quizQuestionRowHTML(index + 1));
-            var row = holder.lastElementChild;
-            if (question.id) row.setAttribute('data-quiz-question-id', question.id);
-            row.querySelector('[data-qq-text]').value = question.text;
+        (rows || []).forEach(function (block) {
+            holder.insertAdjacentHTML('beforeend', blockRowHTML(block.block_type));
+            fillBlockRow(holder.lastElementChild, block);
         });
     }
 
-    function collectFormQuizQuestions(form) {
+    function collectFormBlocks(form) {
         var items = [];
-        form.querySelectorAll('[data-quiz-questions] [data-quiz-question]').forEach(function (row) {
-            var text = row.querySelector('[data-qq-text]').value.trim();
-            if (!text) return;
-            var idAttr = row.getAttribute('data-quiz-question-id');
-            items.push({id: idAttr ? Number(idAttr) : null, text: text});
+        var holder = form.querySelector('[data-blocks]');
+        if (!holder) return items;
+        holder.querySelectorAll('[data-block]').forEach(function (row) {
+            var type = row.getAttribute('data-block-type');
+            var idAttr = row.getAttribute('data-block-id');
+            var item = {id: idAttr ? Number(idAttr) : null, block_type: type};
+            var body = row.querySelector('[data-b-body]');
+            if (body) item.body = body.value.trim();
+            var title = row.querySelector('[data-b-title]');
+            if (title) item.title = title.value.trim();
+            if (type === 'link') {
+                item.url = (row.querySelector('[data-b-url]').value || '').trim();
+                if (!item.url) return;
+            }
+            if (type === 'video') {
+                var picked = row.querySelector('[data-b-video]').value;
+                if (!picked) return;
+                item.video_id = Number(picked);
+            }
+            if (type === 'photo') {
+                item.image_url = row.getAttribute('data-image-url') || '';
+                item.image_path = row.getAttribute('data-image-path') || '';
+                if (!item.image_url) return;
+            }
+            if (type === 'question') {
+                if (!item.body) return;
+                item.question_type = row.querySelector('[data-b-question-type]').value;
+                item.options = [];
+                if (item.question_type !== 'text') {
+                    row.querySelectorAll('[data-b-option]').forEach(function (optionRow) {
+                        var text = optionRow.querySelector('[data-b-option-text]').value.trim();
+                        if (!text) return;
+                        var optionId = optionRow.getAttribute('data-b-option-id');
+                        item.options.push({
+                            id: optionId ? Number(optionId) : null,
+                            text: text,
+                            is_correct: optionRow.querySelector('[data-b-option-correct]').checked
+                        });
+                    });
+                }
+            }
+            if (type === 'text' && !item.body) return;
+            items.push(item);
         });
         return items;
+    }
+
+    // Фото уходит на сервер сразу при выборе — форма несёт только {url, path},
+    // тот же контракт, что у обложек видео и картинок самостоятельной работы.
+    // Переиспользует общий `uploadImage` и готовую ручку `/upload-cover`.
+    function uploadBlockPhoto(row, file) {
+        var status = row.querySelector('[data-b-photo-status]');
+        status.textContent = 'Загружаем…';
+        status.classList.remove('is-error');
+        uploadImage(file, '/cabinet/staff/program/upload-cover').then(function (result) {
+            if (!result || !result.ok) throw new Error();
+            row.setAttribute('data-image-url', result.url);
+            row.setAttribute('data-image-path', result.path || '');
+            var preview = row.querySelector('[data-b-photo-preview]');
+            preview.src = result.url;
+            preview.hidden = false;
+            status.textContent = 'Готово.';
+        }).catch(function () {
+            status.textContent = 'Не удалось загрузить фото. Попробуйте ещё раз.';
+            status.classList.add('is-error');
+        });
     }
 
     function renderQuizQuestions(videoId) {
@@ -956,7 +1141,7 @@ FORM: Operate.
         });
         mockForm.querySelector('[data-m-required]').checked = true;
         resetTariffFields(mockForm);
-        renderFormQuizQuestions(mockForm, []);
+        renderFormBlocks(mockForm, []);
         setFormMessage('');
     }
 
@@ -982,7 +1167,7 @@ FORM: Operate.
         setSurveyQuestionControlsDisabled(false);
         surveyForm.querySelector('[data-s-required]').checked = true;
         resetTariffFields(surveyForm);
-        renderFormQuizQuestions(surveyForm, []);
+        renderFormBlocks(surveyForm, []);
         setMessage(surveyForm, '', false);
     }
 
@@ -1018,7 +1203,7 @@ FORM: Operate.
         setSurveyQuestionControlsDisabled(locked);
         surveyForm.querySelector('[data-s-required]').checked = data.is_required !== false;
         populateTariffFields(surveyForm, data);
-        renderFormQuizQuestions(surveyForm, data.quiz_questions || []);
+        renderFormBlocks(surveyForm, data.blocks || []);
         setMessage(surveyForm, locked
             ? 'Анкету уже кто-то заполнил — вопросы менять нельзя, но обязательность и мини-опрос можно.'
             : 'Правка Анкеты — измените поля и сохраните.', false);
@@ -1030,6 +1215,7 @@ FORM: Operate.
         selectedVideoId = null;
         videoForm.querySelectorAll('[data-v-pick]').forEach(function (input) { input.checked = false; });
         videoForm.querySelector('[data-quiz-questions-wrap]').hidden = true;
+        renderFormBlocks(videoForm, []);
         videoForm.querySelector('[data-v-title]').value = '';
         videoForm.querySelector('[data-v-description]').value = '';
         videoForm.querySelector('[data-v-subject]').value = '';
@@ -1049,7 +1235,7 @@ FORM: Operate.
         resetTariffFields(homeworkForm);
         homeworkImages = [];
         renderHomeworkThumbs();
-        renderFormQuizQuestions(homeworkForm, []);
+        renderFormBlocks(homeworkForm, []);
         setMessage(homeworkForm, '', false);
     }
 
@@ -1061,7 +1247,7 @@ FORM: Operate.
         form.querySelector('[data-x-subject]').value = '';
         form.querySelector('[data-x-required]').checked = true;
         resetTariffFields(form);
-        renderFormQuizQuestions(form, []);
+        renderFormBlocks(form, []);
         setMessage(form, '', false);
     }
 
@@ -1106,7 +1292,7 @@ FORM: Operate.
         });
         mockForm.querySelector('[data-m-required]').checked = data.is_required !== false;
         populateTariffFields(mockForm, data);
-        renderFormQuizQuestions(mockForm, data.quiz_questions || []);
+        renderFormBlocks(mockForm, data.blocks || []);
         setFormMessage('Правка Пробника — измените билеты и сохраните.', false);
         showForm('mock');
     }
@@ -1118,14 +1304,13 @@ FORM: Operate.
         videoForm.querySelector('[data-v-subject]').value = data.subject || '';
         videoForm.querySelector('[data-v-required]').checked = data.is_required !== false;
         populateTariffFields(videoForm, data);
+        // Без этой строки правка видеоматериала открывалась бы с пустым
+        // редактором блоков и стирала их при сохранении: `collectFormBlocks`
+        // читает то, что в форме, а не то, что в базе.
+        renderFormBlocks(videoForm, data.blocks || []);
         if (data.catalog_video_id) {
             var radio = videoForm.querySelector('[data-v-pick][value="' + data.catalog_video_id + '"]');
             if (radio) {
-                // Ролик уже стоит в этом же дне — своей же привязкой он не
-                // занят, снимаем «занято», выставленное сервером для чужих дней.
-                radio.disabled = false;
-                var label = radio.closest('.prg-videopick-item');
-                if (label) label.classList.remove('is-taken');
                 radio.checked = true;
                 selectedVideoId = data.catalog_video_id;
                 renderQuizQuestions(selectedVideoId);
@@ -1146,7 +1331,7 @@ FORM: Operate.
         populateTariffFields(homeworkForm, data);
         homeworkImages = (data.images || []).slice();
         renderHomeworkThumbs();
-        renderFormQuizQuestions(homeworkForm, data.quiz_questions || []);
+        renderFormBlocks(homeworkForm, data.blocks || []);
         setMessage(homeworkForm, 'Правка элемента — измените поля и сохраните.', false);
         showForm('homework');
     }
@@ -1159,7 +1344,7 @@ FORM: Operate.
         form.querySelector('[data-x-subject]').value = data.subject || '';
         form.querySelector('[data-x-required]').checked = data.is_required !== false;
         populateTariffFields(form, data);
-        renderFormQuizQuestions(form, data.quiz_questions || []);
+        renderFormBlocks(form, data.blocks || []);
         setMessage(form, 'Правка элемента — измените поля и сохраните.', false);
         showForm(kind);
     }
@@ -1227,7 +1412,7 @@ FORM: Operate.
                     is_required: mockForm.querySelector('[data-m-required]').checked,
                     tariff_restricted: mockTariff.tariff_restricted,
                     tariffs: mockTariff.tariffs,
-                    quiz_questions: collectFormQuizQuestions(mockForm)
+                    blocks: collectFormBlocks(mockForm)
                 }).then(afterSave).catch(function (error) {
                     saveMock.disabled = false;
                     setFormMessage(saveError(error, 'пробник'), true);
@@ -1259,7 +1444,7 @@ FORM: Operate.
                     mockCreateTariff
                 ),
                 is_required: mockForm.querySelector('[data-m-required]').checked,
-                quiz_questions: collectFormQuizQuestions(mockForm)
+                blocks: collectFormBlocks(mockForm)
             }).then(afterSave).catch(function (error) {
                 saveMock.disabled = false;
                 setFormMessage(saveError(error, 'пробник'), true);
@@ -1288,7 +1473,8 @@ FORM: Operate.
                 description: videoForm.querySelector('[data-v-description]').value.trim() || null,
                 subject: videoForm.querySelector('[data-v-subject]').value || null,
                 is_required: videoForm.querySelector('[data-v-required]').checked,
-                audience: audienceVideo
+                audience: audienceVideo,
+                blocks: collectFormBlocks(videoForm)
             }).then(afterSave).catch(function (error) {
                 saveVideo.disabled = false;
                 setMessage(videoForm, saveError(error, 'видео'), true);
@@ -1296,11 +1482,59 @@ FORM: Operate.
             return;
         }
 
+        // ── Редактор блоков (владелец 31.08.2026) ─────────────────────────
+        // Всё через делегирование на форме: строки рисуются HTML-строкой и
+        // своих обработчиков не несут.
+
+        var addBlock = event.target.closest('[data-add-block]');
+        if (addBlock) {
+            var blocksHolder = addBlock.closest('[data-form]').querySelector('[data-blocks]');
+            blocksHolder.insertAdjacentHTML(
+                'beforeend', blockRowHTML(addBlock.getAttribute('data-add-block'))
+            );
+            syncBlockOptions(blocksHolder.lastElementChild);
+            return;
+        }
+
+        var removeBlock = event.target.closest('[data-remove-block]');
+        if (removeBlock) {
+            removeBlock.closest('[data-block]').remove();
+            return;
+        }
+
+        var moveBlock = event.target.closest('[data-move-block]');
+        if (moveBlock) {
+            var moved = moveBlock.closest('[data-block]');
+            var step = Number(moveBlock.getAttribute('data-move-block'));
+            var neighbour = step < 0 ? moved.previousElementSibling : moved.nextElementSibling;
+            if (neighbour) {
+                // Порядок в DOM и есть порядок блоков: `collectFormBlocks`
+                // читает строки сверху вниз, отдельного поля сортировки нет.
+                if (step < 0) neighbour.before(moved); else neighbour.after(moved);
+            }
+            return;
+        }
+
+        var addBlockOption = event.target.closest('[data-add-b-option]');
+        if (addBlockOption) {
+            addBlockOption
+                .closest('[data-block]')
+                .querySelector('[data-b-options]')
+                .insertAdjacentHTML('beforeend', blockOptionHTML());
+            return;
+        }
+
+        var removeBlockOption = event.target.closest('[data-remove-b-option]');
+        if (removeBlockOption) {
+            removeBlockOption.closest('[data-b-option]').remove();
+            return;
+        }
+
         var addQuizQuestion = event.target.closest('[data-add-quiz-question]');
         if (addQuizQuestion) {
-            // Атрибут общий на видео и на пять других видов (владелец
-            // 30.08.2026) — держим текущую форму, а не хардкодим videoForm,
-            // иначе клик в чужой форме добавлял бы строку в видео.
+            // Остался только у формы видео — это собственный мини-опрос
+            // ролика (`video_quiz`), он живёт на `LearningVideo` и правится
+            // ещё и на экране «Загрузка видео».
             var quizHolder = addQuizQuestion.closest('[data-form]').querySelector('[data-quiz-questions]');
             quizHolder.insertAdjacentHTML('beforeend', quizQuestionRowHTML(quizHolder.children.length + 1));
             return;
@@ -1340,7 +1574,7 @@ FORM: Operate.
                 max_files: Number(homeworkForm.querySelector('[data-h-files]').value || 0),
                 images: homeworkImages,
                 is_required: homeworkForm.querySelector('[data-h-gate-required]').checked,
-                quiz_questions: collectFormQuizQuestions(homeworkForm),
+                blocks: collectFormBlocks(homeworkForm),
                 audience: audienceHw
             }).then(afterSave).catch(function (error) {
                 saveHomework.disabled = false;
@@ -1365,7 +1599,7 @@ FORM: Operate.
                 description: simpleForm.querySelector('[data-x-description]').value,
                 subject: simpleForm.querySelector('[data-x-subject]').value || null,
                 is_required: simpleForm.querySelector('[data-x-required]').checked,
-                quiz_questions: collectFormQuizQuestions(simpleForm),
+                blocks: collectFormBlocks(simpleForm),
                 audience: audienceSimple
             }).then(afterSave).catch(function (error) {
                 saveSimple.disabled = false;
@@ -1403,7 +1637,7 @@ FORM: Operate.
                     is_required: surveyForm.querySelector('[data-s-required]').checked,
                     tariff_restricted: surveyEditTariff.tariff_restricted,
                     tariffs: surveyEditTariff.tariffs,
-                    quiz_questions: collectFormQuizQuestions(surveyForm)
+                    blocks: collectFormBlocks(surveyForm)
                 }).then(afterSave).catch(function (error) {
                     saveSurvey.disabled = false;
                     setMessage(surveyForm, saveError(error, 'анкету'), true);
@@ -1418,7 +1652,7 @@ FORM: Operate.
             var payload = {
                 audience: audienceSurvey,
                 is_required: surveyForm.querySelector('[data-s-required]').checked,
-                quiz_questions: collectFormQuizQuestions(surveyForm)
+                blocks: collectFormBlocks(surveyForm)
             };
             if (mode === 'existing') {
                 var surveyId = surveyForm.querySelector('[data-s-existing]').value;

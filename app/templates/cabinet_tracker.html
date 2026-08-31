@@ -11,7 +11,7 @@ FORM: Operate, список, а не карточка-витрина.
 #}
 {% block title %}Личный трекер{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=11">
+<link rel="stylesheet" href="/static/css/tracker.css?v=12">
 <link rel="stylesheet" href="/static/css/profile_hero.css?v=4">
 {% endblock %}
 {% block content %}
@@ -205,6 +205,12 @@ FORM: Operate, список, а не карточка-витрина.
     io.observe(head);
 })();
 </script>
+
+{# Блоки конструктора (владелец 31.08.2026) раскрываются и здесь, не только на
+   АОП: у содержимого задания нет отдельной страницы, и без этой раскрывашки
+   ученик, работающий из трекера, не увидел бы ни видео, ни текста, ни
+   вопросов. Видео и Пробник по-прежнему уводят отсюда на свои страницы. #}
+{% include "partials/inline/panels_init.html" %}
 
 {% set active_tab = "tracker" %}
 {% include "partials/bottom_nav.html" %}

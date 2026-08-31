@@ -25,10 +25,12 @@ from app.models.video_progress import VideoProgress
 from app.models.video_view_log import VideoViewLog
 from app.models.learning_video import LearningVideo
 from app.models.video_quiz import VideoQuizResponse
-from app.models.task_quiz import (
-    TaskQuizAnswer,
-    TaskQuizQuestion,
-    TaskQuizResponse,
+from app.models.task_block import (
+    TaskBlock,
+    TaskBlockAnswer,
+    TaskBlockAnswerOption,
+    TaskBlockOption,
+    TaskBlockResponse,
 )
 from app.models.learning_topic import (
     LearningTopic,

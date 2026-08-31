@@ -87,16 +87,24 @@
 >{{ 'Сделано' if entry.status == 'done' else 'Отметить' }}</button>
 {% endif %}
 
-{# Мини-опрос после сдачи (владелец 30.08.2026) — общий на material/quiz/
-   lesson/checklist/homework/survey, видео и Пробник рисуют свой (см. ветки
-   выше). Раскрывашка живёт в разметке сразу, даже пока задача не сделана
-   (`hidden`), чтобы обработчик toggle из cabinet_learning.html нашёл её при
-   загрузке страницы и снял `hidden` сразу после отметки, без перезагрузки. #}
-{% if inline_expand and task.kind in ('material', 'quiz', 'lesson', 'checklist', 'homework', 'survey') and detail.quiz_question_count %}
-<details class="trk-row-expand" data-task-kind="task_quiz" {{ '' if entry.status == 'done' else 'hidden' }}>
-    <summary class="btn-outline">Мини-опрос</summary>
-    <div class="trk-expand-body" data-task-quiz-embed-endpoint="/cabinet/tracker/tasks/{{ task.id }}/quiz">
-        {% include "partials/inline/task_quiz.html" %}
+{# Содержимое элемента: блоки конструктора (владелец 31.08.2026) — общие на
+   все виды без исключения, в этом и смысл универсального конструктора.
+
+   Два отличия от раскрывашек выше, оба намеренные:
+
+   1. Видна сразу, не после отметки «сделано». Блоки — то, что нужно
+      посмотреть, чтобы задачу выполнить, а не рефлексия по факту сдачи,
+      какой был прежний мини-опрос.
+   2. **Без `inline_expand`** — рисуется и на АОП, и в «Личном трекере».
+      Тот флаг про «раскрыть вместо перехода на отдельную страницу»: у видео
+      и Пробника такая страница есть, и на трекере они по-старому уводят на
+      неё. У блоков отдельной страницы нет вообще, поэтому без этой
+      раскрывашки содержимое задания на трекере было бы недостижимо. #}
+{% if detail.block_count %}
+<details class="trk-row-expand" data-task-kind="task_blocks">
+    <summary class="btn-outline">Материалы задания</summary>
+    <div class="trk-expand-body" data-task-blocks-endpoint="/cabinet/tracker/tasks/{{ task.id }}/blocks">
+        {% include "partials/inline/task_blocks.html" %}
     </div>
 </details>
 {% endif %}
