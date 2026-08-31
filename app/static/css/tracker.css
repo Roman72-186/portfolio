@@ -920,16 +920,15 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
     position: absolute; inset: 0; z-index: 3; overflow: hidden;
     pointer-events: none; user-select: none;
 }
-/* Тусклая, но читаемая: уроки — светлые слайды и чертежи, и с них же снимают
-   запись, поэтому яркость снята примерно до трети, а видимость держит тёмный
-   контур под текстом (владелец 01.09.2026). Ширина по содержимому — при
-   выравнивании вправо пустая часть блока зря входила бы в offsetWidth. */
+/* Совсем незаметная: владелец 01.09.2026 просил прозрачнее и без тени под
+   текстом. Цена принята — на белом слайде надпись почти пропадает, читается
+   она в основном на тёмных кадрах. Ширина по содержимому: при выравнивании
+   вправо пустая часть блока зря входила бы в offsetWidth. */
 .lrn-inline-video .video-watermark-copy {
     position: absolute; right: 16px; bottom: 64px;
     width: max-content; max-width: min(76%, 310px);
-    color: rgba(255, 255, 255, .34); font-size: clamp(10px, 1.35vw, 13px);
+    color: rgba(255, 255, 255, .22); font-size: clamp(10px, 1.35vw, 13px);
     font-weight: 600; line-height: 1.45; text-align: right;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, .7), 0 0 1px rgba(0, 0, 0, .75);
 }
 /* Надпись не ездит по кадру, а проявляется и гаснет в случайной точке.
    Анимируется только opacity: transform в transition дал бы видимый перелёт

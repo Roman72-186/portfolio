@@ -131,8 +131,9 @@ def test_video_watermark_fades_in_and_out_at_random_spots(auth_client, monkeypat
     # новая координата ставится, пока надпись уже не видна.
     assert "transition: opacity 900ms" in response.text
     assert "Math.cos(angle)" not in response.text
-    # Тусклее прежнего, но с тёмным контуром — иначе пропадёт на белом слайде.
-    assert "color: rgba(255, 255, 255, .34)" in response.text
+    # Прозрачная и без тени под текстом (владелец 01.09.2026).
+    assert "color: rgba(255, 255, 255, .22)" in response.text
+    assert "text-shadow" not in response.text
 
 
 def test_video_fullscreen_keeps_watermark_inside_fullscreen_container(
