@@ -394,3 +394,46 @@ def test_submit_on_task_without_questions_is_404(client, db, user_factory, sessi
         json={"answers": [{"block_id": 1, "text": "Ответ"}]},
     )
     assert resp.status_code == 404
+
+
+# ── Ссылка: только http и https (владелец 31.08.2026) ───────────────────────
+
+
+def test_link_block_rejects_non_http_scheme(client, db, user_factory, session_factory, monkeypatch):
+    """Ссылка уходит прямо в href кнопки у ученика. Схема `javascript:` там
+    выполнилась бы у каждого, кому видно задание."""
+    _freeze(monkeypatch, date.today())
+    _staff_client(client, user_factory, session_factory)
+
+    resp = client.post(
+        f"{PROGRAM}/{_future_day_iso()}/material",
+        json={
+            "title": "Материал",
+            "audience": EVERYONE,
+            "blocks": [{"block_type": BLOCK_LINK, "url": "javascript:alert(1)"}],
+        },
+    )
+    assert resp.status_code == 422
+    assert db.query(TaskBlock).count() == 0
+
+
+def test_link_block_accepts_http_and_https(client, db, user_factory, session_factory, monkeypatch):
+    _freeze(monkeypatch, date.today())
+    _staff_client(client, user_factory, session_factory)
+
+    resp = client.post(
+        f"{PROGRAM}/{_future_day_iso()}/material",
+        json={
+            "title": "Материал",
+            "audience": EVERYONE,
+            "blocks": [
+                {"block_type": BLOCK_LINK, "url": "https://example.org", "title": "Раз"},
+                {"block_type": BLOCK_LINK, "url": "http://example.org", "title": "Два"},
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "material").one()
+    assert [b.url for b in _blocks_of(db, task.id)] == [
+        "https://example.org", "http://example.org",
+    ]

@@ -440,11 +440,29 @@ class BlockItem(BaseModel):
             raise ValueError(f"Неизвестный тип вопроса: {value}")
         return value
 
-    @field_validator("title", "body", "url")
+    @field_validator("title", "body")
     @classmethod
     def strip_optional(cls, value: str | None) -> str | None:
         value = (value or "").strip()
         return value or None
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str | None) -> str | None:
+        """Только http и https.
+
+        Ссылка попадает прямо в `href` кнопки на экране ученика. Без этой
+        проверки в поле можно вписать не адрес, а исполняемый код (схема
+        `javascript:`), и он выполнится у каждого, кому видно задание. Форма
+        доступна только главному преподавателю, но уведённый аккаунт бил бы
+        сразу по всей школе.
+        """
+        value = (value or "").strip()
+        if not value:
+            return None
+        if not value.lower().startswith(("http://", "https://")):
+            raise ValueError("Ссылка должна начинаться с http:// или https://")
+        return value
 
 
 class MockTicketEditPayload(TicketPayload):
