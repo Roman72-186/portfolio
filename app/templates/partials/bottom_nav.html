@@ -1,34 +1,96 @@
 ﻿<style>
-/* 25.08.2026 — мобильный таб-бар (только он, не десктопный .app-sidebar
-   из base.css) переведён на нативный вид iOS: решение владельца, партиал
+/* 01.09.2026 — нижний таб-бар заменён на радиальное FAB-меню (решение
+   владельца): пять пунктов ученика веером раскрываются вверх от одной
+   кнопки внизу по центру, вместо всегда видимой строки вкладок. Партиал
    общий на все экраны кабинета ученика, поэтому эффект намеренно
-   глобальный. Системный шрифт, палитра iOS, стеклянная подложка. */
+   глобальный. Десктопный .app-sidebar (из base.css) не трогаем — там
+   пункты уже подписаны, веер там не нужен. Палитра и тайминги — из тех
+   же токенов base.css и того же акцента --ios-blue, что и прежний
+   таб-бар (25.08.2026); меняется только форма взаимодействия. */
 .bottom-nav {
-    position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
-    background: rgba(249,249,251,0.82);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border-top: 0.5px solid rgba(60,60,67,0.29);
-    display: flex; align-items: stretch;
-    padding-bottom: env(safe-area-inset-bottom, 0);
+    position: fixed; left: 0; right: 0;
+    bottom: calc(20px + env(safe-area-inset-bottom, 0));
+    z-index: 100;
+    display: flex; justify-content: center;
+    pointer-events: none;
 }
-.nav-btn {
-    flex: 1; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 2px;
-    padding: 7px 4px 4px; text-decoration: none;
-    color: rgba(60,60,67,0.6); font-size: 10px; font-weight: 500;
-    letter-spacing: 0; transition: color 120ms ease-out, transform 100ms ease-out;
-    background: none; border: none;
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
-    cursor: pointer; -webkit-tap-highlight-color: transparent;
+.fan-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(15, 15, 20, 0);
+    transition: background var(--duration-base) var(--ease-out);
+    pointer-events: none;
+    z-index: -1;
 }
-.nav-btn:hover { color: #AF52DE; opacity: 1; }
-.nav-btn:active { transform: scale(0.90); }
-.nav-btn:focus-visible { outline: 2px solid #AF52DE; outline-offset: -3px; border-radius: 8px; }
-.nav-btn.nav-active { color: #AF52DE; }
-.nav-btn.nav-active .nav-btn-icon svg { stroke-width: 2.3; }
-.nav-btn-icon { width: 25px; height: 25px; display: flex; align-items: center; justify-content: center; }
-.nav-btn.nav-disabled { opacity: 0.35; cursor: default; pointer-events: none; }
+.bottom-nav.open .fan-backdrop { background: rgba(15, 15, 20, .38); pointer-events: auto; }
+
+.fan-items { position: relative; width: 56px; height: 56px; pointer-events: none; }
+.fan-item-wrap {
+    position: absolute; left: 50%; top: 50%; width: 0; height: 0;
+    transform: translate(var(--x, 0px), var(--y, 0px));
+    transition: transform .35s var(--ease-out);
+    transition-delay: calc(var(--i, 0) * 35ms);
+}
+.bottom-nav:not(.open) .fan-item-wrap { transition-delay: 0ms; }
+
+.fan-item {
+    position: absolute; left: 0; top: 0;
+    width: 48px; height: 48px; margin: -24px 0 0 -24px;
+    border-radius: 50%;
+    background: rgba(249, 249, 251, .92);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border: .5px solid rgba(60, 60, 67, .16);
+    color: rgba(60, 60, 67, .75);
+    display: grid; place-items: center;
+    box-shadow: var(--sh-md);
+    text-decoration: none; -webkit-tap-highlight-color: transparent;
+    transform: scale(0); opacity: 0; pointer-events: none;
+    transition: transform .3s var(--ease-out), opacity .2s ease, color .15s ease;
+}
+.bottom-nav.open .fan-item { transform: scale(1); opacity: 1; pointer-events: auto; }
+.fan-item:active { transform: scale(.92); }
+.fan-item:focus-visible { outline: 2px solid #AF52DE; outline-offset: 2px; }
+.fan-item.fan-item-active { color: #AF52DE; border-color: rgba(175, 82, 222, .35); }
+.fan-item.nav-disabled { opacity: .4; pointer-events: none; }
+
+.fan-item-label {
+    position: absolute; top: -10px; left: 0;
+    transform: translate(-50%, -100%);
+    background: rgba(249, 249, 251, .92);
+    backdrop-filter: blur(16px);
+    border: .5px solid rgba(60, 60, 67, .14);
+    color: rgba(30, 30, 34, .82);
+    font-size: 11px; font-weight: 600;
+    padding: 3px 8px; border-radius: var(--r-pill);
+    white-space: nowrap; opacity: 0;
+    transition: opacity .2s ease;
+    pointer-events: none;
+}
+.bottom-nav.open .fan-item-label { opacity: 1; }
+.fan-item-wrap.lbl-left .fan-item-label { transform: translate(0, -100%); }
+.fan-item-wrap.lbl-right .fan-item-label { transform: translate(-100%, -100%); }
+
+.fan-fab {
+    position: absolute; inset: 0;
+    width: 56px; height: 56px; border-radius: 50%;
+    border: none; background: #AF52DE; color: #fff;
+    box-shadow: var(--sh-blue);
+    display: grid; place-items: center;
+    pointer-events: auto; -webkit-tap-highlight-color: transparent;
+    transition: transform .2s var(--ease-out), background .2s ease;
+}
+.fan-fab:active { transform: scale(.94); }
+.fan-fab:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.bottom-nav.open .fan-fab { background: #8E3FBF; }
+.fan-fab-icon {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    opacity: 0; transform: scale(.6) rotate(-30deg);
+    transition: opacity .2s ease, transform .25s var(--ease-out);
+}
+.fan-fab-icon--default { opacity: 1; transform: scale(1) rotate(0); }
+.bottom-nav.open .fan-fab-icon--default { opacity: 0; transform: scale(.6) rotate(30deg); }
+.bottom-nav.open .fan-fab-icon--close { opacity: 1; transform: scale(1) rotate(0); }
+
 .nav-soon-badge {
     font-size: 8px; font-weight: 600; letter-spacing: 0.02em;
     background: rgba(255,149,0,0.15); color: #C93400;
@@ -58,6 +120,10 @@
             <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
         {% elif icon == 'personal' %}
             <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>
+        {% elif icon == 'menu' %}
+            <line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/>
+        {% elif icon == 'close' %}
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
         {% endif %}
     </svg>
 {%- endmacro %}
@@ -72,6 +138,8 @@
 {% endif %}
 {% set show_scores_nav = false %}
 {% set student_items = student_nav_items() %}
+{% set active_tab = active_tab|default("") %}
+{% set active_item = student_items | selectattr('key', 'equalto', active_tab) | list | first %}
 
 <!-- ── Desktop sidebar (hidden on mobile via .app-sidebar { display:none } in base.html) ── -->
 <aside class="app-sidebar">
@@ -110,38 +178,94 @@
     </div>
 </aside>
 
-<!-- ── Mobile bottom nav ── -->
+<!-- ── Mobile radial FAB-меню (заменяет таб-бар, 01.09.2026) ── -->
 <div id="nav-loader"></div>
-<nav class="bottom-nav" aria-label="Главное меню">
-    {% for item in student_items %}
-    {% if item.soon %}
-    <a href="#" class="nav-btn nav-disabled" aria-disabled="true" aria-label="{{ item.aria_label }}" onclick="return false;">
-        <span class="nav-btn-icon" aria-hidden="true">
-            {{ student_nav_icon(item.icon, 22) }}
-        </span>
-        <span>{{ item.mobile_label }}</span>
-        <span class="nav-soon-badge">Скоро</span>
-    </a>
-    {% else %}
-    <a href="{{ item.mobile_href }}" class="nav-btn {% if active_tab == item.key %}nav-active{% endif %}"
-       {% if active_tab == item.key %}aria-current="page"{% endif %} aria-label="{{ item.aria_label }}">
-        <span class="nav-btn-icon" aria-hidden="true">
-            {{ student_nav_icon(item.icon, 22) }}
-        </span>
-        <span>{{ item.mobile_label }}</span>
-    </a>
-    {% endif %}
-    {% endfor %}
+<nav class="bottom-nav" id="studentFan" aria-label="Главное меню">
+    <div class="fan-backdrop" id="fanBackdrop"></div>
+    <div class="fan-items" id="fanItems">
+        {% for item in student_items %}
+        <div class="fan-item-wrap" data-idx="{{ loop.index0 }}">
+            {% if item.soon %}
+            <a href="#" class="fan-item nav-disabled" aria-disabled="true" tabindex="-1" aria-label="{{ item.aria_label }}" onclick="return false;">
+                <span aria-hidden="true">{{ student_nav_icon(item.icon, 20) }}</span>
+            </a>
+            {% else %}
+            <a href="{{ item.mobile_href }}" class="fan-item {% if active_tab == item.key %}fan-item-active{% endif %}"
+               tabindex="-1" {% if active_tab == item.key %}aria-current="page"{% endif %} aria-label="{{ item.aria_label }}">
+                <span aria-hidden="true">{{ student_nav_icon(item.icon, 20) }}</span>
+            </a>
+            {% endif %}
+            <span class="fan-item-label" aria-hidden="true">
+                {{ item.mobile_label }}{% if item.soon %} <span class="nav-soon-badge">Скоро</span>{% endif %}
+            </span>
+        </div>
+        {% endfor %}
+        <button type="button" class="fan-fab" id="fanFab" aria-haspopup="true" aria-expanded="false" aria-controls="fanItems" aria-label="Открыть меню">
+            <span class="fan-fab-icon fan-fab-icon--default" aria-hidden="true">
+                {% if active_item %}{{ student_nav_icon(active_item.icon, 24) }}{% else %}{{ student_nav_icon('menu', 24) }}{% endif %}
+            </span>
+            <span class="fan-fab-icon fan-fab-icon--close" aria-hidden="true">{{ student_nav_icon('close', 24) }}</span>
+        </button>
+    </div>
 </nav>
 <script>
 (function () {
+    var nav = document.getElementById('studentFan');
+    var fab = document.getElementById('fanFab');
+    var backdrop = document.getElementById('fanBackdrop');
+    var wraps = Array.prototype.slice.call(nav.querySelectorAll('.fan-item-wrap'));
     var loader = document.getElementById('nav-loader');
-    if (!loader) return;
-    document.querySelector('.bottom-nav').addEventListener('click', function (e) {
-        var btn = e.target.closest('.nav-btn');
-        if (!btn || btn.classList.contains('nav-disabled') || btn.classList.contains('nav-active')) return;
-        loader.classList.add('active');
+
+    function layout() {
+        var n = wraps.length;
+        var radius = Math.max(92, Math.min(128, window.innerWidth / 2 - 42));
+        wraps.forEach(function (wrap, idx) {
+            var deg = n > 1 ? 180 - (180 / (n - 1)) * idx : 90;
+            var rad = deg * Math.PI / 180;
+            var x = Math.cos(rad) * radius;
+            var y = -Math.sin(rad) * radius;
+            wrap.style.setProperty('--x', x.toFixed(1) + 'px');
+            wrap.style.setProperty('--y', y.toFixed(1) + 'px');
+            wrap.style.setProperty('--i', idx);
+            wrap.classList.remove('lbl-left', 'lbl-right');
+            if (x < -40) wrap.classList.add('lbl-left');
+            else if (x > 40) wrap.classList.add('lbl-right');
+        });
+    }
+
+    function setOpen(open) {
+        nav.classList.toggle('open', open);
+        fab.setAttribute('aria-expanded', String(open));
+        fab.setAttribute('aria-label', open ? 'Закрыть меню' : 'Открыть меню');
+        wraps.forEach(function (wrap) {
+            var link = wrap.querySelector('.fan-item');
+            if (link && !link.classList.contains('nav-disabled')) {
+                link.tabIndex = open ? 0 : -1;
+            }
+        });
+        if (open) {
+            var firstLink = nav.querySelector('.fan-item:not(.nav-disabled)');
+            if (firstLink) firstLink.focus();
+        } else {
+            fab.focus();
+        }
+    }
+
+    fab.addEventListener('click', function () {
+        setOpen(!nav.classList.contains('open'));
     });
+    backdrop.addEventListener('click', function () { setOpen(false); });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && nav.classList.contains('open')) setOpen(false);
+    });
+    nav.addEventListener('click', function (e) {
+        var link = e.target.closest('.fan-item');
+        if (!link || link.classList.contains('nav-disabled') || link.classList.contains('fan-item-active')) return;
+        if (loader) loader.classList.add('active');
+    });
+
+    layout();
+    window.addEventListener('resize', layout);
 })();
 </script>
 <script>
