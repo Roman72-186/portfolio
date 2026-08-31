@@ -897,6 +897,14 @@ body.has-video-pseudo-fullscreen { overflow: hidden; overscroll-behavior: none; 
    опаковый фон видео и так закрывает ::before целиком, снимать изоляцию
    в этот момент безопасно. */
 body.has-video-pseudo-fullscreen .ios-learning { isolation: auto; }
+/* Тот же трюк с containing block/stacking context, вторая находка живой
+   проверки 01.09.2026: `.trk-item--done { opacity: 0.72 }` (строка 136) —
+   opacity ниже 1 у предка заводит СВОЙ stacking context, и внутри него
+   z-index:10000 у видео снова запирается, теперь уже независимо от снятой
+   выше изоляции `.ios-learning` — сайдбар опять оказывался поверх. Сбрасываем
+   opacity у карточки на время полноэкранного режима: видео и так закрывает
+   её целиком непрозрачным фоном, разницу 0.72 vs 1 никто не увидит. */
+body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-inline-video .video-frame.is-pseudo-fullscreen {
     position: fixed; inset: 0; z-index: 10000;
     width: 100vw; height: 100vh; height: 100dvh;
