@@ -495,7 +495,7 @@ def test_survey_is_editable_like_any_other_item(
     одного дня физически не может задеть другой."""
     _freeze(monkeypatch)
     _staff_client(client, user_factory, session_factory)
-    day_iso = _future_day_iso()
+    day_iso = MONDAY
 
     created = client.post(
         f"{PROGRAM}/{day_iso}/survey",
