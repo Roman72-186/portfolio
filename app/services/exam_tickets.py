@@ -28,6 +28,7 @@ from app.models.exam_assignment import (
     ExamTicket,
     ExamTicketAssignee,
     ExamTicketTag,
+    ExamTicketTariff,
 )
 from app.models.feature_period import FeaturePeriod
 from app.models.tag import Tag
@@ -157,6 +158,8 @@ def create_ticket(
     assign_to_all: bool,
     tag_ids: list[int],
     assignee_ids: list[int],
+    tariff_restricted: bool = False,
+    tariffs: list[str] | None = None,
 ) -> ExamTicket:
     """Создать билет и разложить адресацию по трём местам.
 
@@ -164,6 +167,11 @@ def create_ticket(
     список тегов идёт в `exam_ticket_tags`, откуда доступ и считается. Носители
     тегов вдобавок материализуются в `ExamTicketAssignee`, иначе рассылка о
     завтрашнем пробнике до них не дойдёт.
+
+    Тарифная видимость (созвон 26.08.2026) пишется независимо от
+    `assign_to_all` — в отличие от тегов/поимённых исключений, которые при
+    «всем» вообще не материализуются, «видно всем, но только тарифу Х»
+    легальная комбинация (см. `AudiencePayload` в cabinet_program.py).
     """
     ticket = ExamTicket(
         assignment_id=assignment.id,
@@ -180,11 +188,17 @@ def create_ticket(
         restrict_start_by_duration=restrict_start_by_duration,
         target_tag_id=tag_ids[0] if tag_ids and not assign_to_all else None,
         assign_to_all=assign_to_all,
+        tariff_restricted=tariff_restricted,
     )
     db.add(ticket)
     db.flush()
 
+    if tariff_restricted:
+        for tariff in dict.fromkeys(t.strip().upper() for t in (tariffs or []) if t.strip()):
+            db.add(ExamTicketTariff(ticket_id=ticket.id, tariff=tariff))
+
     if assign_to_all:
+        db.flush()
         return ticket
 
     reached: set[int] = set(assignee_ids)
@@ -195,6 +209,31 @@ def create_ticket(
         db.add(ExamTicketAssignee(ticket_id=ticket.id, user_id=user_id))
     db.flush()
     return ticket
+
+
+def set_ticket_tariffs(
+    db: Session, ticket: ExamTicket, *, tariff_restricted: bool, tariffs: list[str]
+) -> None:
+    """Переписать тарифную видимость существующего билета целиком — правка
+    вызывает это отдельно от `create_ticket`, та же семантика, что
+    `video_topics.set_topic_tariffs`."""
+    ticket.tariff_restricted = tariff_restricted
+    db.query(ExamTicketTariff).filter(ExamTicketTariff.ticket_id == ticket.id).delete(
+        synchronize_session=False
+    )
+    if tariff_restricted:
+        for tariff in dict.fromkeys(t.strip().upper() for t in tariffs if t.strip()):
+            db.add(ExamTicketTariff(ticket_id=ticket.id, tariff=tariff))
+    db.flush()
+
+
+def get_ticket_tariffs(db: Session, ticket_id: int) -> list[str]:
+    rows = (
+        db.query(ExamTicketTariff.tariff)
+        .filter(ExamTicketTariff.ticket_id == ticket_id)
+        .all()
+    )
+    return [row[0] for row in rows]
 
 
 def validate_tags(db: Session, tag_ids: list[int]) -> list[int]:

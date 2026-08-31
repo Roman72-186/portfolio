@@ -50,6 +50,15 @@ class LearningTopic(Base):
     # раздача платного контента при забытой аудитории — слишком дорогая ошибка.
     assign_to_all: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # Тарифная видимость (созвон 26.08.2026, TODO.md «Реализовать доступность
+    # программы по тарифу») — отдельная от assign_to_all/тегов/поимённых
+    # исключений ось: та адресация решает «кому», эта — «по какому тарифу»,
+    # обе проверяются одновременно в accessible_topic_ids. default=False:
+    # видимость по тарифу не сужена, ведёт себя как раньше. True + пустой
+    # LearningTopicTariff — сознательно «скрыто от всех тарифов» (владелец
+    # 30.08.2026): чек-бокс включили, но тариф ещё не отметили.
+    tariff_restricted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_by_id: Mapped[int | None] = mapped_column(
@@ -89,6 +98,28 @@ class LearningTopicTag(Base):
 
     __table_args__ = (
         Index("ix_learning_topic_tags_tag", "tag_id"),
+    )
+
+
+class LearningTopicTariff(Base):
+    """Каким тарифам видна тема, когда `tariff_restricted=True`.
+
+    Составной PK `(topic_id, tariff)`, не отдельный id-суррогат с
+    уникальностью по topic_id — это намеренно оставляет место под будущую
+    механику «уровень ученика внутри тарифа» (созвон 26.08.2026): к паре
+    можно будет добавить nullable `min_level` одним `ALTER TABLE ADD COLUMN`,
+    без разрушительной миграции. Саму механику уровней здесь не строим.
+    """
+
+    __tablename__ = "learning_topic_tariffs"
+
+    topic_id: Mapped[int] = mapped_column(
+        ForeignKey("learning_topics.id", ondelete="CASCADE"), primary_key=True
+    )
+    tariff: Mapped[str] = mapped_column(String(50), primary_key=True)
+
+    __table_args__ = (
+        Index("ix_learning_topic_tariffs_tariff", "tariff"),
     )
 
 

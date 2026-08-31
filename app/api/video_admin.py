@@ -14,6 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DBSession
 
 from app.config import settings
+from app.constants import TARIFFS
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf_header, require_superadmin
 from app.models.audit_log import AuditLog
@@ -40,10 +41,12 @@ from app.services.video_topics import (
     create_topic,
     delete_topic,
     get_topic,
+    get_topic_tariffs,
     list_topics,
     publish_topic,
     set_topic_assignees,
     set_topic_tags,
+    set_topic_tariffs,
     unpublish_topic,
     update_topic,
 )
@@ -475,6 +478,12 @@ class TopicPayload(BaseModel):
     # владелец уже раздаёт теги (app/services/tags.py::parse_usernames).
     assignee_usernames: str = Field(default="", max_length=20_000)
     sort_order: int | None = Field(default=None, ge=0, le=100_000)
+    # Тарифная видимость (созвон 26.08.2026) — та же ось, что у элементов дня
+    # в cabinet_program.py::AudiencePayload, здесь дублирована локально (та
+    # же конвенция, что уже используется в этом файле для strip_title и
+    # подобных мелких валидаторов).
+    tariff_restricted: bool = False
+    tariffs: list[str] = Field(default_factory=list, max_length=len(TARIFFS))
 
     @field_validator("title")
     @classmethod
@@ -489,6 +498,15 @@ class TopicPayload(BaseModel):
     def strip_description(cls, value: str | None) -> str | None:
         value = (value or "").strip()
         return value or None
+
+    @field_validator("tariffs")
+    @classmethod
+    def validate_tariffs(cls, value: list[str]) -> list[str]:
+        cleaned = [t.strip().upper() for t in value if t.strip()]
+        unknown = [t for t in cleaned if t not in TARIFFS]
+        if unknown:
+            raise ValueError(f"Неизвестный тариф: {unknown[0]}")
+        return list(dict.fromkeys(cleaned))
 
 
 def _parse_opens_at(raw: str) -> datetime:
@@ -551,7 +569,13 @@ def _audit_topic(db: DBSession, *, action: str, user_id: int, topic) -> None:
 
 
 def _topic_audience_feedback(
-    db: DBSession, *, assign_to_all: bool, tag_ids: list[int], assignee_ids: list[int]
+    db: DBSession,
+    *,
+    assign_to_all: bool,
+    tag_ids: list[int],
+    assignee_ids: list[int],
+    tariff_restricted: bool = False,
+    tariffs: list[str] | None = None,
 ) -> dict:
     """Охват темы и спорные теги — чтобы главный преподаватель увидел промах адресации сразу."""
     return {
@@ -560,6 +584,8 @@ def _topic_audience_feedback(
             assign_to_all=assign_to_all,
             tag_ids=tag_ids,
             assignee_ids=assignee_ids,
+            tariff_restricted=tariff_restricted,
+            tariffs=tariffs,
         ),
         "ambiguous_tags": ambiguous_tag_names(db, tag_ids),
     }
@@ -590,12 +616,19 @@ def create_video_topic(
     set_topic_tags(db, topic, payload.tag_ids)
     assignee_ids, not_found = _resolve_assignees(db, payload.assignee_usernames)
     set_topic_assignees(db, topic, assignee_ids)
+    set_topic_tariffs(
+        db, topic,
+        tariff_restricted=payload.tariff_restricted,
+        tariffs=payload.tariffs,
+    )
     _audit_topic(db, action="video_topic_create", user_id=user["user_id"], topic=topic)
     feedback = _topic_audience_feedback(
         db,
         assign_to_all=payload.assign_to_all,
         tag_ids=payload.tag_ids,
         assignee_ids=assignee_ids,
+        tariff_restricted=payload.tariff_restricted,
+        tariffs=payload.tariffs,
     )
     db.commit()
     return JSONResponse(
@@ -623,12 +656,19 @@ def update_video_topic(
     set_topic_tags(db, topic, payload.tag_ids)
     assignee_ids, not_found = _resolve_assignees(db, payload.assignee_usernames)
     set_topic_assignees(db, topic, assignee_ids)
+    set_topic_tariffs(
+        db, topic,
+        tariff_restricted=payload.tariff_restricted,
+        tariffs=payload.tariffs,
+    )
     _audit_topic(db, action="video_topic_update", user_id=user["user_id"], topic=topic)
     feedback = _topic_audience_feedback(
         db,
         assign_to_all=payload.assign_to_all,
         tag_ids=payload.tag_ids,
         assignee_ids=assignee_ids,
+        tariff_restricted=payload.tariff_restricted,
+        tariffs=payload.tariffs,
     )
     db.commit()
     return JSONResponse({"ok": True, "not_found": not_found, **feedback})

@@ -9,7 +9,7 @@ plans/2026-08-23-apparchi-week-month-gate-decisions.md: блокировка о�
 from datetime import date, timedelta
 
 from app.models.exam_cycle import ExamCycle
-from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
+from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, TOPIC_KIND_WEEK, LearningTopic
 from app.services.program import day_bounds, week_start
 from app.services.tracker import (
     close_task_for_user,
@@ -19,6 +19,7 @@ from app.services.tracker import (
     is_week_complete,
 )
 from app.services.tz import msk_midnight, today_msk
+from app.services.video_topics import set_topic_tariffs
 
 MARCH_MONDAY_1 = date(2026, 3, 2)
 MARCH_MONDAY_2 = date(2026, 3, 9)
@@ -67,6 +68,58 @@ def test_required_element_blocks_week(db, regular_user):
     _task(db, regular_user, kind="video", due_on=monday, is_required=True)
 
     assert is_week_complete(db, regular_user.id, monday) is False
+
+
+def _program_item_topic(db, owner, monday: date, *, tariffs=None) -> LearningTopic:
+    """Служебная тема одного элемента (созвон 26.08.2026) — в отличие от
+    `_week_topic` выше, `kind=program_item`, как заводит `ensure_item_topic`."""
+    topic = LearningTopic(
+        title="Элемент недели",
+        opens_at=msk_midnight(monday),
+        assign_to_all=True,
+        is_published=True,
+        kind=TOPIC_KIND_PROGRAM_ITEM,
+        created_by_id=owner.id,
+    )
+    db.add(topic)
+    db.flush()
+    set_topic_tariffs(db, topic, tariff_restricted=True, tariffs=tariffs or [])
+    db.commit()
+    db.refresh(topic)
+    return topic
+
+
+def test_tariff_hidden_required_element_does_not_block_week(db, user_factory):
+    """Владелец 26.08.2026: элемент, скрытый по тарифу, не должен запирать
+    неделю ученику, которому он вообще не показан — не нужен спецкод в
+    is_week_complete, скрытие уже происходит на уровне accessible_task_entries."""
+    monday = week_start(today_msk())
+    student = user_factory(vk_id=410_001, tariff="УВЕРЕННЫЙ")
+    topic = _program_item_topic(db, student, monday, tariffs=["МАКСИМУМ"])
+    task = create_task(
+        db, title="Видео только МАКСИМУМ", user_id=student.id,
+        kind="video", due_at=day_bounds(monday)[0] + timedelta(hours=6),
+        topic_id=topic.id, is_required=True,
+    )
+    task.is_published = True
+    db.commit()
+
+    assert is_week_complete(db, student.id, monday) is True
+
+
+def test_tariff_matching_required_element_still_blocks_week(db, user_factory):
+    monday = week_start(today_msk())
+    student = user_factory(vk_id=410_002, tariff="МАКСИМУМ")
+    topic = _program_item_topic(db, student, monday, tariffs=["МАКСИМУМ"])
+    task = create_task(
+        db, title="Видео только МАКСИМУМ", user_id=student.id,
+        kind="video", due_at=day_bounds(monday)[0] + timedelta(hours=6),
+        topic_id=topic.id, is_required=True,
+    )
+    task.is_published = True
+    db.commit()
+
+    assert is_week_complete(db, student.id, monday) is False
 
 
 def test_both_subjects_checked_without_split(db, regular_user):

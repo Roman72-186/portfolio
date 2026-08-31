@@ -18,12 +18,14 @@ from app.models.exam_assignment import (
     ExamTicket,
     ExamTicketAssignee,
     ExamTicketTag,
+    ExamTicketTariff,
 )
 from app.models.exam_cycle import ExamCycle
 from app.models.feedback import Feedback, FeedbackMessage, FeedbackPhoto
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.tracker import ITEM_MOCK_EXAM, SOURCE_EXAM_ASSIGNMENT, TrackerTask
+from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.mock_exam_access import (
     get_matching_target_tag_ids_for_student,
@@ -71,6 +73,19 @@ def get_active_tickets(db: DBSession, user_id: int, subject: str) -> list[ExamTi
         .filter(ExamTicketTag.tag_id.in_(matching_target_tag_ids))
         .scalar_subquery()
     )
+    # Тарифная видимость (созвон 26.08.2026) — тот же принцип, что у
+    # accessible_topic_ids: не только видеомодульная тема элемента прячется от
+    # ученика, но и сам билет становится нерезолвируемым, иначе «скрыт
+    # полностью» превратилось бы в «скрыт с вкладки, но доступен по прямой
+    # ссылке» (см. TrackerTask.kind == ITEM_MOCK_EXAM, отдельный механизм).
+    student_tariff = (
+        db.query(User.tariff).filter(User.id == user_id).scalar() or ""
+    ).strip().upper()
+    tariff_ok_ticket_ids = (
+        db.query(ExamTicketTariff.ticket_id)
+        .filter(ExamTicketTariff.tariff == student_tariff)
+        .scalar_subquery()
+    )
     tickets = (
         db.query(ExamTicket)
         .join(ExamAssignment, ExamTicket.assignment_id == ExamAssignment.id)
@@ -88,6 +103,10 @@ def get_active_tickets(db: DBSession, user_id: int, subject: str) -> list[ExamTi
                         ExamTicket.id.in_(assignee_ticket_ids),
                     ),
                 ),
+            ),
+            or_(
+                ExamTicket.tariff_restricted.is_(False),
+                ExamTicket.id.in_(tariff_ok_ticket_ids),
             ),
         )
         .order_by(

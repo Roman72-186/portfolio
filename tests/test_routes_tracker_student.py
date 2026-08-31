@@ -120,6 +120,50 @@ def test_program_item_hidden_without_matching_tag(auth_client, db):
     assert "Видео недели" not in resp.text
 
 
+def _program_item_tariff(db, *, day, due_at, tariffs, user_id):
+    from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM
+    from app.models.tracker import ITEM_VIDEO
+    from app.services.program import ensure_item_topic, set_item_audience
+    from app.services.video_topics import set_topic_tariffs
+
+    topic = ensure_item_topic(db, title="Видео недели (тариф)", day=day, user_id=user_id)
+    set_item_audience(db, topic, assign_to_all=True, tag_ids=[], assignee_ids=[])
+    set_topic_tariffs(db, topic, tariff_restricted=True, tariffs=tariffs)
+    task = create_task(
+        db, title="Видео недели (тариф)", user_id=user_id, due_at=due_at,
+        topic_id=topic.id, kind=ITEM_VIDEO,
+    )
+    task.is_published = True
+    db.commit()
+    db.refresh(task)
+    assert topic.kind == TOPIC_KIND_PROGRAM_ITEM
+    return task
+
+
+def test_program_item_visible_with_matching_tariff(auth_client, db):
+    """Владелец 26.08.2026: тарифная видимость — то же место в accessible_topic_ids,
+    что и теги, но по User.tariff вместо UserTag."""
+    client, user = auth_client
+    assert user.tariff == "УВЕРЕННЫЙ"
+    day, due = _current_week_due(offset_days=1)
+    _program_item_tariff(db, day=day, due_at=due, tariffs=["УВЕРЕННЫЙ"], user_id=user.id)
+
+    resp = client.get(PAGE)
+    assert resp.status_code == 200
+    assert "Видео недели (тариф)" in resp.text
+
+
+def test_program_item_hidden_with_mismatched_tariff(auth_client, db):
+    client, user = auth_client
+    assert user.tariff == "УВЕРЕННЫЙ"
+    day, due = _current_week_due(offset_days=1)
+    _program_item_tariff(db, day=day, due_at=due, tariffs=["МАКСИМУМ"], user_id=user.id)
+
+    resp = client.get(PAGE)
+    assert resp.status_code == 200
+    assert "Видео недели (тариф)" not in resp.text
+
+
 def test_standalone_task_visible_for_assign_to_all(auth_client, db):
     client, user = auth_client
     _, due = _current_week_due(offset_days=2)

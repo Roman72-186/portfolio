@@ -17,6 +17,7 @@ from app.models.learning_topic import (
     LearningTopic,
     LearningTopicAssignee,
     LearningTopicTag,
+    LearningTopicTariff,
 )
 from app.models.role import Role
 from app.models.tag import Tag, UserTag
@@ -73,8 +74,12 @@ def get_topic(
 def accessible_topic_ids(db: Session, user_id: int) -> set[int]:
     """Темы, открытые ученику прямо сейчас.
 
-    Тема открыта, если опубликована, наступил её `opens_at` и она адресована
-    ученику: флагом «всем», пересечением тегов или поимённо.
+    Тема открыта, если опубликована, наступил её `opens_at`, адресована
+    ученику (флагом «всем», пересечением тегов или поимённо) и не скрыта по
+    тарифу. Это ученический контракт функции: тарифный фильтр здесь
+    сознательно не выключается никаким аргументом — куратор/staff читают
+    элементы дня напрямую (`program.py::items_for_day`/`item_details`), в
+    обход этой функции, и видят их независимо от тарифа (владелец 26.08.2026).
 
     Верхней границы у окна нет: прошедшая тема остаётся в каталоге как учебный
     архив. Время берём через `tz.now_msk()` — в контейнере UTC, иначе фильтр
@@ -93,6 +98,16 @@ def accessible_topic_ids(db: Session, user_id: int) -> set[int]:
         .filter(LearningTopicAssignee.user_id == user_id)
         .scalar_subquery()
     )
+    # Тариф ученика — плоская строка, не EncryptedString, сравнивать в SQL
+    # можно напрямую. Пустой/None тариф просто не совпадёт ни с одной строкой
+    # LearningTopicTariff — тарифно-ограниченные темы остаются скрытыми.
+    tariff = db.query(User.tariff).filter(User.id == user_id).scalar()
+    tariff = (tariff or "").strip().upper()
+    tariff_ok_topic_ids = (
+        db.query(LearningTopicTariff.topic_id)
+        .filter(LearningTopicTariff.tariff == tariff)
+        .scalar_subquery()
+    )
     rows = (
         db.query(LearningTopic.id)
         .filter(
@@ -103,6 +118,10 @@ def accessible_topic_ids(db: Session, user_id: int) -> set[int]:
                 LearningTopic.assign_to_all.is_(True),
                 LearningTopic.id.in_(tagged_topic_ids),
                 LearningTopic.id.in_(assigned_topic_ids),
+            ),
+            or_(
+                LearningTopic.tariff_restricted.is_(False),
+                LearningTopic.id.in_(tariff_ok_topic_ids),
             ),
         )
         .all()
@@ -188,6 +207,32 @@ def get_assignee_ids(db: Session, topic_id: int) -> list[int]:
     return [row[0] for row in rows]
 
 
+def get_topic_tariffs(db: Session, topic_id: int) -> list[str]:
+    rows = (
+        db.query(LearningTopicTariff.tariff)
+        .filter(LearningTopicTariff.topic_id == topic_id)
+        .all()
+    )
+    return [row[0] for row in rows]
+
+
+def set_topic_tariffs(
+    db: Session, topic: LearningTopic, *, tariff_restricted: bool, tariffs: list[str]
+) -> None:
+    """Переписать тарифную видимость целиком — та же семантика, что у
+    `set_topic_tags`. `tariff_restricted=False` чистит строки, а не оставляет
+    их висеть неиспользуемыми: включили ограничение заново — список тарифов
+    не должен внезапно вернуться из прошлого состояния."""
+    topic.tariff_restricted = tariff_restricted
+    db.query(LearningTopicTariff).filter(
+        LearningTopicTariff.topic_id == topic.id
+    ).delete(synchronize_session=False)
+    if tariff_restricted:
+        for tariff in dict.fromkeys(t.strip().upper() for t in tariffs if t.strip()):
+            db.add(LearningTopicTariff(topic_id=topic.id, tariff=tariff))
+    db.flush()
+
+
 def ambiguous_tag_names(db: Session, tag_ids: list[int]) -> list[str]:
     """Имена выбранных тегов, которые легко понять не так.
 
@@ -215,12 +260,16 @@ def count_topic_audience(
     assign_to_all: bool,
     tag_ids: list[int],
     assignee_ids: list[int],
+    tariff_restricted: bool = False,
+    tariffs: list[str] | None = None,
 ) -> int:
     """Сколько активных учеников реально получат тему.
 
     Считается по той же адресации, что и в accessible_topic_ids, и служит
     проверкой на глаз: адресовал теме «Р» и увидел трёх человек вместо сорока —
-    значит выбран не тот тег.
+    значит выбран не тот тег. `tariff_restricted`/`tariffs` сужают охват так же,
+    как в accessible_topic_ids — иначе цифра на созданном с тарифным
+    ограничением элементе будет враньём.
 
     Учитывается и членство в группе: без него `require_learning_content_access`
     отдаёт ученику 403 на весь видеомодуль, и такой человек в охвате — обман.
@@ -235,6 +284,13 @@ def count_topic_audience(
             User.is_group_member.is_(True),
         )
     )
+    if tariff_restricted:
+        tariff_values = [t.strip().upper() for t in (tariffs or []) if t.strip()]
+        # Список тарифов пуст — оператору IN нечего сопоставлять, а
+        # `User.tariff.in_([])` на некоторых диалектах ведёт себя странно;
+        # `in_(())` даёт заведомо ложное условие на любом бэкенде.
+        students = students.filter(User.tariff.in_(tariff_values or ()))
+
     if assign_to_all:
         return students.count()
 

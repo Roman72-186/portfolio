@@ -12,6 +12,21 @@ FORM: Operate.
 <link rel="stylesheet" href="/static/css/program_ios.css?v=4">
 {% endblock %}
 {% block content %}
+{% macro tariff_fields() %}
+<label class="prg-field prg-field--row">
+    <input type="checkbox" data-tariff-restricted>
+    <span>Ограничить по тарифу</span>
+</label>
+<div class="prg-tariffs" data-tariffs-wrap hidden>
+    <p class="prg-hint">Элемент виден только отмеченным тарифам. Не отметили ни одного — скрыт от всех.</p>
+    {% for tariff in tariffs %}
+    <label class="prg-field prg-field--row">
+        <input type="checkbox" data-tariff value="{{ tariff }}">
+        <span>{{ tariff }}</span>
+    </label>
+    {% endfor %}
+</div>
+{% endmacro %}
 <div class="prg-page ios-prg-day" data-day="{{ day_iso }}">
     <div class="prg-head">
         <div class="prg-head-copy">
@@ -114,6 +129,7 @@ FORM: Operate.
             <span>Обязательно для сдачи</span>
         </label>
         <p class="prg-hint">Билет автоматически доступен всем ученикам, окно сдачи система выставляет сама.</p>
+        {{ tariff_fields() }}
         <div class="prg-quiz" data-quiz-questions-wrap>
             <h3>Мини-опрос после сдачи</h3>
             <p class="prg-hint">Ответы свободные, без проверки. Один набор вопросов на все отмеченные предметы сразу (на создании) или на этот билет (на правке).</p>
@@ -155,6 +171,7 @@ FORM: Operate.
             <input type="checkbox" data-x-required checked>
             <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
         </label>
+        {{ tariff_fields() }}
         <div class="prg-quiz" data-quiz-questions-wrap>
             <h3>Мини-опрос после сдачи</h3>
             <p class="prg-hint">Ответы свободные, без проверки. Показывается ученику, когда он отметит элемент сделанным.</p>
@@ -235,6 +252,7 @@ FORM: Operate.
             <input type="checkbox" data-v-required checked>
             <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
         </label>
+        {{ tariff_fields() }}
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-video-save>Поставить в день</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -277,6 +295,7 @@ FORM: Operate.
             <input type="checkbox" data-h-gate-required checked>
             <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
         </label>
+        {{ tariff_fields() }}
         <div class="prg-quiz" data-quiz-questions-wrap>
             <h3>Мини-опрос после сдачи</h3>
             <p class="prg-hint">Ответы свободные, без проверки. Показывается ученику после того, как работа принята.</p>
@@ -335,6 +354,7 @@ FORM: Operate.
             <input type="checkbox" data-s-required checked>
             <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
         </label>
+        {{ tariff_fields() }}
         <div class="prg-quiz" data-quiz-questions-wrap>
             <h3>Мини-опрос после заполнения</h3>
             <p class="prg-hint">Отдельно от вопросов анкеты выше — короткая рефлексия, показывается сразу после отправки. Ответы свободные, без проверки.</p>
@@ -418,6 +438,47 @@ FORM: Operate.
         });
     }
     window.PROGRAM_API = api;
+
+    // ── Тарифная видимость (созвон 26.08.2026) ─────────────────────────
+    // Общие data-атрибуты на все пять форм (mock/video/homework/simple/
+    // survey) — запросы всегда идут через конкретный элемент формы, как и у
+    // существующих `data-quiz-questions-wrap`/`data-form-message`, поэтому
+    // префикс здесь не нужен.
+    document.addEventListener('change', function (event) {
+        if (!event.target.hasAttribute('data-tariff-restricted')) return;
+        var form = event.target.closest('form');
+        var wrap = form && form.querySelector('[data-tariffs-wrap]');
+        if (wrap) wrap.hidden = !event.target.checked;
+    });
+
+    function collectTariffFields(form) {
+        var restricted = form.querySelector('[data-tariff-restricted]').checked;
+        var tariffs = [];
+        form.querySelectorAll('[data-tariff]:checked').forEach(function (box) {
+            tariffs.push(box.value);
+        });
+        return {tariff_restricted: restricted, tariffs: tariffs};
+    }
+
+    function resetTariffFields(form) {
+        var toggle = form.querySelector('[data-tariff-restricted]');
+        toggle.checked = false;
+        form.querySelectorAll('[data-tariff]').forEach(function (box) { box.checked = false; });
+        var wrap = form.querySelector('[data-tariffs-wrap]');
+        if (wrap) wrap.hidden = true;
+    }
+
+    function populateTariffFields(form, data) {
+        var restricted = !!(data && data.tariff_restricted);
+        var tariffs = (data && data.tariffs) || [];
+        var toggle = form.querySelector('[data-tariff-restricted]');
+        toggle.checked = restricted;
+        form.querySelectorAll('[data-tariff]').forEach(function (box) {
+            box.checked = tariffs.indexOf(box.value) !== -1;
+        });
+        var wrap = form.querySelector('[data-tariffs-wrap]');
+        if (wrap) wrap.hidden = !restricted;
+    }
 
     // ── Пробник ─────────────────────────────────────────────────────────
     var dayIso = document.querySelector('.prg-page').dataset.day;
@@ -894,6 +955,7 @@ FORM: Operate.
             block.querySelector('[data-tickets]').innerHTML = '';
         });
         mockForm.querySelector('[data-m-required]').checked = true;
+        resetTariffFields(mockForm);
         renderFormQuizQuestions(mockForm, []);
         setFormMessage('');
     }
@@ -919,6 +981,7 @@ FORM: Operate.
         surveyForm.querySelector('[data-s-questions]').innerHTML = '';
         setSurveyQuestionControlsDisabled(false);
         surveyForm.querySelector('[data-s-required]').checked = true;
+        resetTariffFields(surveyForm);
         renderFormQuizQuestions(surveyForm, []);
         setMessage(surveyForm, '', false);
     }
@@ -954,6 +1017,7 @@ FORM: Operate.
         var locked = !!data.survey_locked;
         setSurveyQuestionControlsDisabled(locked);
         surveyForm.querySelector('[data-s-required]').checked = data.is_required !== false;
+        populateTariffFields(surveyForm, data);
         renderFormQuizQuestions(surveyForm, data.quiz_questions || []);
         setMessage(surveyForm, locked
             ? 'Анкету уже кто-то заполнил — вопросы менять нельзя, но обязательность и мини-опрос можно.'
@@ -970,6 +1034,7 @@ FORM: Operate.
         videoForm.querySelector('[data-v-description]').value = '';
         videoForm.querySelector('[data-v-subject]').value = '';
         videoForm.querySelector('[data-v-required]').checked = true;
+        resetTariffFields(videoForm);
         setMessage(videoForm, '', false);
     }
 
@@ -981,6 +1046,7 @@ FORM: Operate.
         homeworkForm.querySelector('[data-h-required]').checked = true;
         homeworkForm.querySelector('[data-h-files]').value = 1;
         homeworkForm.querySelector('[data-h-gate-required]').checked = true;
+        resetTariffFields(homeworkForm);
         homeworkImages = [];
         renderHomeworkThumbs();
         renderFormQuizQuestions(homeworkForm, []);
@@ -994,6 +1060,7 @@ FORM: Operate.
         form.querySelector('[data-x-description]').value = '';
         form.querySelector('[data-x-subject]').value = '';
         form.querySelector('[data-x-required]').checked = true;
+        resetTariffFields(form);
         renderFormQuizQuestions(form, []);
         setMessage(form, '', false);
     }
@@ -1038,6 +1105,7 @@ FORM: Operate.
             });
         });
         mockForm.querySelector('[data-m-required]').checked = data.is_required !== false;
+        populateTariffFields(mockForm, data);
         renderFormQuizQuestions(mockForm, data.quiz_questions || []);
         setFormMessage('Правка Пробника — измените билеты и сохраните.', false);
         showForm('mock');
@@ -1049,6 +1117,7 @@ FORM: Operate.
         videoForm.querySelector('[data-v-description]').value = data.description || '';
         videoForm.querySelector('[data-v-subject]').value = data.subject || '';
         videoForm.querySelector('[data-v-required]').checked = data.is_required !== false;
+        populateTariffFields(videoForm, data);
         if (data.catalog_video_id) {
             var radio = videoForm.querySelector('[data-v-pick][value="' + data.catalog_video_id + '"]');
             if (radio) {
@@ -1074,6 +1143,7 @@ FORM: Operate.
         homeworkForm.querySelector('[data-h-required]').checked = data.submission_required !== false;
         homeworkForm.querySelector('[data-h-files]').value = data.max_files != null ? data.max_files : 1;
         homeworkForm.querySelector('[data-h-gate-required]').checked = data.is_required !== false;
+        populateTariffFields(homeworkForm, data);
         homeworkImages = (data.images || []).slice();
         renderHomeworkThumbs();
         renderFormQuizQuestions(homeworkForm, data.quiz_questions || []);
@@ -1088,6 +1158,7 @@ FORM: Operate.
         form.querySelector('[data-x-description]').value = data.description || '';
         form.querySelector('[data-x-subject]').value = data.subject || '';
         form.querySelector('[data-x-required]').checked = data.is_required !== false;
+        populateTariffFields(form, data);
         renderFormQuizQuestions(form, data.quiz_questions || []);
         setMessage(form, 'Правка элемента — измените поля и сохраните.', false);
         showForm(kind);
@@ -1150,9 +1221,12 @@ FORM: Operate.
                 }
                 setFormMessage('');
                 saveMock.disabled = true;
+                var mockTariff = collectTariffFields(mockForm);
                 api(itemUrl('mock', mockForm), {
                     tickets: editTickets,
                     is_required: mockForm.querySelector('[data-m-required]').checked,
+                    tariff_restricted: mockTariff.tariff_restricted,
+                    tariffs: mockTariff.tariffs,
                     quiz_questions: collectFormQuizQuestions(mockForm)
                 }).then(afterSave).catch(function (error) {
                     saveMock.disabled = false;
@@ -1177,9 +1251,13 @@ FORM: Operate.
             )) return;
             setFormMessage('');
             saveMock.disabled = true;
+            var mockCreateTariff = collectTariffFields(mockForm);
             api('/cabinet/staff/program/' + dayIso + '/mock', {
                 subjects: blocks,
-                audience: {assign_to_all: true, tag_ids: [], assignee_usernames: ''},
+                audience: Object.assign(
+                    {assign_to_all: true, tag_ids: [], assignee_usernames: ''},
+                    mockCreateTariff
+                ),
                 is_required: mockForm.querySelector('[data-m-required]').checked,
                 quiz_questions: collectFormQuizQuestions(mockForm)
             }).then(afterSave).catch(function (error) {
@@ -1191,7 +1269,10 @@ FORM: Operate.
 
         var saveVideo = event.target.closest('[data-video-save]');
         if (saveVideo) {
-            var audienceVideo = {assign_to_all: true, tag_ids: [], assignee_usernames: ''};
+            var audienceVideo = Object.assign(
+                {assign_to_all: true, tag_ids: [], assignee_usernames: ''},
+                collectTariffFields(videoForm)
+            );
             if (!selectedVideoId) {
                 setMessage(videoForm, 'Сначала выберите ролик из списка.', true);
                 return;
@@ -1244,7 +1325,10 @@ FORM: Operate.
 
         var saveHomework = event.target.closest('[data-homework-save]');
         if (saveHomework) {
-            var audienceHw = {assign_to_all: true, tag_ids: [], assignee_usernames: ''};
+            var audienceHw = Object.assign(
+                {assign_to_all: true, tag_ids: [], assignee_usernames: ''},
+                collectTariffFields(homeworkForm)
+            );
             var titleHw = homeworkForm.querySelector('[data-h-title]').value.trim();
             if (!titleHw) { setMessage(homeworkForm, 'Укажите название.', true); return; }
             saveHomework.disabled = true;
@@ -1269,7 +1353,10 @@ FORM: Operate.
         if (saveSimple) {
             var simpleForm = saveSimple.closest('[data-simple-kind]');
             var kind = simpleForm.dataset.simpleKind;
-            var audienceSimple = {assign_to_all: true, tag_ids: [], assignee_usernames: ''};
+            var audienceSimple = Object.assign(
+                {assign_to_all: true, tag_ids: [], assignee_usernames: ''},
+                collectTariffFields(simpleForm)
+            );
             var titleSimple = simpleForm.querySelector('[data-x-title]').value.trim();
             if (!titleSimple) { setMessage(simpleForm, 'Укажите название.', true); return; }
             saveSimple.disabled = true;
@@ -1309,10 +1396,13 @@ FORM: Operate.
                 var titleEdit = surveyForm.querySelector('[data-s-title]').value.trim();
                 if (!titleEdit) { setMessage(surveyForm, 'Укажите название анкеты.', true); return; }
                 saveSurvey.disabled = true;
+                var surveyEditTariff = collectTariffFields(surveyForm);
                 api(itemUrl('survey', surveyForm), {
                     title: titleEdit,
                     questions: collectSurveyQuestions(),
                     is_required: surveyForm.querySelector('[data-s-required]').checked,
+                    tariff_restricted: surveyEditTariff.tariff_restricted,
+                    tariffs: surveyEditTariff.tariffs,
                     quiz_questions: collectFormQuizQuestions(surveyForm)
                 }).then(afterSave).catch(function (error) {
                     saveSurvey.disabled = false;
@@ -1320,7 +1410,10 @@ FORM: Operate.
                 });
                 return;
             }
-            var audienceSurvey = {assign_to_all: true, tag_ids: [], assignee_usernames: ''};
+            var audienceSurvey = Object.assign(
+                {assign_to_all: true, tag_ids: [], assignee_usernames: ''},
+                collectTariffFields(surveyForm)
+            );
             var mode = surveyForm.querySelector('[data-s-mode]:checked').value;
             var payload = {
                 audience: audienceSurvey,

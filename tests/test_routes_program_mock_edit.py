@@ -12,8 +12,11 @@ from datetime import date, datetime, timedelta, timezone
 
 from app.models.exam_assignment import ExamAssignment, ExamTicket
 from app.models.exam_cycle import ExamCycle
+from app.models.learning_topic import LearningTopic
 from app.models.task_quiz import TaskQuizQuestion
 from app.models.tracker import TrackerTask
+from app.services.exam_tickets import get_ticket_tariffs
+from app.services.video_topics import get_topic_tariffs
 
 PROGRAM = "/cabinet/staff/program"
 EVERYONE = {"assign_to_all": True, "tag_ids": [], "assignee_usernames": ""}
@@ -78,6 +81,52 @@ def test_edit_ticket_title_in_place_preserves_id(client, db, user_factory, sessi
     assert refreshed.title == "Правленый натюрморт"
     assert refreshed.description == "Ваза"
     assert db.query(ExamTicket).count() == 1
+
+
+def test_mock_tariff_restriction_round_trips_on_create_and_edit(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Пробник — единственный вид, где адресация не редактируется, но тариф
+    (владелец 26.08.2026) — исключение, как is_required."""
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+
+    create_resp = client.post(
+        f"{PROGRAM}/{_future_day_iso()}/mock",
+        json={
+            "subjects": [{"subject": "Рисунок", "tickets": [_ticket()]}],
+            "audience": {
+                "assign_to_all": True, "tag_ids": [], "assignee_usernames": "",
+                "tariff_restricted": True, "tariffs": ["МАКСИМУМ"],
+            },
+        },
+    )
+    assert create_resp.status_code == 200, create_resp.text
+    ticket = db.query(ExamTicket).one()
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "mock_exam").one()
+    assert ticket.tariff_restricted is True
+    assert get_ticket_tariffs(db, ticket.id) == ["МАКСИМУМ"]
+    topic = db.get(LearningTopic, task.topic_id)
+    assert topic.tariff_restricted is True
+    assert get_topic_tariffs(db, topic.id) == ["МАКСИМУМ"]
+
+    edit_resp = client.post(
+        f"{PROGRAM}/items/{task.id}/mock",
+        json={
+            "tickets": [{"id": ticket.id, "title": ticket.title, "description": ticket.description}],
+            "is_required": True,
+            "tariff_restricted": False,
+            "tariffs": [],
+        },
+    )
+    assert edit_resp.status_code == 200, edit_resp.text
+    db.expire_all()
+    ticket = db.get(ExamTicket, ticket.id)
+    assert ticket.tariff_restricted is False
+    assert get_ticket_tariffs(db, ticket.id) == []
+    topic = db.get(LearningTopic, task.topic_id)
+    assert topic.tariff_restricted is False
+    assert get_topic_tariffs(db, topic.id) == []
 
 
 def test_edit_adds_new_ticket(client, db, user_factory, session_factory, monkeypatch):

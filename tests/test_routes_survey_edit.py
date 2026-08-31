@@ -6,9 +6,11 @@
 
 from datetime import date
 
+from app.models.learning_topic import LearningTopic
 from app.models.survey import Survey, SurveyQuestion
 from app.models.task_quiz import TaskQuizQuestion
 from app.models.tracker import TrackerTask
+from app.services.video_topics import get_topic_tariffs
 
 PROGRAM = "/cabinet/staff/program"
 TODAY = date(2026, 8, 21)
@@ -72,6 +74,31 @@ def test_edit_updates_title_and_questions(client, db, user_factory, session_fact
     task = db.get(TrackerTask, task.id)
     assert task.is_required is False
     assert task.title == "Анкета недели (правка)"
+
+
+def test_edit_sets_tariff_restriction(client, db, user_factory, session_factory, monkeypatch):
+    """SurveyEditPayload не наследует AudiencePayload (адресация не
+    редактируется) — тариф лежит у неё отдельными полями (созвон 26.08.2026)."""
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    _create_survey(client, MONDAY)
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "survey").one()
+
+    resp = client.post(
+        f"{PROGRAM}/items/{task.id}/survey",
+        json={
+            "title": "Анкета недели",
+            "questions": [{"text": "Как настроение?", "question_type": "text", "options": []}],
+            "is_required": True,
+            "tariff_restricted": True,
+            "tariffs": ["МАКСИМУМ"],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    db.expire_all()
+    topic = db.get(LearningTopic, db.get(TrackerTask, task.id).topic_id)
+    assert topic.tariff_restricted is True
+    assert get_topic_tariffs(db, topic.id) == ["МАКСИМУМ"]
 
 
 def test_edit_updates_quiz_questions(client, db, user_factory, session_factory, monkeypatch):

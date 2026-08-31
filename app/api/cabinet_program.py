@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session as DBSession
 
-from app.constants import MOCK_SUBJECTS
+from app.constants import MOCK_SUBJECTS, TARIFFS
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf, require_csrf_header
 from app.models.audit_log import AuditLog
@@ -55,8 +55,10 @@ from app.services.exam_tickets import (
     create_ticket,
     default_schedule_for_day,
     ensure_mock_period_for,
+    get_ticket_tariffs,
     next_seq_number,
     parse_msk_datetime,
+    set_ticket_tariffs,
     validate_tags,
     validate_window,
 )
@@ -106,6 +108,8 @@ from app.services.video_topics import (
     count_topic_audience,
     get_assignee_ids,
     get_tag_ids,
+    get_topic_tariffs,
+    set_topic_tariffs,
 )
 from app.tmpl import templates
 
@@ -174,6 +178,14 @@ def _edit_payloads(
             "subject": item.subject,
             "is_required": item.is_required,
         }
+        # Тариф правится, только пока тема элемента — служебная тема ровно
+        # этого элемента (TOPIC_KIND_PROGRAM_ITEM). Элементы, попавшие в день
+        # через copy_week, делят тему на всю неделю — там чек-бокс тарифа не
+        # рисуется вовсе (см. _apply_element_tariff).
+        topic = db.get(LearningTopic, item.topic_id) if item.topic_id else None
+        if topic is not None and topic.kind == TOPIC_KIND_PROGRAM_ITEM:
+            payload["tariff_restricted"] = topic.tariff_restricted
+            payload["tariffs"] = get_topic_tariffs(db, topic.id)
         if item.kind == ITEM_VIDEO and detail.get("video"):
             payload["catalog_video_id"] = detail["video"].id
         if item.kind == ITEM_HOMEWORK and detail.get("homework"):
@@ -293,6 +305,7 @@ def program_day(
             "edit_payloads": _edit_payloads(db, items, details),
             "kind_labels": ITEM_KIND_LABELS,
             "subjects": MOCK_SUBJECTS,
+            "tariffs": TARIFFS,
             # Анкета — переиспользуемый шаблон (owner-решение 22–23.08): конструктор
             # предлагает готовые анкеты, чтобы не набирать один и тот же опрос
             # заново на каждой из восьми точек года.
@@ -370,14 +383,23 @@ class MockTicketEditPayload(TicketPayload):
 
 class MockEditPayload(BaseModel):
     """Правка Пробника (владелец 30.08.2026): билеты, обязательность,
-    мини-опрос. Предмет и адресация не меняются — предмет зашит в задание,
-    аудитория переносится с уже существующей темы дня."""
+    мини-опрос. Предмет и адресация (теги/поимённые/«всем») не меняются —
+    предмет зашит в задание, аудитория переносится с уже существующей темы
+    дня. Тариф — исключение (созвон 26.08.2026): его можно включить/снять и
+    после создания, как и is_required."""
 
     model_config = ConfigDict(extra="forbid")
 
     tickets: list[MockTicketEditPayload] = Field(min_length=1, max_length=10)
     is_required: bool = True
     quiz_questions: list[QuizQuestionItem] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
+    tariff_restricted: bool = False
+    tariffs: list[str] = Field(default_factory=list, max_length=len(TARIFFS))
+
+    @field_validator("tariffs")
+    @classmethod
+    def validate_tariffs(cls, value: list[str]) -> list[str]:
+        return _validate_tariffs(value)
 
 
 class SubjectPayload(BaseModel):
@@ -396,12 +418,35 @@ class SubjectPayload(BaseModel):
         return value
 
 
+def _validate_tariffs(value: list[str]) -> list[str]:
+    """Общий валидатор списка тарифов — переиспользуют все payload'ы с
+    тарифным чек-боксом (AudiencePayload, MockEditPayload, SurveyEditPayload)."""
+    cleaned = [t.strip().upper() for t in value if t.strip()]
+    unknown = [t for t in cleaned if t not in TARIFFS]
+    if unknown:
+        raise ValueError(f"Неизвестный тариф: {unknown[0]}")
+    return list(dict.fromkeys(cleaned))
+
+
 class AudiencePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     assign_to_all: bool = False
     tag_ids: list[int] = Field(default_factory=list, max_length=200)
     assignee_usernames: str = Field(default="", max_length=20_000)
+    # Тарифная видимость (созвон 26.08.2026) — ортогональна остальной
+    # адресации: assign_to_all=True + tariff_restricted=True легальная
+    # комбинация («видно всем ученикам этих тарифов»), см. _resolve_audience.
+    # По умолчанию выключено (видно всем тарифам, как раньше); включили —
+    # список тарифов по умолчанию пуст, то есть элемент скрыт от всех, пока
+    # преподаватель явно не отметит нужные (владелец 30.08.2026).
+    tariff_restricted: bool = False
+    tariffs: list[str] = Field(default_factory=list, max_length=len(TARIFFS))
+
+    @field_validator("tariffs")
+    @classmethod
+    def validate_tariffs(cls, value: list[str]) -> list[str]:
+        return _validate_tariffs(value)
 
 
 class MockPayload(BaseModel):
@@ -416,6 +461,32 @@ class MockPayload(BaseModel):
     # правки (`MockEditPayload` ниже), id на создании всегда None, но так
     # payload един на оба эндпоинта и не нужно два разных JS-сборщика.
     quiz_questions: list[QuizQuestionItem] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
+
+
+def _apply_element_tariff(
+    db: DBSession, topic: LearningTopic, *, tariff_restricted: bool, tariffs: list[str]
+) -> None:
+    """Записать тарифную видимость на тему ОДНОГО элемента — не на тему,
+    общую для целой недели.
+
+    `copy_week` (app/services/tracker.py) копирует все элементы недели на одну
+    и ту же тему `kind=week`, а не заводит по служебной теме на элемент, как
+    `ensure_item_topic` здесь. Записать тариф в этом случае значило бы скрыть
+    всю неделю по тарифу вместо одного элемента — тише не ошибиться заранее,
+    чем потом объяснять пропавшую неделю (владелец 26.08.2026, разбор
+    архитектора 30.08.2026).
+    """
+    if topic.kind != TOPIC_KIND_PROGRAM_ITEM:
+        if tariff_restricted or tariffs:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Тариф элемента нельзя настроить — тема общая для всей "
+                    "скопированной недели"
+                ),
+            )
+        return
+    set_topic_tariffs(db, topic, tariff_restricted=tariff_restricted, tariffs=tariffs)
 
 
 def _guard_future(day: date) -> None:
@@ -529,6 +600,8 @@ def create_mock_item(
                 assign_to_all=payload.audience.assign_to_all,
                 tag_ids=tag_ids,
                 assignee_ids=assignee_ids,
+                tariff_restricted=payload.audience.tariff_restricted,
+                tariffs=payload.audience.tariffs,
             )
             latest_close = closes_at if latest_close is None else max(latest_close, closes_at)
             period_start = start_date if period_start is None else min(period_start, start_date)
@@ -543,6 +616,12 @@ def create_mock_item(
             assign_to_all=payload.audience.assign_to_all,
             tag_ids=tag_ids,
             assignee_ids=assignee_ids,
+        )
+        set_topic_tariffs(
+            db,
+            topic,
+            tariff_restricted=payload.audience.tariff_restricted,
+            tariffs=payload.audience.tariffs,
         )
         task = create_task(
             db,
@@ -593,6 +672,8 @@ def create_mock_item(
                 assign_to_all=payload.audience.assign_to_all,
                 tag_ids=tag_ids,
                 assignee_ids=assignee_ids,
+                tariff_restricted=payload.audience.tariff_restricted,
+                tariffs=payload.audience.tariffs,
             ),
             "ambiguous_tags": ambiguous_tag_names(db, tag_ids),
         }
@@ -761,6 +842,13 @@ class SurveyEditPayload(BaseModel):
     questions: list[SurveyQuestionPayload] = Field(default_factory=list, max_length=50)
     is_required: bool = True
     quiz_questions: list[QuizQuestionItem] = Field(default_factory=list, max_length=MAX_QUIZ_QUESTIONS)
+    tariff_restricted: bool = False
+    tariffs: list[str] = Field(default_factory=list, max_length=len(TARIFFS))
+
+    @field_validator("tariffs")
+    @classmethod
+    def validate_tariffs(cls, value: list[str]) -> list[str]:
+        return _validate_tariffs(value)
 
 
 def _audience_reply(db: DBSession, audience: AudiencePayload, tag_ids, not_found) -> dict:
@@ -772,6 +860,8 @@ def _audience_reply(db: DBSession, audience: AudiencePayload, tag_ids, not_found
             assign_to_all=audience.assign_to_all,
             tag_ids=tag_ids,
             assignee_ids=[],
+            tariff_restricted=audience.tariff_restricted,
+            tariffs=audience.tariffs,
         ),
         "ambiguous_tags": ambiguous_tag_names(db, tag_ids),
     }
@@ -847,6 +937,11 @@ def create_video_item(
         assign_to_all=payload.audience.assign_to_all,
         tag_ids=tag_ids,
         assignee_ids=assignee_ids,
+    )
+    set_topic_tariffs(
+        db, topic,
+        tariff_restricted=payload.audience.tariff_restricted,
+        tariffs=payload.audience.tariffs,
     )
     video.topic_id = topic.id
     # Постановка в день — это и есть решение куратора «показать ученикам»:
@@ -925,6 +1020,11 @@ def create_homework_item(
         assign_to_all=payload.audience.assign_to_all,
         tag_ids=tag_ids,
         assignee_ids=assignee_ids,
+    )
+    set_topic_tariffs(
+        db, topic,
+        tariff_restricted=payload.audience.tariff_restricted,
+        tariffs=payload.audience.tariffs,
     )
     homework = create_homework(
         db,
@@ -1005,6 +1105,11 @@ def _create_simple_item(
         assign_to_all=payload.audience.assign_to_all,
         tag_ids=tag_ids,
         assignee_ids=assignee_ids,
+    )
+    set_topic_tariffs(
+        db, topic,
+        tariff_restricted=payload.audience.tariff_restricted,
+        tariffs=payload.audience.tariffs,
     )
     task = create_task(
         db,
@@ -1129,6 +1234,11 @@ def create_survey_item(
         tag_ids=tag_ids,
         assignee_ids=assignee_ids,
     )
+    set_topic_tariffs(
+        db, topic,
+        tariff_restricted=payload.audience.tariff_restricted,
+        tariffs=payload.audience.tariffs,
+    )
     task = create_task(
         db,
         title=survey.title,
@@ -1188,6 +1298,8 @@ def _sync_mock_tickets(
     assign_to_all: bool,
     tag_ids: list[int],
     assignee_ids: list[int],
+    tariff_restricted: bool = False,
+    tariffs: list[str] | None = None,
 ) -> None:
     """Развести билеты из формы правки с уже сохранёнными — id-сохраняющая
     логика, как у мини-опроса (владелец 30.08.2026: править билет можно
@@ -1221,6 +1333,11 @@ def _sync_mock_tickets(
             ticket.description = item.description
             ticket.image_s3_url = item.image_url
             ticket.image_s3_path = item.image_path
+            set_ticket_tariffs(
+                db, ticket,
+                tariff_restricted=tariff_restricted,
+                tariffs=tariffs or [],
+            )
             matched_ids.add(ticket.id)
         else:
             opens_at = parse_msk_datetime(
@@ -1253,6 +1370,8 @@ def _sync_mock_tickets(
                 assign_to_all=assign_to_all,
                 tag_ids=tag_ids,
                 assignee_ids=assignee_ids,
+                tariff_restricted=tariff_restricted,
+                tariffs=tariffs,
             )
             next_number += 1
 
@@ -1307,7 +1426,17 @@ def update_mock_item(
         assign_to_all=assign_to_all,
         tag_ids=tag_ids,
         assignee_ids=assignee_ids,
+        tariff_restricted=payload.tariff_restricted,
+        tariffs=payload.tariffs,
     )
+    if task.topic_id:
+        topic = db.get(LearningTopic, task.topic_id)
+        if topic is not None:
+            _apply_element_tariff(
+                db, topic,
+                tariff_restricted=payload.tariff_restricted,
+                tariffs=payload.tariffs,
+            )
     sync_task_quiz_questions(
         db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
     )
@@ -1380,6 +1509,11 @@ def update_survey_item(
         topic = db.get(LearningTopic, task.topic_id)
         if topic is not None:
             topic.title = f"Анкета · {survey.title}"[:200]
+            _apply_element_tariff(
+                db, topic,
+                tariff_restricted=payload.tariff_restricted,
+                tariffs=payload.tariffs,
+            )
 
     sync_task_quiz_questions(
         db, task_id=task.id, items=[(q.id, q.text) for q in payload.quiz_questions]
@@ -1418,6 +1552,11 @@ def _update_simple_item(
         topic = db.get(LearningTopic, task.topic_id)
         if topic is not None:
             topic.title = f"{_SIMPLE_ITEM_TOPIC_PREFIX[kind]} · {payload.title}"[:200]
+            _apply_element_tariff(
+                db, topic,
+                tariff_restricted=payload.audience.tariff_restricted,
+                tariffs=payload.audience.tariffs,
+            )
 
     update_task(
         task,
@@ -1516,6 +1655,11 @@ def update_homework_item(
         topic = db.get(LearningTopic, task.topic_id)
         if topic is not None:
             topic.title = f"Самостоятельная · {payload.title}"[:200]
+            _apply_element_tariff(
+                db, topic,
+                tariff_restricted=payload.audience.tariff_restricted,
+                tariffs=payload.audience.tariffs,
+            )
 
     update_task(
         task,
@@ -1600,6 +1744,11 @@ def update_video_item(
         topic = db.get(LearningTopic, task.topic_id)
         if topic is not None:
             topic.title = f"Видео · {title}"[:200]
+            _apply_element_tariff(
+                db, topic,
+                tariff_restricted=payload.audience.tariff_restricted,
+                tariffs=payload.audience.tariffs,
+            )
 
     update_task(
         task,

@@ -9,12 +9,15 @@ test_simple_item_edit_refuses_on_the_day_itself), видео/самостоят�
 """
 
 import json
-from datetime import date
+from datetime import date, datetime
 
 from app.models.homework import HomeworkAssignment, HomeworkImage
-from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, LearningTopic
+from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, TOPIC_KIND_WEEK, LearningTopic
 from app.models.learning_video import LearningVideo
-from app.models.tracker import TrackerTask
+from app.models.tracker import ITEM_MATERIAL, TrackerTask
+from app.services.tracker import create_task
+from app.services.tz import MSK_TZ, msk_midnight
+from app.services.video_topics import get_topic_tariffs
 
 PROGRAM = "/cabinet/staff/program"
 TODAY = date(2026, 8, 21)
@@ -90,6 +93,98 @@ def test_simple_item_edit_updates_task_and_topic_title(
     assert task.is_required is False
     topic = db.get(LearningTopic, task.topic_id)
     assert topic.title == "Материал · Референс по композиции"
+
+
+def test_simple_item_edit_round_trips_tariff_restriction(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Тариф правится и после создания — в отличие от тегов/поимённых (созвон 26.08.2026)."""
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+
+    client.post(
+        f"{PROGRAM}/{MONDAY}/material",
+        json={
+            "title": "Материал",
+            "audience": {
+                "assign_to_all": True, "tag_ids": [], "assignee_usernames": "",
+                "tariff_restricted": True, "tariffs": ["МАКСИМУМ"],
+            },
+        },
+    )
+    task = db.query(TrackerTask).one()
+    db.expire_all()
+    topic = db.get(LearningTopic, task.topic_id)
+    assert topic.tariff_restricted is True
+    assert get_topic_tariffs(db, topic.id) == ["МАКСИМУМ"]
+
+    response = client.post(
+        f"{PROGRAM}/items/{task.id}/material",
+        json={
+            "title": "Материал",
+            "audience": {
+                "assign_to_all": True, "tag_ids": [], "assignee_usernames": "",
+                "tariff_restricted": True, "tariffs": ["УВЕРЕННЫЙ", "Я С ВАМИ"],
+            },
+        },
+    )
+    assert response.status_code == 200, response.text
+    db.expire_all()
+    topic = db.get(LearningTopic, task.topic_id)
+    assert set(get_topic_tariffs(db, topic.id)) == {"УВЕРЕННЫЙ", "Я С ВАМИ"}
+
+    response = client.post(
+        f"{PROGRAM}/items/{task.id}/material",
+        json={"title": "Материал", "audience": EVERYONE},
+    )
+    assert response.status_code == 200, response.text
+    db.expire_all()
+    topic = db.get(LearningTopic, task.topic_id)
+    assert topic.tariff_restricted is False
+    assert get_topic_tariffs(db, topic.id) == []
+
+
+def test_simple_item_edit_rejects_tariff_when_topic_shared_by_a_copied_week(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """copy_week (app/services/tracker.py) кладёт все элементы копии на одну
+    общую тему недели — тариф там нельзя настроить точечно на элементе, иначе
+    он тихо скрыл бы всю неделю (архитектурный разбор 30.08.2026)."""
+    _freeze(monkeypatch)
+    owner = _staff_client(client, user_factory, session_factory)
+
+    week_topic = LearningTopic(
+        title="Неделя (копия)",
+        opens_at=msk_midnight(date(2026, 8, 24)),
+        assign_to_all=True,
+        is_published=False,
+        kind=TOPIC_KIND_WEEK,
+        created_by_id=owner.id,
+    )
+    db.add(week_topic)
+    db.flush()
+    task = create_task(
+        db, title="Материал из копии недели", user_id=owner.id,
+        kind=ITEM_MATERIAL, due_at=datetime(2026, 8, 25, 20, 59, tzinfo=MSK_TZ),
+        topic_id=week_topic.id, assign_to_all=True,
+    )
+    task.is_published = True
+    db.commit()
+
+    response = client.post(
+        f"{PROGRAM}/items/{task.id}/material",
+        json={
+            "title": "Материал из копии недели",
+            "audience": {
+                "assign_to_all": True, "tag_ids": [], "assignee_usernames": "",
+                "tariff_restricted": True, "tariffs": ["МАКСИМУМ"],
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    db.expire_all()
+    assert db.get(LearningTopic, week_topic.id).tariff_restricted is False
 
 
 def test_simple_item_edit_wrong_kind_404(

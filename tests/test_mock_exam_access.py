@@ -1,6 +1,11 @@
 from datetime import datetime, timedelta
 
-from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
+from app.models.exam_assignment import (
+    ExamAssignment,
+    ExamTicket,
+    ExamTicketAssignee,
+    ExamTicketTariff,
+)
 from app.models.tag import Tag, UserTag
 from app.models.user import User
 from app.services.exam_cycle import get_active_ticket, get_active_tickets
@@ -139,6 +144,53 @@ def test_active_tickets_prefer_newer_assignment_over_later_start_date(db, regula
     assert active_ids == [new_tickets[1].id, new_tickets[0].id]
     assert old_ticket.id not in active_ids
     assert get_active_ticket(db, regular_user.id, "Рисунок").id == new_tickets[1].id
+
+
+def _tariff_gated_ticket(db, owner, *, subject="Рисунок", tariffs):
+    """Билет с широким окном (today-1..today+30) — тот же приём, что у
+    `_create_ticket` выше, чтобы не зависеть от точной границы open/close
+    относительно реального времени теста."""
+    from app.services.tz import today_msk
+
+    today = today_msk()
+    assignment = ExamAssignment(
+        title=f"Тест {subject}", subject=subject, created_by_id=owner.id, status="published",
+    )
+    db.add(assignment)
+    db.flush()
+    ticket = ExamTicket(
+        assignment_id=assignment.id,
+        ticket_number=1,
+        title=f"Билет {subject}",
+        start_date=today - timedelta(days=1),
+        end_date=today + timedelta(days=30),
+        assign_to_all=True,
+        tariff_restricted=True,
+    )
+    db.add(ticket)
+    db.flush()
+    for tariff in tariffs:
+        db.add(ExamTicketTariff(ticket_id=ticket.id, tariff=tariff))
+    db.commit()
+    return ticket
+
+
+def test_tariff_restricted_ticket_hidden_from_mismatched_tariff(db, admin_user, user_factory):
+    """Владелец 26.08.2026: скрыть только тему элемента недостаточно, билет
+    должен стать нерезолвируемым и напрямую."""
+    ticket = _tariff_gated_ticket(db, admin_user, tariffs=["МАКСИМУМ"])
+    student = user_factory(vk_id=420_001, tariff="УВЕРЕННЫЙ")
+
+    assert get_active_tickets(db, student.id, "Рисунок") == []
+    assert ticket.tariff_restricted is True
+
+
+def test_tariff_restricted_ticket_open_for_matching_tariff(db, admin_user, user_factory):
+    ticket = _tariff_gated_ticket(db, admin_user, tariffs=["МАКСИМУМ"])
+    student = user_factory(vk_id=420_002, tariff="МАКСИМУМ")
+
+    active = get_active_tickets(db, student.id, "Рисунок")
+    assert [t.id for t in active] == [ticket.id]
 
 
 def test_attempt_open_ignores_90_minute_timer():

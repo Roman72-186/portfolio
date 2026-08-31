@@ -325,6 +325,44 @@ def test_admin_creates_and_publishes_topic(admin_client, db, monkeypatch):
     assert get_topic(db, topic_id).is_published is True
 
 
+def test_topic_tariff_restriction_round_trips_on_create_and_edit(admin_client, db, monkeypatch):
+    """Тарифная видимость (созвон 26.08.2026) применяется и к теме недели
+    целиком, не только к отдельному элементу дня программы."""
+    from app.services.video_topics import get_topic_tariffs
+
+    client, _ = admin_client
+    _configure_upload(monkeypatch)
+    created = client.post(
+        "/cabinet/admin/videos/topics",
+        json={
+            "title": "Неделя на тарифе",
+            "opens_at": "2026-08-03T10:00",
+            "assign_to_all": True,
+            "tariff_restricted": True,
+            "tariffs": ["МАКСИМУМ"],
+        },
+    )
+    assert created.status_code == 200, created.text
+    topic_id = created.json()["topic_id"]
+    assert get_topic(db, topic_id).tariff_restricted is True
+    assert get_topic_tariffs(db, topic_id) == ["МАКСИМУМ"]
+
+    updated = client.post(
+        f"/cabinet/admin/videos/topics/{topic_id}",
+        json={
+            "title": "Неделя на тарифе",
+            "opens_at": "2026-08-03T10:00",
+            "assign_to_all": True,
+            "tariff_restricted": False,
+            "tariffs": [],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    db.expire_all()
+    assert get_topic(db, topic_id).tariff_restricted is False
+    assert get_topic_tariffs(db, topic_id) == []
+
+
 def test_topic_with_attached_lesson_cannot_be_deleted(admin_client, db, monkeypatch):
     """Иначе урок молча стал бы доступен всем — удаление темы не должно раздавать контент."""
     client, _ = admin_client

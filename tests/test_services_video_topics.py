@@ -12,10 +12,12 @@ from app.services.video_topics import (
     get_assignee_ids,
     get_tag_ids,
     get_topic,
+    get_topic_tariffs,
     list_topics,
     publish_topic,
     set_topic_assignees,
     set_topic_tags,
+    set_topic_tariffs,
     unpublish_topic,
     update_topic,
 )
@@ -116,6 +118,74 @@ def test_draft_and_deleted_topics_are_closed(db, regular_user, admin_user):
     db.commit()
 
     assert accessible_topic_ids(db, regular_user.id) == set()
+
+
+# ---------------------------------------------------------------------------
+# Тарифная видимость (созвон 26.08.2026)
+# ---------------------------------------------------------------------------
+
+def test_tariff_restricted_topic_hidden_from_mismatched_tariff(db, admin_user, user_factory):
+    topic = _topic(db, admin_user, assign_to_all=True)
+    set_topic_tariffs(db, topic, tariff_restricted=True, tariffs=["МАКСИМУМ"])
+    db.commit()
+
+    student = user_factory(vk_id=400_101, tariff="УВЕРЕННЫЙ")
+    assert accessible_topic_ids(db, student.id) == set()
+
+
+def test_tariff_restricted_topic_open_for_matching_tariff(db, admin_user, user_factory):
+    topic = _topic(db, admin_user, assign_to_all=True)
+    set_topic_tariffs(db, topic, tariff_restricted=True, tariffs=["МАКСИМУМ"])
+    db.commit()
+
+    student = user_factory(vk_id=400_102, tariff="МАКСИМУМ")
+    assert accessible_topic_ids(db, student.id) == {topic.id}
+
+
+def test_tariff_restricted_with_no_tariffs_checked_is_hidden_from_everyone(
+    db, admin_user, user_factory
+):
+    """Владелец 30.08.2026: включили чек-бокс, ни один тариф не отметили —
+    элемент скрыт от всех, а не «виден всем» по умолчанию."""
+    topic = _topic(db, admin_user, assign_to_all=True)
+    set_topic_tariffs(db, topic, tariff_restricted=True, tariffs=[])
+    db.commit()
+
+    for offset, tariff in enumerate(("МАКСИМУМ", "УВЕРЕННЫЙ", "Я С ВАМИ")):
+        student = user_factory(vk_id=400_200 + offset, tariff=tariff)
+        assert accessible_topic_ids(db, student.id) == set()
+
+
+def test_tariff_unrestricted_topic_visible_to_every_tariff(db, admin_user, user_factory):
+    topic = _topic(db, admin_user, assign_to_all=True)
+    student = user_factory(vk_id=400_103, tariff="Я С ВАМИ")
+    assert accessible_topic_ids(db, student.id) == {topic.id}
+
+
+def test_set_topic_tariffs_clears_rows_when_switched_off(db, admin_user):
+    topic = _topic(db, admin_user, assign_to_all=True)
+    set_topic_tariffs(db, topic, tariff_restricted=True, tariffs=["МАКСИМУМ", "УВЕРЕННЫЙ"])
+    db.commit()
+    assert set(get_topic_tariffs(db, topic.id)) == {"МАКСИМУМ", "УВЕРЕННЫЙ"}
+
+    set_topic_tariffs(db, topic, tariff_restricted=False, tariffs=[])
+    db.commit()
+    assert get_topic_tariffs(db, topic.id) == []
+    assert topic.tariff_restricted is False
+
+
+def test_count_topic_audience_respects_tariff_filter(db, admin_user, user_factory):
+    user_factory(vk_id=400_301, tariff="МАКСИМУМ")
+    user_factory(vk_id=400_302, tariff="УВЕРЕННЫЙ")
+    user_factory(vk_id=400_303, tariff="МАКСИМУМ")
+
+    everyone = count_topic_audience(db, assign_to_all=True, tag_ids=[], assignee_ids=[])
+    only_max = count_topic_audience(
+        db, assign_to_all=True, tag_ids=[], assignee_ids=[],
+        tariff_restricted=True, tariffs=["МАКСИМУМ"],
+    )
+    assert only_max == 2
+    assert only_max < everyone
 
 
 # ---------------------------------------------------------------------------

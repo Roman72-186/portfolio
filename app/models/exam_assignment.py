@@ -70,6 +70,11 @@ class ExamTicket(Base):
         Integer, ForeignKey("tags.id", ondelete="SET NULL"), nullable=True, index=True
     )
     assign_to_all: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Тарифная видимость (созвон 26.08.2026) — зеркало LearningTopic.tariff_restricted.
+    # Билет резолвится отдельным механизмом (get_active_tickets), в обход
+    # accessible_topic_ids, поэтому тарифное поле нужно и здесь: скрыть только
+    # тему элемента недостаточно, билет остался бы сдаваем напрямую.
+    tariff_restricted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -78,6 +83,25 @@ class ExamTicket(Base):
         Index("ix_exam_tickets_assignment", "assignment_id", "ticket_number"),
         Index("ix_exam_tickets_start_date", "start_date"),
         Index("ix_exam_tickets_time_window", "opens_at", "closes_at"),
+    )
+
+
+class ExamTicketTariff(Base):
+    """Каким тарифам виден билет, когда `tariff_restricted=True`.
+
+    Составной PK, та же семантика и то же место под будущий `min_level`, что
+    у `LearningTopicTariff` — см. её докстринг.
+    """
+
+    __tablename__ = "exam_ticket_tariffs"
+
+    ticket_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("exam_tickets.id", ondelete="CASCADE"), primary_key=True
+    )
+    tariff: Mapped[str] = mapped_column(String(50), primary_key=True)
+
+    __table_args__ = (
+        Index("ix_exam_ticket_tariffs_tariff", "tariff"),
     )
 
 
