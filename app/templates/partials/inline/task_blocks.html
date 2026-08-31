@@ -32,6 +32,9 @@
         var statusEl = root.querySelector('[data-role="status"]');
         var listEl = root.querySelector('[data-role="list"]');
         var uid = Math.random().toString(36).slice(2);
+        // Одна попытка: после ответа поля блокируются, чтобы нельзя было
+        // подобрать верный вариант, увидев «неверно».
+        var answered = false;
 
         function el(tag, className, text) {
             var node = document.createElement(tag);
@@ -53,11 +56,17 @@
 
         function renderPhoto(block) {
             var wrap = withTitle(el('div', 'lrn-blk lrn-blk-photo'), block);
-            var img = el('img', 'lrn-blk-image');
-            img.src = block.image_url;
-            img.alt = block.title || 'Изображение к заданию';
-            img.loading = 'lazy';
-            wrap.appendChild(img);
+            var gallery = el('div', 'lrn-blk-gallery');
+            (block.images || []).forEach(function (image) {
+                var img = el('img', 'lrn-blk-image');
+                img.src = image.url;
+                img.alt = block.title || 'Изображение к заданию';
+                img.loading = 'lazy';
+                gallery.appendChild(img);
+            });
+            // Одна картинка занимает всю ширину, несколько — встают сеткой.
+            if ((block.images || []).length === 1) gallery.classList.add('is-single');
+            wrap.appendChild(gallery);
             if (block.body) wrap.appendChild(el('p', 'video-help', block.body));
             return wrap;
         }
@@ -105,6 +114,13 @@
             return wrap;
         }
 
+        function verdictMark(block) {
+            // Значком и словом, не одним цветом: цвет читают не все.
+            if (block.is_correct === true) return el('span', 'lrn-blk-verdict is-ok', '✓ Верно');
+            if (block.is_correct === false) return el('span', 'lrn-blk-verdict is-wrong', '✗ Неверно');
+            return null;
+        }
+
         function renderQuestion(block, index) {
             var wrap = withTitle(el('div', 'lrn-blk lrn-blk-question'), block);
             var fieldId = 'lrn-blk-' + uid + '-' + index;
@@ -119,7 +135,10 @@
                 textarea.maxLength = 2000;
                 textarea.value = block.answer_text || '';
                 textarea.setAttribute('data-answer-text', block.id);
+                textarea.disabled = answered;
                 wrap.appendChild(textarea);
+                var freeMark = verdictMark(block);
+                if (freeMark) wrap.appendChild(freeMark);
                 return wrap;
             }
 
@@ -133,10 +152,13 @@
                 input.value = option.id;
                 input.checked = chosen.indexOf(option.id) !== -1;
                 input.setAttribute('data-answer-option', block.id);
+                input.disabled = answered;
                 row.appendChild(input);
                 row.appendChild(el('span', null, option.text));
                 wrap.appendChild(row);
             });
+            var mark = verdictMark(block);
+            if (mark) wrap.appendChild(mark);
             return wrap;
         }
 
@@ -186,9 +208,21 @@
                     body: JSON.stringify({ answers: collectAnswers(data) })
                 }).then(function (resp) {
                     if (!resp.ok) throw new Error();
-                    button.disabled = false;
-                    note.classList.remove('is-error');
-                    note.textContent = 'Спасибо, ответ сохранён.';
+                    return resp.json();
+                }).then(function (verdict) {
+                    // Попытка одна: перерисовываем панель ответом сервера —
+                    // с отметками «верно/неверно», счётом и закрытой формой.
+                    answered = true;
+                    data.blocks.forEach(function (block) {
+                        (verdict.results || []).forEach(function (r) {
+                            if (r.block_id === block.id) block.is_correct = r.is_correct;
+                        });
+                    });
+                    data.answered = true;
+                    data.correct_count = verdict.correct_count;
+                    data.gradable_count = verdict.gradable_count;
+                    listEl.innerHTML = '';
+                    render(data);
                 }).catch(function () {
                     button.disabled = false;
                     note.textContent = 'Не удалось отправить ответ. Попробуйте ещё раз.';
@@ -200,9 +234,18 @@
 
         function render(data) {
             var blocks = data.blocks || [];
+            answered = !!data.answered;
             if (!blocks.length) {
                 statusEl.textContent = 'Здесь пока пусто.';
                 return;
+            }
+            // Счёт сверху, чтобы его было видно сразу. Показываем всегда,
+            // когда есть что считать (владелец 31.08.2026).
+            if (answered && data.gradable_count) {
+                listEl.appendChild(el(
+                    'p', 'lrn-blk-score',
+                    'Верных ответов: ' + data.correct_count + ' из ' + data.gradable_count
+                ));
             }
             blocks.forEach(function (block, index) {
                 var renderer = RENDERERS[block.block_type];
@@ -212,6 +255,9 @@
                 if (renderer) listEl.appendChild(renderer(block, index));
             });
             if (data.has_questions && data.submit_endpoint) appendSubmit(data);
+            else if (answered && data.has_questions) {
+                listEl.appendChild(el('p', 'video-help', 'Ответ сохранён, изменить его нельзя.'));
+            }
             statusEl.hidden = true;
             listEl.hidden = false;
         }

@@ -1125,3 +1125,24 @@ body.has-video-pseudo-fullscreen .ios-learning { isolation: auto; }
 .lrn-blk-option input { flex: none; margin: 0; }
 
 .lrn-blk-submit { display: flex; flex-direction: column; gap: var(--s-2); align-items: flex-start; }
+
+/* Вердикт проверки и галерея в панели задания (владелец 31.08.2026).
+   Правильность — значком и словом, не одним цветом: цвет читают не все. */
+
+.lrn-blk-score {
+    margin: 0 0 var(--s-2); padding: var(--s-2) var(--s-3);
+    border-radius: var(--r-sm); background: var(--surface-2);
+    color: var(--text); font-weight: 600;
+}
+
+.lrn-blk-verdict {
+    display: inline-flex; align-items: center; gap: 6px;
+    align-self: flex-start; padding: 2px 10px;
+    border-radius: var(--r-pill); font-size: 0.9em; font-weight: 600;
+}
+.lrn-blk-verdict.is-ok { color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
+.lrn-blk-verdict.is-wrong { color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
+
+.lrn-blk-gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s-2); }
+.lrn-blk-gallery.is-single { grid-template-columns: 1fr; }
+.lrn-blk-option input:disabled + span { color: var(--muted); }
