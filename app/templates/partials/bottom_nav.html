@@ -45,17 +45,25 @@
     box-shadow: var(--sh-md);
     text-decoration: none; -webkit-tap-highlight-color: transparent;
     transform: scale(0); opacity: 0; pointer-events: none;
-    transition: transform .3s var(--ease-out), opacity .2s ease, color .15s ease;
+    transition: transform .3s var(--ease-out), opacity .2s ease, color .15s ease, background .15s ease, border-color .15s ease;
 }
+/* Иконки — inline SVG; убираем инлайновый зазор под "строчку", иначе
+   grid центрирует бокс span'а, а не сам рисунок, и центровка едет. */
+.fan-item svg, .fan-fab-icon svg { display: block; }
 .bottom-nav.open .fan-item { transform: scale(1); opacity: 1; pointer-events: auto; }
+.fan-item:hover,
+.fan-item:active,
+.fan-item.fan-item-active {
+    background: #AF52DE; color: #fff; border-color: transparent;
+}
 .fan-item:active { transform: scale(.92); }
 .fan-item:focus-visible { outline: 2px solid #AF52DE; outline-offset: 2px; }
-.fan-item.fan-item-active { color: #AF52DE; border-color: rgba(175, 82, 222, .35); }
 .fan-item.nav-disabled { opacity: .4; pointer-events: none; }
+/* Трекер — первый пункт веера, обводку убираем по просьбе владельца. */
+.fan-item-wrap[data-key="tracker"] .fan-item { border-color: transparent; }
 
 .fan-item-label {
-    position: absolute; top: -10px; left: 0;
-    transform: translate(-50%, -100%);
+    position: absolute; top: 0; left: 0;
     background: rgba(249, 249, 251, .92);
     backdrop-filter: blur(16px);
     border: .5px solid rgba(60, 60, 67, .14);
@@ -67,8 +75,11 @@
     pointer-events: none;
 }
 .bottom-nav.open .fan-item-label { opacity: 1; }
-.fan-item-wrap.lbl-left .fan-item-label { transform: translate(0, -100%); }
-.fan-item-wrap.lbl-right .fan-item-label { transform: translate(-100%, -100%); }
+/* Левая половина веера (3 пункта) — подпись сверху-слева от иконки,
+   правая половина (3 пункта) — сверху-справа. Отступ в 26px гарантированно
+   выносит подпись за круг иконки (радиус 24px), чтобы не перекрывались. */
+.fan-item-wrap.lbl-left .fan-item-label { transform: translate(calc(-100% - 26px), calc(-100% - 26px)); }
+.fan-item-wrap.lbl-right .fan-item-label { transform: translate(26px, calc(-100% - 26px)); }
 
 .fan-fab {
     position: absolute; inset: 0;
@@ -184,7 +195,7 @@
     <div class="fan-backdrop" id="fanBackdrop"></div>
     <div class="fan-items" id="fanItems">
         {% for item in student_items %}
-        <div class="fan-item-wrap" data-idx="{{ loop.index0 }}">
+        <div class="fan-item-wrap" data-idx="{{ loop.index0 }}" data-key="{{ item.key }}">
             {% if item.soon %}
             <a href="#" class="fan-item nav-disabled" aria-disabled="true" tabindex="-1" aria-label="{{ item.aria_label }}" onclick="return false;">
                 <span aria-hidden="true">{{ student_nav_icon(item.icon, 20) }}</span>
@@ -218,18 +229,26 @@
 
     function layout() {
         var n = wraps.length;
-        var radius = Math.max(92, Math.min(128, window.innerWidth / 2 - 42));
+        // Растягиваем веер почти на всю ширину экрана (radiusX), но по
+        // высоте держим его приплюснутым и близко к кнопке (radiusY) —
+        // не купол, а пологий горизонт. Разлёт по углу — не все 180°: у
+        // самого горизонта (0°/180°) точки равного шага по углу сходятся
+        // почти вплотную (cos почти не меняется) и соседние кружки лезут
+        // друг на друга, поэтому крайние пункты чуть подняты от горизонта.
+        var radiusX = Math.max(130, Math.min(210, window.innerWidth / 2 - 30));
+        var radiusY = Math.min(88, radiusX * 0.5);
+        var spread = 130;
+        var startDeg = 90 + spread / 2;
         wraps.forEach(function (wrap, idx) {
-            var deg = n > 1 ? 180 - (180 / (n - 1)) * idx : 90;
+            var deg = n > 1 ? startDeg - (spread / (n - 1)) * idx : 90;
             var rad = deg * Math.PI / 180;
-            var x = Math.cos(rad) * radius;
-            var y = -Math.sin(rad) * radius;
+            var x = Math.cos(rad) * radiusX;
+            var y = -Math.sin(rad) * radiusY;
             wrap.style.setProperty('--x', x.toFixed(1) + 'px');
             wrap.style.setProperty('--y', y.toFixed(1) + 'px');
             wrap.style.setProperty('--i', idx);
             wrap.classList.remove('lbl-left', 'lbl-right');
-            if (x < -40) wrap.classList.add('lbl-left');
-            else if (x > 40) wrap.classList.add('lbl-right');
+            wrap.classList.add(idx < n / 2 ? 'lbl-left' : 'lbl-right');
         });
     }
 
