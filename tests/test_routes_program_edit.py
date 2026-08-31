@@ -487,67 +487,24 @@ def test_day_page_offers_edit_only_for_editable_kinds(
     assert str(material_task.id) in edit_data
 
 
-def test_day_page_offers_edit_for_survey_used_in_only_one_day(
+def test_survey_is_editable_like_any_other_item(
     client, db, user_factory, session_factory, monkeypatch
 ):
-    """Владелец 30.08.2026: анкету, которая пока стоит только в этом одном
-    дне, править можно — обе кнопки на месте."""
+    """Прежнее правило «анкету-шаблон нельзя править, если она стоит в
+    нескольких днях» снято 31.08.2026: вопросы стали блоками задания, и правка
+    одного дня физически не может задеть другой."""
     _freeze(monkeypatch)
     _staff_client(client, user_factory, session_factory)
+    day_iso = _future_day_iso()
 
-    client.post(
-        f"{PROGRAM}/{MONDAY}/survey",
-        json={
-            "title": "Анкета одного дня",
-            "questions": [{"text": "Как прошла неделя?", "question_type": "text", "options": []}],
-            "audience": EVERYONE,
-        },
+    created = client.post(
+        f"{PROGRAM}/{day_iso}/survey",
+        json={"title": "Анкета недели", "audience": EVERYONE},
     )
-    survey_task = db.query(TrackerTask).filter(TrackerTask.kind == "survey").one()
+    assert created.status_code == 200, created.text
 
-    page = client.get(f"{PROGRAM}/{MONDAY}").text
-    survey_article = page[page.index(f'data-item-id="{survey_task.id}"'):]
-    assert 'data-item-edit' in survey_article[:survey_article.index('</article>')]
-
-    edit_data_json = page.split('programEditData = ')[1].split(';\n')[0]
-    edit_data = json.loads(edit_data_json)
-    payload = edit_data[str(survey_task.id)]
-    assert payload["title"] == "Анкета одного дня"
-    assert payload["questions"][0]["text"] == "Как прошла неделя?"
-
-
-def test_day_page_hides_edit_for_survey_reused_on_another_day(
-    client, db, user_factory, session_factory, monkeypatch
-):
-    """Владелец 30.08.2026: анкета — переиспользуемый шаблон, правка из
-    карточки одного дня не должна молча менять её во всех остальных, где
-    она уже стоит — правку скрываем целиком, обе кнопки становятся только
-    «Удалить»."""
-    _freeze(monkeypatch)
-    _staff_client(client, user_factory, session_factory)
-
-    client.post(
-        f"{PROGRAM}/{MONDAY}/survey",
-        json={
-            "title": "Общая анкета",
-            "questions": [{"text": "Как настроение?", "question_type": "text", "options": []}],
-            "audience": EVERYONE,
-        },
-    )
-    from app.models.survey import Survey
-    survey = db.query(Survey).one()
-
-    client.post(
-        f"{PROGRAM}/{TUESDAY}/survey",
-        json={"survey_id": survey.id, "audience": EVERYONE},
-    )
-    survey_tasks = db.query(TrackerTask).filter(TrackerTask.kind == "survey").order_by(TrackerTask.id).all()
-    assert len(survey_tasks) == 2
-    monday_task = survey_tasks[0]
-
-    page = client.get(f"{PROGRAM}/{MONDAY}").text
-    edit_data_json = page.split('programEditData = ')[1].split(';\n')[0]
-    edit_data = json.loads(edit_data_json)
-    assert str(monday_task.id) not in edit_data
-    survey_article = page[page.index(f'data-item-id="{monday_task.id}"'):]
-    assert 'data-item-edit' not in survey_article[:survey_article.index('</article>')]
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "survey").one()
+    page = client.get(f"{PROGRAM}/{day_iso}")
+    assert page.status_code == 200
+    payload = json.loads(page.text.split("programEditData = ")[1].split(";" + chr(10))[0])
+    assert str(task.id) in payload

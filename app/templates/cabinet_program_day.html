@@ -318,57 +318,7 @@ FORM: Operate.
         <p class="prg-message" data-form-message></p>
     </form>
 
-    <form class="prg-form" data-form="survey" hidden>
-        <h2>Анкета на {{ day.day }} число</h2>
-        <p class="prg-hint">
-            Анкета — переиспользуемый шаблон: выберите готовую, если этот же
-            набор вопросов уже показывался раньше, или соберите новый.
-        </p>
-
-        <div class="prg-grid2" data-survey-mode-picker>
-            <label class="prg-field prg-field--row">
-                <input type="radio" name="survey-mode" data-s-mode value="new" checked>
-                <span>Новая анкета</span>
-            </label>
-            <label class="prg-field prg-field--row">
-                <input type="radio" name="survey-mode" data-s-mode value="existing" {% if not surveys %}disabled{% endif %}>
-                <span>Уже есть в базе{% if not surveys %} — пока пусто{% endif %}</span>
-            </label>
-        </div>
-
-        <div data-survey-existing hidden>
-            <label class="prg-field">Какую анкету поставить в этот день
-                <select data-s-existing>
-                    <option value="">— выберите анкету —</option>
-                    {% for survey in surveys %}
-                    <option value="{{ survey.id }}">{{ survey.title }} — вопросов: {{ survey.question_count }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-        </div>
-
-        <div data-survey-new>
-            <label class="prg-field">Название анкеты
-                <input type="text" data-s-title maxlength="200" autocomplete="off">
-            </label>
-            <div data-s-questions></div>
-            <div class="prg-actions">
-                <button type="button" class="btn-outline" data-add-question>Добавить вопрос</button>
-            </div>
-        </div>
-
-        <label class="prg-field prg-field--row">
-            <input type="checkbox" data-s-required checked>
-            <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
-        </label>
-        {{ tariff_fields() }}
-        {{ blocks_editor() }}
-        <div class="prg-actions">
-            <button type="button" class="btn-blue" data-survey-save>Сохранить</button>
-            <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
-        </div>
-        <p class="prg-message" data-form-message></p>
-    </form>
+    {{ simple_form('survey', 'Анкета', 'Вопросы собираются блоками ниже — как и всё остальное содержимое. Готовый набор можно взять из другого задания.') }}
 
     {{ simple_form('material', 'Материалы', 'Текст, ссылки, файлы — ученик отмечает сам.') }}
     {{ simple_form('quiz', 'Тест по теории', 'Задание на самопроверку — ученик отмечает сам, автоматической проверки нет. Не путать с мини-опросом после видео.') }}
@@ -585,7 +535,6 @@ FORM: Operate.
     // ── Видео и самостоятельная работа ──────────────────────────────────
     var videoForm = document.querySelector('[data-form="video"]');
     var homeworkForm = document.querySelector('[data-form="homework"]');
-    var surveyForm = document.querySelector('[data-form="survey"]');
     var homeworkImages = [];
     // Ролик для дня выбирают из каталога — id отмеченной радиокнопки.
     var selectedVideoId = null;
@@ -1049,139 +998,7 @@ FORM: Operate.
     // ── Анкета ──────────────────────────────────────────────────────────
     // Вопрос — карточка вида ticketHTML: своё поле текста, тип ответа и
     // блок вариантов, который виден только для single/multiple.
-    function optionHTML() {
-        return ''
-            + '<div class="prg-option" data-option>'
-            + '  <input type="text" data-o-text maxlength="300" placeholder="Вариант ответа">'
-            + '  <label><input type="checkbox" data-o-correct> Верный</label>'
-            + '  <button type="button" class="btn-outline" data-remove-option>Убрать</button>'
-            + '</div>';
-    }
-
-    function questionTypeOptions() {
-        return questionTypes.map(function (qt) {
-            return '<option value="' + qt.value + '">' + qt.label + '</option>';
-        }).join('');
-    }
-
-    function questionHTML(number) {
-        return ''
-            + '<div class="prg-ticket" data-question>'
-            + '  <div class="prg-ticket-head"><strong>Вопрос ' + number + '</strong>'
-            + '    <button type="button" class="btn-outline" data-remove-question>Убрать</button></div>'
-            + '  <label class="prg-field">Текст вопроса<textarea data-q-text maxlength="500"></textarea></label>'
-            + '  <label class="prg-field">Тип ответа<select data-q-type>' + questionTypeOptions() + '</select></label>'
-            + '  <div data-q-options>'
-            + '    <div data-options-list></div>'
-            + '    <div class="prg-actions"><button type="button" class="btn-outline" data-add-option>Добавить вариант</button></div>'
-            + '  </div>'
-            + '</div>';
-    }
-
-    // Тип «свободный текст» не показывает варианты — гейт по значению select,
-    // синхронизируется при каждой смене типа и сразу после создания вопроса.
-    function syncQuestionOptions(card) {
-        var type = card.querySelector('[data-q-type]').value;
-        card.querySelector('[data-q-options]').hidden = type === 'text';
-    }
-
-    function addQuestion() {
-        var holder = surveyForm.querySelector('[data-s-questions]');
-        holder.insertAdjacentHTML('beforeend', questionHTML(holder.children.length + 1));
-        var card = holder.lastElementChild;
-        var optionsList = card.querySelector('[data-options-list]');
-        optionsList.insertAdjacentHTML('beforeend', optionHTML());
-        optionsList.insertAdjacentHTML('beforeend', optionHTML());
-        syncQuestionOptions(card);
-    }
-
-    function collectSurveyQuestions() {
-        var questions = [];
-        surveyForm.querySelectorAll('[data-question]').forEach(function (card) {
-            var text = card.querySelector('[data-q-text]').value.trim();
-            if (!text) return;
-            var type = card.querySelector('[data-q-type]').value;
-            var options = [];
-            if (type !== 'text') {
-                card.querySelectorAll('[data-option]').forEach(function (row) {
-                    var optionText = row.querySelector('[data-o-text]').value.trim();
-                    if (!optionText) return;
-                    options.push({
-                        text: optionText,
-                        is_correct: row.querySelector('[data-o-correct]').checked
-                    });
-                });
-            }
-            questions.push({text: text, question_type: type, options: options});
-        });
-        return questions;
-    }
-
-    if (surveyForm) {
-        surveyForm.addEventListener('change', function (event) {
-            if (event.target.hasAttribute('data-s-mode')) {
-                var isExisting = event.target.value === 'existing';
-                surveyForm.querySelector('[data-survey-existing]').hidden = !isExisting;
-                surveyForm.querySelector('[data-survey-new]').hidden = isExisting;
-            }
-            if (event.target.hasAttribute('data-q-type')) {
-                syncQuestionOptions(event.target.closest('[data-question]'));
-            }
-        });
-    }
-
-    if (mockForm) {
-        mockForm.addEventListener('change', function (event) {
-            if (event.target.hasAttribute('data-subject-toggle')) {
-                var block = event.target.closest('[data-subject-block]');
-                var body = block.querySelector('[data-subject-body]');
-                body.hidden = !event.target.checked;
-                if (event.target.checked && !block.querySelector('[data-ticket]')) {
-                    block.querySelector('[data-tickets]').insertAdjacentHTML('beforeend', ticketHTML(1));
-                }
-            }
-            if (event.target.hasAttribute('data-t-image')) {
-                uploadTicketImage(event.target, event.target.closest('[data-ticket]').querySelector('[data-t-thumb]'));
-            }
-        });
-    }
-
-    // ── Переключение вкладок ────────────────────────────────────────────
-    // Реестр собирается из DOM, а не перечислен руками: новый вид элемента —
-    // это плитка с data-open-form и форма с тем же data-form, без правок JS.
-    // В прошедшем дне шаблон не рендерит ни плиток, ни форм — реестр пуст,
-    // и обработчик просто ничего не делает.
-    var tiles = Array.prototype.slice.call(document.querySelectorAll('[data-open-form]'));
-    var forms = Array.prototype.slice.call(document.querySelectorAll('.prg-form[data-form]'));
-
-    // Заполненное не сбрасываем: преподаватель мог набрать билеты и загрузить
-    // картинки, уход на соседнюю вкладку не должен их стирать.
-    function showForm(kind) {
-        forms.forEach(function (form) { form.hidden = form.dataset.form !== kind; });
-        tiles.forEach(function (tile) {
-            var isActive = tile.dataset.openForm === kind;
-            tile.classList.toggle('is-active', isActive);
-            tile.setAttribute('aria-expanded', isActive ? 'true' : 'false');
-        });
-        var opened = forms.filter(function (form) { return form.dataset.form === kind; })[0];
-        if (opened) opened.scrollIntoView({behavior: 'smooth', block: 'start'});
-    }
-
-    function hideForms() {
-        forms.forEach(function (form) { form.hidden = true; });
-        tiles.forEach(function (tile) {
-            tile.classList.remove('is-active');
-            tile.setAttribute('aria-expanded', 'false');
-        });
-    }
-
-    hideForms();
-
-    // ── Правка вместо удаления-и-пересоздания ────────────────────────────
-    // «Изменить» на карточке открывает ту же форму, что и плитка создания,
-    // предзаполненную текущими значениями. Сохранение идёт по task_id
-    // (itemUrl выше), а не по dayIso — день элемента не меняется.
-    var simpleEditableKinds = ['material', 'quiz', 'lesson', 'checklist'];
+    var simpleEditableKinds = ['material', 'quiz', 'lesson', 'checklist', 'survey'];
 
     function resetMockFormForCreate() {
         delete mockForm.dataset.editingTaskId;
@@ -1199,71 +1016,6 @@ FORM: Operate.
         resetTariffFields(mockForm);
         renderFormBlocks(mockForm, []);
         setFormMessage('');
-    }
-
-    // Правка блокирует вопросы, только если анкету уже кто-то заполнил
-    // (владелец 30.08.2026, см. survey.py::set_questions) — is_required и
-    // мини-опрос при этом остаются доступны.
-    function setSurveyQuestionControlsDisabled(disabled) {
-        surveyForm.querySelectorAll(
-            '[data-q-text], [data-q-type], [data-o-text], [data-o-correct], '
-            + '[data-remove-question], [data-remove-option], [data-add-option]'
-        ).forEach(function (el) { el.disabled = disabled; });
-        surveyForm.querySelector('[data-add-question]').disabled = disabled;
-    }
-
-    function resetSurveyFormForCreate() {
-        delete surveyForm.dataset.editingTaskId;
-        surveyForm.querySelector('[data-survey-mode-picker]').hidden = false;
-        surveyForm.querySelector('[data-s-mode][value="new"]').checked = true;
-        surveyForm.querySelector('[data-survey-existing]').hidden = true;
-        surveyForm.querySelector('[data-survey-new]').hidden = false;
-        surveyForm.querySelector('[data-s-title]').value = '';
-        surveyForm.querySelector('[data-s-questions]').innerHTML = '';
-        setSurveyQuestionControlsDisabled(false);
-        surveyForm.querySelector('[data-s-required]').checked = true;
-        resetTariffFields(surveyForm);
-        renderFormBlocks(surveyForm, []);
-        setMessage(surveyForm, '', false);
-    }
-
-    function openSurveyEdit(taskId, data) {
-        surveyForm.dataset.editingTaskId = String(taskId);
-        surveyForm.querySelector('[data-survey-mode-picker]').hidden = true;
-        surveyForm.querySelector('[data-survey-existing]').hidden = true;
-        surveyForm.querySelector('[data-survey-new]').hidden = false;
-        surveyForm.querySelector('[data-s-title]').value = data.title || '';
-
-        var holder = surveyForm.querySelector('[data-s-questions]');
-        holder.innerHTML = '';
-        (data.questions || []).forEach(function (question) {
-            holder.insertAdjacentHTML('beforeend', questionHTML(holder.children.length + 1));
-            var card = holder.lastElementChild;
-            card.querySelector('[data-q-text]').value = question.text || '';
-            card.querySelector('[data-q-type]').value = question.question_type || 'text';
-            var optionsList = card.querySelector('[data-options-list]');
-            optionsList.innerHTML = '';
-            var options = question.options && question.options.length
-                ? question.options
-                : [{text: '', is_correct: false}, {text: '', is_correct: false}];
-            options.forEach(function (option) {
-                optionsList.insertAdjacentHTML('beforeend', optionHTML());
-                var row = optionsList.lastElementChild;
-                row.querySelector('[data-o-text]').value = option.text || '';
-                row.querySelector('[data-o-correct]').checked = !!option.is_correct;
-            });
-            syncQuestionOptions(card);
-        });
-
-        var locked = !!data.survey_locked;
-        setSurveyQuestionControlsDisabled(locked);
-        surveyForm.querySelector('[data-s-required]').checked = data.is_required !== false;
-        populateTariffFields(surveyForm, data);
-        renderFormBlocks(surveyForm, data.blocks || []);
-        setMessage(surveyForm, locked
-            ? 'Анкету уже кто-то заполнил — вопросы менять нельзя, но обязательность и мини-опрос можно.'
-            : 'Правка Анкеты — измените поля и сохраните.', false);
-        showForm('survey');
     }
 
     function resetVideoFormForCreate() {
@@ -1416,7 +1168,6 @@ FORM: Operate.
                 if (openKind === 'video') resetVideoFormForCreate();
                 else if (openKind === 'homework') resetHomeworkFormForCreate();
                 else if (openKind === 'mock') resetMockFormForCreate();
-                else if (openKind === 'survey') resetSurveyFormForCreate();
                 else if (simpleEditableKinds.indexOf(openKind) !== -1) resetSimpleFormForCreate(openKind);
             }
             showForm(openKind);
@@ -1435,7 +1186,6 @@ FORM: Operate.
             if (editKind === 'video') openVideoEdit(editTaskId, editData);
             else if (editKind === 'homework') openHomeworkEdit(editTaskId, editData);
             else if (editKind === 'mock_exam') openMockEdit(editTaskId, editData);
-            else if (editKind === 'survey') openSurveyEdit(editTaskId, editData);
             else openSimpleEdit(editKind, editTaskId, editData);
             return;
         }
@@ -1670,74 +1420,6 @@ FORM: Operate.
             return;
         }
 
-        if (event.target.closest('[data-add-question]')) { addQuestion(); return; }
-
-        var removeQuestion = event.target.closest('[data-remove-question]');
-        if (removeQuestion) { removeQuestion.closest('[data-question]').remove(); return; }
-
-        var addOption = event.target.closest('[data-add-option]');
-        if (addOption) {
-            addOption.closest('[data-question]')
-                .querySelector('[data-options-list]')
-                .insertAdjacentHTML('beforeend', optionHTML());
-            return;
-        }
-
-        var removeOption = event.target.closest('[data-remove-option]');
-        if (removeOption) { removeOption.closest('[data-option]').remove(); return; }
-
-        var saveSurvey = event.target.closest('[data-survey-save]');
-        if (saveSurvey) {
-            if (surveyForm.dataset.editingTaskId) {
-                var titleEdit = surveyForm.querySelector('[data-s-title]').value.trim();
-                if (!titleEdit) { setMessage(surveyForm, 'Укажите название анкеты.', true); return; }
-                saveSurvey.disabled = true;
-                var surveyEditTariff = collectTariffFields(surveyForm);
-                api(itemUrl('survey', surveyForm), {
-                    title: titleEdit,
-                    questions: collectSurveyQuestions(),
-                    is_required: surveyForm.querySelector('[data-s-required]').checked,
-                    tariff_restricted: surveyEditTariff.tariff_restricted,
-                    tariffs: surveyEditTariff.tariffs,
-                    blocks: collectFormBlocks(surveyForm)
-                }).then(afterSave).catch(function (error) {
-                    saveSurvey.disabled = false;
-                    setMessage(surveyForm, saveError(error, 'анкету'), true);
-                });
-                return;
-            }
-            var audienceSurvey = Object.assign(
-                {assign_to_all: true, tag_ids: [], assignee_usernames: ''},
-                collectTariffFields(surveyForm)
-            );
-            var mode = surveyForm.querySelector('[data-s-mode]:checked').value;
-            var payload = {
-                audience: audienceSurvey,
-                is_required: surveyForm.querySelector('[data-s-required]').checked,
-                blocks: collectFormBlocks(surveyForm)
-            };
-            if (mode === 'existing') {
-                var surveyId = surveyForm.querySelector('[data-s-existing]').value;
-                if (!surveyId) { setMessage(surveyForm, 'Выберите анкету из списка.', true); return; }
-                payload.survey_id = Number(surveyId);
-            } else {
-                var titleSurvey = surveyForm.querySelector('[data-s-title]').value.trim();
-                if (!titleSurvey) { setMessage(surveyForm, 'Укажите название анкеты.', true); return; }
-                var questions = collectSurveyQuestions();
-                if (!questions.length) {
-                    setMessage(surveyForm, 'Добавьте хотя бы один вопрос с текстом.', true);
-                    return;
-                }
-                payload.title = titleSurvey;
-                payload.questions = questions;
-            }
-            saveSurvey.disabled = true;
-            api('/cabinet/staff/program/' + dayIso + '/survey', payload).then(afterSave).catch(function (error) {
-                saveSurvey.disabled = false;
-                setMessage(surveyForm, saveError(error, 'анкету'), true);
-            });
-            return;
-        }
 
         var removeButton = event.target.closest('[data-item-delete]');
         if (!removeButton) return;

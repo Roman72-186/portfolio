@@ -25,11 +25,9 @@ from app.models.tracker import (
     ITEM_MOCK_EXAM,
     ITEM_VIDEO,
     SOURCE_HOMEWORK,
-    SOURCE_SURVEY,
     TrackerTask,
 )
 from app.models.learning_video import LearningVideo
-from app.services.survey import get_surveys, question_counts as survey_question_counts
 from app.services.tz import MSK_TZ, msk_midnight, today_msk
 from app.services.video_topics import (
     count_topic_audience,
@@ -386,12 +384,6 @@ def item_details(db: Session, tasks: list[TrackerTask]) -> dict[int, dict]:
         ):
             videos.setdefault(video.topic_id, video)
 
-    survey_ids = [
-        t.source_id for t in tasks if t.source_kind == SOURCE_SURVEY and t.source_id
-    ]
-    surveys = get_surveys(db, survey_ids)
-    survey_counts = survey_question_counts(db, list(surveys.keys()))
-
     # Блоки конструктора (владелец 31.08.2026) — счётчики, а не содержимое:
     # карточка решает, рисовать ли раскрывашку, сами блоки приходят по запросу
     # с `/cabinet/tracker/tasks/{id}/blocks`, как раньше делал мини-опрос.
@@ -416,12 +408,9 @@ def item_details(db: Session, tasks: list[TrackerTask]) -> dict[int, dict]:
 
     details: dict[int, dict] = {}
     for task in tasks:
-        survey = surveys.get(task.source_id) if task.source_kind == SOURCE_SURVEY else None
         details[task.id] = {
             "homework": homework.get(task.source_id) if task.source_kind == SOURCE_HOMEWORK else None,
             "video": videos.get(task.topic_id),
-            "survey": survey,
-            "survey_question_count": survey_counts.get(survey.id, 0) if survey else 0,
             "quiz_question_count": quiz_counts.get(task.id, 0),
             "block_count": block_counts.get(task.id, 0),
         }

@@ -36,13 +36,21 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
-from app.models.survey import (  # noqa: F401  (реэкспорт: один язык типов на обе формы)
-    QUESTION_MULTIPLE,
-    QUESTION_SINGLE,
-    QUESTION_TEXT,
-    QUESTION_TYPE_LABELS,
-    QUESTION_TYPES,
-)
+
+# Типы вопроса. Раньше жили в `app/models/survey.py` и импортировались сюда;
+# после переезда анкеты в блоки (31.08.2026) анкеты как отдельной сущности нет,
+# и это единственный их дом.
+QUESTION_SINGLE = "single"      # один вариант ответа, один верный (викторина)
+QUESTION_MULTIPLE = "multiple"  # несколько вариантов, два и более верных
+QUESTION_TEXT = "text"          # свободный текст, без вариантов
+
+QUESTION_TYPES = (QUESTION_SINGLE, QUESTION_MULTIPLE, QUESTION_TEXT)
+
+QUESTION_TYPE_LABELS = {
+    QUESTION_SINGLE: "Один вариант ответа",
+    QUESTION_MULTIPLE: "Несколько вариантов ответа",
+    QUESTION_TEXT: "Свободный текст",
+}
 
 BLOCK_TEXT = "text"          # абзац текста
 BLOCK_PHOTO = "photo"        # одна картинка в S3

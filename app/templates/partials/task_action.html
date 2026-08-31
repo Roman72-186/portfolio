@@ -11,7 +11,7 @@
 неделе (решение Р1), это станет обходом в одно нажатие.
 
 **Галочку убираем только там, где задача закрывается сама.** Видео
-(`video.py::_close_video_task_once`) и анкета (`survey_submission.py::submit_student_survey`)
+(`video.py::_close_video_task_once`)
 закрываются по своему событию. Домашка и пробник (23.08, решение владельца)
 закрываются либо автоматически по факту загрузки финального фото (тариф без
 обратной связи), либо кнопкой куратора «Принять работу»/«Закрыть цикл» (тариф
@@ -34,7 +34,6 @@
 #}
 {% set task = entry.task %}
 {% set detail = (details or {}).get(task.id, {}) %}
-{% set survey_autocloses = task.kind == 'survey' and detail.survey %}
 {# `detail.video` у program.py::item_details — любой прикреплённый ролик,
    включая черновик (staff-экран дня читает тот же `detail.video.status`).
    Ученику показываем ссылку/плеер только на готовый — is_published+ready, та
@@ -46,7 +45,7 @@
    Раньше отсутствие готового видео сбрасывало задачу в общую ветку ниже, и
    она рисовала кнопку «Отметить» — ровно тот обход в одно нажатие, от
    которого этот partial существует (см. шапку файла). #}
-{% set autocloses = task.kind == 'video' or survey_autocloses or task.kind in ('homework', 'mock_exam') %}
+{% set autocloses = task.kind == 'video' or task.kind in ('homework', 'mock_exam') %}
 
 {% if task.kind == 'mock_exam' and inline_expand %}
 <details class="trk-row-expand" data-task-kind="mock_exam">
@@ -68,8 +67,6 @@
 <a class="btn-blue" href="/cabinet/videos/{{ video.id }}">Смотреть</a>
 {% elif task.kind == 'video' %}
 <span class="trk-pending-note">Видео скоро появится</span>
-{% elif survey_autocloses %}
-<a class="btn-blue" href="/cabinet/survey/{{ task.id }}">Заполнить анкету</a>
 {% elif task.kind == 'homework' %}
 <a class="btn-blue" href="/cabinet/homework/{{ task.id }}">Начать</a>
 {% endif %}

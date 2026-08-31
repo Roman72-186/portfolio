@@ -288,6 +288,14 @@ def upgrade() -> None:
     op.drop_column("task_blocks", "legacy_sq_id")
     op.drop_column("task_block_options", "legacy_so_id")
 
+    # Источник «анкета» исчезает вместе с сущностью: `source_id` указывал бы на
+    # удалённую строку, а гасить задачу по факту заполнения анкеты больше
+    # некому — теперь это обычные блоки-вопросы.
+    op.execute(
+        "UPDATE tracker_tasks SET source_kind = NULL, source_id = NULL "
+        "WHERE source_kind = 'survey'"
+    )
+
     # Старые таблицы сносим в порядке зависимостей.
     op.drop_table("survey_answer_options")
     op.drop_table("survey_answers")

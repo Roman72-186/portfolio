@@ -43,11 +43,9 @@ SOURCE_EXAM_ASSIGNMENT = "exam_assignment"  # сдача пробника
 SOURCE_LEARNING_TOPIC = "learning_topic"    # просмотр видео недели
 SOURCE_FEEDBACK = "feedback"                # ответ в диалоге обратной связи
 SOURCE_HOMEWORK = "homework"                # сдача домашней работы
-SOURCE_SURVEY = "survey"                    # заполнение анкеты (app/models/survey.py)
 
 SOURCE_KINDS = (
     SOURCE_EXAM_ASSIGNMENT, SOURCE_LEARNING_TOPIC, SOURCE_FEEDBACK, SOURCE_HOMEWORK,
-    SOURCE_SURVEY,
 )
 
 # Тип элемента программы — что преподаватель ставит в день недели. Отличается от

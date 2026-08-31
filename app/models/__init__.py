@@ -61,11 +61,3 @@ from app.models.tracker import (
     TrackerTaskState,
     TrackerTaskTag,
 )
-from app.models.survey import (
-    Survey,
-    SurveyAnswer,
-    SurveyAnswerOption,
-    SurveyOption,
-    SurveyQuestion,
-    SurveyResponse,
-)
