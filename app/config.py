@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     s3_bucket: str = ""
     s3_access_key: str = ""
     s3_secret_key: str = ""
-    s3_region: str = "ru-1"
+    s3_region: str = "ru-3"
     # Публичный домен для отдачи объектов, если отличается от S3_ENDPOINT+S3_BUCKET.
     # У Selectel это отдельный домен вида https://{bucket_uuid}.selstorage.ru — тот же
     # домен, что и S3_ENDPOINT, объекты анонимно не отдаёт (проверено на боевом бакете).
