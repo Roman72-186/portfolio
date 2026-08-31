@@ -63,6 +63,7 @@
 .fan-item-wrap[data-key="tracker"] .fan-item { border-color: transparent; }
 
 .fan-item-label {
+    display: none;
     position: absolute; top: 0; left: 0;
     background: rgba(249, 249, 251, .92);
     backdrop-filter: blur(16px);
@@ -229,21 +230,12 @@
 
     function layout() {
         var n = wraps.length;
-        // Растягиваем веер почти на всю ширину экрана (radiusX), но по
-        // высоте держим его приплюснутым и близко к кнопке (radiusY) —
-        // не купол, а пологий горизонт. Разлёт по углу — не все 180°: у
-        // самого горизонта (0°/180°) точки равного шага по углу сходятся
-        // почти вплотную (cos почти не меняется) и соседние кружки лезут
-        // друг на друга, поэтому крайние пункты чуть подняты от горизонта.
-        var radiusX = Math.max(130, Math.min(210, window.innerWidth / 2 - 30));
-        var radiusY = Math.min(88, radiusX * 0.5);
-        var spread = 130;
-        var startDeg = 90 + spread / 2;
+        var radius = Math.max(92, Math.min(128, window.innerWidth / 2 - 42));
         wraps.forEach(function (wrap, idx) {
-            var deg = n > 1 ? startDeg - (spread / (n - 1)) * idx : 90;
+            var deg = n > 1 ? 180 - (180 / (n - 1)) * idx : 90;
             var rad = deg * Math.PI / 180;
-            var x = Math.cos(rad) * radiusX;
-            var y = -Math.sin(rad) * radiusY;
+            var x = Math.cos(rad) * radius;
+            var y = -Math.sin(rad) * radius;
             wrap.style.setProperty('--x', x.toFixed(1) + 'px');
             wrap.style.setProperty('--y', y.toFixed(1) + 'px');
             wrap.style.setProperty('--i', idx);
