@@ -9,6 +9,7 @@ import {
 import { setVideoList } from "./video.js";
 import { setSchemeImages } from "./scheme.js";
 import { renderUniversalContent } from "./universalRenderer.js";
+import { resolveAssetUrl } from "./assetUrl.js";
 let dom = null;
 let currentCard = null;
 
@@ -213,17 +214,7 @@ syncUniversalContent();
 
 function normalizeAssetUrl(url) {
   if (!url) return url;
-
-  const s = String(url);
-
-  const isAbsolute =
-    /^https?:\/\//i.test(s) ||
-    s.startsWith("/") ||
-    s.startsWith("data:");
-
-  return isAbsolute
-    ? s
-    : `https://api.apparchi.ru/?path=${encodeURIComponent(s)}`;
+  return resolveAssetUrl(url);
 }
 
 function syncUniversalContent() {

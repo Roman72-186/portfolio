@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
+import { resolveAssetUrl } from "./assetUrl.js";
 
 let scene = null;
 let camera = null;
@@ -1271,18 +1272,7 @@ function clearRoomsMaterialOverrides() {
 }
 
 function normalizeRoomTextureUrl(url) {
-  if (!url) return "";
-
-  const s = String(url);
-
-  const isAbsolute =
-    /^https?:\/\//i.test(s) ||
-    s.startsWith("/") ||
-    s.startsWith("data:");
-
-  return isAbsolute
-    ? s
-    : `https://api.apparchi.ru/?path=${encodeURIComponent(s)}`;
+  return resolveAssetUrl(url);
 }
 
 function getRoomObjectKey(obj) {

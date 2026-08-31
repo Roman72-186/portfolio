@@ -8,6 +8,7 @@ import { MODELS, loadModel, getModelMeta } from "./models.js";
 import { initThree, setModel as threeSetModel, clearModel as threeClearModel, resize as threeResize } from "./threeViewer.js";
 import { initScheme, setSchemeImages, activateScheme, deactivateScheme, resetSchemeView } from "./scheme.js";
 import { initVideo, setVideoList, activateVideo, deactivateVideo } from "./video.js";
+import { resolveAssetUrl } from "./assetUrl.js";
 
 let dom = null;
 let currentModelId = null;
@@ -340,17 +341,7 @@ function openUniversalArch(modelItem, card) {
 
 function normalizeContentAssetUrl(url) {
   if (!url) return url;
-
-  const s = String(url);
-
-  const isAbsolute =
-    /^https?:\/\//i.test(s) ||
-    s.startsWith("/") ||
-    s.startsWith("data:");
-
-  return isAbsolute
-    ? s
-    : `https://api.apparchi.ru/?path=${encodeURIComponent(s)}`;
+  return resolveAssetUrl(url);
 }
 
 function openContentCard(card) {

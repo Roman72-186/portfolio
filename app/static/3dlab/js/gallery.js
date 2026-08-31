@@ -9,6 +9,7 @@
 // НЕ содержит three.js, viewer, UI вкладок и т.п.
 
 import { MODELS } from "./models.js";
+import { resolveAssetUrl } from "./assetUrl.js";
 import { cachedFetch } from "./cache/cachedFetch.js";
 
 /**
@@ -20,16 +21,7 @@ import { cachedFetch } from "./cache/cachedFetch.js";
  * @param {function(string):void} options.onSelect — вызывается при клике по карточке
  */
 function resolvePreviewUrl(preview) {
-  if (!preview) return "";
-
-  const isAbsolute =
-    /^https?:\/\//i.test(preview) ||
-    preview.startsWith("/") ||
-    preview.startsWith("data:");
-
-  return isAbsolute
-    ? preview
-    : `https://api.apparchi.ru/?path=${encodeURIComponent(preview)}`;
+  return resolveAssetUrl(preview);
 }
 
 function warmPreview(preview) {

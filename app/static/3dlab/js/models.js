@@ -6,11 +6,12 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 // IndexedDB cache
 import { cachedFetch } from "./cache/cachedFetch.js";
+import { ASSET_BASE } from "./assetUrl.js";
 import { INSET_SOURCE_DEFS } from "./insetsModels.js";
 import { ROOM_SOURCE_DEFS } from "./roomsModels.js";
 
-// БАЗОВЫЙ URL для защищённого доступа
-const BASE = "https://api.apparchi.ru/?path=";
+// Базовый адрес хранилища ассетов — один на всю лабораторию, см. assetUrl.js
+const BASE = ASSET_BASE;
 // ✅ Source-модели для врезок (генерятся из insetsModels.js)
 const INSET_SOURCE_MODELS = (INSET_SOURCE_DEFS || []).map((d) => ({
   id: d.id,
@@ -478,6 +479,9 @@ if (window.TG_INIT_DATA) {
 
   const isGltfUrl = /\.gltf(\?|$)/i.test(url);
 
+  // Две ветки ниже: `?path=` срабатывает, если ASSET_BASE снова станет
+  // роутом-выдачей с параметром пути (например, своим закрытым сессией),
+  // а обычный разбор URL — для прямых ссылок в хранилище, как сейчас.
   const resolveSiblingAssetUrl = (sourceUrl, assetUri) => {
     if (!assetUri || /^data:/i.test(assetUri)) return null;
     if (/^https?:\/\//i.test(assetUri)) return assetUri;

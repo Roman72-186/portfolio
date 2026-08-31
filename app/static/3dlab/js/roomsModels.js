@@ -4,7 +4,10 @@
 // Пока используем временно те же ресурсы, что и в "Архитектурных деталях",
 // чтобы быстро поднять новый раздел.
 // Позже ты просто заменишь preview / schemes / photos / video / sourcePath.
-const BASE = "https://api.apparchi.ru/?path=";
+import { ASSET_BASE } from "./assetUrl.js";
+
+// Базовый адрес хранилища ассетов — один на всю лабораторию, см. assetUrl.js
+const BASE = ASSET_BASE;
 const RAW_ROOMS = [
   {
     id: "room_0",

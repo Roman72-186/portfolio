@@ -21,6 +21,7 @@ import {
 } from "./threeViewer.js";
 import { loadModel } from "./models.js";
 import { INSETS, getInsetMeta } from "./insetsModels.js";
+import { resolveAssetUrl } from "./assetUrl.js";
 import { initScheme, setSchemeImages, activateScheme, deactivateScheme, resetSchemeView } from "./scheme.js";
 import { initVideo, setVideoList, activateVideo, deactivateVideo } from "./video.js";
 
@@ -565,16 +566,7 @@ function setupInset3dUiAutoHide() {
 
 function normalizeInsetSchemeUrl(url) {
   if (!url) return url;
-
-  const s = String(url);
-  const isAbsolute =
-    /^https?:\/\//i.test(s) ||
-    s.startsWith("/") ||
-    s.startsWith("data:");
-
-  return isAbsolute
-    ? s
-    : `https://api.apparchi.ru/?path=${encodeURIComponent(s)}`;
+  return resolveAssetUrl(url);
 }
 
 function getInsetCapabilities(meta) {
