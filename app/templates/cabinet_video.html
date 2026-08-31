@@ -410,12 +410,34 @@ body.has-video-pseudo-fullscreen {
             return pseudoFullscreen || fullscreenElement() === playerContainer;
         }
 
+        // `100vh`/`100dvh` в CSS не спасают на части мобильных браузеров
+        // (старый WebKit без dvh, встроенные webview VK/Telegram): при видимой
+        // адресной строке `100vh` больше реального видимого экрана, кнопка
+        // выхода (bottom:8px) уезжает за нижний край, а `overflow:hidden` на
+        // body одновременно блокирует скролл до неё — тупик без выхода
+        // (баг владельца 31.08.2026). `visualViewport` отдаёт реальную видимую
+        // высоту в любой момент, включая смену адресной строки — держим
+        // размер синхронным с ней, а не с постоянными vh/dvh.
+        function syncPseudoFullscreenSize() {
+            if (!pseudoFullscreen) return;
+            var vv = window.visualViewport;
+            playerContainer.style.height = (vv ? vv.height : window.innerHeight) + 'px';
+            playerContainer.style.width = (vv ? vv.width : window.innerWidth) + 'px';
+        }
+
         function enterPseudoFullscreen() {
             if (pseudoFullscreen) return;
             pseudoFullscreen = true;
             playerContainer.classList.add('is-pseudo-fullscreen');
             document.documentElement.classList.add('has-video-pseudo-fullscreen');
             document.body.classList.add('has-video-pseudo-fullscreen');
+            syncPseudoFullscreenSize();
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', syncPseudoFullscreenSize);
+                window.visualViewport.addEventListener('scroll', syncPseudoFullscreenSize);
+            } else {
+                window.addEventListener('resize', syncPseudoFullscreenSize);
+            }
             updateFullscreenButton();
         }
 
@@ -423,8 +445,16 @@ body.has-video-pseudo-fullscreen {
             if (!pseudoFullscreen) return;
             pseudoFullscreen = false;
             playerContainer.classList.remove('is-pseudo-fullscreen');
+            playerContainer.style.height = '';
+            playerContainer.style.width = '';
             document.documentElement.classList.remove('has-video-pseudo-fullscreen');
             document.body.classList.remove('has-video-pseudo-fullscreen');
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener('resize', syncPseudoFullscreenSize);
+                window.visualViewport.removeEventListener('scroll', syncPseudoFullscreenSize);
+            } else {
+                window.removeEventListener('resize', syncPseudoFullscreenSize);
+            }
             updateFullscreenButton();
             if (restoreFocus !== false && fullscreenButton) fullscreenButton.focus();
         }
