@@ -35,6 +35,10 @@ PROGRAM = "/cabinet/staff/program"
 EVERYONE = {"assign_to_all": True, "tag_ids": [], "assignee_usernames": ""}
 
 
+def _text_block(body):
+    return {"block_type": BLOCK_TEXT, "body": body}
+
+
 def _question(body, *, block_id=None, question_type=QUESTION_TEXT, options=None):
     item = {"block_type": BLOCK_QUESTION, "question_type": question_type, "body": body}
     if block_id is not None:
@@ -630,3 +634,57 @@ def test_hidden_question_does_not_block_closing(client, db, user_factory, sessio
     _student_client(client, user_factory, session_factory)
 
     assert client.post(f"/cabinet/tracker/tasks/{task.id}/toggle").status_code == 200
+
+
+# ── «Взять содержимое из другого задания» ───────────────────────────────────
+
+
+def test_blocks_source_lists_only_tasks_with_content(client, db, user_factory, session_factory, monkeypatch):
+    _freeze(monkeypatch, date.today())
+    _staff_client(client, user_factory, session_factory)
+    day_iso = _future_day_iso()
+    client.post(f"{PROGRAM}/{day_iso}/material",
+                json={"title": "С содержимым", "audience": EVERYONE,
+                      "blocks": [_text_block("Текст")]})
+    client.post(f"{PROGRAM}/{day_iso}/checklist",
+                json={"title": "Пустой", "audience": EVERYONE})
+
+    items = client.get(f"{PROGRAM}/blocks-source").json()["items"]
+
+    titles = [i["title"] for i in items]
+    assert "С содержимым" in titles
+    assert "Пустой" not in titles
+
+
+def test_blocks_source_returns_content_without_ids(client, db, user_factory, session_factory, monkeypatch):
+    """Содержимое копируется, а не связывается: без `id` форма заведёт новые
+    блоки, и правка копии не заденет оригинал."""
+    _freeze(monkeypatch, date.today())
+    _staff_client(client, user_factory, session_factory)
+    client.post(
+        f"{PROGRAM}/{_future_day_iso()}/material",
+        json={"title": "Источник", "audience": EVERYONE, "blocks": [
+            _text_block("Вступление"),
+            _question("Выбери", question_type=QUESTION_SINGLE,
+                      options=[{"text": "А", "is_correct": True}, {"text": "Б"}]),
+        ]},
+    )
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "material").one()
+
+    body = client.get(f"{PROGRAM}/blocks-source/{task.id}").json()
+
+    assert [b["block_type"] for b in body["blocks"]] == [BLOCK_TEXT, BLOCK_QUESTION]
+    assert all("id" not in b for b in body["blocks"])
+    assert body["blocks"][1]["options"] == [
+        {"text": "А", "is_correct": True}, {"text": "Б", "is_correct": False},
+    ]
+
+
+def test_blocks_source_404_for_task_without_blocks(client, db, user_factory, session_factory, monkeypatch):
+    _freeze(monkeypatch, date.today())
+    _staff_client(client, user_factory, session_factory)
+    client.post(f"{PROGRAM}/{_future_day_iso()}/checklist",
+                json={"title": "Пустой", "audience": EVERYONE})
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "checklist").one()
+
+    assert client.get(f"{PROGRAM}/blocks-source/{task.id}").status_code == 404

@@ -49,6 +49,15 @@ FORM: Operate.
         <button type="button" class="btn-outline" data-add-block="{{ kind }}">+ {{ label }}</button>
         {% endfor %}
     </div>
+    {# Заменяет прежнюю шаблонность анкеты: набор вопросов больше не живёт
+       отдельной сущностью, зато любой набор блоков переносится из соседнего
+       задания. Содержимое копируется, а не связывается — правка копии
+       оригинал не задевает. #}
+    <div class="prg-actions prg-blocks-take">
+        <button type="button" class="btn-outline" data-take-blocks>Взять содержимое из другого задания</button>
+        <select data-take-source hidden></select>
+        <p class="prg-hint" data-take-status></p>
+    </div>
 </div>
 {% endmacro %}
 <div class="prg-page ios-prg-day" data-day="{{ day_iso }}">
@@ -396,6 +405,16 @@ FORM: Operate.
         }
         // Редактор блоков: тип ответа решает, нужны ли варианты, а выбранный
         // файл уходит на сервер сразу — форма несёт только {url, path}.
+        if (event.target.hasAttribute('data-take-source') && event.target.value) {
+            var srcWrap = event.target.closest('[data-blocks-wrap]');
+            takeBlocksFrom(
+                event.target.closest('[data-form]'),
+                event.target.value,
+                srcWrap.querySelector('[data-take-status]')
+            );
+            event.target.value = '';
+            return;
+        }
         if (event.target.hasAttribute('data-b-question-type')) {
             syncBlockOptions(event.target.closest('[data-block]'));
             return;
@@ -737,6 +756,54 @@ FORM: Operate.
             });
             syncBlockOptions(row);
         }
+    }
+
+
+    // ── «Взять содержимое из другого задания» (владелец 31.08.2026) ────────
+    // Копия, а не связь: правка не должна задевать задание-источник.
+
+    function fillTakeSources(select, status) {
+        status.textContent = 'Ищем задания с содержимым…';
+        status.classList.remove('is-error');
+        fetch('/cabinet/staff/program/blocks-source', {
+            credentials: 'same-origin', headers: {'Accept': 'application/json'}
+        }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
+            var items = (data && data.items) || [];
+            if (!items.length) {
+                status.textContent = 'Пока не из чего брать: содержимое есть только здесь.';
+                return;
+            }
+            select.innerHTML = '<option value="">— выберите задание —</option>' + items.map(function (i) {
+                var day = i.day ? ' · ' + i.day : '';
+                return '<option value="' + i.id + '">' + escapeHTML(i.kind_label + ': ' + i.title + day) + '</option>';
+            }).join('');
+            select.hidden = false;
+            status.textContent = 'Выберите — содержимое добавится к тому, что уже есть.';
+        }).catch(function () {
+            status.textContent = 'Не удалось получить список. Попробуйте ещё раз.';
+            status.classList.add('is-error');
+        });
+    }
+
+    function takeBlocksFrom(form, taskId, status) {
+        status.classList.remove('is-error');
+        status.textContent = 'Переносим…';
+        fetch('/cabinet/staff/program/blocks-source/' + taskId, {
+            credentials: 'same-origin', headers: {'Accept': 'application/json'}
+        }).then(function (r) {
+            if (!r.ok) throw new Error();
+            return r.json();
+        }).then(function (data) {
+            var holder = form.querySelector('[data-blocks]');
+            (data.blocks || []).forEach(function (block) {
+                holder.insertAdjacentHTML('beforeend', blockRowHTML(block.block_type));
+                fillBlockRow(holder.lastElementChild, block);
+            });
+            status.textContent = 'Добавлено блоков: ' + (data.blocks || []).length + '.';
+        }).catch(function () {
+            status.textContent = 'Не удалось перенести содержимое.';
+            status.classList.add('is-error');
+        });
     }
 
     function renderFormBlocks(form, rows) {
@@ -1190,6 +1257,16 @@ FORM: Operate.
         // ── Редактор блоков (владелец 31.08.2026) ─────────────────────────
         // Всё через делегирование на форме: строки рисуются HTML-строкой и
         // своих обработчиков не несут.
+
+        var takeBlocks = event.target.closest('[data-take-blocks]');
+        if (takeBlocks) {
+            var takeWrap = takeBlocks.closest('[data-blocks-wrap]');
+            fillTakeSources(
+                takeWrap.querySelector('[data-take-source]'),
+                takeWrap.querySelector('[data-take-status]')
+            );
+            return;
+        }
 
         var addBlock = event.target.closest('[data-add-block]');
         if (addBlock) {

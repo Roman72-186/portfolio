@@ -28,6 +28,7 @@ from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, LearningTopic
 from app.models.learning_video import LearningVideo
 from app.models.task_block import (
     BLOCK_QUESTION,
+    TaskBlock,
     QUESTION_TYPE_LABELS,
     QUESTION_TYPES,
     BLOCK_TYPE_LABELS,
@@ -259,6 +260,84 @@ def program_month(
             "today_iso": today.isoformat(),
         },
     )
+
+
+# Порядок важен: «/{iso}» ниже ловит любую строку, включая «blocks-source».
+# FastAPI берёт первый подходящий маршрут, поэтому конкретные пути — выше.
+@router.get("/blocks-source", response_class=JSONResponse)
+def blocks_source_list(
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    q: str = "",
+):
+    """Задания, из которых можно взять содержимое (владелец 31.08.2026).
+
+    Заменяет прежнюю шаблонность анкеты: набор вопросов больше не живёт
+    отдельной сущностью, зато любой набор блоков переносится из соседнего
+    задания одной кнопкой. Отдаём только те, где блоки вообще есть.
+    """
+    rows = (
+        db.query(TrackerTask.id, TrackerTask.title, TrackerTask.kind, TrackerTask.due_at)
+        .join(TaskBlock, TaskBlock.task_id == TrackerTask.id)
+        .filter(TrackerTask.deleted_at.is_(None))
+    )
+    needle = (q or "").strip()
+    if needle:
+        rows = rows.filter(TrackerTask.title.ilike(f"%{needle}%"))
+    rows = (
+        rows.group_by(TrackerTask.id, TrackerTask.title, TrackerTask.kind, TrackerTask.due_at)
+        .order_by(TrackerTask.due_at.desc().nullslast())
+        .limit(50)
+        .all()
+    )
+    return JSONResponse({"items": [
+        {
+            "id": r.id,
+            "title": r.title,
+            "kind_label": ITEM_KIND_LABELS.get(r.kind, r.kind),
+            "day": msk_date(r.due_at).isoformat() if r.due_at else None,
+        }
+        for r in rows
+    ]})
+
+
+@router.get("/blocks-source/{task_id}", response_class=JSONResponse)
+def blocks_source_content(
+    task_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Блоки выбранного задания — в той же форме, что принимает форма правки.
+
+    `id` намеренно не отдаём: содержимое **копируется**, а не связывается.
+    Правка копии не должна задевать оригинал — ровно этой связанности мы и
+    избавились, убрав шаблон анкеты.
+    """
+    blocks = get_task_blocks(db, task_id)
+    if not blocks:
+        raise HTTPException(status_code=404, detail="У этого задания нет содержимого")
+    options = get_task_block_options(db, [b.id for b in blocks])
+    images = get_task_block_images(db, [b.id for b in blocks])
+    return JSONResponse({"blocks": [
+        {
+            "block_type": b.block_type,
+            "title": b.title,
+            "body": b.body,
+            "video_id": b.video_id,
+            "url": b.url,
+            "question_type": b.question_type,
+            "hidden_until_done": b.hidden_until_done,
+            "images": [
+                {"url": i.image_s3_url, "path": i.image_s3_path}
+                for i in images.get(b.id, [])
+            ],
+            "options": [
+                {"text": o.text, "is_correct": o.is_correct}
+                for o in options.get(b.id, [])
+            ],
+        }
+        for b in blocks
+    ]})
 
 
 @router.get("/{iso}", response_class=HTMLResponse)
