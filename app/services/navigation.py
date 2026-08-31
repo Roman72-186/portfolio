@@ -150,6 +150,19 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         icon="cycle",
     ),
     StaffNavItem(
+        # Очередь проверки ответов (владелец 31.08.2026). min_rank=2, потому
+        # что смотреть ответы должен и куратор, а в «Учебные программы» его не
+        # пускают — там ранг 4. Своих учеников куратор видит, чужих нет.
+        key="review",
+        href="/cabinet/staff/review",
+        sidebar_label="На проверку",
+        pill_label="Проверка",
+        aria_label="Ответы на проверку",
+        tooltip="Ответы учеников, которые вы ещё не смотрели",
+        icon="cycle",
+        min_rank=2,
+    ),
+    StaffNavItem(
         key="program",
         href="/cabinet/staff/program",
         sidebar_label="Учебные программы",

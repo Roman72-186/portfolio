@@ -461,3 +461,116 @@ def save_response(
                 )
     db.flush()
     return response
+
+
+# --- очередь проверки -------------------------------------------------------
+
+
+def review_queue(
+    db: DBSession,
+    *,
+    curator_id: int | None = None,
+    only_unreviewed: bool = True,
+    subject: str | None = None,
+    student_id: int | None = None,
+    tariff: str | None = None,
+    week_start: "datetime | None" = None,
+    week_end: "datetime | None" = None,
+    limit: int = 200,
+) -> list[dict]:
+    """Очередь проверки: ответы учеников, свежие сверху.
+
+    Владелец 31.08.2026 попросил показывать **все** вопросы, а не только
+    свободные: видно должно быть сам вопрос, что ученик выбрал и что написал.
+    Проверяемые машиной всё равно попадают в очередь — преподаватель хочет
+    видеть, кто именно споткнулся.
+
+    `curator_id` — ограничение куратора своими учениками (тот же приём, что в
+    `cabinet_students_shared.py::_get_accessible_students`). Главный
+    преподаватель и суперадмин зовут без него и видят всех.
+
+    Один запрос с join'ами вместо чтения по строке: экран на два-три десятка
+    учеников иначе дал бы сотни походов в базу.
+    """
+    from app.models.tracker import TrackerTask
+    from app.models.user import User
+
+    q = (
+        db.query(TaskBlockAnswer, TaskBlock, TaskBlockResponse, TrackerTask, User)
+        .join(TaskBlockResponse, TaskBlockResponse.id == TaskBlockAnswer.response_id)
+        .join(TaskBlock, TaskBlock.id == TaskBlockAnswer.block_id)
+        .join(TrackerTask, TrackerTask.id == TaskBlockResponse.task_id)
+        .join(User, User.id == TaskBlockResponse.user_id)
+        .filter(TrackerTask.deleted_at.is_(None))
+    )
+    if only_unreviewed:
+        q = q.filter(TaskBlockAnswer.reviewed_at.is_(None))
+    if curator_id is not None:
+        q = q.filter(User.curator_id == curator_id)
+    if student_id is not None:
+        q = q.filter(User.id == student_id)
+    if subject:
+        q = q.filter(TrackerTask.subject == subject)
+    if tariff:
+        q = q.filter(User.tariff == tariff)
+    if week_start is not None:
+        q = q.filter(TrackerTask.due_at >= week_start)
+    if week_end is not None:
+        q = q.filter(TrackerTask.due_at < week_end)
+
+    rows = q.order_by(TaskBlockResponse.updated_at.desc(), TaskBlockAnswer.id.desc()).limit(limit).all()
+    if not rows:
+        return []
+
+    options = get_options(db, [block.id for _a, block, _r, _t, _u in rows])
+    chosen = {}
+    for answer, _b, response, _t, _u in rows:
+        chosen.setdefault(response.id, None)
+    for response_id in list(chosen):
+        chosen[response_id] = get_selected_options(db, response_id=response_id)
+
+    items: list[dict] = []
+    for answer, block, response, task, student in rows:
+        picked = chosen.get(response.id, {}).get(block.id, set())
+        items.append({
+            "answer_id": answer.id,
+            "student_id": student.id,
+            "student_name": student.name,
+            "task_id": task.id,
+            "task_title": task.title,
+            "subject": task.subject,
+            "question": block.body or "",
+            "question_type": block.question_type,
+            "text": answer.text or "",
+            "chosen": [o.text for o in options.get(block.id, []) if o.id in picked],
+            "correct": [o.text for o in options.get(block.id, []) if o.is_correct],
+            "reviewed": answer.reviewed_at is not None,
+            "answered_at": response.updated_at,
+        })
+    return items
+
+
+def set_reviewed(
+    db: DBSession, *, answer_id: int, user_id: int, reviewed: bool
+) -> TaskBlockAnswer | None:
+    """Отметить ответ просмотренным или снять отметку.
+
+    Снимать может тот же staff — ткнули случайно, надо уметь вернуть
+    (владелец 31.08.2026). Ученик отметку видит, но не трогает.
+    """
+    answer = db.get(TaskBlockAnswer, answer_id)
+    if answer is None:
+        return None
+    if reviewed:
+        answer.reviewed_at = answer.reviewed_at or _now()
+        answer.reviewed_by_id = user_id
+    else:
+        answer.reviewed_at = None
+        answer.reviewed_by_id = None
+    db.flush()
+    return answer
+
+
+def _now():
+    from app.services.tz import now_msk
+    return now_msk()

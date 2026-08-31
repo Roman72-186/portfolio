@@ -63,6 +63,14 @@ def test_staff_nav_items_keep_admin_contract():
         ("students", "/cabinet/students", "Ученики", "Ученики", "Ученики", "Ученики"),
         ("cycles", "/cabinet/staff/cycles", "Цикл Пробника", "Цикл", "Цикл Пробника", "Цикл Пробника"),
         (
+            "review",
+            "/cabinet/staff/review",
+            "На проверку",
+            "Проверка",
+            "Ответы на проверку",
+            "Ответы учеников, которые вы ещё не смотрели",
+        ),
+        (
             "program",
             "/cabinet/staff/program",
             "Учебные программы",
@@ -100,10 +108,15 @@ def test_staff_nav_items_keep_rank_specific_visibility_contract():
         "students",
         "mock_check",
         "cycles",
+        "review",
         "3dlab",
     ]
     assert "mock_check" not in [item.key for item in rank_4_items]
     assert "mock_check" not in [item.key for item in rank_5_items]
+    # Очередь проверки видна с ранга куратора: ответы смотрит и он, а в
+    # «Учебные программы» его не пускают (владелец 31.08.2026).
+    assert "review" in [item.key for item in rank_3_items]
+    assert "review" in [item.key for item in rank_4_items]
     assert "program" not in [item.key for item in rank_3_items]
     assert "program" in [item.key for item in rank_4_items]
     assert "program" in [item.key for item in rank_5_items]
