@@ -405,6 +405,22 @@ function lrnUpdateTabBadge(kind) {
     });
 })();
 
+// Баг 31.08.2026: вход в CSS-анимации при появлении карточки
+// (`ios-learning-rise`, `transform: translateY(8px) → none`) с
+// `animation-fill-mode: both` держит эффект анимации «в силе» даже после
+// её завершения — computed `transform` у карточки сериализуется не
+// ключевым словом `none`, а матрицей, и по спеке CSS Transforms это
+// заводит свой containing block для потомков `position:fixed`. Инлайн-
+// видео на полный экран (`.video-frame.is-pseudo-fullscreen`) от этого
+// позиционируется не относительно окна, а относительно карточки — видно
+// только часть экрана, кнопка выхода уезжает за пределы видимого. Снимаем
+// анимацию с элемента сразу по её завершению: конечное состояние и так
+// совпадает с состоянием без анимации вовсе (opacity:1, transform:none по
+// умолчанию), визуально ничего не меняется.
+document.addEventListener('animationend', function (event) {
+    if (event.animationName === 'ios-learning-rise') event.target.style.animation = 'none';
+});
+
 </script>
 {% include "partials/inline/panels_init.html" %}
 
