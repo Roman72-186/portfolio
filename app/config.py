@@ -59,8 +59,8 @@ class Settings(BaseSettings):
     vapid_private_key: str = ""  # серверный ключ подписи push-сообщений, не покидает сервер
     vapid_claim_email: str = ""  # mailto: в VAPID claims, требование push-сервисов (FCM и др.)
 
-    # S3 (TimeWeb сейчас, Selectel — после миграции)
-    s3_endpoint: str = ""        # e.g. https://s3.timeweb.cloud — API-эндпоинт для boto3 (put/get/delete)
+    # S3 (Selectel, TimeWeb отключён миграцией 2026-08)
+    s3_endpoint: str = ""        # e.g. https://s3.ru-3.storage.selcloud.ru — API-эндпоинт для boto3 (put/get/delete)
     s3_bucket: str = ""
     s3_access_key: str = ""
     s3_secret_key: str = ""
