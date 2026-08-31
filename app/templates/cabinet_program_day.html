@@ -8,7 +8,7 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=9">
+<link rel="stylesheet" href="/static/css/program.css?v=10">
 <link rel="stylesheet" href="/static/css/program_ios.css?v=4">
 {% endblock %}
 {% block content %}
@@ -54,10 +54,15 @@ FORM: Operate.
        задания. Содержимое копируется, а не связывается — правка копии
        оригинал не задевает. #}
     <div class="prg-actions prg-blocks-take">
+        {# Предпросмотр (владелец 31.08.2026): преподаватель собирает задание
+           вслепую, а увидеть глазами ученика можно только сохранив и зайдя
+           под ним. Рисуем прямо из формы, ничего не сохраняя. #}
+        <button type="button" class="btn-outline" data-preview-blocks>Глазами ученика</button>
         <button type="button" class="btn-outline" data-take-blocks>Взять содержимое из другого задания</button>
         <select data-take-source hidden></select>
         <p class="prg-hint" data-take-status></p>
     </div>
+    <div class="prg-preview" data-preview hidden></div>
 </div>
 {% endmacro %}
 <div class="prg-page ios-prg-day" data-day="{{ day_iso }}">
@@ -759,6 +764,92 @@ FORM: Operate.
     }
 
 
+    // ── Предпросмотр «глазами ученика» (владелец 31.08.2026) ──────────────
+    // Рисуем из того, что сейчас в форме, ничего не сохраняя: иначе увидеть
+    // результат можно было бы только сохранив и зайдя под учеником.
+
+    var VIDEO_TITLES = ({{ catalog_videos|tojson }}).reduce(function (acc, v) {
+        acc[v.id] = v.title;
+        return acc;
+    }, {});
+
+    function previewBlocks(form) {
+        var box = form.querySelector('[data-preview]');
+        var blocks = collectFormBlocks(form);
+        box.innerHTML = '';
+        if (!blocks.length) {
+            box.innerHTML = '<p class="prg-hint">Пока нечего показывать — добавьте блоки.</p>';
+            box.hidden = false;
+            return;
+        }
+        blocks.forEach(function (b) {
+            var wrap = document.createElement('div');
+            wrap.className = 'prg-preview-blk';
+            if (b.title) {
+                var h = document.createElement('p');
+                h.className = 'field-label';
+                h.textContent = b.title;
+                wrap.appendChild(h);
+            }
+            if (b.block_type === 'text') {
+                var t = document.createElement('p');
+                t.textContent = b.body || '';
+                wrap.appendChild(t);
+            } else if (b.block_type === 'photo') {
+                (b.images || []).forEach(function (img) {
+                    var el = document.createElement('img');
+                    el.src = img.url;
+                    el.alt = '';
+                    el.className = 'prg-preview-img';
+                    wrap.appendChild(el);
+                });
+            } else if (b.block_type === 'video') {
+                var v = document.createElement('p');
+                v.className = 'prg-hint';
+                v.textContent = 'Видео: ' + (VIDEO_TITLES[b.video_id] || 'ролик не выбран');
+                wrap.appendChild(v);
+            } else if (b.block_type === 'link') {
+                var a = document.createElement('a');
+                a.className = 'btn-outline';
+                a.href = b.url;
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                a.textContent = b.title || 'Открыть ссылку';
+                wrap.appendChild(a);
+            } else if (b.block_type === 'question') {
+                var q = document.createElement('p');
+                q.textContent = b.body || '';
+                wrap.appendChild(q);
+                if (b.question_type === 'text') {
+                    var ta = document.createElement('textarea');
+                    ta.className = 'form-input';
+                    ta.rows = 2;
+                    ta.disabled = true;
+                    wrap.appendChild(ta);
+                } else {
+                    (b.options || []).forEach(function (o) {
+                        var row = document.createElement('label');
+                        row.className = 'prg-preview-option';
+                        var input = document.createElement('input');
+                        input.type = b.question_type === 'multiple' ? 'checkbox' : 'radio';
+                        input.disabled = true;
+                        row.appendChild(input);
+                        row.appendChild(document.createTextNode(' ' + o.text));
+                        wrap.appendChild(row);
+                    });
+                }
+                if (b.hidden_until_done) {
+                    var note = document.createElement('p');
+                    note.className = 'prg-hint';
+                    note.textContent = 'Появится только после того, как ученик закроет задание.';
+                    wrap.appendChild(note);
+                }
+            }
+            box.appendChild(wrap);
+        });
+        box.hidden = false;
+    }
+
     // ── «Взять содержимое из другого задания» (владелец 31.08.2026) ────────
     // Копия, а не связь: правка не должна задевать задание-источник.
 
@@ -1257,6 +1348,12 @@ FORM: Operate.
         // ── Редактор блоков (владелец 31.08.2026) ─────────────────────────
         // Всё через делегирование на форме: строки рисуются HTML-строкой и
         // своих обработчиков не несут.
+
+        var previewBtn = event.target.closest('[data-preview-blocks]');
+        if (previewBtn) {
+            previewBlocks(previewBtn.closest('[data-form]'));
+            return;
+        }
 
         var takeBlocks = event.target.closest('[data-take-blocks]');
         if (takeBlocks) {
