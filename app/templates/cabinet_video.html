@@ -58,30 +58,38 @@ body.has-video-pseudo-fullscreen {
     position: absolute;
     right: 16px;
     bottom: 64px;
-    width: min(76%, 310px);
-    /* Ватермарка должна оставаться читаемой на светлом кадре: уроки — это
-       чертежи и белые слайды, и с них же снимают запись. Полупрозрачный белый
-       на таком фоне почти исчезал, поэтому под текстом стоит собственная тень
-       по контуру, а не только мягкая подложка. */
-    color: rgba(255, 255, 255, .58);
+    /* Ширина по содержимому, а не 76% контейнера: при выравнивании вправо
+       пустая часть блока входила в offsetWidth, и надпись зря отжималась от
+       правого края при расчёте безопасной зоны. */
+    width: max-content;
+    max-width: min(76%, 310px);
+    /* Ватермарка не должна лезть в глаза (владелец 01.09.2026), но и пропадать
+       ей нельзя: уроки — это чертежи и белые слайды, и с них же снимают запись.
+       Полупрозрачный белый на светлом кадре исчезает совсем, поэтому яркость
+       снята примерно до трети, а читаемость держит тёмный контур под текстом. */
+    color: rgba(255, 255, 255, .34);
     font-size: clamp(10px, 1.35vw, 13px);
     font-weight: 600;
     line-height: 1.45;
     text-align: right;
     text-shadow:
-        0 1px 3px rgba(0, 0, 0, .85),
-        0 0 1px rgba(0, 0, 0, .9),
-        1px 1px 0 rgba(0, 0, 0, .35);
-    transform: rotate(-8deg);
-    transform-origin: right bottom;
+        0 1px 3px rgba(0, 0, 0, .7),
+        0 0 1px rgba(0, 0, 0, .75);
 }
-.video-watermark-copy.is-orbiting {
+/* Режим показа: надпись не ездит по кадру, а проявляется и гаснет в случайной
+   точке (владелец 01.09.2026). Анимируется только opacity — если добавить сюда
+   transform, между точками появится видимый перелёт, ровно тот, от которого
+   уходим. Новая координата ставится, пока прозрачность уже нулевая. */
+.video-watermark-copy.is-drifting {
     top: 0;
     left: 0;
     right: auto;
     bottom: auto;
-    will-change: transform;
+    opacity: 0;
+    transition: opacity 900ms var(--ease-out, ease);
+    will-change: opacity, transform;
 }
+.video-watermark-copy.is-drifting.is-visible { opacity: 1; }
 .video-watermark-copy span { display: block; }
 .video-fullscreen-button {
     position: absolute;
@@ -183,7 +191,6 @@ body.has-video-pseudo-fullscreen {
                 <div class="video-watermark-copy">
                     <span>{{ viewer_watermark.name }}</span>
                     <span>{{ viewer_watermark.username }}</span>
-                    <span>{{ viewer_watermark.phone }}</span>
                 </div>
             </div>
             <button
@@ -265,13 +272,15 @@ body.has-video-pseudo-fullscreen {
         }
         var playerContainer = frame.parentElement;
         var watermarkCopy = playerContainer.querySelector('.video-watermark-copy');
-        var watermarkAnimationFrame = null;
-        var watermarkStepTimer = null;
+        var watermarkCycleTimer = null;
         var watermarkResizeObserver = null;
-        var orbitMetrics = null;
-        // Последний угол на орбите: по нему ватермарка возвращается на место
-        // после пересчёта размеров, не дожидаясь следующего тика.
-        var lastWatermarkAngle = -Math.PI / 2;
+        var watermarkBounds = null;
+        var watermarkFadeMs = 900;
+        // Последняя точка и последняя ячейка сетки: по точке ватермарка
+        // возвращается внутрь кадра после пересчёта размеров, по ячейке
+        // выбирается следующая — чтобы два показа подряд не легли в одно место.
+        var lastWatermarkPoint = null;
+        var lastWatermarkCell = -1;
         var pseudoFullscreen = false;
         frame.addEventListener('load', function () {
             playerContainer.classList.add('is-ready');
@@ -330,7 +339,7 @@ body.has-video-pseudo-fullscreen {
             iosInstallHint.hidden = false;
         }
 
-        function measureWatermarkOrbit() {
+        function measureWatermarkBounds() {
             if (!watermarkCopy) return;
             var containerWidth = playerContainer.clientWidth;
             var containerHeight = playerContainer.clientHeight;
@@ -338,91 +347,106 @@ body.has-video-pseudo-fullscreen {
             var watermarkHeight = watermarkCopy.offsetHeight;
             var sidePadding = Math.max(12, Math.min(24, containerWidth * 0.025));
             var topPadding = Math.max(12, Math.min(24, containerHeight * 0.04));
+            // Нижний отступ крупнее прочих: там панель управления Bunny и своя
+            // кнопка фуллскрина — надпись не должна на них наезжать.
             var bottomPadding = Math.max(58, Math.min(72, containerHeight * 0.1));
             var minX = sidePadding;
             var maxX = Math.max(minX, containerWidth - watermarkWidth - sidePadding);
             var minY = topPadding;
             var maxY = Math.max(minY, containerHeight - watermarkHeight - bottomPadding);
 
-            orbitMetrics = {
-                centerX: (minX + maxX) / 2,
-                centerY: (minY + maxY) / 2,
-                radiusX: (maxX - minX) / 2,
-                radiusY: (maxY - minY) / 2
-            };
-            // Переставляем сразу после пересчёта орбиты. В анимированном режиме
-            // это сделал бы следующий кадр, но при prefers-reduced-motion кадров
-            // нет: координаты обновляются раз в 4.5 секунды, и после выхода из
-            // фуллскрина ватермарка оставалась за границами уменьшившегося
-            // контейнера — а он с overflow: hidden, то есть её попросту не видно.
-            positionWatermark(lastWatermarkAngle);
+            watermarkBounds = { minX: minX, maxX: maxX, minY: minY, maxY: maxY };
+            // Пересчёт обязан сразу вернуть надпись внутрь новых границ. При
+            // выходе из фуллскрина контейнер уменьшается, а у слоя
+            // overflow: hidden — старая координата оказывается за краем, и
+            // ватермарки попросту не видно до следующего показа.
+            placeWatermark(lastWatermarkPoint);
         }
 
-        function positionWatermark(angle) {
-            if (!watermarkCopy || !orbitMetrics) return;
-            lastWatermarkAngle = angle;
-            var x = orbitMetrics.centerX + orbitMetrics.radiusX * Math.cos(angle);
-            var y = orbitMetrics.centerY + orbitMetrics.radiusY * Math.sin(angle);
+        function placeWatermark(point) {
+            if (!watermarkCopy || !watermarkBounds || !point) return;
+            var x = Math.min(Math.max(point.x, watermarkBounds.minX), watermarkBounds.maxX);
+            var y = Math.min(Math.max(point.y, watermarkBounds.minY), watermarkBounds.maxY);
+            lastWatermarkPoint = { x: x, y: y };
             watermarkCopy.style.transform =
-                'translate3d(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px,0) rotate(-8deg)';
+                'translate3d(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px,0)';
         }
 
-        function startWatermarkOrbit() {
+        function pickWatermarkSpot() {
+            if (!watermarkBounds) return null;
+            // Сетка 3x3 вместо чистого Math.random(): два случайных числа подряд
+            // нередко ложатся почти в одну точку, и надпись выглядит застывшей.
+            var cell = Math.floor(Math.random() * 9);
+            if (cell === lastWatermarkCell) {
+                cell = (cell + 1 + Math.floor(Math.random() * 8)) % 9;
+            }
+            lastWatermarkCell = cell;
+            var spanX = (watermarkBounds.maxX - watermarkBounds.minX) / 3;
+            var spanY = (watermarkBounds.maxY - watermarkBounds.minY) / 3;
+            return {
+                x: watermarkBounds.minX + spanX * ((cell % 3) + Math.random()),
+                y: watermarkBounds.minY + spanY * (Math.floor(cell / 3) + Math.random())
+            };
+        }
+
+        function runWatermarkCycle() {
+            if (!watermarkCopy) return;
+            measureWatermarkBounds();
+            placeWatermark(pickWatermarkSpot());
+            watermarkCopy.classList.add('is-visible');
+            // Видно заметно дольше, чем не видно: пауза нужна, чтобы надпись не
+            // мозолила глаз, но при этом почти любой отрезок записи должен
+            // застать зрителя на кадре.
+            watermarkCycleTimer = window.setTimeout(function () {
+                watermarkCopy.classList.remove('is-visible');
+                watermarkCycleTimer = window.setTimeout(runWatermarkCycle, watermarkFadeMs + 2400);
+            }, 5200);
+        }
+
+        function startWatermarkDrift() {
             if (!watermarkCopy) return;
             // Идемпотентно: страница возвращается из bfcache уже остановленной,
-            // а второй запуск поверх живого цикла дал бы два rAF и два наблюдателя.
-            stopWatermarkOrbit();
-            watermarkCopy.classList.add('is-orbiting');
-            measureWatermarkOrbit();
+            // а второй запуск поверх живого цикла дал бы два таймера и два
+            // наблюдателя за размером.
+            stopWatermarkDrift();
+            watermarkCopy.classList.add('is-drifting');
 
             var reduceMotion = window.matchMedia
                 && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-            var startAngle = -Math.PI / 2;
+            // Тот же цикл, но без плавности: при prefers-reduced-motion надпись
+            // просто появляется и пропадает.
+            watermarkFadeMs = reduceMotion ? 0 : 900;
+            watermarkCopy.style.transitionDuration = watermarkFadeMs + 'ms';
 
-            if (reduceMotion) {
-                var step = 0;
-                positionWatermark(startAngle);
-                watermarkStepTimer = window.setInterval(function () {
-                    step = (step + 1) % 8;
-                    positionWatermark(startAngle + step * Math.PI / 4);
-                }, 4500);
-            } else {
-                var orbitStartedAt = performance.now();
-                var orbitDuration = 20000;
-                function animateWatermark(now) {
-                    var progress = ((now - orbitStartedAt) % orbitDuration) / orbitDuration;
-                    positionWatermark(startAngle + progress * Math.PI * 2);
-                    watermarkAnimationFrame = window.requestAnimationFrame(animateWatermark);
-                }
-                watermarkAnimationFrame = window.requestAnimationFrame(animateWatermark);
-            }
+            runWatermarkCycle();
 
             if ('ResizeObserver' in window) {
-                watermarkResizeObserver = new ResizeObserver(measureWatermarkOrbit);
+                watermarkResizeObserver = new ResizeObserver(measureWatermarkBounds);
                 watermarkResizeObserver.observe(playerContainer);
             } else {
-                window.addEventListener('resize', measureWatermarkOrbit);
+                window.addEventListener('resize', measureWatermarkBounds);
             }
         }
 
-        function stopWatermarkOrbit() {
-            if (watermarkAnimationFrame !== null) {
-                window.cancelAnimationFrame(watermarkAnimationFrame);
-                watermarkAnimationFrame = null;
+        function stopWatermarkDrift() {
+            if (watermarkCycleTimer !== null) {
+                window.clearTimeout(watermarkCycleTimer);
+                watermarkCycleTimer = null;
             }
-            if (watermarkStepTimer !== null) {
-                window.clearInterval(watermarkStepTimer);
-                watermarkStepTimer = null;
-            }
+            // Замирает видимой, а не погашенной. Остановка приходит на
+            // pagehide, а он срабатывает и при уходе во вкладку-фон, откуда
+            // страница возвращается живой: погашенная надпись оставила бы
+            // опознанное видео идти вообще без имени зрителя.
+            if (watermarkCopy) watermarkCopy.classList.add('is-visible');
             if (watermarkResizeObserver) {
                 watermarkResizeObserver.disconnect();
                 watermarkResizeObserver = null;
             } else {
-                window.removeEventListener('resize', measureWatermarkOrbit);
+                window.removeEventListener('resize', measureWatermarkBounds);
             }
         }
 
-        startWatermarkOrbit();
+        startWatermarkDrift();
         function fullscreenElement() {
             return document.fullscreenElement || document.webkitFullscreenElement || null;
         }
@@ -487,8 +511,8 @@ body.has-video-pseudo-fullscreen {
             fullscreenButton.setAttribute('aria-label', label);
             fullscreenButton.setAttribute('title', label);
             fullscreenButton.setAttribute('aria-pressed', String(isFullscreen));
-            window.requestAnimationFrame(measureWatermarkOrbit);
-            window.setTimeout(measureWatermarkOrbit, 250);
+            window.requestAnimationFrame(measureWatermarkBounds);
+            window.setTimeout(measureWatermarkBounds, 250);
         }
 
         function reportFullscreenError() {
@@ -555,9 +579,9 @@ body.has-video-pseudo-fullscreen {
         }
 
         // Без { once: true }: pagehide срабатывает и при уходе в bfcache, а оттуда
-        // страница возвращается живой — орбиту надо будет остановить снова.
+        // страница возвращается живой — цикл ватермарки надо остановить снова.
         window.addEventListener('pagehide', function () {
-            stopWatermarkOrbit();
+            stopWatermarkDrift();
             exitPseudoFullscreen(false);
         });
 
@@ -644,9 +668,9 @@ body.has-video-pseudo-fullscreen {
         // на основной путь нельзя.
         window.addEventListener('pageshow', function (event) {
             if (!event.persisted) return;
-            // Возврат из bfcache: pagehide уже погасил орбиту, но страница жива и
+            // Возврат из bfcache: pagehide уже погасил цикл, но страница жива и
             // видео снова на экране — без перезапуска ватермарка застыла бы в точке.
-            startWatermarkOrbit();
+            startWatermarkDrift();
             refreshPlayerUrlIfStale();
         });
         // Урок могли открыть, а включить через полчаса: пока просмотр не начался,

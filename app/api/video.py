@@ -107,7 +107,6 @@ def _player_payload(
         viewer_name = str(user.get("name") or "").strip() or "Имя не указано"
 
     viewer_username = str(user.get("tg_username") or "").strip().lstrip("@")
-    viewer_phone = str(user.get("phone") or "").strip()
     payload = {
         "video_title": video.title,
         "video_description": getattr(video, "description", None),
@@ -117,7 +116,6 @@ def _player_payload(
         "viewer_watermark": {
             "name": viewer_name,
             "username": f"@{viewer_username}" if viewer_username else "Username не указан",
-            "phone": viewer_phone or "Телефон не указан",
         },
     }
     try:

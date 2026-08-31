@@ -920,16 +920,26 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
     position: absolute; inset: 0; z-index: 3; overflow: hidden;
     pointer-events: none; user-select: none;
 }
+/* Тусклая, но читаемая: уроки — светлые слайды и чертежи, и с них же снимают
+   запись, поэтому яркость снята примерно до трети, а видимость держит тёмный
+   контур под текстом (владелец 01.09.2026). Ширина по содержимому — при
+   выравнивании вправо пустая часть блока зря входила бы в offsetWidth. */
 .lrn-inline-video .video-watermark-copy {
-    position: absolute; right: 16px; bottom: 64px; width: min(76%, 310px);
-    color: rgba(255, 255, 255, .58); font-size: clamp(10px, 1.35vw, 13px);
+    position: absolute; right: 16px; bottom: 64px;
+    width: max-content; max-width: min(76%, 310px);
+    color: rgba(255, 255, 255, .34); font-size: clamp(10px, 1.35vw, 13px);
     font-weight: 600; line-height: 1.45; text-align: right;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, .85), 0 0 1px rgba(0, 0, 0, .9), 1px 1px 0 rgba(0, 0, 0, .35);
-    transform: rotate(-8deg); transform-origin: right bottom;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .7), 0 0 1px rgba(0, 0, 0, .75);
 }
-.lrn-inline-video .video-watermark-copy.is-orbiting {
-    top: 0; left: 0; right: auto; bottom: auto; will-change: transform;
+/* Надпись не ездит по кадру, а проявляется и гаснет в случайной точке.
+   Анимируется только opacity: transform в transition дал бы видимый перелёт
+   между точками — ровно то, от чего уходим. */
+.lrn-inline-video .video-watermark-copy.is-drifting {
+    top: 0; left: 0; right: auto; bottom: auto;
+    opacity: 0; transition: opacity 900ms var(--ease-out, ease);
+    will-change: opacity, transform;
 }
+.lrn-inline-video .video-watermark-copy.is-drifting.is-visible { opacity: 1; }
 .lrn-inline-video .video-watermark-copy span { display: block; }
 .lrn-inline-video .video-fullscreen-button {
     position: absolute; right: 8px; bottom: 8px; z-index: 4;

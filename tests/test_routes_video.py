@@ -87,7 +87,9 @@ def test_video_watermark_shows_current_viewer_identity(auth_client, db, monkeypa
     assert response.status_code == 200
     assert response.text.count("Анна Смирнова") == 1
     assert response.text.count("@anna_art") == 1
-    assert response.text.count("+7 999 123-45-67") == 1
+    # Телефон в ватермарке больше не показываем (владелец 01.09.2026): зрителя
+    # опознают имя и username, а номер только утяжелял надпись.
+    assert "+7 999 123-45-67" not in response.text
     assert 'class="video-watermark" aria-hidden="true"' in response.text
 
 
@@ -96,7 +98,6 @@ def test_video_watermark_escapes_viewer_identity(auth_client, db, monkeypatch):
     _configure_bunny(monkeypatch)
     user.name = '<img src=x onerror="alert(1)">'
     user.tg_username = '<script>alert(2)</script>'
-    user.phone = '<svg onload="alert(3)">'
     db.commit()
 
     response = client.get("/cabinet/video")
@@ -104,28 +105,34 @@ def test_video_watermark_escapes_viewer_identity(auth_client, db, monkeypatch):
     assert response.status_code == 200
     assert "<img src=x" not in response.text
     assert "<script>alert(2)</script>" not in response.text
-    assert "<svg onload" not in response.text
     assert "&lt;img src=x" in response.text
     assert "@&lt;script&gt;alert(2)&lt;/script&gt;" in response.text
-    assert "&lt;svg onload" in response.text
 
 
-def test_video_watermark_moves_around_safe_orbit(auth_client, monkeypatch):
+def test_video_watermark_fades_in_and_out_at_random_spots(auth_client, monkeypatch):
+    """Надпись со зрителем не летает по кругу, а проявляется и гаснет в
+    случайной точке безопасной зоны кадра (владелец 01.09.2026)."""
     client, _ = auth_client
     _configure_bunny(monkeypatch)
 
     response = client.get("/cabinet/video")
 
     assert response.status_code == 200
-    assert "function measureWatermarkOrbit()" in response.text
-    assert "Math.cos(angle)" in response.text
-    assert "Math.sin(angle)" in response.text
-    assert "orbitDuration = 20000" in response.text
-    assert "window.requestAnimationFrame(animateWatermark)" in response.text
-    assert "new ResizeObserver(measureWatermarkOrbit)" in response.text
+    assert "function measureWatermarkBounds()" in response.text
+    assert "function pickWatermarkSpot()" in response.text
+    assert "function runWatermarkCycle()" in response.text
+    assert "Math.random()" in response.text
+    assert "watermarkCopy.classList.add('is-visible')" in response.text
+    assert "watermarkCopy.classList.remove('is-visible')" in response.text
+    assert "new ResizeObserver(measureWatermarkBounds)" in response.text
     assert "(prefers-reduced-motion: reduce)" in response.text
-    assert "step = (step + 1) % 8" in response.text
     assert "bottomPadding" in response.text
+    # Перелёта между точками быть не должно: анимируется только прозрачность,
+    # новая координата ставится, пока надпись уже не видна.
+    assert "transition: opacity 900ms" in response.text
+    assert "Math.cos(angle)" not in response.text
+    # Тусклее прежнего, но с тёмным контуром — иначе пропадёт на белом слайде.
+    assert "color: rgba(255, 255, 255, .34)" in response.text
 
 
 def test_video_fullscreen_keeps_watermark_inside_fullscreen_container(
@@ -546,9 +553,9 @@ def test_video_page_refreshes_expired_player_url(auth_client, monkeypatch):
     assert "resumeSeconds = currentSeconds;" in response.text
     assert "if (document.visibilityState === 'visible') refreshPlayerUrlIfStale();" in response.text
     assert "if (!event.persisted) return;" in response.text
-    # Возврат из bfcache: pagehide гасит орбиту ватермарки, и без перезапуска она
+    # Возврат из bfcache: pagehide гасит цикл ватермарки, и без перезапуска она
     # осталась бы висеть в одной точке — то есть перестала бы мешать записи экрана.
-    assert "startWatermarkOrbit();\n            refreshPlayerUrlIfStale();" in response.text
+    assert "startWatermarkDrift();\n            refreshPlayerUrlIfStale();" in response.text
     # Обвязка пересоздаётся, а старая замолкает по поколению: иначе прогресс
     # сохранялся бы дважды после каждого обновления ссылки.
     assert "function attachPlayer()" in response.text
