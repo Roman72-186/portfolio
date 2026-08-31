@@ -24,7 +24,6 @@ from app.models.legacy_portfolio_photo import LegacyPortfolioPhoto
 from app.models.video_progress import VideoProgress
 from app.models.video_view_log import VideoViewLog
 from app.models.learning_video import LearningVideo
-from app.models.video_quiz import VideoQuizResponse
 from app.models.task_block import (
     TaskBlock,
     TaskBlockAnswer,

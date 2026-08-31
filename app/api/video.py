@@ -27,14 +27,6 @@ from app.services.video_progress import (
     log_video_view,
     save_video_progress as persist_video_progress,
 )
-from app.models.video_quiz import MAX_QUIZ_QUESTIONS
-from app.services.video_quiz import (
-    get_answers_map,
-    get_quiz_question_rows,
-    get_quiz_questions,
-    get_response as get_quiz_response,
-    save_response as save_quiz_response,
-)
 from app.tmpl import templates
 
 
@@ -52,16 +44,6 @@ class VideoProgressUpdate(BaseModel):
         if self.duration_seconds is not None and self.position_seconds > self.duration_seconds + 5:
             raise ValueError("position_seconds cannot exceed duration_seconds")
         return self
-
-
-class VideoQuizSubmit(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    answers: list[str] = Field(min_length=1, max_length=MAX_QUIZ_QUESTIONS)
-
-    @field_validator("answers")
-    @classmethod
-    def strip_answers(cls, value: list[str]) -> list[str]:
-        return [item.strip()[:2000] for item in value]
 
 
 def _not_found(request: Request, user: dict):
@@ -113,7 +95,6 @@ def _player_payload(
     video,
     progress_endpoint: str,
     player_url_endpoint: str,
-    quiz_submit_endpoint: str | None = None,
 ) -> tuple[dict, bool]:
     """Данные плеера — общие для страницы `/cabinet/videos/{id}` и инлайн-эндпоинта
     АОП (`/cabinet/videos/{id}/embed`). Второй элемент — признак ошибки конфигурации
@@ -127,7 +108,6 @@ def _player_payload(
 
     viewer_username = str(user.get("tg_username") or "").strip().lstrip("@")
     viewer_phone = str(user.get("phone") or "").strip()
-    quiz_questions = get_quiz_questions(video) if quiz_submit_endpoint else []
     payload = {
         "video_title": video.title,
         "video_description": getattr(video, "description", None),
@@ -139,9 +119,6 @@ def _player_payload(
             "username": f"@{viewer_username}" if viewer_username else "Username не указан",
             "phone": viewer_phone or "Телефон не указан",
         },
-        "quiz_questions": quiz_questions,
-        "quiz_submit_endpoint": quiz_submit_endpoint,
-        "quiz_answers": None,
     }
     try:
         payload["player_url"] = build_signed_embed_url(
@@ -162,18 +139,6 @@ def _player_payload(
         payload["resume_position_seconds"] = 0.0
         payload["video_already_completed"] = False
 
-    if quiz_questions:
-        try:
-            existing = get_quiz_response(db, video_id=video.id, user_id=user["user_id"])
-            if existing is not None:
-                question_rows = get_quiz_question_rows(video)
-                answers_map = get_answers_map(db, response_id=existing.id)
-                payload["quiz_answers"] = [
-                    answers_map.get(question.id, "") for question in question_rows
-                ]
-        except SQLAlchemyError:
-            logger.exception("Video quiz response read failed for user_id=%s", user["user_id"])
-            db.rollback()
     return payload, False
 
 
@@ -185,7 +150,6 @@ def _render_player(
     video,
     progress_endpoint: str,
     player_url_endpoint: str,
-    quiz_submit_endpoint: str | None = None,
 ):
     payload, has_error = _player_payload(
         user,
@@ -193,7 +157,6 @@ def _render_player(
         video=video,
         progress_endpoint=progress_endpoint,
         player_url_endpoint=player_url_endpoint,
-        quiz_submit_endpoint=quiz_submit_endpoint,
     )
     context = {
         "request": request,
@@ -265,7 +228,6 @@ def cabinet_video_by_id(
         video=video,
         progress_endpoint=f"/cabinet/videos/{video_id}/progress",
         player_url_endpoint=f"/cabinet/videos/{video_id}/player-url",
-        quiz_submit_endpoint=f"/cabinet/videos/{video_id}/quiz",
     )
 
 
@@ -293,7 +255,6 @@ def cabinet_video_embed(
         video=video,
         progress_endpoint=f"/cabinet/videos/{video_id}/progress",
         player_url_endpoint=f"/cabinet/videos/{video_id}/player-url",
-        quiz_submit_endpoint=f"/cabinet/videos/{video_id}/quiz",
     )
     if has_error:
         return JSONResponse({"ok": False, "error": "player_unavailable"}, status_code=503)
@@ -331,47 +292,6 @@ def save_catalog_video_progress(
         known_duration_seconds=video.duration_seconds,
         topic_id=video.topic_id,
     )
-
-
-@router.post("/videos/{video_id}/quiz", response_class=JSONResponse)
-def submit_video_quiz(
-    video_id: int,
-    payload: VideoQuizSubmit,
-    user: Annotated[dict, Depends(require_learning_content_access)],
-    db: Annotated[DBSession, Depends(get_db)],
-    _csrf: Annotated[None, Depends(require_csrf_header)],
-):
-    """Сохранить ответы мини-опроса — только по факту досмотренного видео.
-
-    Досмотр решает сервер (`VideoProgress.completed_at`), как и автозакрытие
-    трекер-задачи выше: клиенту верить нельзя, а без гейта опрос отвечали бы
-    и не открыв ролик.
-    """
-    video = _video_for_viewer(db, catalog_id=video_id, user=user)
-    if video is None:
-        raise HTTPException(status_code=404, detail="Видео не найдено")
-    question_rows = get_quiz_question_rows(video)
-    if not question_rows:
-        raise HTTPException(status_code=404, detail="Мини-опрос не настроен")
-    if len(payload.answers) != len(question_rows):
-        raise HTTPException(status_code=422, detail="Число ответов не совпадает с числом вопросов")
-    progress = get_video_progress(db, user_id=user["user_id"], video_id=video.bunny_video_id)
-    if progress is None or progress.completed_at is None:
-        raise HTTPException(status_code=409, detail="Сначала досмотрите видео")
-    try:
-        save_quiz_response(
-            db,
-            video_id=video.id,
-            user_id=user["user_id"],
-            question_rows=question_rows,
-            answers=payload.answers,
-        )
-        db.commit()
-    except SQLAlchemyError:
-        logger.exception("Video quiz response save failed for user_id=%s", user["user_id"])
-        db.rollback()
-        return JSONResponse({"ok": False, "error": "save_failed"}, status_code=503)
-    return JSONResponse({"ok": True})
 
 
 @router.get("/video", response_class=HTMLResponse)

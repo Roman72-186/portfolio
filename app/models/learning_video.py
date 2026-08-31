@@ -35,17 +35,6 @@ class LearningVideo(Base):
     # (решение владельца 22.08, plans/2026-08-22-…, п.8.1; расширен с трёх
     # фиксированных вопросов до произвольного числа через конструктор
     # «плюс — новая строка» 29.08.2026 — см. app/models/video_quiz.py).
-    # Каждый вопрос настраивает преподаватель в админке видео. Не путать с
-    # типом блока `survey`/анкетой недели — это отдельная небольшая стройка
-    # внутри видео-вкладки. Пустой набор — мини-опрос под роликом не
-    # показывается вовсе.
-    questions: Mapped[list["LearningVideoQuestion"]] = relationship(
-        "LearningVideoQuestion",
-        back_populates="video",
-        order_by="LearningVideoQuestion.sort_order",
-        cascade="all, delete-orphan",
-    )
-
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="uploading")
     bunny_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
     encode_progress: Mapped[int | None] = mapped_column(Integer, nullable=True)

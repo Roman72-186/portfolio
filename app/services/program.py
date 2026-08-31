@@ -311,7 +311,6 @@ def videos_for_picker(db: Session) -> list[dict]:
     picked = []
     for video in (
         db.query(LearningVideo)
-        .options(selectinload(LearningVideo.questions))
         .filter(LearningVideo.deleted_at.is_(None))
         .order_by(LearningVideo.created_at.desc())
         .all()
@@ -334,12 +333,6 @@ def videos_for_picker(db: Session) -> list[dict]:
             # как справку «где ещё стоит», кликать по строке она не мешает.
             "taken": False,
             "note": binding["label"] if binding else None,
-            # Мини-опрос настраивается прямо здесь же (владелец 29.08.2026:
-            # выбрал ролик на день — тут же и вопросы), не только на
-            # /cabinet/admin/videos. Сохраняет отдельная ручка
-            # (video_admin.py::update_video_quiz_questions), эта форма не
-            # знает title/description ролика и не должна их трогать.
-            "questions": [{"id": q.id, "text": q.text} for q in video.questions],
         })
     return picked
 
@@ -374,8 +367,7 @@ def item_details(db: Session, tasks: list[TrackerTask]) -> dict[int, dict]:
         # был произвольным (баг, найден при подготовке инлайн-показа на АОП).
         for video in (
             db.query(LearningVideo)
-            .options(selectinload(LearningVideo.questions))
-            .filter(
+                .filter(
                 LearningVideo.topic_id.in_(topic_ids),
                 LearningVideo.deleted_at.is_(None),
             )

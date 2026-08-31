@@ -21,7 +21,6 @@ from app.models.audit_log import AuditLog
 from app.models.learning_video import LearningVideo
 from app.models.role import Role
 from app.models.user import User
-from app.models.video_quiz import MAX_QUIZ_QUESTIONS
 from app.services.bunny_stream import (
     BunnyStreamAPIError,
     BunnyStreamCreateUncertainError,
@@ -34,7 +33,6 @@ from app.services.bunny_stream import (
 from app.services.tags import parse_usernames
 from app.services.tz import MSK_TZ
 from app.services.video_catalog import list_all_videos, publish_video, sync_status_from_bunny, unpublish_video
-from app.services.video_quiz import sync_questions
 from app.services.video_topics import (
     ambiguous_tag_names,
     count_topic_audience,
@@ -108,24 +106,6 @@ class CreateVideoUpload(BaseModel):
         return value
 
 
-class QuizQuestionInput(BaseModel):
-    """Одна строка конструктора мини-опроса. `id` — существующий вопрос
-    (правится на месте, ответы учеников сохраняются), `None` — новая строка,
-    добавленная кнопкой «+»."""
-
-    model_config = ConfigDict(extra="forbid")
-    id: int | None = Field(default=None, ge=1)
-    text: str = Field(min_length=1, max_length=300)
-
-    @field_validator("text")
-    @classmethod
-    def strip_text(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("Question text cannot be empty")
-        return value
-
-
 class UpdateVideoMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=200)
@@ -136,13 +116,6 @@ class UpdateVideoMetadata(BaseModel):
     # молча отвязало бы ролик от его элемента учебной программы, а вместе с
     # привязкой отвалились бы и адресность, и автозакрытие задачи в трекере.
     topic_id: int | None = Field(default=None, ge=1)
-    # Мини-опрос после видео — произвольный список вопросов (было ровно три
-    # фиксированных поля до 29.08.2026, см. app/services/video_quiz.py).
-    # Поле не прислали — вопросы не трогаем; прислали пустой список — опрос
-    # убран целиком. Тот же принцип, что у topic_id выше.
-    quiz_questions: list[QuizQuestionInput] | None = Field(
-        default=None, max_length=MAX_QUIZ_QUESTIONS
-    )
 
     @field_validator("title")
     @classmethod
@@ -157,17 +130,6 @@ class UpdateVideoMetadata(BaseModel):
     def strip_optional_description(cls, value: str | None) -> str | None:
         value = (value or "").strip()
         return value or None
-
-
-class UpdateQuizQuestions(BaseModel):
-    """Payload отдельной ручки `/{video_id}/quiz-questions` — та же форма
-    строк, что в `UpdateVideoMetadata.quiz_questions`, но без title/description:
-    конструктор дня программы выбирает уже загруженный ролик и настраивает
-    его вопросы тут же, не открывая страницу «Загрузка видео» и не трогая
-    название ролика."""
-
-    model_config = ConfigDict(extra="forbid")
-    quiz_questions: list[QuizQuestionInput] = Field(max_length=MAX_QUIZ_QUESTIONS)
 
 
 class DeleteVideoConfirmation(BaseModel):
@@ -349,12 +311,6 @@ def update_video_metadata(
     # Ключ отсутствует в теле — привязку не трогаем (см. докстринг поля).
     if "topic_id" in payload.model_fields_set:
         video.topic_id = payload.topic_id
-    if "quiz_questions" in payload.model_fields_set:
-        sync_questions(
-            db,
-            video_id=video.id,
-            items=[(item.id, item.text) for item in (payload.quiz_questions or [])],
-        )
     # Маршрут меняет привязку к теме, то есть кто вообще увидит урок. Без записи
     # переброс урока на «доступно всем» (topic_id=None) не оставлял следа.
     _audit(
@@ -366,35 +322,6 @@ def update_video_metadata(
     )
     db.commit()
     return JSONResponse({"ok": True})
-
-
-@router.post("/{video_id}/quiz-questions", response_class=JSONResponse)
-def update_video_quiz_questions(
-    video_id: int,
-    payload: UpdateQuizQuestions,
-    user: Annotated[dict, Depends(require_admin_role)],
-    db: Annotated[DBSession, Depends(get_db)],
-    _csrf: Annotated[None, Depends(require_csrf_header)],
-):
-    """Настроить вопросы мини-опроса отдельно от `update_video_metadata` —
-    вызывается из конструктора дня программы, где ролик уже выбран из
-    каталога и его title/description трогать не нужно (в отличие от
-    `UpdateVideoMetadata`, где `title` обязателен)."""
-    video = _get_video_or_404(db, video_id)
-    questions = sync_questions(
-        db,
-        video_id=video.id,
-        items=[(item.id, item.text) for item in payload.quiz_questions],
-    )
-    _audit(db, action="video_quiz_questions_update", user_id=user["user_id"], video=video)
-    db.commit()
-    # Отдаём id новых строк обратно: клиент хранит вопросы в памяти (форма
-    # не перезагружает страницу после сохранения) и следующей правке нужны
-    # настоящие id, а не null — иначе sync_questions примет их за новые
-    # строки и удвоит.
-    return JSONResponse(
-        {"ok": True, "questions": [{"id": q.id, "text": q.text} for q in questions]}
-    )
 
 
 @router.post("/{video_id}/publish", response_class=JSONResponse)

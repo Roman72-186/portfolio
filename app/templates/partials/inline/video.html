@@ -38,10 +38,8 @@ JSON-эндпоинтом `/cabinet/videos/{id}/embed` (app/api/video.py) тол
         </div>
     </div>
     <p class="video-progress-status" data-role="progress-status" aria-live="polite" hidden></p>
-    <section class="card" data-role="quiz" hidden aria-label="Мини-опрос по видео">
-        <h2 class="card-title">Пара вопросов о видео</h2>
-        <div data-role="quiz-body"></div>
-    </section>
+    {# Мини-опрос отсюда убран 31.08.2026: вопросы к ролику стали блоками
+       задания и показываются общей панелью содержимого на той же карточке. #}
 </div>
 
 <script>
@@ -73,8 +71,6 @@ JSON-эндпоинтом `/cabinet/videos/{id}/embed` (app/api/video.py) тол
         var watermark = root.querySelector('[data-role="watermark"]');
         var fullscreenButton = root.querySelector('[data-role="fullscreen-btn"]');
         var progressStatus = root.querySelector('[data-role="progress-status"]');
-        var quizSection = root.querySelector('[data-role="quiz"]');
-        var quizBody = root.querySelector('[data-role="quiz-body"]');
         var wrapper = root.closest('.trk-expand-body');
         var endpoint = wrapper ? wrapper.getAttribute('data-video-embed-endpoint') : null;
         if (!endpoint) return;
@@ -123,10 +119,6 @@ JSON-эндпоинтом `/cabinet/videos/{id}/embed` (app/api/video.py) тол
                 ? 'Продолжим с сохранённого места.'
                 : 'Место просмотра сохраняется автоматически.';
 
-            if (data.quiz_questions && data.quiz_questions.length) {
-                renderQuiz(data);
-            }
-
             loadPlayerJs().then(function () {
                 attachPlayerBehaviour(data);
             }).catch(function () {
@@ -134,78 +126,6 @@ JSON-эндпоинтом `/cabinet/videos/{id}/embed` (app/api/video.py) тол
                 progressStatus.classList.add('is-error');
                 iframe.src = data.player_url;
             });
-        }
-
-        function renderQuiz(data) {
-            quizBody.innerHTML = '';
-            if (data.quiz_answers) {
-                data.quiz_questions.forEach(function (question, i) {
-                    var p = document.createElement('p');
-                    var label = document.createElement('span');
-                    label.className = 'field-label';
-                    label.textContent = question;
-                    var value = document.createElement('span');
-                    value.className = 'video-help';
-                    value.textContent = data.quiz_answers[i] || '—';
-                    p.appendChild(label);
-                    p.appendChild(value);
-                    quizBody.appendChild(p);
-                });
-                quizSection.hidden = false;
-                return;
-            }
-            var form = document.createElement('form');
-            data.quiz_questions.forEach(function (question, i) {
-                var p = document.createElement('p');
-                var label = document.createElement('label');
-                label.className = 'field-label';
-                label.setAttribute('for', 'lrn-video-quiz-q' + i + '-' + Math.random().toString(36).slice(2));
-                label.textContent = question;
-                var textarea = document.createElement('textarea');
-                textarea.className = 'form-input';
-                textarea.id = label.getAttribute('for');
-                textarea.rows = 3;
-                textarea.maxLength = 2000;
-                p.appendChild(label);
-                p.appendChild(textarea);
-                form.appendChild(p);
-            });
-            var submitBtn = document.createElement('button');
-            submitBtn.type = 'submit';
-            submitBtn.className = 'btn-blue';
-            submitBtn.textContent = 'Отправить';
-            var quizStatus = document.createElement('p');
-            quizStatus.className = 'video-progress-status';
-            quizStatus.setAttribute('aria-live', 'polite');
-            form.appendChild(submitBtn);
-            form.appendChild(quizStatus);
-            form.addEventListener('submit', function (event) {
-                event.preventDefault();
-                var textareas = form.querySelectorAll('textarea');
-                var answers = Array.prototype.map.call(textareas, function (t) { return t.value; });
-                submitBtn.disabled = true;
-                fetch(data.quiz_submit_endpoint, {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: {
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': csrfToken
-                    },
-                    body: JSON.stringify({ answers: answers })
-                }).then(function (resp) {
-                    if (!resp.ok) throw new Error();
-                    textareas.forEach(function (t) { t.disabled = true; });
-                    submitBtn.hidden = true;
-                    quizStatus.textContent = 'Спасибо, ответ сохранён.';
-                }).catch(function () {
-                    submitBtn.disabled = false;
-                    quizStatus.textContent = 'Не удалось отправить ответ. Попробуйте ещё раз.';
-                    quizStatus.classList.add('is-error');
-                });
-            });
-            quizBody.appendChild(form);
-            quizSection.hidden = !data.video_already_completed;
         }
 
         function attachPlayerBehaviour(data) {
@@ -508,7 +428,6 @@ JSON-эндпоинтом `/cabinet/videos/{id}/embed` (app/api/video.py) тол
                     if (progress.completed) setStatus('Видео просмотрено. При следующем открытии начнём сначала.', false);
                     return response.json().catch(function () { return null; });
                 }).then(function (respData) {
-                    if (respData && respData.completed) quizSection.hidden = false;
                 }).catch(function (error) {
                     if (error.message === 'session_expired') setStatus('Войдите заново, чтобы сохранять место просмотра.', true);
                     else setStatus('Не удалось сохранить место. Видео продолжит работать.', true);

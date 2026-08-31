@@ -242,15 +242,8 @@ FORM: Operate.
         <label class="prg-field">Описание ролика, необязательно
             <textarea data-v-description maxlength="5000"></textarea>
         </label>
-        <div class="prg-quiz" data-quiz-questions-wrap hidden>
-            <h3>Мини-опрос после выбранного видео</h3>
-            <p class="prg-hint">Вопросы сохраняются сами по мере того, как вы печатаете.</p>
-            <div data-quiz-questions></div>
-            <div class="prg-actions">
-                <button type="button" class="btn-outline" data-add-quiz-question>Добавить вопрос</button>
-            </div>
-            <p class="prg-message" data-quiz-message></p>
-        </div>
+        {# Мини-опрос ролика отсюда убран 31.08.2026: вопросы стали блоками
+           задания и настраиваются редактором содержимого ниже. #}
         {{ blocks_editor() }}
         <div class="prg-grid2">
             <label class="prg-field">Предмет
@@ -392,7 +385,7 @@ FORM: Operate.
     // ── Тарифная видимость (созвон 26.08.2026) ─────────────────────────
     // Общие data-атрибуты на все пять форм (mock/video/homework/simple/
     // survey) — запросы всегда идут через конкретный элемент формы, как и у
-    // существующих `data-quiz-questions-wrap`/`data-form-message`, поэтому
+    // существующих `data-blocks-wrap`/`data-form-message`, поэтому
     // префикс здесь не нужен.
     document.addEventListener('change', function (event) {
         if (event.target.hasAttribute('data-tariff-restricted')) {
@@ -542,14 +535,10 @@ FORM: Operate.
     // Мини-опрос каждого ролика (владелец 29.08.2026: вопросы настраиваются
     // тут же, где ролик выбирают на день, а не только на «Загрузке видео»).
     // Локальная копия обновляется после каждого сохранения — сервер
-    // возвращает реальные id новых строк, без этого повторное сохранение
-    // приняло бы их за новые и удвоило.
-    var catalogVideoQuestions = {};
     // Название и описание уже загруженного ролика — чтобы при выборе из
     // списка подставить их в поля правки, не отдельным походом за данными.
     var catalogVideoMeta = {};
     ({{ catalog_videos|tojson }}).forEach(function (v) {
-        catalogVideoQuestions[v.id] = v.questions || [];
         catalogVideoMeta[v.id] = {title: v.title, description: v.description || ''};
     });
 
@@ -617,15 +606,6 @@ FORM: Operate.
             wrap.appendChild(remove);
             holder.appendChild(wrap);
         });
-    }
-
-    function quizQuestionRowHTML(number) {
-        return ''
-            + '<div class="prg-ticket" data-quiz-question>'
-            + '  <div class="prg-ticket-head"><strong>Вопрос ' + number + '</strong>'
-            + '    <button type="button" class="btn-outline" data-remove-quiz-question>Убрать</button></div>'
-            + '  <label class="prg-field">Текст вопроса<textarea data-qq-text maxlength="300"></textarea></label>'
-            + '</div>';
     }
 
     // ── Универсальный конструктор содержимого (владелец 31.08.2026) ────────
@@ -883,90 +863,11 @@ FORM: Operate.
         });
     }
 
-    function renderQuizQuestions(videoId) {
-        var holder = videoForm.querySelector('[data-quiz-questions]');
-        holder.innerHTML = '';
-        (catalogVideoQuestions[videoId] || []).forEach(function (question, index) {
-            holder.insertAdjacentHTML('beforeend', quizQuestionRowHTML(index + 1));
-            var row = holder.lastElementChild;
-            row.setAttribute('data-quiz-question-id', question.id);
-            // Текст ставим через .value, не в собранную HTML-строку — вопрос
-            // мог быть заполнен раньше и содержать `<`/`&`/кавычки.
-            row.querySelector('[data-qq-text]').value = question.text;
-        });
-        videoForm.querySelector('[data-quiz-questions-wrap]').hidden = false;
-        videoForm.querySelector('[data-quiz-message]').textContent = '';
-    }
-
-    function collectQuizQuestions() {
-        var items = [];
-        videoForm.querySelectorAll('[data-quiz-question]').forEach(function (row) {
-            var text = row.querySelector('[data-qq-text]').value.trim();
-            if (!text) return;
-            var idAttr = row.getAttribute('data-quiz-question-id');
-            items.push({id: idAttr ? Number(idAttr) : null, text: text});
-        });
-        return items;
-    }
-
-    // Автосохранение вопросов (владелец 29.08.2026: не нужна отдельная кнопка
-    // «Сохранить вопросы» — печатаешь, через паузу само сохраняется).
-    var quizSaveTimer = null;
-
-    function syncQuizQuestionIds(freshQuestions) {
-        // Строки не перерисовываем — только проставляем настоящие id новых
-        // вопросов взамен временных `null`. Полная перерисовка на каждое
-        // автосохранение сбивала бы курсор прямо во время печати.
-        var rows = videoForm.querySelectorAll('[data-quiz-question]');
-        rows.forEach(function (row, index) {
-            var fresh = freshQuestions[index];
-            if (fresh) row.setAttribute('data-quiz-question-id', fresh.id);
-        });
-        catalogVideoQuestions[selectedVideoId] = freshQuestions;
-    }
-
-    function saveQuizQuestionsNow(rerenderAfter) {
-        var quizMessage = videoForm.querySelector('[data-quiz-message]');
-        if (!selectedVideoId) {
-            quizMessage.textContent = 'Сначала выберите ролик из списка.';
-            quizMessage.classList.add('is-error');
-            return;
-        }
-        quizMessage.textContent = 'Сохраняем…';
-        quizMessage.classList.remove('is-error');
-        var savingVideoId = selectedVideoId;
-        api('/cabinet/admin/videos/' + savingVideoId + '/quiz-questions', {
-            quiz_questions: collectQuizQuestions()
-        }).then(function (data) {
-            // Пока запрос шёл, могли успеть выбрать другой ролик — тогда эти
-            // строки в форме уже не про него, применять ответ некуда.
-            if (selectedVideoId !== savingVideoId) return;
-            syncQuizQuestionIds(data.questions);
-            // Перерисовка (сброс нумерации «Вопрос N») только после явного
-            // удаления строки — во время печати она сбила бы курсор.
-            if (rerenderAfter) renderQuizQuestions(selectedVideoId);
-            quizMessage.textContent = 'Вопросы сохранены.';
-        }).catch(function (error) {
-            if (selectedVideoId !== savingVideoId) return;
-            quizMessage.textContent = saveError(error, 'вопросы');
-            quizMessage.classList.add('is-error');
-        });
-    }
-
-    function scheduleQuizSave() {
-        clearTimeout(quizSaveTimer);
-        quizSaveTimer = setTimeout(saveQuizQuestionsNow, 800);
-    }
-
     if (videoForm) {
-        videoForm.addEventListener('input', function (event) {
-            if (event.target.hasAttribute('data-qq-text')) scheduleQuizSave();
-        });
         videoForm.addEventListener('change', function (event) {
             if (event.target.hasAttribute('data-v-pick')) {
                 selectedVideoId = Number(event.target.value);
                 setMessage(videoForm, '', false);
-                renderQuizQuestions(selectedVideoId);
                 var picked = catalogVideoMeta[selectedVideoId];
                 if (picked) {
                     videoForm.querySelector('[data-v-title]').value = picked.title || '';
@@ -1022,7 +923,6 @@ FORM: Operate.
         delete videoForm.dataset.editingTaskId;
         selectedVideoId = null;
         videoForm.querySelectorAll('[data-v-pick]').forEach(function (input) { input.checked = false; });
-        videoForm.querySelector('[data-quiz-questions-wrap]').hidden = true;
         renderFormBlocks(videoForm, []);
         videoForm.querySelector('[data-v-title]').value = '';
         videoForm.querySelector('[data-v-description]').value = '';
@@ -1121,7 +1021,6 @@ FORM: Operate.
             if (radio) {
                 radio.checked = true;
                 selectedVideoId = data.catalog_video_id;
-                renderQuizQuestions(selectedVideoId);
             }
         }
         setMessage(videoForm, 'Правка элемента — измените поля и сохраните.', false);
@@ -1339,33 +1238,6 @@ FORM: Operate.
         var removeBlockOption = event.target.closest('[data-remove-b-option]');
         if (removeBlockOption) {
             removeBlockOption.closest('[data-b-option]').remove();
-            return;
-        }
-
-        var addQuizQuestion = event.target.closest('[data-add-quiz-question]');
-        if (addQuizQuestion) {
-            // Остался только у формы видео — это собственный мини-опрос
-            // ролика (`video_quiz`), он живёт на `LearningVideo` и правится
-            // ещё и на экране «Загрузка видео».
-            var quizHolder = addQuizQuestion.closest('[data-form]').querySelector('[data-quiz-questions]');
-            quizHolder.insertAdjacentHTML('beforeend', quizQuestionRowHTML(quizHolder.children.length + 1));
-            return;
-        }
-
-        var removeQuizQuestion = event.target.closest('[data-remove-quiz-question]');
-        if (removeQuizQuestion) {
-            // Строка общая на все виды (quizQuestionRowHTML переиспользуется
-            // целиком), но автосохранение по клику — только у видео: у
-            // остальных нет отдельного экрана правки, вопросы уходят вместе
-            // с формой по кнопке «Сохранить».
-            var isVideoQuizRow = videoForm.contains(removeQuizQuestion);
-            removeQuizQuestion.closest('[data-quiz-question]').remove();
-            if (isVideoQuizRow) {
-                // Убрали строку — сохраняем сразу же, без ожидания: это осознанный
-                // клик, а не набор текста, который стоит подождать перед отправкой.
-                clearTimeout(quizSaveTimer);
-                saveQuizQuestionsNow(true);
-            }
             return;
         }
 
