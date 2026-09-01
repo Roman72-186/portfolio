@@ -129,6 +129,8 @@ def test_curator_first_message_then_student_reply(auth_client, db, user_factory,
     submission = db.query(HomeworkSubmission).one()
 
     curator = user_factory(vk_id=777_001, name="Куратор Аня", role_name="куратор")
+    user.curator_id = curator.id
+    db.commit()
     curator_session = session_factory(curator)
     client.cookies.set("session_id", curator_session.id)
 
@@ -236,6 +238,8 @@ def test_curator_accept_closes_task(auth_client, db, user_factory, session_facto
     assert _task_state(db, task.id, user.id) is None
 
     curator = user_factory(vk_id=333_001, name="Куратор Оля", role_name="куратор")
+    user.curator_id = curator.id
+    db.commit()
     client.cookies.set("session_id", session_factory(curator).id)
     resp = client.post(f"/cabinet/staff/homework/submissions/{submission.id}/accept")
     assert resp.status_code == 200
@@ -256,6 +260,80 @@ def test_curator_cannot_accept_without_final_photo(auth_client, db, user_factory
     submission = db.query(HomeworkSubmission).one()
 
     curator = user_factory(vk_id=333_002, name="Куратор Ира", role_name="куратор")
+    user.curator_id = curator.id
+    db.commit()
     client.cookies.set("session_id", session_factory(curator).id)
     resp = client.post(f"/cabinet/staff/homework/submissions/{submission.id}/accept")
     assert resp.status_code == 409
+
+
+def test_curator_cannot_open_foreign_submission_detail(auth_client, db, user_factory, session_factory):
+    """Дыра доступа: куратор не должен открыть сдачу чужого ученика по прямому URL."""
+    client, user = auth_client  # student.curator_id остаётся None — ничей
+    task, _ = _homework_task(db, user.id)
+    client.get(f"/cabinet/homework/{task.id}")  # заводит submission лениво
+    submission = db.query(HomeworkSubmission).one()
+
+    other_curator = user_factory(vk_id=444_001, name="Куратор Чужой", role_name="куратор")
+    client.cookies.set("session_id", session_factory(other_curator).id)
+
+    resp = client.get(f"/cabinet/staff/homework/submissions/{submission.id}")
+    assert resp.status_code == 403
+
+
+def test_curator_cannot_accept_foreign_submission(auth_client, db, user_factory, session_factory):
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        client.post(
+            f"/cabinet/homework/{task.id}/final",
+            files={"photo": ("work.jpg", b"fake-bytes", "image/jpeg")},
+        )
+    submission = db.query(HomeworkSubmission).one()
+
+    other_curator = user_factory(vk_id=444_002, name="Куратор Чужой", role_name="куратор")
+    client.cookies.set("session_id", session_factory(other_curator).id)
+
+    resp = client.post(f"/cabinet/staff/homework/submissions/{submission.id}/accept")
+    assert resp.status_code == 403
+
+
+def test_curator_cannot_message_foreign_submission(auth_client, db, user_factory, session_factory):
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    client.get(f"/cabinet/homework/{task.id}")
+    submission = db.query(HomeworkSubmission).one()
+
+    other_curator = user_factory(vk_id=444_003, name="Куратор Чужой", role_name="куратор")
+    client.cookies.set("session_id", session_factory(other_curator).id)
+
+    resp = client.post(
+        f"/cabinet/staff/homework/submissions/{submission.id}/message",
+        data={"text": "Не мой ученик"},
+    )
+    assert resp.status_code == 403
+
+
+def test_curator_submissions_list_excludes_foreign_students(auth_client, db, user_factory, session_factory):
+    """Список сдач по задаче показывает куратору только его учеников."""
+    client, user = auth_client
+    task, homework = _homework_task(db, user.id)
+
+    own_curator = user_factory(vk_id=444_004, name="Куратор Свой", role_name="куратор")
+    user.curator_id = own_curator.id
+    db.commit()
+
+    other_student = user_factory(vk_id=444_005, name="Чужой Ученик", role_name="ученик")
+
+    from app.services.homework_submission import get_or_create_submission
+    own_submission, _ = get_or_create_submission(db, task=task, user_id=user.id)
+    foreign_submission, _ = get_or_create_submission(db, task=task, user_id=other_student.id)
+    db.commit()
+
+    client.cookies.set("session_id", session_factory(own_curator).id)
+    resp = client.get(f"/cabinet/staff/homework/{task.id}/submissions")
+
+    assert resp.status_code == 200
+    assert f"/cabinet/staff/homework/submissions/{own_submission.id}" in resp.text
+    assert f"/cabinet/staff/homework/submissions/{foreign_submission.id}" not in resp.text

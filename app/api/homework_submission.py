@@ -41,6 +41,7 @@ from app.services.homework_submission import (
     list_submissions_for_task,
     set_final_image,
 )
+from app.services.student_access import get_student_for_staff_access
 from app.services.tracker import accessible_task_ids, close_task_for_user
 from app.services.tracker import homework_images as list_homework_reference_images
 from app.services.upload_validation import read_image_uploads
@@ -304,6 +305,12 @@ def staff_homework_submissions(
     students = {
         u.id: u for u in db.query(User).filter(User.id.in_(student_ids)).all()
     } if student_ids else {}
+    if user["role_rank"] == 2:
+        # Куратор видит сдачи только своих учеников — как везде остальных.
+        submissions = [
+            s for s in submissions
+            if students.get(s.user_id) and students[s.user_id].curator_id == user["user_id"]
+        ]
     rows = [
         {"submission": s, "student": students.get(s.user_id)}
         for s in submissions
@@ -327,6 +334,11 @@ async def staff_homework_submission_detail(
     submission = db.get(HomeworkSubmission, submission_id)
     if submission is None:
         raise HTTPException(status_code=404, detail="Сдача не найдена")
+    get_student_for_staff_access(
+        db, user, submission.user_id,
+        not_found_detail="Сдача не найдена",
+        forbidden_detail="Это не ваш студент",
+    )
     task = db.get(TrackerTask, submission.tracker_task_id)
     homework = db.get(HomeworkAssignment, submission.homework_id)
     if task is None or homework is None:
@@ -350,6 +362,11 @@ async def accept_homework_submission(
     submission = db.get(HomeworkSubmission, submission_id)
     if submission is None:
         raise HTTPException(status_code=404, detail="Сдача не найдена")
+    get_student_for_staff_access(
+        db, user, submission.user_id,
+        not_found_detail="Сдача не найдена",
+        forbidden_detail="Это не ваш студент",
+    )
     images = list_images(db, submission.id)
     if not any(i.is_final for i in images):
         raise HTTPException(status_code=409, detail="Финальное фото ещё не загружено")
@@ -375,5 +392,10 @@ async def staff_send_homework_message(
     submission = db.get(HomeworkSubmission, submission_id)
     if submission is None:
         raise HTTPException(status_code=404, detail="Сдача не найдена")
+    get_student_for_staff_access(
+        db, user, submission.user_id,
+        not_found_detail="Сдача не найдена",
+        forbidden_detail="Это не ваш студент",
+    )
     fb, _ = get_or_create_feedback(db, submission_id=submission.id, initiator_id=user["user_id"])
     return await _post_message(request, submission, fb, db, user, text, photo)
