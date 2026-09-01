@@ -82,68 +82,32 @@ FORM: Operate.
 
     {% if not is_past %}
     <div class="prg-tiles">
-        <button type="button" class="prg-tile" data-open-form="mock">
-            <span class="prg-tile-icon" aria-hidden="true">★</span>
+        {% for preset in item_presets %}
+        <button type="button" class="prg-tile" data-open-form="{{ preset.kind }}">
+            <span class="prg-tile-icon" aria-hidden="true">{{ preset.icon }}</span>
             <span>
-                <strong>Задание (Пробник)</strong>
-                <small>Билеты по рисунку и композиции, окно сдачи</small>
+                <strong>{{ preset.label }}</strong>
+                <small>{{ preset.hint }}</small>
             </span>
         </button>
-        <button type="button" class="prg-tile" data-open-form="video">
-            <span class="prg-tile-icon" aria-hidden="true">▶</span>
-            <span>
-                <strong>Видеоматериал</strong>
-                <small>Выбрать ролик из загруженных</small>
-            </span>
-        </button>
-        <button type="button" class="prg-tile" data-open-form="homework">
-            <span class="prg-tile-icon" aria-hidden="true">✎</span>
-            <span>
-                <strong>Самостоятельная работа</strong>
-                <small>Условие, референсы, сдача работы</small>
-            </span>
-        </button>
-        <button type="button" class="prg-tile" data-open-form="survey">
-            <span class="prg-tile-icon" aria-hidden="true">☑</span>
-            <span>
-                <strong>Анкета</strong>
-                <small>Готовый шаблон или новые вопросы</small>
-            </span>
-        </button>
-        <button type="button" class="prg-tile" data-open-form="material">
-            <span class="prg-tile-icon" aria-hidden="true">📄</span>
-            <span>
-                <strong>Материалы</strong>
-                <small>Текст и ссылки к неделе</small>
-            </span>
-        </button>
-        <button type="button" class="prg-tile" data-open-form="quiz">
-            <span class="prg-tile-icon" aria-hidden="true">?</span>
-            <span>
-                <strong>Тест по теории</strong>
-                <small>Задание на самопроверку</small>
-            </span>
-        </button>
-        <button type="button" class="prg-tile" data-open-form="lesson">
-            <span class="prg-tile-icon" aria-hidden="true">🎥</span>
-            <span>
-                <strong>Занятие</strong>
-                <small>Созвон или эфир</small>
-            </span>
-        </button>
-        <button type="button" class="prg-tile" data-open-form="checklist">
-            <span class="prg-tile-icon" aria-hidden="true">☰</span>
-            <span>
-                <strong>Чек-лист и проверки</strong>
-                <small>Список пунктов для самопроверки</small>
-            </span>
-        </button>
+        {% endfor %}
     </div>
     {% endif %}
 
     {% if not is_past %}
     <form class="prg-form" data-form="mock" hidden>
         <h2>Задание (Пробник) на {{ day.day }} число</h2>
+        <div class="prg-grid2">
+            <label class="prg-field">
+                <input type="text" data-m-title maxlength="200" autocomplete="off"
+                       aria-label="Тема учебного дня" placeholder="Тема учебного дня">
+            </label>
+        </div>
+        <label class="prg-field">
+            <textarea data-m-description maxlength="5000"
+                      aria-label="Описание, необязательно"
+                      placeholder="Описание, необязательно"></textarea>
+        </label>
         <p class="prg-hint">Отметьте предметы. В один день можно поставить оба.</p>
         {% for subject in subjects %}
         <div class="prg-subject" data-subject-block="{{ subject }}">
@@ -185,8 +149,9 @@ FORM: Operate.
         <h2>{{ title }} на {{ day.day }} число</h2>
         {% if hint %}<p class="prg-hint">{{ hint }}</p>{% endif %}
         <div class="prg-grid2">
-            <label class="prg-field">Тема учебного дня
-                <input type="text" data-x-title maxlength="200" autocomplete="off">
+            <label class="prg-field">
+                <input type="text" data-x-title maxlength="200" autocomplete="off"
+                       aria-label="Тема учебного дня" placeholder="Тема учебного дня">
             </label>
             <label class="prg-field">Предмет
                 <select data-x-subject>
@@ -254,13 +219,14 @@ FORM: Operate.
             Загруженных роликов пока нет. Сначала загрузите видео на вкладке «Загрузка видео».
         </p>
         {% endif %}
-        <label class="prg-field">Название ролика
-            <input type="text" data-v-title maxlength="200" autocomplete="off">
+        <label class="prg-field">
+            <input type="text" data-v-title maxlength="200" autocomplete="off"
+                   aria-label="Тема учебного дня" placeholder="Тема учебного дня">
         </label>
         <label class="prg-field">
             <textarea data-v-description maxlength="5000"
-                      aria-label="Описание ролика, необязательно"
-                      placeholder="Описание ролика, необязательно"></textarea>
+                      aria-label="Описание, необязательно"
+                      placeholder="Описание, необязательно"></textarea>
         </label>
         {# Мини-опрос ролика отсюда убран 31.08.2026: вопросы стали блоками
            задания и настраиваются редактором содержимого ниже. #}
@@ -290,8 +256,9 @@ FORM: Operate.
     <form class="prg-form" data-form="homework" hidden>
         <h2>Самостоятельная работа на {{ day.day }} число</h2>
         <div class="prg-grid2">
-            <label class="prg-field">Тема учебного дня
-                <input type="text" data-h-title maxlength="200" autocomplete="off">
+            <label class="prg-field">
+                <input type="text" data-h-title maxlength="200" autocomplete="off"
+                       aria-label="Тема учебного дня" placeholder="Тема учебного дня">
             </label>
             <label class="prg-field">Предмет
                 <select data-h-subject>
@@ -302,8 +269,9 @@ FORM: Operate.
                 </select>
             </label>
         </div>
-        <label class="prg-field">Что нужно сделать
-            <textarea data-h-description maxlength="5000"></textarea>
+        <label class="prg-field">
+            <textarea data-h-description maxlength="5000"
+                      aria-label="Что нужно сделать" placeholder="Что нужно сделать"></textarea>
         </label>
         <div class="prg-grid2">
             <label class="prg-field prg-field--row">
@@ -331,12 +299,9 @@ FORM: Operate.
         <p class="prg-message" data-form-message></p>
     </form>
 
-    {{ simple_form('survey', 'Анкета', 'Вопросы собираются блоками ниже — как и всё остальное содержимое. Готовый набор можно взять из другого задания.') }}
-
-    {{ simple_form('material', 'Материалы', 'Текст, ссылки, файлы — ученик отмечает сам.') }}
-    {{ simple_form('quiz', 'Тест по теории', 'Задание на самопроверку — ученик отмечает сам, автоматической проверки нет. Не путать с мини-опросом после видео.') }}
-    {{ simple_form('lesson', 'Занятие', 'Тема и время созвона или эфира — ссылку пока указывайте в описании.') }}
-    {{ simple_form('checklist', 'Чек-лист и проверки', 'Список пунктов для самопроверки — ученик отмечает сам.') }}
+    {% for preset in item_presets if preset.capability == 'generic' %}
+    {{ simple_form(preset.kind, preset.label, preset.hint) }}
+    {% endfor %}
     {% endif %}
 
     <section class="prg-items">
@@ -469,6 +434,11 @@ FORM: Operate.
     // ── Пробник ─────────────────────────────────────────────────────────
     var dayIso = document.querySelector('.prg-page').dataset.day;
     var mockForm = document.querySelector('[data-form="mock"]');
+    var itemPresets = {{ item_presets|tojson }};
+    var presetByKind = itemPresets.reduce(function (result, preset) {
+        result[preset.kind] = preset;
+        return result;
+    }, {});
 
     function ticketHTML(number) {
         // Окно билета (открывается/закрывается/минут на работу) больше не
@@ -478,8 +448,8 @@ FORM: Operate.
             + '<div class="prg-ticket" data-ticket>'
             + '  <div class="prg-ticket-head"><strong>Билет ' + number + '</strong>'
             + '    <button type="button" class="btn-outline" data-remove-ticket>Убрать</button></div>'
-            + '  <label class="prg-field">Название<input type="text" data-t-title maxlength="200"></label>'
-            + '  <label class="prg-field">Описание<textarea data-t-description maxlength="2000"></textarea></label>'
+            + '  <label class="prg-field"><input type="text" data-t-title maxlength="200" aria-label="Название билета" placeholder="Название билета"></label>'
+            + '  <label class="prg-field"><textarea data-t-description maxlength="2000" aria-label="Описание билета, необязательно" placeholder="Описание билета, необязательно"></textarea></label>'
             + '  <label class="prg-field">Картинка билета<input type="file" data-t-image accept="image/*"></label>'
             + '  <div class="prg-thumbs" data-t-thumb></div>'
             + '</div>';
@@ -565,13 +535,6 @@ FORM: Operate.
     // Мини-опрос каждого ролика (владелец 29.08.2026: вопросы настраиваются
     // тут же, где ролик выбирают на день, а не только на «Загрузке видео»).
     // Локальная копия обновляется после каждого сохранения — сервер
-    // Название и описание уже загруженного ролика — чтобы при выборе из
-    // списка подставить их в поля правки, не отдельным походом за данными.
-    var catalogVideoMeta = {};
-    ({{ catalog_videos|tojson }}).forEach(function (v) {
-        catalogVideoMeta[v.id] = {title: v.title, description: v.description || ''};
-    });
-
     // Правка вместо удаления-и-пересоздания (владелец 29.08.2026): данные
     // уже стоящих в дне элементов — по task_id, чтобы «Изменить» на карточке
     // могло заново открыть ту же форму с текущими значениями.
@@ -666,33 +629,33 @@ FORM: Operate.
 
     function blockBodyHTML(type) {
         if (type === 'text') {
-            return '<label class="prg-field">Текст<textarea data-b-body maxlength="5000"></textarea></label>';
+            return '<label class="prg-field"><textarea data-b-body maxlength="5000" aria-label="Текст" placeholder="Текст"></textarea></label>';
         }
         if (type === 'photo') {
             // multiple: владелец 31.08.2026 — выбрал десять файлов разом, а не
             // жал «+ Фото» десять раз. Потолок держат и сервер, и этот скрипт.
             return ''
-                + '<label class="prg-field">Файлы<input type="file" accept="image/*" multiple data-b-photo-file></label>'
+                + '<label class="prg-field"><input type="file" accept="image/*" multiple data-b-photo-file aria-label="Фото"></label>'
                 + '<p class="prg-hint" data-b-photo-status></p>'
                 + '<div class="prg-blk-gallery" data-b-images></div>'
                 + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Подпись, необязательно" placeholder="Подпись, необязательно"></label>';
         }
         if (type === 'video') {
             return ''
-                + '<label class="prg-field">Ролик<select data-b-video>'
-                + '<option value="">— выберите —</option>' + videoOptionsHTML() + '</select></label>'
+                + '<label class="prg-field"><select data-b-video aria-label="Ролик">'
+                + '<option value="">Выберите ролик</option>' + videoOptionsHTML() + '</select></label>'
                 + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок, необязательно" placeholder="Заголовок, необязательно"></label>';
         }
         if (type === 'link') {
             return ''
-                + '<label class="prg-field">Адрес<input type="url" data-b-url maxlength="500" placeholder="https://"></label>'
-                + '<label class="prg-field">Надпись на кнопке<input type="text" data-b-title maxlength="200"></label>';
+                + '<label class="prg-field"><input type="url" data-b-url maxlength="500" aria-label="Адрес ссылки" placeholder="Адрес ссылки"></label>'
+                + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Надпись на кнопке" placeholder="Надпись на кнопке"></label>';
         }
         // question
         return ''
-            + '<label class="prg-field">Текст вопроса<textarea data-b-body maxlength="5000"></textarea></label>'
-            + '<label class="prg-field">Тип ответа<select data-b-question-type>'
-            + '{% for qt in question_types %}<option value="{{ qt.value }}">{{ qt.label }}</option>{% endfor %}'
+            + '<label class="prg-field"><textarea data-b-body maxlength="5000" aria-label="Текст вопроса" placeholder="Текст вопроса"></textarea></label>'
+            + '<label class="prg-field"><select data-b-question-type aria-label="Тип ответа">'
+            + '{% for qt in question_types %}<option value="{{ qt.value }}">Тип ответа: {{ qt.label }}</option>{% endfor %}'
             + '</select></label>'
             + '<div class="prg-blk-options" data-b-options-wrap hidden>'
             + '  <p class="prg-hint">Отметьте верный вариант — без него вопрос не сохранится.</p>'
@@ -1032,10 +995,9 @@ FORM: Operate.
             if (event.target.hasAttribute('data-v-pick')) {
                 selectedVideoId = Number(event.target.value);
                 setMessage(videoForm, '', false);
-                var picked = catalogVideoMeta[selectedVideoId];
-                if (picked) {
-                    videoForm.querySelector('[data-v-title]').value = picked.title || '';
-                    videoForm.querySelector('[data-v-description]').value = picked.description || '';
+                var firstVideoBlock = videoForm.querySelector('[data-block-type="video"] [data-b-video]');
+                if (firstVideoBlock) {
+                    firstVideoBlock.value = String(selectedVideoId);
                 }
             }
         });
@@ -1099,6 +1061,8 @@ FORM: Operate.
 
     function resetMockFormForCreate() {
         delete mockForm.dataset.editingTaskId;
+        mockForm.querySelector('[data-m-title]').value = '';
+        mockForm.querySelector('[data-m-description]').value = '';
         mockForm.querySelectorAll('[data-subject-block]').forEach(function (block) {
             block.hidden = false;
             var toggle = block.querySelector('[data-subject-toggle]');
@@ -1160,6 +1124,8 @@ FORM: Operate.
         // только блок этого предмета, остальные скрываем целиком, чтобы
         // billet не собрался по второму предмету случайно.
         mockForm.dataset.editingTaskId = String(taskId);
+        mockForm.querySelector('[data-m-title]').value = data.title || '';
+        mockForm.querySelector('[data-m-description]').value = data.description || '';
         mockForm.querySelectorAll('[data-subject-block]').forEach(function (block) {
             var isThis = block.dataset.subjectBlock === data.subject;
             var toggle = block.querySelector('[data-subject-toggle]');
@@ -1211,7 +1177,14 @@ FORM: Operate.
         // Без этой строки правка видеоматериала открывалась бы с пустым
         // редактором блоков и стирала их при сохранении: `collectFormBlocks`
         // читает то, что в форме, а не то, что в базе.
-        renderFormBlocks(videoForm, data.blocks || []);
+        var videoBlocks = (data.blocks || []).slice();
+        // Старые видеозадания создавались до универсальных блоков. При первой
+        // правке показываем их уже в новом конструкторе и сохраняем основной
+        // ролик как обычный видеоблок.
+        if (!videoBlocks.length && data.catalog_video_id) {
+            videoBlocks.push({block_type: 'video', video_id: data.catalog_video_id});
+        }
+        renderFormBlocks(videoForm, videoBlocks);
         if (data.catalog_video_id) {
             var radio = videoForm.querySelector('[data-v-pick][value="' + data.catalog_video_id + '"]');
             if (radio) {
@@ -1266,6 +1239,14 @@ FORM: Operate.
                 else if (simpleEditableKinds.indexOf(openKind) !== -1) resetSimpleFormForCreate(openKind);
             }
             showForm(openKind);
+            var preset = presetByKind[openKind];
+            var emptyEditor = openForm && !openForm.dataset.editingTaskId
+                && !openForm.querySelector('[data-block]');
+            if (preset && preset.default_block && emptyEditor) {
+                var holder = openForm.querySelector('[data-blocks]');
+                holder.insertAdjacentHTML('beforeend', blockRowHTML(preset.default_block));
+                syncBlockOptions(holder.lastElementChild);
+            }
             return;
         }
 
@@ -1297,6 +1278,11 @@ FORM: Operate.
 
         var saveMock = event.target.closest('[data-mock-save]');
         if (saveMock) {
+            var mockTitle = mockForm.querySelector('[data-m-title]').value.trim();
+            if (!mockTitle) {
+                setFormMessage('Укажите тему учебного дня.', true);
+                return;
+            }
             if (mockForm.dataset.editingTaskId) {
                 // Правка (владелец 30.08.2026) — один предмет, уже известный
                 // из карточки, билеты собираем только из его блока.
@@ -1309,6 +1295,8 @@ FORM: Operate.
                 saveMock.disabled = true;
                 var mockTariff = collectTariffFields(mockForm);
                 api(itemUrl('mock', mockForm), {
+                    title: mockTitle,
+                    description: mockForm.querySelector('[data-m-description]').value,
                     tickets: editTickets,
                     is_required: mockForm.querySelector('[data-m-required]').checked,
                     tariff_restricted: mockTariff.tariff_restricted,
@@ -1339,6 +1327,8 @@ FORM: Operate.
             saveMock.disabled = true;
             var mockCreateTariff = collectTariffFields(mockForm);
             api('/cabinet/staff/program/' + dayIso + '/mock', {
+                title: mockTitle,
+                description: mockForm.querySelector('[data-m-description]').value,
                 subjects: blocks,
                 audience: Object.assign(
                     {assign_to_all: true, tag_ids: [], assignee_usernames: ''},
@@ -1363,15 +1353,19 @@ FORM: Operate.
                 setMessage(videoForm, 'Сначала выберите ролик из списка.', true);
                 return;
             }
+            var videoDayTitle = videoForm.querySelector('[data-v-title]').value.trim();
+            if (!videoDayTitle) {
+                setMessage(videoForm, 'Укажите тему учебного дня.', true);
+                return;
+            }
             saveVideo.disabled = true;
-            // Название и описание — то же, что указывалось при загрузке
-            // ролика: пустое поле ничего не стирает (сервер не трогает то,
-            // что не прислали непустым), заполненное переписывает карточку
-            // ролика в каталоге (владелец 29.08.2026).
+            // Тема и описание относятся к учебному дню. Название ролика в
+            // каталоге здесь не меняем: один ролик может входить в разные дни
+            // с разными учебными темами.
             api(itemUrl('video', videoForm), {
                 catalog_video_id: selectedVideoId,
-                title: videoForm.querySelector('[data-v-title]').value.trim() || null,
-                description: videoForm.querySelector('[data-v-description]').value.trim() || null,
+                day_title: videoDayTitle,
+                day_description: videoForm.querySelector('[data-v-description]').value,
                 subject: videoForm.querySelector('[data-v-subject]').value || null,
                 is_required: videoForm.querySelector('[data-v-required]').checked,
                 audience: audienceVideo,

@@ -71,6 +71,8 @@ def test_edit_ticket_title_in_place_preserves_id(client, db, user_factory, sessi
     resp = client.post(
         f"{PROGRAM}/items/{task.id}/mock",
         json={
+            "title": "Пробник: свет и тон",
+            "description": "Тема и пояснение относятся к учебному дню",
             "tickets": [{"id": ticket.id, "title": "Правленый натюрморт", "description": "Ваза"}],
             "is_required": True,
         },
@@ -81,6 +83,9 @@ def test_edit_ticket_title_in_place_preserves_id(client, db, user_factory, sessi
     assert refreshed.title == "Правленый натюрморт"
     assert refreshed.description == "Ваза"
     assert db.query(ExamTicket).count() == 1
+    task = db.get(TrackerTask, task.id)
+    assert task.title == "Пробник: свет и тон"
+    assert task.description == "Тема и пояснение относятся к учебному дню"
 
 
 def test_mock_tariff_restriction_round_trips_on_create_and_edit(

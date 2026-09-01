@@ -10,6 +10,7 @@
 кусок, вызовы остались».
 """
 
+import json
 import re
 from datetime import timedelta
 
@@ -83,11 +84,43 @@ def test_day_page_uses_school_day_copy_and_inline_optional_hints(
     assert "Укажите тему учебного дня." in page.text
 
     for placeholder in (
+        "Тема учебного дня",
+        "Что нужно сделать",
         "Описание, необязательно",
-        "Описание ролика, необязательно",
         "Примечание к заданию, необязательно",
+        "Название билета",
+        "Описание билета, необязательно",
+        "Текст",
         "Подпись, необязательно",
         "Заголовок, необязательно",
+        "Адрес ссылки",
+        "Надпись на кнопке",
+        "Текст вопроса",
     ):
         assert f'aria-label="{placeholder}"' in page.text
         assert f'placeholder="{placeholder}"' in page.text
+
+    for external_label in (
+        "Тема учебного дня",
+        "Что нужно сделать",
+    ):
+        assert f'<label class="prg-field">{external_label}' not in page.text
+
+    for embedded_control in ("Фото", "Ролик", "Тип ответа"):
+        assert f'aria-label="{embedded_control}"' in page.text
+
+    assert '<label class="prg-field">Файлы' not in page.text
+    assert '<label class="prg-field">Ролик' not in page.text
+    assert '<label class="prg-field">Тип ответа' not in page.text
+    assert "Выберите ролик" in page.text
+    assert "Тип ответа: " in page.text
+
+    # Плитки и простые формы строятся из одного серверного реестра. Новый
+    # generic-preset не требует копировать разметку конструктора вручную.
+    preset_match = re.search(r"var itemPresets = (\[.*?\]);", page.text)
+    assert preset_match
+    presets = json.loads(preset_match.group(1))
+    for preset in presets:
+        assert f'data-open-form="{preset["kind"]}"' in page.text
+        if preset["capability"] == "generic":
+            assert f'data-simple-kind="{preset["kind"]}"' in page.text

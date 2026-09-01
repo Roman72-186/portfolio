@@ -6,6 +6,7 @@ from app.models.homework import HomeworkAssignment, HomeworkImage
 from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, LearningTopic
 from app.models.learning_video import LearningVideo
 from app.models.tag import Tag, UserTag
+from app.models.task_block import TaskBlock
 from app.models.tracker import TrackerTask
 from app.services.tz import MSK_TZ
 from app.services.video_catalog import is_video_accessible
@@ -92,6 +93,38 @@ def test_video_item_binds_topic_cover_and_task(
     assert topic.kind == TOPIC_KIND_PROGRAM_ITEM
     task = db.query(TrackerTask).one()
     assert task.kind == "video" and task.topic_id == topic.id
+
+
+def test_video_item_saves_universal_blocks_and_separate_day_copy(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    video = _video(db)
+
+    response = client.post(
+        f"{PROGRAM}/{MONDAY}/video",
+        json={
+            "catalog_video_id": video.id,
+            "day_title": "Подготовка к занятию",
+            "day_description": "Посмотрите и ответьте на вопрос",
+            "blocks": [
+                {"block_type": "video", "video_id": video.id},
+                {"block_type": "text", "body": "Запишите главный вывод"},
+            ],
+            "audience": {"assign_to_all": True, "tag_ids": [], "assignee_usernames": ""},
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    db.expire_all()
+    task = db.query(TrackerTask).one()
+    assert task.title == "Подготовка к занятию"
+    assert task.description == "Посмотрите и ответьте на вопрос"
+    assert db.get(LearningVideo, video.id).title == "Черновое название"
+    assert [b.block_type for b in db.query(TaskBlock).order_by(TaskBlock.sort_order)] == [
+        "video", "text"
+    ]
 
 
 def test_video_item_publishes_immediately_when_already_ready(

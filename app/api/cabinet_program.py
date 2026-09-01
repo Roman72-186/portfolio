@@ -127,6 +127,20 @@ MONTH_NAMES = (
     "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
 )
 
+# Один реестр управляет плитками и стартовым содержимым конструктора. Новый
+# простой сценарий добавляется здесь и в списке допустимых TrackerTask.kind;
+# отдельная копия формы ему не нужна.
+PROGRAM_ITEM_PRESETS = [
+    {"kind": "mock", "label": "Задание (Пробник)", "icon": "★", "hint": "Билеты по рисунку и композиции, окно сдачи", "capability": "mock", "default_block": "question"},
+    {"kind": ITEM_VIDEO, "label": "Видеоматериал", "icon": "▶", "hint": "Ролик и дополнительные задачи учебного дня", "capability": "video", "default_block": "video"},
+    {"kind": ITEM_HOMEWORK, "label": "Самостоятельная работа", "icon": "✎", "hint": "Материалы, условие и сдача работы", "capability": "homework", "default_block": "text"},
+    {"kind": ITEM_SURVEY, "label": "Анкета", "icon": "☑", "hint": "Один или несколько вопросов", "capability": "generic", "default_block": "question"},
+    {"kind": ITEM_MATERIAL, "label": "Материалы", "icon": "📄", "hint": "Текст, статья, фото, видео или ссылка", "capability": "generic", "default_block": "text"},
+    {"kind": ITEM_QUIZ, "label": "Тест по теории", "icon": "?", "hint": "Вопросы с одним или несколькими ответами", "capability": "generic", "default_block": "question"},
+    {"kind": ITEM_LESSON, "label": "Занятие", "icon": "🎥", "hint": "Подготовка, материалы и задачи занятия", "capability": "generic", "default_block": "text"},
+    {"kind": ITEM_CHECKLIST, "label": "Чек-лист и проверки", "icon": "☰", "hint": "Пункты и вопросы для самопроверки", "capability": "generic", "default_block": "question"},
+]
+
 
 def _parse_month(raw: str | None, today: date) -> tuple[int, int]:
     """`?month=2026-09` → (2026, 9). Мусор и пустое значение — текущий месяц."""
@@ -377,6 +391,7 @@ def program_day(
             ],
             "edit_payloads": _edit_payloads(db, items, details),
             "kind_labels": ITEM_KIND_LABELS,
+            "item_presets": PROGRAM_ITEM_PRESETS,
             "subjects": MOCK_SUBJECTS,
             "tariffs": TARIFFS,
             # Анкета — переиспользуемый шаблон (owner-решение 22–23.08): конструктор
@@ -561,6 +576,8 @@ class MockEditPayload(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    title: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
     tickets: list[MockTicketEditPayload] = Field(min_length=1, max_length=10)
     is_required: bool = True
     blocks: list[BlockItem] = Field(default_factory=list, max_length=MAX_BLOCKS)
@@ -623,6 +640,8 @@ class AudiencePayload(BaseModel):
 class MockPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    title: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
     subjects: list[SubjectPayload] = Field(min_length=1, max_length=len(MOCK_SUBJECTS))
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
     is_required: bool = True
@@ -794,8 +813,8 @@ def create_mock_item(
         )
         task = create_task(
             db,
-            title=f"Пробник по предмету «{block.subject}»",
-            description=note,
+            title=payload.title or f"Пробник по предмету «{block.subject}»",
+            description=payload.description if payload.description is not None else note,
             due_at=latest_close,
             subject=block.subject,
             topic_id=topic.id,
@@ -860,17 +879,28 @@ class VideoPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     catalog_video_id: int = Field(ge=1)
+    # Общие поля учебного дня. `title`/`description` ниже оставлены для
+    # обратной совместимости со старыми клиентами, где они правили каталог.
+    day_title: str | None = Field(default=None, max_length=200)
+    day_description: str | None = Field(default=None, max_length=5000)
     title: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=5000)
     cover_url: str | None = Field(default=None, max_length=500)
     cover_path: str | None = Field(default=None, max_length=300)
     subject: str | None = Field(default=None, max_length=50)
     is_required: bool = True
+    blocks: list[BlockItem] = Field(default_factory=list, max_length=MAX_BLOCKS)
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
 
     @field_validator("title")
     @classmethod
     def strip_title(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        return value or None
+
+    @field_validator("day_title")
+    @classmethod
+    def strip_day_title(cls, value: str | None) -> str | None:
         value = (value or "").strip()
         return value or None
 
@@ -1033,7 +1063,7 @@ def create_video_item(
     if binding and binding["kind"] == TOPIC_KIND_PROGRAM_ITEM and binding["day"]:
         raise HTTPException(status_code=422, detail=binding["label"])
 
-    title = payload.title or video.title
+    title = payload.day_title or payload.title or video.title
     topic = ensure_item_topic(
         db, title=f"Видео · {title}", day=day, user_id=user["user_id"]
     )
@@ -1079,7 +1109,11 @@ def create_video_item(
     task = create_task(
         db,
         title=title,
-        description=payload.description if description_provided else video.description,
+        description=(
+            payload.day_description
+            if "day_description" in payload.model_fields_set
+            else payload.description if description_provided else video.description
+        ),
         due_at=day_bounds(day)[0],
         subject=payload.subject,
         topic_id=topic.id,
@@ -1090,6 +1124,10 @@ def create_video_item(
         user_id=user["user_id"],
     )
     task.is_published = True
+    db.flush()
+    sync_task_blocks(
+        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
+    )
     db.add(
         AuditLog(
             action="program_video_create",
@@ -1480,8 +1518,12 @@ def update_mock_item(
     )
     update_task(
         task,
-        title=task.title,
-        description=task.description,
+        title=payload.title or task.title,
+        description=(
+            payload.description
+            if "description" in payload.model_fields_set
+            else task.description
+        ),
         due_at=task.due_at,
         subject=task.subject,
         assign_to_all=task.assign_to_all,
@@ -1705,7 +1747,7 @@ def update_video_item(
         else:
             new_video.auto_publish_on_ready = True
 
-    title = payload.title or new_video.title
+    title = payload.day_title or payload.title or new_video.title
     # Ключ `description` в теле, а не просто «не None» — иначе прислать
     # пустую строку, чтобы стереть описание, было бы невозможно (`""` после
     # `strip_description` тоже превращается в `None`, как и «не прислали»).
@@ -1731,12 +1773,19 @@ def update_video_item(
     update_task(
         task,
         title=title,
-        description=payload.description if description_provided else new_video.description,
+        description=(
+            payload.day_description
+            if "day_description" in payload.model_fields_set
+            else payload.description if description_provided else new_video.description
+        ),
         due_at=task.due_at,
         subject=payload.subject,
         assign_to_all=task.assign_to_all,
         kind=ITEM_VIDEO,
         is_required=payload.is_required,
+    )
+    sync_task_blocks(
+        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
     )
     db.add(
         AuditLog(
