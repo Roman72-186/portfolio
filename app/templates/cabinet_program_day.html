@@ -38,7 +38,7 @@ FORM: Operate.
    Пробника и вариантов ответа анкеты. Стили — в `program.css`. #}
 {% macro blocks_editor() %}
 <div class="prg-blocks" data-blocks-wrap>
-    <h3>Содержимое задания</h3>
+    <h3>Задачи учебного дня</h3>
     <p class="prg-hint">
         Добавьте, что должен увидеть ученик: текст, фото, видео из загруженных,
         ссылку, вопрос. Порядок — как расставите, стрелками ↑ ↓.
@@ -152,8 +152,10 @@ FORM: Operate.
                 <span><strong>{{ subject }}</strong></span>
             </label>
             <div data-subject-body hidden>
-                <label class="prg-field">Примечание к заданию, необязательно
-                    <input type="text" data-subject-note maxlength="200" autocomplete="off">
+                <label class="prg-field">
+                    <input type="text" data-subject-note maxlength="200" autocomplete="off"
+                           aria-label="Примечание к заданию, необязательно"
+                           placeholder="Примечание к заданию, необязательно">
                 </label>
                 <div data-tickets></div>
                 <div class="prg-actions">
@@ -183,7 +185,7 @@ FORM: Operate.
         <h2>{{ title }} на {{ day.day }} число</h2>
         {% if hint %}<p class="prg-hint">{{ hint }}</p>{% endif %}
         <div class="prg-grid2">
-            <label class="prg-field">Название
+            <label class="prg-field">Тема учебного дня
                 <input type="text" data-x-title maxlength="200" autocomplete="off">
             </label>
             <label class="prg-field">Предмет
@@ -195,8 +197,10 @@ FORM: Operate.
                 </select>
             </label>
         </div>
-        <label class="prg-field">Описание, необязательно
-            <textarea data-x-description maxlength="5000"></textarea>
+        <label class="prg-field">
+            <textarea data-x-description maxlength="5000"
+                      aria-label="Описание, необязательно"
+                      placeholder="Описание, необязательно"></textarea>
         </label>
         <label class="prg-field prg-field--row">
             <input type="checkbox" data-x-required checked>
@@ -253,8 +257,10 @@ FORM: Operate.
         <label class="prg-field">Название ролика
             <input type="text" data-v-title maxlength="200" autocomplete="off">
         </label>
-        <label class="prg-field">Описание ролика, необязательно
-            <textarea data-v-description maxlength="5000"></textarea>
+        <label class="prg-field">
+            <textarea data-v-description maxlength="5000"
+                      aria-label="Описание ролика, необязательно"
+                      placeholder="Описание ролика, необязательно"></textarea>
         </label>
         {# Мини-опрос ролика отсюда убран 31.08.2026: вопросы стали блоками
            задания и настраиваются редактором содержимого ниже. #}
@@ -284,7 +290,7 @@ FORM: Operate.
     <form class="prg-form" data-form="homework" hidden>
         <h2>Самостоятельная работа на {{ day.day }} число</h2>
         <div class="prg-grid2">
-            <label class="prg-field">Название
+            <label class="prg-field">Тема учебного дня
                 <input type="text" data-h-title maxlength="200" autocomplete="off">
             </label>
             <label class="prg-field">Предмет
@@ -669,13 +675,13 @@ FORM: Operate.
                 + '<label class="prg-field">Файлы<input type="file" accept="image/*" multiple data-b-photo-file></label>'
                 + '<p class="prg-hint" data-b-photo-status></p>'
                 + '<div class="prg-blk-gallery" data-b-images></div>'
-                + '<label class="prg-field">Подпись, необязательно<input type="text" data-b-title maxlength="200"></label>';
+                + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Подпись, необязательно" placeholder="Подпись, необязательно"></label>';
         }
         if (type === 'video') {
             return ''
                 + '<label class="prg-field">Ролик<select data-b-video>'
                 + '<option value="">— выберите —</option>' + videoOptionsHTML() + '</select></label>'
-                + '<label class="prg-field">Заголовок, необязательно<input type="text" data-b-title maxlength="200"></label>';
+                + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок, необязательно" placeholder="Заголовок, необязательно"></label>';
         }
         if (type === 'link') {
             return ''
@@ -1454,7 +1460,7 @@ FORM: Operate.
                 collectTariffFields(homeworkForm)
             );
             var titleHw = homeworkForm.querySelector('[data-h-title]').value.trim();
-            if (!titleHw) { setMessage(homeworkForm, 'Укажите название.', true); return; }
+            if (!titleHw) { setMessage(homeworkForm, 'Укажите тему учебного дня.', true); return; }
             saveHomework.disabled = true;
             api(itemUrl('homework', homeworkForm), {
                 title: titleHw,
@@ -1482,7 +1488,7 @@ FORM: Operate.
                 collectTariffFields(simpleForm)
             );
             var titleSimple = simpleForm.querySelector('[data-x-title]').value.trim();
-            if (!titleSimple) { setMessage(simpleForm, 'Укажите название.', true); return; }
+            if (!titleSimple) { setMessage(simpleForm, 'Укажите тему учебного дня.', true); return; }
             saveSimple.disabled = true;
             api(itemUrl(kind, simpleForm), {
                 title: titleSimple,

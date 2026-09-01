@@ -64,3 +64,30 @@ def test_day_page_script_calls_only_defined_functions(
         missing = sorted(called - declared - KNOWN_GLOBALS)
 
         assert not missing, f"вызовы без определения: {missing}"
+
+
+def test_day_page_uses_school_day_copy_and_inline_optional_hints(
+    client, db, user_factory, session_factory
+):
+    admin = user_factory(vk_id=990_102, name="Главный", is_admin=True, role_name="админ")
+    client.cookies.set("session_id", session_factory(admin).id)
+    iso = (today_msk() + timedelta(days=14)).isoformat()
+
+    page = client.get(f"/cabinet/staff/program/{iso}")
+    assert page.status_code == 200
+
+    assert "Содержимое задания" not in page.text
+    assert "Задачи учебного дня" in page.text
+    assert "Тема учебного дня" in page.text
+    assert "Укажите название." not in page.text
+    assert "Укажите тему учебного дня." in page.text
+
+    for placeholder in (
+        "Описание, необязательно",
+        "Описание ролика, необязательно",
+        "Примечание к заданию, необязательно",
+        "Подпись, необязательно",
+        "Заголовок, необязательно",
+    ):
+        assert f'aria-label="{placeholder}"' in page.text
+        assert f'placeholder="{placeholder}"' in page.text
