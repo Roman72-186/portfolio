@@ -128,15 +128,6 @@
     ],
     "style_lines": 124
   },
-  "partials/bottom_nav.html": {
-    "hex": 4,
-    "shadow": [
-      "app-sidebar",
-      "bottom-nav",
-      "css"
-    ],
-    "style_lines": 36
-  },
   "partials/course_calculator_widget.html": {
     "hex": 4,
     "shadow": [],
