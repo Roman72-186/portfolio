@@ -157,8 +157,30 @@
     padding: 14px 16px; background: var(--bg); border: 1px dashed var(--line);
     border-radius: var(--r-sm);
 }
+.prg-subject[hidden], .prg-subject-picker[hidden],
+.prg-subject-picker [hidden], .prg-subject-head [hidden] { display: none; }
 .prg-subject + .prg-subject { margin-top: 10px; }
 .prg-subject h3 { margin: 0 0 8px; font: 700 14px/1.3 var(--font-display); color: var(--text); }
+.prg-mock-builder {
+    display: grid; gap: 10px; padding: 14px 0; margin: 2px 0;
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
+.prg-mock-builder > h3 { margin: 0; font: 700 15px/1.3 var(--font-display); color: var(--text); }
+.prg-subject-picker { margin-bottom: 2px; }
+.prg-subject-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.prg-subject-head > div { display: grid; gap: 3px; }
+.prg-subject-head strong { color: var(--text); font: 700 14px/1.3 var(--font-display); }
+.prg-subject-head span { color: var(--muted); font-size: 12px; }
+.prg-subject-actions { justify-content: flex-end; }
+.prg-subject.is-ready { border-style: solid; }
+.prg-ticket-upload input[type="file"] { padding: 9px; }
+.prg-ticket-content { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; align-items: start; }
+.prg-ticket-content .prg-thumbs {
+    min-height: 96px; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 12px; text-align: center;
+}
+.prg-ticket-content .prg-thumbs img { width: 112px; height: 96px; }
+.prg-ticket-content textarea { min-height: 96px; }
 
 .prg-ticket {
     display: grid; gap: 10px; padding: 12px 14px; margin-top: 10px;
@@ -234,6 +256,9 @@
     .prg-day { min-height: 64px; padding: 6px; }
     .prg-monthbar h2 { min-width: 0; font-size: 16px; }
     .prg-grid { gap: 4px; }
+    .prg-ticket-content { grid-template-columns: 88px minmax(0, 1fr); gap: 10px; }
+    .prg-ticket-content .prg-thumbs img { width: 88px; height: 88px; }
+    .prg-ticket-content textarea { min-height: 88px; }
 }
 
 /* ── Редактор блоков конструктора (владелец 31.08.2026) ─────────────────────

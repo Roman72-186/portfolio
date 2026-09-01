@@ -8,8 +8,8 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=11">
-<link rel="stylesheet" href="/static/css/program_ios.css?v=6">
+<link rel="stylesheet" href="/static/css/program.css?v=12">
+<link rel="stylesheet" href="/static/css/program_ios.css?v=7">
 {% endblock %}
 {% block content %}
 {% macro tariff_fields() %}
@@ -36,13 +36,10 @@ FORM: Operate.
 
    Разметка пустая, строки рисует JS (`renderFormBlocks`) — как у билетов
    Пробника и вариантов ответа анкеты. Стили — в `program.css`. #}
-{% macro blocks_editor() %}
+{% macro blocks_editor(title='Задачи учебного дня', hint='Добавьте, что должен увидеть ученик: текст, фото, видео из загруженных, ссылку или вопрос. Порядок меняется стрелками ↑ ↓.') %}
 <div class="prg-blocks" data-blocks-wrap>
-    <h3>Задачи учебного дня</h3>
-    <p class="prg-hint">
-        Добавьте, что должен увидеть ученик: текст, фото, видео из загруженных,
-        ссылку, вопрос. Порядок — как расставите, стрелками ↑ ↓.
-    </p>
+    <h3>{{ title }}</h3>
+    <p class="prg-hint">{{ hint }}</p>
     <div data-blocks></div>
     <div class="prg-actions prg-blocks-add">
         {% for kind, label in block_types %}
@@ -108,33 +105,53 @@ FORM: Operate.
                       aria-label="Описание, необязательно"
                       placeholder="Описание, необязательно"></textarea>
         </label>
-        <p class="prg-hint">Отметьте предметы. В один день можно поставить оба.</p>
+        <section class="prg-mock-builder" data-mock-builder>
+            <h3>Билеты пробника</h3>
+            <p class="prg-hint">Выберите предмет, затем добавьте фотографии билетов. Каждая фотография станет отдельным билетом.</p>
+            <div class="prg-actions prg-subject-picker" data-subject-picker>
+                {% for subject in subjects %}
+                <button type="button" class="btn-outline" data-add-subject="{{ subject }}">+ {{ subject }}</button>
+                {% endfor %}
+            </div>
         {% for subject in subjects %}
-        <div class="prg-subject" data-subject-block="{{ subject }}">
-            <label class="prg-field prg-field--row">
-                <input type="checkbox" data-subject-toggle value="{{ subject }}">
-                <span><strong>{{ subject }}</strong></span>
-            </label>
+        <div class="prg-subject" data-subject-block="{{ subject }}" hidden>
+            <input type="checkbox" data-subject-toggle value="{{ subject }}" hidden>
+            <div class="prg-subject-head">
+                <div>
+                    <strong>{{ subject }}</strong>
+                    <span data-subject-summary>Билеты ещё не добавлены</span>
+                </div>
+                <div class="prg-actions prg-subject-actions">
+                    <button type="button" class="btn-outline" data-subject-edit hidden>Изменить</button>
+                    <button type="button" class="btn-outline" data-subject-remove>Убрать предмет</button>
+                </div>
+            </div>
             <div data-subject-body hidden>
-                <label class="prg-field">
-                    <input type="text" data-subject-note maxlength="200" autocomplete="off"
-                           aria-label="Примечание к заданию, необязательно"
-                           placeholder="Примечание к заданию, необязательно">
+                <input type="hidden" data-subject-note value="">
+                <label class="prg-field prg-ticket-upload">
+                    <span>Фотографии билетов</span>
+                    <input type="file" data-subject-images accept="image/*" multiple>
                 </label>
+                <p class="prg-hint">Можно выбрать несколько фотографий сразу. Не больше 10 на один предмет.</p>
+                <p class="prg-message" data-subject-status aria-live="polite"></p>
                 <div data-tickets></div>
                 <div class="prg-actions">
-                    <button type="button" class="btn-outline" data-add-ticket>Добавить билет</button>
+                    <button type="button" class="btn-blue" data-subject-done>Готово</button>
                 </div>
             </div>
         </div>
         {% endfor %}
+        </section>
         <label class="prg-field prg-field--row">
             <input type="checkbox" data-m-required checked>
             <span>Обязательно для сдачи</span>
         </label>
         <p class="prg-hint">Билет автоматически доступен всем ученикам, окно сдачи система выставляет сама.</p>
         {{ tariff_fields() }}
-        {{ blocks_editor() }}
+        {{ blocks_editor(
+            'Дополнительные задачи учебного дня',
+            'Текст, фото, видео, ссылки и вопросы из этого раздела попадут в каждый выбранный предмет.'
+        ) }}
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-mock-save>Сохранить</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -395,6 +412,11 @@ FORM: Operate.
             syncBlockOptions(event.target.closest('[data-block]'));
             return;
         }
+        if (event.target.hasAttribute('data-subject-images') && event.target.files.length) {
+            uploadSubjectImages(event.target.closest('[data-subject-block]'), event.target.files);
+            event.target.value = '';
+            return;
+        }
         if (event.target.hasAttribute('data-b-photo-file') && event.target.files.length) {
             uploadBlockPhotos(event.target.closest('[data-block]'), event.target.files);
             // Сбрасываем, иначе повторный выбор тех же файлов не даст change.
@@ -440,18 +462,20 @@ FORM: Operate.
         return result;
     }, {});
 
+    var MAX_MOCK_TICKETS = 10;
+
     function ticketHTML(number) {
         // Окно билета (открывается/закрывается/минут на работу) больше не
         // настраивается здесь — решение владельца 30.08.2026, сервер сам
         // берёт `default_schedule_for_day(day)` по дню конструктора.
         return ''
             + '<div class="prg-ticket" data-ticket>'
-            + '  <div class="prg-ticket-head"><strong>Билет ' + number + '</strong>'
+            + '  <div class="prg-ticket-head"><strong data-ticket-number>Фото ' + number + '</strong>'
             + '    <button type="button" class="btn-outline" data-remove-ticket>Убрать</button></div>'
-            + '  <label class="prg-field"><input type="text" data-t-title maxlength="200" aria-label="Название билета" placeholder="Название билета"></label>'
-            + '  <label class="prg-field"><textarea data-t-description maxlength="2000" aria-label="Описание билета, необязательно" placeholder="Описание билета, необязательно"></textarea></label>'
-            + '  <label class="prg-field">Картинка билета<input type="file" data-t-image accept="image/*"></label>'
-            + '  <div class="prg-thumbs" data-t-thumb></div>'
+            + '  <div class="prg-ticket-content">'
+            + '    <div class="prg-thumbs" data-t-thumb></div>'
+            + '    <label class="prg-field"><textarea data-t-description maxlength="2000" aria-label="Подпись к фотографии, необязательно" placeholder="Подпись к фотографии, необязательно"></textarea></label>'
+            + '  </div>'
             + '</div>';
     }
 
@@ -461,26 +485,142 @@ FORM: Operate.
         box.classList.toggle('is-error', !!isError);
     }
 
-    function uploadTicketImage(input, holder) {
-        var file = input.files && input.files[0];
+    function updateSubjectSummary(block) {
+        var count = block.querySelectorAll('[data-ticket]').length;
+        var summary = block.querySelector('[data-subject-summary]');
+        summary.textContent = count
+            ? count + ' ' + (count === 1 ? 'билет' : (count < 5 ? 'билета' : 'билетов'))
+            : 'Билеты ещё не добавлены';
+    }
+
+    function renumberTickets(block) {
+        block.querySelectorAll('[data-ticket]').forEach(function (row, index) {
+            row.querySelector('[data-ticket-number]').textContent = 'Фото ' + (index + 1);
+        });
+        updateSubjectSummary(block);
+    }
+
+    function openSubjectBlock(block) {
+        mockForm.querySelector('[data-subject-picker]').hidden = true;
+        mockForm.querySelectorAll('[data-subject-block]').forEach(function (other) {
+            other.querySelector('[data-subject-body]').hidden = other !== block;
+        });
+        block.hidden = false;
+        block.querySelector('[data-subject-toggle]').checked = true;
+        block.querySelector('[data-subject-body]').hidden = false;
+        block.querySelector('[data-subject-edit]').hidden = true;
+        block.classList.remove('is-ready');
+        var picker = mockForm.querySelector('[data-add-subject="' + block.dataset.subjectBlock + '"]');
+        if (picker) picker.hidden = true;
+    }
+
+    function finishSubjectBlock(block) {
+        var tickets = Array.prototype.slice.call(block.querySelectorAll('[data-ticket]'));
+        var status = block.querySelector('[data-subject-status]');
+        if (tickets.some(function (row) { return row.dataset.uploading === 'true'; })) {
+            status.textContent = 'Дождитесь загрузки фотографий.';
+            status.classList.add('is-error');
+            return false;
+        }
+        if (!tickets.length || tickets.some(function (row) {
+            return !row.querySelector('[data-t-thumb]').dataset.url;
+        })) {
+            status.textContent = 'Добавьте хотя бы одну фотографию билета.';
+            status.classList.add('is-error');
+            return false;
+        }
+        status.textContent = '';
+        status.classList.remove('is-error');
+        block.querySelector('[data-subject-body]').hidden = true;
+        block.querySelector('[data-subject-edit]').hidden = false;
+        block.classList.add('is-ready');
+        if (!mockForm.dataset.editingTaskId) {
+            var hasUnusedSubject = Array.prototype.some.call(
+                mockForm.querySelectorAll('[data-add-subject]'),
+                function (button) { return !button.hidden; }
+            );
+            mockForm.querySelector('[data-subject-picker]').hidden = !hasUnusedSubject;
+        }
+        updateSubjectSummary(block);
+        return true;
+    }
+
+    function addTicketRow(block, ticket) {
+        var holder = block.querySelector('[data-tickets]');
+        holder.insertAdjacentHTML('beforeend', ticketHTML(holder.children.length + 1));
+        var row = holder.lastElementChild;
+        if (ticket && ticket.id) row.setAttribute('data-ticket-id', ticket.id);
+        if (ticket && ticket.title) row.dataset.ticketTitle = ticket.title;
+        row.querySelector('[data-t-description]').value = (ticket && ticket.description) || '';
+        if (ticket && ticket.image_url) {
+            var thumb = row.querySelector('[data-t-thumb]');
+            thumb.dataset.url = ticket.image_url;
+            thumb.dataset.path = ticket.image_path || '';
+            var img = document.createElement('img');
+            img.src = ticket.image_url;
+            img.alt = 'Фотография билета';
+            thumb.appendChild(img);
+        }
+        renumberTickets(block);
+        return row;
+    }
+
+    function uploadTicketImage(file, row) {
         if (!file) return;
         var data = new FormData();
         data.append('file', file);
         data.append('csrf_token', csrfToken);
+        var holder = row.querySelector('[data-t-thumb]');
+        var block = row.closest('[data-subject-block]');
+        var status = block.querySelector('[data-subject-status]');
+        row.dataset.uploading = 'true';
         holder.textContent = 'Загружаем…';
         fetch('/cabinet/upload-ticket-image', {
             method: 'POST', credentials: 'same-origin',
             headers: {'X-CSRF-Token': csrfToken}, body: data
         }).then(function (r) { return r.json(); }).then(function (result) {
-            if (!result || !result.success) { holder.textContent = 'Не загрузилось'; return; }
+            if (!result || !result.success) throw new Error('upload_failed');
             holder.innerHTML = '';
             var img = document.createElement('img');
             img.src = result.url;
-            img.alt = 'Картинка билета';
+            img.alt = 'Фотография билета';
             holder.appendChild(img);
             holder.dataset.url = result.url || '';
             holder.dataset.path = result.path || '';
-        }).catch(function () { holder.textContent = 'Не загрузилось'; });
+            status.textContent = '';
+            status.classList.remove('is-error');
+        }).catch(function () {
+            holder.textContent = 'Не удалось загрузить';
+            status.textContent = 'Одно из фото не загрузилось. Уберите его и добавьте заново.';
+            status.classList.add('is-error');
+        }).then(function () {
+            row.dataset.uploading = 'false';
+            updateSubjectSummary(block);
+        });
+    }
+
+    function uploadSubjectImages(block, files) {
+        var holder = block.querySelector('[data-tickets]');
+        var status = block.querySelector('[data-subject-status]');
+        var room = MAX_MOCK_TICKETS - holder.children.length;
+        if (room <= 0) {
+            status.textContent = 'На один предмет можно добавить не больше 10 билетов.';
+            status.classList.add('is-error');
+            return;
+        }
+        var queue = Array.prototype.slice.call(files, 0, room);
+        var skipped = files.length - queue.length;
+        if (skipped) {
+            status.textContent = 'Добавлены первые ' + queue.length + ' фото. Лимит – 10 билетов.';
+            status.classList.add('is-error');
+        } else {
+            status.textContent = 'Загружаем фотографии…';
+            status.classList.remove('is-error');
+        }
+        queue.forEach(function (file) {
+            var row = addTicketRow(block, null);
+            uploadTicketImage(file, row);
+        });
     }
 
     function collectSubjects() {
@@ -488,10 +628,10 @@ FORM: Operate.
         mockForm.querySelectorAll('[data-subject-block]').forEach(function (block) {
             if (!block.querySelector('[data-subject-toggle]').checked) return;
             var tickets = [];
-            block.querySelectorAll('[data-ticket]').forEach(function (row) {
+            block.querySelectorAll('[data-ticket]').forEach(function (row, index) {
                 var thumb = row.querySelector('[data-t-thumb]');
                 tickets.push({
-                    title: row.querySelector('[data-t-title]').value.trim(),
+                    title: row.dataset.ticketTitle || (block.dataset.subjectBlock + ' · Билет ' + (index + 1)),
                     description: row.querySelector('[data-t-description]').value,
                     image_url: thumb.dataset.url || null,
                     image_path: thumb.dataset.path || null
@@ -511,12 +651,12 @@ FORM: Operate.
     // см. openMockEdit), id-сохраняющая пара, как у мини-опроса.
     function collectMockEditTickets() {
         var items = [];
-        mockForm.querySelectorAll('[data-subject-block]:not([hidden]) [data-ticket]').forEach(function (row) {
+        mockForm.querySelectorAll('[data-subject-block]:not([hidden]) [data-ticket]').forEach(function (row, index) {
             var thumb = row.querySelector('[data-t-thumb]');
             var idAttr = row.getAttribute('data-ticket-id');
             items.push({
                 id: idAttr ? Number(idAttr) : null,
-                title: row.querySelector('[data-t-title]').value.trim(),
+                title: row.dataset.ticketTitle || ('Билет ' + (index + 1)),
                 description: row.querySelector('[data-t-description]').value,
                 image_url: thumb.dataset.url || null,
                 image_path: thumb.dataset.path || null
@@ -1063,15 +1203,21 @@ FORM: Operate.
         delete mockForm.dataset.editingTaskId;
         mockForm.querySelector('[data-m-title]').value = '';
         mockForm.querySelector('[data-m-description]').value = '';
+        mockForm.querySelector('[data-subject-picker]').hidden = false;
+        mockForm.querySelectorAll('[data-add-subject]').forEach(function (button) { button.hidden = false; });
         mockForm.querySelectorAll('[data-subject-block]').forEach(function (block) {
-            block.hidden = false;
+            block.hidden = true;
+            block.classList.remove('is-ready');
             var toggle = block.querySelector('[data-subject-toggle]');
             toggle.checked = false;
             toggle.disabled = false;
             block.querySelector('[data-subject-body]').hidden = true;
             block.querySelector('[data-subject-note]').value = '';
-            block.querySelector('[data-subject-note]').closest('.prg-field').hidden = false;
+            block.querySelector('[data-subject-edit]').hidden = true;
+            block.querySelector('[data-subject-remove]').hidden = false;
+            block.querySelector('[data-subject-status]').textContent = '';
             block.querySelector('[data-tickets]').innerHTML = '';
+            updateSubjectSummary(block);
         });
         mockForm.querySelector('[data-m-required]').checked = true;
         resetTariffFields(mockForm);
@@ -1126,6 +1272,7 @@ FORM: Operate.
         mockForm.dataset.editingTaskId = String(taskId);
         mockForm.querySelector('[data-m-title]').value = data.title || '';
         mockForm.querySelector('[data-m-description]').value = data.description || '';
+        mockForm.querySelector('[data-subject-picker]').hidden = true;
         mockForm.querySelectorAll('[data-subject-block]').forEach(function (block) {
             var isThis = block.dataset.subjectBlock === data.subject;
             var toggle = block.querySelector('[data-subject-toggle]');
@@ -1140,25 +1287,15 @@ FORM: Operate.
             toggle.checked = true;
             toggle.disabled = true;
             body.hidden = false;
-            block.querySelector('[data-subject-note]').closest('.prg-field').hidden = true;
+            block.classList.remove('is-ready');
+            block.querySelector('[data-subject-edit]').hidden = true;
+            block.querySelector('[data-subject-remove]').hidden = true;
             var holder = block.querySelector('[data-tickets]');
             holder.innerHTML = '';
-            (data.tickets || []).forEach(function (ticket, index) {
-                holder.insertAdjacentHTML('beforeend', ticketHTML(index + 1));
-                var row = holder.lastElementChild;
-                row.setAttribute('data-ticket-id', ticket.id);
-                row.querySelector('[data-t-title]').value = ticket.title || '';
-                row.querySelector('[data-t-description]').value = ticket.description || '';
-                if (ticket.image_url) {
-                    var thumb = row.querySelector('[data-t-thumb]');
-                    thumb.dataset.url = ticket.image_url;
-                    thumb.dataset.path = ticket.image_path || '';
-                    var img = document.createElement('img');
-                    img.src = ticket.image_url;
-                    img.alt = 'Картинка билета';
-                    thumb.appendChild(img);
-                }
+            (data.tickets || []).forEach(function (ticket) {
+                addTicketRow(block, ticket);
             });
+            updateSubjectSummary(block);
         });
         mockForm.querySelector('[data-m-required]').checked = data.is_required !== false;
         populateTariffFields(mockForm, data);
@@ -1266,15 +1403,52 @@ FORM: Operate.
             return;
         }
 
-        var addTicket = event.target.closest('[data-add-ticket]');
-        if (addTicket) {
-            var holder = addTicket.closest('[data-subject-body]').querySelector('[data-tickets]');
-            holder.insertAdjacentHTML('beforeend', ticketHTML(holder.children.length + 1));
+        var addSubject = event.target.closest('[data-add-subject]');
+        if (addSubject) {
+            var subjectBlock = mockForm.querySelector('[data-subject-block="' + addSubject.dataset.addSubject + '"]');
+            openSubjectBlock(subjectBlock);
+            subjectBlock.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+            return;
+        }
+
+        var editSubject = event.target.closest('[data-subject-edit]');
+        if (editSubject) {
+            openSubjectBlock(editSubject.closest('[data-subject-block]'));
+            return;
+        }
+
+        var removeSubject = event.target.closest('[data-subject-remove]');
+        if (removeSubject && !mockForm.dataset.editingTaskId) {
+            var removedSubjectBlock = removeSubject.closest('[data-subject-block]');
+            var removedSubject = removedSubjectBlock.dataset.subjectBlock;
+            removedSubjectBlock.querySelector('[data-subject-toggle]').checked = false;
+            removedSubjectBlock.querySelector('[data-subject-body]').hidden = true;
+            removedSubjectBlock.querySelector('[data-tickets]').innerHTML = '';
+            removedSubjectBlock.classList.remove('is-ready');
+            removedSubjectBlock.hidden = true;
+            updateSubjectSummary(removedSubjectBlock);
+            var removedPicker = mockForm.querySelector('[data-add-subject="' + removedSubject + '"]');
+            if (removedPicker) removedPicker.hidden = false;
+            mockForm.querySelector('[data-subject-picker]').hidden = false;
+            return;
+        }
+
+        var doneSubject = event.target.closest('[data-subject-done]');
+        if (doneSubject) {
+            finishSubjectBlock(doneSubject.closest('[data-subject-block]'));
             return;
         }
 
         var removeTicket = event.target.closest('[data-remove-ticket]');
-        if (removeTicket) { removeTicket.closest('[data-ticket]').remove(); return; }
+        if (removeTicket) {
+            var removedBlock = removeTicket.closest('[data-subject-block]');
+            removeTicket.closest('[data-ticket]').remove();
+            removedBlock.classList.remove('is-ready');
+            removedBlock.querySelector('[data-subject-edit]').hidden = true;
+            removedBlock.querySelector('[data-subject-body]').hidden = false;
+            renumberTickets(removedBlock);
+            return;
+        }
 
         var saveMock = event.target.closest('[data-mock-save]');
         if (saveMock) {
@@ -1283,12 +1457,16 @@ FORM: Operate.
                 setFormMessage('Укажите тему учебного дня.', true);
                 return;
             }
+            if (mockForm.querySelector('[data-ticket][data-uploading="true"]')) {
+                setFormMessage('Дождитесь загрузки фотографий.', true);
+                return;
+            }
             if (mockForm.dataset.editingTaskId) {
                 // Правка (владелец 30.08.2026) — один предмет, уже известный
                 // из карточки, билеты собираем только из его блока.
                 var editTickets = collectMockEditTickets();
-                if (!editTickets.length || editTickets.some(function (t) { return !t.title; })) {
-                    setFormMessage('Есть билет без названия.', true);
+                if (!editTickets.length || editTickets.some(function (t) { return !t.image_url; })) {
+                    setFormMessage('Добавьте фотографию каждого билета.', true);
                     return;
                 }
                 setFormMessage('');
@@ -1309,12 +1487,12 @@ FORM: Operate.
                 return;
             }
             var blocks = collectSubjects();
-            if (!blocks.length) { setFormMessage('Отметьте хотя бы один предмет.', true); return; }
+            if (!blocks.length) { setFormMessage('Добавьте хотя бы один предмет.', true); return; }
             var empty = blocks.filter(function (b) {
-                return !b.tickets.length || b.tickets.some(function (t) { return !t.title; });
+                return !b.tickets.length || b.tickets.some(function (t) { return !t.image_url; });
             });
             if (empty.length) {
-                setFormMessage('У предмета «' + empty[0].subject + '» есть билет без названия.', true);
+                setFormMessage('Добавьте фотографию каждого билета по предмету «' + empty[0].subject + '».', true);
                 return;
             }
             var missing = {{ subjects|tojson }}.filter(function (s) {

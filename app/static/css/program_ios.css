@@ -219,6 +219,12 @@
 .ios-prg-day .prg-subject h3 { font: 700 14px/1.3 var(--ios-font); color: var(--ios-label); }
 .ios-prg-day [data-subject-body] { margin-top: 12px; }
 .ios-prg-day [data-subject-body]:not([hidden]) { display: grid; gap: 12px; }
+.ios-prg-day .prg-mock-builder { border-color: var(--ios-separator); }
+.ios-prg-day .prg-mock-builder > h3,
+.ios-prg-day .prg-subject-head strong { color: var(--ios-label); font-family: var(--ios-font); }
+.ios-prg-day .prg-subject-head span { color: var(--ios-label-2); }
+.ios-prg-day .prg-subject.is-ready { background: rgba(52,199,89,0.08); }
+.ios-prg-day .prg-ticket-content .prg-thumbs { color: var(--ios-label-2); }
 
 /* ── Билеты и вопросы анкеты (общая карточка-строка) ── */
 .ios-prg-day .prg-ticket {

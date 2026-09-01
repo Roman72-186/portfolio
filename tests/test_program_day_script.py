@@ -87,9 +87,7 @@ def test_day_page_uses_school_day_copy_and_inline_optional_hints(
         "Тема учебного дня",
         "Что нужно сделать",
         "Описание, необязательно",
-        "Примечание к заданию, необязательно",
-        "Название билета",
-        "Описание билета, необязательно",
+        "Подпись к фотографии, необязательно",
         "Текст",
         "Подпись, необязательно",
         "Заголовок, необязательно",
@@ -114,6 +112,16 @@ def test_day_page_uses_school_day_copy_and_inline_optional_hints(
     assert '<label class="prg-field">Тип ответа' not in page.text
     assert "Выберите ролик" in page.text
     assert "Тип ответа: " in page.text
+
+    # Билеты пробника собираются внутри предмета. Нижние универсальные блоки
+    # явно отделены и копируются в оба выбранных предмета.
+    assert 'data-add-subject="Рисунок"' in page.text
+    assert 'data-add-subject="Композиция"' in page.text
+    assert 'data-subject-images accept="image/*" multiple' in page.text
+    assert "Дополнительные задачи учебного дня" in page.text
+    assert "попадут в каждый выбранный предмет" in page.text
+    assert "MAX_MOCK_TICKETS = 10" in page.text
+    assert "block.dataset.subjectBlock + ' · Билет '" in page.text
 
     # Плитки и простые формы строятся из одного серверного реестра. Новый
     # generic-preset не требует копировать разметку конструктора вручную.
