@@ -132,7 +132,7 @@ MONTH_NAMES = (
 # отдельная копия формы ему не нужна.
 PROGRAM_ITEM_PRESETS = [
     {"kind": "mock", "label": "Задание (Пробник)", "icon": "★", "hint": "Билеты по рисунку и композиции, окно сдачи", "capability": "mock", "default_block": "question"},
-    {"kind": ITEM_VIDEO, "label": "Видеоматериал", "icon": "▶", "hint": "Ролик и дополнительные задачи учебного дня", "capability": "video", "default_block": "video"},
+    {"kind": ITEM_VIDEO, "label": "Видеоматериал", "icon": "▶", "hint": "Ролик и дополнительные задачи учебного дня", "capability": "video", "default_block": None},
     {"kind": ITEM_HOMEWORK, "label": "Самостоятельная работа", "icon": "✎", "hint": "Материалы, условие и сдача работы", "capability": "homework", "default_block": "text"},
     {"kind": ITEM_SURVEY, "label": "Анкета", "icon": "☑", "hint": "Один или несколько вопросов", "capability": "generic", "default_block": "question"},
     {"kind": ITEM_MATERIAL, "label": "Материалы", "icon": "📄", "hint": "Текст, статья, фото, видео или ссылка", "capability": "generic", "default_block": "text"},

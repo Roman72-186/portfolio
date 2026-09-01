@@ -110,7 +110,7 @@ def test_day_page_uses_school_day_copy_and_inline_optional_hints(
     assert '<label class="prg-field">Файлы' not in page.text
     assert '<label class="prg-field">Ролик' not in page.text
     assert '<label class="prg-field">Тип ответа' not in page.text
-    assert "Выберите ролик" in page.text
+    assert "Выберите видео" in page.text
     assert "Тип ответа: " in page.text
 
     # Билеты пробника собираются внутри предмета. Нижние универсальные блоки
@@ -132,3 +132,6 @@ def test_day_page_uses_school_day_copy_and_inline_optional_hints(
         assert f'data-open-form="{preset["kind"]}"' in page.text
         if preset["capability"] == "generic":
             assert f'data-simple-kind="{preset["kind"]}"' in page.text
+
+    video_preset = next(preset for preset in presets if preset["kind"] == "video")
+    assert video_preset["default_block"] is None

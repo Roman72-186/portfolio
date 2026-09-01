@@ -200,42 +200,6 @@ FORM: Operate.
 
     <form class="prg-form" data-form="video" hidden>
         <h2>Видеоматериал на {{ day.day }} число</h2>
-        {# Загрузка живёт на вкладке «Загрузка видео»: здесь ролик выбирают
-           из уже загруженных. Название и описание — то же, что указано при
-           загрузке, — можно поменять сразу тут же (владелец 29.08.2026). #}
-        <p class="prg-hint">
-            Ролики загружаются на вкладке
-            <a href="/cabinet/admin/videos">«Загрузка видео»</a>. Здесь выбираем готовый.
-        </p>
-        {% if catalog_videos %}
-        <div class="prg-videopick" role="radiogroup" aria-label="Загруженные ролики">
-            {% for item in catalog_videos %}
-            {# Занятых роликов больше нет (владелец 31.08.2026): ролик ставится
-               блоком, и один и тот же можно поставить в несколько заданий.
-               `item.note` осталась справкой «где ещё стоит», выбор не блокирует. #}
-            <label class="prg-videopick-item">
-                <input type="radio" name="catalog-video" value="{{ item.id }}" data-v-pick>
-                {% if item.cover_url %}
-                <img class="prg-videopick-cover" src="{{ item.cover_url }}" alt="" loading="lazy">
-                {% else %}
-                <span class="prg-videopick-cover prg-videopick-cover--empty" aria-hidden="true">▶</span>
-                {% endif %}
-                <span class="prg-videopick-copy">
-                    <strong>{{ item.title }}</strong>
-                    <small>
-                        {% if item.status != 'ready' %}Обработка ещё идёт · {% endif %}
-                        {% if item.duration_seconds %}{{ (item.duration_seconds / 60)|round(1) }} мин.{% else %}Длительность появится после обработки{% endif %}
-                    </small>
-                    {% if item.note %}<small class="prg-videopick-note">{{ item.note }}</small>{% endif %}
-                </span>
-            </label>
-            {% endfor %}
-        </div>
-        {% else %}
-        <p class="prg-message is-error">
-            Загруженных роликов пока нет. Сначала загрузите видео на вкладке «Загрузка видео».
-        </p>
-        {% endif %}
         <label class="prg-field">
             <input type="text" data-v-title maxlength="200" autocomplete="off"
                    aria-label="Тема учебного дня" placeholder="Тема учебного дня">
@@ -245,9 +209,29 @@ FORM: Operate.
                       aria-label="Описание, необязательно"
                       placeholder="Описание, необязательно"></textarea>
         </label>
-        {# Мини-опрос ролика отсюда убран 31.08.2026: вопросы стали блоками
-           задания и настраиваются редактором содержимого ниже. #}
-        {{ blocks_editor() }}
+        {% if catalog_videos %}
+        <label class="prg-field">
+            <select data-v-pick aria-label="Выберите видео">
+                <option value="">Выберите видео</option>
+            {% for item in catalog_videos %}
+                <option value="{{ item.id }}">
+                    {{- item.title -}}
+                    {% if item.status != 'ready' %} · обработка{% endif %}
+                    {% if item.duration_seconds %} · {{ (item.duration_seconds / 60)|round(1) }} мин.{% endif %}
+                    {% if item.note %} · {{ item.note }}{% endif %}
+                </option>
+            {% endfor %}
+            </select>
+        </label>
+        <p class="prg-hint">
+            Нужного ролика нет? Добавьте его на вкладке
+            <a href="/cabinet/admin/videos">«Загрузка видео»</a>.
+        </p>
+        {% else %}
+        <p class="prg-message is-error">
+            Загруженных роликов пока нет. Сначала загрузите видео на вкладке «Загрузка видео».
+        </p>
+        {% endif %}
         <div class="prg-grid2">
             <label class="prg-field">Предмет
                 <select data-v-subject>
@@ -263,6 +247,10 @@ FORM: Operate.
             <span>Обязательный элемент — блокирует переход к следующей вкладке недели</span>
         </label>
         {{ tariff_fields() }}
+        {{ blocks_editor(
+            'Дополнительные задачи учебного дня',
+            'После основного видео можно добавить текст, фото, другой ролик, ссылку или вопрос.'
+        ) }}
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-video-save>Поставить в день</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -1133,12 +1121,8 @@ FORM: Operate.
     if (videoForm) {
         videoForm.addEventListener('change', function (event) {
             if (event.target.hasAttribute('data-v-pick')) {
-                selectedVideoId = Number(event.target.value);
+                selectedVideoId = event.target.value ? Number(event.target.value) : null;
                 setMessage(videoForm, '', false);
-                var firstVideoBlock = videoForm.querySelector('[data-block-type="video"] [data-b-video]');
-                if (firstVideoBlock) {
-                    firstVideoBlock.value = String(selectedVideoId);
-                }
             }
         });
     }
@@ -1228,7 +1212,8 @@ FORM: Operate.
     function resetVideoFormForCreate() {
         delete videoForm.dataset.editingTaskId;
         selectedVideoId = null;
-        videoForm.querySelectorAll('[data-v-pick]').forEach(function (input) { input.checked = false; });
+        var videoPicker = videoForm.querySelector('[data-v-pick]');
+        if (videoPicker) videoPicker.value = '';
         renderFormBlocks(videoForm, []);
         videoForm.querySelector('[data-v-title]').value = '';
         videoForm.querySelector('[data-v-description]').value = '';
@@ -1315,17 +1300,11 @@ FORM: Operate.
         // редактором блоков и стирала их при сохранении: `collectFormBlocks`
         // читает то, что в форме, а не то, что в базе.
         var videoBlocks = (data.blocks || []).slice();
-        // Старые видеозадания создавались до универсальных блоков. При первой
-        // правке показываем их уже в новом конструкторе и сохраняем основной
-        // ролик как обычный видеоблок.
-        if (!videoBlocks.length && data.catalog_video_id) {
-            videoBlocks.push({block_type: 'video', video_id: data.catalog_video_id});
-        }
         renderFormBlocks(videoForm, videoBlocks);
         if (data.catalog_video_id) {
-            var radio = videoForm.querySelector('[data-v-pick][value="' + data.catalog_video_id + '"]');
-            if (radio) {
-                radio.checked = true;
+            var picker = videoForm.querySelector('[data-v-pick]');
+            if (picker && picker.querySelector('option[value="' + data.catalog_video_id + '"]')) {
+                picker.value = String(data.catalog_video_id);
                 selectedVideoId = data.catalog_video_id;
             }
         }
@@ -1527,13 +1506,13 @@ FORM: Operate.
                 {assign_to_all: true, tag_ids: [], assignee_usernames: ''},
                 collectTariffFields(videoForm)
             );
-            if (!selectedVideoId) {
-                setMessage(videoForm, 'Сначала выберите ролик из списка.', true);
-                return;
-            }
             var videoDayTitle = videoForm.querySelector('[data-v-title]').value.trim();
             if (!videoDayTitle) {
                 setMessage(videoForm, 'Укажите тему учебного дня.', true);
+                return;
+            }
+            if (!selectedVideoId) {
+                setMessage(videoForm, 'Выберите видео из списка.', true);
                 return;
             }
             saveVideo.disabled = true;

@@ -471,11 +471,16 @@ def test_day_page_video_form_has_title_and_description_fields(
     вкладку «Загрузка видео» (владелец 29.08.2026, второй заход)."""
     _freeze(monkeypatch)
     _staff_client(client, user_factory, session_factory)
+    _video(db, status="ready")
 
     page = client.get(f"{PROGRAM}/{MONDAY}").text
 
     assert 'data-v-title' in page
     assert 'data-v-description' in page
+    assert '<select data-v-pick aria-label="Выберите видео">' in page
+    assert 'type="radio" name="catalog-video"' not in page
+    assert page.index('data-v-title') < page.index('data-v-description') < page.index('data-v-pick')
+    assert "Дополнительные задачи учебного дня" in page
 
 
 def test_video_edit_swaps_to_another_free_video(
