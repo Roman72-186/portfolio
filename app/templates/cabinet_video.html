@@ -58,14 +58,7 @@ body.has-video-pseudo-fullscreen {
     position: absolute;
     right: 16px;
     bottom: 64px;
-    /* Ширина по содержимому, а не 76% контейнера: при выравнивании вправо
-       пустая часть блока входила в offsetWidth, и надпись зря отжималась от
-       правого края при расчёте безопасной зоны. */
     width: max-content;
-    max-width: min(76%, 310px);
-    /* Совсем незаметная: владелец 01.09.2026 просил прозрачнее и без тени под
-       текстом. Цена решения известна и принята — на белом слайде надпись
-       почти пропадает, читается она в основном на тёмных кадрах. */
     color: rgba(255, 255, 255, .22);
     font-size: clamp(10px, 1.35vw, 13px);
     font-weight: 600;
@@ -151,6 +144,7 @@ body.has-video-pseudo-fullscreen {
     .video-help { font-size: 12px; }
 }
 </style>
+<link rel="stylesheet" href="/static/css/video.css?v=1">
 <link rel="stylesheet" href="/static/css/video_ios.css?v=5">
 {% endblock %}
 {% block content %}

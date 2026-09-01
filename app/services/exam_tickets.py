@@ -44,6 +44,11 @@ from app.services.tz import MSK_TZ, today_msk
 MAX_TICKETS_PER_SUBJECT = 10
 
 
+def now_utc() -> datetime:
+    """Текущее время в UTC вынесено для детерминированной проверки окна билета."""
+    return datetime.now(timezone.utc)
+
+
 def default_schedule_for_day(day: date) -> dict:
     """Окно по умолчанию: 11:45–18:30 выбранного дня, 90 минут на работу.
 
@@ -107,7 +112,7 @@ def validate_window(
                 f"({duration_minutes} мин) — билет нельзя будет получить"
             ),
         )
-    if closes_at < datetime.now(timezone.utc):
+    if closes_at < now_utc():
         raise HTTPException(
             status_code=422, detail=f"Билет {ticket_number}: закрытие уже в прошлом"
         )

@@ -32,6 +32,10 @@ def _freeze(monkeypatch, value: date = TODAY):
     monkeypatch.setattr("app.api.cabinet_program.today_msk", lambda: value)
     monkeypatch.setattr("app.services.program.today_msk", lambda: value)
     monkeypatch.setattr("app.services.exam_tickets.today_msk", lambda: value)
+    monkeypatch.setattr(
+        "app.services.exam_tickets.now_utc",
+        lambda: datetime.combine(value, datetime.min.time(), tzinfo=timezone.utc),
+    )
 
 
 def _tag(db, name: str) -> Tag:

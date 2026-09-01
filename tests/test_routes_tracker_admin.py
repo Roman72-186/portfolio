@@ -56,7 +56,7 @@ def test_admin_and_superadmin_open_tracker_admin(
     rank4 = client.get(PAGE)
     assert rank4.status_code == 200
     assert "Задачи трекера" in rank4.text
-    assert "/static/css/tracker.css?v=4" in rank4.text
+    assert "/static/css/tracker.css?v=30" in rank4.text
 
     super_client, _ = admin_client
     assert super_client.get(PAGE).status_code == 200
