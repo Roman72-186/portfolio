@@ -313,4 +313,9 @@
 @media (max-width: 760px) {
     .ios-prg-day .prg-tiles, .ios-prg-day .prg-grid2, .ios-prg-day .prg-grid3, .ios-prg-day .prg-item { grid-template-columns: 1fr; }
     .ios-prg-day .prg-form { padding: 16px; }
+    .ios-prg-day .prg-head .btn-outline,
+    .ios-prg-day .prg-actions .btn-outline,
+    .ios-prg-day .prg-item-actions button { min-height: 44px; }
+    .ios-prg-day .prg-field input:not([type="checkbox"]):not([type="radio"]),
+    .ios-prg-day .prg-field select { min-height: 44px; }
 }

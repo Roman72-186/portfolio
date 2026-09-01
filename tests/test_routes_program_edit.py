@@ -1,7 +1,7 @@
 """Правка элементов дня программы вместо удаления-и-пересоздания.
 
-Владелец 29.08.2026: пока день не наступил (с 30.08 — строго будущее, см.
-test_simple_item_edit_refuses_on_the_day_itself), видео/самостоятельную/
+Владелец 29.08.2026: сегодня и в будущем (см.
+test_simple_item_edit_allows_on_the_day_itself) видео/самостоятельную/
 материалы/тест по теории/занятие/чек-лист можно менять на месте — «Изменить»
 рядом с «Удалить». Пробник (билеты, test_routes_program_mock_edit.py) и
 Анкета (вопросы, ниже — только пока шаблон стоит ровно в одном дне) теперь
@@ -14,7 +14,8 @@ from datetime import date, datetime
 from app.models.homework import HomeworkAssignment, HomeworkImage
 from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, TOPIC_KIND_WEEK, LearningTopic
 from app.models.learning_video import LearningVideo
-from app.models.tracker import ITEM_MATERIAL, TrackerTask
+from app.models.task_block import TaskBlock
+from app.models.tracker import ITEM_CHECKLIST, ITEM_MATERIAL, TrackerTask
 from app.services.tracker import create_task
 from app.services.tz import MSK_TZ, msk_midnight
 from app.services.video_topics import get_topic_tariffs
@@ -60,6 +61,82 @@ EVERYONE = {"assign_to_all": True, "tag_ids": [], "assignee_usernames": ""}
 
 
 # ── Простые элементы ────────────────────────────────────────────────────────
+
+
+def test_checklist_edit_round_trips_card_and_blocks(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Чек-лист правится на месте вместе с универсальным содержимым."""
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+
+    created = client.post(
+        f"{PROGRAM}/{MONDAY}/checklist",
+        json={
+            "title": "Перед занятием",
+            "description": "Черновой список",
+            "subject": "Рисунок",
+            "audience": EVERYONE,
+            "blocks": [
+                {"block_type": "text", "body": "Проверьте материалы"},
+                {"block_type": "text", "body": "Подготовьте рабочее место"},
+            ],
+        },
+    )
+    assert created.status_code == 200, created.text
+    task = db.query(TrackerTask).filter(TrackerTask.kind == ITEM_CHECKLIST).one()
+    original_blocks = (
+        db.query(TaskBlock)
+        .filter(TaskBlock.task_id == task.id)
+        .order_by(TaskBlock.sort_order)
+        .all()
+    )
+
+    page = client.get(f"{PROGRAM}/{MONDAY}").text
+    article = page[page.index(f'data-item-id="{task.id}"'):]
+    assert 'data-item-edit data-item-kind="checklist"' in article[:article.index("</article>")]
+    edit_data = json.loads(page.split("programEditData = ")[1].split(";\n")[0])
+    assert [block["id"] for block in edit_data[str(task.id)]["blocks"]] == [
+        block.id for block in original_blocks
+    ]
+
+    updated = client.post(
+        f"{PROGRAM}/items/{task.id}/checklist",
+        json={
+            "title": "Перед проверкой",
+            "description": "Обновлённый список",
+            "subject": "Композиция",
+            "is_required": False,
+            "audience": EVERYONE,
+            "blocks": [
+                {
+                    "id": original_blocks[0].id,
+                    "block_type": "text",
+                    "body": "Проверьте материалы и референсы",
+                },
+                {"block_type": "text", "body": "Проверьте дедлайн"},
+            ],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    db.expire_all()
+
+    task = db.get(TrackerTask, task.id)
+    assert (task.title, task.description, task.subject, task.is_required) == (
+        "Перед проверкой", "Обновлённый список", "Композиция", False,
+    )
+    saved_blocks = (
+        db.query(TaskBlock)
+        .filter(TaskBlock.task_id == task.id)
+        .order_by(TaskBlock.sort_order)
+        .all()
+    )
+    assert saved_blocks[0].id == original_blocks[0].id
+    assert [block.body for block in saved_blocks] == [
+        "Проверьте материалы и референсы", "Проверьте дедлайн",
+    ]
+    assert original_blocks[1].id not in [block.id for block in saved_blocks]
+
 
 def test_simple_item_edit_updates_task_and_topic_title(
     client, db, user_factory, session_factory, monkeypatch
@@ -228,12 +305,10 @@ def test_simple_item_edit_refuses_once_day_has_passed(
     assert response.status_code == 422
 
 
-def test_simple_item_edit_refuses_on_the_day_itself(
+def test_simple_item_edit_allows_on_the_day_itself(
     client, db, user_factory, session_factory, monkeypatch
 ):
-    """Владелец 30.08.2026: правка строже создания — как только наступил
-    день элемента (сегодня), он уже мог уйти ученикам, редактировать
-    нельзя, даже если день ещё не прошёл."""
+    """Добавленное задание можно исправить в день публикации."""
     _freeze(monkeypatch)
     _staff_client(client, user_factory, session_factory)
 
@@ -246,13 +321,15 @@ def test_simple_item_edit_refuses_on_the_day_itself(
     _freeze(monkeypatch, date(2026, 8, 24))
     response = client.post(
         f"{PROGRAM}/items/{task.id}/checklist",
-        json={"title": "Сегодня уже нельзя", "audience": EVERYONE},
+        json={"title": "Исправлено сегодня", "audience": EVERYONE},
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 200
+    db.refresh(task)
+    assert task.title == "Исправлено сегодня"
 
 
-def test_day_page_hides_edit_button_on_the_day_itself(
+def test_day_page_shows_edit_button_on_the_day_itself(
     client, db, user_factory, session_factory, monkeypatch
 ):
     _freeze(monkeypatch)
@@ -268,7 +345,7 @@ def test_day_page_hides_edit_button_on_the_day_itself(
     page = client.get(f"{PROGRAM}/{MONDAY}").text
 
     article = page[page.index(f'data-item-id="{task.id}"'):]
-    assert 'data-item-edit' not in article[:article.index('</article>')]
+    assert 'data-item-edit' in article[:article.index('</article>')]
     assert 'data-item-delete' in article[:article.index('</article>')]
 
 
