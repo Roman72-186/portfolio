@@ -86,6 +86,31 @@ def test_curator_cannot_open_foreign_student_review(db, user_factory, session_fa
     assert resp.status_code == 403
 
 
+def test_moderator_cannot_open_unassigned_student_review(db, user_factory, session_factory, client):
+    """Advisor-ревью 01.09.2026: require_curator пропускает и ранг 3, без явной
+    проверки в _check_student_access модератор видел бы любого ученика."""
+    moderator = user_factory(vk_id=860_112, name="Модератор", role_name="модератор")
+    student = user_factory(vk_id=860_113, name="Ученик")  # curator_id остаётся None
+
+    client.cookies.set("session_id", session_factory(moderator).id)
+    resp = client.get(f"/cabinet/staff/students-review/{student.id}")
+
+    assert resp.status_code == 403
+
+
+def test_moderator_cannot_mark_unassigned_work_viewed(db, user_factory, session_factory, client):
+    moderator = user_factory(vk_id=860_114, name="Модератор", role_name="модератор")
+    student = user_factory(vk_id=860_115, name="Ученик")
+    work = _work(db, student.id, score=None)
+
+    client.cookies.set("session_id", session_factory(moderator).id)
+    resp = client.post(f"/cabinet/staff/students-review/work/{work.id}/viewed")
+
+    assert resp.status_code == 403
+    db.refresh(work)
+    assert work.viewed_at is None
+
+
 def test_student_cannot_open_review_screen(auth_client):
     client, _ = auth_client
     resp = client.get("/cabinet/staff/students-review")

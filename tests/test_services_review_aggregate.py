@@ -149,6 +149,17 @@ def test_work_items_unscored_is_unreviewed(db, user_factory):
     assert item.review_url == f"/cabinet/students?student={student.id}&tab=mock-exams"
 
 
+def test_work_items_excludes_portfolio_before_after(db, user_factory):
+    """Advisor-ревью 01.09.2026: портфолио (before/after) никогда не получает
+    score в интерфейсе (только галерея месяцев) — включение навесило бы
+    каждому ученику постоянный «непроверено» без способа снять."""
+    student = user_factory(vk_id=810_150, name="Ученик")
+    _work(db, student.id, score=None, work_type="before")
+    _work(db, student.id, score=None, work_type="after")
+
+    assert _work_items(db) == []
+
+
 def test_work_items_scored_is_reviewed(db, user_factory):
     student = user_factory(vk_id=810_102, name="Ученик")
     _work(db, student.id, score=80)
@@ -345,6 +356,21 @@ def test_aggregate_counts_admin_sees_all_active_students(db, user_factory):
     rows = aggregate_student_review_counts(db, {"user_id": admin.id, "role_rank": 4})
 
     assert unassigned.id in {row["student"].id for row in rows}
+
+
+def test_aggregate_counts_moderator_scoped_same_as_curator(db, user_factory):
+    """Advisor-ревью 01.09.2026: до фикса `_accessible_students` (rank != 2 →
+    видно всех) и счётчик (rank < 4 → скоуп по curator_id) расходились на
+    ранге 3 — модератор видел всю школу с вечным «всё проверено»."""
+    moderator = user_factory(vk_id=840_108, name="Модератор", role_name="модератор")
+    own_student = user_factory(vk_id=840_109, name="Свой ученик")
+    own_student.curator_id = moderator.id
+    foreign_student = user_factory(vk_id=840_110, name="Чужой ученик")
+    db.commit()
+
+    rows = aggregate_student_review_counts(db, {"user_id": moderator.id, "role_rank": 3})
+
+    assert [row["student"].id for row in rows] == [own_student.id]
 
 
 # --- week_bounds / student_review_items (этап 5) -----------------------------

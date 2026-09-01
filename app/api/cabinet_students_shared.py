@@ -916,13 +916,17 @@ def score_work(
     comment: str = Form(""),
     tab: str = Form("mock-exams"),
 ):
-    """Решение владельца 01.09.2026: куратор тоже ставит балл (не только rank ≥4) —
-    отсюда `get_student_for_staff_access`, которого раньше не было (админ+ видел всех)."""
-    get_student_for_staff_access(
-        db, user, student_id,
-        not_found_detail="Работа не найдена",
-        forbidden_detail="Это не ваш студент",
-    )
+    """Решение владельца 01.09.2026: куратор тоже ставит балл (не только rank ≥4).
+
+    Не через `get_student_for_staff_access` — её owner-проверка срабатывает
+    только при `role_rank == 2`, а `require_curator` пропускает и ранг 3
+    (модератор). Владелец про модератора не говорил — тот же приём, что уже
+    есть в `task_block_review.py`: показать меньше безопаснее, чем чужое.
+    """
+    if user["role_rank"] < 4:  # тот же порог, что review_aggregate.py::FULL_ACCESS_RANK
+        student = db.query(User).filter(User.id == student_id).first()
+        if not student or student.curator_id != user["user_id"]:
+            raise HTTPException(status_code=403, detail="Это не ваш студент")
     work = db.query(Work).filter(Work.id == work_id, Work.user_id == student_id).first()
     if not work:
         raise HTTPException(status_code=404, detail="Работа не найдена")

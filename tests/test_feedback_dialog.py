@@ -1076,6 +1076,27 @@ def test_curator_cannot_score_foreign_student_work(client, db, user_factory, ses
     assert work.score is None
 
 
+def test_moderator_cannot_score_unassigned_student_work(client, db, user_factory, session_factory):
+    """Ранг 3 попадает под то же ограничение, что куратор (advisor-ревью
+    01.09.2026): require_curator пропускает и модератора, а владелец только
+    просил расширить право куратору — показать меньше безопаснее, чем чужое."""
+    moderator = user_factory(vk_id=930_027, name="Модератор", role_name="модератор")
+    student = user_factory(vk_id=930_028, name="Ученик")  # curator_id остаётся None
+    cycle = _mk_cycle(db, student.id)
+    work = _mk_final_work(db, student.id, cycle.id, score=None)
+
+    client.cookies.set("session_id", session_factory(moderator).id)
+    resp = client.post(
+        f"/cabinet/students/{student.id}/works/{work.id}/score",
+        data={"score": "80", "comment": "", "tab": "mock-exams"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 403
+    db.refresh(work)
+    assert work.score is None
+
+
 def test_curator_can_close_cycle_after_scoring_own_student(
     client, db, user_factory, session_factory
 ):
@@ -1143,6 +1164,28 @@ def test_curator_cannot_open_foreign_student_feedback_detail(
 
     assert resp.status_code == 403
     assert "Это не ваш студент" in resp.text
+
+
+def test_curator_sees_score_form_in_own_student_feedback_dialog(
+    client, db, user_factory, session_factory
+):
+    """Advisor-ревью 01.09.2026: одного ослабленного эндпоинта мало — форма
+    оценки в диалоге была спрятана за `viewer_role in ('admin', 'superadmin')`
+    и куратор физически не мог до неё дотянуться, хотя POST уже пропускал."""
+    curator = user_factory(vk_id=930_029, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=930_030, name="Ученик")
+    student.curator_id = curator.id
+    db.add(student)
+    db.commit()
+    cycle = _mk_cycle(db, student.id)
+    _mk_final_work(db, student.id, cycle.id, score=None)
+
+    client.cookies.set("session_id", session_factory(curator).id)
+    resp = client.get(f"/cabinet/curator/feedback/{cycle.id}")
+
+    assert resp.status_code == 200
+    assert "Оценить финальную работу" in resp.text
+    assert 'name="score"' in resp.text
 
 
 def test_staff_portfolio_json_returns_cycle_works_by_subject(

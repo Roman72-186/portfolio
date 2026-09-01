@@ -29,16 +29,14 @@ DOMAIN_WORK = "work"
 DOMAIN_HOMEWORK = "homework"
 DOMAIN_EXAM_CYCLE = "exam_cycle"
 
-_WORK_TYPE_TITLES = {
-    "before": "Портфолио — До",
-    "after": "Портфолио — После",
-    "mock_exam": "Пробник",
-    "retake": "Отработка",
-}
-_WORK_TYPE_TABS = {
-    "before": "portfolio", "after": "portfolio",
-    "mock_exam": "mock-exams", "retake": "retakes",
-}
+# С этого ранга видно всех учеников без ограничения по curator_id. Ранг 3
+# (модератор) попадает под то же ограничение, что куратор — владелец про
+# него не говорил (решение 1 было только про куратора), и показать меньше
+# безопаснее, чем чужое (тот же приём, что task_block_review.py).
+FULL_ACCESS_RANK = 4
+
+_WORK_TYPE_TITLES = {"mock_exam": "Пробник", "retake": "Отработка"}
+_WORK_TYPE_TABS = {"mock_exam": "mock-exams", "retake": "retakes"}
 
 
 @dataclass(frozen=True)
@@ -109,15 +107,22 @@ def _work_items(
     week_start: datetime | None = None,
     week_end: datetime | None = None,
 ) -> list[ReviewItem]:
-    """Портфолио/пробник/отработка. Непроверено — `score IS NULL`; «просмотрено»
-    без оценки (миграция `744b7e5e4961`) тоже снимает строку с «непроверенных»."""
+    """Пробник и отработка — не портфолио: `before`/`after` в интерфейсе никогда
+    не получают `score` (нет такой формы, только галерея месяцев), включать их
+    сюда значило бы навесить каждому ученику вечный «непроверено» без способа
+    снять (advisor-ревью 01.09.2026). Непроверено — `score IS NULL`;
+    «просмотрено» без оценки (миграция `744b7e5e4961`) тоже снимает строку с
+    «непроверенных»."""
     from app.models.user import User
-    from app.models.work import Work
+    from app.models.work import WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE, Work
 
     q = (
         db.query(Work, User)
         .join(User, User.id == Work.user_id)
-        .filter(Work.status == "success", Work.is_final == True)  # noqa: E712
+        .filter(
+            Work.status == "success", Work.is_final == True,  # noqa: E712
+            Work.work_type.in_((WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE)),
+        )
     )
     if curator_id is not None:
         q = q.filter(User.curator_id == curator_id)
@@ -261,11 +266,12 @@ def _exam_cycle_items(
 
 def _accessible_students(db: DBSession, user: dict) -> list:
     """Канонический список — `_get_accessible_students` (решение владельца,
-    вопрос 2): куратор видит `curator_id` + `is_active`, admin+ — всех активных."""
+    вопрос 2): куратор (и модератор, `FULL_ACCESS_RANK`) видит `curator_id` +
+    `is_active`, admin+ — всех активных."""
     from app.models.role import Role
     from app.models.user import User
 
-    if user["role_rank"] == 2:
+    if user["role_rank"] < FULL_ACCESS_RANK:
         return (
             db.query(User)
             .filter(User.curator_id == user["user_id"], User.is_active == True)  # noqa: E712
@@ -307,7 +313,7 @@ def aggregate_student_review_counts(db: DBSession, user: dict) -> list[dict]:
     Сортировка — непроверенные выше (по убыванию счётчика), дальше проверенные
     по имени, как в базовом списке.
     """
-    curator_id = None if user.get("role_rank", 0) >= 4 else user["user_id"]
+    curator_id = None if user.get("role_rank", 0) >= FULL_ACCESS_RANK else user["user_id"]
     students = _accessible_students(db, user)
     counts = _unreviewed_counts_by_student(db, curator_id=curator_id)
 

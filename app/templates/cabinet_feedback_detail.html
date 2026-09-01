@@ -300,7 +300,10 @@
         </section>
     {% endif %}
 
-    {% if viewer_role in ('admin', 'superadmin') and not cycle.closed_at and attempts %}
+    {# Решение владельца 01.09.2026: куратор тоже ставит балл (не только
+       admin/superadmin) — эндпоинт уже ослаблен (score_work, require_curator
+       + скоуп по curator_id), здесь только открыть форму. #}
+    {% if viewer_role in ('curator', 'admin', 'superadmin') and not cycle.closed_at and attempts %}
         {% set a = attempts|last %}
         {% set score_cls = 'no-score' %}
         {% if a.score is not none %}

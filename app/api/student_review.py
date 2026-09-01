@@ -22,24 +22,39 @@ from app.constants import MOCK_SUBJECTS, TARIFFS
 from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_curator
 from app.models.exam_cycle import ExamCycle
+from app.models.user import User
 from app.models.work import Work
 from app.services.review_aggregate import (
+    FULL_ACCESS_RANK,
     aggregate_student_review_counts,
     student_review_items,
     week_bounds,
 )
-from app.services.student_access import get_student_for_staff_access
 from app.services.tz import today_msk
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/staff/students-review")
 
-# С этого ранга видно всех учеников без ограничения по curator_id.
-FULL_ACCESS_RANK = 4
-
 
 def _curator_scope(user: dict) -> int | None:
     return None if user.get("role_rank", 0) >= FULL_ACCESS_RANK else user["user_id"]
+
+
+def _check_student_access(
+    db: DBSession, user: dict, student_id: int, *, not_found_detail: str, forbidden_detail: str,
+) -> User:
+    """rank < FULL_ACCESS_RANK (куратор и модератор) — только свои ученики.
+
+    Не `get_student_for_staff_access`: её owner-проверка срабатывает только
+    при `role_rank == 2`, а сюда пускает `require_curator` (rank ≥ 2) — без
+    этой явной проверки модератор видел бы чужих учеников (advisor-ревью
+    01.09.2026)."""
+    student = db.query(User).filter(User.id == student_id, User.is_active == True).first()  # noqa: E712
+    if student is None:
+        raise HTTPException(status_code=404, detail=not_found_detail)
+    if user["role_rank"] < FULL_ACCESS_RANK and student.curator_id != user["user_id"]:
+        raise HTTPException(status_code=403, detail=forbidden_detail)
+    return student
 
 
 def _parse_week(week: str | None) -> date:
@@ -76,9 +91,8 @@ def student_review_detail(
     subject: str | None = None,
     tariff: str | None = None,
 ):
-    student = get_student_for_staff_access(
+    student = _check_student_access(
         db, user, student_id,
-        active_only=True,
         not_found_detail="Ученик не найден",
         forbidden_detail="Нет доступа к этому ученику",
     )
@@ -131,7 +145,7 @@ def mark_work_viewed(
     work = db.get(Work, work_id)
     if work is None:
         raise HTTPException(status_code=404, detail="Работа не найдена")
-    get_student_for_staff_access(
+    _check_student_access(
         db, user, work.user_id,
         not_found_detail="Работа не найдена",
         forbidden_detail="Это не ваш студент",
@@ -152,7 +166,7 @@ def mark_cycle_viewed(
     cycle = db.get(ExamCycle, cycle_id)
     if cycle is None:
         raise HTTPException(status_code=404, detail="Цикл не найден")
-    get_student_for_staff_access(
+    _check_student_access(
         db, user, cycle.user_id,
         not_found_detail="Цикл не найден",
         forbidden_detail="Это не ваш студент",
