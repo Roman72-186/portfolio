@@ -1032,6 +1032,75 @@ def test_scoring_work_does_not_close_cycle(client, admin_user, regular_user, ses
     assert lock.is_locked is True
 
 
+def test_curator_can_score_own_student_work(client, db, user_factory, session_factory):
+    """Решение владельца 01.09.2026: куратор тоже ставит балл, не только rank ≥4."""
+    curator = user_factory(vk_id=930_020, name="Куратор Своя", role_name="куратор")
+    student = user_factory(vk_id=930_021, name="Ученик")
+    student.curator_id = curator.id
+    db.add(student)
+    db.commit()
+    cycle = _mk_cycle(db, student.id)
+    work = _mk_final_work(db, student.id, cycle.id, score=None)
+
+    client.cookies.set("session_id", session_factory(curator).id)
+    resp = client.post(
+        f"/cabinet/students/{student.id}/works/{work.id}/score",
+        data={"score": "80", "comment": "", "tab": "mock-exams"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 302
+    db.refresh(work)
+    assert work.score == 80
+
+
+def test_curator_cannot_score_foreign_student_work(client, db, user_factory, session_factory):
+    owner = user_factory(vk_id=930_022, name="Куратор Своя", role_name="куратор")
+    other = user_factory(vk_id=930_023, name="Куратор Чужая", role_name="куратор")
+    student = user_factory(vk_id=930_024, name="Ученик")
+    student.curator_id = owner.id
+    db.add(student)
+    db.commit()
+    cycle = _mk_cycle(db, student.id)
+    work = _mk_final_work(db, student.id, cycle.id, score=None)
+
+    client.cookies.set("session_id", session_factory(other).id)
+    resp = client.post(
+        f"/cabinet/students/{student.id}/works/{work.id}/score",
+        data={"score": "80", "comment": "", "tab": "mock-exams"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 403
+    db.refresh(work)
+    assert work.score is None
+
+
+def test_curator_can_close_cycle_after_scoring_own_student(
+    client, db, user_factory, session_factory
+):
+    """Полная цепочка решения 1: куратор ставит балл финалу и сам закрывает цикл."""
+    curator = user_factory(vk_id=930_025, name="Куратор Своя", role_name="куратор")
+    student = user_factory(vk_id=930_026, name="Ученик")
+    student.curator_id = curator.id
+    db.add(student)
+    db.commit()
+    cycle = _mk_cycle(db, student.id)
+    work = _mk_final_work(db, student.id, cycle.id, score=None)
+
+    client.cookies.set("session_id", session_factory(curator).id)
+    client.post(
+        f"/cabinet/students/{student.id}/works/{work.id}/score",
+        data={"score": "80", "comment": "", "tab": "mock-exams"},
+        follow_redirects=False,
+    )
+    resp = client.post(f"/cabinet/feedback/{cycle.id}/close", headers={"Accept": "application/json"})
+
+    assert resp.status_code == 200
+    db.refresh(cycle)
+    assert cycle.closed_at is not None
+
+
 def test_curator_cannot_load_foreign_student_cycles_json(
     client, db, user_factory, session_factory
 ):

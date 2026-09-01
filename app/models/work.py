@@ -34,6 +34,11 @@ class Work(Base):
     sent_to_retake_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     scored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     scored_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # «Просмотрено» без оценки — единый экран проверки (решение владельца
+    # 01.09.2026). Независимо от score/scored_at: куратор мог посмотреть и
+    # решить оценить позже.
+    viewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    viewed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     comment: Mapped[str | None] = mapped_column(String(1000), nullable=True)  # curator comment on the work
     uploaded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | success | failed

@@ -8,6 +8,7 @@ def test_curator_nav_items_keep_current_contract():
         ("dashboard", "/cabinet/curator", "Кабинет"),
         ("students", "/cabinet/students", "Ученики"),
         ("cycles", "/cabinet/staff/cycles", "Цикл Пробника"),
+        ("students_review", "/cabinet/staff/students-review", "Проверка"),
         ("reports", "/cabinet/curator/reports", "Отчёты"),
         ("statistics", "/cabinet/students?tab=statistics", "Статистика"),
     ]
@@ -71,6 +72,14 @@ def test_staff_nav_items_keep_admin_contract():
             "Ответы учеников, которые вы ещё не смотрели",
         ),
         (
+            "students_review",
+            "/cabinet/staff/students-review",
+            "Проверка по ученику",
+            "По ученику",
+            "Проверка по ученику",
+            "Открыть ученика и разобрать всё, что он сдал, за один заход",
+        ),
+        (
             "program",
             "/cabinet/staff/program",
             "Учебные программы",
@@ -109,6 +118,7 @@ def test_staff_nav_items_keep_rank_specific_visibility_contract():
         "mock_check",
         "cycles",
         "review",
+        "students_review",
         "3dlab",
     ]
     assert "mock_check" not in [item.key for item in rank_4_items]
@@ -117,6 +127,10 @@ def test_staff_nav_items_keep_rank_specific_visibility_contract():
     # «Учебные программы» его не пускают (владелец 31.08.2026).
     assert "review" in [item.key for item in rank_3_items]
     assert "review" in [item.key for item in rank_4_items]
+    # Проверка по ученику видна с того же ранга, что и очередь «На проверку»
+    # (решение владельца 01.09.2026): у куратора экран полный.
+    assert "students_review" in [item.key for item in rank_3_items]
+    assert "students_review" in [item.key for item in rank_4_items]
     assert "program" not in [item.key for item in rank_3_items]
     assert "program" in [item.key for item in rank_4_items]
     assert "program" in [item.key for item in rank_5_items]

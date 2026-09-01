@@ -34,6 +34,11 @@ class ExamCycle(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
+    # «Просмотрено» без оценки — единый экран проверки (решение владельца
+    # 01.09.2026). Независимо от closed_at: куратор мог посмотреть незакрытый
+    # цикл, ничего пока не решив.
+    viewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    viewed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     @property
     def is_on_revision(self) -> bool:

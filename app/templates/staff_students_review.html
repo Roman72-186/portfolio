@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{#
+Единый экран проверки (созвон 01.09.2026): список учеников с непроверенным
+наверху, вместо очереди «по типу задания через весь список». Без своего
+<style> — только prg-* (program.css), образец — staff_review_queue.html.
+#}
+{% block title %}Проверка по ученику{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=11">
+{% endblock %}
+{% block content %}
+<div class="prg-page">
+    <div class="prg-head">
+        <div class="prg-head-copy">
+            <h1>Проверка по ученику</h1>
+            <p>Откройте ученика — увидите всё, что он сдал, в одном месте.</p>
+        </div>
+    </div>
+
+    <section class="prg-items">
+        {% if rows %}
+        {% for row in rows %}
+        <a class="prg-item" href="/cabinet/staff/students-review/{{ row.student.id }}">
+            <div>
+                <h3>{{ row.student.name }}</h3>
+                <div class="prg-meta">
+                    {% if row.student.tariff %}<span>{{ row.student.tariff }}</span>{% endif %}
+                </div>
+            </div>
+            <div class="prg-item-actions">
+                {% if row.unchecked > 0 %}
+                <span class="prg-badge">{{ row.unchecked }} непроверено</span>
+                {% else %}
+                <span class="prg-badge">всё проверено</span>
+                {% endif %}
+            </div>
+        </a>
+        {% endfor %}
+        {% else %}
+        <div class="prg-empty">Учеников пока нет.</div>
+        {% endif %}
+    </section>
+</div>
+{% include "_curator_nav.html" %}
+{% if user.role_rank == 3 %}
+{% include "partials/staff_nav.html" %}
+{% endif %}
+{% endblock %}

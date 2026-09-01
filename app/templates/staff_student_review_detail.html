@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{#
+Карточка ученика + всё, что он сдал за неделю, по всем доменам сразу.
+Диалог (Feedback/HomeworkFeedback) сюда не встроен — только ссылка на
+существующий UI (решение владельца 01.09.2026, вопрос 5). Без своего
+<style> — только prg-*, образец — staff_review_queue.html.
+#}
+{% block title %}{{ student.name }} — проверка{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=11">
+{% endblock %}
+{% block content %}
+<div class="prg-page">
+    <div class="prg-head">
+        <div class="prg-head-copy">
+            <h1>{{ student.name }}</h1>
+            <p>
+                {% if student.tariff %}{{ student.tariff }}{% endif %}
+                {% if subject %} · {{ subject }}{% endif %}
+                {% if tariff %} · {{ tariff }}{% endif %}
+            </p>
+        </div>
+    </div>
+
+    <div class="prg-monthbar">
+        <a class="btn-outline prg-nav" href="?week={{ prev_week }}{% if subject %}&subject={{ subject }}{% endif %}{% if tariff %}&tariff={{ tariff }}{% endif %}" aria-label="Предыдущая неделя">←</a>
+        <h2>{{ week_start.strftime('%d.%m') }} — {{ week_end.strftime('%d.%m') }}</h2>
+        <a class="btn-outline prg-nav" href="?week={{ next_week }}{% if subject %}&subject={{ subject }}{% endif %}{% if tariff %}&tariff={{ tariff }}{% endif %}" aria-label="Следующая неделя">→</a>
+    </div>
+
+    <form class="prg-form" method="get" style="display:block">
+        <div class="prg-grid2">
+            <label class="prg-field">Предмет
+                <select name="subject">
+                    <option value="">Любой</option>
+                    {% for s in subjects %}
+                    <option value="{{ s }}" {{ 'selected' if subject == s }}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="prg-field">Тариф
+                <select name="tariff">
+                    <option value="">Любой</option>
+                    {% for t in tariffs %}
+                    <option value="{{ t }}" {{ 'selected' if tariff == t }}>{{ t }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+        <div class="prg-actions">
+            <button type="submit" class="btn-blue">Показать</button>
+            <a class="btn-outline" href="/cabinet/staff/students-review/{{ student.id }}">Сбросить</a>
+        </div>
+    </form>
+
+    {% if items %}
+    <div class="prg-items">
+        {% for item in items %}
+        <article class="prg-item{{ ' is-done' if item.is_reviewed }}" data-review-row
+             {% if item.domain in ('work', 'exam_cycle') %}data-domain="{{ item.domain }}" data-id="{{ item.item_id }}"{% endif %}>
+            <div>
+                <h3>{{ item.title }}</h3>
+                <div class="prg-meta">
+                    {% if item.subject %}<span>{{ item.subject }}</span>{% endif %}
+                    {% if item.submitted_at %}<span>{{ item.submitted_at.strftime('%d.%m %H:%M') }}</span>{% endif %}
+                    <span>{{ 'проверено' if item.is_reviewed else 'на проверку' }}</span>
+                </div>
+            </div>
+            <div class="prg-item-actions">
+                <a class="btn-outline" href="{{ item.review_url }}">Открыть</a>
+                {% if not item.is_reviewed and item.domain in ('work', 'exam_cycle') %}
+                <button type="button" class="btn-outline" data-mark-viewed>Просмотрено</button>
+                {% endif %}
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="prg-empty">За эту неделю по фильтрам ничего не сдано.</p>
+    {% endif %}
+
+    <p><a class="btn-outline" href="/cabinet/staff/students-review">← Ко всем ученикам</a></p>
+</div>
+
+<script>
+(function () {
+    var csrfToken = {{ csrf_token(request)|tojson }};
+    document.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-mark-viewed]');
+        if (!button) return;
+        var row = button.closest('[data-review-row]');
+        var domain = row.getAttribute('data-domain');
+        var id = row.getAttribute('data-id');
+        var path = domain === 'work' ? '/cabinet/staff/students-review/work/' : '/cabinet/staff/students-review/cycle/';
+        button.disabled = true;
+        fetch(path + id + '/viewed', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Accept': 'application/json', 'X-CSRF-Token': csrfToken}
+        }).then(function (resp) {
+            if (!resp.ok) throw new Error();
+            row.classList.add('is-done');
+            button.remove();
+        }).catch(function () {
+            button.disabled = false;
+            button.textContent = 'Не вышло, ещё раз';
+        });
+    });
+})();
+</script>
+
+{% include "_curator_nav.html" %}
+{% if user.role_rank == 3 %}
+{% include "partials/staff_nav.html" %}
+{% endif %}
+{% endblock %}

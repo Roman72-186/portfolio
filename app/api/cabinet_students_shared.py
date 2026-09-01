@@ -2,7 +2,9 @@
 Единый роутер карточки ученика для всех ролей персонала.
 
 Доступ:
-  - rank=2 (куратор)   — только свои студенты, только просмотр
+  - rank=2 (куратор)   — только свои студенты; с 01.09.2026 (решение владельца,
+    plans/2026-09-01-apparchi-student-centric-review.md) может ставить балл
+    Work (`score_work`) — остальное на карточке по-прежнему только просмотр
   - rank=3 (модератор) — заглушка, нет доступа
   - rank=4 (админ)     — все студенты, оценивание + разблокировка
   - rank=5 (суперадмин) — все студенты, оценивание + разблокировка
@@ -21,7 +23,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.cache import invalidate_session, invalidate_unread
 from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, MONTHS, MONTH_TO_NUM, TARIFFS, COHORT_TAGS, COHORT_TAG_LABELS
 from app.db.database import get_db
-from app.dependencies import get_current_user, require_admin_role, require_csrf
+from app.dependencies import get_current_user, require_admin_role, require_csrf, require_curator
 from app.models.session import Session
 from app.models.exam_assignment import ExamTicket
 from app.models.exam_cycle import ExamCycle
@@ -906,7 +908,7 @@ def move_retake_to_subject(
 def score_work(
     student_id: int,
     work_id: int,
-    user: Annotated[dict, Depends(require_admin_role)],
+    user: Annotated[dict, Depends(require_curator)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     background_tasks: BackgroundTasks,
@@ -914,6 +916,13 @@ def score_work(
     comment: str = Form(""),
     tab: str = Form("mock-exams"),
 ):
+    """Решение владельца 01.09.2026: куратор тоже ставит балл (не только rank ≥4) —
+    отсюда `get_student_for_staff_access`, которого раньше не было (админ+ видел всех)."""
+    get_student_for_staff_access(
+        db, user, student_id,
+        not_found_detail="Работа не найдена",
+        forbidden_detail="Это не ваш студент",
+    )
     work = db.query(Work).filter(Work.id == work_id, Work.user_id == student_id).first()
     if not work:
         raise HTTPException(status_code=404, detail="Работа не найдена")

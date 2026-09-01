@@ -24,6 +24,7 @@ from app.api import cabinet_tracker
 from app.api import homework_submission
 from app.api import lab_assets
 from app.api import task_block_review
+from app.api import student_review
 from app.limiter import limiter
 from app.services.rbac import seed_roles_and_permissions
 from app.services import n8n as n8n_service
@@ -313,6 +314,7 @@ app.include_router(cabinet_tracker.router)
 app.include_router(homework_submission.router)
 app.include_router(lab_assets.router)
 app.include_router(task_block_review.router)
+app.include_router(student_review.router)
 
 
 @app.get("/health")
