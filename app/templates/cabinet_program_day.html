@@ -1054,9 +1054,41 @@ FORM: Operate.
         });
     }
 
-    // ── Анкета ──────────────────────────────────────────────────────────
-    // Вопрос — карточка вида ticketHTML: своё поле текста, тип ответа и
-    // блок вариантов, который виден только для single/multiple.
+    // ── Переключение вкладок ────────────────────────────────────────────
+    // Реестр собирается из DOM, а не перечислен руками: новый вид элемента —
+    // это плитка с data-open-form и форма с тем же data-form, без правок JS.
+    // В прошедшем дне шаблон не рендерит ни плиток, ни форм — реестр пуст,
+    // и обработчик просто ничего не делает.
+    var tiles = Array.prototype.slice.call(document.querySelectorAll('[data-open-form]'));
+    var forms = Array.prototype.slice.call(document.querySelectorAll('.prg-form[data-form]'));
+
+    // Заполненное не сбрасываем: преподаватель мог набрать билеты и загрузить
+    // картинки, уход на соседнюю вкладку не должен их стирать.
+    function showForm(kind) {
+        forms.forEach(function (form) { form.hidden = form.dataset.form !== kind; });
+        tiles.forEach(function (tile) {
+            var isActive = tile.dataset.openForm === kind;
+            tile.classList.toggle('is-active', isActive);
+            tile.setAttribute('aria-expanded', isActive ? 'true' : 'false');
+        });
+        var opened = forms.filter(function (form) { return form.dataset.form === kind; })[0];
+        if (opened) opened.scrollIntoView({behavior: 'smooth', block: 'start'});
+    }
+
+    function hideForms() {
+        forms.forEach(function (form) { form.hidden = true; });
+        tiles.forEach(function (tile) {
+            tile.classList.remove('is-active');
+            tile.setAttribute('aria-expanded', 'false');
+        });
+    }
+
+    hideForms();
+
+    // ── Правка вместо удаления-и-пересоздания ────────────────────────────
+    // «Изменить» на карточке открывает ту же форму, что и плитка создания,
+    // предзаполненную текущими значениями. Сохранение идёт по task_id
+    // (itemUrl выше), а не по dayIso — день элемента не меняется.
     var simpleEditableKinds = ['material', 'quiz', 'lesson', 'checklist', 'survey'];
 
     function resetMockFormForCreate() {
