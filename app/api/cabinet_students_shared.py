@@ -921,7 +921,8 @@ def score_work(
     Не через `get_student_for_staff_access` — её owner-проверка срабатывает
     только при `role_rank == 2`, а `require_curator` пропускает и ранг 3
     (модератор). Владелец про модератора не говорил — тот же приём, что уже
-    есть в `task_block_review.py`: показать меньше безопаснее, чем чужое.
+    есть в `student_review.py::_check_student_access`: показать меньше
+    безопаснее, чем чужое.
     """
     if user["role_rank"] < 4:  # тот же порог, что review_aggregate.py::FULL_ACCESS_RANK
         student = db.query(User).filter(User.id == student_id).first()

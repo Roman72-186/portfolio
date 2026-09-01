@@ -1,11 +1,41 @@
 """Единый экран проверки: список учеников + карточка ученика по всем доменам.
 
-`plans/2026-09-01-apparchi-student-centric-review.md`, этап 5.
+`plans/2026-09-01-apparchi-student-centric-review.md`, этап 5. Тесты на
+ответы блоков заданий (`task-block/.../reviewed`) перенесены сюда со сноса
+отдельного экрана `/cabinet/staff/review` 02.09.2026 — контракт («куратор не
+видит и не трогает чужих учеников») тот же, что был у `test_routes_review_queue.py`.
 """
 from datetime import date, datetime, timezone
 
 from app.models.exam_cycle import ExamCycle
+from app.models.task_block import BLOCK_QUESTION, QUESTION_TEXT, TaskBlock, TaskBlockAnswer
+from app.models.tracker import TrackerTask
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+from app.services.task_blocks import save_response
+
+
+def _task_with_question(db, title="Материал"):
+    # Без due_at нарочно: у части заданий дедлайна нет вовсе, а неделя на
+    # этом экране считается по дате сдачи ответа, не по дедлайну (регрессия
+    # найдена и починена 02.09.2026, см. test_task_without_due_date_still_visible_this_week).
+    task = TrackerTask(title=title, kind="material", is_published=True, assign_to_all=True)
+    db.add(task)
+    db.flush()
+    block = TaskBlock(
+        task_id=task.id, block_type=BLOCK_QUESTION, question_type=QUESTION_TEXT,
+        body="Как прошло?", sort_order=0,
+    )
+    db.add(block)
+    db.flush()
+    return task, block
+
+
+def _answer(db, task, block, student, text):
+    save_response(
+        db, task_id=task.id, user_id=student.id, blocks=[block],
+        answers={block.id: {"text": text}},
+    )
+    db.commit()
 
 
 def _work(db, user_id, *, score=None, created_at=None):
@@ -166,6 +196,116 @@ def test_curator_can_mark_cycle_viewed_without_closing(db, user_factory, session
     db.refresh(cycle)
     assert cycle.viewed_at is not None
     assert cycle.closed_at is None  # «просмотрено» не закрывает цикл
+
+
+def test_task_without_due_date_still_visible_this_week(db, user_factory, session_factory, client):
+    """Регрессия 02.09.2026: фильтр недели раньше шёл по `TrackerTask.due_at`,
+    а не по дате сдачи ответа. У задания без дедлайна due_at — NULL, и
+    `NULL >= week_start` в SQL ложно, поэтому ответ не находился ни в одной
+    неделе. Решение владельца 01.09.2026 (вопрос 3) требовало фильтр по дате
+    сдачи/создания записи — починено в `task_blocks.py::review_queue`."""
+    curator = user_factory(vk_id=860_132, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=860_133, name="Ученик")
+    student.curator_id = curator.id
+    task, block = _task_with_question(db)
+    assert task.due_at is None
+    db.commit()
+    _answer(db, task, block, student, "Ответ без дедлайна")
+
+    client.cookies.set("session_id", session_factory(curator).id)
+    resp = client.get(f"/cabinet/staff/students-review/{student.id}")
+
+    assert resp.status_code == 200
+    assert "Ответ без дедлайна" in resp.text
+
+
+def test_detail_page_shows_task_block_question_and_answer(db, user_factory, session_factory, client):
+    curator = user_factory(vk_id=860_120, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=860_121, name="Ученик")
+    student.curator_id = curator.id
+    task, block = _task_with_question(db)
+    db.commit()
+    _answer(db, task, block, student, "Свет и тень")
+
+    client.cookies.set("session_id", session_factory(curator).id)
+    resp = client.get(f"/cabinet/staff/students-review/{student.id}")
+
+    assert resp.status_code == 200
+    assert "Как прошло?" in resp.text
+    assert "Свет и тень" in resp.text
+
+
+def test_curator_can_toggle_task_block_answer_reviewed(db, user_factory, session_factory, client):
+    curator = user_factory(vk_id=860_122, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=860_123, name="Ученик")
+    student.curator_id = curator.id
+    task, block = _task_with_question(db)
+    db.commit()
+    _answer(db, task, block, student, "Ответ")
+    answer = db.query(TaskBlockAnswer).one()
+
+    client.cookies.set("session_id", session_factory(curator).id)
+    resp = client.post(f"/cabinet/staff/students-review/task-block/{answer.id}/reviewed", json={"reviewed": True})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["reviewed"] is True
+    db.expire_all()
+    assert db.get(TaskBlockAnswer, answer.id).reviewed_at is not None
+
+
+def test_task_block_toggle_can_be_taken_back(db, user_factory, session_factory, client):
+    """Ткнули случайно — надо уметь вернуть (владелец 31.08.2026)."""
+    curator = user_factory(vk_id=860_124, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=860_125, name="Ученик")
+    student.curator_id = curator.id
+    task, block = _task_with_question(db)
+    db.commit()
+    _answer(db, task, block, student, "Ответ")
+    answer = db.query(TaskBlockAnswer).one()
+
+    client.cookies.set("session_id", session_factory(curator).id)
+    client.post(f"/cabinet/staff/students-review/task-block/{answer.id}/reviewed", json={"reviewed": True})
+    back = client.post(f"/cabinet/staff/students-review/task-block/{answer.id}/reviewed", json={"reviewed": False})
+
+    assert back.status_code == 200
+    assert back.json()["reviewed"] is False
+    db.expire_all()
+    assert db.get(TaskBlockAnswer, answer.id).reviewed_at is None
+
+
+def test_curator_cannot_toggle_foreign_task_block_answer(db, user_factory, session_factory, client):
+    """Подстановка чужого номера ответа в адрес не должна проходить."""
+    owner = user_factory(vk_id=860_126, name="Куратор своя", role_name="куратор")
+    other = user_factory(vk_id=860_127, name="Куратор чужая", role_name="куратор")
+    foreign = user_factory(vk_id=860_128, name="Чужой ученик")
+    foreign.curator_id = owner.id
+    task, block = _task_with_question(db)
+    db.commit()
+    _answer(db, task, block, foreign, "Ответ чужого")
+    answer = db.query(TaskBlockAnswer).one()
+
+    client.cookies.set("session_id", session_factory(other).id)
+    resp = client.post(f"/cabinet/staff/students-review/task-block/{answer.id}/reviewed", json={"reviewed": True})
+
+    assert resp.status_code == 403
+    db.expire_all()
+    assert db.get(TaskBlockAnswer, answer.id).reviewed_at is None
+
+
+def test_head_teacher_can_toggle_any_task_block_answer(db, user_factory, session_factory, client):
+    curator = user_factory(vk_id=860_129, name="Куратор", role_name="куратор")
+    head = user_factory(vk_id=860_130, name="Главный", is_admin=True, role_name="админ")
+    student = user_factory(vk_id=860_131, name="Ученик")
+    student.curator_id = curator.id
+    task, block = _task_with_question(db)
+    db.commit()
+    _answer(db, task, block, student, "Ответ")
+    answer = db.query(TaskBlockAnswer).one()
+
+    client.cookies.set("session_id", session_factory(head).id)
+    resp = client.post(f"/cabinet/staff/students-review/task-block/{answer.id}/reviewed", json={"reviewed": True})
+
+    assert resp.status_code == 200
 
 
 def test_week_filter_excludes_items_outside_range(db, user_factory, session_factory, client):

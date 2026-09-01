@@ -154,19 +154,6 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         icon="cycle",
     ),
     StaffNavItem(
-        # Очередь проверки ответов (владелец 31.08.2026). min_rank=2, потому
-        # что смотреть ответы должен и куратор, а в «Учебные программы» его не
-        # пускают — там ранг 4. Своих учеников куратор видит, чужих нет.
-        key="review",
-        href="/cabinet/staff/review",
-        sidebar_label="На проверку",
-        pill_label="Проверка",
-        aria_label="Ответы на проверку",
-        tooltip="Ответы учеников, которые вы ещё не смотрели",
-        icon="cycle",
-        min_rank=2,
-    ),
-    StaffNavItem(
         # Единый экран проверки по ученику (решение владельца 01.09.2026,
         # plans/2026-09-01-apparchi-student-centric-review.md, этап 7).
         # min_rank=2: экран полный уже у куратора (право на балл Work/ExamCycle

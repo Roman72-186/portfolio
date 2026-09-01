@@ -16,12 +16,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session as DBSession
 
 from app.constants import MOCK_SUBJECTS, TARIFFS
 from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_curator
 from app.models.exam_cycle import ExamCycle
+from app.models.task_block import TaskBlockAnswer, TaskBlockResponse
 from app.models.user import User
 from app.models.work import Work
 from app.services.review_aggregate import (
@@ -30,6 +32,7 @@ from app.services.review_aggregate import (
     student_review_items,
     week_bounds,
 )
+from app.services.task_blocks import set_reviewed
 from app.services.tz import today_msk
 from app.tmpl import templates
 
@@ -175,3 +178,44 @@ def mark_cycle_viewed(
     cycle.viewed_by_id = user["user_id"]
     db.commit()
     return JSONResponse({"ok": True})
+
+
+class TaskBlockReviewMark(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reviewed: bool = True
+
+
+@router.post("/task-block/{answer_id}/reviewed", response_class=JSONResponse)
+def mark_task_block_reviewed(
+    answer_id: int,
+    payload: TaskBlockReviewMark,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Тумблер «Просмотрено» для ответа на блок задания (снос отдельного
+    экрана `/cabinet/staff/review` 02.09.2026, там кнопка была такая же).
+
+    Владелец ученика ответа берём из `TaskBlockResponse.user_id`, а не из
+    тела запроса — иначе куратор мог бы подставить своего ученика и снять/
+    поставить отметку на чужом ответе (тот же класс дыры, что чинили в
+    `_check_student_access` 01.09.2026)."""
+    row = (
+        db.query(TaskBlockAnswer, TaskBlockResponse)
+        .join(TaskBlockResponse, TaskBlockResponse.id == TaskBlockAnswer.response_id)
+        .filter(TaskBlockAnswer.id == answer_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Ответ не найден")
+    _answer, response = row
+    _check_student_access(
+        db, user, response.user_id,
+        not_found_detail="Ответ не найден",
+        forbidden_detail="Это не ваш студент",
+    )
+    answer = set_reviewed(
+        db, answer_id=answer_id, user_id=user["user_id"], reviewed=payload.reviewed
+    )
+    db.commit()
+    return JSONResponse({"ok": True, "reviewed": answer.reviewed_at is not None})

@@ -489,6 +489,13 @@ def review_queue(
     `cabinet_students_shared.py::_get_accessible_students`). Главный
     преподаватель и суперадмин зовут без него и видят всех.
 
+    `week_start`/`week_end` фильтруют по `TaskBlockResponse.updated_at` — дате
+    сдачи ответа, а не по дедлайну `TrackerTask.due_at` (решение владельца
+    01.09.2026, вопрос 3: «неделя по дате сдачи/создания записи»). Дедлайн у
+    задания может быть не проставлен вовсе — тогда фильтр по нему не находил
+    бы ответ ни в одной неделе (нашлось 02.09.2026 при сносе `/cabinet/staff
+    /review`, там `review_queue` звался вообще без периода).
+
     Один запрос с join'ами вместо чтения по строке: экран на два-три десятка
     учеников иначе дал бы сотни походов в базу.
     """
@@ -514,9 +521,9 @@ def review_queue(
     if tariff:
         q = q.filter(User.tariff == tariff)
     if week_start is not None:
-        q = q.filter(TrackerTask.due_at >= week_start)
+        q = q.filter(TaskBlockResponse.updated_at >= week_start)
     if week_end is not None:
-        q = q.filter(TrackerTask.due_at < week_end)
+        q = q.filter(TaskBlockResponse.updated_at < week_end)
 
     rows = q.order_by(TaskBlockResponse.updated_at.desc(), TaskBlockAnswer.id.desc()).limit(limit).all()
     if not rows:

@@ -64,14 +64,6 @@ def test_staff_nav_items_keep_admin_contract():
         ("students", "/cabinet/students", "Ученики", "Ученики", "Ученики", "Ученики"),
         ("cycles", "/cabinet/staff/cycles", "Цикл Пробника", "Цикл", "Цикл Пробника", "Цикл Пробника"),
         (
-            "review",
-            "/cabinet/staff/review",
-            "На проверку",
-            "Проверка",
-            "Ответы на проверку",
-            "Ответы учеников, которые вы ещё не смотрели",
-        ),
-        (
             "students_review",
             "/cabinet/staff/students-review",
             "Проверка по ученику",
@@ -117,18 +109,14 @@ def test_staff_nav_items_keep_rank_specific_visibility_contract():
         "students",
         "mock_check",
         "cycles",
-        "review",
         "students_review",
         "3dlab",
     ]
     assert "mock_check" not in [item.key for item in rank_4_items]
     assert "mock_check" not in [item.key for item in rank_5_items]
-    # Очередь проверки видна с ранга куратора: ответы смотрит и он, а в
-    # «Учебные программы» его не пускают (владелец 31.08.2026).
-    assert "review" in [item.key for item in rank_3_items]
-    assert "review" in [item.key for item in rank_4_items]
-    # Проверка по ученику видна с того же ранга, что и очередь «На проверку»
-    # (решение владельца 01.09.2026): у куратора экран полный.
+    # Проверка по ученику видна с ранга куратора (решение владельца
+    # 01.09.2026): у куратора экран полный, а в «Учебные программы» его не
+    # пускают (там ранг 4).
     assert "students_review" in [item.key for item in rank_3_items]
     assert "students_review" in [item.key for item in rank_4_items]
     assert "program" not in [item.key for item in rank_3_items]

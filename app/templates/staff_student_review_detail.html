@@ -3,7 +3,11 @@
 Карточка ученика + всё, что он сдал за неделю, по всем доменам сразу.
 Диалог (Feedback/HomeworkFeedback) сюда не встроен — только ссылка на
 существующий UI (решение владельца 01.09.2026, вопрос 5). Без своего
-<style> — только prg-*, образец — staff_review_queue.html.
+<style> — только prg-*, держит tests/test_reuse_ratchet.py.
+
+Карточка домена task_block (снос отдельного экрана `/cabinet/staff/review`
+02.09.2026) рисует вопрос/ответ и тумблер «Просмотрено» прямо здесь — там
+не было формы оценки, только отметка «посмотрел».
 #}
 {% block title %}{{ student.name }} — проверка{% endblock %}
 {% block extra_styles %}
@@ -57,19 +61,36 @@
     <div class="prg-items">
         {% for item in items %}
         <article class="prg-item{{ ' is-done' if item.is_reviewed }}" data-review-row
-             {% if item.domain in ('work', 'exam_cycle') %}data-domain="{{ item.domain }}" data-id="{{ item.item_id }}"{% endif %}>
-            <div>
+             data-domain="{{ item.domain }}" data-id="{{ item.item_id }}">
+            <div class="prg-item-copy">
                 <h3>{{ item.title }}</h3>
                 <div class="prg-meta">
                     {% if item.subject %}<span>{{ item.subject }}</span>{% endif %}
                     {% if item.submitted_at %}<span>{{ item.submitted_at.strftime('%d.%m %H:%M') }}</span>{% endif %}
                     <span>{{ 'проверено' if item.is_reviewed else 'на проверку' }}</span>
                 </div>
+                {% if item.domain == 'task_block' %}
+                {% if item.question %}<p class="prg-hint">{{ item.question }}</p>{% endif %}
+                {% if item.chosen %}
+                <p><strong>Выбрал:</strong> {{ item.chosen|join(', ') }}</p>
+                {% if item.correct %}
+                <p class="prg-hint">Верно: {{ item.correct|join(', ') }}</p>
+                {% endif %}
+                {% endif %}
+                {% if item.text %}<p>{{ item.text }}</p>{% endif %}
+                {% endif %}
             </div>
             <div class="prg-item-actions">
+                {% if item.domain == 'task_block' %}
+                <button type="button" class="btn-outline" data-review-toggle
+                        data-reviewed="{{ 'true' if item.is_reviewed else 'false' }}">
+                    {{ 'Вернуть в очередь' if item.is_reviewed else 'Просмотрено' }}
+                </button>
+                {% else %}
                 <a class="btn-outline" href="{{ item.review_url }}">Открыть</a>
                 {% if not item.is_reviewed and item.domain in ('work', 'exam_cycle') %}
                 <button type="button" class="btn-outline" data-mark-viewed>Просмотрено</button>
+                {% endif %}
                 {% endif %}
             </div>
         </article>
@@ -85,6 +106,7 @@
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};
+
     document.addEventListener('click', function (event) {
         var button = event.target.closest('[data-mark-viewed]');
         if (!button) return;
@@ -101,6 +123,36 @@
             if (!resp.ok) throw new Error();
             row.classList.add('is-done');
             button.remove();
+        }).catch(function () {
+            button.disabled = false;
+            button.textContent = 'Не вышло, ещё раз';
+        });
+    });
+
+    document.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-review-toggle]');
+        if (!button) return;
+        var row = button.closest('[data-review-row]');
+        var id = row.getAttribute('data-id');
+        var next = button.getAttribute('data-reviewed') !== 'true';
+        button.disabled = true;
+        fetch('/cabinet/staff/students-review/task-block/' + id + '/reviewed', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify({reviewed: next})
+        }).then(function (resp) {
+            if (!resp.ok) throw new Error();
+            return resp.json();
+        }).then(function (data) {
+            button.disabled = false;
+            button.setAttribute('data-reviewed', data.reviewed ? 'true' : 'false');
+            button.textContent = data.reviewed ? 'Вернуть в очередь' : 'Просмотрено';
+            row.classList.toggle('is-done', data.reviewed);
         }).catch(function () {
             button.disabled = false;
             button.textContent = 'Не вышло, ещё раз';

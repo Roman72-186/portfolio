@@ -63,7 +63,9 @@ def test_task_block_items_maps_unreviewed_answer_to_dto(db, user_factory):
     assert item.subject == "Рисунок"
     assert item.is_reviewed is False
     assert item.submitted_at is not None
-    assert item.review_url == f"/cabinet/staff/review?student={student.id}&only=all"
+    assert item.review_url == ""
+    assert item.question == "Что было главным?"
+    assert item.text == "Свет и тень"
 
 
 def test_task_block_items_reflects_reviewed_flag(db, user_factory):

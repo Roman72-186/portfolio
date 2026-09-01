@@ -32,7 +32,7 @@ DOMAIN_EXAM_CYCLE = "exam_cycle"
 # С этого ранга видно всех учеников без ограничения по curator_id. Ранг 3
 # (модератор) попадает под то же ограничение, что куратор — владелец про
 # него не говорил (решение 1 было только про куратора), и показать меньше
-# безопаснее, чем чужое (тот же приём, что task_block_review.py).
+# безопаснее, чем чужое (тот же приём, что student_review.py::_check_student_access).
 FULL_ACCESS_RANK = 4
 
 _WORK_TYPE_TITLES = {"mock_exam": "Пробник", "retake": "Отработка"}
@@ -41,7 +41,12 @@ _WORK_TYPE_TABS = {"mock_exam": "mock-exams", "retake": "retakes"}
 
 @dataclass(frozen=True)
 class ReviewItem:
-    """Общий формат строки в едином списке проверки, один на все домены."""
+    """Общий формат строки в едином списке проверки, один на все домены.
+
+    `question`/`chosen`/`correct`/`text` заполнены только у `task_block`
+    (снос отдельного экрана `/cabinet/staff/review` 02.09.2026 — карточку
+    ответа теперь рисует сам `staff_student_review_detail.html`, `review_url`
+    у этого домена не используется)."""
 
     domain: str
     item_id: int
@@ -51,6 +56,10 @@ class ReviewItem:
     submitted_at: datetime | None
     is_reviewed: bool
     review_url: str
+    question: str | None = None
+    chosen: list[str] | None = None
+    correct: list[str] | None = None
+    text: str | None = None
 
 
 def _task_block_items(
@@ -91,7 +100,11 @@ def _task_block_items(
             subject=row["subject"],
             submitted_at=row["answered_at"],
             is_reviewed=row["reviewed"],
-            review_url=f"/cabinet/staff/review?student={row['student_id']}&only=all",
+            review_url="",
+            question=row["question"],
+            chosen=row["chosen"],
+            correct=row["correct"],
+            text=row["text"],
         )
         for row in raw
     ]
