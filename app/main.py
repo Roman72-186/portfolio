@@ -22,6 +22,7 @@ from app.api import cabinet_learning, cabinet_personal, cabinet_tracker_admin, c
 from app.api import cabinet_digest_admin, cabinet_goal_admin
 from app.api import cabinet_tracker
 from app.api import homework_submission
+from app.api import lab_assets
 from app.api import task_block_review
 from app.limiter import limiter
 from app.services.rbac import seed_roles_and_permissions
@@ -104,8 +105,19 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     )
 
 
+# Ассеты 3D-лаборатории просит не человек, а fetch и <video>. Обработчики ниже
+# уводят браузер на страницу входа или рисуют HTML-заглушку — для навигации это
+# правильно, а для запроса модели означает 200 с версткой вместо файла: загрузчик
+# glTF давится ею, и в консоли вместо внятного «нет доступа» появляется мусор.
+# Поэтому на этом префиксе отдаём голый код ответа.
+def _is_lab_asset(request: Request) -> bool:
+    return request.url.path.startswith("/lab/asset/")
+
+
 @app.exception_handler(403)
 async def forbidden_handler(request: Request, exc):
+    if _is_lab_asset(request):
+        return JSONResponse(status_code=403, content={"detail": getattr(exc, "detail", "Forbidden")})
     accept = request.headers.get("accept", "")
     content_type = request.headers.get("content-type", "")
     if "application/json" in accept or "application/json" in content_type:
@@ -124,6 +136,8 @@ async def forbidden_handler(request: Request, exc):
 
 @app.exception_handler(401)
 async def unauthorized_handler(request: Request, exc):
+    if _is_lab_asset(request):
+        return JSONResponse(status_code=401, content={"detail": getattr(exc, "detail", "Unauthorized")})
     accept = request.headers.get("accept", "")
     content_type = request.headers.get("content-type", "")
     if "application/json" in accept or "application/json" in content_type:
@@ -134,6 +148,8 @@ async def unauthorized_handler(request: Request, exc):
 
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc):
+    if _is_lab_asset(request):
+        return JSONResponse(status_code=404, content={"detail": getattr(exc, "detail", "Not found")})
     accept = request.headers.get("accept", "")
     if "application/json" in accept:
         return JSONResponse(status_code=404, content={"detail": "Not found"})
@@ -295,6 +311,7 @@ app.include_router(cabinet_goal_admin.router)
 app.include_router(cabinet_program.router)
 app.include_router(cabinet_tracker.router)
 app.include_router(homework_submission.router)
+app.include_router(lab_assets.router)
 app.include_router(task_block_review.router)
 
 

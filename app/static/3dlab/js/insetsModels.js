@@ -4,6 +4,11 @@
 // Добавить новую врезку = добавить один объект в RAW_INSETS.
 // models.js сам сможет загрузить source-модели по sourcePath (без правок models.js).
 
+import { ASSET_BASE } from "./assetUrl.js";
+
+// Базовый адрес контента — один на всю лабораторию, см. assetUrl.js
+const BASE = ASSET_BASE;
+
 const RAW_INSETS = [
 
   {
@@ -13,11 +18,11 @@ const RAW_INSETS = [
   preview: "textures/preview/preview4.webp",
 
 video: [
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/vrez/v1.mp4`,
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/vrez/v2.mp4`,
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/vrez/v3.mp4`,
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/vrez/v5.mp4`,
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/vrez/v8.mp4`,
+  `${BASE}textures/0/vrez/v1.mp4`,
+  `${BASE}textures/0/vrez/v2.mp4`,
+  `${BASE}textures/0/vrez/v3.mp4`,
+  `${BASE}textures/0/vrez/v5.mp4`,
+  `${BASE}textures/0/vrez/v8.mp4`,
 ],
 },
   

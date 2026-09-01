@@ -1,6 +1,10 @@
 // js/content/cardsRegistry.js
 
 import { BLOCKS, SUBBLOCKS, CONTENT_TYPES } from "./contentTypes.js";
+import { ASSET_BASE } from "../assetUrl.js";
+
+// Базовый адрес контента — один на всю лабораторию, см. assetUrl.js
+const BASE = ASSET_BASE;
 
 export const CARDS = {
   test_universal_card: {
@@ -34,8 +38,8 @@ export const CARDS = {
           [SUBBLOCKS.VIDEOS]: {
             type: CONTENT_TYPES.VIDEOS,
             items: [
-              "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/kapitel2/v1.mp4",
-              "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/kapitel2/v2.mp4"
+              `${BASE}textures/kapitel2/v1.mp4`,
+              `${BASE}textures/kapitel2/v2.mp4`
             ]
           }
         }
@@ -54,7 +58,7 @@ export const CARDS = {
           [SUBBLOCKS.VIDEOS]: {
             type: CONTENT_TYPES.VIDEOS,
             items: [
-              "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/kapitel2/v1.mp4"
+              `${BASE}textures/kapitel2/v1.mp4`
             ]
           }
         }
@@ -101,7 +105,7 @@ export const CARDS = {
           [SUBBLOCKS.VIDEOS]: {
             type: CONTENT_TYPES.VIDEOS,
             items: [
-              "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/doric/v1.mp4"
+              `${BASE}textures/doric/v1.mp4`
             ]
           }
         }
@@ -157,7 +161,7 @@ export const CARDS = {
           [SUBBLOCKS.VIDEOS]: {
             type: CONTENT_TYPES.VIDEOS,
             items: [
-              "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/doric/v1.mp4"
+              `${BASE}textures/doric/v1.mp4`
             ]
           }
         }
@@ -222,7 +226,7 @@ kapitel2_universal: {
           type: CONTENT_TYPES.VIDEOS,
 
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/kapitel2/videos/scheme/v1.mp4"
+            `${BASE}content/arch/kapitel2/videos/scheme/v1.mp4`
           ]
         }
       }
@@ -234,7 +238,7 @@ kapitel2_universal: {
           type: CONTENT_TYPES.VIDEOS,
 
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/kapitel2/videos/drawing/v2.mp4"
+            `${BASE}content/arch/kapitel2/videos/drawing/v2.mp4`
           ]
         }
       }
@@ -297,7 +301,7 @@ kapitel1_universal: {
           type: CONTENT_TYPES.VIDEOS,
 
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/kapitel1/videos/scheme/v1.mp4"
+            `${BASE}content/arch/kapitel1/videos/scheme/v1.mp4`
           ]
         }
       }
@@ -309,7 +313,7 @@ kapitel1_universal: {
           type: CONTENT_TYPES.VIDEOS,
 
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/kapitel1/videos/drawing/v2.mp4"
+            `${BASE}content/arch/kapitel1/videos/drawing/v2.mp4`
           ]
         }
       }
@@ -361,7 +365,7 @@ vase1_universal: {
         [SUBBLOCKS.VIDEOS]: {
           type: CONTENT_TYPES.VIDEOS,
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/vase1/videos/scheme/v1.mp4"
+            `${BASE}content/arch/vase1/videos/scheme/v1.mp4`
           ]
         }
       }
@@ -372,7 +376,7 @@ vase1_universal: {
         [SUBBLOCKS.VIDEOS]: {
           type: CONTENT_TYPES.VIDEOS,
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/vase1/videos/drawing/v2.mp4"
+            `${BASE}content/arch/vase1/videos/drawing/v2.mp4`
           ]
         }
       }
@@ -425,7 +429,7 @@ vase2_universal: {
         [SUBBLOCKS.VIDEOS]: {
           type: CONTENT_TYPES.VIDEOS,
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/vase2/videos/scheme/v1.mp4"
+            `${BASE}content/arch/vase2/videos/scheme/v1.mp4`
           ]
         }
       }
@@ -436,7 +440,7 @@ vase2_universal: {
         [SUBBLOCKS.VIDEOS]: {
           type: CONTENT_TYPES.VIDEOS,
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/vase2/videos/drawing/v2.mp4"
+            `${BASE}content/arch/vase2/videos/drawing/v2.mp4`
           ]
         }
       }
@@ -491,7 +495,7 @@ chair1_universal: {
         [SUBBLOCKS.VIDEOS]: {
           type: CONTENT_TYPES.VIDEOS,
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/chair1/videos/drawing/v1.mp4"
+            `${BASE}content/arch/chair1/videos/drawing/v1.mp4`
           ]
         }
       }
@@ -546,7 +550,7 @@ chair2_universal: {
         [SUBBLOCKS.VIDEOS]: {
           type: CONTENT_TYPES.VIDEOS,
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/chair1/videos/drawing/v1.mp4"
+            `${BASE}content/arch/chair1/videos/drawing/v1.mp4`
           ]
         }
       }
@@ -599,7 +603,7 @@ ionic_universal: {
         [SUBBLOCKS.VIDEOS]: {
           type: CONTENT_TYPES.VIDEOS,
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/ionic/videos/scheme/v1.mp4"
+            `${BASE}content/arch/ionic/videos/scheme/v1.mp4`
           ]
         }
       }
@@ -651,7 +655,7 @@ doric_universal: {
         [SUBBLOCKS.VIDEOS]: {
           type: CONTENT_TYPES.VIDEOS,
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/doric/videos/scheme/v1.mp4"
+            `${BASE}content/arch/doric/videos/scheme/v1.mp4`
           ]
         }
       }
@@ -713,7 +717,7 @@ balyasina2_universal: {
           type: CONTENT_TYPES.VIDEOS,
 
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/balyasina2/videos/scheme/v1.mp4"
+            `${BASE}content/arch/balyasina2/videos/scheme/v1.mp4`
           ]
         }
       }
@@ -725,7 +729,7 @@ balyasina2_universal: {
           type: CONTENT_TYPES.VIDEOS,
 
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/balyasina2/videos/drawing/v2.mp4"
+            `${BASE}content/arch/balyasina2/videos/drawing/v2.mp4`
           ]
         }
       }
@@ -786,7 +790,7 @@ balyasina1_universal: {
           type: CONTENT_TYPES.VIDEOS,
 
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/balyasina1/videos/scheme/v1.mp4"
+            `${BASE}content/arch/balyasina1/videos/scheme/v1.mp4`
           ]
         }
       }
@@ -798,7 +802,7 @@ balyasina1_universal: {
           type: CONTENT_TYPES.VIDEOS,
 
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/balyasina1/videos/drawing/v2.mp4"
+            `${BASE}content/arch/balyasina1/videos/drawing/v2.mp4`
           ]
         }
       }
@@ -857,7 +861,7 @@ molbert_universal: {
         [SUBBLOCKS.VIDEOS]: {
           type: CONTENT_TYPES.VIDEOS,
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/molbert/videos/scheme/v3.mp4"
+            `${BASE}content/arch/molbert/videos/scheme/v3.mp4`
           ]
         }
       }
@@ -868,8 +872,8 @@ molbert_universal: {
         [SUBBLOCKS.VIDEOS]: {
           type: CONTENT_TYPES.VIDEOS,
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/molbert/videos/drawing/v1.mp4",
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/molbert/videos/drawing/v2.mp4"
+            `${BASE}content/arch/molbert/videos/drawing/v1.mp4`,
+            `${BASE}content/arch/molbert/videos/drawing/v2.mp4`
           ]
         }
       }
@@ -901,10 +905,10 @@ arch_0_universal: {
         [SUBBLOCKS.VIDEOS]: {
           type: CONTENT_TYPES.VIDEOS,
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/arch_0/videos/v1.mp4",
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/arch_0/videos/v2.mp4",
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/arch_0/videos/v3.mp4",
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/arch/arch_0/videos/v4.mp4"
+            `${BASE}content/arch/arch_0/videos/v1.mp4`,
+            `${BASE}content/arch/arch_0/videos/v2.mp4`,
+            `${BASE}content/arch/arch_0/videos/v3.mp4`,
+            `${BASE}content/arch/arch_0/videos/v4.mp4`
           ]
         }
       }
@@ -1597,8 +1601,8 @@ inset_0_universal: {
           type: CONTENT_TYPES.VIDEOS,
 
           items: [
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/insets/inset_0/videos/v2.mp4",
-            "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/content/insets/inset_0/videos/v5.mp4"
+            `${BASE}content/insets/inset_0/videos/v2.mp4`,
+            `${BASE}content/insets/inset_0/videos/v5.mp4`
           ]
         }
       }

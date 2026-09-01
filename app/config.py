@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://redis:6379/0"
 
+    # 3D-лаборатория: каталог с копией контента (модели, текстуры, превью,
+    # схемы, видео). Лежит вне репозитория и монтируется в контейнер только на
+    # чтение — см. app/api/lab_assets.py.
+    lab_assets_dir: str = "/app/lab-assets"
+
     # 3D Lab SSO
     sso_token_ttl_minutes: int = 2   # short-lived cross-service token TTL
     lab3d_url: str = ""              # e.g. https://3dlab.example.com

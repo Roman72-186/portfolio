@@ -45,10 +45,10 @@ export const MODELS = [
     ],
 
 video: [
-  "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/arch/v1.mp4",
-  "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/arch/v2.mp4",
-  "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/arch/v3.mp4",
-  "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/arch/v4.mp4",
+  `${BASE}textures/0/arch/v1.mp4`,
+  `${BASE}textures/0/arch/v2.mp4`,
+  `${BASE}textures/0/arch/v3.mp4`,
+  `${BASE}textures/0/arch/v4.mp4`,
 ]
   },
   
@@ -70,7 +70,7 @@ video: [
 //    ],
 
 video: [
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/doric/v1.mp4`
+  `${BASE}textures/doric/v1.mp4`
 ],
     textures: {
       base: `${BASE}textures/doric/BaseColor.jpg`,
@@ -95,7 +95,7 @@ video: [
       `${BASE}textures/ionic/s4.jpg`
     ],
 video: [
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/ionic/v1.mp4`
+  `${BASE}textures/ionic/v1.mp4`
 ],
     textures: {
       base: `${BASE}textures/ionic/BaseColor.jpg`,
@@ -118,8 +118,8 @@ video: [
       `${BASE}textures/balyasina1/s2.jpg`
     ],
 video: [
-  "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/balyasina1/v1.mp4",
-  "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/balyasina1/v2.mp4"
+  `${BASE}textures/balyasina1/v1.mp4`,
+  `${BASE}textures/balyasina1/v2.mp4`
 ],
     textures: {
       base: `${BASE}textures/balyasina1/BaseColor.jpg`,
@@ -143,8 +143,8 @@ video: [
        `${BASE}textures/balyasina2/s3.jpg`
     ],
 video: [
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/balyasina2/v1.mp4`,
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/balyasina2/v2.mp4`
+  `${BASE}textures/balyasina2/v1.mp4`,
+  `${BASE}textures/balyasina2/v2.mp4`
 ],
     textures: {
       base: `${BASE}textures/balyasina2/BaseColor.jpg`,
@@ -167,8 +167,8 @@ video: [
       `${BASE}textures/kapitel2/s2.jpg`
     ],
 video: [
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/kapitel2/v1.mp4`,
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/kapitel2/v2.mp4`
+  `${BASE}textures/kapitel2/v1.mp4`,
+  `${BASE}textures/kapitel2/v2.mp4`
 ],
     textures: {
       base: `${BASE}textures/kapitel2/BaseColor.jpg`,
@@ -191,8 +191,8 @@ video: [
       `${BASE}textures/kapitel1/s2.jpg`
     ],
 video: [
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/kapitel1/v1.mp4`,
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/kapitel1/v2.mp4`
+  `${BASE}textures/kapitel1/v1.mp4`,
+  `${BASE}textures/kapitel1/v2.mp4`
 ],
     textures: {
       base: `${BASE}textures/kapitel1/BaseColor.jpg`,
@@ -215,8 +215,8 @@ video: [
       `${BASE}textures/vase1/s2.jpg`
     ],
 video: [
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/vase1/v1.mp4`,
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/vase1/v2.mp4`
+  `${BASE}textures/vase1/v1.mp4`,
+  `${BASE}textures/vase1/v2.mp4`
 ],
     textures: {
       base: `${BASE}textures/vase1/BaseColor.jpg`,
@@ -240,8 +240,8 @@ video: [
       `${BASE}textures/vase2/s3.jpg`
     ],
 video: [
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/vase2/v1.mp4`,
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/vase2/v2.mp4`
+  `${BASE}textures/vase2/v1.mp4`,
+  `${BASE}textures/vase2/v2.mp4`
 ],
     textures: {
       base: `${BASE}textures/vase2/BaseColor.jpg`,
@@ -264,7 +264,7 @@ video: [
      `${BASE}textures/chair1/s2.jpg`
     ],
 video: [
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/chair1/v1.mp4`
+  `${BASE}textures/chair1/v1.mp4`
 ],
     textures: {
       base: `${BASE}textures/chair1/BaseColor.jpg`,
@@ -287,7 +287,7 @@ video: [
      `${BASE}textures/chair2/s2.jpg`
     ],
 video: [
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/chair1/v1.mp4`
+  `${BASE}textures/chair1/v1.mp4`
 ],
     textures: {
       base: `${BASE}textures/chair2/BaseColor.jpg`,
@@ -306,9 +306,9 @@ video: [
   url: `${BASE}models/molbert.gltf`,
   preview: `${BASE}textures/molbert/preview.png`,
 video: [
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/molbert/v1.mp4`,
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/molbert/v2.mp4`,
-  `https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/molbert/v3.mp4`
+  `${BASE}textures/molbert/v1.mp4`,
+  `${BASE}textures/molbert/v2.mp4`,
+  `${BASE}textures/molbert/v3.mp4`
 ],
 
 materials: {

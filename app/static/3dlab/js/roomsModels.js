@@ -22,10 +22,10 @@ const RAW_ROOMS = [
     ],
 
     video: [
-      "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/arch/v1.mp4",
-      "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/arch/v2.mp4",
-      "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/arch/v3.mp4",
-      "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/0/arch/v4.mp4"
+      `${BASE}textures/0/arch/v1.mp4`,
+      `${BASE}textures/0/arch/v2.mp4`,
+      `${BASE}textures/0/arch/v3.mp4`,
+      `${BASE}textures/0/arch/v4.mp4`
     ]
   },
 
@@ -55,7 +55,7 @@ const RAW_ROOMS = [
     ],
 
     video: [
-      "https://s3.twcstorage.ru/540d791f-86c02015-75b1-462f-b960-b855e300451a/textures/doric/v1.mp4"
+      `${BASE}textures/doric/v1.mp4`
     ]
   }
 ];

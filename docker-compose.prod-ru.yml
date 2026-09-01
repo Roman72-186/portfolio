@@ -41,6 +41,8 @@ services:
     env_file: .env
     volumes:
       - ./app:/app/app
+      # Контент 3D-лаборатории: 4.8 ГБ вне git, только на чтение.
+      - ./lab-assets:/app/lab-assets:ro
     labels:
       - traefik.enable=true
       - traefik.docker.network=web
