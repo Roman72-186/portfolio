@@ -340,8 +340,29 @@ body.has-video-pseudo-fullscreen {
             // остаются прежними до следующего пересчёта.
             var containerRect = playerContainer.getBoundingClientRect();
             if (containerRect.width < 20 || containerRect.height < 20) return;
-            var containerWidth = containerRect.width;
-            var containerHeight = containerRect.height;
+            // Ролик — 16:9, плеер показывает его через object-fit: contain. В
+            // псевдо-полноэкранном режиме на высоком узком телефоне рамка
+            // (100vw x 100dvh) намного выше самого ролика, и сверху/снизу
+            // остаются чёрные поля внутри iframe Bunny. Границы дрейфа
+            // считаем по видимому прямоугольнику ролика внутри рамки (то же
+            // прижатие, что у contain), а не по всей рамке — иначе водяной
+            // знак уходит в чёрные поля (владелец 02.09.2026, «летает выше/
+            // ниже видео»). В обычном режиме рамка и так 16:9 — здесь no-op.
+            var videoAspect = 16 / 9;
+            var frameAspect = containerRect.width / containerRect.height;
+            var visibleWidth = containerRect.width;
+            var visibleHeight = containerRect.height;
+            var visibleOffsetX = 0;
+            var visibleOffsetY = 0;
+            if (frameAspect > videoAspect) {
+                visibleWidth = containerRect.height * videoAspect;
+                visibleOffsetX = (containerRect.width - visibleWidth) / 2;
+            } else if (frameAspect < videoAspect) {
+                visibleHeight = containerRect.width / videoAspect;
+                visibleOffsetY = (containerRect.height - visibleHeight) / 2;
+            }
+            var containerWidth = visibleWidth;
+            var containerHeight = visibleHeight;
             var watermarkWidth = watermarkCopy.offsetWidth;
             var watermarkHeight = watermarkCopy.offsetHeight;
             var sidePadding = Math.max(12, Math.min(24, containerWidth * 0.025));
@@ -349,10 +370,10 @@ body.has-video-pseudo-fullscreen {
             // Нижний отступ крупнее прочих: там панель управления Bunny и своя
             // кнопка фуллскрина — надпись не должна на них наезжать.
             var bottomPadding = Math.max(58, Math.min(72, containerHeight * 0.1));
-            var minX = sidePadding;
-            var maxX = Math.max(minX, containerWidth - watermarkWidth - sidePadding);
-            var minY = topPadding;
-            var maxY = Math.max(minY, containerHeight - watermarkHeight - bottomPadding);
+            var minX = visibleOffsetX + sidePadding;
+            var maxX = Math.max(minX, visibleOffsetX + containerWidth - watermarkWidth - sidePadding);
+            var minY = visibleOffsetY + topPadding;
+            var maxY = Math.max(minY, visibleOffsetY + containerHeight - watermarkHeight - bottomPadding);
 
             watermarkBounds = { minX: minX, maxX: maxX, minY: minY, maxY: maxY };
             // Пересчёт обязан сразу вернуть надпись внутрь новых границ. При
