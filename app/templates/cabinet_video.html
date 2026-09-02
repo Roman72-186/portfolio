@@ -15,6 +15,9 @@
     width: 100%;
     aspect-ratio: 16 / 9;
     background: #0f121c;
+    /* Доп. слой обрезки (владелец 02.09.2026: на мобильном водяной знак
+       «улетает» выше/ниже кадра) — тот же фикс, что в tracker.css. */
+    overflow: hidden;
 }
 .video-frame:fullscreen,
 .video-frame:-webkit-full-screen {
@@ -331,8 +334,14 @@ body.has-video-pseudo-fullscreen {
 
         function measureWatermarkBounds() {
             if (!watermarkCopy) return;
-            var containerWidth = playerContainer.clientWidth;
-            var containerHeight = playerContainer.clientHeight;
+            // getBoundingClientRect(), не clientWidth/clientHeight — владелец
+            // 02.09.2026 поймал на мобильном надпись вне рамки видео; нулевой/
+            // крошечный размер (кадр ещё не в потоке) не запоминаем, границы
+            // остаются прежними до следующего пересчёта.
+            var containerRect = playerContainer.getBoundingClientRect();
+            if (containerRect.width < 20 || containerRect.height < 20) return;
+            var containerWidth = containerRect.width;
+            var containerHeight = containerRect.height;
             var watermarkWidth = watermarkCopy.offsetWidth;
             var watermarkHeight = watermarkCopy.offsetHeight;
             var sidePadding = Math.max(12, Math.min(24, containerWidth * 0.025));

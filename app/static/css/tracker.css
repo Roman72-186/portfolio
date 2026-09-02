@@ -881,6 +881,12 @@
 }
 .lrn-inline-video .video-frame {
     position: relative; width: 100%; aspect-ratio: 16 / 9; background: #0f121c;
+    /* Доп. слой обрезки поверх `.video-shell`/`.video-watermark` (владелец
+       02.09.2026: на мобильном водяной знак «улетает» выше/ниже видео) —
+       на десктопе позиционирование проверено и корректно, но лишний
+       overflow:hidden здесь ничего не портит и закрывает случай, если
+       клипует именно этот уровень, а не соседние. */
+    overflow: hidden;
 }
 .lrn-inline-video .video-frame:fullscreen,
 .lrn-inline-video .video-frame:-webkit-full-screen {

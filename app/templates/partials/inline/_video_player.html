@@ -134,8 +134,19 @@
 
             function measureWatermarkBounds() {
                 if (!watermarkCopy) return;
-                var containerWidth = playerContainer.clientWidth;
-                var containerHeight = playerContainer.clientHeight;
+                // `getBoundingClientRect()`, а не `clientWidth`/`clientHeight` —
+                // владелец 02.09.2026 поймал на мобильном надпись, гуляющую
+                // выше/ниже видео вместо рамки; `clientWidth`/`clientHeight`
+                // округляют до целого пикселя и не учитывают то, что элемент
+                // мог измениться в тот же кадр — `getBoundingClientRect()`
+                // даёт актуальный размер с учётом фактического рендера.
+                // Нулевой/крошечный размер (рамка ещё не размещена в потоке —
+                // до первого layout, до `is-ready`) не запоминаем: границы
+                // остаются прежними, следующий цикл/ResizeObserver пересчитает.
+                var containerRect = playerContainer.getBoundingClientRect();
+                if (containerRect.width < 20 || containerRect.height < 20) return;
+                var containerWidth = containerRect.width;
+                var containerHeight = containerRect.height;
                 var watermarkWidth = watermarkCopy.offsetWidth;
                 var watermarkHeight = watermarkCopy.offsetHeight;
                 var sidePadding = Math.max(12, Math.min(24, containerWidth * 0.025));
