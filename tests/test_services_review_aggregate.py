@@ -291,7 +291,23 @@ def test_exam_cycle_items_open_is_unreviewed(db, user_factory):
     item = items[0]
     assert item.domain == DOMAIN_EXAM_CYCLE
     assert item.is_reviewed is False
-    assert item.review_url == f"/cabinet/students/{student.id}/cycles"
+    assert item.review_url == f"/cabinet/curator/feedback/{cycle.id}"
+
+
+def test_exam_cycle_items_review_url_uses_admin_prefix_for_rank_4(db, user_factory):
+    student = user_factory(vk_id=830_105, name="Ученик")
+    cycle = _cycle(db, student.id, closed=False)
+
+    item = _exam_cycle_items(db, role_rank=4)[0]
+    assert item.review_url == f"/cabinet/admin/feedback/{cycle.id}"
+
+
+def test_exam_cycle_items_review_url_uses_superadmin_prefix_for_rank_5(db, user_factory):
+    student = user_factory(vk_id=830_106, name="Ученик")
+    cycle = _cycle(db, student.id, closed=False)
+
+    item = _exam_cycle_items(db, role_rank=5)[0]
+    assert item.review_url == f"/cabinet/superadmin/feedback/{cycle.id}"
 
 
 def test_exam_cycle_items_closed_is_reviewed(db, user_factory):

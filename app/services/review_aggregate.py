@@ -71,6 +71,7 @@ def _task_block_items(
     tariff: str | None = None,
     week_start: datetime | None = None,
     week_end: datetime | None = None,
+    role_rank: int = 0,
 ) -> list[ReviewItem]:
     """Ответы на блоки заданий — обёртка над `task_blocks.py::review_queue`.
 
@@ -119,6 +120,7 @@ def _work_items(
     tariff: str | None = None,
     week_start: datetime | None = None,
     week_end: datetime | None = None,
+    role_rank: int = 0,
 ) -> list[ReviewItem]:
     """Пробник и отработка — не портфолио: `before`/`after` в интерфейсе никогда
     не получают `score` (нет такой формы, только галерея месяцев), включать их
@@ -175,6 +177,7 @@ def _homework_items(
     tariff: str | None = None,
     week_start: datetime | None = None,
     week_end: datetime | None = None,
+    role_rank: int = 0,
 ) -> list[ReviewItem]:
     """Сдачи домашки. Непроверено — `status != accepted`. `submitted_at` — дата
     сдачи финального фото, не дедлайн постановки (`TrackerTask.due_at`)."""
@@ -228,12 +231,26 @@ def _exam_cycle_items(
     tariff: str | None = None,
     week_start: datetime | None = None,
     week_end: datetime | None = None,
+    role_rank: int = 0,
 ) -> list[ReviewItem]:
     """Циклы Пробника. Непроверено — открыт (`closed_at IS NULL`) либо «на
     правке» (`revision_requested_at` без `revision_done_at`); «просмотрено» без
-    закрытия (миграция `744b7e5e4961`) тоже снимает строку с «непроверенных»."""
+    закрытия (миграция `744b7e5e4961`) тоже снимает строку с «непроверенных».
+
+    `review_url` ведёт прямо в диалог цикла (`cabinet_feedback_detail.html`),
+    а не на JSON-список `/cabinet/students/{id}/cycles` — тот эндпоинт отдаёт
+    сырые данные, а не HTML (починка 02.09.2026). Префикс роута по рангу —
+    тот же трёхветочный выбор, что уже дублируется в `app/api/feedback.py`
+    (`staff_cycles_list`, `student_cycles_json`)."""
     from app.models.exam_cycle import ExamCycle
     from app.models.user import User
+
+    if role_rank >= 5:
+        detail_prefix = "/cabinet/superadmin/feedback/"
+    elif role_rank >= 4:
+        detail_prefix = "/cabinet/admin/feedback/"
+    else:
+        detail_prefix = "/cabinet/curator/feedback/"
 
     q = db.query(ExamCycle, User).join(User, User.id == ExamCycle.user_id)
     if curator_id is not None:
@@ -269,7 +286,7 @@ def _exam_cycle_items(
             subject=cycle.subject,
             submitted_at=submitted_at,
             is_reviewed=is_reviewed,
-            review_url=f"/cabinet/students/{student.id}/cycles",
+            review_url=f"{detail_prefix}{cycle.id}",
         ))
     return items
 
@@ -359,6 +376,7 @@ def student_review_items(
     week_end: datetime | None = None,
     subject: str | None = None,
     tariff: str | None = None,
+    role_rank: int = 0,
 ) -> list[ReviewItem]:
     """Всё, что сдал один ученик за период, по всем доменам сразу — карточка
     экрана «проверить всё по ученику». Непроверенные выше, внутри группы —
@@ -368,6 +386,7 @@ def student_review_items(
         items.extend(adapter(
             db, curator_id=curator_id, student_id=student_id,
             subject=subject, tariff=tariff, week_start=week_start, week_end=week_end,
+            role_rank=role_rank,
         ))
     _epoch = datetime.min.replace(tzinfo=timezone.utc)
     items.sort(key=lambda i: i.submitted_at or _epoch, reverse=True)

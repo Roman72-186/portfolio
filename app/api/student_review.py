@@ -112,6 +112,7 @@ def student_review_detail(
         week_end=week_end,
         subject=subject or None,
         tariff=tariff or None,
+        role_rank=user["role_rank"],
     )
     return templates.TemplateResponse("staff_student_review_detail.html", {
         "request": request,
