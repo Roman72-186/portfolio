@@ -7,7 +7,6 @@ def test_curator_nav_items_keep_current_contract():
     assert [(item.key, item.href, item.label) for item in items] == [
         ("dashboard", "/cabinet/curator", "Кабинет"),
         ("students", "/cabinet/students", "Ученики"),
-        ("cycles", "/cabinet/staff/cycles", "Цикл Пробника"),
         ("students_review", "/cabinet/staff/students-review", "Проверка"),
         ("reports", "/cabinet/curator/reports", "Отчёты"),
         ("statistics", "/cabinet/students?tab=statistics", "Статистика"),
@@ -62,7 +61,6 @@ def test_staff_nav_items_keep_admin_contract():
     ] == [
         ("dashboard", "/cabinet", "Кабинет", "Кабинет", "Кабинет", "Кабинет"),
         ("students", "/cabinet/students", "Ученики", "Ученики", "Ученики", "Ученики"),
-        ("cycles", "/cabinet/staff/cycles", "Цикл Пробника", "Цикл", "Цикл Пробника", "Цикл Пробника"),
         (
             "students_review",
             "/cabinet/staff/students-review",
@@ -108,7 +106,6 @@ def test_staff_nav_items_keep_rank_specific_visibility_contract():
         "dashboard",
         "students",
         "mock_check",
-        "cycles",
         "students_review",
         "3dlab",
     ]

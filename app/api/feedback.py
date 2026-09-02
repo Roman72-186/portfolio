@@ -10,7 +10,6 @@
                                                     хотя бы одним сообщением staff)
 
 Staff (куратор / админ / суперадмин):
-  GET  /cabinet/staff/cycles                    — все циклы для просмотра
   GET  /cabinet/staff/cycle/probnik/{user_id}   — календарь Пробника ученика (legacy)
   GET  /cabinet/staff/cycle/otrabotka/{user_id} — календарь Отработки ученика (legacy)
   GET  /cabinet/curator/feedback/{cycle_id}     — диалог цикла (куратор)
@@ -31,7 +30,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from sqlalchemy import and_ as sa_and, or_ as sa_or
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
@@ -58,10 +56,7 @@ from app.services.exam_cycle import (
     request_curator_revision,
 )
 from app.services.student_access import get_student_for_staff_access
-from app.services.utils import has_case_growth
 from app.tmpl import templates
-
-from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +206,7 @@ def student_feedback_list(
     user: Annotated[dict, Depends(get_current_user)],
 ):
     if user["role_rank"] != 1:
-        return RedirectResponse("/cabinet/staff/cycles", status_code=302)
+        return RedirectResponse("/cabinet/staff/students-review", status_code=302)
     return RedirectResponse("/cabinet/cycle?tab=feedback", status_code=302)
 
 
@@ -488,140 +483,6 @@ async def post_dialog_message(
     return RedirectResponse(f"/cabinet/curator/feedback/{cycle.id}#m-{msg.id}", status_code=302)
 
 
-# ── Staff: список циклов (куратор/админ/SA) ──────────────────────────────────
-
-def _staff_cycles_data(db: DBSession, user: dict, archived: bool = False) -> list[dict]:
-    """Плоский список циклов Пробника для staff.
-
-    archived=False — открытые циклы (closed_at IS NULL), сортировка по дате старта.
-    archived=True — архив закрытых циклов (closed_at IS NOT NULL), сортировка по
-    дате закрытия (свежезакрытые первыми) — limit 500 берёт самые недавние.
-
-    Каждый элемент несёт идентификацию ученика (имя + @username) и все теги
-    как в списке учеников (тариф, период, кол-во занятий, очно/онлайн, КЕЙС,
-    когорта) — строка самодостаточна, группировка по ученику не нужна.
-    """
-    q = (
-        db.query(ExamCycle, User)
-        .join(User, ExamCycle.user_id == User.id)
-        .filter(User.deleted_at.is_(None), User.archived_at.is_(None))
-    )
-    if archived:
-        q = q.filter(ExamCycle.closed_at.isnot(None))
-        q = q.order_by(ExamCycle.closed_at.desc(), ExamCycle.id.desc())
-    else:
-        # Открытые + закрытые, возвращённые куратору на правку ОС: такой цикл
-        # должен висеть в рабочем списке куратора, пока правка не завершена
-        # (revision_done_at пуст). Curator-фильтр ниже отдаёт ему только его
-        # учеников (автор ОС = назначенный куратор).
-        q = q.filter(
-            sa_or(
-                ExamCycle.closed_at.is_(None),
-                sa_and(
-                    ExamCycle.revision_requested_at.isnot(None),
-                    ExamCycle.revision_done_at.is_(None),
-                ),
-            )
-        )
-        q = q.order_by(ExamCycle.started_at.desc(), ExamCycle.id.desc())
-    if user["role_rank"] == 2:
-        q = q.filter(User.curator_id == user["user_id"])
-    rows = q.limit(500).all()
-    if not rows:
-        return []
-    cycle_ids = [c.id for c, _ in rows]
-    finals_by_cycle: dict[int, list[Work]] = {}
-    for w in (
-        db.query(Work)
-        .filter(Work.cycle_id.in_(cycle_ids), Work.is_final == True)  # noqa: E712
-        .all()
-    ):
-        finals_by_cycle.setdefault(w.cycle_id, []).append(w)
-    fb_work_ids = {
-        row[0] for row in db.query(Feedback.work_id).join(Work, Feedback.work_id == Work.id)
-        .filter(Work.cycle_id.in_(cycle_ids)).all()
-    }
-    # Тег КЕЙС: рост score между пробниками одного предмета (как в списке учеников).
-    student_ids = {s.id for _, s in rows}
-    case_works = (
-        db.query(Work.user_id, Work.subject, Work.score, Work.month, Work.year,
-                 Work.scored_at, Work.created_at, Work.work_type)
-        .filter(
-            Work.user_id.in_(student_ids),
-            Work.work_type == WORK_TYPE_MOCK_EXAM,
-            Work.status == "success",
-            Work.score.isnot(None),
-            Work.subject.isnot(None),
-        )
-        .all()
-    )
-    works_by_uid: dict[int, list] = defaultdict(list)
-    for w in case_works:
-        works_by_uid[w.user_id].append(w)
-    has_case_by_user = {uid: has_case_growth(ws) for uid, ws in works_by_uid.items()}
-    items = []
-    for cycle, student in rows:
-        finals = finals_by_cycle.get(cycle.id, [])
-        graded = [w for w in finals if w.score is not None]
-        final_score = (
-            max(graded, key=lambda w: (w.attempt_number or 0, w.id)).score
-            if graded else None
-        )
-        items.append({
-            "id": cycle.id,
-            "subject": cycle.subject,
-            "started_at": cycle.started_at.isoformat(),
-            "closed_at": cycle.closed_at.isoformat() if cycle.closed_at else None,
-            "revision_requested": cycle.is_on_revision,
-            "score": final_score,
-            "attempts": len(finals),
-            "feedbacks_count": sum(1 for w in finals if w.id in fb_work_ids),
-            "student_id": student.id,
-            "student_name": student.name,
-            "tg_username": (student.tg_username or "").lstrip("@") if user["role_rank"] >= 4 else "",
-            "tariff": student.tariff,
-            "cohort_tag": student.cohort_tag,
-            "course_periods": student.course_periods,
-            "lessons_count": student.lessons_count,
-            "study_mode": student.study_mode,
-            "has_case": has_case_by_user.get(student.id, False),
-        })
-    return items
-
-
-@router.get("/cabinet/staff/cycles", response_class=HTMLResponse)
-def staff_cycles_list(
-    request: Request,
-    user: Annotated[dict, Depends(require_curator)],
-    db: Annotated[DBSession, Depends(get_db)],
-    status: str = "open",
-):
-    # Архив (закрытые циклы) — только админ/SA (role_rank >= 4). Куратору отдаём
-    # открытый список даже при ?status=archive (тихо, без 403).
-    can_archive = user["role_rank"] >= 4
-    archived = status == "archive" and can_archive
-    cycles = _staff_cycles_data(db, user, archived=archived)
-    if not archived:
-        # Открытые: строки одного ученика рядом (стабильная сортировка сохраняет
-        # порядок «свежие → старые» из запроса). Архив остаётся в порядке закрытия.
-        cycles.sort(key=lambda c: (c["student_name"] or "",))
-    if user["role_rank"] >= 5:
-        detail_prefix = "/cabinet/superadmin/feedback/"
-    elif user["role_rank"] >= 4:
-        detail_prefix = "/cabinet/admin/feedback/"
-    else:
-        detail_prefix = "/cabinet/curator/feedback/"
-    return templates.TemplateResponse("cabinet_staff_cycles.html", {
-        "request": request, "user": user,
-        "cycles": cycles,
-        "total_cycles": len(cycles),
-        "detail_prefix": detail_prefix,
-        "status": "archive" if archived else "open",
-        "can_archive": can_archive,
-        "nav_active": "cycles",  # подсветка пункта в _curator_nav (куратор)
-    })
-
-
 # ── JSON: циклы конкретного ученика (для вкладки в карточке staff) ───────────
 
 @router.get("/cabinet/students/{student_id}/cycles")
@@ -701,14 +562,14 @@ def _staff_dialog_detail(db: DBSession, request: Request, user: dict, cycle_id: 
 
     payload = _dialog_payload(db, cycle)
     if user["role_rank"] >= 5:
-        back_url = "/cabinet/staff/cycles"
         viewer_role = "superadmin"
     elif user["role_rank"] >= 4:
-        back_url = "/cabinet/staff/cycles"
         viewer_role = "admin"
     else:
-        back_url = "/cabinet/staff/cycles"
         viewer_role = "curator"
+    # Флатный список циклов (/cabinet/staff/cycles) снесён 02.09.2026 —
+    # вход в этот диалог теперь только через «Проверку по ученику», туда и
+    # ведёт «назад» (review_aggregate.py::_exam_cycle_items).
     return templates.TemplateResponse("cabinet_feedback_detail.html", {
         "request": request, "user": user,
         "cycle": _serialize_cycle(cycle, [a for a in payload["attempts"]]),
@@ -720,8 +581,8 @@ def _staff_dialog_detail(db: DBSession, request: Request, user: dict, cycle_id: 
         "has_staff_message": payload.get("has_staff_message", False),
         "viewer_role": viewer_role,
         "student": {"id": student.id, "name": student.name},
-        "back_url": back_url,
-        "back_label": "К списку циклов",
+        "back_url": f"/cabinet/staff/students-review/{student.id}",
+        "back_label": "К проверке ученика",
     })
 
 

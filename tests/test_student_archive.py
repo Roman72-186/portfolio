@@ -243,20 +243,22 @@ def test_archive_mock_exams_tab_links_to_dialog(superadmin_client, db, student):
 
 
 def test_archived_cycles_leave_staff_working_list(db, student, user_factory):
-    """Тот же цикл не должен висеть в рабочем списке нового потока."""
-    from app.api.feedback import _staff_cycles_data
+    """Тот же цикл не должен висеть в рабочем списке нового потока — теперь
+    это «Проверка по ученику» (снос флатного /cabinet/staff/cycles 02.09.2026),
+    рабочий список которого строится из тех же активных учеников."""
+    from app.services.review_aggregate import aggregate_student_review_counts
 
     actor = user_factory(vk_id=910011, name="SA", role_name="суперадмин")
-    cycle, _ = _mk_cycle_with_final(db, student.id)
+    _mk_cycle_with_final(db, student.id)
     staff = {"user_id": actor.id, "role_rank": 5}
 
-    ids = [row["id"] for row in _staff_cycles_data(db, staff)]
-    assert cycle.id in ids
+    ids = [row["student"].id for row in aggregate_student_review_counts(db, staff)]
+    assert student.id in ids
 
     archive_user(db, target_user_id=student.id, performed_by_id=actor.id)
 
-    ids = [row["id"] for row in _staff_cycles_data(db, staff)]
-    assert cycle.id not in ids
+    ids = [row["student"].id for row in aggregate_student_review_counts(db, staff)]
+    assert student.id not in ids
 
 
 def test_archive_button_on_superadmin_dashboard(superadmin_client):

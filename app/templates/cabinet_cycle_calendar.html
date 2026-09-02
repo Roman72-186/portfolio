@@ -67,7 +67,7 @@
 {% if staff_view %}
     {# Куратор (rank 2) — через _curator_nav (self-guarded); главный преподаватель/SA (rank >= 4) —
        staff_nav уже подключён из base.html. Модератор (rank 3) не покрыт ни тем,
-       ни другим — отдаём ему staff_nav здесь (см. cabinet_staff_cycles.html). #}
+       ни другим — отдаём ему staff_nav здесь. #}
     {% include "_curator_nav.html" %}
     {% if user.role_rank == 3 %}
     {% include "partials/staff_nav.html" %}

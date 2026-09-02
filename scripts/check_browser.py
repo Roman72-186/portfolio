@@ -55,7 +55,7 @@ PAGES = [
     ("admin-panel", "/cabinet/admin-panel"),
     ("admin-students", "/cabinet/admin/students"),
     ("admin-mock-check", "/cabinet/admin/mock-check"),
-    ("staff-cycles", "/cabinet/staff/cycles"),
+    ("staff-students-review", "/cabinet/staff/students-review"),
     ("feedback-list", "/cabinet/feedback/"),
     ("feedback-photo-726", "/cabinet/superadmin/feedback/726"),
     ("feedback-video-720", "/cabinet/superadmin/feedback/720"),
@@ -151,7 +151,7 @@ with sync_playwright() as p:
     mpage = mctx.new_page()
     mobile = []
     for name, url in [("home", "/"), ("cabinet", "/cabinet"), ("portfolio", "/cabinet/portfolio"),
-                      ("staff-cycles", "/cabinet/staff/cycles"),
+                      ("staff-students-review", "/cabinet/staff/students-review"),
                       ("feedback-photo-726", "/cabinet/superadmin/feedback/726")]:
         try:
             r = mpage.goto(BASE + url, wait_until="load", timeout=45000)

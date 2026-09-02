@@ -33,7 +33,7 @@ for p in \
   /cabinet/admin-panel \
   /cabinet/admin/students \
   /cabinet/admin/mock-check \
-  /cabinet/staff/cycles \
+  /cabinet/staff/students-review \
   /cabinet/feedback/ \
   /gallery \
   /3dlab \

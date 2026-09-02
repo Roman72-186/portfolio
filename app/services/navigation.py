@@ -46,7 +46,6 @@ class StaffNavItem:
 CURATOR_NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem(key="dashboard", href="/cabinet/curator", label="Кабинет", icon="🏠"),
     NavItem(key="students", href="/cabinet/students", label="Ученики", icon="👥"),
-    NavItem(key="cycles", href="/cabinet/staff/cycles", label="Цикл Пробника", icon="🔁"),
     # Единый экран проверки по ученику (решение владельца 01.09.2026) — для
     # куратора этот пункт, а не STAFF_NAV_ITEMS: _curator_nav.html читает
     # отдельный список, не пересекающийся со staff-сайдбаром admin+.
@@ -145,19 +144,13 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         max_rank=3,
     ),
     StaffNavItem(
-        key="cycles",
-        href="/cabinet/staff/cycles",
-        sidebar_label="Цикл Пробника",
-        pill_label="Цикл",
-        aria_label="Цикл Пробника",
-        tooltip="Цикл Пробника",
-        icon="cycle",
-    ),
-    StaffNavItem(
         # Единый экран проверки по ученику (решение владельца 01.09.2026,
         # plans/2026-09-01-apparchi-student-centric-review.md, этап 7).
         # min_rank=2: экран полный уже у куратора (право на балл Work/ExamCycle
         # расширено отдельно) — своих учеников он видит, чужих нет.
+        # Пункт «Цикл Пробника» снесён 02.09.2026: диалог цикла (фото билета,
+        # оценка, закрытие) уже открывается отсюда через строку экрана —
+        # отдельный флатный список стал дублем (см. review_aggregate.py).
         key="students_review",
         href="/cabinet/staff/students-review",
         sidebar_label="Проверка по ученику",
