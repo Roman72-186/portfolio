@@ -1127,10 +1127,11 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 
 .lrn-blk-link .btn-outline { align-self: flex-start; }
 
-.lrn-blk-player {
-    width: 100%; aspect-ratio: 16 / 9; border: 0;
-    border-radius: var(--r-md); background: var(--surface-2);
-}
+/* Видео-блок больше не носит свой .lrn-blk-player — рендерится той же
+   разметкой .lrn-inline-video/.video-shell/.video-frame, что и вкладка
+   «Видео» (владелец 02.09.2026: кнопка fullscreen и водяной знак должны
+   были быть с самого начала, но потерялись при переезде видео в блоки
+   31.08.2026 — этот класс/стиль был их временной заменой без обеих защит). */
 
 .lrn-blk-option {
     display: flex; align-items: center; gap: var(--s-2);

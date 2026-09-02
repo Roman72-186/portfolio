@@ -20,6 +20,11 @@
     <div class="lrn-blk-list" data-role="list" hidden></div>
 </div>
 
+{# Видео-блок зовёт `window.lrnVideoPlayer.mount` — тот же плеер, что у
+   вкладки «Видео» (`partials/inline/video.html`). Включаем сюда напрямую,
+   а не полагаемся на то, что video.html уже на странице: у дня может не
+   быть ни одной задачи kind=video, только блоки. #}
+{% include "partials/inline/_video_player.html" %}
 <script>
 (function () {
     window.lrnPanelInit = window.lrnPanelInit || {};
@@ -84,33 +89,81 @@
             return wrap;
         }
 
+        // Разметка — та же, что у `partials/inline/video.html` (совпадающие
+        // `data-role`), только собрана в рантайме: у задачи может быть
+        // несколько видео-блоков сразу, у каждого свой endpoint, а не один
+        // общий на всю карточку. Кнопку fullscreen, водяной знак зрителя,
+        // автосохранение позиции и всё остальное поведение отдаёт
+        // `window.lrnVideoPlayer.mount` (`_video_player.html`) — та же
+        // функция, что у вкладки «Видео», второй копии не заводим (баг
+        // владельца 02.09.2026: видео-блок при переезде в блоки 31.08.2026
+        // написан заново, и обеих защит там не было вовсе).
         function renderVideo(block) {
             var wrap = withTitle(el('div', 'lrn-blk lrn-blk-video'), block);
-            var slot = el('p', 'video-progress-status', 'Загружаем видео…');
-            wrap.appendChild(slot);
             if (!block.video_embed_endpoint) {
-                slot.textContent = 'Ролик недоступен.';
+                wrap.appendChild(el('p', 'video-progress-status is-error', 'Ролик недоступен.'));
                 return wrap;
             }
-            fetch(block.video_embed_endpoint, {
-                credentials: 'same-origin',
-                headers: { 'Accept': 'application/json' }
-            }).then(function (resp) {
-                if (!resp.ok) throw new Error();
-                return resp.json();
-            }).then(function (data) {
-                if (!data.ok || !data.player_url) throw new Error();
-                var frame = el('iframe', 'lrn-blk-player');
-                frame.src = data.player_url;
-                frame.allow = 'accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen';
-                frame.allowFullscreen = true;
-                frame.loading = 'lazy';
-                frame.title = block.title || 'Видео к заданию';
-                wrap.replaceChild(frame, slot);
-            }).catch(function () {
-                slot.textContent = 'Не удалось загрузить видео. Попробуйте позже.';
-                slot.classList.add('is-error');
-            });
+
+            var root = el('div', 'lrn-inline-video');
+            var statusEl = el('p', 'video-progress-status', 'Загружаем видео…');
+            statusEl.setAttribute('aria-live', 'polite');
+            statusEl.setAttribute('data-role', 'status');
+
+            var shell = el('div', 'video-shell');
+            shell.hidden = true;
+            shell.setAttribute('data-role', 'shell');
+            shell.setAttribute('aria-label', block.title || 'Видеоурок');
+
+            var frameWrap = el('div', 'video-frame');
+            frameWrap.setAttribute('data-role', 'frame-wrap');
+
+            var loading = el('div', 'video-loading', 'Загружаем видео...');
+            loading.setAttribute('role', 'status');
+
+            var iframe = el('iframe');
+            iframe.setAttribute('data-role', 'iframe');
+            iframe.loading = 'eager';
+            iframe.allow = 'accelerometer; gyroscope; autoplay; encrypted-media';
+            iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+
+            var watermark = el('div', 'video-watermark');
+            watermark.setAttribute('aria-hidden', 'true');
+            var watermarkCopy = el('div', 'video-watermark-copy');
+            watermarkCopy.setAttribute('data-role', 'watermark');
+            watermark.appendChild(watermarkCopy);
+
+            var muteButton = el('button', 'video-mute-button', '🔇 Включить звук');
+            muteButton.type = 'button';
+            muteButton.hidden = true;
+            muteButton.setAttribute('data-role', 'mute-btn');
+            muteButton.setAttribute('aria-label', 'Включить звук');
+            muteButton.title = 'Включить звук';
+
+            var fullscreenButton = el('button', 'video-fullscreen-button', '⛶');
+            fullscreenButton.type = 'button';
+            fullscreenButton.setAttribute('data-role', 'fullscreen-btn');
+            fullscreenButton.setAttribute('aria-label', 'На весь экран');
+            fullscreenButton.title = 'На весь экран';
+
+            frameWrap.appendChild(loading);
+            frameWrap.appendChild(iframe);
+            frameWrap.appendChild(watermark);
+            frameWrap.appendChild(muteButton);
+            frameWrap.appendChild(fullscreenButton);
+            shell.appendChild(frameWrap);
+
+            var progressStatus = el('p', 'video-progress-status');
+            progressStatus.hidden = true;
+            progressStatus.setAttribute('aria-live', 'polite');
+            progressStatus.setAttribute('data-role', 'progress-status');
+
+            root.appendChild(statusEl);
+            root.appendChild(shell);
+            root.appendChild(progressStatus);
+            wrap.appendChild(root);
+
+            window.lrnVideoPlayer.mount(root, { endpoint: block.video_embed_endpoint, csrfToken: csrfToken });
             return wrap;
         }
 
