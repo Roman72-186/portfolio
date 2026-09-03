@@ -50,7 +50,10 @@
    Метим атрибутом дня недели, а не nth-child: строка подписей и ячейки
    соседних месяцев сбили бы счёт. */
 .prg-day[data-dow="6"], .prg-day[data-dow="7"] {
-    color: var(--surface); background: #2A3140; border-color: #2A3140;
+    /* Не var(--surface) — ячейка тёмная в обеих темах, а этот токен в
+       тёмной теме сам темнеет и текст станет невидимым (ревью 03.09.2026,
+       заводили тёмную тему). Нужен буквально белый, а не «цвет поверхности». */
+    color: #fff; background: #2A3140; border-color: #2A3140;
 }
 .prg-day[data-dow="6"]:hover, .prg-day[data-dow="7"]:hover { border-color: var(--blue-mid); }
 
@@ -64,7 +67,7 @@
     min-width: 20px; height: 20px; padding: 0 5px; border-radius: var(--r-pill);
     font: 700 11px/1 var(--font-body);
 }
-.prg-dot--mock { color: var(--surface); background: var(--blue); }
+.prg-dot--mock { color: #fff; background: var(--blue); }
 .prg-dot--video { color: var(--blue-on-soft); background: var(--blue-soft); }
 .prg-dot--homework { color: var(--warning); background: var(--warning-soft); }
 .prg-dot--other { color: var(--muted); background: var(--surface-2); }
@@ -215,7 +218,7 @@
 .prg-thumb { position: relative; display: inline-flex; }
 .prg-thumb button {
     position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; padding: 0;
-    color: var(--surface); background: var(--error); border: none; border-radius: 50%;
+    color: #fff; background: var(--error); border: none; border-radius: 50%;
     font: 700 13px/1 var(--font-body); cursor: pointer;
 }
 
@@ -330,16 +333,10 @@
 .prg-preview-img { max-width: 220px; border-radius: 10px; border: 1px solid var(--line); }
 .prg-preview-option { display: flex; align-items: center; gap: 6px; color: var(--text); }
 
-/* Предпросмотр и перенос содержимого — не новое действие «на будущее», а
-   рабочий переключатель, которым пользуются каждый раз при сборке блоков.
-   Серый `.btn-outline` рядом с яркими «+ Текст/Фото/…» терялся (владелец
-   03.09.2026). Красим тем же акцентом кабинета (`--blue`, он же фиолетовый,
-   см. DESIGN.md) — новый цвет не заводим, только меняем вес подачи между
-   двумя кнопками, чтобы они не сливались друг с другом. */
-[data-preview-blocks] {
-    color: var(--blue-on-soft); background: var(--blue-soft); border-color: var(--blue-tint);
-}
-[data-preview-blocks]:hover { color: #fff; background: var(--blue); border-color: var(--blue); }
-
-[data-take-blocks] { color: var(--blue); border-color: var(--blue); }
-[data-take-blocks]:hover { color: var(--blue-on-soft); background: var(--blue-soft); border-color: var(--blue); }
+/* Фиолетовая заливка «Глазами ученика»/«Взять содержимое» переехала в
+   program_ios.css (владелец 03.09.2026, живая проверка тёмной темы): этот
+   экран всегда рендерится внутри `.ios-prg-day` (см. cabinet_program_day.html),
+   а тамошний `.ios-prg-day .btn-outline` (два класса, вес 0,2,0) перебивал
+   правило уровня атрибута отсюда (вес 0,1,0) — кнопки тут никогда не
+   красились, ни в светлой теме, ни в тёмной, просто в светлой это было
+   незаметно на глаз. */

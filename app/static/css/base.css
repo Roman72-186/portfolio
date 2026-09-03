@@ -3,6 +3,8 @@
    ─────────────────────────────────────────────── */
 
 :root {
+    color-scheme: light;
+
     /* ── Surfaces ───────────────────────────── */
     --bg:           #F4F5F7;
     --surface:      #FFFFFF;
@@ -140,6 +142,95 @@
     --shadow-blue:  var(--sh-blue);
 }
 
+/* ── Тёмная тема — переключатель, решение владельца 03.09.2026 ──
+   Явный opt-in через `[data-theme="dark"]` на `<html>` (кнопка в базовом
+   шаблоне, состояние — localStorage), НЕ `prefers-color-scheme`:
+   системная тёмная тема захватила бы всех учеников/кураторов с тёмным
+   режимом на телефоне сразу при деплое, включая экраны, до которых эта
+   правка ещё не дошла. Системный авто-режим можно завести отдельным
+   шагом, когда переменных вниз по каскаду будет обкатано больше.
+
+   Переопределяются только структурные токены (поверхности, текст,
+   статусы, мягкий акцент, iOS re-skin палитра) — сами значения
+   `--blue`/`--blue-deep`/`--blue-mid` не трогаем, вибрирующий фиолет
+   одинаково хорошо читается на светлом и тёмном фоне.
+
+   Известная граница покрытия (не переделано этим шагом, см. отчёт в
+   сессии 03.09.2026): 34 шаблона хранят собственный инлайновый
+   <style>-блок (около 5800 строк, из них ~150 строк — захардкоженный
+   hex мимо токенов) — шаблоны course_calculator, 3dlab, cabinet_student
+   (и cabinet_students), cabinet_admin_mock_check,
+   cabinet_admin_retake_check, login и другие (имя файла без расширения:
+   dot-html в тексте этого комментария reuse_check.py по ошибке читает
+   как имя CSS-класса). Большая часть (950 из ~1100 цветовых
+   объявлений) уже использует токены и подхватит тёмную тему сама, но
+   точечные захардкоженные пары («бледная плашка + тёмные чернила»,
+   рассчитанные только на белый холст) там не проверялись и могут
+   читаться хуже на тёмном фоне — не сломаны, но не вычищены. */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --bg:           #0D0F14;
+    --surface:      #171A22;
+    --surface-2:    #1F2330;
+    --ink:          #F7F8FA;
+    --text:         #E5E7EB;
+    --muted:        #97A0B0;
+    --dim:          #7B8494;
+    --line:         #2A3140;
+
+    --success:      #34D399;
+    --error:        #F87171;
+    --warning:      #FBBF24;
+
+    /* Мягкий акцент (плашки, активный пункт меню) — на тёмном холсте
+       бледно-лавандовый фон читается пятном, тёмные чернила поверх него
+       становятся нечитаемыми. Пара откалибрована заново, сам `--blue` —
+       нет. */
+    --blue-soft:    rgba(168,85,247,0.16);
+    --blue-tint:    rgba(168,85,247,0.28);
+    --blue-ink:     #E9D5FF;
+    --blue-on-soft: #D8B4FE;
+
+    /* iOS re-skin — Apple HIG dynamic colors (dark), тот же источник
+       принципа, что и у светлых значений выше. */
+    --ios-label:      #FFFFFF;
+    --ios-label-2:    rgba(235,235,245,0.60);
+    --ios-label-3:    rgba(235,235,245,0.30);
+    --ios-sep:        rgba(84,84,88,0.65);
+    --ios-grouped-bg: #000000;
+    --ios-card-bg:    #1C1C1E;
+    --ios-blue:       #BF5AF2;
+    --ios-green:      #30D158;
+    --ios-red:        #FF453A;
+    --ios-orange:     #FF9F0A;
+    --ios-purple:     #BF5AF2;
+}
+/* Фотография бренда под светлый интерьер — на тёмном фоне вместо нового
+   тёмного ассета просто гасим картинку и остаёмся на плоском --bg. */
+:root[data-theme="dark"] body {
+    background-image: none;
+}
+
+/* Плашки `.tag-pill--*`/`.student-info-pill--*`: бледный полупрозрачный
+   фон + тёмные чернила, откалиброванные на белый холст (сами цвета —
+   ниже в файле, `.tag-pill--case`/`--publish`/`--curator`/`--orange`/
+   `--pink`/`--purple`, `.student-info-pill--pink`/`--purple`). На тёмном
+   фоне тёмные чернила почти сливаются с плашкой — меняем только текст,
+   фон остаётся тем же полупрозрачным пятном (он сам по себе адаптируется
+   под подложку). `--blue`-варианты (`.tag-pill--blue`,
+   `.student-info-pill--blue`) уже используют var(--blue) и ничего не
+   требуют. */
+:root[data-theme="dark"] .tag-pill--case                          { color: #FDE68A; }
+:root[data-theme="dark"] .tag-pill--publish                       { color: #C4B5FD; }
+:root[data-theme="dark"] .tag-pill--curator,
+:root[data-theme="dark"] .tag-pill--curator-tag,
+:root[data-theme="dark"] .tag-pill--orange                        { color: #FDBA74; }
+:root[data-theme="dark"] .tag-pill--pink,
+:root[data-theme="dark"] .student-info-pill--pink                 { color: #F9A8D4; }
+:root[data-theme="dark"] .tag-pill--purple,
+:root[data-theme="dark"] .student-info-pill--purple                { color: #D8B4FE; }
+
 /* ── Reset ── */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -195,6 +286,47 @@ a:hover { color: var(--blue-deep); }
 #nav-loader.active {
     transform: scaleX(0.85);
     transition: transform 0.4s cubic-bezier(0.1, 0.6, 0.3, 1);
+}
+
+/* ── Переключатель темы (владелец 03.09.2026) ──
+   Слева внизу — справа уже `.floating-widget-tray` (колокольчик, скоуплен
+   на авторизованных). Тот же приём кнопки, что у `.notif-bell`: круг 48px,
+   `var(--surface)`/`var(--line)`, чтобы не заводить отдельный визуальный
+   язык. На десктопе (bottom-nav скрыт) — фиксированный отступ 24px, ниже
+   1024px клирим bottom-nav так же, как это делает сам `.floating-widget-tray`. */
+.theme-toggle {
+    position: fixed;
+    left: 18px;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px) + 12px);
+    z-index: 250;
+    width: 48px; height: 48px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1.5px solid var(--line);
+    box-shadow: var(--sh-md);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--blue);
+    cursor: pointer;
+    transition: box-shadow var(--duration-base), transform var(--duration-fast);
+}
+.theme-toggle:hover { box-shadow: 0 8px 28px rgba(20,30,80,.14); transform: translateY(-2px); }
+.theme-toggle-icon--moon { display: none; }
+:root[data-theme="dark"] .theme-toggle-icon--sun { display: none; }
+:root[data-theme="dark"] .theme-toggle-icon--moon { display: block; }
+html.has-video-pseudo-fullscreen .theme-toggle,
+body.has-video-pseudo-fullscreen .theme-toggle { display: none; }
+@media (min-width: 1024px) {
+    .theme-toggle { left: 24px; bottom: 24px; }
+    /* Живая проверка 03.09.2026: на этой ширине разворачивается десктопный
+       `.staff-aside` (шаблон `partials/staff_nav`) — сплошная колонка 220px
+       от края до края по высоте, а не строка внизу. Тот же левый нижний
+       угол занят её кнопкой «Выйти», кружок переключателя лёг прямо на
+       текст. Левый край в принципе занят сайдбаром на любой высоте —
+       переносим в верхний правый угол, там на десктопе staff-экранов
+       пусто (колокольчик и .floating-widget-tray внизу справа). */
+    body:has(.staff-aside) .theme-toggle {
+        left: auto; right: 24px; top: 24px; bottom: auto;
+    }
 }
 
 /* ── Floating widgets ── */

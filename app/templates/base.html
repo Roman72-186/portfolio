@@ -7,6 +7,22 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Путь к сотке!">
     <meta name="theme-color" content="#ffffff">
+    <!-- Тёмная тема (владелец 03.09.2026): выставляем атрибут ДО подключения
+         base.css, иначе первая отрисовка проходит на светлых токенах и страница
+         на долю секунды мигает светлым перед переключением (FOUC). Полный
+         обработчик клика — внизу body, рядом с самой кнопкой; здесь только
+         восстановление сохранённого выбора. -->
+    <script>
+    (function () {
+        try {
+            if (localStorage.getItem('apparchi-theme') === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                var meta = document.querySelector('meta[name="theme-color"]');
+                if (meta) meta.setAttribute('content', '#0D0F14');
+            }
+        } catch (e) {}
+    })();
+    </script>
     <link rel="manifest" href="/static/manifest.json">
     <link rel="icon" type="image/png" sizes="48x48" href="/static/img/favicon.png?v=2">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/img/apple-touch-icon.png?v=2">
@@ -19,11 +35,55 @@
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" onload="this.onload=null;this.rel='stylesheet'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet"></noscript>
     <!-- Base styles: versioned for cache-busting -->
-    <link rel="stylesheet" href="/static/css/base.css?v=45">
+    <link rel="stylesheet" href="/static/css/base.css?v=47">
     {% block extra_styles %}{% endblock %}
 </head>
 <body{% if user is defined and user and user.impersonated_by_id %} class="is-impersonating"{% endif %}>
     <a class="skip-link" href="#main-content">Перейти к содержимому</a>
+    <!-- Переключатель тёмной темы (владелец 03.09.2026) — рендерится всегда,
+         без условия на пользователя: работает и на публичных/логин-экранах,
+         не только в кабинете. Слева внизу, а не в floating-widget-tray
+         справа: тот показывается только авторизованным и уже занят
+         колокольчиком уведомлений. -->
+    <button type="button" id="themeToggle" class="theme-toggle" aria-pressed="false" aria-label="Тёмная тема">
+        <svg class="theme-toggle-icon theme-toggle-icon--sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+        </svg>
+        <svg class="theme-toggle-icon theme-toggle-icon--moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>
+        </svg>
+    </button>
+    <script>
+    (function () {
+        var THEME_KEY = 'apparchi-theme';
+        var META_LIGHT = '#ffffff';
+        var META_DARK = '#0D0F14';
+        var btn = document.getElementById('themeToggle');
+        if (!btn) return;
+        function apply(theme, persist) {
+            if (theme === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+            }
+            var meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute('content', theme === 'dark' ? META_DARK : META_LIGHT);
+            btn.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
+            btn.setAttribute('aria-label', theme === 'dark' ? 'Светлая тема' : 'Тёмная тема');
+            if (persist) {
+                try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+            }
+        }
+        btn.addEventListener('click', function () {
+            var current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+            apply(current === 'dark' ? 'light' : 'dark', true);
+        });
+        // Синхронизирует aria-атрибуты кнопки с тем, что уже выставил
+        // anti-FOUC скрипт в <head> (кнопки там ещё не было).
+        apply(document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light', false);
+    })();
+    </script>
     <!-- Telegram in-app browser escape: открываем сайт во внешнем браузере.
          Встроенный браузер Telegram ломает сессию/CSRF и медленно грузит фото.
          Детект: window.TelegramWebviewProxy (инжектится Telegram и на Android, и
