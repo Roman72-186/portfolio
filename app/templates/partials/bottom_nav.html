@@ -1,4 +1,4 @@
-﻿<link rel="stylesheet" href="/static/css/bottom_nav_fan.css?v=2">
+﻿<link rel="stylesheet" href="/static/css/bottom_nav_fan.css?v=3">
 
 {% macro student_nav_icon(icon, size) -%}
     <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -170,12 +170,13 @@
                 link.tabIndex = open ? 0 : -1;
             }
         });
-        if (open) {
-            var firstLink = nav.querySelector('.fan-item:not(.nav-disabled)');
-            if (firstLink) firstLink.focus();
-        } else {
-            fab.focus();
-        }
+        // Фокус на первый лепесток при открытии сюда не переносим (раньше
+        // переносили): programmatic focus() браузер на мобилке засчитывает
+        // за focus-visible и рисует постоянное фиолетовое кольцо на первом
+        // пункте при каждом открытии веера тапом — воспроизведено 04.09.2026
+        // (владелец прислал скриншот). Кнопка остаётся с роль-tabindex-
+        // управлением (см. выше) — таб после открытия уже ведёт в лепестки.
+        if (!open) fab.focus();
     }
 
     fab.addEventListener('click', function () {

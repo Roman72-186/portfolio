@@ -64,18 +64,24 @@
 .fan-item:active { transform: scale(.92); }
 .fan-item:focus-visible { outline: 2px solid var(--ios-purple); outline-offset: 2px; }
 .fan-item.nav-disabled { opacity: .4; pointer-events: none; }
-/* Трекер — первый пункт веера, обводку убираем по просьбе владельца.
-   border-color:transparent само по себе не хватало — по краю круга
-   всё равно проступал ободок от backdrop-filter (известная особенность
-   blur на border-radius:50%), поэтому здесь убираем и сам blur, заменяя
-   полупрозрачный фон на непрозрачный того же оттенка. */
-.fan-item-wrap[data-key="tracker"] .fan-item {
+/* Первый (самый левый, на уровне FAB) пункт веера — обводку убираем по
+   просьбе владельца. border-color:transparent само по себе не хватало —
+   по краю круга всё равно проступал ободок от backdrop-filter (известная
+   особенность blur на border-radius:50%), поэтому здесь убираем и сам
+   blur, заменяя полупрозрачный фон на непрозрачный. Селектор структурный
+   (:first-child), а не по конкретному ключу пункта — список переставляли
+   03.09.2026, старый селектор по имени пункта держал фикс на прежнем
+   первом пункте, а не на новом. Цвет — литерал, а не токен темы: у
+   остальных лепестков фон полупрозрачный плюс blur, не зависит от
+   [data-theme], этот должен визуально совпадать, а не темнеть в тёмной
+   теме. */
+.fan-item-wrap:first-child .fan-item {
     border: none;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
 }
-.fan-item-wrap[data-key="tracker"] .fan-item:not(:hover):not(:active):not(.fan-item-active) {
-    background: var(--surface-2);
+.fan-item-wrap:first-child .fan-item:not(:hover):not(:active):not(.fan-item-active) {
+    background: #F9F9FB;
 }
 
 .fan-item-label {
