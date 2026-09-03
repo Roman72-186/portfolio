@@ -1,10 +1,12 @@
 """Protected learning-video catalogue, playback and progress routes."""
 
+import json
 import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from jinja2.utils import htmlsafe_json_dumps
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DBSession
@@ -140,6 +142,22 @@ def _player_payload(
     return payload, False
 
 
+# Ключи, которые реально читает `window.lrnVideoPlayer.mount()`
+# (`_video_player.html`) — не весь `payload` из `_player_payload`, иначе
+# `video_description` отрисовался бы дважды (в шапке страницы и в этом
+# JSON), а мёртвый после удаления мини-опроса `video_already_completed`
+# продолжил бы утекать в разметку без всякого потребителя.
+_PLAYER_DATA_KEYS = (
+    "player_url",
+    "video_title",
+    "viewer_watermark",
+    "resume_position_seconds",
+    "progress_endpoint",
+    "player_url_endpoint",
+    "player_url_ttl_seconds",
+)
+
+
 def _render_player(
     request: Request,
     user: dict,
@@ -156,10 +174,23 @@ def _render_player(
         progress_endpoint=progress_endpoint,
         player_url_endpoint=player_url_endpoint,
     )
+    player_data = None
+    if not has_error:
+        # `|tojson` в Jinja экранирует не-ASCII в `\uXXXX` (ensure_ascii=True по
+        # умолчанию) — имя и username зрителя ушли бы в разметку нечитаемой
+        # escape-кашей. Собираем JSON вручную с ensure_ascii=False, но тем же
+        # `htmlsafe_json_dumps`, что и `|tojson` внутри — экранирование
+        # `<`/`>`/`&`/`'` (защита от разрыва `<script>`) остаётся на месте.
+        player_data = htmlsafe_json_dumps(
+            {key: payload[key] for key in _PLAYER_DATA_KEYS},
+            dumps=json.dumps,
+            ensure_ascii=False,
+        )
     context = {
         "request": request,
         "user": user,
         "back_url": "/cabinet/admin/videos" if user.get("role_rank", 0) >= 4 else "/cabinet/videos",
+        "player_data": player_data,
         **payload,
     }
     if has_error:

@@ -14,8 +14,14 @@
 (`status`/`shell`/`frame-wrap`/`iframe`/`watermark`/`fullscreen-btn`/
 `mute-btn`/`progress-status`) — неважно, отрисована она Jinja'ой заранее или
 собрана в рантайме через `document.createElement`, лишь бы узлы находились по
-тем же атрибутам. `options.endpoint` — URL `/cabinet/videos/{id}/embed`,
-`options.csrfToken` — токен для сохранения прогресса.
+тем же атрибутам. Два способа передать данные: `options.endpoint` — URL
+`/cabinet/videos/{id}/embed`, грузит их фетчем (вкладка «Видео», видео-блок
+конструктора); `options.data` — уже готовый объект той же формы, без похода в
+сеть (`cabinet_video.html`, 03.09.2026: там `_player_payload` и так вызывается
+сервером при рендере страницы, второй одинаковый запрос был бы лишним и вдобавок
+удвоил счётчик просмотров, `log_video_view` пишется по факту рендера страницы,
+до JS). `options.csrfToken` — токен для сохранения прогресса, нужен в обоих
+режимах.
 #}
 <script>
 (function () {
@@ -42,7 +48,7 @@
     window.lrnVideoPlayer.mount = function (root, options) {
         var endpoint = options && options.endpoint;
         var csrfToken = options && options.csrfToken;
-        if (!endpoint) return;
+        var preloadedData = options && options.data;
 
         var statusEl = root.querySelector('[data-role="status"]');
         var shell = root.querySelector('[data-role="shell"]');
@@ -59,28 +65,38 @@
             statusEl.classList.add('is-error');
         }
 
-        fetch(endpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
-            .then(function (resp) {
-                if (resp.status === 403) {
-                    return resp.json().then(function (body) {
-                        throw new Error((body && body.detail) || 'Видео недоступно.');
-                    });
-                }
-                if (!resp.ok) throw new Error('Не удалось загрузить видео. Попробуйте позже.');
-                return resp.json();
-            })
-            .then(function (data) {
-                if (!data.ok || !data.player_url) {
-                    showError('Видео временно недоступно.');
-                    return;
-                }
-                statusEl.hidden = true;
-                shell.hidden = false;
-                populatePlayer(data);
-            })
-            .catch(function (err) {
-                showError(err.message || 'Не удалось загрузить видео.');
-            });
+        if (preloadedData) {
+            // Данные уже проверены и собраны сервером при рендере страницы —
+            // ошибку недоступности он в этом случае отражает кодом ответа
+            // страницы (503) и своей веткой шаблона, сюда попадает только
+            // успешный случай.
+            statusEl.hidden = true;
+            shell.hidden = false;
+            populatePlayer(preloadedData);
+        } else if (endpoint) {
+            fetch(endpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                .then(function (resp) {
+                    if (resp.status === 403) {
+                        return resp.json().then(function (body) {
+                            throw new Error((body && body.detail) || 'Видео недоступно.');
+                        });
+                    }
+                    if (!resp.ok) throw new Error('Не удалось загрузить видео. Попробуйте позже.');
+                    return resp.json();
+                })
+                .then(function (data) {
+                    if (!data.ok || !data.player_url) {
+                        showError('Видео временно недоступно.');
+                        return;
+                    }
+                    statusEl.hidden = true;
+                    shell.hidden = false;
+                    populatePlayer(data);
+                })
+                .catch(function (err) {
+                    showError(err.message || 'Не удалось загрузить видео.');
+                });
+        }
 
         function populatePlayer(data) {
             watermark.innerHTML = '';
@@ -452,6 +468,19 @@
 
             document.addEventListener('visibilitychange', function () {
                 if (document.visibilityState === 'visible') refreshPlayerUrlIfStale();
+            });
+            // Страница видео отдаётся с `Cache-Control: private, no-store`, поэтому
+            // возврат из bfcache не гарантирован — чаще браузер просто перезагрузит
+            // страницу целиком. Но часть браузеров всё же вернут её живой: `pagehide`
+            // уже погасил цикл водяного знака (см. ниже), без перезапуска здесь он
+            // остался бы стоять в одной точке — то есть перестал бы мешать записи
+            // экрана (владелец 31.08.2026; было в `cabinet_video.html` до переезда
+            // 03.09.2026 на общий плеер, но отсутствовало здесь для видео-блока и
+            // вкладки «Видео» — перенесено сюда, чтобы у всех мест был один фикс).
+            window.addEventListener('pageshow', function (event) {
+                if (!event.persisted) return;
+                startWatermarkDrift();
+                refreshPlayerUrlIfStale();
             });
             window.setInterval(function () {
                 if (document.visibilityState !== 'visible' || hasEverPlayed) return;

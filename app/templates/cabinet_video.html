@@ -162,51 +162,49 @@ body.has-video-pseudo-fullscreen {
         {% endif %}
     </header>
 
-    <section class="video-shell" aria-label="Видеоурок">
-        {% if player_url %}
-        <script
-            src="https://assets.mediadelivery.net/playerjs/player-0.1.0.min.js"
-            integrity="sha384-FzNVGZdy6ImmE/3LFewUFSxAVlmjM0wP4aKlUJYalPvzGkIEva94s2WZgmeQPVvC"
-            crossorigin="anonymous"></script>
-        <div class="video-frame">
-            <div class="video-loading" role="status">Загружаем видео...</div>
-            <iframe
-                id="bunny-stream-embed"
-                src="{{ player_url }}"
-                title="{{ video_title }}"
-                loading="eager"
-                {# picture-in-picture не выдаём намеренно: PiP выносит кадр из DOM
-                   страницы, и ватермарка со зрителем остаётся здесь. По той же
-                   причине у iframe нет allowfullscreen — фуллскрин только свой. #}
-                allow="accelerometer; gyroscope; autoplay; encrypted-media"
-                referrerpolicy="strict-origin-when-cross-origin"></iframe>
-            <div class="video-watermark" aria-hidden="true">
-                <div class="video-watermark-copy">
-                    <span>{{ viewer_watermark.name }}</span>
-                    <span>{{ viewer_watermark.username }}</span>
+    {% if player_url %}
+    <div data-role="root">
+        <p class="video-progress-status" data-role="status" aria-live="polite" hidden>Загружаем видео…</p>
+        <section class="video-shell" data-role="shell" aria-label="Видеоурок" hidden>
+            <div class="video-frame" data-role="frame-wrap">
+                <div class="video-loading" role="status">Загружаем видео...</div>
+                <iframe
+                    data-role="iframe"
+                    title=""
+                    loading="eager"
+                    {# picture-in-picture не выдаём намеренно: PiP выносит кадр из DOM
+                       страницы, и ватермарка со зрителем остаётся здесь. По той же
+                       причине у iframe нет allowfullscreen — фуллскрин только свой. #}
+                    allow="accelerometer; gyroscope; autoplay; encrypted-media"
+                    referrerpolicy="strict-origin-when-cross-origin"></iframe>
+                <div class="video-watermark" aria-hidden="true">
+                    <div class="video-watermark-copy" data-role="watermark"></div>
                 </div>
+                <button
+                    type="button"
+                    class="video-mute-button"
+                    data-role="mute-btn"
+                    hidden
+                    aria-label="Включить звук"
+                    title="Включить звук">🔇 Включить звук</button>
+                <button
+                    type="button"
+                    class="video-fullscreen-button"
+                    data-role="fullscreen-btn"
+                    aria-label="На весь экран"
+                    title="На весь экран">⛶</button>
             </div>
-            <button
-                id="video-mute-button"
-                class="video-mute-button"
-                type="button"
-                hidden
-                aria-label="Включить звук"
-                title="Включить звук">🔇 Включить звук</button>
-            <button
-                id="video-fullscreen-button"
-                class="video-fullscreen-button"
-                type="button"
-                aria-label="На весь экран"
-                title="На весь экран">⛶</button>
-        </div>
-        {% else %}
+        </section>
+        <p data-role="progress-status" class="video-progress-status" aria-live="polite" hidden></p>
+    </div>
+    {% else %}
+    <section class="video-shell" aria-label="Видеоурок">
         <div class="video-unavailable" role="status">
             <h2>Видео временно недоступно</h2>
             <p>Попробуйте открыть страницу позже. Настройки доступа уже проверяются.</p>
         </div>
-        {% endif %}
     </section>
+    {% endif %}
 
     {% if player_url %}
     <p id="video-ios-install-hint" class="video-ios-install-hint" hidden>
@@ -214,710 +212,36 @@ body.has-video-pseudo-fullscreen {
         нажмите «Поделиться», затем «На экран „Домой“» и откройте Apparchi с иконки.
     </p>
     <p class="video-help">Качество подбирается автоматически. При необходимости его можно изменить в настройках плеера.</p>
-    <p id="video-progress-status" class="video-progress-status" aria-live="polite">
-        {% if resume_position_seconds|default(0) >= 5 %}
-        Продолжим с сохранённого места.
-        {% else %}
-        Место просмотра сохраняется автоматически.
-        {% endif %}
-    </p>
-    {% if quiz_questions %}
-    <section id="video-quiz" class="card"{% if quiz_answers is none and not video_already_completed %} hidden{% endif %} aria-label="Мини-опрос по видео">
-        <h2 class="card-title">Пара вопросов о видео</h2>
-        {% if quiz_answers is not none %}
-        {% for question in quiz_questions %}
-        <p><span class="field-label">{{ question }}</span><span class="video-help">{{ quiz_answers[loop.index0] or '—' }}</span></p>
-        {% endfor %}
-        {% else %}
-        <form id="video-quiz-form" data-quiz-endpoint="{{ quiz_submit_endpoint }}">
-            {% for question in quiz_questions %}
-            <p>
-                <label class="field-label" for="video-quiz-q{{ loop.index }}">{{ question }}</label>
-                <textarea class="form-input" id="video-quiz-q{{ loop.index }}" rows="3" maxlength="2000"></textarea>
-            </p>
-            {% endfor %}
-            <button type="submit" class="btn-blue">Отправить</button>
-            <p id="video-quiz-status" class="video-progress-status" aria-live="polite"></p>
-        </form>
-        {% endif %}
-    </section>
-    {% endif %}
+
+    {% include "partials/inline/_video_player.html" %}
     <script>
     (function () {
-        var frame = document.getElementById('bunny-stream-embed');
-        var status = document.getElementById('video-progress-status');
-        var fullscreenButton = document.getElementById('video-fullscreen-button');
-        var muteButton = document.getElementById('video-mute-button');
-        var iosInstallHint = document.getElementById('video-ios-install-hint');
-        if (!frame) return;
-        var currentPlayer = null;
-        // Сервер отдаёт player_url с muted=true (звуковой автостарт в чужом
-        // iframe браузер разрешает не всегда, беззвучный — всегда, владелец
-        // 31.08.2026): видео стартует само, но без звука, кнопка — явный
-        // призыв его включить.
-        if (muteButton) {
-            muteButton.hidden = false;
-            muteButton.addEventListener('click', function () {
-                if (!currentPlayer) return;
-                currentPlayer.unmute();
-                muteButton.hidden = true;
-            });
-        }
-        var playerContainer = frame.parentElement;
-        var watermarkCopy = playerContainer.querySelector('.video-watermark-copy');
-        var watermarkCycleTimer = null;
-        var watermarkResizeObserver = null;
-        var watermarkBounds = null;
-        var watermarkFadeMs = 900;
-        // Последняя точка и последняя ячейка сетки: по точке ватермарка
-        // возвращается внутрь кадра после пересчёта размеров, по ячейке
-        // выбирается следующая — чтобы два показа подряд не легли в одно место.
-        var lastWatermarkPoint = null;
-        var lastWatermarkCell = -1;
-        var pseudoFullscreen = false;
-        frame.addEventListener('load', function () {
-            playerContainer.classList.add('is-ready');
-        }, { once: true });
+        // Данные уже собраны и проверены сервером при рендере страницы
+        // (`_player_payload`, `app/api/video.py`) — второй поход в сеть за той же
+        // информацией не нужен, `_video_player.html` умеет монтироваться и на
+        // готовых данных. Логика fullscreen/водяного знака/автосохранения — там
+        // же, общая с вкладкой «Видео» и видео-блоком конструктора (03.09.2026:
+        // раньше здесь была третья независимая копия).
+        var root = document.querySelector('[data-role="root"]');
+        window.lrnVideoPlayer.mount(root, {
+            data: {{ player_data }},
+            csrfToken: {{ csrf_token(request)|tojson }}
+        });
 
+        // iOS-подсказка про запуск с экрана «Домой» — только у отдельной
+        // страницы плеера, в инлайн-карточке АОП её нет.
+        var iosInstallHint = document.getElementById('video-ios-install-hint');
         function isIosDevice() {
             return /iPad|iPhone|iPod/.test(window.navigator.userAgent)
                 || (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1);
         }
-
         function isStandaloneApp() {
             return window.navigator.standalone === true
                 || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
         }
-
-        var quizSection = document.getElementById('video-quiz');
-        function revealVideoQuiz() {
-            if (quizSection) quizSection.hidden = false;
-        }
-        var quizForm = document.getElementById('video-quiz-form');
-        if (quizForm) {
-            quizForm.addEventListener('submit', function (event) {
-                event.preventDefault();
-                var quizStatus = document.getElementById('video-quiz-status');
-                var textareas = quizForm.querySelectorAll('textarea');
-                var submitButton = quizForm.querySelector('button[type="submit"]');
-                var answers = Array.prototype.map.call(textareas, function (field) {
-                    return field.value;
-                });
-                submitButton.disabled = true;
-                fetch(quizForm.dataset.quizEndpoint, {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: {
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': csrfToken
-                    },
-                    body: JSON.stringify({ answers: answers })
-                }).then(function (response) {
-                    if (!response.ok) throw new Error('quiz_save_failed');
-                    textareas.forEach(function (field) { field.disabled = true; });
-                    submitButton.hidden = true;
-                    if (quizStatus) quizStatus.textContent = 'Спасибо, ответ сохранён.';
-                }).catch(function () {
-                    submitButton.disabled = false;
-                    if (quizStatus) {
-                        quizStatus.textContent = 'Не удалось отправить ответ. Попробуйте ещё раз.';
-                        quizStatus.classList.add('is-error');
-                    }
-                });
-            });
-        }
-
         if (iosInstallHint && isIosDevice() && !isStandaloneApp()) {
             iosInstallHint.hidden = false;
         }
-
-        function measureWatermarkBounds() {
-            if (!watermarkCopy) return;
-            // getBoundingClientRect(), не clientWidth/clientHeight — владелец
-            // 02.09.2026 поймал на мобильном надпись вне рамки видео; нулевой/
-            // крошечный размер (кадр ещё не в потоке) не запоминаем, границы
-            // остаются прежними до следующего пересчёта.
-            var containerRect = playerContainer.getBoundingClientRect();
-            if (containerRect.width < 20 || containerRect.height < 20) return;
-            // Ролик — 16:9, плеер показывает его через object-fit: contain. В
-            // псевдо-полноэкранном режиме на высоком узком телефоне рамка
-            // (100vw x 100dvh) намного выше самого ролика, и сверху/снизу
-            // остаются чёрные поля внутри iframe Bunny. Границы дрейфа
-            // считаем по видимому прямоугольнику ролика внутри рамки (то же
-            // прижатие, что у contain), а не по всей рамке — иначе водяной
-            // знак уходит в чёрные поля (владелец 02.09.2026, «летает выше/
-            // ниже видео»). В обычном режиме рамка и так 16:9 — здесь no-op.
-            var videoAspect = 16 / 9;
-            var frameAspect = containerRect.width / containerRect.height;
-            var visibleWidth = containerRect.width;
-            var visibleHeight = containerRect.height;
-            var visibleOffsetX = 0;
-            var visibleOffsetY = 0;
-            if (frameAspect > videoAspect) {
-                visibleWidth = containerRect.height * videoAspect;
-                visibleOffsetX = (containerRect.width - visibleWidth) / 2;
-            } else if (frameAspect < videoAspect) {
-                visibleHeight = containerRect.width / videoAspect;
-                visibleOffsetY = (containerRect.height - visibleHeight) / 2;
-            }
-            var containerWidth = visibleWidth;
-            var containerHeight = visibleHeight;
-            var watermarkWidth = watermarkCopy.offsetWidth;
-            var watermarkHeight = watermarkCopy.offsetHeight;
-            var sidePadding = Math.max(12, Math.min(24, containerWidth * 0.025));
-            var topPadding = Math.max(12, Math.min(24, containerHeight * 0.04));
-            // Нижний отступ крупнее прочих: там панель управления Bunny и своя
-            // кнопка фуллскрина — надпись не должна на них наезжать.
-            var bottomPadding = Math.max(58, Math.min(72, containerHeight * 0.1));
-            var minX = visibleOffsetX + sidePadding;
-            var maxX = Math.max(minX, visibleOffsetX + containerWidth - watermarkWidth - sidePadding);
-            var minY = visibleOffsetY + topPadding;
-            var maxY = Math.max(minY, visibleOffsetY + containerHeight - watermarkHeight - bottomPadding);
-
-            watermarkBounds = { minX: minX, maxX: maxX, minY: minY, maxY: maxY };
-            // Пересчёт обязан сразу вернуть надпись внутрь новых границ. При
-            // выходе из фуллскрина контейнер уменьшается, а у слоя
-            // overflow: hidden — старая координата оказывается за краем, и
-            // ватермарки попросту не видно до следующего показа.
-            placeWatermark(lastWatermarkPoint);
-        }
-
-        function placeWatermark(point) {
-            if (!watermarkCopy || !watermarkBounds || !point) return;
-            var x = Math.min(Math.max(point.x, watermarkBounds.minX), watermarkBounds.maxX);
-            var y = Math.min(Math.max(point.y, watermarkBounds.minY), watermarkBounds.maxY);
-            lastWatermarkPoint = { x: x, y: y };
-            watermarkCopy.style.transform =
-                'translate3d(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px,0)';
-        }
-
-        function pickWatermarkSpot() {
-            if (!watermarkBounds) return null;
-            // Сетка 3x3 вместо чистого Math.random(): два случайных числа подряд
-            // нередко ложатся почти в одну точку, и надпись выглядит застывшей.
-            var cell = Math.floor(Math.random() * 9);
-            if (cell === lastWatermarkCell) {
-                cell = (cell + 1 + Math.floor(Math.random() * 8)) % 9;
-            }
-            lastWatermarkCell = cell;
-            var spanX = (watermarkBounds.maxX - watermarkBounds.minX) / 3;
-            var spanY = (watermarkBounds.maxY - watermarkBounds.minY) / 3;
-            return {
-                x: watermarkBounds.minX + spanX * ((cell % 3) + Math.random()),
-                y: watermarkBounds.minY + spanY * (Math.floor(cell / 3) + Math.random())
-            };
-        }
-
-        function runWatermarkCycle() {
-            if (!watermarkCopy) return;
-            measureWatermarkBounds();
-            placeWatermark(pickWatermarkSpot());
-            watermarkCopy.classList.add('is-visible');
-            // Видно заметно дольше, чем не видно: пауза нужна, чтобы надпись не
-            // мозолила глаз, но при этом почти любой отрезок записи должен
-            // застать зрителя на кадре.
-            watermarkCycleTimer = window.setTimeout(function () {
-                watermarkCopy.classList.remove('is-visible');
-                watermarkCycleTimer = window.setTimeout(runWatermarkCycle, watermarkFadeMs + 2400);
-            }, 5200);
-        }
-
-        function startWatermarkDrift() {
-            if (!watermarkCopy) return;
-            // Идемпотентно: страница возвращается из bfcache уже остановленной,
-            // а второй запуск поверх живого цикла дал бы два таймера и два
-            // наблюдателя за размером.
-            stopWatermarkDrift();
-            watermarkCopy.classList.add('is-drifting');
-
-            var reduceMotion = window.matchMedia
-                && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-            // Тот же цикл, но без плавности: при prefers-reduced-motion надпись
-            // просто появляется и пропадает.
-            watermarkFadeMs = reduceMotion ? 0 : 900;
-            watermarkCopy.style.transitionDuration = watermarkFadeMs + 'ms';
-
-            runWatermarkCycle();
-
-            if ('ResizeObserver' in window) {
-                watermarkResizeObserver = new ResizeObserver(measureWatermarkBounds);
-                watermarkResizeObserver.observe(playerContainer);
-            } else {
-                window.addEventListener('resize', measureWatermarkBounds);
-            }
-        }
-
-        function stopWatermarkDrift() {
-            if (watermarkCycleTimer !== null) {
-                window.clearTimeout(watermarkCycleTimer);
-                watermarkCycleTimer = null;
-            }
-            // Замирает видимой, а не погашенной. Остановка приходит на
-            // pagehide, а он срабатывает и при уходе во вкладку-фон, откуда
-            // страница возвращается живой: погашенная надпись оставила бы
-            // опознанное видео идти вообще без имени зрителя.
-            if (watermarkCopy) watermarkCopy.classList.add('is-visible');
-            if (watermarkResizeObserver) {
-                watermarkResizeObserver.disconnect();
-                watermarkResizeObserver = null;
-            } else {
-                window.removeEventListener('resize', measureWatermarkBounds);
-            }
-        }
-
-        startWatermarkDrift();
-        function fullscreenElement() {
-            return document.fullscreenElement || document.webkitFullscreenElement || null;
-        }
-
-        function isFullscreenActive() {
-            return pseudoFullscreen || fullscreenElement() === playerContainer;
-        }
-
-        // `100vh`/`100dvh` в CSS не спасают на части мобильных браузеров
-        // (старый WebKit без dvh, встроенные webview VK/Telegram): при видимой
-        // адресной строке `100vh` больше реального видимого экрана, кнопка
-        // выхода (bottom:8px) уезжает за нижний край, а `overflow:hidden` на
-        // body одновременно блокирует скролл до неё — тупик без выхода
-        // (баг владельца 31.08.2026). `visualViewport` отдаёт реальную видимую
-        // высоту в любой момент, включая смену адресной строки — держим
-        // размер синхронным с ней, а не с постоянными vh/dvh.
-        function syncPseudoFullscreenSize() {
-            if (!pseudoFullscreen) return;
-            var vv = window.visualViewport;
-            playerContainer.style.height = (vv ? vv.height : window.innerHeight) + 'px';
-            playerContainer.style.width = (vv ? vv.width : window.innerWidth) + 'px';
-        }
-
-        function enterPseudoFullscreen() {
-            if (pseudoFullscreen) return;
-            pseudoFullscreen = true;
-            playerContainer.classList.add('is-pseudo-fullscreen');
-            document.documentElement.classList.add('has-video-pseudo-fullscreen');
-            document.body.classList.add('has-video-pseudo-fullscreen');
-            syncPseudoFullscreenSize();
-            if (window.visualViewport) {
-                window.visualViewport.addEventListener('resize', syncPseudoFullscreenSize);
-                window.visualViewport.addEventListener('scroll', syncPseudoFullscreenSize);
-            } else {
-                window.addEventListener('resize', syncPseudoFullscreenSize);
-            }
-            updateFullscreenButton();
-        }
-
-        function exitPseudoFullscreen(restoreFocus) {
-            if (!pseudoFullscreen) return;
-            pseudoFullscreen = false;
-            playerContainer.classList.remove('is-pseudo-fullscreen');
-            playerContainer.style.height = '';
-            playerContainer.style.width = '';
-            document.documentElement.classList.remove('has-video-pseudo-fullscreen');
-            document.body.classList.remove('has-video-pseudo-fullscreen');
-            if (window.visualViewport) {
-                window.visualViewport.removeEventListener('resize', syncPseudoFullscreenSize);
-                window.visualViewport.removeEventListener('scroll', syncPseudoFullscreenSize);
-            } else {
-                window.removeEventListener('resize', syncPseudoFullscreenSize);
-            }
-            updateFullscreenButton();
-            if (restoreFocus !== false && fullscreenButton) fullscreenButton.focus();
-        }
-
-        function updateFullscreenButton() {
-            if (!fullscreenButton) return;
-            var isFullscreen = isFullscreenActive();
-            var label = isFullscreen ? 'Выйти из полноэкранного режима' : 'На весь экран';
-            fullscreenButton.setAttribute('aria-label', label);
-            fullscreenButton.setAttribute('title', label);
-            fullscreenButton.setAttribute('aria-pressed', String(isFullscreen));
-            window.requestAnimationFrame(measureWatermarkBounds);
-            window.setTimeout(measureWatermarkBounds, 250);
-        }
-
-        function reportFullscreenError() {
-            status.textContent = 'Не удалось включить полноэкранный режим. Разрешите его в настройках браузера.';
-            status.classList.add('is-error');
-        }
-
-        var requestFullscreen = playerContainer.requestFullscreen
-            || playerContainer.webkitRequestFullscreen;
-        var exitFullscreen = document.exitFullscreen
-            || document.webkitExitFullscreen;
-
-        function shouldUsePseudoFullscreen() {
-            if (!requestFullscreen || !exitFullscreen) return true;
-            return window.matchMedia
-                && window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
-        }
-        // Общая логика входа в полноэкранный режим — и по клику на кнопку, и
-        // автоматически при открытии видео (владелец 31.08.2026, «сразу в
-        // полный экран»). Нативный requestFullscreen() без прямого клика
-        // браузер обычно тихо отклоняет — .catch(enterPseudoFullscreen)/
-        // try…catch уже переключают на свой псевдо-полноэкранный режим,
-        // которому разрешение не нужно, так что автовызов безопасен.
-        function activateFullscreen() {
-            if (pseudoFullscreen || fullscreenElement() === playerContainer) return;
-            if (shouldUsePseudoFullscreen()) { enterPseudoFullscreen(); return; }
-            try {
-                var requestResult = requestFullscreen.call(playerContainer);
-                if (requestResult && typeof requestResult.catch === 'function') {
-                    requestResult.catch(enterPseudoFullscreen);
-                }
-            } catch (error) {
-                enterPseudoFullscreen();
-            }
-        }
-
-        if (fullscreenButton) {
-            fullscreenButton.addEventListener('click', function () {
-                if (pseudoFullscreen) {
-                    exitPseudoFullscreen();
-                    return;
-                }
-
-                if (fullscreenElement() === playerContainer) {
-                    try {
-                        var exitResult = exitFullscreen.call(document);
-                        if (exitResult && typeof exitResult.catch === 'function') {
-                            exitResult.catch(reportFullscreenError);
-                        }
-                    } catch (error) {
-                        reportFullscreenError();
-                    }
-                    return;
-                }
-
-                activateFullscreen();
-            });
-            document.addEventListener('fullscreenchange', updateFullscreenButton);
-            document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
-            document.addEventListener('keydown', function (event) {
-                if (event.key === 'Escape' && pseudoFullscreen) exitPseudoFullscreen();
-            });
-            updateFullscreenButton();
-        }
-
-        // Без { once: true }: pagehide срабатывает и при уходе в bfcache, а оттуда
-        // страница возвращается живой — цикл ватермарки надо остановить снова.
-        window.addEventListener('pagehide', function () {
-            stopWatermarkDrift();
-            exitPseudoFullscreen(false);
-        });
-
-        // ── Свежая подписанная ссылка ──────────────────────────────────────
-        // Токен Bunny живёт минуты. Пока iframe загружен, просмотр не рвётся, но
-        // любой его перезапрос — возврат на вкладку, перезапуск PWA, старт позже
-        // TTL — упирается в заглушку. Поднимать TTL нельзя: страница плеера
-        // открывается и без Referer. Значит берём свежую ссылку перед перезапросом.
-        var playerUrlEndpoint = {{ player_url_endpoint|default('')|tojson }};
-        var playerUrlTtlSeconds = {{ player_url_ttl_seconds|default(300)|tojson }};
-        var playerUrlMintedAt = Date.now();
-        var playerUrlRefreshInFlight = false;
-        var playerUrlRefreshDisabled = false;
-        var reattachPlayer = null;
-        var playerGeneration = 0;
-        var isPlaying = false;
-        var hasEverPlayed = false;
-
-        function showStatus(message, isError) {
-            if (!status) return;
-            status.textContent = message;
-            status.classList.toggle('is-error', Boolean(isError));
-        }
-
-        function isPlayerUrlStale() {
-            var safeLifetimeMs = Math.max(30, playerUrlTtlSeconds - 60) * 1000;
-            return Date.now() - playerUrlMintedAt > safeLifetimeMs;
-        }
-
-        function refreshPlayerUrl() {
-            if (!playerUrlEndpoint || playerUrlRefreshInFlight || playerUrlRefreshDisabled) return;
-            playerUrlRefreshInFlight = true;
-            fetch(playerUrlEndpoint, {
-                credentials: 'same-origin',
-                headers: { 'Accept': 'application/json' }
-            }).then(function (response) {
-                // 401 — истёкшая сессия. Без отдельной ветки он уходил в общий
-                // отказ и гасился молча: ученик видел рабочую страницу, где
-                // «Play» упирается в заглушку Bunny, и не понимал почему.
-                if (response.status === 401) {
-                    playerUrlRefreshDisabled = true;
-                    throw new Error('session_expired');
-                }
-                if (response.status === 403 || response.status === 404) {
-                    playerUrlRefreshDisabled = true;
-                    throw new Error('access_closed');
-                }
-                if (!response.ok) throw new Error('refresh_failed');
-                return response.json();
-            }).then(function (data) {
-                if (!data || !data.player_url) throw new Error('refresh_failed');
-                if (data.ttl_seconds) playerUrlTtlSeconds = data.ttl_seconds;
-                playerUrlMintedAt = Date.now();
-                playerContainer.classList.remove('is-ready');
-                frame.addEventListener('load', function () {
-                    playerContainer.classList.add('is-ready');
-                    if (reattachPlayer) reattachPlayer();
-                }, { once: true });
-                frame.src = data.player_url;
-            }).catch(function (error) {
-                if (error.message === 'access_closed') {
-                    showStatus('Доступ к уроку закрыт. Обновите страницу.', true);
-                } else if (error.message === 'session_expired') {
-                    showStatus('Войдите заново, чтобы продолжить просмотр.', true);
-                }
-            }).finally(function () {
-                playerUrlRefreshInFlight = false;
-            });
-        }
-
-        function refreshPlayerUrlIfStale() {
-            if (isPlaying || !isPlayerUrlStale()) return;
-            refreshPlayerUrl();
-        }
-
-        document.addEventListener('visibilitychange', function () {
-            if (document.visibilityState === 'visible') refreshPlayerUrlIfStale();
-        });
-        // Страница отдаётся с `Cache-Control: private, no-store` (см. app/main.py),
-        // поэтому восстановление из bfcache здесь не гарантировано: чаще браузер
-        // просто перезагрузит страницу, и вся инициализация пройдёт заново. Ветка
-        // нужна для тех браузеров, которые страницу всё же вернут живой, — без неё
-        // ватермарка осталась бы стоять, а ссылка протухшей. Полагаться на неё как
-        // на основной путь нельзя.
-        window.addEventListener('pageshow', function (event) {
-            if (!event.persisted) return;
-            // Возврат из bfcache: pagehide уже погасил цикл, но страница жива и
-            // видео снова на экране — без перезапуска ватермарка застыла бы в точке.
-            startWatermarkDrift();
-            refreshPlayerUrlIfStale();
-        });
-        // Урок могли открыть, а включить через полчаса: пока просмотр не начался,
-        // подтягиваем ссылку сами, чтобы «Play» не упёрся в заглушку.
-        window.setInterval(function () {
-            if (document.visibilityState !== 'visible' || hasEverPlayed) return;
-            refreshPlayerUrlIfStale();
-        }, 60000);
-
-        if (!window.playerjs || !window.playerjs.Player) {
-            // Без playerjs не видно, идёт ли просмотр, поэтому обновление ссылки
-            // выключено: перезагрузить iframe посреди урока хуже, чем оставить
-            // ученику ручное обновление страницы.
-            playerUrlRefreshDisabled = true;
-            status.textContent = 'Автосохранение временно недоступно. Видео продолжит работать.';
-            status.classList.add('is-error');
-            // Без playerjs звонить unmute() некому — родная кнопка звука
-            // самого плеера Bunny внутри iframe остаётся, наша прячется.
-            if (muteButton) muteButton.hidden = true;
-            return;
-        }
-
-        var resumeSeconds = {{ resume_position_seconds|default(0)|tojson }};
-        var csrfToken = {{ csrf_token(request)|tojson }};
-        var currentSeconds = resumeSeconds;
-        var durationSeconds = null;
-        var lastSavedSeconds = resumeSeconds;
-        var lastAutomaticSaveAt = Date.now();
-        var saveInFlight = false;
-        var pendingProgress = null;
-        var savingDisabled = false;
-        var hasReportedSaved = false;
-
-        function finiteNumber(value) {
-            var number = Number(value);
-            return Number.isFinite(number) ? number : null;
-        }
-
-        function timingData(raw) {
-            if (typeof raw === 'string') {
-                try { raw = JSON.parse(raw); } catch (error) { return null; }
-            }
-            if (!raw || typeof raw !== 'object') return null;
-            return {
-                seconds: finiteNumber(raw.seconds),
-                duration: finiteNumber(raw.duration)
-            };
-        }
-
-        function formatTime(seconds) {
-            var whole = Math.max(0, Math.floor(seconds));
-            var hours = Math.floor(whole / 3600);
-            var minutes = Math.floor((whole % 3600) / 60);
-            var remainder = whole % 60;
-            if (hours > 0) {
-                return hours + ':' + String(minutes).padStart(2, '0') + ':' + String(remainder).padStart(2, '0');
-            }
-            return minutes + ':' + String(remainder).padStart(2, '0');
-        }
-
-        function setStatus(message, isError) {
-            if (status.textContent.trim() === message) return;
-            showStatus(message, isError);
-        }
-
-        function sendProgress(progress, keepalive) {
-            if (savingDisabled) return;
-            if (saveInFlight) {
-                pendingProgress = progress;
-                return;
-            }
-            saveInFlight = true;
-
-            fetch({{ progress_endpoint|default('/cabinet/video/progress')|tojson }}, {
-                method: 'POST',
-                credentials: 'same-origin',
-                keepalive: Boolean(keepalive),
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': csrfToken
-                },
-                body: JSON.stringify({
-                    position_seconds: progress.position_seconds,
-                    duration_seconds: progress.duration_seconds
-                })
-            }).then(function (response) {
-                if (response.status === 401) {
-                    savingDisabled = true;
-                    throw new Error('session_expired');
-                }
-                // 403 — истёкший CSRF-токен (живёт 6 часов, а вкладку с уроком
-                // держат дольше). Без выключения сохранение уходило в цикл: порог
-                // «сдвинулись на 2 секунды» считается от последнего успешного
-                // сохранения, поэтому запросы шли каждые 10 секунд до закрытия
-                // вкладки, и каждый писал warning в журнал сервера.
-                if (response.status === 403) {
-                    savingDisabled = true;
-                    throw new Error('session_expired');
-                }
-                if (!response.ok) throw new Error('save_failed');
-                lastSavedSeconds = progress.position_seconds;
-                if (!hasReportedSaved && !progress.completed) {
-                    hasReportedSaved = true;
-                    setStatus('Место просмотра сохранено.', false);
-                }
-                if (progress.completed) {
-                    setStatus('Видео просмотрено. При следующем открытии начнём сначала.', false);
-                }
-                // Мини-опрос открывается по подтверждению сервера, а не по
-                // клиентской догадке (`progress.completed` выше — событие
-                // 'ended' плеера): досмотр считает сервер по своей длительности,
-                // и только его ответ достоверен.
-                return response.json().catch(function () { return null; });
-            }).then(function (data) {
-                if (data && data.completed) revealVideoQuiz();
-            }).catch(function (error) {
-                if (error.message === 'session_expired') {
-                    setStatus('Войдите заново, чтобы сохранять место просмотра.', true);
-                } else {
-                    setStatus('Не удалось сохранить место. Видео продолжит работать.', true);
-                }
-            }).finally(function () {
-                saveInFlight = false;
-                if (pendingProgress) {
-                    var nextProgress = pendingProgress;
-                    pendingProgress = null;
-                    sendProgress(nextProgress, false);
-                }
-            });
-        }
-
-        function saveProgress(force, completed, keepalive) {
-            if (savingDisabled || currentSeconds === null || currentSeconds < 0) return;
-            if (!force && Math.abs(currentSeconds - lastSavedSeconds) < 2) return;
-            sendProgress({
-                position_seconds: Math.max(0, currentSeconds),
-                duration_seconds: durationSeconds && durationSeconds > 0 ? durationSeconds : null,
-                completed: Boolean(completed)
-            }, keepalive);
-        }
-
-        // После обновления ссылки iframe перезагружается, и внутри живёт уже
-        // новый плеер: обвязку приходится создавать заново, а не переиспользовать.
-        function attachPlayer() {
-            // playerjs слушает сообщения окна и не различает старый и новый
-            // экземпляры: без поколения прежняя обвязка продолжила бы отвечать на
-            // события нового плеера и сохранять прогресс дважды.
-            var generation = ++playerGeneration;
-            var player = new window.playerjs.Player(frame);
-            currentPlayer = player;
-
-            player.on('ready', function () {
-                if (generation !== playerGeneration) return;
-                playerContainer.classList.add('is-ready');
-                player.getDuration(function (value) {
-                    durationSeconds = finiteNumber(value);
-                    if (
-                        resumeSeconds >= 5
-                        && (!durationSeconds || resumeSeconds < durationSeconds - 10)
-                    ) {
-                        player.setCurrentTime(resumeSeconds);
-                        currentSeconds = resumeSeconds;
-                        setStatus('Продолжили с ' + formatTime(resumeSeconds) + '.', false);
-                    } else {
-                        currentSeconds = 0;
-                        setStatus('Место просмотра сохраняется автоматически.', false);
-                    }
-                });
-            });
-
-            player.on('timeupdate', function (raw) {
-                if (generation !== playerGeneration) return;
-                var timing = timingData(raw);
-                if (!timing || timing.seconds === null) return;
-                currentSeconds = timing.seconds;
-                if (timing.duration !== null && timing.duration > 0) durationSeconds = timing.duration;
-                if (Date.now() - lastAutomaticSaveAt >= 10000) {
-                    lastAutomaticSaveAt = Date.now();
-                    saveProgress(false, false, false);
-                }
-            });
-
-            player.on('play', function () {
-                if (generation !== playerGeneration) return;
-                isPlaying = true;
-                hasEverPlayed = true;
-            });
-
-            player.on('pause', function () {
-                if (generation !== playerGeneration) return;
-                isPlaying = false;
-                saveProgress(true, false, false);
-            });
-
-            player.on('seeked', function () {
-                if (generation !== playerGeneration) return;
-                player.getCurrentTime(function (value) {
-                    var seconds = finiteNumber(value);
-                    if (seconds !== null) currentSeconds = seconds;
-                    saveProgress(true, false, false);
-                });
-            });
-
-            player.on('ended', function () {
-                if (generation !== playerGeneration) return;
-                isPlaying = false;
-                if (durationSeconds !== null) currentSeconds = durationSeconds;
-                saveProgress(true, true, false);
-            });
-        }
-
-        attachPlayer();
-        activateFullscreen();
-        reattachPlayer = function () {
-            // Ученик должен вернуться на то же место, а не в начало урока.
-            resumeSeconds = currentSeconds;
-            isPlaying = false;
-            attachPlayer();
-        };
-
-        document.addEventListener('visibilitychange', function () {
-            if (document.visibilityState === 'hidden') saveProgress(true, false, true);
-        });
-        window.addEventListener('pagehide', function () {
-            saveProgress(true, false, true);
-        });
     })();
     </script>
     {% endif %}

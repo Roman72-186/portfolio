@@ -94,6 +94,12 @@ def test_video_watermark_shows_current_viewer_identity(auth_client, db, monkeypa
 
 
 def test_video_watermark_escapes_viewer_identity(auth_client, db, monkeypatch):
+    """Данные зрителя уходят в разметку JSON-блоком (`player_data`, собран
+    `htmlsafe_json_dumps` в `app/api/video.py`), а не подстановкой в HTML —
+    экранирование там своё: `<`/`>` становятся `\\u003c`/`\\u003e`, а не
+    `&lt;`/`&gt;` (см. `_render_player`). Разрыв `<script>` и XSS исключены тем
+    же способом, что раньше давал Jinja-автоэкранинг, только другим синтаксисом.
+    """
     client, user = auth_client
     _configure_bunny(monkeypatch)
     user.name = '<img src=x onerror="alert(1)">'
@@ -105,8 +111,8 @@ def test_video_watermark_escapes_viewer_identity(auth_client, db, monkeypatch):
     assert response.status_code == 200
     assert "<img src=x" not in response.text
     assert "<script>alert(2)</script>" not in response.text
-    assert "&lt;img src=x" in response.text
-    assert "@&lt;script&gt;alert(2)&lt;/script&gt;" in response.text
+    assert "\\u003cimg src=x" in response.text
+    assert "@\\u003cscript\\u003ealert(2)\\u003c/script\\u003e" in response.text
 
 
 def test_video_watermark_fades_in_and_out_at_random_spots(auth_client, monkeypatch):
@@ -145,7 +151,7 @@ def test_video_fullscreen_keeps_watermark_inside_fullscreen_container(
     response = client.get("/cabinet/video")
 
     assert response.status_code == 200
-    assert 'id="video-fullscreen-button"' in response.text
+    assert 'data-role="fullscreen-btn"' in response.text
     assert ".video-frame:fullscreen" in response.text
     assert "playerContainer.requestFullscreen" in response.text
     assert "requestFullscreen.call(playerContainer)" in response.text
@@ -308,7 +314,7 @@ def test_video_progress_is_saved_and_restored_for_current_user(auth_client, db, 
 
     page = client.get("/cabinet/video")
     assert page.status_code == 200
-    assert "var resumeSeconds = 123.5;" in page.text
+    assert '"resume_position_seconds": 123.5' in page.text
 
 
 def test_video_progress_cannot_override_user_or_video(auth_client, monkeypatch):
@@ -418,7 +424,7 @@ def test_video_progress_failure_does_not_break_playback(auth_client, monkeypatch
 
     assert response.status_code == 200
     assert "iframe.mediadelivery.net" in response.text
-    assert "var resumeSeconds = 0.0;" in response.text
+    assert '"resume_position_seconds": 0.0' in response.text
 
 
 def test_video_progress_save_failure_returns_safe_503(auth_client, monkeypatch):
@@ -545,18 +551,21 @@ def test_video_page_refreshes_expired_player_url(auth_client, monkeypatch):
     response = client.get("/cabinet/video")
 
     assert response.status_code == 200
-    assert 'var playerUrlEndpoint = "/cabinet/video/player-url";' in response.text
-    assert "var playerUrlTtlSeconds = 300;" in response.text
+    assert '"player_url_endpoint": "/cabinet/video/player-url"' in response.text
+    assert '"player_url_ttl_seconds": 300' in response.text
     assert "function isPlayerUrlStale()" in response.text
     assert "function refreshPlayerUrl()" in response.text
-    assert "frame.src = data.player_url;" in response.text
+    assert "iframe.src = data.player_url;" in response.text
     assert "if (reattachPlayer) reattachPlayer();" in response.text
     assert "resumeSeconds = currentSeconds;" in response.text
     assert "if (document.visibilityState === 'visible') refreshPlayerUrlIfStale();" in response.text
     assert "if (!event.persisted) return;" in response.text
     # Возврат из bfcache: pagehide гасит цикл ватермарки, и без перезапуска она
     # осталась бы висеть в одной точке — то есть перестала бы мешать записи экрана.
-    assert "startWatermarkDrift();\n            refreshPlayerUrlIfStale();" in response.text
+    # Общий плеер (`_video_player.html`) — не завязываемся на точные отступы строк.
+    assert "window.addEventListener('pageshow'" in response.text
+    assert "startWatermarkDrift();" in response.text
+    assert "refreshPlayerUrlIfStale();" in response.text
     # Обвязка пересоздаётся, а старая замолкает по поколению: иначе прогресс
     # сохранялся бы дважды после каждого обновления ссылки.
     assert "function attachPlayer()" in response.text
@@ -572,7 +581,10 @@ def test_video_page_has_throttled_playerjs_progress_contract(auth_client, monkey
 
     assert response.status_code == 200
     assert "player-0.1.0.min.js" in response.text
-    assert "integrity=\"sha384-FzNVGZdy6ImmE/3LFewUFSxAVlmjM0wP4aKlUJYalPvzGkIEva94s2WZgmeQPVvC\"" in response.text
+    # Скрипт грузится динамически общим плеером (`loadPlayerJs()` в
+    # `_video_player.html`), не статичным тегом `<script src=... integrity=...>` —
+    # хэш ставится JS-присваиванием, а не HTML-атрибутом.
+    assert "sha384-FzNVGZdy6ImmE/3LFewUFSxAVlmjM0wP4aKlUJYalPvzGkIEva94s2WZgmeQPVvC" in response.text
     assert "player.on('ready'" in response.text
     assert "player.on('timeupdate'" in response.text
     assert "player.on('pause'" in response.text
