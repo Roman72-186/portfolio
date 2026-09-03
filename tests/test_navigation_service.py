@@ -28,6 +28,7 @@ def test_student_nav_items_keep_current_contract():
         )
         for item in items
     ] == [
+        ("3dlab", "/3dlab", "/3dlab", "3D Лаб", "3D Лаб", "3D Лаб", False),
         ("tracker", "/cabinet/tracker", "/cabinet/tracker", "Личный трекер", "Трекер", "Личный трекер", False),
         (
             "learning",
@@ -38,7 +39,6 @@ def test_student_nav_items_keep_current_contract():
             "Актуальное образовательное пространство",
             False,
         ),
-        ("3dlab", "/3dlab", "/3dlab", "3D Лаб", "3D Лаб", "3D Лаб", False),
         ("portfolio", "/cabinet/portfolio", "/cabinet/portfolio", "Портфолио", "Портфолио", "Портфолио", False),
         ("statistics", "#", "#", "Статистика", "Статистика", "Статистика (скоро)", True),
         ("personal", "/cabinet/personal", "/cabinet/personal", "Личная информация", "Личное", "Личная информация", False),
