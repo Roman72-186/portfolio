@@ -76,6 +76,7 @@
         <div class="desk-nav-footer-row">
             {% include "partials/desk_nav_logout.html" %}
             {{ notif_gear_widget() }}
+            {% include "partials/theme_toggle_btn.html" %}
         </div>
     </div>
 </aside>
@@ -173,6 +174,32 @@
 (function () {
     var wraps = document.querySelectorAll('.notif-gear-wrap');
     if (!wraps.length) return;
+
+    // Тёмная тема — строка внутри шестерёнки, видна только на мобилке
+    // (.notif-gear-row--theme в base.css); на десктопе/планшете у ученика
+    // есть отдельная кнопка рядом с "Выйти" (partials/theme_toggle_btn.html
+    // в этом же .desk-nav-footer-row). Оба контрола держат один и тот же
+    // window.ApparchiTheme, поэтому синхронизируются через общее событие.
+    var themeInputs = document.querySelectorAll('[data-theme-toggle]');
+    if (themeInputs.length && window.ApparchiTheme) {
+        var syncThemeInputs = function () {
+            var isDark = window.ApparchiTheme.current() === 'dark';
+            themeInputs.forEach(function (input) {
+                input.checked = isDark;
+                var row = input.closest('.notif-gear-row');
+                var note = row && row.querySelector('[data-theme-note]');
+                if (note) note.textContent = isDark ? 'Включена' : 'Выключена';
+            });
+        };
+        themeInputs.forEach(function (input) {
+            input.addEventListener('change', function () {
+                window.ApparchiTheme.apply(input.checked ? 'dark' : 'light', true);
+                syncThemeInputs();
+            });
+        });
+        document.addEventListener('apparchi-theme-change', syncThemeInputs);
+        syncThemeInputs();
+    }
 
     function urlBase64ToUint8Array(base64String) {
         var padding = '='.repeat((4 - base64String.length % 4) % 4);

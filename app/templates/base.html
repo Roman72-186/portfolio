@@ -7,19 +7,38 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Путь к сотке!">
     <meta name="theme-color" content="#ffffff">
-    <!-- Тёмная тема (владелец 03.09.2026): выставляем атрибут ДО подключения
-         base.css, иначе первая отрисовка проходит на светлых токенах и страница
-         на долю секунды мигает светлым перед переключением (FOUC). Полный
-         обработчик клика — внизу body, рядом с самой кнопкой; здесь только
-         восстановление сохранённого выбора. -->
+    <!-- Тёмная тема (владелец 03.09.2026) — общий объект вместо кнопки на
+         каждой странице: элемент управления живёт там, где у роли уже есть
+         "настройки" (шестерёнка ученика — partials/notif_gear.html; кнопка
+         рядом с "Выйти" у персонала — partials/staff_nav.html), а не висит
+         отдельным плавающим кружком поверх контента. `apply()` выставляет
+         атрибут ДО подключения base.css, иначе первая отрисовка идёт на
+         светлых токенах и страница на долю секунды мигает (FOUC). */ -->
     <script>
     (function () {
-        try {
-            if (localStorage.getItem('apparchi-theme') === 'dark') {
-                document.documentElement.setAttribute('data-theme', 'dark');
+        var THEME_KEY = 'apparchi-theme';
+        var META_LIGHT = '#ffffff';
+        var META_DARK = '#0D0F14';
+        window.ApparchiTheme = {
+            current: function () {
+                return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+            },
+            apply: function (theme, persist) {
+                if (theme === 'dark') {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                } else {
+                    document.documentElement.removeAttribute('data-theme');
+                }
                 var meta = document.querySelector('meta[name="theme-color"]');
-                if (meta) meta.setAttribute('content', '#0D0F14');
+                if (meta) meta.setAttribute('content', theme === 'dark' ? META_DARK : META_LIGHT);
+                if (persist) {
+                    try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+                }
+                document.dispatchEvent(new CustomEvent('apparchi-theme-change', {detail: {theme: theme}}));
             }
+        };
+        try {
+            if (localStorage.getItem(THEME_KEY) === 'dark') window.ApparchiTheme.apply('dark', false);
         } catch (e) {}
     })();
     </script>
@@ -35,53 +54,45 @@
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" onload="this.onload=null;this.rel='stylesheet'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet"></noscript>
     <!-- Base styles: versioned for cache-busting -->
-    <link rel="stylesheet" href="/static/css/base.css?v=47">
+    <link rel="stylesheet" href="/static/css/base.css?v=49">
     {% block extra_styles %}{% endblock %}
 </head>
 <body{% if user is defined and user and user.impersonated_by_id %} class="is-impersonating"{% endif %}>
     <a class="skip-link" href="#main-content">Перейти к содержимому</a>
-    <!-- Переключатель тёмной темы (владелец 03.09.2026) — рендерится всегда,
-         без условия на пользователя: работает и на публичных/логин-экранах,
-         не только в кабинете. Слева внизу, а не в floating-widget-tray
-         справа: тот показывается только авторизованным и уже занят
-         колокольчиком уведомлений. -->
-    <button type="button" id="themeToggle" class="theme-toggle" aria-pressed="false" aria-label="Тёмная тема">
-        <svg class="theme-toggle-icon theme-toggle-icon--sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="4"/>
-            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
-        </svg>
-        <svg class="theme-toggle-icon theme-toggle-icon--moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>
-        </svg>
-    </button>
+    <!-- Кнопка-переключатель темы (владелец 03.09.2026) — общая обвязка для
+         всех её мест: рядом с "Выйти" в сайдбаре персонала/ученика
+         (partials/theme_toggle_btn.html) и в шапке мобильного дашборда
+         персонала (partials/mobile_dashboard_theme_toggle.html). Живёт
+         здесь, а не в partial'ах: на странице их может быть несколько (клик
+         по одной должен обновить все), а где-то не быть вовсе — запрос DOM
+         тогда просто вернёт пустой список. У ученика на мобилке своя
+         версия — чекбокс внутри шестерёнки, обвязан в bottom_nav.html,
+         синхронизируется с этой через событие apparchi-theme-change. -->
     <script>
     (function () {
-        var THEME_KEY = 'apparchi-theme';
-        var META_LIGHT = '#ffffff';
-        var META_DARK = '#0D0F14';
-        var btn = document.getElementById('themeToggle');
-        if (!btn) return;
-        function apply(theme, persist) {
-            if (theme === 'dark') {
-                document.documentElement.setAttribute('data-theme', 'dark');
-            } else {
-                document.documentElement.removeAttribute('data-theme');
+        // DOMContentLoaded, а не сразу: этот блок сидит в начале body, а сама
+        // кнопка рендерится ниже по странице (staff_nav/bottom_nav — partial,
+        // подключённый дальше) — querySelectorAll здесь и сейчас нашёл бы 0
+        // элементов и обработчик клика не привязался бы вовсе.
+        document.addEventListener('DOMContentLoaded', function () {
+            var buttons = document.querySelectorAll('[data-theme-toggle-btn]');
+            if (!buttons.length) return;
+            function sync() {
+                var isDark = window.ApparchiTheme.current() === 'dark';
+                buttons.forEach(function (btn) {
+                    btn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
+                    btn.setAttribute('aria-label', isDark ? 'Светлая тема' : 'Тёмная тема');
+                });
             }
-            var meta = document.querySelector('meta[name="theme-color"]');
-            if (meta) meta.setAttribute('content', theme === 'dark' ? META_DARK : META_LIGHT);
-            btn.setAttribute('aria-pressed', theme === 'dark' ? 'true' : 'false');
-            btn.setAttribute('aria-label', theme === 'dark' ? 'Светлая тема' : 'Тёмная тема');
-            if (persist) {
-                try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
-            }
-        }
-        btn.addEventListener('click', function () {
-            var current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-            apply(current === 'dark' ? 'light' : 'dark', true);
+            buttons.forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    window.ApparchiTheme.apply(window.ApparchiTheme.current() === 'dark' ? 'light' : 'dark', true);
+                    sync();
+                });
+            });
+            document.addEventListener('apparchi-theme-change', sync);
+            sync();
         });
-        // Синхронизирует aria-атрибуты кнопки с тем, что уже выставил
-        // anti-FOUC скрипт в <head> (кнопки там ещё не было).
-        apply(document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light', false);
     })();
     </script>
     <!-- Telegram in-app browser escape: открываем сайт во внешнем браузере.

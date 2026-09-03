@@ -160,9 +160,9 @@
    <style>-блок (около 5800 строк, из них ~150 строк — захардкоженный
    hex мимо токенов) — шаблоны course_calculator, 3dlab, cabinet_student
    (и cabinet_students), cabinet_admin_mock_check,
-   cabinet_admin_retake_check, login и другие (имя файла без расширения:
-   dot-html в тексте этого комментария reuse_check.py по ошибке читает
-   как имя CSS-класса). Большая часть (950 из ~1100 цветовых
+   cabinet_admin_retake_check, login и другие (имена без расширения —
+   слово-точка-html в комментарии рядом с правилом читается регэкспом
+   храповика переиспользования как имя CSS-класса). Большая часть (950 из ~1100 цветовых
    объявлений) уже использует токены и подхватит тёмную тему сама, но
    точечные захардкоженные пары («бледная плашка + тёмные чернила»,
    рассчитанные только на белый холст) там не проверялись и могут
@@ -289,44 +289,52 @@ a:hover { color: var(--blue-deep); }
 }
 
 /* ── Переключатель темы (владелец 03.09.2026) ──
-   Слева внизу — справа уже `.floating-widget-tray` (колокольчик, скоуплен
-   на авторизованных). Тот же приём кнопки, что у `.notif-bell`: круг 48px,
-   `var(--surface)`/`var(--line)`, чтобы не заводить отдельный визуальный
-   язык. На десктопе (bottom-nav скрыт) — фиксированный отступ 24px, ниже
-   1024px клирим bottom-nav так же, как это делает сам `.floating-widget-tray`. */
-.theme-toggle {
-    position: fixed;
-    left: 18px;
-    bottom: calc(72px + env(safe-area-inset-bottom, 0px) + 12px);
-    z-index: 250;
-    width: 48px; height: 48px;
-    border-radius: 50%;
-    background: var(--surface);
-    border: 1.5px solid var(--line);
-    box-shadow: var(--sh-md);
-    display: flex; align-items: center; justify-content: center;
-    color: var(--blue);
-    cursor: pointer;
-    transition: box-shadow var(--duration-base), transform var(--duration-fast);
-}
-.theme-toggle:hover { box-shadow: 0 8px 28px rgba(20,30,80,.14); transform: translateY(-2px); }
+   Не плавающая кнопка — контрол лежит там, где у роли уже есть "рядом с
+   Выйти": desktop/планшет — .desk-nav-footer-row в шаблонах сайдбара
+   персонала и ученика (там же у ученика ещё шестерёнка уведомлений);
+   мобилка — рядом с .mobile-dashboard-logout в шапке дашборда персонала, а
+   у ученика — строкой внутри самой шестерёнки (.notif-gear-row--theme),
+   там свободного места в шапке уже нет.
+
+   Иконки солнце/луна общие для всех кнопок — переключаются по
+   `[data-theme]` на `<html>`, а не по классу конкретной кнопки. */
 .theme-toggle-icon--moon { display: none; }
 :root[data-theme="dark"] .theme-toggle-icon--sun { display: none; }
 :root[data-theme="dark"] .theme-toggle-icon--moon { display: block; }
-html.has-video-pseudo-fullscreen .theme-toggle,
-body.has-video-pseudo-fullscreen .theme-toggle { display: none; }
+
+/* Кнопка в подвале десктопного сайдбара (персонал и ученик) — тот же
+   приём круглой иконки, что у `.notif-gear-btn` в шестерёнке ученика
+   по соседству. */
+.sidebar-theme-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+    border: 1px solid var(--line); background: var(--surface);
+    color: var(--muted); cursor: pointer; padding: 0;
+    transition: background var(--duration-fast), color var(--duration-fast), border-color var(--duration-fast);
+}
+.sidebar-theme-btn:hover { background: var(--surface-2); color: var(--ink); opacity: 1; }
+
+/* Кнопка в мобильной шапке дашборда персонала (superadmin/главный
+   преподаватель и куратор) — сидит рядом с .mobile-dashboard-logout__button
+   на цветной hero-карточке, поэтому
+   переиспользует именно её раскладку (белая иконка на полупрозрачной
+   подложке), а не .sidebar-theme-btn. Составной селектор — специфичность
+   выше, чем у самой .mobile-dashboard-logout__button, иначе она глушит
+   display:none этого класса вне мобильной ширины. */
+.mobile-dashboard-theme-btn.mobile-dashboard-logout__button { display: none; }
+@media (max-width: 768px) {
+    .mobile-dashboard-theme-btn.mobile-dashboard-logout__button { display: inline-flex; }
+}
+
+/* Строка «Тёмная тема» внутри шестерёнки ученика — только на мобилке
+   (<1024px), там же, где у роли ниже нет отдельной кнопки-компаньона
+   рядом с "Выйти". На десктопе/планшете её глушим, чтобы не дублировать
+   с .sidebar-theme-btn в подвале сайдбара. */
 @media (min-width: 1024px) {
-    .theme-toggle { left: 24px; bottom: 24px; }
-    /* Живая проверка 03.09.2026: на этой ширине разворачивается десктопный
-       `.staff-aside` (шаблон `partials/staff_nav`) — сплошная колонка 220px
-       от края до края по высоте, а не строка внизу. Тот же левый нижний
-       угол занят её кнопкой «Выйти», кружок переключателя лёг прямо на
-       текст. Левый край в принципе занят сайдбаром на любой высоте —
-       переносим в верхний правый угол, там на десктопе staff-экранов
-       пусто (колокольчик и .floating-widget-tray внизу справа). */
-    body:has(.staff-aside) .theme-toggle {
-        left: auto; right: 24px; top: 24px; bottom: auto;
-    }
+    /* Составной селектор — .notif-gear-row (одинарный класс, display:flex)
+       определён ниже по файлу и при равном весе выигрывал бы у этого
+       правила по порядку каскада, несмотря на @media. */
+    .notif-gear-row.notif-gear-row--theme { display: none; }
 }
 
 /* ── Floating widgets ── */

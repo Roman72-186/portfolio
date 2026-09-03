@@ -42,7 +42,10 @@
         {% endfor %}
     </nav>
     <div class="desk-nav-footer">
-        {% include "partials/desk_nav_logout.html" %}
+        <div class="desk-nav-footer-row">
+            {% include "partials/desk_nav_logout.html" %}
+            {% include "partials/theme_toggle_btn.html" %}
+        </div>
     </div>
 </aside>
 <style>
