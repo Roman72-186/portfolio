@@ -266,7 +266,23 @@
    варианта ответа — здесь только то, чего у них нет. Токены из base.css. */
 
 .prg-blocks { margin-top: 16px; }
-.prg-blocks-add { flex-wrap: wrap; gap: 8px; }
+
+/* Строки блоков слипались друг с другом и с кнопками ниже — margin-top
+   у `.prg-ticket` (10px) рассчитан на компактные билеты Пробника, для
+   более крупных строк конструктора мало (владелец 03.09.2026). Каждая
+   зона действий (добавить тип блока / предпросмотр и перенос) вдобавок
+   получает свой отступ и разделитель, иначе три ряда кнопок читаются
+   как один. */
+.prg-blk { margin-top: var(--s-4); }
+.prg-blocks-add {
+    flex-wrap: wrap; gap: 8px;
+    margin-top: var(--s-3);
+}
+.prg-blocks-take {
+    flex-wrap: wrap; gap: 8px;
+    margin-top: var(--s-4); padding-top: var(--s-3);
+    border-top: 1px dashed var(--line);
+}
 
 .prg-blk-move { display: inline-flex; gap: 6px; }
 
@@ -313,4 +329,17 @@
 .prg-preview-blk[data-block-type="question"] { border-left-color: var(--blk-question); }
 .prg-preview-img { max-width: 220px; border-radius: 10px; border: 1px solid var(--line); }
 .prg-preview-option { display: flex; align-items: center; gap: 6px; color: var(--text); }
-.prg-blocks-take { flex-wrap: wrap; gap: 8px; }
+
+/* Предпросмотр и перенос содержимого — не новое действие «на будущее», а
+   рабочий переключатель, которым пользуются каждый раз при сборке блоков.
+   Серый `.btn-outline` рядом с яркими «+ Текст/Фото/…» терялся (владелец
+   03.09.2026). Красим тем же акцентом кабинета (`--blue`, он же фиолетовый,
+   см. DESIGN.md) — новый цвет не заводим, только меняем вес подачи между
+   двумя кнопками, чтобы они не сливались друг с другом. */
+[data-preview-blocks] {
+    color: var(--blue-on-soft); background: var(--blue-soft); border-color: var(--blue-tint);
+}
+[data-preview-blocks]:hover { color: #fff; background: var(--blue); border-color: var(--blue); }
+
+[data-take-blocks] { color: var(--blue); border-color: var(--blue); }
+[data-take-blocks]:hover { color: var(--blue-on-soft); background: var(--blue-soft); border-color: var(--blue); }
