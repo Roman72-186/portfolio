@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=35">
+<link rel="stylesheet" href="/static/css/tracker.css?v=36">
 {% endblock %}
 {% block content %}
 <div class="lrn-page ios-learning">
@@ -392,7 +392,7 @@ function lrnUpdateTabBadge(kind) {
                 row.classList.add('trk-item--' + data.status);
                 btn.classList.toggle('is-done', done);
                 btn.setAttribute('aria-pressed', done ? 'true' : 'false');
-                btn.textContent = done ? 'Сделано' : 'Отметить';
+                btn.textContent = done ? 'Выполнено' : 'Отметить выполнение';
                 // Кнопка остаётся задизейбленной навсегда — отжать обратно
                 // нельзя, ниже в .finally() она включится только при ошибке.
                 btn.disabled = done;

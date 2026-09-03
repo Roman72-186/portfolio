@@ -126,11 +126,21 @@
     .trk-head { display: grid; grid-template-columns: 1fr; }
     .trk-grid, .trk-grid--two, .trk-row { grid-template-columns: 1fr; }
     .trk-row-actions { justify-content: flex-start; }
+    .lrn-blk-gallery { grid-template-columns: 1fr; }
+    .lrn-inline-mock .photo-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* ── Экран ученика: неделя с днями и заданиями ──────────────────────── */
 
-.trk-item { border-left: 4px solid var(--line); }
+.trk-item {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-areas: "content" "actions";
+    row-gap: 10px;
+    border-left: 4px solid var(--line);
+}
+.trk-item > div:first-child { grid-area: content; min-width: 0; }
+.trk-item > .trk-row-actions { grid-area: actions; justify-content: flex-end; }
 .trk-item--overdue { border-left-color: var(--error); }
 .trk-item--upcoming { border-left-color: var(--warning); }
 .trk-item--done { border-left-color: var(--success); opacity: 0.72; }
@@ -177,6 +187,7 @@
 @media (max-width: 480px) {
     .trk-weekcell-dow { font-size: 9px; }
     .trk-weekcell-num { font-size: 14px; }
+    .lrn-inline-mock .photo-grid { grid-template-columns: 1fr; }
 }
 
 /* ── АОП: шапка, переключатель предмета, вкладки недели, карточки ────── */
@@ -453,27 +464,21 @@
 .ios-tracker .trk-row-actions .btn-blue:hover { transform: none; filter: brightness(1.05); }
 .ios-tracker .trk-row-actions .btn-blue:active { transform: scale(0.94); filter: brightness(0.92); }
 
-/* Кнопка «Отметить» → круглый чекбокс iOS вместо текстовой пилюли; текст
-   остаётся в DOM для скринридеров (text-indent прячет его только визуально). */
+/* Кнопка «Отметить выполнение» — текстовая пилюля, всегда в фиксированной
+   grid-области `actions` карточки (.trk-item), поэтому не нужно отдельно
+   позиционировать её под конкретный брейкпоинт. */
 .ios-tracker .trk-toggle-btn {
-    width: 26px; height: 26px; min-height: 26px; padding: 0;
-    border-radius: 50%; border: 1.5px solid var(--ios-sep); background: transparent;
-    text-indent: -999px; overflow: hidden; white-space: nowrap;
-    position: relative; flex-shrink: 0;
+    min-height: 44px; padding: 10px 16px;
+    border-radius: var(--r-pill); border: 1.5px solid var(--ios-sep); background: transparent;
+    font: 600 13px/1 var(--ios-font); color: var(--ios-blue);
+    cursor: pointer;
     transition: transform 120ms cubic-bezier(0.34, 1.2, 0.64, 1),
-                background 120ms var(--ios-ease), border-color 120ms var(--ios-ease);
+                background 120ms var(--ios-ease), border-color 120ms var(--ios-ease),
+                color 120ms var(--ios-ease);
 }
-.ios-tracker .trk-toggle-btn::after {
-    content: ''; position: absolute; inset: 0; margin: auto;
-    width: 11px; height: 6px;
-    border-left: 2px solid #fff; border-bottom: 2px solid #fff;
-    transform: rotate(-45deg) scale(0); opacity: 0;
-    transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 100ms ease-out;
-}
-.ios-tracker .trk-toggle-btn.is-done { background: var(--ios-green); border-color: var(--ios-green); }
-.ios-tracker .trk-toggle-btn.is-done::after { transform: rotate(-45deg) scale(1); opacity: 1; }
-.ios-tracker .trk-toggle-btn:active { transform: scale(0.86); }
-.ios-tracker .trk-toggle-btn:disabled { opacity: 0.5; }
+.ios-tracker .trk-toggle-btn.is-done { background: var(--ios-green); border-color: var(--ios-green); color: #fff; }
+.ios-tracker .trk-toggle-btn:active { transform: scale(0.96); }
+.ios-tracker .trk-toggle-btn:disabled { opacity: 0.6; cursor: default; }
 
 .ios-tracker .trk-empty {
     background: var(--ios-card-bg); border: none; border-radius: 16px;
@@ -775,65 +780,28 @@
 .ios-learning .trk-row-actions .btn-blue:hover { transform: none; filter: brightness(1.05); }
 .ios-learning .trk-row-actions .btn-blue:active { transform: scale(0.94); filter: brightness(0.92); }
 
-/* Кнопка «Отметить» → круглый чекбокс iOS, тот же паттерн, что у трекера.
-   Непрочитанное состояние раньше рисовалось почти невидимой рамкой
-   (`--ios-sep` на прозрачном фоне) — на белой карточке она сливалась с
-   фоном, и было непонятно, что кружок вообще нужно нажать (владелец,
-   26.08.2026). Незакрытое состояние теперь заливается акцентным синим
-   тоном и рамкой того же цвета — тот же единственный акцент, что и у
-   активной вкладки/CTA на этом экране, а не новый оттенок. */
+/* Кнопка «Отметить выполнение» — текстовая пилюля, тот же паттерн, что у
+   трекера (см. `.ios-tracker .trk-toggle-btn`). Она всегда лежит в
+   фиксированной grid-области `actions` карточки (.trk-item), поэтому не
+   нужно вынимать её из потока под конкретный брейкпоинт — костыль
+   `position:absolute` на мобильном (был здесь до 03.09.2026) снят вместе
+   с этим переходом. */
 .ios-learning .trk-toggle-btn {
-    width: 28px; height: 28px; min-height: 28px; padding: 0;
-    border-radius: 50%; border: 2px solid rgba(175,82,222,0.55); background: rgba(175,82,222,0.10);
-    text-indent: -999px; overflow: hidden; white-space: nowrap;
-    position: relative; flex-shrink: 0;
+    min-height: 44px; padding: 10px 16px;
+    border-radius: var(--r-pill); border: 2px solid rgba(175,82,222,0.55); background: rgba(175,82,222,0.10);
+    font: 600 13px/1 var(--ios-font); color: var(--ios-blue);
+    cursor: pointer;
     transition: transform 120ms cubic-bezier(0.34, 1.2, 0.64, 1),
-                background 120ms var(--ios-ease), border-color 120ms var(--ios-ease);
+                background 120ms var(--ios-ease), border-color 120ms var(--ios-ease),
+                color 120ms var(--ios-ease);
 }
-.ios-learning .trk-toggle-btn::after {
-    content: ''; position: absolute; inset: 0; margin: auto;
-    width: 11px; height: 6px;
-    border-left: 2px solid #fff; border-bottom: 2px solid #fff;
-    transform: rotate(-45deg) scale(0); opacity: 0;
-    transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 100ms ease-out;
-}
-.ios-learning .trk-toggle-btn.is-done { background: var(--ios-green); border-color: var(--ios-green); }
-.ios-learning .trk-toggle-btn.is-done::after { transform: rotate(-45deg) scale(1); opacity: 1; }
-.ios-learning .trk-toggle-btn:active { transform: scale(0.86); }
+.ios-learning .trk-toggle-btn.is-done { background: var(--ios-green); border-color: var(--ios-green); color: #fff; }
+.ios-learning .trk-toggle-btn:active { transform: scale(0.96); }
 /* `:disabled` без `.is-done` — запрос в полёте (полсекунды после клика,
    пока не пришёл ответ сервера). Готовую сделанной задачу гасить нельзя:
    отметка необратима (решение владельца 26.08.2026), и полупрозрачная
    зелёная галочка выглядела бы как «недоступно», а не «выполнено». */
 .ios-learning .trk-toggle-btn:disabled:not(.is-done) { opacity: 0.5; }
-
-/* На телефоне карточка сужается до одной колонки (`.trk-row` ловит общий
-   `@media (max-width: 760px)` выше) и кружок «Отметить» уезжал отдельной
-   строкой под текст — было неочевидно, что вообще нужно что-то нажимать
-   (владелец, 26.08.2026). На мобильном кружок встаёт в правый верхний угол
-   самой карточки, рядом с заголовком; кнопки-ссылки (пробник/домашка/видео/
-   анкета) в `.trk-row-actions` этот блок не трогает — у них есть текст, им
-   спускаться под контент нормально.
-
-   Абсолютно позиционируем сам кружок, а не весь `.trk-row-actions`
-   (правка 31.08.2026, найдено при разборе бага «видео на АОП перекошено на
-   мобильном»): у задач без автозакрытия (`kind` не video/анкета/домашка/
-   пробник) в том же `.trk-row-actions` рядом с чекбоксом лежит ещё
-   раскрывашка «Материалы задания» (универсальный конструктор блоков,
-   31.08.2026, `task_action.html`) — она младше этого правила на 5 дней и
-   при его написании не учитывалась. Если абсолютно спозиционировать весь
-   контейнер, раскрывашка (`width:100%` в `.trk-row-expand`) резолвится
-   относительно auto-width абсолютного блока без заданной ширины и рвёт
-   раскладку открытой панели (в том числе видео внутри блоков). Кружок один
-   в потоке не участвует — вынимаем из потока только его. */
-@media (max-width: 760px) {
-    .ios-learning .trk-item { position: relative; }
-    .ios-learning .trk-toggle-btn {
-        position: absolute; top: 13px; right: 16px;
-    }
-    .ios-learning .trk-row:has(.trk-toggle-btn) > div:first-child {
-        padding-right: 40px;
-    }
-}
 
 @keyframes ios-learning-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .ios-learning .lrn-card,

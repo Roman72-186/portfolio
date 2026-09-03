@@ -11,7 +11,7 @@ FORM: Operate, список, а не карточка-витрина.
 #}
 {% block title %}Личный трекер{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=35">
+<link rel="stylesheet" href="/static/css/tracker.css?v=36">
 <link rel="stylesheet" href="/static/css/profile_hero.css?v=5">
 {% endblock %}
 {% block content %}
@@ -179,7 +179,7 @@ FORM: Operate, список, а не карточка-витрина.
                 row.classList.add('trk-item--' + data.status);
                 btn.classList.toggle('is-done', done);
                 btn.setAttribute('aria-pressed', done ? 'true' : 'false');
-                btn.textContent = done ? 'Сделано' : 'Отметить';
+                btn.textContent = done ? 'Выполнено' : 'Отметить выполнение';
                 // Кнопка остаётся задизейбленной навсегда — отжать обратно
                 // нельзя, ниже в .catch() она включится только при ошибке.
                 btn.disabled = done;

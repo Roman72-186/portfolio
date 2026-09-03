@@ -81,7 +81,7 @@
     data-toggle-task="{{ task.id }}"
     aria-pressed="{{ 'true' if entry.status == 'done' else 'false' }}"
     {{ 'disabled' if entry.status == 'done' }}
->{{ 'Сделано' if entry.status == 'done' else 'Отметить' }}</button>
+>{{ 'Выполнено' if entry.status == 'done' else 'Отметить выполнение' }}</button>
 {% endif %}
 
 {# Содержимое элемента: блоки конструктора (владелец 31.08.2026) — общие на
