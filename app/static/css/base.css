@@ -62,6 +62,25 @@
     --ios-orange: #FF9500;
     --ios-purple: #AF52DE;
 
+    /* ── iOS re-skin: шрифт, кривая анимации и нейтральная палитра
+       (label/separator/подложка) — 03.09.2026, первый шаг перед тёмной
+       темой. Тот же самый блок (`--ios-font` … `--ios-card-bg`) был
+       буквально скопирован в 23 файла (`.ios-prg-day`, `.ios-tracker`,
+       `.ios-staff-dashboard` и т.д.), каждый — свой `:root`-подобный
+       скоуп: переключатель темы упёрся бы в то, что переопределение
+       выше по каскаду (здесь) ничего не меняет, файлы снова
+       перезаписывают его локально. Кастомное свойство наследуется по
+       DOM вниз без переобъявления — локальные копии убраны, скоупы
+       читают эти значения прямо отсюда. ── */
+    --ios-font:       -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    --ios-ease:       cubic-bezier(0.16, 1, 0.3, 1);
+    --ios-label:      #1C1C1E;
+    --ios-label-2:    rgba(60,60,67,0.60);
+    --ios-label-3:    rgba(60,60,67,0.30);
+    --ios-sep:        rgba(60,60,67,0.29);
+    --ios-grouped-bg: #F2F2F7;
+    --ios-card-bg:    #FFFFFF;
+
     /* ── Shadows ────────────────────────────── */
     --sh-sm:   0 1px 2px rgba(15,23,42,.04), 0 1px 1px rgba(15,23,42,.03);
     --sh-md:   0 8px 24px rgba(20,30,80,.08);

@@ -14,7 +14,6 @@
    в cabinet_tracker.html, на другие экраны не влияет. */
 
 .profile-hero {
-    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
     font-family: var(--ios-font);
     background: linear-gradient(160deg, #BF5AF2 0%, #7B1FA2 100%);
     border-radius: 26px;

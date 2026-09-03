@@ -315,14 +315,6 @@
    ═══════════════════════════════════════════════════════════════════════ */
 
 .ios-tracker {
-    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
-    --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
-    --ios-label: #1C1C1E;
-    --ios-label-2: rgba(60,60,67,0.60);
-    --ios-label-3: rgba(60,60,67,0.30);
-    --ios-sep: rgba(60,60,67,0.29);
-    --ios-grouped-bg: #F2F2F7;
-    --ios-card-bg: #FFFFFF;
     position: relative;
     isolation: isolate;
     font-family: var(--ios-font);
@@ -524,19 +516,11 @@
    и на случай, если их подключат ещё где-то. */
 
 .ios-learning {
-    --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
-    --ios-ease: cubic-bezier(0.16, 1, 0.3, 1);
     /* Системный iOS pink — под цвет предмета «Композиция» (решение владельца
        27.08.2026, разбор созвона 26.08: у Рисунка и Композиции уже есть свои
        цвета, готового HEX в коде не нашлось, взят системный аналог того же
        семейства, что --ios-blue/--ios-red/--ios-green). */
     --ios-pink: #FF2D55;
-    --ios-label: #1C1C1E;
-    --ios-label-2: rgba(60,60,67,0.60);
-    --ios-label-3: rgba(60,60,67,0.30);
-    --ios-sep: rgba(60,60,67,0.29);
-    --ios-grouped-bg: #F2F2F7;
-    --ios-card-bg: #FFFFFF;
     position: relative;
     isolation: isolate;
     font-family: var(--ios-font);
@@ -980,7 +964,6 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
    30.08.2026). Не переиспользует `.ios-upload-mock` напрямую: тот скоуп несёт
    полноэкранный fixed-фон и разметку отдельной страницы (h1/back-link),
    которых здесь нет — только визуальный язык компонентов, свои классы. */
-.lrn-inline-mock { --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif; }
 .lrn-inline-mock .video-progress-status { min-height: 20px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .lrn-inline-mock .video-progress-status.is-error { color: var(--error); }
 .lrn-inline-mock .trk-pending-note { margin: 0; }
