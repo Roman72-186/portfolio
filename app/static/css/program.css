@@ -297,7 +297,20 @@
     border: 1px dashed var(--line); border-radius: 12px; background: var(--surface-2);
     display: flex; flex-direction: column; gap: 12px;
 }
-.prg-preview-blk { display: flex; flex-direction: column; gap: 6px; }
+/* Карточка + полоса по типу — то же деление, что у `.prg-blk` в самом
+   редакторе (program_ios.css): предпросмотр не должен выглядеть честнее
+   или хуже, чем реальный экран ученика. */
+.prg-preview-blk {
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 10px 12px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm);
+    border-left: 3px solid var(--blk-text);
+}
+.prg-preview-blk[data-block-type="text"]     { border-left-color: var(--blk-text); }
+.prg-preview-blk[data-block-type="photo"]    { border-left-color: var(--blk-photo); }
+.prg-preview-blk[data-block-type="video"]    { border-left-color: var(--blk-video); }
+.prg-preview-blk[data-block-type="link"]     { border-left-color: var(--blk-link); }
+.prg-preview-blk[data-block-type="question"] { border-left-color: var(--blk-question); }
 .prg-preview-img { max-width: 220px; border-radius: 10px; border: 1px solid var(--line); }
 .prg-preview-option { display: flex; align-items: center; gap: 6px; color: var(--text); }
 .prg-blocks-take { flex-wrap: wrap; gap: 8px; }

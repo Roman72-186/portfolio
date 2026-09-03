@@ -49,7 +49,11 @@
         }
 
         function withTitle(wrap, block) {
-            if (block.title) wrap.appendChild(el('p', 'field-label', block.title));
+            // Не field-label: тот же класс держит подписи полей форм по всему
+            // приложению, а здесь заголовок блока должен быть заметнее тела
+            // текста под ним, а не мельче (было 12px против обычного текста —
+            // ревью 03.09.2026).
+            if (block.title) wrap.appendChild(el('p', 'lrn-blk-title', block.title));
             return wrap;
         }
 
@@ -177,7 +181,10 @@
         function renderQuestion(block, index) {
             var wrap = withTitle(el('div', 'lrn-blk lrn-blk-question'), block);
             var fieldId = 'lrn-blk-' + uid + '-' + index;
-            var label = el('label', 'field-label', block.body || '');
+            // Это сам вопрос, а не подпись поля — field-label здесь занижал
+            // его до заголовка блока (оба 12px), хотя это главный текст,
+            // который нужно прочитать первым (ревью 03.09.2026).
+            var label = el('label', 'lrn-blk-question-body', block.body || '');
             label.setAttribute('for', fieldId);
             wrap.appendChild(label);
 
@@ -241,6 +248,10 @@
 
         function appendSubmit(data) {
             var form = el('form', 'lrn-blk-submit');
+            // Форма рисовалась как ещё один пункт списка блоков — заголовок
+            // + рамка сверху (в CSS) отделяют её как конец задания, а не
+            // очередной блок (ревью 03.09.2026).
+            form.appendChild(el('p', 'lrn-blk-title', 'Готовы отправить ответы?'));
             var button = el('button', 'btn-blue', 'Отправить ответы');
             button.type = 'submit';
             var note = el('p', 'video-progress-status');

@@ -226,13 +226,67 @@
 .ios-prg-day .prg-subject.is-ready { background: rgba(52,199,89,0.08); }
 .ios-prg-day .prg-ticket-content .prg-thumbs { color: var(--ios-label-2); }
 
-/* ── Билеты и вопросы анкеты (общая карточка-строка) ── */
+/* ── Билеты и вопросы анкеты (общая карточка-строка) ──
+   Фон — тот же приём, что у `.prg-subject` двумя блоками выше: карточка
+   лежит на белой `.prg-form`, поэтому берёт «утопленную» поверхность
+   `--ios-grouped-bg` + тонкую границу, а не тот же белый цвет, что и форма
+   вокруг (было — карточка и форма совпадали по фону, отличала только
+   почти невидимая тень 5%; ревью 03.09.2026, 4 независимых агента). */
 .ios-prg-day .prg-ticket {
     gap: 10px; padding: 14px 16px; margin-top: 10px;
-    background: var(--ios-card-bg); border: none; border-radius: 14px;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    background: var(--ios-grouped-bg); border: 1px solid var(--ios-sep); border-radius: 14px;
+    box-shadow: none;
 }
 .ios-prg-day .prg-ticket-head strong { font: 700 13px/1 var(--ios-font); color: var(--ios-label); }
+
+/* ── Блок конструктора: цветная полоса по типу (`data-block-type`) ──
+   Только категориальная метка, не статус — токены `--blk-*` из base.css
+   осознанно не переиспользуют --success/--error/--warning/--blue. Подпись
+   типа в `.prg-ticket-head` остаётся первичным носителем, полоса —
+   вторичный ускоритель сканирования при 7+ блоках в списке. */
+.ios-prg-day .prg-blk[data-block-type] { border-left: 3px solid var(--blk-text); }
+.ios-prg-day .prg-blk[data-block-type="text"]     { border-left-color: var(--blk-text); }
+.ios-prg-day .prg-blk[data-block-type="photo"]    { border-left-color: var(--blk-photo); }
+.ios-prg-day .prg-blk[data-block-type="video"]    { border-left-color: var(--blk-video); }
+.ios-prg-day .prg-blk[data-block-type="link"]     { border-left-color: var(--blk-link); }
+.ios-prg-day .prg-blk[data-block-type="question"] { border-left-color: var(--blk-question); }
+
+/* Номер блока — второй зрительный якорь рядом с подписью типа (см. комментарий
+   выше про 7+ блоков). Кнопка «Убрать» отделена от ↑/↓ зазором и окрашена
+   как разрушительное действие, а не ещё одна пилюля того же веса, что и
+   перемещение — их разделяли 6px, тап на телефоне легко промахивался. */
+.ios-prg-day .prg-blk-number {
+    display: inline-block; margin-right: 6px;
+    color: var(--ios-label-3); font: 700 13px/1 var(--ios-font);
+}
+.ios-prg-day .prg-blk-actions { display: inline-flex; align-items: center; gap: 14px; }
+.ios-prg-day .prg-blk-remove {
+    margin-left: 2px; color: var(--ios-red); border-color: var(--ios-red);
+}
+
+/* Вспышка при перестановке ↑/↓ — иначе мгновенное перемещение DOM-узла
+   ничем не сигналит, что нажатие сработало (ревью 03.09.2026). */
+.ios-prg-day .prg-blk--moved { animation: prg-blk-flash 700ms var(--ios-ease); }
+@keyframes prg-blk-flash {
+    0%   { background: var(--ios-grouped-bg); }
+    30%  { background: color-mix(in srgb, var(--blue) 18%, var(--ios-grouped-bg)); }
+    100% { background: var(--ios-grouped-bg); }
+}
+
+/* Временная подсветка блоков, вставленных «Взять содержимое из другого
+   задания», плюс разделитель перед первым из них — иначе пачка новых
+   блоков тут же становится неотличима от остальных. */
+.ios-prg-day .prg-blk--new { background: color-mix(in srgb, var(--blue) 10%, var(--ios-grouped-bg)); }
+.ios-prg-day .prg-blk-divider {
+    margin-top: 14px; padding-top: 10px;
+    border-top: 1px dashed var(--ios-sep);
+    color: var(--ios-label-2); font: 700 11px/1 var(--ios-font);
+    text-transform: uppercase; letter-spacing: 0.04em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ios-prg-day .prg-blk--moved { animation: none; }
+}
 
 /* ── Мини-опрос выбранного ролика (форма «Видеоматериал», владелец
    29.08.2026 — конструктор вопросов тут же, где выбирают ролик на день, не

@@ -824,7 +824,15 @@
     content: '▾'; font-size: 11px; transition: transform var(--duration-fast) var(--ease-out);
 }
 .trk-row-expand[open] > summary::after { transform: rotate(180deg); }
-.trk-expand-body { margin-top: 12px; }
+/* Утопленная подпанель конкретного задания — тот же приём, что у
+   `.prg-ticket` на `--ios-grouped-bg` в program_ios.css: без своего фона
+   развёрнутое содержимое лежало на том же белом `--ios-card-bg`, что и
+   строка задания и вся группа вокруг, и визуально утекало в соседние
+   задания списка (ревью 03.09.2026, 4 независимых агента). */
+.trk-expand-body {
+    margin-top: 12px; padding: var(--s-2) var(--s-1); border-radius: 14px;
+    background: var(--ios-grouped-bg, var(--surface-2));
+}
 
 /* Открытая панель живёт внутри `.trk-row-actions` — `auto`-колонка
    `.trk-row { grid-template-columns: minmax(0, 1fr) auto }`. Без этого
@@ -1089,9 +1097,45 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
    Живёт здесь, а не инлайном в шаблоне — за ростом <style> в шаблонах следит
    tests/test_reuse_ratchet.py. Только токены из base.css, своих цветов нет. */
 
-.lrn-blk-list { display: flex; flex-direction: column; gap: var(--s-4); }
+/* Статус загрузки (data-role="status" в task_blocks.html) — до сих пор
+   рисовался голым `<p>` без единого CSS-правила: между кликом на «Материалы
+   задания» и ответом сервера ученик видел текст без рамки-обещания, что
+   здесь появится контент (ревью 03.09.2026). */
+.lrn-blocks [data-role="status"] {
+    margin: 0; padding: var(--s-3);
+    background: var(--surface-2); border-radius: var(--r-md);
+    color: var(--muted); font-size: 13px;
+}
+.lrn-blocks [data-role="status"].is-error { color: var(--error); }
 
-.lrn-blk { display: flex; flex-direction: column; gap: var(--s-2); }
+.lrn-blk-list { display: flex; flex-direction: column; gap: var(--s-3); }
+
+/* Карточка блока + полоса по типу — блоки лежали прямо на фоне страницы
+   без рамки/фона, отличал их только отступ, и на сплошном полотне текста
+   ученик не видел, где кончается один блок и начинается следующий (ревью
+   03.09.2026, 4 независимых агента). Полоса — `--blk-*` из base.css, та же
+   категориальная метка, что у блока в редакторе (program_ios.css), не
+   статус. Подпись типа в заголовке блока остаётся первичным носителем. */
+.lrn-blk {
+    display: flex; flex-direction: column; gap: var(--s-2);
+    padding: var(--s-3);
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
+    border-left: 3px solid var(--blk-text);
+}
+.lrn-blk-text     { border-left-color: var(--blk-text); }
+.lrn-blk-photo    { border-left-color: var(--blk-photo); }
+.lrn-blk-video    { border-left-color: var(--blk-video); }
+.lrn-blk-link     { border-left-color: var(--blk-link); }
+.lrn-blk-question { border-left-color: var(--blk-question); }
+/* Вопрос — единственный тип, который требует действия, а не только чтения:
+   лёгкая подложка поверх границы того же цвета делает это заметным сразу,
+   не дожидаясь, пока взгляд дойдёт до вариантов ответа (ревью 03.09.2026). */
+.lrn-blk-question { background: color-mix(in srgb, var(--blk-question) 6%, var(--surface)); }
+
+/* Заголовок блока — не field-label (та подпись форм ниже своего же текста,
+   12px против 15px тела). Здесь заголовок обязан быть заметнее содержимого,
+   иначе при беглом скролле не за что зацепиться взглядом. */
+.lrn-blk-title { margin: 0; color: var(--ink); font: 700 14px/1.3 var(--font-display); }
 .lrn-blk-body { margin: 0; color: var(--text); line-height: 1.55; white-space: pre-wrap; }
 
 .lrn-blk-image {
@@ -1107,16 +1151,26 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
    были быть с самого начала, но потерялись при переезде видео в блоки
    31.08.2026 — этот класс/стиль был их временной заменой без обеих защит). */
 
+/* Текст самого вопроса — не field-label: это содержимое, а не подпись поля,
+   и должно читаться раньше вариантов ответа под ним, а не наравне с ними. */
+.lrn-blk-question-body { display: block; margin: 0 0 var(--s-1); color: var(--ink); font: 600 15px/1.4 var(--font-body); }
+
 .lrn-blk-option {
     display: flex; align-items: center; gap: var(--s-2);
     padding: var(--s-2) var(--s-3);
     border: 1px solid var(--line); border-radius: var(--r-sm);
+    background: var(--surface);
     color: var(--text); cursor: pointer;
 }
 .lrn-blk-option:hover { background: var(--surface-2); }
 .lrn-blk-option input { flex: none; margin: 0; }
 
-.lrn-blk-submit { display: flex; flex-direction: column; gap: var(--s-2); align-items: flex-start; }
+/* Рамка сверху отделяет форму отправки от блоков-вопросов над ней — иначе
+   она читалась как ещё один пункт списка, а не как конец задания. */
+.lrn-blk-submit {
+    display: flex; flex-direction: column; gap: var(--s-2); align-items: flex-start;
+    padding-top: var(--s-3); border-top: 1px solid var(--line);
+}
 
 /* Вердикт проверки и галерея в панели задания (владелец 31.08.2026).
    Правильность — значком и словом, не одним цветом: цвет читают не все. */

@@ -8,8 +8,8 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=12">
-<link rel="stylesheet" href="/static/css/program_ios.css?v=7">
+<link rel="stylesheet" href="/static/css/program.css?v=13">
+<link rel="stylesheet" href="/static/css/program_ios.css?v=9">
 {% endblock %}
 {% block content %}
 {% macro tariff_fields() %}
@@ -488,6 +488,17 @@ FORM: Operate.
         updateSubjectSummary(block);
     }
 
+    // Тот же приём, что renumberTickets выше — при 7+ блоках одного типа
+    // («вопрос», «вопрос», «вопрос») подпись типа их не различает, номер
+    // даёт зацепку взгляду без чтения текста внутри (ревью 03.09.2026).
+    function renumberBlocks(holder) {
+        if (!holder) return;
+        holder.querySelectorAll('[data-block]').forEach(function (row, index) {
+            var num = row.querySelector('[data-block-number]');
+            if (num) num.textContent = String(index + 1) + '.';
+        });
+    }
+
     function openSubjectBlock(block) {
         mockForm.querySelector('[data-subject-picker]').hidden = true;
         mockForm.querySelectorAll('[data-subject-block]').forEach(function (other) {
@@ -799,11 +810,14 @@ FORM: Operate.
     function blockRowHTML(type) {
         return ''
             + '<div class="prg-ticket prg-blk" data-block data-block-type="' + type + '">'
-            + '  <div class="prg-ticket-head"><strong>' + escapeHTML(BLOCK_LABELS[type] || type) + '</strong>'
-            + '    <span class="prg-blk-move">'
-            + '      <button type="button" class="btn-outline" data-move-block="-1" aria-label="Выше">↑</button>'
-            + '      <button type="button" class="btn-outline" data-move-block="1" aria-label="Ниже">↓</button>'
-            + '      <button type="button" class="btn-outline" data-remove-block>Убрать</button>'
+            + '  <div class="prg-ticket-head">'
+            + '    <span><span class="prg-blk-number" data-block-number></span><strong>' + escapeHTML(BLOCK_LABELS[type] || type) + '</strong></span>'
+            + '    <span class="prg-blk-actions">'
+            + '      <span class="prg-blk-move">'
+            + '        <button type="button" class="btn-outline" data-move-block="-1" aria-label="Выше">↑</button>'
+            + '        <button type="button" class="btn-outline" data-move-block="1" aria-label="Ниже">↓</button>'
+            + '      </span>'
+            + '      <button type="button" class="btn-outline prg-blk-remove" data-remove-block>Убрать</button>'
             + '    </span>'
             + '  </div>'
             + blockBodyHTML(type)
@@ -882,6 +896,7 @@ FORM: Operate.
         blocks.forEach(function (b) {
             var wrap = document.createElement('div');
             wrap.className = 'prg-preview-blk';
+            wrap.setAttribute('data-block-type', b.block_type);
             if (b.title) {
                 var h = document.createElement('p');
                 h.className = 'field-label';
@@ -983,11 +998,40 @@ FORM: Operate.
             return r.json();
         }).then(function (data) {
             var holder = form.querySelector('[data-blocks]');
-            (data.blocks || []).forEach(function (block) {
+            var incoming = data.blocks || [];
+            if (!incoming.length) {
+                status.textContent = 'В этом задании пока нет блоков.';
+                return;
+            }
+            // Граница между тем, что уже было в форме, и тем, что приехало
+            // пачкой: без неё вставленные блоки тут же становятся
+            // неотличимы от остальных (ревью 03.09.2026).
+            var hadBlocksBefore = !!holder.querySelector('[data-block]');
+            if (hadBlocksBefore) {
+                holder.insertAdjacentHTML(
+                    'beforeend',
+                    '<div class="prg-blk-divider" data-take-divider>Добавлено из другого задания</div>'
+                );
+            }
+            var firstNew = null;
+            incoming.forEach(function (block) {
                 holder.insertAdjacentHTML('beforeend', blockRowHTML(block.block_type));
-                fillBlockRow(holder.lastElementChild, block);
+                var row = holder.lastElementChild;
+                fillBlockRow(row, block);
+                row.classList.add('prg-blk--new');
+                if (!firstNew) firstNew = row;
             });
-            status.textContent = 'Добавлено блоков: ' + (data.blocks || []).length + '.';
+            renumberBlocks(holder);
+            if (firstNew) firstNew.scrollIntoView({behavior: 'smooth', block: 'center'});
+            // Подсветка временная: снимаем через паузу, а не оставляем
+            // навсегда — иначе через десять минут редактирования старый
+            // «свежий» блок выглядит так же, как только что взятый.
+            setTimeout(function () {
+                holder.querySelectorAll('.prg-blk--new').forEach(function (row) {
+                    row.classList.remove('prg-blk--new');
+                });
+            }, 6000);
+            status.textContent = 'Добавлено блоков: ' + incoming.length + '.';
         }).catch(function () {
             status.textContent = 'Не удалось перенести содержимое.';
             status.classList.add('is-error');
@@ -1002,6 +1046,7 @@ FORM: Operate.
             holder.insertAdjacentHTML('beforeend', blockRowHTML(block.block_type));
             fillBlockRow(holder.lastElementChild, block);
         });
+        renumberBlocks(holder);
     }
 
     function collectFormBlocks(form) {
@@ -1560,25 +1605,41 @@ FORM: Operate.
             blocksHolder.insertAdjacentHTML(
                 'beforeend', blockRowHTML(addBlock.getAttribute('data-add-block'))
             );
-            syncBlockOptions(blocksHolder.lastElementChild);
+            var newBlock = blocksHolder.lastElementChild;
+            syncBlockOptions(newBlock);
+            renumberBlocks(blocksHolder);
+            // На длинном списке новый блок в конце легко оказывается за
+            // экраном без единого сигнала, что кнопка вообще сработала.
+            newBlock.scrollIntoView({behavior: 'smooth', block: 'center'});
             return;
         }
 
         var removeBlock = event.target.closest('[data-remove-block]');
         if (removeBlock) {
+            var removeHolder = removeBlock.closest('[data-blocks]');
             removeBlock.closest('[data-block]').remove();
+            renumberBlocks(removeHolder);
             return;
         }
 
         var moveBlock = event.target.closest('[data-move-block]');
         if (moveBlock) {
             var moved = moveBlock.closest('[data-block]');
+            var moveHolder = moved.closest('[data-blocks]');
             var step = Number(moveBlock.getAttribute('data-move-block'));
             var neighbour = step < 0 ? moved.previousElementSibling : moved.nextElementSibling;
             if (neighbour) {
                 // Порядок в DOM и есть порядок блоков: `collectFormBlocks`
                 // читает строки сверху вниз, отдельного поля сортировки нет.
                 if (step < 0) neighbour.before(moved); else neighbour.after(moved);
+                renumberBlocks(moveHolder);
+                // Мгновенная перестановка DOM-узла ничем не сигналит, что
+                // сработала — на длинном списке блок молча уезжает за
+                // пределы экрана (ревью 03.09.2026).
+                moved.classList.remove('prg-blk--moved');
+                void moved.offsetWidth; // перезапуск CSS-анимации
+                moved.classList.add('prg-blk--moved');
+                moved.scrollIntoView({behavior: 'smooth', block: 'nearest'});
             }
             return;
         }
