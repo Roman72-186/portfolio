@@ -54,7 +54,7 @@
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" onload="this.onload=null;this.rel='stylesheet'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet"></noscript>
     <!-- Base styles: versioned for cache-busting -->
-    <link rel="stylesheet" href="/static/css/base.css?v=49">
+    <link rel="stylesheet" href="/static/css/base.css?v=50">
     {% block extra_styles %}{% endblock %}
 </head>
 <body{% if user is defined and user and user.impersonated_by_id %} class="is-impersonating"{% endif %}>
@@ -237,7 +237,7 @@
     {% if user is defined and user %}
     <div class="floating-widget-tray" id="floatingWidgetTray" aria-label="Быстрые виджеты">
         {% set _unread = unread_count_for(user) %}
-        <button type="button" class="notif-bell" id="notifBell" aria-haspopup="dialog"
+        <button type="button" class="notif-bell" data-notif-bell aria-haspopup="dialog"
             aria-expanded="false"
             aria-label="Уведомления{% if _unread %} ({{ _unread }} непрочитанных){% endif %}">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -245,7 +245,7 @@
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
             <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
         </svg>
-        <span class="notif-bell-badge" id="notifBellBadge" aria-hidden="true"
+        <span class="notif-bell-badge" data-notif-bell-badge aria-hidden="true"
               {% if not _unread %}hidden{% endif %}>{{ _unread }}</span>
         </button>
         {% if settings.course_calculator_all_roles %}
@@ -265,13 +265,21 @@
     </div>
 
     <script>
-    (function(){
-        var bell = document.getElementById('notifBell');
+    // DOMContentLoaded, а не сразу: у ученика на мобилке вторая кнопка-
+    // колокольчик рендерится лепестком в partials/bottom_nav.html, ниже по
+    // странице (тот partial подключается из блока content, а этот script —
+    // выше него) — querySelectorAll здесь и сейчас нашёл бы только первую
+    // кнопку из .floating-widget-tray. Тот же приём, что у переключателя
+    // темы чуть выше по файлу.
+    document.addEventListener('DOMContentLoaded', function(){
+        // [data-notif-bell] — не единственная кнопка, обе открывают один и
+        // тот же #notifPop — делегирование, а не getElementById.
+        var bells = document.querySelectorAll('[data-notif-bell]');
         var pop = document.getElementById('notifPop');
         var body = document.getElementById('notifPopBody');
-        var badge = document.getElementById('notifBellBadge');
+        var badges = document.querySelectorAll('[data-notif-bell-badge]');
         var closeBtn = document.getElementById('notifPopClose');
-        if (!bell || !pop || !body) return;
+        if (!bells.length || !pop || !body) return;
         var CSRF = '{{ csrf_token(request) }}';
 
         function esc(s){
@@ -280,8 +288,8 @@
             return d.innerHTML;
         }
         function clearBadge(){
-            if (badge){ badge.hidden = true; badge.textContent = '0'; }
-            bell.setAttribute('aria-label', 'Уведомления');
+            badges.forEach(function(badge){ badge.hidden = true; badge.textContent = '0'; });
+            bells.forEach(function(bell){ bell.setAttribute('aria-label', 'Уведомления'); });
         }
         function render(items){
             if (!items || !items.length){
@@ -324,26 +332,29 @@
         }
         function open(){
             pop.hidden = false;
-            bell.setAttribute('aria-expanded', 'true');
+            bells.forEach(function(bell){ bell.setAttribute('aria-expanded', 'true'); });
             load();
         }
         function close(){
             pop.hidden = true;
-            bell.setAttribute('aria-expanded', 'false');
+            bells.forEach(function(bell){ bell.setAttribute('aria-expanded', 'false'); });
         }
-        bell.addEventListener('click', function(e){
-            e.preventDefault();
-            if (pop.hidden) open(); else close();
+        bells.forEach(function(bell){
+            bell.addEventListener('click', function(e){
+                e.preventDefault();
+                if (pop.hidden) open(); else close();
+            });
         });
         if (closeBtn) closeBtn.addEventListener('click', close);
         document.addEventListener('click', function(e){
             if (pop.hidden) return;
-            if (!pop.contains(e.target) && !bell.contains(e.target)) close();
+            var insideBell = Array.prototype.some.call(bells, function(bell){ return bell.contains(e.target); });
+            if (!pop.contains(e.target) && !insideBell) close();
         });
         document.addEventListener('keydown', function(e){
             if (e.key === 'Escape' && !pop.hidden) close();
         });
-    })();
+    });
     </script>
     {% endif %}
 

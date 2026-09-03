@@ -57,6 +57,15 @@ CURATOR_NAV_ITEMS: tuple[NavItem, ...] = (
 
 STUDENT_NAV_ITEMS: tuple[StudentNavItem, ...] = (
     StudentNavItem(
+        key="3dlab",
+        desktop_href="/3dlab",
+        mobile_href="/3dlab",
+        desktop_label="3D Лаб",
+        mobile_label="3D Лаб",
+        aria_label="3D Лаб",
+        icon="3dlab",
+    ),
+    StudentNavItem(
         key="tracker",
         desktop_href="/cabinet/tracker",
         mobile_href="/cabinet/tracker",
@@ -73,15 +82,6 @@ STUDENT_NAV_ITEMS: tuple[StudentNavItem, ...] = (
         mobile_label="Обучение",
         aria_label="Актуальное образовательное пространство",
         icon="learning",
-    ),
-    StudentNavItem(
-        key="3dlab",
-        desktop_href="/3dlab",
-        mobile_href="/3dlab",
-        desktop_label="3D Лаб",
-        mobile_label="3D Лаб",
-        aria_label="3D Лаб",
-        icon="3dlab",
     ),
     StudentNavItem(
         key="portfolio",
