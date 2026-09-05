@@ -239,6 +239,8 @@ def _edit_payloads(
                 "is_required": b.is_required,
                 "subject": b.subject,
                 "tariffs": sorted(block_tariffs.get(b.id, set())),
+                "opens_at": msk_date(b.opens_at).isoformat() if b.opens_at else None,
+                "bypass_sequence": b.bypass_sequence,
                 "options": [
                     {
                         "id": o.id, "text": o.text, "is_correct": o.is_correct,
@@ -353,6 +355,10 @@ def blocks_source_content(
             "is_required": b.is_required,
             "subject": b.subject,
             "tariffs": sorted(tariffs.get(b.id, set())),
+            # opens_at сюда намеренно не копируется: это абсолютная дата
+            # исходного дня, в новом дне она бы означала не то (владелец
+            # 06.09.2026) — куратор проставляет заново, если нужно.
+            "bypass_sequence": b.bypass_sequence,
             "images": [
                 {"url": i.image_s3_url, "path": i.image_s3_path}
                 for i in images.get(b.id, [])
@@ -520,6 +526,16 @@ class BlockItem(BaseModel):
     is_required: bool = False
     subject: str | None = Field(default=None, max_length=50)
     tariffs: list[str] = Field(default_factory=list, max_length=10)
+    # Период доступа — открывается 00:00 МСК этой даты, независимо от
+    # действий ученика; складывается с is_required, не заменяет (владелец
+    # 03.09.2026, найдено при повторном разборе 06.09.2026). Конвертацию в
+    # UTC делает сервисный слой (`sync_blocks`), не эта схема.
+    opens_at: date | None = None
+    # Явный обход последовательной блокировки — куратор решает сам, для
+    # какой версии блока он нужен (владелец 06.09.2026, снимает конфликт
+    # между «ссылка видна сразу» и «для тарифа Х ссылка ждёт сдачи домашки»
+    # без ветвления по тарифу в коде).
+    bypass_sequence: bool = False
 
     @model_validator(mode="after")
     def choice_question_needs_a_right_answer(self) -> "BlockItem":

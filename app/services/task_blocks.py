@@ -5,6 +5,8 @@
 свежим запросом, кэша между запросами нет.
 """
 
+from datetime import date as date_type, timezone
+
 from sqlalchemy.orm import Session as DBSession
 
 from app.constants import MOCK_SUBJECTS, TARIFFS
@@ -27,6 +29,7 @@ from app.models.task_block import (
     TaskBlockTariff,
 )
 from app.models.tracker import STATUS_DONE, STATUS_OPEN
+from app.services.tz import msk_midnight
 
 
 def get_blocks(db: DBSession, task_id: int) -> list[TaskBlock]:
@@ -400,6 +403,12 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         row.is_required = bool(item.get("is_required"))
         subject = _clean(item.get("subject"), 50)
         row.subject = subject if subject in MOCK_SUBJECTS else None
+        row.bypass_sequence = bool(item.get("bypass_sequence"))
+        opens_at_date = item.get("opens_at")
+        row.opens_at = (
+            msk_midnight(opens_at_date).astimezone(timezone.utc)
+            if isinstance(opens_at_date, date_type) else None
+        )
         if block_type == BLOCK_QUESTION:
             question_type = (item.get("question_type") or "").strip()
             row.question_type = (
@@ -601,28 +610,38 @@ def is_block_accessible(
     states: dict[int, TaskBlockState],
     tariffs_by_block: dict[int, set[str]],
     user_tariff: str | None,
+    now=None,
 ) -> bool:
     """Доступен ли ученику блок `blocks[block_index]` прямо сейчас.
 
-    Правило (владелец 05.09.2026, подтверждено 06.09.2026, предобучение):
-    блок недоступен, если тариф ученика не входит в список тарифов блока
-    (пустой список — доступен всем), ИЛИ если среди блоков строго перед ним
-    есть хотя бы один обязательный, ещё не закрытый этим учеником. Один
-    незакрытый обязательный блок блокирует **весь хвост ленты**, а не только
-    следующий блок — подтверждено владельцем 06.09.2026, то же правило, что
-    уже действует у `TrackerTask.is_required` для вкладок недели
-    (decisions.md 23.08), просто на уровень ниже: не вкладка, а блок внутри
-    неё.
+    Три независимых условия, все должны выполняться разом:
 
-    Обязательный блок, который сам недоступен этому ученику по тарифу, никого
-    не блокирует — он не для этого тарифа вообще, требовать его выполнения
-    было бы тупиком без выхода.
+    1. **Период доступа** (владелец 03.09.2026, найдено при повторном
+       разборе созвона 06.09.2026): если у блока проставлен `opens_at` и это
+       время ещё не наступило — блок недоступен, независимо ни от чего
+       остального. Открывается по календарю, а не по действию ученика:
+       «теория и задания откроются только с 23 сентября 0000» — это
+       отдельный гейт от обязательности, они складываются.
+    2. **Тариф**: недоступен, если тариф ученика не входит в список тарифов
+       блока (пустой список — доступен всем).
+    3. **Последовательность** (владелец 05.09.2026, подтверждено
+       06.09.2026): недоступен, если среди блоков строго перед ним есть
+       хотя бы один обязательный, ещё не закрытый этим учеником. Один
+       незакрытый обязательный блок блокирует **весь хвост ленты**, а не
+       только следующий блок — то же правило, что уже действует у
+       `TrackerTask.is_required` для вкладок недели (decisions.md 23.08),
+       просто на уровень ниже: не вкладка, а блок внутри неё. Обязательный
+       блок, который сам недоступен этому ученику по тарифу, никого не
+       блокирует — требовать его выполнения было бы тупиком без выхода.
 
-    Блок-ссылка (`BLOCK_LINK`) — исключение из последовательной блокировки
-    (владелец 06.09.2026): ссылка на занятие должна быть видна сразу, не
-    дожидаясь выполнения предыдущих блоков, иначе ученик потеряет её из виду
-    (созвон 03.09). Тарифный гейт на ссылку при этом действует как обычно —
-    исключение только из очереди «сначала пройди предыдущее».
+    `target.bypass_sequence` пропускает только пункт 3, не 1 и не 2
+    (владелец 06.09.2026). Раньше это было жёстко зашито на `BLOCK_LINK`
+    («ссылка на занятие видна сразу, не дожидаясь предыдущих блоков») — но
+    тот же созвон 03.09 требует обратного для тарифа «Уверенный максимум»:
+    та же ссылка должна ждать сдачи домашки. Явный флаг снимает конфликт без
+    ветвления по тарифу в коде: куратор делает две версии блока-ссылки —
+    одну с `bypass_sequence=True` без тарифа (видна всем сразу), другую с
+    `bypass_sequence=False` и тарифом `["МАКСИМУМ"]` (обычная очередь).
 
     Видимость: блок, недоступный по тарифу, в готовой ленте не показывается
     вообще, а не серым «недоступно на вашем тарифе» (владелец 06.09.2026) —
@@ -630,10 +649,16 @@ def is_block_accessible(
     касается, она уже возвращает чистый True/False.
     """
     target = blocks[block_index]
+    opens_at = target.opens_at
+    if opens_at is not None:
+        if opens_at.tzinfo is None:
+            opens_at = opens_at.replace(tzinfo=timezone.utc)
+        if opens_at > (now or _now()):
+            return False
     target_tariffs = tariffs_by_block.get(target.id)
     if target_tariffs and user_tariff not in target_tariffs:
         return False
-    if target.block_type == BLOCK_LINK:
+    if target.bypass_sequence:
         return True
     for prior in blocks[:block_index]:
         if not prior.is_required:
@@ -671,6 +696,7 @@ def feed_state(
     block_ids = [block.id for block in blocks]
     states = get_states(db, block_ids=block_ids, user_id=user_id)
     tariffs_by_block = get_tariffs(db, block_ids)
+    now = _now()  # один и тот же момент для всех блоков ленты, не по одному на блок
     result: list[dict] = []
     for index, block in enumerate(blocks):
         accessible = is_block_accessible(
@@ -679,6 +705,7 @@ def feed_state(
             states=states,
             tariffs_by_block=tariffs_by_block,
             user_tariff=user_tariff,
+            now=now,
         )
         state = states.get(block.id)
         result.append({

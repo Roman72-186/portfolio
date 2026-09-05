@@ -5,6 +5,8 @@
 собой (SQLite в тестах не исполняет ON DELETE CASCADE, чистка явная).
 """
 
+from datetime import date, datetime, timezone
+
 from app.models.learning_video import LearningVideo
 from app.models.task_block import (
     BLOCK_LINK,
@@ -959,25 +961,48 @@ def test_is_block_accessible_required_block_not_for_this_tariff_does_not_block(d
     assert _accessible(db, blocks, confident_student.id, "УВЕРЕННЫЙ", 1) is True
 
 
-def test_is_block_accessible_link_bypasses_sequential_lock(db, regular_user):
-    """Ссылка на занятие видна сразу, не дожидаясь предыдущих блоков
-    (владелец 06.09.2026) — иначе ученик потеряет её из виду (созвон 03.09)."""
+def test_is_block_accessible_bypass_sequence_flag(db, regular_user):
+    """Явный флаг куратора — блок доступен сразу, не дожидаясь предыдущих
+    блоков (владелец 06.09.2026), иначе ученик потеряет ссылку из виду
+    (созвон 03.09). Раньше это было жёстко зашито на block_type=link, теперь
+    явный флаг, который куратор проставляет сам."""
     task = _task(db)
     blocks = sync_blocks(
         db, task_id=task.id,
         items=[
             _text("Видео", is_required=True),
-            {"block_type": BLOCK_LINK, "url": "https://meet.example.org/lesson", "title": "Подключиться"},
+            {
+                "block_type": BLOCK_LINK, "url": "https://meet.example.org/lesson",
+                "title": "Подключиться", "bypass_sequence": True,
+            },
         ],
     )
     db.commit()
 
     # Первый (обязательный) блок ещё не закрыт — обычный блок был бы
-    # заблокирован, а ссылка всё равно доступна.
+    # заблокирован, а этот, с флагом, всё равно доступен.
     assert _accessible(db, blocks, regular_user.id, "УВЕРЕННЫЙ", 1) is True
 
 
-def test_is_block_accessible_link_still_respects_own_tariff_gate(db, user_factory):
+def test_is_block_accessible_link_without_bypass_flag_still_gated(db, regular_user):
+    """Регрессия ровно на найденный конфликт (созвон 03.09): для тарифа
+    «Уверенный максимум» ссылка на занятие ДОЛЖНА ждать сдачи домашки, а не
+    быть исключением. Без явного bypass_sequence блок-ссылка ведёт себя как
+    любой другой — жёсткая привязка к block_type убрана."""
+    task = _task(db)
+    blocks = sync_blocks(
+        db, task_id=task.id,
+        items=[
+            _text("Сдай домашку", is_required=True),
+            {"block_type": BLOCK_LINK, "url": "https://meet.example.org/lesson"},
+        ],
+    )
+    db.commit()
+
+    assert _accessible(db, blocks, regular_user.id, "УВЕРЕННЫЙ", 1) is False
+
+
+def test_is_block_accessible_bypass_sequence_still_respects_own_tariff_gate(db, user_factory):
     """Исключение из последовательной блокировки — не исключение из тарифа:
     ссылка на закрытое тарифом занятие не должна течь всем подряд."""
     task = _task(db)
@@ -985,7 +1010,7 @@ def test_is_block_accessible_link_still_respects_own_tariff_gate(db, user_factor
         db, task_id=task.id,
         items=[{
             "block_type": BLOCK_LINK, "url": "https://meet.example.org/lesson",
-            "tariffs": ["МАКСИМУМ"],
+            "tariffs": ["МАКСИМУМ"], "bypass_sequence": True,
         }],
     )
     db.commit()
@@ -993,6 +1018,70 @@ def test_is_block_accessible_link_still_respects_own_tariff_gate(db, user_factor
     confident_student = user_factory(vk_id=700_404, tariff="УВЕРЕННЫЙ")
 
     assert _accessible(db, blocks, confident_student.id, "УВЕРЕННЫЙ", 0) is False
+
+
+# --- период доступа: opens_at (владелец 03.09.2026, найдено 06.09.2026) -----
+
+
+def test_is_block_accessible_respects_future_opens_at(db, regular_user):
+    """«Теория и задания откроются только с 23 сентября 0000» — независимо
+    от того, что ученик сделал с предыдущими блоками."""
+    task = _task(db)
+    blocks = sync_blocks(
+        db, task_id=task.id,
+        items=[_text("Откроется позже", opens_at=date(2099, 1, 1))],
+    )
+    db.commit()
+
+    assert _accessible(db, blocks, regular_user.id, "УВЕРЕННЫЙ", 0) is False
+
+
+def test_is_block_accessible_opens_at_in_the_past_is_accessible(db, regular_user):
+    task = _task(db)
+    blocks = sync_blocks(
+        db, task_id=task.id,
+        items=[_text("Уже открыт", opens_at=date(2020, 1, 1))],
+    )
+    db.commit()
+
+    assert _accessible(db, blocks, regular_user.id, "УВЕРЕННЫЙ", 0) is True
+
+
+def test_is_block_accessible_opens_at_combines_with_sequence():
+    """opens_at и is_required складываются, а не заменяют друг друга:
+    блок с прошедшей датой открытия всё равно ждёт очередь."""
+    now = datetime(2026, 9, 6, tzinfo=timezone.utc)
+    past = TaskBlock(id=1, sort_order=0, is_required=True, opens_at=datetime(2020, 1, 1, tzinfo=timezone.utc))
+    later = TaskBlock(id=2, sort_order=1, opens_at=datetime(2020, 1, 1, tzinfo=timezone.utc))
+    blocks = [past, later]
+
+    assert is_block_accessible(
+        block_index=1, blocks=blocks, states={}, tariffs_by_block={},
+        user_tariff="УВЕРЕННЫЙ", now=now,
+    ) is False  # дата открытия прошла, но предыдущий обязательный блок не закрыт
+
+
+def test_sync_blocks_persists_opens_at_and_bypass_sequence(db):
+    task = _task(db)
+    [block] = sync_blocks(
+        db, task_id=task.id,
+        items=[_text("Текст", opens_at=date(2026, 9, 23), bypass_sequence=True)],
+    )
+    db.commit()
+
+    assert block.bypass_sequence is True
+    assert block.opens_at is not None
+    # Полночь МСК 23 сентября — это 21:00 UTC 22 сентября.
+    assert block.opens_at.astimezone(timezone.utc).isoformat() == "2026-09-22T21:00:00+00:00"
+
+
+def test_sync_blocks_without_opens_at_leaves_it_none(db):
+    task = _task(db)
+    [block] = sync_blocks(db, task_id=task.id, items=[_text("Текст")])
+    db.commit()
+
+    assert block.opens_at is None
+    assert block.bypass_sequence is False
 
 
 def test_block_status_locked_current_done(db, regular_user):

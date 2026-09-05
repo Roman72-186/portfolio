@@ -13,7 +13,7 @@ Staff-сторона — конструктор дня (`cabinet_program.py`), �
 """
 
 import json as _json
-from datetime import date, timedelta
+from datetime import date, timedelta, timezone
 
 from app.models.learning_video import LearningVideo
 from app.models.task_block import (
@@ -151,6 +151,42 @@ def test_constructor_accepts_precourse_fields(client, db, user_factory, session_
     assert block.is_required is True
     assert block.subject == "Рисунок"
     assert get_task_block_tariffs(db, [block.id]) == {block.id: {"МАКСИМУМ"}}
+
+
+def test_constructor_accepts_opens_at_and_bypass_sequence(client, db, user_factory, session_factory, monkeypatch):
+    """Регрессия (найдено 06.09.2026 при повторном разборе созвона):
+    период доступа и обход последовательной блокировки — те же незакрытые
+    поля формы, что и остальные precourse-настройки блока."""
+    _freeze(monkeypatch, date.today())
+    _staff_client(client, user_factory, session_factory)
+
+    resp = client.post(
+        f"{PROGRAM}/{_future_day_iso()}/material",
+        json={
+            "title": "Материал",
+            "audience": EVERYONE,
+            "blocks": [
+                {
+                    "block_type": BLOCK_LINK, "url": "https://meet.example.org/lesson",
+                    "opens_at": "2026-09-23", "bypass_sequence": True,
+                },
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "material").one()
+    [block] = _blocks_of(db, task.id)
+    assert block.bypass_sequence is True
+    assert block.opens_at is not None
+    assert block.opens_at.astimezone(timezone.utc).isoformat() == "2026-09-22T21:00:00+00:00"
+
+    # Форма правки отдаёт их обратно для предзаполнения.
+    resp = client.get(f"{PROGRAM}/{_future_day_iso()}")
+    edit_data_json = resp.text.split("programEditData = ")[1].split(";\n")[0]
+    payload = _json.loads(edit_data_json)[str(task.id)]
+    assert payload["blocks"][0]["opens_at"] == "2026-09-23"
+    assert payload["blocks"][0]["bypass_sequence"] is True
 
 
 def test_lesson_accepts_blocks_too(client, db, user_factory, session_factory, monkeypatch):
