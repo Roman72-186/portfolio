@@ -959,6 +959,42 @@ def test_is_block_accessible_required_block_not_for_this_tariff_does_not_block(d
     assert _accessible(db, blocks, confident_student.id, "УВЕРЕННЫЙ", 1) is True
 
 
+def test_is_block_accessible_link_bypasses_sequential_lock(db, regular_user):
+    """Ссылка на занятие видна сразу, не дожидаясь предыдущих блоков
+    (владелец 06.09.2026) — иначе ученик потеряет её из виду (созвон 03.09)."""
+    task = _task(db)
+    blocks = sync_blocks(
+        db, task_id=task.id,
+        items=[
+            _text("Видео", is_required=True),
+            {"block_type": BLOCK_LINK, "url": "https://meet.example.org/lesson", "title": "Подключиться"},
+        ],
+    )
+    db.commit()
+
+    # Первый (обязательный) блок ещё не закрыт — обычный блок был бы
+    # заблокирован, а ссылка всё равно доступна.
+    assert _accessible(db, blocks, regular_user.id, "УВЕРЕННЫЙ", 1) is True
+
+
+def test_is_block_accessible_link_still_respects_own_tariff_gate(db, user_factory):
+    """Исключение из последовательной блокировки — не исключение из тарифа:
+    ссылка на закрытое тарифом занятие не должна течь всем подряд."""
+    task = _task(db)
+    blocks = sync_blocks(
+        db, task_id=task.id,
+        items=[{
+            "block_type": BLOCK_LINK, "url": "https://meet.example.org/lesson",
+            "tariffs": ["МАКСИМУМ"],
+        }],
+    )
+    db.commit()
+
+    confident_student = user_factory(vk_id=700_404, tariff="УВЕРЕННЫЙ")
+
+    assert _accessible(db, blocks, confident_student.id, "УВЕРЕННЫЙ", 0) is False
+
+
 def test_block_status_locked_current_done(db, regular_user):
     task = _task(db)
     blocks = sync_blocks(
