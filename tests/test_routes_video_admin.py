@@ -641,6 +641,12 @@ def test_completion_uses_server_duration_not_client_claim(
     assert forged.json()["completed"] is False
     assert db.get(VideoProgress, (user.id, VIDEO_ID)).completed_at is None
 
+    # Защита от перемотки (владелец 05.09.2026) требует накопленного реального
+    # времени просмотра — симулируем, что ученик уже почти досмотрел урок.
+    progress = db.get(VideoProgress, (user.id, VIDEO_ID))
+    progress.watched_seconds = 3590.0
+    db.commit()
+
     honest = client.post(
         f"/cabinet/videos/{video.id}/progress",
         json={"position_seconds": 3598, "duration_seconds": 3600},

@@ -7,6 +7,7 @@
 
 from sqlalchemy.orm import Session as DBSession
 
+from app.constants import MOCK_SUBJECTS, TARIFFS
 from app.models.task_block import (
     BLOCK_LINK,
     BLOCK_PHOTO,
@@ -22,7 +23,10 @@ from app.models.task_block import (
     TaskBlockImage,
     TaskBlockOption,
     TaskBlockResponse,
+    TaskBlockState,
+    TaskBlockTariff,
 )
+from app.models.tracker import STATUS_DONE, STATUS_OPEN
 
 
 def get_blocks(db: DBSession, task_id: int) -> list[TaskBlock]:
@@ -100,6 +104,7 @@ def _sync_options(
         if row is not None:
             row.text = text
             row.is_correct = bool(raw.get("is_correct"))
+            row.requires_text = bool(raw.get("requires_text"))
             row.sort_order = order
             matched_ids.add(row.id)
         else:
@@ -108,6 +113,7 @@ def _sync_options(
                     block_id=block.id,
                     text=text,
                     is_correct=bool(raw.get("is_correct")),
+                    requires_text=bool(raw.get("requires_text")),
                     sort_order=order,
                 )
             )
@@ -150,6 +156,46 @@ def _prune_empty_answers(db: DBSession, block_id: int) -> None:
         )
         if has_option is None:
             db.delete(answer)
+
+
+def get_tariffs(db: DBSession, block_ids: list[int]) -> dict[int, set[str]]:
+    """Тарифы блока, сгруппированные по блоку. Пустой набор = доступен всем."""
+    if not block_ids:
+        return {}
+    rows = (
+        db.query(TaskBlockTariff)
+        .filter(TaskBlockTariff.block_id.in_(block_ids))
+        .all()
+    )
+    grouped: dict[int, set[str]] = {}
+    for row in rows:
+        grouped.setdefault(row.block_id, set()).add(row.tariff)
+    return grouped
+
+
+def _sync_tariffs(db: DBSession, block: TaskBlock, tariffs: list[str] | None) -> None:
+    """Полная пересборка списка тарифов блока.
+
+    Как у картинок галереи — нет ничего промежуточного (ответов учеников,
+    внешних ссылок), что стоило бы сохранять между правками формы, поэтому
+    проще снести и собрать заново, чем разводить по id.
+
+    Неизвестное значение (не из `app.constants.TARIFFS`) молча отбрасывается,
+    а не роняет сохранение всего блока: справочник тарифов может пополниться
+    или переименоваться (владелец 05.09.2026 — быстрое переименование тарифа
+    это правка одной строки в `constants.py`, форма конструктора не должна
+    стать вторым местом, которое надо обновлять вручную).
+    """
+    db.query(TaskBlockTariff).filter(
+        TaskBlockTariff.block_id == block.id
+    ).delete(synchronize_session=False)
+    seen: set[str] = set()
+    for raw in tariffs or []:
+        tariff = (raw or "").strip().upper()
+        if tariff not in TARIFFS or tariff in seen:
+            continue
+        seen.add(tariff)
+        db.add(TaskBlockTariff(block_id=block.id, tariff=tariff))
 
 
 def get_images(db: DBSession, block_ids: list[int]) -> dict[int, list[TaskBlockImage]]:
@@ -283,6 +329,12 @@ def _drop_block(db: DBSession, block: TaskBlock) -> None:
     db.query(TaskBlockOption).filter(
         TaskBlockOption.block_id == block.id
     ).delete(synchronize_session=False)
+    db.query(TaskBlockTariff).filter(
+        TaskBlockTariff.block_id == block.id
+    ).delete(synchronize_session=False)
+    db.query(TaskBlockState).filter(
+        TaskBlockState.block_id == block.id
+    ).delete(synchronize_session=False)
     db.delete(block)
 
 
@@ -345,6 +397,9 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         row.hidden_until_done = bool(
             item.get("hidden_until_done") if block_type == BLOCK_QUESTION else False
         )
+        row.is_required = bool(item.get("is_required"))
+        subject = _clean(item.get("subject"), 50)
+        row.subject = subject if subject in MOCK_SUBJECTS else None
         if block_type == BLOCK_QUESTION:
             question_type = (item.get("question_type") or "").strip()
             row.question_type = (
@@ -363,6 +418,7 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
             _sync_options(db, row, [])
         # Картинки — только у галереи; блок могли переключить с фото на текст.
         _sync_images(db, row, item.get("images") if row.block_type == BLOCK_PHOTO else [])
+        _sync_tariffs(db, row, item.get("tariffs"))
     for block_id, row in existing.items():
         if block_id in matched_ids:
             continue
@@ -406,6 +462,21 @@ def get_selected_options(db: DBSession, *, response_id: int) -> dict[int, set[in
     return selected
 
 
+def get_selected_option_texts(db: DBSession, *, response_id: int) -> dict[int, str]:
+    """Свободный текст под выбранными вариантами: option_id → текст.
+
+    Для префилла формы при повторном открытии — тот же case, что уже есть у
+    `get_answers_map` для текста всего вопроса, только на уровне варианта
+    (владелец 05.09.2026, requires_text)."""
+    rows = (
+        db.query(TaskBlockAnswerOption.option_id, TaskBlockAnswerOption.text)
+        .join(TaskBlockAnswer, TaskBlockAnswer.id == TaskBlockAnswerOption.answer_id)
+        .filter(TaskBlockAnswer.response_id == response_id, TaskBlockAnswerOption.text.isnot(None))
+        .all()
+    )
+    return {option_id: text for option_id, text in rows}
+
+
 def save_response(
     db: DBSession,
     *,
@@ -416,7 +487,12 @@ def save_response(
 ) -> TaskBlockResponse:
     """Сохранить ответы ученика на блоки-вопросы элемента.
 
-    `answers` — `{block_id: {"text": str | None, "option_ids": [int]}}`.
+    `answers` — `{block_id: {"text": str | None, "option_ids": [int],
+    "option_texts": {option_id: str}}}`. `option_texts` — только для
+    вариантов с `TaskBlockOption.requires_text=True` (владелец 05.09.2026:
+    «выбрал навык — сразу под ним раскрывается поле, почему»); для
+    остальных вариантов текст молча игнорируется, даже если пришёл.
+
     Идемпотентно: повторная отправка обновляет те же строки, не заводит второе
     заполнение (уникальность по task_id + user_id).
     """
@@ -453,14 +529,149 @@ def save_response(
             continue
         # Принимаем только варианты этого блока: id из чужого блока в теле
         # запроса не должен попасть в ответ.
-        valid = {option.id for option in allowed_options.get(block.id, [])}
+        options_by_id = {option.id: option for option in allowed_options.get(block.id, [])}
+        option_texts = payload.get("option_texts") or {}
         for option_id in payload.get("option_ids") or []:
-            if option_id in valid:
-                db.add(
-                    TaskBlockAnswerOption(answer_id=answer.id, option_id=option_id)
+            option = options_by_id.get(option_id)
+            if option is None:
+                continue
+            option_text = None
+            if option.requires_text:
+                option_text = (option_texts.get(option_id) or "").strip() or None
+            db.add(
+                TaskBlockAnswerOption(
+                    answer_id=answer.id, option_id=option_id, text=option_text
                 )
+            )
     db.flush()
     return response
+
+
+# --- единая лента: состояние блока, доступность, сборка (владелец 05.09.2026,
+# plans/2026-09-04-apparchi-precourse-block-feed-implementation-plan.md) -----
+
+
+def get_state(db: DBSession, *, block_id: int, user_id: int) -> TaskBlockState | None:
+    return (
+        db.query(TaskBlockState)
+        .filter(TaskBlockState.block_id == block_id, TaskBlockState.user_id == user_id)
+        .one_or_none()
+    )
+
+
+def get_states(db: DBSession, *, block_ids: list[int], user_id: int) -> dict[int, TaskBlockState]:
+    """Состояния сразу для пачки блоков одного ученика — один запрос на ленту."""
+    if not block_ids:
+        return {}
+    rows = (
+        db.query(TaskBlockState)
+        .filter(TaskBlockState.block_id.in_(block_ids), TaskBlockState.user_id == user_id)
+        .all()
+    )
+    return {row.block_id: row for row in rows}
+
+
+def close_block_for_user(
+    db: DBSession, block: TaskBlock, user_id: int, *, source: str
+) -> TaskBlockState:
+    """Идемпотентно закрыть блок по событию-источнику (видео досмотрено,
+    портфолио загружено и т.п.). Зеркало `tracker.close_task_for_user`.
+
+    Только open → done, никогда наоборот: система не должна откатывать блок,
+    который уже закрыт — ни повторным heartbeat'ом, ни повторным вызовом
+    того же источника.
+    """
+    state = get_state(db, block_id=block.id, user_id=user_id)
+    if state is None:
+        state = TaskBlockState(block_id=block.id, user_id=user_id, status=STATUS_OPEN)
+        db.add(state)
+    if state.status != STATUS_DONE:
+        state.status = STATUS_DONE
+        state.completed_at = _now()
+        state.completed_by_id = None
+        state.completion_source = source
+    db.flush()
+    return state
+
+
+def is_block_accessible(
+    *,
+    block_index: int,
+    blocks: list[TaskBlock],
+    states: dict[int, TaskBlockState],
+    tariffs_by_block: dict[int, set[str]],
+    user_tariff: str | None,
+) -> bool:
+    """Доступен ли ученику блок `blocks[block_index]` прямо сейчас.
+
+    Правило (владелец 05.09.2026, предобучение): блок недоступен, если
+    тариф ученика не входит в список тарифов блока (пустой список — доступен
+    всем), ИЛИ если среди блоков строго перед ним есть хотя бы один
+    обязательный, ещё не закрытый этим учеником. Один незакрытый обязательный
+    блок блокирует всё, что идёт после него — то же правило, что уже
+    действует у `TrackerTask.is_required` для вкладок недели (decisions.md
+    23.08), просто на уровень ниже: не вкладка, а блок внутри неё.
+
+    Обязательный блок, который сам недоступен этому ученику по тарифу, никого
+    не блокирует — он не для этого тарифа вообще, требовать его выполнения
+    было бы тупиком без выхода.
+    """
+    target = blocks[block_index]
+    target_tariffs = tariffs_by_block.get(target.id)
+    if target_tariffs and user_tariff not in target_tariffs:
+        return False
+    for prior in blocks[:block_index]:
+        if not prior.is_required:
+            continue
+        prior_tariffs = tariffs_by_block.get(prior.id)
+        if prior_tariffs and user_tariff not in prior_tariffs:
+            continue
+        state = states.get(prior.id)
+        if state is None or state.status != STATUS_DONE:
+            return False
+    return True
+
+
+def block_status(
+    block: TaskBlock, state: TaskBlockState | None, *, accessible: bool
+) -> str:
+    """`"locked"` | `"current"` | `"done"` — для рендера ленты."""
+    if not accessible:
+        return "locked"
+    if state is not None and state.status == STATUS_DONE:
+        return "done"
+    return "current"
+
+
+def feed_state(
+    db: DBSession, *, task_id: int, user_id: int, user_tariff: str | None
+) -> list[dict]:
+    """Блоки задачи одним запросом + статус для конкретного ученика.
+
+    Возвращает список `{"block": TaskBlock, "status": str, "state":
+    TaskBlockState | None}` в порядке `sort_order` — ровно то, что нужно
+    шаблону единой ленты для рендера, без похода в базу на каждый блок.
+    """
+    blocks = get_blocks(db, task_id)
+    block_ids = [block.id for block in blocks]
+    states = get_states(db, block_ids=block_ids, user_id=user_id)
+    tariffs_by_block = get_tariffs(db, block_ids)
+    result: list[dict] = []
+    for index, block in enumerate(blocks):
+        accessible = is_block_accessible(
+            block_index=index,
+            blocks=blocks,
+            states=states,
+            tariffs_by_block=tariffs_by_block,
+            user_tariff=user_tariff,
+        )
+        state = states.get(block.id)
+        result.append({
+            "block": block,
+            "status": block_status(block, state, accessible=accessible),
+            "state": state,
+        })
+    return result
 
 
 # --- очередь проверки -------------------------------------------------------

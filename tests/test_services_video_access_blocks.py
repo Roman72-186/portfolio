@@ -57,14 +57,15 @@ def _task(db, *, assign_to_all: bool, title="Материал") -> TrackerTask:
     return task
 
 
-def _put_video_in_task(db, task: TrackerTask, video: LearningVideo) -> None:
+def _put_video_in_task(db, task: TrackerTask, video: LearningVideo, *, tariffs=None) -> None:
     sync_blocks(
-        db, task_id=task.id, items=[{"block_type": BLOCK_VIDEO, "video_id": video.id}]
+        db, task_id=task.id,
+        items=[{"block_type": BLOCK_VIDEO, "video_id": video.id, "tariffs": tariffs or []}],
     )
 
 
 def _viewer(user) -> dict:
-    return {"user_id": user.id, "role_rank": 1}
+    return {"user_id": user.id, "role_rank": 1, "tariff": user.tariff}
 
 
 # --- старое поведение не меняется -------------------------------------------
@@ -206,3 +207,54 @@ def test_catalog_mixes_block_bound_and_legacy_videos(db, user_factory):
     for video in (legacy, shown):
         assert is_video_accessible(db, video, _viewer(student)) is True
     assert is_video_accessible(db, hidden, _viewer(student)) is False
+
+
+# --- тарифный гейт блока (владелец 05.09.2026, ревью после первой реализации)
+
+
+def test_video_tariff_gate_blocks_wrong_tariff_directly(db, user_factory):
+    """Ученик не того тарифа не должен обойти гейт ленты, зайдя напрямую по
+    /cabinet/videos/{id} — тот же класс дыры, что уже закрыт для тем."""
+    confident = user_factory(vk_id=710_101, name="Уверенный", tariff="УВЕРЕННЫЙ")
+    video = _video(db)
+    task = _task(db, assign_to_all=True)
+    _put_video_in_task(db, task, video, tariffs=["МАКСИМУМ"])
+    db.commit()
+
+    assert is_video_accessible(db, video, _viewer(confident)) is False
+
+
+def test_video_tariff_gate_allows_matching_tariff(db, user_factory):
+    maximum = user_factory(vk_id=710_102, name="Максимум", tariff="МАКСИМУМ")
+    video = _video(db)
+    task = _task(db, assign_to_all=True)
+    _put_video_in_task(db, task, video, tariffs=["МАКСИМУМ"])
+    db.commit()
+
+    assert is_video_accessible(db, video, _viewer(maximum)) is True
+
+
+def test_video_accessible_if_any_of_its_blocks_allows_this_tariff(db, user_factory):
+    """Один и тот же ролик стоит в двух заданиях: одно только для максимума,
+    другое без ограничений — доступ считается по любому из них."""
+    confident = user_factory(vk_id=710_103, name="Уверенный", tariff="УВЕРЕННЫЙ")
+    video = _video(db)
+    only_maximum = _task(db, assign_to_all=True, title="Только максимуму")
+    open_to_all = _task(db, assign_to_all=True, title="Всем")
+    _put_video_in_task(db, only_maximum, video, tariffs=["МАКСИМУМ"])
+    _put_video_in_task(db, open_to_all, video)
+    db.commit()
+
+    assert is_video_accessible(db, video, _viewer(confident)) is True
+
+
+def test_video_tariff_gate_hides_from_catalog_too(db, user_factory):
+    """Список и прямой заход обязаны решать одинаково и для тарифного гейта."""
+    confident = user_factory(vk_id=710_104, name="Уверенный", tariff="УВЕРЕННЫЙ")
+    video = _video(db)
+    task = _task(db, assign_to_all=True)
+    _put_video_in_task(db, task, video, tariffs=["МАКСИМУМ"])
+    db.commit()
+
+    catalog = list_published_videos(db, viewer=_viewer(confident))
+    assert video.id not in {v.id for v in catalog}

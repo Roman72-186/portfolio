@@ -19,9 +19,13 @@ from app.models.task_block import (
     TaskBlockAnswer,
     TaskBlockAnswerOption,
     TaskBlockOption,
+    TaskBlockState,
 )
-from app.models.tracker import TrackerTask
+from app.models.tracker import STATUS_DONE, STATUS_OPEN, TrackerTask
 from app.services.task_blocks import (
+    block_status,
+    close_block_for_user,
+    feed_state,
     get_answers_map,
     get_blocks,
     get_blocks_for_tasks,
@@ -29,6 +33,10 @@ from app.services.task_blocks import (
     get_options,
     get_response,
     get_selected_options,
+    get_state,
+    get_states,
+    get_tariffs,
+    is_block_accessible,
     question_blocks,
     save_response,
     sync_blocks,
@@ -704,3 +712,310 @@ def test_grade_multiple_requires_full_match(db, user_factory):
                   answers={block.id: {"option_ids": [a.id, b.id]}})
     db.commit()
     assert grade_response(db, blocks=[block], response_id=response.id)["correct_count"] == 1
+
+
+# --- единая лента: is_required/subject/tariffs, состояние блока, доступность
+# (владелец 05.09.2026) -------------------------------------------------------
+
+
+def test_sync_blocks_persists_is_required_and_subject(db):
+    task = _task(db)
+    [block] = sync_blocks(
+        db,
+        task_id=task.id,
+        items=[_text("Досмотри видео", is_required=True, subject="Рисунок")],
+    )
+    db.commit()
+
+    assert block.is_required is True
+    assert block.subject == "Рисунок"
+
+
+def test_sync_blocks_is_required_defaults_false(db):
+    """Регрессия: старые блоки без is_required в payload не должны внезапно
+    стать обязательными — default=False, не True, как у TrackerTask."""
+    task = _task(db)
+    [block] = sync_blocks(db, task_id=task.id, items=[_text("Просто текст")])
+    db.commit()
+
+    assert block.is_required is False
+
+
+def test_sync_blocks_rejects_unknown_subject(db):
+    """Неизвестное значение предмета (не «Рисунок»/«Композиция») не должно
+    попасть в базу как есть — иначе гейт по предмету тихо сломается."""
+    task = _task(db)
+    [block] = sync_blocks(
+        db, task_id=task.id, items=[_text("Текст", subject="Танцы")]
+    )
+    db.commit()
+
+    assert block.subject is None
+
+
+def test_sync_blocks_persists_tariffs(db):
+    task = _task(db)
+    [block] = sync_blocks(
+        db,
+        task_id=task.id,
+        items=[_text("Только максимуму", tariffs=["МАКСИМУМ"])],
+    )
+    db.commit()
+
+    assert get_tariffs(db, [block.id]) == {block.id: {"МАКСИМУМ"}}
+
+
+def test_sync_blocks_ignores_unknown_tariff(db):
+    task = _task(db)
+    [block] = sync_blocks(
+        db,
+        task_id=task.id,
+        items=[_text("Текст", tariffs=["МАКСИМУМ", "НЕСУЩЕСТВУЮЩИЙ"])],
+    )
+    db.commit()
+
+    assert get_tariffs(db, [block.id]) == {block.id: {"МАКСИМУМ"}}
+
+
+def test_sync_blocks_tariffs_removed_on_resync(db):
+    task = _task(db)
+    [block] = sync_blocks(
+        db, task_id=task.id, items=[_text("Текст", tariffs=["МАКСИМУМ"])]
+    )
+    db.commit()
+    assert get_tariffs(db, [block.id]) == {block.id: {"МАКСИМУМ"}}
+
+    sync_blocks(
+        db,
+        task_id=task.id,
+        items=[{"id": block.id, **_text("Текст")}],
+    )
+    db.commit()
+
+    assert get_tariffs(db, [block.id]) == {}
+
+
+def test_option_requires_text_round_trip(db, user_factory):
+    task = _task(db)
+    student = user_factory(vk_id=700_301, name="Ученик")
+    [block] = sync_blocks(
+        db,
+        task_id=task.id,
+        items=[
+            _question(
+                "Какие навыки развивать?", question_type=QUESTION_MULTIPLE,
+                options=[
+                    {"text": "Стрессоустойчивость", "requires_text": True},
+                    {"text": "Уверенность"},
+                ],
+            )
+        ],
+    )
+    db.commit()
+    stress, confidence = get_options(db, [block.id])[block.id]
+    assert stress.requires_text is True
+    assert confidence.requires_text is False
+
+    save_response(
+        db, task_id=task.id, user_id=student.id, blocks=[block],
+        answers={
+            block.id: {
+                "option_ids": [stress.id, confidence.id],
+                "option_texts": {stress.id: "Часто нервничаю перед экзаменом"},
+            }
+        },
+    )
+    db.commit()
+
+    response = get_response(db, task_id=task.id, user_id=student.id)
+    answers = {
+        row.option_id: row.text
+        for row in db.query(TaskBlockAnswerOption)
+        .join(TaskBlockAnswer, TaskBlockAnswer.id == TaskBlockAnswerOption.answer_id)
+        .filter(TaskBlockAnswer.response_id == response.id)
+        .all()
+    }
+    assert answers[stress.id] == "Часто нервничаю перед экзаменом"
+    # Текст под вариантом без requires_text молча игнорируется, даже если пришёл.
+    assert answers[confidence.id] is None
+
+
+def test_close_block_for_user_is_idempotent_open_to_done_only(db, regular_user):
+    task = _task(db)
+    [block] = sync_blocks(db, task_id=task.id, items=[_text("Видео")])
+    db.commit()
+
+    state = close_block_for_user(db, block, regular_user.id, source="auto")
+    db.commit()
+    assert state.status == STATUS_DONE
+    first_completed_at = state.completed_at
+
+    # Повторное закрытие тем же или другим источником не откатывает и не
+    # переписывает completed_at — идемпотентно, как у close_task_for_user.
+    state_again = close_block_for_user(db, block, regular_user.id, source="manual")
+    db.commit()
+    assert state_again.id == state.id
+    assert state_again.status == STATUS_DONE
+    assert state_again.completed_at == first_completed_at
+    assert state_again.completion_source == "auto"
+
+
+def test_close_block_for_user_creates_state_lazily(db, regular_user):
+    task = _task(db)
+    [block] = sync_blocks(db, task_id=task.id, items=[_text("Видео")])
+    db.commit()
+
+    assert get_state(db, block_id=block.id, user_id=regular_user.id) is None
+
+    close_block_for_user(db, block, regular_user.id, source="auto")
+    db.commit()
+
+    state = get_state(db, block_id=block.id, user_id=regular_user.id)
+    assert state is not None
+    assert state.status == STATUS_DONE
+
+
+def _accessible(db, blocks, user_id, user_tariff, index):
+    states = get_states(db, block_ids=[b.id for b in blocks], user_id=user_id)
+    tariffs_by_block = get_tariffs(db, [b.id for b in blocks])
+    return is_block_accessible(
+        block_index=index, blocks=blocks, states=states,
+        tariffs_by_block=tariffs_by_block, user_tariff=user_tariff,
+    )
+
+
+def test_is_block_accessible_optional_block_never_blocks(db, regular_user):
+    task = _task(db)
+    blocks = sync_blocks(
+        db, task_id=task.id,
+        items=[_text("Первый"), _text("Второй")],  # оба не обязательны
+    )
+    db.commit()
+
+    assert _accessible(db, blocks, regular_user.id, "УВЕРЕННЫЙ", 1) is True
+
+
+def test_is_block_accessible_required_block_blocks_next_until_done(db, regular_user):
+    task = _task(db)
+    blocks = sync_blocks(
+        db, task_id=task.id,
+        items=[_text("Видео", is_required=True), _text("Задание")],
+    )
+    db.commit()
+    first, second = blocks
+
+    assert _accessible(db, blocks, regular_user.id, "УВЕРЕННЫЙ", 1) is False
+
+    close_block_for_user(db, first, regular_user.id, source="auto")
+    db.commit()
+
+    assert _accessible(db, blocks, regular_user.id, "УВЕРЕННЫЙ", 1) is True
+
+
+def test_is_block_accessible_required_block_blocks_entire_rest_of_chain(db, regular_user):
+    """Один незакрытый обязательный блок блокирует всё, что после него, а не
+    только непосредственно следующий (то же правило, что у TrackerTask.is_required)."""
+    task = _task(db)
+    blocks = sync_blocks(
+        db, task_id=task.id,
+        items=[_text("Первый", is_required=True), _text("Второй"), _text("Третий")],
+    )
+    db.commit()
+
+    assert _accessible(db, blocks, regular_user.id, "УВЕРЕННЫЙ", 1) is False
+    assert _accessible(db, blocks, regular_user.id, "УВЕРЕННЫЙ", 2) is False
+
+
+def test_is_block_accessible_tariff_gate(db, user_factory):
+    task = _task(db)
+    blocks = sync_blocks(
+        db, task_id=task.id,
+        items=[_text("Только максимуму", tariffs=["МАКСИМУМ"])],
+    )
+    db.commit()
+
+    maximum_student = user_factory(vk_id=700_401, tariff="МАКСИМУМ")
+    confident_student = user_factory(vk_id=700_402, tariff="УВЕРЕННЫЙ")
+
+    assert _accessible(db, blocks, maximum_student.id, "МАКСИМУМ", 0) is True
+    assert _accessible(db, blocks, confident_student.id, "УВЕРЕННЫЙ", 0) is False
+
+
+def test_is_block_accessible_required_block_not_for_this_tariff_does_not_block(db, user_factory):
+    """Обязательный блок, недоступный этому ученику по тарифу, не должен
+    вечно блокировать его дальше по ленте — тупика без выхода быть не должно."""
+    task = _task(db)
+    blocks = sync_blocks(
+        db, task_id=task.id,
+        items=[
+            _text("Домашка только для максимума", is_required=True, tariffs=["МАКСИМУМ"]),
+            _text("Общее для всех"),
+        ],
+    )
+    db.commit()
+
+    confident_student = user_factory(vk_id=700_403, tariff="УВЕРЕННЫЙ")
+
+    assert _accessible(db, blocks, confident_student.id, "УВЕРЕННЫЙ", 1) is True
+
+
+def test_block_status_locked_current_done(db, regular_user):
+    task = _task(db)
+    blocks = sync_blocks(
+        db, task_id=task.id,
+        items=[_text("Первый", is_required=True), _text("Второй")],
+    )
+    db.commit()
+    first, second = blocks
+
+    states = get_states(db, block_ids=[first.id, second.id], user_id=regular_user.id)
+    assert block_status(second, states.get(second.id), accessible=False) == "locked"
+    assert block_status(first, states.get(first.id), accessible=True) == "current"
+
+    close_block_for_user(db, first, regular_user.id, source="auto")
+    db.commit()
+    states = get_states(db, block_ids=[first.id, second.id], user_id=regular_user.id)
+    assert block_status(first, states.get(first.id), accessible=True) == "done"
+
+
+def test_feed_state_end_to_end(db, regular_user):
+    task = _task(db)
+    blocks = sync_blocks(
+        db, task_id=task.id,
+        items=[_text("Видео", is_required=True), _text("Опрос"), _text("Итог")],
+    )
+    db.commit()
+    first, second, third = blocks
+
+    feed = feed_state(db, task_id=task.id, user_id=regular_user.id, user_tariff="УВЕРЕННЫЙ")
+    by_id = {row["block"].id: row["status"] for row in feed}
+    assert by_id[first.id] == "current"
+    assert by_id[second.id] == "locked"
+    assert by_id[third.id] == "locked"
+
+    close_block_for_user(db, first, regular_user.id, source="auto")
+    db.commit()
+
+    feed = feed_state(db, task_id=task.id, user_id=regular_user.id, user_tariff="УВЕРЕННЫЙ")
+    by_id = {row["block"].id: row["status"] for row in feed}
+    assert by_id[first.id] == "done"
+    assert by_id[second.id] == "current"
+    assert by_id[third.id] == "current"
+
+
+def test_drop_block_cleans_up_state_and_tariffs(db, regular_user):
+    """SQLite в тестах не исполняет ON DELETE CASCADE — чистка при удалении
+    блока явная, как у вариантов и ответов (см. докстринг модуля)."""
+    task = _task(db)
+    [block] = sync_blocks(
+        db, task_id=task.id, items=[_text("Текст", tariffs=["МАКСИМУМ"])]
+    )
+    db.commit()
+    close_block_for_user(db, block, regular_user.id, source="auto")
+    db.commit()
+
+    sync_blocks(db, task_id=task.id, items=[])  # блок не пришёл в items — удалён
+    db.commit()
+
+    assert db.query(TaskBlockState).count() == 0
+    assert get_tariffs(db, [block.id]) == {}

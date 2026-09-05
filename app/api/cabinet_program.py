@@ -41,6 +41,7 @@ from app.services.task_blocks import (
     get_blocks as get_task_blocks,
     get_images as get_task_block_images,
     get_options as get_task_block_options,
+    get_tariffs as get_task_block_tariffs,
     sync_blocks as sync_task_blocks,
 )
 from app.services.video_catalog import publish_video
@@ -220,6 +221,7 @@ def _edit_payloads(
         blocks = get_task_blocks(db, item.id)
         block_options = get_task_block_options(db, [b.id for b in blocks])
         block_images = get_task_block_images(db, [b.id for b in blocks])
+        block_tariffs = get_task_block_tariffs(db, [b.id for b in blocks])
         payload["blocks"] = [
             {
                 "id": b.id,
@@ -234,8 +236,14 @@ def _edit_payloads(
                 "url": b.url,
                 "question_type": b.question_type,
                 "hidden_until_done": b.hidden_until_done,
+                "is_required": b.is_required,
+                "subject": b.subject,
+                "tariffs": sorted(block_tariffs.get(b.id, set())),
                 "options": [
-                    {"id": o.id, "text": o.text, "is_correct": o.is_correct}
+                    {
+                        "id": o.id, "text": o.text, "is_correct": o.is_correct,
+                        "requires_text": o.requires_text,
+                    }
                     for o in block_options.get(b.id, [])
                 ]
                 if b.block_type == BLOCK_QUESTION
@@ -332,6 +340,7 @@ def blocks_source_content(
         raise HTTPException(status_code=404, detail="У этого задания нет содержимого")
     options = get_task_block_options(db, [b.id for b in blocks])
     images = get_task_block_images(db, [b.id for b in blocks])
+    tariffs = get_task_block_tariffs(db, [b.id for b in blocks])
     return JSONResponse({"blocks": [
         {
             "block_type": b.block_type,
@@ -341,12 +350,15 @@ def blocks_source_content(
             "url": b.url,
             "question_type": b.question_type,
             "hidden_until_done": b.hidden_until_done,
+            "is_required": b.is_required,
+            "subject": b.subject,
+            "tariffs": sorted(tariffs.get(b.id, set())),
             "images": [
                 {"url": i.image_s3_url, "path": i.image_s3_path}
                 for i in images.get(b.id, [])
             ],
             "options": [
-                {"text": o.text, "is_correct": o.is_correct}
+                {"text": o.text, "is_correct": o.is_correct, "requires_text": o.requires_text}
                 for o in options.get(b.id, [])
             ],
         }
@@ -456,6 +468,9 @@ class BlockOptionItem(BaseModel):
     id: int | None = Field(default=None, ge=1)
     text: str = Field(min_length=1, max_length=300)
     is_correct: bool = False
+    # Выбор этого варианта раскрывает у ученика поле свободного текста
+    # (владелец 05.09.2026). См. `app/models/task_block.py::TaskBlockOption`.
+    requires_text: bool = False
 
     @field_validator("text")
     @classmethod
@@ -495,6 +510,16 @@ class BlockItem(BaseModel):
     # задание. В проверку «ответил ли на всё» не входит — иначе задание нельзя
     # было бы закрыть никогда (развязка согласована владельцем 31.08.2026).
     hidden_until_done: bool = False
+    # Единая лента предобучения (владелец 05.09.2026, план
+    # plans/2026-09-04-apparchi-precourse-block-feed-implementation-plan.md):
+    # обязательность и тариф-гейт — на уровне блока, не всей задачи; предмет —
+    # тоже на блоке, часть цикла идёт без деления на Рисунок/Композицию.
+    # Валидацию значений (предмет из MOCK_SUBJECTS, тариф из TARIFFS) делает
+    # сервисный слой (`sync_blocks`/`_sync_tariffs`), не эта схема — то же
+    # разделение ответственности, что уже было для block_type/question_type.
+    is_required: bool = False
+    subject: str | None = Field(default=None, max_length=50)
+    tariffs: list[str] = Field(default_factory=list, max_length=10)
 
     @model_validator(mode="after")
     def choice_question_needs_a_right_answer(self) -> "BlockItem":

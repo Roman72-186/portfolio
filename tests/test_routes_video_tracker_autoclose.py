@@ -9,12 +9,26 @@ TrackerTask(kind=video) той же темы, причём auto — не пер�
 from app.config import settings
 from app.models.learning_video import LearningVideo
 from app.models.tracker import ITEM_VIDEO, STATUS_DONE, TrackerTaskState
+from app.models.video_progress import VideoProgress
 from app.models.video_view_log import VideoViewLog
 from app.services.program import ensure_item_topic, set_item_audience
 from app.services.tracker import create_task
 from app.services.tz import today_msk
 
 VIDEO_ID = "35ed80ae-8103-4528-a700-3f69ec56957d"
+
+
+def _seed_watch_time(db, *, user_id: int, video_id: str, watched_seconds: float) -> None:
+    """Симулирует, что ученик уже реально смотрел ролик какое-то время —
+    защита от перемотки (владелец 05.09.2026) требует накопленного времени
+    просмотра, а не только позицию у конца ролика в одном heartbeat'е."""
+    db.add(
+        VideoProgress(
+            user_id=user_id, video_id=video_id,
+            position_seconds=watched_seconds, watched_seconds=watched_seconds,
+        )
+    )
+    db.commit()
 
 
 def _configure_bunny(monkeypatch) -> None:
@@ -51,6 +65,7 @@ def test_first_completion_closes_tracker_task(auth_client, db, monkeypatch):
     client, user = auth_client
     _configure_bunny(monkeypatch)
     task, video = _video_with_task(db, user.id)
+    _seed_watch_time(db, user_id=user.id, video_id=VIDEO_ID, watched_seconds=590.0)
 
     resp = client.post(
         f"/cabinet/videos/{video.id}/progress",
@@ -97,6 +112,7 @@ def test_repeated_heartbeat_after_completion_does_not_error(auth_client, db, mon
     client, user = auth_client
     _configure_bunny(monkeypatch)
     task, video = _video_with_task(db, user.id)
+    _seed_watch_time(db, user_id=user.id, video_id=VIDEO_ID, watched_seconds=590.0)
 
     first = client.post(
         f"/cabinet/videos/{video.id}/progress",

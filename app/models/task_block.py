@@ -1,5 +1,18 @@
 """Универсальный конструктор содержимого элемента дня (владелец 31.08.2026).
 
+**Добавка 05.09.2026 — единая лента блоков для предобучения.** Созвон
+владельца с методистом 03.09.2026 попросил блокировку и обязательность на
+уровне отдельного блока внутри одной ленты (не только на уровне вкладки,
+как решили 23.08 — `plans/2026-08-23-apparchi-constructor-and-tracker-open-
+questions.md`). Три новых поля здесь и две новые таблицы ниже — под это:
+`is_required`/`subject` у блока, `TaskBlockTariff` (per-блок тарифный гейт,
+зеркало `TrackerTaskTag`) и `TaskBlockState` (статус блока у ученика, зеркало
+`TrackerTaskState` — `TaskBlockResponse` для этого не годится, она про
+заполнение вопросов всего задания разом, а не про состояние одного блока).
+Подробности и открытые вопросы — `plans/2026-09-04-apparchi-precourse-block-
+feed-implementation-plan.md`. Роуты/шаблоны единой ленты в этой стройке ещё
+не собраны — только модель и сервисный слой.
+
 До этой модели каждый вид `TrackerTask.kind` умел ровно один вид содержимого:
 «Видеоматериал» — только ролик, «Самостоятельная работа» — только картинки,
 а «Материал»/«Тест по теории»/«Занятие»/«Чек-лист» вообще ничего, кроме
@@ -36,6 +49,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
+from app.models.tracker import STATUS_OPEN
 
 # Типы вопроса. Раньше жили в `app/models/survey.py` и импортировались сюда;
 # после переезда анкеты в блоки (31.08.2026) анкеты как отдельной сущности нет,
@@ -124,6 +138,20 @@ class TaskBlock(Base):
         Boolean, nullable=False, default=False
     )
 
+    # Обязателен ли блок для перехода дальше по ленте (владелец 05.09.2026).
+    # default=False, а не True, как у TrackerTask.is_required: этот блок мог
+    # уже существовать и отрисовываться в основном обучении до стройки ленты —
+    # True по умолчанию заставило бы старые блоки внезапно что-то
+    # блокировать. Обязательность блок получает только когда её явно
+    # проставит куратор в новой ленте.
+    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Предмет блока — «Рисунок»|«Композиция»|None (доступен обоим). Зеркало
+    # TrackerTask.subject, значения — app.constants.MOCK_SUBJECTS. Нужен
+    # именно на блоке, а не на всём задании: предобучение часть цикла ведёт
+    # без деления на предметы, часть — с делением (владелец 03.09.2026).
+    subject: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
@@ -176,6 +204,13 @@ class TaskBlockOption(Base):
     text: Mapped[str] = mapped_column(String(300), nullable=False)
     is_correct: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Выбор этого варианта раскрывает у ученика поле свободного текста
+    # (владелец 03.09.2026: «выбрал навык — сразу под ним пишет, почему»).
+    # Текст живёт в TaskBlockAnswerOption.text — привязан к варианту, а не
+    # к вопросу целиком, иначе несколько выбранных вариантов не могли бы
+    # держать каждый свой независимый текст в одном TaskBlockAnswer.text.
+    requires_text: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         Index("ix_task_block_options_order", "block_id", "sort_order"),
@@ -268,4 +303,75 @@ class TaskBlockAnswerOption(Base):
     )
     option_id: Mapped[int] = mapped_column(
         ForeignKey("task_block_options.id", ondelete="CASCADE"), primary_key=True
+    )
+
+    # Свободный текст под конкретным выбранным вариантом — заполняется только
+    # когда у варианта TaskBlockOption.requires_text=True (владелец
+    # 05.09.2026). Пусто у вариантов без этого флага.
+    text: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class TaskBlockTariff(Base):
+    """Тариф, которому доступен блок. Пусто — доступен всем тарифам.
+
+    Зеркало `TrackerTaskTag`: тот же принцип «нормализованная таблица
+    строк», а не JSON-поле (докстринг модуля выше). Канонические значения —
+    `app.constants.TARIFFS`, проверка идёт в сервисном слое, не на уровне
+    БД: переименование тарифа остаётся правкой одной строки в
+    `constants.py`, а не миграцией (владелец 05.09.2026 — тарифы пока те
+    же, что в constants.py, но должны легко переименовываться).
+    """
+
+    __tablename__ = "task_block_tariffs"
+
+    block_id: Mapped[int] = mapped_column(
+        ForeignKey("task_blocks.id", ondelete="CASCADE"), primary_key=True
+    )
+    tariff: Mapped[str] = mapped_column(String(50), primary_key=True)
+
+
+class TaskBlockState(Base):
+    """Состояние одного блока у конкретного ученика.
+
+    `TaskBlockResponse` для этого не годится — она про заполнение вопросов
+    всего задания разом (уникальность по task_id+user_id), а не про один
+    блок: блоку без вопросов (видео, кнопка «Загрузить портфолио») вообще
+    некуда было бы записать «выполнено». Строка заводится лениво, как у
+    `TrackerTaskState` — нет строки, значит блок открыт.
+    """
+
+    __tablename__ = "task_block_states"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    block_id: Mapped[int] = mapped_column(
+        ForeignKey("task_blocks.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default=STATUS_OPEN)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Кто закрыл: None — закрыла система (то же соглашение, что у
+    # TrackerTaskState.completed_by_id).
+    completed_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    completion_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("block_id", "user_id", name="uq_task_block_state_block_user"),
+        Index("ix_task_block_states_user", "user_id"),
     )

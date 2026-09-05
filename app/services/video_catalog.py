@@ -45,20 +45,34 @@ def block_bound_video_ids(db: Session) -> set[int]:
     return {row[0] for row in rows}
 
 
-def _accessible_block_video_ids(db: Session, user_id: int) -> set[int]:
+def _accessible_block_video_ids(
+    db: Session, user_id: int, *, user_tariff: str | None
+) -> set[int]:
     """Ролики из блоков тех элементов, что открыты этому ученику.
 
     Достаточно одного доступного элемента: один и тот же ролик конструктор
     разрешает ставить в несколько заданий.
+
+    Тарифный гейт блока (`TaskBlockTariff`, владелец 05.09.2026 — ревью после
+    первой реализации) учитывается здесь же, а не только в единой ленте
+    предобучения: иначе ученик не того тарифа не мог бы пройти к ролику через
+    ленту, но свободно открыл бы его напрямую по `/cabinet/videos/{id}` или
+    нашёл в общем каталоге — та же дыра, которую здесь уже один раз закрыли
+    для тем (см. докстринг `is_video_accessible`). Один и тот же ролик может
+    стоять в нескольких блоках с разными тарифами — доступ считается по
+    ЛЮБОМУ из них: если хотя бы один доступный элемент открывает ролик этому
+    тарифу, ролик открыт.
     """
-    # Локальный импорт: `tracker` тянет `video_topics`, и импорт на уровне
-    # модуля замкнул бы кольцо через этот файл.
+    # Локальные импорты: `tracker` тянет `video_topics`, и импорт на уровне
+    # модуля замкнул бы кольцо через этот файл; `task_blocks` — по той же
+    # причине, что и раньше не был затянут сюда без необходимости.
+    from app.services.task_blocks import get_tariffs
     from app.services.tracker import accessible_task_ids
 
     topic_ids = accessible_topic_ids(db, user_id)
     task_ids = accessible_task_ids(db, user_id)
     rows = (
-        db.query(TaskBlock.video_id)
+        db.query(TaskBlock.id, TaskBlock.video_id)
         .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
         .filter(
             TaskBlock.block_type == BLOCK_VIDEO,
@@ -70,10 +84,17 @@ def _accessible_block_video_ids(db: Session, user_id: int) -> set[int]:
                 TrackerTask.topic_id.is_(None) & TrackerTask.id.in_(task_ids),
             ),
         )
-        .distinct()
         .all()
     )
-    return {row[0] for row in rows}
+    if not rows:
+        return set()
+    tariffs_by_block = get_tariffs(db, [block_id for block_id, _video_id in rows])
+    accessible: set[int] = set()
+    for block_id, video_id in rows:
+        block_tariffs = tariffs_by_block.get(block_id)
+        if not block_tariffs or user_tariff in block_tariffs:
+            accessible.add(video_id)
+    return accessible
 
 
 def is_video_accessible(db: Session, video, viewer: dict) -> bool:
@@ -94,7 +115,9 @@ def is_video_accessible(db: Session, video, viewer: dict) -> bool:
         return True
     video_id = getattr(video, "id", None)
     if video_id and video_id in block_bound_video_ids(db):
-        return video_id in _accessible_block_video_ids(db, viewer["user_id"])
+        return video_id in _accessible_block_video_ids(
+            db, viewer["user_id"], user_tariff=viewer.get("tariff")
+        )
     topic_id = getattr(video, "topic_id", None)
     if topic_id is None:
         return True
@@ -123,7 +146,10 @@ def list_published_videos(db: Session, *, viewer: dict) -> list[LearningVideo]:
         allowed = accessible_topic_ids(db, viewer["user_id"])
         in_blocks = block_bound_video_ids(db)
         allowed_by_block = (
-            _accessible_block_video_ids(db, viewer["user_id"]) if in_blocks else set()
+            _accessible_block_video_ids(
+                db, viewer["user_id"], user_tariff=viewer.get("tariff")
+            )
+            if in_blocks else set()
         )
         return [
             video

@@ -2,6 +2,7 @@
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -24,10 +25,12 @@ from app.services.video_catalog import (
     list_published_videos,
 )
 from app.services.video_progress import (
+    compute_watched_seconds,
     get_resume_position,
     get_video_progress,
     log_video_view,
     save_video_progress as persist_video_progress,
+    watched_enough,
 )
 from app.tmpl import templates
 
@@ -424,6 +427,13 @@ def _save_progress(
     done впервые» ловится чтением состояния до апсерта: `persist_video_progress`
     делает атомарный `INSERT … ON CONFLICT`, из его возврата «стало ли только
     что true» не восстановить.
+
+    Защита от перемотки (владелец 05.09.2026): позиция у конца ролика — не
+    единственное условие. Перемотка ползунком выставляет `position_seconds`
+    рядом с длительностью за одно движение, поэтому вдобавок требуем, чтобы
+    накопилось реальное (календарное) время просмотра, близкое к
+    длительности — независимо от скорости воспроизведения
+    (`watched_enough`/`compute_watched_seconds`, `app/services/video_progress.py`).
     """
     if known_duration_seconds is not None and known_duration_seconds > 0:
         duration = known_duration_seconds
@@ -431,14 +441,17 @@ def _save_progress(
         duration = payload.duration_seconds
     else:
         duration = None
-    completed = (
+
+    now = datetime.now(timezone.utc)
+    existing = get_video_progress(db, user_id=user["user_id"], video_id=bunny_video_id)
+    was_completed = existing is not None and existing.completed_at is not None
+    watched_seconds = compute_watched_seconds(existing, now=now)
+
+    position_near_end = (
         duration is not None
         and duration - payload.position_seconds <= 5
     )
-    was_completed = False
-    if completed and topic_id is not None:
-        existing = get_video_progress(db, user_id=user["user_id"], video_id=bunny_video_id)
-        was_completed = existing is not None and existing.completed_at is not None
+    completed = position_near_end and watched_enough(watched_seconds, duration)
     try:
         completed = persist_video_progress(
             db,
@@ -447,6 +460,7 @@ def _save_progress(
             position_seconds=payload.position_seconds,
             duration_seconds=payload.duration_seconds,
             completed=completed,
+            watched_seconds=watched_seconds,
         )
     except SQLAlchemyError:
         logger.exception("Video progress save failed for user_id=%s", user["user_id"])

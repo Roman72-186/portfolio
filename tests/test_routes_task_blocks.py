@@ -22,6 +22,7 @@ from app.models.task_block import (
     BLOCK_QUESTION,
     BLOCK_TEXT,
     BLOCK_VIDEO,
+    QUESTION_MULTIPLE,
     QUESTION_SINGLE,
     QUESTION_TEXT,
     TaskBlock,
@@ -117,6 +118,39 @@ def test_material_accepts_every_block_type(client, db, user_factory, session_fac
     ]
     assert rows[2].video_id == video.id
     assert rows[3].url == "https://example.org"
+
+
+def test_constructor_accepts_precourse_fields(client, db, user_factory, session_factory, monkeypatch):
+    """Регрессия (ревью 05.09.2026): раньше форма конструктора не знала про
+    `is_required`/`subject`/`tariffs` вообще — `BlockItem` их отбрасывал
+    (`extra="forbid"`), и весь блочный гейт для предобучения нельзя было
+    настроить руками, только через прямой вызов сервиса в тестах."""
+    from app.services.task_blocks import get_tariffs as get_task_block_tariffs
+
+    _freeze(monkeypatch, date.today())
+    _staff_client(client, user_factory, session_factory)
+
+    resp = client.post(
+        f"{PROGRAM}/{_future_day_iso()}/material",
+        json={
+            "title": "Материал",
+            "audience": EVERYONE,
+            "blocks": [
+                {
+                    "block_type": BLOCK_TEXT, "body": "Досмотри видео",
+                    "is_required": True, "subject": "Рисунок",
+                    "tariffs": ["МАКСИМУМ"],
+                },
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "material").one()
+    [block] = _blocks_of(db, task.id)
+    assert block.is_required is True
+    assert block.subject == "Рисунок"
+    assert get_task_block_tariffs(db, [block.id]) == {block.id: {"МАКСИМУМ"}}
 
 
 def test_lesson_accepts_blocks_too(client, db, user_factory, session_factory, monkeypatch):
@@ -354,6 +388,56 @@ def test_submit_blocks_round_trips(client, db, user_factory, session_factory):
 
     body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
     assert body["blocks"][0]["answer_text"] == "Хорошо"
+
+
+def test_option_requires_text_reveals_and_round_trips_via_route(
+    client, db, user_factory, session_factory,
+):
+    """Регрессия (ревью 05.09.2026): раньше `option_texts` от реального
+    роута никогда не доходил до `save_response` — форма писала текст, а
+    схема ответа его тихо ронял (`extra="forbid"` без этого поля). Теперь
+    `requires_text` виден в GET для рендера поля, а сохранённый текст
+    возвращается для префилла при повторном открытии."""
+    staff = user_factory(vk_id=550_310, name="Стафф", is_admin=True, role_name="админ")
+    task = _material_task_with_blocks(
+        db, staff.id,
+        blocks=[{
+            "block_type": BLOCK_QUESTION, "question_type": QUESTION_MULTIPLE,
+            "body": "Какие навыки развивать?",
+        }],
+    )
+    [block] = _blocks_of(db, task.id)
+    stress = TaskBlockOption(
+        block_id=block.id, text="Стрессоустойчивость", sort_order=0, requires_text=True,
+    )
+    confidence = TaskBlockOption(block_id=block.id, text="Уверенность", sort_order=1)
+    db.add_all([stress, confidence])
+    db.commit()
+    db.refresh(stress)
+    db.refresh(confidence)
+
+    _student_client(client, user_factory, session_factory)
+
+    before = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    options = before["blocks"][0]["options"]
+    assert {o["id"]: o["requires_text"] for o in options} == {
+        stress.id: True, confidence.id: False,
+    }
+
+    resp = client.post(
+        f"/cabinet/tracker/tasks/{task.id}/blocks",
+        json={"answers": [{
+            "block_id": block.id,
+            "option_ids": [stress.id, confidence.id],
+            "option_texts": {str(stress.id): "Часто нервничаю перед экзаменом"},
+        }]},
+    )
+    assert resp.status_code == 200, resp.text
+
+    after = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert after["blocks"][0]["answer_option_texts"] == {
+        str(stress.id): "Часто нервничаю перед экзаменом",
+    }
 
 
 def test_submit_blocks_works_after_task_done_too(client, db, user_factory, session_factory):
@@ -676,7 +760,8 @@ def test_blocks_source_returns_content_without_ids(client, db, user_factory, ses
     assert [b["block_type"] for b in body["blocks"]] == [BLOCK_TEXT, BLOCK_QUESTION]
     assert all("id" not in b for b in body["blocks"])
     assert body["blocks"][1]["options"] == [
-        {"text": "А", "is_correct": True}, {"text": "Б", "is_correct": False},
+        {"text": "А", "is_correct": True, "requires_text": False},
+        {"text": "Б", "is_correct": False, "requires_text": False},
     ]
 
 

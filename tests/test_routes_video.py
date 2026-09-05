@@ -369,6 +369,16 @@ def test_video_progress_ignores_client_completed_flag(auth_client, db, monkeypat
         "/cabinet/video/progress",
         json={"position_seconds": 20, "duration_seconds": 100, "completed": True},
     )
+    # Защита от перемотки (владелец 05.09.2026) требует накопленного реального
+    # времени просмотра — симулируем, что ученик уже почти досмотрел, иначе
+    # один heartbeat у конца ролика больше не защитывает просмотр.
+    db.add(
+        VideoProgress(
+            user_id=user.id, video_id=VIDEO_ID,
+            position_seconds=90.0, watched_seconds=90.0,
+        )
+    )
+    db.commit()
     near_end = client.post(
         "/cabinet/video/progress",
         json={"position_seconds": 98, "duration_seconds": 100},

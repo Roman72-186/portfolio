@@ -53,6 +53,7 @@ from app.services.task_blocks import (
     grade_response as grade_task_blocks,
     get_options as get_task_block_options,
     get_response as get_task_block_response,
+    get_selected_option_texts as get_task_block_selected_option_texts,
     get_selected_options as get_task_block_selected_options,
     question_blocks as task_question_blocks,
     save_response as save_task_block_response,
@@ -260,11 +261,13 @@ def cabinet_tracker_task_blocks(
 
     answers_map: dict[int, str] = {}
     selected: dict[int, set[int]] = {}
+    selected_option_texts: dict[int, str] = {}
     response = get_task_block_response(db, task_id=task_id, user_id=user["user_id"])
     answered = response is not None
     if response is not None:
         answers_map = get_task_block_answers_map(db, response_id=response.id)
         selected = get_task_block_selected_options(db, response_id=response.id)
+        selected_option_texts = get_task_block_selected_option_texts(db, response_id=response.id)
     images = get_task_block_images(db, [b.id for b in blocks])
     # Вердикт отдаём, только когда ученик уже ответил. Иначе `is_correct` в
     # теле ответа подсказал бы верный вариант до отправки.
@@ -299,12 +302,19 @@ def cabinet_tracker_task_blocks(
             item["question_type"] = block.question_type
             item["options"] = [
                 # `is_correct` наружу не отдаём: ученик не должен видеть
-                # правильный ответ в теле ответа сервера.
-                {"id": o.id, "text": o.text}
+                # правильный ответ в теле ответа сервера. `requires_text`
+                # нужен фронту, чтобы понять, под каким вариантом раскрывать
+                # поле свободного текста (владелец 05.09.2026).
+                {"id": o.id, "text": o.text, "requires_text": o.requires_text}
                 for o in options.get(block.id, [])
             ]
             item["answer_text"] = answers_map.get(block.id, "")
             item["answer_option_ids"] = sorted(selected.get(block.id, set()))
+            item["answer_option_texts"] = {
+                option_id: text
+                for option_id, text in selected_option_texts.items()
+                if option_id in selected.get(block.id, set())
+            }
             item["is_correct"] = correct_by_block.get(block.id)
         payload.append(item)
 
@@ -329,12 +339,27 @@ class TrackerBlockAnswerItem(BaseModel):
     block_id: int = Field(ge=1)
     text: str | None = Field(default=None, max_length=2000)
     option_ids: list[int] = Field(default_factory=list, max_length=20)
+    # Свободный текст под конкретным выбранным вариантом (владелец 05.09.2026:
+    # «выбрал навык — сразу под ним раскрывается поле, почему»). Ключ —
+    # option_id; сервис (`save_response`) сам игнорирует текст у вариантов
+    # без `requires_text`, даже если он всё равно пришёл.
+    option_texts: dict[int, str] = Field(default_factory=dict, max_length=20)
 
     @field_validator("text")
     @classmethod
     def strip_text(cls, value: str | None) -> str | None:
         value = (value or "").strip()
         return value or None
+
+    @field_validator("option_texts")
+    @classmethod
+    def clean_option_texts(cls, value: dict[int, str]) -> dict[int, str]:
+        cleaned = {}
+        for option_id, text in value.items():
+            text = (text or "").strip()
+            if text:
+                cleaned[option_id] = text[:2000]
+        return cleaned
 
 
 class TrackerTaskBlocksSubmit(BaseModel):
@@ -384,7 +409,10 @@ def submit_cabinet_tracker_task_blocks(
         user_id=user["user_id"],
         blocks=questions,
         answers={
-            a.block_id: {"text": a.text, "option_ids": a.option_ids}
+            a.block_id: {
+                "text": a.text, "option_ids": a.option_ids,
+                "option_texts": a.option_texts,
+            }
             for a in payload.answers
         },
     )
