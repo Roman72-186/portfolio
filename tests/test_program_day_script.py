@@ -133,5 +133,14 @@ def test_day_page_uses_school_day_copy_and_inline_optional_hints(
         if preset["capability"] == "generic":
             assert f'data-simple-kind="{preset["kind"]}"' in page.text
 
-    video_preset = next(preset for preset in presets if preset["kind"] == "video")
-    assert video_preset["default_block"] is None
+    # Плитка осталась одна — «Задание» (владелец 06.09.2026: «убрать
+    # Видеоматериал, Пробник и Самостоятельную работу, а оставить новый
+    # функционал с любыми заданиями»). Плитки видео здесь больше нет.
+    assert [preset["kind"] for preset in presets] == ["material"]
+
+    # Формы шире плиток: по ним правятся элементы, уже стоящие в программе.
+    for kind in ("survey", "quiz", "lesson", "checklist"):
+        assert f'data-simple-kind="{kind}"' in page.text
+    for kind in ("mock", "video", "homework"):
+        assert f'data-form="{kind}"' in page.text
+        assert f'data-open-form="{kind}"' not in page.text

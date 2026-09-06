@@ -304,8 +304,12 @@ FORM: Operate.
         <p class="prg-message" data-form-message></p>
     </form>
 
-    {% for preset in item_presets if preset.capability == 'generic' %}
-    {{ simple_form(preset.kind, preset.label, preset.hint) }}
+    {# Форм больше, чем плиток (владелец 06.09.2026): завести новый элемент
+       можно только «Заданием», но уже созданные анкеты, тесты, занятия и
+       чек-листы должны открываться на правку — кнопка «Изменить» ищет форму
+       по `data-form="{kind}"`. #}
+    {% for form_kind in item_form_kinds %}
+    {{ simple_form(form_kind.kind, form_kind.label, form_kind.hint) }}
     {% endfor %}
     {% endif %}
 

@@ -132,7 +132,10 @@ def test_marks_show_what_stands_in_the_day(
 
 # ── Экран дня ─────────────────────────────────────────────────────────────
 
-def test_future_day_offers_three_tiles(client, user_factory, session_factory, monkeypatch):
+def test_future_day_offers_the_single_task_tile(client, user_factory, session_factory, monkeypatch):
+    """Плитка одна — «Задание» (владелец 06.09.2026: «убрать Видеоматериал,
+    Пробник и Самостоятельную работу, а оставить новый функционал с любыми
+    заданиями»). Содержимое любому элементу задают блоки."""
     _freeze_today(monkeypatch, date(2026, 8, 21))
     _staff_client(client, user_factory, session_factory)
 
@@ -140,9 +143,10 @@ def test_future_day_offers_three_tiles(client, user_factory, session_factory, mo
 
     assert page.status_code == 200
     assert "24 август 2026, понедельник" in page.text
-    assert 'data-open-form="mock"' in page.text
-    assert 'data-open-form="video"' in page.text
-    assert 'data-open-form="homework"' in page.text
+    assert 'data-open-form="material"' in page.text
+    assert 'data-open-form="mock"' not in page.text
+    assert 'data-open-form="video"' not in page.text
+    assert 'data-open-form="homework"' not in page.text
 
 
 def test_past_day_is_read_only(client, db, user_factory, session_factory, monkeypatch):
