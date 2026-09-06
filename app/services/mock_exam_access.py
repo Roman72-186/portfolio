@@ -20,7 +20,15 @@ from app.services.tz import MSK_TZ, now_msk
 if TYPE_CHECKING:
     from app.models.exam_assignment import ExamTicket
 
-MOCK_EXAM_DURATION_SEC = 90 * 60
+# Четыре часа на работу (владелец 06.09.2026, голосовое 01:38: «условия по
+# дефолту нужно стоять 240 минут на сдачу, не 90, как сейчас»). До этого лимит
+# был полтора часа, а гостям на экране всё это время показывались те же 240 —
+# два числа про одно и то же разъезжались (`guest_exam.py` брал своё). Теперь
+# источник один, гостевой модуль импортирует отсюда.
+#
+# Окно доступа (11:45–18:30) не менялось: это когда билет можно взять, а не
+# сколько над ним сидеть. 240 минут в него помещаются.
+MOCK_EXAM_DURATION_SEC = 240 * 60
 MOCK_EXAM_DEFAULT_DURATION_MINUTES = MOCK_EXAM_DURATION_SEC // 60
 MOCK_EXAM_OPEN_AT = time(11, 45)
 MOCK_EXAM_CLOSE_AT = time(18, 30)

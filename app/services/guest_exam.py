@@ -23,6 +23,7 @@ from app.models.guest_exam import (
     GuestSubmission,
     GuestVisit,
 )
+from app.services.mock_exam_access import MOCK_EXAM_DEFAULT_DURATION_MINUTES
 from app.services.tz import MSK_TZ, today_msk
 
 GUEST_ASSIGNMENT_KIND = "guest"
@@ -55,7 +56,9 @@ _CODE_GENERATION_ATTEMPTS = 10
 
 # Только визуальный отсчёт на странице — не блокирует отправку после истечения
 # (тот же принцип, что у реального пробника, см. mock_exam_access.py).
-VISUAL_DURATION_MINUTES = 240
+# Одно число с боевым пробником (владелец 06.09.2026): раньше здесь стояло 240
+# при лимите 90 в mock_exam_access — гость видел одно, ученик получал другое.
+VISUAL_DURATION_MINUTES = MOCK_EXAM_DEFAULT_DURATION_MINUTES
 
 
 def _serializer() -> URLSafeTimedSerializer:

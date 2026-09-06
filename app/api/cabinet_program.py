@@ -10,7 +10,7 @@
 
 import json
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -24,7 +24,7 @@ from app.dependencies import require_admin_role, require_csrf, require_csrf_head
 from app.models.audit_log import AuditLog
 from app.models.exam_assignment import ExamAssignment, ExamTicket
 from app.models.exam_cycle import ExamCycle
-from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, LearningTopic
+from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, TOPIC_KIND_WEEK, LearningTopic
 from app.models.learning_video import LearningVideo
 from app.models.task_block import (
     BLOCK_QUESTION,
@@ -101,15 +101,21 @@ from app.services.tracker import (
     update_homework,
     update_task,
 )
-from app.services.tz import today_msk
+from app.services.tz import msk_midnight, today_msk
 from app.services.utils import compress_image
 from app.services.video_topics import (
     ambiguous_tag_names,
     count_topic_audience,
+    create_topic,
     get_assignee_ids,
     get_tag_ids,
+    get_topic,
     get_topic_tariffs,
+    list_topics as list_week_topics,
+    publish_topic,
     set_topic_tariffs,
+    unpublish_topic,
+    update_topic,
 )
 from app.tmpl import templates
 
@@ -128,19 +134,29 @@ MONTH_NAMES = (
     "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
 )
 
-# Один реестр управляет плитками и стартовым содержимым конструктора. Новый
-# простой сценарий добавляется здесь и в списке допустимых TrackerTask.kind;
-# отдельная копия формы ему не нужна.
+# Один реестр управляет плитками и стартовым содержимым конструктора.
+#
+# Владелец 06.09.2026 (голосовое 01:37): «всё, что сейчас настроено по
+# конструктору, считай, в каждом блоке каждой кнопки из восьми одинаковое —
+# мне смысл эти восемь кнопок держать?». Пять универсальных плиток (Анкета,
+# Материалы, Тест по теории, Занятие, Чек-лист) отличались только подписью:
+# содержимое всем им задают блоки. Осталась одна — «Задание».
+#
+# Пробник, Видеоматериал и Самостоятельная работа оставлены отдельными
+# кнопками осознанно, тем же голосовым («пробник и видеоматериал оставить всё
+# это по аналогии, как сейчас»): за каждой стоит своя механика — билеты и
+# таймер, привязка ролика, приём работ, — а не только набор блоков.
+#
+# Уже созданные элементы старых видов (`survey`, `quiz`, `lesson`, `checklist`)
+# продолжают работать и правиться: из `ITEM_KINDS` они не убраны, ушли только
+# кнопки создания новых.
 PROGRAM_ITEM_PRESETS = [
     {"kind": "mock", "label": "Задание (Пробник)", "icon": "★", "hint": "Билеты по рисунку и композиции, окно сдачи", "capability": "mock", "default_block": "question"},
     {"kind": ITEM_VIDEO, "label": "Видеоматериал", "icon": "▶", "hint": "Ролик и дополнительные задачи учебного дня", "capability": "video", "default_block": None},
-    {"kind": ITEM_HOMEWORK, "label": "Самостоятельная работа", "icon": "✎", "hint": "Материалы, условие и сдача работы", "capability": "homework", "default_block": "text"},
-    {"kind": ITEM_SURVEY, "label": "Анкета", "icon": "☑", "hint": "Один или несколько вопросов", "capability": "generic", "default_block": "question"},
-    {"kind": ITEM_MATERIAL, "label": "Материалы", "icon": "📄", "hint": "Текст, статья, фото, видео или ссылка", "capability": "generic", "default_block": "text"},
-    {"kind": ITEM_QUIZ, "label": "Тест по теории", "icon": "?", "hint": "Вопросы с одним или несколькими ответами", "capability": "generic", "default_block": "question"},
-    {"kind": ITEM_LESSON, "label": "Занятие", "icon": "🎥", "hint": "Подготовка, материалы и задачи занятия", "capability": "generic", "default_block": "text"},
-    {"kind": ITEM_CHECKLIST, "label": "Чек-лист и проверки", "icon": "☰", "hint": "Пункты и вопросы для самопроверки", "capability": "generic", "default_block": "question"},
+    {"kind": ITEM_HOMEWORK, "label": "Самостоятельная работа", "icon": "✎", "hint": "Материалы, условие и сдача работы учеником", "capability": "homework", "default_block": "text"},
+    {"kind": ITEM_MATERIAL, "label": "Задание", "icon": "📄", "hint": "Любое содержимое: текст, фото, видео, ссылка, вопросы", "capability": "generic", "default_block": "text"},
 ]
+
 
 
 def _parse_month(raw: str | None, today: date) -> tuple[int, int]:
@@ -284,6 +300,141 @@ def program_month(
             "today_iso": today.isoformat(),
         },
     )
+
+
+# ── Циклы программы (владелец 06.09.2026) ───────────────────────────────────
+#
+# «Открываем, устанавливаем, с какого по какое это будет цикл — то есть он три
+# недели — расставляем блоки друг за другом по порядку». Цикл — рамка вокруг
+# дней программы: он задаёт период, за который ученик видит свою ленту
+# (`services/cycle_feed.py`). Отдельной сущности не заводим: цикл это
+# `LearningTopic(kind='week')` с периодом `opens_at … ends_at` — вторая
+# сущность расписания в проекте запрещена (AGENTS.md).
+#
+# Экрана создания цикла до 06.09.2026 не было вовсе: эндпоинты жили в админке
+# видео, но их не звал ни один шаблон, а программа собиралась по дням
+# календаря. Поэтому здесь именно создание, а не перенос формы.
+
+
+class CyclePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    # Даты из <input type="date">, московские. Конец включительно: цикл «по 3
+    # октября» заканчивается вечером третьего, а не в полночь на его начале.
+    starts_on: str = Field(min_length=1, max_length=32)
+    ends_on: str = Field(min_length=1, max_length=32)
+    is_published: bool = True
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Название не может быть пустым")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def strip_description(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        return value or None
+
+
+def _cycle_dates(payload: CyclePayload) -> tuple[datetime, datetime]:
+    """Период цикла в московском времени: начало суток и конец последних суток."""
+    start = parse_day_iso(payload.starts_on)
+    end = parse_day_iso(payload.ends_on)
+    if start is None or end is None:
+        raise HTTPException(status_code=422, detail="Неверная дата периода")
+    if end < start:
+        raise HTTPException(status_code=422, detail="Конец периода раньше начала")
+    # В UTC явно: колонка `DateTime(timezone=True)`, и московское время,
+    # положенное «как есть», зависит от того, кто его потом прочитает —
+    # PostgreSQL переведёт сам, а SQLite таймзону теряет и вернёт наивное
+    # значение, которое проект трактует как UTC (`program.py::msk_date`).
+    # Тогда конец цикла «по 3 октября 23:59 МСК» превратился бы в 4 октября.
+    return (
+        msk_midnight(start).astimezone(timezone.utc),
+        (msk_midnight(end) + timedelta(hours=23, minutes=59, seconds=59)).astimezone(timezone.utc),
+    )
+
+
+@router.get("/cycles", response_class=HTMLResponse)
+def program_cycles(
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    cycles = [
+        {
+            "id": topic.id,
+            "title": topic.title,
+            "description": topic.description,
+            "starts_on": msk_date(topic.opens_at).isoformat(),
+            "ends_on": msk_date(topic.ends_at).isoformat() if topic.ends_at else None,
+            "is_published": topic.is_published,
+        }
+        for topic in list_week_topics(db)
+    ]
+    return templates.TemplateResponse(
+        "cabinet_program_cycles.html",
+        {"request": request, "user": user, "cycles": cycles},
+    )
+
+
+@router.post("/cycles", response_class=JSONResponse)
+def create_program_cycle(
+    payload: CyclePayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    opens_at, ends_at = _cycle_dates(payload)
+    topic = create_topic(
+        db,
+        title=payload.title,
+        description=payload.description,
+        opens_at=opens_at,
+        ends_at=ends_at,
+        # Цикл виден всем ученикам: адресация внутри цикла идёт по блокам
+        # (тариф, предмет), а не по самой рамке.
+        assign_to_all=True,
+        user_id=user["user_id"],
+    )
+    if payload.is_published:
+        publish_topic(topic, user_id=user["user_id"])
+    db.commit()
+    return JSONResponse({"ok": True, "cycle_id": topic.id})
+
+
+@router.post("/cycles/{topic_id}", response_class=JSONResponse)
+def update_program_cycle(
+    topic_id: int,
+    payload: CyclePayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    topic = get_topic(db, topic_id, kinds=(TOPIC_KIND_WEEK,))
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Цикл не найден")
+    opens_at, ends_at = _cycle_dates(payload)
+    update_topic(
+        topic,
+        title=payload.title,
+        description=payload.description,
+        opens_at=opens_at,
+        ends_at=ends_at,
+        assign_to_all=True,
+    )
+    if payload.is_published:
+        publish_topic(topic, user_id=user["user_id"])
+    else:
+        unpublish_topic(topic)
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 # Порядок важен: «/{iso}» ниже ловит любую строку, включая «blocks-source».

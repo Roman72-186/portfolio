@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Циклы программы{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=15">
+{% endblock %}
+{% block content %}
+{#
+Циклы учебной программы — рамка с периодом вокруг дней (владелец 06.09.2026:
+«открываем, устанавливаем, с какого по какое это будет цикл — то есть он три
+недели»). Цикл задаёт окно, за которое ученик видит свою ленту заданий
+(`services/cycle_feed.py`); порядок внутри ленты задаётся на экране дня.
+
+Отдельной сущности под цикл нет: это `LearningTopic(kind='week')` с периодом
+`opens_at … ends_at`. Стили — общие `program.css`, своего <style> здесь нет:
+за инлайновым CSS следит `tests/test_reuse_ratchet.py`.
+#}
+<div class="prg-page">
+    {% include "partials/program_tabs.html" %}
+
+    <div class="prg-head">
+        <div>
+            <h1>Циклы программы</h1>
+            <p class="prg-hint">
+                Цикл — период, за который ученик видит свои задания одной лентой.
+                В предобучении это два-три дня, в основном обучении — неделя или месяц.
+            </p>
+        </div>
+    </div>
+
+    <form class="prg-form" data-cycle-form>
+        <h2 data-cycle-form-title>Новый цикл</h2>
+        <input type="hidden" data-c-id value="">
+        <label class="prg-field">
+            <input type="text" data-c-title maxlength="200" autocomplete="off"
+                   aria-label="Название цикла" placeholder="Название цикла">
+        </label>
+        <label class="prg-field">
+            <textarea data-c-description maxlength="5000"
+                      aria-label="Описание, необязательно"
+                      placeholder="Описание, необязательно"></textarea>
+        </label>
+        <div class="prg-grid2">
+            <label class="prg-field">
+                <span>С какого</span>
+                <input type="date" data-c-start aria-label="Начало цикла">
+            </label>
+            <label class="prg-field">
+                <span>По какое включительно</span>
+                <input type="date" data-c-end aria-label="Конец цикла">
+            </label>
+        </div>
+        <label class="prg-field prg-field--row">
+            <input type="checkbox" data-c-published checked>
+            <span>Показывать ученикам</span>
+        </label>
+        <div class="prg-actions">
+            <button type="button" class="btn-blue" data-cycle-save>Сохранить</button>
+            <button type="button" class="btn-outline" data-cycle-reset hidden>Отменить правку</button>
+        </div>
+        <p class="prg-message" data-cycle-message></p>
+    </form>
+
+    <section class="prg-items">
+        <h2>Уже заведены</h2>
+        {% if cycles %}
+        {% for cycle in cycles %}
+        <article class="prg-item" data-cycle-id="{{ cycle.id }}">
+            <div>
+                <span class="prg-badge">{{ 'Виден ученикам' if cycle.is_published else 'Скрыт' }}</span>
+                <h3>{{ cycle.title }}</h3>
+                {% if cycle.description %}<p>{{ cycle.description }}</p>{% endif %}
+                <div class="prg-meta">
+                    <span>с {{ cycle.starts_on }}</span>
+                    {% if cycle.ends_on %}
+                    <span>по {{ cycle.ends_on }}</span>
+                    {% else %}
+                    <span>период не задан — считается календарной неделей</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="prg-item-actions">
+                <button type="button" class="btn-outline" data-cycle-edit
+                        data-payload='{{ cycle|tojson }}'>Править</button>
+            </div>
+        </article>
+        {% endfor %}
+        {% else %}
+        <p class="prg-hint">Пока ни одного цикла. Пока цикла нет, ученик видит задания текущей календарной недели.</p>
+        {% endif %}
+    </section>
+</div>
+
+<script>
+(function () {
+    var csrfToken = {{ csrf_token(request)|tojson }};
+    var form = document.querySelector('[data-cycle-form]');
+    if (!form) return;
+
+    var fields = {
+        id: form.querySelector('[data-c-id]'),
+        title: form.querySelector('[data-c-title]'),
+        description: form.querySelector('[data-c-description]'),
+        start: form.querySelector('[data-c-start]'),
+        end: form.querySelector('[data-c-end]'),
+        published: form.querySelector('[data-c-published]')
+    };
+    var message = form.querySelector('[data-cycle-message]');
+    var formTitle = form.querySelector('[data-cycle-form-title]');
+    var resetBtn = form.querySelector('[data-cycle-reset]');
+
+    function reset() {
+        fields.id.value = '';
+        fields.title.value = '';
+        fields.description.value = '';
+        fields.start.value = '';
+        fields.end.value = '';
+        fields.published.checked = true;
+        formTitle.textContent = 'Новый цикл';
+        resetBtn.hidden = true;
+        message.textContent = '';
+    }
+
+    document.querySelectorAll('[data-cycle-edit]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var data = JSON.parse(button.getAttribute('data-payload'));
+            fields.id.value = data.id;
+            fields.title.value = data.title || '';
+            fields.description.value = data.description || '';
+            fields.start.value = data.starts_on || '';
+            fields.end.value = data.ends_on || '';
+            fields.published.checked = !!data.is_published;
+            formTitle.textContent = 'Правка цикла';
+            resetBtn.hidden = false;
+            form.scrollIntoView({ block: 'start' });
+        });
+    });
+
+    resetBtn.addEventListener('click', reset);
+
+    form.querySelector('[data-cycle-save]').addEventListener('click', function () {
+        var id = fields.id.value;
+        // Обе даты обязательны: цикл без конца ведёт себя как календарная
+        // неделя, и человек, который открыл эту форму, хотел не этого.
+        if (!fields.title.value.trim() || !fields.start.value || !fields.end.value) {
+            message.textContent = 'Заполните название и обе даты периода.';
+            return;
+        }
+        fetch('/cabinet/staff/program/cycles' + (id ? '/' + id : ''), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify({
+                title: fields.title.value.trim(),
+                description: fields.description.value.trim() || null,
+                starts_on: fields.start.value,
+                ends_on: fields.end.value,
+                is_published: fields.published.checked
+            })
+        }).then(function (resp) {
+            if (!resp.ok) return resp.json().then(function (body) { throw new Error(body.detail || ''); });
+            window.location.reload();
+        }).catch(function (err) {
+            message.textContent = err.message || 'Не удалось сохранить цикл.';
+        });
+    });
+})();
+</script>
+{% endblock %}

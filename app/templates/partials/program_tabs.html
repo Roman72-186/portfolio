@@ -12,6 +12,9 @@
     <a class="prg-tab{% if _prg_p.startswith('/cabinet/staff/program') %} is-active{% endif %}"
        href="/cabinet/staff/program"
        {% if _prg_p.startswith('/cabinet/staff/program') %}aria-current="page"{% endif %}>Календарь</a>
+    <a class="prg-tab{% if _prg_p.startswith('/cabinet/staff/program/cycles') %} is-active{% endif %}"
+       href="/cabinet/staff/program/cycles"
+       {% if _prg_p.startswith('/cabinet/staff/program/cycles') %}aria-current="page"{% endif %}>Циклы</a>
     <span class="prg-tabs-sep" aria-hidden="true"></span>
     <a class="prg-tab{% if _prg_p.startswith('/cabinet/staff/digest') %} is-active{% endif %}"
        href="/cabinet/staff/digest"

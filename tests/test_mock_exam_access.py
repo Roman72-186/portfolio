@@ -210,10 +210,13 @@ def test_attempt_open_ignores_90_minute_timer():
     )
 
 
-def test_mock_exam_deadline_is_90_minutes_but_not_after_day_close():
+def test_mock_exam_deadline_is_240_minutes_but_not_after_day_close():
+    """Владелец 06.09.2026: «по дефолту нужно стоять 240 минут на сдачу, не 90».
+    Окно доступа осталось прежним (11:45–18:30), поэтому поздний старт
+    по-прежнему упирается в закрытие дня, а не в лимит."""
     started_at = datetime(2026, 1, 1, 11, 45, tzinfo=MSK_TZ)
     assert mock_exam_deadline_for_started_at(started_at) == datetime(
-        2026, 1, 1, 13, 15, tzinfo=MSK_TZ
+        2026, 1, 1, 15, 45, tzinfo=MSK_TZ
     )
 
     latest_start = datetime(2026, 1, 1, 17, 0, tzinfo=MSK_TZ)
