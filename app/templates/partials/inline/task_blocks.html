@@ -25,6 +25,10 @@
    а не полагаемся на то, что video.html уже на странице: у дня может не
    быть ни одной задачи kind=video, только блоки. #}
 {% include "partials/inline/_video_player.html" %}
+{# Рендер блоков вынесен в общий файл 06.09.2026: те же блоки рисует лента
+   цикла (`partials/inline/cycle_feed.html`), и второй копии рендереров в
+   проекте быть не должно — за этим следит `tests/test_reuse_ratchet.py`. #}
+<script src="/static/js/task-blocks-render.js?v=1"></script>
 <script>
 (function () {
     window.lrnPanelInit = window.lrnPanelInit || {};
@@ -36,215 +40,8 @@
 
         var statusEl = root.querySelector('[data-role="status"]');
         var listEl = root.querySelector('[data-role="list"]');
-        var uid = Math.random().toString(36).slice(2);
-        // Одна попытка: после ответа поля блокируются, чтобы нельзя было
-        // подобрать верный вариант, увидев «неверно».
-        var answered = false;
-
-        function el(tag, className, text) {
-            var node = document.createElement(tag);
-            if (className) node.className = className;
-            if (text !== undefined && text !== null) node.textContent = text;
-            return node;
-        }
-
-        function withTitle(wrap, block) {
-            // Не field-label: тот же класс держит подписи полей форм по всему
-            // приложению, а здесь заголовок блока должен быть заметнее тела
-            // текста под ним, а не мельче (было 12px против обычного текста —
-            // ревью 03.09.2026).
-            if (block.title) wrap.appendChild(el('p', 'lrn-blk-title', block.title));
-            return wrap;
-        }
-
-        function renderText(block) {
-            var wrap = withTitle(el('div', 'lrn-blk lrn-blk-text'), block);
-            wrap.appendChild(el('p', 'lrn-blk-body', block.body || ''));
-            return wrap;
-        }
-
-        function renderPhoto(block) {
-            var wrap = withTitle(el('div', 'lrn-blk lrn-blk-photo'), block);
-            var gallery = el('div', 'lrn-blk-gallery');
-            (block.images || []).forEach(function (image) {
-                var img = el('img', 'lrn-blk-image');
-                img.src = image.url;
-                img.alt = block.title || 'Изображение к заданию';
-                img.loading = 'lazy';
-                gallery.appendChild(img);
-            });
-            // Одна картинка занимает всю ширину, несколько — встают сеткой.
-            if ((block.images || []).length === 1) gallery.classList.add('is-single');
-            wrap.appendChild(gallery);
-            if (block.body) wrap.appendChild(el('p', 'video-help', block.body));
-            return wrap;
-        }
-
-        function renderLink(block) {
-            var wrap = withTitle(el('div', 'lrn-blk lrn-blk-link'), block);
-            // Ссылка кнопкой, а не текстом для копирования — решение 17.08 по
-            // ссылке на созвон, здесь тот же приём.
-            var a = el('a', 'btn-outline', block.title || 'Открыть ссылку');
-            a.href = block.url;
-            a.target = '_blank';
-            a.rel = 'noopener noreferrer';
-            wrap.appendChild(a);
-            if (block.body) wrap.appendChild(el('p', 'video-help', block.body));
-            return wrap;
-        }
-
-        // Разметка — та же, что у `partials/inline/video.html` (совпадающие
-        // `data-role`), только собрана в рантайме: у задачи может быть
-        // несколько видео-блоков сразу, у каждого свой endpoint, а не один
-        // общий на всю карточку. Кнопку fullscreen, водяной знак зрителя,
-        // автосохранение позиции и всё остальное поведение отдаёт
-        // `window.lrnVideoPlayer.mount` (`_video_player.html`) — та же
-        // функция, что у вкладки «Видео», второй копии не заводим (баг
-        // владельца 02.09.2026: видео-блок при переезде в блоки 31.08.2026
-        // написан заново, и обеих защит там не было вовсе).
-        function renderVideo(block) {
-            var wrap = withTitle(el('div', 'lrn-blk lrn-blk-video'), block);
-            if (!block.video_embed_endpoint) {
-                wrap.appendChild(el('p', 'video-progress-status is-error', 'Ролик недоступен.'));
-                return wrap;
-            }
-
-            var root = el('div', 'lrn-inline-video');
-            var statusEl = el('p', 'video-progress-status', 'Загружаем видео…');
-            statusEl.setAttribute('aria-live', 'polite');
-            statusEl.setAttribute('data-role', 'status');
-
-            var shell = el('div', 'video-shell');
-            shell.hidden = true;
-            shell.setAttribute('data-role', 'shell');
-            shell.setAttribute('aria-label', block.title || 'Видеоурок');
-
-            var frameWrap = el('div', 'video-frame');
-            frameWrap.setAttribute('data-role', 'frame-wrap');
-
-            var loading = el('div', 'video-loading', 'Загружаем видео...');
-            loading.setAttribute('role', 'status');
-
-            var iframe = el('iframe');
-            iframe.setAttribute('data-role', 'iframe');
-            iframe.loading = 'eager';
-            iframe.allow = 'accelerometer; gyroscope; autoplay; encrypted-media';
-            iframe.referrerPolicy = 'strict-origin-when-cross-origin';
-
-            var watermark = el('div', 'video-watermark');
-            watermark.setAttribute('aria-hidden', 'true');
-            var watermarkCopy = el('div', 'video-watermark-copy');
-            watermarkCopy.setAttribute('data-role', 'watermark');
-            watermark.appendChild(watermarkCopy);
-
-            var muteButton = el('button', 'video-mute-button', '🔇 Включить звук');
-            muteButton.type = 'button';
-            muteButton.hidden = true;
-            muteButton.setAttribute('data-role', 'mute-btn');
-            muteButton.setAttribute('aria-label', 'Включить звук');
-            muteButton.title = 'Включить звук';
-
-            var fullscreenButton = el('button', 'video-fullscreen-button', '⛶');
-            fullscreenButton.type = 'button';
-            fullscreenButton.setAttribute('data-role', 'fullscreen-btn');
-            fullscreenButton.setAttribute('aria-label', 'На весь экран');
-            fullscreenButton.title = 'На весь экран';
-
-            frameWrap.appendChild(loading);
-            frameWrap.appendChild(iframe);
-            frameWrap.appendChild(watermark);
-            frameWrap.appendChild(muteButton);
-            frameWrap.appendChild(fullscreenButton);
-            shell.appendChild(frameWrap);
-
-            var progressStatus = el('p', 'video-progress-status');
-            progressStatus.hidden = true;
-            progressStatus.setAttribute('aria-live', 'polite');
-            progressStatus.setAttribute('data-role', 'progress-status');
-
-            root.appendChild(statusEl);
-            root.appendChild(shell);
-            root.appendChild(progressStatus);
-            wrap.appendChild(root);
-
-            window.lrnVideoPlayer.mount(root, { endpoint: block.video_embed_endpoint, csrfToken: csrfToken });
-            return wrap;
-        }
-
-        function verdictMark(block) {
-            // Значком и словом, не одним цветом: цвет читают не все.
-            if (block.is_correct === true) return el('span', 'lrn-blk-verdict is-ok', '✓ Верно');
-            if (block.is_correct === false) return el('span', 'lrn-blk-verdict is-wrong', '✗ Неверно');
-            return null;
-        }
-
-        function renderQuestion(block, index) {
-            var wrap = withTitle(el('div', 'lrn-blk lrn-blk-question'), block);
-            var fieldId = 'lrn-blk-' + uid + '-' + index;
-            // Это сам вопрос, а не подпись поля — field-label здесь занижал
-            // его до заголовка блока (оба 12px), хотя это главный текст,
-            // который нужно прочитать первым (ревью 03.09.2026).
-            var label = el('label', 'lrn-blk-question-body', block.body || '');
-            label.setAttribute('for', fieldId);
-            wrap.appendChild(label);
-
-            if (block.question_type === 'text') {
-                var textarea = el('textarea', 'form-input');
-                textarea.id = fieldId;
-                textarea.rows = 3;
-                textarea.maxLength = 2000;
-                textarea.value = block.answer_text || '';
-                textarea.setAttribute('data-answer-text', block.id);
-                textarea.disabled = answered;
-                wrap.appendChild(textarea);
-                var freeMark = verdictMark(block);
-                if (freeMark) wrap.appendChild(freeMark);
-                return wrap;
-            }
-
-            var multiple = block.question_type === 'multiple';
-            var chosen = block.answer_option_ids || [];
-            (block.options || []).forEach(function (option, oi) {
-                var row = el('label', 'lrn-blk-option');
-                var input = el('input');
-                input.type = multiple ? 'checkbox' : 'radio';
-                input.name = fieldId + (multiple ? '-' + oi : '');
-                input.value = option.id;
-                input.checked = chosen.indexOf(option.id) !== -1;
-                input.setAttribute('data-answer-option', block.id);
-                input.disabled = answered;
-                row.appendChild(input);
-                row.appendChild(el('span', null, option.text));
-                wrap.appendChild(row);
-            });
-            var mark = verdictMark(block);
-            if (mark) wrap.appendChild(mark);
-            return wrap;
-        }
-
-        var RENDERERS = {
-            text: renderText,
-            photo: renderPhoto,
-            video: renderVideo,
-            link: renderLink,
-            question: renderQuestion
-        };
-
-        function collectAnswers(data) {
-            var answers = [];
-            (data.blocks || []).forEach(function (block) {
-                if (block.block_type !== 'question') return;
-                var answer = { block_id: block.id, option_ids: [] };
-                var textField = listEl.querySelector('[data-answer-text="' + block.id + '"]');
-                if (textField) answer.text = textField.value;
-                var options = listEl.querySelectorAll('[data-answer-option="' + block.id + '"]');
-                Array.prototype.forEach.call(options, function (input) {
-                    if (input.checked) answer.option_ids.push(Number(input.value));
-                });
-                answers.push(answer);
-            });
-            return answers;
-        }
+        var renderer = window.lrnBlockRender.create({ csrfToken: csrfToken });
+        var el = window.lrnBlockRender.el;
 
         function appendSubmit(data) {
             var form = el('form', 'lrn-blk-submit');
@@ -269,14 +66,14 @@
                         'Content-Type': 'application/json',
                         'X-CSRF-Token': csrfToken
                     },
-                    body: JSON.stringify({ answers: collectAnswers(data) })
+                    body: JSON.stringify({ answers: renderer.collectAnswers(data.blocks, listEl) })
                 }).then(function (resp) {
                     if (!resp.ok) throw new Error();
                     return resp.json();
                 }).then(function (verdict) {
                     // Попытка одна: перерисовываем панель ответом сервера —
                     // с отметками «верно/неверно», счётом и закрытой формой.
-                    answered = true;
+                    renderer.answered = true;
                     data.blocks.forEach(function (block) {
                         (verdict.results || []).forEach(function (r) {
                             if (r.block_id === block.id) block.is_correct = r.is_correct;
@@ -298,28 +95,25 @@
 
         function render(data) {
             var blocks = data.blocks || [];
-            answered = !!data.answered;
+            renderer.answered = !!data.answered;
             if (!blocks.length) {
                 statusEl.textContent = 'Здесь пока пусто.';
                 return;
             }
             // Счёт сверху, чтобы его было видно сразу. Показываем всегда,
             // когда есть что считать (владелец 31.08.2026).
-            if (answered && data.gradable_count) {
+            if (renderer.answered && data.gradable_count) {
                 listEl.appendChild(el(
                     'p', 'lrn-blk-score',
                     'Верных ответов: ' + data.correct_count + ' из ' + data.gradable_count
                 ));
             }
             blocks.forEach(function (block, index) {
-                var renderer = RENDERERS[block.block_type];
-                // Неизвестный тип пропускаем молча: старый браузер с
-                // закэшированным шаблоном не должен ронять всю панель, когда
-                // на сервере появится шестой тип блока.
-                if (renderer) listEl.appendChild(renderer(block, index));
+                var node = renderer.render(block, index);
+                if (node) listEl.appendChild(node);
             });
             if (data.has_questions && data.submit_endpoint) appendSubmit(data);
-            else if (answered && data.has_questions) {
+            else if (renderer.answered && data.has_questions) {
                 listEl.appendChild(el('p', 'video-help', 'Ответ сохранён, изменить его нельзя.'));
             }
             statusEl.hidden = true;

@@ -1,432 +1,133 @@
 {% extends "base.html" %}
 {% block title %}Образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=40">
+<link rel="stylesheet" href="/static/css/tracker.css?v=41">
 {% endblock %}
 {% block content %}
+{#
+Единая лента заданий цикла — экран ученика после 06.09.2026.
+
+Владелец (голосовое 06.09 01:37): «мне смысл эти восемь кнопок держать?
+Просто открываем, устанавливаем, с какого по какое это будет цикл, расставляем
+блоки друг за другом по порядку… после сохранения в таком же виде появляется у
+ученика, уже с учётом доступности». Восемь вкладок недели
+(`WEEK_TAB_SEQUENCE`) с этого экрана убраны: порядок задаёт преподаватель в
+конструкторе, а не вид задания.
+
+Сборка ленты — `services/cycle_feed.py::feed_for_student`. Шаг ленты — блок
+конструктора; задание без блоков (видео и домашки, заведённые до
+конструктора) идёт одной карточкой, иначе оно просто исчезло бы с экрана.
+
+Содержимое блоков подгружается тем же эндпоинтом, что и в карточке задания
+(`/cabinet/tracker/tasks/{id}/blocks`), одним запросом на задание, и
+раскладывается по карточкам шагов. Рендер блоков общий —
+`/static/js/task-blocks-render.js`, второй копии рендереров в проекте нет.
+#}
 <div class="lrn-page ios-learning">
 
     <div class="lrn-hero">
-        <h1>{{ topic.title if topic else 'Актуальное образовательное пространство' }}</h1>
-        {% if topic and topic.description %}
-        <p>{{ topic.description }}</p>
+        <h1>{{ feed.topic.title if feed.topic else 'Актуальное образовательное пространство' }}</h1>
+        {% if feed.topic and feed.topic.description %}
+        <p>{{ feed.topic.description }}</p>
         {% else %}
-        <p>Задание, анкета и занятие текущей недели — в одном месте.</p>
+        <p>Задания идут по порядку: следующее открывается, когда сделано предыдущее.</p>
+        {% endif %}
+        {% if feed.total_count %}
+        <p class="lrn-progress">Сделано {{ feed.done_count }} из {{ feed.total_count }}</p>
         {% endif %}
     </div>
 
-    {# Баннер «Пока нет ни одной доступной недели» здесь раньше стоял на
-       `{% if not topic %}` — гас, только если для недели заведён LearningTopic,
-       и вводил в заблуждение: у ученика уже могли быть задачи без темы, а
-       баннер поверх них всё равно говорил «пока ничего нет» (решение
-       владельца 25.08.2026). Текущая неделя строится всегда — заголовок
-       падает на дефолтный текст выше, а восемь вкладок ниже показывают, что
-       реально есть; для пустой вкладки своя надпись — `«Здесь пока ничего
-       нет.»` — ниже по циклу. #}
-
-    {# Переключатель направления стоит над тем, что фильтрует. Раньше он лежал
-       ниже списка задач и ничего не делал вовсе — теперь прячет задачи чужого
-       предмета по `task.subject`. #}
+    {# Переключатель направления стоит над тем, что фильтрует, и прячет шаги
+       чужого предмета по `task.subject` — как и во вкладках до 06.09. #}
     <div class="lrn-subject-toggle" role="tablist" aria-label="Направление">
         <button type="button" class="lrn-subject-btn active" data-subject="Рисунок" onclick="lrnSwitchSubject(this)">Рисунок</button>
         <button type="button" class="lrn-subject-btn" data-subject="Композиция" onclick="lrnSwitchSubject(this)">Композиция</button>
     </div>
 
-    {# Восемь вкладок недели в фиксированном порядке (решение владельца
-       22.08/23.08) — каждая следующая открыта, только когда закрыта
-       предыдущая. Расчёт — `tracker.py::build_week_tabs`. Календаря по датам
-       у ученика больше нет: страница дня отменена тем же решением.
-
-       Мобильная правка 27.08.2026 («под мобилку... ловить кнопку по центру
-       ... кнопки внутрь поля перелистывания ... зациклить»): стрелки лежат
-       overlay ВНУТРИ .lrn-tabs-row поверх поля прокрутки, а не отдельными
-       элементами по бокам от него — раньше растягивали ряд. Поле — карусель
-       с центр-снапом (scroll-snap в tracker.css): кнопка, попавшая в центр
-       свайпом или переходом стрелки, ловится скриптом `lrnUpdateCenteredTab`
-       и получает .is-centered (увеличение + отдельная полупрозрачная
-       плашка). Листание зациклено — `lrnFocusTab` переходит с последней
-       кнопки на первую и обратно по модулю, поэтому у стрелок больше нет
-       `disabled` на краях. Открытие панели — по-прежнему отдельный явный
-       клик по кнопке, не сам факт того, что она в центре. #}
-    <div class="lrn-tabs-row">
-        <div class="lrn-tabs nav-pill" role="tablist" aria-label="Вкладки недели">
-            {% for tab in tabs %}
-            {# Точка-маркер как непрочитанное уведомление в iOS (решение владельца
-               25.08.2026): есть у вкладки хоть одна незакрытая задача —
-               `tab.has_unread` из `tracker.py::build_week_tabs`. Гасится сама —
-               статус задачи меняется на done, и при следующей загрузке страницы
-               точки уже нет; для вкладок без перезагрузки (тест/чек-лист/материал
-               с кнопкой «Отметить») её же на лету снимает `lrnUpdateTabBadge`.
-
-               .is-locked гасит кнопку визуально для вкладок, запертых
-               последовательностью (`tab.is_locked`) — раньше это было видно
-               только после клика, в самой панели (решение владельца
-               27.08.2026). Не путать с тарифной невидимостью — та по решению
-               созвона 26.08 полностью убирает элемент, а не гасит его. #}
-            <button
-                type="button"
-                class="nav-pill-item{{ ' active is-centered' if loop.first }}{{ ' is-locked' if tab.is_locked }}"
-                data-tab="{{ tab.kind }}"
-                role="tab"
-                aria-selected="{{ 'true' if loop.first else 'false' }}"
-                onclick="lrnActivateTab('{{ tab.kind }}')"
-            >{{ tab.label }}{% if tab.has_unread %}<span class="lrn-tab-dot" aria-hidden="true"></span>{% endif %}</button>
-            {% endfor %}
-        </div>
-        <button type="button" class="lrn-tab-arrow lrn-tab-arrow--prev" aria-label="Предыдущий раздел" onclick="lrnFocusTab(-1)"{{ ' disabled' if tabs|length < 2 }}>‹</button>
-        <button type="button" class="lrn-tab-arrow lrn-tab-arrow--next" aria-label="Следующий раздел" onclick="lrnFocusTab(1)"{{ ' disabled' if tabs|length < 2 }}>›</button>
-    </div>
-
-    {% for tab in tabs %}
-    <div class="lrn-tabpanel" data-tabpanel="{{ tab.kind }}"{{ ' hidden' if not loop.first }}>
-        {% if tab.is_locked %}
-        <div class="lrn-card is-disabled">
-            <div class="lrn-card-title">{{ tab.label }}</div>
-            <p class="lrn-card-note">Сначала сделай «{{ tab.locked_reason }}».</p>
-        </div>
-        {% else %}
-
-            {% if tab.kind == 'lesson' %}
-                {% if topic and topic.meeting_url %}
-                <a class="lrn-card" href="{{ topic.meeting_url }}" target="_blank" rel="noopener">
-                    <div class="lrn-card-title">Занятие</div>
-                    <p class="lrn-card-note">Ссылка на созвон недели.</p>
-                    <span class="lrn-card-cta">Присоединиться →</span>
-                </a>
-                {% elif not tab.entries %}
-                <div class="lrn-card is-disabled">
-                    <div class="lrn-card-title">Занятие</div>
-                    <p class="lrn-card-note">Ссылка на созвон появится позже.</p>
+    {% if feed.steps %}
+    <div class="lrn-feed">
+        {% for step in feed.steps %}
+        {# data-subject пустой у задач без предмета — такие видны в обоих
+           направлениях, прятать их переключателем нельзя. #}
+        <article
+            class="lrn-step lrn-step--{{ step.status }}"
+            data-subject="{{ step.task.subject or '' }}"
+            data-task-id="{{ step.task.id }}"
+            {% if step.block %}data-block-id="{{ step.block.id }}"{% endif %}
+        >
+            <header class="lrn-step-head">
+                <div class="trk-meta">
+                    <span class="trk-badge trk-badge--kind">{{ step.entry.kind_label }}</span>
+                    {% if step.task.subject %}<span class="trk-badge trk-badge--kind">{{ step.task.subject }}</span>{% endif %}
+                    {% if step.status == 'done' %}<span class="trk-badge trk-badge--draft">Сделано</span>{% endif %}
                 </div>
-                {% endif %}
-            {% endif %}
+                <h3 class="lrn-step-title">
+                    {%- if step.block and step.block.title -%}{{ step.block.title }}
+                    {%- else -%}{{ step.task.title }}{%- endif -%}
+                </h3>
+                {% if not step.block and step.task.description %}<p class="lrn-card-note">{{ step.task.description }}</p>{% endif %}
+                <div class="trk-meta">
+                    <span class="{{ 'is-overdue' if step.entry.status == 'overdue' }}">до {{ step.entry.due_label }}</span>
+                </div>
+            </header>
 
-            {% if tab.kind == 'feedback' %}
-                {# Переиспользует код цикла Пробника (ExamCycle/Feedback) — решение
-                   владельца 22.08, новой сущности под вкладку не заводим. Каждая
-                   карточка ведёт в уже существующий диалог `/cabinet/feedback/{id}`
-                   (тот же экран, что открывает полный список на /cabinet/cycle). #}
-                {% if open_cycles %}
-                <div class="lrn-cards">
-                    {% for cycle in open_cycles %}
-                    <a class="lrn-card" href="/cabinet/feedback/{{ cycle.id }}" data-subject="{{ cycle.subject }}">
-                        <div class="trk-meta" style="margin-bottom:6px;">
-                            <span class="trk-badge trk-badge--kind">{{ cycle.subject }}</span>
-                            {% if cycle.unread_count and cycle.unread_count > 0 %}
-                            <span class="trk-badge trk-badge--draft">Новое · {{ cycle.unread_count }}</span>
-                            {% endif %}
-                        </div>
-                        <div class="lrn-card-title">Обратная связь по Пробнику</div>
-                        <p class="lrn-card-note">Начат {{ cycle.started_at[:10] }}.</p>
-                        <span class="lrn-card-cta">Открыть диалог →</span>
-                    </a>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <p class="lrn-empty">Открытых циклов Пробника нет — обратная связь появится здесь после отправки работы на Пробник.</p>
-                {% endif %}
-            {% elif tab.entries %}
-            <div class="lrn-cards">
-                {% for entry in tab.entries %}
-                {# data-subject пустой у задач без предмета — такие видны в обоих
-                   направлениях, прятать их переключателем нельзя. #}
-                <div class="trk-row trk-item trk-item--{{ entry.status }}" data-subject="{{ entry.task.subject or '' }}">
-                    <div>
-                        <div class="trk-meta" style="margin-bottom:6px;">
-                            <span class="trk-badge trk-badge--kind">{{ entry.kind_label }}</span>
-                            {% if entry.task.subject %}<span class="trk-badge trk-badge--kind">{{ entry.task.subject }}</span>{% endif %}
-                        </div>
-                        <h3>{{ entry.task.title }}</h3>
-                        {% if entry.task.description %}<p>{{ entry.task.description }}</p>{% endif %}
-                        <div class="trk-meta">
-                            <span class="{{ 'is-overdue' if entry.status == 'overdue' }}">до {{ entry.due_label }}</span>
-                        </div>
-                    </div>
-                    <div class="trk-row-actions">
-                        {% set inline_expand = true %}
-                        {% include "partials/task_action.html" %}
-                    </div>
-                </div>
-                {% endfor %}
+            {% if step.status == 'locked' %}
+            <p class="lrn-card-note lrn-step-locked">Откроется, когда будет сделано предыдущее.</p>
+            {% elif step.block %}
+            {# Содержимое подставит скрипт ниже: по одному запросу на задание,
+               а не на каждый блок. #}
+            <div class="lrn-step-body" data-role="block-body">
+                <p class="video-progress-status" data-role="status" aria-live="polite">Загружаем…</p>
             </div>
-            {% elif tab.kind != 'lesson' %}
-            <p class="lrn-empty">Здесь пока ничего нет.</p>
+            {% else %}
+            <div class="trk-row-actions lrn-step-actions">
+                {% set entry = step.entry %}
+                {% set inline_expand = true %}
+                {% include "partials/task_action.html" %}
+            </div>
             {% endif %}
-
-        {% endif %}
+        </article>
+        {% endfor %}
     </div>
-    {% endfor %}
+    {% else %}
+    <p class="lrn-empty">Здесь пока ничего нет — задания появятся, когда преподаватель соберёт цикл.</p>
+    {% endif %}
 
-    <p class="lrn-empty lrn-subject-empty" hidden>По этому направлению на этой неделе задач нет.</p>
+    <p class="lrn-empty lrn-subject-empty" hidden>По этому направлению заданий нет.</p>
 
     <div style="height:96px"></div>
 </div>
 
+{% include "partials/inline/cycle_feed.html" %}
+{% include "partials/inline/panels_init.html" %}
 <script>
-var csrfToken = {{ csrf_token(request)|tojson }};
-
-function lrnScrollButtonToCenter(track, btn, animate) {
-    // Своя анимация scrollLeft вместо нативного `scrollIntoView({behavior:
-    // 'smooth'})` (владелец 28.08.2026: «не работает» после прошлой правки
-    // со стрелками) — у `scroll-snap-type: x mandatory` на .lrn-tabs есть
-    // известный конфликт с нативным плавным скроллом в части браузеров:
-    // snap «спорит» с анимацией и скролл зависает, не доезжая до цели.
-    // requestAnimationFrame поверх scrollLeft не зависит от этого механизма
-    // вообще — снапу нечего перехватывать, мы сами двигаем позицию.
-    var trackRect = track.getBoundingClientRect();
-    var btnRect = btn.getBoundingClientRect();
-    var target = track.scrollLeft + (btnRect.left + btnRect.width / 2) - (trackRect.left + trackRect.width / 2);
-    var max = track.scrollWidth - track.clientWidth;
-    target = Math.max(0, Math.min(target, max));
-    if (!animate) { track.scrollLeft = target; return; }
-    var start = track.scrollLeft;
-    var delta = target - start;
-    if (Math.abs(delta) < 1) return;
-    var startTime = null;
-    // Длительность от дистанции, а не фикс (владелец 28.08.2026: «проверь
-    // скорость срабатывания анимации перехода») — соседний шаг стрелкой
-    // (~84px, ширина кнопки + gap) раньше ехал те же 320мс, что и дальний
-    // прыжок кликом по вкладке через весь ряд: первое выходило вяло,
-    // второе — рывком на той же формальной длительности. 0.6мс/px, зажато
-    // между 180мс (короткий шаг не должен быть быстрее почти-мгновенного) и
-    // 600мс (даже самый длинный прыжок не должен ощущаться вязким).
-    var duration = Math.min(600, Math.max(180, Math.abs(delta) * 0.6));
-    function step(ts) {
-        if (startTime === null) startTime = ts;
-        var t = Math.min((ts - startTime) / duration, 1);
-        var eased = 1 - Math.pow(1 - t, 3); // easeOutCubic — то же смягчение, что и у остальных iOS-переходов на этом экране
-        track.scrollLeft = start + delta * eased;
-        if (t < 1) requestAnimationFrame(step);
-    }
-    requestAnimationFrame(step);
-}
-
-function lrnActivateTab(kind) {
-    // Переключатель вкладок недели — восемь пунктов в фиксированном порядке,
-    // клиентский показ/скрытие панели, без перезагрузки страницы. Прямой
-    // клик по кнопке — «явное нажатие»: открывает панель сразу и скроллит
-    // кнопку в центр карусели (та же логика центрирования, что и при
-    // свайпе, — её подхватит lrnUpdateCenteredTab по событию scroll).
-    var track = document.querySelector('.lrn-tabs');
-    document.querySelectorAll('.lrn-tabs .nav-pill-item').forEach(function (btn) {
-        var active = btn.getAttribute('data-tab') === kind;
-        btn.classList.toggle('active', active);
-        btn.setAttribute('aria-selected', active ? 'true' : 'false');
-        if (active && track) lrnScrollButtonToCenter(track, btn, true);
+function lrnSwitchSubject(button) {
+    // Переключатель направления: прячет шаги чужого предмета. Шаги без
+    // предмета видны всегда — они общие для обоих направлений.
+    document.querySelectorAll('.lrn-subject-btn').forEach(function (btn) {
+        btn.classList.toggle('active', btn === button);
     });
-    document.querySelectorAll('.lrn-tabpanel').forEach(function (panel) {
-        panel.hidden = panel.getAttribute('data-tabpanel') !== kind;
-    });
-    // Смена вкладки меняет, какая панель видна, — фильтр предмета должен
-    // пересчитаться для новой активной панели, иначе «пусто по направлению»
-    // будет показывать состояние прошлой вкладки.
     lrnApplySubjectFilter();
-}
-
-function lrnFocusTab(direction) {
-    // Стрелка листает карусель по кругу (владелец 27.08.2026, мобильная
-    // правка: «кнопки сделать зацикленными, можно листать как влево, так и
-    // вправо») — с последней кнопки next уводит на первую и обратно, по
-    // модулю от текущей позиции. Сама «поимка» по центру и увеличение —
-    // забота lrnUpdateCenteredTab, реагирующего на scroll; здесь только
-    // двигаем трек, свайп двигает его точно так же напрямую пальцем.
-    var track = document.querySelector('.lrn-tabs');
-    if (!track) return;
-    var buttons = Array.prototype.slice.call(track.querySelectorAll('.nav-pill-item'));
-    if (!buttons.length) return;
-    var current = buttons.findIndex(function (b) { return b.classList.contains('is-centered'); });
-    if (current === -1) current = buttons.findIndex(function (b) { return b.classList.contains('active'); });
-    if (current === -1) current = 0;
-    var next = (current + direction + buttons.length) % buttons.length;
-    lrnScrollButtonToCenter(track, buttons[next], true);
-}
-
-function lrnUpdateCenteredTab() {
-    // «Ловит» кнопку по центру поля прокрутки (владелец 27.08.2026: «при
-    // перелистовании ловить кнопку по центру и она должна стать больше и на
-    // отдельной полупрозрачной плашке») — одинаково от свайпа и от стрелки,
-    // обе просто двигают scrollLeft трека. Ближайшая к центру трека кнопка
-    // получает .is-centered (увеличение + плашка — tracker.css), у
-    // остальных снимается.
-    var track = document.querySelector('.lrn-tabs');
-    if (!track) return;
-    var trackRect = track.getBoundingClientRect();
-    var centerX = trackRect.left + trackRect.width / 2;
-    var buttons = track.querySelectorAll('.nav-pill-item');
-    var closest = null;
-    var closestDist = Infinity;
-    buttons.forEach(function (btn) {
-        var r = btn.getBoundingClientRect();
-        var dist = Math.abs((r.left + r.width / 2) - centerX);
-        if (dist < closestDist) { closestDist = dist; closest = btn; }
-    });
-    buttons.forEach(function (btn) { btn.classList.toggle('is-centered', btn === closest); });
 }
 
 function lrnApplySubjectFilter() {
-    // Разводка по направлению, о которой просили на созвоне 17.08 (00:08:30):
-    // выбрал «Рисунок» — видишь только рисунок. Фильтруем по `task.subject`,
-    // поле уже есть у задачи и выводится бейджем рядом с названием.
-    //
-    // Задачи без предмета видны всегда: занятие/анкета/эфир без привязки к
-    // предмету относятся к обоим направлениям, и прятать их переключателем
-    // было бы враньём (решение владельца 22.08, элементы без предмета).
-    //
-    // Селектор — просто `[data-subject]`, не `.trk-item[data-subject]`:
-    // карточки цикла Пробника на вкладке «Обратная связь» (`.lrn-card`, не
-    // `.trk-item`) несут тот же атрибут и должны прятаться тем же
-    // переключателем — иначе оба предмета там видны всегда (найдено 24.08).
-    var activeBtn = document.querySelector('.lrn-subject-btn.active');
-    var subject = activeBtn ? activeBtn.getAttribute('data-subject') : null;
-    var panel = document.querySelector('.lrn-tabpanel:not([hidden])');
-    var totalRows = 0;
+    var active = document.querySelector('.lrn-subject-btn.active');
+    var subject = active ? active.getAttribute('data-subject') : null;
     var shown = 0;
-    if (panel) {
-        panel.querySelectorAll('[data-subject]').forEach(function (row) {
-            totalRows += 1;
-            var rowSubject = row.getAttribute('data-subject');
-            var show = !rowSubject || rowSubject === subject;
-            row.hidden = !show;
-            if (show) shown += 1;
-        });
-    }
+    document.querySelectorAll('.lrn-feed [data-subject]').forEach(function (node) {
+        var own = node.getAttribute('data-subject');
+        var visible = !own || !subject || own === subject;
+        node.hidden = !visible;
+        if (visible) shown += 1;
+    });
     var empty = document.querySelector('.lrn-subject-empty');
-    if (empty) empty.hidden = !(totalRows > 0 && shown === 0);
+    if (empty) empty.hidden = shown > 0 || !document.querySelector('.lrn-feed');
 }
 
-function lrnSwitchSubject(btn) {
-    document.querySelectorAll('.lrn-subject-btn').forEach(function (b) {
-        b.classList.toggle('active', b === btn);
-        b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
-    });
-    lrnApplySubjectFilter();
-}
-
-// Применяем фильтр сразу при загрузке: иначе кнопка «Рисунок» подсвечена, а в
-// активной вкладке лежат задачи обоих направлений — экран противоречит сам себе.
-(function () {
-    lrnApplySubjectFilter();
-})();
-
-// Карусель вкладок недели (владелец 27.08.2026) — при загрузке докручиваем
-// активную кнопку в центр без анимации, иначе она стоит у левого края, а не
-// там, где .is-centered её ожидает увидеть; дальше scroll и resize держат
-// .is-centered в актуальном состоянии сами.
-(function () {
-    var track = document.querySelector('.lrn-tabs');
-    if (!track) return;
-    var activeBtn = track.querySelector('.nav-pill-item.active');
-    if (activeBtn) lrnScrollButtonToCenter(track, activeBtn, false);
-    lrnUpdateCenteredTab();
-    var ticking = false;
-    track.addEventListener('scroll', function () {
-        if (ticking) return;
-        ticking = true;
-        requestAnimationFrame(function () { lrnUpdateCenteredTab(); ticking = false; });
-    }, { passive: true });
-    window.addEventListener('resize', lrnUpdateCenteredTab);
-
-    // Смена цвета при нажатии (владелец 27.08.2026) через .is-pressed, не
-    // только нативный CSS `:active` — на iPhone WebKit включает `:active`
-    // по тапу, только если где-то на странице есть обработчик касания;
-    // без него цвет при нажатии просто не появлялся («нет изменений»).
-    // pointerdown/up/cancel/leave — единый API для мыши, пальца и стилуса.
-    track.querySelectorAll('.nav-pill-item').forEach(function (btn) {
-        var press = function () { btn.classList.add('is-pressed'); };
-        var release = function () { btn.classList.remove('is-pressed'); };
-        btn.addEventListener('pointerdown', press);
-        btn.addEventListener('pointerup', release);
-        btn.addEventListener('pointercancel', release);
-        btn.addEventListener('pointerleave', release);
-    });
-})();
-
-function lrnUpdateTabBadge(kind) {
-    // Снимает точку-маркер с кнопки вкладки, если внутри её панели больше
-    // нет незакрытых задач — считает по факту `.trk-item--done` в разметке,
-    // а не по сохранённому на загрузке `tab.has_unread`, иначе точка
-    // пережила бы отметку «сделано» до следующей перезагрузки страницы.
-    // Скрытые переключателем предмета строки (`hidden`) тоже считаются —
-    // маркер про факт незакрытости, а не про то, что сейчас видно.
-    var panel = document.querySelector('.lrn-tabpanel[data-tabpanel="' + kind + '"]');
-    var btn = document.querySelector('.lrn-tabs .nav-pill-item[data-tab="' + kind + '"]');
-    if (!panel || !btn) return;
-    var hasUnread = false;
-    panel.querySelectorAll('.trk-item').forEach(function (row) {
-        if (!row.classList.contains('trk-item--done')) hasUnread = true;
-    });
-    var dot = btn.querySelector('.lrn-tab-dot');
-    if (hasUnread && !dot) {
-        dot = document.createElement('span');
-        dot.className = 'lrn-tab-dot';
-        dot.setAttribute('aria-hidden', 'true');
-        btn.appendChild(dot);
-    } else if (!hasUnread && dot) {
-        dot.remove();
-    }
-}
-
-(function () {
-    // Тот же обработчик, что у «Личного трекера» (cabinet_tracker.html) —
-    // отметка «сделано» ведёт на общий эндпоинт /cabinet/tracker/tasks/{id}/toggle
-    // независимо от того, с какого экрана её вызвали.
-    document.querySelectorAll('[data-toggle-task]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            // Отметка необратима (решение владельца 26.08.2026) — спрашиваем
-            // явное подтверждение перед отправкой, отменить потом будет нельзя.
-            if (!window.confirm('Отметить как выполнено? Отменить будет нельзя.')) return;
-            var taskId = btn.getAttribute('data-toggle-task');
-            var row = btn.closest('.trk-item');
-            var panel = btn.closest('.lrn-tabpanel');
-            btn.disabled = true;
-            fetch('/cabinet/tracker/tasks/' + taskId + '/toggle', {
-                method: 'POST',
-                headers: {'X-CSRF-Token': csrfToken},
-                cache: 'no-store'
-            }).then(function (resp) {
-                if (!resp.ok) throw new Error();
-                return resp.json();
-            }).then(function (data) {
-                var done = data.status === 'done';
-                row.classList.remove('trk-item--overdue', 'trk-item--upcoming', 'trk-item--done');
-                row.classList.add('trk-item--' + data.status);
-                btn.classList.toggle('is-done', done);
-                btn.setAttribute('aria-pressed', done ? 'true' : 'false');
-                btn.textContent = done ? 'Выполнено' : 'Отметить выполнение';
-                // Кнопка остаётся задизейбленной навсегда — отжать обратно
-                // нельзя, ниже в .finally() она включится только при ошибке.
-                btn.disabled = done;
-                if (panel) lrnUpdateTabBadge(panel.getAttribute('data-tabpanel'));
-            }).catch(function () {
-                btn.textContent = 'Не получилось, ещё раз';
-                btn.disabled = false;
-            });
-        });
-    });
-})();
-
-// Баг 31.08.2026: вход в CSS-анимации при появлении карточки
-// (`ios-learning-rise`, `transform: translateY(8px) → none`) с
-// `animation-fill-mode: both` держит эффект анимации «в силе» даже после
-// её завершения — computed `transform` у карточки сериализуется не
-// ключевым словом `none`, а матрицей, и по спеке CSS Transforms это
-// заводит свой containing block для потомков `position:fixed`. Инлайн-
-// видео на полный экран (`.video-frame.is-pseudo-fullscreen`) от этого
-// позиционируется не относительно окна, а относительно карточки — видно
-// только часть экрана, кнопка выхода уезжает за пределы видимого. Снимаем
-// анимацию с элемента сразу по её завершению: конечное состояние и так
-// совпадает с состоянием без анимации вовсе (opacity:1, transform:none по
-// умолчанию), визуально ничего не меняется.
-document.addEventListener('animationend', function (event) {
-    if (event.animationName === 'ios-learning-rise') event.target.style.animation = 'none';
-});
-
+document.addEventListener('DOMContentLoaded', lrnApplySubjectFilter);
 </script>
-{% include "partials/inline/panels_init.html" %}
 
-{% set active_tab = "learning" %}
+{# Нижняя навигация и лайтбокс — общие для экранов ученика. #}
 {% include "partials/bottom_nav.html" %}
-{# Билет Пробника (partials/inline/mock_exam.html) открывается по клику через
-   openLightbox — тот же приём, что был на отдельной странице /upload/mock-exam. #}
 {% include "partials/lightbox.html" %}
 {% endblock %}

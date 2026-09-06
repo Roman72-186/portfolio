@@ -1,0 +1,141 @@
+{#
+Наполнение ленты цикла содержимым блоков (владелец 06.09.2026).
+
+Карточки шагов рисует сервер (`cabinet_learning.html`) — он же решает, что
+заперто, что сделано, что можно делать сейчас. Здесь только подтягивается
+содержимое: по одному запросу на задание, тем же эндпоинтом, что и карточка
+задания в «Личном трекере», и блоки раскладываются по своим карточкам шагов
+по `data-block-id`.
+
+Рендер блоков — общий `/static/js/task-blocks-render.js`, второй копии
+рендереров в проекте нет (за этим следит `tests/test_reuse_ratchet.py`).
+
+Форма отправки ответов одна на задание, а не на блок: попытка одна и счёт
+общий (владелец 31.08.2026). Она встаёт под последним шагом-вопросом этого
+задания.
+#}
+{% include "partials/inline/_video_player.html" %}
+<script src="/static/js/task-blocks-render.js?v=1"></script>
+<script>
+(function () {
+    var csrfToken = {{ csrf_token(request)|tojson }};
+    var feed = document.querySelector('.lrn-feed');
+    if (!feed) return;
+
+    var el = window.lrnBlockRender.el;
+    var steps = Array.prototype.slice.call(feed.querySelectorAll('[data-block-id]'));
+    if (!steps.length) return;
+
+    // Один запрос на задание, а не на блок: у задания из пяти блоков это
+    // пять одинаковых ответов сервера вместо одного.
+    var taskIds = [];
+    steps.forEach(function (step) {
+        var id = step.getAttribute('data-task-id');
+        if (taskIds.indexOf(id) === -1) taskIds.push(id);
+    });
+
+    function stepFor(taskId, blockId) {
+        return feed.querySelector(
+            '[data-task-id="' + taskId + '"][data-block-id="' + blockId + '"]'
+        );
+    }
+
+    function fail(step, text) {
+        var status = step.querySelector('[data-role="status"]');
+        if (!status) return;
+        status.textContent = text;
+        status.classList.add('is-error');
+    }
+
+    function renderTask(taskId, data) {
+        var renderer = window.lrnBlockRender.create({
+            csrfToken: csrfToken,
+            answered: !!data.answered
+        });
+        var blocks = data.blocks || [];
+        var lastQuestionBody = null;
+
+        blocks.forEach(function (block, index) {
+            var step = stepFor(taskId, block.id);
+            // Блока может не быть на экране: запертый шаг содержимого не
+            // получает вовсе — иначе «закрыто» обходилось бы чтением ответа
+            // сервера в консоли браузера.
+            if (!step) return;
+            var body = step.querySelector('[data-role="block-body"]');
+            if (!body) return;
+            var node = renderer.render(block, index);
+            body.innerHTML = '';
+            if (node) body.appendChild(node);
+            if (block.block_type === 'question') lastQuestionBody = body;
+        });
+
+        if (data.answered && data.gradable_count && lastQuestionBody) {
+            lastQuestionBody.appendChild(el(
+                'p', 'lrn-blk-score',
+                'Верных ответов: ' + data.correct_count + ' из ' + data.gradable_count
+            ));
+        }
+        if (data.has_questions && data.submit_endpoint && lastQuestionBody) {
+            appendSubmit(taskId, data, renderer, lastQuestionBody);
+        } else if (data.answered && data.has_questions && lastQuestionBody) {
+            lastQuestionBody.appendChild(el('p', 'video-help', 'Ответ сохранён, изменить его нельзя.'));
+        }
+    }
+
+    function appendSubmit(taskId, data, renderer, host) {
+        var form = el('form', 'lrn-blk-submit');
+        form.appendChild(el('p', 'lrn-blk-title', 'Готовы отправить ответы?'));
+        var button = el('button', 'btn-blue', 'Отправить ответы');
+        button.type = 'submit';
+        var note = el('p', 'video-progress-status');
+        note.setAttribute('aria-live', 'polite');
+        form.appendChild(button);
+        form.appendChild(note);
+        form.addEventListener('submit', function (event) {
+            event.preventDefault();
+            button.disabled = true;
+            fetch(data.submit_endpoint, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken
+                },
+                // Ответы собираются со всей ленты: вопросы одного задания
+                // разъехались по разным карточкам шагов.
+                body: JSON.stringify({ answers: renderer.collectAnswers(data.blocks, feed) })
+            }).then(function (resp) {
+                if (!resp.ok) throw new Error();
+                return resp.json();
+            }).then(function () {
+                // Попытка одна, и статусы шагов считает сервер: после ответа
+                // перезагружаем экран, чтобы вердикт, счёт и открывшиеся
+                // ниже шаги пришли из одного источника.
+                window.location.reload();
+            }).catch(function () {
+                button.disabled = false;
+                note.textContent = 'Не удалось отправить ответ. Попробуйте ещё раз.';
+                note.classList.add('is-error');
+            });
+        });
+        host.appendChild(form);
+    }
+
+    taskIds.forEach(function (taskId) {
+        fetch('/cabinet/tracker/tasks/' + taskId + '/blocks', {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
+        }).then(function (resp) {
+            if (!resp.ok) throw new Error();
+            return resp.json();
+        }).then(function (data) {
+            renderTask(taskId, data);
+        }).catch(function () {
+            feed.querySelectorAll('[data-task-id="' + taskId + '"]').forEach(function (step) {
+                fail(step, 'Не удалось загрузить содержимое. Попробуйте позже.');
+            });
+        });
+    });
+})();
+</script>
