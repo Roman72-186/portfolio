@@ -399,6 +399,9 @@ class TopicPayload(BaseModel):
     description: str | None = Field(default=None, max_length=5000)
     # Локальное время МСК из <input type="datetime-local">, без таймзоны.
     opens_at: str = Field(min_length=1, max_length=32)
+    # Конец периода цикла (владелец 06.09.2026). Пусто — обычная неделя от
+    # понедельника `opens_at`, как было до 06.09.
+    ends_at: str | None = Field(default=None, max_length=32)
     assign_to_all: bool = False
     tag_ids: list[int] = Field(default_factory=list, max_length=200)
     # Поимённые исключения задаются списком @username — тем же способом, каким
@@ -446,6 +449,27 @@ def _parse_opens_at(raw: str) -> datetime:
         parsed = datetime.fromisoformat(raw.strip())
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Неверная дата открытия") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=MSK_TZ)
+    return parsed
+
+
+def _parse_ends_at(raw: str | None) -> datetime | None:
+    """Конец периода цикла из формы: конец последних суток МСК выбранной даты.
+
+    Пустая строка и `None` — цикл без своего периода, читается как обычная
+    неделя. Дата без времени означает «включительно по этот день», поэтому
+    время дотягивается до 23:59:59 МСК: иначе цикл, заведённый «по 3 октября»,
+    закрылся бы в полночь на его начале.
+    """
+    if raw is None or not raw.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Неверная дата окончания") from exc
+    if parsed.hour == 0 and parsed.minute == 0 and parsed.second == 0:
+        parsed = parsed.replace(hour=23, minute=59, second=59)
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=MSK_TZ)
     return parsed
@@ -537,6 +561,7 @@ def create_video_topic(
         title=payload.title,
         description=payload.description,
         opens_at=_parse_opens_at(payload.opens_at),
+        ends_at=_parse_ends_at(payload.ends_at),
         assign_to_all=payload.assign_to_all,
         user_id=user["user_id"],
     )
@@ -577,6 +602,7 @@ def update_video_topic(
         title=payload.title,
         description=payload.description,
         opens_at=_parse_opens_at(payload.opens_at),
+        ends_at=_parse_ends_at(payload.ends_at),
         assign_to_all=payload.assign_to_all,
         sort_order=payload.sort_order,
     )

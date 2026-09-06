@@ -632,6 +632,106 @@ def week_topic_for_monday(db: Session, user_id: int, monday: date) -> LearningTo
     )
 
 
+# ---------------------------------------------------------------------------
+# Цикл с произвольным периодом (владелец 06.09.2026)
+# ---------------------------------------------------------------------------
+#
+# До 06.09 период учебной единицы был всегда календарной неделей: резолверы
+# выше берут понедельник от `opens_at` и добавляют шесть дней. Владелец просит
+# произвольный период («открываем, ставим, с какого по какое, цикл три
+# недели»), поэтому у темы появился `ends_at`, а рядом — те же три операции,
+# но по периоду, а не по понедельнику.
+#
+# Недельные функции остаются рабочими: тема без `ends_at` читается как раньше,
+# и все темы, заведённые до 06.09.2026, именно такие.
+
+
+def cycle_bounds(topic: LearningTopic) -> tuple[date, date]:
+    """Период цикла в московских датах, включительно с обеих сторон.
+
+    Без `ends_at` — прежняя неделя: понедельник от `opens_at` плюс шесть дней.
+    Мусорный период (конец раньше начала) схлопывается в один день начала:
+    пустой цикл ученику показать нечем, а падать на данных из базы незачем.
+    """
+    start = msk_date(topic.opens_at)
+    if topic.ends_at is None:
+        monday = week_start(start)
+        return monday, monday + timedelta(days=6)
+    end = msk_date(topic.ends_at)
+    return start, max(start, end)
+
+
+def _accessible_cycles(db: Session, user_id: int) -> list[LearningTopic]:
+    """Доступные ученику циклы (`LearningTopic(kind='week')`), от ранних к поздним.
+
+    Порядок фиксирован по `opens_at`, потом по `id`: периоды, в отличие от
+    понедельников, могут пересекаться, и без явной сортировки экран зависел бы
+    от порядка выдачи базы.
+    """
+    topic_ids = accessible_topic_ids(db, user_id)
+    if not topic_ids:
+        return []
+    return (
+        db.query(LearningTopic)
+        .filter(LearningTopic.id.in_(topic_ids), LearningTopic.kind == TOPIC_KIND_WEEK)
+        .order_by(LearningTopic.opens_at.asc(), LearningTopic.id.asc())
+        .all()
+    )
+
+
+def cycle_for_day(db: Session, user_id: int, day: date) -> LearningTopic | None:
+    """Цикл ученика, в чей период попадает `day`. `None`, если такого нет.
+
+    Периоды циклов, в отличие от понедельников, могут пересечься — два цикла
+    накрывают одну дату — или разойтись с зазором. Ответ определён для обоих
+    случаев: при пересечении берётся **позже начавшийся** цикл (он новее и
+    ближе к тому, чем ученик занят сейчас), в зазоре — `None`, и решение, что
+    показать в этом случае, принимает экран, а не резолвер.
+    """
+    covering = [
+        topic for topic in _accessible_cycles(db, user_id)
+        if cycle_bounds(topic)[0] <= day <= cycle_bounds(topic)[1]
+    ]
+    return covering[-1] if covering else None
+
+
+def is_cycle_complete(db: Session, user_id: int, topic: LearningTopic) -> bool:
+    """Цикл пройден: закрыты все обязательные задачи внутри его периода.
+
+    То же правило, что у `is_week_complete`, только окно берётся из периода
+    цикла, а не из понедельника. Билет Пробника (`ITEM_MOCK_EXAM`) исключён по
+    той же причине: он блокирует месяц, а не цикл (решение владельца 23.08,
+    подтверждено 24.08).
+    """
+    first, last = cycle_bounds(topic)
+    start, _ = day_bounds(first)
+    _, end = day_bounds(last)
+    entries = accessible_task_entries(db, user_id, start=start, end=end)
+    return all(
+        entry["status"] == "done"
+        for entry in entries
+        if entry["task"].is_required and entry["task"].kind != ITEM_MOCK_EXAM
+    )
+
+
+def effective_cycle(db: Session, user_id: int, today: date) -> LearningTopic | None:
+    """Цикл, на котором ученик стоит сейчас: первый незакрытый из начавшихся.
+
+    Периодный аналог `effective_week_start`: должник видит свой застрявший
+    цикл, а не тот, что идёт по календарю. Не начавшиеся циклы не выдаются
+    вперёд срока. Если все начавшиеся закрыты — цикл, накрывающий сегодня, а
+    если такого нет — `None` (между циклами зазор).
+    """
+    started = [
+        topic for topic in _accessible_cycles(db, user_id)
+        if cycle_bounds(topic)[0] <= today
+    ]
+    for topic in started:
+        if not is_cycle_complete(db, user_id, topic):
+            return topic
+    return cycle_for_day(db, user_id, today)
+
+
 def is_month_complete(db: Session, user_id: int, year: int, month: int) -> bool:
     """Месяц пройден: все недели месяца закрыты (то же правило недели,
     применённое к каждой) плюс отдельно закрыт Пробник по обоим предметам —

@@ -138,11 +138,13 @@ def create_topic(
     description: str | None = None,
     assign_to_all: bool = False,
     kind: str = TOPIC_KIND_WEEK,
+    ends_at: datetime | None = None,
 ) -> LearningTopic:
     topic = LearningTopic(
         title=title,
         description=description,
         opens_at=opens_at,
+        ends_at=ends_at,
         assign_to_all=assign_to_all,
         kind=kind,
         created_by_id=user_id,
@@ -160,10 +162,14 @@ def update_topic(
     description: str | None = None,
     assign_to_all: bool = False,
     sort_order: int | None = None,
+    ends_at: datetime | None = None,
 ) -> None:
     topic.title = title
     topic.description = description
     topic.opens_at = opens_at
+    # Пустое поле в форме — снять конец периода, а не сохранить прежний:
+    # иначе цикл нельзя было бы вернуть к обычной неделе.
+    topic.ends_at = ends_at
     topic.assign_to_all = assign_to_all
     if sort_order is not None:
         topic.sort_order = sort_order
