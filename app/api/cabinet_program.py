@@ -211,6 +211,8 @@ def _edit_payloads(
             "description": item.description or "",
             "subject": item.subject,
             "is_required": item.is_required,
+            # Дата открытия задания — для предзаполнения формы правки.
+            "starts_on": msk_date(item.starts_at).isoformat() if item.starts_at else None,
         }
         # Тариф правится, только пока тема элемента — служебная тема ровно
         # этого элемента (TOPIC_KIND_PROGRAM_ITEM). Элементы, попавшие в день
@@ -1167,6 +1169,12 @@ class SimpleItemPayload(BaseModel):
     description: str | None = Field(default=None, max_length=5000)
     subject: str | None = Field(default=None, max_length=50)
     is_required: bool = True
+    # Дата, с которой задание появляется у ученика, независимо от того, что он
+    # успел сделать раньше (владелец 03.09.2026: «даже если ребёнок выполнил
+    # опрос 22 сентября в 20:00, теория и задания откроются только с
+    # 23 сентября 00:00»). Пусто — задание видно сразу после публикации, как
+    # было до 06.09.2026.
+    starts_on: date | None = None
     blocks: list[BlockItem] = Field(default_factory=list, max_length=MAX_BLOCKS)
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
 
@@ -1471,6 +1479,12 @@ def _create_simple_item(
         kind=kind,
         is_required=payload.is_required,
         user_id=user["user_id"],
+    )
+    # Полночь МСК выбранной даты, в UTC: колонка `DateTime(timezone=True)`, и
+    # наивное московское время прочиталось бы как UTC (см. `program.py::msk_date`).
+    task.starts_at = (
+        msk_midnight(payload.starts_on).astimezone(timezone.utc)
+        if payload.starts_on else None
     )
     task.is_published = True
     db.flush()
@@ -1785,6 +1799,12 @@ def _update_simple_item(
         title=payload.title,
         description=payload.description,
         due_at=task.due_at,
+        # Полночь МСК в UTC — иначе наивное московское время прочиталось бы
+        # как UTC и задание открылось бы на три часа позже заявленного.
+        starts_at=(
+            msk_midnight(payload.starts_on).astimezone(timezone.utc)
+            if payload.starts_on else None
+        ),
         subject=payload.subject,
         assign_to_all=task.assign_to_all,
         kind=kind,

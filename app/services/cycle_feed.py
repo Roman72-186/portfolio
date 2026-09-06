@@ -22,13 +22,13 @@
 без такого шага они просто исчезли бы из ленты вместе с домашками, которые
 ученики уже сдают.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
 from app.models.learning_topic import LearningTopic
 from app.models.tracker import ITEM_MOCK_EXAM, STATUS_DONE
-from app.services.program import day_bounds
+from app.services.program import day_bounds, msk_date
 from app.services.task_blocks import (
     get_blocks_for_tasks,
     get_states,
@@ -44,6 +44,20 @@ from app.services.tracker import (
 
 STATUS_LOCKED = "locked"
 STATUS_CURRENT = "current"
+
+# Почему шаг заперт: очередью или календарём. Ученику это разные сообщения —
+# «сделай предыдущее» против «откроется 23 сентября» (владелец 03.09.2026).
+LOCK_BY_SEQUENCE = "sequence"
+LOCK_BY_DATE = "date"
+
+
+def _not_open_yet(value: datetime | None, now: datetime) -> bool:
+    """Момент открытия ещё не наступил. `None` — открыто всегда."""
+    if value is None:
+        return False
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value > now
 
 
 def feed_window(
@@ -95,6 +109,8 @@ def build_cycle_feed(
     if not entries:
         return []
 
+    now = datetime.now(timezone.utc)
+
     tasks = [entry["task"] for entry in entries]
     blocks_by_task = get_blocks_for_tasks(db, [task.id for task in tasks])
 
@@ -115,14 +131,30 @@ def build_cycle_feed(
     for entry in entries:
         task = entry["task"]
         task_blocks = blocks_by_task.get(task.id, [])
+        # Дата открытия задания целиком: «теория и задания откроются только с
+        # 23 сентября 00:00» — независимо от того, что ученик успел сделать
+        # раньше (владелец 03.09.2026). Складывается с очередью, не заменяет.
+        task_waits_date = _not_open_yet(task.starts_at, now)
+        opens_on = msk_date(task.starts_at) if task_waits_date else None
+
         if not task_blocks:
             done = _task_done(entry)
+            if done:
+                status, lock_reason = STATUS_DONE, None
+            elif task_waits_date:
+                status, lock_reason = STATUS_LOCKED, LOCK_BY_DATE
+            elif blocked:
+                status, lock_reason = STATUS_LOCKED, LOCK_BY_SEQUENCE
+            else:
+                status, lock_reason = STATUS_CURRENT, None
             steps.append({
                 "task": task,
                 "block": None,
                 "state": None,
                 "entry": entry,
-                "status": STATUS_DONE if done else (STATUS_LOCKED if blocked else STATUS_CURRENT),
+                "status": status,
+                "lock_reason": lock_reason,
+                "opens_on": opens_on,
             })
             if (
                 not done
@@ -135,19 +167,39 @@ def build_cycle_feed(
         for block in task_blocks:
             state = states.get(block.id)
             done = state is not None and state.status == STATUS_DONE
-            accessible = not blocked and is_block_accessible(
-                block_index=block_index,
-                blocks=ordered_blocks,
-                states=states,
-                tariffs_by_block=tariffs_by_block,
-                user_tariff=user_tariff,
+            block_waits_date = _not_open_yet(block.opens_at, now)
+            accessible = (
+                not blocked
+                and not task_waits_date
+                and is_block_accessible(
+                    block_index=block_index,
+                    blocks=ordered_blocks,
+                    states=states,
+                    tariffs_by_block=tariffs_by_block,
+                    user_tariff=user_tariff,
+                    now=now,
+                )
             )
+            if done:
+                status, lock_reason = STATUS_DONE, None
+            elif accessible:
+                status, lock_reason = STATUS_CURRENT, None
+            elif task_waits_date or block_waits_date:
+                status, lock_reason = STATUS_LOCKED, LOCK_BY_DATE
+            else:
+                status, lock_reason = STATUS_LOCKED, LOCK_BY_SEQUENCE
             steps.append({
                 "task": task,
                 "block": block,
                 "state": state,
                 "entry": entry,
-                "status": STATUS_DONE if done else (STATUS_CURRENT if accessible else STATUS_LOCKED),
+                "status": status,
+                "lock_reason": lock_reason,
+                # Дата блока важнее даты задания: она ближе к тому, что ученик
+                # видит перед собой.
+                "opens_on": (
+                    msk_date(block.opens_at) if block_waits_date else opens_on
+                ),
             })
             block_index += 1
     return steps

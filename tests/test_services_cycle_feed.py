@@ -235,3 +235,59 @@ def test_empty_cycle_gives_an_empty_feed(db, regular_user):
 
     assert feed["steps"] == []
     assert feed["total_count"] == 0
+
+
+# ── дата открытия (владелец 03.09.2026) ─────────────────────────────────────
+
+def test_task_with_future_start_date_is_locked_by_calendar(db, regular_user):
+    """«Даже если ребёнок выполнил опрос 22 сентября в 20:00, теория и задания
+    откроются только с 23 сентября 00:00»."""
+    _cycle(db, regular_user)
+    task = _task(db, regular_user, title="Теория")
+    task.starts_at = _utc(msk_midnight(TODAY + timedelta(days=2)))
+    db.commit()
+    _block(db, task, title="Видео теории", order=1)
+
+    steps = _feed(db, regular_user)
+
+    assert steps[0]["status"] == "locked"
+    assert steps[0]["lock_reason"] == "date"
+    assert steps[0]["opens_on"] == TODAY + timedelta(days=2)
+
+
+def test_past_start_date_does_not_lock(db, regular_user):
+    _cycle(db, regular_user)
+    task = _task(db, regular_user, title="Теория")
+    task.starts_at = _utc(msk_midnight(TODAY - timedelta(days=1)))
+    db.commit()
+    _block(db, task, title="Видео теории", order=1)
+
+    assert _feed(db, regular_user)[0]["status"] == "current"
+
+
+def test_block_with_future_open_date_is_locked_by_calendar(db, regular_user):
+    _cycle(db, regular_user)
+    task = _task(db, regular_user, title="Задание")
+    first = _block(db, task, title="Доступный", order=1, is_required=False)
+    later = _block(db, task, title="Ждёт даты", order=2, is_required=False)
+    later.opens_at = _utc(msk_midnight(TODAY + timedelta(days=3)))
+    db.commit()
+
+    steps = _feed(db, regular_user)
+
+    assert steps[0]["status"] == "current"
+    assert steps[1]["status"] == "locked"
+    assert steps[1]["lock_reason"] == "date"
+    assert first.id != later.id
+
+
+def test_sequence_lock_keeps_its_own_reason(db, regular_user):
+    """Заперто очередью, а не календарём — подпись у ученика другая."""
+    _cycle(db, regular_user)
+    task = _task(db, regular_user, title="Задание")
+    _block(db, task, title="Первый", order=1)
+    _block(db, task, title="Второй", order=2)
+
+    steps = _feed(db, regular_user)
+
+    assert steps[1]["lock_reason"] == "sequence"

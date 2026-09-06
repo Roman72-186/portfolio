@@ -188,6 +188,12 @@ FORM: Operate.
             <input type="checkbox" data-x-required checked>
             <span>Обязательный элемент — пока не сделан, следующие шаги ленты закрыты</span>
         </label>
+        {# Дата открытия всего задания (владелец 03.09.2026: «даже если ребёнок
+           выполнил опрос 22 сентября в 20:00, теория и задания откроются только
+           с 23 сентября 00:00»). Пусто — видно сразу после публикации. #}
+        <label class="prg-field">Откроется не раньше
+            <input type="date" data-x-starts aria-label="Дата открытия задания">
+        </label>
         {{ tariff_fields() }}
         {{ blocks_editor() }}
         <div class="prg-actions">
@@ -811,6 +817,41 @@ FORM: Operate.
             + '</label>';
     }
 
+    // Настройки, общие для любого типа блока (владелец 06.09.2026: «добавили
+    // контент, настроили кому доступно, настроили дату и проставили,
+    // блокирует или нет дальнейшую выдачу»). До этого дня модель их уже
+    // умела, а выставить руками было негде — блок всегда сохранялся
+    // необязательным, без даты и без тарифа.
+    function blockSettingsHTML() {
+        return ''
+            + '<details class="prg-blk-settings">'
+            + '  <summary>Доступность блока</summary>'
+            + '  <label class="prg-field prg-field--row">'
+            + '    <input type="checkbox" data-b-required>'
+            + '    <span>Блокирует дальнейшую выдачу — пока не сделан, всё ниже закрыто</span>'
+            + '  </label>'
+            + '  <label class="prg-field">Откроется не раньше'
+            + '    <input type="date" data-b-opens aria-label="Дата открытия блока">'
+            + '  </label>'
+            + '  <label class="prg-field">Предмет'
+            + '    <select data-b-subject aria-label="Предмет блока">'
+            + '      <option value="">Без предмета — виден в обоих направлениях</option>'
+            + '{% for subject in subjects %}      <option value="{{ subject }}">{{ subject }}</option>
+{% endfor %}'
+            + '    </select>'
+            + '  </label>'
+            + '  <div class="prg-blk-tariffs">'
+            + '    <p class="prg-hint">Тарифы: не отметили ни одного — блок виден всем.</p>'
+            + '{% for tariff in tariffs %}    <label class="prg-field prg-field--row"><input type="checkbox" data-b-tariff value="{{ tariff }}"><span>{{ tariff }}</span></label>
+{% endfor %}'
+            + '  </div>'
+            + '  <label class="prg-field prg-field--row">'
+            + '    <input type="checkbox" data-b-bypass>'
+            + '    <span>Не ждать очереди — доступен, даже если выше есть незакрытое</span>'
+            + '  </label>'
+            + '</details>';
+    }
+
     function blockRowHTML(type) {
         return ''
             + '<div class="prg-ticket prg-blk" data-block data-block-type="' + type + '">'
@@ -825,6 +866,7 @@ FORM: Operate.
             + '    </span>'
             + '  </div>'
             + blockBodyHTML(type)
+            + blockSettingsHTML()
             + '</div>';
     }
 
@@ -863,6 +905,18 @@ FORM: Operate.
         }
         var hiddenBox = row.querySelector('[data-b-hidden-until-done]');
         if (hiddenBox) hiddenBox.checked = !!block.hidden_until_done;
+        var requiredBox = row.querySelector('[data-b-required]');
+        if (requiredBox) requiredBox.checked = !!block.is_required;
+        var opensAt = row.querySelector('[data-b-opens]');
+        if (opensAt) opensAt.value = block.opens_at || '';
+        var subject = row.querySelector('[data-b-subject]');
+        if (subject) subject.value = block.subject || '';
+        var bypass = row.querySelector('[data-b-bypass]');
+        if (bypass) bypass.checked = !!block.bypass_sequence;
+        (block.tariffs || []).forEach(function (tariff) {
+            var box = row.querySelector('[data-b-tariff][value="' + tariff + '"]');
+            if (box) box.checked = true;
+        });
         var qType = row.querySelector('[data-b-question-type]');
         if (qType) {
             qType.value = block.question_type || 'text';
@@ -1065,6 +1119,19 @@ FORM: Operate.
             if (body) item.body = body.value.trim();
             var title = row.querySelector('[data-b-title]');
             if (title) item.title = title.value.trim();
+            // Доступность блока — одинаково у всех типов.
+            var requiredBox = row.querySelector('[data-b-required]');
+            item.is_required = !!(requiredBox && requiredBox.checked);
+            var opensAt = row.querySelector('[data-b-opens]');
+            item.opens_at = (opensAt && opensAt.value) ? opensAt.value : null;
+            var subjectSel = row.querySelector('[data-b-subject]');
+            item.subject = (subjectSel && subjectSel.value) ? subjectSel.value : null;
+            var bypassBox = row.querySelector('[data-b-bypass]');
+            item.bypass_sequence = !!(bypassBox && bypassBox.checked);
+            item.tariffs = [];
+            row.querySelectorAll('[data-b-tariff]:checked').forEach(function (box) {
+                item.tariffs.push(box.value);
+            });
             if (type === 'link') {
                 item.url = (row.querySelector('[data-b-url]').value || '').trim();
                 if (!item.url) return;
@@ -1294,6 +1361,7 @@ FORM: Operate.
         form.querySelector('[data-x-description]').value = '';
         form.querySelector('[data-x-subject]').value = '';
         form.querySelector('[data-x-required]').checked = true;
+        form.querySelector('[data-x-starts]').value = '';
         resetTariffFields(form);
         renderFormBlocks(form, []);
         setMessage(form, '', false);
@@ -1384,6 +1452,7 @@ FORM: Operate.
         form.querySelector('[data-x-description]').value = data.description || '';
         form.querySelector('[data-x-subject]').value = data.subject || '';
         form.querySelector('[data-x-required]').checked = data.is_required !== false;
+        form.querySelector('[data-x-starts]').value = data.starts_on || '';
         populateTariffFields(form, data);
         renderFormBlocks(form, data.blocks || []);
         setMessage(form, 'Правка элемента — измените поля и сохраните.', false);
@@ -1711,6 +1780,7 @@ FORM: Operate.
                 description: simpleForm.querySelector('[data-x-description]').value,
                 subject: simpleForm.querySelector('[data-x-subject]').value || null,
                 is_required: simpleForm.querySelector('[data-x-required]').checked,
+                starts_on: simpleForm.querySelector('[data-x-starts]').value || null,
                 blocks: collectFormBlocks(simpleForm),
                 audience: audienceSimple
             }).then(afterSave).catch(function (error) {
