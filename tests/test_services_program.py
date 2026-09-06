@@ -155,7 +155,9 @@ def test_default_window_is_the_chosen_day(db):
 
     assert schedule["opens_at"] == "2026-08-24T11:45"
     assert schedule["closes_at"] == "2026-08-24T18:30"
-    assert schedule["duration_minutes"] == 90
+    # 240 минут по умолчанию с 06.09.2026 (владелец: «по дефолту нужно стоять
+    # 240 минут на сдачу, не 90, как сейчас»); окно 11:45–18:30 не менялось.
+    assert schedule["duration_minutes"] == 240
 
 
 def test_window_shorter_than_the_work_time_is_rejected():

@@ -9,12 +9,15 @@
 #}
 {% set _prg_p = request.url.path %}
 <nav class="prg-tabs" aria-label="Разделы учебных программ">
-    <a class="prg-tab{% if _prg_p.startswith('/cabinet/staff/program') %} is-active{% endif %}"
+    {# «Календарь» — весь раздел, кроме вложенного пути «Циклы»: без этой
+       оговорки на странице циклов подсветились бы обе вкладки сразу. #}
+    {% set _prg_cycles = _prg_p.startswith('/cabinet/staff/program/cycles') %}
+    <a class="prg-tab{% if _prg_p.startswith('/cabinet/staff/program') and not _prg_cycles %} is-active{% endif %}"
        href="/cabinet/staff/program"
-       {% if _prg_p.startswith('/cabinet/staff/program') %}aria-current="page"{% endif %}>Календарь</a>
-    <a class="prg-tab{% if _prg_p.startswith('/cabinet/staff/program/cycles') %} is-active{% endif %}"
+       {% if _prg_p.startswith('/cabinet/staff/program') and not _prg_cycles %}aria-current="page"{% endif %}>Календарь</a>
+    <a class="prg-tab{% if _prg_cycles %} is-active{% endif %}"
        href="/cabinet/staff/program/cycles"
-       {% if _prg_p.startswith('/cabinet/staff/program/cycles') %}aria-current="page"{% endif %}>Циклы</a>
+       {% if _prg_cycles %}aria-current="page"{% endif %}>Циклы</a>
     <span class="prg-tabs-sep" aria-hidden="true"></span>
     <a class="prg-tab{% if _prg_p.startswith('/cabinet/staff/digest') %} is-active{% endif %}"
        href="/cabinet/staff/digest"

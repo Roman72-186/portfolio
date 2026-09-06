@@ -31,9 +31,6 @@ from app.models.tracker import (
     SOURCE_LEARNING_TOPIC,
     STATUS_DONE,
     STATUS_OPEN,
-    TAB_KIND_FEEDBACK,
-    WEEK_TAB_LABELS,
-    WEEK_TAB_SEQUENCE,
     ScheduleDigest,
     ScheduleDigestAssignee,
     ScheduleDigestTag,
@@ -451,68 +448,6 @@ def accessible_task_entries(
             else None,
         })
     return entries
-
-
-def build_week_tabs(entries: list[dict]) -> list[dict]:
-    """Восемь вкладок недели АОП в фиксированном порядке `WEEK_TAB_SEQUENCE`,
-    с блокировкой «следующая вкладка открыта, только когда закрыта предыдущая»
-    (решение владельца 22.08/23.08).
-
-    Чистая функция без похода в БД: `entries` уже посчитаны
-    `accessible_task_entries` вместе со статусом. Вкладка без единой задачи
-    (преподаватель просто ничего не поставил в неё на эту неделю) блокировать
-    нечем — она пропускает цепочку дальше, не запирая следующую. Причина
-    блокировки («Сначала сделай …») держится на первой реально незакрытой
-    вкладке и не сдвигается, пока по ней не появится статус done у всех задач.
-
-    Билет Пробника (`ITEM_MOCK_EXAM`) — отдельный от домашки механизм
-    (`ExamCycle`/`ExamTicket`, не сливается), но решением владельца 24.08
-    показывается ученику внутри вкладки «Задание», а не своей карточкой вне
-    вкладок (было решением 22.08). У `ITEM_MOCK_EXAM` своей позиции в
-    `WEEK_TAB_SEQUENCE` нет и не появляется — его записи просто досыпаются в
-    бакет `ITEM_HOMEWORK` перед раскладкой. Это только про отображение:
-    незакрытый билет не запирает следующие вкладки этой же недели и не
-    участвует в недельном гейте (см. `is_week_complete`, которая его тоже
-    исключает) — по решению владельца 24.08 Пробник продолжает блокировать
-    только переход на следующий месяц, к неделе отношения не имеет.
-
-    `has_unread` — маркер-точка на кнопке вкладки (решение владельца
-    25.08.2026): есть хоть одна незакрытая задача вкладки и сама вкладка не
-    заперта (запертую нечем «просмотреть» раньше предыдущей). Кнопка
-    «Обратная связь» своих `entries` не получает (виртуальная вкладка поверх
-    ExamCycle) — её `has_unread` подставляет `cabinet_learning.py` поверх
-    результата этой функции, здесь всегда `False`.
-    """
-    by_kind: dict[str, list[dict]] = {}
-    for entry in entries:
-        by_kind.setdefault(entry["task"].kind, []).append(entry)
-
-    mock_entries = by_kind.pop(ITEM_MOCK_EXAM, [])
-    if mock_entries:
-        by_kind[ITEM_HOMEWORK] = by_kind.get(ITEM_HOMEWORK, []) + mock_entries
-
-    tabs = []
-    locked_reason: str | None = None
-    for kind in WEEK_TAB_SEQUENCE:
-        tab_entries = by_kind.get(kind, [])
-        is_locked = locked_reason is not None
-        tabs.append({
-            "kind": kind,
-            "label": WEEK_TAB_LABELS[kind],
-            "entries": tab_entries,
-            "is_locked": is_locked,
-            "locked_reason": locked_reason,
-            "reserved": kind == TAB_KIND_FEEDBACK,
-            "has_unread": not is_locked and any(e["status"] != "done" for e in tab_entries),
-        })
-        # Билет Пробника участвует в отображении вкладки «Задание», но не в
-        # проверке «закрыта ли вкладка» — иначе он запирал бы «Чек-лист» и
-        # всё, что после, хотя решение владельца отводит ему только месячный
-        # уровень блокировки.
-        lock_entries = [e for e in tab_entries if e["task"].kind != ITEM_MOCK_EXAM]
-        if not is_locked and lock_entries and any(e["status"] != "done" for e in lock_entries):
-            locked_reason = WEEK_TAB_LABELS[kind]
-    return tabs
 
 
 # ---------------------------------------------------------------------------

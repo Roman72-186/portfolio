@@ -85,26 +85,6 @@ ITEM_KIND_LABELS = {
 # фиксирован, пока не появится конструктор последовательностей блоков (п.14,
 # отдельная будущая стройка) — тогда станет настраиваемым.
 #
-# TAB_KIND_FEEDBACK — виртуальная восьмая вкладка: у неё нет TrackerTask.kind,
-# это задел под шаг 4 (возврат «Обратной связи» поверх ExamCycle/Feedback).
-TAB_KIND_FEEDBACK = "feedback"
-
-WEEK_TAB_SEQUENCE = (
-    ITEM_MATERIAL, ITEM_VIDEO, ITEM_QUIZ, ITEM_LESSON,
-    ITEM_HOMEWORK, ITEM_CHECKLIST, ITEM_SURVEY, TAB_KIND_FEEDBACK,
-)
-
-WEEK_TAB_LABELS = {
-    ITEM_MATERIAL: "Материалы",
-    ITEM_VIDEO: "Видео",
-    ITEM_QUIZ: "Тест по теории",
-    ITEM_LESSON: "Занятие",
-    ITEM_HOMEWORK: "Задание",
-    ITEM_CHECKLIST: "Чек-лист и проверки",
-    ITEM_SURVEY: "Анкета",
-    TAB_KIND_FEEDBACK: "Обратная связь",
-}
-
 STATUS_OPEN = "open"
 STATUS_DONE = "done"
 
@@ -151,11 +131,10 @@ class TrackerTask(Base):
     # школе — та же дорогая ошибка, что у тем видеоуроков.
     assign_to_all: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    # Блокирует ли элемент переход к следующей вкладке недели/следующей неделе
-    # (гейт «блок → неделя → месяц», решение владельца 23.08). default=True
-    # осознанно: `build_week_tabs` уже блокирует вкладки по факту закрытия —
-    # де-факто всё обязательно сегодня, чекбокс даёт возможность разрешить
-    # элемент, а не наоборот.
+    # Блокирует ли элемент следующие шаги ленты и переход к следующему циклу
+    # (гейт «блок → цикл → месяц», решение владельца 23.08, лента — 06.09.2026).
+    # default=True осознанно: де-факто обязательно всё, чекбокс даёт
+    # возможность разрешить элемент, а не наоборот.
     is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

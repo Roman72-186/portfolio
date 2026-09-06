@@ -116,3 +116,11 @@ def test_cycles_page_lists_existing(admin_client, db):
 
     resp = client.get(PAGE)
     assert "Предобучение" in resp.text
+
+
+def test_only_one_tab_is_active_on_cycles_page(admin_client):
+    """«Циклы» — вложенный путь внутри «Календаря»: без явной оговорки в
+    шапке подсвечивались бы обе вкладки сразу."""
+    client, _ = admin_client
+    resp = client.get(PAGE)
+    assert resp.text.count("prg-tab is-active") == 1
