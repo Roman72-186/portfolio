@@ -340,3 +340,15 @@
    правило уровня атрибута отсюда (вес 0,1,0) — кнопки тут никогда не
    красились, ни в светлой теме, ни в тёмной, просто в светлой это было
    незаметно на глаз. */
+
+/* Таблица прохождения цикла (владелец 03.09.2026). Прокрутка по горизонтали —
+   общий `.table-scroll` из base.css, здесь только сама таблица. */
+.prg-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.prg-table th, .prg-table td {
+    padding: 8px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+}
+.prg-table th { font-weight: 800; color: var(--muted); }
+.prg-table td:first-child { white-space: normal; }

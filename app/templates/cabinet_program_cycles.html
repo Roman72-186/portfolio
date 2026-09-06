@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Циклы программы{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=15">
+<link rel="stylesheet" href="/static/css/program.css?v=16">
 {% endblock %}
 {% block content %}
 {#
@@ -79,6 +79,7 @@
                 </div>
             </div>
             <div class="prg-item-actions">
+                <a class="btn-outline" href="/cabinet/staff/program/cycles/{{ cycle.id }}/stats">Прохождение</a>
                 <button type="button" class="btn-outline" data-cycle-edit
                         data-payload='{{ cycle|tojson }}'>Править</button>
             </div>

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Прохождение цикла{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=16">
+{% endblock %}
+{% block content %}
+{#
+Прохождение цикла (владелец 03.09.2026): «сколько людей там посмотрело,
+сколько людей в итоге загрузили задание… будем смотреть с разных тарифов,
+сколько людей не досмотрело».
+
+Считает `services/cycle_stats.py` по тем же сущностям, что и лента ученика:
+шаг — блок конструктора, задание без блоков — один шаг. Своего <style> здесь
+нет, классы общие с остальными экранами программы.
+#}
+<div class="prg-page">
+    {% include "partials/program_tabs.html" %}
+
+    <div class="prg-head">
+        <div>
+            <h1>{{ stats.topic.title }}</h1>
+            <p class="prg-hint">
+                Период {{ stats.start.strftime('%d.%m.%Y') }} – {{ stats.end.strftime('%d.%m.%Y') }}.
+                Учеников: {{ stats.students }}, прошли цикл целиком: {{ stats.finished }}.
+            </p>
+        </div>
+        <a class="btn-outline" href="/cabinet/staff/program/cycles">К циклам</a>
+    </div>
+
+    <section class="prg-items">
+        <h2>По тарифам</h2>
+        <div class="prg-meta">
+            {% for tariff in stats.tariffs %}
+            <span>{{ tariff }}: {{ stats.students_by_tariff[tariff] }}</span>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="prg-items">
+        <h2>По шагам</h2>
+        {% if stats.steps %}
+        <div class="table-scroll">
+            <table class="prg-table">
+                <thead>
+                    <tr>
+                        <th>Шаг</th>
+                        <th>Сделали</th>
+                        {% for tariff in stats.tariffs %}<th>{{ tariff }}</th>{% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for step in stats.steps %}
+                    <tr>
+                        <td>{{ step.title }}</td>
+                        <td>{{ step.done }} из {{ step.total }}</td>
+                        {% for tariff in stats.tariffs %}
+                        <td>{{ step.by_tariff[tariff] }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="prg-hint">В цикле пока нет ни одного задания.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

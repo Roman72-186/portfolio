@@ -44,6 +44,7 @@ from app.services.task_blocks import (
     get_tariffs as get_task_block_tariffs,
     sync_blocks as sync_task_blocks,
 )
+from app.services.cycle_stats import cycle_stats
 from app.services.video_catalog import publish_video
 from app.models.tracker import (
     ITEM_CHECKLIST,
@@ -418,6 +419,27 @@ def create_program_cycle(
         publish_topic(topic, user_id=user["user_id"])
     db.commit()
     return JSONResponse({"ok": True, "cycle_id": topic.id})
+
+
+@router.get("/cycles/{topic_id}/stats", response_class=HTMLResponse)
+def program_cycle_stats(
+    topic_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Прохождение цикла: по шагам и по тарифам (владелец 03.09.2026).
+
+    «Сколько людей там посмотрело, сколько людей в итоге загрузили задание…
+    будем смотреть с разных тарифов».
+    """
+    topic = get_topic(db, topic_id, kinds=(TOPIC_KIND_WEEK,))
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Цикл не найден")
+    return templates.TemplateResponse(
+        "cabinet_program_cycle_stats.html",
+        {"request": request, "user": user, "stats": cycle_stats(db, topic)},
+    )
 
 
 @router.post("/cycles/{topic_id}", response_class=JSONResponse)
