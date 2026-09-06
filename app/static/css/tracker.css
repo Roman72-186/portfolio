@@ -1243,3 +1243,16 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
     color: var(--blue);
 }
 .lrn-archive-note { margin: 0 0 12px; }
+
+/* Шкала навыков: навык слева, оценка справа (владелец 03.09.2026). */
+.lrn-scale-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--line);
+}
+.lrn-scale-row:last-child { border-bottom: none; }
+.lrn-scale-name { font-size: 14px; }
+.lrn-scale-input { width: 84px; flex: 0 0 auto; }

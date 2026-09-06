@@ -14,6 +14,7 @@ from app.models.task_block import (
     BLOCK_LINK,
     BLOCK_PHOTO,
     BLOCK_PORTFOLIO,
+    BLOCK_SCALE,
     BLOCK_QUESTION,
     BLOCK_TYPES,
     BLOCK_VIDEO,
@@ -77,8 +78,16 @@ def get_options(db: DBSession, block_ids: list[int]) -> dict[int, list[TaskBlock
 
 
 def question_blocks(blocks: list[TaskBlock]) -> list[TaskBlock]:
-    """Только блоки-вопросы — то, на что ученик отвечает."""
-    return [block for block in blocks if block.block_type == BLOCK_QUESTION]
+    """Блоки, на которые ученик отвечает: вопросы и шкала навыков.
+
+    Шкала попала сюда, потому что она сохраняется тем же путём, что и вопрос
+    (`save_response`), и её ответы так же участвуют в «ответил ли ученик».
+    Вердикта «верно/неверно» у неё нет — оценивать самооценку не по чему.
+    """
+    return [
+        block for block in blocks
+        if block.block_type in (BLOCK_QUESTION, BLOCK_SCALE)
+    ]
 
 
 def _clean(value: str | None, limit: int) -> str | None:
@@ -274,7 +283,8 @@ def grade_response(
     graded = [
         block
         for block in question_blocks(blocks)
-        if block.question_type != QUESTION_TEXT
+        # Шкала навыков — самооценка, верного ответа у неё нет по устройству.
+        if block.block_type == BLOCK_QUESTION and block.question_type != QUESTION_TEXT
     ]
     options = get_options(db, [block.id for block in graded])
     chosen = (
@@ -354,6 +364,11 @@ def _is_empty(block_type: str, item: dict) -> bool:
         ]
     if block_type == BLOCK_LINK:
         return not (item.get("url") or "").strip()
+    if block_type == BLOCK_SCALE:
+        return not [
+            option for option in (item.get("options") or [])
+            if (option.get("text") or "").strip()
+        ]
     if block_type == BLOCK_PORTFOLIO:
         # Кнопка «Загрузить портфолио» самодостаточна: заголовок и пояснение
         # необязательны, содержимого у неё нет по устройству.
@@ -426,7 +441,12 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
     for row, item in paired:
         # Свободный текст вариантов не имеет; смена типа вопроса на текстовый
         # или блока на не-вопрос должна убрать оставшиеся варианты.
-        if row.block_type == BLOCK_QUESTION and row.question_type != QUESTION_TEXT:
+        # Варианты есть у вопроса с выбором и у шкалы навыков: там вариант —
+        # это название навыка, который ученик оценивает.
+        if (
+            row.block_type == BLOCK_SCALE
+            or (row.block_type == BLOCK_QUESTION and row.question_type != QUESTION_TEXT)
+        ):
             _sync_options(db, row, item.get("options") or [])
         else:
             _sync_options(db, row, [])
@@ -550,7 +570,9 @@ def save_response(
             if option is None:
                 continue
             option_text = None
-            if option.requires_text:
+            if option.requires_text or block.block_type == BLOCK_SCALE:
+                # У шкалы текст варианта — это оценка навыка («7 из 10»),
+                # поэтому она принимается без флага requires_text.
                 option_text = (option_texts.get(option_id) or "").strip() or None
             db.add(
                 TaskBlockAnswerOption(

@@ -3,7 +3,7 @@
 {% block title %}Личная информация{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/account_actions.css?v=1">
-<link rel="stylesheet" href="/static/css/personal_ios.css?v=5">
+<link rel="stylesheet" href="/static/css/personal_ios.css?v=6">
 {% endblock %}
 {% block content %}
 <div class="prs-page ios-personal">
@@ -57,6 +57,28 @@
             <div class="prs-row-note">Скоро появится здесь.</div>
         </div>
     </div>
+
+    {# Динамика самооценки навыков (владелец 03.09.2026): «в начале обучения
+       было так, в середине уже вот так, а к концу ещё более развито». Точки
+       по датам, чтобы шкалы можно было сравнить между собой. #}
+    {% if skills %}
+    <div class="prs-section-title">Мои навыки</div>
+    <div class="prs-group">
+        {% for row in skills %}
+        <div class="prs-row prs-row--stacked">
+            <span class="prs-row-label">{{ row.skill }}</span>
+            <div class="prs-skill-points">
+                {% for point in row.points %}
+                <span class="prs-skill-point">
+                    <strong>{{ point.score }}</strong>
+                    <small>{{ point.date.strftime('%d.%m.%y') }}</small>
+                </span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
 
     <div class="prs-section-title">Аккаунт</div>
     <div class="prs-actions">

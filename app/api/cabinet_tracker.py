@@ -33,8 +33,8 @@ from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
 from app.models.task_block import (
-    BLOCK_PHOTO, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_VIDEO, MAX_BLOCKS,
-    QUESTION_TEXT,
+    BLOCK_PHOTO, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_SCALE, BLOCK_VIDEO,
+    MAX_BLOCKS, QUESTION_TEXT, SCALE_MAX,
 )
 from app.models.tracker import (
     EVENT_KIND_LABELS,
@@ -283,6 +283,8 @@ def cabinet_tracker_task_blocks(
         b for b in get_task_blocks(db, task_id)
         if not (b.block_type == BLOCK_QUESTION and b.hidden_until_done and not task_done)
     ]
+    # `question_blocks` отдаёт и вопросы, и шкалы навыков — у обоих есть
+    # варианты и ответы ученика.
     questions = task_question_blocks(blocks)
     options = get_task_block_options(db, [b.id for b in questions])
 
@@ -325,6 +327,17 @@ def cabinet_tracker_task_blocks(
             ]
         elif block.block_type == "link":
             item["url"] = block.url
+        elif block.block_type == BLOCK_SCALE:
+            # Диагностика навыков: варианты — навыки, ответ — оценка каждому.
+            item["scale_max"] = SCALE_MAX
+            item["options"] = [
+                {"id": o.id, "text": o.text}
+                for o in options.get(block.id, [])
+            ]
+            item["answer_option_texts"] = {
+                option_id: text
+                for option_id, text in selected_option_texts.items()
+            }
         elif block.block_type == BLOCK_PORTFOLIO:
             # Ведём на существующий экран загрузки работ, своего у блока нет.
             item["upload_url"] = "/upload"

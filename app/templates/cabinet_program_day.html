@@ -795,6 +795,19 @@ FORM: Operate.
                 + '<option value="">Выберите ролик</option>' + videoOptionsHTML() + '</select></label>'
                 + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок, необязательно" placeholder="Заголовок, необязательно"></label>';
         }
+        if (type === 'scale') {
+            // Диагностика навыков (владелец 03.09.2026): варианты — названия
+            // навыков, ученик ставит каждому оценку от 1 до 10. Верного
+            // ответа нет, поэтому отметки «верный вариант» здесь тоже нет.
+            return ''
+                + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок" placeholder="Заголовок, например «Оцени себя»"></label>'
+                + '<label class="prg-field"><textarea data-b-body maxlength="5000" aria-label="Пояснение" placeholder="Пояснение, необязательно"></textarea></label>'
+                + '<div class="prg-blk-options">'
+                + '  <p class="prg-hint">Навыки, которые ученик оценит от 1 до 10.</p>'
+                + '  <div data-b-options></div>'
+                + '  <div class="prg-actions"><button type="button" class="btn-outline" data-add-b-option>Добавить навык</button></div>'
+                + '</div>';
+        }
         if (type === 'portfolio') {
             // Кнопка «Загрузить портфолио» (владелец 03.09.2026): ведёт на
             // готовый экран загрузки работ. Своего содержимого нет — только
@@ -926,6 +939,18 @@ FORM: Operate.
             var box = row.querySelector('[data-b-tariff][value="' + tariff + '"]');
             if (box) box.checked = true;
         });
+        if (row.getAttribute('data-block-type') === 'scale') {
+            var scaleHolder = row.querySelector('[data-b-options]');
+            (block.options || []).forEach(function (option) {
+                scaleHolder.insertAdjacentHTML('beforeend', blockOptionHTML());
+                var optionRow = scaleHolder.lastElementChild;
+                if (option.id) optionRow.setAttribute('data-b-option-id', option.id);
+                optionRow.querySelector('[data-b-option-text]').value = option.text;
+                var correctBox = optionRow.querySelector('[data-b-option-correct]');
+                // У самооценки верного варианта нет — прячем отметку.
+                if (correctBox) correctBox.closest('label').hidden = true;
+            });
+        }
         var qType = row.querySelector('[data-b-question-type]');
         if (qType) {
             qType.value = block.question_type || 'text';
@@ -1159,6 +1184,21 @@ FORM: Operate.
                     });
                 });
                 if (!item.images.length) return;
+            }
+            if (type === 'scale') {
+                item.options = [];
+                row.querySelectorAll('[data-b-option]').forEach(function (optionRow) {
+                    var text = optionRow.querySelector('[data-b-option-text]').value.trim();
+                    if (!text) return;
+                    var optionId = optionRow.getAttribute('data-b-option-id');
+                    item.options.push({
+                        id: optionId ? Number(optionId) : null,
+                        text: text,
+                        // Верного ответа у самооценки нет.
+                        is_correct: false
+                    });
+                });
+                if (!item.options.length) return;
             }
             if (type === 'question') {
                 if (!item.body) return;

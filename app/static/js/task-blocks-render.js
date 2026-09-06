@@ -169,6 +169,37 @@
                 return wrap;
             }
 
+            // Шкала навыков (владелец 03.09.2026): «оцени, насколько ты
+            // стрессоустойчивый… ребёнок отмечает 3 из 10». Каждый навык —
+            // своя строка с выбором от 1 до 10; верного ответа нет.
+            function renderScale(block, index) {
+                var wrap = withTitle(el('div', 'lrn-blk lrn-blk-scale'), block);
+                if (block.body) wrap.appendChild(el('p', 'lrn-blk-question-body', block.body));
+                var max = block.scale_max || 10;
+                var saved = block.answer_option_texts || {};
+                (block.options || []).forEach(function (option, oi) {
+                    var row = el('div', 'lrn-scale-row');
+                    row.appendChild(el('span', 'lrn-scale-name', option.text));
+                    var select = el('select', 'form-input lrn-scale-input');
+                    select.id = 'lrn-scale-' + api.uid + '-' + index + '-' + oi;
+                    select.setAttribute('aria-label', option.text);
+                    select.setAttribute('data-scale-option', option.id);
+                    select.disabled = api.answered;
+                    var empty = el('option', null, '—');
+                    empty.value = '';
+                    select.appendChild(empty);
+                    for (var value = 1; value <= max; value += 1) {
+                        var opt = el('option', null, String(value));
+                        opt.value = String(value);
+                        if (String(saved[option.id] || '') === String(value)) opt.selected = true;
+                        select.appendChild(opt);
+                    }
+                    row.appendChild(select);
+                    wrap.appendChild(row);
+                });
+                return wrap;
+            }
+
             function verdictMark(block) {
                 // Значком и словом, не одним цветом: цвет читают не все.
                 if (block.is_correct === true) return el('span', 'lrn-blk-verdict is-ok', '✓ Верно');
@@ -225,7 +256,8 @@
                 video: renderVideo,
                 link: renderLink,
                 question: renderQuestion,
-                portfolio: renderPortfolio
+                portfolio: renderPortfolio,
+                scale: renderScale
             };
 
             api.render = function (block, index) {
@@ -239,6 +271,19 @@
             api.collectAnswers = function (blocks, scope) {
                 var answers = [];
                 (blocks || []).forEach(function (block) {
+                    if (block.block_type === 'scale') {
+                        // Оценка приходит текстом варианта: у шкалы «выбран»
+                        // каждый навык, которому ученик поставил число.
+                        var scaleAnswer = { block_id: block.id, option_ids: [], option_texts: {} };
+                        (block.options || []).forEach(function (option) {
+                            var field = scope.querySelector('[data-scale-option="' + option.id + '"]');
+                            if (!field || !field.value) return;
+                            scaleAnswer.option_ids.push(option.id);
+                            scaleAnswer.option_texts[option.id] = field.value;
+                        });
+                        if (scaleAnswer.option_ids.length) answers.push(scaleAnswer);
+                        return;
+                    }
                     if (block.block_type !== 'question') return;
                     var answer = { block_id: block.id, option_ids: [] };
                     var textField = scope.querySelector('[data-answer-text="' + block.id + '"]');
