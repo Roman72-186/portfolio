@@ -1217,3 +1217,29 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 /* Запертый не притворяется кликабельным. */
 .lrn-step--locked { opacity: 0.5; }
 .lrn-step-locked { margin-top: 10px; font-style: italic; }
+
+/* Пройденные циклы: возврат к своим ответам (владелец 03.09.2026). */
+.lrn-cycles {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 2px 0 8px;
+    scrollbar-width: none;
+}
+.lrn-cycles::-webkit-scrollbar { display: none; }
+.lrn-cycle-chip {
+    flex: 0 0 auto;
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--dim);
+    text-decoration: none;
+    white-space: nowrap;
+}
+.lrn-cycle-chip.is-current {
+    border-color: var(--blue);
+    color: var(--blue);
+}
+.lrn-archive-note { margin: 0 0 12px; }

@@ -33,7 +33,8 @@ from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
 from app.models.task_block import (
-    BLOCK_PHOTO, BLOCK_QUESTION, BLOCK_VIDEO, MAX_BLOCKS, QUESTION_TEXT,
+    BLOCK_PHOTO, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_VIDEO, MAX_BLOCKS,
+    QUESTION_TEXT,
 )
 from app.models.tracker import (
     EVENT_KIND_LABELS,
@@ -44,7 +45,8 @@ from app.models.tracker import (
     TrackerTask,
     TrackerTaskState,
 )
-from app.services.program import day_bounds, item_details, week_start
+from app.models.work import Work
+from app.services.program import day_bounds, item_details, msk_date, week_start
 from app.services.stats import avg_score_by_subject_all_time
 from app.services.task_blocks import (
     get_answers_map as get_task_block_answers_map,
@@ -55,6 +57,7 @@ from app.services.task_blocks import (
     get_response as get_task_block_response,
     get_selected_option_texts as get_task_block_selected_option_texts,
     get_selected_options as get_task_block_selected_options,
+    get_state as get_task_block_state,
     question_blocks as task_question_blocks,
     save_response as save_task_block_response,
 )
@@ -226,6 +229,30 @@ def _is_task_done(db: DBSession, task_id: int, user_id: int) -> bool:
 
 # ── GET /cabinet/tracker/tasks/{id}/blocks ───────────────────────────────────
 
+def _portfolio_block_done(db: DBSession, block, user_id: int) -> bool:
+    """Закрыт ли блок «Загрузить портфолио» — по факту загрузки работы.
+
+    Отсчёт от даты открытия блока, иначе от даты открытия задания, иначе от
+    начала дня задания: прошлогодняя работа не должна закрывать сегодняшний
+    шаг (владелец 03.09.2026 — «портфолио, которое именно 18 числа»).
+    """
+    state = get_task_block_state(db, block_id=block.id, user_id=user_id)
+    if state is not None and state.status == STATUS_DONE:
+        return True
+    task = db.get(TrackerTask, block.task_id)
+    since = block.opens_at or (task.starts_at if task else None)
+    if since is None and task is not None and task.due_at is not None:
+        since = day_bounds(msk_date(task.due_at))[0]
+    if since is None:
+        return False
+    return (
+        db.query(Work.id)
+        .filter(Work.user_id == user_id, Work.created_at >= since)
+        .first()
+        is not None
+    )
+
+
 @router.get("/tracker/tasks/{task_id}/blocks")
 def cabinet_tracker_task_blocks(
     task_id: int,
@@ -298,6 +325,10 @@ def cabinet_tracker_task_blocks(
             ]
         elif block.block_type == "link":
             item["url"] = block.url
+        elif block.block_type == BLOCK_PORTFOLIO:
+            # Ведём на существующий экран загрузки работ, своего у блока нет.
+            item["upload_url"] = "/upload"
+            item["done"] = _portfolio_block_done(db, block, user["user_id"])
         elif block.block_type == BLOCK_QUESTION:
             item["question_type"] = block.question_type
             item["options"] = [

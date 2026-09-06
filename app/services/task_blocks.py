@@ -13,6 +13,7 @@ from app.constants import MOCK_SUBJECTS, TARIFFS
 from app.models.task_block import (
     BLOCK_LINK,
     BLOCK_PHOTO,
+    BLOCK_PORTFOLIO,
     BLOCK_QUESTION,
     BLOCK_TYPES,
     BLOCK_VIDEO,
@@ -353,6 +354,10 @@ def _is_empty(block_type: str, item: dict) -> bool:
         ]
     if block_type == BLOCK_LINK:
         return not (item.get("url") or "").strip()
+    if block_type == BLOCK_PORTFOLIO:
+        # Кнопка «Загрузить портфолио» самодостаточна: заголовок и пояснение
+        # необязательны, содержимого у неё нет по устройству.
+        return False
     # text и question: без текста блок бессмысленен.
     return not (item.get("body") or "").strip()
 

@@ -27,15 +27,19 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.models.learning_topic import LearningTopic
+from app.models.task_block import BLOCK_PORTFOLIO
 from app.models.tracker import ITEM_MOCK_EXAM, STATUS_DONE
+from app.models.work import Work
 from app.services.program import day_bounds, msk_date
 from app.services.task_blocks import (
+    close_block_for_user,
     get_blocks_for_tasks,
     get_states,
     get_tariffs,
     is_block_accessible,
 )
 from app.services.tracker import (
+    accessible_cycles,
     accessible_task_entries,
     cycle_bounds,
     effective_cycle,
@@ -84,6 +88,24 @@ def _task_done(entry: dict) -> bool:
     return entry["status"] == STATUS_DONE
 
 
+def has_portfolio_upload(db: Session, user_id: int, *, since: date) -> bool:
+    """Загружал ли ученик работу начиная с `since` (московская дата).
+
+    Блок «Загрузить портфолио» закрывается фактом загрузки, а не галочкой
+    (владелец 03.09.2026: «пока не будет подтверждения, что он загрузил
+    портфолио, которое именно 18 числа, у него не откроется актуальное
+    образовательное пространство дальше»). Отсчёт — от начала цикла: прошлогодняя
+    работа не должна засчитывать сегодняшнее задание.
+    """
+    start, _ = day_bounds(since)
+    return (
+        db.query(Work.id)
+        .filter(Work.user_id == user_id, Work.created_at >= start)
+        .first()
+        is not None
+    )
+
+
 def build_cycle_feed(
     db: Session, *, user_id: int, user_tariff: str | None, start: date, end: date
 ) -> list[dict]:
@@ -122,6 +144,23 @@ def build_cycle_feed(
     states = get_states(db, block_ids=block_ids, user_id=user_id)
     tariffs_by_block = get_tariffs(db, block_ids)
 
+    # Блок «Загрузить портфолио» закрывается фактом загрузки работы, а не
+    # галочкой ученика (владелец 03.09.2026). Закрываем по-настоящему, а не
+    # только в отрисовке: иначе закрытый на экране блок продолжал бы запирать
+    # всё, что ниже, — последовательность считается по состояниям блоков. Тот
+    # же приём, что у видео (`api/video.py::_close_video_task_once`).
+    pending_portfolio = [
+        block for block in ordered_blocks
+        if block.block_type == BLOCK_PORTFOLIO and block.id not in states
+    ]
+    if pending_portfolio and has_portfolio_upload(db, user_id, since=start):
+        for block in pending_portfolio:
+            close_block_for_user(
+                db, block=block, user_id=user_id, source="portfolio_upload"
+            )
+        db.commit()
+        states = get_states(db, block_ids=block_ids, user_id=user_id)
+
     # Задача без блоков участвует в блокировке хвоста наравне с блоками: пока
     # обязательное видео не досмотрено, следующее задание ленты закрыто.
     # `blocked` взводится один раз и дальше запирает всё, что ниже.
@@ -155,6 +194,7 @@ def build_cycle_feed(
                 "status": status,
                 "lock_reason": lock_reason,
                 "opens_on": opens_on,
+                "subject": task.subject,
             })
             if (
                 not done
@@ -200,29 +240,87 @@ def build_cycle_feed(
                 "opens_on": (
                     msk_date(block.opens_at) if block_waits_date else opens_on
                 ),
+                # Предмет блока важнее предмета задания: часть цикла идёт без
+                # деления на Рисунок и Композицию, часть — с делением
+                # (владелец 03.09.2026).
+                "subject": block.subject or task.subject,
             })
             block_index += 1
     return steps
 
 
+def started_cycles(db: Session, user_id: int, today: date) -> list[LearningTopic]:
+    """Циклы ученика, которые уже начались, от поздних к ранним.
+
+    Нужны для возврата в пройденное: «он может вернуться в этот цикл, зайти в
+    этот цикл, потому что у каждого цикла своя тема в обучении» (владелец
+    03.09.2026). Не начавшиеся не показываем — программа вперёд не выдаётся.
+    """
+    started = [
+        topic for topic in accessible_cycles(db, user_id)
+        if cycle_bounds(topic)[0] <= today
+    ]
+    return list(reversed(started))
+
+
 def feed_for_student(
-    db: Session, *, user_id: int, user_tariff: str | None, today: date
+    db: Session, *, user_id: int, user_tariff: str | None, today: date,
+    cycle_id: int | None = None,
 ) -> dict:
     """Готовая лента для экрана: цикл, его границы и шаги.
 
     Одна точка входа для роута — чтобы экран не собирал окно и шаги по
     отдельности и не разъезжался с тем, по какому периоду считается закрытие
     цикла.
+
+    `cycle_id` — открыть конкретный цикл вместо текущего: ученик возвращается в
+    пройденное. Чужой или ещё не начавшийся цикл молча игнорируется — падать на
+    подобранном в адресной строке номере незачем.
     """
-    topic, start, end = feed_window(db, user_id, today)
+    current_topic, current_start, current_end = feed_window(db, user_id, today)
+    chosen = None
+    if cycle_id is not None:
+        chosen = next(
+            (t for t in started_cycles(db, user_id, today) if t.id == cycle_id), None
+        )
+    if chosen is not None:
+        start, end = cycle_bounds(chosen)
+        topic = chosen
+    else:
+        topic, start, end = current_topic, current_start, current_end
     steps = build_cycle_feed(
         db, user_id=user_id, user_tariff=user_tariff, start=start, end=end
     )
+    cycles = started_cycles(db, user_id, today)
     return {
         "topic": topic,
         "start": start,
         "end": end,
         "steps": steps,
+        # Список пройденных циклов для возврата; текущий помечен отдельно.
+        "cycles": [
+            {
+                "id": item.id,
+                "title": item.title,
+                "start": cycle_bounds(item)[0],
+                "end": cycle_bounds(item)[1],
+                "is_current": topic is not None and item.id == topic.id,
+            }
+            for item in cycles
+        ],
+        # Открыт прошлый цикл, а не тот, на котором ученик стоит сейчас:
+        # экран показывает его только для чтения.
+        "is_archive": (
+            chosen is not None
+            and (current_topic is None or chosen.id != current_topic.id)
+        ),
         "done_count": sum(1 for step in steps if step["status"] == STATUS_DONE),
         "total_count": len(steps),
+        # Переключатель «Рисунок / Композиция» показывается, только когда в
+        # цикле реально есть деление по предметам (владелец 03.09.2026: «в
+        # предыдущих циклах эти кнопки не нужны, мы просто не будем ставить
+        # разделение, и кнопок в принципе не будет»).
+        "subjects": sorted({
+            step["subject"] for step in steps if step["subject"]
+        }),
     }

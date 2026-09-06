@@ -596,7 +596,7 @@ def cycle_bounds(topic: LearningTopic) -> tuple[date, date]:
     return start, max(start, end)
 
 
-def _accessible_cycles(db: Session, user_id: int) -> list[LearningTopic]:
+def accessible_cycles(db: Session, user_id: int) -> list[LearningTopic]:
     """Доступные ученику циклы (`LearningTopic(kind='week')`), от ранних к поздним.
 
     Порядок фиксирован по `opens_at`, потом по `id`: периоды, в отличие от
@@ -624,7 +624,7 @@ def cycle_for_day(db: Session, user_id: int, day: date) -> LearningTopic | None:
     показать в этом случае, принимает экран, а не резолвер.
     """
     covering = [
-        topic for topic in _accessible_cycles(db, user_id)
+        topic for topic in accessible_cycles(db, user_id)
         if cycle_bounds(topic)[0] <= day <= cycle_bounds(topic)[1]
     ]
     return covering[-1] if covering else None
@@ -658,7 +658,7 @@ def effective_cycle(db: Session, user_id: int, today: date) -> LearningTopic | N
     если такого нет — `None` (между циклами зазор).
     """
     started = [
-        topic for topic in _accessible_cycles(db, user_id)
+        topic for topic in accessible_cycles(db, user_id)
         if cycle_bounds(topic)[0] <= today
     ]
     for topic in started:

@@ -46,15 +46,20 @@ def cabinet_learning(
     request: Request,
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
+    cycle: int | None = None,
 ):
     if needs_profile_setup(user):
         return RedirectResponse("/cabinet/profile", status_code=302)
 
+    # `?cycle=` — возврат в пройденный цикл (владелец 03.09.2026: «он может
+    # вернуться в этот цикл… если он задание выполнил, у него будет доступно к
+    # пересмотру, к перечитыванию своих ответов, но без возможности изменить»).
     feed = feed_for_student(
         db,
         user_id=user["user_id"],
         user_tariff=user.get("tariff"),
         today=today_msk(),
+        cycle_id=cycle,
     )
 
     return templates.TemplateResponse("cabinet_learning.html", {

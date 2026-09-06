@@ -277,6 +277,28 @@ def test_learning_marks_task_subject_for_the_switch(auth_client, db):
     assert 'class="lrn-subject-toggle"' in resp.text
 
 
+def test_learning_hides_the_switch_without_subjects(auth_client, db):
+    """Владелец 03.09.2026: «в предыдущих циклах эти кнопки не нужны — мы
+    просто не будем ставить разделение, и кнопок в принципе не будет».
+    В предобучении до 29 сентября деления на предметы нет вовсе."""
+    client, user = auth_client
+    _task(db, user, title="Общее задание")
+
+    resp = client.get("/cabinet/learning")
+    assert 'class="lrn-subject-toggle"' not in resp.text
+
+
+def test_learning_switch_lists_only_present_subjects(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user, title="Только рисунок")
+    task.subject = "Рисунок"
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert 'data-subject="Рисунок"' in resp.text
+    assert 'data-subject="Композиция"' not in resp.text
+
+
 def test_learning_cycle_period_widens_the_window(auth_client, db):
     """Трёхнедельный цикл показывает задание, которое в календарную неделю не
     попадает, — ради этого период и заводился."""
@@ -299,3 +321,49 @@ def test_trk_row_and_lrn_step_respect_the_hidden_attribute():
 def test_tracker_css_has_no_stray_jinja_comment_terminator():
     """`#}` внутри CSS означает, что комментарий шаблона уехал в статику."""
     assert "#}" not in TRACKER_CSS
+
+
+# ── возврат в пройденные циклы (владелец 03.09.2026) ────────────────────────
+
+def test_learning_lists_past_cycles(auth_client, db):
+    """«Он может вернуться в этот цикл, потому что у каждого цикла своя тема»."""
+    client, user = auth_client
+    _topic(db, user, title="Первый цикл", opens_in_days=-20, ends_in_days=-10)
+    _topic(db, user, title="Второй цикл", opens_in_days=-3, ends_in_days=10)
+
+    resp = client.get("/cabinet/learning")
+
+    assert "Первый цикл" in resp.text
+    assert "Второй цикл" in resp.text
+    assert 'class="lrn-cycles"' in resp.text
+
+
+def test_learning_opens_a_past_cycle_read_only(auth_client, db):
+    client, user = auth_client
+    past = _topic(db, user, title="Первый цикл", opens_in_days=-20, ends_in_days=-10)
+    _topic(db, user, title="Второй цикл", opens_in_days=-3, ends_in_days=10)
+
+    resp = client.get(f"/cabinet/learning?cycle={past.id}")
+
+    assert resp.status_code == 200
+    assert "Пройденный цикл" in resp.text
+
+
+def test_learning_ignores_a_future_cycle_in_the_link(auth_client, db):
+    """Не начавшийся цикл вперёд не выдаётся, даже если номер подобрали руками."""
+    client, user = auth_client
+    future = _topic(db, user, title="Будущий цикл", opens_in_days=5, ends_in_days=15)
+
+    resp = client.get(f"/cabinet/learning?cycle={future.id}")
+
+    assert resp.status_code == 200
+    assert "Пройденный цикл" not in resp.text
+
+
+def test_learning_hides_cycle_chips_when_there_is_one_cycle(auth_client, db):
+    client, user = auth_client
+    _topic(db, user, title="Единственный", opens_in_days=-3, ends_in_days=10)
+
+    resp = client.get("/cabinet/learning")
+
+    assert 'class="lrn-cycles"' not in resp.text

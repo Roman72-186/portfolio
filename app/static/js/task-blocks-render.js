@@ -152,6 +152,23 @@
                 return wrap;
             }
 
+            // Кнопка «Загрузить портфолио» (владелец 03.09.2026): ведёт на
+            // готовый экран загрузки работ и возвращает обратно. Своего
+            // содержимого у блока нет — только заголовок, пояснение и кнопка.
+            function renderPortfolio(block) {
+                var wrap = withTitle(el('div', 'lrn-blk lrn-blk-portfolio'), block);
+                if (block.body) wrap.appendChild(el('p', 'lrn-blk-body', block.body));
+                var a = el('a', 'btn-blue', 'Загрузить портфолио');
+                a.href = block.upload_url || '/upload';
+                wrap.appendChild(a);
+                if (block.done) {
+                    wrap.appendChild(el('p', 'lrn-blk-verdict is-ok', '✓ Работа загружена'));
+                } else {
+                    wrap.appendChild(el('p', 'video-help', 'Пока работа не загружена, следующие шаги закрыты.'));
+                }
+                return wrap;
+            }
+
             function verdictMark(block) {
                 // Значком и словом, не одним цветом: цвет читают не все.
                 if (block.is_correct === true) return el('span', 'lrn-blk-verdict is-ok', '✓ Верно');
@@ -207,7 +224,8 @@
                 photo: renderPhoto,
                 video: renderVideo,
                 link: renderLink,
-                question: renderQuestion
+                question: renderQuestion,
+                portfolio: renderPortfolio
             };
 
             api.render = function (block, index) {

@@ -37,12 +37,38 @@
         {% endif %}
     </div>
 
-    {# Переключатель направления стоит над тем, что фильтрует, и прячет шаги
-       чужого предмета по `task.subject` — как и во вкладках до 06.09. #}
-    <div class="lrn-subject-toggle" role="tablist" aria-label="Направление">
-        <button type="button" class="lrn-subject-btn active" data-subject="Рисунок" onclick="lrnSwitchSubject(this)">Рисунок</button>
-        <button type="button" class="lrn-subject-btn" data-subject="Композиция" onclick="lrnSwitchSubject(this)">Композиция</button>
+    {# Переключатель направления появляется, только если в этом цикле есть
+       деление по предметам (владелец 03.09.2026: «в предыдущих циклах эти
+       кнопки не нужны — мы просто не будем ставить разделение, и кнопок в
+       принципе не будет»). В предобучении до 29 сентября деления нет вовсе. #}
+    {# Пройденные циклы: вернуться и перечитать свои ответы (владелец
+       03.09.2026). Показываем, только когда есть куда возвращаться. #}
+    {% if feed.cycles|length > 1 %}
+    <div class="lrn-cycles" aria-label="Циклы обучения">
+        {% for cycle in feed.cycles %}
+        <a class="lrn-cycle-chip{{ ' is-current' if cycle.is_current }}"
+           href="/cabinet/learning{{ '' if cycle.is_current else '?cycle=' ~ cycle.id }}">
+            {{ cycle.title }}
+        </a>
+        {% endfor %}
     </div>
+    {% endif %}
+
+    {% if feed.is_archive %}
+    <p class="lrn-card-note lrn-archive-note">
+        Пройденный цикл — можно перечитать свои ответы, изменить их нельзя.
+        <a href="/cabinet/learning">Вернуться к текущему</a>
+    </p>
+    {% endif %}
+
+    {% if feed.subjects %}
+    <div class="lrn-subject-toggle" role="tablist" aria-label="Направление">
+        {% for subject in feed.subjects %}
+        <button type="button" class="lrn-subject-btn{{ ' active' if loop.first }}"
+                data-subject="{{ subject }}" onclick="lrnSwitchSubject(this)">{{ subject }}</button>
+        {% endfor %}
+    </div>
+    {% endif %}
 
     {% if feed.steps %}
     <div class="lrn-feed">
@@ -51,14 +77,14 @@
            направлениях, прятать их переключателем нельзя. #}
         <article
             class="lrn-step lrn-step--{{ step.status }}"
-            data-subject="{{ step.task.subject or '' }}"
+            data-subject="{{ step.subject or '' }}"
             data-task-id="{{ step.task.id }}"
             {% if step.block %}data-block-id="{{ step.block.id }}"{% endif %}
         >
             <header class="lrn-step-head">
                 <div class="trk-meta">
                     <span class="trk-badge trk-badge--kind">{{ step.entry.kind_label }}</span>
-                    {% if step.task.subject %}<span class="trk-badge trk-badge--kind">{{ step.task.subject }}</span>{% endif %}
+                    {% if step.subject %}<span class="trk-badge trk-badge--kind">{{ step.subject }}</span>{% endif %}
                     {% if step.status == 'done' %}<span class="trk-badge trk-badge--draft">Сделано</span>{% endif %}
                 </div>
                 <h3 class="lrn-step-title">
