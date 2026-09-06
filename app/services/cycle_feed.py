@@ -27,7 +27,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.models.learning_topic import LearningTopic
-from app.models.task_block import BLOCK_PORTFOLIO
+from app.models.task_block import BLOCK_PORTFOLIO, BLOCK_TIMED
 from app.models.tracker import ITEM_MOCK_EXAM, STATUS_DONE
 from app.models.work import Work
 from app.services.program import day_bounds, msk_date
@@ -149,12 +149,21 @@ def build_cycle_feed(
     # только в отрисовке: иначе закрытый на экране блок продолжал бы запирать
     # всё, что ниже, — последовательность считается по состояниям блоков. Тот
     # же приём, что у видео (`api/video.py::_close_video_task_once`).
-    pending_portfolio = [
+    pending_uploads = [
         block for block in ordered_blocks
         if block.block_type == BLOCK_PORTFOLIO and block.id not in states
     ]
-    if pending_portfolio and has_portfolio_upload(db, user_id, since=start):
-        for block in pending_portfolio:
+    # Работа на время закрывается той же загрузкой, но только после старта:
+    # без нажатия «Начать» засчитывать нечего — не с чем сравнивать лимит.
+    pending_uploads += [
+        block for block in ordered_blocks
+        if block.block_type == BLOCK_TIMED
+        and block.id in states
+        and states[block.id].started_at is not None
+        and states[block.id].status != STATUS_DONE
+    ]
+    if pending_uploads and has_portfolio_upload(db, user_id, since=start):
+        for block in pending_uploads:
             close_block_for_user(
                 db, block=block, user_id=user_id, source="portfolio_upload"
             )
@@ -292,6 +301,20 @@ def feed_for_student(
         db, user_id=user_id, user_tariff=user_tariff, start=start, end=end
     )
     cycles = started_cycles(db, user_id, today)
+    # «Следующее задание откроется 23 сентября» (владелец 03.09.2026): подсказка
+    # тому, кто закрыл всё доступное и упёрся в календарь, а не в собственные
+    # долги. Если впереди есть хоть один шаг, который можно делать сейчас,
+    # подсказки нет — она бы только отвлекала.
+    waiting_for = None
+    if steps and not any(step["status"] == STATUS_CURRENT for step in steps):
+        upcoming = [
+            step["opens_on"] for step in steps
+            if step["status"] == STATUS_LOCKED
+            and step["lock_reason"] == LOCK_BY_DATE
+            and step["opens_on"] is not None
+        ]
+        if upcoming:
+            waiting_for = min(upcoming)
     return {
         "topic": topic,
         "start": start,
@@ -308,6 +331,7 @@ def feed_for_student(
             }
             for item in cycles
         ],
+        "waiting_for": waiting_for,
         # Открыт прошлый цикл, а не тот, на котором ученик стоит сейчас:
         # экран показывает его только для чтения.
         "is_archive": (

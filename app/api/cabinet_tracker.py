@@ -33,8 +33,8 @@ from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
 from app.models.task_block import (
-    BLOCK_PHOTO, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_SCALE, BLOCK_VIDEO,
-    MAX_BLOCKS, QUESTION_TEXT, SCALE_MAX,
+    BLOCK_PHOTO, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_SCALE, BLOCK_TIMED,
+    BLOCK_VIDEO, MAX_BLOCKS, QUESTION_TEXT, SCALE_MAX, TaskBlock,
 )
 from app.models.tracker import (
     EVENT_KIND_LABELS,
@@ -59,6 +59,8 @@ from app.services.task_blocks import (
     get_selected_options as get_task_block_selected_options,
     get_state as get_task_block_state,
     question_blocks as task_question_blocks,
+    start_timed_block as start_task_timed_block,
+    timed_overrun as task_block_timed_overrun,
     save_response as save_task_block_response,
 )
 from app.services.tracker import (
@@ -338,6 +340,16 @@ def cabinet_tracker_task_blocks(
                 option_id: text
                 for option_id, text in selected_option_texts.items()
             }
+        elif block.block_type == BLOCK_TIMED:
+            state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
+            item["time_limit_minutes"] = block.time_limit_minutes
+            item["started_at"] = (
+                state.started_at.isoformat() if state and state.started_at else None
+            )
+            item["done"] = bool(state and state.status == STATUS_DONE)
+            item["overrun"] = task_block_timed_overrun(block, state)
+            item["start_endpoint"] = f"/cabinet/tracker/blocks/{block.id}/start"
+            item["upload_url"] = "/upload"
         elif block.block_type == BLOCK_PORTFOLIO:
             # Ведём на существующий экран загрузки работ, своего у блока нет.
             item["upload_url"] = "/upload"
@@ -409,6 +421,31 @@ class TrackerBlockAnswerItem(BaseModel):
 class TrackerTaskBlocksSubmit(BaseModel):
     model_config = ConfigDict(extra="forbid")
     answers: list[TrackerBlockAnswerItem] = Field(min_length=1, max_length=MAX_BLOCKS)
+
+
+@router.post("/tracker/blocks/{block_id}/start", response_class=JSONResponse)
+def start_timed_block_route(
+    block_id: int,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Старт работы на время: отсчёт начинается по кнопке ученика.
+
+    Время старта — предмет измерения, поэтому повторное нажатие его не
+    сдвигает (`start_timed_block`).
+    """
+    block = db.get(TaskBlock, block_id)
+    if block is None or block.block_type != BLOCK_TIMED:
+        raise HTTPException(status_code=404, detail="Блок не найден")
+    _accessible_task_or_404(db, user["user_id"], block.task_id)
+    state = start_task_timed_block(db, block=block, user_id=user["user_id"])
+    db.commit()
+    return JSONResponse({
+        "ok": True,
+        "started_at": state.started_at.isoformat() if state.started_at else None,
+        "time_limit_minutes": block.time_limit_minutes,
+    })
 
 
 # ── POST /cabinet/tracker/tasks/{id}/blocks ──────────────────────────────────

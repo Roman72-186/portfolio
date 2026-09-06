@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=41">
+<link rel="stylesheet" href="/static/css/tracker.css?v=42">
 {% endblock %}
 {% block content %}
 {#
@@ -67,6 +67,19 @@
         <button type="button" class="lrn-subject-btn{{ ' active' if loop.first }}"
                 data-subject="{{ subject }}" onclick="lrnSwitchSubject(this)">{{ subject }}</button>
         {% endfor %}
+    </div>
+    {% endif %}
+
+    {# Всё доступное сделано, дальше ждём календарь (владелец 03.09.2026:
+       «ему выпадает уведомление, что следующее задание откроется 23 сентября,
+       и мы отсылаем его в чат комьюнити»). #}
+    {% if feed.waiting_for %}
+    <div class="lrn-card lrn-waiting">
+        <div class="lrn-card-title">На сегодня всё</div>
+        <p class="lrn-card-note">
+            Следующее задание откроется {{ feed.waiting_for.strftime('%d.%m.%Y') }}.
+            Пока загляни в чат сообщества — там идёт обсуждение.
+        </p>
     </div>
     {% endif %}
 

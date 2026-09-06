@@ -15,6 +15,7 @@ from app.models.task_block import (
     BLOCK_PHOTO,
     BLOCK_PORTFOLIO,
     BLOCK_SCALE,
+    BLOCK_TIMED,
     BLOCK_QUESTION,
     BLOCK_TYPES,
     BLOCK_VIDEO,
@@ -364,6 +365,9 @@ def _is_empty(block_type: str, item: dict) -> bool:
         ]
     if block_type == BLOCK_LINK:
         return not (item.get("url") or "").strip()
+    if block_type == BLOCK_TIMED:
+        # Кнопка «Начать» самодостаточна, как и «Загрузить портфолио».
+        return False
     if block_type == BLOCK_SCALE:
         return not [
             option for option in (item.get("options") or [])
@@ -424,6 +428,11 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         subject = _clean(item.get("subject"), 50)
         row.subject = subject if subject in MOCK_SUBJECTS else None
         row.bypass_sequence = bool(item.get("bypass_sequence"))
+        # Лимит — только у работы на время; смена типа блока его убирает.
+        limit = item.get("time_limit_minutes")
+        row.time_limit_minutes = (
+            int(limit) if block_type == BLOCK_TIMED and limit else None
+        )
         opens_at_date = item.get("opens_at")
         row.opens_at = (
             msk_midnight(opens_at_date).astimezone(timezone.utc)
@@ -697,6 +706,44 @@ def is_block_accessible(
         if state is None or state.status != STATUS_DONE:
             return False
     return True
+
+
+def start_timed_block(db: DBSession, *, block: TaskBlock, user_id: int) -> TaskBlockState:
+    """Отметить старт работы на время. Повторный вызов ничего не сдвигает.
+
+    Иначе ученик, дважды нажавший «Начать», обнулял бы себе отсчёт — а он и
+    есть предмет измерения (владелец 03.09.2026: «будем отслеживать, сколько
+    детей превысили время»).
+    """
+    state = get_state(db, block_id=block.id, user_id=user_id)
+    if state is None:
+        state = TaskBlockState(block_id=block.id, user_id=user_id, status=STATUS_OPEN)
+        db.add(state)
+        db.flush()
+    if state.started_at is None:
+        state.started_at = _now()
+        db.flush()
+    return state
+
+
+def timed_overrun(block: TaskBlock, state: TaskBlockState | None) -> bool:
+    """Не уложился ли ученик в лимит. Без старта, лимита или сдачи — нет.
+
+    Превышение не мешает сдать работу: «придётся делать так, что ребёнок будет
+    рисовать, как у него получилось, и будет скидывать» — оно только попадает
+    в статистику.
+    """
+    if state is None or block.time_limit_minutes is None:
+        return False
+    if state.started_at is None or state.completed_at is None:
+        return False
+    started = state.started_at
+    finished = state.completed_at
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    if finished.tzinfo is None:
+        finished = finished.replace(tzinfo=timezone.utc)
+    return (finished - started).total_seconds() > block.time_limit_minutes * 60
 
 
 def block_status(

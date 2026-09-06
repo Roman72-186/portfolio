@@ -200,6 +200,64 @@
                 return wrap;
             }
 
+            // Работа на время (владелец 03.09.2026): ученик жмёт «Начать»,
+            // рисует и загружает работу тем же экраном, что и портфолио.
+            // Превышение лимита не мешает сдать — оно только видно.
+            function renderTimed(block) {
+                var wrap = withTitle(el('div', 'lrn-blk lrn-blk-timed'), block);
+                if (block.body) wrap.appendChild(el('p', 'lrn-blk-body', block.body));
+                var limit = block.time_limit_minutes;
+                if (limit) {
+                    wrap.appendChild(el('p', 'video-help', 'На работу отводится ' + limit + ' мин.'));
+                }
+                if (block.done) {
+                    wrap.appendChild(el(
+                        'p',
+                        block.overrun ? 'lrn-blk-verdict is-wrong' : 'lrn-blk-verdict is-ok',
+                        block.overrun ? 'Работа сдана, время превышено' : 'Работа сдана вовремя'
+                    ));
+                    return wrap;
+                }
+                if (!block.started_at) {
+                    var startBtn = el('button', 'btn-blue', 'Начать работу');
+                    startBtn.type = 'button';
+                    var note = el('p', 'video-progress-status');
+                    note.setAttribute('aria-live', 'polite');
+                    startBtn.addEventListener('click', function () {
+                        startBtn.disabled = true;
+                        fetch(block.start_endpoint, {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            headers: {
+                                'Accept': 'application/json',
+                                'X-CSRF-Token': csrfToken
+                            }
+                        }).then(function (resp) {
+                            if (!resp.ok) throw new Error();
+                            // Отсчёт ведёт сервер — перезагружаем, чтобы время
+                            // старта пришло из одного источника.
+                            window.location.reload();
+                        }).catch(function () {
+                            startBtn.disabled = false;
+                            note.textContent = 'Не удалось начать. Попробуйте ещё раз.';
+                            note.classList.add('is-error');
+                        });
+                    });
+                    wrap.appendChild(startBtn);
+                    wrap.appendChild(note);
+                    return wrap;
+                }
+                var started = new Date(block.started_at);
+                wrap.appendChild(el(
+                    'p', 'video-help',
+                    'Начато в ' + started.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'})
+                ));
+                var upload = el('a', 'btn-blue', 'Загрузить работу');
+                upload.href = block.upload_url || '/upload';
+                wrap.appendChild(upload);
+                return wrap;
+            }
+
             function verdictMark(block) {
                 // Значком и словом, не одним цветом: цвет читают не все.
                 if (block.is_correct === true) return el('span', 'lrn-blk-verdict is-ok', '✓ Верно');
@@ -257,7 +315,8 @@
                 link: renderLink,
                 question: renderQuestion,
                 portfolio: renderPortfolio,
-                scale: renderScale
+                scale: renderScale,
+                timed: renderTimed
             };
 
             api.render = function (block, index) {

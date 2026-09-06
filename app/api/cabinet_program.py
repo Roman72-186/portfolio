@@ -269,6 +269,7 @@ def _edit_payloads(
                 "tariffs": sorted(block_tariffs.get(b.id, set())),
                 "opens_at": msk_date(b.opens_at).isoformat() if b.opens_at else None,
                 "bypass_sequence": b.bypass_sequence,
+                "time_limit_minutes": b.time_limit_minutes,
                 "options": [
                     {
                         "id": o.id, "text": o.text, "is_correct": o.is_correct,
@@ -721,6 +722,9 @@ class BlockItem(BaseModel):
     # между «ссылка видна сразу» и «для тарифа Х ссылка ждёт сдачи домашки»
     # без ветвления по тарифу в коде).
     bypass_sequence: bool = False
+    # Лимит работы на время в минутах (владелец 03.09.2026, «давай сделаем
+    # один час»). У остальных типов игнорируется сервисом.
+    time_limit_minutes: int | None = Field(default=None, ge=5, le=600)
 
     @model_validator(mode="after")
     def choice_question_needs_a_right_answer(self) -> "BlockItem":

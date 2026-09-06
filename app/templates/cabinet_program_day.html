@@ -795,6 +795,17 @@ FORM: Operate.
                 + '<option value="">Выберите ролик</option>' + videoOptionsHTML() + '</select></label>'
                 + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок, необязательно" placeholder="Заголовок, необязательно"></label>';
         }
+        if (type === 'timed') {
+            // Контрольная на время (владелец 03.09.2026): «в контрольной у нас
+            // таймер… давай сделаем один час». Ученик стартует сам, сдаёт тем
+            // же экраном загрузки работ; превышение видно в статистике.
+            return ''
+                + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок" placeholder="Заголовок, например «Контрольная работа»"></label>'
+                + '<label class="prg-field"><textarea data-b-body maxlength="5000" aria-label="Условие" placeholder="Условие работы"></textarea></label>'
+                + '<label class="prg-field">Лимит, минут'
+                + '  <input type="number" min="5" max="600" step="5" value="60" data-b-time-limit aria-label="Лимит в минутах">'
+                + '</label>';
+        }
         if (type === 'scale') {
             // Диагностика навыков (владелец 03.09.2026): варианты — названия
             // навыков, ученик ставит каждому оценку от 1 до 10. Верного
@@ -935,6 +946,8 @@ FORM: Operate.
         if (subject) subject.value = block.subject || '';
         var bypass = row.querySelector('[data-b-bypass]');
         if (bypass) bypass.checked = !!block.bypass_sequence;
+        var limitField = row.querySelector('[data-b-time-limit]');
+        if (limitField && block.time_limit_minutes) limitField.value = block.time_limit_minutes;
         (block.tariffs || []).forEach(function (tariff) {
             var box = row.querySelector('[data-b-tariff][value="' + tariff + '"]');
             if (box) box.checked = true;
@@ -1162,6 +1175,9 @@ FORM: Operate.
             item.subject = (subjectSel && subjectSel.value) ? subjectSel.value : null;
             var bypassBox = row.querySelector('[data-b-bypass]');
             item.bypass_sequence = !!(bypassBox && bypassBox.checked);
+            var limitField = row.querySelector('[data-b-time-limit]');
+            item.time_limit_minutes = (limitField && limitField.value)
+                ? Number(limitField.value) : null;
             item.tariffs = [];
             row.querySelectorAll('[data-b-tariff]:checked').forEach(function (box) {
                 item.tariffs.push(box.value);

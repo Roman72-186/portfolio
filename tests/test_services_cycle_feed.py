@@ -291,3 +291,50 @@ def test_sequence_lock_keeps_its_own_reason(db, regular_user):
     steps = _feed(db, regular_user)
 
     assert steps[1]["lock_reason"] == "sequence"
+
+
+# ── «на сегодня всё» (владелец 03.09.2026) ──────────────────────────────────
+
+def test_waiting_for_appears_when_everything_open_is_done(db, regular_user):
+    """«Ему выпадает уведомление, что следующее задание откроется 23 сентября»."""
+    _cycle(db, regular_user)
+    today_task = _task(db, regular_user, title="Сегодня")
+    done_block = _block(db, today_task, title="Опрос", order=1)
+    close_block_for_user(db, block=done_block, user_id=regular_user.id, source="manual")
+    later = _task(db, regular_user, title="Послезавтра", due_on=TODAY + timedelta(days=2))
+    later.starts_at = _utc(msk_midnight(TODAY + timedelta(days=2)))
+    db.commit()
+    _block(db, later, title="Теория", order=1)
+
+    feed = feed_for_student(
+        db, user_id=regular_user.id, user_tariff=regular_user.tariff, today=TODAY
+    )
+
+    assert feed["waiting_for"] == TODAY + timedelta(days=2)
+
+
+def test_no_waiting_hint_while_something_is_doable(db, regular_user):
+    """Есть что делать сейчас — подсказка только отвлекала бы."""
+    _cycle(db, regular_user)
+    task = _task(db, regular_user, title="Сегодня")
+    _block(db, task, title="Опрос", order=1)
+
+    feed = feed_for_student(
+        db, user_id=regular_user.id, user_tariff=regular_user.tariff, today=TODAY
+    )
+
+    assert feed["waiting_for"] is None
+
+
+def test_no_waiting_hint_when_blocked_by_own_debt(db, regular_user):
+    """Заперто собственным незакрытым шагом, а не календарём."""
+    _cycle(db, regular_user)
+    task = _task(db, regular_user, title="Задание")
+    _block(db, task, title="Первый", order=1)
+    _block(db, task, title="Второй", order=2)
+
+    feed = feed_for_student(
+        db, user_id=regular_user.id, user_tariff=regular_user.tariff, today=TODAY
+    )
+
+    assert feed["waiting_for"] is None

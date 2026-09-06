@@ -1256,3 +1256,6 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-scale-row:last-child { border-bottom: none; }
 .lrn-scale-name { font-size: 14px; }
 .lrn-scale-input { width: 84px; flex: 0 0 auto; }
+
+/* «На сегодня всё» — ученик закрыл доступное и ждёт следующей даты. */
+.lrn-waiting { border-color: var(--blue); margin-bottom: 12px; }

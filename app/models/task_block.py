@@ -85,6 +85,14 @@ BLOCK_PORTFOLIO = "portfolio"
 # оценка по каждому. Оценки копятся: «в начале обучения было так, в середине
 # вот так» — сравнение по датам живёт в личной информации ученика.
 BLOCK_SCALE = "scale"
+# Контрольная работа на время (владелец 03.09.2026): «здесь в контрольной у нас
+# таймер… давай сделаем один час… мы будем отслеживать статистику, сколько детей
+# превысили время… их можно будет пометить красненьким». Ученик жмёт «Начать»,
+# рисует и загружает работу; система считает, уложился он в лимит или нет.
+BLOCK_TIMED = "timed"
+
+# Час на контрольную — число из созвона 03.09.2026 («давай сделаем один час»).
+TIMED_DEFAULT_MINUTES = 60
 
 # Верхняя граница шкалы. Десять — из формулировки владельца («3 из 10»).
 SCALE_MAX = 10
@@ -94,7 +102,7 @@ SCALE_MAX = 10
 # (в проекте нет ни одного JSONB, все списки — нормализованные таблицы).
 BLOCK_TYPES = (
     BLOCK_TEXT, BLOCK_PHOTO, BLOCK_VIDEO, BLOCK_LINK, BLOCK_QUESTION,
-    BLOCK_PORTFOLIO, BLOCK_SCALE,
+    BLOCK_PORTFOLIO, BLOCK_SCALE, BLOCK_TIMED,
 )
 
 BLOCK_TYPE_LABELS = {
@@ -105,6 +113,7 @@ BLOCK_TYPE_LABELS = {
     BLOCK_QUESTION: "Вопрос",
     BLOCK_PORTFOLIO: "Загрузить портфолио",
     BLOCK_SCALE: "Шкала навыков",
+    BLOCK_TIMED: "Работа на время",
 }
 
 # Тот же потолок, что у мини-опроса видео и прежнего task_quiz — общий язык
@@ -195,6 +204,12 @@ class TaskBlock(Base):
     # блока, где нужна обычная последовательная блокировка. Тарифный гейт и
     # opens_at этот флаг не обходит — только очередь «сначала предыдущее».
     bypass_sequence: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Лимит на работу в минутах — только у блока «Работа на время». Ученик
+    # начинает сам, отсчёт идёт от нажатия; превышение не мешает сдать, но
+    # попадает в статистику (владелец 03.09.2026: «сколько детей превысили
+    # время… пометить красненьким»).
+    time_limit_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
@@ -395,6 +410,11 @@ class TaskBlockState(Base):
     )
 
     status: Mapped[str] = mapped_column(String(20), nullable=False, default=STATUS_OPEN)
+    # Когда ученик нажал «Начать» у блока «Работа на время». У остальных типов
+    # пусто: строка состояния там заводится в момент выполнения, а не старта.
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
