@@ -181,14 +181,19 @@ def test_day_page_uses_school_day_copy_and_inline_optional_hints(
         if preset["capability"] == "generic":
             assert f'data-simple-kind="{preset["kind"]}"' in page.text
 
-    # Плитка осталась одна — «Задание» (владелец 06.09.2026: «убрать
-    # Видеоматериал, Пробник и Самостоятельную работу, а оставить новый
-    # функционал с любыми заданиями»). Плитки видео здесь больше нет.
-    assert [preset["kind"] for preset in presets] == ["material"]
+    # Плиток две: «Задание» и «Пробник». Видеоматериал и Самостоятельная
+    # работа сняты 06.09.2026 («убрать Видеоматериал, Пробник и
+    # Самостоятельную работу, а оставить новый функционал с любыми
+    # заданиями») и не вернулись: ролик ставится блоком «Видео», приём работ —
+    # блоком «Загрузить работы». Пробник вернули 07.09.2026 — билет, окно
+    # 11:45–18:30 и попытка блоками не собираются, а механика всё это время
+    # была цела, не работала только кнопка.
+    assert [preset["kind"] for preset in presets] == ["material", "mock"]
 
     # Формы шире плиток: по ним правятся элементы, уже стоящие в программе.
     for kind in ("survey", "quiz", "lesson", "checklist"):
         assert f'data-simple-kind="{kind}"' in page.text
     for kind in ("mock", "video", "homework"):
         assert f'data-form="{kind}"' in page.text
+    for kind in ("video", "homework"):
         assert f'data-open-form="{kind}"' not in page.text

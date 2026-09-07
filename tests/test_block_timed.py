@@ -181,7 +181,12 @@ def test_over_the_limit_is_marked(db, regular_user):
 
 # ── сдача ───────────────────────────────────────────────────────────────────
 
-def test_upload_closes_a_started_work(db, regular_user):
+def test_portfolio_upload_no_longer_closes_the_timed_work(db, regular_user):
+    """С 07.09.2026 работа сдаётся в самом блоке.
+
+    Раньше блок закрывался любой работой, загруженной на общем экране
+    `/upload` за период цикла — включая работу совсем по другому поводу.
+    """
     _cycle(db, regular_user)
     task = _task(db, regular_user)
     block = _timed(db, task)
@@ -194,24 +199,8 @@ def test_upload_closes_a_started_work(db, regular_user):
         start=CYCLE_START, end=CYCLE_END,
     )
 
-    assert steps[0]["status"] == "done"
-    assert get_state(db, block_id=block.id, user_id=regular_user.id).completed_at is not None
-
-
-def test_upload_without_start_does_not_close_the_work(db, regular_user):
-    """Без нажатия «Начать» засчитывать нечего: не с чем сравнивать лимит."""
-    _cycle(db, regular_user)
-    task = _task(db, regular_user)
-    block = _timed(db, task)
-    _work(db, regular_user)
-
-    steps = build_cycle_feed(
-        db, user_id=regular_user.id, user_tariff=regular_user.tariff,
-        start=CYCLE_START, end=CYCLE_END,
-    )
-
     assert steps[0]["status"] == "current"
-    assert get_state(db, block_id=block.id, user_id=regular_user.id) is None
+    assert get_state(db, block_id=block.id, user_id=regular_user.id).completed_at is None
 
 
 # ── экраны ──────────────────────────────────────────────────────────────────

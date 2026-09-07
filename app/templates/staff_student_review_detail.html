@@ -79,9 +79,21 @@
                 {% endif %}
                 {% if item.text %}<p>{{ item.text }}</p>{% endif %}
                 {% endif %}
+                {# Работа, сданная в блоке задания: фото и описание видны прямо
+                   здесь — отдельного экрана у этого домена нет. #}
+                {% if item.domain == 'block_work' %}
+                {% if item.text %}<p>{{ item.text }}</p>{% endif %}
+                {% if item.images %}
+                <div class="photo-grid">
+                    {% for url in item.images %}
+                    <img src="{{ url }}" alt="Работа ученика" loading="lazy">
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% endif %}
             </div>
             <div class="prg-item-actions">
-                {% if item.domain == 'task_block' %}
+                {% if item.domain in ('task_block', 'block_work') %}
                 <button type="button" class="btn-outline" data-review-toggle
                         data-reviewed="{{ 'true' if item.is_reviewed else 'false' }}">
                     {{ 'Вернуть в очередь' if item.is_reviewed else 'Просмотрено' }}
@@ -135,8 +147,13 @@
         var row = button.closest('[data-review-row]');
         var id = row.getAttribute('data-id');
         var next = button.getAttribute('data-reviewed') !== 'true';
+        // Ответы на вопросы и сданные файлы — разные сущности с разными
+        // отметками проверки, тумблер у них общий, эндпоинт свой.
+        var togglePath = row.getAttribute('data-domain') === 'block_work'
+            ? '/cabinet/staff/students-review/block-work/'
+            : '/cabinet/staff/students-review/task-block/';
         button.disabled = true;
-        fetch('/cabinet/staff/students-review/task-block/' + id + '/reviewed', {
+        fetch(togglePath + id + '/reviewed', {
             method: 'POST',
             credentials: 'same-origin',
             headers: {

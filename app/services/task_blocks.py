@@ -16,7 +16,9 @@ from app.models.task_block import (
     BLOCK_PORTFOLIO,
     BLOCK_SCALE,
     BLOCK_TIMED,
+    BLOCK_UPLOAD,
     BLOCK_QUESTION,
+    BLOCK_TYPE_LABELS,
     BLOCK_TYPES,
     BLOCK_VIDEO,
     MAX_BLOCK_IMAGES,
@@ -29,6 +31,8 @@ from app.models.task_block import (
     TaskBlockOption,
     TaskBlockResponse,
     TaskBlockState,
+    TaskBlockSubmission,
+    TaskBlockSubmissionImage,
     TaskBlockTariff,
 )
 from app.models.tracker import STATUS_DONE, STATUS_OPEN
@@ -373,9 +377,9 @@ def _is_empty(block_type: str, item: dict) -> bool:
             option for option in (item.get("options") or [])
             if (option.get("text") or "").strip()
         ]
-    if block_type == BLOCK_PORTFOLIO:
-        # Кнопка «Загрузить портфолио» самодостаточна: заголовок и пояснение
-        # необязательны, содержимого у неё нет по устройству.
+    if block_type in (BLOCK_PORTFOLIO, BLOCK_UPLOAD):
+        # Кнопки «Загрузить портфолио» и «Загрузить работы» самодостаточны:
+        # заголовок и пояснение необязательны, своего содержимого у них нет.
         return False
     # text и question: без текста блок бессмысленен.
     return not (item.get("body") or "").strip()
@@ -569,11 +573,13 @@ def save_response(
                 TaskBlockAnswerOption.answer_id == answer.id
             ).delete(synchronize_session=False)
         if block.question_type == QUESTION_TEXT:
+            _close_answered_block(db, block=block, user_id=user_id, filled=bool(text))
             continue
         # Принимаем только варианты этого блока: id из чужого блока в теле
         # запроса не должен попасть в ответ.
         options_by_id = {option.id: option for option in allowed_options.get(block.id, [])}
         option_texts = payload.get("option_texts") or {}
+        accepted = 0
         for option_id in payload.get("option_ids") or []:
             option = options_by_id.get(option_id)
             if option is None:
@@ -588,8 +594,57 @@ def save_response(
                     answer_id=answer.id, option_id=option_id, text=option_text
                 )
             )
+            accepted += 1
+        _close_answered_block(
+            db, block=block, user_id=user_id, filled=bool(text or accepted)
+        )
     db.flush()
     return response
+
+
+def _close_answered_block(
+    db: DBSession, *, block: TaskBlock, user_id: int, filled: bool
+) -> None:
+    """Ответ закрывает блок (найдено 07.09.2026).
+
+    Без этого обязательный вопрос запирал ленту навсегда: ученик отвечал,
+    ответ сохранялся, состояния блока не появлялось — и `is_block_accessible`
+    продолжал держать закрытым весь хвост ниже. Закрываем в сервисе, а не в
+    роуте: это owner-слой «ученик ответил на блок», и другая точка входа
+    получит то же поведение без своей копии правила.
+
+    `filled` считается **после** разбора вариантов: id чужого блока из тела
+    запроса отбрасывается, и такой «ответ» не должен ничего закрывать.
+    """
+    if filled:
+        close_block_for_user(db, block=block, user_id=user_id, source="answer")
+
+
+def answered_block_ids(db: DBSession, *, response_id: int) -> set[int]:
+    """Блоки, на которые у ученика есть непустой ответ.
+
+    Пустая строка и ответ без единого варианта не считаются: иначе форма
+    закрылась бы у вопроса, который ученик пропустил, и он не смог бы
+    вернуться (`submit_endpoint` выдаётся только по неотвеченным).
+    """
+    answered: set[int] = set()
+    rows = (
+        db.query(TaskBlockAnswer)
+        .filter(TaskBlockAnswer.response_id == response_id)
+        .all()
+    )
+    if not rows:
+        return answered
+    with_options = {
+        row.answer_id
+        for row in db.query(TaskBlockAnswerOption.answer_id)
+        .filter(TaskBlockAnswerOption.answer_id.in_([r.id for r in rows]))
+        .all()
+    }
+    for row in rows:
+        if (row.text or "").strip() or row.id in with_options:
+            answered.add(row.block_id)
+    return answered
 
 
 # --- единая лента: состояние блока, доступность, сборка (владелец 05.09.2026,
@@ -908,3 +963,192 @@ def set_reviewed(
 def _now():
     from app.services.tz import now_msk
     return now_msk()
+
+
+# ── Сдача работ в блоке (владелец 07.09.2026) ────────────────────────────────
+
+def get_submission(
+    db: DBSession, *, block_id: int, user_id: int
+) -> TaskBlockSubmission | None:
+    return (
+        db.query(TaskBlockSubmission)
+        .filter(
+            TaskBlockSubmission.block_id == block_id,
+            TaskBlockSubmission.user_id == user_id,
+        )
+        .one_or_none()
+    )
+
+
+def get_submissions(
+    db: DBSession, *, block_ids: list[int], user_id: int
+) -> dict[int, TaskBlockSubmission]:
+    """Сдачи сразу по пачке блоков одного ученика — один запрос на ленту."""
+    if not block_ids:
+        return {}
+    rows = (
+        db.query(TaskBlockSubmission)
+        .filter(
+            TaskBlockSubmission.block_id.in_(block_ids),
+            TaskBlockSubmission.user_id == user_id,
+        )
+        .all()
+    )
+    return {row.block_id: row for row in rows}
+
+
+def get_or_create_submission(
+    db: DBSession, *, block: TaskBlock, user_id: int
+) -> TaskBlockSubmission:
+    submission = get_submission(db, block_id=block.id, user_id=user_id)
+    if submission is None:
+        submission = TaskBlockSubmission(block_id=block.id, user_id=user_id)
+        db.add(submission)
+        db.flush()
+    return submission
+
+
+def count_submission_images(db: DBSession, submission_id: int) -> int:
+    return (
+        db.query(TaskBlockSubmissionImage)
+        .filter(TaskBlockSubmissionImage.submission_id == submission_id)
+        .count()
+    )
+
+
+def list_submission_images(
+    db: DBSession, submission_id: int
+) -> list[TaskBlockSubmissionImage]:
+    return (
+        db.query(TaskBlockSubmissionImage)
+        .filter(TaskBlockSubmissionImage.submission_id == submission_id)
+        .order_by(TaskBlockSubmissionImage.sort_order, TaskBlockSubmissionImage.id)
+        .all()
+    )
+
+
+def add_submission_image(
+    db: DBSession, *, submission: TaskBlockSubmission, url: str, path: str | None
+) -> TaskBlockSubmissionImage:
+    image = TaskBlockSubmissionImage(
+        submission_id=submission.id,
+        image_s3_url=url,
+        image_s3_path=path,
+        sort_order=count_submission_images(db, submission.id),
+    )
+    db.add(image)
+    db.flush()
+    return image
+
+
+def mark_submitted(
+    db: DBSession, *, submission: TaskBlockSubmission, comment: str | None = None
+) -> TaskBlockSubmission:
+    """Отметить работу сданной. Пересдача до проверки сдвигает `submitted_at`
+    и снимает отметку проверки — куратор должен увидеть новую версию работы,
+    а не старую галочку (тот же смысл, что `needs_revision` у `Work`)."""
+    submission.submitted_at = _now()
+    if comment is not None:
+        submission.comment = comment or None
+    submission.reviewed_at = None
+    submission.reviewed_by_id = None
+    db.flush()
+    return submission
+
+
+def set_submission_reviewed(
+    db: DBSession, *, submission_id: int, user_id: int, reviewed: bool,
+    comment: str | None = None,
+) -> TaskBlockSubmission | None:
+    """Отметка куратора «работа проверена». Снимается тем же способом, что у
+    ответов на вопросы (`set_reviewed`) — ткнули случайно, надо уметь вернуть."""
+    submission = db.get(TaskBlockSubmission, submission_id)
+    if submission is None:
+        return None
+    if reviewed:
+        submission.reviewed_at = submission.reviewed_at or _now()
+        submission.reviewed_by_id = user_id
+    else:
+        submission.reviewed_at = None
+        submission.reviewed_by_id = None
+    if comment is not None:
+        submission.review_comment = comment or None
+    db.flush()
+    return submission
+
+
+def submission_review_queue(
+    db: DBSession,
+    *,
+    curator_id: int | None = None,
+    student_id: int | None = None,
+    subject: str | None = None,
+    tariff: str | None = None,
+    week_start=None,
+    week_end=None,
+    limit: int = 200,
+) -> list[dict]:
+    """Сданные в блоках работы для экрана проверки по ученику.
+
+    Скоуп куратора и набор фильтров — те же, что у `review_queue` по ответам:
+    оба списка сводит один агрегатор (`services/review_aggregate.py`), и
+    расхождение в правилах доступа между ними было бы дырой.
+    """
+    from app.models.tracker import TrackerTask
+    from app.models.user import User
+
+    query = (
+        db.query(TaskBlockSubmission, TaskBlock, TrackerTask, User)
+        .join(TaskBlock, TaskBlock.id == TaskBlockSubmission.block_id)
+        .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
+        .join(User, User.id == TaskBlockSubmission.user_id)
+        .filter(TaskBlockSubmission.submitted_at.isnot(None))
+    )
+    if curator_id is not None:
+        query = query.filter(User.curator_id == curator_id)
+    if student_id is not None:
+        query = query.filter(TaskBlockSubmission.user_id == student_id)
+    if subject:
+        query = query.filter(TaskBlock.subject == subject)
+    if tariff:
+        query = query.filter(User.tariff == tariff)
+    if week_start is not None:
+        query = query.filter(TaskBlockSubmission.submitted_at >= week_start)
+    if week_end is not None:
+        query = query.filter(TaskBlockSubmission.submitted_at <= week_end)
+
+    rows = (
+        query.order_by(TaskBlockSubmission.submitted_at.desc())
+        .limit(limit)
+        .all()
+    )
+    image_map: dict[int, list[TaskBlockSubmissionImage]] = {}
+    ids = [submission.id for submission, _, _, _ in rows]
+    if ids:
+        for image in (
+            db.query(TaskBlockSubmissionImage)
+            .filter(TaskBlockSubmissionImage.submission_id.in_(ids))
+            .order_by(TaskBlockSubmissionImage.sort_order, TaskBlockSubmissionImage.id)
+            .all()
+        ):
+            image_map.setdefault(image.submission_id, []).append(image)
+
+    items = []
+    for submission, block, task, student in rows:
+        items.append({
+            "submission_id": submission.id,
+            "block_id": block.id,
+            "task_id": task.id,
+            "student_id": student.id,
+            "task_title": task.title,
+            "block_title": block.title or BLOCK_TYPE_LABELS.get(block.block_type, ""),
+            "subject": block.subject or task.subject,
+            "comment": submission.comment,
+            "images": [i.image_s3_url for i in image_map.get(submission.id, [])],
+            "overrun": timed_overrun(
+                block, get_state(db, block_id=block.id, user_id=student.id)
+            ),
+            "reviewed": submission.reviewed_at is not None,
+            "submitted_at": submission.submitted_at,
+        })
+    return items

@@ -27,7 +27,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.models.learning_topic import LearningTopic
-from app.models.task_block import BLOCK_PORTFOLIO, BLOCK_TIMED
+from app.models.task_block import BLOCK_PORTFOLIO
 from app.models.tracker import ITEM_MOCK_EXAM, STATUS_DONE
 from app.models.work import Work
 from app.services.program import day_bounds, msk_date
@@ -136,6 +136,21 @@ def build_cycle_feed(
     tasks = [entry["task"] for entry in entries]
     blocks_by_task = get_blocks_for_tasks(db, [task.id for task in tasks])
 
+    # Вопрос «покажите только после закрытия задания» до этого момента в ленте
+    # не участвует вообще (найдено 07.09.2026). Панель задания его прятала
+    # (`visible_question_blocks`), а лента показывала как обычный шаг — и,
+    # если он был отмечен обязательным, запирала им весь хвост: ответить
+    # нельзя, потому что не видно, а не ответишь — дальше не пустят. Тот же
+    # тупик, который 31.08.2026 уже развязывали на уровне закрытия задания.
+    for entry in entries:
+        task_id = entry["task"].id
+        if _task_done(entry):
+            continue
+        blocks_by_task[task_id] = [
+            block for block in blocks_by_task.get(task_id, [])
+            if not block.hidden_until_done
+        ]
+
     # Сквозной список блоков в порядке ленты — на нём и считается блокировка.
     ordered_blocks = []
     for entry in entries:
@@ -149,18 +164,13 @@ def build_cycle_feed(
     # только в отрисовке: иначе закрытый на экране блок продолжал бы запирать
     # всё, что ниже, — последовательность считается по состояниям блоков. Тот
     # же приём, что у видео (`api/video.py::_close_video_task_once`).
+    # Блоки «Загрузить работы» и «Работа на время» сюда не входят: с
+    # 07.09.2026 они принимают файлы сами и закрываются в момент загрузки
+    # (`api/cabinet_tracker.py::upload_task_block_work`). Пересчёт по портфолио
+    # закрывал бы их любой посторонней работой, загруженной на общем экране.
     pending_uploads = [
         block for block in ordered_blocks
         if block.block_type == BLOCK_PORTFOLIO and block.id not in states
-    ]
-    # Работа на время закрывается той же загрузкой, но только после старта:
-    # без нажатия «Начать» засчитывать нечего — не с чем сравнивать лимит.
-    pending_uploads += [
-        block for block in ordered_blocks
-        if block.block_type == BLOCK_TIMED
-        and block.id in states
-        and states[block.id].started_at is not None
-        and states[block.id].status != STATUS_DONE
     ]
     if pending_uploads and has_portfolio_upload(db, user_id, since=start):
         for block in pending_uploads:

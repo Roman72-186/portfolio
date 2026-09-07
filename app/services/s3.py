@@ -117,6 +117,13 @@ def s3_path_homework_submission(
     return f"domashka/{vk_id}/{submission_id}/{kind}/{_make_filename(tariff or 'X', vk_id, filename)}"
 
 
+def s3_path_task_block_submission(
+    vk_id: int, submission_id: int, filename: str, tariff: str = ""
+) -> str:
+    """Работа, сданная в блоке задания: zadaniya/{vk_id}/{submission_id}/{filename}."""
+    return f"zadaniya/{vk_id}/{submission_id}/{_make_filename(tariff or 'X', vk_id, filename)}"
+
+
 def s3_path_homework_feedback(submission_id: int, filename: str) -> str:
     """Файлы обратной связи по домашке: feedback-domashka/{submission_id}/{filename}."""
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpg"

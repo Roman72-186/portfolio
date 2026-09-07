@@ -24,7 +24,7 @@ Hero-карточка (аватар/имя/тариф/баллы Р-К/год п
 from datetime import timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session as DBSession
@@ -34,7 +34,8 @@ from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
 from app.models.task_block import (
     BLOCK_PHOTO, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_SCALE, BLOCK_TIMED,
-    BLOCK_VIDEO, MAX_BLOCKS, QUESTION_TEXT, SCALE_MAX, TaskBlock,
+    BLOCK_UPLOAD, BLOCK_VIDEO, MAX_BLOCKS, MAX_SUBMISSION_IMAGES, QUESTION_TEXT,
+    SCALE_MAX, SUBMISSION_BLOCK_TYPES, TaskBlock,
 )
 from app.models.tracker import (
     EVENT_KIND_LABELS,
@@ -48,8 +49,17 @@ from app.models.tracker import (
 from app.models.work import Work
 from app.services.program import day_bounds, item_details, msk_date, week_start
 from app.services.stats import avg_score_by_subject_all_time
+from app.services import s3 as s3_service
 from app.services.task_blocks import (
+    add_submission_image as add_task_block_submission_image,
+    answered_block_ids as task_block_answered_ids,
+    close_block_for_user as close_task_block_for_user,
+    count_submission_images as count_task_block_submission_images,
     get_answers_map as get_task_block_answers_map,
+    get_or_create_submission as get_or_create_task_block_submission,
+    get_submission as get_task_block_submission,
+    list_submission_images as list_task_block_submission_images,
+    mark_submitted as mark_task_block_submitted,
     get_blocks as get_task_blocks,
     get_images as get_task_block_images,
     grade_response as grade_task_blocks,
@@ -73,6 +83,8 @@ from app.services.tracker import (
     task_status,
 )
 from app.services.tz import today_msk, now_msk
+from app.services.upload_validation import read_image_uploads
+from app.services.utils import compress_image
 from app.services.video_topics import accessible_topic_ids
 from app.tmpl import templates
 
@@ -255,6 +267,23 @@ def _portfolio_block_done(db: DBSession, block, user_id: int) -> bool:
     )
 
 
+def _submission_payload(db: DBSession, block, user_id: int) -> dict:
+    """Что ученик уже сдал в этом блоке — общая часть «загрузки работ» и
+    «работы на время»: у них одна механика приёма, разная только обёртка."""
+    submission = get_task_block_submission(db, block_id=block.id, user_id=user_id)
+    images = (
+        list_task_block_submission_images(db, submission.id) if submission else []
+    )
+    return {
+        "upload_endpoint": f"/cabinet/tracker/blocks/{block.id}/upload",
+        "max_files": MAX_SUBMISSION_IMAGES,
+        "submitted_files": [i.image_s3_url for i in images],
+        "submitted_comment": submission.comment if submission else None,
+        "reviewed": bool(submission and submission.reviewed_at),
+        "review_comment": submission.review_comment if submission else None,
+    }
+
+
 @router.get("/tracker/tasks/{task_id}/blocks")
 def cabinet_tracker_task_blocks(
     task_id: int,
@@ -294,11 +323,19 @@ def cabinet_tracker_task_blocks(
     selected: dict[int, set[int]] = {}
     selected_option_texts: dict[int, str] = {}
     response = get_task_block_response(db, task_id=task_id, user_id=user["user_id"])
-    answered = response is not None
+    # «Ответил» — это когда закрыты все вопросы, а не когда просто появилась
+    # строка заполнения (починка 07.09.2026). Раньше первая же отправка
+    # запирала форму целиком: пропустил одно поле — вернуться некуда, а если
+    # тот вопрос был обязательным, лента вставала намертво.
+    answered_ids = (
+        task_block_answered_ids(db, response_id=response.id) if response else set()
+    )
     if response is not None:
         answers_map = get_task_block_answers_map(db, response_id=response.id)
         selected = get_task_block_selected_options(db, response_id=response.id)
         selected_option_texts = get_task_block_selected_option_texts(db, response_id=response.id)
+    questions_left = [b for b in questions if b.id not in answered_ids]
+    answered = bool(response) and not questions_left
     images = get_task_block_images(db, [b.id for b in blocks])
     # Вердикт отдаём, только когда ученик уже ответил. Иначе `is_correct` в
     # теле ответа подсказал бы верный вариант до отправки.
@@ -317,6 +354,9 @@ def cabinet_tracker_task_blocks(
             "block_type": block.block_type,
             "title": block.title,
             "body": block.body,
+            # Запирается отдельный вопрос, а не форма разом: на пропущенный
+            # ученик должен иметь возможность вернуться.
+            "answered": block.id in answered_ids,
         }
         if block.block_type == BLOCK_VIDEO:
             item["video_id"] = block.video_id
@@ -349,7 +389,14 @@ def cabinet_tracker_task_blocks(
             item["done"] = bool(state and state.status == STATUS_DONE)
             item["overrun"] = task_block_timed_overrun(block, state)
             item["start_endpoint"] = f"/cabinet/tracker/blocks/{block.id}/start"
-            item["upload_url"] = "/upload"
+            item.update(_submission_payload(db, block, user["user_id"]))
+        elif block.block_type == BLOCK_UPLOAD:
+            # Работы грузятся здесь же, ученик никуда не уходит (владелец
+            # 07.09.2026). `done` берём из состояния блока: его ставит сам
+            # роут загрузки, а не пересчёт по портфолио.
+            state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
+            item["done"] = bool(state and state.status == STATUS_DONE)
+            item.update(_submission_payload(db, block, user["user_id"]))
         elif block.block_type == BLOCK_PORTFOLIO:
             # Ведём на существующий экран загрузки работ, своего у блока нет.
             item["upload_url"] = "/upload"
@@ -383,7 +430,7 @@ def cabinet_tracker_task_blocks(
         "answered": answered,
         "submit_endpoint": (
             f"/cabinet/tracker/tasks/{task_id}/blocks"
-            if questions and not answered else None
+            if questions_left else None
         ),
         "correct_count": verdict["correct_count"] if verdict else None,
         "gradable_count": verdict["gradable_count"] if verdict else None,
@@ -448,6 +495,82 @@ def start_timed_block_route(
     })
 
 
+MAX_UPLOAD_FILE_SIZE = 10 * 1024 * 1024
+
+
+@router.post("/tracker/blocks/{block_id}/upload", response_class=JSONResponse)
+async def upload_task_block_work(
+    block_id: int,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+    photos: list[UploadFile] = File(...),
+    comment: str | None = Form(default=None),
+):
+    """Приём работы прямо в блоке задания (владелец 07.09.2026).
+
+    Контракт загрузки взят у домашки (`api/homework_submission.py`): та же
+    валидация, то же сжатие, тот же отказ 502, когда S3 настроен, но не
+    ответил. Разница одна — файл привязан к блоку, а не к постановке задачи,
+    поэтому в одном задании может стоять несколько разных приёмов работ.
+
+    Блок закрывается здесь же, а не пересчётом по портфолио: до этого любая
+    загрузка на общем экране `/upload` закрывала блок, даже если ученик грузил
+    совсем другое.
+    """
+    block = db.get(TaskBlock, block_id)
+    if block is None or block.block_type not in SUBMISSION_BLOCK_TYPES:
+        raise HTTPException(status_code=404, detail="Блок не найден")
+    _accessible_task_or_404(db, user["user_id"], block.task_id)
+
+    submission = get_or_create_task_block_submission(
+        db, block=block, user_id=user["user_id"]
+    )
+    existing = count_task_block_submission_images(db, submission.id)
+    if existing >= MAX_SUBMISSION_IMAGES:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": f"Лимит файлов исчерпан: уже загружено {existing} из {MAX_SUBMISSION_IMAGES}",
+            },
+            status_code=422,
+        )
+    files, err = await read_image_uploads(
+        photos,
+        max_files=MAX_SUBMISSION_IMAGES - existing,
+        max_size=MAX_UPLOAD_FILE_SIZE,
+    )
+    if err:
+        return JSONResponse({"ok": False, "error": err}, status_code=422)
+
+    created = 0
+    for filename, data in files:
+        s3_path = s3_service.s3_path_task_block_submission(
+            user["vk_id"], submission.id, filename, user.get("tariff") or "",
+        )
+        url = s3_service.upload_to_s3(s3_path, compress_image(data), "image/jpeg")
+        if s3_service.is_configured() and not url:
+            return JSONResponse(
+                {"ok": False, "error": "Ошибка загрузки в хранилище"}, status_code=502
+            )
+        add_task_block_submission_image(
+            db, submission=submission, url=url or "", path=s3_path if url else None
+        )
+        created += 1
+
+    if created:
+        mark_task_block_submitted(db, submission=submission, comment=comment)
+        # Закрываем блок фактом сдачи: работа приехала, лента едет дальше.
+        # Проверка куратора на это не влияет — иначе ученик стоял бы в ленте,
+        # пока куратор не дойдёт до его работы (то же правило, что у домашки
+        # на тарифе без обратной связи).
+        close_task_block_for_user(
+            db, block=block, user_id=user["user_id"], source="submission"
+        )
+    db.commit()
+    return JSONResponse({"ok": True, "created": created})
+
+
 # ── POST /cabinet/tracker/tasks/{id}/blocks ──────────────────────────────────
 
 @router.post("/tracker/tasks/{task_id}/blocks", response_class=JSONResponse)
@@ -469,9 +592,6 @@ def submit_cabinet_tracker_task_blocks(
     требуется — сохраняется то, что прислали.
     """
     _accessible_task_or_404(db, user["user_id"], task_id)
-    # Одна попытка: сервер проверяет сам, кнопку на экране мало.
-    if get_task_block_response(db, task_id=task_id, user_id=user["user_id"]) is not None:
-        raise HTTPException(status_code=409, detail="Вы уже отвечали на это задание")
     task_done = _is_task_done(db, task_id, user["user_id"])
     all_blocks = get_task_blocks(db, task_id)
     questions = [
@@ -480,7 +600,20 @@ def submit_cabinet_tracker_task_blocks(
     ]
     if not questions:
         raise HTTPException(status_code=404, detail="У задачи нет вопросов")
+    # Одна попытка — на вопрос, а не на задание целиком (уточнено 07.09.2026).
+    # Правило 31.08 не даёт переотправлять ответ до победы, и оно остаётся:
+    # уже отвеченный вопрос сюда не пройдёт. Но пропущенный ученик обязан
+    # иметь возможность дослать — иначе обязательный вопрос без ответа
+    # запирает ленту навсегда, а форма отправки уже исчезла.
+    response = get_task_block_response(db, task_id=task_id, user_id=user["user_id"])
+    already = task_block_answered_ids(db, response_id=response.id) if response else set()
+    visible = questions
+    questions = [block for block in visible if block.id not in already]
+    if not questions:
+        raise HTTPException(status_code=409, detail="Вы уже отвечали на это задание")
     known = {block.id for block in questions}
+    if [a.block_id for a in payload.answers if a.block_id in already]:
+        raise HTTPException(status_code=409, detail="На этот вопрос вы уже ответили")
     unknown = [a.block_id for a in payload.answers if a.block_id not in known]
     if unknown:
         raise HTTPException(status_code=422, detail="Ответ на чужой вопрос")
@@ -498,7 +631,9 @@ def submit_cabinet_tracker_task_blocks(
         },
     )
     db.flush()
-    verdict = grade_task_blocks(db, blocks=questions, response_id=response.id)
+    # Вердикт — по всем видимым вопросам, а не только по этой порции: ученик,
+    # дославший пропущенный ответ, должен видеть счёт целиком.
+    verdict = grade_task_blocks(db, blocks=visible, response_id=response.id)
     db.commit()
     # Результат сразу в ответе (владелец 31.08.2026): ученик видит, где прав,
     # не перезагружая страницу.

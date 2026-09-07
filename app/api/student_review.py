@@ -23,7 +23,7 @@ from app.constants import MOCK_SUBJECTS, TARIFFS
 from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_curator
 from app.models.exam_cycle import ExamCycle
-from app.models.task_block import TaskBlockAnswer, TaskBlockResponse
+from app.models.task_block import TaskBlockAnswer, TaskBlockResponse, TaskBlockSubmission
 from app.models.user import User
 from app.models.work import Work
 from app.services.review_aggregate import (
@@ -32,7 +32,7 @@ from app.services.review_aggregate import (
     student_review_items,
     week_bounds,
 )
-from app.services.task_blocks import set_reviewed
+from app.services.task_blocks import set_reviewed, set_submission_reviewed
 from app.services.tz import today_msk
 from app.tmpl import templates
 
@@ -220,3 +220,32 @@ def mark_task_block_reviewed(
     )
     db.commit()
     return JSONResponse({"ok": True, "reviewed": answer.reviewed_at is not None})
+
+
+@router.post("/block-work/{submission_id}/reviewed", response_class=JSONResponse)
+def mark_block_work_reviewed(
+    submission_id: int,
+    payload: TaskBlockReviewMark,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Тумблер «Проверено» для работы, сданной в блоке задания.
+
+    Владелец работы берётся из самой сдачи, а не из тела запроса — та же
+    защита, что у `mark_task_block_reviewed`.
+    """
+    submission = db.get(TaskBlockSubmission, submission_id)
+    if submission is None:
+        raise HTTPException(status_code=404, detail="Работа не найдена")
+    _check_student_access(
+        db, user, submission.user_id,
+        not_found_detail="Работа не найдена",
+        forbidden_detail="Это не ваш студент",
+    )
+    submission = set_submission_reviewed(
+        db, submission_id=submission_id, user_id=user["user_id"],
+        reviewed=payload.reviewed,
+    )
+    db.commit()
+    return JSONResponse({"ok": True, "reviewed": submission.reviewed_at is not None})

@@ -110,8 +110,12 @@ def test_learning_has_no_week_tabs_anymore(auth_client, db):
 
 
 def test_learning_shows_cycle_title(auth_client, db):
+    """Период задан явно: без `ends_at` тема считается прежней неделей
+    (понедельник плюс шесть дней), и по понедельникам «открытая вчера» тема
+    попадала в прошлую неделю — заголовка не было, тест падал от дня запуска.
+    """
     client, user = auth_client
-    _topic(db, user, title="Цикл про композицию")
+    _topic(db, user, title="Цикл про композицию", ends_in_days=5)
 
     resp = client.get("/cabinet/learning")
     assert resp.status_code == 200

@@ -12,6 +12,12 @@
 рендерер с методами `render(block, index)`, `collectAnswers(blocks, scope)` и
 свойством `answered` (одна попытка: после ответа поля запираются).
 
+Одна попытка считается **по вопросу**, не по заданию (уточнено 07.09.2026):
+поле запирает либо общий `api.answered` (отвечено всё), либо `block.answered`
+у конкретного вопроса. Раньше первая отправка запирала форму целиком, и
+пропущенный вопрос становился недостижимым — а если он был обязательным,
+лента вставала намертво.
+
 Видео отдаёт `window.lrnVideoPlayer.mount` из `_video_player.html` — плеер со
 всем поведением (fullscreen, водяной знак, защита от перемотки) второй раз не
 переписывается.
@@ -184,7 +190,7 @@
                     select.id = 'lrn-scale-' + api.uid + '-' + index + '-' + oi;
                     select.setAttribute('aria-label', option.text);
                     select.setAttribute('data-scale-option', option.id);
-                    select.disabled = api.answered;
+                    select.disabled = api.answered || !!block.answered;
                     var empty = el('option', null, '—');
                     empty.value = '';
                     select.appendChild(empty);
@@ -200,9 +206,128 @@
                 return wrap;
             }
 
+            // Уже сданные файлы — той же галереей, что и материалы задания:
+            // отдельная сетка под превью означала бы второй набор стилей.
+            function submittedGallery(block) {
+                var files = block.submitted_files || [];
+                if (!files.length) return null;
+                var gallery = el('div', 'lrn-blk-gallery');
+                files.forEach(function (url) {
+                    var img = el('img', 'lrn-blk-image');
+                    img.src = url;
+                    img.alt = 'Загруженная работа';
+                    img.loading = 'lazy';
+                    gallery.appendChild(img);
+                });
+                if (files.length === 1) gallery.classList.add('is-single');
+                return gallery;
+            }
+
+            // Приём работ прямо в блоке (владелец 07.09.2026: «работы нужно
+            // загружать в заданиях»). Один и тот же узел у блока «Загрузить
+            // работы» и у «Работы на время» — механика приёма у них общая.
+            function uploadForm(block) {
+                var wrap = el('div', 'lrn-blk-upload');
+                var gallery = submittedGallery(block);
+                if (gallery) wrap.appendChild(gallery);
+                if (block.submitted_comment) {
+                    wrap.appendChild(el('p', 'lrn-blk-body', block.submitted_comment));
+                }
+                if (block.reviewed) {
+                    wrap.appendChild(el('p', 'lrn-blk-verdict is-ok', '✓ Работу проверил куратор'));
+                }
+                if (block.review_comment) {
+                    wrap.appendChild(el('p', 'video-help', block.review_comment));
+                }
+
+                var left = (block.max_files || 10) - (block.submitted_files || []).length;
+                if (left <= 0) {
+                    wrap.appendChild(el('p', 'video-help', 'Загружено максимальное число файлов.'));
+                    return wrap;
+                }
+
+                var fileId = 'lrn-upl-' + api.uid + '-' + block.id;
+                var label = el('label', 'field-label', 'Фото работы (до ' + left + ')');
+                label.setAttribute('for', fileId);
+                var input = el('input', 'form-input');
+                input.type = 'file';
+                input.id = fileId;
+                input.accept = 'image/*';
+                input.multiple = true;
+
+                var commentId = fileId + '-note';
+                var commentLabel = el('label', 'field-label', 'Описание работы');
+                commentLabel.setAttribute('for', commentId);
+                var comment = el('textarea', 'form-input');
+                comment.id = commentId;
+                comment.rows = 3;
+                comment.value = block.submitted_comment || '';
+
+                var send = el('button', 'btn-blue', 'Отправить работу');
+                send.type = 'button';
+                var note = el('p', 'video-progress-status');
+                note.setAttribute('aria-live', 'polite');
+
+                send.addEventListener('click', function () {
+                    if (!input.files || !input.files.length) {
+                        note.textContent = 'Выберите хотя бы один файл.';
+                        note.classList.add('is-error');
+                        return;
+                    }
+                    var data = new FormData();
+                    for (var i = 0; i < input.files.length; i += 1) {
+                        data.append('photos', input.files[i]);
+                    }
+                    data.append('comment', comment.value || '');
+                    send.disabled = true;
+                    note.classList.remove('is-error');
+                    note.textContent = 'Загружаем…';
+                    fetch(block.upload_endpoint, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {'X-CSRF-Token': csrfToken},
+                        body: data
+                    }).then(function (resp) {
+                        return resp.json().then(function (body) {
+                            return {ok: resp.ok && body.ok, body: body};
+                        });
+                    }).then(function (result) {
+                        if (!result.ok) throw new Error(result.body.error || '');
+                        // Состояние блока и хвост ленты пересчитывает сервер —
+                        // перезагружаем, чтобы не расходиться с ним.
+                        window.location.reload();
+                    }).catch(function (err) {
+                        send.disabled = false;
+                        note.textContent = (err && err.message)
+                            ? err.message
+                            : 'Не удалось загрузить. Попробуйте ещё раз.';
+                        note.classList.add('is-error');
+                    });
+                });
+
+                wrap.appendChild(label);
+                wrap.appendChild(input);
+                wrap.appendChild(commentLabel);
+                wrap.appendChild(comment);
+                wrap.appendChild(send);
+                wrap.appendChild(note);
+                return wrap;
+            }
+
+            // Блок «Загрузить работы» — приём файлов на месте.
+            function renderUpload(block) {
+                var wrap = withTitle(el('div', 'lrn-blk lrn-blk-upload-block'), block);
+                if (block.body) wrap.appendChild(el('p', 'lrn-blk-body', block.body));
+                if (block.done) {
+                    wrap.appendChild(el('p', 'lrn-blk-verdict is-ok', '✓ Работа сдана'));
+                }
+                wrap.appendChild(uploadForm(block));
+                return wrap;
+            }
+
             // Работа на время (владелец 03.09.2026): ученик жмёт «Начать»,
-            // рисует и загружает работу тем же экраном, что и портфолио.
-            // Превышение лимита не мешает сдать — оно только видно.
+            // рисует и загружает работу здесь же. Превышение лимита не мешает
+            // сдать — оно только видно.
             function renderTimed(block) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-timed'), block);
                 if (block.body) wrap.appendChild(el('p', 'lrn-blk-body', block.body));
@@ -216,6 +341,9 @@
                         block.overrun ? 'lrn-blk-verdict is-wrong' : 'lrn-blk-verdict is-ok',
                         block.overrun ? 'Работа сдана, время превышено' : 'Работа сдана вовремя'
                     ));
+                    // Форму оставляем: до проверки куратором ученик может
+                    // догрузить недостающий лист, не открывая ничего заново.
+                    wrap.appendChild(uploadForm(block));
                     return wrap;
                 }
                 if (!block.started_at) {
@@ -252,9 +380,7 @@
                     'p', 'video-help',
                     'Начато в ' + started.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'})
                 ));
-                var upload = el('a', 'btn-blue', 'Загрузить работу');
-                upload.href = block.upload_url || '/upload';
-                wrap.appendChild(upload);
+                wrap.appendChild(uploadForm(block));
                 return wrap;
             }
 
@@ -281,7 +407,7 @@
                     textarea.maxLength = 2000;
                     textarea.value = block.answer_text || '';
                     textarea.setAttribute('data-answer-text', block.id);
-                    textarea.disabled = api.answered;
+                    textarea.disabled = api.answered || !!block.answered;
                     wrap.appendChild(textarea);
                     var freeMark = verdictMark(block);
                     if (freeMark) wrap.appendChild(freeMark);
@@ -298,7 +424,7 @@
                     input.value = option.id;
                     input.checked = chosen.indexOf(option.id) !== -1;
                     input.setAttribute('data-answer-option', block.id);
-                    input.disabled = api.answered;
+                    input.disabled = api.answered || !!block.answered;
                     row.appendChild(input);
                     row.appendChild(el('span', null, option.text));
                     wrap.appendChild(row);
@@ -316,7 +442,8 @@
                 question: renderQuestion,
                 portfolio: renderPortfolio,
                 scale: renderScale,
-                timed: renderTimed
+                timed: renderTimed,
+                upload: renderUpload
             };
 
             api.render = function (block, index) {
@@ -330,6 +457,9 @@
             api.collectAnswers = function (blocks, scope) {
                 var answers = [];
                 (blocks || []).forEach(function (block) {
+                    // Уже отвеченный вопрос в отправку не идёт: сервер такой
+                    // ответ отклоняет, и вся отправка вместе с ним пропала бы.
+                    if (block.answered) return;
                     if (block.block_type === 'scale') {
                         // Оценка приходит текстом варианта: у шкалы «выбран»
                         // каждый навык, которому ученик поставил число.

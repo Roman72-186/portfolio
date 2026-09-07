@@ -90,9 +90,19 @@ BLOCK_SCALE = "scale"
 # превысили время… их можно будет пометить красненьким». Ученик жмёт «Начать»,
 # рисует и загружает работу; система считает, уложился он в лимит или нет.
 BLOCK_TIMED = "timed"
+# Приём работ прямо в задании (владелец 07.09.2026: «работы нужно загружать в
+# заданиях»). В отличие от BLOCK_PORTFOLIO ученик никуда не уходит: файлы
+# грузятся здесь же и привязываются к блоку (`TaskBlockSubmission`), а куратор
+# видит их на едином экране проверки по ученику.
+BLOCK_UPLOAD = "upload"
 
 # Час на контрольную — число из созвона 03.09.2026 («давай сделаем один час»).
 TIMED_DEFAULT_MINUTES = 60
+
+# Сколько файлов ученик кладёт в одну сдачу. Десять — как у блока-галереи
+# преподавателя (MAX_BLOCK_IMAGES) и у промежуточных фото пробника: общий
+# потолок в проекте, отдельного числа этот блок не заслуживает.
+MAX_SUBMISSION_IMAGES = 10
 
 # Верхняя граница шкалы. Десять — из формулировки владельца («3 из 10»).
 SCALE_MAX = 10
@@ -102,8 +112,13 @@ SCALE_MAX = 10
 # (в проекте нет ни одного JSONB, все списки — нормализованные таблицы).
 BLOCK_TYPES = (
     BLOCK_TEXT, BLOCK_PHOTO, BLOCK_VIDEO, BLOCK_LINK, BLOCK_QUESTION,
-    BLOCK_PORTFOLIO, BLOCK_SCALE, BLOCK_TIMED,
+    BLOCK_PORTFOLIO, BLOCK_SCALE, BLOCK_TIMED, BLOCK_UPLOAD,
 )
+
+# Блоки, которые ученик закрывает загрузкой работы. Список нужен и роуту
+# приёма файлов, и ленте: у «работы на время» к загрузке добавляется таймер,
+# в остальном механика одна.
+SUBMISSION_BLOCK_TYPES = (BLOCK_UPLOAD, BLOCK_TIMED)
 
 BLOCK_TYPE_LABELS = {
     BLOCK_TEXT: "Текст",
@@ -114,6 +129,7 @@ BLOCK_TYPE_LABELS = {
     BLOCK_PORTFOLIO: "Загрузить портфолио",
     BLOCK_SCALE: "Шкала навыков",
     BLOCK_TIMED: "Работа на время",
+    BLOCK_UPLOAD: "Загрузить работы",
 }
 
 # Тот же потолок, что у мини-опроса видео и прежнего task_quiz — общий язык
@@ -438,4 +454,95 @@ class TaskBlockState(Base):
     __table_args__ = (
         UniqueConstraint("block_id", "user_id", name="uq_task_block_state_block_user"),
         Index("ix_task_block_states_user", "user_id"),
+    )
+
+
+class TaskBlockSubmission(Base):
+    """Работа, которую ученик сдал прямо в блоке задания.
+
+    Заведена 07.09.2026 по требованию владельца «работы нужно загружать в
+    заданиях». До неё блоки «Загрузить портфолио» и «Работа на время» только
+    уводили ученика ссылкой на общий экран `/upload`: файл попадал в портфолио
+    (`Work`), к заданию не привязывался, а блок закрывался фактом любой новой
+    работы за период цикла — включая загруженную совсем по другому поводу.
+
+    Ключ — (`block_id`, `user_id`), а не (`task_id`, `user_id`), как у
+    `HomeworkSubmission`: в одном задании может стоять несколько блоков приёма
+    работ (контрольная на время плюс обычная сдача), и задачный ключ склеил бы
+    их в одну сдачу. Та же причина, по которой отдельно от `TaskBlockResponse`
+    живёт `TaskBlockState`.
+
+    Своей моделью, а не колонкой в `Work`: `app/models/homework.py` описывает,
+    как переплетение домашки с `Work`/`ExamCycle` один раз уже уронило доступ
+    к урокам. Портфолио остаётся портфолио, сдача по заданию — отдельной
+    сущностью с собственным статусом проверки.
+    """
+
+    __tablename__ = "task_block_submissions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    block_id: Mapped[int] = mapped_column(
+        ForeignKey("task_blocks.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+
+    # Общее описание к работе (владелец, вопрос 7 в ВОПРОСЫ-ПО-ЛЕНТЕ.md:
+    # «до 10 фотографий с общим описанием»). Одно на сдачу, не на снимок.
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Момент сдачи. Отдельно от created_at: строка заводится при первой
+    # загрузке файла, а пересдача до проверки обновляет именно этот момент —
+    # по нему куратор видит, что работа приехала заново.
+    submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Проверка куратором. Пусто — работа ждёт в очереди «непроверенное»
+    # (`services/review_aggregate.py`), тот же предикат, что у `Work.score`.
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reviewed_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    review_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("block_id", "user_id", name="uq_task_block_submission_block_user"),
+        Index("ix_task_block_submissions_user", "user_id"),
+    )
+
+
+class TaskBlockSubmissionImage(Base):
+    """Один файл сданной работы. Пара url+path — как у `TaskBlockImage`."""
+
+    __tablename__ = "task_block_submission_images"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    submission_id: Mapped[int] = mapped_column(
+        ForeignKey("task_block_submissions.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    image_s3_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    image_s3_path: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        Index("ix_task_block_submission_images_order", "submission_id", "sort_order"),
     )

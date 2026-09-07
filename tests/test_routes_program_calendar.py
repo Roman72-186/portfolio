@@ -132,10 +132,14 @@ def test_marks_show_what_stands_in_the_day(
 
 # ── Экран дня ─────────────────────────────────────────────────────────────
 
-def test_future_day_offers_the_single_task_tile(client, user_factory, session_factory, monkeypatch):
-    """Плитка одна — «Задание» (владелец 06.09.2026: «убрать Видеоматериал,
+def test_future_day_offers_the_task_and_mock_tiles(client, user_factory, session_factory, monkeypatch):
+    """Плиток две — «Задание» и «Пробник».
+
+    Видео и Самостоятельная работа сняты 06.09.2026 («убрать Видеоматериал,
     Пробник и Самостоятельную работу, а оставить новый функционал с любыми
-    заданиями»). Содержимое любому элементу задают блоки."""
+    заданиями») и не вернулись: ролик ставится блоком «Видео», приём работ —
+    блоком «Загрузить работы». Пробник вернули 07.09.2026: билет, окно сдачи
+    и попытка блоками не собираются."""
     _freeze_today(monkeypatch, date(2026, 8, 21))
     _staff_client(client, user_factory, session_factory)
 
@@ -144,7 +148,7 @@ def test_future_day_offers_the_single_task_tile(client, user_factory, session_fa
     assert page.status_code == 200
     assert "24 август 2026, понедельник" in page.text
     assert 'data-open-form="material"' in page.text
-    assert 'data-open-form="mock"' not in page.text
+    assert 'data-open-form="mock"' in page.text
     assert 'data-open-form="video"' not in page.text
     assert 'data-open-form="homework"' not in page.text
 

@@ -28,6 +28,10 @@ DOMAIN_TASK_BLOCK = "task_block"
 DOMAIN_WORK = "work"
 DOMAIN_HOMEWORK = "homework"
 DOMAIN_EXAM_CYCLE = "exam_cycle"
+# Работы, сданные прямо в блоке задания (владелец 07.09.2026). Отдельный
+# домен, а не строка внутри DOMAIN_TASK_BLOCK: там ответы на вопросы, тут
+# файлы, и «проверено» у них снимается разными действиями куратора.
+DOMAIN_BLOCK_WORK = "block_work"
 
 # С этого ранга видно всех учеников без ограничения по curator_id. Ранг 3
 # (модератор) попадает под то же ограничение, что куратор — владелец про
@@ -60,6 +64,9 @@ class ReviewItem:
     chosen: list[str] | None = None
     correct: list[str] | None = None
     text: str | None = None
+    # Файлы сданной работы — только у `block_work`: куратор смотрит их прямо
+    # в карточке, отдельного экрана у этого домена нет.
+    images: list[str] | None = None
 
 
 def _task_block_items(
@@ -222,6 +229,60 @@ def _homework_items(
     return items
 
 
+
+def _block_work_items(
+    db: DBSession,
+    *,
+    curator_id: int | None = None,
+    student_id: int | None = None,
+    subject: str | None = None,
+    tariff: str | None = None,
+    week_start: datetime | None = None,
+    week_end: datetime | None = None,
+    role_rank: int = 0,
+) -> list[ReviewItem]:
+    """Работы, сданные в блоке задания — обёртка над
+    `task_blocks.py::submission_review_queue`.
+
+    Отдельного экрана у них нет и заводить его нельзя (инвариант проекта:
+    новый тип сдачи получает адаптер, а не свой роут и пункт меню) — работы
+    видны на том же `/cabinet/staff/students-review/{id}`, что и всё
+    остальное по ученику.
+    """
+    from app.services.task_blocks import submission_review_queue
+
+    raw = submission_review_queue(
+        db,
+        curator_id=curator_id,
+        student_id=student_id,
+        subject=subject,
+        tariff=tariff,
+        week_start=week_start,
+        week_end=week_end,
+        limit=100_000,
+    )
+    items = []
+    for row in raw:
+        title = row["task_title"]
+        if row["block_title"]:
+            title = f"{title} — {row['block_title']}"
+        if row["overrun"]:
+            title = f"{title} (время превышено)"
+        items.append(ReviewItem(
+            domain=DOMAIN_BLOCK_WORK,
+            item_id=row["submission_id"],
+            student_id=row["student_id"],
+            title=title,
+            subject=row["subject"],
+            submitted_at=row["submitted_at"],
+            is_reviewed=row["reviewed"],
+            review_url="",
+            text=row["comment"],
+            images=row["images"],
+        ))
+    return items
+
+
 def _exam_cycle_items(
     db: DBSession,
     *,
@@ -330,7 +391,10 @@ def _unreviewed_counts_by_student(db: DBSession, *, curator_id: int | None) -> d
     from collections import Counter
 
     counts: Counter[int] = Counter()
-    for adapter in (_task_block_items, _work_items, _homework_items, _exam_cycle_items):
+    for adapter in (
+        _task_block_items, _work_items, _homework_items, _exam_cycle_items,
+        _block_work_items,
+    ):
         for item in adapter(db, curator_id=curator_id):
             if not item.is_reviewed:
                 counts[item.student_id] += 1
@@ -382,7 +446,10 @@ def student_review_items(
     экрана «проверить всё по ученику». Непроверенные выше, внутри группы —
     свежие сверху."""
     items: list[ReviewItem] = []
-    for adapter in (_task_block_items, _work_items, _homework_items, _exam_cycle_items):
+    for adapter in (
+        _task_block_items, _work_items, _homework_items, _exam_cycle_items,
+        _block_work_items,
+    ):
         items.extend(adapter(
             db, curator_id=curator_id, student_id=student_id,
             subject=subject, tariff=tariff, week_start=week_start, week_end=week_end,
