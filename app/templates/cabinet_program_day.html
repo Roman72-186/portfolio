@@ -770,6 +770,33 @@ FORM: Operate.
         }).join('');
     }
 
+    // Предметы и тарифы приходят списком, а разметка собирается здесь.
+    // Раньше на их месте стоял цикл Jinja прямо внутри строкового литерала:
+    // при непустом списке в литерал попадал перевод строки, и весь скрипт
+    // страницы падал с SyntaxError — в конструкторе не работала ни одна
+    // кнопка (авария 06.09.2026, коммит 25cd35b).
+    function subjectOptionsHTML() {
+        return ({{ subjects|tojson }}).map(function (subject) {
+            return '<option value="' + escapeHTML(subject) + '">'
+                + escapeHTML(subject) + '</option>';
+        }).join('');
+    }
+
+    function questionTypeOptionsHTML() {
+        return questionTypes.map(function (qt) {
+            return '<option value="' + escapeHTML(qt.value) + '">Тип ответа: '
+                + escapeHTML(qt.label) + '</option>';
+        }).join('');
+    }
+
+    function tariffChecksHTML() {
+        return ({{ tariffs|tojson }}).map(function (tariff) {
+            return '<label class="prg-field prg-field--row">'
+                + '<input type="checkbox" data-b-tariff value="' + escapeHTML(tariff) + '">'
+                + '<span>' + escapeHTML(tariff) + '</span></label>';
+        }).join('');
+    }
+
     function escapeHTML(value) {
         var div = document.createElement('div');
         div.textContent = value == null ? '' : String(value);
@@ -837,7 +864,7 @@ FORM: Operate.
         return ''
             + '<label class="prg-field"><textarea data-b-body maxlength="5000" aria-label="Текст вопроса" placeholder="Текст вопроса"></textarea></label>'
             + '<label class="prg-field"><select data-b-question-type aria-label="Тип ответа">'
-            + '{% for qt in question_types %}<option value="{{ qt.value }}">Тип ответа: {{ qt.label }}</option>{% endfor %}'
+            + questionTypeOptionsHTML()
             + '</select></label>'
             + '<div class="prg-blk-options" data-b-options-wrap hidden>'
             + '  <p class="prg-hint">Отметьте верный вариант — без него вопрос не сохранится.</p>'
@@ -869,14 +896,12 @@ FORM: Operate.
             + '  <label class="prg-field">Предмет'
             + '    <select data-b-subject aria-label="Предмет блока">'
             + '      <option value="">Без предмета — виден в обоих направлениях</option>'
-            + '{% for subject in subjects %}      <option value="{{ subject }}">{{ subject }}</option>
-{% endfor %}'
+            + subjectOptionsHTML()
             + '    </select>'
             + '  </label>'
             + '  <div class="prg-blk-tariffs">'
             + '    <p class="prg-hint">Тарифы: не отметили ни одного — блок виден всем.</p>'
-            + '{% for tariff in tariffs %}    <label class="prg-field prg-field--row"><input type="checkbox" data-b-tariff value="{{ tariff }}"><span>{{ tariff }}</span></label>
-{% endfor %}'
+            + tariffChecksHTML()
             + '  </div>'
             + '  <label class="prg-field prg-field--row">'
             + '    <input type="checkbox" data-b-bypass>'
