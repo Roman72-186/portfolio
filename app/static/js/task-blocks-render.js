@@ -434,6 +434,39 @@
                 return wrap;
             }
 
+            // Правила школы с галочкой у каждого пункта (владелец 03.09.2026:
+            // «прочитать и поставить галочки рядом с этими правилами»).
+            // Стили берём у вариантов вопроса — своей разметки блок не
+            // заслуживает, отличие только в правиле закрытия.
+            function renderRules(block, index) {
+                var wrap = withTitle(el('div', 'lrn-blk lrn-blk-question'), block);
+                if (block.body) wrap.appendChild(el('p', 'lrn-blk-question-body', block.body));
+                var chosen = block.answer_option_ids || [];
+                var locked = api.answered || !!block.answered;
+                (block.options || []).forEach(function (option, oi) {
+                    var row = el('label', 'lrn-blk-option');
+                    var input = el('input');
+                    input.type = 'checkbox';
+                    input.name = 'lrn-rules-' + api.uid + '-' + index + '-' + oi;
+                    input.value = option.id;
+                    input.checked = chosen.indexOf(option.id) !== -1;
+                    input.setAttribute('data-rules-option', block.id);
+                    input.disabled = locked;
+                    row.appendChild(input);
+                    row.appendChild(el('span', null, option.text));
+                    wrap.appendChild(row);
+                });
+                if (!locked) {
+                    // Отмечено не всё — сервер такую отправку не сохранит,
+                    // и ученик должен понимать почему, а не жать вслепую.
+                    wrap.appendChild(el(
+                        'p', 'lrn-card-note',
+                        'Отметьте все пункты — иначе шаг не закроется.'
+                    ));
+                }
+                return wrap;
+            }
+
             var RENDERERS = {
                 text: renderText,
                 photo: renderPhoto,
@@ -443,7 +476,8 @@
                 portfolio: renderPortfolio,
                 scale: renderScale,
                 timed: renderTimed,
-                upload: renderUpload
+                upload: renderUpload,
+                rules: renderRules
             };
 
             api.render = function (block, index) {
@@ -471,6 +505,17 @@
                             scaleAnswer.option_texts[option.id] = field.value;
                         });
                         if (scaleAnswer.option_ids.length) answers.push(scaleAnswer);
+                        return;
+                    }
+                    if (block.block_type === 'rules') {
+                        // Шлём отмеченное как есть: решение «все или ничего»
+                        // принимает сервер, чтобы обход формы ничего не менял.
+                        var ruleAnswer = { block_id: block.id, option_ids: [] };
+                        var boxes = scope.querySelectorAll('[data-rules-option="' + block.id + '"]');
+                        Array.prototype.forEach.call(boxes, function (input) {
+                            if (input.checked) ruleAnswer.option_ids.push(Number(input.value));
+                        });
+                        if (ruleAnswer.option_ids.length) answers.push(ruleAnswer);
                         return;
                     }
                     if (block.block_type !== 'question') return;

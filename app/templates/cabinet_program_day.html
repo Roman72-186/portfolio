@@ -856,6 +856,20 @@ FORM: Operate.
                 + '  <div class="prg-actions"><button type="button" class="btn-outline" data-add-b-option>Добавить навык</button></div>'
                 + '</div>';
         }
+        if (type === 'rules') {
+            // Правила школы (владелец 03.09.2026): «он должен их прочитать и
+            // поставить галочки рядом с этими правилами». Пункты — те же
+            // варианты, что у шкалы; отметки «верный вариант» здесь нет:
+            // согласие не бывает неправильным.
+            return ''
+                + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок" placeholder="Заголовок, например «Правила школы»"></label>'
+                + '<label class="prg-field"><textarea data-b-body maxlength="5000" aria-label="Текст согласия" placeholder="Текст согласия, например «Отметьте каждый пункт, с которым ознакомились»"></textarea></label>'
+                + '<div class="prg-blk-options">'
+                + '  <p class="prg-hint">Пункты правил. Шаг закроется, только когда ученик отметит все.</p>'
+                + '  <div data-b-options></div>'
+                + '  <div class="prg-actions"><button type="button" class="btn-outline" data-add-b-option>Добавить правило</button></div>'
+                + '</div>';
+        }
         if (type === 'portfolio') {
             // Кнопка «Загрузить портфолио» (владелец 03.09.2026): ведёт на
             // готовый экран загрузки работ. Своего содержимого нет — только
@@ -987,6 +1001,18 @@ FORM: Operate.
             var box = row.querySelector('[data-b-tariff][value="' + tariff + '"]');
             if (box) box.checked = true;
         });
+        if (row.getAttribute('data-block-type') === 'rules') {
+            var rulesHolder = row.querySelector('[data-b-options]');
+            (block.options || []).forEach(function (option) {
+                rulesHolder.insertAdjacentHTML('beforeend', blockOptionHTML());
+                var ruleRow = rulesHolder.lastElementChild;
+                if (option.id) ruleRow.setAttribute('data-b-option-id', option.id);
+                ruleRow.querySelector('[data-b-option-text]').value = option.text;
+                var ruleCorrect = ruleRow.querySelector('[data-b-option-correct]');
+                // Согласие не бывает верным или неверным — отметку прячем.
+                if (ruleCorrect) ruleCorrect.closest('label').hidden = true;
+            });
+        }
         if (row.getAttribute('data-block-type') === 'scale') {
             var scaleHolder = row.querySelector('[data-b-options]');
             (block.options || []).forEach(function (option) {
@@ -1235,6 +1261,21 @@ FORM: Operate.
                     });
                 });
                 if (!item.images.length) return;
+            }
+            if (type === 'rules') {
+                item.options = [];
+                row.querySelectorAll('[data-b-option]').forEach(function (optionRow) {
+                    var ruleText = optionRow.querySelector('[data-b-option-text]').value.trim();
+                    if (!ruleText) return;
+                    var ruleId = optionRow.getAttribute('data-b-option-id');
+                    item.options.push({
+                        id: ruleId ? Number(ruleId) : null,
+                        text: ruleText,
+                        // Верного пункта у согласия нет.
+                        is_correct: false
+                    });
+                });
+                if (!item.options.length) return;
             }
             if (type === 'scale') {
                 item.options = [];
@@ -1821,10 +1862,23 @@ FORM: Operate.
 
         var addBlockOption = event.target.closest('[data-add-b-option]');
         if (addBlockOption) {
-            addBlockOption
-                .closest('[data-block]')
-                .querySelector('[data-b-options]')
-                .insertAdjacentHTML('beforeend', blockOptionHTML());
+            var optionsOwner = addBlockOption.closest('[data-block]');
+            var optionsHolder = optionsOwner.querySelector('[data-b-options]');
+            optionsHolder.insertAdjacentHTML('beforeend', blockOptionHTML());
+            // У шкалы и правил верного варианта нет по устройству: там пункт —
+            // это навык или правило. Прячем отметку сразу при добавлении, как
+            // она уже прячется при открытии сохранённого блока.
+            var ownerType = optionsOwner.getAttribute('data-block-type');
+            if (ownerType === 'scale' || ownerType === 'rules') {
+                var freshOption = optionsHolder.lastElementChild;
+                var freshCorrect = freshOption.querySelector('[data-b-option-correct]');
+                if (freshCorrect) freshCorrect.closest('label').hidden = true;
+                if (ownerType === 'rules') {
+                    freshOption
+                        .querySelector('[data-b-option-text]')
+                        .placeholder = 'Текст правила';
+                }
+            }
             return;
         }
 

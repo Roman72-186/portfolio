@@ -14,6 +14,7 @@ from app.models.task_block import (
     BLOCK_LINK,
     BLOCK_PHOTO,
     BLOCK_PORTFOLIO,
+    BLOCK_RULES,
     BLOCK_SCALE,
     BLOCK_TIMED,
     BLOCK_UPLOAD,
@@ -83,15 +84,16 @@ def get_options(db: DBSession, block_ids: list[int]) -> dict[int, list[TaskBlock
 
 
 def question_blocks(blocks: list[TaskBlock]) -> list[TaskBlock]:
-    """Блоки, на которые ученик отвечает: вопросы и шкала навыков.
+    """Блоки, на которые ученик отвечает: вопросы, шкала навыков, правила.
 
     Шкала попала сюда, потому что она сохраняется тем же путём, что и вопрос
     (`save_response`), и её ответы так же участвуют в «ответил ли ученик».
     Вердикта «верно/неверно» у неё нет — оценивать самооценку не по чему.
+    Правила — тем же путём, но закрываются только по всем галочкам сразу.
     """
     return [
         block for block in blocks
-        if block.block_type in (BLOCK_QUESTION, BLOCK_SCALE)
+        if block.block_type in (BLOCK_QUESTION, BLOCK_SCALE, BLOCK_RULES)
     ]
 
 
@@ -372,7 +374,7 @@ def _is_empty(block_type: str, item: dict) -> bool:
     if block_type == BLOCK_TIMED:
         # Кнопка «Начать» самодостаточна, как и «Загрузить портфолио».
         return False
-    if block_type == BLOCK_SCALE:
+    if block_type in (BLOCK_SCALE, BLOCK_RULES):
         return not [
             option for option in (item.get("options") or [])
             if (option.get("text") or "").strip()
@@ -457,7 +459,7 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         # Варианты есть у вопроса с выбором и у шкалы навыков: там вариант —
         # это название навыка, который ученик оценивает.
         if (
-            row.block_type == BLOCK_SCALE
+            row.block_type in (BLOCK_SCALE, BLOCK_RULES)
             or (row.block_type == BLOCK_QUESTION and row.question_type != QUESTION_TEXT)
         ):
             _sync_options(db, row, item.get("options") or [])
@@ -559,6 +561,17 @@ def save_response(
         payload = answers.get(block.id)
         if payload is None:
             continue
+        if block.block_type == BLOCK_RULES:
+            _save_rules(
+                db,
+                block=block,
+                response_id=response.id,
+                user_id=user_id,
+                existing=existing.get(block.id),
+                option_ids=payload.get("option_ids") or [],
+                allowed=allowed_options.get(block.id, []),
+            )
+            continue
         answer = existing.get(block.id)
         text = (payload.get("text") or "").strip() or None
         if answer is None:
@@ -600,6 +613,46 @@ def save_response(
         )
     db.flush()
     return response
+
+
+def _save_rules(
+    db: DBSession,
+    *,
+    block: TaskBlock,
+    response_id: int,
+    user_id: int,
+    existing: TaskBlockAnswer | None,
+    option_ids: list[int],
+    allowed: list[TaskBlockOption],
+) -> None:
+    """Согласие с правилами: шаг закрывается, только когда отмечены все.
+
+    Частичная отметка **не сохраняется вовсе**, и это главное решение здесь.
+    Если записать три галочки из пяти, `answered_block_ids` посчитает блок
+    отвеченным (у него появится строка варианта), форма отправки исчезнет —
+    и обязательный блок навсегда запрёт хвост ленты. Ровно та поломка, что
+    чинилась 07.09.2026 у вопросов; повторять её новым типом не будем.
+
+    Пока отмечено не всё, блок остаётся неотвеченным: ученик видит форму и
+    доставляет галочки. Цена — недоотмеченные пункты не переживают
+    перезагрузку страницы, и это дешевле запертой ленты.
+    """
+    allowed_ids = {option.id for option in allowed}
+    chosen = {option_id for option_id in option_ids if option_id in allowed_ids}
+    if not allowed_ids or chosen != allowed_ids:
+        return
+    answer = existing
+    if answer is None:
+        answer = TaskBlockAnswer(response_id=response_id, block_id=block.id, text=None)
+        db.add(answer)
+        db.flush()
+    else:
+        db.query(TaskBlockAnswerOption).filter(
+            TaskBlockAnswerOption.answer_id == answer.id
+        ).delete(synchronize_session=False)
+    for option_id in sorted(chosen):
+        db.add(TaskBlockAnswerOption(answer_id=answer.id, option_id=option_id, text=None))
+    close_block_for_user(db, block=block, user_id=user_id, source="answer")
 
 
 def _close_answered_block(

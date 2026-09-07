@@ -33,7 +33,7 @@ from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
 from app.models.task_block import (
-    BLOCK_PHOTO, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_SCALE, BLOCK_TIMED,
+    BLOCK_PHOTO, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_RULES, BLOCK_SCALE, BLOCK_TIMED,
     BLOCK_UPLOAD, BLOCK_VIDEO, MAX_BLOCKS, MAX_SUBMISSION_IMAGES, QUESTION_TEXT,
     SCALE_MAX, SUBMISSION_BLOCK_TYPES, TaskBlock,
 )
@@ -419,6 +419,15 @@ def cabinet_tracker_task_blocks(
                 if option_id in selected.get(block.id, set())
             }
             item["is_correct"] = correct_by_block.get(block.id)
+        elif block.block_type == BLOCK_RULES:
+            # Правила школы: варианты — сами правила, `body` — текст согласия.
+            # Отмеченные отдаём, чтобы уже закрытый блок открывался с
+            # проставленными галочками, а не пустым.
+            item["options"] = [
+                {"id": o.id, "text": o.text}
+                for o in options.get(block.id, [])
+            ]
+            item["answer_option_ids"] = sorted(selected.get(block.id, set()))
         payload.append(item)
 
     return JSONResponse({
