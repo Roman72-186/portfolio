@@ -335,13 +335,3 @@ def test_constructor_form_has_a_branch_for_the_block(admin_client):
 
     assert "type === 'upload'" in page.text
 
-
-def test_constructor_offers_the_mock_exam_tile(admin_client):
-    """Пробник вернули 07.09.2026: механика была цела, не работала кнопка."""
-    client, _ = admin_client
-    day = (TODAY + timedelta(days=14)).isoformat()
-
-    page = client.get(f"/cabinet/staff/program/{day}")
-
-    assert 'data-open-form="mock"' in page.text
-    assert "Билеты по рисунку и композиции" in page.text

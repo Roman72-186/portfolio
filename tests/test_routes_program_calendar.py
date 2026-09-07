@@ -132,14 +132,18 @@ def test_marks_show_what_stands_in_the_day(
 
 # ── Экран дня ─────────────────────────────────────────────────────────────
 
-def test_future_day_offers_the_task_and_mock_tiles(client, user_factory, session_factory, monkeypatch):
-    """Плиток две — «Задание» и «Пробник».
+def test_future_day_offers_only_the_task_tile(client, user_factory, session_factory, monkeypatch):
+    """Плитка одна — «Задание», всё остальное задают блоки конструктора.
 
-    Видео и Самостоятельная работа сняты 06.09.2026 («убрать Видеоматериал,
-    Пробник и Самостоятельную работу, а оставить новый функционал с любыми
-    заданиями») и не вернулись: ролик ставится блоком «Видео», приём работ —
-    блоком «Загрузить работы». Пробник вернули 07.09.2026: билет, окно сдачи
-    и попытка блоками не собираются."""
+    Владелец 06.09.2026: «убрать Видеоматериал, Пробник и Самостоятельную
+    работу, а оставить новый функционал с любыми заданиями». 07.09.2026
+    плитку «Пробник» вернули коммитом `bb1d1e0` и этот тест переписали под
+    возврат — подтверждения владельца на возврат не нашлось. Он же
+    07.09.2026: «убери пробники и все задания должны быть в одной вкладке,
+    должен быть конструктор».
+
+    **Красный тест здесь значит, что плитку вернули без дословного слова
+    владельца — не правьте его, спросите.**"""
     _freeze_today(monkeypatch, date(2026, 8, 21))
     _staff_client(client, user_factory, session_factory)
 
@@ -148,9 +152,8 @@ def test_future_day_offers_the_task_and_mock_tiles(client, user_factory, session
     assert page.status_code == 200
     assert "24 август 2026, понедельник" in page.text
     assert 'data-open-form="material"' in page.text
-    assert 'data-open-form="mock"' in page.text
-    assert 'data-open-form="video"' not in page.text
-    assert 'data-open-form="homework"' not in page.text
+    for kind in ("mock", "video", "homework"):
+        assert f'data-open-form="{kind}"' not in page.text
 
 
 def test_past_day_is_read_only(client, db, user_factory, session_factory, monkeypatch):
