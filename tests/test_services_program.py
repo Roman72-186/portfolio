@@ -17,8 +17,25 @@ from app.models.tag import Tag, UserTag
 from app.models.tracker import ITEM_MOCK_EXAM, ITEM_VIDEO, TrackerTask
 from app.services import exam_tickets, program
 from app.services.exam_cycle import get_active_tickets
-from app.services.tz import MSK_TZ
+from app.services.tz import MSK_TZ, now_msk
 from app.services.video_topics import get_topic, list_topics
+
+
+def _opened_this_morning() -> datetime:
+    """Билет, открытый сегодня утром по МСК.
+
+    Было `datetime.now(timezone.utc) - timedelta(hours=1)`, и это краснело
+    каждый вечер: доступ к пробнику в тестах заморожен на сегодня 13:00 МСК
+    (`conftest.mock_exam_access_default_time`), а «час назад» после 14:00
+    реального времени оказывается **позже** замороженного «сейчас» — билет
+    ещё не открыт, и активных билетов нет. Тот же класс хрупкости, что
+    чинился 07.09.2026 у `test_learning_shows_cycle_title`.
+    """
+    return (
+        now_msk()
+        .replace(hour=9, minute=0, second=0, microsecond=0)
+        .astimezone(timezone.utc)
+    )
 
 
 def _tag(db, name: str) -> Tag:
@@ -256,7 +273,7 @@ def test_second_tag_opens_the_ticket_for_a_student(db, user_factory):
     )
     db.add(assignment)
     db.flush()
-    opened = datetime.now(timezone.utc) - timedelta(hours=1)
+    opened = _opened_this_morning()
     exam_tickets.create_ticket(
         db,
         assignment,
@@ -295,7 +312,7 @@ def test_ticket_without_audience_reaches_nobody(db, user_factory):
     )
     db.add(assignment)
     db.flush()
-    opened = datetime.now(timezone.utc) - timedelta(hours=1)
+    opened = _opened_this_morning()
     exam_tickets.create_ticket(
         db,
         assignment,
