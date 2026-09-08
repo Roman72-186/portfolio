@@ -1110,10 +1110,25 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-blk-video    { border-left-color: var(--blk-video); }
 .lrn-blk-link     { border-left-color: var(--blk-link); }
 .lrn-blk-question { border-left-color: var(--blk-question); }
+/* Пять типов, добавленных после 31.08.2026: в конструкторе полосы им выдали
+   08.09.2026, а у ученика их не было — половина ленты висела на сером
+   `--blk-text` по умолчанию. Селектор блока «Загрузить работы» —
+   `.lrn-blk-upload-block`, а не `.lrn-blk-upload`: второе имя занято
+   внутренним контейнером формы приёма файлов (task-blocks-render.js,
+   uploadForm), общим у «Загрузить работы» и «Работы на время». */
+.lrn-blk-portfolio    { border-left-color: var(--blk-portfolio); }
+.lrn-blk-scale        { border-left-color: var(--blk-scale); }
+.lrn-blk-timed        { border-left-color: var(--blk-timed); }
+.lrn-blk-upload-block { border-left-color: var(--blk-upload); }
+.lrn-blk-rules        { border-left-color: var(--blk-rules); }
 /* Вопрос — единственный тип, который требует действия, а не только чтения:
    лёгкая подложка поверх границы того же цвета делает это заметным сразу,
    не дожидаясь, пока взгляд дойдёт до вариантов ответа (ревью 03.09.2026). */
 .lrn-blk-question { background: color-mix(in srgb, var(--blk-question) 6%, var(--surface)); }
+/* Правила — второй такой тип: ученик обязан отметить каждый пункт, иначе шаг
+   не закроется. Раньше блок носил чужой класс вопроса и подложку получал
+   вместе с ним; теперь класс свой, подложка остаётся по той же причине. */
+.lrn-blk-rules { background: color-mix(in srgb, var(--blk-rules) 6%, var(--surface)); }
 
 /* Заголовок блока — не field-label (та подпись форм ниже своего же текста,
    12px против 15px тела). Здесь заголовок обязан быть заметнее содержимого,

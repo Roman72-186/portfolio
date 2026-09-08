@@ -436,10 +436,12 @@
 
             // Правила школы с галочкой у каждого пункта (владелец 03.09.2026:
             // «прочитать и поставить галочки рядом с этими правилами»).
-            // Стили берём у вариантов вопроса — своей разметки блок не
-            // заслуживает, отличие только в правиле закрытия.
+            // Разметка вариантов та же, что у вопроса (.lrn-blk-option,
+            // .lrn-blk-question-body — самостоятельные классы, не вложенные),
+            // а класс карточки свой: с чужим `lrn-blk-question` правила
+            // получали розовую полосу вопроса и в ленте от него не отличались.
             function renderRules(block, index) {
-                var wrap = withTitle(el('div', 'lrn-blk lrn-blk-question'), block);
+                var wrap = withTitle(el('div', 'lrn-blk lrn-blk-rules'), block);
                 if (block.body) wrap.appendChild(el('p', 'lrn-blk-question-body', block.body));
                 var chosen = block.answer_option_ids || [];
                 var locked = api.answered || !!block.answered;
