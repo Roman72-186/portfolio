@@ -28,6 +28,7 @@ from app.constants import (
     FEATURE_MOCK_EXAM,
     FEATURE_RETAKE,
     TARIFFS,
+    TARIFFS_CURRENT,
     STUDY_MODES,
     STUDY_MODE_LABELS,
     EXAM_SUBJECT_HINTS,
@@ -2417,6 +2418,22 @@ def _invalidate_user_sessions(db: DBSession, user_id: int) -> None:
         logger.warning("invalidate_user_sessions failed for user_id=%s: %s", user_id, exc)
 
 
+def _tariff_choices(current: str | None) -> list[str]:
+    """Выбор тарифа в карточке ученика: действующая линейка плюс его нынешний.
+
+    Владелец 07.09.2026 завёл новую линейку и сказал «старые записи не
+    трогаем». Поэтому назначать можно только действующие тарифы, но у 150
+    человек в базе стоят прежние — и если не подложить собственное значение
+    ученика, в списке не окажется выбранного варианта. Тогда браузер выберет
+    первый пункт, и простое сохранение карточки молча переведёт человека с
+    «МАКСИМУМА» на «Я САМ».
+    """
+    value = (current or "").strip()
+    if value and value not in TARIFFS_CURRENT:
+        return TARIFFS_CURRENT + [value]
+    return list(TARIFFS_CURRENT)
+
+
 @router.get("/superadmin/users/{target_id}", response_class=HTMLResponse)
 def superadmin_user_card(
     target_id: int,
@@ -2447,7 +2464,7 @@ def superadmin_user_card(
         "target_curator": curator,
         "curators": curators,
         "roles": roles,
-        "tariffs": TARIFFS,
+        "tariffs": _tariff_choices(target.tariff),
         "cohort_tags": sorted(COHORT_TAGS),
         "study_modes": STUDY_MODES,
         "study_mode_labels": STUDY_MODE_LABELS,
