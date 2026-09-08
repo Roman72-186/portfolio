@@ -8,7 +8,7 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=16">
+<link rel="stylesheet" href="/static/css/program.css?v=17">
 <link rel="stylesheet" href="/static/css/program_ios.css?v=11">
 {% endblock %}
 {% block content %}
@@ -161,7 +161,7 @@ FORM: Operate.
     {% endif %}
 
     {% if not is_past %}
-    {% macro simple_form(kind, title, hint) %}
+    {% macro simple_form(kind, title, hint, mock_capable=False) %}
     <form class="prg-form" data-form="{{ kind }}" data-simple-kind="{{ kind }}" hidden>
         <h2>{{ title }} на {{ day.day }} число</h2>
         {% if hint %}<p class="prg-hint">{{ hint }}</p>{% endif %}
@@ -196,6 +196,46 @@ FORM: Operate.
         </label>
         {{ tariff_fields() }}
         {{ blocks_editor() }}
+        {% if mock_capable %}
+        {# Пробник внутри «Задания» (владелец 08.09.2026: «внутри должна быть
+           логика создания ПРОБНИКА!!!»). Отдельной плитки нет: добавили
+           билеты — форма уходит на `/{iso}/mock` вместо `/{iso}/material`,
+           и день получает элемент с билетом, окном и попыткой. Разметка
+           повторяет предметный блок формы `mock` по `data-*`, чтобы работали
+           те же делегированные обработчики (`uploadSubjectImages`,
+           `addTicketRow`, `renumberTickets`) — копии функций не нужны. #}
+        <div class="prg-actions">
+            <button type="button" class="btn-outline" data-add-mock>+ Пробник (билеты)</button>
+        </div>
+        <section class="prg-mock-builder" data-simple-mock hidden>
+            <h3>Билеты пробника</h3>
+            <p class="prg-hint">
+                Каждая фотография станет отдельным билетом, ученику достаётся один.
+                Окно сдачи система ставит сама: 11:45–18:30 этого дня, 4 часа на работу,
+                поэтому «Откроется не раньше» к пробнику не применяется.
+            </p>
+            <div class="prg-subject" data-subject-block="" data-simple-subject-block>
+                <input type="checkbox" data-subject-toggle checked hidden>
+                <input type="hidden" data-subject-note value="">
+                <div class="prg-subject-head">
+                    <div>
+                        <strong>Билеты</strong>
+                        <span data-subject-summary>Билеты ещё не добавлены</span>
+                    </div>
+                    <div class="prg-actions prg-subject-actions">
+                        <button type="button" class="btn-outline" data-remove-mock>Убрать пробник</button>
+                    </div>
+                </div>
+                <label class="prg-field prg-ticket-upload">
+                    <span>Фотографии билетов</span>
+                    <input type="file" data-subject-images accept="image/*" multiple>
+                </label>
+                <p class="prg-hint">Можно выбрать несколько сразу. Не больше 10 билетов.</p>
+                <p class="prg-message" data-subject-status aria-live="polite"></p>
+                <div data-tickets></div>
+            </div>
+        </section>
+        {% endif %}
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-simple-save>Сохранить</button>
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -315,7 +355,10 @@ FORM: Operate.
        чек-листы должны открываться на правку — кнопка «Изменить» ищет форму
        по `data-form="{kind}"`. #}
     {% for form_kind in item_form_kinds %}
-    {{ simple_form(form_kind.kind, form_kind.label, form_kind.hint) }}
+    {{ simple_form(
+        form_kind.kind, form_kind.label, form_kind.hint,
+        mock_capable=form_kind.get('mock_capable', False)
+    ) }}
     {% endfor %}
     {% endif %}
 
@@ -1497,6 +1540,55 @@ FORM: Operate.
         setMessage(homeworkForm, '', false);
     }
 
+    // ── Пробник внутри «Задания» ────────────────────────────────────────
+    // Владелец 08.09.2026: «внутри должна быть логика создания ПРОБНИКА!!!».
+    // Секция билетов живёт в форме «Задания»; как только в ней есть хотя бы
+    // один билет, форма уходит на `/{iso}/mock` — роут, механику и окно
+    // сдачи которого мы не трогаем.
+    function simpleMockSection(form) {
+        return form.querySelector('[data-simple-mock]');
+    }
+
+    function simpleMockTickets(form) {
+        var section = simpleMockSection(form);
+        return section && !section.hidden
+            ? Array.prototype.slice.call(section.querySelectorAll('[data-ticket]'))
+            : [];
+    }
+
+    function collectSimpleTickets(form) {
+        var subject = form.querySelector('[data-x-subject]').value;
+        return simpleMockTickets(form).map(function (row, index) {
+            var thumb = row.querySelector('[data-t-thumb]');
+            return {
+                title: row.dataset.ticketTitle || (subject + ' · Билет ' + (index + 1)),
+                description: row.querySelector('[data-t-description]').value,
+                image_url: thumb.dataset.url || null,
+                image_path: thumb.dataset.path || null
+            };
+        });
+    }
+
+    function showSimpleMock(form, visible) {
+        var section = simpleMockSection(form);
+        if (!section) return;
+        section.hidden = !visible;
+        var opener = form.querySelector('[data-add-mock]');
+        if (opener) opener.hidden = visible;
+        // «Откроется не раньше» с билетами не отправляется: окно ставит сервер.
+        var starts = form.querySelector('[data-x-starts]');
+        if (starts) starts.closest('.prg-field').hidden = visible;
+    }
+
+    function resetSimpleMock(form) {
+        var section = simpleMockSection(form);
+        if (!section) return;
+        section.querySelector('[data-tickets]').innerHTML = '';
+        section.querySelector('[data-subject-status]').textContent = '';
+        updateSubjectSummary(section.querySelector('[data-subject-block]'));
+        showSimpleMock(form, false);
+    }
+
     function resetSimpleFormForCreate(kind) {
         var form = document.querySelector('[data-form="' + kind + '"]');
         delete form.dataset.editingTaskId;
@@ -1507,6 +1599,7 @@ FORM: Operate.
         form.querySelector('[data-x-starts]').value = '';
         resetTariffFields(form);
         renderFormBlocks(form, []);
+        resetSimpleMock(form);
         setMessage(form, '', false);
     }
 
@@ -1598,6 +1691,12 @@ FORM: Operate.
         form.querySelector('[data-x-starts]').value = data.starts_on || '';
         populateTariffFields(form, data);
         renderFormBlocks(form, data.blocks || []);
+        // Билеты на правке не предлагаем: уже созданное задание нельзя
+        // превратить в пробник — у `/items/{id}/material` и `/items/{id}/mock`
+        // разные контракты, а пробник правится своей формой (openMockEdit).
+        resetSimpleMock(form);
+        var mockOpener = form.querySelector('[data-add-mock]');
+        if (mockOpener) mockOpener.hidden = true;
         setMessage(form, 'Правка элемента — измените поля и сохраните.', false);
         showForm(kind);
     }
@@ -1643,6 +1742,23 @@ FORM: Operate.
             return;
         }
 
+        var addMock = event.target.closest('[data-add-mock]');
+        if (addMock) {
+            var addMockForm = addMock.closest('[data-simple-kind]');
+            showSimpleMock(addMockForm, true);
+            simpleMockSection(addMockForm).scrollIntoView({behavior: 'smooth', block: 'nearest'});
+            return;
+        }
+
+        var removeMock = event.target.closest('[data-remove-mock]');
+        if (removeMock) {
+            var removeMockForm = removeMock.closest('[data-simple-kind]');
+            if (simpleMockTickets(removeMockForm).length
+                && !window.confirm('Убрать пробник вместе с загруженными билетами?')) return;
+            resetSimpleMock(removeMockForm);
+            return;
+        }
+
         var addSubject = event.target.closest('[data-add-subject]');
         if (addSubject) {
             var subjectBlock = mockForm.querySelector('[data-subject-block="' + addSubject.dataset.addSubject + '"]');
@@ -1684,8 +1800,13 @@ FORM: Operate.
             var removedBlock = removeTicket.closest('[data-subject-block]');
             removeTicket.closest('[data-ticket]').remove();
             removedBlock.classList.remove('is-ready');
-            removedBlock.querySelector('[data-subject-edit]').hidden = true;
-            removedBlock.querySelector('[data-subject-body]').hidden = false;
+            // Секция билетов внутри «Задания» проще предметного блока формы
+            // `mock`: свёртки и кнопки «Изменить» у неё нет. Обращение к ним
+            // напрямую роняло бы обработчик на первой же удалённой строке.
+            var removedEdit = removedBlock.querySelector('[data-subject-edit]');
+            if (removedEdit) removedEdit.hidden = true;
+            var removedBody = removedBlock.querySelector('[data-subject-body]');
+            if (removedBody) removedBody.hidden = false;
             renumberTickets(removedBlock);
             return;
         }
@@ -1930,6 +2051,37 @@ FORM: Operate.
             );
             var titleSimple = simpleForm.querySelector('[data-x-title]').value.trim();
             if (!titleSimple) { setMessage(simpleForm, 'Укажите тему учебного дня.', true); return; }
+
+            // Билеты добавлены — это пробник, и уходит он на свой роут.
+            // Окно сдачи ставит сервер, поэтому `starts_on` не отправляем.
+            var mockTickets = collectSimpleTickets(simpleForm);
+            if (mockTickets.length) {
+                var mockSubject = simpleForm.querySelector('[data-x-subject]').value;
+                if (!mockSubject) {
+                    setMessage(simpleForm, 'У пробника обязателен предмет — выберите его выше.', true);
+                    return;
+                }
+                if (simpleMockTickets(simpleForm).some(function (row) {
+                    return row.dataset.uploading === 'true';
+                })) {
+                    setMessage(simpleForm, 'Фотографии билетов ещё загружаются — подождите.', true);
+                    return;
+                }
+                saveSimple.disabled = true;
+                api(itemUrl('mock', simpleForm), {
+                    title: titleSimple,
+                    description: simpleForm.querySelector('[data-x-description]').value,
+                    subjects: [{subject: mockSubject, note: null, tickets: mockTickets}],
+                    is_required: simpleForm.querySelector('[data-x-required]').checked,
+                    blocks: collectFormBlocks(simpleForm),
+                    audience: audienceSimple
+                }).then(afterSave).catch(function (error) {
+                    saveSimple.disabled = false;
+                    setMessage(simpleForm, saveError(error, 'пробник'), true);
+                });
+                return;
+            }
+
             saveSimple.disabled = true;
             api(itemUrl(kind, simpleForm), {
                 title: titleSimple,
