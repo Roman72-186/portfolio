@@ -303,6 +303,46 @@
 /* Временная подсветка блоков, вставленных «Взять содержимое из другого
    задания», плюс разделитель перед первым из них — иначе пачка новых
    блоков тут же становится неотличима от остальных. */
+/* ── Секция «Доступность блока» в iOS-скине ────────────────────────────────
+   Направление слоёв здесь обратное базовому скину. Карточка блока сидит на
+   «утопленной» `--ios-grouped-bg`, а в тёмной теме это чистый чёрный —
+   ниже пола нет, поэтому плашка поднимается на `--ios-card-bg`.
+
+   Тем же движением чинится поле даты. Оно берёт `--ios-grouped-bg` из общего
+   `.prg-field input`, и это правило рассчитано на поле, лежащее прямо в
+   белой форме. Внутри карточки блока фон совпадал с фоном карточки, рамки у
+   поля нет — замер 08.09.2026 на пустом поле дал ровно один цвет на весь
+   элемент и 0% «чужих» пикселей, в обеих темах. На плашке контраст
+   возвращается: светлая — поле #F2F2F7 на белой плашке, тёмная — чёрное
+   поле на #1C1C1E.
+
+   Второй половины дела CSS не решает: пустое `input[type="date"]` в WebKit
+   (движок Safari) не рисует ни подсказку формата, ни рамку — Chromium рисует
+   «дд.мм.гггг», и на компьютере поле поэтому читалось. Что значит пустое
+   поле, говорит подпись `.prg-hint` в самой разметке. */
+.ios-prg-day .prg-blk-settings > summary {
+    padding: var(--s-2) 0;
+    color: var(--ios-label-2); font: 700 11px/1.3 var(--ios-font);
+    text-transform: uppercase; letter-spacing: 0.03em;
+}
+.ios-prg-day .prg-blk-settings > summary::after {
+    color: var(--ios-label-3);
+    transition: transform 180ms var(--ios-ease);
+}
+.ios-prg-day .prg-blk-setting {
+    padding: var(--s-3) var(--s-4);
+    background: var(--ios-card-bg); border: none; border-radius: 12px;
+}
+/* Отрицательный отступ `.prg-hint` (-6px выше) рассчитан на подпись под полем
+   в гриде формы. У подписи внутри `.prg-field` свой шаг задаёт грид поля, а
+   внутри плашки она первая строка после padding — и там -6px съедал половину
+   верхнего отступа (замер: 6px вместо 12px). Оба случая отступ обнуляют. */
+.ios-prg-day .prg-field .prg-hint,
+.ios-prg-day .prg-blk-setting > .prg-hint {
+    margin: 0;
+    color: var(--ios-label-2); font: 400 12px/1.4 var(--ios-font);
+}
+
 .ios-prg-day .prg-blk--new { background: color-mix(in srgb, var(--blue) 10%, var(--ios-grouped-bg)); }
 .ios-prg-day .prg-blk-divider {
     margin-top: 14px; padding-top: 10px;
@@ -420,6 +460,15 @@
 @media (max-width: 760px) {
     .ios-prg-day .prg-tiles, .ios-prg-day .prg-grid2, .ios-prg-day .prg-grid3, .ios-prg-day .prg-item { grid-template-columns: 1fr; }
     .ios-prg-day .prg-form { padding: 16px; }
+}
+
+/* Тап-цели отделены от раскладки и держатся до 834px (владелец 08.09.2026:
+   «на любых экранах мобильной версии, ну и планшет»). Порог 760 не покрывал
+   планшет: iPad в портрете — 768, iPad Air — 820, и кнопки с полями там
+   падали до 40–42px вместо положенных 44 (замер на 768px). Сетку колонок
+   этот порог не трогает: на планшете две колонки уместны, поэтому
+   `grid-template-columns` остался на 760. */
+@media (max-width: 834px) {
     .ios-prg-day .prg-head .btn-outline,
     .ios-prg-day .prg-actions .btn-outline,
     .ios-prg-day .prg-item-actions button { min-height: 44px; }

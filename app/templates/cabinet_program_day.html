@@ -8,8 +8,8 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=18">
-<link rel="stylesheet" href="/static/css/program_ios.css?v=12">
+<link rel="stylesheet" href="/static/css/program.css?v=19">
+<link rel="stylesheet" href="/static/css/program_ios.css?v=13">
 {% endblock %}
 {% block content %}
 {% macro tariff_fields() %}
@@ -200,6 +200,7 @@ FORM: Operate.
            с 23 сентября 00:00»). Пусто — видно сразу после публикации. #}
         <label class="prg-field">Откроется не раньше
             <input type="date" data-x-starts aria-label="Дата открытия задания">
+            <span class="prg-hint">Пусто – задание видно сразу после публикации.</span>
         </label>
         {{ tariff_fields() }}
         {{ blocks_editor(with_mock=mock_capable) }}
@@ -958,24 +959,25 @@ FORM: Operate.
         return ''
             + '<details class="prg-blk-settings">'
             + '  <summary>Доступность блока</summary>'
-            + '  <label class="prg-field prg-field--row">'
+            + '  <label class="prg-field prg-field--row prg-blk-setting">'
             + '    <input type="checkbox" data-b-required>'
             + '    <span>Блокирует дальнейшую выдачу — пока не сделан, всё ниже закрыто</span>'
             + '  </label>'
-            + '  <label class="prg-field">Откроется не раньше'
+            + '  <label class="prg-field prg-blk-setting">Откроется не раньше'
             + '    <input type="date" data-b-opens aria-label="Дата открытия блока">'
+            + '    <span class="prg-hint">Пусто – блок ждёт только свою очередь.</span>'
             + '  </label>'
-            + '  <label class="prg-field">Предмет'
+            + '  <label class="prg-field prg-blk-setting">Предмет'
             + '    <select data-b-subject aria-label="Предмет блока">'
             + '      <option value="">Без предмета — виден в обоих направлениях</option>'
             + subjectOptionsHTML()
             + '    </select>'
             + '  </label>'
-            + '  <div class="prg-blk-tariffs">'
+            + '  <div class="prg-blk-tariffs prg-blk-setting">'
             + '    <p class="prg-hint">Тарифы: не отметили ни одного — блок виден всем.</p>'
             + tariffChecksHTML()
             + '  </div>'
-            + '  <label class="prg-field prg-field--row">'
+            + '  <label class="prg-field prg-field--row prg-blk-setting">'
             + '    <input type="checkbox" data-b-bypass>'
             + '    <span>Не ждать очереди — доступен, даже если выше есть незакрытое</span>'
             + '  </label>'
