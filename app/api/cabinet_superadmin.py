@@ -656,7 +656,8 @@ def exam_assignment_create_form(
         "student_list": _load_student_list(db),
         "tag_list": _load_tag_list(db),
         "curator_list": _load_curator_list(db),
-        "tariffs": TARIFFS,
+        # Адресация билета — только действующая линейка (владелец 08.09.2026).
+        "tariffs": TARIFFS_CURRENT,
         "cohort_labels": COHORT_TAG_LABELS,
         "study_mode_labels": STUDY_MODE_LABELS,
         "default_schedule": _default_ticket_schedule(),
@@ -726,7 +727,8 @@ def exam_assignment_edit_form(
         "student_list": _load_student_list(db),
         "tag_list": _load_tag_list(db),
         "curator_list": _load_curator_list(db),
-        "tariffs": TARIFFS,
+        # Адресация билета — только действующая линейка (владелец 08.09.2026).
+        "tariffs": TARIFFS_CURRENT,
         "cohort_labels": COHORT_TAG_LABELS,
         "study_mode_labels": STUDY_MODE_LABELS,
         "default_schedule": _default_ticket_schedule(),

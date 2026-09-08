@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
-from app.constants import MOCK_SUBJECTS, TARIFFS, TARIFF_DISPLAY
+from app.constants import MOCK_SUBJECTS
 from app.db.database import get_db
 from app.dependencies import get_current_user, require_curator, require_admin_role, require_csrf
 from app.models.curator_report import CuratorReport
@@ -29,7 +29,6 @@ from app.tmpl import templates
 router = APIRouter(prefix="/cabinet")
 
 PAGE_SIZE = 10
-TARIFF_LABELS = list(TARIFF_DISPLAY.values())
 # Видео-параметры общие с диалогом ОС — единый источник в services/feedback.
 MAX_CURATOR_REPORT_VIDEO_SIZE = fb_service.MAX_FEEDBACK_VIDEO_SIZE
 ALLOWED_CURATOR_REPORT_VIDEO_TYPES = fb_service.ALLOWED_FEEDBACK_VIDEO_TYPES

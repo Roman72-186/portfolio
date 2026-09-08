@@ -16,6 +16,7 @@ from app.config import settings
 from app.constants import (
     MONTHS,
     TARIFFS,
+    TARIFFS_CURRENT,
     TARIFF_DISPLAY,
     ENROLLMENT_YEARS,
     MONTH_TO_NUM,
@@ -64,7 +65,12 @@ def _get_unread_count(user_id: int, db: DBSession) -> int:
     return count
 
 # Human-readable tariff labels for form display (value submitted is UPPER, label is title-case)
-TARIFF_LABELS = list(TARIFF_DISPLAY.values())
+# Подписи действующей линейки: именно их ученик видит на шаге «Тариф
+# обучения» при регистрации. Отработавшие сюда не попадают — владелец
+# 08.09.2026: «новый учебный год, старых учеников поместили в архив и
+# забыли». `.upper()` при сохранении возвращает подпись к каноническому
+# значению, поэтому список подписей и список значений не разъезжаются.
+TARIFF_LABELS = [TARIFF_DISPLAY[t] for t in TARIFFS_CURRENT]
 
 
 def needs_profile_setup(user: dict) -> bool:

@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session as DBSession
 
-from app.constants import MOCK_SUBJECTS, TARIFFS
+from app.constants import MOCK_SUBJECTS, TARIFFS, TARIFFS_CURRENT
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf, require_csrf_header
 from app.models.audit_log import AuditLog
@@ -609,7 +609,11 @@ def program_day(
             "item_presets": PROGRAM_ITEM_PRESETS,
             "item_form_kinds": PROGRAM_ITEM_FORM_KINDS,
             "subjects": MOCK_SUBJECTS,
-            "tariffs": TARIFFS,
+            # Выбор «кому видно» — только действующая линейка (владелец
+            # 08.09.2026: «новый учебный год, старых поместили в архив и
+            # забыли»). Валидация ниже осталась по всему списку: настройка,
+            # сохранённая под прежним тарифом, не должна отваливаться с 400.
+            "tariffs": TARIFFS_CURRENT,
             # Анкета — переиспользуемый шаблон (owner-решение 22–23.08): конструктор
             # предлагает готовые анкеты, чтобы не набирать один и тот же опрос
             # заново на каждой из восьми точек года.

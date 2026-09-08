@@ -131,3 +131,60 @@ def test_legacy_value_still_saves(superadmin_client, db, user_factory):
     assert resp.status_code in (200, 302, 303)
     db.refresh(student)
     assert student.tariff == "УВЕРЕННЫЙ"
+
+
+# ── где предлагается выбор, а где остаётся весь список ──────────────────────
+#
+# Владелец 08.09.2026: «новый учебный год, старых учеников поместили в архив и
+# забыли». Отсюда граница: **выбор** сузили до действующей линейки, **поиск и
+# проверку** оставили по всему списку — иначе архив станет ненаходимым, а
+# карточки живых staff-аккаунтов со старым тарифом перестанут сохраняться.
+
+def test_student_profile_offers_only_the_current_lineup(client, db, user_factory, session_factory):
+    """Шаг «Тариф обучения» при регистрации — то, что увидит новичок 18 сентября."""
+    student = user_factory(vk_id=910005, name="Новичок", role_name="ученик")
+    # Анкета первого входа: заполненный профиль роут уводит на «Контакты».
+    student.profile_completed = False
+    db.commit()
+    sess = session_factory(student)
+    client.cookies.set("session_id", sess.id)
+
+    page = client.get("/cabinet/profile").text
+    assert "Тариф обучения" in page
+
+    for tariff in TARIFFS_CURRENT:
+        assert f'value="{TARIFF_DISPLAY[tariff]}"' in page
+    for legacy in TARIFFS_LEGACY:
+        assert f'value="{TARIFF_DISPLAY[legacy]}"' not in page
+
+
+def test_profile_labels_survive_the_round_trip():
+    """Форма шлёт подпись, сервер приводит её к каноническому значению
+    `.upper()`. Разъедься эти два списка — тариф перестал бы сохраняться."""
+    from app.api.cabinet_student import TARIFF_LABELS
+
+    assert [label.upper() for label in TARIFF_LABELS] == TARIFFS_CURRENT
+
+
+def test_day_constructor_offers_only_the_current_lineup(admin_client):
+    """Кому виден блок — выбор из действующих."""
+    from datetime import timedelta
+    from app.services.tz import today_msk
+
+    client, _ = admin_client
+    day = (today_msk() + timedelta(days=14)).isoformat()
+
+    page = client.get(f"/cabinet/staff/program/{day}").text
+
+    assert "УВЕРЕННЫЙ МАКСИМУМ" in page
+    assert '"МАКСИМУМ"' not in page.replace("УВЕРЕННЫЙ МАКСИМУМ", "")
+
+
+def test_user_filter_still_finds_the_archive(superadmin_client):
+    """Фильтр по людям не сужаем: архив должен оставаться находимым."""
+    client, _ = superadmin_client
+
+    page = client.get("/cabinet/superadmin/users").text
+
+    for legacy in TARIFFS_LEGACY:
+        assert f'<option value="{legacy}"' in page

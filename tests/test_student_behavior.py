@@ -32,12 +32,18 @@ def test_incomplete_profile_redirects_to_profile_form(client, user_factory, sess
 
 
 def test_profile_form_returns_200_when_incomplete(client, user_factory, session_factory):
-    """GET /cabinet/profile returns 200 with tariff options visible."""
+    """GET /cabinet/profile returns 200 with tariff options visible.
+
+    Список сузился до действующей линейки (владелец 08.09.2026: «новый учебный
+    год, старых учеников поместили в архив и забыли»), поэтому проверяем
+    «Уверенный максимум», а не прежний «Максимум». Состав линейки держит
+    `tests/test_tariffs_precourse.py`.
+    """
     client, _ = _auth(client, user_factory, session_factory,
                       vk_id=100_102, profile_completed=False)
     resp = client.get("/cabinet/profile")
     assert resp.status_code == 200
-    assert "Максимум" in resp.text
+    assert "Уверенный максимум" in resp.text
     assert "Уверенный" in resp.text
 
 
