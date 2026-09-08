@@ -375,7 +375,7 @@
 </div>
 
 {% if viewer_role == 'student' %}
-    {% set active_tab = "cycle" %}
+    {% set active_tab = "feedback" %}
     {% include "partials/bottom_nav.html" %}
 {% else %}
     {# Куратор (rank 2) — через _curator_nav (self-guarded); главный преподаватель/SA (rank >= 4) —

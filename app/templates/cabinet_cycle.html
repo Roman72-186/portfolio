@@ -1,23 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Цикл Пробника{% endblock %}
+{% block title %}Обратная связь{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/cycle_ios.css?v=4">
 {% endblock %}
 {% block content %}
 <div class="cyc-page ios-cycle">
     <section class="cyc-hero">
-        <h1>Цикл Пробника</h1>
+        <h1>Обратная связь</h1>
         <p>Здесь хранится диалог с куратором и статус проверки работ.</p>
         <span class="badge">Циклов всего: {{ cycles_count }}</span>
+        {% set total_unread = open_cycles|sum(attribute='unread_count') %}
+        {% if total_unread and total_unread > 0 %}<span class="badge">Новых сообщений: {{ total_unread }}</span>{% endif %}
     </section>
-
-    <div class="cyc-tabs">
-        <button type="button" class="cyc-tab active" data-tab="feedback">
-            Обратная связь
-            {% set total_unread = open_cycles|sum(attribute='unread_count') %}
-            {% if total_unread and total_unread > 0 %}<span class="tab-badge">{{ total_unread }}</span>{% endif %}
-        </button>
-    </div>
 
     {# ── Обратная связь ── #}
     <div class="cyc-panel active" data-panel="feedback">
@@ -69,23 +63,8 @@
     </div>
 </div>
 
-{% set active_tab = "cycle" %}
+{% set active_tab = "feedback" %}
 {% include "partials/bottom_nav.html" %}
 {% include "partials/lightbox.html" %}
 
-<script>
-// ── Tab switcher ─────────────────────────────────────────────────────────────
-(function () {
-    const tabs = document.querySelectorAll('.cyc-tab');
-    const panels = document.querySelectorAll('.cyc-panel');
-    function activate(name) {
-        tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-        panels.forEach(p => p.classList.toggle('active', p.dataset.panel === name));
-        const url = new URL(window.location.href);
-        url.searchParams.set('tab', name);
-        history.replaceState(null, '', url.toString());
-    }
-    tabs.forEach(t => t.addEventListener('click', () => activate(t.dataset.tab)));
-})();
-</script>
 {% endblock %}

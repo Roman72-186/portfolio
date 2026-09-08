@@ -600,7 +600,10 @@ def cabinet_cycle_hub(
         "closed_cycles": closed_cycles,
         "cycles_count": cycles_count,
         "unread_count": unread,
-        "active_tab": "cycle",
+        # Ключ пункта меню «Обратная связь» (`services/navigation.py`), не
+        # «cycle»: экран давно сведён к одному диалогу, пункта «Цикл
+        # Пробника» в меню нет.
+        "active_tab": "feedback",
     })
 
 

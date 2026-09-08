@@ -40,6 +40,15 @@ def test_student_nav_items_keep_current_contract():
             False,
         ),
         ("portfolio", "/cabinet/portfolio", "/cabinet/portfolio", "Портфолио", "Портфолио", "Портфолио", False),
+        (
+            "feedback",
+            "/cabinet/feedback/",
+            "/cabinet/feedback/",
+            "Обратная связь",
+            "Обратная связь",
+            "Обратная связь",
+            False,
+        ),
         ("statistics", "#", "#", "Статистика", "Статистика", "Статистика (скоро)", True),
         ("personal", "/cabinet/personal", "/cabinet/personal", "Личная информация", "Личное", "Личная информация", False),
     ]

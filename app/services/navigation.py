@@ -92,6 +92,28 @@ STUDENT_NAV_ITEMS: tuple[StudentNavItem, ...] = (
         aria_label="Портфолио",
         icon="portfolio",
     ),
+    # Обратная связь — диалог с куратором по сданным работам (владелец
+    # 09.09.2026). До 06.09 ученик попадал в него вкладкой недели; вкладки
+    # снесли, а другого входа не осталось: с «Обучения», «Трекера» и
+    # «Портфолио» ссылок на диалог нет, оставался только колокольчик, и то
+    # лишь пока висит непрочитанное уведомление. Старую переписку ученик
+    # открыть не мог вовсе.
+    #
+    # Ведёт на `/cabinet/feedback/`, а не сразу на `/cabinet/cycle`: первый —
+    # это адрес самой обратной связи, он же разводит staff по их роутам
+    # (`api/feedback.py::student_feedback_list`), ученика — на экран списка
+    # циклов. Прямая ссылка на `/cabinet/cycle` из нижнего меню убрана
+    # 05.07.2026 как «цикл пробника», и возвращать её под тем же именем не
+    # нужно — см. `tests/test_navigation_contracts.py`.
+    StudentNavItem(
+        key="feedback",
+        desktop_href="/cabinet/feedback/",
+        mobile_href="/cabinet/feedback/",
+        desktop_label="Обратная связь",
+        mobile_label="Обратная связь",
+        aria_label="Обратная связь",
+        icon="cycle",
+    ),
     StudentNavItem(
         key="statistics",
         desktop_href="#",

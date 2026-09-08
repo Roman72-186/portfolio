@@ -145,13 +145,18 @@ def test_student_feedback_root_redirects_to_cycle_feedback_tab(auth_client):
 # ── Cycle page: feedback tab visibility ──────────────────────────────────────
 
 def test_cycle_page_only_feedback_tab_no_mock_tab(auth_client):
-    """У ученика в Цикле Пробника осталась только вкладка «Обратная связь»."""
+    """На экране ученика только обратная связь, пробника нет.
+
+    Полоски вкладок здесь больше нет вовсе (09.09.2026): вкладка осталась одна
+    и повторяла заголовок экрана, который к тому же переименован в «Обратную
+    связь» — теперь это пункт меню. Проверяем сам блок содержимого.
+    """
     client, _ = auth_client
     resp = client.get("/cabinet/cycle")
     assert resp.status_code == 200
-    # Вкладка «Обратная связь» всегда присутствует, вкладки «Пробник» нет.
-    assert 'data-tab="feedback"' in resp.text
+    assert 'data-panel="feedback"' in resp.text
     assert 'data-tab="mock"' not in resp.text
+    assert 'data-panel="mock"' not in resp.text
 
 
 def test_feedback_cycle_shows_submitted_ticket_image(auth_client, db):
@@ -240,7 +245,7 @@ def test_cycle_page_feedback_tab_visible_with_open_cycle(auth_client, db):
     _mk_cycle(db, user.id, closed=False)
     resp = client.get("/cabinet/cycle")
     assert resp.status_code == 200
-    assert 'data-tab="feedback"' in resp.text
+    assert 'data-panel="feedback"' in resp.text
 
 
 # ── Dialog message POST ──────────────────────────────────────────────────────

@@ -65,12 +65,18 @@ def test_student_cabinet_uses_student_bottom_nav_only(
     assert 'href="/cabinet/portfolio"' in bottom_nav
     assert 'href="/cabinet/personal"' in bottom_nav
     assert 'href="/3dlab"' in bottom_nav
+    # Обратная связь — пункт меню с 09.09.2026. До этого диалог с куратором
+    # открывался вкладкой недели, а после сноса вкладок 06.09 — только по
+    # карточке уведомления, пока непрочитанное висит.
+    assert 'href="/cabinet/feedback/"' in bottom_nav
 
     # Статистика — заглушка «скоро», без рабочей ссылки.
     assert 'nav-soon-badge' in bottom_nav
 
-    # Цикл пробника и загрузка пробника ушли из нижнего меню (роуты живы по прямым ссылкам,
-    # но со страницы кабинета ученика на них уже есть контекстные ссылки вне нижнего меню).
+    # Цикл пробника и загрузка пробника ушли из нижнего меню 05.07.2026 и не
+    # возвращаются: пункт выше ведёт на `/cabinet/feedback/` — адрес самой
+    # обратной связи, который и разводит роли по их экранам. Прямой ссылки на
+    # `/cabinet/cycle` в меню по-прежнему нет.
     assert 'href="/cabinet/cycle"' not in bottom_nav
     assert 'href="/upload/mock-exam"' not in bottom_nav
 
