@@ -65,6 +65,13 @@ def test_task_form_carries_the_ticket_section(
 
     assert "data-add-mock" in form
     assert "data-simple-mock" in form
+
+    # Кнопка стоит в общем ряду добавления, рядом с «+ Текст» и «+ Фото»
+    # (владелец 08.09.2026: «перенести в общий список добавления кнопок»).
+    add_row_start = form.index("prg-blocks-add")
+    add_row = form[add_row_start:form.index("</div>", form.index("data-add-mock"))]
+    assert "data-add-mock" in add_row
+    assert "data-add-block" in add_row
     # Делегированные обработчики билетов ищут именно эти атрибуты: без них
     # загрузка фотографий и нумерация молча перестанут работать.
     for attribute in (

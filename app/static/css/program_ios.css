@@ -168,8 +168,11 @@
 .ios-prg-day .prg-tile small { color: var(--ios-label-2); font: 400 12px/1.4 var(--ios-font); margin-top: 2px; }
 
 /* ── Форма сборки (открывается под плитками) ── */
+/* Шаг между строками формы поднят с 14px до токена --s-5 по той же просьбе
+   владельца 08.09.2026: поля, галочки и разделы конструктора стояли теснее,
+   чем читаются. */
 .ios-prg-day .prg-form {
-    padding: 20px; gap: 14px; margin-bottom: 22px;
+    padding: 20px; gap: var(--s-5); margin-bottom: 22px;
     background: var(--ios-card-bg); border: none; border-radius: 20px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
@@ -263,6 +266,17 @@
 .ios-prg-day .prg-blk[data-block-type="video"]    { border-left-color: var(--blk-video); }
 .ios-prg-day .prg-blk[data-block-type="link"]     { border-left-color: var(--blk-link); }
 .ios-prg-day .prg-blk[data-block-type="question"] { border-left-color: var(--blk-question); }
+.ios-prg-day .prg-blk[data-block-type="portfolio"] { border-left-color: var(--blk-portfolio); }
+.ios-prg-day .prg-blk[data-block-type="scale"]     { border-left-color: var(--blk-scale); }
+.ios-prg-day .prg-blk[data-block-type="timed"]     { border-left-color: var(--blk-timed); }
+.ios-prg-day .prg-blk[data-block-type="upload"]    { border-left-color: var(--blk-upload); }
+.ios-prg-day .prg-blk[data-block-type="rules"]     { border-left-color: var(--blk-rules); }
+
+/* Разрыв между карточками блоков (владелец 08.09.2026). 10px достались от
+   компактных билетов пробника, а карточка блока выше в несколько раз:
+   соседние строки читались как продолжение одной. Подпись типа и номер уже
+   есть — не хватало именно воздуха между ними. */
+.ios-prg-day .prg-blk + .prg-blk { margin-top: var(--s-4); }
 
 /* Номер блока — второй зрительный якорь рядом с подписью типа (см. комментарий
    выше про 7+ блоков). Кнопка «Убрать» отделена от ↑/↓ зазором и окрашена
@@ -318,7 +332,27 @@
     color: var(--ios-label-2); font: 600 12px/1 var(--ios-font);
 }
 
-.ios-prg-day .prg-actions { gap: 8px; }
+/* Воздух между кнопками (владелец 08.09.2026: «пересмотреть все кнопки,
+   чтобы между строками, элементами было больше пустоты»).
+
+   Оси разведены намеренно. Кнопки одной строки — это тулбар, им плотность
+   идёт на пользу; строки же при переносе слипались в одно пятно, и жалоба
+   была именно на это. Поэтому `column-gap` остаётся прежним, растёт только
+   `row-gap`.
+
+   Longhand, а не `gap`: составные селекторы ниже перекрыли бы обе оси одним
+   значением и вернули бы тесноту по горизонтали. */
+.ios-prg-day .prg-actions { column-gap: var(--s-2); row-gap: var(--s-3); }
+/* Ряд добавления живёт в нескольких строках всегда — блоков одиннадцать,
+   они не помещаются в строку ни на одной ширине. Здесь разрыв больше. */
+.ios-prg-day .prg-actions.prg-blocks-add,
+.ios-prg-day .prg-actions.prg-blocks-take { column-gap: var(--s-2); row-gap: var(--s-4); }
+/* Подпись статуса — такой же flex-элемент ряда, и отрицательный отступ,
+   рассчитанный на подпись под полем, съедал бы новый разрыв строк. */
+.ios-prg-day .prg-blocks-take .prg-hint { flex-basis: 100%; margin: var(--s-1) 0 0; }
+/* Прямые ряды формы — это «Сохранить»/«Отмена». Пара главных действий стоит
+   свободнее тулбара: 8px между ними читались как одна кнопка с разделителем. */
+.ios-prg-day .prg-form > .prg-actions { column-gap: var(--s-3); }
 .ios-prg-day .prg-actions .btn-outline { min-height: 40px; padding: 9px 16px; font-size: 12px; }
 
 .ios-prg-day .prg-message { color: var(--ios-label-2); font: 400 13px/1.45 var(--ios-font); }

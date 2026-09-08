@@ -8,8 +8,8 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=17">
-<link rel="stylesheet" href="/static/css/program_ios.css?v=11">
+<link rel="stylesheet" href="/static/css/program.css?v=18">
+<link rel="stylesheet" href="/static/css/program_ios.css?v=12">
 {% endblock %}
 {% block content %}
 {% macro tariff_fields() %}
@@ -36,7 +36,7 @@ FORM: Operate.
 
    Разметка пустая, строки рисует JS (`renderFormBlocks`) — как у билетов
    Пробника и вариантов ответа анкеты. Стили — в `program.css`. #}
-{% macro blocks_editor(title='Задачи учебного дня', hint='Добавьте, что должен увидеть ученик: текст, фото, видео из загруженных, ссылку или вопрос. Порядок меняется стрелками ↑ ↓.') %}
+{% macro blocks_editor(title='Задачи учебного дня', hint='Добавьте, что должен увидеть ученик: текст, фото, видео из загруженных, ссылку или вопрос. Порядок меняется стрелками ↑ ↓.', with_mock=False) %}
 <div class="prg-blocks" data-blocks-wrap>
     <h3>{{ title }}</h3>
     <p class="prg-hint">{{ hint }}</p>
@@ -45,6 +45,13 @@ FORM: Operate.
         {% for kind, label in block_types %}
         <button type="button" class="btn-outline" data-add-block="{{ kind }}">+ {{ label }}</button>
         {% endfor %}
+        {# Пробник стоит в общем ряду (владелец 08.09.2026), хотя заводит не
+           блок, а другой вид элемента: для преподавателя это такой же пункт
+           «что положить в день», и разделять их значило бы объяснять разницу,
+           которой у него в голове нет. Кнопка ведёт к секции билетов ниже. #}
+        {% if with_mock %}
+        <button type="button" class="btn-outline" data-add-mock>+ Пробник</button>
+        {% endif %}
     </div>
     {# Заменяет прежнюю шаблонность анкеты: набор вопросов больше не живёт
        отдельной сущностью, зато любой набор блоков переносится из соседнего
@@ -195,7 +202,7 @@ FORM: Operate.
             <input type="date" data-x-starts aria-label="Дата открытия задания">
         </label>
         {{ tariff_fields() }}
-        {{ blocks_editor() }}
+        {{ blocks_editor(with_mock=mock_capable) }}
         {% if mock_capable %}
         {# Пробник внутри «Задания» (владелец 08.09.2026: «внутри должна быть
            логика создания ПРОБНИКА!!!»). Отдельной плитки нет: добавили
@@ -203,10 +210,8 @@ FORM: Operate.
            и день получает элемент с билетом, окном и попыткой. Разметка
            повторяет предметный блок формы `mock` по `data-*`, чтобы работали
            те же делегированные обработчики (`uploadSubjectImages`,
-           `addTicketRow`, `renumberTickets`) — копии функций не нужны. #}
-        <div class="prg-actions">
-            <button type="button" class="btn-outline" data-add-mock>+ Пробник (билеты)</button>
-        </div>
+           `addTicketRow`, `renumberTickets`) — копии функций не нужны.
+           Кнопка, открывающая секцию, стоит в общем ряду добавления. #}
         <section class="prg-mock-builder" data-simple-mock hidden>
             <h3>Билеты пробника</h3>
             <p class="prg-hint">
