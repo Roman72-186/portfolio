@@ -46,7 +46,7 @@ from app.models.tracker import (
     TrackerTask,
     TrackerTaskState,
 )
-from app.models.work import Work
+from app.models.work import WORK_TYPE_BEFORE, Work
 from app.services.program import day_bounds, item_details, msk_date, week_start
 from app.services.stats import avg_score_by_subject_all_time
 from app.services import s3 as s3_service
@@ -244,11 +244,16 @@ def _is_task_done(db: DBSession, task_id: int, user_id: int) -> bool:
 # ── GET /cabinet/tracker/tasks/{id}/blocks ───────────────────────────────────
 
 def _portfolio_block_done(db: DBSession, block, user_id: int) -> bool:
-    """Закрыт ли блок «Загрузить портфолио» — по факту загрузки работы.
+    """Закрыт ли блок «Загрузить портфолио» — по факту загрузки работы «До».
 
     Отсчёт от даты открытия блока, иначе от даты открытия задания, иначе от
     начала дня задания: прошлогодняя работа не должна закрывать сегодняшний
     шаг (владелец 03.09.2026 — «портфолио, которое именно 18 числа»).
+
+    Считаем только `before` и только успешные загрузки (владелец 09.09.2026:
+    «по этой кнопке работы загружаются в ДО»). Раньше подходила любая работа
+    любого типа: сданный пробник закрывал блок предобучения, а неудачная
+    загрузка — открывала ленту, хотя файла в хранилище нет.
     """
     state = get_task_block_state(db, block_id=block.id, user_id=user_id)
     if state is not None and state.status == STATUS_DONE:
@@ -261,7 +266,12 @@ def _portfolio_block_done(db: DBSession, block, user_id: int) -> bool:
         return False
     return (
         db.query(Work.id)
-        .filter(Work.user_id == user_id, Work.created_at >= since)
+        .filter(
+            Work.user_id == user_id,
+            Work.work_type == WORK_TYPE_BEFORE,
+            Work.status == "success",
+            Work.created_at >= since,
+        )
         .first()
         is not None
     )
@@ -399,7 +409,12 @@ def cabinet_tracker_task_blocks(
             item.update(_submission_payload(db, block, user["user_id"]))
         elif block.block_type == BLOCK_PORTFOLIO:
             # Ведём на существующий экран загрузки работ, своего у блока нет.
-            item["upload_url"] = "/upload"
+            # Всегда в раздел «До» (владелец 09.09.2026: «по этой кнопке работы
+            # загружаются в ДО»). Без явного `section` экран выбирает раздел
+            # сам по `portfolio_do_completed`, и ученик, уже грузивший работы,
+            # попадал в «После». Раздел доезжает и до отправки: `upload.html`
+            # кладёт `section` скрытым полем формы.
+            item["upload_url"] = "/upload?section=before"
             item["done"] = _portfolio_block_done(db, block, user["user_id"])
         elif block.block_type == BLOCK_QUESTION:
             item["question_type"] = block.question_type

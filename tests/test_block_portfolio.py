@@ -63,10 +63,13 @@ def _portfolio_block(db, task, order=1):
     return block
 
 
-def _work(db, user, *, days_ago=0):
+def _work(db, user, *, days_ago=0, work_type="before", status="success"):
+    """Успешная работа «До» по умолчанию — то же, что кладёт боевая загрузка
+    (`api/upload.py::_process_uploads` ставит `status="success"` сразу)."""
     work = Work(
-        user_id=user.id, work_type="before", month="сентябрь", year=TODAY.year,
+        user_id=user.id, work_type=work_type, month="сентябрь", year=TODAY.year,
         filename="work.jpg", s3_url="https://example.com/work.jpg",
+        status=status,
     )
     db.add(work)
     db.flush()
@@ -100,6 +103,28 @@ def test_old_upload_does_not_count(db, regular_user):
     """«Портфолио, которое именно 18 числа» — прошлогодняя работа не закрывает
     сегодняшний шаг."""
     _work(db, regular_user, days_ago=90)
+
+    assert has_portfolio_upload(db, regular_user.id, since=CYCLE_START) is False
+
+
+# Тип и статус работы (владелец 09.09.2026: «по этой кнопке работы загружаются
+# в ДО»). До этого шаг закрывала любая работа: сданный пробник засчитывался за
+# портфолио предобучения, а неудачная загрузка открывала ленту без файла.
+
+def test_after_work_does_not_count(db, regular_user):
+    _work(db, regular_user, work_type="after")
+
+    assert has_portfolio_upload(db, regular_user.id, since=CYCLE_START) is False
+
+
+def test_mock_exam_work_does_not_count(db, regular_user):
+    _work(db, regular_user, work_type="mock_exam")
+
+    assert has_portfolio_upload(db, regular_user.id, since=CYCLE_START) is False
+
+
+def test_failed_upload_does_not_count(db, regular_user):
+    _work(db, regular_user, status="failed")
 
     assert has_portfolio_upload(db, regular_user.id, since=CYCLE_START) is False
 
@@ -193,3 +218,25 @@ def test_portfolio_block_saves_without_content(admin_client, db):
     block = db.query(TaskBlock).filter(TaskBlock.block_type == BLOCK_PORTFOLIO).first()
     assert block is not None
     assert block.is_required is True
+
+
+# ── ссылка кнопки ───────────────────────────────────────────────────────────
+
+def test_button_points_at_the_before_section(auth_client, db):
+    """Кнопка ведёт строго в «До», даже когда онбординг уже пройден.
+
+    Владелец 09.09.2026: «по этой кнопке работы загружаются в ДО». Без явного
+    `section` экран загрузки выбирает раздел сам по `portfolio_do_completed`,
+    и ученик, уже грузивший работы, попадал в «После».
+    """
+    from app.models.user import User
+
+    client, user = auth_client
+    db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
+    db.commit()
+    task = _task(db, user)
+    _portfolio_block(db, task)
+
+    payload = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+
+    assert payload["blocks"][0]["upload_url"] == "/upload?section=before"

@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from app.models.learning_topic import LearningTopic
 from app.models.task_block import BLOCK_PORTFOLIO
 from app.models.tracker import ITEM_MOCK_EXAM, STATUS_DONE
-from app.models.work import Work
+from app.models.work import WORK_TYPE_BEFORE, Work
 from app.services.program import day_bounds, msk_date
 from app.services.task_blocks import (
     close_block_for_user,
@@ -89,18 +89,28 @@ def _task_done(entry: dict) -> bool:
 
 
 def has_portfolio_upload(db: Session, user_id: int, *, since: date) -> bool:
-    """Загружал ли ученик работу начиная с `since` (московская дата).
+    """Загружал ли ученик работу «До» начиная с `since` (московская дата).
 
     Блок «Загрузить портфолио» закрывается фактом загрузки, а не галочкой
     (владелец 03.09.2026: «пока не будет подтверждения, что он загрузил
     портфолио, которое именно 18 числа, у него не откроется актуальное
     образовательное пространство дальше»). Отсчёт — от начала цикла: прошлогодняя
     работа не должна засчитывать сегодняшнее задание.
+
+    Тип работы и статус проверяются вместе с датой (владелец 09.09.2026: «по
+    этой кнопке работы загружаются в ДО»). Условие обязано совпадать с
+    `api/cabinet_tracker.py::_portfolio_block_done`: разойдутся — блок будет
+    рисоваться закрытым и при этом запирать ленту, или наоборот.
     """
     start, _ = day_bounds(since)
     return (
         db.query(Work.id)
-        .filter(Work.user_id == user_id, Work.created_at >= start)
+        .filter(
+            Work.user_id == user_id,
+            Work.work_type == WORK_TYPE_BEFORE,
+            Work.status == "success",
+            Work.created_at >= start,
+        )
         .first()
         is not None
     )
