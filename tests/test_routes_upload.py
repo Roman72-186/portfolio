@@ -111,7 +111,6 @@ def test_upload_form_with_auth_returns_200(auth_client):
 
 def test_upload_form_contains_month_options(auth_client, db):
     client, user = auth_client
-    _create_active_period(db, user, "portfolio_upload")
     resp = client.get("/upload")
     assert "январь" in resp.text
     assert "декабрь" in resp.text
@@ -136,7 +135,6 @@ def test_upload_form_allows_explicit_before_mode_even_after_completion(auth_clie
 
 def test_upload_invalid_month_shows_error(auth_client, db):
     client, user = auth_client
-    _create_active_period(db, user, "portfolio_upload")
     with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
         resp = _upload(
             client,
@@ -150,7 +148,6 @@ def test_upload_invalid_month_shows_error(auth_client, db):
 
 def test_upload_unsupported_format_shows_error(auth_client, db):
     client, user = auth_client
-    _create_active_period(db, user, "portfolio_upload")
     resp = _upload(client, [("photos", ("doc.pdf", b"data", "application/pdf"))])
     assert resp.status_code == 200
     assert "формат" in resp.text.lower() or "неподдерживаемый" in resp.text
@@ -208,7 +205,6 @@ def test_upload_s3_failure_shows_retry_error(auth_client, db):
     from app.models.work import Work
 
     client, user = auth_client
-    _create_active_period(db, user, "portfolio_upload")
     with patch(_MOCK_S3_CONFIGURED, return_value=True), \
          patch(_MOCK_S3_UPLOAD, return_value=None), \
          patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
@@ -224,7 +220,6 @@ def test_upload_with_n8n_disabled_is_s3_only(auth_client, db):
     from app.models.work import Work
 
     client, user = auth_client
-    _create_active_period(db, user, "portfolio_upload")
     n8n_mock = AsyncMock(return_value=_OK_RESULT)
 
     with patch("app.api.upload.settings.n8n_enabled", False), \
@@ -250,7 +245,6 @@ def test_upload_with_n8n_disabled_requires_s3(auth_client, db):
     from app.models.work import Work
 
     client, user = auth_client
-    _create_active_period(db, user, "portfolio_upload")
 
     with patch("app.api.upload.settings.n8n_enabled", False), \
          patch(_MOCK_S3_CONFIGURED, return_value=False), \
@@ -272,7 +266,6 @@ def test_upload_n8n_failure_still_shows_success(auth_client, db):
     from app.models.work import Work
 
     client, user = auth_client
-    _create_active_period(db, user, "portfolio_upload")
 
     with patch(_MOCK_S3_CONFIGURED, return_value=True), \
          patch(_MOCK_S3_UPLOAD, return_value="https://s3.example/work.jpg"), \
@@ -305,7 +298,6 @@ def test_upload_background_scheduling_failure_keeps_s3_success(auth_client, db):
     from app.models.work import Work
 
     client, user = auth_client
-    _create_active_period(db, user, "portfolio_upload")
 
     with patch(_MOCK_S3_CONFIGURED, return_value=True), \
          patch(_MOCK_S3_UPLOAD, return_value="https://s3.example/work.jpg"), \
@@ -335,7 +327,6 @@ def test_upload_writes_to_upload_log(auth_client, db):
     from app.models.upload_log import UploadLog
 
     client, user = auth_client
-    _create_active_period(db, user, "portfolio_upload")
     with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
         _upload(client, [("photos", ("x.jpg", _JPG_BYTES, "image/jpeg"))])
 
