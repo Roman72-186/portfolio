@@ -1307,3 +1307,68 @@ def test_curator_can_unlock_subject(client, db, user_factory, session_factory):
     updated = db.query(MockExamLock).filter(MockExamLock.id == lock_id).first()
     assert updated.is_locked is False
     assert updated.unlocked_by_id == curator.id
+
+
+# ---------------------------------------------------------------------------
+# Сторожевые тесты: загрузка портфолио не заперта окном FeaturePeriod
+# ---------------------------------------------------------------------------
+# Владелец 09.09.2026: «ранее открывали загрузку портфолио. Эти триггеры нужно
+# выключить сейчас — всё, что было… мы открываем задания по портфолио,
+# пробникам либо остальным уже в учебных программах. Остальное ничего не должно
+# влиять». Ученик шёл по кнопке блока «Загрузить портфолио» из задания и видел
+# баннер «Загрузка закрыта». Возвращать гейт — только по новой дословной
+# просьбе владельца, записанной в коде.
+
+def _complete_portfolio_onboarding(db, user):
+    """Раздел «После» — единственный, где раньше срабатывал гейт: до онбординга
+    `_resolve_upload_mode` уводит ученика в «До», и проверка не выполнялась."""
+    from app.models.user import User
+    db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
+    db.commit()
+
+
+def test_upload_after_open_without_feature_period(auth_client, db):
+    client, user = auth_client
+    _complete_portfolio_onboarding(db, user)
+
+    resp = client.get("/upload?section=after")
+
+    assert resp.status_code == 200
+    assert "Загрузка закрыта" not in resp.text
+    assert "Выберите месяц" in resp.text
+
+
+def test_upload_after_post_accepted_without_feature_period(auth_client, db):
+    from app.models.work import Work, WORK_TYPE_AFTER
+
+    client, user = auth_client
+    _complete_portfolio_onboarding(db, user)
+
+    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
+        resp = _upload(
+            client,
+            [("photos", ("p.jpg", _JPG_BYTES, "image/jpeg"))],
+            month="январь",
+            section="after",
+        )
+
+    assert resp.status_code == 200
+    assert "Загрузка закрыта" not in resp.text
+    assert db.query(Work).filter(
+        Work.user_id == user.id, Work.work_type == WORK_TYPE_AFTER
+    ).count() == 1
+
+
+def test_upload_api_after_accepted_without_feature_period(auth_client, db):
+    client, user = auth_client
+    _complete_portfolio_onboarding(db, user)
+
+    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
+        resp = client.post(
+            "/upload/api",
+            data={"month": "январь", "section": "after"},
+            files=[("photos", ("p.jpg", _JPG_BYTES, "image/jpeg"))],
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True

@@ -20,7 +20,6 @@ from app.constants import (
     TARIFF_DISPLAY,
     ENROLLMENT_YEARS,
     MONTH_TO_NUM,
-    FEATURE_PORTFOLIO_UPLOAD,
     MOCK_SUBJECTS,
 )
 from app.db.database import get_db
@@ -615,7 +614,11 @@ async def cabinet_portfolio(
 ):
     """Portfolio tab: before works as a flat gallery, after works grouped by year-month."""
     from app.services.drive import list_student_photos
-    portfolio_upload_open, _ = is_feature_available(db, FEATURE_PORTFOLIO_UPLOAD)
+    # Кнопка «Загрузить фото» больше не зависит от окна FeaturePeriod: гейт
+    # загрузки портфолио снят целиком (владелец 09.09.2026, см.
+    # `api/upload.py::upload_form`). Иначе экран прятал бы кнопку от ученика,
+    # которому загрузку уже открыло задание учебной программы.
+    portfolio_upload_open = True
 
     before_works = (
         db.query(Work)

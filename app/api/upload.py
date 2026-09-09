@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session
 from app.config import settings
-from app.constants import MONTHS, MOCK_SUBJECTS, FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM, FEATURE_RETAKE
+from app.constants import MONTHS, MOCK_SUBJECTS, FEATURE_MOCK_EXAM, FEATURE_RETAKE
 from app.services.exam_cycle import (
     MAX_INTERMEDIATE_PER_FINAL,
     close_or_expire_mock_exam_attempts,
@@ -607,12 +607,15 @@ def upload_form(
     db: Annotated[DBSession, Depends(get_db)],
     section: str | None = None,
 ):
+    # Загрузка портфолио больше не заперта глобальным окном FeaturePeriod
+    # (владелец 09.09.2026: «ранее открывали загрузку портфолио. Эти триггеры
+    # нужно выключить сейчас — всё, что было… мы открываем задания по
+    # портфолио, пробникам либо остальным уже в учебных программах. Остальное
+    # ничего не должно влиять»). Ученик приходил сюда по кнопке блока
+    # «Загрузить портфолио» из задания и упирался в баннер «Загрузка закрыта».
+    # Доступ теперь определяет только само задание в учебной программе.
     mode = _resolve_upload_mode(user, section)
-    if mode == "after":
-        fa, fm = is_feature_available(db, FEATURE_PORTFOLIO_UPLOAD)
-    else:
-        fa, fm = True, None
-    return _render_upload(request, user, mode=mode, feature_available=fa, feature_message=fm)
+    return _render_upload(request, user, mode=mode)
 
 
 # ── POST /upload ─────────────────────────────────────────────────────────────
@@ -628,13 +631,10 @@ async def upload_photos(
     month: str | None = Form(default=None),
     section: str | None = Form(default=None),
 ):
+    # Гейт FeaturePeriod снят вместе с GET /upload (владелец 09.09.2026),
+    # иначе форма открывалась бы, а отправка возвращала «Загрузка закрыта».
     mode = _resolve_upload_mode(user, section)
     work_type = WORK_TYPE_BEFORE if mode == "before" else WORK_TYPE_AFTER
-
-    if mode == "after":
-        fa, fm = is_feature_available(db, FEATURE_PORTFOLIO_UPLOAD)
-        if not fa:
-            return _render_upload(request, user, mode=mode, feature_available=fa, feature_message=fm)
 
     def _err(msg):
         return _render_upload(request, user, mode=mode, error=msg)
@@ -697,13 +697,9 @@ async def upload_photos_api(
     section: str | None = Form(default=None),
 ):
     """AJAX-friendly вариант POST /upload — возвращает JSON вместо редиректа."""
+    # Без гейта FeaturePeriod, как и обычный POST /upload (владелец 09.09.2026).
     mode = _resolve_upload_mode(user, section)
     work_type = WORK_TYPE_BEFORE if mode == "before" else WORK_TYPE_AFTER
-
-    if mode == "after":
-        fa, fm = is_feature_available(db, FEATURE_PORTFOLIO_UPLOAD)
-        if not fa:
-            return JSONResponse({"success": False, "error": fm or "Раздел закрыт"}, status_code=403)
 
     if mode == "before":
         month = _default_month()

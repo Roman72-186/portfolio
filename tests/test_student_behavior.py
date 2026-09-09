@@ -225,25 +225,19 @@ def test_dashboard_tariff_history_from_upload_log(auth_client, db):
     assert resp.status_code == 200
 
 
-def test_dashboard_shows_upload_button_when_portfolio_after_is_open(auth_client, db):
-    """Portfolio tab shows /upload CTA when portfolio upload window is open."""
-    from app.constants import FEATURE_PORTFOLIO_UPLOAD
-    from app.models.feature_period import FeaturePeriod
+def test_dashboard_shows_upload_button_without_feature_period(auth_client, db):
+    """Кнопка «Загрузить фото» на вкладке Портфолио видна без окна FeaturePeriod.
+
+    Сторожевой тест решения владельца 09.09.2026 («эти триггеры нужно выключить
+    сейчас — всё, что было»): доступ к загрузке даёт задание учебной программы,
+    глобальное окно больше ни на что не влияет. Раньше тот же тест сначала
+    заводил активный FeaturePeriod — без него кнопка пряталась.
+    """
     from app.models.user import User
 
     client, user = auth_client
     db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
-    db.add(FeaturePeriod(
-        feature=FEATURE_PORTFOLIO_UPLOAD,
-        start_date=date.today() - timedelta(days=1),
-        end_date=date.today() + timedelta(days=7),
-        is_active=True,
-        created_by_id=user.id,
-    ))
     db.commit()
-
-    from app.services.feature_periods import invalidate_feature_cache
-    invalidate_feature_cache(FEATURE_PORTFOLIO_UPLOAD)
 
     resp = client.get("/cabinet/portfolio")
     assert resp.status_code == 200
