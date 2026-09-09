@@ -61,7 +61,9 @@ async def cabinet_gallery(
     return templates.TemplateResponse("gallery.html", {
         "request": request,
         "user": user,
-        "before_groups": group_works(before_works),
+        # «До» — плоская лента без месяцев (владелец 09.09.2026: «в До
+        # добавляется не по месяцам»), как в кабинете и на экранах staff.
+        "before_works": sorted(before_works, key=lambda w: w.created_at, reverse=True),
         "after_groups": group_works(after_works),
         "mock_groups": group_works(mock_works),
         "retake_groups": group_works(retake_works),

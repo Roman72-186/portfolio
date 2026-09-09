@@ -555,3 +555,27 @@ def test_unreviewed_counts_include_point_a_only_for_admin(db, user_factory):
 
     assert {r["student"].id: r["unchecked"] for r in curator_rows}[student.id] == 0
     assert {r["student"].id: r["unchecked"] for r in admin_rows}[student.id] == 1
+
+
+def test_point_a_sorts_next_to_other_domains(db, user_factory):
+    """Карточка точки А сортируется вместе с остальными доменами.
+
+    `submitted_at` у неё берётся из агрегата `max(Work.created_at)`, а не с
+    ORM-объекта: наивная дата уронила бы общую сортировку по TypeError — тот
+    же класс поломки, что уже чинили у циклов Пробника.
+    """
+    student = user_factory(vk_id=850_120, name="Ученик")
+    _before_work(db, student.id)
+    task, block = _task(db), None
+    blocks = sync_blocks(db, task_id=task.id, items=[_question("Как прошло?")])
+    save_response(
+        db, task_id=task.id, user_id=student.id, blocks=blocks,
+        answers={blocks[0].id: {"text": "Хорошо"}},
+    )
+    db.commit()
+
+    items = student_review_items(db, student_id=student.id, role_rank=ADMIN_RANK)
+
+    domains = [item.domain for item in items]
+    assert DOMAIN_PORTFOLIO_BEFORE in domains
+    assert DOMAIN_TASK_BLOCK in domains

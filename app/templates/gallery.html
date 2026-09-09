@@ -61,55 +61,39 @@
     </div>
     {% else %}
 
-    <!-- До обучения -->
+    <!-- До обучения: плоская лента, месяцев нет (владелец 09.09.2026) -->
     <div class="gallery-section" id="section-before" data-filter="before">
         <div class="section-label">До обучения</div>
-        {% if before_groups %}
-            {% for group in before_groups %}
-            {% set gid = "bf-" ~ loop.index %}
-            <div class="month-item" data-group-id="{{ gid }}">
-                <button class="month-header" type="button"
-                        aria-expanded="false" aria-controls="body-{{ gid }}"
-                        onclick="toggleGroup(this.parentElement)">
-                    <div class="month-header-left">
-                        <span class="month-name">{{ group.year }} — {{ group.month | capitalize }}</span>
-                        <span class="month-count">{{ group.total }} фото</span>
-                    </div>
-                    <span class="month-chevron">▼</span>
-                </button>
-                <div class="month-body" id="body-{{ gid }}">
-                    <div class="works-grid" id="grid-{{ gid }}" data-gallery="{{ gid }}">
-                        {% for w in group.works %}
-                        {% set thumb = w.s3_url or (drive_thumbs.get(w.drive_file_id, '') if w.drive_file_id else '') %}
-                            {% if thumb %}
-                        <button type="button" class="work-cell" data-page-index="{{ loop.index0 }}" onclick="openGallery(this.querySelector('img'))" aria-label="Открыть фото {{ w.filename }}">
-                            <img src="{{ thumb }}" alt="{{ w.filename }}" loading="lazy"
-                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex';this.closest('.work-cell').disabled=true">
-                            <div class="work-no-photo" style="display:{% if not thumb %}flex{% else %}none{% endif %}">фото</div>
-                            {% if w.score is not none %}
-                            <div class="score-badge">{{ w.score | int }}</div>
-                            {% endif %}
-                        </button>
-                            {% else %}
-                        <div class="work-cell" data-page-index="{{ loop.index0 }}">
-                            <div class="work-no-photo">фото</div>
-                            {% if w.score is not none %}
-                            <div class="score-badge">{{ w.score | int }}</div>
-                            {% endif %}
-                        </div>
-                            {% endif %}
-                        {% endfor %}
-                    </div>
-                    {% if group.total > page_size %}
-                    <div class="pagination" id="pag-{{ gid }}">
-                        <button onclick="prevPage('{{ gid }}')" id="prev-{{ gid }}" disabled>‹ Пред.</button>
-                        <span class="pagination-info" id="info-{{ gid }}">Фото 1–{{ [page_size, group.total] | min }} из {{ group.total }}</span>
-                        <button onclick="nextPage('{{ gid }}', {{ group.total }})" id="next-{{ gid }}">След. ›</button>
-                    </div>
-                    {% endif %}
-                </div>
+        {% if before_works %}
+        <div class="works-grid" id="grid-bf" data-gallery="bf">
+            {% for w in before_works %}
+            {% set thumb = w.s3_url or (drive_thumbs.get(w.drive_file_id, '') if w.drive_file_id else '') %}
+                {% if thumb %}
+            <button type="button" class="work-cell" data-page-index="{{ loop.index0 }}" onclick="openGallery(this.querySelector('img'))" aria-label="Открыть фото {{ w.filename }}">
+                <img src="{{ thumb }}" alt="{{ w.filename }}" loading="lazy"
+                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex';this.closest('.work-cell').disabled=true">
+                <div class="work-no-photo" style="display:none">фото</div>
+                {% if w.score is not none %}
+                <div class="score-badge">{{ w.score | int }}</div>
+                {% endif %}
+            </button>
+                {% else %}
+            <div class="work-cell" data-page-index="{{ loop.index0 }}">
+                <div class="work-no-photo">фото</div>
+                {% if w.score is not none %}
+                <div class="score-badge">{{ w.score | int }}</div>
+                {% endif %}
             </div>
+                {% endif %}
             {% endfor %}
+        </div>
+        {% if before_count > page_size %}
+        <div class="pagination" id="pag-bf">
+            <button onclick="prevPage('bf')" id="prev-bf" disabled>‹ Пред.</button>
+            <span class="pagination-info" id="info-bf">Фото 1–{{ [page_size, before_count] | min }} из {{ before_count }}</span>
+            <button onclick="nextPage('bf', {{ before_count }})" id="next-bf">След. ›</button>
+        </div>
+        {% endif %}
         {% else %}
         <div class="empty-mini">Нет фотографий «до обучения»</div>
         {% endif %}
@@ -356,7 +340,10 @@ document.querySelectorAll('.works-grid').forEach(function(grid) {
     });
 });
 
-['section-before','section-after','section-mock','section-retake'].forEach(function(sid) {
+// «До» — лента без раскрывашки, её страницы включаем сразу.
+if (document.getElementById('grid-bf')) initPagination('bf');
+
+['section-after','section-mock','section-retake'].forEach(function(sid) {
     var sec = document.getElementById(sid);
     if (!sec) return;
     var items = sec.querySelectorAll('.month-item');

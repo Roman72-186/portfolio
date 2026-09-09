@@ -381,13 +381,21 @@ def _portfolio_before_items(
                     .all()
                 )
             ]
+        # Дата приходит из агрегата `max(Work.created_at)`, а не с ORM-объекта:
+        # хук conftest, который навешивает UTC при загрузке, её не касается, и
+        # в SQLite она наивная. `student_review_items` сортирует все домены
+        # одним ключом — наивное значение уронило бы сортировку по TypeError
+        # (та же поломка, что уже чинили у циклов Пробника ниже).
+        submitted_at = scored_at or last_upload_at
+        if isinstance(submitted_at, datetime) and submitted_at.tzinfo is None:
+            submitted_at = submitted_at.replace(tzinfo=timezone.utc)
         items.append(ReviewItem(
             domain=DOMAIN_PORTFOLIO_BEFORE,
             item_id=student.id,
             student_id=student.id,
             title=f"Портфолио «До» — точка А ({works_count} фото)",
             subject=None,
-            submitted_at=scored_at or last_upload_at,
+            submitted_at=submitted_at,
             is_reviewed=is_reviewed,
             review_url="",
             images=images,

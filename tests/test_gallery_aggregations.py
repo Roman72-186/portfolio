@@ -36,9 +36,12 @@ def test_gallery_counts_match_work_rows_per_type(auth_client, db):
     resp = client.get("/cabinet/gallery")
     assert resp.status_code == 200
     text = resp.text
-    # Все работы одного типа в одном месяце группируются в один блок "N фото".
-    assert '<span class="month-count">2 фото</span>' in text  # before: b1+b2
-    assert text.count('<span class="month-count">1 фото</span>') == 3  # after, mock, retake — по 1
+    # «До» — плоская лента без месяцев (владелец 09.09.2026), поэтому у него
+    # нет подписи месяца: считаем сами карточки.
+    before_section = text[text.index('id="section-before"'):text.index('id="section-after"')]
+    assert before_section.count('class="work-cell"') == 2  # b1 + b2
+    # Остальные разделы остались помесячными: after, mock, retake — по одной.
+    assert text.count('<span class="month-count">1 фото</span>') == 3
 
 
 def test_gallery_excludes_non_success_and_other_users_works(auth_client, db, user_factory):
@@ -57,8 +60,10 @@ def test_gallery_excludes_non_success_and_other_users_works(auth_client, db, use
     resp = client.get("/cabinet/gallery")
     assert resp.status_code == 200
     text = resp.text
-    # Ровно одна успешная своя работа — группа должна показывать "1 фото", не 4.
-    assert '<span class="month-count">1 фото</span>' in text
+    # Ровно одна успешная своя работа — в ленте «До» одна карточка, не четыре.
+    before_section = text[text.index('id="section-before"'):text.index('id="section-after"')]
+    assert before_section.count('class="work-cell"') == 1
+    assert "mine.jpg" in text
     assert "others.jpg" not in text
     assert "pending.jpg" not in text
     assert "failed.jpg" not in text
