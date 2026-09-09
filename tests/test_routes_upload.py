@@ -909,6 +909,21 @@ def test_retake_api_accepts_upload_when_mock_sent_to_retake(auth_client, db):
     ).count() == 1
 
 
+def test_retake_form_denied_without_assignment_even_with_active_period(auth_client, db):
+    """Гейт FeaturePeriod снят (владелец 09.09.2026, тот же приём, что для
+    портфолио): активное окно 'retake' само по себе больше не открывает
+    доступ — нужно личное назначение отработки куратором. Возвращать окно
+    дат — только по новой дословной просьбе владельца, записанной в коде."""
+    client, user = auth_client
+    _create_active_period(db, user, "retake")
+
+    resp = client.get("/upload/retake")
+
+    assert resp.status_code == 200
+    assert "Отработки закрыты" in resp.text
+    assert "Отработку назначает куратор" in resp.text
+
+
 def test_send_mock_to_retake_keeps_subject_locked(admin_client, db, user_factory):
     """'На отработку' saves a score and retake assignment, but does not unlock mock reupload."""
     from app.models.mock_exam_lock import MockExamLock

@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
-from app.constants import MONTHS, MOCK_SUBJECTS, FEATURE_RETAKE, TARIFFS_WITH_FEEDBACK
+from app.constants import MONTHS, MOCK_SUBJECTS, TARIFFS_WITH_FEEDBACK
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
 from app.models.exam_assignment import ExamTicket
@@ -53,7 +53,6 @@ from app.services.exam_cycle import (
     intermediate_upload_state,
     next_attempt_number,
 )
-from app.services.feature_periods import is_feature_available
 from app.services.mock_exam_access import (
     is_mock_exam_attempt_open,
     ticket_closes_at,
@@ -636,9 +635,15 @@ async def upload_otrabotka_final(
     subject: str = Form(...),
     student_score: float | None = Form(default=None),
 ):
-    fa, fm = is_feature_available(db, FEATURE_RETAKE)
-    if not fa:
-        return JSONResponse({"success": False, "error": fm or "Отработка закрыта"}, status_code=403)
+    # Гейт FeaturePeriod снят (владелец 09.09.2026, тот же приём, что для
+    # портфолио): условие то же, что у GET/POST /upload/retake —
+    # `_has_retake_assignment` в app/api/upload.py.
+    from app.api.upload import _has_retake_assignment
+    if not _has_retake_assignment(db, user["user_id"]):
+        return JSONResponse(
+            {"success": False, "error": "Отработку назначает куратор. Дождитесь, когда он отправит вашу работу на отработку."},
+            status_code=403,
+        )
     if subject not in MOCK_SUBJECTS:
         return JSONResponse({"success": False, "error": "Выберите предмет"}, status_code=422)
 

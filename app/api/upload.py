@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session
 from app.config import settings
-from app.constants import MONTHS, MOCK_SUBJECTS, FEATURE_MOCK_EXAM, FEATURE_RETAKE
+from app.constants import MONTHS, MOCK_SUBJECTS, FEATURE_MOCK_EXAM
 from app.services.exam_cycle import (
     MAX_INTERMEDIATE_PER_FINAL,
     close_or_expire_mock_exam_attempts,
@@ -312,10 +312,12 @@ def _has_retake_assignment(db: DBSession, user_id: int) -> bool:
 
 
 def _retake_available_for_user(db: DBSession, user_id: int) -> tuple[bool, str | None]:
-    fa, fm = is_feature_available(db, FEATURE_RETAKE)
-    if fa or _has_retake_assignment(db, user_id):
+    # Гейт FeaturePeriod снят (владелец 09.09.2026, тот же приём, что для
+    # портфолио): доступ к отработке даёт только факт, что куратор отправил
+    # работу ученика на отработку — а не ручное окно дат.
+    if _has_retake_assignment(db, user_id):
         return True, None
-    return fa, fm
+    return False, "Отработку назначает куратор. Дождитесь, когда он отправит вашу работу на отработку."
 
 
 _N8N_MAX_RETRIES = 3

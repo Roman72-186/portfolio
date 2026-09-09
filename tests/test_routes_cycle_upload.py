@@ -1047,3 +1047,69 @@ def test_closed_cycle_final_appears_in_portfolio(auth_client, db):
     assert "final.jpg" in resp.text
     # ticket_title пробрасывается из ExamCycle.ticket_id -> ExamTicket.title
     assert '"ticket_title"' in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Сторожевые тесты: отработка не заперта окном FeaturePeriod (POST /upload/otrabotka/final)
+# ---------------------------------------------------------------------------
+# Владелец 09.09.2026: «эти триггеры нужно выключить сейчас — всё, что было…
+# мы открываем задания по портфолио, пробникам либо остальным уже в учебных
+# программах. Остальное ничего не должно влиять». Тот же приём, что для
+# портфолио (commit 0b7cd67): доступ даёт факт назначенной куратором
+# отработки (`Work.sent_to_retake`), а не ручное окно дат. Возвращать окно
+# дат — только по новой дословной просьбе владельца, записанной в коде.
+
+def _otrabotka_final(client, subject="Рисунок", photos=None):
+    photos = photos or [("photos", ("otrabotka.jpg", _JPG_BYTES, "image/jpeg"))]
+    return client.post("/upload/otrabotka/final", data={"subject": subject}, files=photos)
+
+
+def test_otrabotka_final_denied_without_personal_assignment(auth_client, db):
+    """Цикл Пробника есть, но куратор отработку не назначал — доступа нет."""
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Рисунок")
+    _final(client, "Рисунок")
+
+    resp = _otrabotka_final(client, "Рисунок")
+
+    assert resp.status_code == 403
+    assert resp.json()["error"] == (
+        "Отработку назначает куратор. Дождитесь, когда он отправит вашу работу на отработку."
+    )
+
+
+def test_otrabotka_final_stays_closed_with_active_period_but_no_assignment(auth_client, db):
+    """Активное окно FeaturePeriod по 'retake' само по себе больше не открывает доступ."""
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Рисунок")
+    _final(client, "Рисунок")
+    _create_active_period(db, user, "retake")
+
+    resp = _otrabotka_final(client, "Рисунок")
+
+    assert resp.status_code == 403
+
+
+def test_otrabotka_final_accepted_with_personal_assignment(auth_client, db):
+    """Куратор отправил финалку Пробника на отработку — форма принимает фото без окна дат."""
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
+
+    client, user = auth_client
+    _create_active_period(db, user, "mock_exam")
+    _create_active_ticket(db, user, "Рисунок")
+    _final(client, "Рисунок")
+    db.query(Work).filter(
+        Work.user_id == user.id, Work.work_type == WORK_TYPE_MOCK_EXAM,
+    ).update({"sent_to_retake": True})
+    db.commit()
+
+    resp = _otrabotka_final(client, "Рисунок")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["success"] is True
+    assert db.query(Work).filter(
+        Work.user_id == user.id, Work.work_type == WORK_TYPE_RETAKE,
+    ).count() == 1

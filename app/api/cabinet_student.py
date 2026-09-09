@@ -890,13 +890,21 @@ def render_cycle_calendar(
     back_url: str = "/cabinet/cycle",
     back_label: str = "К Циклу Пробника",
 ):
-    from app.constants import FEATURE_LABELS
+    from app.constants import FEATURE_LABELS, FEATURE_RETAKE
 
     works_by_subject = _collect_cycle_works(db, target_user_id, work_type)
     subjects = list(MOCK_SUBJECTS)
     if "Без предмета" in works_by_subject:
         subjects.append("Без предмета")
-    upload_open, upload_msg = is_feature_available(db, feature_key)
+    if feature_key == FEATURE_RETAKE:
+        # Отработка не гейтится окном FeaturePeriod (владелец 09.09.2026, тот
+        # же приём, что для портфолио): доступ даёт факт назначенной
+        # куратором отработки конкретному ученику, а не общее окно дат.
+        from app.api.upload import _has_retake_assignment
+        upload_open = _has_retake_assignment(db, target_user_id)
+        upload_msg = None if upload_open else "Отработку назначает куратор."
+    else:
+        upload_open, upload_msg = is_feature_available(db, feature_key)
     return templates.TemplateResponse("cabinet_cycle_calendar.html", {
         "request": request,
         "user": user,
