@@ -615,6 +615,14 @@ async def cabinet_portfolio(
 ):
     """Portfolio tab: before works as a flat gallery, after works grouped by year-month."""
     from app.services.drive import list_student_photos
+    # Балл точки А читается из базы, а не из user-dict сессии (владелец
+    # 09.09.2026, показать ученику): поле намеренно не входит в сессию, его
+    # правит ГП у чужого ученика (см. комментарий у колонок в app/models/user.py).
+    portfolio_before_score = (
+        db.query(User.portfolio_before_score)
+        .filter(User.id == user["user_id"])
+        .scalar()
+    )
     # Кнопка «Загрузить фото» больше не зависит от окна FeaturePeriod: гейт
     # загрузки портфолио снят целиком (владелец 09.09.2026, см.
     # `api/upload.py::upload_form`). Иначе экран прятал бы кнопку от ученика,
@@ -682,6 +690,7 @@ async def cabinet_portfolio(
         "request": request,
         "user": user,
         "can_upload_portfolio_after": bool(portfolio_upload_open),
+        "portfolio_before_score": portfolio_before_score,
         "portfolio_before_works": [serialize_work(w) for w in before_works],
         "portfolio_after_groups": [serialize_portfolio_group(g) for g in after_groups],
         "mock_works_by_subject": mock_works_by_subject,

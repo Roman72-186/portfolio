@@ -76,6 +76,13 @@
     <!-- До обучения -->
     <div class="section-title">До обучения</div>
 
+    {# Балл точки А (владелец 09.09.2026, показать ученику): ставит только
+       Главный преподаватель, пока балла нет — строка не рендерится вовсе,
+       а не «оценка: —». #}
+    {% if portfolio_before_score is not none %}
+    <p class="pf-subtitle">Работы «до» оценены на {{ portfolio_before_score }} из 100.</p>
+    {% endif %}
+
     {{ pf_flat('before', portfolio_before_works, 'Фотографий пока нет', 'Загрузите работы «до обучения» — это первый шаг') }}
 
     <div class="portfolio-bottom-action">

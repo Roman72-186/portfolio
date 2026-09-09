@@ -277,6 +277,50 @@ def test_portfolio_before_renders_flat_without_months(auth_client, db):
     assert 'id="portfolio-before-root"' not in resp.text  # старый пикер убран
 
 
+def test_portfolio_before_shows_point_a_score_from_db(auth_client, db):
+    """Балл точки А читается из базы (владелец 09.09.2026: показать ученику).
+
+    Поле намеренно не входит в user-dict сессии (комментарий у колонок в
+    app/models/user.py) — ставит его ГП у чужого ученика, и сбросить чужую
+    сессию нечем. Обновляем колонку напрямую в базе, минуя сессию, чтобы
+    убедиться, что экран читает актуальное значение, а не устаревшую сессию.
+    """
+    from app.models.user import User
+
+    client, user = auth_client
+    db.query(User).filter(User.id == user.id).update({
+        "portfolio_do_completed": True,
+        "portfolio_before_score": 82,
+    })
+    db.commit()
+
+    resp = client.get("/cabinet/portfolio")
+
+    assert resp.status_code == 200
+    before_section = resp.text[
+        resp.text.index(">До обучения<"):resp.text.index(">После обучения<")
+    ]
+    assert "82 из 100" in before_section
+
+
+def test_portfolio_before_hides_score_line_when_not_scored(auth_client, db):
+    """Пока балла нет — строка не рендерится вовсе, а не «оценка: —»."""
+    from app.models.user import User
+
+    client, user = auth_client
+    db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
+    db.commit()
+
+    resp = client.get("/cabinet/portfolio")
+
+    assert resp.status_code == 200
+    before_section = resp.text[
+        resp.text.index(">До обучения<"):resp.text.index(">После обучения<")
+    ]
+    assert "из 100" not in before_section
+    assert "оценка" not in before_section.lower()
+
+
 def test_portfolio_after_keeps_month_blocks(auth_client, db):
     """«После» остаётся помесячным — владелец просил убрать месяцы только у «До»."""
     from app.models.work import Work, WORK_TYPE_AFTER
