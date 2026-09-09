@@ -52,6 +52,23 @@ class User(Base):
     staff_login: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True, index=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     portfolio_do_completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Точка А — одна оценка Главного преподавателя за ВЕСЬ набор работ «До»
+    # (владелец 09.09.2026: «оценку должен ГП ставит общую по всем работам, не
+    # для каждой… это будет для высчета среднего значения в точке А»). Шкала
+    # 0–100, как у Work.score. Колонками на ученике, а не отдельной таблицей:
+    # оценка ровно одна на ученика, как и соседний portfolio_do_completed.
+    #
+    # В user-dict сессии (`app/dependencies.py`) эти поля не кладутся: их
+    # правит ГП у чужого ученика, а сбросить чужую сессию из Redis нечем —
+    # `invalidate_session` берёт session_id того, кто пришёл. Нужен балл на
+    # экране ученика — читать его из базы, а не из сессии.
+    portfolio_before_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    portfolio_before_scored_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    portfolio_before_scored_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
     curator_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     curator_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

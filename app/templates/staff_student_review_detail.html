@@ -81,7 +81,10 @@
                 {% endif %}
                 {# Работа, сданная в блоке задания: фото и описание видны прямо
                    здесь — отдельного экрана у этого домена нет. #}
-                {% if item.domain == 'block_work' %}
+                {# Работы «До» показываем здесь же: точку А ГП ставит за весь
+                   набор, и без фотографий это была бы оценка вслепую. Своего
+                   экрана у домена нет и заводить его нельзя. #}
+                {% if item.domain in ('block_work', 'portfolio_before') %}
                 {% if item.text %}<p>{{ item.text }}</p>{% endif %}
                 {% if item.images %}
                 <div class="photo-grid">
@@ -93,7 +96,13 @@
                 {% endif %}
             </div>
             <div class="prg-item-actions">
-                {% if item.domain in ('task_block', 'block_work') %}
+                {% if item.domain == 'portfolio_before' %}
+                <label class="prg-field prg-field--row">Балл 0–100
+                    <input type="number" min="0" max="100" step="1" data-point-a-score
+                           value="{{ item.score if item.score is not none else '' }}">
+                </label>
+                <button type="button" class="btn-blue" data-point-a-save>Сохранить</button>
+                {% elif item.domain in ('task_block', 'block_work') %}
                 <button type="button" class="btn-outline" data-review-toggle
                         data-reviewed="{{ 'true' if item.is_reviewed else 'false' }}">
                     {{ 'Вернуть в очередь' if item.is_reviewed else 'Просмотрено' }}
@@ -135,6 +144,39 @@
             if (!resp.ok) throw new Error();
             row.classList.add('is-done');
             button.remove();
+        }).catch(function () {
+            button.disabled = false;
+            button.textContent = 'Не вышло, ещё раз';
+        });
+    });
+
+    // Точка А: одна оценка за весь набор работ «До». Своей сущности у домена
+    // нет, `data-id` карточки — это id ученика.
+    document.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-point-a-save]');
+        if (!button) return;
+        var row = button.closest('[data-review-row]');
+        var input = row.querySelector('[data-point-a-score]');
+        var value = parseInt(input.value, 10);
+        if (isNaN(value) || value < 0 || value > 100) {
+            input.focus();
+            return;
+        }
+        button.disabled = true;
+        fetch('/cabinet/staff/students-review/portfolio-before/' + row.getAttribute('data-id') + '/score', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify({score: value})
+        }).then(function (resp) {
+            if (!resp.ok) throw new Error();
+            row.classList.add('is-done');
+            button.disabled = false;
+            button.textContent = 'Сохранено';
         }).catch(function () {
             button.disabled = false;
             button.textContent = 'Не вышло, ещё раз';

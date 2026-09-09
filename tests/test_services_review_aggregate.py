@@ -11,6 +11,7 @@ from app.models.tracker import ITEM_HOMEWORK, SOURCE_HOMEWORK, TrackerTask
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
 from app.services.review_aggregate import (
     DOMAIN_EXAM_CYCLE,
+    DOMAIN_PORTFOLIO_BEFORE,
     DOMAIN_HOMEWORK,
     DOMAIN_TASK_BLOCK,
     DOMAIN_WORK,
@@ -20,6 +21,7 @@ from app.services.review_aggregate import (
     week_bounds,
     _exam_cycle_items,
     _homework_items,
+    _portfolio_before_items,
     _task_block_items,
     _work_items,
 )
@@ -421,3 +423,135 @@ def test_student_review_items_only_this_student(db, user_factory):
     items = student_review_items(db, student_id=student.id)
 
     assert all(i.student_id == student.id for i in items)
+
+
+# --- точка А: оценка ГП за набор работ «До» ---------------------------------
+#
+# Владелец 09.09.2026: «по этой кнопке работы загружаются в ДО и их может
+# оценить ГП, это будет для высчета среднего значения в точке А», «оценку
+# должен ГП ставит общую по всем работам, не для каждой», «только Главный
+# преподаватель». Тест `test_work_items_excludes_portfolio_before_after` выше
+# остаётся зелёным и верным: `_work_items` работы «До» по-прежнему не берёт,
+# у них отдельный домен со своей оценкой на ученике.
+
+ADMIN_RANK = 4
+
+
+def _before_work(db, user_id, *, created_at=None):
+    work = Work(
+        user_id=user_id, work_type="before", month="сентябрь", year=2026,
+        filename="before.jpg", s3_url="https://s3.example.com/before.jpg",
+        status="success",
+    )
+    db.add(work)
+    db.commit()
+    db.refresh(work)
+    if created_at is not None:
+        work.created_at = created_at
+        db.commit()
+    return work
+
+
+def test_point_a_card_absent_without_before_works(db, user_factory):
+    """Иначе каждый новичок висел бы вечным «непроверено» без способа снять."""
+    user_factory(vk_id=850_101, name="Ученик без работ")
+
+    assert _portfolio_before_items(db, role_rank=ADMIN_RANK) == []
+
+
+def test_point_a_card_is_unreviewed_until_scored(db, user_factory):
+    student = user_factory(vk_id=850_102, name="Ученик")
+    _before_work(db, student.id)
+
+    items = _portfolio_before_items(db, role_rank=ADMIN_RANK)
+
+    assert len(items) == 1
+    assert items[0].domain == DOMAIN_PORTFOLIO_BEFORE
+    assert items[0].student_id == student.id
+    assert items[0].is_reviewed is False
+    assert items[0].score is None
+
+
+def test_point_a_card_survives_week_navigation_until_scored(db, user_factory):
+    """Работы «До» грузятся один раз в предобучении: недельный фильтр спрятал
+    бы карточку уже на следующей неделе, и оценить её стало бы негде."""
+    student = user_factory(vk_id=850_103, name="Ученик")
+    _before_work(
+        db, student.id,
+        created_at=datetime.now(timezone.utc) - timedelta(days=21),
+    )
+    week_start, week_end = week_bounds(date.today())
+
+    items = _portfolio_before_items(
+        db, role_rank=ADMIN_RANK, week_start=week_start, week_end=week_end,
+    )
+
+    assert len(items) == 1
+    assert items[0].is_reviewed is False
+
+
+def test_scored_point_a_shows_only_in_the_week_it_was_scored(db, user_factory):
+    student = user_factory(vk_id=850_104, name="Ученик")
+    _before_work(db, student.id)
+    student.portfolio_before_score = 87
+    student.portfolio_before_scored_at = datetime.now(timezone.utc) - timedelta(days=14)
+    db.commit()
+
+    this_week = week_bounds(date.today())
+    scored_week = week_bounds(date.today() - timedelta(days=14))
+
+    assert _portfolio_before_items(
+        db, role_rank=ADMIN_RANK, week_start=this_week[0], week_end=this_week[1],
+    ) == []
+    items = _portfolio_before_items(
+        db, role_rank=ADMIN_RANK, week_start=scored_week[0], week_end=scored_week[1],
+    )
+    assert len(items) == 1
+    assert items[0].is_reviewed is True
+    assert items[0].score == 87
+
+
+def test_point_a_hidden_from_curator_and_moderator(db, user_factory):
+    student = user_factory(vk_id=850_105, name="Ученик")
+    _before_work(db, student.id)
+
+    assert _portfolio_before_items(db, role_rank=2) == []
+    assert _portfolio_before_items(db, role_rank=3) == []
+
+
+def test_point_a_visible_to_admin_and_superadmin(db, user_factory):
+    student = user_factory(vk_id=850_106, name="Ученик")
+    _before_work(db, student.id)
+
+    assert len(_portfolio_before_items(db, role_rank=4)) == 1
+    assert len(_portfolio_before_items(db, role_rank=5)) == 1
+
+
+def test_point_a_photos_only_for_a_single_student(db, user_factory):
+    """На списке со счётчиками фотографии никому не нужны, а запрос там идёт
+    по всем ученикам сразу."""
+    student = user_factory(vk_id=850_107, name="Ученик")
+    _before_work(db, student.id)
+
+    assert _portfolio_before_items(db, role_rank=ADMIN_RANK)[0].images is None
+    single = _portfolio_before_items(db, role_rank=ADMIN_RANK, student_id=student.id)
+    assert single[0].images == ["https://s3.example.com/before.jpg"]
+
+
+def test_unreviewed_counts_include_point_a_only_for_admin(db, user_factory):
+    curator = user_factory(vk_id=850_108, name="Куратор", role_name="куратор")
+    admin = user_factory(vk_id=850_109, name="Админ", role_name="админ")
+    student = user_factory(vk_id=850_110, name="Ученик")
+    student.curator_id = curator.id
+    db.commit()
+    _before_work(db, student.id)
+
+    curator_rows = aggregate_student_review_counts(
+        db, {"user_id": curator.id, "role_rank": 2}
+    )
+    admin_rows = aggregate_student_review_counts(
+        db, {"user_id": admin.id, "role_rank": 4}
+    )
+
+    assert {r["student"].id: r["unchecked"] for r in curator_rows}[student.id] == 0
+    assert {r["student"].id: r["unchecked"] for r in admin_rows}[student.id] == 1

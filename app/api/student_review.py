@@ -16,12 +16,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session as DBSession
 
 from app.constants import MOCK_SUBJECTS, TARIFFS
 from app.db.database import get_db
-from app.dependencies import require_csrf_header, require_curator
+from app.dependencies import require_admin_role, require_csrf_header, require_curator
 from app.models.exam_cycle import ExamCycle
 from app.models.task_block import TaskBlockAnswer, TaskBlockResponse, TaskBlockSubmission
 from app.models.user import User
@@ -249,3 +249,43 @@ def mark_block_work_reviewed(
     )
     db.commit()
     return JSONResponse({"ok": True, "reviewed": submission.reviewed_at is not None})
+
+
+class PortfolioBeforeScore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    score: int = Field(ge=0, le=100)
+
+
+@router.post("/portfolio-before/{student_id}/score", response_class=JSONResponse)
+def score_portfolio_before(
+    student_id: int,
+    payload: PortfolioBeforeScore,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Точка А — одна оценка за весь набор работ «До».
+
+    `require_admin_role` (ранг 4), а не `require_curator` с ручной проверкой:
+    владелец 09.09.2026 на вопрос «кто ставит оценку» ответил «только Главный
+    преподаватель». У ранга 4 и выше доступ ко всем ученикам не ограничен
+    куратором, поэтому отдельная проверка владения здесь не нужна — хватает
+    того, что ученик существует и активен.
+
+    `invalidate_session` не вызывается намеренно: балл не входит в user-dict
+    сессии (см. комментарий у колонок в `app/models/user.py`), а сбросить
+    чужую сессию из Redis всё равно нечем.
+    """
+    student = (
+        db.query(User)
+        .filter(User.id == student_id, User.is_active == True)  # noqa: E712
+        .first()
+    )
+    if student is None:
+        raise HTTPException(status_code=404, detail="Ученик не найден")
+
+    student.portfolio_before_score = payload.score
+    student.portfolio_before_scored_at = datetime.now(timezone.utc)
+    student.portfolio_before_scored_by_id = user["user_id"]
+    db.commit()
+    return JSONResponse({"ok": True, "score": payload.score})

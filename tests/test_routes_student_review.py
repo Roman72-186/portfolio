@@ -320,3 +320,52 @@ def test_week_filter_excludes_items_outside_range(db, user_factory, session_fact
 
     assert resp.status_code == 200
     assert "За эту неделю по фильтрам ничего не сдано" in resp.text
+
+
+# ── точка А на экране проверки ──────────────────────────────────────────────
+
+def _before_work(db, user_id):
+    work = Work(
+        user_id=user_id, work_type="before", month="сентябрь", year=2026,
+        filename="before.jpg", s3_url="https://s3.example.com/before.jpg",
+        status="success",
+    )
+    db.add(work)
+    db.commit()
+    return work
+
+
+def test_head_teacher_sees_the_point_a_card_with_a_score_field(
+    client, db, user_factory, session_factory
+):
+    """Карточка живёт на общем экране проверки — отдельный экран под точку А
+    заводить нельзя (инвариант проекта)."""
+    student = user_factory(vk_id=870_001, name="Ученик Точкин")
+    admin = user_factory(vk_id=870_002, name="Главный преподаватель", role_name="админ")
+    _before_work(db, student.id)
+    client.cookies.set("session_id", session_factory(admin).id)
+
+    resp = client.get(f"/cabinet/staff/students-review/{student.id}")
+
+    assert resp.status_code == 200
+    assert 'data-domain="portfolio_before"' in resp.text
+    assert "точка А" in resp.text
+    assert "data-point-a-score" in resp.text
+    assert "https://s3.example.com/before.jpg" in resp.text  # оценка не вслепую
+
+
+def test_curator_does_not_see_the_point_a_card(client, db, user_factory, session_factory):
+    student = user_factory(vk_id=870_003, name="Ученик Точкин")
+    curator = user_factory(vk_id=870_004, name="Куратор", role_name="куратор")
+    student.curator_id = curator.id
+    db.commit()
+    _before_work(db, student.id)
+    client.cookies.set("session_id", session_factory(curator).id)
+
+    resp = client.get(f"/cabinet/staff/students-review/{student.id}")
+
+    assert resp.status_code == 200
+    # Ищем саму карточку, а не подстроку: обработчик кнопки лежит в общем
+    # скрипте страницы и печатается всем ролям.
+    assert 'data-domain="portfolio_before"' not in resp.text
+    assert "точка А" not in resp.text
