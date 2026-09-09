@@ -245,9 +245,14 @@ def test_dashboard_shows_upload_button_without_feature_period(auth_client, db):
     assert "Загрузить фото" in resp.text
 
 
-def test_portfolio_renders_before_after_month_blocks(auth_client, db):
-    """До/После рендерятся server-side раскрывающимися блоками по месяцам
-    (единый вид со staff-панелью), а не старым пикером-помесячником."""
+def test_portfolio_before_renders_flat_without_months(auth_client, db):
+    """«До» — одна плоская лента (владелец 09.09.2026: «в До добавляется не по
+    месяцам»).
+
+    Проверяем участок разметки между заголовками разделов, а не страницу
+    целиком: месячные блоки остаются у «После», и ассерт по всей странице
+    прошёл бы, ничего не проверив.
+    """
     from app.models.work import Work, WORK_TYPE_BEFORE
     from app.models.user import User
 
@@ -261,11 +266,37 @@ def test_portfolio_renders_before_after_month_blocks(auth_client, db):
 
     resp = client.get("/cabinet/portfolio")
     assert resp.status_code == 200
-    assert "pf-mblock" in resp.text          # блоки по месяцам
-    assert "pfToggleMonth" in resp.text       # тоггл раскрытия
-    assert "before-1.jpg" in resp.text
-    assert "before-2.jpg" in resp.text
+    before_section = resp.text[
+        resp.text.index(">До обучения<"):resp.text.index(">После обучения<")
+    ]
+    assert "before-1.jpg" in before_section
+    assert "before-2.jpg" in before_section
+    assert "pf-mblock" not in before_section      # без раскрывашек по месяцам
+    assert "pfToggleMonth" not in before_section
+    assert "январь" not in before_section          # и без подписи месяца
     assert 'id="portfolio-before-root"' not in resp.text  # старый пикер убран
+
+
+def test_portfolio_after_keeps_month_blocks(auth_client, db):
+    """«После» остаётся помесячным — владелец просил убрать месяцы только у «До»."""
+    from app.models.work import Work, WORK_TYPE_AFTER
+    from app.models.user import User
+
+    client, user = auth_client
+    db.query(User).filter(User.id == user.id).update({"portfolio_do_completed": True})
+    db.add(Work(
+        user_id=user.id, work_type=WORK_TYPE_AFTER, month="январь", year=2026,
+        filename="after-1.jpg", s3_url="https://s3.example/after-1.jpg", status="success",
+    ))
+    db.commit()
+
+    resp = client.get("/cabinet/portfolio")
+    assert resp.status_code == 200
+    after_section = resp.text[resp.text.index(">После обучения<"):]
+    assert "after-1.jpg" in after_section
+    assert "pf-mblock" in after_section
+    assert "pfToggleMonth" in after_section
+    assert "январь" in after_section
 
 
 # ---------------------------------------------------------------------------

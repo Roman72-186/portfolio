@@ -4,6 +4,30 @@
 <link rel="stylesheet" href="/static/css/portfolio_ios.css?v=4">
 {% endblock %}
 {% block content %}
+{# Плоская лента без месяцев — раздел «До» (владелец 09.09.2026: «в До
+   добавляется не по месяцам»). Стартовый набор ученик грузит один раз в
+   предобучении, месяцы там ничего не разделяют. Карточка и сетка те же, что
+   у месячных блоков, — своих стилей не заводим. #}
+{% macro pf_flat(key, works, empty_title, empty_text) %}
+  {% if works %}
+    <div class="pf-mgrid" data-gallery="pf-{{ key }}">
+        {% for w in works %}
+        {% set src = w.thumb or w.s3_url or "" %}
+        {% if src %}
+        <button type="button" class="pf-work-card" onclick="openGallery(this.querySelector('img'))" aria-label="Открыть фото {{ w.filename }}">
+            <img src="{{ src }}" alt="{{ w.filename }}" loading="lazy">
+        </button>
+        {% endif %}
+        {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">🖼️</div>
+        <div class="empty-state-title">{{ empty_title }}</div>
+        <div class="empty-state-text">{{ empty_text }}</div>
+    </div>
+  {% endif %}
+{% endmacro %}
 {% macro pf_blocks(key, groups, empty_title, empty_text) %}
   {% if groups %}
     {% for g in groups %}
@@ -44,7 +68,7 @@
             Моё портфолио
         </h1>
         <p class="pf-subtitle">
-            Работы сгруппированы по году и месяцу.
+            Работы «После обучения» сгруппированы по году и месяцу.
         </p>
         </div>
     </div>
@@ -52,7 +76,7 @@
     <!-- До обучения -->
     <div class="section-title">До обучения</div>
 
-    {{ pf_blocks('before', portfolio_before_groups, 'Фотографий пока нет', 'Загрузите работы «до обучения» — это первый шаг') }}
+    {{ pf_flat('before', portfolio_before_works, 'Фотографий пока нет', 'Загрузите работы «до обучения» — это первый шаг') }}
 
     <div class="portfolio-bottom-action">
         <a href="/upload?section=before" class="portfolio-upload-btn">

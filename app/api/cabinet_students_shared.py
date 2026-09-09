@@ -43,6 +43,7 @@ from app.services import s3 as s3_service
 from app.services.exam_cycle import get_active_ticket, has_submitted_for_ticket
 from app.services.feature_periods import get_active_period
 from app.services.stats import avg_score_by_subject_all_time
+from app.services.portfolio import after_gallery_groups, item_source
 from app.services.student_access import get_student_for_staff_access
 from app.services.tz import MSK_TZ, msk_midnight
 from app.services.utils import compress_image, study_duration_text, group_works, has_case_growth
@@ -597,11 +598,6 @@ def get_portfolio(
         .filter(Work.user_id == student_id, Work.work_type == WORK_TYPE_BEFORE, Work.status == "success")
         .order_by(Work.created_at.desc()).limit(100).all()
     )
-    after_works = (
-        db.query(Work)
-        .filter(Work.user_id == student_id, Work.work_type == WORK_TYPE_AFTER, Work.status == "success")
-        .order_by(Work.created_at.desc()).limit(300).all()
-    )
     mock_works = (
         db.query(Work)
         .filter(Work.user_id == student_id, Work.work_type == WORK_TYPE_MOCK_EXAM, Work.status == "success")
@@ -631,19 +627,30 @@ def get_portfolio(
             "photo_url": student.photo_url,
             "cohort_tag": student.cohort_tag,
         },
-        "before_by_month": [
-            {
-                "month": g["month"], "year": g["year"], "total": g["total"],
-                "works": [{"s3_url": w.s3_url, "filename": w.filename, "id": w.id} for w in g["works"]],
-            }
-            for g in group_works(before_works)
+        # «До» — плоский список без месяцев (владелец 09.09.2026). Стартовый
+        # набор ученик грузит один раз в предобучении: месяцы там ничего не
+        # разделяют, а папка месяца тянула за собой массовое удаление.
+        "before_flat": [
+            {"s3_url": w.s3_url, "filename": w.filename, "id": w.id, "source": "work"}
+            for w in before_works
         ],
+        # «После» — работы портфолио вместе со сдачами внутри заданий
+        # (владелец 09.09.2026), сборка в `services/portfolio.py`.
+        # `work_total` — сколько в месяце настоящих `Work`: по нему считается
+        # массовое удаление папки, сдачи по заданиям тот роут не трогает.
         "after_by_month": [
             {
                 "month": g["month"], "year": g["year"], "total": g["total"],
-                "works": [{"s3_url": w.s3_url, "filename": w.filename, "id": w.id} for w in g["works"]],
+                "work_total": g["work_total"],
+                "works": [
+                    {
+                        "s3_url": w.s3_url, "filename": w.filename, "id": w.id,
+                        "source": item_source(w),
+                    }
+                    for w in g["works"]
+                ],
             }
-            for g in group_works(after_works)
+            for g in after_gallery_groups(db, student_id)
         ],
         "mock_works_by_subject": mock_works_by_subject,
         "mock_subjects": mock_subjects,

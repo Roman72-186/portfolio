@@ -43,7 +43,8 @@ from app.services.mock_exam_access import (
 from app.services.contacts import normalize_phone, normalize_tg_username, validate_contacts
 from app.services.tz import MSK_TZ, today_msk
 from app.services.user_management import log_tariff_change
-from app.services.utils import group_works, compress_image
+from app.services.portfolio import after_gallery_groups
+from app.services.utils import compress_image
 from app.services.video_catalog import list_published_videos
 from app.tmpl import templates, format_ticket_description
 
@@ -620,6 +621,9 @@ async def cabinet_portfolio(
     # которому загрузку уже открыло задание учебной программы.
     portfolio_upload_open = True
 
+    # «До» — плоская лента, свежие сверху (владелец 09.09.2026: «в До
+    # добавляется не по месяцам»). Стартовый набор грузится один раз в
+    # предобучении и месяцами не делится.
     before_works = (
         db.query(Work)
         .filter(
@@ -627,21 +631,15 @@ async def cabinet_portfolio(
             Work.work_type == WORK_TYPE_BEFORE,
             Work.status == "success",
         )
-        .order_by(Work.year, Work.month, Work.created_at)
+        .order_by(Work.created_at.desc())
         .limit(500)
         .all()
     )
-    after_works = (
-        db.query(Work)
-        .filter(
-            Work.user_id == user["user_id"],
-            Work.work_type == WORK_TYPE_AFTER,
-            Work.status == "success",
-        )
-        .order_by(Work.year, Work.month, Work.created_at)
-        .limit(500)
-        .all()
-    )
+    # «После» собирает и работы портфолио, и то, что ученик сдал внутри
+    # заданий (владелец 09.09.2026). Сборка — `services/portfolio.py`, одна на
+    # кабинет ученика и на экраны staff.
+    after_groups = after_gallery_groups(db, user["user_id"])
+    after_works = [w for g in after_groups for w in g["works"]]
 
     # Пробные экзамены: финалки ЗАКРЫТЫХ циклов в формате дневного календаря
     # (по предметам, со score/этапами) — тот же сборщик, что и во вкладке Пробники.
@@ -665,32 +663,26 @@ async def cabinet_portfolio(
         )
         drive_thumbnails = {p["id"]: p["thumbnail_url"] for p in photos if p.get("id") and p.get("thumbnail_url")}
 
+    def serialize_work(w) -> dict:
+        return {
+            "id": w.id,
+            "filename": w.filename,
+            "thumb": w.s3_url or (drive_thumbnails.get(w.drive_file_id, "") if w.drive_file_id else ""),
+        }
+
     def serialize_portfolio_group(group: dict) -> dict:
         return {
             "year": group["year"],
             "month": group["month"],
             "total": group["total"],
-            "works": [
-                {
-                    "id": w.id,
-                    "filename": w.filename,
-                    "thumb": w.s3_url or (drive_thumbnails.get(w.drive_file_id, "") if w.drive_file_id else ""),
-                }
-                for w in group["works"]
-            ],
+            "works": [serialize_work(w) for w in group["works"]],
         }
-
-    before_groups = group_works(before_works)
-    after_groups = group_works(after_works)
 
     return templates.TemplateResponse("cabinet_portfolio.html", {
         "request": request,
         "user": user,
         "can_upload_portfolio_after": bool(portfolio_upload_open),
-        "before_works": before_works,
-        "before_groups": before_groups,
-        "after_groups": after_groups,
-        "portfolio_before_groups": [serialize_portfolio_group(g) for g in before_groups],
+        "portfolio_before_works": [serialize_work(w) for w in before_works],
         "portfolio_after_groups": [serialize_portfolio_group(g) for g in after_groups],
         "mock_works_by_subject": mock_works_by_subject,
         "mock_subjects": mock_subjects,

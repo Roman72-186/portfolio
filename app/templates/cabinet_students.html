@@ -1785,12 +1785,20 @@ function buildPortfolio(data) {
 
     var sid = data.student.id;
 
-    // Before works by month (раскрывающиеся блоки — единый вид с «После» и с портфолио ученика)
+    // «До» — одна плоская сетка без месяцев (владелец 09.09.2026: «в До
+    // добавляется не по месяцам»). `.month-grid` вне `.portfolio-month` видна
+    // по умолчанию, поэтому ни inline-стиля, ни правки CSS не нужно.
+    // Вместе с месяцами у «До» пропала кнопка «Удалить папку»; поштучное
+    // удаление работы через крестик осталось.
     html += '<div class="section-title">До обучения</div>';
-    if (data.before_by_month && data.before_by_month.length) {
-        data.before_by_month.forEach(function(g, idx) {
-            html += buildPortfolioMonthBlock(sid, 'before', g, 'before-' + idx);
+    if (data.before_flat && data.before_flat.length) {
+        html += '<div class="month-grid" data-gallery="before-' + sid + '">';
+        data.before_flat.forEach(function(w) {
+            if (!w.s3_url) return;
+            var img = '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото"><img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy"></button>';
+            html += wrapPortfolioPhoto(img, sid, w.id, 'before', w.source);
         });
+        html += '</div>';
     } else {
         html += '<div class="no-works">Работы не загружены</div>';
     }
@@ -1819,8 +1827,13 @@ function buildPortfolioMonthBlock(sid, workType, g, blockId) {
     var renameBtn = IS_SUPERADMIN && workType === 'after'
         ? '<button type="button" class="portfolio-rename-btn" onclick="event.stopPropagation();renamePortfolioMonth(' + sid + ',\'' + workType + '\',\'' + esc(g.month) + '\',' + g.year + ')">Переименовать</button>'
         : '';
-    var delBtn = (CAN_SCORE && workType !== 'mock')
-        ? '<button type="button" class="folder-del-btn" onclick="event.stopPropagation();deleteFolderWorks(' + sid + ',\'' + workType + '\',\'' + esc(g.month) + '\',' + g.year + ',' + g.total + ')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Удалить</button>'
+    // Удаление папки считаем по `work_total`, а не по `total`: месяц
+    // показывает и снимки, сданные внутри заданий, а bulk-роут работ их не
+    // трогает. Иначе подтверждение обещало бы удалить больше, чем удалит.
+    // Месяц без единой настоящей работы кнопку не получает вовсе.
+    var workTotal = (g.work_total === undefined) ? g.total : g.work_total;
+    var delBtn = (CAN_SCORE && workType !== 'mock' && workTotal > 0)
+        ? '<button type="button" class="folder-del-btn" onclick="event.stopPropagation();deleteFolderWorks(' + sid + ',\'' + workType + '\',\'' + esc(g.month) + '\',' + g.year + ',' + workTotal + ')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Удалить</button>'
         : '';
     var dropAttrs = IS_SUPERADMIN && workType === 'after'
         ? ' ondragover="portfolioAllowDrop(event,this)" ondragenter="portfolioDragEnter(event,this)" ondragleave="portfolioDragLeave(event,this)" ondrop="portfolioDrop(event,this,' + sid + ',\'' + esc(g.month) + '\',' + g.year + ')"'
@@ -1840,7 +1853,7 @@ function buildPortfolioMonthBlock(sid, workType, g, blockId) {
     g.works.forEach(function(w) {
         if (w.s3_url) {
             var img = '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото"><img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy"></button>';
-            html += wrapPortfolioPhoto(img, sid, w.id, workType);
+            html += wrapPortfolioPhoto(img, sid, w.id, workType, w.source);
         }
     });
     html += '</div></div>';
@@ -2897,7 +2910,13 @@ function wrapPhoto(imgHtml, studentId, workId) {
 
 // ── Upload modal ────────────────────────────────────────────────────────────
 
-function wrapPortfolioPhoto(imgHtml, studentId, workId, workType) {
+// `source` различает настоящую работу портфолио (`work`) и снимок, сданный
+// внутри задания (`submission`, живёт в task_block_submissions). У второго
+// `id` — это id картинки сдачи, и он не имеет смысла для роутов удаления и
+// переноса работ: отдать его туда значит удалить или перенести чужой Work.
+// Поэтому у не-work элементов управляющих кнопок нет вовсе.
+function wrapPortfolioPhoto(imgHtml, studentId, workId, workType, source) {
+    if (source && source !== 'work') return imgHtml;
     if (!(IS_SUPERADMIN && workType === 'after')) {
         return wrapPhoto(imgHtml, studentId, workId);
     }
