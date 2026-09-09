@@ -8,7 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession, aliased
 
 from app.cache import invalidate_unread
-from app.constants import FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM, FEATURE_RETAKE, FEATURE_LABELS
+from app.constants import FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM, FEATURE_LABELS
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf
 from app.models.feature_period import FeaturePeriod
@@ -162,7 +162,10 @@ def _load_dashboard_data(db: DBSession, now: datetime) -> dict:
     ]
 
     today = today_msk()
-    _features = [FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM, FEATURE_RETAKE]
+    # «Отработки» убрана отсюда (владелец 09.09.2026): доступ к ней даёт
+    # назначение куратором, а не окно FeaturePeriod — плитка на главной
+    # админа стала бы обманкой (см. app/api/upload.py::_retake_available_for_user).
+    _features = [FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM]
     feature_statuses: dict = {}
     for _feat in _features:
         _period = (

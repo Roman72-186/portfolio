@@ -26,7 +26,6 @@ from app.constants import (
     FEATURE_LABELS,
     FEATURE_PORTFOLIO_UPLOAD,
     FEATURE_MOCK_EXAM,
-    FEATURE_RETAKE,
     TARIFFS,
     TARIFFS_CURRENT,
     STUDY_MODES,
@@ -1248,7 +1247,13 @@ def exam_assignment_duplicate(
 
 # ── Feature periods ───────────────────────────────────────────────────────────
 
-ALL_FEATURES = [FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM, FEATURE_RETAKE]
+# «Отработки» убрана из списка (владелец 09.09.2026): доступ к отработке
+# определяет назначение куратором (`_has_retake_assignment` в
+# app/api/upload.py), а не окно дат — пункт стал обманкой, даты ставились бы,
+# а доступ они больше не открывают. Старые записи FeaturePeriod с
+# feature='retake' в базе не удалялись — история, ни на что не влияют, просто
+# не показываются на этом экране.
+ALL_FEATURES = [FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM]
 
 
 @router.get("/periods", response_class=HTMLResponse)
