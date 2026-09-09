@@ -233,3 +233,48 @@ def test_mock_questions_are_served_by_the_blocks_endpoint(auth_client, db):
     body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
     assert [b["body"] for b in body["blocks"]] == ["Как прошла сдача?"]
     assert body["submit_endpoint"] == f"/cabinet/tracker/tasks/{task.id}/blocks"
+
+
+# ── Время сдачи, заданное преподавателем (владелец 09.09.2026) ────────────────
+
+def test_start_gives_the_duration_set_by_the_teacher(auth_client, db):
+    """Ученику идёт время билета, а не общая четырёхчасовая норма.
+
+    Владелец 09.09.2026 просил выставлять время сдачи в конструкторе — значит
+    именно его число должно оказаться в таймере. Инлайн-карточка
+    (`partials/inline/mock_exam.html`) считает обратный отсчёт от `started_at`
+    и `expires_at` этого ответа, поэтому проверка ответа и есть проверка
+    таймера.
+    """
+    from datetime import datetime, time, timedelta as _td, timezone
+
+    from app.services.mock_exam_access import MOCK_EXAM_DEFAULT_DURATION_MINUTES
+    from app.services.tz import MSK_TZ
+
+    client, user = auth_client
+    _create_active_period(db, user)
+    ticket = _create_active_ticket(db, user, "Рисунок")
+    # Окно на сегодня целиком, 75 минут на работу — как выставил бы
+    # преподаватель в конструкторе.
+    today = date.today()
+    ticket.opens_at = datetime.combine(today, time(0, 30), tzinfo=MSK_TZ)
+    ticket.closes_at = datetime.combine(today, time(23, 30), tzinfo=MSK_TZ)
+    ticket.duration_minutes = 75
+    db.commit()
+
+    resp = client.post("/upload/mock-exam/start", data={"subject": "Рисунок"})
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["duration_sec"] == 75 * 60
+    assert body["duration_sec"] != MOCK_EXAM_DEFAULT_DURATION_MINUTES * 60
+    started = datetime.fromisoformat(body["started_at"])
+    expires = datetime.fromisoformat(body["expires_at"])
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    # Дедлайн — старт плюс заданные минуты (окно шире, значит не оно режет).
+    assert expires - started == _td(minutes=75)
+    # Билет доезжает целиком: у ученика его название и описание.
+    assert body["ticket"]["title"] == "Билет Рисунок"

@@ -11,10 +11,12 @@
 роут принимает.
 """
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import re
 
 from app.models.exam_assignment import ExamAssignment, ExamTicket
+from app.services.mock_exam_access import MOCK_EXAM_DEFAULT_DURATION_MINUTES
+from app.services.tz import MSK_TZ
 from app.models.task_block import TaskBlock
 from app.models.tracker import SOURCE_EXAM_ASSIGNMENT, TrackerTask
 
@@ -223,3 +225,170 @@ def test_starts_on_together_with_tickets_is_refused(
     )
 
     assert response.status_code == 422
+
+
+# ── Время сдачи (владелец 09.09.2026) ─────────────────────────────────────
+#
+# «Выбираем название билета, какое-то описание, добавляем фотку и выставляем
+# время сдачи». 30.08.2026 эти поля из конструктора убрали, окно ставил сервер;
+# теперь они вернулись, оставшись необязательными.
+
+def _mock_json(**extra) -> dict:
+    """Минимальный payload формы «Задания» с одним билетом."""
+    payload = {
+        "title": "Пробник по рисунку",
+        "subjects": [
+            {
+                "subject": "Рисунок",
+                "note": None,
+                "tickets": [{"title": "Натюрморт с фруктами", "description": "Два листа"}],
+            }
+        ],
+        "audience": {"assign_to_all": True, "tag_ids": [], "assignee_usernames": ""},
+    }
+    payload.update(extra)
+    return payload
+
+
+def test_schedule_from_the_form_lands_on_the_ticket(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Заданное время сдачи доезжает до билета без изменений."""
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+
+    response = client.post(
+        f"{PROGRAM}/{FUTURE_DAY}/mock",
+        json=_mock_json(schedule={
+            "opens_at": f"{FUTURE_DAY}T09:00",
+            "closes_at": f"{FUTURE_DAY}T21:00",
+            "duration_minutes": 90,
+        }),
+    )
+
+    assert response.status_code == 200, response.text
+    ticket = db.query(ExamTicket).one()
+    assert ticket.title == "Натюрморт с фруктами"
+    assert ticket.description == "Два листа"
+    assert ticket.duration_minutes == 90
+    # В базе UTC, в форме московское время: 09:00 МСК = 06:00 UTC.
+    assert ticket.opens_at.astimezone(timezone.utc).hour == 6
+    assert ticket.closes_at.astimezone(timezone.utc).hour == 18
+
+
+def test_no_schedule_keeps_the_default_window(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Не заполнил поля — прежнее поведение: 11:45–18:30 дня и 240 минут.
+
+    Это и есть страховка от регрессии для преподавателя, который к новым
+    полям не притронулся.
+    """
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+
+    response = client.post(f"{PROGRAM}/{FUTURE_DAY}/mock", json=_mock_json())
+
+    assert response.status_code == 200, response.text
+    ticket = db.query(ExamTicket).one()
+    assert ticket.duration_minutes == MOCK_EXAM_DEFAULT_DURATION_MINUTES
+    opens_msk = ticket.opens_at.astimezone(MSK_TZ)
+    closes_msk = ticket.closes_at.astimezone(MSK_TZ)
+    assert (opens_msk.hour, opens_msk.minute) == (11, 45)
+    assert (closes_msk.hour, closes_msk.minute) == (18, 30)
+
+
+def test_form_prefills_the_schedule_fields(
+    client, user_factory, session_factory, monkeypatch
+):
+    """Поля времени стоят заполненными, а не пустыми.
+
+    Пустое `datetime-local` в Safari не рисует ни рамки, ни подсказки формата
+    (разбор 08.09.2026) — поле выглядело бы отсутствующим.
+    """
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+
+    form = _task_form(client.get(f"{PROGRAM}/{FUTURE_DAY}").text)
+
+    assert "data-mock-schedule" in form
+    assert f'data-mock-opens\n               value="{FUTURE_DAY}T11:45"' in form
+    assert f'data-mock-closes\n               value="{FUTURE_DAY}T18:30"' in form
+    assert f'data-mock-duration\n               value="{MOCK_EXAM_DEFAULT_DURATION_MINUTES}"' in form
+
+
+def test_window_outside_the_day_is_refused(
+    client, user_factory, session_factory, monkeypatch
+):
+    """Открытие пробника обязано попадать в день задания.
+
+    `datetime-local` даёт выбрать любую дату. Без проверки карточка стояла бы
+    в одном дне, а билет открывался в другом: ученик видит задание в ленте,
+    жмёт «Начать» и получает «окно ещё не открылось» — и причину не узнаёт ни
+    он, ни преподаватель.
+    """
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    other_day = (date.fromisoformat(FUTURE_DAY) + timedelta(days=7)).isoformat()
+
+    response = client.post(
+        f"{PROGRAM}/{FUTURE_DAY}/mock",
+        json=_mock_json(schedule={
+            "opens_at": f"{other_day}T11:45",
+            "closes_at": f"{other_day}T18:30",
+            "duration_minutes": 60,
+        }),
+    )
+
+    assert response.status_code == 422
+    assert "открывается в день задания" in response.json()["detail"]
+
+
+def test_window_may_cross_midnight(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Закрытие на следующий день разрешено: пробник может идти через полночь."""
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    next_day = (date.fromisoformat(FUTURE_DAY) + timedelta(days=1)).isoformat()
+
+    response = client.post(
+        f"{PROGRAM}/{FUTURE_DAY}/mock",
+        json=_mock_json(schedule={
+            "opens_at": f"{FUTURE_DAY}T20:00",
+            "closes_at": f"{next_day}T02:00",
+            "duration_minutes": 120,
+        }),
+    )
+
+    assert response.status_code == 200, response.text
+    ticket = db.query(ExamTicket).one()
+    assert ticket.start_date.isoformat() == FUTURE_DAY
+    assert ticket.end_date.isoformat() == next_day
+
+
+def test_duration_longer_than_the_window_is_refused_with_a_plain_reason(
+    client, user_factory, session_factory, monkeypatch
+):
+    """240 минут в окне 11:45–18:30 не влезают — и это должно быть сказано.
+
+    Самая вероятная первая ошибка: поля предзаполнены окном в 405 минут, а
+    владелец печатает в «минутах» большее число. Молчаливое сохранение здесь
+    было бы худшим исходом.
+    """
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+
+    response = client.post(
+        f"{PROGRAM}/{FUTURE_DAY}/mock",
+        json=_mock_json(schedule={
+            "opens_at": f"{FUTURE_DAY}T11:45",
+            "closes_at": f"{FUTURE_DAY}T18:30",
+            "duration_minutes": 480,
+        }),
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "окно короче времени на работу" in detail
+    assert "480" in detail

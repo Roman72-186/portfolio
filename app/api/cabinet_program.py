@@ -102,7 +102,12 @@ from app.services.tracker import (
     update_homework,
     update_task,
 )
-from app.services.tz import msk_midnight, today_msk
+from app.services.mock_exam_access import (
+    ticket_closes_at,
+    ticket_duration_sec,
+    ticket_opens_at,
+)
+from app.services.tz import MSK_TZ, msk_midnight, today_msk
 from app.services.utils import compress_image
 from app.services.video_topics import (
     ambiguous_tag_names,
@@ -256,16 +261,25 @@ def _edit_payloads(
                 for img in homework_images(db, hw.id)
             ]
         if item.kind == ITEM_MOCK_EXAM and item.source_id:
+            tickets = (
+                db.query(ExamTicket)
+                .filter(ExamTicket.assignment_id == item.source_id)
+                .order_by(ExamTicket.ticket_number)
+                .all()
+            )
             payload["tickets"] = [
                 {
                     "id": t.id, "title": t.title, "description": t.description or "",
                     "image_url": t.image_s3_url, "image_path": t.image_s3_path,
                 }
-                for t in db.query(ExamTicket)
-                .filter(ExamTicket.assignment_id == item.source_id)
-                .order_by(ExamTicket.ticket_number)
-                .all()
+                for t in tickets
             ]
+            # Время сдачи — общее на задание, поэтому берём с первого билета
+            # (владелец 09.09.2026: время должно правиться, а не только
+            # задаваться при создании). Форма ждёт строки в московском времени,
+            # ровно как их отдаёт `default_schedule_for_day`.
+            if tickets:
+                payload["schedule"] = _ticket_schedule_fields(tickets[0])
         # Блоки конструктора — у всех видов элемента без исключения: в этом и
         # смысл универсального конструктора.
         blocks = get_task_blocks(db, item.id)
@@ -619,6 +633,11 @@ def program_day(
             "item_presets": PROGRAM_ITEM_PRESETS,
             "item_form_kinds": PROGRAM_ITEM_FORM_KINDS,
             "subjects": MOCK_SUBJECTS,
+            # Предзаполнение полей времени сдачи пробника: 11:45–18:30 этого
+            # дня и 240 минут. Преподаватель их правит (владелец 09.09.2026),
+            # но пустыми они не стоят — пустое `datetime-local` в Safari не
+            # рисует вообще ничего (разбор 08.09.2026).
+            "mock_default_schedule": default_schedule_for_day(day),
             # Выбор «кому видно» — только действующая линейка (владелец
             # 08.09.2026: «новый учебный год, старых поместили в архив и
             # забыли»). Валидация ниже осталась по всему списку: настройка,
@@ -642,11 +661,47 @@ def program_day(
     )
 
 
+class MockSchedulePayload(BaseModel):
+    """Время сдачи пробника: когда билет открывается, закрывается и сколько
+    минут даётся на работу.
+
+    История поля. 30.08.2026 настройку убрали из конструктора совсем — окно
+    всегда бралось из `default_schedule_for_day(day)`. 09.09.2026 владелец
+    попросил вернуть: «выбираем название билета, какое-то описание, добавляем
+    фотку и выставляем время сдачи». Поэтому поля снова принимаются, но
+    остаются необязательными: пустой payload означает то же расписание по
+    умолчанию, что и до правки, и преподаватель, который к полям не притронулся,
+    получает прежнее поведение.
+
+    Окно одно на весь пробник дня, а не на каждый билет: `ExamAssignment`
+    хранит билеты одного задания, и разные окна внутри него означали бы, что
+    ученику достался билет, который уже закрылся, — при случайной выдаче это не
+    диагностируется.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    opens_at: str | None = Field(default=None, max_length=32)
+    closes_at: str | None = Field(default=None, max_length=32)
+    duration_minutes: int | None = Field(default=None, ge=1, le=720)
+
+    @property
+    def is_empty(self) -> bool:
+        """Ни одного поля времени в запросе.
+
+        Форма присылает время всегда, но запрос без него легален, и на правке
+        это разные вещи: «не трогал время» должно оставить сохранённое окно, а
+        не вернуть его к 11:45–18:30.
+        """
+        return not (
+            (self.opens_at or "").strip()
+            or (self.closes_at or "").strip()
+            or self.duration_minutes
+        )
+
+
 class TicketPayload(BaseModel):
-    """Окно билета (открывается/закрывается/минут на работу) сюда не входит —
-    решение владельца 30.08.2026: убрать настройку периода и времени из
-    конструктора, окно всегда берётся из `default_schedule_for_day(day)`
-    (11:45–18:30 дня, 90 минут), день уже известен из `iso` в пути."""
+    """Билет: название, описание, фотография. Время сдачи — не здесь, а в
+    `MockSchedulePayload` рядом: оно одно на все билеты задания."""
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1, max_length=200)
@@ -839,6 +894,10 @@ class MockEditPayload(BaseModel):
     blocks: list[BlockItem] = Field(default_factory=list, max_length=MAX_BLOCKS)
     tariff_restricted: bool = False
     tariffs: list[str] = Field(default_factory=list, max_length=len(TARIFFS))
+    # Время сдачи правится вместе с билетами (владелец 09.09.2026): выставить
+    # его при создании и не иметь возможности исправить — та же ловушка, что с
+    # исчезающей кнопкой пробника.
+    schedule: MockSchedulePayload = Field(default_factory=MockSchedulePayload)
 
     @field_validator("tariffs")
     @classmethod
@@ -901,12 +960,69 @@ class MockPayload(BaseModel):
     subjects: list[SubjectPayload] = Field(min_length=1, max_length=len(MOCK_SUBJECTS))
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
     is_required: bool = True
+    # Время сдачи (владелец 09.09.2026). Пустой объект = расписание по
+    # умолчанию, то есть прежнее поведение.
+    schedule: MockSchedulePayload = Field(default_factory=MockSchedulePayload)
     # Блоки содержимого — один набор на все выбранные предметы сразу, каждый
     # предмет получает свою копию строк. `BlockItem` (id/None), не голая
     # строка — та же форма, что у правки (`MockEditPayload` ниже), id на
     # создании всегда None, но так payload един на оба эндпоинта и не нужно
     # два разных JS-сборщика.
     blocks: list[BlockItem] = Field(default_factory=list, max_length=MAX_BLOCKS)
+
+
+def _ticket_schedule_fields(ticket: ExamTicket) -> dict:
+    """Время сдачи билета в том же виде, в каком его ждёт форма конструктора.
+
+    Обратная сторона `_mock_schedule`: строки московского времени формата
+    `datetime-local`. У билетов старой формы `opens_at`/`closes_at` могут быть
+    пустыми — тогда берётся дневное окно по датам билета, тем же правилом, по
+    которому его считает `mock_exam_access.ticket_opens_at`, второй трактовки
+    пустого поля не заводим.
+    """
+    opens_at = ticket_opens_at(ticket)
+    closes_at = ticket_closes_at(ticket)
+    return {
+        "opens_at": opens_at.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M"),
+        "closes_at": closes_at.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M"),
+        "duration_minutes": ticket_duration_sec(ticket) // 60,
+    }
+
+
+def _mock_schedule(schedule: "MockSchedulePayload | None", day: date) -> dict:
+    """Время сдачи пробника: что задал преподаватель, остальное — по умолчанию.
+
+    Возвращает тот же словарь строк, что и `default_schedule_for_day`, чтобы
+    дальше работал прежний путь (`parse_msk_datetime` → `validate_window`) и не
+    появилось второго формата времени. Незаполненное поле берётся из
+    расписания по умолчанию: преподаватель, который к полям не притронулся,
+    получает поведение до 09.09.2026.
+    """
+    default = default_schedule_for_day(day)
+    if schedule is None:
+        return default
+    opens_at = (schedule.opens_at or "").strip() or default["opens_at"]
+    closes_at = (schedule.closes_at or "").strip() or default["closes_at"]
+    duration = schedule.duration_minutes or default["duration_minutes"]
+    # Открытие обязано попадать в день элемента. Поле `datetime-local` даёт
+    # выбрать любую дату, и без проверки карточка стояла бы в одном дне, а
+    # билет открывался в другом: ученик видит задание в ленте, жмёт «Начать» и
+    # получает «окно ещё не открылось». Закрытие позже дня разрешено — пробник
+    # может переходить через полночь.
+    if not opens_at.startswith(day.isoformat()):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Пробник открывается в день задания — "
+                f"{day.strftime('%d.%m.%Y')}. Поменяйте дату открытия "
+                "или перенесите задание в нужный день."
+            ),
+        )
+    return {
+        "opens_at": opens_at,
+        "closes_at": closes_at,
+        "duration_minutes": duration,
+    }
 
 
 def _apply_element_tariff(
@@ -1006,9 +1122,12 @@ def create_mock_item(
         db.add(assignment)
         db.flush()
 
-        # Окно билета больше не настраивается в конструкторе (решение
-        # владельца 30.08.2026) — одно и то же для всех билетов дня.
-        schedule = default_schedule_for_day(day)
+        # Время сдачи задаёт преподаватель (владелец 09.09.2026), а незаполненное
+        # поле падает на расписание по умолчанию — 11:45–18:30 этого дня и 240
+        # минут на работу. Окно одно на все билеты задания: разные окна внутри
+        # одного `ExamAssignment` означали бы, что случайная выдача может
+        # достать ученику уже закрытый билет.
+        schedule = _mock_schedule(payload.schedule, day)
         duration_minutes = schedule["duration_minutes"]
         restrict_start_by_duration = True
 
@@ -1644,6 +1763,7 @@ def _sync_mock_tickets(
     assignee_ids: list[int],
     tariff_restricted: bool = False,
     tariffs: list[str] | None = None,
+    schedule: dict | None = None,
 ) -> None:
     """Развести билеты из формы правки с уже сохранёнными — id-сохраняющая
     логика, как у мини-опроса (владелец 30.08.2026: править билет можно
@@ -1651,10 +1771,18 @@ def _sync_mock_tickets(
     `MockExamAttempt.ticket_title`/`ticket_description`/`ticket_image_url`,
     правка билета его не трогает).
 
-    Новый билет получает то же окно, что и остальные билеты этого дня
-    (`default_schedule_for_day` — окно одно на весь `ExamAssignment`,
-    `ticket_number` только для текста ошибок), и ту же адресацию, что уже
-    стоит на теме элемента.
+    Окно одно на весь `ExamAssignment` (`ticket_number` только для текста
+    ошибок), адресация — та, что уже стоит на теме элемента. `schedule`
+    задаёт преподаватель; `None` означает расписание по умолчанию для этого
+    дня. Заданное окно применяется **ко всем билетам задания, а не только к
+    новым** (владелец 09.09.2026: время сдачи должно правиться): иначе
+    исправленное время молча относилось бы к части билетов, а какой из них
+    достанется ученику — решает случайная выдача.
+
+    Правка окна меняет и дедлайн уже начатой попытки — она считается от
+    `ticket_closes_at`/`ticket_duration_sec` в момент запроса, а не от снимка.
+    Это и есть смысл управления временем сдачи: продлили — ученик получил
+    больше, сократили — меньше.
 
     Билет с открытым/сданным циклом (`ExamCycle`) убрать нельзя — проверяем
     явно перед удалением (не полагаемся на FK: в тестах SQLite внешние
@@ -1665,9 +1793,31 @@ def _sync_mock_tickets(
         for t in db.query(ExamTicket).filter(ExamTicket.assignment_id == assignment.id).all()
     }
     next_number = max((t.ticket_number for t in existing.values()), default=0) + 1
-    schedule = default_schedule_for_day(day)
+    if schedule is None:
+        # Ничего не задали — держим то окно, что уже стоит на задании. Первый
+        # билет тут за всех: окно у них общее (см. докстринг).
+        saved = min(existing.values(), key=lambda t: t.ticket_number, default=None)
+        schedule = (
+            _ticket_schedule_fields(saved) if saved is not None
+            else default_schedule_for_day(day)
+        )
     duration_minutes = schedule["duration_minutes"]
     restrict_start_by_duration = True
+    # Окно разбирается один раз: у всех билетов задания оно общее, а
+    # `ticket_number` в ошибках указывает на первый билет — поля-то одни.
+    window_opens_at = parse_msk_datetime(
+        schedule["opens_at"], ticket_number=1, field_label="открывается"
+    )
+    window_closes_at = parse_msk_datetime(
+        schedule["closes_at"], ticket_number=1, field_label="закрывается"
+    )
+    window_start_date, window_end_date = validate_window(
+        ticket_number=1,
+        opens_at=window_opens_at,
+        closes_at=window_closes_at,
+        duration_minutes=duration_minutes,
+        restrict_start_by_duration=restrict_start_by_duration,
+    )
 
     matched_ids: set[int] = set()
     for item in tickets:
@@ -1677,6 +1827,11 @@ def _sync_mock_tickets(
             ticket.description = item.description
             ticket.image_s3_url = item.image_url
             ticket.image_s3_path = item.image_path
+            ticket.opens_at = window_opens_at
+            ticket.closes_at = window_closes_at
+            ticket.duration_minutes = duration_minutes
+            ticket.start_date = window_start_date
+            ticket.end_date = window_end_date
             set_ticket_tariffs(
                 db, ticket,
                 tariff_restricted=tariff_restricted,
@@ -1684,19 +1839,9 @@ def _sync_mock_tickets(
             )
             matched_ids.add(ticket.id)
         else:
-            opens_at = parse_msk_datetime(
-                schedule["opens_at"], ticket_number=next_number, field_label="открывается"
-            )
-            closes_at = parse_msk_datetime(
-                schedule["closes_at"], ticket_number=next_number, field_label="закрывается"
-            )
-            start_date, end_date = validate_window(
-                ticket_number=next_number,
-                opens_at=opens_at,
-                closes_at=closes_at,
-                duration_minutes=duration_minutes,
-                restrict_start_by_duration=restrict_start_by_duration,
-            )
+            opens_at = window_opens_at
+            closes_at = window_closes_at
+            start_date, end_date = window_start_date, window_end_date
             create_ticket(
                 db,
                 assignment,
@@ -1772,6 +1917,12 @@ def update_mock_item(
         assignee_ids=assignee_ids,
         tariff_restricted=payload.tariff_restricted,
         tariffs=payload.tariffs,
+        # Пустое время = «не трогал»: окно берётся с уже сохранённого билета
+        # внутри `_sync_mock_tickets`, а не сбрасывается к умолчанию дня.
+        schedule=(
+            None if payload.schedule.is_empty
+            else _mock_schedule(payload.schedule, day)
+        ),
     )
     if task.topic_id:
         topic = db.get(LearningTopic, task.topic_id)

@@ -135,7 +135,11 @@ def test_day_page_uses_school_day_copy_and_inline_optional_hints(
         "Тема учебного дня",
         "Что нужно сделать",
         "Описание, необязательно",
-        "Подпись к фотографии, необязательно",
+        # Билет: у него снова есть название, а подпись к фотографии стала
+        # описанием задания (владелец 09.09.2026: «выбираем название билета,
+        # какое-то описание, добавляем фотку и выставляем время сдачи»).
+        "Название билета",
+        "Описание задания, необязательно",
         "Текст",
         "Подпись, необязательно",
         "Заголовок, необязательно",
@@ -145,6 +149,7 @@ def test_day_page_uses_school_day_copy_and_inline_optional_hints(
     ):
         assert f'aria-label="{placeholder}"' in page.text
         assert f'placeholder="{placeholder}"' in page.text
+
 
     for external_label in (
         "Тема учебного дня",
@@ -201,3 +206,46 @@ def test_day_page_uses_school_day_copy_and_inline_optional_hints(
         # Форма правки есть, кнопки создания нет — новый элемент такого вида
         # завести нельзя, старый правится.
         assert f'data-open-form="{kind}"' not in page.text
+
+
+def test_preview_uses_the_student_renderer_not_its_own(
+    client, db, user_factory, session_factory
+):
+    """«Глазами ученика» рисует блоки общим рендерером ученика.
+
+    Сторож для дефекта 09.09.2026: у предпросмотра был свой набор рендереров,
+    он знал пять типов блоков из десяти, и «Загрузить портфолио», «Загрузить
+    работы», «Работа на время», «Шкала навыков», «Правила с галочками»
+    показывались преподавателю одним заголовком — без кнопки, поля загрузки и
+    пунктов. Проверять себя таким экраном нельзя: он терял половину задания.
+
+    Проверяется шов, а не картинка: рендерер подключён, предпросмотр зовёт
+    именно его и гасит интерактив. Свои ветки по типам блока внутри
+    предпросмотра означали бы, что копия снова отросла.
+    """
+    admin = user_factory(vk_id=990_104, name="Главный", is_admin=True, role_name="админ")
+    client.cookies.set("session_id", session_factory(admin).id)
+    iso = (today_msk() + timedelta(days=14)).isoformat()
+
+    page = client.get(f"/cabinet/staff/program/{iso}")
+    assert page.status_code == 200
+
+    assert '<script src="/static/js/task-blocks-render.js' in page.text
+    # Классы блоков ученика живут в `tracker.css` — без него предпросмотр
+    # показал бы голую разметку.
+    assert "/static/css/tracker.css" in page.text
+
+    body = page.text
+    script = body[body.index("function previewBlocks("):]
+    script = script[:script.index("function fillTakeSources(")]
+    assert "renderer.render(previewBlockShape(" in script
+    assert "freezePreview(box)" in script
+
+    # Своих рендереров у предпросмотра нет: тип блока внутри него упоминается
+    # только там, где это неизбежно — у видео (плееру нужен подписанный адрес
+    # сохранённого блока, до сохранения его нет).
+    own_branches = [
+        line for line in script.splitlines()
+        if "block_type ===" in line and "'video'" not in line
+    ]
+    assert not own_branches, own_branches

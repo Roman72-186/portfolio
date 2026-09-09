@@ -16,6 +16,7 @@ from app.models.learning_topic import LearningTopic
 from app.models.task_block import BLOCK_QUESTION, TaskBlock
 from app.models.tracker import TrackerTask
 from app.services.exam_tickets import get_ticket_tariffs
+from app.services.tz import MSK_TZ
 from app.services.video_topics import get_topic_tariffs
 
 PROGRAM = "/cabinet/staff/program"
@@ -307,3 +308,125 @@ def test_day_page_offers_edit_for_mock_and_prefills_tickets(client, db, user_fac
     payload = edit_data[str(task.id)]
     assert payload["tickets"][0]["id"] == ticket.id
     assert payload["tickets"][0]["title"] == ticket.title
+
+
+# ── Время сдачи правится вместе с билетами (владелец 09.09.2026) ──────────
+
+def test_edit_schedule_applies_to_every_ticket_of_the_assignment(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Правка окна меняет все билеты задания, а не только новые.
+
+    Ученику билет достаётся случайно: если исправленное время село бы на часть
+    билетов, поведение зависело бы от выдачи и не диагностировалось.
+    """
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    day_iso = _future_day_iso()
+    assert _create_mock(
+        client, day_iso, tickets=[_ticket("Первый"), _ticket("Второй")]
+    ).status_code == 200
+    tickets = db.query(ExamTicket).order_by(ExamTicket.ticket_number).all()
+    assert len(tickets) == 2
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "mock_exam").one()
+
+    resp = client.post(
+        f"{PROGRAM}/items/{task.id}/mock",
+        json={
+            "title": "Пробник: свет и тон",
+            "tickets": [
+                {"id": tickets[0].id, "title": "Первый", "description": ""},
+                {"id": tickets[1].id, "title": "Второй", "description": ""},
+            ],
+            "is_required": True,
+            "schedule": {
+                "opens_at": f"{day_iso}T10:00",
+                "closes_at": f"{day_iso}T20:00",
+                "duration_minutes": 120,
+            },
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    db.expire_all()
+    for ticket in db.query(ExamTicket).all():
+        assert ticket.duration_minutes == 120
+        assert ticket.opens_at.astimezone(MSK_TZ).hour == 10
+        assert ticket.closes_at.astimezone(MSK_TZ).hour == 20
+
+
+def test_edit_without_schedule_keeps_the_saved_window(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Правка билета без полей времени не сбрасывает окно к умолчанию.
+
+    Форма присылает время всегда, но запрос без него легален — и молча
+    вернуть 11:45–18:30 было бы хуже всего: преподаватель правил название.
+    """
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    day_iso = _future_day_iso()
+    assert _create_mock(client, day_iso).status_code == 200
+    ticket = db.query(ExamTicket).one()
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "mock_exam").one()
+    client.post(
+        f"{PROGRAM}/items/{task.id}/mock",
+        json={
+            "tickets": [{"id": ticket.id, "title": "Натюрморт", "description": ""}],
+            "is_required": True,
+            "schedule": {
+                "opens_at": f"{day_iso}T09:30",
+                "closes_at": f"{day_iso}T19:30",
+                "duration_minutes": 45,
+            },
+        },
+    )
+    db.expire_all()
+
+    resp = client.post(
+        f"{PROGRAM}/items/{task.id}/mock",
+        json={
+            "tickets": [{"id": ticket.id, "title": "Другое название", "description": ""}],
+            "is_required": True,
+        },
+    )
+
+    assert resp.status_code == 200, resp.text
+    db.expire_all()
+    refreshed = db.get(ExamTicket, ticket.id)
+    assert refreshed.title == "Другое название"
+    assert refreshed.duration_minutes == 45
+    assert refreshed.opens_at.astimezone(MSK_TZ).hour == 9
+    assert refreshed.closes_at.astimezone(MSK_TZ).hour == 19
+
+
+def test_day_page_prefills_the_saved_schedule_for_edit(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Форма правки показывает сохранённое время, а не расписание по умолчанию."""
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+    day_iso = _future_day_iso()
+    assert _create_mock(client, day_iso).status_code == 200
+    ticket = db.query(ExamTicket).one()
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "mock_exam").one()
+    client.post(
+        f"{PROGRAM}/items/{task.id}/mock",
+        json={
+            "tickets": [{"id": ticket.id, "title": "Натюрморт", "description": ""}],
+            "is_required": True,
+            "schedule": {
+                "opens_at": f"{day_iso}T08:15",
+                "closes_at": f"{day_iso}T22:45",
+                "duration_minutes": 300,
+            },
+        },
+    )
+
+    page = client.get(f"{PROGRAM}/{day_iso}").text
+    edit_data = json.loads(page.split("programEditData = ")[1].split(";\n")[0])
+    schedule = edit_data[str(task.id)]["schedule"]
+
+    assert schedule["opens_at"] == f"{day_iso}T08:15"
+    assert schedule["closes_at"] == f"{day_iso}T22:45"
+    assert schedule["duration_minutes"] == 300
