@@ -383,34 +383,58 @@ def task_status(
 
 
 def accessible_task_entries(
-    db: Session, user_id: int, *, start: datetime | None, end: datetime
+    db: Session, user_id: int, *, start: datetime | None, end: datetime,
+    topic_id: int | None = None, include_undated: bool = False,
 ) -> list[dict]:
     """Задачи ученика (программа + разовые) до `end` с личным статусом.
 
-    Общий движок для двух экранов, которые раньше собирали один и тот же
-    запрос по отдельности: «Личный трекер» зовёт с `start=None` — долг
-    копится, пока не закрыт, недели назад он никуда не девается; «Актуальное
-    образовательное пространство» передаёт границы текущей недели, для
-    разбивки по дням. Каждая запись — словарь с `task`/`kind_label`/`status`/
-    `due_label`/`day`, без похода в шаблон за вычислениями.
+    Общий движок для трёх мест, которые раньше собирали один и тот же запрос
+    по отдельности: «Личный трекер» зовёт с `start=None` — долг копится, пока
+    не закрыт, недели назад он никуда не девается; «Актуальное образовательное
+    пространство» и гейты «неделя/цикл пройдены» передают границы периода, для
+    разбивки по дням и проверки полноты. Каждая запись — словарь с
+    `task`/`kind_label`/`status`/`due_label`/`day`, без похода в шаблон за
+    вычислениями.
+
+    `include_undated`/`topic_id` — добавлены 10.09.2026 для заданий цикла без
+    даты (`due_at IS NULL`, задание принадлежит циклу через `topic_id`
+    напрямую, а не через совпадение дат). Оба по умолчанию выключены, старое
+    поведение (только датные задания, окно `[start, end)`) не меняется ни
+    байтом без явной передачи параметров — вызовы, которым бездатные задания
+    не нужны (`is_week_complete`), их и не передают.
+
+    `topic_id`, если задан, сужает **только бездатную** ветку выборки до
+    одного цикла — без этого гейт «цикл A пройден» подхватил бы чужой
+    недоделанный бездатный шаг из другого доступного ученику цикла Б. На
+    датные задания (старый календарь, `topic_id` — служебная тема дня или
+    вовсе `None`) `topic_id` не влияет: они как находились по совпадению
+    `due_at` с окном, так и находятся — цикл, который проверяет полноту
+    ровно этого периода, обязан видеть и их тоже.
     """
     topic_ids = accessible_topic_ids(db, user_id)
     task_ids = accessible_task_ids(db, user_id)
+    date_filter = TrackerTask.due_at < end
+    if start is not None:
+        date_filter = date_filter & (TrackerTask.due_at >= start)
+    if include_undated:
+        undated_filter = TrackerTask.due_at.is_(None)
+        if topic_id is not None:
+            undated_filter = undated_filter & (TrackerTask.topic_id == topic_id)
+        date_filter = or_(date_filter, undated_filter)
     filters = [
         TrackerTask.is_published.is_(True),
         TrackerTask.deleted_at.is_(None),
-        TrackerTask.due_at < end,
+        date_filter,
         or_(
             TrackerTask.topic_id.in_(topic_ids),
             TrackerTask.topic_id.is_(None) & TrackerTask.id.in_(task_ids),
         ),
     ]
-    if start is not None:
-        filters.insert(2, TrackerTask.due_at >= start)
+    no_due_last = case((TrackerTask.due_at.is_(None), 1), else_=0)
     tasks = (
         db.query(TrackerTask)
         .filter(*filters)
-        .order_by(TrackerTask.due_at.asc(), TrackerTask.sort_order.asc(), TrackerTask.id.asc())
+        .order_by(no_due_last, TrackerTask.due_at.asc(), TrackerTask.sort_order.asc(), TrackerTask.id.asc())
         .all()
     )
 
@@ -430,15 +454,20 @@ def accessible_task_entries(
     entries = []
     for task in tasks:
         due_at = task.due_at
-        if due_at.tzinfo is None:
-            due_at = due_at.replace(tzinfo=timezone.utc)
+        due_label = None
+        day = None
+        if due_at is not None:
+            if due_at.tzinfo is None:
+                due_at = due_at.replace(tzinfo=timezone.utc)
+            due_label = due_at.astimezone(MSK_TZ).strftime("%H:%M")
+            day = msk_date(task.due_at)
         state = states.get(task.id)
         entries.append({
             "task": task,
             "kind_label": ITEM_KIND_LABELS.get(task.kind, task.kind),
             "status": task_status(task, state, now=now),
-            "due_label": due_at.astimezone(MSK_TZ).strftime("%H:%M"),
-            "day": msk_date(task.due_at),
+            "due_label": due_label,
+            "day": day,
             # Дата закрытия отдельно от `day` (дата дедлайна): «Сделано» на
             # экране ученика фильтруется по ней, иначе закрытый долг прошлой
             # недели пропадал с экрана — из «Просрочено» вышел, в «Сделано»
@@ -596,6 +625,50 @@ def cycle_bounds(topic: LearningTopic) -> tuple[date, date]:
     return start, max(start, end)
 
 
+def cycle_label(topic: LearningTopic) -> str:
+    """Название цикла для показа — период дат, если `title` пуст.
+
+    Название цикла стало необязательным 10.09.2026: форма его не требует, но
+    показывать пустую строку в списке циклов или в переключателе ленты
+    ученика было бы хуже, чем период — он у цикла есть всегда.
+    """
+    title = (topic.title or "").strip()
+    if title:
+        return title
+    first, last = cycle_bounds(topic)
+    return f"{first.strftime('%d.%m')} — {last.strftime('%d.%m.%Y')}"
+
+
+def next_sort_order_in_topic(db: Session, topic_id: int) -> int:
+    """Следующий порядковый номер задания в цикле — новое добавляется в конец."""
+    items = list_week_items(db, topic_id)
+    return (items[-1].sort_order + 1) if items else 0
+
+
+def move_task_in_topic(db: Session, *, topic_id: int, task_id: int, direction: int) -> None:
+    """Переставить задание в цикле на шаг вверх/вниз (`direction`: -1 или 1).
+
+    Сначала перенумеровывает список 0..n-1 в текущем порядке — защита от
+    легаси-строк с одинаковым `sort_order` (например 0 у всех), где простой
+    обмен значениями с соседом ничего не изменил бы. Затем меняет местами
+    `sort_order` перемещаемого задания и его соседа. Задание с края списка,
+    которое просят подвинуть дальше края, — тихий no-op, как у стрелок
+    блоков конструктора.
+    """
+    items = list_week_items(db, topic_id)
+    for index, item in enumerate(items):
+        item.sort_order = index
+    current_index = next((i for i, t in enumerate(items) if t.id == task_id), None)
+    if current_index is None:
+        raise ValueError(f"Задание {task_id} не найдено в цикле {topic_id}")
+    target_index = current_index + direction
+    if not (0 <= target_index < len(items)):
+        return
+    items[current_index].sort_order, items[target_index].sort_order = (
+        items[target_index].sort_order, items[current_index].sort_order,
+    )
+
+
 def accessible_cycles(db: Session, user_id: int) -> list[LearningTopic]:
     """Доступные ученику циклы (`LearningTopic(kind='week')`), от ранних к поздним.
 
@@ -637,11 +710,19 @@ def is_cycle_complete(db: Session, user_id: int, topic: LearningTopic) -> bool:
     цикла, а не из понедельника. Билет Пробника (`ITEM_MOCK_EXAM`) исключён по
     той же причине: он блокирует месяц, а не цикл (решение владельца 23.08,
     подтверждено 24.08).
+
+    `topic_id=topic.id, include_undated=True` (10.09.2026) — задания внутри
+    цикла заводятся без даты, принадлежность считается по `topic_id`, а не по
+    совпадению `due_at` с периодом. `topic_id` обязателен именно здесь: без
+    него бездатное задание любого другого доступного ученику цикла тоже
+    попало бы в эту проверку и вечно держало бы цикл A незавершённым.
     """
     first, last = cycle_bounds(topic)
     start, _ = day_bounds(first)
     _, end = day_bounds(last)
-    entries = accessible_task_entries(db, user_id, start=start, end=end)
+    entries = accessible_task_entries(
+        db, user_id, start=start, end=end, topic_id=topic.id, include_undated=True,
+    )
     return all(
         entry["status"] == "done"
         for entry in entries

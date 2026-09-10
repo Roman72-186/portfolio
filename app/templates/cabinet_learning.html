@@ -105,9 +105,11 @@
                     {%- else -%}{{ step.task.title }}{%- endif -%}
                 </h3>
                 {% if not step.block and step.task.description %}<p class="lrn-card-note">{{ step.task.description }}</p>{% endif %}
+                {% if step.entry.due_label %}
                 <div class="trk-meta">
                     <span class="{{ 'is-overdue' if step.entry.status == 'overdue' }}">до {{ step.entry.due_label }}</span>
                 </div>
+                {% endif %}
             </header>
 
             {% if step.status == 'locked' %}

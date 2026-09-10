@@ -41,6 +41,7 @@ from app.services.task_blocks import (
     get_blocks as get_task_blocks,
     get_images as get_task_block_images,
     get_options as get_task_block_options,
+    get_required_tariffs as get_task_block_required_tariffs,
     get_tariffs as get_task_block_tariffs,
     sync_blocks as sync_task_blocks,
 )
@@ -93,10 +94,14 @@ from app.services.program import (
 from app.services.tracker import (
     create_homework,
     create_task,
+    cycle_label,
     delete_task,
     get_homework,
     get_task,
     homework_images,
+    list_week_items,
+    move_task_in_topic,
+    next_sort_order_in_topic,
     resolve_assignees,
     set_homework_images,
     update_homework,
@@ -286,6 +291,7 @@ def _edit_payloads(
         block_options = get_task_block_options(db, [b.id for b in blocks])
         block_images = get_task_block_images(db, [b.id for b in blocks])
         block_tariffs = get_task_block_tariffs(db, [b.id for b in blocks])
+        block_required_tariffs = get_task_block_required_tariffs(db, [b.id for b in blocks])
         payload["blocks"] = [
             {
                 "id": b.id,
@@ -303,6 +309,7 @@ def _edit_payloads(
                 "is_required": b.is_required,
                 "subject": b.subject,
                 "tariffs": sorted(block_tariffs.get(b.id, set())),
+                "required_tariffs": sorted(block_required_tariffs.get(b.id, set())),
                 "opens_at": msk_date(b.opens_at).isoformat() if b.opens_at else None,
                 "closes_at": (
                     b.closes_at.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M")
@@ -373,7 +380,9 @@ def program_month(
 class CyclePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    title: str = Field(min_length=1, max_length=200)
+    # Название необязательно (владелец 10.09.2026) — список циклов и лента
+    # ученика показывают период дат вместо пустого названия (`cycle_label`).
+    title: str = Field(default="", max_length=200)
     description: str | None = Field(default=None, max_length=5000)
     # Даты из <input type="date">, московские. Конец включительно: цикл «по 3
     # октября» заканчивается вечером третьего, а не в полночь на его начале.
@@ -384,10 +393,7 @@ class CyclePayload(BaseModel):
     @field_validator("title")
     @classmethod
     def strip_title(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("Название не может быть пустым")
-        return value
+        return value.strip()
 
     @field_validator("description")
     @classmethod
@@ -425,6 +431,7 @@ def program_cycles(
         {
             "id": topic.id,
             "title": topic.title,
+            "label": cycle_label(topic),
             "description": topic.description,
             "starts_on": msk_date(topic.opens_at).isoformat(),
             "ends_on": msk_date(topic.ends_at).isoformat() if topic.ends_at else None,
@@ -512,6 +519,186 @@ def update_program_cycle(
     return JSONResponse({"ok": True})
 
 
+class CycleItemPayload(BaseModel):
+    """Задание внутри цикла — тот же набор полей, что у «Задания» на экране
+    дня (`SimpleItemPayload`), но без даты и без своей аудитории.
+
+    Даты нет: владелец 10.09.2026 — «к датам привязывать не будем, просто
+    задания как есть сейчас, они по порядку будут добавляться». Порядок
+    задаёт `sort_order` (см. `create_cycle_material_item`), не дата.
+
+    Аудитории/тарифа тоже нет: `create_program_cycle` уже адресует весь цикл
+    целиком (`assign_to_all=True`), а видимость и обязательность внутри
+    цикла настраиваются на уровне блока (`BlockItem.tariffs`/
+    `required_tariffs`), не на уровне задания. Поле в форме не рисуется —
+    схема просто не принимает его, а не молча игнорирует.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    subject: str | None = Field(default=None, max_length=50)
+    is_required: bool = True
+    # Дата, с которой задание открывается ученику по календарю — независимый
+    # гейт от последовательности внутри цикла (то же поле, что у
+    # SimpleItemPayload.starts_on).
+    starts_on: date | None = None
+    blocks: list[BlockItem] = Field(default_factory=list, max_length=MAX_BLOCKS)
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Title cannot be empty")
+        return value
+
+    @field_validator("subject")
+    @classmethod
+    def validate_subject(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        if not value:
+            return None
+        if value not in MOCK_SUBJECTS:
+            raise ValueError("Unknown subject")
+        return value
+
+
+class MoveDirectionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    direction: int = Field(ge=-1, le=1)
+
+    @field_validator("direction")
+    @classmethod
+    def direction_not_zero(cls, value: int) -> int:
+        if value == 0:
+            raise ValueError("direction must be -1 or 1")
+        return value
+
+
+@router.get("/cycles/{topic_id}", response_class=HTMLResponse)
+def program_cycle_items(
+    topic_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Задания внутри цикла — вместо дня календаря (владелец 10.09.2026).
+
+    Единственный заводимый вид — «Задание» (`ITEM_MATERIAL`), тот же вид,
+    что и на дне; правится тем же роутом (`/items/{task_id}/material`), что
+    уже умеет работать без даты (см. `_get_editable_task`, `_update_simple_item`
+    в этом же файле).
+    """
+    topic = get_topic(db, topic_id, kinds=(TOPIC_KIND_WEEK,))
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Цикл не найден")
+    items = list_week_items(db, topic_id)
+    return templates.TemplateResponse(
+        "cabinet_program_cycle_items.html",
+        {
+            "request": request,
+            "user": user,
+            "topic": topic,
+            "cycle_label": cycle_label(topic),
+            "items": items,
+            "edit_payloads": _edit_payloads(db, items, {t.id: {} for t in items}),
+            "kind_labels": ITEM_KIND_LABELS,
+            "subjects": MOCK_SUBJECTS,
+            "question_types": [
+                {"value": t, "label": QUESTION_TYPE_LABELS[t]} for t in QUESTION_TYPES
+            ],
+            # Видео-блок остаётся в наборе типов блока (BLOCK_VIDEO из
+            # BLOCK_TYPES) — только вида элемента «Видеоматериал» здесь нет,
+            # ролик по-прежнему можно положить блоком внутрь «Задания».
+            "catalog_videos": videos_for_picker(db),
+            "block_types": [(t, BLOCK_TYPE_LABELS[t]) for t in BLOCK_TYPES],
+            "max_block_images": MAX_BLOCK_IMAGES,
+            "tariffs": TARIFFS_CURRENT,
+        },
+    )
+
+
+@router.post("/cycles/{topic_id}/items/material", response_class=JSONResponse)
+def create_cycle_material_item(
+    topic_id: int,
+    payload: CycleItemPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Новое задание в цикле — без дня и без своей темы: `topic_id` ставится
+    прямо на цикл (`LearningTopic(kind='week')`), а не на одноразовую тему
+    элемента, как это делает `ensure_item_topic` на дне (владелец 10.09.2026:
+    адресация внутри цикла — по блокам, а не по рамке, отдельной темы на
+    задание тут не заводим).
+    """
+    topic = get_topic(db, topic_id, kinds=(TOPIC_KIND_WEEK,))
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Цикл не найден")
+    task = create_task(
+        db,
+        title=payload.title,
+        description=payload.description,
+        due_at=None,
+        subject=payload.subject,
+        topic_id=topic.id,
+        kind=ITEM_MATERIAL,
+        is_required=payload.is_required,
+        sort_order=next_sort_order_in_topic(db, topic.id),
+        user_id=user["user_id"],
+    )
+    task.starts_at = (
+        msk_midnight(payload.starts_on).astimezone(timezone.utc)
+        if payload.starts_on else None
+    )
+    task.is_published = True
+    db.flush()
+    sync_task_blocks(
+        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
+    )
+    db.add(
+        AuditLog(
+            action="program_cycle_item_create",
+            performed_by_id=user["user_id"],
+            details=json.dumps(
+                {"topic_id": topic.id, "task_id": task.id}, ensure_ascii=False
+            ),
+        )
+    )
+    db.commit()
+    return JSONResponse({"ok": True, "task_id": task.id})
+
+
+@router.post("/cycles/{topic_id}/items/{task_id}/move", response_class=JSONResponse)
+def move_cycle_item(
+    topic_id: int,
+    task_id: int,
+    payload: MoveDirectionPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Переставить задание в цикле на шаг вверх/вниз — отдельным запросом на
+    каждый клик (владелец 10.09.2026: «сможем передвигать вверх-вниз»), а не
+    пересборкой всей формы, как у блоков внутри задания: задания цикла
+    сохраняются по одному, а не одной формой на весь цикл разом.
+    """
+    topic = get_topic(db, topic_id, kinds=(TOPIC_KIND_WEEK,))
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Цикл не найден")
+    try:
+        move_task_in_topic(
+            db, topic_id=topic_id, task_id=task_id, direction=payload.direction
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Элемент не найден")
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
 # Порядок важен: «/{iso}» ниже ловит любую строку, включая «blocks-source».
 # FastAPI берёт первый подходящий маршрут, поэтому конкретные пути — выше.
 @router.get("/blocks-source", response_class=JSONResponse)
@@ -569,6 +756,7 @@ def blocks_source_content(
     options = get_task_block_options(db, [b.id for b in blocks])
     images = get_task_block_images(db, [b.id for b in blocks])
     tariffs = get_task_block_tariffs(db, [b.id for b in blocks])
+    required_tariffs = get_task_block_required_tariffs(db, [b.id for b in blocks])
     return JSONResponse({"blocks": [
         {
             "block_type": b.block_type,
@@ -581,6 +769,7 @@ def blocks_source_content(
             "is_required": b.is_required,
             "subject": b.subject,
             "tariffs": sorted(tariffs.get(b.id, set())),
+            "required_tariffs": sorted(required_tariffs.get(b.id, set())),
             # opens_at и closes_at сюда намеренно не копируются: это
             # абсолютные дата и время исходного дня, в новом дне они бы
             # означали не то (владелец 06.09.2026 про opens_at, то же
@@ -802,6 +991,11 @@ class BlockItem(BaseModel):
     is_required: bool = False
     subject: str | None = Field(default=None, max_length=50)
     tariffs: list[str] = Field(default_factory=list, max_length=10)
+    # Кого обязать выполнить, если блок обязательный — отдельная ось от
+    # видимости (`tariffs` выше): пусто = обязательно всем, кому видно
+    # (владелец 10.09.2026). Валидацию значений делает сервисный слой
+    # (`sync_blocks`/`_sync_required_tariffs`), как и у `tariffs`.
+    required_tariffs: list[str] = Field(default_factory=list, max_length=10)
     # Период доступа — открывается 00:00 МСК этой даты, независимо от
     # действий ученика; складывается с is_required, не заменяет (владелец
     # 03.09.2026, найдено при повторном разборе 06.09.2026). Конвертацию в
@@ -1757,15 +1951,21 @@ def create_survey_item(
 
 
 def _get_editable_task(db: DBSession, task_id: int, kind: str) -> TrackerTask:
-    """Найти элемент дня для правки: тот же вид, ещё не прошедший день.
+    """Найти элемент для правки: тот же вид, ещё не прошедший день.
 
     День берём из `task.due_at`, а не из URL — правка идёт по id элемента,
     и клиентский `iso` здесь не участвует и подделать его нельзя.
+
+    `task.due_at` пуст у заданий цикла (10.09.2026, заводятся без даты) — у
+    них нет «прошедшего дня», который надо было бы защищать: `_guard_editable`
+    просто не имеет смысла и пропускается, иначе `msk_date(None)` уронит
+    `AttributeError` на первом же обращении к `.tzinfo`.
     """
     task = get_task(db, task_id)
     if task is None or task.kind != kind:
         raise HTTPException(status_code=404, detail="Элемент не найден")
-    _guard_editable(msk_date(task.due_at))
+    if task.due_at is not None:
+        _guard_editable(msk_date(task.due_at))
     return task
 
 
@@ -2006,8 +2206,19 @@ def _update_simple_item(
 
     if task.topic_id:
         topic = db.get(LearningTopic, task.topic_id)
-        if topic is not None:
+        # Служебная тема элемента (`program_item`) — это и есть её название,
+        # правка задания правит и её. Тема цикла (`week`) — это сам цикл, а
+        # не тема одного задания: переименовывать её правкой одного задания
+        # из многих внутри неё нельзя, тариф там тоже не элементный (владелец
+        # 06.09.2026 — адресация внутри цикла по блокам, не по рамке).
+        if topic is not None and topic.kind == TOPIC_KIND_PROGRAM_ITEM:
             topic.title = f"{_SIMPLE_ITEM_TOPIC_PREFIX[kind]} · {payload.title}"[:200]
+            _apply_element_tariff(
+                db, topic,
+                tariff_restricted=payload.audience.tariff_restricted,
+                tariffs=payload.audience.tariffs,
+            )
+        elif topic is not None:
             _apply_element_tariff(
                 db, topic,
                 tariff_restricted=payload.audience.tariff_restricted,
@@ -2115,8 +2326,11 @@ def update_homework_item(
 
     if task.topic_id:
         topic = db.get(LearningTopic, task.topic_id)
-        if topic is not None:
+        # См. комментарий в `_update_simple_item` — тема цикла (`week`) не
+        # переименовывается правкой одного её задания.
+        if topic is not None and topic.kind == TOPIC_KIND_PROGRAM_ITEM:
             topic.title = f"Самостоятельная · {payload.title}"[:200]
+        if topic is not None:
             _apply_element_tariff(
                 db, topic,
                 tariff_restricted=payload.audience.tariff_restricted,
@@ -2204,8 +2418,11 @@ def update_video_item(
 
     if task.topic_id:
         topic = db.get(LearningTopic, task.topic_id)
-        if topic is not None:
+        # См. комментарий в `_update_simple_item` — тема цикла (`week`) не
+        # переименовывается правкой одного её задания.
+        if topic is not None and topic.kind == TOPIC_KIND_PROGRAM_ITEM:
             topic.title = f"Видео · {title}"[:200]
+        if topic is not None:
             _apply_element_tariff(
                 db, topic,
                 tariff_restricted=payload.audience.tariff_restricted,

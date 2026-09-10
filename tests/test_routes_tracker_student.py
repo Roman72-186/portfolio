@@ -1,6 +1,6 @@
 """Экран ученика «Личный трекер» (/cabinet/tracker): неделя с днями и заданиями."""
 
-from datetime import timedelta
+from datetime import timedelta, timezone
 
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.models.tag import Tag, UserTag
@@ -478,3 +478,32 @@ def test_tracker_hides_behind_schedule_warning_without_debt(auth_client):
     resp = client.get(PAGE)
     assert resp.status_code == 200
     assert "Ты отстаёшь от текущей программы" not in resp.text
+
+
+def test_undated_cycle_task_is_visible_in_personal_tracker(auth_client, db):
+    """Задание внутри цикла (владелец 10.09.2026) заводится без даты —
+    `accessible_task_entries` должна находить его через `topic_id`, а не
+    через окно `due_at`, и шаблон не должен падать на пустой дате."""
+    client, user = auth_client
+    today = today_msk()
+    topic = LearningTopic(
+        title="Цикл",
+        opens_at=msk_midnight(today - timedelta(days=1)).astimezone(timezone.utc).replace(tzinfo=None),
+        ends_at=msk_midnight(today + timedelta(days=5)).astimezone(timezone.utc).replace(tzinfo=None),
+        assign_to_all=True, is_published=True, kind=TOPIC_KIND_WEEK,
+        created_by_id=user.id,
+    )
+    db.add(topic)
+    db.commit()
+    db.refresh(topic)
+
+    task = create_task(
+        db, title="Задание цикла без даты", user_id=user.id, kind="material",
+        due_at=None, topic_id=topic.id, assign_to_all=True, is_required=True,
+    )
+    task.is_published = True
+    db.commit()
+
+    resp = client.get(PAGE)
+    assert resp.status_code == 200
+    assert "Задание цикла без даты" in resp.text

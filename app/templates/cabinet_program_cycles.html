@@ -32,7 +32,7 @@
         <input type="hidden" data-c-id value="">
         <label class="prg-field">
             <input type="text" data-c-title maxlength="200" autocomplete="off"
-                   aria-label="Название цикла" placeholder="Название цикла">
+                   aria-label="Название цикла, необязательно" placeholder="Название цикла, необязательно">
         </label>
         <label class="prg-field">
             <textarea data-c-description maxlength="5000"
@@ -67,7 +67,7 @@
         <article class="prg-item" data-cycle-id="{{ cycle.id }}">
             <div>
                 <span class="prg-badge">{{ 'Виден ученикам' if cycle.is_published else 'Скрыт' }}</span>
-                <h3>{{ cycle.title }}</h3>
+                <h3>{{ cycle.label }}</h3>
                 {% if cycle.description %}<p>{{ cycle.description }}</p>{% endif %}
                 <div class="prg-meta">
                     <span>с {{ cycle.starts_on }}</span>
@@ -79,6 +79,7 @@
                 </div>
             </div>
             <div class="prg-item-actions">
+                <a class="btn-outline" href="/cabinet/staff/program/cycles/{{ cycle.id }}">Задания</a>
                 <a class="btn-outline" href="/cabinet/staff/program/cycles/{{ cycle.id }}/stats">Прохождение</a>
                 <button type="button" class="btn-outline" data-cycle-edit
                         data-payload='{{ cycle|tojson }}'>Править</button>
@@ -140,10 +141,11 @@
 
     form.querySelector('[data-cycle-save]').addEventListener('click', function () {
         var id = fields.id.value;
-        // Обе даты обязательны: цикл без конца ведёт себя как календарная
-        // неделя, и человек, который открыл эту форму, хотел не этого.
-        if (!fields.title.value.trim() || !fields.start.value || !fields.end.value) {
-            message.textContent = 'Заполните название и обе даты периода.';
+        // Название необязательно (владелец 10.09.2026) — обе даты обязательны:
+        // цикл без конца ведёт себя как календарная неделя, и человек, который
+        // открыл эту форму, хотел не этого.
+        if (!fields.start.value || !fields.end.value) {
+            message.textContent = 'Заполните обе даты периода.';
             return;
         }
         fetch('/cabinet/staff/program/cycles' + (id ? '/' + id : ''), {
@@ -163,6 +165,15 @@
             })
         }).then(function (resp) {
             if (!resp.ok) return resp.json().then(function (body) { throw new Error(body.detail || ''); });
+            return resp.json();
+        }).then(function (data) {
+            // Новый цикл (не правка) — сразу на экран добавления заданий
+            // (владелец 10.09.2026: «сохранил цикл, сразу попал в добавление
+            // заданий»). Правку существующего цикла просто перечитываем списком.
+            if (!id && data && data.cycle_id) {
+                window.location.href = '/cabinet/staff/program/cycles/' + data.cycle_id;
+                return;
+            }
             window.location.reload();
         }).catch(function (err) {
             message.textContent = err.message || 'Не удалось сохранить цикл.';

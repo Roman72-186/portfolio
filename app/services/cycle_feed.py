@@ -34,6 +34,7 @@ from app.services.program import day_bounds, msk_date
 from app.services.task_blocks import (
     close_block_for_user,
     get_blocks_for_tasks,
+    get_required_tariffs,
     get_states,
     get_tariffs,
     is_block_accessible,
@@ -42,6 +43,7 @@ from app.services.tracker import (
     accessible_cycles,
     accessible_task_entries,
     cycle_bounds,
+    cycle_label,
     effective_cycle,
     effective_week_start,
 )
@@ -131,7 +133,8 @@ def has_portfolio_upload(db: Session, user_id: int, *, since: date) -> bool:
 
 
 def build_cycle_feed(
-    db: Session, *, user_id: int, user_tariff: str | None, start: date, end: date
+    db: Session, *, user_id: int, user_tariff: str | None, start: date, end: date,
+    topic_id: int | None = None,
 ) -> list[dict]:
     """Шаги ленты за период `[start, end]`, сверху вниз, со статусом ученика.
 
@@ -148,10 +151,19 @@ def build_cycle_feed(
     запирает — он блокирует месяц, а не цикл (решение владельца 23.08,
     подтверждено 24.08). Ради этого его собственная обязательность в
     последовательности игнорируется.
+
+    `topic_id` (10.09.2026) — id настоящего цикла (`LearningTopic(kind='week')`),
+    если он есть (`feed_window` вернул не запасную календарную неделю). Только
+    тогда в выборку подмешиваются задания без даты (`include_undated=True`,
+    см. `accessible_task_entries`) — у запасной календарной недели цикла нет,
+    и бездатным заданиям там взяться неоткуда.
     """
     window_start, _ = day_bounds(start)
     _, window_end = day_bounds(end)
-    entries = accessible_task_entries(db, user_id, start=window_start, end=window_end)
+    entries = accessible_task_entries(
+        db, user_id, start=window_start, end=window_end,
+        topic_id=topic_id, include_undated=topic_id is not None,
+    )
     if not entries:
         return []
 
@@ -182,6 +194,7 @@ def build_cycle_feed(
     block_ids = [block.id for block in ordered_blocks]
     states = get_states(db, block_ids=block_ids, user_id=user_id)
     tariffs_by_block = get_tariffs(db, block_ids)
+    required_tariffs_by_block = get_required_tariffs(db, block_ids)
 
     # Блок «Загрузить портфолио» закрывается фактом загрузки работы, а не
     # галочкой ученика (владелец 03.09.2026). Закрываем по-настоящему, а не
@@ -261,6 +274,7 @@ def build_cycle_feed(
                     states=states,
                     tariffs_by_block=tariffs_by_block,
                     user_tariff=user_tariff,
+                    required_tariffs_by_block=required_tariffs_by_block,
                     now=now,
                 )
             )
@@ -335,7 +349,8 @@ def feed_for_student(
     else:
         topic, start, end = current_topic, current_start, current_end
     steps = build_cycle_feed(
-        db, user_id=user_id, user_tariff=user_tariff, start=start, end=end
+        db, user_id=user_id, user_tariff=user_tariff, start=start, end=end,
+        topic_id=topic.id if topic is not None else None,
     )
     cycles = started_cycles(db, user_id, today)
     # «Следующее задание откроется 23 сентября» (владелец 03.09.2026): подсказка
@@ -361,7 +376,7 @@ def feed_for_student(
         "cycles": [
             {
                 "id": item.id,
-                "title": item.title,
+                "title": cycle_label(item),
                 "start": cycle_bounds(item)[0],
                 "end": cycle_bounds(item)[1],
                 "is_current": topic is not None and item.id == topic.id,

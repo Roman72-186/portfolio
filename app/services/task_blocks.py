@@ -30,6 +30,7 @@ from app.models.task_block import (
     TaskBlockAnswerOption,
     TaskBlockImage,
     TaskBlockOption,
+    TaskBlockRequiredTariff,
     TaskBlockResponse,
     TaskBlockState,
     TaskBlockSubmission,
@@ -216,6 +217,39 @@ def _sync_tariffs(db: DBSession, block: TaskBlock, tariffs: list[str] | None) ->
             continue
         seen.add(tariff)
         db.add(TaskBlockTariff(block_id=block.id, tariff=tariff))
+
+
+def get_required_tariffs(db: DBSession, block_ids: list[int]) -> dict[int, set[str]]:
+    """Тарифы, которым обязательно выполнение блока. Пустой набор = обязательно
+    всем, кому блок виден (владелец 10.09.2026 — отдельная ось от видимости)."""
+    if not block_ids:
+        return {}
+    rows = (
+        db.query(TaskBlockRequiredTariff)
+        .filter(TaskBlockRequiredTariff.block_id.in_(block_ids))
+        .all()
+    )
+    grouped: dict[int, set[str]] = {}
+    for row in rows:
+        grouped.setdefault(row.block_id, set()).add(row.tariff)
+    return grouped
+
+
+def _sync_required_tariffs(
+    db: DBSession, block: TaskBlock, tariffs: list[str] | None
+) -> None:
+    """Полная пересборка списка «кого обязать» — копия `_sync_tariffs`, та же
+    причина сноса-и-пересборки и молчаливого отбрасывания неизвестного тарифа."""
+    db.query(TaskBlockRequiredTariff).filter(
+        TaskBlockRequiredTariff.block_id == block.id
+    ).delete(synchronize_session=False)
+    seen: set[str] = set()
+    for raw in tariffs or []:
+        tariff = (raw or "").strip().upper()
+        if tariff not in TARIFFS or tariff in seen:
+            continue
+        seen.add(tariff)
+        db.add(TaskBlockRequiredTariff(block_id=block.id, tariff=tariff))
 
 
 def get_images(db: DBSession, block_ids: list[int]) -> dict[int, list[TaskBlockImage]]:
@@ -479,6 +513,7 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         # Картинки — только у галереи; блок могли переключить с фото на текст.
         _sync_images(db, row, item.get("images") if row.block_type == BLOCK_PHOTO else [])
         _sync_tariffs(db, row, item.get("tariffs"))
+        _sync_required_tariffs(db, row, item.get("required_tariffs"))
     for block_id, row in existing.items():
         if block_id in matched_ids:
             continue
@@ -765,6 +800,7 @@ def is_block_accessible(
     states: dict[int, TaskBlockState],
     tariffs_by_block: dict[int, set[str]],
     user_tariff: str | None,
+    required_tariffs_by_block: dict[int, set[str]] | None = None,
     now=None,
 ) -> bool:
     """Доступен ли ученику блок `blocks[block_index]` прямо сейчас.
@@ -794,7 +830,12 @@ def is_block_accessible(
        блок, который сам недоступен этому ученику по тарифу **или уже
        закрылся по календарю** (владелец 10.09.2026 — тот же тупик, что и с
        тарифом: требовать выполнения того, что закрылось навсегда, невозможно
-       в принципе), никого не блокирует.
+       в принципе), никого не блокирует. Отдельно от видимости: если у
+       обязательного блока проставлен `required_tariffs` (владелец
+       10.09.2026 — «на дешёвом тарифе ученик всё делает сам, на топовом
+       сдача обязательна, но блок виден обоим») и тариф ученика в него не
+       входит — блок для этого ученика необязателен, тоже не блокирует, хотя
+       остаётся видимым.
 
     `target.bypass_sequence` пропускает только пункт 4, не 1, 2 и 3
     (владелец 06.09.2026). Раньше это было жёстко зашито на `BLOCK_LINK`
@@ -834,6 +875,11 @@ def is_block_accessible(
             continue
         prior_tariffs = tariffs_by_block.get(prior.id)
         if prior_tariffs and user_tariff not in prior_tariffs:
+            continue
+        prior_required_tariffs = (
+            required_tariffs_by_block.get(prior.id) if required_tariffs_by_block else None
+        )
+        if prior_required_tariffs and user_tariff not in prior_required_tariffs:
             continue
         prior_closes_at = prior.closes_at
         if prior_closes_at is not None:

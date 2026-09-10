@@ -1,0 +1,374 @@
+{% extends "base.html" %}
+{#
+Задания внутри цикла (владелец 10.09.2026) — замена календарного дня как
+способа заводить задания. Сохранил цикл на экране «Циклы» → сразу сюда:
+задания идут просто по порядку, без даты, порядок меняется стрелками ↑ ↓.
+
+Единственный заводимый вид — «Задание» (`ITEM_MATERIAL`), тот же
+универсальный конструктор блоков, что на экране дня. «Глазами ученика» и
+«Взять содержимое из другого задания» здесь пока нет — сознательно оставлено
+за скобками первой версии экрана, не забытый кусок.
+#}
+{% block title %}{{ cycle_label }}{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=20">
+<link rel="stylesheet" href="/static/css/program_ios.css?v=14">
+{% endblock %}
+{% block content %}
+<div class="prg-page ios-prg-day" data-topic="{{ topic.id }}">
+    {% include "partials/program_tabs.html" %}
+
+    <div class="prg-head">
+        <div class="prg-head-copy">
+            <h1>{{ cycle_label }}</h1>
+            {% if topic.description %}<p>{{ topic.description }}</p>{% endif %}
+            <p class="prg-hint" data-role-note>
+                {# TODO(владелец): пояснение о смысле цикла — формулировка ещё
+                   не дана, не придумывать самостоятельно (10.09.2026). #}
+            </p>
+        </div>
+        <a class="btn-outline" href="/cabinet/staff/program/cycles">К циклам</a>
+    </div>
+
+    <div class="prg-tiles">
+        <button type="button" class="prg-tile" data-open-form>
+            <span class="prg-tile-icon" aria-hidden="true">📄</span>
+            <span>
+                <strong>Задание</strong>
+                <small>Любое содержимое: текст, фото, видео, ссылка, вопросы</small>
+            </span>
+        </button>
+    </div>
+
+    <form class="prg-form" data-item-form hidden>
+        <h2 data-item-form-title>Новое задание</h2>
+        <input type="hidden" data-item-id value="">
+        <div class="prg-grid2">
+            <label class="prg-field">
+                <input type="text" data-item-title maxlength="200" autocomplete="off"
+                       aria-label="Тема учебного дня" placeholder="Тема учебного дня">
+            </label>
+            <label class="prg-field">Предмет
+                <select data-item-subject>
+                    <option value="">Без предмета</option>
+                    {% for subject in subjects %}
+                    <option value="{{ subject }}">{{ subject }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+        <label class="prg-field">
+            <textarea data-item-description maxlength="5000"
+                      aria-label="Описание, необязательно"
+                      placeholder="Описание, необязательно"></textarea>
+        </label>
+        <label class="prg-field prg-field--row">
+            <input type="checkbox" data-item-required checked>
+            <span>Обязательный элемент — пока не сделан, следующие шаги ленты закрыты</span>
+        </label>
+        <label class="prg-field">Откроется не раньше
+            <input type="date" data-item-starts aria-label="Дата открытия задания">
+            <span class="prg-hint">Пусто – задание видно сразу после публикации.</span>
+        </label>
+
+        <div class="prg-blocks" data-blocks-wrap>
+            <h3>Задачи учебного дня</h3>
+            <p class="prg-hint">Добавьте, что должен увидеть ученик: текст, фото, видео из загруженных, ссылку или вопрос. Порядок меняется стрелками ↑ ↓.</p>
+            <div data-blocks></div>
+            <div class="prg-actions prg-blocks-add">
+                {% for kind, label in block_types %}
+                <button type="button" class="btn-outline" data-add-block="{{ kind }}">+ {{ label }}</button>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="prg-actions">
+            <button type="button" class="btn-blue" data-item-save>Сохранить</button>
+            <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
+        </div>
+        <p class="prg-message" data-form-message></p>
+    </form>
+
+    <section class="prg-items">
+        <h2>Уже в этом цикле</h2>
+        {% if items %}
+        {% for item in items %}
+        <article class="prg-item" data-item-id="{{ item.id }}">
+            <div>
+                <h3>{{ item.title }}</h3>
+                {% if item.description %}<p>{{ item.description }}</p>{% endif %}
+                {% if item.subject %}<span class="prg-badge">{{ item.subject }}</span>{% endif %}
+            </div>
+            <div class="prg-item-actions">
+                <span class="prg-blk-move">
+                    <button type="button" class="btn-outline" data-item-move="-1" aria-label="Выше" {% if loop.first %}disabled{% endif %}>↑</button>
+                    <button type="button" class="btn-outline" data-item-move="1" aria-label="Ниже" {% if loop.last %}disabled{% endif %}>↓</button>
+                </span>
+                <button type="button" class="btn-outline" data-item-edit>Изменить</button>
+                <button type="button" class="btn-outline" data-item-delete>Удалить</button>
+            </div>
+        </article>
+        {% endfor %}
+        {% else %}
+        <p class="prg-hint">Пока ни одного задания. Нажмите «Задание» выше, чтобы добавить первое.</p>
+        {% endif %}
+    </section>
+</div>
+
+<script>
+var csrfToken = {{ csrf_token(request)|tojson }};
+var topicId = {{ topic.id|tojson }};
+var editPayloads = {{ edit_payloads|tojson }};
+
+// Рендер карточки блока любого типа и панель «Доступность блока» — общие
+// функции конструктора (см. partials/program_blocks_editor_js.html).
+{% include "partials/program_blocks_editor_js.html" %}
+
+// Загрузка фото блока — тот же контракт, что на экране дня
+// (`/cabinet/staff/program/upload-cover`, FormData с `file`, ответ
+// `{ok, url, path}`).
+function uploadImage(file, url) {
+    var data = new FormData();
+    data.append('file', file);
+    data.append('csrf_token', csrfToken);
+    return fetch(url, {
+        method: 'POST', credentials: 'same-origin',
+        headers: {'X-CSRF-Token': csrfToken}, body: data
+    }).then(function (r) { return r.json(); });
+}
+
+function uploadBlockPhotos(row, files) {
+    var status = row.querySelector('[data-b-photo-status]');
+    var room = MAX_BLOCK_IMAGES - row.querySelectorAll('[data-b-image]').length;
+    status.classList.remove('is-error');
+    if (room <= 0) {
+        status.textContent = 'В одном блоке не больше ' + MAX_BLOCK_IMAGES + ' фото.';
+        status.classList.add('is-error');
+        return;
+    }
+    var queue = Array.prototype.slice.call(files, 0, room);
+    var skipped = files.length - queue.length;
+    status.textContent = 'Загружаем ' + queue.length + '…';
+    var done = 0;
+    var failed = 0;
+    queue.forEach(function (file) {
+        uploadImage(file, '/cabinet/staff/program/upload-cover').then(function (result) {
+            if (!result || !result.ok) throw new Error();
+            addImageThumb(row, result.url, result.path);
+        }).catch(function () {
+            failed += 1;
+        }).then(function () {
+            done += 1;
+            if (done < queue.length) return;
+            var parts = [];
+            if (done - failed) parts.push('Загружено: ' + (done - failed) + '.');
+            if (failed) parts.push('Не удалось: ' + failed + '.');
+            if (skipped) parts.push('Лишние ' + skipped + ' не влезли в лимит.');
+            status.textContent = parts.join(' ');
+            if (failed) status.classList.add('is-error');
+        });
+    });
+}
+
+(function () {
+    var form = document.querySelector('[data-item-form]');
+    var tile = document.querySelector('[data-open-form]');
+    var formTitle = form.querySelector('[data-item-form-title]');
+    var message = form.querySelector('[data-form-message]');
+    var fields = {
+        id: form.querySelector('[data-item-id]'),
+        title: form.querySelector('[data-item-title]'),
+        subject: form.querySelector('[data-item-subject]'),
+        description: form.querySelector('[data-item-description]'),
+        required: form.querySelector('[data-item-required]'),
+        starts: form.querySelector('[data-item-starts]')
+    };
+
+    function api(url, body) {
+        return fetch(url, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify(body)
+        }).then(function (resp) {
+            if (!resp.ok) {
+                return resp.json().catch(function () { return {}; }).then(function (data) {
+                    var err = new Error(data.detail || 'request_failed');
+                    err.status = resp.status;
+                    throw err;
+                });
+            }
+            return resp.json();
+        });
+    }
+
+    function resetForm() {
+        fields.id.value = '';
+        fields.title.value = '';
+        fields.subject.value = '';
+        fields.description.value = '';
+        fields.required.checked = true;
+        fields.starts.value = '';
+        renderFormBlocks(form, []);
+        formTitle.textContent = 'Новое задание';
+        message.textContent = '';
+    }
+
+    function openForm() {
+        form.hidden = false;
+        form.scrollIntoView({block: 'start'});
+    }
+
+    tile.addEventListener('click', function () {
+        resetForm();
+        openForm();
+    });
+
+    form.querySelector('[data-form-cancel]').addEventListener('click', function () {
+        form.hidden = true;
+    });
+
+    document.querySelectorAll('[data-item-edit]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var itemId = button.closest('[data-item-id]').getAttribute('data-item-id');
+            var data = editPayloads[itemId];
+            if (!data) return;
+            resetForm();
+            fields.id.value = itemId;
+            fields.title.value = data.title || '';
+            fields.subject.value = data.subject || '';
+            fields.description.value = data.description || '';
+            fields.required.checked = !!data.is_required;
+            fields.starts.value = data.starts_on || '';
+            renderFormBlocks(form, data.blocks || []);
+            formTitle.textContent = 'Правка задания';
+            openForm();
+        });
+    });
+
+    form.querySelector('[data-item-save]').addEventListener('click', function () {
+        var title = fields.title.value.trim();
+        if (!title) {
+            message.textContent = 'Укажите тему учебного дня.';
+            message.classList.add('is-error');
+            return;
+        }
+        message.classList.remove('is-error');
+        var payload = {
+            title: title,
+            subject: fields.subject.value || null,
+            description: fields.description.value.trim() || null,
+            is_required: fields.required.checked,
+            starts_on: fields.starts.value || null,
+            blocks: collectFormBlocks(form)
+        };
+        var id = fields.id.value;
+        var url = id
+            ? '/cabinet/staff/program/items/' + id + '/material'
+            : '/cabinet/staff/program/cycles/' + topicId + '/items/material';
+        api(url, payload).then(function () {
+            window.location.reload();
+        }).catch(function (err) {
+            message.textContent = (err.status === 422 && err.message !== 'request_failed')
+                ? err.message : 'Не удалось сохранить задание.';
+            message.classList.add('is-error');
+        });
+    });
+
+    document.querySelectorAll('[data-item-delete]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var itemId = button.closest('[data-item-id]').getAttribute('data-item-id');
+            if (!window.confirm('Убрать это задание из цикла?')) return;
+            api('/cabinet/staff/program/items/' + itemId + '/delete', {}).then(function () {
+                window.location.reload();
+            }).catch(function () {
+                window.alert('Не удалось удалить задание.');
+            });
+        });
+    });
+
+    document.querySelectorAll('[data-item-move]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var itemId = button.closest('[data-item-id]').getAttribute('data-item-id');
+            var direction = Number(button.getAttribute('data-item-move'));
+            api(
+                '/cabinet/staff/program/cycles/' + topicId + '/items/' + itemId + '/move',
+                {direction: direction}
+            ).then(function () {
+                window.location.reload();
+            }).catch(function () {
+                window.alert('Не удалось переставить задание.');
+            });
+        });
+    });
+
+    // Делегированный обработчик конструктора блоков — тот же набор
+    // действий, что на экране дня (add/move/remove-block, add/remove-option,
+    // загрузка фото), только своей копией: задания цикла сохраняются по
+    // одному, у формы здесь нет соседей вроде билетов Пробника, ради которых
+    // на дне устроен общий обработчик кликов на всю страницу.
+    form.addEventListener('click', function (event) {
+        var addBlock = event.target.closest('[data-add-block]');
+        if (addBlock) {
+            var holder = form.querySelector('[data-blocks]');
+            holder.insertAdjacentHTML('beforeend', blockRowHTML(addBlock.getAttribute('data-add-block')));
+            renumberBlocks(holder);
+            holder.lastElementChild.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+            return;
+        }
+        var moveBlock = event.target.closest('[data-move-block]');
+        if (moveBlock) {
+            var moved = moveBlock.closest('[data-block]');
+            var moveHolder = moved.closest('[data-blocks]');
+            var step = Number(moveBlock.getAttribute('data-move-block'));
+            var neighbour = step < 0 ? moved.previousElementSibling : moved.nextElementSibling;
+            if (neighbour) {
+                if (step < 0) neighbour.before(moved); else neighbour.after(moved);
+                renumberBlocks(moveHolder);
+            }
+            return;
+        }
+        var removeBlock = event.target.closest('[data-remove-block]');
+        if (removeBlock) {
+            var row = removeBlock.closest('[data-block]');
+            var removeHolder = row.closest('[data-blocks]');
+            row.remove();
+            renumberBlocks(removeHolder);
+            return;
+        }
+        var addOption = event.target.closest('[data-add-b-option]');
+        if (addOption) {
+            var optionsHolder = addOption.closest('.prg-blk-options').querySelector('[data-b-options]');
+            optionsHolder.insertAdjacentHTML('beforeend', blockOptionHTML());
+            return;
+        }
+        var removeOption = event.target.closest('[data-remove-b-option]');
+        if (removeOption) {
+            removeOption.closest('[data-b-option]').remove();
+            return;
+        }
+        var removeImage = event.target.closest('[data-remove-b-image]');
+        if (removeImage) {
+            removeImage.closest('[data-b-image]').remove();
+            return;
+        }
+    });
+
+    form.addEventListener('change', function (event) {
+        if (event.target.hasAttribute('data-b-question-type')) {
+            syncBlockOptions(event.target.closest('[data-block]'));
+            return;
+        }
+        if (event.target.hasAttribute('data-b-photo-file') && event.target.files.length) {
+            uploadBlockPhotos(event.target.closest('[data-block]'), event.target.files);
+            // Сбрасываем, иначе повторный выбор тех же файлов не даст change.
+            event.target.value = '';
+        }
+    });
+})();
+</script>
+{% endblock %}

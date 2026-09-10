@@ -10,7 +10,11 @@ import pytest
 from app.services.navigation import staff_nav_items
 
 PAGES = (
-    "/cabinet/staff/program",
+    # Не «/cabinet/staff/program» — с 10.09.2026 вкладка «Календарь» скрыта
+    # из навигации (циклы заменили её как способ заводить задания), на этом
+    # URL больше ни одна вкладка не подсвечена. «Циклы» — входная точка
+    # раздела теперь.
+    "/cabinet/staff/program/cycles",
     "/cabinet/staff/digest",
     "/cabinet/staff/goals",
     "/cabinet/admin/videos",
@@ -39,8 +43,10 @@ def test_program_tabs_render_on_every_section_page(
 
     assert response.status_code == 200
     assert 'aria-label="Разделы учебных программ"' in response.text
-    for tab in ("Календарь", "Дайджест", "Цели", "Загрузка видео"):
+    for tab in ("Циклы", "Дайджест", "Цели", "Загрузка видео"):
         assert f">{tab}</a>" in response.text
+    # «Календарь» больше не в навигации (владелец 10.09.2026).
+    assert ">Календарь</a>" not in response.text
     # Ровно одна вкладка подсвечена — иначе неясно, где ты находишься.
     assert response.text.count("prg-tab is-active") == 1
 

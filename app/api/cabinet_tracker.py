@@ -104,7 +104,12 @@ def cabinet_tracker(
     week_monday = week_start(today)
     _, week_end = day_bounds(week_monday + timedelta(days=6))
 
-    entries = accessible_task_entries(db, user["user_id"], start=None, end=week_end)
+    # include_undated=True (10.09.2026): задания внутри цикла заводятся без
+    # даты, накопленный долг «Личного трекера» должен видеть и их, как и
+    # датные задания старого календаря.
+    entries = accessible_task_entries(
+        db, user["user_id"], start=None, end=week_end, include_undated=True,
+    )
 
     # Дайджест месяца — первый блок на экране (решение владельца 22.08).
     digest = active_digest_for_student(db, user["user_id"], year=today.year, month=today.month)

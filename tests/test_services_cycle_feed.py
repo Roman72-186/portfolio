@@ -96,6 +96,64 @@ def test_without_a_cycle_window_falls_back_to_the_week(db, regular_user):
     assert (end - start).days == 6
 
 
+# ── задания без даты внутри цикла (владелец 10.09.2026) ────────────────────
+# Заводятся не через _task() (тот всегда ставит due_at) — topic_id указывает
+# прямо на цикл, как это делает create_cycle_material_item в cabinet_program.py.
+
+def _undated_task(db, topic, owner, *, title, order=0, is_required=True):
+    task = create_task(
+        db, title=title, user_id=owner.id, kind="material",
+        due_at=None, topic_id=topic.id, assign_to_all=True,
+        is_required=is_required, sort_order=order,
+    )
+    task.is_published = True
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def test_undated_cycle_tasks_appear_in_sort_order(db, regular_user):
+    topic = _cycle(db, regular_user)
+    _undated_task(db, topic, regular_user, title="Второе", order=1)
+    _undated_task(db, topic, regular_user, title="Первое", order=0)
+
+    result = feed_for_student(
+        db, user_id=regular_user.id, user_tariff=regular_user.tariff, today=TODAY,
+    )
+
+    titles = [step["task"].title for step in result["steps"]]
+    assert titles == ["Первое", "Второе"]
+
+
+def test_undated_task_from_another_cycle_does_not_leak_in(db, regular_user):
+    """`topic_id` в accessible_task_entries сужает бездатную выборку строго
+    до одного цикла — без него чужой недоделанный бездатный шаг блокировал
+    бы не тот цикл (найдено при разработке, было регрессией)."""
+    topic_a = _cycle(db, regular_user, starts_on=TODAY - timedelta(days=1), ends_on=TODAY + timedelta(days=2), title="A")
+    topic_b = _cycle(db, regular_user, starts_on=TODAY + timedelta(days=20), ends_on=TODAY + timedelta(days=25), title="B")
+    _undated_task(db, topic_a, regular_user, title="Из цикла A")
+    _undated_task(db, topic_b, regular_user, title="Из цикла B")
+
+    result = feed_for_student(
+        db, user_id=regular_user.id, user_tariff=regular_user.tariff, today=TODAY,
+    )
+
+    titles = [step["task"].title for step in result["steps"]]
+    assert titles == ["Из цикла A"]
+
+
+def test_undated_required_task_locks_the_next_one(db, regular_user):
+    topic = _cycle(db, regular_user)
+    _undated_task(db, topic, regular_user, title="Первое", order=0, is_required=True)
+    _undated_task(db, topic, regular_user, title="Второе", order=1)
+
+    result = feed_for_student(
+        db, user_id=regular_user.id, user_tariff=regular_user.tariff, today=TODAY,
+    )
+
+    assert [step["status"] for step in result["steps"]] == ["current", "locked"]
+
+
 # ── порядок и сквозная блокировка ───────────────────────────────────────────
 
 def test_blocks_follow_the_order_the_teacher_set(db, regular_user):

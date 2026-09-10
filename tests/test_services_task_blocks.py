@@ -33,6 +33,7 @@ from app.services.task_blocks import (
     get_blocks_for_tasks,
     get_images,
     get_options,
+    get_required_tariffs,
     get_response,
     get_selected_options,
     get_state,
@@ -797,6 +798,34 @@ def test_sync_blocks_tariffs_removed_on_resync(db):
     assert get_tariffs(db, [block.id]) == {}
 
 
+def test_sync_blocks_persists_required_tariffs(db):
+    """Отдельная ось от видимости (владелец 10.09.2026): «Тарифы» решают,
+    кому виден блок, «required_tariffs» — с кого требовать выполнение."""
+    task = _task(db)
+    [block] = sync_blocks(
+        db,
+        task_id=task.id,
+        items=[_text("Сдача обязательна максимуму", required_tariffs=["МАКСИМУМ"])],
+    )
+    db.commit()
+
+    assert get_required_tariffs(db, [block.id]) == {block.id: {"МАКСИМУМ"}}
+    # Видимость (пустая) не пострадала от заполненной обязательности.
+    assert get_tariffs(db, [block.id]) == {}
+
+
+def test_sync_blocks_ignores_unknown_required_tariff(db):
+    task = _task(db)
+    [block] = sync_blocks(
+        db,
+        task_id=task.id,
+        items=[_text("Текст", required_tariffs=["МАКСИМУМ", "НЕСУЩЕСТВУЮЩИЙ"])],
+    )
+    db.commit()
+
+    assert get_required_tariffs(db, [block.id]) == {block.id: {"МАКСИМУМ"}}
+
+
 def test_option_requires_text_round_trip(db, user_factory):
     task = _task(db)
     student = user_factory(vk_id=700_301, name="Ученик")
@@ -880,9 +909,11 @@ def test_close_block_for_user_creates_state_lazily(db, regular_user):
 def _accessible(db, blocks, user_id, user_tariff, index):
     states = get_states(db, block_ids=[b.id for b in blocks], user_id=user_id)
     tariffs_by_block = get_tariffs(db, [b.id for b in blocks])
+    required_tariffs_by_block = get_required_tariffs(db, [b.id for b in blocks])
     return is_block_accessible(
         block_index=index, blocks=blocks, states=states,
         tariffs_by_block=tariffs_by_block, user_tariff=user_tariff,
+        required_tariffs_by_block=required_tariffs_by_block,
     )
 
 
@@ -959,6 +990,31 @@ def test_is_block_accessible_required_block_not_for_this_tariff_does_not_block(d
     confident_student = user_factory(vk_id=700_403, tariff="УВЕРЕННЫЙ")
 
     assert _accessible(db, blocks, confident_student.id, "УВЕРЕННЫЙ", 1) is True
+
+
+def test_is_block_accessible_required_tariff_gate_does_not_block_other_tariff(db, user_factory):
+    """Блок видим всем (тарифы видимости пусты), но обязателен только
+    «МАКСИМУМ» (владелец 10.09.2026): на дешёвом тарифе ученик всё делает
+    сам, без сдачи — блок не должен запирать ему дальнейшую ленту."""
+    task = _task(db)
+    blocks = sync_blocks(
+        db, task_id=task.id,
+        items=[
+            _text("Сдать работу", is_required=True, required_tariffs=["МАКСИМУМ"]),
+            _text("Дальше по ленте"),
+        ],
+    )
+    db.commit()
+
+    confident_student = user_factory(vk_id=700_404, tariff="УВЕРЕННЫЙ")
+    maximum_student = user_factory(vk_id=700_405, tariff="МАКСИМУМ")
+
+    # Тариф без обязательства — не блокирует, хотя блок ему видим и остаётся
+    # is_required=True на уровне записи.
+    assert _accessible(db, blocks, confident_student.id, "УВЕРЕННЫЙ", 1) is True
+    # Тариф из required_tariffs — блокирует, пока не закрыт, как обычный
+    # обязательный блок.
+    assert _accessible(db, blocks, maximum_student.id, "МАКСИМУМ", 1) is False
 
 
 def test_is_block_accessible_bypass_sequence_flag(db, regular_user):

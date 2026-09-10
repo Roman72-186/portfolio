@@ -9,12 +9,13 @@
 #}
 {% set _prg_p = request.url.path %}
 <nav class="prg-tabs" aria-label="Разделы учебных программ">
-    {# «Календарь» — весь раздел, кроме вложенного пути «Циклы»: без этой
-       оговорки на странице циклов подсветились бы обе вкладки сразу. #}
+    {# Вкладка «Календарь» скрыта из навигации 10.09.2026 (владелец: «давай
+       календарь пока скроем») — циклы стали способом заводить задания,
+       календарь как способ создания больше не предлагается. Сам раздел
+       (`/cabinet/staff/program`, `/cabinet/staff/program/{iso}`) остаётся
+       живым для прямых ссылок и уже опубликованных там заданий — роуты не
+       трогали, убрана только ссылка на них здесь. #}
     {% set _prg_cycles = _prg_p.startswith('/cabinet/staff/program/cycles') %}
-    <a class="prg-tab{% if _prg_p.startswith('/cabinet/staff/program') and not _prg_cycles %} is-active{% endif %}"
-       href="/cabinet/staff/program"
-       {% if _prg_p.startswith('/cabinet/staff/program') and not _prg_cycles %}aria-current="page"{% endif %}>Календарь</a>
     <a class="prg-tab{% if _prg_cycles %} is-active{% endif %}"
        href="/cabinet/staff/program/cycles"
        {% if _prg_cycles %}aria-current="page"{% endif %}>Циклы</a>

@@ -10,6 +10,7 @@
 """
 from datetime import date
 
+from sqlalchemy import and_, case, or_
 from sqlalchemy.orm import Session
 
 from app.constants import TARIFFS
@@ -40,18 +41,26 @@ def active_students(db: Session) -> list[User]:
     )
 
 
-def _cycle_tasks(db: Session, first: date, last: date) -> list[TrackerTask]:
+def _cycle_tasks(db: Session, topic_id: int, first: date, last: date) -> list[TrackerTask]:
+    """Задачи цикла: свои по `topic_id` (новая схема, заданы без даты) плюс
+    старые датные, попавшие в период по `due_at` (совместимость со старыми
+    циклами, где `topic_id` задачи — служебная тема элемента дня, не сам
+    цикл). Пересечения множеств нет: старые датные элементы никогда не имеют
+    `topic_id == topic_id`, у них своя одноразовая тема."""
     start, _ = day_bounds(first)
     _, end = day_bounds(last)
+    no_due_last = case((TrackerTask.due_at.is_(None), 1), else_=0)
     return (
         db.query(TrackerTask)
         .filter(
             TrackerTask.is_published.is_(True),
             TrackerTask.deleted_at.is_(None),
-            TrackerTask.due_at >= start,
-            TrackerTask.due_at < end,
+            or_(
+                TrackerTask.topic_id == topic_id,
+                and_(TrackerTask.due_at >= start, TrackerTask.due_at < end),
+            ),
         )
-        .order_by(TrackerTask.due_at, TrackerTask.sort_order, TrackerTask.id)
+        .order_by(no_due_last, TrackerTask.due_at, TrackerTask.sort_order, TrackerTask.id)
         .all()
     )
 
@@ -65,7 +74,7 @@ def cycle_stats(db: Session, topic: LearningTopic) -> dict:
     бы в том, что вообще считать заданием.
     """
     first, last = cycle_bounds(topic)
-    tasks = _cycle_tasks(db, first, last)
+    tasks = _cycle_tasks(db, topic.id, first, last)
     students = active_students(db)
     total = len(students)
     tariff_of = {student.id: (student.tariff or "").strip().upper() for student in students}

@@ -116,7 +116,9 @@ class TrackerTask(Base):
     )
     # Что это за элемент: видео, домашка, пробник, анкета, занятие.
     kind: Mapped[str] = mapped_column(String(20), nullable=False, default=ITEM_OTHER)
-    # Порядок внутри одного дня: дата задаёт день, sort_order — что раньше внутри дня.
+    # Порядок внутри одного дня: дата задаёт день, sort_order — что раньше внутри
+    # дня. У заданий цикла (10.09.2026, `due_at IS NULL`) дня нет вовсе —
+    # sort_order внутри topic_id и есть единственный порядок.
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     completion_mode: Mapped[str] = mapped_column(

@@ -140,6 +140,25 @@ def test_task_outside_the_period_is_not_counted(db, regular_user):
     assert stats["steps"] == []
 
 
+def test_undated_cycle_task_is_counted_by_topic_id(db, regular_user):
+    """Задание внутри цикла (10.09.2026) заводится без даты, `topic_id`
+    указывает прямо на цикл — статистика обязана находить его так же, как
+    находит старые датные задания по совпадению `due_at` с периодом."""
+    topic = _cycle(db, regular_user)
+    task = create_task(
+        db, title="Задание цикла", user_id=regular_user.id, kind="material",
+        due_at=None, topic_id=topic.id, assign_to_all=True, is_required=True,
+    )
+    task.is_published = True
+    db.commit()
+    _block(db, task)
+
+    stats = cycle_stats(db, topic)
+
+    assert len(stats["steps"]) == 1
+    assert stats["steps"][0]["title"] == "Видео"  # заголовок блока из _block()
+
+
 # ── экран ───────────────────────────────────────────────────────────────────
 
 def test_stats_page_opens_for_admin(admin_client, db, regular_user):

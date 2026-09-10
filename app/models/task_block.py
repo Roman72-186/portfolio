@@ -440,6 +440,26 @@ class TaskBlockTariff(Base):
     tariff: Mapped[str] = mapped_column(String(50), primary_key=True)
 
 
+class TaskBlockRequiredTariff(Base):
+    """Тариф, которому обязательно выполнение блока. Пусто — обязательно всем,
+    кому блок виден (владелец 10.09.2026: на дешёвом тарифе ученик всё делает
+    самостоятельно без сдачи, на топовом — сдача обязательна, при этом блок
+    виден обоим).
+
+    Отдельная ось от `TaskBlockTariff`: та решает «кому видно», эта — «с кого
+    требовать» (`is_block_accessible` проверяет обе разом). Зеркало
+    `TaskBlockTariff` один в один, включая канонические значения из
+    `app.constants.TARIFFS`.
+    """
+
+    __tablename__ = "task_block_required_tariffs"
+
+    block_id: Mapped[int] = mapped_column(
+        ForeignKey("task_blocks.id", ondelete="CASCADE"), primary_key=True
+    )
+    tariff: Mapped[str] = mapped_column(String(50), primary_key=True)
+
+
 class TaskBlockState(Base):
     """Состояние одного блока у конкретного ученика.
 
