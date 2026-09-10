@@ -184,11 +184,14 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
     ),
     StaffNavItem(
         key="program",
-        href="/cabinet/staff/program",
+        # Вход сразу на циклы (10.09.2026): календарь убран из вкладок раздела
+        # (`program_tabs.html`), но точку входа из бокового меню забыли
+        # переключить вместе с ним — она вела на старый календарь.
+        href="/cabinet/staff/program/cycles",
         sidebar_label="Учебные программы",
         pill_label="Программы",
         aria_label="Учебные программы",
-        tooltip="Календарь учебных программ",
+        tooltip="Циклы учебных программ",
         icon="program",
         min_rank=4,
     ),

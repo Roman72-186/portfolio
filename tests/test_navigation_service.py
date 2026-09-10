@@ -80,11 +80,11 @@ def test_staff_nav_items_keep_admin_contract():
         ),
         (
             "program",
-            "/cabinet/staff/program",
+            "/cabinet/staff/program/cycles",
             "Учебные программы",
             "Программы",
             "Учебные программы",
-            "Календарь учебных программ",
+            "Циклы учебных программ",
         ),
         ("3dlab", "/3dlab", "3D Лаб", "3D Лаб", "3D Лаб", "3D Лаборатория"),
         (
