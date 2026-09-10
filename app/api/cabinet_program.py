@@ -519,6 +519,163 @@ def update_program_cycle(
     return JSONResponse({"ok": True})
 
 
+class BlockImageItem(BaseModel):
+    """Одна картинка блока-галереи. Файл уже лежит в S3: форма шлёт только
+    ссылку и путь, как это делают обложки видео и картинки самостоятельной."""
+
+    model_config = ConfigDict(extra="forbid")
+    url: str = Field(min_length=1, max_length=500)
+    path: str | None = Field(default=None, max_length=300)
+
+
+class BlockOptionItem(BaseModel):
+    """Вариант ответа у блока-вопроса. `id` — существующий вариант (правится
+    на месте, выбор учеников сохраняется), `None` — новый."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: int | None = Field(default=None, ge=1)
+    text: str = Field(min_length=1, max_length=300)
+    is_correct: bool = False
+    # Выбор этого варианта раскрывает у ученика поле свободного текста
+    # (владелец 05.09.2026). См. `app/models/task_block.py::TaskBlockOption`.
+    requires_text: bool = False
+
+    @field_validator("text")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Option text cannot be empty")
+        return value
+
+
+class BlockItem(BaseModel):
+    """Один блок содержимого элемента (владелец 31.08.2026, универсальный
+    конструктор — см. `app/models/task_block.py`).
+
+    Один класс на все пять типов: специализированные поля не обязательны и
+    заполняются только под свой тип, лишние сервис вычищает сам
+    (`task_blocks.sync_blocks`). `id` — существующий блок, правится на месте
+    вместе с уже сохранёнными ответами учеников; `None` — новый.
+
+    Сюда переехал прежний мини-опрос: блок с `block_type="question"` и
+    `question_type="text"` — это ровно то, чем был `QuizQuestionItem`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    id: int | None = Field(default=None, ge=1)
+    block_type: str = Field(min_length=1, max_length=20)
+    title: str | None = Field(default=None, max_length=200)
+    body: str | None = Field(default=None, max_length=5000)
+    video_id: int | None = Field(default=None, ge=1)
+    images: list[BlockImageItem] = Field(
+        default_factory=list, max_length=MAX_BLOCK_IMAGES
+    )
+    url: str | None = Field(default=None, max_length=500)
+    question_type: str | None = Field(default=None, max_length=20)
+    options: list[BlockOptionItem] = Field(default_factory=list, max_length=20)
+    # Вопрос-рефлексия: показывается только после того, как ученик закрыл
+    # задание. В проверку «ответил ли на всё» не входит — иначе задание нельзя
+    # было бы закрыть никогда (развязка согласована владельцем 31.08.2026).
+    hidden_until_done: bool = False
+    # Единая лента предобучения (владелец 05.09.2026, план
+    # plans/2026-09-04-apparchi-precourse-block-feed-implementation-plan.md):
+    # обязательность и тариф-гейт — на уровне блока, не всей задачи; предмет —
+    # тоже на блоке, часть цикла идёт без деления на Рисунок/Композицию.
+    # Валидацию значений (предмет из MOCK_SUBJECTS, тариф из TARIFFS) делает
+    # сервисный слой (`sync_blocks`/`_sync_tariffs`), не эта схема — то же
+    # разделение ответственности, что уже было для block_type/question_type.
+    is_required: bool = False
+    subject: str | None = Field(default=None, max_length=50)
+    tariffs: list[str] = Field(default_factory=list, max_length=10)
+    # Кого обязать выполнить, если блок обязательный — отдельная ось от
+    # видимости (`tariffs` выше): пусто = обязательно всем, кому видно
+    # (владелец 10.09.2026). Валидацию значений делает сервисный слой
+    # (`sync_blocks`/`_sync_required_tariffs`), как и у `tariffs`.
+    required_tariffs: list[str] = Field(default_factory=list, max_length=10)
+    # Период доступа — открывается 00:00 МСК этой даты, независимо от
+    # действий ученика; складывается с is_required, не заменяет (владелец
+    # 03.09.2026, найдено при повторном разборе 06.09.2026). Конвертацию в
+    # UTC делает сервисный слой (`sync_blocks`), не эта схема.
+    opens_at: date | None = None
+    # Закрытие по календарю — обратная сторона `opens_at` (владелец
+    # 10.09.2026). Несёт время суток, а не только дату, поэтому строка
+    # `datetime-local`, а не `date`: конвертацию в UTC делает сервисный слой
+    # (`sync_blocks` → `app.services.tz.parse_msk_local`), не эта схема.
+    closes_at: str | None = Field(default=None, max_length=32)
+    # Текст вместо стандартной фразы ленты «Откроется …» / «Доступ закрыт»,
+    # пока блок заперт по календарю (владелец 10.09.2026).
+    locked_message: str | None = Field(default=None, max_length=300)
+    # Явный обход последовательной блокировки — куратор решает сам, для
+    # какой версии блока он нужен (владелец 06.09.2026, снимает конфликт
+    # между «ссылка видна сразу» и «для тарифа Х ссылка ждёт сдачи домашки»
+    # без ветвления по тарифу в коде).
+    bypass_sequence: bool = False
+    # Лимит работы на время в минутах (владелец 03.09.2026, «давай сделаем
+    # один час»). У остальных типов игнорируется сервисом.
+    time_limit_minutes: int | None = Field(default=None, ge=5, le=600)
+
+    @model_validator(mode="after")
+    def choice_question_needs_a_right_answer(self) -> "BlockItem":
+        """Вопрос с вариантами нельзя сохранить, не отметив верный.
+
+        Решение владельца 31.08.2026: лучше не пустить кривой тест в базу, чем
+        потом объяснять, почему у ученика вопрос не засчитался. Система без
+        отметки просто не знает, с чем сравнивать ответ.
+        """
+        if self.block_type != BLOCK_QUESTION:
+            return self
+        if self.question_type in (None, QUESTION_TEXT):
+            return self
+        if not any(option.is_correct for option in self.options):
+            raise ValueError(
+                "У вопроса с вариантами отметьте хотя бы один верный ответ"
+            )
+        return self
+
+    @field_validator("block_type")
+    @classmethod
+    def validate_block_type(cls, value: str) -> str:
+        value = (value or "").strip()
+        if value not in BLOCK_TYPES:
+            raise ValueError(f"Неизвестный тип блока: {value}")
+        return value
+
+    @field_validator("question_type")
+    @classmethod
+    def validate_question_type(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        if not value:
+            return None
+        if value not in QUESTION_TYPES:
+            raise ValueError(f"Неизвестный тип вопроса: {value}")
+        return value
+
+    @field_validator("title", "body")
+    @classmethod
+    def strip_optional(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        return value or None
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str | None) -> str | None:
+        """Только http и https.
+
+        Ссылка попадает прямо в `href` кнопки на экране ученика. Без этой
+        проверки в поле можно вписать не адрес, а исполняемый код (схема
+        `javascript:`), и он выполнится у каждого, кому видно задание. Форма
+        доступна только главному преподавателю, но уведённый аккаунт бил бы
+        сразу по всей школе.
+        """
+        value = (value or "").strip()
+        if not value:
+            return None
+        if not value.lower().startswith(("http://", "https://")):
+            raise ValueError("Ссылка должна начинаться с http:// или https://")
+        return value
+
+
 class CycleItemPayload(BaseModel):
     """Задание внутри цикла — тот же набор полей, что у «Задания» на экране
     дня (`SimpleItemPayload`), но без даты и без своей аудитории.
@@ -922,161 +1079,6 @@ class TicketPayload(BaseModel):
         return value or None
 
 
-class BlockImageItem(BaseModel):
-    """Одна картинка блока-галереи. Файл уже лежит в S3: форма шлёт только
-    ссылку и путь, как это делают обложки видео и картинки самостоятельной."""
-
-    model_config = ConfigDict(extra="forbid")
-    url: str = Field(min_length=1, max_length=500)
-    path: str | None = Field(default=None, max_length=300)
-
-
-class BlockOptionItem(BaseModel):
-    """Вариант ответа у блока-вопроса. `id` — существующий вариант (правится
-    на месте, выбор учеников сохраняется), `None` — новый."""
-
-    model_config = ConfigDict(extra="forbid")
-    id: int | None = Field(default=None, ge=1)
-    text: str = Field(min_length=1, max_length=300)
-    is_correct: bool = False
-    # Выбор этого варианта раскрывает у ученика поле свободного текста
-    # (владелец 05.09.2026). См. `app/models/task_block.py::TaskBlockOption`.
-    requires_text: bool = False
-
-    @field_validator("text")
-    @classmethod
-    def strip_text(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("Option text cannot be empty")
-        return value
-
-
-class BlockItem(BaseModel):
-    """Один блок содержимого элемента (владелец 31.08.2026, универсальный
-    конструктор — см. `app/models/task_block.py`).
-
-    Один класс на все пять типов: специализированные поля не обязательны и
-    заполняются только под свой тип, лишние сервис вычищает сам
-    (`task_blocks.sync_blocks`). `id` — существующий блок, правится на месте
-    вместе с уже сохранёнными ответами учеников; `None` — новый.
-
-    Сюда переехал прежний мини-опрос: блок с `block_type="question"` и
-    `question_type="text"` — это ровно то, чем был `QuizQuestionItem`.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-    id: int | None = Field(default=None, ge=1)
-    block_type: str = Field(min_length=1, max_length=20)
-    title: str | None = Field(default=None, max_length=200)
-    body: str | None = Field(default=None, max_length=5000)
-    video_id: int | None = Field(default=None, ge=1)
-    images: list[BlockImageItem] = Field(
-        default_factory=list, max_length=MAX_BLOCK_IMAGES
-    )
-    url: str | None = Field(default=None, max_length=500)
-    question_type: str | None = Field(default=None, max_length=20)
-    options: list[BlockOptionItem] = Field(default_factory=list, max_length=20)
-    # Вопрос-рефлексия: показывается только после того, как ученик закрыл
-    # задание. В проверку «ответил ли на всё» не входит — иначе задание нельзя
-    # было бы закрыть никогда (развязка согласована владельцем 31.08.2026).
-    hidden_until_done: bool = False
-    # Единая лента предобучения (владелец 05.09.2026, план
-    # plans/2026-09-04-apparchi-precourse-block-feed-implementation-plan.md):
-    # обязательность и тариф-гейт — на уровне блока, не всей задачи; предмет —
-    # тоже на блоке, часть цикла идёт без деления на Рисунок/Композицию.
-    # Валидацию значений (предмет из MOCK_SUBJECTS, тариф из TARIFFS) делает
-    # сервисный слой (`sync_blocks`/`_sync_tariffs`), не эта схема — то же
-    # разделение ответственности, что уже было для block_type/question_type.
-    is_required: bool = False
-    subject: str | None = Field(default=None, max_length=50)
-    tariffs: list[str] = Field(default_factory=list, max_length=10)
-    # Кого обязать выполнить, если блок обязательный — отдельная ось от
-    # видимости (`tariffs` выше): пусто = обязательно всем, кому видно
-    # (владелец 10.09.2026). Валидацию значений делает сервисный слой
-    # (`sync_blocks`/`_sync_required_tariffs`), как и у `tariffs`.
-    required_tariffs: list[str] = Field(default_factory=list, max_length=10)
-    # Период доступа — открывается 00:00 МСК этой даты, независимо от
-    # действий ученика; складывается с is_required, не заменяет (владелец
-    # 03.09.2026, найдено при повторном разборе 06.09.2026). Конвертацию в
-    # UTC делает сервисный слой (`sync_blocks`), не эта схема.
-    opens_at: date | None = None
-    # Закрытие по календарю — обратная сторона `opens_at` (владелец
-    # 10.09.2026). Несёт время суток, а не только дату, поэтому строка
-    # `datetime-local`, а не `date`: конвертацию в UTC делает сервисный слой
-    # (`sync_blocks` → `app.services.tz.parse_msk_local`), не эта схема.
-    closes_at: str | None = Field(default=None, max_length=32)
-    # Текст вместо стандартной фразы ленты «Откроется …» / «Доступ закрыт»,
-    # пока блок заперт по календарю (владелец 10.09.2026).
-    locked_message: str | None = Field(default=None, max_length=300)
-    # Явный обход последовательной блокировки — куратор решает сам, для
-    # какой версии блока он нужен (владелец 06.09.2026, снимает конфликт
-    # между «ссылка видна сразу» и «для тарифа Х ссылка ждёт сдачи домашки»
-    # без ветвления по тарифу в коде).
-    bypass_sequence: bool = False
-    # Лимит работы на время в минутах (владелец 03.09.2026, «давай сделаем
-    # один час»). У остальных типов игнорируется сервисом.
-    time_limit_minutes: int | None = Field(default=None, ge=5, le=600)
-
-    @model_validator(mode="after")
-    def choice_question_needs_a_right_answer(self) -> "BlockItem":
-        """Вопрос с вариантами нельзя сохранить, не отметив верный.
-
-        Решение владельца 31.08.2026: лучше не пустить кривой тест в базу, чем
-        потом объяснять, почему у ученика вопрос не засчитался. Система без
-        отметки просто не знает, с чем сравнивать ответ.
-        """
-        if self.block_type != BLOCK_QUESTION:
-            return self
-        if self.question_type in (None, QUESTION_TEXT):
-            return self
-        if not any(option.is_correct for option in self.options):
-            raise ValueError(
-                "У вопроса с вариантами отметьте хотя бы один верный ответ"
-            )
-        return self
-
-    @field_validator("block_type")
-    @classmethod
-    def validate_block_type(cls, value: str) -> str:
-        value = (value or "").strip()
-        if value not in BLOCK_TYPES:
-            raise ValueError(f"Неизвестный тип блока: {value}")
-        return value
-
-    @field_validator("question_type")
-    @classmethod
-    def validate_question_type(cls, value: str | None) -> str | None:
-        value = (value or "").strip()
-        if not value:
-            return None
-        if value not in QUESTION_TYPES:
-            raise ValueError(f"Неизвестный тип вопроса: {value}")
-        return value
-
-    @field_validator("title", "body")
-    @classmethod
-    def strip_optional(cls, value: str | None) -> str | None:
-        value = (value or "").strip()
-        return value or None
-
-    @field_validator("url")
-    @classmethod
-    def validate_url(cls, value: str | None) -> str | None:
-        """Только http и https.
-
-        Ссылка попадает прямо в `href` кнопки на экране ученика. Без этой
-        проверки в поле можно вписать не адрес, а исполняемый код (схема
-        `javascript:`), и он выполнится у каждого, кому видно задание. Форма
-        доступна только главному преподавателю, но уведённый аккаунт бил бы
-        сразу по всей школе.
-        """
-        value = (value or "").strip()
-        if not value:
-            return None
-        if not value.lower().startswith(("http://", "https://")):
-            raise ValueError("Ссылка должна начинаться с http:// или https://")
-        return value
 
 
 class MockTicketEditPayload(TicketPayload):
