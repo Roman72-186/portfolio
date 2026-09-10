@@ -113,6 +113,33 @@ def _on_refresh(instance, context, attrs):
 # Database fixtures
 # ---------------------------------------------------------------------------
 
+@pytest.fixture()
+def sql_counter():
+    """Считает SQL-запросы за блок кода: `with sql_counter() as c: ...; c.count`.
+
+    Нужен вместо замеров по часам. Секунды на тестовой машине зависят от её
+    загрузки, и такой тест краснеет без причины; число запросов зависит только
+    от кода и ловит то, ради чего тест писался, — N+1 и лишние обращения к БД.
+    """
+    class _Counter:
+        def __init__(self):
+            self.count = 0
+
+        def _on_execute(self, *args, **kwargs):
+            self.count += 1
+
+        def __enter__(self):
+            self.count = 0
+            event.listen(_TEST_ENGINE, "before_cursor_execute", self._on_execute)
+            return self
+
+        def __exit__(self, *exc):
+            event.remove(_TEST_ENGINE, "before_cursor_execute", self._on_execute)
+            return False
+
+    return _Counter
+
+
 @pytest.fixture(autouse=True)
 def _reset_schema():
     """Create tables before each test, drop them after."""

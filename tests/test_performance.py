@@ -1,13 +1,20 @@
-"""Performance tests — key endpoints must respond within thresholds.
+"""Тесты производительности — по числу запросов к БД, а не по секундам.
 
-SQLite in-memory is used in tests (faster than PostgreSQL for small datasets),
-so thresholds are intentionally generous to catch obvious N+1 or blocking issues.
+До 10.09.2026 здесь стояли шесть проверок вида `duration < 1.0`. На тестовой
+машине секунды зависят от её загрузки: тот же код проходил утром и краснел под
+нагрузкой. Тест, который краснеет случайно, приучает не верить красному.
+
+Считаем SQL-запросы (фикстура `sql_counter` из conftest). Число запросов зависит
+только от кода и ловит ровно то, ради чего тесты писались: N+1 и лишние
+обращения к БД. Пороги взяты по факту на 10.09.2026 с запасом ~50 %: главная 15,
+дашборд суперадмина 14, портфолио JSON 6, пробники JSON 4, логин 0.
+
+Главная проверка на N+1 — `test_superadmin_dashboard_does_not_scale_with_data`:
+двадцать учеников с работами не должны добавлять запросов.
 """
-import time
 import pytest
 
-from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_BEFORE, WORK_TYPE_AFTER
-from app.models.user import User
+from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_AFTER
 
 
 # ---------------------------------------------------------------------------
@@ -67,51 +74,50 @@ def student_with_works(db, user_factory, curator_client):
 
 
 # ---------------------------------------------------------------------------
-# Homepage
+# Главная и вход
 # ---------------------------------------------------------------------------
 
-def test_homepage_response_time(client):
-    start = time.time()
-    resp = client.get("/")
-    duration = time.time() - start
+def test_homepage_query_count(client, sql_counter):
+    with sql_counter() as counter:
+        resp = client.get("/")
     assert resp.status_code == 200
-    assert duration < 1.0, f"/ took {duration:.3f}s, expected < 1.0s"
+    assert counter.count <= 25, f"Главная сделала {counter.count} запросов, ожидали <= 25"
 
 
-# ---------------------------------------------------------------------------
-# Staff login page
-# ---------------------------------------------------------------------------
-
-def test_login_page_response_time(client):
-    start = time.time()
-    resp = client.get("/login")
-    duration = time.time() - start
+def test_login_page_makes_no_queries(client, sql_counter):
+    """Страница входа не должна ходить в БД вообще."""
+    with sql_counter() as counter:
+        resp = client.get("/login")
     assert resp.status_code == 200
-    assert duration < 0.5, f"/login took {duration:.3f}s, expected < 0.5s"
+    assert counter.count <= 2, f"/login сделал {counter.count} запросов, ожидали <= 2"
 
 
 # ---------------------------------------------------------------------------
-# Superadmin dashboard
+# Кабинет суперадмина
 # ---------------------------------------------------------------------------
 
-def test_superadmin_dashboard_response_time(superadmin_client):
+def test_superadmin_dashboard_query_count(superadmin_client, sql_counter):
     client, _ = superadmin_client
-    start = time.time()
-    resp = client.get("/cabinet/superadmin")
-    duration = time.time() - start
+    with sql_counter() as counter:
+        resp = client.get("/cabinet/superadmin")
     assert resp.status_code == 200
-    assert duration < 1.5, f"/cabinet/superadmin took {duration:.3f}s, expected < 1.5s"
+    assert counter.count <= 22, f"Дашборд сделал {counter.count} запросов, ожидали <= 22"
 
 
-def test_superadmin_dashboard_with_data_response_time(
-    superadmin_client, db, user_factory, session_factory
+def test_superadmin_dashboard_does_not_scale_with_data(
+    superadmin_client, db, sql_counter, user_factory, session_factory
 ):
+    """Двадцать учеников с работами не должны добавлять запросов — это и есть N+1."""
     client, _ = superadmin_client
 
-    # Add some users and works
+    with sql_counter() as counter:
+        resp = client.get("/cabinet/superadmin")
+    assert resp.status_code == 200
+    empty = counter.count
+
     for i in range(20):
         u = user_factory(vk_id=990000 + i, name=f"User {i}", role_name="ученик")
-        w = Work(
+        db.add(Work(
             user_id=u.id,
             work_type=WORK_TYPE_MOCK_EXAM,
             month="март",
@@ -121,53 +127,52 @@ def test_superadmin_dashboard_with_data_response_time(
             status="success",
             score=50 + i,
             subject="Рисунок",
-        )
-        db.add(w)
+        ))
     db.commit()
 
-    start = time.time()
-    resp = client.get("/cabinet/superadmin")
-    duration = time.time() - start
-    assert resp.status_code == 200
-    assert duration < 2.0, f"Dashboard with data took {duration:.3f}s, expected < 2.0s"
-
-
-# ---------------------------------------------------------------------------
-# Curator split-panel JSON endpoints
-# ---------------------------------------------------------------------------
-
-def test_curator_portfolio_json_response_time(curator_client, db, student_with_works):
-    client, _ = curator_client
-    start = time.time()
-    resp = client.get(f"/cabinet/curator/portfolio/student/{student_with_works.id}")
-    duration = time.time() - start
-    assert resp.status_code == 200
-    assert duration < 1.0, f"Portfolio JSON took {duration:.3f}s, expected < 1.0s"
-
-
-def test_curator_mock_exams_json_response_time(curator_client, db, student_with_works):
-    client, _ = curator_client
-    start = time.time()
-    resp = client.get(f"/cabinet/curator/mock-exams/student/{student_with_works.id}")
-    duration = time.time() - start
-    assert resp.status_code == 200
-    assert duration < 1.0, f"Mock exams JSON took {duration:.3f}s, expected < 1.0s"
-
-
-# ---------------------------------------------------------------------------
-# Multiple requests — session caching check
-# ---------------------------------------------------------------------------
-
-def test_repeated_requests_no_degradation(superadmin_client):
-    """Second and third requests should not be significantly slower than the first."""
-    client, _ = superadmin_client
-    times = []
-    for _ in range(3):
-        start = time.time()
+    with sql_counter() as counter:
         resp = client.get("/cabinet/superadmin")
-        times.append(time.time() - start)
-        assert resp.status_code == 200
+    assert resp.status_code == 200
+    assert counter.count <= empty + 3, (
+        f"С данными дашборд сделал {counter.count} запросов против {empty} на пустой базе — "
+        "похоже на N+1"
+    )
 
-    # No request should be more than 3x slower than the fastest
-    assert max(times) < min(times) * 3 + 0.5, \
-        f"Response times varied too much: {[f'{t:.3f}' for t in times]}"
+
+# ---------------------------------------------------------------------------
+# JSON-эндпоинты куратора
+# ---------------------------------------------------------------------------
+
+def test_curator_portfolio_json_query_count(curator_client, db, student_with_works, sql_counter):
+    client, _ = curator_client
+    with sql_counter() as counter:
+        resp = client.get(f"/cabinet/curator/portfolio/student/{student_with_works.id}")
+    assert resp.status_code == 200
+    assert counter.count <= 12, f"Портфолио JSON сделал {counter.count} запросов, ожидали <= 12"
+
+
+def test_curator_mock_exams_json_query_count(curator_client, db, student_with_works, sql_counter):
+    client, _ = curator_client
+    with sql_counter() as counter:
+        resp = client.get(f"/cabinet/curator/mock-exams/student/{student_with_works.id}")
+    assert resp.status_code == 200
+    assert counter.count <= 10, f"Пробники JSON сделали {counter.count} запросов, ожидали <= 10"
+
+
+# ---------------------------------------------------------------------------
+# Повторные запросы — проверка кеша сессий
+# ---------------------------------------------------------------------------
+
+def test_repeated_requests_do_not_add_queries(superadmin_client, sql_counter):
+    """Второй и третий заход не должны стоить больше первого."""
+    client, _ = superadmin_client
+    counts = []
+    for _ in range(3):
+        with sql_counter() as counter:
+            resp = client.get("/cabinet/superadmin")
+        assert resp.status_code == 200
+        counts.append(counter.count)
+
+    assert max(counts) <= min(counts) + 2, (
+        f"Число запросов скачет между заходами: {counts}"
+    )
