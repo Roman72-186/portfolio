@@ -2,7 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Ядро проекта и критичные правила инфраструктуры — в `../AGENTS.md` (родительский `../CLAUDE.md` — только указатель на него). Архитектура, RBAC, модели, интеграции и устройство тестов — в `../docs/architecture.md`, читать по требованию. Стиль кода и правила PR — в соседнем `AGENTS.md`.
+Ядро проекта и критичные правила инфраструктуры — в `../AGENTS.md` (родительский `../CLAUDE.md` — только указатель на него). Архитектура, RBAC, модели, интеграции и устройство тестов — в `../docs/architecture.md`, читать по требованию. Стиль кода и правила PR — в соседнем `AGENTS.md`. Дизайн-система и Spark-классы — в `DESIGN.md`.
+
+Перед правкой роута, сервиса или модели — `.codegraph/` (индексированный граф кода): `codegraph_explore`/`codegraph_search` находят определение и использования, `codegraph_impact`/`codegraph_callers` показывают, что сломается. Индекс обновляется сам.
 
 ## Quick commands (run from this directory)
 
@@ -29,15 +31,16 @@ python scripts/deploy.py --status                   # версия на прод
 
 **Полный деплой заливает всё дерево** кроме `.git`/`__pycache__`/`.env`/`tests`/`venv`/`node_modules` — вместе с любым незакоммиченным чужим WIP, включая боевую статику `app/static/`. Если в репозитории лежат чужие правки, деплоить поштучно.
 
-## Жёсткие правила (выдержка)
+## Жёсткие правила — в `../AGENTS.md`
 
-- **Seed в lifespan — только через SAVEPOINT** (`with db.begin_nested():` на каждую запись), иначе `IntegrityError` отравит транзакцию и старт упадёт.
-- **Traefik**: у `app` несколько docker-сетей — обязателен label `traefik.docker.network=web`.
-- **После любой мутации полей User** вызывай `app.cache.invalidate_session(session_id)` — иначе Redis-кэш отдаёт устаревший user dict.
-- **Прод-compose**: `docker-compose.prod-ru.yml` (в нём встроен Traefik). `deploy.py` после билда сам делает `FLUSHDB` в Redis.
-- **Тесты не импортируют `app.main` на уровне модуля** — `conftest.py` подменяет движок на SQLite до импорта; импорт вне фикстуры привяжет тест к боевому PostgreSQL.
-- **RBAC — только по рангам роли** (1–5). Permissions удалены миграцией `375d357fbd05`; `require_permission` и `ROLE_PERMISSIONS` в коде нет, не восстанавливать.
-- **Даты и периоды — через `app/services/tz.py`** (`today_msk()`/`now_msk()`), не `date.today()`: в контейнере UTC, иначе фильтры едут на 3 часа.
-- **Видео: ключи Bunny только на сервере.** Браузер получает подписанный embed-URL с TTL и временные TUS-креденшелы; `BUNNY_STREAM_API_KEY`/`BUNNY_STREAM_TOKEN_KEY` не попадают в HTML, логи и коммиты. Файл идёт напрямую браузер → Bunny, мимо VPS. Модуль — `app/services/bunny_stream.py`, обзор — `../session-handoffs/video-integration.md`.
+Раздел «Критичные правила инфраструктуры» и следом «Инварианты, которые не видно
+из одного файла». Там же причина и прецедент у каждого правила — здесь их держать
+незачем: файл лежит в отдельном git-репозитории и одним коммитом с владельцем
+не поедет, поэтому копия неизбежно отстаёт. До 10.09.2026 тут висела выдержка
+из восьми пунктов (SAVEPOINT, Traefik, `invalidate_session`, импорт `app.main`
+в тестах, ранги RBAC, `tz.py`, ключи Bunny, прод-compose) — все восемь целы
+в `../AGENTS.md`, сверены поимённо.
 
-См. полный список guardrails в `../AGENTS.md`, архитектуру — в `../docs/architecture.md`.
+**Новое правило пишется в `../AGENTS.md`.** Параллельный список здесь не заводить.
+
+Архитектура, модели, роутеры и устройство тестов — `../docs/architecture.md`.
