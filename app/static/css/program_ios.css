@@ -3,12 +3,12 @@
    (cabinet_program.html) и экран дня (cabinet_program_day.html), обе под
    require_admin_role (ГП/СА). Общий язык с остальной инициативой — см.
    app/static/css/dashboard_staff_ios.css, superadmin_*_ios.css,
-   tracker.css/survey_ios.css/homework_ios.css (студенческая сторона).
+   tracker.css/homework_ios.css (студенческая сторона).
 
    Особенность экрана: своего инлайнового <style> у шаблонов нет — вся
    разметка сидит на общих классах program.css (`.prg-*`). Эти же классы
    (`.prg-page`/`.prg-head`/`.prg-option`/`.prg-message`/`.prg-field`)
-   разделяются со студенческими «Анкетой» (survey_ios.css, скоуп
+   разделяются со студенческими «Анкетой» (её стили живут здесь же, скоуп
    `.ios-survey`) и «Домашкой» (homework_ios.css, скоуп `.ios-homework`) —
    program.css НЕ редактировался и не будет: всё переопределение только
    здесь, под своими скоупами. Два скоупа в одном файле:
@@ -200,7 +200,7 @@
 .ios-prg-day .prg-field--row { flex-direction: row; align-items: center; gap: 10px; text-transform: none; letter-spacing: normal; color: var(--ios-label); font: 400 14px/1.4 var(--ios-font); }
 .ios-prg-day .prg-field--row input[type="number"] { width: 72px; }
 
-/* Кастомный чекбокс/радио в духе iOS (тот же приём, что survey_ios.css). */
+/* Кастомный чекбокс/радио в духе iOS (тот же приём, что homework_ios.css). */
 .ios-prg-day input[type="checkbox"],
 .ios-prg-day input[type="radio"] {
     appearance: none; -webkit-appearance: none; margin: 0; flex-shrink: 0;

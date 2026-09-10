@@ -15,7 +15,7 @@
    совпадения имён нет (проверено grep).
 
    Checkbox-приём для «прошлых тарифов» — тот же `:has(input:checked)`,
-   что уже в survey_ios.css (.prg-option). JS-обработчик, который раньше
+   что уже в program_ios.css (.prg-option). JS-обработчик, который раньше
    красил рамку/фон инлайновым style.borderColor/style.background, убран —
    CSS :has() делает то же самое декларативно, скрытие текущего тарифа из
    списка (реальная бизнес-логика) осталось в JS без изменений.
@@ -166,7 +166,7 @@
 .ios-profile .prf-field-note-inline { color: var(--ios-label-3); font-weight: 400; text-transform: none; }
 
 /* ── Прошлые тарифы — список строк с чекбоксом, тот же приём, что
-   .prg-option в survey_ios.css (radio/checkbox appearance:none + ::after). ── */
+   .prg-option в program_ios.css (radio/checkbox appearance:none + ::after). ── */
 .ios-profile .prf-tariff-list { padding: 8px 16px 12px; display: flex; flex-direction: column; gap: 8px; }
 .ios-profile .prf-tariff-item {
     display: flex; align-items: center; gap: 12px;
@@ -197,7 +197,7 @@
 }
 
 /* ── Кнопка сохранения (общая .btn-blue/.cta-sticky из base.css —
-   переопределена только в этом скоупе, как в survey_ios.css/homework_ios.css) ── */
+   переопределена только в этом скоупе, как в program_ios.css/homework_ios.css) ── */
 .ios-profile .prf-cta { margin-top: 20px; }
 .ios-profile .btn-blue {
     background: var(--ios-blue); box-shadow: none;

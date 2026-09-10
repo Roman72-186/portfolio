@@ -5,7 +5,7 @@
    .ios-personal/.ios-feedback/.ios-portfolio/.ios-gallery/.ios-upload/
    .ios-notifications/.ios-survey (см. app/static/css/tracker.css,
    video_ios.css, personal_ios.css, feedback_ios.css, portfolio_ios.css,
-   gallery_ios.css, upload_ios.css, notifications_ios.css, survey_ios.css).
+   gallery_ios.css, upload_ios.css, notifications_ios.css).
 
    Общий шаблон для ученика и куратора (viewer_role разводит разметку) —
    владелец подтвердил (25.08.2026, AskUserQuestion): ре-скин один на всех,
@@ -18,7 +18,7 @@
    `.btn-outline`/`.chip`/`.photo-grid`/`.empty-state`/`.section-label`/
    `.form-label`/`.field-input`/`.back-link`). Эти классы разделяются с
    конструктором анкет персонала и «Анкетой» (уже переопределены в
-   `survey_ios.css` под своим скоупом) — program.css/base.css не
+   `program_ios.css` под своим скоупом) — program.css/base.css не
    редактировались, program.css уже на `?v=5`, поднимать не нужно.
 
    Список сообщений диалога переверстан из вложенных `.card` в `.card` (это

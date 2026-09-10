@@ -4,7 +4,7 @@
    .ios-feedback/.ios-portfolio/.ios-gallery/.ios-upload/.ios-notifications/
    .ios-survey/.ios-homework (см. app/static/css/tracker.css, video_ios.css,
    personal_ios.css, feedback_ios.css, portfolio_ios.css, gallery_ios.css,
-   upload_ios.css, notifications_ios.css, survey_ios.css, homework_ios.css).
+   upload_ios.css, notifications_ios.css, homework_ios.css).
 
    Экран проверен по Depends-гейту роутера (`app/api/cabinet_student.py`,
    `Depends(require_student)`) — строго ученический, вкладка нижней
