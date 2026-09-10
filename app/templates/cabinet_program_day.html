@@ -1055,6 +1055,14 @@ FORM: Operate.
             + '    <input type="date" data-b-opens aria-label="Дата открытия блока">'
             + '    <span class="prg-hint">Пусто – блок ждёт только свою очередь.</span>'
             + '  </label>'
+            + '  <label class="prg-field prg-blk-setting">Закроется'
+            + '    <input type="datetime-local" data-b-closes aria-label="Дата и время закрытия блока">'
+            + '    <span class="prg-hint">Пусто – не закрывается по календарю.</span>'
+            + '  </label>'
+            + '  <label class="prg-field prg-blk-setting">Текст, если заблокирован'
+            + '    <input type="text" data-b-locked-message maxlength="300" aria-label="Текст уведомления при блокировке по дате">'
+            + '    <span class="prg-hint">Покажется вместо стандартной фразы «Откроется …» / «Доступ закрыт».</span>'
+            + '  </label>'
             + '  <label class="prg-field prg-blk-setting">Предмет'
             + '    <select data-b-subject aria-label="Предмет блока">'
             + '      <option value="">Без предмета — виден в обоих направлениях</option>'
@@ -1129,6 +1137,10 @@ FORM: Operate.
         if (requiredBox) requiredBox.checked = !!block.is_required;
         var opensAt = row.querySelector('[data-b-opens]');
         if (opensAt) opensAt.value = block.opens_at || '';
+        var closesAt = row.querySelector('[data-b-closes]');
+        if (closesAt) closesAt.value = block.closes_at || '';
+        var lockedMessage = row.querySelector('[data-b-locked-message]');
+        if (lockedMessage) lockedMessage.value = block.locked_message || '';
         var subject = row.querySelector('[data-b-subject]');
         if (subject) subject.value = block.subject || '';
         var bypass = row.querySelector('[data-b-bypass]');
@@ -1380,6 +1392,11 @@ FORM: Operate.
             item.is_required = !!(requiredBox && requiredBox.checked);
             var opensAt = row.querySelector('[data-b-opens]');
             item.opens_at = (opensAt && opensAt.value) ? opensAt.value : null;
+            var closesAt = row.querySelector('[data-b-closes]');
+            item.closes_at = (closesAt && closesAt.value) ? closesAt.value : null;
+            var lockedMessageField = row.querySelector('[data-b-locked-message]');
+            item.locked_message = (lockedMessageField && lockedMessageField.value)
+                ? lockedMessageField.value.trim() : null;
             var subjectSel = row.querySelector('[data-b-subject]');
             item.subject = (subjectSel && subjectSel.value) ? subjectSel.value : null;
             var bypassBox = row.querySelector('[data-b-bypass]');

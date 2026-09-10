@@ -1084,6 +1084,93 @@ def test_sync_blocks_without_opens_at_leaves_it_none(db):
     assert block.bypass_sequence is False
 
 
+# --- закрытие по календарю: closes_at (владелец 10.09.2026) -----------------
+
+
+def test_is_block_accessible_past_closes_at_is_not_accessible(db, regular_user):
+    """«27 сентября в 23:30 закрывается доступ» — момент закрытия прошёл,
+    блок недоступен независимо от очереди и тарифа."""
+    task = _task(db)
+    blocks = sync_blocks(
+        db, task_id=task.id,
+        items=[_text("Уже закрыт", closes_at="2020-01-01T00:00")],
+    )
+    db.commit()
+
+    assert _accessible(db, blocks, regular_user.id, "УВЕРЕННЫЙ", 0) is False
+
+
+def test_is_block_accessible_future_closes_at_is_accessible(db, regular_user):
+    task = _task(db)
+    blocks = sync_blocks(
+        db, task_id=task.id,
+        items=[_text("Ещё открыт", closes_at="2099-01-01T00:00")],
+    )
+    db.commit()
+
+    assert _accessible(db, blocks, regular_user.id, "УВЕРЕННЫЙ", 0) is True
+
+
+def test_is_block_accessible_required_block_closed_does_not_block(db, regular_user):
+    """Обязательный блок, который сам уже закрылся по календарю, не должен
+    вечно запирать хвост ленты — тот же тупик, что уже решён для тарифа
+    (test_is_block_accessible_required_block_not_for_this_tariff_does_not_block)."""
+    task = _task(db)
+    blocks = sync_blocks(
+        db, task_id=task.id,
+        items=[
+            _text("Просрочено", is_required=True, closes_at="2020-01-01T00:00"),
+            _text("Дальше по ленте"),
+        ],
+    )
+    db.commit()
+
+    assert _accessible(db, blocks, regular_user.id, "УВЕРЕННЫЙ", 1) is True
+
+
+def test_sync_blocks_persists_closes_at_and_locked_message(db):
+    task = _task(db)
+    [block] = sync_blocks(
+        db, task_id=task.id,
+        items=[_text(
+            "Текст", closes_at="2026-09-27T23:30",
+            locked_message="Пока проверь чат-комьюнити в телеграмме.",
+        )],
+    )
+    db.commit()
+
+    assert block.closes_at is not None
+    # 23:30 МСК 27 сентября — это 20:30 UTC того же дня.
+    assert block.closes_at.astimezone(timezone.utc).isoformat() == "2026-09-27T20:30:00+00:00"
+    assert block.locked_message == "Пока проверь чат-комьюнити в телеграмме."
+
+
+def test_sync_blocks_without_closes_at_leaves_it_none(db):
+    task = _task(db)
+    [block] = sync_blocks(db, task_id=task.id, items=[_text("Текст")])
+    db.commit()
+
+    assert block.closes_at is None
+    assert block.locked_message is None
+
+
+def test_sync_blocks_drops_closes_at_before_opens_at(db):
+    """Куратор перепутал поля — закрытие раньше открытия отбрасывается
+    молча, как и другой некорректный ввод в sync_blocks (неизвестный тариф,
+    неизвестный предмет)."""
+    task = _task(db)
+    [block] = sync_blocks(
+        db, task_id=task.id,
+        items=[_text(
+            "Текст", opens_at=date(2026, 9, 23), closes_at="2026-09-20T00:00",
+        )],
+    )
+    db.commit()
+
+    assert block.opens_at is not None
+    assert block.closes_at is None
+
+
 def test_block_status_locked_current_done(db, regular_user):
     task = _task(db)
     blocks = sync_blocks(

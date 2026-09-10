@@ -37,7 +37,7 @@ from app.models.task_block import (
     TaskBlockTariff,
 )
 from app.models.tracker import STATUS_DONE, STATUS_OPEN
-from app.services.tz import msk_midnight
+from app.services.tz import msk_midnight, parse_msk_local
 
 
 def get_blocks(db: DBSession, task_id: int) -> list[TaskBlock]:
@@ -444,6 +444,17 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
             msk_midnight(opens_at_date).astimezone(timezone.utc)
             if isinstance(opens_at_date, date_type) else None
         )
+        row.closes_at = parse_msk_local(item.get("closes_at"))
+        # Закрытие раньше открытия — куратор перепутал поля; отбрасываем
+        # молча, как и везде в этой функции с некорректным вводом, а не
+        # роняем сохранение всего блока (см. неизвестный тариф/предмет выше).
+        if (
+            row.closes_at is not None
+            and row.opens_at is not None
+            and row.closes_at <= row.opens_at
+        ):
+            row.closes_at = None
+        row.locked_message = _clean(item.get("locked_message"), 300)
         if block_type == BLOCK_QUESTION:
             question_type = (item.get("question_type") or "").strip()
             row.question_type = (
@@ -758,27 +769,34 @@ def is_block_accessible(
 ) -> bool:
     """Доступен ли ученику блок `blocks[block_index]` прямо сейчас.
 
-    Три независимых условия, все должны выполняться разом:
+    Четыре независимых условия, все должны выполняться разом:
 
-    1. **Период доступа** (владелец 03.09.2026, найдено при повторном
-       разборе созвона 06.09.2026): если у блока проставлен `opens_at` и это
-       время ещё не наступило — блок недоступен, независимо ни от чего
-       остального. Открывается по календарю, а не по действию ученика:
-       «теория и задания откроются только с 23 сентября 0000» — это
+    1. **Открытие по календарю** (владелец 03.09.2026, найдено при
+       повторном разборе созвона 06.09.2026): если у блока проставлен
+       `opens_at` и это время ещё не наступило — блок недоступен, независимо
+       ни от чего остального. Открывается по календарю, а не по действию
+       ученика: «теория и задания откроются только с 23 сентября 0000» — это
        отдельный гейт от обязательности, они складываются.
-    2. **Тариф**: недоступен, если тариф ученика не входит в список тарифов
+    2. **Закрытие по календарю** (владелец 10.09.2026): если у блока
+       проставлен `closes_at` и этот момент уже прошёл — блок недоступен,
+       так же безусловно, как и до открытия. Симметрично пункту 1, но
+       отдельным полем: у блока может быть только открытие, только закрытие,
+       оба сразу или ни одного.
+    3. **Тариф**: недоступен, если тариф ученика не входит в список тарифов
        блока (пустой список — доступен всем).
-    3. **Последовательность** (владелец 05.09.2026, подтверждено
+    4. **Последовательность** (владелец 05.09.2026, подтверждено
        06.09.2026): недоступен, если среди блоков строго перед ним есть
        хотя бы один обязательный, ещё не закрытый этим учеником. Один
        незакрытый обязательный блок блокирует **весь хвост ленты**, а не
        только следующий блок — то же правило, что уже действует у
        `TrackerTask.is_required` для вкладок недели (decisions.md 23.08),
        просто на уровень ниже: не вкладка, а блок внутри неё. Обязательный
-       блок, который сам недоступен этому ученику по тарифу, никого не
-       блокирует — требовать его выполнения было бы тупиком без выхода.
+       блок, который сам недоступен этому ученику по тарифу **или уже
+       закрылся по календарю** (владелец 10.09.2026 — тот же тупик, что и с
+       тарифом: требовать выполнения того, что закрылось навсегда, невозможно
+       в принципе), никого не блокирует.
 
-    `target.bypass_sequence` пропускает только пункт 3, не 1 и не 2
+    `target.bypass_sequence` пропускает только пункт 4, не 1, 2 и 3
     (владелец 06.09.2026). Раньше это было жёстко зашито на `BLOCK_LINK`
     («ссылка на занятие видна сразу, не дожидаясь предыдущих блоков») — но
     тот же созвон 03.09 требует обратного для тарифа «Уверенный максимум»:
@@ -792,12 +810,19 @@ def is_block_accessible(
     решение для шаблона ленты, когда он появится; этой функции оно не
     касается, она уже возвращает чистый True/False.
     """
+    moment = now or _now()
     target = blocks[block_index]
     opens_at = target.opens_at
     if opens_at is not None:
         if opens_at.tzinfo is None:
             opens_at = opens_at.replace(tzinfo=timezone.utc)
-        if opens_at > (now or _now()):
+        if opens_at > moment:
+            return False
+    closes_at = target.closes_at
+    if closes_at is not None:
+        if closes_at.tzinfo is None:
+            closes_at = closes_at.replace(tzinfo=timezone.utc)
+        if closes_at <= moment:
             return False
     target_tariffs = tariffs_by_block.get(target.id)
     if target_tariffs and user_tariff not in target_tariffs:
@@ -810,6 +835,14 @@ def is_block_accessible(
         prior_tariffs = tariffs_by_block.get(prior.id)
         if prior_tariffs and user_tariff not in prior_tariffs:
             continue
+        prior_closes_at = prior.closes_at
+        if prior_closes_at is not None:
+            prior_closes = (
+                prior_closes_at if prior_closes_at.tzinfo
+                else prior_closes_at.replace(tzinfo=timezone.utc)
+            )
+            if prior_closes <= moment:
+                continue
         state = states.get(prior.id)
         if state is None or state.status != STATUS_DONE:
             return False

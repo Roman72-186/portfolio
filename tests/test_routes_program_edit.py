@@ -138,6 +138,46 @@ def test_checklist_edit_round_trips_card_and_blocks(
     assert original_blocks[1].id not in [block.id for block in saved_blocks]
 
 
+def test_block_closes_at_and_locked_message_round_trip(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """`closes_at`/`locked_message` (владелец 10.09.2026) сохраняются и
+    отдаются обратно форме правки так же, как уже проверено для `opens_at`
+    и `bypass_sequence` выше."""
+    _freeze(monkeypatch)
+    _staff_client(client, user_factory, session_factory)
+
+    created = client.post(
+        f"{PROGRAM}/{MONDAY}/checklist",
+        json={
+            "title": "Модуль",
+            "subject": "Рисунок",
+            "audience": EVERYONE,
+            "blocks": [
+                {
+                    "block_type": "text",
+                    "body": "Материал",
+                    "closes_at": "2026-09-27T23:30",
+                    "locked_message": "Пока проверь чат-комьюнити в телеграмме.",
+                },
+            ],
+        },
+    )
+    assert created.status_code == 200, created.text
+    task = db.query(TrackerTask).filter(TrackerTask.kind == ITEM_CHECKLIST).one()
+    [block] = db.query(TaskBlock).filter(TaskBlock.task_id == task.id).all()
+
+    assert block.locked_message == "Пока проверь чат-комьюнити в телеграмме."
+    # 23:30 МСК 27 сентября — 20:30 UTC того же дня.
+    assert block.closes_at.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M") == "2026-09-27T23:30"
+
+    page = client.get(f"{PROGRAM}/{MONDAY}").text
+    edit_data = json.loads(page.split("programEditData = ")[1].split(";\n")[0])
+    edited_block = edit_data[str(task.id)]["blocks"][0]
+    assert edited_block["closes_at"] == "2026-09-27T23:30"
+    assert edited_block["locked_message"] == "Пока проверь чат-комьюнити в телеграмме."
+
+
 def test_simple_item_edit_updates_task_and_topic_title(
     client, db, user_factory, session_factory, monkeypatch
 ):

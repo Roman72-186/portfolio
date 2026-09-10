@@ -304,6 +304,11 @@ def _edit_payloads(
                 "subject": b.subject,
                 "tariffs": sorted(block_tariffs.get(b.id, set())),
                 "opens_at": msk_date(b.opens_at).isoformat() if b.opens_at else None,
+                "closes_at": (
+                    b.closes_at.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M")
+                    if b.closes_at else None
+                ),
+                "locked_message": b.locked_message,
                 "bypass_sequence": b.bypass_sequence,
                 "time_limit_minutes": b.time_limit_minutes,
                 "options": [
@@ -576,9 +581,13 @@ def blocks_source_content(
             "is_required": b.is_required,
             "subject": b.subject,
             "tariffs": sorted(tariffs.get(b.id, set())),
-            # opens_at сюда намеренно не копируется: это абсолютная дата
-            # исходного дня, в новом дне она бы означала не то (владелец
-            # 06.09.2026) — куратор проставляет заново, если нужно.
+            # opens_at и closes_at сюда намеренно не копируются: это
+            # абсолютные дата и время исходного дня, в новом дне они бы
+            # означали не то (владелец 06.09.2026 про opens_at, то же
+            # применяется к closes_at 10.09.2026) — куратор проставляет
+            # заново, если нужно. Текст уведомления копируется как обычный
+            # текст — он от даты не зависит.
+            "locked_message": b.locked_message,
             "bypass_sequence": b.bypass_sequence,
             "images": [
                 {"url": i.image_s3_url, "path": i.image_s3_path}
@@ -798,6 +807,14 @@ class BlockItem(BaseModel):
     # 03.09.2026, найдено при повторном разборе 06.09.2026). Конвертацию в
     # UTC делает сервисный слой (`sync_blocks`), не эта схема.
     opens_at: date | None = None
+    # Закрытие по календарю — обратная сторона `opens_at` (владелец
+    # 10.09.2026). Несёт время суток, а не только дату, поэтому строка
+    # `datetime-local`, а не `date`: конвертацию в UTC делает сервисный слой
+    # (`sync_blocks` → `app.services.tz.parse_msk_local`), не эта схема.
+    closes_at: str | None = Field(default=None, max_length=32)
+    # Текст вместо стандартной фразы ленты «Откроется …» / «Доступ закрыт»,
+    # пока блок заперт по календарю (владелец 10.09.2026).
+    locked_message: str | None = Field(default=None, max_length=300)
     # Явный обход последовательной блокировки — куратор решает сам, для
     # какой версии блока он нужен (владелец 06.09.2026, снимает конфликт
     # между «ссылка видна сразу» и «для тарифа Х ссылка ждёт сдачи домашки»

@@ -10,7 +10,7 @@
 План — plans/2026-09-06-apparchi-block-feed-replaces-week-tabs.md, этап 2.
 """
 import pathlib
-from datetime import timedelta
+from datetime import timedelta, timezone
 
 from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, TOPIC_KIND_WEEK, LearningTopic
 from app.models.learning_video import LearningVideo
@@ -199,6 +199,32 @@ def test_learning_shows_progress_counter(auth_client, db):
 
     resp = client.get("/cabinet/learning")
     assert "Сделано 1 из 2" in resp.text
+
+
+def test_learning_closed_block_shows_curator_message(auth_client, db):
+    """«27 сентября в 23:30 закрывается доступ» с текстом куратора вместо
+    стандартной фразы — свой текст должен перекрыть шаблонную «Доступ закрыт»."""
+    client, user = auth_client
+    task = _task(db, user, title="Задание")
+    block = _block(db, task, title="Модуль", order=1, is_required=False)
+    block.closes_at = now_msk().astimezone(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
+    block.locked_message = "Пока проверь чат-комьюнити в телеграмме."
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert "lrn-step--locked" in resp.text
+    assert "Пока проверь чат-комьюнити в телеграмме." in resp.text
+
+
+def test_learning_closed_block_without_message_shows_default(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user, title="Задание")
+    block = _block(db, task, title="Модуль", order=1, is_required=False)
+    block.closes_at = now_msk().astimezone(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert "Доступ закрыт." in resp.text
 
 
 def test_learning_optional_block_does_not_lock_the_tail(auth_client, db):

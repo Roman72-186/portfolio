@@ -49,10 +49,15 @@ from app.services.tracker import (
 STATUS_LOCKED = "locked"
 STATUS_CURRENT = "current"
 
-# Почему шаг заперт: очередью или календарём. Ученику это разные сообщения —
-# «сделай предыдущее» против «откроется 23 сентября» (владелец 03.09.2026).
+# Почему шаг заперт: очередью, открытием по календарю или закрытием по
+# календарю. Ученику это разные сообщения — «сделай предыдущее» против
+# «откроется 23 сентября» против «доступ закрыт» (владелец 03.09.2026,
+# LOCK_BY_CLOSED добавлен 10.09.2026). Отдельная причина для закрытия, а не
+# общая с открытием: у закрытого навсегда блока `opens_on` посчитать не из
+# чего, а «Откроется …» для него — неправда.
 LOCK_BY_SEQUENCE = "sequence"
 LOCK_BY_DATE = "date"
+LOCK_BY_CLOSED = "closed"
 
 
 def _not_open_yet(value: datetime | None, now: datetime) -> bool:
@@ -62,6 +67,15 @@ def _not_open_yet(value: datetime | None, now: datetime) -> bool:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value > now
+
+
+def _already_closed(value: datetime | None, now: datetime) -> bool:
+    """Момент закрытия уже прошёл. `None` — не закрывается никогда."""
+    if value is None:
+        return False
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value <= now
 
 
 def feed_window(
@@ -237,6 +251,7 @@ def build_cycle_feed(
             state = states.get(block.id)
             done = state is not None and state.status == STATUS_DONE
             block_waits_date = _not_open_yet(block.opens_at, now)
+            block_closed = _already_closed(block.closes_at, now)
             accessible = (
                 not blocked
                 and not task_waits_date
@@ -253,6 +268,8 @@ def build_cycle_feed(
                 status, lock_reason = STATUS_DONE, None
             elif accessible:
                 status, lock_reason = STATUS_CURRENT, None
+            elif block_closed:
+                status, lock_reason = STATUS_LOCKED, LOCK_BY_CLOSED
             elif task_waits_date or block_waits_date:
                 status, lock_reason = STATUS_LOCKED, LOCK_BY_DATE
             else:

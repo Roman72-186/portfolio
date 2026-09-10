@@ -281,6 +281,72 @@ def test_block_with_future_open_date_is_locked_by_calendar(db, regular_user):
     assert first.id != later.id
 
 
+# ── закрытие по календарю (владелец 10.09.2026) ─────────────────────────────
+
+def test_block_with_past_close_date_is_locked_as_closed(db, regular_user):
+    """«27 сентября в 23:30 закрывается доступ» — заперт по-своему, не как
+    ожидание открытия и не как очередь."""
+    _cycle(db, regular_user)
+    task = _task(db, regular_user, title="Модуль")
+    block = _block(db, task, title="Закрывается", order=1, is_required=False)
+    block.closes_at = _utc(msk_midnight(TODAY - timedelta(days=1)))
+    db.commit()
+
+    steps = _feed(db, regular_user)
+
+    assert steps[0]["status"] == "locked"
+    assert steps[0]["lock_reason"] == "closed"
+
+
+def test_locked_message_overrides_default_and_is_not_used_when_absent(db, regular_user):
+    _cycle(db, regular_user)
+    task = _task(db, regular_user, title="Модуль")
+    with_message = _block(db, task, title="С текстом", order=1, is_required=False)
+    with_message.closes_at = _utc(msk_midnight(TODAY - timedelta(days=1)))
+    with_message.locked_message = "Пока проверь чат-комьюнити в телеграмме."
+    without_message = _block(db, task, title="Без текста", order=2, is_required=False)
+    without_message.closes_at = _utc(msk_midnight(TODAY - timedelta(days=1)))
+    db.commit()
+
+    steps = _feed(db, regular_user)
+
+    assert steps[0]["block"].locked_message == "Пока проверь чат-комьюнити в телеграмме."
+    assert steps[1]["block"].locked_message is None
+
+
+def test_closed_required_block_does_not_lock_the_tail(db, regular_user):
+    """Обязательный блок, который сам уже закрылся по календарю, не должен
+    запирать хвост ленты навсегда — тот же тупик без выхода, что решён для
+    тарифа (is_block_accessible)."""
+    _cycle(db, regular_user)
+    task = _task(db, regular_user, title="Модуль")
+    expired = _block(db, task, title="Просрочено", order=1)
+    expired.closes_at = _utc(msk_midnight(TODAY - timedelta(days=1)))
+    _block(db, task, title="Дальше", order=2, is_required=False)
+    db.commit()
+
+    steps = _feed(db, regular_user)
+
+    assert steps[0]["lock_reason"] == "closed"
+    assert steps[1]["status"] == "current"
+
+
+def test_closed_block_does_not_leak_into_waiting_for_banner(db, regular_user):
+    """Закрытый навсегда блок не должен подсказывать несуществующую дату
+    открытия в баннере «Следующее задание откроется …»."""
+    _cycle(db, regular_user)
+    task = _task(db, regular_user, title="Модуль")
+    block = _block(db, task, title="Закрыт", order=1)
+    block.closes_at = _utc(msk_midnight(TODAY - timedelta(days=1)))
+    db.commit()
+
+    feed = feed_for_student(
+        db, user_id=regular_user.id, user_tariff=regular_user.tariff, today=TODAY
+    )
+
+    assert feed["waiting_for"] is None
+
+
 def test_sequence_lock_keeps_its_own_reason(db, regular_user):
     """Заперто очередью, а не календарём — подпись у ученика другая."""
     _cycle(db, regular_user)
