@@ -82,7 +82,7 @@ def guest_mode_page(
         if tab == "stats" else []
     )
 
-    return templates.TemplateResponse("cabinet_guest_mode.html", {
+    return templates.TemplateResponse(request, "cabinet_guest_mode.html", {
         "request": request,
         "user": user,
         "tab": tab,

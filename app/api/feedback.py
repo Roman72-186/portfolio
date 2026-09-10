@@ -250,7 +250,7 @@ def student_feedback_detail(
         )
         db.commit()
 
-    return templates.TemplateResponse("cabinet_feedback_detail.html", {
+    return templates.TemplateResponse(request, "cabinet_feedback_detail.html", {
         "request": request, "user": user,
         "cycle": _serialize_cycle(cycle, [a for a in payload["attempts"]]),
         "attempts": payload["attempts"],
@@ -570,7 +570,7 @@ def _staff_dialog_detail(db: DBSession, request: Request, user: dict, cycle_id: 
     # Флатный список циклов (/cabinet/staff/cycles) снесён 02.09.2026 —
     # вход в этот диалог теперь только через «Проверку по ученику», туда и
     # ведёт «назад» (review_aggregate.py::_exam_cycle_items).
-    return templates.TemplateResponse("cabinet_feedback_detail.html", {
+    return templates.TemplateResponse(request, "cabinet_feedback_detail.html", {
         "request": request, "user": user,
         "cycle": _serialize_cycle(cycle, [a for a in payload["attempts"]]),
         "attempts": payload["attempts"],

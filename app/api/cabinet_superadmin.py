@@ -348,7 +348,7 @@ def cabinet_superadmin(
     now = datetime.now(timezone.utc)
     ctx = _load_dashboard_data(db, now)
     ctx.update({"request": request, "user": user})
-    return templates.TemplateResponse("cabinet_staff.html", ctx)
+    return templates.TemplateResponse(request, "cabinet_staff.html", ctx)
 
 
 @router.post("/superadmin/set-credentials", response_class=HTMLResponse)
@@ -375,7 +375,7 @@ def superadmin_set_credentials(
         "user": user,
         "issued_creds": issued_creds,
     })
-    return templates.TemplateResponse("cabinet_staff.html", ctx)
+    return templates.TemplateResponse(request, "cabinet_staff.html", ctx)
 
 
 @router.post("/superadmin/issue-link", response_class=HTMLResponse)
@@ -409,7 +409,7 @@ def superadmin_issue_link(
         "issued_link_name": f"{target.last_name or ''} {target.first_name or target.name}".strip(),
         "issued_link_expires_at": login_token.expires_at,
     })
-    return templates.TemplateResponse("cabinet_staff.html", ctx)
+    return templates.TemplateResponse(request, "cabinet_staff.html", ctx)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -451,7 +451,7 @@ def exam_assignments_hub(
         .group_by(ExamAssignment.status)
         .all()
     )
-    return templates.TemplateResponse("superadmin_exam_hub.html", {
+    return templates.TemplateResponse(request, "superadmin_exam_hub.html", {
         "request": request,
         "user": user,
         "active_count": counts.get("published", 0) + counts.get("draft", 0),
@@ -487,7 +487,7 @@ def _render_assignment_list(request, user, db: DBSession, statuses: list[str], m
             ticket_counts[aid] = cnt
             period_by_assignment[aid] = (start_min, end_max)
 
-    return templates.TemplateResponse("superadmin_exam_assignments.html", {
+    return templates.TemplateResponse(request, "superadmin_exam_assignments.html", {
         "request": request,
         "user": user,
         "assignments": assignments,
@@ -647,7 +647,7 @@ def exam_assignment_create_form(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    return templates.TemplateResponse("superadmin_exam_assignment_form.html", {
+    return templates.TemplateResponse(request, "superadmin_exam_assignment_form.html", {
         "request": request,
         "user": user,
         "subjects": MOCK_SUBJECTS,
@@ -718,7 +718,7 @@ def exam_assignment_edit_form(
     )
 
     import json as _json
-    return templates.TemplateResponse("superadmin_exam_assignment_form.html", {
+    return templates.TemplateResponse(request, "superadmin_exam_assignment_form.html", {
         "request": request,
         "user": user,
         "subjects": MOCK_SUBJECTS,
@@ -1100,7 +1100,7 @@ def exam_assignment_detail(
         for t in tickets
     }
 
-    return templates.TemplateResponse("superadmin_exam_assignment_detail.html", {
+    return templates.TemplateResponse(request, "superadmin_exam_assignment_detail.html", {
         "request": request,
         "user": user,
         "assignment": assignment,
@@ -1268,7 +1268,7 @@ def periods_list(
         .all()
     )
     today = today_msk()
-    return templates.TemplateResponse("periods_management.html", {
+    return templates.TemplateResponse(request, "periods_management.html", {
         "request": request,
         "user": user,
         "periods": periods,
@@ -1429,7 +1429,7 @@ def superadmin_activity(
         get_self_score_stats,
     )
 
-    return templates.TemplateResponse("superadmin_activity.html", {
+    return templates.TemplateResponse(request, "superadmin_activity.html", {
         "request": request,
         "user": user,
         "logins": get_login_stats(db),
@@ -1461,7 +1461,7 @@ def superadmin_stats(
     ticket_stats = get_ticket_receipt_stats(db, period_id=period_id)
     feedback_table = get_mock_feedback_rows(db, period_id=period_id)
     score_stats = get_mock_score_stats(db, period_id=period_id)
-    return templates.TemplateResponse("superadmin_stats.html", {
+    return templates.TemplateResponse(request, "superadmin_stats.html", {
         "request": request,
         "user": user,
         "periods": periods,
@@ -1719,7 +1719,7 @@ def _render_superadmin_create_staff(
     page_error: str | None = None,
 ):
     roles = db.query(Role).order_by(Role.rank).all()
-    return templates.TemplateResponse("superadmin_create_staff.html", {
+    return templates.TemplateResponse(request, "superadmin_create_staff.html", {
         "request": request,
         "user": user,
         "roles": roles,
@@ -1737,7 +1737,7 @@ def _render_superadmin_assign_curator(
     assignment_result: dict | None = None,
 ):
     curators = _load_superadmin_curators(db)
-    return templates.TemplateResponse("superadmin_assign_curator.html", {
+    return templates.TemplateResponse(request, "superadmin_assign_curator.html", {
         "request": request,
         "user": user,
         "curators": curators,
@@ -1942,7 +1942,7 @@ def _render_superadmin_users(
         for uid, ws in grouped.items():
             has_case_by_user[uid] = _hcg(ws)
 
-    return templates.TemplateResponse("superadmin_users.html", {
+    return templates.TemplateResponse(request, "superadmin_users.html", {
         "request": request,
         "user": user,
         "users": users,
@@ -2464,7 +2464,7 @@ def superadmin_user_card(
     curators = _load_superadmin_curators(db)
     roles = db.query(Role).order_by(Role.rank).all()
 
-    return templates.TemplateResponse("superadmin_user_card.html", {
+    return templates.TemplateResponse(request, "superadmin_user_card.html", {
         "request": request,
         "user": user,
         "target": target,
@@ -2828,7 +2828,7 @@ def superadmin_curators_list(
         }
         for r in rows
     ]
-    return templates.TemplateResponse("superadmin_curators.html", {
+    return templates.TemplateResponse(request, "superadmin_curators.html", {
         "request": request,
         "user": user,
         "curators": curators,

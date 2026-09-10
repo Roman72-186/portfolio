@@ -213,7 +213,7 @@ def cabinet_admin(
     now = datetime.now(timezone.utc)
     ctx = _load_dashboard_data(db, now)
     ctx.update({"request": request, "user": user})
-    return templates.TemplateResponse("cabinet_staff.html", ctx)
+    return templates.TemplateResponse(request, "cabinet_staff.html", ctx)
 
 
 # ── Mock exam check (dedicated split-panel) ──────────────────────────────────
@@ -285,7 +285,7 @@ def admin_mock_check(
 
     tariffs_present = sorted({s["tariff"] for s in sidebar_students if s["tariff"]})
 
-    return templates.TemplateResponse("cabinet_admin_mock_check.html", {
+    return templates.TemplateResponse(request, "cabinet_admin_mock_check.html", {
         "request": request,
         "user": user,
         "sidebar_students": sidebar_students,
@@ -352,7 +352,7 @@ def admin_retake_check(
 
     tariffs_present = sorted({s["tariff"] for s in sidebar_students if s["tariff"]})
 
-    return templates.TemplateResponse("cabinet_admin_retake_check.html", {
+    return templates.TemplateResponse(request, "cabinet_admin_retake_check.html", {
         "request": request,
         "user": user,
         "is_superadmin": user.get("role_rank", 0) >= 5,

@@ -113,7 +113,7 @@ async def _render_submission_page(
     } if sender_ids else {}
     student = db.get(User, submission.user_id) if viewer_role != "student" else None
 
-    return templates.TemplateResponse("homework_submission.html", {
+    return templates.TemplateResponse(request, "homework_submission.html", {
         "request": request,
         "student": student,
         "user": user,
@@ -315,7 +315,7 @@ def staff_homework_submissions(
         {"submission": s, "student": students.get(s.user_id)}
         for s in submissions
     ]
-    return templates.TemplateResponse("staff_homework_submissions.html", {
+    return templates.TemplateResponse(request, "staff_homework_submissions.html", {
         "request": request,
         "user": user,
         "task": task,

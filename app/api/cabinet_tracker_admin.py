@@ -227,8 +227,7 @@ def tracker_admin_page(
     task_assignee_ids = {t.id: get_assignee_ids(db, t.id) for t in tasks}
     all_tags = get_all_tags(db)
     ambiguous_names = set(ambiguous_tag_names(db, [tag.id for tag in all_tags]))
-    return templates.TemplateResponse(
-        "cabinet_tracker_admin.html",
+    return templates.TemplateResponse(request, "cabinet_tracker_admin.html",
         {
             "request": request,
             "user": user,

@@ -96,7 +96,7 @@ def _render_login(request: Request, error: str | None = None):
     }
     if error:
         context["error"] = error
-    return templates.TemplateResponse("login.html", context)
+    return templates.TemplateResponse(request, "login.html", context)
 
 
 def _load_pkce_cookie(request: Request) -> tuple[dict | None, str | None]:
@@ -358,7 +358,7 @@ async def vk_callback(
         # VK API didn't give a definite answer (timeout/error) — don't treat this
         # as a confirmed non-membership, ask the user to retry instead.
         logger.warning("vk_callback: membership check inconclusive for user %s", vk_user_id)
-        return templates.TemplateResponse("denied.html", {
+        return templates.TemplateResponse(request, "denied.html", {
             "request": request,
             "reason": "Не удалось проверить участие в сообществе ВК. Попробуйте войти ещё раз через минуту.",
             "vk_group_id": settings.vk_group_id,
@@ -370,7 +370,7 @@ async def vk_callback(
             existing_user.is_group_member = False
             existing_user.last_vk_check_at = _now()
             db.commit()
-        return templates.TemplateResponse("denied.html", {
+        return templates.TemplateResponse(request, "denied.html", {
             "request": request,
             "reason": "Доступ запрещён. Вы не являетесь участником сообщества.",
             "vk_group_id": settings.vk_group_id,
@@ -395,7 +395,7 @@ async def vk_callback(
 
     if not user.is_active:
         db.commit()
-        return templates.TemplateResponse("blocked.html", {"request": request})
+        return templates.TemplateResponse(request, "blocked.html", {"request": request})
 
     if settings.n8n_enabled:
         background.add_task(
@@ -465,7 +465,7 @@ def _render_guest_landing(request: Request, db: DBSession, guest_token: str | No
     config = guest_exam_service.get_config_by_token(db, guest_token) if guest_token else None
     if not config:
         return _render_login(request, error)
-    return templates.TemplateResponse("guest/guest_landing.html", {
+    return templates.TemplateResponse(request, "guest/guest_landing.html", {
         "request": request,
         "config": config,
         "is_open": config.is_active,
@@ -500,7 +500,7 @@ def _guest_telegram_session(
         logger.warning("Telegram guest login: config not found for token=%r", guest_token)
         return _render_login(request, "Ссылка пробного экзамена не найдена.")
     if not config.is_active:
-        return templates.TemplateResponse("guest/guest_landing.html", {
+        return templates.TemplateResponse(request, "guest/guest_landing.html", {
             "request": request,
             "config": config,
             "is_open": False,
@@ -615,7 +615,7 @@ async def telegram_login_callback(
     is_member = await telegram_service.check_channel_membership(chat_id)
     if is_member is None:
         logger.warning("Telegram login callback: membership check inconclusive for chat_id=%s", chat_id)
-        return templates.TemplateResponse("denied.html", {
+        return templates.TemplateResponse(request, "denied.html", {
             "request": request,
             "reason": "Не удалось проверить участие в закрытом канале. Попробуйте войти ещё раз через минуту.",
             "recheck_url": "/auth/telegram-login",
@@ -628,7 +628,7 @@ async def telegram_login_callback(
         if existing_user:
             existing_user.is_group_member = False
             db.commit()
-        return templates.TemplateResponse("denied.html", {
+        return templates.TemplateResponse(request, "denied.html", {
             "request": request,
             "reason": "Доступ запрещён. Вы не являетесь участником закрытого канала.",
             "recheck_url": "/auth/telegram-login",
@@ -646,7 +646,7 @@ async def telegram_login_callback(
 
     if not user.is_active:
         db.commit()
-        return templates.TemplateResponse("blocked.html", {"request": request})
+        return templates.TemplateResponse(request, "blocked.html", {"request": request})
 
     db.commit()
     return _create_session_response(db, user)
@@ -673,14 +673,14 @@ async def one_time_link_login(
         return _render_login(request, "Не удалось определить пользователя по ссылке.")
 
     if not user.is_active:
-        return templates.TemplateResponse("denied.html", {
+        return templates.TemplateResponse(request, "denied.html", {
             "request": request,
             "reason": "Ваш доступ временно отключен. Напишите администратору.",
         })
     # Allow: VK group members, legacy admins, and staff (role rank >= 2)
     role_rank = user.role.rank if user.role else 0
     if not user.is_admin and not user.is_group_member and role_rank < 2:
-        return templates.TemplateResponse("denied.html", {
+        return templates.TemplateResponse(request, "denied.html", {
             "request": request,
             "reason": "Доступ к кабинету доступен только участникам закрытой группы ВК.",
         })
@@ -1040,7 +1040,7 @@ def lab3d_page(
     """Serve the 3D Lab app for VK group members, students, and staff."""
     if not user.get("is_group_member") and not user.get("is_admin") and user.get("role_rank", 0) < 1:
         return RedirectResponse("/denied", status_code=302)
-    return templates.TemplateResponse("3dlab.html", {
+    return templates.TemplateResponse(request, "3dlab.html", {
         "request": request,
         "lab_user": {"id": user["vk_id"], "name": user["name"]},
     })
@@ -1074,7 +1074,7 @@ def enter_3dlab(
 @router.get("/denied", response_class=HTMLResponse)
 def denied_page(request: Request):
     """Show the VK group access denial page used by redirects."""
-    return templates.TemplateResponse("denied.html", {
+    return templates.TemplateResponse(request, "denied.html", {
         "request": request,
         "reason": "Доступ к 3D лаборатории открыт только участникам закрытого сообщества.",
         "vk_group_id": settings.vk_group_id,
@@ -1168,7 +1168,7 @@ async def vk_recheck(
     if is_member:
         return RedirectResponse("/cabinet", status_code=302)
 
-    return templates.TemplateResponse("denied.html", {
+    return templates.TemplateResponse(request, "denied.html", {
         "request": request,
         "reason": "Вы всё ещё не являетесь участником сообщества. Вступите и попробуйте снова.",
         "vk_group_id": settings.vk_group_id,
@@ -1176,7 +1176,7 @@ async def vk_recheck(
 
 
 def _render_staff_login(request: Request, error: str | None = None):
-    return templates.TemplateResponse("staff_login.html", {
+    return templates.TemplateResponse(request, "staff_login.html", {
         "request": request,
         "error": error,
     })

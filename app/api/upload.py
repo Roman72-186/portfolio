@@ -79,7 +79,7 @@ def _resolve_upload_mode(user: dict, requested_section: str | None) -> str:
 
 def _render_upload(request, user, *, mode: str = "after", error=None, success=False,
                    success_count=0, fail_count=0, feature_available=True, feature_message=None):
-    return templates.TemplateResponse("upload.html", {
+    return templates.TemplateResponse(request, "upload.html", {
         "request": request,
         "user": user,
         "months": MONTHS,
@@ -256,7 +256,7 @@ def _render_mock(request, user, db, *, error=None, success=False, success_count=
         )
         stage_upload_state_by_subject[attempt.subject] = intermediate_upload_state(existing)
 
-    return templates.TemplateResponse("upload_mock.html", {
+    return templates.TemplateResponse(request, "upload_mock.html", {
         "request": request,
         "user": user,
         "max_files": MAX_FILES,
@@ -286,7 +286,7 @@ def _render_retake(request, user, *, error=None, success=False, success_count=0,
     now = datetime.now(timezone.utc)
     month_name = MONTHS[now.month - 1].capitalize()
     current_date = f"{now.day} {month_name} {now.year}"
-    return templates.TemplateResponse("upload_retake.html", {
+    return templates.TemplateResponse(request, "upload_retake.html", {
         "request": request,
         "user": user,
         "max_files": MAX_FILES,

@@ -51,7 +51,7 @@ def cabinet_personal(
     if needs_profile_setup(user):
         return RedirectResponse("/cabinet/profile", status_code=302)
 
-    return templates.TemplateResponse("cabinet_personal.html", {
+    return templates.TemplateResponse(request, "cabinet_personal.html", {
         "request": request,
         "user": user,
         "saved": request.query_params.get("saved") == "1",
@@ -93,8 +93,7 @@ def cabinet_personal_contacts(
     if needs_profile_setup(user):
         return RedirectResponse("/cabinet/profile", status_code=302)
 
-    return templates.TemplateResponse(
-        "cabinet_personal_contacts.html", _contacts_ctx(request, user)
+    return templates.TemplateResponse(request, "cabinet_personal_contacts.html", _contacts_ctx(request, user)
     )
 
 
@@ -126,8 +125,7 @@ def cabinet_personal_contacts_save(
 
     if errors:
         form = {"phone": phone, "parent_phone": parent_phone, "tg_username": tg_username}
-        return templates.TemplateResponse(
-            "cabinet_personal_contacts.html",
+        return templates.TemplateResponse(request, "cabinet_personal_contacts.html",
             _contacts_ctx(request, user, errors=errors, form=form),
         )
 

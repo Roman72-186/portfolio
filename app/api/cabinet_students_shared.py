@@ -475,7 +475,7 @@ def _render_students_panel(
         reverse=True,
     )
 
-    return templates.TemplateResponse("cabinet_students.html", {
+    return templates.TemplateResponse(request, "cabinet_students.html", {
         "request": request,
         "user": user,
         "sidebar_students": sidebar_students,

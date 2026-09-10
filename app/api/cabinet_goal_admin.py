@@ -117,8 +117,7 @@ def goal_admin_page(
     goal_assignee_ids = {g.id: get_goal_assignee_ids(db, g.id) for g in goals}
     all_tags = get_all_tags(db)
     ambiguous_names = set(ambiguous_tag_names(db, [tag.id for tag in all_tags]))
-    return templates.TemplateResponse(
-        "cabinet_goal_admin.html",
+    return templates.TemplateResponse(request, "cabinet_goal_admin.html",
         {
             "request": request,
             "user": user,

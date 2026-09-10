@@ -131,7 +131,7 @@ async def forbidden_handler(request: Request, exc):
         reason = "Аккаунт был удалён."
     else:
         reason = detail or "Доступ запрещён"
-    return templates.TemplateResponse("blocked.html", {"request": request, "reason": reason}, status_code=403)
+    return templates.TemplateResponse(request, "blocked.html", {"request": request, "reason": reason}, status_code=403)
 
 
 @app.exception_handler(401)
@@ -154,7 +154,7 @@ async def not_found_handler(request: Request, exc):
     if "application/json" in accept:
         return JSONResponse(status_code=404, content={"detail": "Not found"})
     from app.tmpl import templates
-    return templates.TemplateResponse("404.html", {"request": request}, status_code=404)
+    return templates.TemplateResponse(request, "404.html", {"request": request}, status_code=404)
 
 
 @app.exception_handler(500)
@@ -163,7 +163,7 @@ async def server_error_handler(request: Request, exc):
     if "application/json" in accept:
         return JSONResponse(status_code=500, content={"detail": "Internal server error"})
     from app.tmpl import templates
-    return templates.TemplateResponse("404.html", {"request": request}, status_code=500)
+    return templates.TemplateResponse(request, "404.html", {"request": request}, status_code=500)
 
 
 @app.exception_handler(Exception)
@@ -174,7 +174,7 @@ async def unhandled_exception_handler(request: Request, exc):
     if "application/json" in accept:
         return JSONResponse(status_code=500, content={"detail": "Internal server error"})
     from app.tmpl import templates
-    return templates.TemplateResponse("404.html", {"request": request}, status_code=500)
+    return templates.TemplateResponse(request, "404.html", {"request": request}, status_code=500)
 
 
 # Static files
@@ -323,4 +323,4 @@ def health():
 @app.get("/404", response_class=HTMLResponse)
 async def page_404(request: Request):
     from app.tmpl import templates
-    return templates.TemplateResponse("404.html", {"request": request}, status_code=200)
+    return templates.TemplateResponse(request, "404.html", {"request": request}, status_code=200)

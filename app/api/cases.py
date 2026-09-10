@@ -56,8 +56,7 @@ def admin_cases_page(
             subject=subject_clean,
         )
 
-    return templates.TemplateResponse(
-        "cabinet_cases.html",
+    return templates.TemplateResponse(request, "cabinet_cases.html",
         {
             "request": request,
             "user": user,

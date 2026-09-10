@@ -191,8 +191,7 @@ def video_admin_page(
     # служебная (`program_item`), и фильтр по неделям показывал бы «тема
     # удалена» на живой привязке.
     topics = list_topics(db, kinds=None)
-    return templates.TemplateResponse(
-        "cabinet_videos_admin.html",
+    return templates.TemplateResponse(request, "cabinet_videos_admin.html",
         {
             "request": request,
             "user": user,

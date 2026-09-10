@@ -62,7 +62,7 @@ def cabinet_learning(
         cycle_id=cycle,
     )
 
-    return templates.TemplateResponse("cabinet_learning.html", {
+    return templates.TemplateResponse(request, "cabinet_learning.html", {
         "request": request,
         "user": user,
         "feed": feed,

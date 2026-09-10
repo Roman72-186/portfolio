@@ -76,7 +76,7 @@ def students_review_list(
     db: Annotated[DBSession, Depends(get_db)],
 ):
     rows = aggregate_student_review_counts(db, user)
-    return templates.TemplateResponse("staff_students_review.html", {
+    return templates.TemplateResponse(request, "staff_students_review.html", {
         "request": request,
         "user": user,
         "rows": rows,
@@ -114,7 +114,7 @@ def student_review_detail(
         tariff=tariff or None,
         role_rank=user["role_rank"],
     )
-    return templates.TemplateResponse("staff_student_review_detail.html", {
+    return templates.TemplateResponse(request, "staff_student_review_detail.html", {
         "request": request,
         "user": user,
         "student": student,

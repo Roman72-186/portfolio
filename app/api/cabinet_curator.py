@@ -123,7 +123,7 @@ def cabinet_curator_dashboard(
     user: Annotated[dict, Depends(require_curator)],
 ):
     """Дашборд куратора: синяя плашка с именем + блоки навигации по разделам."""
-    return templates.TemplateResponse("cabinet_curator_dashboard.html", {
+    return templates.TemplateResponse(request, "cabinet_curator_dashboard.html", {
         "request": request,
         "user": user,
         "nav_active": "dashboard",
@@ -183,7 +183,7 @@ def curator_reports(
             "date_label": local_dt.strftime("%d.%m.%Y %H:%M") if local_dt else "",
             "curator_name": curator_names.get(r.curator_id) if is_staff else None,
         })
-    return templates.TemplateResponse("cabinet_curator_reports.html", {
+    return templates.TemplateResponse(request, "cabinet_curator_reports.html", {
         "request": request,
         "user": user,
         "nav_active": "reports",

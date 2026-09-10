@@ -56,7 +56,7 @@ def legacy_portfolio_view(
         .all()
     )
 
-    return templates.TemplateResponse("legacy_portfolio.html", {
+    return templates.TemplateResponse(request, "legacy_portfolio.html", {
         "request": request,
         "user": user,
         "student": student,

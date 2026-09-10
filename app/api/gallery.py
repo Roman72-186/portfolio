@@ -58,7 +58,7 @@ async def cabinet_gallery(
         except Exception as exc:
             logger.warning("gallery: drive fetch failed for vk_id=%s: %s", user["vk_id"], exc)
 
-    return templates.TemplateResponse("gallery.html", {
+    return templates.TemplateResponse(request, "gallery.html", {
         "request": request,
         "user": user,
         # «До» — плоская лента без месяцев (владелец 09.09.2026: «в До
@@ -105,7 +105,7 @@ def cabinet_history(
     )
     total_success = sum(1 for l in logs if l.status == "success")
     total_photos = sum(l.photo_count for l in logs if l.status == "success")
-    return templates.TemplateResponse("history.html", {
+    return templates.TemplateResponse(request, "history.html", {
         "request": request,
         "user": user,
         "logs": logs,

@@ -165,8 +165,7 @@ def digest_admin_page(
     digest_assignee_ids = {d.id: get_digest_assignee_ids(db, d.id) for d in digests}
     all_tags = get_all_tags(db)
     ambiguous_names = set(ambiguous_tag_names(db, [tag.id for tag in all_tags]))
-    return templates.TemplateResponse(
-        "cabinet_digest_admin.html",
+    return templates.TemplateResponse(request, "cabinet_digest_admin.html",
         {
             "request": request,
             "user": user,
@@ -319,8 +318,7 @@ def digest_events_page(
 ):
     digest = _get_digest_or_404(db, digest_id)
     events = list_events(db, digest_id)
-    return templates.TemplateResponse(
-        "cabinet_digest_events.html",
+    return templates.TemplateResponse(request, "cabinet_digest_events.html",
         {
             "request": request,
             "user": user,

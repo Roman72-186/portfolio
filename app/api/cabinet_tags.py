@@ -71,7 +71,7 @@ def superadmin_tags_page(
     suggested_tags = get_suggested_tags(db)
     curator_names = get_curator_names(db)
 
-    return templates.TemplateResponse("superadmin_tags.html", {
+    return templates.TemplateResponse(request, "superadmin_tags.html", {
         "request": request,
         "user": user,
         "students": students,

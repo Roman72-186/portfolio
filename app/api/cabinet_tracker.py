@@ -134,7 +134,7 @@ def cabinet_tracker(
         and (e["completed_on"] is None or e["completed_on"] >= week_monday)
     ]
 
-    return templates.TemplateResponse("cabinet_tracker.html", {
+    return templates.TemplateResponse(request, "cabinet_tracker.html", {
         "request": request,
         "user": user,
         "overdue": overdue,

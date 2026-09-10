@@ -207,7 +207,7 @@ def cabinet_student(
         and is_subject_allowed_for_student(db, user["user_id"], a.subject)
     ]
 
-    return templates.TemplateResponse("cabinet_student.html", {
+    return templates.TemplateResponse(request, "cabinet_student.html", {
         "request": request,
         "user": user,
         "tariff_history": tariff_history,
@@ -254,7 +254,7 @@ def profile_get(
     if user["profile_completed"]:
         return RedirectResponse("/cabinet/personal/contacts", status_code=302)
 
-    return templates.TemplateResponse("profile.html", _profile_template_ctx(request, user))
+    return templates.TemplateResponse(request, "profile.html", _profile_template_ctx(request, user))
 
 
 @router.post("/profile", response_class=HTMLResponse)
@@ -362,7 +362,7 @@ def profile_post(
             "university_year": parsed_university_year,
             "past_tariffs": past_tariffs,
         }
-        return templates.TemplateResponse("profile.html",
+        return templates.TemplateResponse(request, "profile.html",
             _profile_template_ctx(request, user, errors=errors, form=form))
 
     db_user = db.query(User).filter(User.id == user["user_id"]).first()
@@ -409,7 +409,7 @@ def cabinet_notifications(
         ).update({"is_read": True, "read_at": datetime.now(timezone.utc)})
         db.commit()
         invalidate_unread(user["user_id"])
-    return templates.TemplateResponse("cabinet_notifications.html", {
+    return templates.TemplateResponse(request, "cabinet_notifications.html", {
         "request": request,
         "user": user,
         "notifications": notifications,
@@ -593,7 +593,7 @@ def cabinet_cycle_hub(
     cycles_count = len(open_cycles) + len(closed_cycles)
     unread = _get_unread_count(user["user_id"], db)
 
-    return templates.TemplateResponse("cabinet_cycle.html", {
+    return templates.TemplateResponse(request, "cabinet_cycle.html", {
         "request": request,
         "user": user,
         "open_cycles": open_cycles,
@@ -686,7 +686,7 @@ async def cabinet_portfolio(
             "works": [serialize_work(w) for w in group["works"]],
         }
 
-    return templates.TemplateResponse("cabinet_portfolio.html", {
+    return templates.TemplateResponse(request, "cabinet_portfolio.html", {
         "request": request,
         "user": user,
         "can_upload_portfolio_after": bool(portfolio_upload_open),
@@ -914,7 +914,7 @@ def render_cycle_calendar(
         upload_msg = None if upload_open else "Отработку назначает куратор."
     else:
         upload_open, upload_msg = is_feature_available(db, feature_key)
-    return templates.TemplateResponse("cabinet_cycle_calendar.html", {
+    return templates.TemplateResponse(request, "cabinet_cycle_calendar.html", {
         "request": request,
         "user": user,
         "page_title": page_title,

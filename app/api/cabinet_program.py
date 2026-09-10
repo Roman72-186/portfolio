@@ -345,8 +345,7 @@ def program_month(
     year, month_num = _parse_month(month, today)
     prev_year, prev_month = shift_month(year, month_num, -1)
     next_year, next_month = shift_month(year, month_num, 1)
-    return templates.TemplateResponse(
-        "cabinet_program.html",
+    return templates.TemplateResponse(request, "cabinet_program.html",
         {
             "request": request,
             "user": user,
@@ -439,8 +438,7 @@ def program_cycles(
         }
         for topic in list_week_topics(db)
     ]
-    return templates.TemplateResponse(
-        "cabinet_program_cycles.html",
+    return templates.TemplateResponse(request, "cabinet_program_cycles.html",
         {"request": request, "user": user, "cycles": cycles},
     )
 
@@ -485,8 +483,7 @@ def program_cycle_stats(
     topic = get_topic(db, topic_id, kinds=(TOPIC_KIND_WEEK,))
     if topic is None:
         raise HTTPException(status_code=404, detail="Цикл не найден")
-    return templates.TemplateResponse(
-        "cabinet_program_cycle_stats.html",
+    return templates.TemplateResponse(request, "cabinet_program_cycle_stats.html",
         {"request": request, "user": user, "stats": cycle_stats(db, topic)},
     )
 
@@ -753,8 +750,7 @@ def program_cycle_items(
     if topic is None:
         raise HTTPException(status_code=404, detail="Цикл не найден")
     items = list_week_items(db, topic_id)
-    return templates.TemplateResponse(
-        "cabinet_program_cycle_items.html",
+    return templates.TemplateResponse(request, "cabinet_program_cycle_items.html",
         {
             "request": request,
             "user": user,
@@ -959,8 +955,7 @@ def program_day(
     today = today_msk()
     items = items_for_day(db, day)
     details = item_details(db, items)
-    return templates.TemplateResponse(
-        "cabinet_program_day.html",
+    return templates.TemplateResponse(request, "cabinet_program_day.html",
         {
             "request": request,
             "user": user,

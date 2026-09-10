@@ -52,7 +52,7 @@ class VideoProgressUpdate(BaseModel):
 
 
 def _not_found(request: Request, user: dict):
-    return templates.TemplateResponse("404.html", {"request": request, "user": user}, status_code=404)
+    return templates.TemplateResponse(request, "404.html", {"request": request, "user": user}, status_code=404)
 
 
 def _video_for_viewer(db: DBSession, *, catalog_id: int, user: dict):
@@ -197,8 +197,8 @@ def _render_player(
         **payload,
     }
     if has_error:
-        return templates.TemplateResponse("cabinet_video.html", context, status_code=503)
-    return templates.TemplateResponse("cabinet_video.html", context)
+        return templates.TemplateResponse(request, "cabinet_video.html", context, status_code=503)
+    return templates.TemplateResponse(request, "cabinet_video.html", context)
 
 
 @router.get("/videos", response_class=HTMLResponse)
@@ -218,8 +218,7 @@ def cabinet_videos(
         resume = get_resume_position(progress)
         state = "completed" if progress and progress.completed_at else ("started" if resume >= 5 else "new")
         items.append({"video": video, "resume_seconds": resume, "state": state})
-    return templates.TemplateResponse(
-        "cabinet_videos.html",
+    return templates.TemplateResponse(request, "cabinet_videos.html",
         {
             "request": request,
             "user": user,

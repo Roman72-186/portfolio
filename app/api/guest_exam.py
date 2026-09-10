@@ -67,7 +67,7 @@ def guest_landing(request: Request, token: str, db: Annotated[DBSession, Depends
     if participant:
         return RedirectResponse(f"/guest/{token}/exam", status_code=302)
 
-    return templates.TemplateResponse("guest/guest_landing.html", {
+    return templates.TemplateResponse(request, "guest/guest_landing.html", {
         "request": request,
         "config": config,
         "is_open": config.is_active,
@@ -86,12 +86,12 @@ def guest_telegram_login(request: Request, token: str, db: Annotated[DBSession, 
     канале к гостю не применяется."""
     config = _get_config_or_404(db, token)
     if not config.is_active:
-        return templates.TemplateResponse("guest/guest_landing.html", {
+        return templates.TemplateResponse(request, "guest/guest_landing.html", {
             "request": request, "config": config, "is_open": False,
             "telegram_login_enabled": telegram_login_enabled(),
         }, status_code=403)
     if not telegram_login_enabled():
-        return templates.TemplateResponse("guest/guest_landing.html", {
+        return templates.TemplateResponse(request, "guest/guest_landing.html", {
             "request": request, "config": config, "is_open": True,
             "telegram_login_enabled": False,
             "error": "Вход через Telegram пока не настроен.",
@@ -114,7 +114,7 @@ def guest_start(
     анонимной формы /login: защита — rate limit, не CSRF)."""
     config = _get_config_or_404(db, token)
     if not config.is_active:
-        return templates.TemplateResponse("guest/guest_landing.html", {
+        return templates.TemplateResponse(request, "guest/guest_landing.html", {
             "request": request, "config": config, "is_open": False,
             "telegram_login_enabled": telegram_login_enabled(),
         }, status_code=403)
@@ -138,7 +138,7 @@ def guest_start(
             error = "Введите имя"
 
     if not participant:
-        return templates.TemplateResponse("guest/guest_landing.html", {
+        return templates.TemplateResponse(request, "guest/guest_landing.html", {
             "request": request, "config": config, "is_open": True, "error": error,
             "telegram_login_enabled": telegram_login_enabled(),
         }, status_code=400)
@@ -169,7 +169,7 @@ def guest_exam_page(request: Request, token: str, db: Annotated[DBSession, Depen
         for subject in MOCK_SUBJECTS
     ]
 
-    return templates.TemplateResponse("guest/guest_exam.html", {
+    return templates.TemplateResponse(request, "guest/guest_exam.html", {
         "request": request,
         "config": config,
         "participant": participant,
