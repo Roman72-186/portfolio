@@ -1313,3 +1313,7 @@ button.desk-nav-item {
 .cal-peer-score--orange { background: var(--score-orange); }
 .cal-peer-score--lime { background: var(--score-lime); }
 .cal-peer-score--green { background: var(--success); }
+
+/* Мелкая подсказка под полем формы. Общая: до неё каждый экран заводил свой
+   класс на те же три свойства. */
+.field-hint { font-size: 11px; color: var(--dim); margin-top: 4px; line-height: 1.4; }

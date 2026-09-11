@@ -45,7 +45,7 @@ from app.services.feature_periods import get_active_period
 from app.services.stats import avg_score_by_subject_all_time
 from app.services.portfolio import after_gallery_groups, item_source
 from app.services.student_access import get_student_for_staff_access
-from app.services.tz import MSK_TZ, msk_midnight
+from app.services.tz import MSK_TZ, msk_input_value, msk_midnight, parse_msk_local
 from app.services.utils import compress_image, study_duration_text, group_works, has_case_growth
 from app.tmpl import templates
 
@@ -567,6 +567,10 @@ def get_student_profile(
             "lessons_count": student.lessons_count,
             "enrollment_year": student.enrollment_year,
             "university_year": student.university_year,
+            # Срок доступа для формы карточки: `datetime-local` понимает только
+            # местное время без таймзоны, поэтому отдаём московское — в том же
+            # виде, в каком его вводят обратно (`parse_msk_local`).
+            "access_until": msk_input_value(student.access_until),
             "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
             "is_group_member": student.is_group_member,
             "profile_completed": student.profile_completed,
@@ -1152,6 +1156,7 @@ def edit_student_profile(
     enrollment_year: str = Form(""),
     university_year: str = Form(""),
     cohort_tag: str = Form(""),
+    access_until: str = Form(""),
 ):
     student = _check_access(student_id, user, db)
 
@@ -1174,6 +1179,16 @@ def edit_student_profile(
         errors.append("Неверный тариф")
     if cohort_tag and cohort_tag not in COHORT_TAGS:
         errors.append("Неверная метка набора")
+
+    # Срок доступа: пусто — снять ограничение (так оплативший возвращается к
+    # обучению), дата — закрыть кабинет в этот момент по Москве. Мусор в поле
+    # отличаем от пустого явно: `parse_msk_local` на оба случая отвечает None,
+    # и молчаливое «не разобрали — значит сняли» открыло бы доступ тому, кому
+    # его как раз ограничивают.
+    access_until_raw = access_until.strip()
+    parsed_access_until = parse_msk_local(access_until_raw) if access_until_raw else None
+    if access_until_raw and parsed_access_until is None:
+        errors.append("Неверная дата срока доступа")
 
     parsed_enrollment_year = None
     if enrollment_year.strip():
@@ -1212,6 +1227,7 @@ def edit_student_profile(
     if parsed_university_year is not None:
         student.university_year = parsed_university_year
     student.cohort_tag = cohort_tag or None
+    student.access_until = parsed_access_until
     db.commit()
 
     # Invalidate all cached sessions for this student

@@ -26,11 +26,12 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.api.cabinet_student import needs_profile_setup
 from app.cache import invalidate_session
-from app.constants import TARIFF_DISPLAY, MONTHS
+from app.constants import TARIFF_DISPLAY, MONTHS, PAYMENT_URL, SUPPORT_URL
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
 from app.models.user import User
 from app.services.skills_history import skills_history
+from app.services.tz import msk_text
 from app.services.contacts import (
     find_student_by_tg_username,
     normalize_phone,
@@ -42,19 +43,28 @@ from app.tmpl import templates
 router = APIRouter(prefix="/cabinet")
 
 
+
+
 @router.get("/personal", response_class=HTMLResponse)
 def cabinet_personal(
     request: Request,
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    if needs_profile_setup(user):
+    # Порядок проверок важен: у ученика с закрытым доступом анкету не просим.
+    # `/cabinet/profile` закрыт тем же запретом и отбрасывает обратно сюда —
+    # редирект на него первым закольцевал бы страницу насмерть. Да и смысла в
+    # анкете уже нет: доступ кончился, человек пришёл решать про оплату.
+    if not user.get("access_expired") and needs_profile_setup(user):
         return RedirectResponse("/cabinet/profile", status_code=302)
 
     return templates.TemplateResponse(request, "cabinet_personal.html", {
         "request": request,
         "user": user,
         "saved": request.query_params.get("saved") == "1",
+        "support_url": SUPPORT_URL,
+        "payment_url": PAYMENT_URL,
+        "access_until_text": msk_text(user.get("access_until")),
         # Динамика самооценки навыков (владелец 03.09.2026): «в начале
         # обучения было так, в середине уже вот так» — сравнение по датам.
         "skills": skills_history(db, user["user_id"]),

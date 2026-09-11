@@ -18,6 +18,7 @@ from app.cache import (
     pop_telegram_oidc_pkce, set_telegram_oidc_pkce,
 )
 from app.config import settings
+from app.constants import SUPPORT_URL, TRIAL_ACCESS_UNTIL_MSK, TRIAL_START_PAYLOAD
 from app.db.database import get_db
 from app.dependencies import (
     _as_utc, get_current_user, require_internal_api_token, require_lab3d_token,
@@ -42,6 +43,7 @@ from app.services.telegram_login import (
     exchange_code as tg_exchange_code,
     verify_id_token as tg_verify_id_token,
 )
+from app.services.tz import parse_msk_local
 from app.services import drive as drive_service
 from app.services import guest_exam as guest_exam_service
 from app.services import telegram as telegram_service
@@ -832,7 +834,9 @@ class TelegramUpdate(BaseModel):
 
 
 # Единый контакт поддержки — тот же, что и на login.html/404.html.
-_SUPPORT_URL = "https://t.me/roman_chatbots"
+# Единая ссылка поддержки живёт в app/constants.py — её же показывает
+# экран закрытого доступа в «Личной информации».
+_SUPPORT_URL = SUPPORT_URL
 
 
 async def _send_membership_denied(chat_id: int) -> None:
@@ -968,6 +972,7 @@ async def _handle_telegram_link_start(
 
 async def _handle_telegram_new_start(
     db: DBSession, *, chat_id: int, tg_from: _TgFrom | None, base_url: str,
+    trial: bool = False,
 ) -> None:
     """Обычный /start без payload — новый ученик либо повторный вход уже
     привязанного Telegram-аккаунта. Членство в канале проверяется сразу;
@@ -991,6 +996,13 @@ async def _handle_telegram_new_start(
         return
 
     user = _upsert_telegram_user(db, chat_id=chat_id, tg_from=tg_from, is_group_member=True)
+    # Срок ставим только новичку по ссылке пробного набора и только если он
+    # ещё не задан: повторный /start по той же ссылке не должен ни продлевать
+    # срок, ни обрезать доступ тому, кто уже оплатил и учится дальше.
+    if trial and user.access_until is None:
+        trial_deadline = parse_msk_local(TRIAL_ACCESS_UNTIL_MSK)
+        if trial_deadline is not None:
+            user.access_until = trial_deadline
     db.commit()
     await _issue_and_send_login_link(db, user, chat_id, base_url)
 
@@ -1003,7 +1015,12 @@ async def _handle_telegram_message(db: DBSession, message: _TgMessage, base_url:
 
     chat_id = message.chat.id
     payload = payload.strip()
-    if payload:
+    if payload == TRIAL_START_PAYLOAD:
+        # Ссылка пробного набора: вход как у всех, но со сроком доступа.
+        await _handle_telegram_new_start(
+            db, chat_id=chat_id, tg_from=message.from_user, base_url=base_url, trial=True,
+        )
+    elif payload:
         await _handle_telegram_link_start(db, chat_id=chat_id, raw_token=payload, tg_from=message.from_user, base_url=base_url)
     else:
         await _handle_telegram_new_start(db, chat_id=chat_id, tg_from=message.from_user, base_url=base_url)

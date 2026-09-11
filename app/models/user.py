@@ -78,6 +78,24 @@ class User(Base):
     archived_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
     )
+    # Срок доступа: наступил — ученик заходит, но видит только «Личную
+    # информацию» со ссылкой на оплату и поддержку (владелец 11.09.2026, про
+    # пробный набор предобучения 18-27.09: «доступ закрыт и он остаётся только
+    # на экране Личная информация, ссылка на поддержку»). ЧЕТВЁРТОЕ состояние
+    # рядом с блокировкой, архивом и soft-delete — и единственное, где вход
+    # остаётся рабочим: те три закрывают кабинет целиком, а здесь человек
+    # должен дочитать условия и оплатить.
+    #
+    # Поле намеренно НЕ про пробный период: та же дата закрывает доступ любому
+    # ученику, который перестал платить. NULL — доступ бессрочный, так живут
+    # все действующие ученики.
+    #
+    # Хранится в UTC, время суток значимо (отсечка «27 сентября 23:30»), —
+    # поэтому конвертация через `app.services.tz.parse_msk_local`, как у
+    # `TaskBlock.closes_at`, а не через `msk_midnight`.
+    access_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

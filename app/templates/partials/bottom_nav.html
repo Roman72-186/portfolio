@@ -39,7 +39,7 @@
     {% set nav_role_name = nav_role_name|default(user.role.name|default(""), true) %}
 {% endif %}
 {% set show_scores_nav = false %}
-{% set student_items = student_nav_items() %}
+{% set student_items = student_nav_items(user.access_expired|default(false)) %}
 {% set active_tab = active_tab|default("") %}
 {% set active_item = student_items | selectattr('key', 'equalto', active_tab) | list | first %}
 

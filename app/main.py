@@ -24,6 +24,7 @@ from app.api import cabinet_tracker
 from app.api import homework_submission
 from app.api import lab_assets
 from app.api import student_review
+from app.dependencies import ACCESS_EXPIRED_DETAIL
 from app.limiter import limiter
 from app.services.rbac import seed_roles_and_permissions
 from app.services import n8n as n8n_service
@@ -123,8 +124,14 @@ async def forbidden_handler(request: Request, exc):
     if "application/json" in accept or "application/json" in content_type:
         detail = getattr(exc, "detail", "Forbidden")
         return JSONResponse(status_code=403, content={"detail": detail})
-    from app.tmpl import templates
     detail = getattr(exc, "detail", "")
+    # Истёкший срок доступа (`User.access_until`) — не тупик, а переадресация:
+    # ученику оставлена «Личная информация» со ссылкой на оплату, туда его и
+    # уводим вместо заглушки «Нет доступа». Зацикливания не будет — сам
+    # `/cabinet/personal` в белом списке `dependencies.py` и 403 не отдаёт.
+    if detail == ACCESS_EXPIRED_DETAIL:
+        return RedirectResponse("/cabinet/personal", status_code=302)
+    from app.tmpl import templates
     if "заблокирован" in detail.lower():
         reason = "Ваш аккаунт заблокирован. Обратитесь к администратору."
     elif "удалён" in detail.lower():

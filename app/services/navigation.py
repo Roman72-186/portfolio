@@ -246,7 +246,14 @@ def curator_nav_items() -> tuple[NavItem, ...]:
     return CURATOR_NAV_ITEMS
 
 
-def student_nav_items() -> tuple[StudentNavItem, ...]:
+def student_nav_items(access_expired: bool = False) -> tuple[StudentNavItem, ...]:
+    """У ученика с истёкшим сроком доступа (`User.access_until`) в меню
+    остаётся только «Личная информация» — остальные разделы ему всё равно
+    отдадут 403 из `get_current_user`, и меню из живых на вид ссылок,
+    отбрасывающих обратно, читалось бы как поломка платформы, а не как
+    закрытый доступ."""
+    if access_expired:
+        return tuple(item for item in STUDENT_NAV_ITEMS if item.key == "personal")
     return STUDENT_NAV_ITEMS
 
 

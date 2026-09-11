@@ -3,7 +3,7 @@
 {% block title %}Личная информация{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/account_actions.css?v=1">
-<link rel="stylesheet" href="/static/css/personal_ios.css?v=6">
+<link rel="stylesheet" href="/static/css/personal_ios.css?v=7">
 {% endblock %}
 {% block content %}
 <div class="prs-page ios-personal">
@@ -15,6 +15,22 @@
 
     {% if saved %}
     <div class="prs-saved">Контакты сохранены.</div>
+    {% endif %}
+
+    {% if user.access_expired %}
+    <div class="prs-access-closed">
+        <h2>Доступ закрыт</h2>
+        <p>
+            {% if access_until_text %}Срок доступа закончился {{ access_until_text }} по Москве.{% endif %}
+            Чтобы вернуться к урокам и заданиям, оплатите обучение – доступ откроется снова.
+        </p>
+        <div class="prs-access-closed-actions">
+            {% if payment_url %}
+            <a href="{{ payment_url }}" target="_blank" rel="noopener noreferrer" class="btn-blue">Оплатить обучение</a>
+            {% endif %}
+            <a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" class="btn-outline">Написать в поддержку</a>
+        </div>
+    </div>
     {% endif %}
 
     <div class="prs-section-title">Контакты</div>

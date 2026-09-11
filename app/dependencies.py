@@ -22,6 +22,34 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+# Маркер отказа по истёкшему сроку доступа (`User.access_until`). Обработчик
+# 403 в `app/main.py` узнаёт отказ по этой строке и вместо заглушки
+# «Нет доступа» уводит ученика на «Личную информацию» — единственный экран,
+# который ему оставлен.
+ACCESS_EXPIRED_DETAIL = "Срок доступа истёк"
+
+# Что остаётся открытым, когда срок доступа истёк. Список закрытый: всё, чего
+# в нём нет, закрывается само — новый роутер не нужно вспоминать и подшивать
+# руками (владелец 11.09.2026: «доступ закрыт и он остаётся только на экране
+# Личная информация»).
+#
+# `/cabinet/superadmin/impersonate/stop` здесь не по ошибке: режим «глазами
+# ученика» намеренно не обходит запрет — иначе суперадмин не увидит того, что
+# видит ученик, — и без этого пути он бы застрял в чужой шкуре без выхода.
+ACCESS_EXPIRED_ALLOWED_PREFIXES = (
+    "/cabinet/personal",
+    "/cabinet/superadmin/impersonate/stop",
+    "/auth",
+    "/logout",
+    "/static",
+    "/health",
+)
+
+
+def is_path_allowed_when_access_expired(path: str) -> bool:
+    return path.startswith(ACCESS_EXPIRED_ALLOWED_PREFIXES)
+
+
 def get_current_user(
     request: Request,
     response: Response,
@@ -101,6 +129,23 @@ def get_current_user(
     if role_rank == 0 and not user.is_admin and not user.is_group_member:
         raise HTTPException(status_code=403, detail="Доступ возможен только участникам группы")
 
+    # Истёкший срок доступа — четвёртое состояние рядом с блокировкой, архивом
+    # и удалением, и единственное, где вход остаётся рабочим: человек должен
+    # дойти до «Личной информации», прочитать условие и оплатить. Проверка
+    # живёт здесь, а не в middleware: срок доступа — такая же часть вопроса
+    # «можно ли этому аккаунту пользоваться кабинетом», как `is_active`, и
+    # свежая строка `User` уже прочитана из базы прямо над этим местом.
+    # Middleware пришлось бы заново разбирать cookie и сессию — тот же код во
+    # втором слое.
+    #
+    # Срок держит только учеников (`role_rank == 1`): случайная дата на строке
+    # сотрудника не должна запирать кабинет куратору.
+    access_expired = False
+    if role_rank == 1 and user.access_until is not None:
+        access_expired = _as_utc(user.access_until) <= now
+    if access_expired and not is_path_allowed_when_access_expired(request.url.path):
+        raise HTTPException(status_code=403, detail=ACCESS_EXPIRED_DETAIL)
+
     result = {
         "session_id": session.id,
         "impersonated_by_id": session.impersonated_by_id,
@@ -131,6 +176,8 @@ def get_current_user(
         "course_periods": user.course_periods,
         "lessons_count": user.lessons_count,
         "enrolled_at": user.enrolled_at,
+        "access_until": user.access_until,
+        "access_expired": access_expired,
         "created_at": user.created_at,
         "role_name": role_name,
         "role_rank": role_rank,

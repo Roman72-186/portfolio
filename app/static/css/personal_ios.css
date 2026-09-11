@@ -249,3 +249,36 @@
 }
 .ios-personal .prs-skill-point strong { font-size: 15px; }
 .ios-personal .prs-skill-point small { font-size: 11px; color: var(--dim); }
+
+/* ── Закрытый доступ (`User.access_until`) ────────────────────────────────
+   Срок доступа истёк: ученику оставлен только этот экран, отсюда он уходит
+   оплачивать или писать в поддержку (владелец 11.09.2026). */
+.ios-personal .prs-access-closed {
+    background: var(--warning-soft);
+    border: 1px solid var(--warning-tint);
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+.ios-personal .prs-access-closed h2 {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--warning-ink);
+    margin: 0 0 8px;
+}
+.ios-personal .prs-access-closed p {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--warning-text);
+    margin: 0 0 16px;
+}
+.ios-personal .prs-access-closed-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.ios-personal .prs-access-closed-actions > a {
+    flex: 1 1 200px;
+    justify-content: center;
+    text-align: center;
+}

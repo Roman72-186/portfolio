@@ -1405,6 +1405,11 @@ function renderProfile(data) {
     if (s.past_tariffs) {
         html += profileField('Прошлые тарифы', s.past_tariffs, true);
     }
+    // Строку показываем только тем, у кого срок задан: у большинства учеников
+    // доступ бессрочный, и пустое «Доступ до» в каждой карточке было бы шумом.
+    if (s.access_until) {
+        html += profileField('Доступ до', s.access_until.replace('T', ' '));
+    }
     if (s.about) {
         html += '<div class="profile-field full-width">'
             + '<div class="profile-field-label">О себе</div>'
@@ -2819,6 +2824,13 @@ function startEditProfile() {
             return '<option value="' + key + '"' + (s.cohort_tag === key ? ' selected' : '') + '>' + COHORT_TAG_LABELS[key] + '</option>';
         }).join('')
         + '</select></div>';
+    // Срок доступа. Пусто — учится без ограничения, так живут все действующие
+    // ученики; дата — в этот момент кабинет закроется и останется одна «Личная
+    // информация». Очистить поле = вернуть доступ оплатившему.
+    html += '<div class="profile-field"><div class="profile-field-label">Доступ до</div>'
+        + '<input type="datetime-local" class="profile-edit-input" id="edit-access_until" value="' + esc(s.access_until || '') + '">'
+        + '<div class="field-hint">Пусто — доступ без ограничения</div>'
+        + '</div>';
     html += '<div class="profile-edit-actions form-actions">'
         + '<button class="profile-cancel-btn" onclick="cancelEditProfile()">Отмена</button>'
         + '<button class="btn-blue btn-save" onclick="saveProfile()">Сохранить</button>'
@@ -2854,6 +2866,7 @@ function saveProfile() {
     body.append('enrollment_year', document.getElementById('edit-enrollment_year').value);
     body.append('university_year', document.getElementById('edit-university_year').value);
     body.append('cohort_tag', document.getElementById('edit-cohort_tag').value);
+    body.append('access_until', document.getElementById('edit-access_until').value);
 
     fetch('/cabinet/students/' + _currentStudentId + '/profile', { method: 'POST', body: body })
         .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
