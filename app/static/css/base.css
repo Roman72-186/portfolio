@@ -39,6 +39,11 @@
     --ok-strong:    #047857;
     --success-text: #166534;
     --gold:         #FCD34D;
+    /* 4-тиерный градиент балла (Пробники): red/orange/lime/green. Тон
+       theme-invariant, как и у существующего .cal-hero-score. */
+    --score-orange: #F97316;
+    --score-lime:   #84CC16;
+    --on-color:     #fff;
 
     /* ── Тип блока конструктора (TaskBlock.block_type) ──
        Категориальная метка, не статус: сознательно не переиспользует
@@ -1291,3 +1296,20 @@ button.desk-nav-item {
 .student-hero-pill--purple { background: rgba(168,85,247,0.35); border-color: rgba(168,85,247,0.5); color: #fff; }
 
 .student-tag-pills { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+
+/* Пробные экзамены: подборка соседей по баллу, владелец 11.09.2026.
+   Модификаторы --red/--orange/--lime/--green — тот же 4-тиерный градиент,
+   что и у бейджа в шапке работы, но под БЭМ-именем своего класса: голые
+   имена вида «score-red» уже независимо переопределены в нескольких
+   шаблонах — совпадение имени в base.css задело бы их как чужое
+   переопределение общего класса, которого на деле нет. */
+.cal-peers-title { margin-top: 14px; font-size: 12px; font-weight: 800; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.cal-peers { display: flex; gap: 8px; margin-top: 8px; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+.cal-peer-card { flex: 0 0 92px; scroll-snap-align: center; position: relative; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+.cal-peer-card img { width: 92px; height: 92px; object-fit: cover; display: block; cursor: zoom-in; }
+.cal-peer-card.is-own { border: 2px solid var(--blue); box-shadow: var(--shadow-blue); }
+.cal-peer-score { position: absolute; bottom: 4px; right: 4px; font-size: 11px; font-weight: 900; color: var(--on-color); padding: 2px 6px; border-radius: var(--r-pill); background: var(--dim); }
+.cal-peer-score--red { background: var(--error); }
+.cal-peer-score--orange { background: var(--score-orange); }
+.cal-peer-score--lime { background: var(--score-lime); }
+.cal-peer-score--green { background: var(--success); }

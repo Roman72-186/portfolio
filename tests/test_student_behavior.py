@@ -457,6 +457,54 @@ def test_cycle_page_shows_closed_mock_cycle(auth_client, db):
     assert "75 / 100" in resp.text
 
 
+def test_portfolio_wires_score_neighbors_peer_strip(auth_client, db, user_factory):
+    """/cabinet/portfolio включает showPeers и пробрасывает score_neighbors
+    в JSON календаря (подборка по баллу, владелец 11.09.2026)."""
+    from app.models.exam_assignment import ExamAssignment, ExamTicket
+    from app.models.exam_cycle import ExamCycle
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+
+    client, user = auth_client
+    other = user_factory(vk_id=830_001, name="Other")
+
+    assignment = ExamAssignment(
+        title="Пробник", subject="Рисунок", created_by_id=other.id, status="published",
+    )
+    db.add(assignment)
+    db.flush()
+    ticket = ExamTicket(
+        assignment_id=assignment.id, ticket_number=1, title="Билет",
+        start_date=date(2026, 1, 1), end_date=date(2026, 1, 31), assign_to_all=True,
+    )
+    db.add(ticket)
+    db.flush()
+
+    other_cycle = ExamCycle(user_id=other.id, subject="Рисунок", ticket_id=ticket.id, started_at=date(2026, 1, 5))
+    own_cycle = ExamCycle(user_id=user.id, subject="Рисунок", ticket_id=ticket.id, started_at=date(2026, 1, 5))
+    db.add_all([other_cycle, own_cycle])
+    db.flush()
+    db.add(Work(
+        user_id=other.id, work_type=WORK_TYPE_MOCK_EXAM, month="01", year=2026,
+        filename="other-final.jpg", subject="Рисунок", status="success",
+        s3_url="https://example.test/other-final.jpg",
+        cycle_id=other_cycle.id, is_final=True, attempt_number=1, score=65,
+    ))
+    db.add(Work(
+        user_id=user.id, work_type=WORK_TYPE_MOCK_EXAM, month="01", year=2026,
+        filename="own-final.jpg", subject="Рисунок", status="success",
+        s3_url="https://example.test/own-final.jpg",
+        cycle_id=own_cycle.id, is_final=True, attempt_number=1, score=70,
+    ))
+    db.commit()
+
+    resp = client.get("/cabinet/portfolio")
+
+    assert resp.status_code == 200
+    assert "showPeers: true" in resp.text
+    assert "score_neighbors" in resp.text
+    assert "/cabinet/api/portfolio/peer-photo/" in resp.text
+
+
 # 5. Gallery and history
 # ---------------------------------------------------------------------------
 

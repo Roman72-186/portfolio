@@ -1267,6 +1267,146 @@ def test_portfolio_collector_includes_legacy_scored_mock_and_excludes_stages(
     assert "unscored.jpg" not in names     # неоценённый скрыт
 
 
+# ── Подборка соседей по баллу (Портфолио → Пробные экзамены, владелец 11.09.2026) ──
+
+def _mk_ticket(db, *, subject="Рисунок", creator_id):
+    from app.models.exam_assignment import ExamAssignment, ExamTicket
+
+    assignment = ExamAssignment(
+        title="Пробник", subject=subject, created_by_id=creator_id, status="published",
+    )
+    db.add(assignment)
+    db.flush()
+    ticket = ExamTicket(
+        assignment_id=assignment.id, ticket_number=1, title="Билет",
+        start_date=date(2026, 1, 1), end_date=date(2026, 1, 31), assign_to_all=True,
+    )
+    db.add(ticket)
+    db.flush()
+    return ticket
+
+
+def _mk_scored_final_for_ticket(db, *, user_id, ticket_id, subject, score, closed=True):
+    cycle = ExamCycle(
+        user_id=user_id, subject=subject, ticket_id=ticket_id,
+        started_at=date(2026, 1, 5),
+        closed_at=datetime.now(timezone.utc) if closed else None,
+    )
+    db.add(cycle)
+    db.flush()
+    w = Work(
+        user_id=user_id, work_type=WORK_TYPE_MOCK_EXAM, month="01", year=2026,
+        filename=f"final-{user_id}-{subject}.jpg", subject=subject, status="success",
+        cycle_id=cycle.id, is_final=True, attempt_number=1, score=score,
+    )
+    db.add(w)
+    db.commit()
+    return cycle, w
+
+
+def test_collect_cycle_works_peers_none_without_ticket(regular_user, db):
+    """Цикл без ticket_id (легаси) — соседей искать не из чего, score_neighbors=None."""
+    from app.api.cabinet_student import _collect_cycle_works
+
+    cycle = _mk_cycle(db, regular_user.id, subject="Рисунок", closed=True)
+    _mk_final_work(db, regular_user.id, cycle.id, score=70)
+
+    res = _collect_cycle_works(
+        db, regular_user.id, WORK_TYPE_MOCK_EXAM, closed_only=True, include_peers=True,
+    )
+    work = next(w for works in res.values() for w in works)
+    assert work["score_neighbors"] is None
+
+
+def test_collect_cycle_works_peers_shows_however_many_exist(regular_user, user_factory, db):
+    """Правило «показываем сколько есть»: 1 сосед снизу, 0 сверху — не расширяем пул."""
+    from app.api.cabinet_student import _collect_cycle_works
+
+    ticket = _mk_ticket(db, creator_id=regular_user.id)
+    other = user_factory(vk_id=810_001, name="Other")
+    _mk_scored_final_for_ticket(db, user_id=other.id, ticket_id=ticket.id, subject="Рисунок", score=65)
+    _, own_work = _mk_scored_final_for_ticket(
+        db, user_id=regular_user.id, ticket_id=ticket.id, subject="Рисунок", score=70,
+    )
+
+    res = _collect_cycle_works(
+        db, regular_user.id, WORK_TYPE_MOCK_EXAM, closed_only=True, include_peers=True,
+    )
+    work = next(w for w in res["Рисунок"] if w["id"] == own_work.id)
+    nb = work["score_neighbors"]
+    assert [p["score"] for p in nb["below"]] == [65.0]
+    assert nb["above"] == []
+
+
+def test_collect_cycle_works_peers_no_leakage_between_subjects(regular_user, user_factory, db):
+    """Разные предметы = разные билеты = разные пулы соседей."""
+    from app.api.cabinet_student import _collect_cycle_works
+
+    ticket_draw = _mk_ticket(db, subject="Рисунок", creator_id=regular_user.id)
+    ticket_comp = _mk_ticket(db, subject="Композиция", creator_id=regular_user.id)
+    other = user_factory(vk_id=810_002, name="Other")
+    _mk_scored_final_for_ticket(db, user_id=other.id, ticket_id=ticket_draw.id, subject="Рисунок", score=65)
+    _mk_scored_final_for_ticket(db, user_id=other.id, ticket_id=ticket_comp.id, subject="Композиция", score=95)
+    _, drawing_work = _mk_scored_final_for_ticket(
+        db, user_id=regular_user.id, ticket_id=ticket_draw.id, subject="Рисунок", score=70,
+    )
+    _, comp_work = _mk_scored_final_for_ticket(
+        db, user_id=regular_user.id, ticket_id=ticket_comp.id, subject="Композиция", score=70,
+    )
+
+    res = _collect_cycle_works(
+        db, regular_user.id, WORK_TYPE_MOCK_EXAM, closed_only=True, include_peers=True,
+    )
+    drawing = next(w for w in res["Рисунок"] if w["id"] == drawing_work.id)
+    comp = next(w for w in res["Композиция"] if w["id"] == comp_work.id)
+    assert [p["score"] for p in drawing["score_neighbors"]["below"]] == [65.0]
+    assert [p["score"] for p in comp["score_neighbors"]["above"]] == [95.0]
+
+
+def test_collect_cycle_works_peers_payload_has_no_identifying_fields(regular_user, user_factory, db):
+    """Payload соседа — только score + photo_url на прокси-эндпоинт, никогда сырой user_id/s3_url."""
+    import json
+
+    from app.api.cabinet_student import _collect_cycle_works
+
+    ticket = _mk_ticket(db, creator_id=regular_user.id)
+    other = user_factory(vk_id=810_003, name="Other")
+    _, other_work = _mk_scored_final_for_ticket(
+        db, user_id=other.id, ticket_id=ticket.id, subject="Рисунок", score=65,
+    )
+    _mk_scored_final_for_ticket(
+        db, user_id=regular_user.id, ticket_id=ticket.id, subject="Рисунок", score=70,
+    )
+
+    res = _collect_cycle_works(
+        db, regular_user.id, WORK_TYPE_MOCK_EXAM, closed_only=True, include_peers=True,
+    )
+    dumped = json.dumps(res)
+    assert "user_id" not in dumped
+    assert str(other.vk_id) not in dumped
+    work = next(w for w in res["Рисунок"] if w["score"] == 70.0)
+    peer = work["score_neighbors"]["below"][0]
+    assert set(peer.keys()) == {"score", "photo_url"}
+    assert peer["photo_url"] == f"/cabinet/api/portfolio/peer-photo/{other_work.id}"
+
+
+def test_collect_cycle_works_peers_off_by_default(regular_user, user_factory, db):
+    """include_peers=False (по умолчанию, два других вызывающих места) — score_neighbors
+    отсутствует/None даже если формально есть с кем сравнивать — регрессия не ломается."""
+    from app.api.cabinet_student import _collect_cycle_works
+
+    ticket = _mk_ticket(db, creator_id=regular_user.id)
+    other = user_factory(vk_id=810_004, name="Other")
+    _mk_scored_final_for_ticket(db, user_id=other.id, ticket_id=ticket.id, subject="Рисунок", score=65)
+    _mk_scored_final_for_ticket(
+        db, user_id=regular_user.id, ticket_id=ticket.id, subject="Рисунок", score=70,
+    )
+
+    res = _collect_cycle_works(db, regular_user.id, WORK_TYPE_MOCK_EXAM, closed_only=True)
+    work = next(w for works in res.values() for w in works if w["score"] == 70.0)
+    assert work["score_neighbors"] is None
+
+
 def test_staff_students_page_wires_mock_calendar(
     client, admin_user, session_factory, db
 ):

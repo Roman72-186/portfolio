@@ -255,6 +255,30 @@ window.CYCCAL = window.CYCCAL || (function () {
         return html;
     }
 
+    function buildPeers(inst, w) {
+        if (!inst.showPeers) return '';
+        const nb = w.score_neighbors;
+        if (!nb || (!nb.below.length && !nb.above.length)) return '';
+        const cards = [].concat(
+            nb.below.map(function(p) { return { score: p.score, url: p.photo_url, isOwn: false }; }),
+            [{ score: w.score, url: w.s3_url, isOwn: true }],
+            nb.above.map(function(p) { return { score: p.score, url: p.photo_url, isOwn: false }; })
+        );
+        let html = '<div class="cal-peers-title">Сравните с другими работами по этому билету</div>';
+        html += '<div class="cal-peers">';
+        cards.forEach(function(c) {
+            const sc = c.score != null ? Math.round(c.score) : null;
+            html += '<div class="cal-peer-card' + (c.isOwn ? ' is-own' : '') + '"' + (c.isOwn ? ' data-own-peer="1"' : '') + '>';
+            if (c.url) html += renderImg(c.url, '');
+            const scCls = scoreClass(sc);
+            const scMod = scCls === 'no-score' ? '' : ' cal-peer-score--' + scCls.slice(6);
+            html += '<span class="cal-peer-score' + scMod + '">' + (sc != null ? sc : '—') + '</span>';
+            html += '</div>';
+        });
+        html += '</div>';
+        return html;
+    }
+
     function buildStages(w) {
         if (!w.intermediates || !w.intermediates.length) return '';
         let html = '<div class="cal-stages-title">Этапы ('+w.intermediates.length+')</div><div class="cal-stages">';
@@ -302,6 +326,7 @@ window.CYCCAL = window.CYCCAL || (function () {
             html += '<div class="cal-attempt-meta">' + (works.length > 1 ? 'Работ за день: '+works.length : '') + '</div>';
             html += '</div>';
             html += buildHero(inst, w, gallery);
+            html += buildPeers(inst, w);
             if (inst.showStages !== false) html += buildStages(w);
             html += buildFeedback(inst, w);
             html += '</div>';
@@ -350,6 +375,7 @@ window.CYCCAL = window.CYCCAL || (function () {
                 emptyText: cfg.emptyText || 'Работ пока нет.',
                 showFeedback: !!cfg.showFeedback,
                 showStages: cfg.showStages !== false,
+                showPeers: !!cfg.showPeers,
                 state: {}
             };
             renderAll(cfg.key);

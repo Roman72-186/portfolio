@@ -716,3 +716,66 @@ def close_or_expire_mock_exam_attempts(
             MockExamAttempt.ticket_id.is_(None),
         ),
     ).update({"expired_at": now}, synchronize_session=False)
+
+
+def get_score_neighbor_candidates(
+    db: DBSession,
+    *,
+    exclude_user_id: int,
+    work_type: str,
+    ticket_ids: list[int],
+) -> dict[int, list[tuple[float, int]]]:
+    """Батч чужих оценённых финалов по списку ticket_id: {ticket_id: [(score, work_id), ...]}.
+
+    Один запрос на все билеты страницы (не N+1 на работу). work_type фильтруется
+    явно: Отработка может делить cycle_id/ticket_id с исходным Пробником
+    (revision-поля лежат прямо на ExamCycle), но соседи по баллу должны
+    сравнивать «пробник с пробником», а не подмешивать отработки.
+    Возвращает только (score, work_id) — user_id/фото сюда намеренно не идёт,
+    чтобы карточки соседей оставались анонимными; фото резолвится отдельно
+    через прокси-эндпоинт и только для уже отобранных ≤4 соседей.
+    """
+    if not ticket_ids:
+        return {}
+    rows = (
+        db.query(Work.score, Work.id, ExamCycle.ticket_id)
+        .join(ExamCycle, Work.cycle_id == ExamCycle.id)
+        .filter(
+            ExamCycle.ticket_id.in_(ticket_ids),
+            Work.user_id != exclude_user_id,
+            Work.work_type == work_type,
+            Work.status == "success",
+            Work.score.isnot(None),
+            Work.parent_work_id.is_(None),
+        )
+        .all()
+    )
+    out: dict[int, list[tuple[float, int]]] = {}
+    for score, work_id, ticket_id in rows:
+        out.setdefault(ticket_id, []).append((float(score), work_id))
+    return out
+
+
+def pick_score_neighbors(
+    own_score: float,
+    candidates: list[tuple[float, int]],
+) -> dict[str, list[tuple[float, int]]]:
+    """2 ближайших с баллом <= own_score + 2 ближайших с баллом > own_score.
+
+    Равный балл — «снизу» (<=), не отбрасывается: при округлении баллов в
+    небольшой когорте совпадения — обычное дело, молчаливое исключение
+    противоречило бы правилу «показывать сколько есть». Вторичная сортировка
+    по work_id делает выбор детерминированным при нескольких кандидатах
+    с одинаковым баллом.
+    Возвращает {"below": [(score, work_id), ...] по возрастанию, "above": [...]}.
+    """
+    below = sorted(
+        (c for c in candidates if c[0] <= own_score),
+        key=lambda c: (-c[0], c[1]),
+    )[:2]
+    below.sort(key=lambda c: (c[0], c[1]))
+    above = sorted(
+        (c for c in candidates if c[0] > own_score),
+        key=lambda c: (c[0], c[1]),
+    )[:2]
+    return {"below": below, "above": above}

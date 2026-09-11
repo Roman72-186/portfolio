@@ -47,4 +47,7 @@ class ExamCycle(Base):
 
     __table_args__ = (
         Index("ix_exam_cycles_user_subject_started", "user_id", "subject", text("started_at DESC")),
+        # Подборка соседей по баллу (Портфолио → Пробные экзамены) фильтрует
+        # exam_cycles по ticket_id — первый такой запрос в проекте.
+        Index("ix_exam_cycles_ticket_id", "ticket_id"),
     )

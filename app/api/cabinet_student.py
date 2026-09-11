@@ -1,4 +1,5 @@
 import logging
+import mimetypes
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -6,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 from datetime import date
 
-from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query, Body, UploadFile, File
+from fastapi import APIRouter, Request, Depends, Form, HTTPException, Query, Body, UploadFile, File, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
@@ -685,7 +686,7 @@ async def cabinet_portfolio(
     # Пробные экзамены: финалки ЗАКРЫТЫХ циклов в формате дневного календаря
     # (по предметам, со score/этапами) — тот же сборщик, что и во вкладке Пробники.
     mock_works_by_subject = _collect_cycle_works(
-        db, user["user_id"], WORK_TYPE_MOCK_EXAM, closed_only=True
+        db, user["user_id"], WORK_TYPE_MOCK_EXAM, closed_only=True, include_peers=True
     )
     mock_subjects = list(MOCK_SUBJECTS)
     if "Без предмета" in mock_works_by_subject:
@@ -745,11 +746,16 @@ def _collect_cycle_works(
     work_type: str,
     *,
     closed_only: bool = False,
+    include_peers: bool = False,
 ) -> dict[str, list[dict]]:
     """Календарь Цикла Пробника: финалки + промежуточные + feedback по предметам.
 
     closed_only=True — только финалы из ЗАКРЫТЫХ циклов (для Портфолио →
     Пробные экзамены: показываем уже оценённые/завершённые).
+    include_peers=True — добавляет score_neighbors: анонимную подборку 2+2 чужих
+    работ того же билета с соседними баллами (владелец 11.09.2026, только для
+    /cabinet/portfolio — см. cabinet_portfolio()). Не влияет на два других
+    вызывающих места (render_cycle_calendar, staff-портфолио), они его не передают.
     """
     from app.models.feedback import Feedback, FeedbackPhoto, FeedbackMessage
     from app.models.exam_cycle import ExamCycle
@@ -857,6 +863,16 @@ def _collect_cycle_works(
             if title:
                 ticket_title_by_cycle[cid] = title
 
+    peers_by_ticket: dict[int, list[tuple[float, int]]] = {}
+    if include_peers and cycle_ids:
+        from app.services.exam_cycle import get_score_neighbor_candidates
+
+        ticket_ids = list({c.ticket_id for c in cycles_by_id.values() if c.ticket_id})
+        if ticket_ids:
+            peers_by_ticket = get_score_neighbor_candidates(
+                db, exclude_user_id=user_id, work_type=work_type, ticket_ids=ticket_ids,
+            )
+
     def _serialize(w: Work) -> dict:
         created = w.created_at
         if created and created.tzinfo is None:
@@ -879,6 +895,21 @@ def _collect_cycle_works(
             }
         cycle = cycles_by_id.get(w.cycle_id) if w.cycle_id else None
         display_url = last_student_photo_by_work.get(w.id) or w.s3_url
+        score_neighbors = None
+        if include_peers and w.score is not None and cycle and cycle.ticket_id:
+            from app.services.exam_cycle import pick_score_neighbors
+
+            picked = pick_score_neighbors(float(w.score), peers_by_ticket.get(cycle.ticket_id, []))
+            score_neighbors = {
+                "below": [
+                    {"score": s, "photo_url": f"/cabinet/api/portfolio/peer-photo/{wid}"}
+                    for s, wid in picked["below"]
+                ],
+                "above": [
+                    {"score": s, "photo_url": f"/cabinet/api/portfolio/peer-photo/{wid}"}
+                    for s, wid in picked["above"]
+                ],
+            }
         return {
             "id": w.id,
             "subject": w.subject or "",
@@ -900,6 +931,7 @@ def _collect_cycle_works(
                 for i in intermediates_by_parent.get(w.id, [])
             ],
             "feedback": fb_payload,
+            "score_neighbors": score_neighbors,
         }
 
     by_subject: dict[str, list[dict]] = {s: [] for s in MOCK_SUBJECTS}
@@ -1007,3 +1039,97 @@ def get_exam_ticket(
             "end_date": ticket.end_date.isoformat(),
         },
     })
+
+
+# ── GET /cabinet/api/portfolio/peer-photo/{work_id} ──────────────────────────
+
+def _resolve_peer_display_path(db: DBSession, w: Work) -> str | None:
+    """Путь к файлу для чужой карточки в подборке по баллу — тот же приоритет,
+    что и для своей карточки в _collect_cycle_works: последнее фото ученика
+    из диалога ОС (после которого выставлен балл), иначе исходная загрузка.
+    Иначе сравнение было бы нечестным — у себя финальное фото, у чужих исходник.
+    """
+    from app.models.feedback import Feedback, FeedbackMessage
+
+    fb = db.query(Feedback).filter(Feedback.work_id == w.id).first()
+    if fb:
+        row = (
+            db.query(FeedbackMessage.photo_s3_path)
+            .filter(
+                FeedbackMessage.feedback_id == fb.id,
+                FeedbackMessage.sender_role == "student",
+                FeedbackMessage.photo_s3_path.isnot(None),
+            )
+            .order_by(FeedbackMessage.created_at.desc(), FeedbackMessage.id.desc())
+            .first()
+        )
+        if row and row[0]:
+            return row[0]
+    return w.s3_path
+
+
+@router.get("/api/portfolio/peer-photo/{work_id}")
+def get_peer_photo(
+    work_id: int,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Стримит байты чужого фото для анонимной подборки по баллу
+    (Портфолио → Пробные экзамены, владелец 11.09.2026).
+
+    Не redirect на публичный CDN URL: пути пробников содержат vk_id
+    (`s3_path_probnik_cycle`/`s3_path_mock_exam`), а сравнение задумано
+    анонимным — VK ID автора чужой работы не должен светиться даже во
+    вкладке «Сеть» браузера. Поэтому байты идут через сервер.
+    """
+    from app.models.exam_cycle import ExamCycle
+
+    peer = (
+        db.query(Work)
+        .filter(
+            Work.id == work_id,
+            Work.status == "success",
+            Work.score.isnot(None),
+            Work.parent_work_id.is_(None),
+            Work.cycle_id.isnot(None),
+        )
+        .first()
+    )
+    if not peer:
+        raise HTTPException(404)
+    peer_cycle = db.query(ExamCycle).filter(ExamCycle.id == peer.cycle_id).first()
+    if not peer_cycle or not peer_cycle.ticket_id:
+        raise HTTPException(404)
+
+    # Право доступа: тот же критерий, что породил пул соседей в
+    # get_score_neighbor_candidates — свой оценённый финал по тому же
+    # ticket_id. Не «именно один из 4 выбранных соседей» — граница
+    # приватности это «тот же билет, оба оценены», топ-4 — UI-решение поверх неё.
+    shares_ticket = (
+        db.query(Work.id)
+        .join(ExamCycle, Work.cycle_id == ExamCycle.id)
+        .filter(
+            ExamCycle.ticket_id == peer_cycle.ticket_id,
+            Work.user_id == user["user_id"],
+            Work.work_type == peer.work_type,
+            Work.status == "success",
+            Work.score.isnot(None),
+            Work.parent_work_id.is_(None),
+        )
+        .first()
+    )
+    if not shares_ticket:
+        raise HTTPException(404)
+
+    s3_path = _resolve_peer_display_path(db, peer)
+    if not s3_path:
+        raise HTTPException(404)
+    data = s3_service.download_from_s3(s3_path)
+    if not data:
+        raise HTTPException(404)
+    content_type = mimetypes.guess_type(s3_path)[0] or "image/jpeg"
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
