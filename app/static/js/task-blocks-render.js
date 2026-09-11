@@ -188,29 +188,38 @@
             function renderScale(block, index) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-scale'), block);
                 if (block.body) wrap.appendChild(el('p', 'lrn-blk-question-body', block.body));
+                var min = typeof block.scale_min === 'number' ? block.scale_min : 0;
                 var max = block.scale_max || 10;
                 var saved = block.answer_option_texts || {};
                 var locked = api.answered || !!block.answered;
                 (block.options || []).forEach(function (option, oi) {
                     var row = el('div', 'lrn-scale-row');
                     row.appendChild(el('span', 'lrn-scale-name', option.text));
+                    if (option.description) {
+                        row.appendChild(el('p', 'trk-hint', option.description));
+                    }
                     var control = el('div', 'lrn-scale-control');
                     var input = el('input', 'lrn-scale-input');
                     input.type = 'range';
-                    input.min = '1';
+                    input.min = String(min);
                     input.max = String(max);
                     input.step = '1';
                     input.id = 'lrn-scale-' + api.uid + '-' + index + '-' + oi;
                     input.setAttribute('aria-label', option.text);
                     input.setAttribute('data-scale-option', option.id);
                     input.disabled = locked;
-                    var savedValue = saved[option.id];
-                    var valueLabel = el('span', 'lrn-scale-value', savedValue ? String(savedValue) : '—');
-                    if (savedValue) {
+                    // savedValue может быть "0" — валидная оценка, не «ещё не
+                    // отвечено». Строка "0" truthy в JS, но проверяем явно, а
+                    // не полагаемся на это (владелец 12.09.2026: нижний край
+                    // шкалы теперь содержательный ответ, не пустота).
+                    var hasSaved = typeof saved[option.id] !== 'undefined' && saved[option.id] !== null;
+                    var savedValue = hasSaved ? saved[option.id] : null;
+                    var valueLabel = el('span', 'lrn-scale-value', hasSaved ? String(savedValue) : '—');
+                    if (hasSaved) {
                         input.value = String(savedValue);
                         input.dataset.touched = 'true';
                     } else {
-                        input.value = String(Math.round((1 + max) / 2));
+                        input.value = String(Math.round((min + max) / 2));
                     }
                     input.addEventListener('input', function () {
                         input.dataset.touched = 'true';
@@ -219,6 +228,12 @@
                     control.appendChild(input);
                     control.appendChild(valueLabel);
                     row.appendChild(control);
+                    if (option.scale_min_label || option.scale_max_label) {
+                        var labels = el('div', 'lrn-scale-labels');
+                        labels.appendChild(el('span', null, option.scale_min_label || String(min)));
+                        labels.appendChild(el('span', null, option.scale_max_label || String(max)));
+                        row.appendChild(labels);
+                    }
                     wrap.appendChild(row);
                 });
                 return wrap;

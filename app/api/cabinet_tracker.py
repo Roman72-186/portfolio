@@ -35,7 +35,7 @@ from app.dependencies import require_csrf_header, require_student
 from app.models.task_block import (
     BLOCK_PHOTO, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_RULES, BLOCK_SCALE, BLOCK_TIMED,
     BLOCK_UPLOAD, BLOCK_VIDEO, MAX_BLOCKS, MAX_SUBMISSION_IMAGES, QUESTION_TEXT,
-    SCALE_MAX, SUBMISSION_BLOCK_TYPES, TaskBlock,
+    SCALE_MAX, SCALE_MIN, SUBMISSION_BLOCK_TYPES, TaskBlock,
 )
 from app.models.tracker import (
     EVENT_KIND_LABELS,
@@ -387,8 +387,15 @@ def cabinet_tracker_task_blocks(
         elif block.block_type == BLOCK_SCALE:
             # Диагностика навыков: варианты — навыки, ответ — оценка каждому.
             item["scale_max"] = SCALE_MAX
+            item["scale_min"] = SCALE_MIN
             item["options"] = [
-                {"id": o.id, "text": o.text}
+                {
+                    "id": o.id,
+                    "text": o.text,
+                    "description": o.description,
+                    "scale_min_label": o.scale_min_label,
+                    "scale_max_label": o.scale_max_label,
+                }
                 for o in options.get(block.id, [])
             ]
             item["answer_option_texts"] = {

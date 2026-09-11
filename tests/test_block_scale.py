@@ -229,3 +229,132 @@ def test_constructor_offers_the_scale_block(admin_client):
 
     assert 'data-add-block="scale"' in page.text
     assert "Шкала навыков" in page.text
+
+
+# ── описание навыка и подписи краёв (владелец 11.09.2026) ──────────────────
+
+def test_scale_option_keeps_description_and_edge_labels(db):
+    """Раунд-трип трёх новых полей через sync_blocks: и создание, и правка по
+    id не должны их терять."""
+    task = _task(db)
+    blocks = sync_blocks(db, task_id=task.id, items=[{
+        "block_type": BLOCK_SCALE,
+        "title": "Оцени себя",
+        "options": [{
+            "id": None,
+            "text": "Стрессоустойчивость",
+            "is_correct": False,
+            "description": "Как ты справляешься с дедлайнами и правками.",
+            "scale_min_label": "Теряюсь при малейшем давлении",
+            "scale_max_label": "Спокоен в любой запарке",
+        }],
+    }])
+    db.commit()
+    option = db.query(TaskBlockOption).filter(
+        TaskBlockOption.block_id == blocks[0].id
+    ).one()
+    assert option.description == "Как ты справляешься с дедлайнами и правками."
+    assert option.scale_min_label == "Теряюсь при малейшем давлении"
+    assert option.scale_max_label == "Спокоен в любой запарке"
+
+    # Правка тем же id должна обновить поля, а не завести вторую строку.
+    sync_blocks(db, task_id=task.id, items=[{
+        "id": blocks[0].id,
+        "block_type": BLOCK_SCALE,
+        "title": "Оцени себя",
+        "options": [{
+            "id": option.id,
+            "text": "Стрессоустойчивость",
+            "is_correct": False,
+            "description": "Новое описание.",
+            "scale_min_label": "0",
+            "scale_max_label": "10",
+        }],
+    }])
+    db.commit()
+    db.refresh(option)
+    assert option.description == "Новое описание."
+    assert option.scale_min_label == "0"
+    assert option.scale_max_label == "10"
+
+
+def test_scale_score_of_zero_is_a_real_answer_not_a_blank(db, regular_user):
+    """Нижний край шкалы теперь 0 (владелец 12.09.2026) — это содержательный
+    ответ «навык совсем не развит», не «ещё не отвечено»."""
+    task = _task(db)
+    block = _scale(db, task, skills=("Уверенность",))
+    option = db.query(TaskBlockOption).filter(TaskBlockOption.block_id == block.id).one()
+
+    response = save_response(
+        db, task_id=task.id, user_id=regular_user.id, blocks=[block],
+        answers={block.id: {"option_ids": [option.id], "option_texts": {option.id: "0"}}},
+    )
+    db.commit()
+
+    assert get_selected_option_texts(db, response_id=response.id)[option.id] == "0"
+    history = skills_history(db, regular_user.id)
+    assert history[0]["points"][0]["score"] == 0
+    assert history[0]["points"][0]["percent"] == 0
+
+
+def test_history_matches_skill_names_ignoring_case_and_spacing(db, regular_user):
+    """Куратор набирает название заново в каждой новой волне — опечатка вида
+    другого регистра не должна тихо завести вторую строку в профиле."""
+    first_task = _task(db, "Диагностика в начале")
+    first_block = _scale(db, first_task, skills=("Стрессоустойчивость",))
+    first_option = db.query(TaskBlockOption).filter(
+        TaskBlockOption.block_id == first_block.id
+    ).one()
+    save_response(
+        db, task_id=first_task.id, user_id=regular_user.id, blocks=[first_block],
+        answers={first_block.id: {
+            "option_ids": [first_option.id], "option_texts": {first_option.id: "3"},
+        }},
+    )
+    second_task = _task(db, "Диагностика в середине")
+    second_block = _scale(db, second_task, skills=(" стрессоустойчивость ",))
+    second_option = db.query(TaskBlockOption).filter(
+        TaskBlockOption.block_id == second_block.id
+    ).one()
+    save_response(
+        db, task_id=second_task.id, user_id=regular_user.id, blocks=[second_block],
+        answers={second_block.id: {
+            "option_ids": [second_option.id], "option_texts": {second_option.id: "8"},
+        }},
+    )
+    db.commit()
+
+    history = skills_history(db, regular_user.id)
+
+    assert len(history) == 1
+    assert sorted(p["score"] for p in history[0]["points"]) == [3, 8]
+    # Показанное название — из последнего по дате ответа.
+    assert history[0]["skill"] == "стрессоустойчивость"
+
+
+def test_personal_page_shows_skill_description(auth_client, db):
+    client, user = auth_client
+    task = _task(db)
+    blocks = sync_blocks(db, task_id=task.id, items=[{
+        "block_type": BLOCK_SCALE,
+        "title": "Оцени себя",
+        "options": [{
+            "id": None,
+            "text": "Стрессоустойчивость",
+            "is_correct": False,
+            "description": "Как ты справляешься с дедлайнами.",
+        }],
+    }])
+    db.commit()
+    option = db.query(TaskBlockOption).filter(
+        TaskBlockOption.block_id == blocks[0].id
+    ).one()
+    save_response(
+        db, task_id=task.id, user_id=user.id, blocks=[blocks[0]],
+        answers={blocks[0].id: {"option_ids": [option.id], "option_texts": {option.id: "6"}}},
+    )
+    db.commit()
+
+    page = client.get("/cabinet/personal")
+
+    assert "Как ты справляешься с дедлайнами." in page.text

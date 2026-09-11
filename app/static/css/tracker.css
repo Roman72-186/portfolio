@@ -1318,6 +1318,9 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 }
 .lrn-scale-input:disabled { opacity: 0.5; cursor: default; }
 .lrn-scale-value { min-width: 24px; flex: 0 0 auto; text-align: center; font: 700 14px/1 var(--font-body); color: var(--ink); }
+/* Пояснения к краям шкалы («навык совсем не развит» / «уверенно применяет») —
+   владелец 11.09.2026, анкета «Метакомпетенции». */
+.lrn-scale-labels { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
 
 /* «На сегодня всё» — ученик закрыл доступное и ждёт следующей даты. */
 .lrn-waiting { border-color: var(--blue); margin-bottom: 12px; }

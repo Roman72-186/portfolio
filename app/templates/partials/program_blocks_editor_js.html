@@ -248,10 +248,26 @@ function blockRowHTML(type) {
         + '</div>';
 }
 
-function blockOptionHTML() {
+function blockOptionHTML(type) {
+    // Описание навыка и подписи краёв шкалы — только у BLOCK_SCALE (владелец
+    // 11.09.2026, анкета «Метакомпетенции»). Обёрнуты в свой блок с
+    // flex-basis:100%, чтобы .prg-option остался общей строкой для
+    // вопроса/правил и переносил себя на вторую строку только когда этот
+    // блок присутствует.
+    var scaleExtra = type === 'scale'
+        ? ''
+            + '<div class="prg-option-extra">'
+            + '  <textarea data-b-option-description maxlength="5000" placeholder="Описание компетенции, необязательно"></textarea>'
+            + '  <div class="prg-grid2">'
+            + '    <input type="text" data-b-option-min-label maxlength="200" placeholder="Что значит нижняя граница (0)">'
+            + '    <input type="text" data-b-option-max-label maxlength="200" placeholder="Что значит верхняя граница (10)">'
+            + '  </div>'
+            + '</div>'
+        : '';
     return ''
         + '<div class="prg-option" data-b-option>'
         + '  <input type="text" data-b-option-text maxlength="300" placeholder="Вариант ответа">'
+        + scaleExtra
         + '  <label class="prg-field--row"><input type="checkbox" data-b-option-correct><span>Верный</span></label>'
         + '  <button type="button" class="btn-outline" data-remove-b-option>Убрать</button>'
         + '</div>';
@@ -308,7 +324,7 @@ function fillBlockRow(row, block) {
     if (row.getAttribute('data-block-type') === 'rules') {
         var rulesHolder = row.querySelector('[data-b-options]');
         (block.options || []).forEach(function (option) {
-            rulesHolder.insertAdjacentHTML('beforeend', blockOptionHTML());
+            rulesHolder.insertAdjacentHTML('beforeend', blockOptionHTML('rules'));
             var ruleRow = rulesHolder.lastElementChild;
             if (option.id) ruleRow.setAttribute('data-b-option-id', option.id);
             ruleRow.querySelector('[data-b-option-text]').value = option.text;
@@ -320,10 +336,13 @@ function fillBlockRow(row, block) {
     if (row.getAttribute('data-block-type') === 'scale') {
         var scaleHolder = row.querySelector('[data-b-options]');
         (block.options || []).forEach(function (option) {
-            scaleHolder.insertAdjacentHTML('beforeend', blockOptionHTML());
+            scaleHolder.insertAdjacentHTML('beforeend', blockOptionHTML('scale'));
             var optionRow = scaleHolder.lastElementChild;
             if (option.id) optionRow.setAttribute('data-b-option-id', option.id);
             optionRow.querySelector('[data-b-option-text]').value = option.text;
+            optionRow.querySelector('[data-b-option-description]').value = option.description || '';
+            optionRow.querySelector('[data-b-option-min-label]').value = option.scale_min_label || '';
+            optionRow.querySelector('[data-b-option-max-label]').value = option.scale_max_label || '';
             var correctBox = optionRow.querySelector('[data-b-option-correct]');
             // У самооценки верного варианта нет — прячем отметку.
             if (correctBox) correctBox.closest('label').hidden = true;
@@ -334,7 +353,7 @@ function fillBlockRow(row, block) {
         qType.value = block.question_type || 'text';
         var holder = row.querySelector('[data-b-options]');
         (block.options || []).forEach(function (option) {
-            holder.insertAdjacentHTML('beforeend', blockOptionHTML());
+            holder.insertAdjacentHTML('beforeend', blockOptionHTML('question'));
             var optionRow = holder.lastElementChild;
             if (option.id) optionRow.setAttribute('data-b-option-id', option.id);
             optionRow.querySelector('[data-b-option-text]').value = option.text;
@@ -443,11 +462,17 @@ function collectFormBlocks(form) {
                 var text = optionRow.querySelector('[data-b-option-text]').value.trim();
                 if (!text) return;
                 var optionId = optionRow.getAttribute('data-b-option-id');
+                var descriptionField = optionRow.querySelector('[data-b-option-description]');
+                var minLabelField = optionRow.querySelector('[data-b-option-min-label]');
+                var maxLabelField = optionRow.querySelector('[data-b-option-max-label]');
                 item.options.push({
                     id: optionId ? Number(optionId) : null,
                     text: text,
                     // Верного ответа у самооценки нет.
-                    is_correct: false
+                    is_correct: false,
+                    description: descriptionField ? descriptionField.value.trim() : '',
+                    scale_min_label: minLabelField ? minLabelField.value.trim() : '',
+                    scale_max_label: maxLabelField ? maxLabelField.value.trim() : ''
                 });
             });
             if (!item.options.length) return;

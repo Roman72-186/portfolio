@@ -117,6 +117,11 @@ MAX_SUBMISSION_IMAGES = 10
 
 # Верхняя граница шкалы. Десять — из формулировки владельца («3 из 10»).
 SCALE_MAX = 10
+# Нижняя граница (владелец 12.09.2026, анкета «Метакомпетенции»: «шкала от 0
+# до 10» — 0 сам по себе содержательный ответ, «навык вообще не развит», а не
+# «ещё не отвечено»). До 12.09 ползунок начинался с 1 — это правка диапазона,
+# не смена конвенции.
+SCALE_MIN = 0
 
 # Новый тип — строка здесь плюс ветка в шаблоне-рендере, миграция не нужна:
 # специализированные колонки уже nullable, общего JSON-поля намеренно нет
@@ -321,6 +326,15 @@ class TaskBlockOption(Base):
     # к вопросу целиком, иначе несколько выбранных вариантов не могли бы
     # держать каждый свой независимый текст в одном TaskBlockAnswer.text.
     requires_text: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Три поля ниже — только у BLOCK_SCALE (владелец 11.09.2026: анкета
+    # «Метакомпетенции», у каждого навыка своё описание и пояснение к краям
+    # шкалы 0 и 10). NULL у вопросов и правил — та же конвенция, что у
+    # video_id/url/question_type в TaskBlock: специализированные колонки
+    # nullable у чужих типов, полиморфных таблиц вложений в проекте нет.
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scale_min_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    scale_max_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     __table_args__ = (
         Index("ix_task_block_options_order", "block_id", "sort_order"),

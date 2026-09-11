@@ -120,6 +120,13 @@ def _sync_options(
         text = _clean(raw.get("text"), 300)
         if not text:
             continue
+        # Описание и подписи краёв — только у BLOCK_SCALE (владелец 11.09.2026,
+        # анкета «Метакомпетенции»). У вопроса/правил фронт эти ключи не шлёт,
+        # `.get()` тогда даёт None — то же nullable-поведение, что у
+        # requires_text для не-вопросных типов.
+        description = _clean(raw.get("description"), 5000)
+        scale_min_label = _clean(raw.get("scale_min_label"), 200)
+        scale_max_label = _clean(raw.get("scale_max_label"), 200)
         raw_id = raw.get("id")
         row = existing.get(raw_id) if raw_id is not None else None
         if row is not None:
@@ -127,6 +134,9 @@ def _sync_options(
             row.is_correct = bool(raw.get("is_correct"))
             row.requires_text = bool(raw.get("requires_text"))
             row.sort_order = order
+            row.description = description
+            row.scale_min_label = scale_min_label
+            row.scale_max_label = scale_max_label
             matched_ids.add(row.id)
         else:
             db.add(
@@ -136,6 +146,9 @@ def _sync_options(
                     is_correct=bool(raw.get("is_correct")),
                     requires_text=bool(raw.get("requires_text")),
                     sort_order=order,
+                    description=description,
+                    scale_min_label=scale_min_label,
+                    scale_max_label=scale_max_label,
                 )
             )
     dropped = False

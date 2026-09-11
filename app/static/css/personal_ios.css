@@ -230,13 +230,45 @@
     .ios-personal.prs-page { padding: 16px 14px 100px; }
 }
 
-/* Динамика самооценки навыков (владелец 03.09.2026): оценки по датам в ряд,
-   чтобы рост читался с одного взгляда. */
+/* Динамика самооценки навыков (владелец 03.09.2026, доработано 11.09.2026 —
+   описание компетенции и полоса-градусник вместо голых цифр): описание под
+   названием, затем шкала 0-10 с точкой на каждый период, затем точный список
+   «число + дата» — полоса даёт общую картину, список даёт точные значения. */
+.ios-personal .prs-skill-desc {
+    margin: 2px 0 0; font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2);
+}
+.ios-personal .prs-skill-bar { margin-top: 10px; }
+.ios-personal .prs-skill-track {
+    position: relative;
+    height: 6px;
+    margin: 10px 4px;
+    background: var(--line);
+    border-radius: 3px;
+}
+.ios-personal .prs-skill-marker {
+    position: absolute;
+    top: 50%; left: 0;
+    width: 12px; height: 12px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: var(--ios-label-3);
+    border: 2px solid var(--ios-card-bg);
+}
+.ios-personal .prs-skill-marker--latest {
+    width: 16px; height: 16px;
+    background: var(--ios-blue);
+    z-index: 1;
+}
+.ios-personal .prs-skill-scale-legend {
+    display: flex; justify-content: space-between;
+    margin: 0 4px;
+    font: 400 11px/1.2 var(--ios-font); color: var(--ios-label-3);
+}
 .ios-personal .prs-skill-points {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    margin-top: 6px;
+    margin-top: 10px;
 }
 .ios-personal .prs-skill-point {
     display: inline-flex;
@@ -247,6 +279,7 @@
     border: 1px solid var(--line);
     border-radius: 10px;
 }
+.ios-personal .prs-skill-point--latest { border-color: var(--ios-blue); }
 .ios-personal .prs-skill-point strong { font-size: 15px; }
 .ios-personal .prs-skill-point small { font-size: 11px; color: var(--dim); }
 

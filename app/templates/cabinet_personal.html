@@ -3,7 +3,7 @@
 {% block title %}Личная информация{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/account_actions.css?v=1">
-<link rel="stylesheet" href="/static/css/personal_ios.css?v=7">
+<link rel="stylesheet" href="/static/css/personal_ios.css?v=8">
 {% endblock %}
 {% block content %}
 <div class="prs-page ios-personal">
@@ -83,9 +83,25 @@
         {% for row in skills %}
         <div class="prs-row prs-row--stacked">
             <span class="prs-row-label">{{ row.skill }}</span>
+            {% if row.description %}
+            <p class="prs-skill-desc">{{ row.description }}</p>
+            {% endif %}
+            <div class="prs-skill-bar">
+                <div class="prs-skill-track">
+                    {% for point in row.points %}
+                    <span class="prs-skill-marker{% if loop.last %} prs-skill-marker--latest{% endif %}"
+                          style="left: {{ point.percent }}%"
+                          title="{{ point.score }} — {{ point.date.strftime('%d.%m.%y') }}"></span>
+                    {% endfor %}
+                </div>
+                <div class="prs-skill-scale-legend">
+                    <span>0</span>
+                    <span>10</span>
+                </div>
+            </div>
             <div class="prs-skill-points">
                 {% for point in row.points %}
-                <span class="prs-skill-point">
+                <span class="prs-skill-point{% if loop.last %} prs-skill-point--latest{% endif %}">
                     <strong>{{ point.score }}</strong>
                     <small>{{ point.date.strftime('%d.%m.%y') }}</small>
                 </span>

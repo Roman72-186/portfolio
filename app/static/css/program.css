@@ -202,7 +202,7 @@
 .prg-ticket-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .prg-ticket-head strong { font: 700 13px/1 var(--font-display); color: var(--text); }
 
-.prg-option { display: flex; align-items: center; gap: 8px; }
+.prg-option { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .prg-option input[type="text"] {
     flex: 1; box-sizing: border-box; padding: 8px 10px; color: var(--text);
     background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
@@ -213,6 +213,20 @@
     font-size: 12px; color: var(--muted); font-weight: 700;
 }
 .prg-option label input { width: auto; }
+/* Описание навыка и подписи краёв шкалы (владелец 11.09.2026, анкета
+   «Метакомпетенции») — свой блок на всю ширину, переносит .prg-option
+   на вторую строку только когда присутствует (тип scale). */
+.prg-option-extra { flex: 1 1 100%; display: grid; gap: 8px; }
+.prg-option-extra textarea {
+    box-sizing: border-box; padding: 8px 10px; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+    font: 500 13px/1.4 var(--font-body); min-height: 60px; resize: vertical;
+}
+.prg-option-extra input[type="text"] {
+    box-sizing: border-box; padding: 8px 10px; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+    font: 500 13px/1.4 var(--font-body);
+}
 
 .prg-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .prg-actions button { min-height: 44px; }

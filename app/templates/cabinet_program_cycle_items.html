@@ -12,17 +12,17 @@
 #}
 {% block title %}{{ cycle_label }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=20">
+<link rel="stylesheet" href="/static/css/program.css?v=21">
 <link rel="stylesheet" href="/static/css/program_ios.css?v=14">
 {# Предпросмотр «Глазами ученика» рисует блоки общим рендерером ученика, а
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
    показывались бы голой разметкой (см. cabinet_program_day.html). #}
-<link rel="stylesheet" href="/static/css/tracker.css?v=45">
+<link rel="stylesheet" href="/static/css/tracker.css?v=46">
 {% endblock %}
 {% block content %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
-<script src="/static/js/task-blocks-render.js?v=6"></script>
+<script src="/static/js/task-blocks-render.js?v=7"></script>
 <div class="prg-page ios-prg-day" data-topic="{{ topic.id }}">
     {% include "partials/program_tabs.html" %}
 
@@ -454,8 +454,22 @@ function uploadBlockPhotos(row, files) {
         }
         var addOption = event.target.closest('[data-add-b-option]');
         if (addOption) {
-            var optionsHolder = addOption.closest('.prg-blk-options').querySelector('[data-b-options]');
-            optionsHolder.insertAdjacentHTML('beforeend', blockOptionHTML());
+            var optionsOwner = addOption.closest('[data-block]');
+            var optionsHolder = optionsOwner.querySelector('[data-b-options]');
+            var ownerType = optionsOwner.getAttribute('data-block-type');
+            optionsHolder.insertAdjacentHTML('beforeend', blockOptionHTML(ownerType));
+            // Та же логика, что на экране дня: у шкалы и правил нет верного
+            // варианта, прячем отметку сразу при добавлении.
+            if (ownerType === 'scale' || ownerType === 'rules') {
+                var freshOption = optionsHolder.lastElementChild;
+                var freshCorrect = freshOption.querySelector('[data-b-option-correct]');
+                if (freshCorrect) freshCorrect.closest('label').hidden = true;
+                if (ownerType === 'rules') {
+                    freshOption
+                        .querySelector('[data-b-option-text]')
+                        .placeholder = 'Текст правила';
+                }
+            }
             return;
         }
         var removeOption = event.target.closest('[data-remove-b-option]');
