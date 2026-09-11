@@ -76,7 +76,6 @@
 .ios-homework .hw-card { margin-bottom: 16px; }
 
 .ios-homework .photo-grid img { border-radius: 10px; border: none; }
-.ios-homework .hw-final-photo { grid-template-columns: minmax(0,220px); }
 
 .ios-homework .section-label { color: var(--ios-label-2); font: 700 11px/1.3 var(--ios-font); letter-spacing: 0.06em; }
 .ios-homework .hw-section-label { margin-top: 18px; }

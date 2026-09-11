@@ -113,6 +113,14 @@ def build_signed_embed_url(
         {
             "token": token,
             "expires": expires,
+            # Отсутствие параметра в URL — это не «выключено», а «взять
+            # умолчание библиотеки на стороне Bunny» (владелец 11.09.2026,
+            # живой баг: убрали autoplay=true из URL, а видео всё равно
+            # стартовало само — значит на уровне библиотеки в кабинете Bunny
+            # стоит автостарт по умолчанию). Явный `false` — единственный
+            # способ гарантированно выключить его независимо от настроек
+            # провайдера.
+            "autoplay": "false",
             # Keep iPhone playback inside the iframe. Native iOS fullscreen
             # would detach the video from our per-viewer watermark layer.
             #
