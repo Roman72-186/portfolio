@@ -87,9 +87,11 @@
                 {% if item.domain in ('block_work', 'portfolio_before') %}
                 {% if item.text %}<p>{{ item.text }}</p>{% endif %}
                 {% if item.images %}
-                <div class="photo-grid">
+                <div class="photo-grid" data-gallery="review-{{ item.item_id }}">
                     {% for url in item.images %}
-                    <img src="{{ url }}" alt="Работа ученика" loading="lazy">
+                    <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото работы">
+                        <img src="{{ url }}" alt="Работа ученика" loading="lazy">
+                    </button>
                     {% endfor %}
                 </div>
                 {% endif %}
@@ -123,6 +125,8 @@
 
     <p><a class="btn-outline" href="/cabinet/staff/students-review">← Ко всем ученикам</a></p>
 </div>
+
+{% include "partials/lightbox.html" %}
 
 <script>
 (function () {

@@ -56,6 +56,7 @@ from app.services.exam_cycle import (
     request_curator_revision,
 )
 from app.services.student_access import get_student_for_staff_access
+from app.services.utils import validate_video_link
 from app.tmpl import templates
 
 logger = logging.getLogger(__name__)
@@ -285,6 +286,7 @@ async def post_dialog_message(
     photo: UploadFile | None = File(default=None),
     video: UploadFile | None = File(default=None),
     audio: UploadFile | None = File(default=None),
+    video_link: str = Form(default=""),
 ):
     work = db.query(Work).filter(Work.id == work_id).first()
     if not work:
@@ -428,8 +430,16 @@ async def post_dialog_message(
         if adata:
             audio_payload = (audio.filename, adata, audio_content_type or "audio/mpeg")
 
-    if not text_clean and photo_payload is None and video_payload is None and audio_payload is None:
-        raise HTTPException(status_code=400, detail="Введи текст, прикрепи фото, видео или голосовое")
+    try:
+        video_link_clean = validate_video_link(video_link)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    if (
+        not text_clean and photo_payload is None and video_payload is None
+        and audio_payload is None and not video_link_clean
+    ):
+        raise HTTPException(status_code=400, detail="Введи текст, прикрепи фото, видео, ссылку на видео или голосовое")
 
     try:
         msg = await fb_service.send_message(
@@ -441,6 +451,7 @@ async def post_dialog_message(
             photo=photo_payload,
             video=video_payload,
             audio=audio_payload,
+            video_link=video_link_clean,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

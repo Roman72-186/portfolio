@@ -24,6 +24,7 @@ from app.constants import (
 )
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf, require_csrf_header
+from app.models.homework_submission import HomeworkSubmission
 from app.models.notification import Notification
 from app.models.push_subscription import PushSubscription
 from app.models.upload_log import UploadLog
@@ -409,11 +410,28 @@ def cabinet_notifications(
         ).update({"is_read": True, "read_at": datetime.now(timezone.utc)})
         db.commit()
         invalidate_unread(user["user_id"])
+
+    # Уведомление о домашке хранит только submission_id — deep-линк на
+    # /cabinet/homework/{task_id}/feedback собираем здесь, одним запросом
+    # на всю страницу (владелец 10.09.2026, отдельное окно обратной связи).
+    submission_ids = {n.homework_submission_id for n in notifications if n.homework_submission_id}
+    homework_feedback_urls = {}
+    if submission_ids:
+        subs = (
+            db.query(HomeworkSubmission)
+            .filter(HomeworkSubmission.id.in_(submission_ids))
+            .all()
+        )
+        homework_feedback_urls = {
+            s.id: f"/cabinet/homework/{s.tracker_task_id}/feedback" for s in subs
+        }
+
     return templates.TemplateResponse(request, "cabinet_notifications.html", {
         "request": request,
         "user": user,
         "notifications": notifications,
         "unread_count": unread_count,
+        "homework_feedback_urls": homework_feedback_urls,
     })
 
 
@@ -432,12 +450,27 @@ def notifications_feed(
         .limit(30)
         .all()
     )
+    submission_ids = {n.homework_submission_id for n in notifications if n.homework_submission_id}
+    homework_feedback_urls = {}
+    if submission_ids:
+        subs = (
+            db.query(HomeworkSubmission)
+            .filter(HomeworkSubmission.id.in_(submission_ids))
+            .all()
+        )
+        homework_feedback_urls = {
+            s.id: f"/cabinet/homework/{s.tracker_task_id}/feedback" for s in subs
+        }
     items = [
         {
             "title": n.title,
             "text": n.text or "",
             "is_read": n.is_read,
             "work_id": n.work_id,
+            "href": (
+                "/cabinet/cycle" if n.work_id
+                else homework_feedback_urls.get(n.homework_submission_id)
+            ),
             "created_at": n.created_at.strftime("%d.%m.%Y %H:%M") if n.created_at else "",
         }
         for n in notifications

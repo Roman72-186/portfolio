@@ -64,6 +64,10 @@ class HomeworkFeedbackMessage(Base):
     photo_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     video_s3_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     video_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Внешняя ссылка на видео — альтернатива загрузке файла (владелец
+    # 10.09.2026, созвон 09-10.09): сжатия видео ещё нет, а 500 МБ файлом
+    # через диск — не единственный удобный способ поделиться роликом.
+    video_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
@@ -78,7 +82,8 @@ class HomeworkFeedbackMessage(Base):
         ),
         CheckConstraint(
             "(text IS NOT NULL AND length(text) > 0) "
-            "OR (photo_s3_url IS NOT NULL) OR (video_s3_url IS NOT NULL)",
+            "OR (photo_s3_url IS NOT NULL) OR (video_s3_url IS NOT NULL) "
+            "OR (video_url IS NOT NULL)",
             name="ck_homework_feedback_messages_text_or_photo",
         ),
     )

@@ -160,6 +160,60 @@ def test_curator_first_message_then_student_reply(auth_client, db, user_factory,
     assert [m.sender_role for m in messages] == ["curator", "student"]
 
 
+def test_feedback_moved_to_separate_page(auth_client, db, user_factory, session_factory):
+    """Обратная связь 10.09.2026 вынесена из карточки на странице задания в
+    отдельное окно — страница задания больше не содержит текст сообщений,
+    но даёт ссылку и счётчик; сам диалог живёт на /feedback."""
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    client.get(f"/cabinet/homework/{task.id}")
+    submission = db.query(HomeworkSubmission).one()
+
+    curator = user_factory(vk_id=777_002, name="Куратор Яна", role_name="куратор")
+    user.curator_id = curator.id
+    db.commit()
+    curator_session = session_factory(curator)
+    client.cookies.set("session_id", curator_session.id)
+    curator_msg = client.post(
+        f"/cabinet/staff/homework/submissions/{submission.id}/message",
+        data={"text": "Секретный текст обратной связи"},
+    )
+    assert curator_msg.status_code == 200
+
+    student_session = session_factory(user)
+    client.cookies.set("session_id", student_session.id)
+
+    task_page = client.get(f"/cabinet/homework/{task.id}")
+    assert task_page.status_code == 200
+    assert "Секретный текст обратной связи" not in task_page.text
+    assert "Открыть обратную связь" in task_page.text
+    assert "Сообщений: 1" in task_page.text
+
+    feedback_page = client.get(f"/cabinet/homework/{task.id}/feedback")
+    assert feedback_page.status_code == 200
+    assert "Секретный текст обратной связи" in feedback_page.text
+
+    notif = db.query(Notification).filter(Notification.user_id == user.id).one()
+    assert notif.homework_submission_id == submission.id
+
+
+def test_staff_feedback_page_renders(auth_client, db, user_factory, session_factory):
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    client.get(f"/cabinet/homework/{task.id}")
+    submission = db.query(HomeworkSubmission).one()
+
+    curator = user_factory(vk_id=777_003, name="Куратор Оля", role_name="куратор")
+    user.curator_id = curator.id
+    db.commit()
+    curator_session = session_factory(curator)
+    client.cookies.set("session_id", curator_session.id)
+
+    page = client.get(f"/cabinet/staff/homework/submissions/{submission.id}/feedback")
+    assert page.status_code == 200
+    assert "Обратная связь" in page.text
+
+
 def test_staff_submissions_list_shows_submitted_student(admin_client, db, user_factory):
     client, admin = admin_client
     student = user_factory(vk_id=555_001, name="Ученик Петя", role_name="ученик")

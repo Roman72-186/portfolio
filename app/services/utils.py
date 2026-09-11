@@ -9,6 +9,28 @@ from app.services.cases import has_case_growth as _has_case_growth
 logger = logging.getLogger(__name__)
 
 
+MAX_VIDEO_LINK_LEN = 500
+
+
+def validate_video_link(value: str | None) -> str | None:
+    """Проверка внешней ссылки на видео (владелец 10.09.2026: поле «ссылка
+    на видео» вместо загрузки файла, без сжатия — созвон 09-10.09).
+
+    Только http/https, как у ссылки в блоке-конструкторе
+    (`app/api/cabinet_program.py::validate_url`) — иначе в поле, которое
+    сразу идёт в `href`/`src` на экране собеседника, можно вписать схему
+    `javascript:` и получить исполняемый код у каждого, кто откроет диалог.
+    """
+    value = (value or "").strip()
+    if not value:
+        return None
+    if not value.lower().startswith(("http://", "https://")):
+        raise ValueError("Ссылка на видео должна начинаться с http:// или https://")
+    if len(value) > MAX_VIDEO_LINK_LEN:
+        raise ValueError(f"Ссылка на видео длиннее {MAX_VIDEO_LINK_LEN} символов")
+    return value
+
+
 def compress_image(data: bytes, max_px: int = 1600, quality: int = 82) -> bytes:
     """Resize and compress an image to reduce file size.
 

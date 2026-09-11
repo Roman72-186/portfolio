@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{#
+Отдельное окно диалога обратной связи по домашке (владелец 10.09.2026,
+созвон 09-10.09) — вынесено из карточки «Обратная связь» на странице задания
+(`homework_submission.html`), где чат раньше шёл вперемешку с фото и формами
+загрузки. Общий шаблон для ученика (/cabinet/homework/{task_id}/feedback) и
+куратора (/cabinet/staff/homework/submissions/{submission_id}/feedback) —
+viewer_role разводит разметку, та же схема, что у cabinet_feedback_detail.html
+и у прежней встроенной карточки. Свой <style> не заводим — только prg-*
+(program.css) и .hw-*/.ios-homework (homework_ios.css), держит
+tests/test_reuse_ratchet.py.
+#}
+{% block title %}Обратная связь — {{ homework.title }}{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=20">
+<link rel="stylesheet" href="/static/css/homework_ios.css?v=4">
+{% endblock %}
+{% block content %}
+<div class="ios-homework prg-page">
+    <a class="back-link" href="{{ back_url }}">← Назад к заданию</a>
+    <div class="prg-head">
+        <div class="prg-head-copy">
+            <h1>Обратная связь</h1>
+            <p>{{ homework.title }}{% if viewer_role != 'student' and student %} · {{ student.name }}{% endif %}</p>
+        </div>
+    </div>
+
+    <div class="card">
+        {% if messages %}
+        <div class="hw-messages">
+            {% for m in messages %}
+            <div class="hw-msg {{ 'from-me' if m.sender_id == user.user_id else 'from-them' }}">
+                <div class="hw-msg-bubble">
+                    <span class="chip">{{ m.sender_role_label }}{% if m.sender_name %} · {{ m.sender_name }}{% endif %}</span>
+                    {% if m.text %}<p class="hw-msg-text">{{ m.text }}</p>{% endif %}
+                    {% if m.photo_s3_url %}
+                    <img class="hw-msg-photo" src="{{ m.photo_s3_url }}" alt="">
+                    {% endif %}
+                    {% if m.video_url %}
+                    <a class="btn-outline hw-msg-video-link" href="{{ m.video_url }}" target="_blank" rel="noopener noreferrer">▶ Смотреть видео</a>
+                    {% endif %}
+                    <div class="hw-msg-meta">{{ m.created_at[:16].replace('T', ' ') if m.created_at }}</div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-text">
+                {% if viewer_role == 'student' %}Куратор ещё не оставил обратную связь.
+                {% else %}Сообщений пока нет — напишите первым.{% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if viewer_role != 'student' %}
+        {% if final_image and submission.status != 'accepted' %}
+        <form class="hw-async-form hw-form" method="post" action="/cabinet/staff/homework/submissions/{{ submission.id }}/accept">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <button type="submit" class="btn-blue">Принять работу</button>
+            <p class="prg-message"></p>
+        </form>
+        {% elif submission.status == 'accepted' %}
+        <span class="chip hw-accepted">Работа принята</span>
+        {% endif %}
+        <form class="hw-async-form hw-form" method="post" action="/cabinet/staff/homework/submissions/{{ submission.id }}/message" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <textarea class="field-input" name="text" rows="3" placeholder="Сообщение ученику"></textarea>
+            <label class="form-label hw-label-gap">Фото, необязательно</label>
+            <input type="file" class="field-input" name="photo" accept="image/*">
+            <label class="form-label hw-label-gap">Ссылка на видео, необязательно</label>
+            <input type="url" class="field-input" name="video_link" placeholder="https://...">
+            <button type="submit" class="btn-blue hw-submit">Отправить</button>
+            <p class="prg-message"></p>
+        </form>
+        {% elif messages %}
+        <form class="hw-async-form hw-form" method="post" action="/cabinet/homework/{{ task.id }}/message" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <textarea class="field-input" name="text" rows="3" placeholder="Ваш ответ"></textarea>
+            <label class="form-label hw-label-gap">Фото, необязательно</label>
+            <input type="file" class="field-input" name="photo" accept="image/*">
+            <label class="form-label hw-label-gap">Ссылка на видео, необязательно</label>
+            <input type="url" class="field-input" name="video_link" placeholder="https://...">
+            <button type="submit" class="btn-blue hw-submit">Отправить</button>
+            <p class="prg-message"></p>
+        </form>
+        {% else %}
+        <p class="card-desc hw-hint">Ждите первое сообщение куратора — тогда сможете ответить.</p>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+(function () {
+    document.querySelectorAll('.hw-async-form').forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+            event.preventDefault();
+            var msg = form.querySelector('.prg-message');
+            var btn = form.querySelector('button[type=submit]');
+            var csrf = form.querySelector('[name=csrf_token]').value;
+            btn.disabled = true;
+            fetch(form.action, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {'X-CSRF-Token': csrf},
+                body: new FormData(form),
+            }).then(function (response) {
+                return response.json().catch(function () { return {}; }).then(function (data) {
+                    if (!response.ok || data.ok === false) {
+                        throw new Error(data.error || 'Не получилось отправить, попробуйте ещё раз.');
+                    }
+                    return data;
+                });
+            }).then(function () {
+                window.location.reload();
+            }).catch(function (error) {
+                btn.disabled = false;
+                if (msg) { msg.textContent = error.message; msg.classList.add('is-error'); }
+            });
+        });
+    });
+})();
+</script>
+
+{% if viewer_role == 'student' %}
+{% set active_tab = "learning" %}
+{% include "partials/bottom_nav.html" %}
+{% endif %}
+{% endblock %}

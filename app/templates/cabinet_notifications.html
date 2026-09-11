@@ -28,8 +28,9 @@
     {% if notifications %}
     <div class="notif-list">
         {% for n in notifications %}
-        {% if n.work_id %}
-        <a href="/cabinet/cycle" class="notif-card {% if not n.is_read %}unread{% endif %}">
+        {% set href = '/cabinet/cycle' if n.work_id else (homework_feedback_urls.get(n.homework_submission_id) if n.homework_submission_id else none) %}
+        {% if href %}
+        <a href="{{ href }}" class="notif-card {% if not n.is_read %}unread{% endif %}">
         {% else %}
         <div class="notif-card {% if not n.is_read %}unread{% endif %}">
         {% endif %}
@@ -41,10 +42,10 @@
                 {% endif %}
                 <div class="notif-meta">{{ n.created_at.strftime('%d.%m.%Y %H:%M') if n.created_at else '' }}</div>
             </div>
-            {% if n.work_id %}
+            {% if href %}
             <div class="notif-arrow" aria-hidden="true"></div>
             {% endif %}
-        {% if n.work_id %}
+        {% if href %}
         </a>
         {% else %}
         </div>

@@ -199,8 +199,15 @@ async def send_message(
     photo: tuple[str, bytes] | None,
     video: tuple[str, bytes, str] | None = None,
     audio: tuple[str, bytes, str] | None = None,
+    video_link: str | None = None,
 ) -> FeedbackMessage:
-    """Создать новое сообщение в диалоге. Хотя бы одно из (text, photo, video, audio).
+    """Создать новое сообщение в диалоге. Хотя бы одно из (text, photo, video,
+    audio, video_link).
+
+    `video_link` — уже провалидированная (http/https) ссылка на внешнее
+    видео, альтернатива загрузке файла (владелец 10.09.2026). Валидация —
+    на вызывающей стороне (`app/services/utils.py::validate_video_link`),
+    как и у остальных вложений этой функции.
 
     Не делает commit — caller отвечает за транзакцию.
     """
@@ -226,8 +233,11 @@ async def send_message(
         uploaded = await _upload_audio(feedback.work_id, afilename, adata, acontent_type)
         if uploaded is not None:
             audio_path, audio_url = uploaded
-    if text_clean is None and photo_url is None and video_url is None and audio_url is None:
-        raise ValueError("Сообщение должно содержать текст, фото, видео или голосовое")
+    if (
+        text_clean is None and photo_url is None and video_url is None
+        and audio_url is None and not video_link
+    ):
+        raise ValueError("Сообщение должно содержать текст, фото, видео, ссылку на видео или голосовое")
 
     msg = FeedbackMessage(
         feedback_id=feedback.id,
@@ -240,6 +250,7 @@ async def send_message(
         video_s3_url=video_url,
         audio_s3_path=audio_path,
         audio_s3_url=audio_url,
+        video_url=video_link,
     )
     db.add(msg)
     db.flush()
@@ -286,6 +297,7 @@ def serialize_messages(
             "photo_s3_url": m.photo_s3_url,
             "video_s3_url": m.video_s3_url,
             "audio_s3_url": m.audio_s3_url,
+            "video_url": m.video_url,
             "created_at": m.created_at.isoformat() if m.created_at else None,
         }
         for m in messages

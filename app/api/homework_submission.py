@@ -9,12 +9,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session as DBSession
 
+from app.cache import invalidate_unread
 from app.constants import TARIFFS_WITH_FEEDBACK
 from app.db.database import get_db
 from app.dependencies import require_csrf, require_curator, require_student
@@ -45,7 +47,7 @@ from app.services.student_access import get_student_for_staff_access
 from app.services.tracker import accessible_task_ids, close_task_for_user
 from app.services.tracker import homework_images as list_homework_reference_images
 from app.services.upload_validation import read_image_uploads
-from app.services.utils import compress_image
+from app.services.utils import compress_image, validate_video_link
 from app.services.video_topics import accessible_topic_ids
 from app.tmpl import templates
 
@@ -105,13 +107,23 @@ async def _render_submission_page(
         .filter(HomeworkFeedback.submission_id == submission.id)
         .first()
     )
-    messages = fb.messages if fb else []
-    sender_ids = {m.sender_id for m in messages}
-    names = {
-        u.id: u.name
-        for u in db.query(User).filter(User.id.in_(sender_ids)).all()
-    } if sender_ids else {}
+    message_count = len(fb.messages) if fb else 0
+    from app.models.notification import Notification
+    unread_feedback = (
+        db.query(Notification)
+        .filter(
+            Notification.user_id == user["user_id"],
+            Notification.homework_submission_id == submission.id,
+            Notification.is_read.is_(False),
+        )
+        .first()
+        is not None
+    )
     student = db.get(User, submission.user_id) if viewer_role != "student" else None
+    feedback_url = (
+        f"/cabinet/homework/{task.id}/feedback" if viewer_role == "student"
+        else f"/cabinet/staff/homework/submissions/{submission.id}/feedback"
+    )
 
     return templates.TemplateResponse(request, "homework_submission.html", {
         "request": request,
@@ -125,6 +137,54 @@ async def _render_submission_page(
         "final_image": final_image,
         "intermediate_images": intermediate,
         "max_intermediate": _submission_intermediate_limit(homework),
+        "message_count": message_count,
+        "unread_feedback": unread_feedback,
+        "feedback_url": feedback_url,
+        "back_url": back_url,
+    })
+
+
+async def _render_feedback_page(
+    request: Request, db: DBSession, *, task: TrackerTask, homework: HomeworkAssignment,
+    submission: HomeworkSubmission, user: dict, viewer_role: str, back_url: str,
+):
+    """Отдельное окно диалога обратной связи (владелец 10.09.2026, вынесено
+    из карточки на странице задания — созвон 09-10.09)."""
+    images = list_images(db, submission.id)
+    final_image = next((i for i in images if i.is_final), None)
+
+    fb = (
+        db.query(HomeworkFeedback)
+        .filter(HomeworkFeedback.submission_id == submission.id)
+        .first()
+    )
+    messages = fb.messages if fb else []
+    sender_ids = {m.sender_id for m in messages}
+    names = {
+        u.id: u.name
+        for u in db.query(User).filter(User.id.in_(sender_ids)).all()
+    } if sender_ids else {}
+    student = db.get(User, submission.user_id) if viewer_role != "student" else None
+
+    # Открыл диалог — погасили бейдж непрочитанного именно по этой сдаче.
+    from app.models.notification import Notification
+    db.query(Notification).filter(
+        Notification.user_id == user["user_id"],
+        Notification.homework_submission_id == submission.id,
+        Notification.is_read.is_(False),
+    ).update({"is_read": True, "read_at": datetime.now(timezone.utc)}, synchronize_session=False)
+    db.commit()
+    invalidate_unread(user["user_id"])
+
+    return templates.TemplateResponse(request, "homework_feedback_detail.html", {
+        "request": request,
+        "student": student,
+        "user": user,
+        "viewer_role": viewer_role,
+        "task": task,
+        "homework": homework,
+        "submission": submission,
+        "final_image": final_image,
         "messages": serialize_messages(messages, names),
         "back_url": back_url,
     })
@@ -146,6 +206,24 @@ async def student_homework_page(
     return await _render_submission_page(
         request, db, task=task, homework=homework, submission=submission,
         user=user, viewer_role="student", back_url="/cabinet/learning",
+    )
+
+
+@router.get("/homework/{task_id}/feedback", response_class=HTMLResponse)
+async def student_homework_feedback_page(
+    task_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    task, homework = _resolve_homework_task(db, task_id)
+    _guard_student_access(db, task, user["user_id"])
+    submission = get_submission(db, tracker_task_id=task.id, user_id=user["user_id"])
+    if submission is None:
+        raise HTTPException(status_code=404, detail="Сначала отправьте работу")
+    return await _render_feedback_page(
+        request, db, task=task, homework=homework, submission=submission,
+        user=user, viewer_role="student", back_url=f"/cabinet/homework/{task.id}",
     )
 
 
@@ -232,6 +310,7 @@ async def _post_message(
     user: dict,
     text: str | None,
     photo: UploadFile | None,
+    video_link: str = "",
 ) -> JSONResponse:
     photo_payload = None
     if photo is not None and photo.filename:
@@ -239,9 +318,14 @@ async def _post_message(
         if data:
             photo_payload = (photo.filename, data)
     try:
+        video_link_clean = validate_video_link(video_link)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=422)
+    try:
         await send_feedback_message(
             db, feedback=feedback, sender_id=user["user_id"],
             sender_role=_viewer_role(user), text=text, photo=photo_payload,
+            video_link=video_link_clean,
         )
     except ValueError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=422)
@@ -267,6 +351,7 @@ async def student_send_homework_message(
     _csrf: Annotated[None, Depends(require_csrf)],
     text: str = Form(default=""),
     photo: UploadFile | None = File(default=None),
+    video_link: str = Form(default=""),
 ):
     task, _ = _resolve_homework_task(db, task_id)
     _guard_student_access(db, task, user["user_id"])
@@ -284,7 +369,7 @@ async def student_send_homework_message(
         raise HTTPException(
             status_code=403, detail="Куратор ещё не ответил — дождитесь первого сообщения"
         )
-    return await _post_message(request, submission, fb, db, user, text, photo)
+    return await _post_message(request, submission, fb, db, user, text, photo, video_link)
 
 
 # ── Куратор/staff ────────────────────────────────────────────────────────
@@ -350,6 +435,32 @@ async def staff_homework_submission_detail(
     )
 
 
+@router.get("/staff/homework/submissions/{submission_id}/feedback", response_class=HTMLResponse)
+async def staff_homework_feedback_page(
+    submission_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    submission = db.get(HomeworkSubmission, submission_id)
+    if submission is None:
+        raise HTTPException(status_code=404, detail="Сдача не найдена")
+    get_student_for_staff_access(
+        db, user, submission.user_id,
+        not_found_detail="Сдача не найдена",
+        forbidden_detail="Это не ваш студент",
+    )
+    task = db.get(TrackerTask, submission.tracker_task_id)
+    homework = db.get(HomeworkAssignment, submission.homework_id)
+    if task is None or homework is None:
+        raise HTTPException(status_code=404, detail="Сдача не найдена")
+    return await _render_feedback_page(
+        request, db, task=task, homework=homework, submission=submission,
+        user=user, viewer_role=_viewer_role(user),
+        back_url=f"/cabinet/staff/homework/submissions/{submission.id}",
+    )
+
+
 @router.post("/staff/homework/submissions/{submission_id}/accept", response_class=JSONResponse)
 async def accept_homework_submission(
     submission_id: int,
@@ -388,6 +499,7 @@ async def staff_send_homework_message(
     _csrf: Annotated[None, Depends(require_csrf)],
     text: str = Form(default=""),
     photo: UploadFile | None = File(default=None),
+    video_link: str = Form(default=""),
 ):
     submission = db.get(HomeworkSubmission, submission_id)
     if submission is None:
@@ -398,4 +510,4 @@ async def staff_send_homework_message(
         forbidden_detail="Это не ваш студент",
     )
     fb, _ = get_or_create_feedback(db, submission_id=submission.id, initiator_id=user["user_id"])
-    return await _post_message(request, submission, fb, db, user, text, photo)
+    return await _post_message(request, submission, fb, db, user, text, photo, video_link)

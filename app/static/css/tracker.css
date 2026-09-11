@@ -1282,18 +1282,42 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 }
 .lrn-archive-note { margin: 0 0 12px; }
 
-/* Шкала навыков: навык слева, оценка справа (владелец 03.09.2026). */
+/* Шкала навыков: название сверху, ползунок под ним — на узком экране
+   строка «имя + select» умещалась в 84px, у range такой ширины мало
+   (владелец 10.09.2026, замена select на ползунок). */
 .lrn-scale-row {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 6px 0;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 0;
     border-bottom: 1px solid var(--line);
 }
 .lrn-scale-row:last-child { border-bottom: none; }
 .lrn-scale-name { font-size: 14px; }
-.lrn-scale-input { width: 84px; flex: 0 0 auto; }
+.lrn-scale-control { display: flex; align-items: center; gap: 10px; width: 100%; }
+/* height:44px на самом input, а не только на видимом треке — у range hit-area
+   равна content-box элемента, а не пикселям ползунка, это и даёт тач-цель
+   ≥44px без ручного слушателя жестов. */
+.lrn-scale-input {
+    flex: 1 1 auto; min-width: 100px; height: 44px; padding: 0;
+    background: transparent; cursor: pointer;
+    -webkit-appearance: none; appearance: none;
+}
+.lrn-scale-input::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--line); }
+.lrn-scale-input::-moz-range-track { height: 4px; border-radius: 2px; background: var(--line); }
+.lrn-scale-input::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 20px; height: 20px; margin-top: -8px; border-radius: 50%;
+    background: var(--blue); border: 2px solid var(--surface);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.lrn-scale-input::-moz-range-thumb {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--blue); border: 2px solid var(--surface);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.lrn-scale-input:disabled { opacity: 0.5; cursor: default; }
+.lrn-scale-value { min-width: 24px; flex: 0 0 auto; text-align: center; font: 700 14px/1 var(--font-body); color: var(--ink); }
 
 /* «На сегодня всё» — ученик закрыл доступное и ждёт следующей даты. */
 .lrn-waiting { border-color: var(--blue); margin-bottom: 12px; }

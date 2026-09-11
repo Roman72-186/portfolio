@@ -14,6 +14,12 @@ class Notification(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     text: Mapped[str | None] = mapped_column(Text, nullable=True)
     work_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("works.id", ondelete="SET NULL"), nullable=True)
+    # Deep-линк уведомления об обратной связи по домашке (владелец 10.09.2026:
+    # чат домашки выносится в отдельное окно, уведомление должно вести прямо
+    # туда, а не просто говорить «откройте в кабинете»).
+    homework_submission_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("homework_submissions.id", ondelete="SET NULL"), nullable=True
+    )
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     # Момент первого прочтения (для метрики «время реакции»); NULL у непрочитанных
     # и у прочитанных до введения поля.

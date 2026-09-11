@@ -303,8 +303,8 @@
                     '<div class="notif-pop-item-title">' + esc(n.title) + '</div>' +
                     (n.text ? '<div class="notif-pop-item-text">' + esc(n.text) + '</div>' : '') +
                     '<div class="notif-pop-item-meta">' + esc(n.created_at) + '</div>';
-                if (n.work_id){
-                    html += '<a href="/cabinet/cycle" class="' + cls + '">' + inner + '</a>';
+                if (n.href){
+                    html += '<a href="' + esc(n.href) + '" class="' + cls + '">' + inner + '</a>';
                 } else {
                     html += '<div class="' + cls + '">' + inner + '</div>';
                 }

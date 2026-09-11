@@ -178,29 +178,47 @@
             // Шкала навыков (владелец 03.09.2026): «оцени, насколько ты
             // стрессоустойчивый… ребёнок отмечает 3 из 10». Каждый навык —
             // своя строка с выбором от 1 до 10; верного ответа нет.
+            //
+            // Ползунок вместо select (владелец 10.09.2026): у range нет
+            // пустого значения, поэтому «не тронуто» отслеживается отдельным
+            // флагом `dataset.touched`, а не самим `.value` — иначе после
+            // рендера все навыки шкалы считались бы отвеченными, хотя
+            // ученик ни один не подвинул. `collectAnswers` ниже читает
+            // именно этот флаг.
             function renderScale(block, index) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-scale'), block);
                 if (block.body) wrap.appendChild(el('p', 'lrn-blk-question-body', block.body));
                 var max = block.scale_max || 10;
                 var saved = block.answer_option_texts || {};
+                var locked = api.answered || !!block.answered;
                 (block.options || []).forEach(function (option, oi) {
                     var row = el('div', 'lrn-scale-row');
                     row.appendChild(el('span', 'lrn-scale-name', option.text));
-                    var select = el('select', 'form-input lrn-scale-input');
-                    select.id = 'lrn-scale-' + api.uid + '-' + index + '-' + oi;
-                    select.setAttribute('aria-label', option.text);
-                    select.setAttribute('data-scale-option', option.id);
-                    select.disabled = api.answered || !!block.answered;
-                    var empty = el('option', null, '—');
-                    empty.value = '';
-                    select.appendChild(empty);
-                    for (var value = 1; value <= max; value += 1) {
-                        var opt = el('option', null, String(value));
-                        opt.value = String(value);
-                        if (String(saved[option.id] || '') === String(value)) opt.selected = true;
-                        select.appendChild(opt);
+                    var control = el('div', 'lrn-scale-control');
+                    var input = el('input', 'lrn-scale-input');
+                    input.type = 'range';
+                    input.min = '1';
+                    input.max = String(max);
+                    input.step = '1';
+                    input.id = 'lrn-scale-' + api.uid + '-' + index + '-' + oi;
+                    input.setAttribute('aria-label', option.text);
+                    input.setAttribute('data-scale-option', option.id);
+                    input.disabled = locked;
+                    var savedValue = saved[option.id];
+                    var valueLabel = el('span', 'lrn-scale-value', savedValue ? String(savedValue) : '—');
+                    if (savedValue) {
+                        input.value = String(savedValue);
+                        input.dataset.touched = 'true';
+                    } else {
+                        input.value = String(Math.round((1 + max) / 2));
                     }
-                    row.appendChild(select);
+                    input.addEventListener('input', function () {
+                        input.dataset.touched = 'true';
+                        valueLabel.textContent = input.value;
+                    });
+                    control.appendChild(input);
+                    control.appendChild(valueLabel);
+                    row.appendChild(control);
                     wrap.appendChild(row);
                 });
                 return wrap;
@@ -502,7 +520,7 @@
                         var scaleAnswer = { block_id: block.id, option_ids: [], option_texts: {} };
                         (block.options || []).forEach(function (option) {
                             var field = scope.querySelector('[data-scale-option="' + option.id + '"]');
-                            if (!field || !field.value) return;
+                            if (!field || field.dataset.touched !== 'true') return;
                             scaleAnswer.option_ids.push(option.id);
                             scaleAnswer.option_texts[option.id] = field.value;
                         });

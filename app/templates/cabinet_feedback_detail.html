@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Диалог: {{ cycle.subject }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/feedback_ios.css?v=4">
+<link rel="stylesheet" href="/static/css/feedback_ios.css?v=5">
 {% endblock %}
 {% block content %}
 <div class="dlg-page ios-feedback">
@@ -188,6 +188,9 @@
                                 {%- if m.video_s3_url -%}
                                     <video class="dlg-msg-video" controls preload="metadata" src="{{ m.video_s3_url }}"></video>
                                 {%- endif -%}
+                                {%- if m.video_url -%}
+                                    <a class="btn-outline dlg-msg-video-link" href="{{ m.video_url }}" target="_blank" rel="noopener noreferrer">▶ Смотреть видео</a>
+                                {%- endif -%}
                                 {%- if m.audio_s3_url -%}
                                     <audio class="dlg-msg-audio" controls preload="metadata" src="{{ m.audio_s3_url }}"></audio>
                                 {%- endif -%}
@@ -250,6 +253,10 @@
                             <span class="dlg-sf-score-hint">Сохраняется отдельно и не закрывает цикл</span>
                         </div>
                     </div>
+                    <div class="dlg-sf-field">
+                        <label class="dlg-sf-label" for="dlg-video-link">Ссылка на видео (вместо загрузки файла)</label>
+                        <input id="dlg-video-link" class="field-input" type="url" name="video_link" placeholder="https://...">
+                    </div>
                     <div class="dlg-sf-bottom">
                         <label class="dlg-attach">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
@@ -273,6 +280,10 @@
             {% else %}
                 <form class="dlg-form" method="post" action="/cabinet/feedback/{{ target_work_id }}/message" enctype="multipart/form-data" data-work-id="{{ target_work_id }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    <div class="dlg-sf-field">
+                        <label class="dlg-sf-label" for="dlg-video-link-student">Ссылка на видео, необязательно</label>
+                        <input id="dlg-video-link-student" class="field-input" type="url" name="video_link" placeholder="https://...">
+                    </div>
                     <div class="dlg-form-row">
                         <textarea name="text" placeholder="Напишите сообщение или прикрепите фото/видео" rows="3"></textarea>
                         <div class="dlg-form-actions">

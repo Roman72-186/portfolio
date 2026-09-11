@@ -30,9 +30,11 @@ app/static/css/homework_ios.css, переопределяющем эти общ�
         <div class="card-title">Задание</div>
         {% if homework.description %}<p class="card-desc">{{ homework.description }}</p>{% endif %}
         {% if reference_images %}
-        <div class="photo-grid">
+        <div class="photo-grid" data-gallery="hw-ref-{{ task.id }}">
             {% for img in reference_images %}
-            <img src="{{ img.image_s3_url }}" alt="Референс задания" loading="lazy">
+            <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото">
+                <img src="{{ img.image_s3_url }}" alt="Референс задания" loading="lazy">
+            </button>
             {% endfor %}
         </div>
         {% endif %}
@@ -40,9 +42,14 @@ app/static/css/homework_ios.css, переопределяющем эти общ�
 
     <div class="card hw-card">
         <div class="card-title">Ваша работа</div>
+        {% if final_image or intermediate_images %}
+        <div data-gallery="hw-work-{{ submission.id }}">
+        {% endif %}
         {% if final_image %}
         <div class="photo-grid hw-final-photo">
-            <img src="{{ final_image.image_s3_url }}" alt="Финальное фото">
+            <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть финальное фото">
+                <img src="{{ final_image.image_s3_url }}" alt="Финальное фото">
+            </button>
         </div>
         {% else %}
         <p class="card-desc">Финальное фото ещё не загружено.</p>
@@ -62,8 +69,13 @@ app/static/css/homework_ios.css, переопределяющем эти общ�
         <div class="section-label hw-section-label">Промежуточные фото</div>
         <div class="photo-grid">
             {% for img in intermediate_images %}
-            <img src="{{ img.image_s3_url }}" alt="Промежуточное фото" loading="lazy">
+            <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть промежуточное фото">
+                <img src="{{ img.image_s3_url }}" alt="Промежуточное фото" loading="lazy">
+            </button>
             {% endfor %}
+        </div>
+        {% endif %}
+        {% if final_image or intermediate_images %}
         </div>
         {% endif %}
 
@@ -79,63 +91,29 @@ app/static/css/homework_ios.css, переопределяющем эти общ�
     </div>
 
     <div class="card">
-        <div class="card-title">Обратная связь</div>
-        {% if messages %}
-        <div class="hw-messages">
-            {% for m in messages %}
-            <div class="hw-msg {{ 'from-me' if m.sender_id == user.user_id else 'from-them' }}">
-                <div class="hw-msg-bubble">
-                    <span class="chip">{{ m.sender_role_label }}{% if m.sender_name %} · {{ m.sender_name }}{% endif %}</span>
-                    {% if m.text %}<p class="hw-msg-text">{{ m.text }}</p>{% endif %}
-                    {% if m.photo_s3_url %}
-                    <img class="hw-msg-photo" src="{{ m.photo_s3_url }}" alt="">
-                    {% endif %}
-                    <div class="hw-msg-meta">{{ m.created_at[:16].replace('T', ' ') if m.created_at }}</div>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
+        <div class="card-title">Обратная связь{% if unread_feedback %} <span class="chip hw-accepted">Новое</span>{% endif %}</div>
+        {% if message_count %}
+        <p class="card-desc">Сообщений: {{ message_count }}.</p>
         {% else %}
-        <div class="empty-state">
-            <div class="empty-text">
-                {% if viewer_role == 'student' %}Куратор ещё не оставил обратную связь.
-                {% else %}Сообщений пока нет — напишите первым.{% endif %}
-            </div>
-        </div>
+        <p class="card-desc">
+            {% if viewer_role == 'student' %}Куратор ещё не оставил обратную связь.
+            {% else %}Сообщений пока нет — напишите первым.{% endif %}
+        </p>
         {% endif %}
-
-        {% if viewer_role != 'student' %}
-        {% if final_image and submission.status != 'accepted' %}
+        {% if viewer_role != 'student' and final_image and submission.status != 'accepted' %}
         <form class="hw-async-form hw-form" method="post" action="/cabinet/staff/homework/submissions/{{ submission.id }}/accept">
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
             <button type="submit" class="btn-blue">Принять работу</button>
             <p class="prg-message"></p>
         </form>
-        {% elif submission.status == 'accepted' %}
+        {% elif viewer_role != 'student' and submission.status == 'accepted' %}
         <span class="chip hw-accepted">Работа принята</span>
         {% endif %}
-        <form class="hw-async-form hw-form" method="post" action="/cabinet/staff/homework/submissions/{{ submission.id }}/message" enctype="multipart/form-data">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-            <textarea class="field-input" name="text" rows="3" placeholder="Сообщение ученику"></textarea>
-            <label class="form-label hw-label-gap">Фото, необязательно</label>
-            <input type="file" class="field-input" name="photo" accept="image/*">
-            <button type="submit" class="btn-blue hw-submit">Отправить</button>
-            <p class="prg-message"></p>
-        </form>
-        {% elif messages %}
-        <form class="hw-async-form hw-form" method="post" action="/cabinet/homework/{{ task.id }}/message" enctype="multipart/form-data">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-            <textarea class="field-input" name="text" rows="3" placeholder="Ваш ответ"></textarea>
-            <label class="form-label hw-label-gap">Фото, необязательно</label>
-            <input type="file" class="field-input" name="photo" accept="image/*">
-            <button type="submit" class="btn-blue hw-submit">Отправить</button>
-            <p class="prg-message"></p>
-        </form>
-        {% else %}
-        <p class="card-desc hw-hint">Ждите первое сообщение куратора — тогда сможете ответить.</p>
-        {% endif %}
+        <a class="btn-outline hw-submit" href="{{ feedback_url }}">Открыть обратную связь</a>
     </div>
 </div>
+
+{% include "partials/lightbox.html" %}
 
 <script>
 (function () {

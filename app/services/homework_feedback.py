@@ -77,8 +77,16 @@ async def send_message(
     sender_role: str,
     text: str | None,
     photo: tuple[str, bytes] | None,
+    video_link: str | None = None,
 ) -> HomeworkFeedbackMessage:
-    """Создать сообщение в диалоге. Хотя бы одно из (text, photo). Без commit."""
+    """Создать сообщение в диалоге. Хотя бы одно из (text, photo, video_link).
+
+    Загрузки видео-файла у домашки нет вообще (владелец 10.09.2026: только
+    ссылка на внешнее видео — загрузка файла со сжатием отдельная задача без
+    срока). `video_link` — уже провалидированная (http/https) ссылка,
+    валидация на вызывающей стороне (`app/services/utils.py::validate_video_link`).
+
+    Без commit."""
     text_clean = (text or "").strip() or None
     photo_path: str | None = None
     photo_url: str | None = None
@@ -87,8 +95,8 @@ async def send_message(
         uploaded = await _upload_photo(feedback.submission_id, filename, data)
         if uploaded is not None:
             photo_path, photo_url = uploaded
-    if text_clean is None and photo_url is None:
-        raise ValueError("Сообщение должно содержать текст или фото")
+    if text_clean is None and photo_url is None and not video_link:
+        raise ValueError("Сообщение должно содержать текст, фото или ссылку на видео")
 
     msg = HomeworkFeedbackMessage(
         feedback_id=feedback.id,
@@ -97,6 +105,7 @@ async def send_message(
         text=text_clean,
         photo_s3_path=photo_path,
         photo_s3_url=photo_url,
+        video_url=video_link,
     )
     db.add(msg)
     db.flush()
@@ -110,9 +119,9 @@ def notify_counterpart(
     recipient_id: int,
     sender_role: str,
 ) -> Notification:
-    """In-app уведомление без deep-линка: `Notification.work_id` про пробник,
-    у домашки нет своей FK-колонки — заводить её ради одного уведомления
-    избыточно, пока нет второго потребителя. Текст называет, куда идти."""
+    """In-app уведомление с deep-линком на отдельное окно чата домашки
+    (владелец 10.09.2026: `Notification.homework_submission_id`, чат
+    домашки больше не встроен в страницу задания)."""
     if sender_role == ROLE_STUDENT:
         title = "Ученик ответил по домашке"
     else:
@@ -120,7 +129,8 @@ def notify_counterpart(
     n = Notification(
         user_id=recipient_id,
         title=title,
-        text=f"По домашней работе #{submission.id} есть новое сообщение — откройте её в кабинете.",
+        text=f"По домашней работе #{submission.id} есть новое сообщение — откройте обратную связь.",
+        homework_submission_id=submission.id,
     )
     db.add(n)
     db.flush()
@@ -142,6 +152,7 @@ def serialize_messages(
             "sender_role_label": role_label_ru(m.sender_role),
             "text": m.text,
             "photo_s3_url": m.photo_s3_url,
+            "video_url": m.video_url,
             "created_at": m.created_at.isoformat() if m.created_at else None,
         }
         for m in messages

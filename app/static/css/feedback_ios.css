@@ -173,6 +173,9 @@
 .ios-feedback .dlg-msg-bubble img { display: block; max-width: 320px; width: 100%; border-radius: 10px; margin-top: 4px; cursor: zoom-in; }
 .ios-feedback .dlg-msg.from-me .dlg-msg-bubble img { background: rgba(255,255,255,0.1); }
 .ios-feedback .dlg-msg-bubble video { display: block; max-width: 320px; width: 100%; border-radius: 10px; margin-top: 4px; background: #000; }
+/* Ссылка на внешнее видео (владелец 10.09.2026) — та же отбивка сверху,
+   что у file-вложений строкой выше, чтобы не прилипала к тексту. */
+.ios-feedback .dlg-msg-bubble .dlg-msg-video-link { display: inline-block; margin-top: 4px; }
 .ios-feedback .dlg-msg-meta { font: 400 11px/1.3 var(--ios-font); color: var(--ios-label-3); padding: 0 4px; }
 .ios-feedback .dlg-msg-author { font-weight: 700; color: var(--ios-label-2); }
 .ios-feedback .dlg-msg-role { text-transform: uppercase; letter-spacing: 0.04em; }
