@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Набор закрыт{% endblock %}
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:center;min-height:60vh;text-align:center">
+    <div class="card status-card">
+        <h1 style="font-size:22px;font-weight:700;margin-bottom:10px" class="text-accent">Набор закрыт</h1>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6;margin-bottom:28px">
+            Приём на пробный период сейчас не идёт. Если у вас уже есть доступ —
+            войдите обычным способом на главной странице.
+        </p>
+
+        {% if support_url %}
+        <a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" class="btn-outline">
+            Написать в поддержку
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

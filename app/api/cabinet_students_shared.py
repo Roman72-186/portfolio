@@ -95,6 +95,7 @@ def _get_accessible_students(
     mock_period_submitted: bool = False,
     show_hidden: bool = False,
     archived: bool = False,
+    has_access_deadline: bool = False,
 ) -> list:
     """Возвращает список студентов доступных текущему пользователю.
 
@@ -105,10 +106,16 @@ def _get_accessible_students(
     По умолчанию скрыты студенты, не заполнившие анкету (profile_completed=False).
     Суперадмин может раскрыть их через show_hidden=True.
 
+    has_access_deadline=True — учёт пробного набора: показывает только тех,
+    кому проставлен `access_until` (владелец 11.09.2026 — «28 сентября владелец
+    открывает фильтр и видит всех, кому пора решать»). Вошедший по ссылке
+    набора новичок анкету обычно ещё не заполнил, поэтому этот фильтр тоже
+    снимает отсев по profile_completed — иначе он был бы не виден вовсе.
+
     archived=True — режим архива для суперадмина: вместо действующих учеников
     отдаются архивные (прошлые потоки), их данные открыты только на чтение.
     """
-    hide_pre_cohort = not (show_hidden and user["role_rank"] >= 5)
+    hide_pre_cohort = not (show_hidden and user["role_rank"] >= 5) and not has_access_deadline
 
     if archived:
         if user["role_rank"] < 5:
@@ -148,6 +155,8 @@ def _get_accessible_students(
     q = db.query(User).filter(User.role_id == student_role.id, User.is_active == True)  # noqa: E712
     if hide_pre_cohort:
         q = q.filter(User.profile_completed == True)  # noqa: E712
+    if has_access_deadline:
+        q = q.filter(User.access_until.isnot(None))
 
     if has_unchecked_mocks or mock_period_submitted:
         active_period = get_active_period(db, FEATURE_MOCK_EXAM)
@@ -256,6 +265,7 @@ def students_panel(
     has_unchecked_mocks: str = Query(""),
     mock_period_submitted: str = Query(""),
     show_hidden: str = Query(""),
+    has_access_deadline: str = Query(""),
 ):
     return _render_students_panel(
         request, user, db,
@@ -264,6 +274,7 @@ def students_panel(
         has_unchecked_mocks=has_unchecked_mocks,
         mock_period_submitted=mock_period_submitted,
         show_hidden=show_hidden,
+        has_access_deadline=has_access_deadline,
     )
 
 
@@ -278,11 +289,13 @@ def _render_students_panel(
     mock_period_submitted: str = "",
     show_hidden: str = "",
     archived: str = "",
+    has_access_deadline: str = "",
 ):
     is_admin_panel = user["role_rank"] >= 4
     has_unchecked = is_admin_panel and _parse_bool(has_unchecked_mocks)
     mock_submitted = is_admin_panel and _parse_bool(mock_period_submitted)
     show_hidden_b = user["role_rank"] >= 5 and _parse_bool(show_hidden)
+    has_access_deadline_b = is_admin_panel and _parse_bool(has_access_deadline)
     # Архив прошлых потоков — только суперадмину и только на чтение.
     archived_b = user["role_rank"] >= 5 and _parse_bool(archived)
 
@@ -292,6 +305,7 @@ def _render_students_panel(
         mock_period_submitted=mock_submitted,
         show_hidden=show_hidden_b,
         archived=archived_b,
+        has_access_deadline=has_access_deadline_b,
     )
 
     active_hard_filters: list[dict] = []
@@ -301,6 +315,8 @@ def _render_students_panel(
         active_hard_filters.append({"key": "mock_period_submitted", "label": "Сдавал в текущий период"})
     if show_hidden_b:
         active_hard_filters.append({"key": "show_hidden", "label": "Показаны без периодов"})
+    if has_access_deadline_b:
+        active_hard_filters.append({"key": "has_access_deadline", "label": "Со сроком доступа"})
 
     counts_by_user: dict = {}
     avg_by_user: dict = {}

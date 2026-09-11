@@ -26,6 +26,7 @@ from app.constants import (
     FEATURE_LABELS,
     FEATURE_PORTFOLIO_UPLOAD,
     FEATURE_MOCK_EXAM,
+    INTAKE_TRIAL_SLUG,
     TARIFFS,
     TARIFFS_CURRENT,
     STUDY_MODES,
@@ -40,8 +41,10 @@ from app.dependencies import require_superadmin, require_admin_role, require_csr
 from app.models.exam_assignment import ExamAssignment, ExamTicket, ExamTicketAssignee
 from app.models.exam_cycle import ExamCycle
 from app.models.feature_period import FeaturePeriod
+from app.models.intake_link import IntakeLink
+from app.services import intake_link as intake_link_service
 from app.services.feature_periods import invalidate_feature_cache, get_active_period
-from app.services.tz import MSK_TZ, now_msk, today_msk, msk_midnight
+from app.services.tz import MSK_TZ, now_msk, today_msk, msk_midnight, msk_input_value, msk_text, parse_msk_local
 from app.models.role import Role
 from app.models.tag import Tag, UserTag
 from app.models.user import User
@@ -1256,6 +1259,23 @@ def exam_assignment_duplicate(
 ALL_FEATURES = [FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM]
 
 
+def _get_or_create_intake_link(db: DBSession, user_id: int) -> IntakeLink:
+    """Строка ссылки пробного набора — заводится сама при первом сохранении
+    даты/выключателя на /cabinet/periods, владельцу не нужно её «создавать»
+    отдельным действием."""
+    link = intake_link_service.get_link(db, INTAKE_TRIAL_SLUG)
+    if link is None:
+        link = IntakeLink(
+            slug=INTAKE_TRIAL_SLUG,
+            title="Пробный набор предобучения",
+            is_active=False,
+            created_by_id=user_id,
+        )
+        db.add(link)
+        db.flush()
+    return link
+
+
 @router.get("/periods", response_class=HTMLResponse)
 def periods_list(
     request: Request,
@@ -1268,6 +1288,7 @@ def periods_list(
         .all()
     )
     today = today_msk()
+    intake_link = intake_link_service.get_link(db, INTAKE_TRIAL_SLUG)
     return templates.TemplateResponse(request, "periods_management.html", {
         "request": request,
         "user": user,
@@ -1275,7 +1296,52 @@ def periods_list(
         "features": ALL_FEATURES,
         "feature_labels": FEATURE_LABELS,
         "today": today,
+        "intake_link": intake_link,
+        "intake_deadline_input": msk_input_value(intake_link.access_until if intake_link else None),
+        "intake_deadline_text": msk_text(intake_link.access_until if intake_link else None),
+        "intake_public_url": str(request.base_url).rstrip("/") + f"/{INTAKE_TRIAL_SLUG}",
     })
+
+
+@router.post("/intake/deadline")
+def intake_deadline_set(
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    deadline: Annotated[str, Form()] = "",
+):
+    link = _get_or_create_intake_link(db, user["user_id"])
+    raw = deadline.strip()
+    if not raw:
+        # Пусто — снять дату и выключить ссылку: включённая ссылка без даты
+        # означала бы бессрочный доступ всем, кто зайдёт, и это осталось бы
+        # незамеченным.
+        link.access_until = None
+        link.is_active = False
+        db.commit()
+        return RedirectResponse("/cabinet/periods", status_code=303)
+
+    parsed = parse_msk_local(raw)
+    if parsed is None:
+        raise HTTPException(status_code=400, detail="Неверный формат даты")
+
+    link.access_until = parsed
+    db.commit()
+    return RedirectResponse("/cabinet/periods", status_code=303)
+
+
+@router.post("/intake/toggle")
+def intake_toggle(
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    link = _get_or_create_intake_link(db, user["user_id"])
+    if not link.is_active and link.access_until is None:
+        raise HTTPException(status_code=400, detail="Сначала укажите, до какого числа открыт доступ")
+    link.is_active = not link.is_active
+    db.commit()
+    return RedirectResponse("/cabinet/periods", status_code=303)
 
 
 @router.post("/periods/create")

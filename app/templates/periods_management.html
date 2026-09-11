@@ -82,6 +82,47 @@
         </p>
     </div>
 
+    <div class="feature-section">
+        <div class="feature-header">
+            <span class="feature-label">Ссылка пробного набора</span>
+        </div>
+        <div class="period-card {% if intake_link and intake_link.is_active %}active{% else %}inactive{% endif %}">
+            <div>
+                <div class="period-dates" id="intake-url-text">{{ intake_public_url }}</div>
+                <div class="period-title">
+                    {% if intake_deadline_text %}Открыт до {{ intake_deadline_text }} (МСК){% else %}Дата не задана — ссылку нельзя включить{% endif %}
+                </div>
+            </div>
+            <div class="period-card-right">
+                <span class="period-status {% if intake_link and intake_link.is_active %}status-active{% else %}status-inactive{% endif %}">
+                    {% if intake_link and intake_link.is_active %}Открыт{% else %}Закрыт{% endif %}
+                </span>
+                <div class="period-actions">
+                    <button type="button" class="btn-sm" onclick="copyIntakeUrl(this)">Скопировать</button>
+                    <form method="post" action="/cabinet/intake/toggle" style="display:inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                        {% if intake_link and intake_link.is_active %}
+                        <button type="submit" class="btn-danger">Выключить</button>
+                        {% else %}
+                        <button type="submit" class="btn-sm">Включить</button>
+                        {% endif %}
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="create-form open">
+            <form method="post" action="/cabinet/intake/deadline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <label class="form-label" for="intake-deadline">Открыт до (МСК)</label>
+                <input id="intake-deadline" class="form-input" type="datetime-local" name="deadline"
+                       value="{{ intake_deadline_input }}">
+                <div class="form-actions" style="margin-top:12px">
+                    <button type="submit" class="btn-blue btn-save">Сохранить дату</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     {% for feature in features %}
     {% set label = feature_labels[feature] %}
     {% set feature_periods = periods | selectattr('feature', 'equalto', feature) | list %}
@@ -181,6 +222,17 @@
 function toggleForm(feature) {
     var el = document.getElementById('form-' + feature);
     el.classList.toggle('open');
+}
+
+function copyIntakeUrl(btn) {
+    var el = document.getElementById('intake-url-text');
+    if (!el) return;
+    var text = el.textContent.trim();
+    navigator.clipboard.writeText(text).then(function() {
+        var prev = btn.textContent;
+        btn.textContent = 'Скопировано';
+        setTimeout(function() { btn.textContent = prev; }, 1800);
+    });
 }
 </script>
 {% endblock %}

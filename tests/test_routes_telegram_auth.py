@@ -16,7 +16,6 @@ import app.api.auth as auth_module
 from app.config import settings as _app_settings
 from app.models.telegram_link_token import TelegramLinkToken
 from app.models.user import User
-from app.services.tz import msk_input_value
 from app.services.auth_links import issue_telegram_link_token
 
 WEBHOOK_SECRET = "test-webhook-secret"
@@ -283,72 +282,21 @@ def test_relogin_curator_bypasses_membership_gate(client, db, sent_messages, use
 
 
 # ---------------------------------------------------------------------------
-# Отдельная ссылка пробного набора: t.me/<бот>?start=proba
+# Вход через бота ссылкой пробного набора убран (владелец 11.09.2026: заходят
+# с сайта, бот только авторизует) — /start proba больше не особенный payload.
 # ---------------------------------------------------------------------------
 
 TRIAL_CHAT_ID = 555_000_222
 
 
-def test_trial_link_sets_access_deadline(client, db, monkeypatch, sent_messages):
-    """Пришедшему по ссылке пробного набора срок доступа ставится сам — иначе
-    сотне новичков его пришлось бы проставлять руками."""
-    monkeypatch.setattr(auth_module, "TRIAL_ACCESS_UNTIL_MSK", "2026-09-27T23:30")
-    _mock_membership(monkeypatch, True)
-
+def test_start_proba_is_unknown_invite_token(client, db, sent_messages):
+    """Регрессия: `/start proba` — снова обычный неизвестный токен приглашения,
+    а не срабатывающая метка пробного набора."""
     resp = client.post(
         "/auth/telegram/webhook",
         json=_start_update(TRIAL_CHAT_ID, text="/start proba"),
         headers=_headers(),
     )
     assert resp.status_code == 200
-
-    user = db.query(User).filter(User.telegram_chat_id == TRIAL_CHAT_ID).first()
-    assert user is not None
-    assert msk_input_value(user.access_until) == "2026-09-27T23:30"
-
-
-def test_trial_link_without_configured_date_leaves_access_open(client, db, monkeypatch, sent_messages):
-    """Дата не задана — ссылка работает как обычный вход. Безопаснее не закрыть
-    доступ вовсе, чем закрыть не тем числом."""
-    monkeypatch.setattr(auth_module, "TRIAL_ACCESS_UNTIL_MSK", "")
-    _mock_membership(monkeypatch, True)
-
-    client.post(
-        "/auth/telegram/webhook",
-        json=_start_update(TRIAL_CHAT_ID, text="/start proba"),
-        headers=_headers(),
-    )
-
-    user = db.query(User).filter(User.telegram_chat_id == TRIAL_CHAT_ID).first()
-    assert user is not None
-    assert user.access_until is None
-
-
-def test_trial_link_does_not_reset_existing_deadline(client, db, monkeypatch, sent_messages, user_factory):
-    """Повторный заход по той же ссылке срок не переставляет: оплатившему и
-    учащемуся дальше она не должна обрезать доступ."""
-    monkeypatch.setattr(auth_module, "TRIAL_ACCESS_UNTIL_MSK", "2026-09-27T23:30")
-    user = user_factory(vk_id=-778)
-    user.telegram_chat_id = TRIAL_CHAT_ID
-    db.commit()
-    _mock_membership(monkeypatch, True)
-
-    client.post(
-        "/auth/telegram/webhook",
-        json=_start_update(TRIAL_CHAT_ID, text="/start proba"),
-        headers=_headers(),
-    )
-
-    db.refresh(user)
-    assert user.access_until is None
-
-
-def test_regular_start_never_sets_deadline(client, db, monkeypatch, sent_messages):
-    """Обычный /start — обычный ученик без ограничения срока."""
-    monkeypatch.setattr(auth_module, "TRIAL_ACCESS_UNTIL_MSK", "2026-09-27T23:30")
-    _mock_membership(monkeypatch, True)
-
-    client.post("/auth/telegram/webhook", json=_start_update(CHAT_ID), headers=_headers())
-
-    user = db.query(User).filter(User.telegram_chat_id == CHAT_ID).first()
-    assert user.access_until is None
+    assert db.query(User).filter(User.telegram_chat_id == TRIAL_CHAT_ID).first() is None
+    assert "недействительна" in sent_messages[-1]["text"].lower()

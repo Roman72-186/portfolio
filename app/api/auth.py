@@ -18,7 +18,7 @@ from app.cache import (
     pop_telegram_oidc_pkce, set_telegram_oidc_pkce,
 )
 from app.config import settings
-from app.constants import SUPPORT_URL, TRIAL_ACCESS_UNTIL_MSK, TRIAL_START_PAYLOAD
+from app.constants import INTAKE_TRIAL_SLUG, SUPPORT_URL
 from app.db.database import get_db
 from app.dependencies import (
     _as_utc, get_current_user, require_internal_api_token, require_lab3d_token,
@@ -43,9 +43,9 @@ from app.services.telegram_login import (
     exchange_code as tg_exchange_code,
     verify_id_token as tg_verify_id_token,
 )
-from app.services.tz import parse_msk_local
 from app.services import drive as drive_service
 from app.services import guest_exam as guest_exam_service
+from app.services import intake_link as intake_link_service
 from app.services import telegram as telegram_service
 
 logger = logging.getLogger(__name__)
@@ -408,14 +408,16 @@ async def vk_callback(
 
 
 def telegram_oauth_redirect(
-    purpose: str = TG_PURPOSE_LOGIN, guest_token: str | None = None
+    purpose: str = TG_PURPOSE_LOGIN, guest_token: str | None = None,
+    intake_slug: str | None = None,
 ) -> RedirectResponse:
     """Собрать редирект на oauth.telegram.org с PKCE.
 
-    `purpose`/`guest_token` кладутся и в Redis, и в подписанный cookie: если
-    Redis промахнётся (обычный фолбэк, см. callback), назначение входа должно
-    пережить промах, иначе гость уедет в ветку проверки членства в канале и
-    получит отказ.
+    `purpose`/`guest_token`/`intake_slug` кладутся и в Redis, и в подписанный
+    cookie: если Redis промахнётся (обычный фолбэк, см. callback), назначение
+    входа должно пережить промах, иначе гость уедет в ветку проверки членства
+    в канале и получит отказ, а пришедший по ссылке набора — обычный вход без
+    срока доступа.
     """
     state = secrets.token_urlsafe(32)
     code_verifier = generate_code_verifier()
@@ -424,6 +426,8 @@ def telegram_oauth_redirect(
     extra: dict[str, str] = {"purpose": purpose}
     if guest_token:
         extra["guest_token"] = guest_token
+    if intake_slug:
+        extra["intake_slug"] = intake_slug
 
     # TTL 10 минут (не 5, как у VK) — путь через Telegram может уводить в
     # приложение для подтверждения телефона/2FA-пароля и обратно, это дольше,
@@ -486,6 +490,55 @@ async def telegram_login_start(request: Request):
         return RedirectResponse("/?error=Вход через Telegram пока не настроен", status_code=302)
 
     return telegram_oauth_redirect()
+
+
+@router.get("/proba")
+@limiter.limit("20/minute")
+async def intake_trial_entry(
+    request: Request,
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Отдельная ссылка пробного набора (владелец 11.09.2026): вход как у всех
+    через Telegram, но с меткой набора — только что созданный по ней
+    пользователь получает срок доступа (см. telegram_login_callback).
+
+    Литерал, а не `/{slug}`: роутер `auth` подключается в main.py первым, и
+    одно-сегментный path-параметр перехватил бы `/health`, `/404` и любой
+    будущий корневой маршрут.
+    """
+    session_id = request.cookies.get("session_id")
+    if session_id:
+        session_row = db.query(Session, User).join(User, Session.user_id == User.id).filter(
+            Session.id == session_id,
+            Session.is_active == True,
+        ).first()
+        if session_row:
+            session, user = session_row
+            if (
+                _as_utc(session.expires_at) > _now()
+                and user.is_active
+                and (
+                    user.is_admin
+                    or user.is_group_member
+                    or (user.role and user.role.rank >= 2)
+                )
+            ):
+                return RedirectResponse("/cabinet", status_code=302)
+
+    link = intake_link_service.get_link(db, INTAKE_TRIAL_SLUG)
+    if not intake_link_service.is_open(link) or not _telegram_login_enabled():
+        response = templates.TemplateResponse(request, "intake_closed.html", {
+            "request": request,
+            "support_url": SUPPORT_URL,
+        })
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    # Cache-Control: без него осевший в кэше редирект пережил бы выключение
+    # ссылки — владелец выключил набор, а браузер всё равно ведёт в Telegram.
+    response = telegram_oauth_redirect(intake_slug=INTAKE_TRIAL_SLUG)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def _guest_telegram_session(
@@ -571,6 +624,7 @@ async def telegram_login_callback(
         stored_state = state
         purpose = redis_pkce.get("purpose") or TG_PURPOSE_LOGIN
         guest_token = redis_pkce.get("guest_token")
+        intake_slug = redis_pkce.get("intake_slug")
     else:
         logger.warning("Telegram login callback: PKCE missing in Redis for state=%s", state[:12])
         cookie_pkce, cookie_error = _load_telegram_pkce_cookie(request)
@@ -580,6 +634,7 @@ async def telegram_login_callback(
         stored_state = cookie_pkce["st"]
         purpose = cookie_pkce.get("purpose") or TG_PURPOSE_LOGIN
         guest_token = cookie_pkce.get("guest_token")
+        intake_slug = cookie_pkce.get("intake_slug")
 
     if not code_verifier or not stored_state:
         return fail("Ошибка сессии. Попробуйте снова или очистите cookies.")
@@ -644,11 +699,20 @@ async def telegram_login_callback(
         first_name=claims.get("given_name"),
         last_name=claims.get("family_name"),
     )
-    user = _upsert_telegram_user(db, chat_id=chat_id, tg_from=tg_from, is_group_member=True)
+    user, created = _upsert_telegram_user(db, chat_id=chat_id, tg_from=tg_from, is_group_member=True)
 
     if not user.is_active:
         db.commit()
         return templates.TemplateResponse(request, "blocked.html", {"request": request})
+
+    # Срок ставим только только что созданному пользователю — иначе
+    # действующий оплативший ученик, кликнувший по этой же ссылке, получит
+    # закрытие доступа 27-го. Снимок на момент входа: правка даты в админке
+    # потом уже вошедших не сдвигает.
+    if created and intake_slug:
+        deadline = intake_link_service.deadline_for_slug(db, intake_slug)
+        if deadline is not None:
+            user.access_until = deadline
 
     db.commit()
     return _create_session_response(db, user)
@@ -861,12 +925,16 @@ def _upsert_telegram_user(
     chat_id: int,
     tg_from: _TgFrom | None,
     is_group_member: bool,
-) -> User:
+) -> tuple[User, bool]:
     """Тариф здесь не спрашиваем — новый ученик попадёт на анкету
     (`/cabinet/profile`, `needs_profile_setup` в cabinet_student.py) сразу
     после первого входа по ссылке и заполнит его там вместе с именем,
     телефоном и остальными полями. `tariff` остаётся дефолтным до этого
-    момента, как и у ручных VK-аккаунтов."""
+    момента, как и у ручных VK-аккаунтов.
+
+    Второе значение — `created`: только что заведённая учётка или уже
+    существовавшая. Нужно вызывающему коду ссылки пробного набора — срок
+    доступа ставится только новичку (см. telegram_login_callback)."""
     user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
     if user:
         if user.deleted_at is not None:
@@ -881,7 +949,7 @@ def _upsert_telegram_user(
         if tg_from and tg_from.username:
             user.tg_username = tg_from.username
         user.is_group_member = is_group_member
-        return user
+        return user, False
 
     student_role = db.query(Role).filter(Role.name == "ученик").first()
     user = User(
@@ -896,7 +964,7 @@ def _upsert_telegram_user(
     )
     db.add(user)
     db.flush()
-    return user
+    return user, True
 
 
 async def _issue_and_send_login_link(db: DBSession, user: User, chat_id: int, base_url: str) -> None:
@@ -972,7 +1040,6 @@ async def _handle_telegram_link_start(
 
 async def _handle_telegram_new_start(
     db: DBSession, *, chat_id: int, tg_from: _TgFrom | None, base_url: str,
-    trial: bool = False,
 ) -> None:
     """Обычный /start без payload — новый ученик либо повторный вход уже
     привязанного Telegram-аккаунта. Членство в канале проверяется сразу;
@@ -995,14 +1062,7 @@ async def _handle_telegram_new_start(
         await _send_membership_denied(chat_id)
         return
 
-    user = _upsert_telegram_user(db, chat_id=chat_id, tg_from=tg_from, is_group_member=True)
-    # Срок ставим только новичку по ссылке пробного набора и только если он
-    # ещё не задан: повторный /start по той же ссылке не должен ни продлевать
-    # срок, ни обрезать доступ тому, кто уже оплатил и учится дальше.
-    if trial and user.access_until is None:
-        trial_deadline = parse_msk_local(TRIAL_ACCESS_UNTIL_MSK)
-        if trial_deadline is not None:
-            user.access_until = trial_deadline
+    user, _created = _upsert_telegram_user(db, chat_id=chat_id, tg_from=tg_from, is_group_member=True)
     db.commit()
     await _issue_and_send_login_link(db, user, chat_id, base_url)
 
@@ -1015,12 +1075,7 @@ async def _handle_telegram_message(db: DBSession, message: _TgMessage, base_url:
 
     chat_id = message.chat.id
     payload = payload.strip()
-    if payload == TRIAL_START_PAYLOAD:
-        # Ссылка пробного набора: вход как у всех, но со сроком доступа.
-        await _handle_telegram_new_start(
-            db, chat_id=chat_id, tg_from=message.from_user, base_url=base_url, trial=True,
-        )
-    elif payload:
+    if payload:
         await _handle_telegram_link_start(db, chat_id=chat_id, raw_token=payload, tg_from=message.from_user, base_url=base_url)
     else:
         await _handle_telegram_new_start(db, chat_id=chat_id, tg_from=message.from_user, base_url=base_url)
