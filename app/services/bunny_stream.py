@@ -113,17 +113,6 @@ def build_signed_embed_url(
         {
             "token": token,
             "expires": expires,
-            # Открытие видео уже само по себе клик ученика (карточка
-            # раскрывается по «Смотреть») — автостарт экономит второй клик по
-            # play внутри плеера (владелец 31.08.2026). Живая проверка
-            # показала: голый autoplay=true браузер молча душит (звуковое
-            # автовоспроизведение в чужом iframe разрешено не всегда, на
-            # iPhone Safari — вообще никогда, правило ОС). muted=true снимает
-            # это ограничение безусловно — Bunny стартует без звука сразу,
-            # кнопка «Включить звук» поверх плеера (video.html/cabinet_video.html)
-            # даёт досмотреть уже со звуком одним кликом.
-            "autoplay": "true",
-            "muted": "true",
             # Keep iPhone playback inside the iframe. Native iOS fullscreen
             # would detach the video from our per-viewer watermark layer.
             #

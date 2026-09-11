@@ -100,6 +100,7 @@ def test_admin_can_create_direct_tus_upload(
     video = db.query(LearningVideo).filter_by(bunny_video_id=VIDEO_ID).one()
     assert video.created_by_id == admin.id
     assert video.status == "uploading"
+    assert video.auto_publish_on_ready is True
 
 
 def test_uncertain_provider_create_tells_admin_not_to_retry(

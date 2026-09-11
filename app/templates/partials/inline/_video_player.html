@@ -132,21 +132,6 @@
             var lastWatermarkPoint = null;
             var lastWatermarkCell = -1;
             var pseudoFullscreen = false;
-            var currentPlayer = null;
-
-            // Сервер отдаёт player_url с muted=true (звуковой автостарт в
-            // чужом iframe браузер разрешает не всегда, беззвучный — всегда,
-            // владелец 31.08.2026): видео стартует само, но без звука, эта
-            // кнопка — явный призыв его включить, а не мелкая иконка внутри
-            // плеера, которую легко не заметить.
-            if (muteButton) {
-                muteButton.hidden = false;
-                muteButton.addEventListener('click', function () {
-                    if (!currentPlayer) return;
-                    currentPlayer.unmute();
-                    muteButton.hidden = true;
-                });
-            }
 
             function measureWatermarkBounds() {
                 if (!watermarkCopy) return;
@@ -372,13 +357,13 @@
                 return window.matchMedia
                     && window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
             }
-            // Общая логика входа в полноэкранный режим — и по клику на кнопку,
-            // и автоматически при открытии видео (владелец 31.08.2026, «сразу
-            // в полный экран»). Нативный `requestFullscreen()` без прямого
-            // клика браузер обычно тихо отклоняет (нужен «живой» жест) —
-            // `.catch(enterPseudoFullscreen)`/`try…catch` уже переключают на
-            // свой псевдо-полноэкранный режим, которому разрешение не нужно,
-            // так что автовызов безопасен в обоих случаях.
+            // Вход в полноэкранный режим — только по клику на кнопку (владелец
+            // 11.09.2026 отменил автовключение от 31.08.2026: разворот на весь
+            // экран без действия ученика мешал). Нативный `requestFullscreen()`
+            // иногда всё равно отклоняется (например, если браузер решил, что
+            // клик был недостаточно «живым») — `.catch(enterPseudoFullscreen)`/
+            // `try…catch` переключают на свой псевдо-полноэкранный режим,
+            // которому разрешение браузера не нужно.
             function activateFullscreen() {
                 if (pseudoFullscreen || fullscreenElement() === playerContainer) return;
                 if (shouldUsePseudoFullscreen()) { enterPseudoFullscreen(); return; }
@@ -587,7 +572,6 @@
             function attachPlayer() {
                 var generation = ++playerGeneration;
                 var player = new window.playerjs.Player(iframe);
-                currentPlayer = player;
 
                 player.on('ready', function () {
                     if (generation !== playerGeneration) return;
@@ -643,7 +627,6 @@
 
             iframe.src = data.player_url;
             attachPlayer();
-            activateFullscreen();
             reattachPlayer = function () {
                 resumeSeconds = currentSeconds;
                 isPlaying = false;

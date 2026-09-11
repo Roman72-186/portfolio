@@ -231,6 +231,12 @@ def create_video_upload(
             bunny_status=bunny_video.get("status"),
             encode_progress=bunny_video.get("encodeProgress"),
             created_by_id=user["user_id"],
+            # Публикация не ждёт отдельного клика «Опубликовать» (владелец
+            # 11.09.2026, тот же принцип, что и при постановке видео в
+            # день/цикл, см. cabinet_program.py): фоновая проверка
+            # (exam_scheduler.py::_run_video_status_sync) опубликует ролик
+            # сама, как только Bunny закончит обработку.
+            auto_publish_on_ready=True,
         )
         db.add(video)
         db.flush()

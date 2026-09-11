@@ -5,16 +5,24 @@
 задания идут просто по порядку, без даты, порядок меняется стрелками ↑ ↓.
 
 Единственный заводимый вид — «Задание» (`ITEM_MATERIAL`), тот же
-универсальный конструктор блоков, что на экране дня. «Глазами ученика» и
-«Взять содержимое из другого задания» здесь пока нет — сознательно оставлено
-за скобками первой версии экрана, не забытый кусок.
+универсальный конструктор блоков, что на экране дня. «Глазами ученика»
+вернули 11.09.2026 (было сознательно вырезано из первой версии экрана
+10.09.2026, владелец попросил обратно). «Взять содержимое из другого
+задания» здесь по-прежнему нет — вне объёма этой правки.
 #}
 {% block title %}{{ cycle_label }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=20">
 <link rel="stylesheet" href="/static/css/program_ios.css?v=14">
+{# Предпросмотр «Глазами ученика» рисует блоки общим рендерером ученика, а
+   его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
+   показывались бы голой разметкой (см. cabinet_program_day.html). #}
+<link rel="stylesheet" href="/static/css/tracker.css?v=45">
 {% endblock %}
 {% block content %}
+{# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
+   скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
+<script src="/static/js/task-blocks-render.js?v=6"></script>
 <div class="prg-page ios-prg-day" data-topic="{{ topic.id }}">
     {% include "partials/program_tabs.html" %}
 
@@ -81,6 +89,15 @@
                 {% endfor %}
             </div>
         </div>
+
+        {# Предпросмотр (владелец 31.08.2026, возвращён на этот экран
+           11.09.2026): куратор собирает задание вслепую, а увидеть глазами
+           ученика можно только сохранив и зайдя под ним. Рисуем прямо из
+           формы, ничего не сохраняя. #}
+        <div class="prg-actions prg-blocks-take">
+            <button type="button" class="btn-outline" data-preview-blocks>Глазами ученика</button>
+        </div>
+        <div class="prg-preview" data-preview hidden></div>
 
         <div class="prg-actions">
             <button type="button" class="btn-blue" data-item-save>Сохранить</button>
@@ -175,6 +192,13 @@ function uploadBlockPhotos(row, files) {
     var tile = document.querySelector('[data-open-form]');
     var formTitle = form.querySelector('[data-item-form-title]');
     var message = form.querySelector('[data-form-message]');
+    // Помощник создания узлов — тот же, что у рендерера ученика: своего
+    // второго не заводим (`test_reuse_ratchet.py`).
+    var el = window.lrnBlockRender.el;
+    var VIDEO_TITLES = ({{ catalog_videos|tojson }}).reduce(function (acc, v) {
+        acc[v.id] = v.title;
+        return acc;
+    }, {});
     var fields = {
         id: form.querySelector('[data-item-id]'),
         title: form.querySelector('[data-item-title]'),
@@ -204,6 +228,89 @@ function uploadBlockPhotos(row, files) {
             }
             return resp.json();
         });
+    }
+
+    // ── «Глазами ученика» (перенесено с экрана дня, 11.09.2026) ────────────
+    //
+    // Рисует общий рендерер ученика (`/static/js/task-blocks-render.js`), тот
+    // самый, что рисует ленту и карточку задания. Своих рендереров у
+    // предпросмотра нет — см. `test_reuse_ratchet.py` и разбор на экране дня.
+    //
+    // Отличия от ленты ровно два, и оба неизбежны:
+    // 1. блоки ещё не сохранены, поэтому у них нет адресов отправки — рендерер
+    //    это переносит, он читает их только внутри обработчика нажатия;
+    // 2. ролик показывается строкой с названием: плеер требует подписанный
+    //    embed-адрес существующего блока, а его до сохранения нет.
+    function previewBlockShape(block, index) {
+        // Рендерер ученика ждёт id — у несохранённого блока его нет. Даём
+        // отрицательный: он уникален внутри предпросмотра и ни с чем в базе
+        // не пересечётся.
+        return Object.assign({}, block, {
+            id: block.id || -(index + 1),
+            done: false,
+            answered: false,
+            options: (block.options || []).map(function (option, position) {
+                return Object.assign({}, option, {id: option.id || -(position + 1)});
+            })
+        });
+    }
+
+    function previewVideoNote(block) {
+        var wrap = el('div', 'lrn-blk lrn-blk-video');
+        if (block.title) wrap.appendChild(el('p', 'lrn-blk-title', block.title));
+        wrap.appendChild(el(
+            'p', 'prg-hint',
+            'Видео: ' + (VIDEO_TITLES[block.video_id] || 'ролик не выбран')
+            + ' — плеер откроется у ученика.'
+        ));
+        return wrap;
+    }
+
+    // Предпросмотр смотрят, а не проходят: поля и кнопки выключаем, ссылки
+    // оставляем видимыми, но неактивными. Иначе нажатие «Отправить работу»
+    // ушло бы на сервер от лица куратора.
+    function freezePreview(box) {
+        box.querySelectorAll('input, textarea, select, button').forEach(function (field) {
+            field.disabled = true;
+        });
+        box.querySelectorAll('a').forEach(function (link) {
+            link.removeAttribute('href');
+            link.setAttribute('aria-disabled', 'true');
+        });
+    }
+
+    function previewBlocks(form) {
+        var box = form.querySelector('[data-preview]');
+        var blocks = collectFormBlocks(form);
+        box.innerHTML = '';
+        if (!blocks.length) {
+            box.innerHTML = '<p class="prg-hint">Пока нечего показывать — добавьте блоки.</p>';
+            box.hidden = false;
+            return;
+        }
+        var renderer = window.lrnBlockRender.create({csrfToken: csrfToken, answered: false});
+        blocks.forEach(function (block, index) {
+            var wrap = el('div', 'prg-preview-blk');
+            wrap.setAttribute('data-block-type', block.block_type);
+            var node = block.block_type === 'video'
+                ? previewVideoNote(block)
+                : renderer.render(previewBlockShape(block, index), index);
+            if (node === null) {
+                // Тип, которого рендерер не знает: показываем хотя бы
+                // название, молчать про блок нельзя — он у ученика будет.
+                node = el('p', 'prg-hint', block.title || 'Блок «' + block.block_type + '»');
+            }
+            wrap.appendChild(node);
+            if (block.hidden_until_done) {
+                wrap.appendChild(el(
+                    'p', 'prg-hint',
+                    'Появится только после того, как ученик закроет задание.'
+                ));
+            }
+            box.appendChild(wrap);
+        });
+        freezePreview(box);
+        box.hidden = false;
     }
 
     function resetForm() {
@@ -312,6 +419,11 @@ function uploadBlockPhotos(row, files) {
     // одному, у формы здесь нет соседей вроде билетов Пробника, ради которых
     // на дне устроен общий обработчик кликов на всю страницу.
     form.addEventListener('click', function (event) {
+        var previewBtn = event.target.closest('[data-preview-blocks]');
+        if (previewBtn) {
+            previewBlocks(form);
+            return;
+        }
         var addBlock = event.target.closest('[data-add-block]');
         if (addBlock) {
             var holder = form.querySelector('[data-blocks]');
