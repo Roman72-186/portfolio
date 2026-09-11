@@ -4,7 +4,7 @@ from typing import Protocol
 
 
 MAX_UPLOAD_FILE_SIZE = 10 * 1024 * 1024
-MAX_UPLOAD_FILES = 10
+MAX_UPLOAD_FILES = 20
 
 IMAGE_EXTENSIONS = {
     ".jpg", ".jpeg", ".jpe", ".jfif",

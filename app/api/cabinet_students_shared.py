@@ -1229,7 +1229,7 @@ def edit_student_profile(
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
 _ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 MAX_SIZE = 10 * 1024 * 1024
-MAX_FILES = 10
+MAX_FILES = 20
 
 WORK_TYPE_LABELS = {
     "before": "До", "after": "После",
