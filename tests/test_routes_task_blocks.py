@@ -660,6 +660,66 @@ def test_video_block_confirm_is_idempotent(client, db, user_factory, session_fac
     assert resp.json()["ok"] is True
 
 
+# ── Фото-блок: кружок выполнения по аналогии с видео ─────────────────────────
+# (владелец 12.09.2026), но без встречной проверки — у фото нет сигнала вроде
+# `VideoProgress`, отметку ставит и подтверждает сам клик.
+
+def test_photo_block_confirm_closes_on_click(client, db, user_factory, session_factory):
+    staff = user_factory(vk_id=550_323, name="Стафф", is_admin=True, role_name="админ")
+    task = _material_task_with_blocks(
+        db, staff.id,
+        blocks=[{"block_type": BLOCK_PHOTO}],
+    )
+    [block] = _blocks_of(db, task.id)
+    student = _student_client(client, user_factory, session_factory)
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert body["blocks"][0]["done"] is False
+
+    resp = client.post(f"/cabinet/tracker/blocks/{block.id}/done")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["ok"] is True
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert body["blocks"][0]["done"] is True
+
+    from app.models.task_block import TaskBlockState
+    state = db.query(TaskBlockState).filter(
+        TaskBlockState.block_id == block.id, TaskBlockState.user_id == student.id,
+    ).one()
+    assert state.completion_source == "photo_confirmed"
+
+
+def test_photo_block_confirm_is_idempotent(client, db, user_factory, session_factory):
+    staff = user_factory(vk_id=550_324, name="Стафф", is_admin=True, role_name="админ")
+    task = _material_task_with_blocks(
+        db, staff.id,
+        blocks=[{"block_type": BLOCK_PHOTO}],
+    )
+    [block] = _blocks_of(db, task.id)
+    _student_client(client, user_factory, session_factory)
+
+    assert client.post(f"/cabinet/tracker/blocks/{block.id}/done").status_code == 200
+    resp = client.post(f"/cabinet/tracker/blocks/{block.id}/done")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
+def test_photo_block_confirm_rejects_wrong_block_type(client, db, user_factory, session_factory):
+    staff = user_factory(vk_id=550_325, name="Стафф", is_admin=True, role_name="админ")
+    video = LearningVideo(bunny_library_id=1, bunny_video_id="v-blk-2", title="Урок")
+    db.add(video)
+    db.flush()
+    task = _material_task_with_blocks(
+        db, staff.id, blocks=[{"block_type": BLOCK_VIDEO, "video_id": video.id}],
+    )
+    [block] = _blocks_of(db, task.id)
+    _student_client(client, user_factory, session_factory)
+
+    resp = client.post(f"/cabinet/tracker/blocks/{block.id}/done")
+    assert resp.status_code == 404
+
+
 # ── Ссылка: только http и https (владелец 31.08.2026) ───────────────────────
 
 

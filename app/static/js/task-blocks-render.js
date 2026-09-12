@@ -83,10 +83,21 @@
             }
 
             function renderPhoto(block) {
-                var wrap = withTitle(el('div', 'lrn-blk lrn-blk-photo'), block);
+                var wrap = el('div', 'lrn-blk lrn-blk-photo');
+                // Кружок выполнения — по аналогии с видео (владелец
+                // 12.09.2026): у фото нет своего сигнала вроде `VideoProgress`,
+                // отметку ставит и подтверждает сам клик.
+                var head = el('div', 'lrn-blk-head');
+                if (block.title) head.appendChild(el('p', 'lrn-blk-title', block.title));
+                var check = renderBlockCheck(block);
+                head.appendChild(check);
+                wrap.appendChild(head);
+
                 var urls = (block.images || []).map(function (image) { return image.url; });
                 wrap.appendChild(photoGallery(urls, block.title || 'Изображение к заданию'));
                 if (block.body) wrap.appendChild(el('p', 'video-help', block.body));
+
+                wireBlockCheck(check, block.confirm_endpoint, block);
                 return wrap;
             }
 
@@ -103,17 +114,16 @@
                 return wrap;
             }
 
-            // Кружок в правом верхнем углу карточки — ученик отмечает видео
-            // выполненным сам, но сервер принимает отметку, только когда по
-            // `VideoProgress` видно, что ролик действительно досмотрен
-            // (владелец 12.09.2026: «кружок нужно отметить, но проверяем,
-            // просмотрено видео или нет»). Не автозакрытие: если бы кружок
-            // отмечался сам по факту просмотра, кликать было бы уже нечего —
-            // отметка потеряла бы смысл действия ученика.
-            function renderVideoCheck(block) {
+            // Кружок ручной отметки выполнения в правом верхнем углу карточки
+            // (владелец 12.09.2026, видео; распространён на фото-блок в тот
+            // же день). Общий для блоков, где отметку ставит сам ученик —
+            // источники правды у них разные (видео сверяет `VideoProgress`,
+            // фото отмечается сразу), поэтому проверку доступности отметки
+            // делает эндпоинт, а не эта функция.
+            function renderBlockCheck(block) {
                 var check = el('button', 'lrn-blk-check');
                 check.type = 'button';
-                check.setAttribute('data-role', 'video-check');
+                check.setAttribute('data-role', 'block-check');
                 check.setAttribute('aria-pressed', block.done ? 'true' : 'false');
                 var doneLabel = 'Выполнено';
                 var pendingLabel = 'Отметить выполнение';
@@ -127,14 +137,48 @@
                 return check;
             }
 
+            // Общий обработчик клика по кружку: шлёт подтверждение на сервер и
+            // рисует «Выполнено» только по его ответу — источник правды у
+            // видео (`VideoProgress`) и фото (нет проверки, кроме доступа к
+            // заданию) разный, поэтому конкретную ошибку показывает вызывающая
+            // функция через `onError`.
+            function wireBlockCheck(check, endpoint, block, callbacks) {
+                callbacks = callbacks || {};
+                check.addEventListener('click', function () {
+                    if (block.done || !endpoint) return;
+                    check.disabled = true;
+                    fetch(endpoint, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: { 'Accept': 'application/json', 'X-CSRF-Token': csrfToken }
+                    }).then(function (resp) {
+                        return resp.json().then(function (body) {
+                            return { ok: resp.ok && body.ok, body: body };
+                        });
+                    }).then(function (result) {
+                        if (!result.ok) throw new Error(result.body && result.body.error);
+                        block.done = true;
+                        check.classList.add('is-done');
+                        check.textContent = '✓';
+                        check.setAttribute('aria-pressed', 'true');
+                        check.setAttribute('aria-label', 'Выполнено');
+                        check.title = 'Выполнено';
+                        if (callbacks.onSuccess) callbacks.onSuccess();
+                    }).catch(function (err) {
+                        check.disabled = false;
+                        if (callbacks.onError) callbacks.onError(err);
+                    });
+                });
+            }
+
             // Разметка — та же, что у `partials/inline/video.html` (совпадающие
             // `data-role`), только собрана в рантайме: у задачи может быть
             // несколько видео-блоков сразу, у каждого свой endpoint.
             function renderVideo(block) {
                 var wrap = el('div', 'lrn-blk lrn-blk-video');
-                var head = el('div', 'lrn-blk-video-head');
+                var head = el('div', 'lrn-blk-head');
                 if (block.title) head.appendChild(el('p', 'lrn-blk-title', block.title));
-                var check = renderVideoCheck(block);
+                var check = renderBlockCheck(block);
                 head.appendChild(check);
                 wrap.appendChild(head);
 
@@ -212,34 +256,15 @@
                     : 'Досмотрите ролик до конца, чтобы отметить выполнение.';
                 wrap.appendChild(checkHint);
 
-                check.addEventListener('click', function () {
-                    if (block.done || !block.confirm_endpoint) return;
-                    check.disabled = true;
-                    fetch(block.confirm_endpoint, {
-                        method: 'POST',
-                        credentials: 'same-origin',
-                        headers: { 'Accept': 'application/json', 'X-CSRF-Token': csrfToken }
-                    }).then(function (resp) {
-                        return resp.json().then(function (body) {
-                            return { ok: resp.ok && body.ok, body: body };
-                        });
-                    }).then(function (result) {
-                        if (!result.ok) throw new Error(result.body && result.body.error);
-                        block.done = true;
-                        check.classList.add('is-done');
-                        check.textContent = '✓';
-                        check.setAttribute('aria-pressed', 'true');
-                        check.setAttribute('aria-label', 'Выполнено');
-                        check.title = 'Выполнено';
-                        checkHint.hidden = true;
-                    }).catch(function (err) {
-                        check.disabled = false;
+                wireBlockCheck(check, block.confirm_endpoint, block, {
+                    onSuccess: function () { checkHint.hidden = true; },
+                    onError: function (err) {
                         checkHint.hidden = false;
                         checkHint.classList.add('is-error');
                         checkHint.textContent = err && err.message === 'not_watched'
                             ? 'Досмотрите ролик до конца, чтобы отметить выполнение.'
                             : 'Не удалось отметить. Попробуйте ещё раз.';
-                    });
+                    }
                 });
 
                 window.lrnVideoPlayer.mount(root, {

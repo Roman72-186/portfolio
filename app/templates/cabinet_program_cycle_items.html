@@ -17,12 +17,12 @@
 {# Предпросмотр «Глазами ученика» рисует блоки общим рендерером ученика, а
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
    показывались бы голой разметкой (см. cabinet_program_day.html). #}
-<link rel="stylesheet" href="/static/css/tracker.css?v=49">
+<link rel="stylesheet" href="/static/css/tracker.css?v=50">
 {% endblock %}
 {% block content %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
-<script src="/static/js/task-blocks-render.js?v=10"></script>
+<script src="/static/js/task-blocks-render.js?v=11"></script>
 <div class="prg-page ios-prg-day" data-topic="{{ topic.id }}">
     {% include "partials/program_tabs.html" %}
 

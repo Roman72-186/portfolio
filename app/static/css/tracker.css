@@ -1173,16 +1173,17 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
    были быть с самого начала, но потерялись при переезде видео в блоки
    31.08.2026 — этот класс/стиль был их временной заменой без обеих защит). */
 
-/* Кружок выполнения видео-блока — правый верхний угол карточки (владелец
-   12.09.2026). Своя шапка, не `.lrn-blk-title` напрямую: у видео без
-   заголовка кружку иначе было бы не на чем висеть. */
-.lrn-blk-video-head {
+/* Кружок ручной отметки выполнения — правый верхний угол карточки (владелец
+   12.09.2026, видео; распространено на фото-блок 12.09.2026). Своя шапка, не
+   `.lrn-blk-title` напрямую: без заголовка кружку иначе было бы не на чем
+   висеть. */
+.lrn-blk-head {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--s-2);
 }
-.lrn-blk-video-head .lrn-blk-title { flex: 1 1 auto; }
+.lrn-blk-head .lrn-blk-title { flex: 1 1 auto; }
 .lrn-blk-check {
     flex: none;
     width: 28px; height: 28px;

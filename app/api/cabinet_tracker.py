@@ -420,6 +420,12 @@ def cabinet_tracker_task_blocks(
             item["images"] = [
                 {"url": i.image_s3_url} for i in images.get(block.id, [])
             ]
+            # Кружок выполнения по аналогии с видео (владелец 12.09.2026): у
+            # фото нет сигнала вроде `VideoProgress`, поэтому эндпоинт просто
+            # закрывает блок по клику, без встречной проверки.
+            state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
+            item["done"] = bool(state and state.status == STATUS_DONE)
+            item["confirm_endpoint"] = f"/cabinet/tracker/blocks/{block.id}/done"
         elif block.block_type == "link":
             item["url"] = block.url
         elif block.block_type == BLOCK_SCALE:
@@ -597,6 +603,28 @@ def confirm_video_block_watched(
     if not _video_block_watched(db, block, user["user_id"]):
         return JSONResponse({"ok": False, "error": "not_watched"}, status_code=409)
     close_task_block_for_user(db, block=block, user_id=user["user_id"], source="video_watched")
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/tracker/blocks/{block_id}/done", response_class=JSONResponse)
+def confirm_photo_block_done(
+    block_id: int,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Ученик отмечает фото-блок выполненным кружком в углу карточки.
+
+    По аналогии с видео (см. `confirm_video_block_watched`), но без встречной
+    проверки: у фото нет сигнала вроде `VideoProgress`, само содержимое блока
+    доступно ученику сразу — отметка нужна только для трекинга прогресса.
+    """
+    block = db.get(TaskBlock, block_id)
+    if block is None or block.block_type != BLOCK_PHOTO:
+        raise HTTPException(status_code=404, detail="Блок не найден")
+    _accessible_task_or_404(db, user["user_id"], block.task_id)
+    close_task_block_for_user(db, block=block, user_id=user["user_id"], source="photo_confirmed")
     db.commit()
     return JSONResponse({"ok": True})
 
