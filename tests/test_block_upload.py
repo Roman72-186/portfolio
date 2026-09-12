@@ -13,10 +13,12 @@ from unittest.mock import patch
 
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.models.task_block import (
+    BLOCK_PHOTO_UPLOAD,
     BLOCK_TIMED,
     BLOCK_UPLOAD,
     MAX_SUBMISSION_IMAGES,
     TaskBlock,
+    TaskBlockImage,
     TaskBlockSubmission,
     TaskBlockSubmissionImage,
 )
@@ -197,6 +199,40 @@ def test_timed_block_accepts_the_work_in_place(auth_client, db):
     assert get_state(db, block_id=block.id, user_id=user.id).status == "done"
 
 
+# ── фото + сдача работы (владелец 12.09.2026) ───────────────────────────────
+
+def test_photo_upload_block_accepts_the_work_in_place(auth_client, db):
+    """Комбинированный блок закрывается тем же приёмом, что «Загрузить
+    работы» — фото-задание к закрытию отношения не имеет."""
+    client, user = auth_client
+    task = _task(db, user)
+    block = _upload_block(db, task, block_type=BLOCK_PHOTO_UPLOAD)
+    db.add(TaskBlockImage(block_id=block.id, image_s3_url="https://s3.example.com/task.jpg"))
+    db.commit()
+
+    resp = _post(client, block.id, comment="Готово")
+
+    assert resp.status_code == 200
+    submission = get_submission(db, block_id=block.id, user_id=user.id)
+    assert submission is not None
+    assert get_state(db, block_id=block.id, user_id=user.id).status == "done"
+
+
+def test_photo_upload_block_payload_carries_task_photos_and_upload_endpoint(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user)
+    block = _upload_block(db, task, block_type=BLOCK_PHOTO_UPLOAD)
+    db.add(TaskBlockImage(block_id=block.id, image_s3_url="https://s3.example.com/task.jpg"))
+    db.commit()
+
+    payload = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+
+    item = payload["blocks"][0]
+    assert item["images"] == [{"url": "https://s3.example.com/task.jpg"}]
+    assert item["upload_endpoint"] == f"/cabinet/tracker/blocks/{block.id}/upload"
+    assert item["done"] is False
+
+
 # ── лента ───────────────────────────────────────────────────────────────────
 
 def test_feed_opens_the_tail_after_the_work_is_sent(auth_client, db):
@@ -334,4 +370,15 @@ def test_constructor_form_has_a_branch_for_the_block(admin_client):
     page = client.get(f"/cabinet/staff/program/{day}")
 
     assert "type === 'upload'" in page.text
+
+
+def test_constructor_offers_the_photo_upload_block(admin_client):
+    client, _ = admin_client
+    day = (TODAY + timedelta(days=14)).isoformat()
+
+    page = client.get(f"/cabinet/staff/program/{day}")
+
+    assert 'data-add-block="photo_upload"' in page.text
+    assert "Фото + сдача работы" in page.text
+    assert "type === 'photo_upload'" in page.text
 

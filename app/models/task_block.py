@@ -106,6 +106,15 @@ BLOCK_UPLOAD = "upload"
 # неверно» тут нет — согласие не проверяют на правильность
 # (`grade_response` берёт только BLOCK_QUESTION, так что фильтровать нечего).
 BLOCK_RULES = "rules"
+# Комбинированный блок «Фото + сдача работы» (владелец 12.09.2026: «нужно
+# сделать ещё один блок универсальный, где будем загружать фото и по ним
+# ученики будут делать работы и здесь же загружать работы»). Своей механики
+# нет — переиспользует обе уже готовые: галерея-задание — те же
+# `TaskBlockImage`, что у BLOCK_PHOTO, приём результата — тот же
+# `TaskBlockSubmission`, что у BLOCK_UPLOAD. Отдельный тип, а не расширение
+# одного из двух: куратору нужно выбирать плиткой между «просто фото»,
+# «просто сдача» и «фото + сдача», а не переключателем внутри существующих.
+BLOCK_PHOTO_UPLOAD = "photo_upload"
 
 # Час на контрольную — число из созвона 03.09.2026 («давай сделаем один час»).
 TIMED_DEFAULT_MINUTES = 60
@@ -129,12 +138,14 @@ SCALE_MIN = 0
 BLOCK_TYPES = (
     BLOCK_TEXT, BLOCK_PHOTO, BLOCK_VIDEO, BLOCK_LINK, BLOCK_QUESTION,
     BLOCK_PORTFOLIO, BLOCK_SCALE, BLOCK_TIMED, BLOCK_UPLOAD, BLOCK_RULES,
+    BLOCK_PHOTO_UPLOAD,
 )
 
 # Блоки, которые ученик закрывает загрузкой работы. Список нужен и роуту
 # приёма файлов, и ленте: у «работы на время» к загрузке добавляется таймер,
-# в остальном механика одна.
-SUBMISSION_BLOCK_TYPES = (BLOCK_UPLOAD, BLOCK_TIMED)
+# в остальном механика одна. BLOCK_PHOTO_UPLOAD закрывается тем же приёмом,
+# что и BLOCK_UPLOAD — фото-задание к закрытию отношения не имеет.
+SUBMISSION_BLOCK_TYPES = (BLOCK_UPLOAD, BLOCK_TIMED, BLOCK_PHOTO_UPLOAD)
 
 BLOCK_TYPE_LABELS = {
     BLOCK_TEXT: "Текст",
@@ -147,6 +158,7 @@ BLOCK_TYPE_LABELS = {
     BLOCK_TIMED: "Работа на время",
     BLOCK_UPLOAD: "Загрузить работы",
     BLOCK_RULES: "Правила с галочками",
+    BLOCK_PHOTO_UPLOAD: "Фото + сдача работы",
 }
 
 # Тот же потолок, что у мини-опроса видео и прежнего task_quiz — общий язык

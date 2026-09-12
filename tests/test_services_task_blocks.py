@@ -11,6 +11,7 @@ from app.models.learning_video import LearningVideo
 from app.models.task_block import (
     BLOCK_LINK,
     BLOCK_PHOTO,
+    BLOCK_PHOTO_UPLOAD,
     BLOCK_QUESTION,
     BLOCK_TEXT,
     BLOCK_VIDEO,
@@ -625,6 +626,36 @@ def test_switching_photo_block_to_text_drops_images(db):
     db.commit()
 
     assert get_images(db, [block.id]) == {}
+
+
+def test_photo_upload_block_keeps_its_gallery(db):
+    """Комбинированный блок «Фото + сдача работы» (владелец 12.09.2026)
+    хранит фото-задание в той же таблице `TaskBlockImage`, что и BLOCK_PHOTO."""
+    task = _task(db)
+    [block] = sync_blocks(db, task_id=task.id, items=[{
+        "block_type": BLOCK_PHOTO_UPLOAD,
+        "images": [{"url": "https://s3/task.jpg", "path": None}],
+    }])
+    db.commit()
+
+    assert [i.image_s3_url for i in get_images(db, [block.id])[block.id]] == [
+        "https://s3/task.jpg"
+    ]
+
+
+def test_photo_upload_block_survives_without_photos(db):
+    """В отличие от чистого «Фото» блок не пуст без картинок — форма приёма
+    работы уже содержимое (владелец 12.09.2026), картинки куратор может
+    добавить позже."""
+    task = _task(db)
+    blocks = sync_blocks(db, task_id=task.id, items=[{
+        "block_type": BLOCK_PHOTO_UPLOAD,
+        "title": "Срисуйте натюрморт",
+        "images": [],
+    }])
+    db.commit()
+
+    assert [b.block_type for b in blocks] == [BLOCK_PHOTO_UPLOAD]
 
 
 def test_hidden_question_appears_only_after_task_is_done(db):

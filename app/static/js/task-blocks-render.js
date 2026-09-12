@@ -542,6 +542,24 @@
                 return wrap;
             }
 
+            // Фото + сдача работы (владелец 12.09.2026): фото-задание — та же
+            // галерея, что у renderPhoto, приём результата — та же форма, что
+            // у renderUpload. Своего кружка подтверждения нет: блок закрывает
+            // сама сдача, как и «Загрузить работы».
+            function renderPhotoUpload(block) {
+                var wrap = withTitle(el('div', 'lrn-blk lrn-blk-photo-upload'), block);
+                var urls = (block.images || []).map(function (image) { return image.url; });
+                if (urls.length) {
+                    wrap.appendChild(photoGallery(urls, block.title || 'Изображение к заданию'));
+                }
+                if (block.body) wrap.appendChild(el('p', 'lrn-blk-body', block.body));
+                if (block.done) {
+                    wrap.appendChild(el('p', 'lrn-blk-verdict is-ok', '✓ Работа сдана'));
+                }
+                wrap.appendChild(uploadForm(block));
+                return wrap;
+            }
+
             // Работа на время (владелец 03.09.2026): ученик жмёт «Начать»,
             // рисует и загружает работу здесь же. Превышение лимита не мешает
             // сдать — оно только видно.
@@ -696,7 +714,8 @@
                 scale: renderScale,
                 timed: renderTimed,
                 upload: renderUpload,
-                rules: renderRules
+                rules: renderRules,
+                photo_upload: renderPhotoUpload
             };
 
             api.render = function (block, index) {

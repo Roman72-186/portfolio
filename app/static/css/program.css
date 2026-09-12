@@ -414,6 +414,7 @@
 .prg-preview-blk[data-block-type="timed"]     { border-left-color: var(--blk-timed); }
 .prg-preview-blk[data-block-type="upload"]    { border-left-color: var(--blk-upload); }
 .prg-preview-blk[data-block-type="rules"]     { border-left-color: var(--blk-rules); }
+.prg-preview-blk[data-block-type="photo_upload"] { border-left-color: var(--blk-photo-upload); }
 .prg-preview-img { max-width: 220px; border-radius: 10px; border: 1px solid var(--line); }
 .prg-preview-option { display: flex; align-items: center; gap: 6px; color: var(--text); }
 

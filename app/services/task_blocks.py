@@ -13,6 +13,7 @@ from app.constants import MOCK_SUBJECTS, TARIFFS
 from app.models.task_block import (
     BLOCK_LINK,
     BLOCK_PHOTO,
+    BLOCK_PHOTO_UPLOAD,
     BLOCK_PORTFOLIO,
     BLOCK_RULES,
     BLOCK_SCALE,
@@ -426,9 +427,12 @@ def _is_empty(block_type: str, item: dict) -> bool:
             option for option in (item.get("options") or [])
             if (option.get("text") or "").strip()
         ]
-    if block_type in (BLOCK_PORTFOLIO, BLOCK_UPLOAD):
+    if block_type in (BLOCK_PORTFOLIO, BLOCK_UPLOAD, BLOCK_PHOTO_UPLOAD):
         # Кнопки «Загрузить портфолио» и «Загрузить работы» самодостаточны:
         # заголовок и пояснение необязательны, своего содержимого у них нет.
+        # BLOCK_PHOTO_UPLOAD туда же — фото-задание необязательно (куратор
+        # мог сперва написать пояснение и вернуться за фото позже), а форма
+        # приёма работы сама по себе уже содержимое.
         return False
     # text и question: без текста блок бессмысленен.
     return not (item.get("body") or "").strip()
@@ -523,8 +527,12 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
             _sync_options(db, row, item.get("options") or [])
         else:
             _sync_options(db, row, [])
-        # Картинки — только у галереи; блок могли переключить с фото на текст.
-        _sync_images(db, row, item.get("images") if row.block_type == BLOCK_PHOTO else [])
+        # Картинки — у галереи и у комбинированного «Фото + сдача работы»;
+        # блок могли переключить с фото на текст.
+        _sync_images(
+            db, row,
+            item.get("images") if row.block_type in (BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD) else [],
+        )
         _sync_tariffs(db, row, item.get("tariffs"))
         _sync_required_tariffs(db, row, item.get("required_tariffs"))
     for block_id, row in existing.items():

@@ -34,8 +34,9 @@ from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
 from app.models.learning_video import LearningVideo
 from app.models.task_block import (
-    BLOCK_PHOTO, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_RULES, BLOCK_SCALE, BLOCK_TIMED,
-    BLOCK_UPLOAD, BLOCK_VIDEO, MAX_BLOCKS, MAX_SUBMISSION_IMAGES, QUESTION_TEXT,
+    BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_RULES,
+    BLOCK_SCALE, BLOCK_TIMED, BLOCK_UPLOAD, BLOCK_VIDEO, MAX_BLOCKS,
+    MAX_SUBMISSION_IMAGES, QUESTION_TEXT,
     SCALE_MAX, SCALE_MIN, SUBMISSION_BLOCK_TYPES, TaskBlock,
 )
 from app.models.tracker import (
@@ -465,6 +466,17 @@ def cabinet_tracker_task_blocks(
             # Работы грузятся здесь же, ученик никуда не уходит (владелец
             # 07.09.2026). `done` берём из состояния блока: его ставит сам
             # роут загрузки, а не пересчёт по портфолио.
+            state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
+            item["done"] = bool(state and state.status == STATUS_DONE)
+            item.update(_submission_payload(db, block, user["user_id"]))
+        elif block.block_type == BLOCK_PHOTO_UPLOAD:
+            # Фото + сдача работы (владелец 12.09.2026): фото-задание — та же
+            # галерея, что у BLOCK_PHOTO, приём результата — тот же приём, что
+            # у BLOCK_UPLOAD. `done` берёт роут загрузки, отдельного кружка
+            # подтверждения у фото здесь нет — блок закрывает сама сдача.
+            item["images"] = [
+                {"url": i.image_s3_url} for i in images.get(block.id, [])
+            ]
             state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
             item["done"] = bool(state and state.status == STATUS_DONE)
             item.update(_submission_payload(db, block, user["user_id"]))

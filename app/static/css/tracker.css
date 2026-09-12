@@ -1121,6 +1121,7 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-blk-timed        { border-left-color: var(--blk-timed); }
 .lrn-blk-upload-block { border-left-color: var(--blk-upload); }
 .lrn-blk-rules        { border-left-color: var(--blk-rules); }
+.lrn-blk-photo-upload { border-left-color: var(--blk-photo-upload); }
 /* Вопрос — единственный тип, который требует действия, а не только чтения:
    лёгкая подложка поверх границы того же цвета делает это заметным сразу,
    не дожидаясь, пока взгляд дойдёт до вариантов ответа (ревью 03.09.2026). */
