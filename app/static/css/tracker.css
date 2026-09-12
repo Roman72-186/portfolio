@@ -1258,42 +1258,12 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-feed { display: flex; flex-direction: column; gap: 12px; }
 
 .lrn-step {
-    position: relative;
     background: var(--card);
     border: 1px solid var(--line);
     border-radius: var(--radius-card, 14px);
     padding: 14px;
     transition: opacity 0.2s ease, border-color 0.2s ease;
 }
-
-/* Кружок статуса видео-шага — правый верхний угол карточки (владелец
-   12.09.2026). Абсолютное позиционирование, а не место в `.lrn-step-head`:
-   заголовок сворачивается в колонку, а кружок должен остаться в углу
-   независимо от того, сколько бейджей и строк над ним. Виден и когда
-   `.lrn-step--done .lrn-step-body` прячет тело карточки — статус должен
-   читаться без наведения. */
-.lrn-step-check {
-    position: absolute;
-    top: 14px; right: 14px;
-    width: 22px; height: 22px;
-    border-radius: 50%;
-    border: 2px solid var(--line);
-    background: var(--surface);
-}
-.lrn-step-check.is-done {
-    border-color: var(--success);
-    background: var(--success);
-}
-.lrn-step-check.is-done::after {
-    content: '✓';
-    display: block;
-    color: #fff;
-    font-size: 13px; font-weight: 700; line-height: 18px;
-    text-align: center;
-}
-/* Освобождаем место под кружок только там, где он есть — иначе бейджи в шапке
-   при переносе строки легли бы прямо под него на узком экране. */
-.lrn-step:has(.lrn-step-check) .lrn-step-head { padding-right: 32px; }
 
 .lrn-step[hidden] { display: none; }
 .lrn-step-head { display: flex; flex-direction: column; gap: 6px; }

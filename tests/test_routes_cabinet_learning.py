@@ -14,7 +14,7 @@ from datetime import timedelta, timezone
 
 from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, TOPIC_KIND_WEEK, LearningTopic
 from app.models.learning_video import LearningVideo
-from app.models.task_block import BLOCK_TEXT, BLOCK_VIDEO, TaskBlock
+from app.models.task_block import BLOCK_TEXT, TaskBlock
 from app.services.program import day_bounds, week_start
 from app.services.task_blocks import close_block_for_user
 from app.services.tracker import create_task
@@ -257,37 +257,6 @@ def test_learning_video_task_expands_inline_instead_of_linking_away(auth_client,
     resp = client.get("/cabinet/learning")
     assert "Посмотреть урок" in resp.text
     assert 'href="/cabinet/videos/' not in resp.text
-
-
-def test_learning_video_step_shows_completion_circle(auth_client, db):
-    """Кружок в углу карточки (владелец 12.09.2026) — только у видео: и у
-    старой видео-задачи целиком (`kind='video'`, без блоков), и у видео-блока
-    конструктора. У остальных типов его нет — им хватает текстового бейджа
-    «Сделано»."""
-    client, user = auth_client
-    video = LearningVideo(
-        bunny_library_id=1, bunny_video_id="vid-circ", title="Урок",
-        is_published=True, status="ready",
-    )
-    db.add(video)
-    db.flush()
-
-    legacy_video_task = _task(db, user, title="Видео-задача", kind="video", order=0)
-    legacy_video_task.source_kind = "learning_video"
-    legacy_video_task.source_id = video.id
-
-    text_task = _task(db, user, title="Текстовое задание", kind="material", order=1)
-    _block(db, text_task, title="Текст", order=0)
-
-    block_video_task = _task(db, user, title="Задание с видео-блоком", kind="material", order=2)
-    db.add(TaskBlock(
-        task_id=block_video_task.id, block_type=BLOCK_VIDEO, video_id=video.id,
-        sort_order=0, is_required=False,
-    ))
-    db.commit()
-
-    resp = client.get("/cabinet/learning")
-    assert resp.text.count("lrn-step-check") == 2
 
 
 def test_learning_task_without_blocks_locks_the_tail(auth_client, db):

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=47">
+<link rel="stylesheet" href="/static/css/tracker.css?v=48">
 {% endblock %}
 {% block content %}
 {#
@@ -94,18 +94,6 @@
             data-task-id="{{ step.task.id }}"
             {% if step.block %}data-block-id="{{ step.block.id }}"{% endif %}
         >
-            {# Кружок в правом верхнем углу карточки — только у видео (владелец
-               12.09.2026): «отметить выполнение, но проверяем, просмотрено видео
-               или нет». Текстовый бейдж «Сделано» ниже уже говорит то же самое
-               остальным типам и читалкам экрана — кружок для них не дублируем,
-               `aria-hidden` тут ровно поэтому. Отдельно от кнопки в самом блоке
-               видео (`task-blocks-render.js::renderVideo`): та кнопка и правда
-               закрывает блок, этот кружок только показывает исход — он должен
-               остаться виден и когда `.lrn-step--done .lrn-step-body` прячет
-               тело карточки целиком. #}
-            {% if (step.block and step.block.block_type == 'video') or (not step.block and step.task.kind == 'video') %}
-            <span class="lrn-step-check{{ ' is-done' if step.status == 'done' }}" aria-hidden="true"></span>
-            {% endif %}
             <header class="lrn-step-head">
                 <div class="trk-meta">
                     <span class="trk-badge trk-badge--kind">{{ step.entry.kind_label }}</span>
