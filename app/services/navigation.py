@@ -52,6 +52,11 @@ CURATOR_NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem(key="students_review", href="/cabinet/staff/students-review", label="Проверка", icon="🗂️"),
     NavItem(key="reports", href="/cabinet/curator/reports", label="Отчёты", icon="🎬"),
     NavItem(key="statistics", href="/cabinet/students?tab=statistics", label="Статистика", icon="📈"),
+    # Уведомления куратору (добавлено 12.09.2026) — сюда падают напоминания
+    # о дне рождения ученика (exam_scheduler._run_birthday_check) и в
+    # будущем любые другие Notification с user_id=куратор. У admin+
+    # (STAFF_NAV_ITEMS) такого пункта пока нет — им сегодня ничего не адресуют.
+    NavItem(key="notifications", href="/cabinet/staff/notifications", label="Уведомления", icon="🔔"),
 )
 
 

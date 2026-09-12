@@ -43,6 +43,32 @@
                            placeholder="Фамилия" maxlength="50">
                 </div>
             </div>
+            <div class="prf-row prf-row--pair">
+                <div class="prf-field">
+                    <label class="prf-field-label" for="profile-birth-date">Дата рождения <span class="prf-required">*</span></label>
+                    <input class="prf-field-input" type="date" id="profile-birth-date" name="birth_date" required
+                           value="{{ form.birth_date if form else (user.birth_date.isoformat() if user.birth_date else '') }}">
+                </div>
+                <div class="prf-field">
+                    <label class="prf-field-label" for="profile-city">Город <span class="prf-required">*</span></label>
+                    <input class="prf-field-input" type="text" id="profile-city" name="city" required
+                           value="{{ form.city if form else (user.city or '') }}"
+                           placeholder="Город" maxlength="100">
+                </div>
+            </div>
+            <div class="prf-row prf-row--single">
+                <label class="prf-field-label" for="profile-timezone">Часовой пояс <span class="prf-required">*</span></label>
+                <select class="prf-field-input" id="profile-timezone" name="timezone" required>
+                    <option value="" disabled {% if not (form and form.timezone) and not user.timezone %}selected{% endif %}>Выберите часовой пояс</option>
+                    {% for tz_value, tz_label in timezones %}
+                    <option value="{{ tz_value }}"
+                        {% if form and form.timezone == tz_value %}selected
+                        {% elif not form and user.timezone == tz_value %}selected{% endif %}>
+                        {{ tz_label }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
         </div>
 
         <div class="prf-section-title">Шаг 2 из 5 · Начало обучения</div>
@@ -102,6 +128,31 @@
                        value="{{ form.tg_username if form else (user.tg_username or '') }}"
                        placeholder="@username" maxlength="32"
                        pattern="@?[A-Za-z0-9_]{4,31}">
+            </div>
+            <div class="prf-row prf-row--single">
+                <label class="prf-field-label" for="profile-vk">Ссылка на ВКонтакте <span class="prf-required">*</span></label>
+                <input class="prf-field-input" type="text" id="profile-vk" name="vk_profile_url" required
+                       value="{{ form.vk_profile_url if form else (user.vk_profile_url or '') }}"
+                       placeholder="vk.com/имя" maxlength="200">
+            </div>
+            <div class="prf-row prf-row--single">
+                <label class="prf-field-label" for="profile-email">Электронная почта <span class="prf-required">*</span></label>
+                <input class="prf-field-input" type="email" id="profile-email" name="email" required
+                       value="{{ form.email if form else (user.email or '') }}"
+                       placeholder="mail@example.com" maxlength="200">
+            </div>
+            <div class="prf-row prf-row--single">
+                <label class="prf-field-label" for="profile-parent-name">Имя и отчество родителя <span class="prf-required">*</span></label>
+                <input class="prf-field-input" type="text" id="profile-parent-name" name="parent_name" required
+                       value="{{ form.parent_name if form else (user.parent_name or '') }}"
+                       placeholder="Имя Отчество" maxlength="150">
+            </div>
+            <div class="prf-row prf-row--single">
+                <label class="prf-field-label" for="profile-sdek">Ближайший адрес СДЭК <span class="prf-required">*</span></label>
+                <input class="prf-field-input" type="text" id="profile-sdek" name="sdek_address" required
+                       value="{{ form.sdek_address if form else (user.sdek_address or '') }}"
+                       placeholder="Город, улица, пункт выдачи" maxlength="300">
+                <p class="prf-field-note-inline">Пригодится, если решим отправить тебе подарок</p>
             </div>
         </div>
 

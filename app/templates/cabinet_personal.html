@@ -31,6 +31,17 @@
             <a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" class="btn-outline">Написать в поддержку</a>
         </div>
     </div>
+    {% elif user.tg_username_mismatch %}
+    <div class="prs-access-closed">
+        <h2>Доступ закрыт</h2>
+        <p>
+            Ник в Telegram, который вы указали в профиле, не совпадает с тем, что сейчас
+            видно у вас в Telegram. Обновите его ниже — доступ откроется сразу после сохранения.
+        </p>
+        <div class="prs-access-closed-actions">
+            <a href="/cabinet/personal/contacts" class="btn-blue">Обновить ник в Telegram</a>
+        </div>
+    </div>
     {% endif %}
 
     <div class="prs-section-title">Контакты</div>

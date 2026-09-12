@@ -1,5 +1,6 @@
 import logging
 import mimetypes
+import re
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -22,6 +23,7 @@ from app.constants import (
     ENROLLMENT_YEARS,
     MONTH_TO_NUM,
     MOCK_SUBJECTS,
+    TIMEZONES,
 )
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf, require_csrf_header
@@ -232,6 +234,24 @@ def cabinet_student(
     })
 
 
+EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+# Домен — без учёта регистра (VK.com/vk.COM тоже валидны), ник после /
+# регистрозависим у самого ВК, поэтому (?i:) стоит только на домене. Хвост
+# ?utm_... и завершающий "/" — частые довески при шаринге ссылки из
+# мобильного приложения, оба принимаются и отбрасываются при нормализации.
+VK_RE = re.compile(r'^(?:https?://)?(?i:www\.|m\.)?(?i:vk\.com)/([A-Za-z0-9_.]{2,60})/?(?:\?\S*)?$')
+_MIN_BIRTH_YEAR = 1995
+
+
+def normalize_vk_profile_url(raw: str) -> str:
+    """Приводит ссылку к виду https://vk.com/<id>, вход и с https, и без."""
+    raw = (raw or "").strip()
+    m = VK_RE.match(raw)
+    if not m:
+        return raw
+    return f"https://vk.com/{m.group(1)}"
+
+
 def _profile_template_ctx(request, user, errors=None, form=None):
     return {
         "request": request,
@@ -241,6 +261,7 @@ def _profile_template_ctx(request, user, errors=None, form=None):
         "months": MONTHS,
         "enrollment_years": ENROLLMENT_YEARS,
         "university_years": list(range(2015, 2032)),
+        "timezones": TIMEZONES,
         **({"errors": errors} if errors else {}),
         **({"form": form} if form else {}),
     }
@@ -270,6 +291,16 @@ def profile_post(
     phone: Annotated[str, Form()],
     parent_phone: Annotated[str, Form()],
     tariff: Annotated[str, Form()],
+    # Новые поля анкеты (12.09.2026) — required через ручную валидацию ниже,
+    # а не через FastAPI Form(...), чтобы не ловить 422 на старых вызовах
+    # (например, ранний редирект при повторном POST уже заполненной анкеты).
+    birth_date: Annotated[str, Form()] = "",
+    city: Annotated[str, Form()] = "",
+    profile_timezone: Annotated[str, Form(alias="timezone")] = "",
+    parent_name: Annotated[str, Form()] = "",
+    vk_profile_url: Annotated[str, Form()] = "",
+    sdek_address: Annotated[str, Form()] = "",
+    email: Annotated[str, Form()] = "",
     tg_username: Annotated[str, Form()] = "",
     enrollment_month: Annotated[str, Form()] = "",
     enrollment_year: Annotated[str, Form()] = "",
@@ -288,10 +319,61 @@ def profile_post(
     errors = []
     first_name = first_name.strip()
     last_name = last_name.strip()
+    city = city.strip()
+    parent_name = parent_name.strip()
+    sdek_address = sdek_address.strip()
+    email = email.strip().lower()
+    vk_profile_url = normalize_vk_profile_url(vk_profile_url)
+    profile_timezone = profile_timezone.strip()
     phone = normalize_phone(phone)
     parent_phone = normalize_phone(parent_phone)
     tariff = tariff.strip().upper()
     tg_username = normalize_tg_username(tg_username)
+
+    # birth_date — required, YYYY-MM-DD из <input type="date">
+    parsed_birth_date: date | None = None
+    if birth_date.strip():
+        try:
+            parsed_birth_date = date.fromisoformat(birth_date.strip())
+            today = date.today()
+            if parsed_birth_date > today:
+                errors.append("Дата рождения не может быть в будущем")
+            elif parsed_birth_date.year < _MIN_BIRTH_YEAR:
+                errors.append("Проверьте дату рождения")
+        except ValueError:
+            errors.append("Дата рождения указана неверно")
+    else:
+        errors.append("Укажите дату рождения")
+
+    if not city:
+        errors.append("Укажите город")
+    elif len(city) > 100:
+        errors.append("Название города слишком длинное")
+
+    if profile_timezone not in {tz for tz, _ in TIMEZONES}:
+        # Не "Выберите часовой пояс" — этот текст уже занят disabled-плейсхолдером
+        # в самом select (profile.html), он в разметке всегда, ошибку с ним не отличить.
+        errors.append("Укажите часовой пояс")
+
+    if not parent_name:
+        errors.append("Введите имя и отчество родителя")
+    elif len(parent_name) > 150:
+        errors.append("Имя родителя слишком длинное")
+
+    if not vk_profile_url:
+        errors.append("Укажите ссылку на ВКонтакте")
+    elif not VK_RE.match(vk_profile_url):
+        errors.append("Ссылка на ВКонтакте должна выглядеть как vk.com/имя")
+
+    if not sdek_address:
+        errors.append("Укажите ближайший адрес СДЭК")
+    elif len(sdek_address) > 300:
+        errors.append("Адрес СДЭК слишком длинный")
+
+    if not email:
+        errors.append("Укажите электронную почту")
+    elif not EMAIL_RE.match(email):
+        errors.append("Введите корректную электронную почту")
 
     # university_year — required
     parsed_university_year: int | None = None
@@ -355,8 +437,15 @@ def profile_post(
         form = {
             "first_name": first_name,
             "last_name": last_name,
+            "birth_date": birth_date.strip(),
+            "city": city,
+            "timezone": profile_timezone,
             "phone": phone,
             "parent_phone": parent_phone,
+            "parent_name": parent_name,
+            "vk_profile_url": vk_profile_url,
+            "sdek_address": sdek_address,
+            "email": email,
             "tariff": TARIFF_DISPLAY.get(tariff, tariff),
             "tg_username": tg_username,
             "enrollment_month": parsed_month,
@@ -372,8 +461,15 @@ def profile_post(
     db_user.first_name = first_name
     db_user.last_name = last_name
     db_user.name = f"{first_name} {last_name}"
+    db_user.birth_date = parsed_birth_date
+    db_user.city = city
+    db_user.timezone = profile_timezone
     db_user.phone = phone
     db_user.parent_phone = parent_phone
+    db_user.parent_name = parent_name
+    db_user.vk_profile_url = vk_profile_url
+    db_user.sdek_address = sdek_address
+    db_user.email = email
     db_user.tariff = tariff
     db_user.tg_username = tg_username or None
     db_user.enrollment_year = parsed_year

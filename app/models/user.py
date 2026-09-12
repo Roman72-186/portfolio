@@ -1,6 +1,6 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import Integer, BigInteger, String, Boolean, DateTime, ForeignKey, Index
+from sqlalchemy import Integer, BigInteger, String, Boolean, Date, DateTime, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.crypto import EncryptedString
@@ -26,10 +26,39 @@ class User(Base):
     phone: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
     parent_phone: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
     about: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Анкета первого входа (добавлено 12.09.2026). Как и остальные поля этой
+    # анкеты, сохраняются один раз через POST /cabinet/profile. Правки после
+    # первого сохранения пока нет ни у ученика, ни у куратора — экран
+    # куратора (cabinet_students_shared.py) эти семь полей не трогает,
+    # понадобится отдельным шагом.
+    birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Год, за который куратору уже отправлено напоминание о дне рождения
+    # (добавлено 12.09.2026, exam_scheduler._run_birthday_check) — не даёт
+    # слать одно и то же напоминание каждый день всю неделю до даты; год, а
+    # не bool, потому что сбрасывается сам собой на следующий год.
+    birthday_reminder_sent_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Смещение от МСК строкой без "+": "-1", "0", "1" … "9" (см. TIMEZONES
+    # в app/constants.py) — простой список, без геокодинга по городу.
+    timezone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Контактные поля — шифруются как phone/parent_phone/tg_username выше.
+    vk_profile_url: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
+    parent_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    sdek_address: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
+    email: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
     university_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     profile_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     role_id: Mapped[int | None] = mapped_column(ForeignKey("roles.id"), nullable=True)
     tg_username: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
+    # Расхождение с живым Telegram (добавлено 12.09.2026). Раз в сутки
+    # exam_scheduler._run_tg_username_check сверяет это поле с тем, что
+    # реально отдаёт Bot API getChat по telegram_chat_id, и здесь только
+    # поднимает/снимает флаг — само tg_username при расхождении не трогает,
+    # оно ключ поиска для Drive-папки и bulk-импорта (см. contacts.py).
+    # True при profile_completed=True закрывает кабинет ученику, кроме
+    # «Личной информации» (см. dependencies.py) — до тех пор, пока он не
+    # подтвердит актуальный ник на /cabinet/personal/contacts.
+    tg_username_mismatch: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, index=True, nullable=True)
     telegram_notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     enrollment_year: Mapped[int | None] = mapped_column(Integer, nullable=True)

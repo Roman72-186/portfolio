@@ -103,8 +103,15 @@ def test_profile_post_valid_data_sets_profile_completed(client, db, user_factory
     resp = client.post("/cabinet/profile", data={
         "first_name": "Анна",
         "last_name":  "Смирнова",
+        "birth_date": "2010-05-20",
+        "city": "Москва",
+        "timezone": "0",
         "phone":      "+79001112233",
         "parent_phone": "+79002223344",
+        "parent_name": "Ольга Викторовна",
+        "vk_profile_url": "vk.com/anna_smirnova",
+        "sdek_address": "Москва, ул. Ленина 10, ПВЗ Строгино",
+        "email": "anna@example.com",
         "tariff":     "Уверенный",
         "tg_username": "anna_art",
         "enrollment_month": "9",
@@ -120,6 +127,13 @@ def test_profile_post_valid_data_sets_profile_completed(client, db, user_factory
     assert db_user.profile_completed is True
     assert db_user.name == "Анна Смирнова"
     assert db_user.tariff == "УВЕРЕННЫЙ"  # normalized to UPPER on save
+    assert db_user.birth_date.isoformat() == "2010-05-20"
+    assert db_user.city == "Москва"
+    assert db_user.timezone == "0"
+    assert db_user.parent_name == "Ольга Викторовна"
+    assert db_user.vk_profile_url == "https://vk.com/anna_smirnova"
+    assert db_user.sdek_address == "Москва, ул. Ленина 10, ПВЗ Строгино"
+    assert db_user.email == "anna@example.com"
     assert db_user.enrollment_year == 2024
 
 
@@ -132,12 +146,17 @@ def test_profile_post_empty_form_shows_all_required_errors(client, user_factory,
     resp = client.post("/cabinet/profile", data={
         "first_name": " ", "last_name": " ", "phone": " ", "parent_phone": " ",
         "tariff": "Уверенный", "tg_username": " ",
+        "birth_date": " ", "city": " ", "timezone": " ",
+        "parent_name": " ", "vk_profile_url": " ", "sdek_address": " ", "email": " ",
         "enrollment_month": " ", "enrollment_year": " ", "about": " ",
     })
     assert resp.status_code == 200
     for fragment in ("Введите имя", "Введите фамилию", "Введите номер телефона",
                      "Укажите ник в Telegram", "Укажите год поступления",
-                     "Укажите месяц присоединения"):
+                     "Укажите месяц присоединения", "Укажите дату рождения",
+                     "Укажите город", "Укажите часовой пояс",
+                     "Введите имя и отчество родителя", "Укажите ссылку на ВКонтакте",
+                     "Укажите ближайший адрес СДЭК", "Укажите электронную почту"):
         assert fragment in resp.text, f"Expected error: {fragment!r}"
 
 

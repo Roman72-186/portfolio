@@ -7,6 +7,7 @@
 
 Для каждого такого ученика создаёт in-app Notification и проставляет notified_at.
 """
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta, date
 
@@ -23,6 +24,7 @@ from app.models.notification import Notification
 from app.models.role import Role
 from app.models.session import Session
 from app.models.user import User
+from app.services.contacts import normalize_tg_username
 from app.services.mock_exam_access import (
     get_student_ids_for_target_tag,
     is_target_tag_allowed_for_student,
@@ -30,6 +32,7 @@ from app.services.mock_exam_access import (
     ticket_opens_at,
 )
 from app.services.notify import notify_many_sync
+from app.services import telegram as telegram_service
 from app.services.tz import MSK_TZ, today_msk
 
 logger = logging.getLogger(__name__)
@@ -380,6 +383,212 @@ def _run_cleanup() -> None:
         db.close()
 
 
+_TG_CHECK_CONCURRENCY = 10  # ограничитель, чтобы не упереться в rate limit Bot API
+
+
+async def _fetch_tg_usernames(pairs: list[tuple[int, int]]) -> dict[int, tuple[bool, str | None]]:
+    """pairs: [(user_id, chat_id), ...] → {user_id: (ok, live_username)}."""
+    sem = asyncio.Semaphore(_TG_CHECK_CONCURRENCY)
+    results: dict[int, tuple[bool, str | None]] = {}
+
+    async def _one(user_id: int, chat_id: int) -> None:
+        async with sem:
+            results[user_id] = await telegram_service.get_chat_username(chat_id)
+
+    await asyncio.gather(*(_one(uid, cid) for uid, cid in pairs))
+    return results
+
+
+def _run_tg_username_check() -> None:
+    """Раз в сутки сверяет User.tg_username с тем, что реально отдаёт Telegram
+    Bot API (getChat) по telegram_chat_id — у ученика есть возможность вписать
+    в анкету любой ник, а сменить его в самом Telegram и не сказать об этом.
+
+    Само tg_username здесь не переписывается — по нему n8n находит папку в
+    Google Drive и суперадмин ищет ученика при bulk-импорте (contacts.py),
+    менять его в фоне значило бы рвать эту связь без ведома персонала. Вместо
+    этого поднимается/снимается флаг tg_username_mismatch, который закрывает
+    кабинет ученику до тех пор, пока он сам не подтвердит актуальный ник на
+    /cabinet/personal/contacts (см. dependencies.py и cabinet_personal.py).
+
+    Ученики без telegram_chat_id (вход только через VK) пропускаются — для
+    них живого источника правды нет, и мы, как и check_channel_membership,
+    не меняем состояние, когда Telegram не смог ответить (ok=False): это
+    значит «не узнали», а не «ника нет».
+    """
+    db = SessionLocal()
+    try:
+        student_role = db.query(Role).filter(Role.rank == 1).first()
+        if not student_role:
+            return
+
+        students = (
+            db.query(User)
+            .filter(
+                User.role_id == student_role.id,
+                User.is_active == True,  # noqa: E712
+                User.deleted_at.is_(None),
+                User.archived_at.is_(None),
+                User.telegram_chat_id.isnot(None),
+            )
+            .all()
+        )
+        if not students:
+            return
+
+        pairs = [(s.id, s.telegram_chat_id) for s in students]
+        results = asyncio.run(_fetch_tg_usernames(pairs))
+
+        # Сетевой обход мог занять заметное время (пусть и ограниченное
+        # семафором) — за это время ученик мог сам починить свой ник через
+        # /cabinet/personal/contacts и снять блокировку живой сверкой там.
+        # Без expire_all() ниже читались бы значения, вычитанные ДО обхода:
+        # commit в самом конце этой функции переписал бы уже верный флаг
+        # обратно на устаревший результат.
+        db.expire_all()
+
+        checked = flagged = cleared = 0
+        for student in students:
+            ok, live_username = results.get(student.id, (False, None))
+            if not ok:
+                continue  # временная ошибка API — состояние не трогаем
+            checked += 1
+            stored = normalize_tg_username(student.tg_username or "").lower()
+            live = normalize_tg_username(live_username or "").lower()
+            mismatch = stored != live
+            if mismatch and not student.tg_username_mismatch:
+                flagged += 1
+            elif not mismatch and student.tg_username_mismatch:
+                cleared += 1
+            student.tg_username_mismatch = mismatch
+
+        db.commit()
+        if flagged or cleared:
+            logger.info(
+                "TG username check: проверено %d, новых расхождений %d, снято %d",
+                checked, flagged, cleared,
+            )
+    except Exception:
+        logger.exception("Ошибка в проверке ника Telegram")
+        db.rollback()
+    finally:
+        db.close()
+
+
+BIRTHDAY_NOTIFY_DAYS_BEFORE = 7  # за сколько дней до дня рождения уведомляем куратора
+
+
+def _upcoming_birthday(birth_date: date, today: date) -> date:
+    """Ближайшая дата дня рождения (в этом году или в следующем, если уже прошла).
+
+    29 февраля в невисокосный год — переносим на 28-е: настоящей даты в этом
+    году просто нет, а не уведомить совсем — хуже, чем сдвинуть на день.
+    """
+    try:
+        this_year = birth_date.replace(year=today.year)
+    except ValueError:
+        this_year = date(today.year, 2, 28)
+    if this_year >= today:
+        return this_year
+    try:
+        return birth_date.replace(year=today.year + 1)
+    except ValueError:
+        return date(today.year + 1, 2, 28)
+
+
+def _run_birthday_check() -> None:
+    """Раз в сутки: у кого из активных учеников день рождения через неделю
+    или ближе — куратору падает уведомление, чтобы успеть подготовить подарок
+    (владелец 12.09.2026, анкета первого входа собирает дату рождения именно
+    для этого).
+
+    Идемпотентность — как у _run_notification_check выше (не «ровно на 7-й
+    день», а «уже в пределах недели и в этом году ещё не слали»):
+    birthday_reminder_sent_year != текущий год. Точное совпадение с днём
+    было бы хрупким — пропущенный по любой причине прогон job (деплой,
+    перезапуск) уводил бы уведомление совсем, а не сдвигал на день.
+
+    Ученик без curator_id пропускается — слать некому, гадать адресата
+    не тот случай, где можно ошибиться молча.
+    """
+    db = SessionLocal()
+    try:
+        today = today_msk()
+        student_role = db.query(Role).filter(Role.rank == 1).first()
+        if not student_role:
+            return
+
+        base_filter = (
+            User.role_id == student_role.id,
+            User.is_active == True,  # noqa: E712
+            User.deleted_at.is_(None),
+            User.archived_at.is_(None),
+            User.birth_date.isnot(None),
+        )
+        students = (
+            db.query(User)
+            .filter(*base_filter, User.curator_id.isnot(None))
+            .all()
+        )
+        # Без даты рождения не с кем сравнивать «повезло/не повезло на этой
+        # неделе» — отдельный счётчик, чтобы «никого не уведомили» в логе не
+        # значило одинаково и «дней рождения рядом нет», и «некому слать,
+        # потому что у половины учеников нет куратора».
+        without_curator = (
+            db.query(User).filter(*base_filter, User.curator_id.is_(None)).count()
+        )
+        if without_curator:
+            logger.info(
+                "Birthday check: пропущено %d учеников с датой рождения без куратора",
+                without_curator,
+            )
+        if not students:
+            return
+
+        sent = 0
+        created_notifications = []
+        for student in students:
+            upcoming = _upcoming_birthday(student.birth_date, today)
+            days_left = (upcoming - today).days
+            if days_left > BIRTHDAY_NOTIFY_DAYS_BEFORE:
+                continue
+            # Год самого дня рождения (upcoming.year), а не today.year: для
+            # дат 1-7 января окно "7 дней" зацепляет конец декабря, когда
+            # today.year ещё старый, и начало января, когда он уже новый —
+            # сравнение с today.year послало бы одно и то же напоминание
+            # дважды на стыке года.
+            if student.birthday_reminder_sent_year == upcoming.year:
+                continue
+
+            if days_left <= 0:
+                when_text = "сегодня"
+            elif days_left == 1:
+                when_text = "завтра"
+            else:
+                when_text = f"через {days_left} дн."
+
+            notif = Notification(
+                user_id=student.curator_id,
+                title=f"День рождения — {student.name}",
+                text=f"{when_text}, {upcoming.strftime('%d.%m')}. Успейте подготовить подарок.",
+            )
+            db.add(notif)
+            created_notifications.append(notif)
+            invalidate_unread(student.curator_id)
+            student.birthday_reminder_sent_year = upcoming.year
+            sent += 1
+
+        db.commit()
+        if sent:
+            logger.info("Birthday check: отправлено %d напоминаний кураторам", sent)
+            notify_many_sync([n.id for n in created_notifications])
+    except Exception:
+        logger.exception("Ошибка в проверке дней рождения")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def start_scheduler() -> None:
     global _scheduler
     _scheduler = BackgroundScheduler(timezone="UTC")
@@ -425,10 +634,31 @@ def start_scheduler() -> None:
         max_instances=1,
         misfire_grace_time=120,
     )
+    _scheduler.add_job(
+        _run_tg_username_check,
+        trigger="cron",
+        hour=4,
+        minute=0,
+        id="tg_username_check",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+    _scheduler.add_job(
+        _run_birthday_check,
+        trigger="cron",
+        hour=5,
+        minute=0,
+        id="birthday_check",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
     _scheduler.start()
     logger.info(
         "Exam scheduler started (exam_notifications=1h, mock_exam_progress=1min, "
-        "mock_exam_expiry=5min, cleanup=6h, video_status_sync=2min)"
+        "mock_exam_expiry=5min, cleanup=6h, video_status_sync=2min, "
+        "tg_username_check=daily@04:00 UTC, birthday_check=daily@05:00 UTC)"
     )
 
 

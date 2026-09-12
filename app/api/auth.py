@@ -948,6 +948,14 @@ def _upsert_telegram_user(
             user.last_name = tg_from.last_name
         if tg_from and tg_from.username:
             user.tg_username = tg_from.username
+            # Апдейт от бота — сам по себе живое подтверждение ника
+            # (пришёл прямо из Telegram, надёжнее, чем ночной опрос
+            # getChat): раз tg_username только что синхронизирован с этим
+            # значением, расхождения по определению больше нет. Без этой
+            # строки заблокированный ученик мог написать боту /start,
+            # получить рабочую ссылку входа и всё равно упереться в баннер
+            # «Доступ закрыт» — флаг снимала только форма контактов.
+            user.tg_username_mismatch = False
         user.is_group_member = is_group_member
         return user, False
 
@@ -1033,6 +1041,7 @@ async def _handle_telegram_link_start(
     target_user.telegram_chat_id = chat_id
     if tg_from and tg_from.username:
         target_user.tg_username = tg_from.username
+        target_user.tg_username_mismatch = False  # см. комментарий в _upsert_telegram_user
     db.commit()
 
     await _finish_membership_check_and_login(db, target_user, chat_id, base_url)

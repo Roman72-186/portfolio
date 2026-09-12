@@ -128,3 +128,51 @@ async def check_channel_membership(user_id: int) -> bool | None:
     status = data.get("result", {}).get("status")
     logger.info("Telegram getChatMember user_id=%s -> status=%s", user_id, status)
     return status in _MEMBER_STATUSES
+
+
+async def get_chat_username(
+    chat_id: int, *, max_attempts: int = 3, timeout: float = 15.0,
+) -> tuple[bool, str | None]:
+    """Текущий публичный ник владельца chat_id по Bot API getChat.
+
+    Возвращает (True, username) при успешном ответе — username сам может
+    быть None, если у человека сейчас нет публичного ника, это тоже
+    достоверный результат. (False, None) — запрос не удался (сеть, HTTP,
+    ошибка API): как и в check_channel_membership, False здесь значит
+    «не смогли узнать», а не «ника нет», и вызывающий код не должен менять
+    состояние на основании такого ответа.
+
+    `max_attempts`/`timeout` — по умолчанию как у остальных вызовов (3
+    попытки, таймаут клиента), это годится для ночного фонового прогона.
+    Интерактивный вызов из формы (cabinet_personal.py) передаёт меньшие
+    значения: там до 3 повторов по 15 секунд означали бы почти минуту
+    зависшей кнопки «Сохранить» вместо быстрого «не удалось проверить».
+    """
+    if not settings.telegram_bot_token:
+        logger.warning("get_chat_username: TELEGRAM_BOT_TOKEN не настроен")
+        return False, None
+
+    client = await _get_client()
+    try:
+        resp = await request_with_retry(
+            lambda: client.post(_api_url("getChat"), json={"chat_id": chat_id}, timeout=timeout),
+            label="Telegram getChat",
+            max_attempts=max_attempts,
+        )
+    except Exception as exc:
+        logger.warning("Telegram getChat request failed for chat_id=%s: %s", chat_id, exc)
+        return False, None
+
+    if resp.status_code >= 400:
+        logger.warning(
+            "Telegram getChat HTTP %s chat_id=%s body=%s",
+            resp.status_code, chat_id, resp.text[:300],
+        )
+        return False, None
+
+    data = resp.json()
+    if not data.get("ok"):
+        logger.warning("Telegram getChat error chat_id=%s: %s", chat_id, data)
+        return False, None
+
+    return True, data.get("result", {}).get("username")

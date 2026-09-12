@@ -260,7 +260,14 @@
         </div>
         <div class="notif-pop-body" id="notifPopBody"></div>
         <div class="notif-pop-footer">
+            {% if user.role_rank and user.role_rank >= 2 %}
+            {# Персонал (куратор и выше) — свой экран без push-переключателя,
+               у /cabinet/notifications ученический макет и ссылка «← Кабинет»
+               ведёт в /cabinet/learning, к персоналу отношения не имеющий. #}
+            <a href="/cabinet/staff/notifications">Все уведомления →</a>
+            {% else %}
             <a href="/cabinet/notifications">Все уведомления и push →</a>
+            {% endif %}
         </div>
     </div>
 

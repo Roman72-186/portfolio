@@ -120,6 +120,11 @@ FEATURE_LABELS = {
 
 ENROLLMENT_YEARS = list(range(2020, 2031))  # 2020–2030
 
+# Часовой пояс ученика в анкете — простой список смещений от МСК
+# (Калининград МСК-1 … Камчатка МСК+9), без геокодинга по городу.
+TIMEZONES = [(str(offset), f"МСК{'+' if offset > 0 else ''}{offset}" if offset else "МСК")
+             for offset in range(-1, 10)]
+
 # ── Student tags (admin LK) ───────────────────────────────────────────────────
 
 STUDY_MODES = ("offline", "online")

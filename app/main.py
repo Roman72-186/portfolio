@@ -24,7 +24,8 @@ from app.api import cabinet_tracker
 from app.api import homework_submission
 from app.api import lab_assets
 from app.api import student_review
-from app.dependencies import ACCESS_EXPIRED_DETAIL
+from app.api import cabinet_staff_notifications
+from app.dependencies import ACCESS_EXPIRED_DETAIL, TG_MISMATCH_DETAIL
 from app.limiter import limiter
 from app.services.rbac import seed_roles_and_permissions
 from app.services import n8n as n8n_service
@@ -125,11 +126,12 @@ async def forbidden_handler(request: Request, exc):
         detail = getattr(exc, "detail", "Forbidden")
         return JSONResponse(status_code=403, content={"detail": detail})
     detail = getattr(exc, "detail", "")
-    # Истёкший срок доступа (`User.access_until`) — не тупик, а переадресация:
-    # ученику оставлена «Личная информация» со ссылкой на оплату, туда его и
+    # Истёкший срок доступа (`User.access_until`) и расхождение Telegram-ника
+    # (`User.tg_username_mismatch`) — не тупик, а переадресация: ученику
+    # оставлена «Личная информация» с баннером и ссылкой на правку, туда его и
     # уводим вместо заглушки «Нет доступа». Зацикливания не будет — сам
     # `/cabinet/personal` в белом списке `dependencies.py` и 403 не отдаёт.
-    if detail == ACCESS_EXPIRED_DETAIL:
+    if detail in (ACCESS_EXPIRED_DETAIL, TG_MISMATCH_DETAIL):
         return RedirectResponse("/cabinet/personal", status_code=302)
     from app.tmpl import templates
     if "заблокирован" in detail.lower():
@@ -320,6 +322,7 @@ app.include_router(cabinet_tracker.router)
 app.include_router(homework_submission.router)
 app.include_router(lab_assets.router)
 app.include_router(student_review.router)
+app.include_router(cabinet_staff_notifications.router)
 
 
 @app.get("/health")

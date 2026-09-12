@@ -50,6 +50,21 @@ def is_path_allowed_when_access_expired(path: str) -> bool:
     return path.startswith(ACCESS_EXPIRED_ALLOWED_PREFIXES)
 
 
+# Маркер отказа по расхождению Telegram-ника (`User.tg_username_mismatch`,
+# добавлено 12.09.2026) — тот же приём, что и ACCESS_EXPIRED_DETAIL выше:
+# обработчик 403 в app/main.py узнаёт этот текст и уводит на «Личную
+# информацию» вместо заглушки «Нет доступа», там же и правится контакт.
+TG_MISMATCH_DETAIL = "Ник в Telegram не подтверждён"
+
+# Тот же список, что и у истёкшего доступа: «Личная информация» — единственное
+# открытое место, там ученик видит баннер и правит ник на /cabinet/personal/contacts.
+TG_MISMATCH_ALLOWED_PREFIXES = ACCESS_EXPIRED_ALLOWED_PREFIXES
+
+
+def is_path_allowed_when_tg_mismatch(path: str) -> bool:
+    return path.startswith(TG_MISMATCH_ALLOWED_PREFIXES)
+
+
 def get_current_user(
     request: Request,
     response: Response,
@@ -146,6 +161,18 @@ def get_current_user(
     if access_expired and not is_path_allowed_when_access_expired(request.url.path):
         raise HTTPException(status_code=403, detail=ACCESS_EXPIRED_DETAIL)
 
+    # Расхождение Telegram-ника — тем же приёмом, что и истёкший доступ выше.
+    # Держим только на завершённой анкете (`profile_completed`): пока ученик
+    # ещё не дошёл до конца первого входа, флаг ставить некому — сверка
+    # (exam_scheduler._run_tg_username_check) запускается независимо от этого
+    # и могла бы в теории отметить расхождение раньше, чем анкета заполнена;
+    # без этого условия человек застревал бы, не успев даже открыть форму.
+    tg_username_mismatch = (
+        role_rank == 1 and user.profile_completed and user.tg_username_mismatch
+    )
+    if tg_username_mismatch and not is_path_allowed_when_tg_mismatch(request.url.path):
+        raise HTTPException(status_code=403, detail=TG_MISMATCH_DETAIL)
+
     result = {
         "session_id": session.id,
         "impersonated_by_id": session.impersonated_by_id,
@@ -156,6 +183,13 @@ def get_current_user(
         "last_name": user.last_name,
         "phone": user.phone,
         "parent_phone": user.parent_phone,
+        "birth_date": user.birth_date,
+        "city": user.city,
+        "timezone": user.timezone,
+        "vk_profile_url": user.vk_profile_url,
+        "parent_name": user.parent_name,
+        "sdek_address": user.sdek_address,
+        "email": user.email,
         "about": user.about,
         "profile_completed": user.profile_completed,
         "portfolio_do_completed": user.portfolio_do_completed,
@@ -168,6 +202,7 @@ def get_current_user(
         "is_group_member": user.is_group_member,
         "last_vk_check_at": user.last_vk_check_at,
         "tg_username": user.tg_username,
+        "tg_username_mismatch": tg_username_mismatch,
         "telegram_chat_id": user.telegram_chat_id,
         "telegram_notifications_enabled": user.telegram_notifications_enabled,
         "enrollment_year": user.enrollment_year,

@@ -18,6 +18,7 @@
 подключён ни к одному экрану персонала — заводить нечего, пока не появится
 реальный сценарий.
 """
+import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Request, Depends, Form
@@ -31,6 +32,7 @@ from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
 from app.models.user import User
 from app.services.skills_history import skills_history
+from app.services import telegram as telegram_service
 from app.services.tz import msk_text
 from app.services.contacts import (
     find_student_by_tg_username,
@@ -133,6 +135,50 @@ def cabinet_personal_contacts_save(
     ):
         errors.append("Такой ник в Telegram уже занят другим учеником. Проверьте написание.")
 
+    # Живая сверка с Telegram (12.09.2026) — иначе ученик мог бы снять
+    # блокировку tg_username_mismatch, просто перепечатав тот же неверный
+    # ник. telegram_chat_id есть только у входивших через бота. Одна короткая
+    # попытка (не 3×15с из get_chat_username по умолчанию — это интерактивная
+    # форма, ученик ждёт с пальцем на кнопке, а не ночной фон), чтобы не
+    # держать HTTP-запрос почти минуту при недоступном Telegram.
+    tg_mismatch_after_save: bool | None = None
+    was_blocked = False
+    if not errors:
+        db_user = db.query(User).filter(User.id == user["user_id"]).first()
+        was_blocked = db_user.tg_username_mismatch
+        if db_user.telegram_chat_id:
+            ok, live_username = asyncio.run(
+                telegram_service.get_chat_username(
+                    db_user.telegram_chat_id, max_attempts=1, timeout=6.0,
+                )
+            )
+            if ok:
+                live_norm = normalize_tg_username(live_username or "").lower()
+                tg_mismatch_after_save = tg_username.lower() != live_norm
+                if tg_mismatch_after_save:
+                    if live_username:
+                        errors.append(
+                            f"В Telegram сейчас указан другой ник — @{live_username}. "
+                            "Проверьте написание или обновите ник в настройках Telegram."
+                        )
+                    else:
+                        errors.append(
+                            "В Telegram у вас сейчас не задан публичный ник. "
+                            "Установите его в настройках Telegram (Имя пользователя), "
+                            "затем сохраните здесь ещё раз."
+                        )
+            elif was_blocked:
+                # Сохранение именно сейчас важно ученику, чтобы снять блокировку —
+                # промолчать и сохранить контакты «как получится» означало бы
+                # показать «Контакты сохранены» и тут же баннер «Доступ закрыт»
+                # под ним, с текстом, который обещает обратное. Честнее отказать
+                # и попросить повторить: прежний флаг при этом не трогаем совсем.
+                errors.append(
+                    "Не удалось проверить ник в Telegram прямо сейчас — Telegram "
+                    "не ответил. Остальные контакты не сохранены, попробуйте ещё "
+                    "раз через минуту."
+                )
+
     if errors:
         form = {"phone": phone, "parent_phone": parent_phone, "tg_username": tg_username}
         return templates.TemplateResponse(request, "cabinet_personal_contacts.html",
@@ -141,10 +187,11 @@ def cabinet_personal_contacts_save(
 
     # Поля из формы — только контакты. Всё остальное в записи не трогаем даже
     # значением по умолчанию: установочные данные принадлежат куратору.
-    db_user = db.query(User).filter(User.id == user["user_id"]).first()
     db_user.phone = phone
     db_user.parent_phone = parent_phone
     db_user.tg_username = tg_username
+    if tg_mismatch_after_save is not None:
+        db_user.tg_username_mismatch = tg_mismatch_after_save
     db.commit()
     # Иначе Redis продолжит отдавать старые контакты на всех экранах ученика.
     invalidate_session(user["session_id"])
