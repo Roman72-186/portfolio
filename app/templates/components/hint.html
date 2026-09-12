@@ -1,0 +1,10 @@
+{% macro hint(text, label="Подробнее") %}
+<span class="hint-wrap">
+    <button type="button" class="hint-trigger" aria-haspopup="dialog" aria-expanded="false"
+            aria-label="{{ label }}">?</button>
+    <div class="hint-pop" role="dialog" aria-label="{{ label }}" hidden>
+        <button type="button" class="hint-pop-close" aria-label="Закрыть">&times;</button>
+        <div class="hint-pop-body">{{ text }}</div>
+    </div>
+</span>
+{% endmacro %}

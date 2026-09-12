@@ -1207,6 +1207,43 @@ button.desk-nav-item {
 .notif-gear-switch input:checked + .notif-gear-track::before { transform: translateX(16px); }
 .notif-gear-switch input:disabled + .notif-gear-track { opacity: 0.5; cursor: not-allowed; }
 
+/* Подсказки-«всплывашки» по тапу — общий компонент кабинета ученика.
+   position:fixed, координаты через JS, та же причина, что у .notif-gear-pop:
+   карточки вроде .profile-hero держат overflow:hidden ради декоративных
+   кругов, absolute внутри обрезался бы по границе карточки. В отличие от
+   .notif-gear-wrap (один экземпляр на страницу), триггеров подсказки на
+   странице много — app/static/js/hint.js управляет каждым независимо. */
+.hint-wrap { position: relative; display: inline-flex; vertical-align: middle; }
+.hint-trigger {
+    position: relative;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--surface-2);
+    color: var(--muted); font-size: var(--fs-caption); font-weight: 700;
+    cursor: pointer; padding: 0; flex-shrink: 0;
+    transition: background var(--duration-fast), color var(--duration-fast), border-color var(--duration-fast);
+}
+.hint-trigger::before { content: ''; position: absolute; inset: -12px; }
+.hint-trigger:hover { background: var(--blue-soft); color: var(--blue); }
+.hint-trigger[aria-expanded="true"] { background: var(--blue-soft); color: var(--blue); border-color: var(--blue-tint); }
+.hint-trigger:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.hint-pop {
+    position: fixed; z-index: 260;
+    width: 260px; max-width: calc(100vw - 32px);
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-md); box-shadow: var(--sh-md);
+    padding: 12px 30px 12px 14px;
+}
+.hint-pop-close {
+    position: absolute; top: 6px; right: 6px;
+    width: 28px; height: 28px; border-radius: 50%;
+    border: none; background: transparent; color: var(--dim);
+    cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+}
+.hint-pop-close::before { content: ''; position: absolute; inset: -8px; }
+.hint-pop-close:hover { background: var(--surface-2); color: var(--ink); }
+.hint-pop-body { font-size: var(--fs-small); color: var(--ink); line-height: 1.45; }
+
 /* ═══════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════ */

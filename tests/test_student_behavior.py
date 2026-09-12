@@ -47,6 +47,21 @@ def test_profile_form_returns_200_when_incomplete(client, user_factory, session_
     assert "Уверенный" in resp.text
 
 
+def test_profile_form_shows_hint_component(client, user_factory, session_factory):
+    """Анкета подключает пилотные подсказки у часового пояса и ссылки ВК.
+
+    Пилот компонента `components/hint.html` (см. `docs/component-map.md`) —
+    ровно две подсказки на этом экране: у СДЭК уже есть инлайн-примечание,
+    дублировать его всплывашкой не стали.
+    """
+    client, _ = _auth(client, user_factory, session_factory,
+                      vk_id=100_105, profile_completed=False)
+    resp = client.get("/cabinet/profile")
+    assert resp.status_code == 200
+    assert resp.text.count('class="hint-wrap"') == 2
+    assert '<script src="/static/js/hint.js?v=' in resp.text
+
+
 def test_profile_form_redirects_when_already_complete(auth_client):
     """GET /cabinet/profile → экран правки контактов, если анкета заполнена."""
     client, _ = auth_client
