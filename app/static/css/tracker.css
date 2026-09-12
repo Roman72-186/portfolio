@@ -1172,6 +1172,34 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
    были быть с самого начала, но потерялись при переезде видео в блоки
    31.08.2026 — этот класс/стиль был их временной заменой без обеих защит). */
 
+/* Кружок выполнения видео-блока — правый верхний угол карточки (владелец
+   12.09.2026). Своя шапка, не `.lrn-blk-title` напрямую: у видео без
+   заголовка кружку иначе было бы не на чем висеть. */
+.lrn-blk-video-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--s-2);
+}
+.lrn-blk-video-head .lrn-blk-title { flex: 1 1 auto; }
+.lrn-blk-check {
+    flex: none;
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0;
+    border: 2px solid var(--line);
+    border-radius: 50%;
+    background: var(--surface);
+    color: #fff;
+    font-size: 15px; line-height: 1; font-weight: 700;
+    cursor: pointer;
+}
+.lrn-blk-check:hover:not(:disabled) { border-color: var(--blue); }
+.lrn-blk-check:disabled { cursor: default; opacity: 0.7; }
+.lrn-blk-check.is-done { border-color: var(--success); background: var(--success); }
+.lrn-blk-video-check-hint { margin: 0; font-size: 13px; color: var(--dim); }
+.lrn-blk-video-check-hint.is-error { color: var(--error); }
+
 /* Текст самого вопроса — не field-label: это содержимое, а не подпись поля,
    и должно читаться раньше вариантов ответа под ним, а не наравне с ними. */
 .lrn-blk-question-body { display: block; margin: 0 0 var(--s-1); color: var(--ink); font: 600 15px/1.4 var(--font-body); }
@@ -1230,12 +1258,42 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-feed { display: flex; flex-direction: column; gap: 12px; }
 
 .lrn-step {
+    position: relative;
     background: var(--card);
     border: 1px solid var(--line);
     border-radius: var(--radius-card, 14px);
     padding: 14px;
     transition: opacity 0.2s ease, border-color 0.2s ease;
 }
+
+/* Кружок статуса видео-шага — правый верхний угол карточки (владелец
+   12.09.2026). Абсолютное позиционирование, а не место в `.lrn-step-head`:
+   заголовок сворачивается в колонку, а кружок должен остаться в углу
+   независимо от того, сколько бейджей и строк над ним. Виден и когда
+   `.lrn-step--done .lrn-step-body` прячет тело карточки — статус должен
+   читаться без наведения. */
+.lrn-step-check {
+    position: absolute;
+    top: 14px; right: 14px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 2px solid var(--line);
+    background: var(--surface);
+}
+.lrn-step-check.is-done {
+    border-color: var(--success);
+    background: var(--success);
+}
+.lrn-step-check.is-done::after {
+    content: '✓';
+    display: block;
+    color: #fff;
+    font-size: 13px; font-weight: 700; line-height: 18px;
+    text-align: center;
+}
+/* Освобождаем место под кружок только там, где он есть — иначе бейджи в шапке
+   при переносе строки легли бы прямо под него на узком экране. */
+.lrn-step:has(.lrn-step-check) .lrn-step-head { padding-right: 32px; }
 
 .lrn-step[hidden] { display: none; }
 .lrn-step-head { display: flex; flex-direction: column; gap: 6px; }

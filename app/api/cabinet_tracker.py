@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.api.cabinet_student import needs_profile_setup
 from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
+from app.models.learning_video import LearningVideo
 from app.models.task_block import (
     BLOCK_PHOTO, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_RULES, BLOCK_SCALE, BLOCK_TIMED,
     BLOCK_UPLOAD, BLOCK_VIDEO, MAX_BLOCKS, MAX_SUBMISSION_IMAGES, QUESTION_TEXT,
@@ -85,6 +86,7 @@ from app.services.tracker import (
 from app.services.tz import today_msk, now_msk
 from app.services.upload_validation import read_image_uploads
 from app.services.utils import compress_image
+from app.services.video_progress import get_video_progress
 from app.services.video_topics import accessible_topic_ids
 from app.tmpl import templates
 
@@ -282,6 +284,35 @@ def _portfolio_block_done(db: DBSession, block, user_id: int) -> bool:
     )
 
 
+def _video_block_watched(db: DBSession, block, user_id: int) -> bool:
+    """Досмотрел ли ученик ролик видео-блока — по `VideoProgress.completed_at`,
+    той же проверке антиперемотки, что уже стоит на видео-задаче целиком
+    (`api/video.py::_save_progress`: сервер сам решает «досмотрел», клиенту не
+    верим). «Просмотрено» — это только допуск к кнопке ниже, не сама отметка
+    выполнения: блок закрывает ученик явным кликом (владелец 12.09.2026:
+    «кружок нужно отметить, но проверяем, просмотрено видео или нет» — кто
+    ставит отметку и кто её проверяет, две разные роли).
+
+    `completed_at` — отметка на всю жизнь ролика (`video_progress.py::
+    save_video_progress`: «preserve the first completion timestamp», не
+    сбрасывается новым апсертом), не на конкретный блок или цикл. Если один
+    и тот же каталожный ролик когда-нибудь привяжут вторым блоком к другому
+    занятию — старый просмотр молча откроет кружок там без нового просмотра.
+    Не чиним искусственным окном по датам блока (как `_portfolio_block_done`
+    от загрузок): у видео-задачи `TrackerTask.kind == 'video'` то же
+    поведение уже много месяцев (`_close_video_task_once` смотрит на тот же
+    `completed_at`), и один ролик под два разных блока/задачи на практике не
+    заводят — у каждого урока свой каталожный ролик.
+    """
+    if not block.video_id:
+        return False
+    video = db.get(LearningVideo, block.video_id)
+    if video is None:
+        return False
+    progress = get_video_progress(db, user_id=user_id, video_id=video.bunny_video_id)
+    return bool(progress and progress.completed_at is not None)
+
+
 def _submission_payload(db: DBSession, block, user_id: int) -> dict:
     """Что ученик уже сдал в этом блоке — общая часть «загрузки работ» и
     «работы на время»: у них одна механика приёма, разная только обёртка."""
@@ -378,6 +409,13 @@ def cabinet_tracker_task_blocks(
             item["video_embed_endpoint"] = (
                 f"/cabinet/videos/{block.video_id}/embed" if block.video_id else None
             )
+            # Кружок в углу карточки: закрыт ученик отмечает сам, но кнопка
+            # принимает отметку, только когда сервер видит по `VideoProgress`,
+            # что ролик действительно досмотрен (владелец 12.09.2026).
+            state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
+            item["done"] = bool(state and state.status == STATUS_DONE)
+            item["watched"] = _video_block_watched(db, block, user["user_id"])
+            item["confirm_endpoint"] = f"/cabinet/tracker/blocks/{block.id}/watched"
         elif block.block_type == BLOCK_PHOTO:
             item["images"] = [
                 {"url": i.image_s3_url} for i in images.get(block.id, [])
@@ -534,6 +572,33 @@ def start_timed_block_route(
         "started_at": state.started_at.isoformat() if state.started_at else None,
         "time_limit_minutes": block.time_limit_minutes,
     })
+
+
+@router.post("/tracker/blocks/{block_id}/watched", response_class=JSONResponse)
+def confirm_video_block_watched(
+    block_id: int,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Ученик отмечает видео-блок выполненным кружком в углу карточки.
+
+    Отметку ставит ученик кликом, а не факт просмотра сам по себе — иначе
+    кружок закрывался бы раньше, чем ученик успел это увидеть (владелец
+    12.09.2026). Но отправка принимается, только когда сервер сам видит по
+    `VideoProgress`, что ролик действительно досмотрен: без этой проверки
+    кружок был бы обходом того же гейта, ради которого у видео-задачи целиком
+    нет ручной кнопки «Отметить» (`partials/task_action.html`).
+    """
+    block = db.get(TaskBlock, block_id)
+    if block is None or block.block_type != BLOCK_VIDEO:
+        raise HTTPException(status_code=404, detail="Блок не найден")
+    _accessible_task_or_404(db, user["user_id"], block.task_id)
+    if not _video_block_watched(db, block, user["user_id"]):
+        return JSONResponse({"ok": False, "error": "not_watched"}, status_code=409)
+    close_task_block_for_user(db, block=block, user_id=user["user_id"], source="video_watched")
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 MAX_UPLOAD_FILE_SIZE = 10 * 1024 * 1024

@@ -13,7 +13,7 @@ Staff-сторона — конструктор дня (`cabinet_program.py`), �
 """
 
 import json as _json
-from datetime import date, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from app.models.learning_video import LearningVideo
 from app.models.task_block import (
@@ -582,6 +582,82 @@ def test_submit_on_task_without_questions_is_404(client, db, user_factory, sessi
         json={"answers": [{"block_id": 1, "text": "Ответ"}]},
     )
     assert resp.status_code == 404
+
+
+# ── Видео-блок: кружок выполнения проверяет реальный просмотр ───────────────
+# (владелец 12.09.2026 — «кружок нужно отметить, но проверяем, просмотрено
+# видео или нет»). До этой стройки BLOCK_VIDEO вообще не умел закрываться:
+# `TaskBlockState` для него никто не выставлял, и обязательный видео-блок
+# запирал бы хвост ленты навсегда.
+
+def _video_task_with_block(db, staff_user_id):
+    video = LearningVideo(bunny_library_id=1, bunny_video_id="v-blk-1", title="Урок")
+    db.add(video)
+    db.flush()
+    task = _material_task_with_blocks(
+        db, staff_user_id, blocks=[{"block_type": BLOCK_VIDEO, "video_id": video.id}],
+    )
+    [block] = _blocks_of(db, task.id)
+    return task, block, video
+
+
+def _mark_watched(db, *, user_id, bunny_video_id):
+    from app.models.video_progress import VideoProgress
+    db.add(VideoProgress(
+        user_id=user_id, video_id=bunny_video_id,
+        position_seconds=120.0, duration_seconds=120.0, watched_seconds=120.0,
+        completed_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+
+
+def test_video_block_confirm_rejected_when_not_watched(client, db, user_factory, session_factory):
+    staff = user_factory(vk_id=550_320, name="Стафф", is_admin=True, role_name="админ")
+    task, block, _video = _video_task_with_block(db, staff.id)
+    _student_client(client, user_factory, session_factory)
+
+    resp = client.post(f"/cabinet/tracker/blocks/{block.id}/watched")
+    assert resp.status_code == 409
+    assert resp.json()["error"] == "not_watched"
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert body["blocks"][0]["done"] is False
+
+
+def test_video_block_confirm_closes_when_watched(client, db, user_factory, session_factory):
+    staff = user_factory(vk_id=550_321, name="Стафф", is_admin=True, role_name="админ")
+    task, block, video = _video_task_with_block(db, staff.id)
+    student = _student_client(client, user_factory, session_factory)
+    _mark_watched(db, user_id=student.id, bunny_video_id=video.bunny_video_id)
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert body["blocks"][0]["watched"] is True
+    assert body["blocks"][0]["done"] is False
+
+    resp = client.post(f"/cabinet/tracker/blocks/{block.id}/watched")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["ok"] is True
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert body["blocks"][0]["done"] is True
+
+    from app.models.task_block import TaskBlockState
+    state = db.query(TaskBlockState).filter(
+        TaskBlockState.block_id == block.id, TaskBlockState.user_id == student.id,
+    ).one()
+    assert state.completion_source == "video_watched"
+
+
+def test_video_block_confirm_is_idempotent(client, db, user_factory, session_factory):
+    staff = user_factory(vk_id=550_322, name="Стафф", is_admin=True, role_name="админ")
+    task, block, video = _video_task_with_block(db, staff.id)
+    student = _student_client(client, user_factory, session_factory)
+    _mark_watched(db, user_id=student.id, bunny_video_id=video.bunny_video_id)
+
+    assert client.post(f"/cabinet/tracker/blocks/{block.id}/watched").status_code == 200
+    resp = client.post(f"/cabinet/tracker/blocks/{block.id}/watched")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
 
 
 # ── Ссылка: только http и https (владелец 31.08.2026) ───────────────────────
