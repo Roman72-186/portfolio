@@ -192,6 +192,7 @@
                 var max = block.scale_max || 10;
                 var saved = block.answer_option_texts || {};
                 var locked = api.answered || !!block.answered;
+                var inputs = [];
                 (block.options || []).forEach(function (option, oi) {
                     var row = el('div', 'lrn-scale-row');
                     row.appendChild(el('span', 'lrn-scale-name', option.text));
@@ -235,7 +236,83 @@
                         row.appendChild(labels);
                     }
                     wrap.appendChild(row);
+                    inputs.push(input);
                 });
+
+                // Своя кнопка сохранения (владелец 12.09.2026): «чтобы ученик
+                // понял, что его ответы в шкале навыков приняты» — не
+                // дожидаться общей формы «Отправить ответы» под всеми
+                // блоками задания. Эндпоинт общий
+                // (`/cabinet/tracker/tasks/{id}/blocks`), но здесь шлём
+                // только ответы этого блока — сервер прекрасно принимает
+                // частичную отправку (`submit_cabinet_tracker_task_blocks`:
+                // «ответы принимаются частями»), другие блоки задания это
+                // не затрагивает.
+                if (block.submit_endpoint) {
+                    var note = el('p', 'video-progress-status');
+                    note.setAttribute('aria-live', 'polite');
+                    if (locked) {
+                        wrap.appendChild(el(
+                            'p', 'lrn-blk-verdict is-ok',
+                            'Сохранено — результат в «Личной информации».'
+                        ));
+                    } else {
+                        var saveBtn = el('button', 'btn-blue', 'Сохранить');
+                        saveBtn.type = 'button';
+                        saveBtn.addEventListener('click', function () {
+                            var optionIds = [];
+                            var optionTexts = {};
+                            inputs.forEach(function (input) {
+                                if (input.dataset.touched !== 'true') return;
+                                var optionId = Number(input.getAttribute('data-scale-option'));
+                                optionIds.push(optionId);
+                                optionTexts[optionId] = input.value;
+                            });
+                            if (!optionIds.length) {
+                                note.textContent = 'Сдвиньте хотя бы один ползунок.';
+                                note.classList.add('is-error');
+                                return;
+                            }
+                            saveBtn.disabled = true;
+                            note.textContent = '';
+                            note.classList.remove('is-error');
+                            fetch(block.submit_endpoint, {
+                                method: 'POST',
+                                credentials: 'same-origin',
+                                headers: {
+                                    'Accept': 'application/json',
+                                    'Content-Type': 'application/json',
+                                    'X-CSRF-Token': csrfToken
+                                },
+                                body: JSON.stringify({
+                                    answers: [{
+                                        block_id: block.id,
+                                        option_ids: optionIds,
+                                        option_texts: optionTexts
+                                    }]
+                                })
+                            }).then(function (resp) {
+                                if (!resp.ok) throw new Error();
+                                return resp.json();
+                            }).then(function () {
+                                block.answered = true;
+                                inputs.forEach(function (input) { input.disabled = true; });
+                                saveBtn.remove();
+                                note.remove();
+                                wrap.appendChild(el(
+                                    'p', 'lrn-blk-verdict is-ok',
+                                    'Сохранено — результат в «Личной информации».'
+                                ));
+                            }).catch(function () {
+                                saveBtn.disabled = false;
+                                note.textContent = 'Не удалось сохранить. Попробуйте ещё раз.';
+                                note.classList.add('is-error');
+                            });
+                        });
+                        wrap.appendChild(saveBtn);
+                        wrap.appendChild(note);
+                    }
+                }
                 return wrap;
             }
 

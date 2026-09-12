@@ -388,6 +388,11 @@ def cabinet_tracker_task_blocks(
             # Диагностика навыков: варианты — навыки, ответ — оценка каждому.
             item["scale_max"] = SCALE_MAX
             item["scale_min"] = SCALE_MIN
+            # Своя кнопка «Сохранить» у блока (владелец 12.09.2026) — эндпоинт
+            # тот же, что у общей формы «Отправить ответы» внизу задания:
+            # `submit_cabinet_tracker_task_blocks` принимает ответы частями,
+            # отправка одного блока не требует и не трогает остальные.
+            item["submit_endpoint"] = f"/cabinet/tracker/tasks/{task_id}/blocks"
             item["options"] = [
                 {
                     "id": o.id,

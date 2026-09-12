@@ -20,6 +20,7 @@ from app.models.task_block import (
     BLOCK_LINK,
     BLOCK_PHOTO,
     BLOCK_QUESTION,
+    BLOCK_SCALE,
     BLOCK_TEXT,
     BLOCK_VIDEO,
     QUESTION_MULTIPLE,
@@ -474,6 +475,69 @@ def test_option_requires_text_reveals_and_round_trips_via_route(
     assert after["blocks"][0]["answer_option_texts"] == {
         str(stress.id): "Часто нервничаю перед экзаменом",
     }
+
+
+# ── Шкала навыков: своя кнопка «Сохранить» (владелец 12.09.2026) ────────────
+# «Чтобы ученик понял, что его ответы в шкале навыков приняты» — блок несёт
+# собственный submit_endpoint, тот же роут, что у общей формы «Отправить
+# ответы» под всеми блоками задания. Отправка одного блока не требует и не
+# трогает остальные (см. докстринг `submit_cabinet_tracker_task_blocks`).
+
+def test_scale_block_carries_its_own_submit_endpoint(client, db, user_factory, session_factory):
+    staff = user_factory(vk_id=550_310, name="Стафф", is_admin=True, role_name="админ")
+    task = _material_task_with_blocks(
+        db, staff.id,
+        blocks=[{"block_type": BLOCK_SCALE, "title": "Оцени себя"}],
+    )
+    [block] = _blocks_of(db, task.id)
+    db.add(TaskBlockOption(block_id=block.id, text="Уверенность", sort_order=0))
+    db.commit()
+    _student_client(client, user_factory, session_factory)
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert body["blocks"][0]["submit_endpoint"] == f"/cabinet/tracker/tasks/{task.id}/blocks"
+
+
+def test_scale_block_saves_alone_without_touching_other_unanswered_blocks(
+    client, db, user_factory, session_factory,
+):
+    """Своя кнопка шкалы шлёт ответ только по своему блоку — соседний вопрос
+    того же задания остаётся открытым, и его можно ответить отдельно позже."""
+    staff = user_factory(vk_id=550_311, name="Стафф", is_admin=True, role_name="админ")
+    task = _material_task_with_blocks(
+        db, staff.id,
+        blocks=[
+            {"block_type": BLOCK_SCALE, "title": "Оцени себя"},
+            {"block_type": BLOCK_QUESTION, "question_type": QUESTION_TEXT, "body": "Как прошло?"},
+        ],
+    )
+    scale_block, question_block = _blocks_of(db, task.id)
+    db.add(TaskBlockOption(block_id=scale_block.id, text="Уверенность", sort_order=0))
+    db.commit()
+    student = _student_client(client, user_factory, session_factory)
+    [option] = db.query(TaskBlockOption).filter(TaskBlockOption.block_id == scale_block.id).all()
+
+    resp = client.post(
+        f"/cabinet/tracker/tasks/{task.id}/blocks",
+        json={"answers": [{
+            "block_id": scale_block.id,
+            "option_ids": [option.id],
+            "option_texts": {option.id: "7"},
+        }]},
+    )
+    assert resp.status_code == 200, resp.text
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    by_id = {b["id"]: b for b in body["blocks"]}
+    assert by_id[scale_block.id]["answered"] is True
+    assert by_id[question_block.id]["answered"] is False
+    # Общая форма «Отправить ответы» остаётся — вопрос ещё не отвечен.
+    assert body["submit_endpoint"] == f"/cabinet/tracker/tasks/{task.id}/blocks"
+
+    from app.services.skills_history import skills_history
+    history = skills_history(db, student.id)
+    assert history[0]["skill"] == "Уверенность"
+    assert history[0]["points"][0]["score"] == 7
 
 
 def test_submit_blocks_works_after_task_done_too(client, db, user_factory, session_factory):
