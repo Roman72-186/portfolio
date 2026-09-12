@@ -8,6 +8,7 @@
 Отдельной таблицы под диагностику нет: навыки — варианты блока, оценка —
 текст выбранного варианта.
 """
+import json as _json
 from datetime import timedelta
 
 from app.models.task_block import (
@@ -330,6 +331,52 @@ def test_history_matches_skill_names_ignoring_case_and_spacing(db, regular_user)
     assert sorted(p["score"] for p in history[0]["points"]) == [3, 8]
     # Показанное название — из последнего по дате ответа.
     assert history[0]["skill"] == "стрессоустойчивость"
+
+
+def test_edit_form_gets_the_scale_skills_back(admin_client):
+    """Регрессия (найдено 12.09.2026, владелец: «не сохраняется шкала
+    навыков»). `_edit_payloads` (cabinet_program.py) отдавал `options: []`
+    для любого блока кроме BLOCK_QUESTION — форма правки открывала уже
+    сохранённое задание без единого навыка, и следующее сохранение (даже без
+    правок) стирало блок целиком: `sync_blocks` считает блок без вариантов
+    пустым и не создаёт его заново."""
+    client, _ = admin_client
+    day = (TODAY + timedelta(days=20)).isoformat()
+
+    resp = client.post(
+        f"/cabinet/staff/program/{day}/material",
+        json={
+            "title": "Диагностика",
+            "audience": {"assign_to_all": True, "tag_ids": [], "assignee_usernames": ""},
+            "blocks": [{
+                "block_type": BLOCK_SCALE,
+                "title": "Оцени себя",
+                "options": [{
+                    "text": "Стрессоустойчивость",
+                    "is_correct": False,
+                    "description": "Как ты справляешься с дедлайнами.",
+                    "scale_min_label": "Теряюсь",
+                    "scale_max_label": "Спокоен",
+                }],
+            }],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+    page = client.get(f"/cabinet/staff/program/{day}")
+    edit_data_json = page.text.split("programEditData = ")[1].split(";\n")[0]
+    payloads = _json.loads(edit_data_json)
+    [block] = [
+        b for payload in payloads.values() for b in payload.get("blocks", [])
+        if b["block_type"] == BLOCK_SCALE
+    ]
+
+    assert block["options"], "форма правки не получила ни одного навыка обратно"
+    [option] = block["options"]
+    assert option["text"] == "Стрессоустойчивость"
+    assert option["description"] == "Как ты справляешься с дедлайнами."
+    assert option["scale_min_label"] == "Теряюсь"
+    assert option["scale_max_label"] == "Спокоен"
 
 
 def test_personal_page_shows_skill_description(auth_client, db):

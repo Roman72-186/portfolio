@@ -795,9 +795,17 @@ def test_blocks_source_returns_content_without_ids(client, db, user_factory, ses
 
     assert [b["block_type"] for b in body["blocks"]] == [BLOCK_TEXT, BLOCK_QUESTION]
     assert all("id" not in b for b in body["blocks"])
+    # description/scale_min_label/scale_max_label — только у BLOCK_SCALE
+    # (добавлены 12.09.2026), у вопроса всегда None.
     assert body["blocks"][1]["options"] == [
-        {"text": "А", "is_correct": True, "requires_text": False},
-        {"text": "Б", "is_correct": False, "requires_text": False},
+        {
+            "text": "А", "is_correct": True, "requires_text": False,
+            "description": None, "scale_min_label": None, "scale_max_label": None,
+        },
+        {
+            "text": "Б", "is_correct": False, "requires_text": False,
+            "description": None, "scale_min_label": None, "scale_max_label": None,
+        },
     ]
 
 

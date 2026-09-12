@@ -28,6 +28,8 @@ from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, TOPIC_KIND_WEEK, 
 from app.models.learning_video import LearningVideo
 from app.models.task_block import (
     BLOCK_QUESTION,
+    BLOCK_RULES,
+    BLOCK_SCALE,
     TaskBlock,
     QUESTION_TYPE_LABELS,
     QUESTION_TYPES,
@@ -318,14 +320,25 @@ def _edit_payloads(
                 "locked_message": b.locked_message,
                 "bypass_sequence": b.bypass_sequence,
                 "time_limit_minutes": b.time_limit_minutes,
+                # Варианты нужны форме правки у трёх типов: вопрос (текст +
+                # верный ответ), шкала навыков (текст + описание + подписи
+                # краёв) и правила (только текст). До 12.09.2026 сюда попадал
+                # только BLOCK_QUESTION — при повторном открытии сохранённого
+                # задания форма получала пустой список навыков/правил,
+                # `sync_blocks` считал такой блок пустым (`_is_empty`) и
+                # стирал его целиком при следующем сохранении, даже если
+                # куратор ничего не трогал.
                 "options": [
                     {
                         "id": o.id, "text": o.text, "is_correct": o.is_correct,
                         "requires_text": o.requires_text,
+                        "description": o.description,
+                        "scale_min_label": o.scale_min_label,
+                        "scale_max_label": o.scale_max_label,
                     }
                     for o in block_options.get(b.id, [])
                 ]
-                if b.block_type == BLOCK_QUESTION
+                if b.block_type in (BLOCK_QUESTION, BLOCK_SCALE, BLOCK_RULES)
                 else [],
             }
             for b in blocks
@@ -536,6 +549,12 @@ class BlockOptionItem(BaseModel):
     # Выбор этого варианта раскрывает у ученика поле свободного текста
     # (владелец 05.09.2026). См. `app/models/task_block.py::TaskBlockOption`.
     requires_text: bool = False
+    # Только у BLOCK_SCALE (владелец 11.09.2026, анкета «Метакомпетенции») —
+    # описание навыка и подписи к краям шкалы 0 и 10. У вопроса/правил фронт
+    # эти поля не шлёт, пусто — `None`.
+    description: str | None = Field(default=None, max_length=5000)
+    scale_min_label: str | None = Field(default=None, max_length=200)
+    scale_max_label: str | None = Field(default=None, max_length=200)
 
     @field_validator("text")
     @classmethod
@@ -936,7 +955,12 @@ def blocks_source_content(
                 for i in images.get(b.id, [])
             ],
             "options": [
-                {"text": o.text, "is_correct": o.is_correct, "requires_text": o.requires_text}
+                {
+                    "text": o.text, "is_correct": o.is_correct, "requires_text": o.requires_text,
+                    "description": o.description,
+                    "scale_min_label": o.scale_min_label,
+                    "scale_max_label": o.scale_max_label,
+                }
                 for o in options.get(b.id, [])
             ],
         }
