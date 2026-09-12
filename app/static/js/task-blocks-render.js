@@ -53,19 +53,39 @@
                 return wrap;
             }
 
-            function renderPhoto(block) {
-                var wrap = withTitle(el('div', 'lrn-blk lrn-blk-photo'), block);
+            var galleryUid = 0;
+
+            // Общая галерея фото-блоков: одинаковый размер превью (квадрат,
+            // обрезка по центру — см. .lrn-blk-image в tracker.css) и клик
+            // открывает ту же карусель-лайтбокс (partials/lightbox.html), что
+            // у остальных фото-гридов в кабинете (photo-grid/photo-zoom-button).
+            // До 12.09.2026 превью рисовались голым <img> без кликов — отсюда
+            // и разные по высоте картинки, и нераскрывающаяся карусель.
+            function photoGallery(urls, alt) {
                 var gallery = el('div', 'lrn-blk-gallery');
-                (block.images || []).forEach(function (image) {
+                galleryUid += 1;
+                gallery.setAttribute('data-gallery', 'lrn-blk-' + api.uid + '-' + galleryUid);
+                urls.forEach(function (url) {
+                    var btn = el('button', 'photo-zoom-button');
+                    btn.type = 'button';
+                    btn.setAttribute('aria-label', 'Открыть фото');
+                    btn.onclick = function () { window.openGallery(btn.firstElementChild); };
                     var img = el('img', 'lrn-blk-image');
-                    img.src = image.url;
-                    img.alt = block.title || 'Изображение к заданию';
+                    img.src = url;
+                    img.alt = alt;
                     img.loading = 'lazy';
-                    gallery.appendChild(img);
+                    btn.appendChild(img);
+                    gallery.appendChild(btn);
                 });
                 // Одна картинка занимает всю ширину, несколько — встают сеткой.
-                if ((block.images || []).length === 1) gallery.classList.add('is-single');
-                wrap.appendChild(gallery);
+                if (urls.length === 1) gallery.classList.add('is-single');
+                return gallery;
+            }
+
+            function renderPhoto(block) {
+                var wrap = withTitle(el('div', 'lrn-blk lrn-blk-photo'), block);
+                var urls = (block.images || []).map(function (image) { return image.url; });
+                wrap.appendChild(photoGallery(urls, block.title || 'Изображение к заданию'));
                 if (block.body) wrap.appendChild(el('p', 'video-help', block.body));
                 return wrap;
             }
@@ -392,16 +412,7 @@
             function submittedGallery(block) {
                 var files = block.submitted_files || [];
                 if (!files.length) return null;
-                var gallery = el('div', 'lrn-blk-gallery');
-                files.forEach(function (url) {
-                    var img = el('img', 'lrn-blk-image');
-                    img.src = url;
-                    img.alt = 'Загруженная работа';
-                    img.loading = 'lazy';
-                    gallery.appendChild(img);
-                });
-                if (files.length === 1) gallery.classList.add('is-single');
-                return gallery;
+                return photoGallery(files, 'Загруженная работа');
             }
 
             // Приём работ прямо в блоке (владелец 07.09.2026: «работы нужно

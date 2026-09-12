@@ -1160,7 +1160,8 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-blk .btn-outline { max-width: 100%; }
 
 .lrn-blk-image {
-    width: 100%; max-width: 100%; height: auto; display: block;
+    width: 100%; max-width: 100%; display: block;
+    aspect-ratio: 1; object-fit: cover;
     border-radius: var(--r-md); border: 1px solid var(--line);
 }
 

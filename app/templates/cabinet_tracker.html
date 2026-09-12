@@ -11,7 +11,7 @@ FORM: Operate, список, а не карточка-витрина.
 #}
 {% block title %}Личный трекер{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=48">
+<link rel="stylesheet" href="/static/css/tracker.css?v=49">
 <link rel="stylesheet" href="/static/css/profile_hero.css?v=6">
 {% endblock %}
 {% block content %}
@@ -232,4 +232,9 @@ document.addEventListener('animationend', function (event) {
 
 {% set active_tab = "tracker" %}
 {% include "partials/bottom_nav.html" %}
+{# Фото-блоки задания (task_action.html → task_blocks.html) открывают карусель
+   через тот же лайтбокс, что и остальные фото-гриды кабинета — без этого
+   include клик по фото в трекере ничего не делал бы (window.openGallery
+   не определён). #}
+{% include "partials/lightbox.html" %}
 {% endblock %}

@@ -13,12 +13,12 @@ FORM: Operate.
 {# Предпросмотр «Глазами ученика» рисует блоки общим рендерером ученика, а
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
    показывались бы голой разметкой. #}
-<link rel="stylesheet" href="/static/css/tracker.css?v=48">
+<link rel="stylesheet" href="/static/css/tracker.css?v=49">
 {% endblock %}
 {% block content %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
-<script src="/static/js/task-blocks-render.js?v=9"></script>
+<script src="/static/js/task-blocks-render.js?v=10"></script>
 {# Время сдачи пробника (владелец 09.09.2026: «выставляем время сдачи»).
    30.08.2026 эти поля из конструктора убрали, окно ставил сервер; теперь они
    вернулись, но заполнены расписанием по умолчанию — 11:45–18:30 этого дня и
