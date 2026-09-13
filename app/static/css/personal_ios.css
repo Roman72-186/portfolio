@@ -113,6 +113,19 @@
     border-bottom: 1.6px solid var(--ios-label-3);
     transform: rotate(-45deg);
 }
+/* Шеврон и разделитель — оба `::after` одного узла: для любой не-последней
+   строки-ссылки в группе (документы — не последняя, «Изменить контакты» —
+   случайно всегда последняя, поэтому баг не проявлялся раньше) более
+   специфичный `.prs-row:not(:last-child)::after` выше перетягивает себе
+   position/left/right/bottom/height, и шеврон превращается в полоску под
+   текстом вместо стрелки справа (найдено 13.09.2026 на мобильной ширине —
+   заголовки документов переносятся на 2 строки, и дефект стал заметен).
+   Явно перебиваем именно эти свойства тем же уровнем специфичности. */
+.ios-personal .prs-row.prs-row-link::after {
+    position: static;
+    left: auto; right: auto; bottom: auto;
+    height: 7px;
+}
 
 /* строки «Документы» — заголовок+подпись, недоступны для нажатия */
 .ios-personal .prs-row--stacked { display: block; cursor: default; }
@@ -355,8 +368,12 @@
     margin: 0; font: 700 17px/1.3 var(--ios-font); color: var(--ios-label);
 }
 .legal-modal-close {
+    /* 44×44 — тот же тап-таргет, что у .lightbox-close (base.css), не
+       визуальный размер .hint-pop-close (28px + расширенная зона клика):
+       это полноэкранный поп-ап той же категории, что лайтбокс, а не
+       маленькая подсказка. */
     background: var(--ios-grouped-bg); border: none; border-radius: 50%;
-    width: 30px; height: 30px; flex-shrink: 0; cursor: pointer;
+    width: 44px; height: 44px; flex-shrink: 0; cursor: pointer;
     font-size: 18px; line-height: 1; color: var(--ios-label-2);
     display: flex; align-items: center; justify-content: center;
 }
@@ -374,7 +391,7 @@
 .legal-modal-body ul { margin: 0 0 10px; padding-left: 20px; }
 .legal-modal-body li { margin-bottom: 4px; }
 .legal-modal-body table { width: 100%; border-collapse: collapse; margin: 0 0 12px; font-size: 13px; }
-.legal-modal-body td { border: 0.5px solid var(--ios-sep); padding: 6px 8px; vertical-align: top; }
+.legal-modal-body td { border: 0.5px solid var(--ios-sep); padding: 6px 8px; vertical-align: top; word-break: break-word; }
 .legal-modal-body a { text-decoration: underline; word-break: break-word; }
 .legal-modal-loading, .legal-modal-error { color: var(--ios-label-3); padding: 24px 0; text-align: center; }
 .legal-modal-foot {
