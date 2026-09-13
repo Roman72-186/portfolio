@@ -174,6 +174,24 @@ def test_standalone_task_visible_for_assign_to_all(auth_client, db):
     assert "Разовая задача" in resp.text
 
 
+def test_tracker_hides_item_kind_from_student(auth_client, db):
+    """То же правило, что в «Обучении» (решение владельца 13.09.2026): тип
+    задания — служебное поле преподавателя, ученик видит название и срок."""
+    client, user = auth_client
+    tag = _tag(db, "Поток 1")
+    db.add(UserTag(user_id=user.id, tag_id=tag.id))
+    db.commit()
+    day, due = _current_week_due(offset_days=1)
+    _program_item(db, day=day, due_at=due, tag_ids=[tag.id], user_id=user.id)
+
+    resp = client.get(PAGE)
+    assert resp.status_code == 200
+    assert "Видео недели" in resp.text
+    # Ярлык целиком, не подстрока: рядом на странице есть тексты со словом
+    # «материал» внутри, они к бейджу типа отношения не имеют.
+    assert ">Видеоматериал<" not in resp.text
+
+
 def test_standalone_task_hidden_without_addressing(auth_client, db):
     client, user = auth_client
     _, due = _current_week_due(offset_days=2)

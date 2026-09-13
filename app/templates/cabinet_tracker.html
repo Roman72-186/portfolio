@@ -12,7 +12,7 @@ FORM: Operate, список, а не карточка-витрина.
 {% block title %}Личный трекер{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/tracker.css?v=52">
-<link rel="stylesheet" href="/static/css/profile_hero.css?v=6">
+<link rel="stylesheet" href="/static/css/profile_hero.css?v=7">
 {% endblock %}
 {% block content %}
 {% from "components/hint.html" import hint %}
@@ -74,8 +74,13 @@ FORM: Operate, список, а не карточка-витрина.
     <div class="trk-row trk-item trk-item--overdue" data-kind="{{ entry.task.kind }}">
         <div>
             <div class="trk-meta" style="margin-bottom:6px;">
+                {# Подпись типа задания ученику не показываем (решение
+                   владельца 13.09.2026, то же правило, что в «Обучении»):
+                   ярлык служебный, он для преподавателя. Точка осталась: её
+                   цвет идёт по `data-kind` (tracker.css: видео синее,
+                   домашка оранжевая и так далее), а у просроченной строки
+                   перекрывается красным и увеличивается — это уже статус. #}
                 <span class="trk-kind-dot" aria-hidden="true"></span>
-                <span class="trk-badge trk-badge--kind">{{ entry.kind_label }}</span>
                 {% if entry.task.subject %}<span class="trk-badge trk-badge--kind">{{ entry.task.subject }}</span>{% endif %}
             </div>
             <h3>{{ entry.task.title }}</h3>
@@ -97,8 +102,13 @@ FORM: Operate, список, а не карточка-витрина.
     <div class="trk-row trk-item trk-item--upcoming" data-kind="{{ entry.task.kind }}">
         <div>
             <div class="trk-meta" style="margin-bottom:6px;">
+                {# Подпись типа задания ученику не показываем (решение
+                   владельца 13.09.2026, то же правило, что в «Обучении»):
+                   ярлык служебный, он для преподавателя. Точка осталась: её
+                   цвет идёт по `data-kind` (tracker.css: видео синее,
+                   домашка оранжевая и так далее), а у просроченной строки
+                   перекрывается красным и увеличивается — это уже статус. #}
                 <span class="trk-kind-dot" aria-hidden="true"></span>
-                <span class="trk-badge trk-badge--kind">{{ entry.kind_label }}</span>
                 {% if entry.task.subject %}<span class="trk-badge trk-badge--kind">{{ entry.task.subject }}</span>{% endif %}
             </div>
             <h3>{{ entry.task.title }}</h3>
@@ -120,8 +130,13 @@ FORM: Operate, список, а не карточка-витрина.
     <div class="trk-row trk-item trk-item--done" data-kind="{{ entry.task.kind }}">
         <div>
             <div class="trk-meta" style="margin-bottom:6px;">
+                {# Подпись типа задания ученику не показываем (решение
+                   владельца 13.09.2026, то же правило, что в «Обучении»):
+                   ярлык служебный, он для преподавателя. Точка осталась: её
+                   цвет идёт по `data-kind` (tracker.css: видео синее,
+                   домашка оранжевая и так далее), а у просроченной строки
+                   перекрывается красным и увеличивается — это уже статус. #}
                 <span class="trk-kind-dot" aria-hidden="true"></span>
-                <span class="trk-badge trk-badge--kind">{{ entry.kind_label }}</span>
                 {% if entry.task.subject %}<span class="trk-badge trk-badge--kind">{{ entry.task.subject }}</span>{% endif %}
             </div>
             <h3>{{ entry.task.title }}</h3>

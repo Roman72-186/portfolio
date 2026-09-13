@@ -98,11 +98,21 @@
             {% if step.block %}data-block-id="{{ step.block.id }}"{% endif %}
         >
             <header class="lrn-step-head">
+                {# Тип элемента («Материал», «Видеоматериал») ученику не
+                   показываем — решение владельца 13.09.2026: в ленте шли
+                   «Материал, Материал, Материал» вместо названий, ярлык
+                   повторялся и вытеснял смысл. Тип — служебное поле
+                   преподавателя, он остаётся в конструкторе недели
+                   (`cabinet_program_day.html`) и в отчётности.
+                   Условие вокруг `.trk-meta` обязательно: `.lrn-step-head` —
+                   flex column с gap 6px, пустой div оставил бы дырку над
+                   заголовком у шага без предмета и без отметки «Сделано». #}
+                {% if step.subject or step.status == 'done' %}
                 <div class="trk-meta">
-                    <span class="trk-badge trk-badge--kind">{{ step.entry.kind_label }}</span>
                     {% if step.subject %}<span class="trk-badge trk-badge--kind">{{ step.subject }}</span>{% endif %}
                     {% if step.status == 'done' %}<span class="trk-badge trk-badge--draft">Сделано</span>{% endif %}
                 </div>
+                {% endif %}
                 <h3 class="lrn-step-title">
                     {%- if step.block and step.block.title -%}{{ step.block.title }}
                     {%- else -%}{{ step.task.title }}{%- endif -%}

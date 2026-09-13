@@ -144,6 +144,23 @@ def test_learning_shows_task_of_the_current_period(auth_client, db):
     assert 'class="lrn-feed"' in resp.text
 
 
+def test_learning_hides_item_kind_from_student(auth_client, db):
+    """Тип элемента — поле преподавателя, ученику его не показывают (решение
+    владельца 13.09.2026: в ленте шли «Материал, Материал, Материал» вместо
+    названий). Название и описание остаются."""
+    client, user = auth_client
+    _task(db, user, title="Архитектурное эскизирование", kind="material")
+
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert "Архитектурное эскизирование" in resp.text
+    # Проверяем ярлык целиком (`>Материал<`), а не подстроку: на этой же
+    # странице живёт `partials/task_action.html` со словами «Материалы
+    # задания», и голая подстрока падала бы из-за него, а не из-за бейджа.
+    assert ">Материал<" not in resp.text
+    assert ">Видеоматериал<" not in resp.text
+
+
 def test_learning_task_outside_the_period_not_shown(auth_client, db):
     client, user = auth_client
     _task(db, user, title="Через месяц", day=today_msk() + timedelta(days=40))
