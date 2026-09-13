@@ -20,7 +20,6 @@ from app.constants import (
     TARIFFS,
     TARIFFS_CURRENT,
     TARIFF_DISPLAY,
-    ENROLLMENT_YEARS,
     MONTH_TO_NUM,
     MOCK_SUBJECTS,
     TIMEZONES,
@@ -45,7 +44,7 @@ from app.services.mock_exam_access import (
     mock_exam_deadline_for_started_at,
 )
 from app.services.contacts import normalize_phone, normalize_tg_username, validate_contacts
-from app.services.tz import MSK_TZ, today_msk
+from app.services.tz import MSK_TZ, now_msk, today_msk
 from app.services.user_management import log_tariff_change
 from app.services.portfolio import after_gallery_groups
 from app.services.utils import compress_image
@@ -254,15 +253,26 @@ def normalize_vk_profile_url(raw: str) -> str:
     return f"https://vk.com/{m.group(1)}"
 
 
+# Год поступления в вуз — владелец 13.09.2026 оставил в анкете три варианта.
+# Сохранённый год за пределами списка добавляем отдельным пунктом: иначе ученик,
+# который открыл анкету ради другого поля, не сможет её сохранить, не подменив год.
+UNIVERSITY_YEAR_CHOICES = [2027, 2028, 2029]
+
+
+def _university_year_options(user):
+    saved = user.get("university_year") if isinstance(user, dict) else None
+    if saved and saved not in UNIVERSITY_YEAR_CHOICES:
+        return sorted(UNIVERSITY_YEAR_CHOICES + [saved])
+    return list(UNIVERSITY_YEAR_CHOICES)
+
+
 def _profile_template_ctx(request, user, errors=None, form=None):
     return {
         "request": request,
         "user": user,
         "tariffs": TARIFF_LABELS,
         "tariff_display": TARIFF_DISPLAY,
-        "months": MONTHS,
-        "enrollment_years": ENROLLMENT_YEARS,
-        "university_years": list(range(2015, 2032)),
+        "university_years": _university_year_options(user),
         "timezones": TIMEZONES,
         **({"errors": errors} if errors else {}),
         **({"form": form} if form else {}),
@@ -304,8 +314,6 @@ def profile_post(
     sdek_address: Annotated[str, Form()] = "",
     email: Annotated[str, Form()] = "",
     tg_username: Annotated[str, Form()] = "",
-    enrollment_month: Annotated[str, Form()] = "",
-    enrollment_year: Annotated[str, Form()] = "",
     university_year: Annotated[str, Form()] = "",
     about: Annotated[str, Form()] = "",
     past_tariffs: Annotated[list[str], Form()] = [],
@@ -391,36 +399,6 @@ def profile_post(
     else:
         errors.append("Укажи год поступления в ВУЗ")
 
-    # Parse month + year → enrolled_at
-    parsed_month: int | None = None
-    parsed_year: int | None = None
-    parsed_enrolled_at: datetime | None = None
-
-    if enrollment_month.strip():
-        try:
-            _m = int(enrollment_month.strip())
-            if 1 <= _m <= 12:
-                parsed_month = _m
-            else:
-                errors.append("Выбери месяц присоединения")
-        except ValueError:
-            errors.append("Выбери месяц присоединения")
-    else:
-        errors.append("Укажи месяц присоединения к курсу")
-
-    if enrollment_year.strip():
-        try:
-            parsed_year = int(enrollment_year.strip())
-            if not (2000 <= parsed_year <= 2100):
-                errors.append("Год поступления должен быть реальным годом")
-        except ValueError:
-            errors.append("Год поступления должен быть числом")
-    else:
-        errors.append("Укажи год поступления")
-
-    if parsed_month and parsed_year:
-        parsed_enrolled_at = datetime(parsed_year, parsed_month, 1, tzinfo=timezone.utc)
-
     if not first_name:
         errors.append("Введи имя")
     elif len(first_name) > 50:
@@ -450,13 +428,32 @@ def profile_post(
             "email": email,
             "tariff": TARIFF_DISPLAY.get(tariff, tariff),
             "tg_username": tg_username,
-            "enrollment_month": parsed_month,
-            "enrollment_year": parsed_year,
             "university_year": parsed_university_year,
             "past_tariffs": past_tariffs,
         }
         return templates.TemplateResponse(request, "profile.html",
             _profile_template_ctx(request, user, errors=errors, form=form))
+
+    # Месяц и год присоединения к курсу ставятся сами моментом заполнения
+    # анкеты (владелец 13.09.2026: «человек заходит на платформу и заполняет
+    # анкету — это и есть дата присоединения»). Раньше их выбирал ученик руками,
+    # шагом 2 анкеты; шаг убран.
+    #
+    # Три условия, которые легко сломать:
+    # 1. Момент берётся по Москве (`now_msk`), а не по UTC: в ночь на первое
+    #    число UTC ещё в прошлом месяце, и ученик получил бы чужой месяц.
+    # 2. В колонку пишется первое число месяца — та же форма значения, что
+    #    писал прежний код из формы. Экран «Контактные данные» показывает
+    #    `enrolled_at.month` без пересчёта часового пояса, и точный момент
+    #    времени там съехал бы на месяц назад по той же ночной причине.
+    # 3. Обе колонки — `enrolled_at` и `enrollment_year` — из одного момента,
+    #    иначе на стыке 31 декабря месяц и год разъедутся.
+    #
+    # `created_at` тут не годится: аккаунт бывает заведён куратором заранее,
+    # задолго до первого входа ученика.
+    now = datetime.now(timezone.utc)
+    enrollment_moment = now_msk()
+    enrolled_at = datetime(enrollment_moment.year, enrollment_moment.month, 1, tzinfo=timezone.utc)
 
     db_user = db.query(User).filter(User.id == user["user_id"]).first()
     log_tariff_change(db, db_user.id, db_user.id, db_user.tariff, tariff)
@@ -474,13 +471,13 @@ def profile_post(
     db_user.email = email
     db_user.tariff = tariff
     db_user.tg_username = tg_username or None
-    db_user.enrollment_year = parsed_year
-    db_user.enrolled_at = parsed_enrolled_at
+    db_user.enrollment_year = enrollment_moment.year
+    db_user.enrolled_at = enrolled_at
     db_user.university_year = parsed_university_year
     db_user.past_tariffs = ",".join(past_tariffs) if past_tariffs else None
     db_user.profile_completed = True
     if db_user.profile_completed_at is None:
-        db_user.profile_completed_at = datetime.now(timezone.utc)
+        db_user.profile_completed_at = now
     db.commit()
     invalidate_session(user["session_id"])
 

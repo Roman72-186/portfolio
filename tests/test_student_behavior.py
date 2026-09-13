@@ -87,8 +87,6 @@ def test_profile_post_ignored_when_already_complete(auth_client, db):
         "parent_phone": "+79002223344",
         "tariff": "Максимум",
         "tg_username": "anna_art",
-        "enrollment_month": "9",
-        "enrollment_year": "2024",
         "university_year": "2025",
     }, follow_redirects=False)
     assert resp.status_code == 302
@@ -101,13 +99,13 @@ def test_profile_post_ignored_when_already_complete(auth_client, db):
 
 
 def test_profile_form_shows_step_indicator(client, user_factory, session_factory):
-    """GET /cabinet/profile shows a 5-step visual indicator on the long form."""
+    """GET /cabinet/profile shows a 4-step visual indicator on the long form."""
     client, _ = _auth(client, user_factory, session_factory,
                       vk_id=100_107, profile_completed=False)
     resp = client.get("/cabinet/profile")
     assert resp.status_code == 200
-    assert resp.text.count('class="prf-section-title"') == 5
-    assert "Шаг 5 из 5" in resp.text
+    assert resp.text.count('class="prf-section-title"') == 4
+    assert "Шаг 4 из 4" in resp.text
 
 
 def test_profile_post_valid_data_sets_profile_completed(client, db, user_factory, session_factory):
@@ -149,7 +147,44 @@ def test_profile_post_valid_data_sets_profile_completed(client, db, user_factory
     assert db_user.vk_profile_url == "https://vk.com/anna_smirnova"
     assert db_user.sdek_address == "Москва, ул. Ленина 10, ПВЗ Строгино"
     assert db_user.email == "anna@example.com"
-    assert db_user.enrollment_year == 2024
+    # Месяц и год присоединения ставит сервер моментом заполнения анкеты,
+    # по московскому времени и первым числом месяца — как прежде писала форма.
+    from app.services.tz import now_msk
+    moment = now_msk()
+    assert db_user.enrollment_year == moment.year
+    assert db_user.enrolled_at is not None
+    assert (db_user.enrolled_at.year, db_user.enrolled_at.month, db_user.enrolled_at.day) ==         (moment.year, moment.month, 1)
+
+
+def test_profile_post_enrollment_date_shown_on_contacts(client, user_factory, session_factory):
+    """Проставленная сама дата присоединения доходит до экрана «Контактные данные».
+
+    Строку там собирают из двух разных колонок — месяц из `enrolled_at`,
+    год из `enrollment_year` (`cabinet_personal.py`), поэтому сквозная
+    проверка: заполнили анкету — увидели «Месяц Год», а не «Не указано».
+    """
+    from app.constants import MONTHS
+    from app.services.tz import now_msk
+    client, _ = _auth(client, user_factory, session_factory,
+                      vk_id=100_109, profile_completed=False)
+    resp = client.post("/cabinet/profile", data={
+        "first_name": "Пётр", "last_name": "Иванов",
+        "birth_date": "2009-03-14", "city": "Казань", "timezone": "0",
+        "phone": "+79001112233", "parent_phone": "+79002223344",
+        "parent_name": "Мария Петровна",
+        "vk_profile_url": "vk.com/petr_ivanov",
+        "sdek_address": "Казань, ул. Баумана 1, ПВЗ Центр",
+        "email": "petr@example.com", "tariff": "Уверенный",
+        "tg_username": "petr_art", "university_year": "2025",
+        "about": "Хочу в архитектурный",
+    }, follow_redirects=False)
+    assert resp.status_code == 302
+
+    moment = now_msk()
+    page = client.get("/cabinet/personal/contacts")
+    assert page.status_code == 200
+    expected = f"{MONTHS[moment.month - 1].capitalize()} {moment.year}"
+    assert expected in page.text
 
 
 def test_vk_profile_url_accepts_both_domains():
@@ -183,42 +218,16 @@ def test_profile_post_empty_form_shows_all_required_errors(client, user_factory,
         "tariff": "Уверенный", "tg_username": " ",
         "birth_date": " ", "city": " ", "timezone": " ",
         "parent_name": " ", "vk_profile_url": " ", "sdek_address": " ", "email": " ",
-        "enrollment_month": " ", "enrollment_year": " ", "about": " ",
+        "about": " ",
     })
     assert resp.status_code == 200
     for fragment in ("Введи имя", "Введи фамилию", "Введи номер телефона",
                      "Укажи ник в Telegram", "Укажи год поступления",
-                     "Укажи месяц присоединения", "Укажи дату рождения",
+                     "Укажи дату рождения",
                      "Укажи город", "Укажи часовой пояс",
                      "Введи имя и отчество родителя", "Укажи ссылку на ВКонтакте",
                      "Укажи ближайший адрес СДЭК", "Укажи электронную почту"):
         assert fragment in resp.text, f"Expected error: {fragment!r}"
-
-
-def test_profile_post_non_integer_year_shows_error(client, user_factory, session_factory):
-    """Letters in enrollment_year → 'числом' error."""
-    client, _ = _auth(client, user_factory, session_factory,
-                      vk_id=100_105, profile_completed=False)
-    resp = client.post("/cabinet/profile", data={
-        "first_name": "Иван", "last_name": "П", "phone": "+7", "parent_phone": "+7",
-        "tariff": "Уверенный", "tg_username": "iv",
-        "enrollment_month": "9", "enrollment_year": "abc", "about": "X",
-    })
-    assert resp.status_code == 200
-    assert "числом" in resp.text
-
-
-def test_profile_post_invalid_month_shows_error(client, user_factory, session_factory):
-    """Out-of-range enrollment_month (13) → month error."""
-    client, _ = _auth(client, user_factory, session_factory,
-                      vk_id=100_106, profile_completed=False)
-    resp = client.post("/cabinet/profile", data={
-        "first_name": "Иван", "last_name": "П", "phone": "+7", "parent_phone": "+7",
-        "tariff": "Уверенный", "tg_username": "iv",
-        "enrollment_month": "13", "enrollment_year": "2024", "about": "X",
-    })
-    assert resp.status_code == 200
-    assert "месяц" in resp.text.lower()
 
 
 # ---------------------------------------------------------------------------
