@@ -165,37 +165,6 @@
 
 .ios-profile .prf-field-note-inline { color: var(--ios-label-3); font-weight: 400; text-transform: none; }
 
-/* ── Прошлые тарифы — список строк с чекбоксом, тот же приём, что
-   .prg-option в program_ios.css (radio/checkbox appearance:none + ::after). ── */
-.ios-profile .prf-tariff-list { padding: 8px 16px 12px; display: flex; flex-direction: column; gap: 8px; }
-.ios-profile .prf-tariff-item {
-    display: flex; align-items: center; gap: 12px;
-    padding: 12px 14px; border-radius: 12px;
-    background: var(--ios-grouped-bg);
-    font: 400 15px/1.4 var(--ios-font); color: var(--ios-label);
-    cursor: pointer; transition: background .12s;
-}
-.ios-profile .prf-tariff-item:has(input:checked) { background: rgba(175,82,222,0.10); }
-.ios-profile .prf-tariff-item span { flex: 1; min-width: 0; }
-.ios-profile .prf-tariff-item input[type="checkbox"] {
-    appearance: none; -webkit-appearance: none; margin: 0; order: 2;
-    position: relative; flex-shrink: 0; width: 22px; height: 22px;
-    border: 1.5px solid var(--ios-label-3); border-radius: 6px; background: var(--ios-card-bg);
-    cursor: pointer;
-}
-.ios-profile .prf-tariff-item input:checked { background: var(--ios-blue); border-color: var(--ios-blue); }
-.ios-profile .prf-tariff-item input:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 2px; }
-.ios-profile .prf-tariff-item input[type="checkbox"]::after {
-    content: ''; position: absolute; top: 45%; left: 50%;
-    width: 11px; height: 6px; border-left: 2px solid #fff; border-bottom: 2px solid #fff;
-    transform: translate(-50%, -50%) rotate(-45deg) scale(0); transition: transform .12s;
-}
-.ios-profile .prf-tariff-item input[type="checkbox"]:checked::after { transform: translate(-50%, -50%) rotate(-45deg) scale(1); }
-.ios-profile .prf-tariff-empty {
-    margin: 0; padding: 4px 2px;
-    font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-3);
-}
-
 /* ── Кнопка сохранения (общая .btn-blue/.cta-sticky из base.css —
    переопределена только в этом скоупе, как в program_ios.css/homework_ios.css) ── */
 .ios-profile .prf-cta { margin-top: 20px; }

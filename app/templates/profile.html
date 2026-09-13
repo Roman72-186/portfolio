@@ -27,7 +27,7 @@
     <form method="post" action="/cabinet/profile">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
 
-        <div class="prf-section-title">Шаг 1 из 5 · Основные данные
+        <div class="prf-section-title">Шаг 1 из 4 · Основные данные
             <span class="prf-field-note-inline">· имя и фамилию пиши как в паспорте – по ним тебя ищут преподаватели</span>
         </div>
         <div class="prf-group">
@@ -75,40 +75,7 @@
             </div>
         </div>
 
-        <div class="prf-section-title">Шаг 2 из 5 · Начало обучения</div>
-        <div class="prf-group">
-            <div class="prf-row prf-row--single">
-                <label class="prf-field-label">Месяц и год присоединения к курсу <span class="prf-required">*</span></label>
-                <div class="prf-select-row">
-                    <div class="prf-select-cell">
-                        <select class="prf-field-input" name="enrollment_month" aria-label="Месяц присоединения" required>
-                            <option value="" disabled {% if not (form and form.enrollment_month) and not user.enrolled_at %}selected{% endif %}>Месяц</option>
-                            {% for m in months %}
-                            <option value="{{ loop.index }}"
-                                {% if form and form.enrollment_month == loop.index %}selected
-                                {% elif not form and user.enrolled_at and user.enrolled_at.month == loop.index %}selected{% endif %}>
-                                {{ m | capitalize }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="prf-select-cell">
-                        <select class="prf-field-input" name="enrollment_year" aria-label="Год присоединения" required>
-                            <option value="" disabled {% if not (form and form.enrollment_year) and not user.enrollment_year %}selected{% endif %}>Год</option>
-                            {% for y in enrollment_years %}
-                            <option value="{{ y }}"
-                                {% if form and form.enrollment_year == y %}selected
-                                {% elif not form and user.enrollment_year == y %}selected{% endif %}>
-                                {{ y }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="prf-section-title">Шаг 3 из 5 · Контакты</div>
+        <div class="prf-section-title">Шаг 2 из 4 · Контакты</div>
         <div class="prf-group">
             <div class="prf-row prf-row--pair">
                 <div class="prf-field">
@@ -162,12 +129,11 @@
             </div>
         </div>
 
-        <div class="prf-section-title">Шаг 4 из 5 · Тариф обучения</div>
+        <div class="prf-section-title">Шаг 3 из 4 · Тариф обучения</div>
         <div class="prf-group">
             <div class="prf-row prf-row--single">
-                <label class="prf-field-label" for="tariff-select">Текущий тариф <span class="prf-required">*</span></label>
-                <select class="prf-field-input" name="tariff" id="tariff-select" required
-                        onchange="updatePastTariffs()">
+                <label class="prf-field-label" for="tariff-select">Выбери свой тариф <span class="prf-required">*</span></label>
+                <select class="prf-field-input" name="tariff" id="tariff-select" required>
                     <option value="" disabled {% if not (form and form.tariff) and not user.tariff %}selected{% endif %}>Выбери тариф</option>
                     {% for t in tariffs %}
                     <option value="{{ t }}"
@@ -178,32 +144,9 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="prf-row prf-row--single">
-                <label class="prf-field-label">
-                    Ранее учился(-ась) на тарифе
-                    <span class="prf-field-note-inline">(кроме текущего)</span>
-                </label>
-                <div id="past-tariffs-wrap" class="prf-tariff-list">
-                    {% set current = (form.tariff if form and form.tariff else user.tariff) or '' %}
-                    {% set checked = (form.past_tariffs if form and form.past_tariffs is defined else
-                                      (user.past_tariffs.split(',') if user.past_tariffs else [])) %}
-                    {% for t in tariffs %}
-                    <label class="prf-tariff-item" data-tariff="{{ t }}"
-                           style="display:{% if t == current %}none{% else %}flex{% endif %}">
-                        <input type="checkbox" name="past_tariffs" value="{{ t }}"
-                               {% if t in checked %}checked{% endif %}>
-                        <span>{{ t }}</span>
-                    </label>
-                    {% endfor %}
-                    <p id="past-no-choice" class="prf-tariff-empty"
-                       style="display:{% if tariffs|length - 1 == 0 or not current %}block{% else %}none{% endif %}">
-                        Выбери текущий тариф выше
-                    </p>
-                </div>
-            </div>
         </div>
 
-        <div class="prf-section-title">Шаг 5 из 5 · Учёба</div>
+        <div class="prf-section-title">Шаг 4 из 4 · Учёба</div>
         <div class="prf-group">
             <div class="prf-row prf-row--single">
                 <label class="prf-field-label" for="university-year-select">Год поступления в вуз <span class="prf-required">*</span></label>
@@ -227,26 +170,6 @@
 </div>
 <script src="/static/js/hint.js?v=1"></script>
 <script>
-function updatePastTariffs() {
-    const current = document.getElementById('tariff-select').value;
-    const items = document.querySelectorAll('.prf-tariff-item');
-    let visibleCount = 0;
-
-    items.forEach(function(item) {
-        const tariff = item.dataset.tariff;
-        if (tariff === current) {
-            item.style.display = 'none';
-            item.querySelector('input').checked = false;
-        } else {
-            item.style.display = 'flex';
-            visibleCount++;
-        }
-    });
-
-    document.getElementById('past-no-choice').style.display =
-        (!current) ? 'block' : 'none';
-}
-
 document.querySelector('form').addEventListener('submit', function() {
     var btn = document.getElementById('profile-submit-btn');
     btn.disabled = true;
