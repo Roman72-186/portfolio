@@ -50,13 +50,13 @@ def test_moderator_cannot_open_tracker_admin(client, user_factory, session_facto
 
 
 def test_admin_and_superadmin_open_tracker_admin(
-    client, user_factory, session_factory, admin_client
+    client, user_factory, session_factory, admin_client, assert_static_versioned
 ):
     _staff_client(client, user_factory, session_factory)
     rank4 = client.get(PAGE)
     assert rank4.status_code == 200
     assert "Задачи трекера" in rank4.text
-    assert "/static/css/tracker.css?v=44" in rank4.text
+    assert_static_versioned(rank4.text)
 
     super_client, _ = admin_client
     assert super_client.get(PAGE).status_code == 200

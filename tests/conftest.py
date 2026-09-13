@@ -6,6 +6,7 @@ app.main so that the lifespan create_all and all route handlers use the
 same test database.
 """
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -138,6 +139,30 @@ def sql_counter():
             return False
 
     return _Counter
+
+
+@pytest.fixture()
+def assert_static_versioned():
+    """Проверка: каждая ссылка на CSS и JS страницы несёт `?v=<число>`.
+
+    Сторож против `Cache-Control: immutable`: без версии браузер ученика
+    показывает старый файл, пока не почистит кэш руками. В проекте на этом
+    гасли два выката подряд.
+
+    Раньше это проверяли сравнением с записанным числом
+    (`program.css?v=20`). Такая проверка живёт до первой смены версии, а
+    потом краснеет навсегда и перестаёт что-либо стеречь: к 13.09.2026
+    шаблоны уехали на `?v=22` и `?v=51`, а тесты ждали `20` и `44` — оба
+    красные, и поднявший версию всё равно видел красное. Поэтому здесь
+    проверяется не число, а сам факт версии: такой сторож не протухает.
+    """
+    def _check(html: str) -> None:
+        links = re.findall(r'(?:href|src)="(/static/(?:css|js)/[^"]+)"', html)
+        assert links, "на странице нет ни одной ссылки на CSS или JS — проверять нечего"
+        missing = [link for link in links if not re.search(r"\?v=\d+$", link)]
+        assert not missing, "ссылки на статику без версии: " + ", ".join(missing)
+
+    return _check
 
 
 @pytest.fixture(autouse=True)
