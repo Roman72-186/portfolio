@@ -3,10 +3,11 @@
    подключал его, а не копировал блок стилей — инлайновый рост запрещён
    храповиком переиспользования (scripts/reuse_check.py).
 
-   Раскладка (владелец 21.08.2026): аватар вверху слева, между ним и правым
-   столбцом — имя в две строки (имя / фамилия); справа сверху баллы Р/К и
-   год поступления одной плашкой, под ней — тариф. Роль отдельно не
-   подписываем.
+   Раскладка (владелец 21.08.2026, состав полей): аватар слева, имя в две
+   строки (имя / фамилия), баллы Р/К с годом поступления одной плашкой и
+   тариф. Роль отдельно не подписываем. 13.09.2026 плашки переехали из правой
+   колонки в свою строку под именем — ради самого имени, см. комментарий у
+   `.profile-hero-meta`.
 
    25.08.2026 — полный ре-скин под нативный iOS (решение владельца): системный
    шрифт вместо Manrope/Figtree, палитра iOS (systemBlue и т.д.), «стеклянные»
@@ -77,38 +78,48 @@
     opacity: 0; cursor: pointer;
     width: 100%; height: 100%;
 }
+/* Имя и фамилия в одну строку, на вторую переходят только если не влезли
+   (13.09.2026). Жёсткие две строки остались от старой раскладки, где имени
+   давали 103 px; на освободившейся ширине «Мария Орлова» в два этажа выглядит
+   обрывком. */
 .profile-name-stack {
     flex: 1 1 auto; min-width: 0;
-    display: flex; flex-direction: column; gap: 1px;
+    display: flex; flex-wrap: wrap; column-gap: 7px; row-gap: 1px;
 }
 .profile-name-line {
     font-size: 19px; font-weight: 600;
     color: #fff;
     letter-spacing: -0.2px;
     line-height: 1.22;
-    overflow-wrap: break-word;
+    /* 13.09.2026: имя больше не рвётся посреди слова. Раньше тут стоял
+       `overflow-wrap: break-word`, и «Александрия» на телефоне разъезжалась
+       на «Алекса / ндрия» — ширины не хватало, потому что её забирала плашка
+       тарифа капсом. Капс убран (фильтр `tariff_label`), плашка ужалась,
+       место имени вернулось; на совсем длинную фамилию остаётся многоточие —
+       оно читается как обрезка, а разрыв посреди слова читался как ошибка. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
-.profile-hero-right {
-    flex: 0 0 auto;
-    display: flex; flex-direction: column; align-items: flex-end;
+/* Баллы и тариф — своей строкой под именем (13.09.2026). Пока они стояли
+   правой колонкой, ширину карточки делили трое, и имени на телефоне 390 px
+   доставалось 103 px: «Александрия» (122 px) не влезала и рвалась посреди
+   слова. Сжать было нечего — ширину задавала плашка баллов, а у неё внутри
+   цифры. Отдельной строкой обе плашки помещаются рядом (баллы + тариф
+   ≈ 305 px), а имя получает всю ширину минус аватар. `wrap` — на узкие
+   экраны (320–360 px), там тариф уходит на следующую строку. */
+.profile-hero-meta {
+    display: flex; align-items: center; flex-wrap: wrap;
     gap: 8px;
+    margin-top: 14px;
+    position: relative; z-index: 1;
 }
-.profile-tariff {
-    display: inline-flex; align-items: center; gap: 6px;
-    background: rgba(255,255,255,0.16);
-    backdrop-filter: blur(12px) saturate(160%);
-    -webkit-backdrop-filter: blur(12px) saturate(160%);
-    border: 0.5px solid rgba(255,255,255,0.3);
-    border-radius: 999px;
-    padding: 4px 13px;
-    font-size: 12px; font-weight: 600; color: #fff;
-    letter-spacing: -0.01em;
-}
-.profile-tariff-dot {
-    width: 6px; height: 6px;
-    border-radius: 50%; background: #30D158;
-    box-shadow: 0 0 0 2px rgba(48,209,88,0.25);
-}
+/* Плашка тарифа общая — `.profile-tariff` в base.css (белый фон, надпись в
+   цвет тарифа). Здесь только запрет переноса: в своей строке места хватает,
+   а двухэтажная «таблетка» рядом с плашкой баллов выглядит сбоем вёрстки.
+   На узких экранах она целиком уходит на следующую строку — см. wrap выше. */
+.profile-tariff { white-space: nowrap; }
+
 .profile-scores {
     flex: 0 0 auto;
     display: flex; align-items: center; gap: 10px;

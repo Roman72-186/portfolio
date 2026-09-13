@@ -188,3 +188,35 @@ def test_user_filter_still_finds_the_archive(superadmin_client):
 
     for legacy in TARIFFS_LEGACY:
         assert f'<option value="{legacy}"' in page
+
+
+def test_every_tariff_has_a_colour_group():
+    """У каждого валидного тарифа есть цветовая группа для плашки.
+
+    Владелец 13.09.2026: «у каждого тарифа есть свой цвет». Заведут шестой
+    тариф без группы — плашка молча станет нейтральной, и на проде это увидят
+    не сразу: она белая и читается, просто цвет неверный.
+    """
+    from app.constants import TARIFF_SLUGS
+
+    assert set(TARIFF_SLUGS) == set(TARIFFS)
+    for tariff in TARIFFS_CURRENT:
+        assert TARIFF_SLUGS[tariff] != "legacy", tariff
+
+
+def test_unknown_tariff_never_leaves_the_pill_colourless():
+    """Пустой и незнакомый тариф красятся нейтральным, а не наследуют белый.
+
+    Плашка белая, надпись берёт цвет из модификатора. Без модификатора текст
+    унаследовал бы белый цвет шапки — то есть исчез бы.
+    """
+    from app.tmpl import tariff_label, tariff_slug
+
+    assert tariff_slug(None) == "legacy"
+    assert tariff_slug("") == "legacy"
+    assert tariff_slug("ЧТО-ТО НОВОЕ") == "legacy"
+    assert tariff_slug("я сам") == "self"          # регистр не важен
+
+    assert tariff_label(None) == ""
+    assert tariff_label("УВЕРЕННЫЙ МАКСИМУМ") == "Уверенный максимум"
+    assert tariff_label("ЧТО-ТО НОВОЕ") == "ЧТО-ТО НОВОЕ"

@@ -103,6 +103,22 @@
     --ios-grouped-bg: #F2F2F7;
     --ios-card-bg:    #FFFFFF;
 
+    /* ── Цвета тарифов — 13.09.2026, решение владельца: «у каждого тарифа
+       свой цвет», плашка тарифа белая, надпись в цвет тарифа. Значения
+       подобраны под белый фон плашки: надпись мелкая (12px), поэтому каждый
+       цвет проверен на контраст с белым и держит WCAG AA (>= 4.5:1) —
+       ярко-розовый #FF2D78 и системный синий #007AFF в эту планку не прошли
+       (3.6 и 4.0) и здесь не стоят. Группу цвета шаблон получает фильтром
+       `tariff_slug` (app/tmpl.py), hex знает только CSS. ── */
+    --tariff-confident-max: #D81B60;   /* УВЕРЕННЫЙ МАКСИМУМ — розовый, 4.95:1 */
+    --tariff-with-you:      #8E24AA;   /* Я С ВАМИ — фиолетовый, 7.04:1 */
+    --tariff-self:          #1565C0;   /* Я САМ — синий, 5.75:1 */
+    --tariff-legacy:        #4A4A55;   /* отработавшие тарифы и пустое значение, 8.74:1 */
+    /* Фон плашки — белый на обеих темах: она лежит на цветной шапке, и в
+       тёмной теме шапка остаётся цветной. Поэтому не `--ios-card-bg`, тот в
+       тёмной теме чернеет, и надпись пропала бы. */
+    --tariff-pill-bg:       #FFFFFF;
+
     /* ── Shadows ────────────────────────────── */
     --sh-sm:   0 1px 2px rgba(15,23,42,.04), 0 1px 1px rgba(15,23,42,.03);
     --sh-md:   0 8px 24px rgba(20,30,80,.08);
@@ -1323,6 +1339,35 @@ button.desk-nav-item {
 .tag-pill--curator-tag,
 .tag-pill--orange       { background: rgba(249,115,22,0.12);       color: #c2410c; }
 .tag-pill--tariff       { background: rgba(100,116,139,0.10);      color: var(--dim); border: 1px solid var(--line); }
+
+/* Плашка тарифа — общая для всех экранов, где она есть: шапка трекера и шапка
+   дашборда ученика. Владелец 13.09.2026: «у каждого тарифа есть свой цвет,
+   поэтому плашку лучше делать с белым фоном и надписью в цвет тарифа».
+   До этого у каждого экрана была своя стеклянная копия с белой надписью и
+   зелёной точкой — тариф не читался как отдельная сущность.
+
+   Базовый цвет нейтральный, а не декоративный: без него тариф, для которого
+   нет модификатора, унаследовал бы белый цвет шапки и пропал на белом фоне.
+   Группу цвета шаблон получает фильтром tariff_slug, см. app/tmpl.py. */
+.profile-tariff {
+    display: inline-flex; align-items: center; gap: 6px;
+    max-width: 100%;
+    background: var(--tariff-pill-bg);
+    border-radius: var(--r-pill);
+    padding: 5px 13px;
+    font-size: 12px; font-weight: 700;
+    color: var(--tariff-legacy);
+    letter-spacing: -0.01em;
+    box-shadow: 0 2px 10px rgba(20,20,50,0.18);
+}
+.profile-tariff--confident-max { color: var(--tariff-confident-max); }
+.profile-tariff--with-you      { color: var(--tariff-with-you); }
+.profile-tariff--self          { color: var(--tariff-self); }
+.profile-tariff--legacy        { color: var(--tariff-legacy); }
+.profile-tariff-dot {
+    width: 6px; height: 6px; flex-shrink: 0;
+    border-radius: 50%; background: currentColor;
+}
 .tag-pill--pink         { background: rgba(236,72,153,0.12);       color: #be185d; }
 .tag-pill--blue         { background: rgba(168,85,247,0.12);        color: var(--blue); }
 .tag-pill--purple       { background: rgba(168,85,247,0.12);       color: #6b21a8; }

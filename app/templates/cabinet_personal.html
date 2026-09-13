@@ -61,7 +61,7 @@
         </div>
         <div class="prs-row">
             <span class="prs-row-label">Тариф</span>
-            <span class="prs-row-value {{ '' if user.tariff else 'empty' }}">{{ user.tariff or 'Не указано' }}</span>
+            <span class="prs-row-value {{ '' if user.tariff else 'empty' }}">{{ user.tariff|tariff_label or 'Не указано' }}</span>
         </div>
         <a class="prs-row prs-row-link" href="/cabinet/personal/contacts"><span>Изменить контакты</span></a>
     </div>

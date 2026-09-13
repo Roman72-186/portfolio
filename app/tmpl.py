@@ -5,6 +5,7 @@ import re
 from fastapi.templating import Jinja2Templates
 
 from app.config import settings
+from app.constants import TARIFF_DISPLAY, TARIFF_SLUGS
 from app.csrf import generate_csrf_token
 from app.services.navigation import curator_nav_items, staff_nav_items, student_nav_items
 
@@ -54,6 +55,35 @@ templates.env.globals["unread_count_for"] = _unread_count_for
 templates.env.globals["curator_nav_items"] = curator_nav_items
 templates.env.globals["staff_nav_items"] = staff_nav_items
 templates.env.globals["student_nav_items"] = student_nav_items
+
+
+def tariff_label(tariff: str | None) -> str:
+    """Название тарифа для показа человеку: «Уверенный максимум», не «УВЕРЕННЫЙ МАКСИМУМ».
+
+    В базе тариф лежит капсом, и экраны, которые печатали его как есть, кричали
+    на ученика и занимали лишнюю ширину. Форма для интерфейса одна на проект —
+    `TARIFF_DISPLAY` (её же берут пути в S3 и вкладка «Личное»).
+    Незнакомое значение возвращаем как есть: пустой плашки быть не должно.
+    """
+    if not tariff:
+        return ""
+    return TARIFF_DISPLAY.get(tariff.upper(), tariff)
+
+
+def tariff_slug(tariff: str | None) -> str:
+    """Имя цветовой группы тарифа для CSS-модификатора (`profile-tariff--self`).
+
+    Неизвестный или пустой тариф даёт `legacy` — нейтральный тёмный цвет.
+    Молчаливого «без модификатора» тут быть не должно: плашка белая, и надпись
+    без своего цвета унаследовала бы белый текст поверх белого фона.
+    """
+    if not tariff:
+        return "legacy"
+    return TARIFF_SLUGS.get(tariff.upper(), "legacy")
+
+
+templates.env.filters["tariff_label"] = tariff_label
+templates.env.filters["tariff_slug"] = tariff_slug
 
 
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)

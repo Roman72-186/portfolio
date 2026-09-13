@@ -61,11 +61,11 @@
     "style_lines": 24
   },
   "cabinet_student.html": {
-    "hex": 15,
+    "hex": 13,
     "shadow": [
       "profile-hero"
     ],
-    "style_lines": 376
+    "style_lines": 365
   },
   "cabinet_students.html": {
     "hex": 15,

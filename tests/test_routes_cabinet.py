@@ -34,9 +34,20 @@ def test_cabinet_shows_student_name(auth_client, db):
 
 
 def test_cabinet_shows_tariff(auth_client):
+    """Тариф показан человеку и покрашен в свой цвет.
+
+    С 13.09.2026 в плашке стоит не сырое значение из базы («УВЕРЕННЫЙ»), а
+    форма для людей из TARIFF_DISPLAY: капс кричал и занимал ширину, которой
+    не хватало имени. Цвет тарифа приходит модификатором класса — проверяем
+    и его, иначе плашка останется белой с белой надписью.
+    """
+    from app.constants import TARIFF_DISPLAY, TARIFF_SLUGS
+
     client, user = auth_client
     resp = client.get("/cabinet/student")
-    assert user.tariff in resp.text
+
+    assert TARIFF_DISPLAY[user.tariff] in resp.text
+    assert f"profile-tariff--{TARIFF_SLUGS[user.tariff]}" in resp.text
 
 
 def test_student_dashboard_has_mobile_logout_action(auth_client):

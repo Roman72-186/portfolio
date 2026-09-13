@@ -87,18 +87,7 @@
     line-height: 1.15;
     overflow-wrap: break-word;
 }
-.profile-tariff {
-    display: inline-flex; align-items: center; gap: 6px;
-    background: rgba(255,255,255,0.12);
-    border: 1px solid rgba(255,255,255,0.18);
-    border-radius: 20px;
-    padding: 4px 14px;
-    font-size: 13px; font-weight: 700; color: #fff;
-}
-.profile-tariff-dot {
-    width: 7px; height: 7px;
-    border-radius: 50%; background: #6EE7B7;
-}
+/* Плашка тарифа — общий класс profile-tariff из дизайн-системы. */
 .profile-scores {
     flex: 0 0 auto;
     display: flex; align-items: center; gap: 10px;
@@ -467,10 +456,12 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
             <div class="profile-hero-info">
                 <div class="profile-role-tag">◉ Ученик</div>
                 <h1 class="profile-name">{{ [user.last_name, user.first_name] | select | join(' ') }}</h1>
-                <span class="profile-tariff">
+                {% if user.tariff %}
+                <span class="profile-tariff profile-tariff--{{ user.tariff|tariff_slug }}">
                     <span class="profile-tariff-dot"></span>
-                    {{ user.tariff }}
+                    {{ user.tariff|tariff_label }}
                 </span>
+                {% endif %}
             </div>
 
             <div class="profile-scores">
