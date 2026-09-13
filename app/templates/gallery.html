@@ -99,9 +99,9 @@
         {% endif %}
     </div>
 
-    <!-- После обучения -->
+    <!-- В процессе обучения -->
     <div class="gallery-section" id="section-after" data-filter="after">
-        <div class="section-label">После обучения</div>
+        <div class="section-label">В процессе обучения</div>
         {% if after_groups %}
             {% for group in after_groups %}
             {% set gid = "af-" ~ loop.index %}
@@ -149,7 +149,7 @@
             </div>
             {% endfor %}
         {% else %}
-        <div class="empty-mini">Нет фотографий «после обучения»</div>
+        <div class="empty-mini">Нет фотографий «в процессе обучения»</div>
         {% endif %}
     </div>
 

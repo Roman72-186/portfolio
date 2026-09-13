@@ -330,7 +330,7 @@ def test_portfolio_before_renders_flat_without_months(auth_client, db):
     resp = client.get("/cabinet/portfolio")
     assert resp.status_code == 200
     before_section = resp.text[
-        resp.text.index(">До обучения<"):resp.text.index(">После обучения<")
+        resp.text.index(">До обучения<"):resp.text.index(">В процессе обучения<")
     ]
     assert "before-1.jpg" in before_section
     assert "before-2.jpg" in before_section
@@ -361,7 +361,7 @@ def test_portfolio_before_shows_point_a_score_from_db(auth_client, db):
 
     assert resp.status_code == 200
     before_section = resp.text[
-        resp.text.index(">До обучения<"):resp.text.index(">После обучения<")
+        resp.text.index(">До обучения<"):resp.text.index(">В процессе обучения<")
     ]
     assert "82 из 100" in before_section
 
@@ -378,7 +378,7 @@ def test_portfolio_before_hides_score_line_when_not_scored(auth_client, db):
 
     assert resp.status_code == 200
     before_section = resp.text[
-        resp.text.index(">До обучения<"):resp.text.index(">После обучения<")
+        resp.text.index(">До обучения<"):resp.text.index(">В процессе обучения<")
     ]
     assert "из 100" not in before_section
     assert "оценка" not in before_section.lower()
@@ -399,7 +399,7 @@ def test_portfolio_after_keeps_month_blocks(auth_client, db):
 
     resp = client.get("/cabinet/portfolio")
     assert resp.status_code == 200
-    after_section = resp.text[resp.text.index(">После обучения<"):]
+    after_section = resp.text[resp.text.index(">В процессе обучения<"):]
     assert "after-1.jpg" in after_section
     assert "pf-mblock" in after_section
     assert "pfToggleMonth" in after_section

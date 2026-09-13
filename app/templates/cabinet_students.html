@@ -1205,7 +1205,7 @@
                 <label class="upload-field-label" for="upload-work-type">Тип работы</label>
                 <select class="upload-select" name="work_type" id="upload-work-type" onchange="toggleSubjectField()" required>
                     <option value="before">До обучения</option>
-                    <option value="after" selected>После обучения</option>
+                    <option value="after" selected>В процессе обучения</option>
                     <option value="mock_exam">Пробник</option>
                     <option value="retake">Отработка</option>
                 </select>
@@ -1810,7 +1810,7 @@ function buildPortfolio(data) {
     }
 
     // After works by month
-    html += '<div class="section-title">После обучения</div>';
+    html += '<div class="section-title">В процессе обучения</div>';
     if (data.after_by_month && data.after_by_month.length) {
         data.after_by_month.forEach(function(g, idx) {
             html += buildPortfolioMonthBlock(sid, 'after', g, 'after-' + idx);
