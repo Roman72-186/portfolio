@@ -333,7 +333,13 @@
                     // отвечено». Строка "0" truthy в JS, но проверяем явно, а
                     // не полагаемся на это (владелец 12.09.2026: нижний край
                     // шкалы теперь содержательный ответ, не пустота).
-                    var hasSaved = typeof saved[option.id] !== 'undefined' && saved[option.id] !== null;
+                    // Не числом оценка быть не должна, но в старых ответах и
+                    // после ручной правки встречается (`skills_history` такие
+                    // точки тоже пропускает). Без проверки ряд показал бы
+                    // «NaN» — считаем блок неотвеченным.
+                    var hasSaved = typeof saved[option.id] !== 'undefined'
+                        && saved[option.id] !== null
+                        && Number.isFinite(Number(saved[option.id]));
                     var savedValue = hasSaved ? Number(saved[option.id]) : null;
                     var valueLabel = el('span', 'lrn-scale-value', hasSaved ? String(savedValue) : '—');
 
