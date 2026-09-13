@@ -187,6 +187,61 @@ def test_profile_post_enrollment_date_shown_on_contacts(client, user_factory, se
     assert expected in page.text
 
 
+def test_profile_post_accepts_adult_birth_year(client, db, user_factory, session_factory):
+    """Ученик старше тридцати сохраняет анкету: порог года рождения — 1960.
+
+    До 13.09.2026 в коде стоял 1995, и такая анкета падала с текстом
+    «Проверь дату рождения», хотя дата была верной.
+    """
+    from app.models.user import User
+    client, user = _auth(client, user_factory, session_factory,
+                         vk_id=100_111, profile_completed=False)
+    resp = client.post("/cabinet/profile", data={
+        "first_name": "Игорь", "last_name": "Петров",
+        "birth_date": "1988-04-02", "city": "Пермь", "timezone": "2",
+        "phone": "+79001112233", "parent_phone": "+79002223344",
+        "parent_name": "Нина Сергеевна",
+        "vk_profile_url": "vk.com/igor_petrov",
+        "sdek_address": "Пермь, Ленина 5, ПВЗ",
+        "email": "igor@example.com", "tariff": "Я сам",
+        "tg_username": "igor_art", "university_year": "2027",
+    }, follow_redirects=False)
+    assert resp.status_code == 302
+    db.expire_all()
+    assert db.query(User).filter(User.id == user.id).first().birth_date.isoformat() == "1988-04-02"
+
+
+def test_profile_post_rejects_birth_year_below_floor(client, user_factory, session_factory):
+    """Год ниже порога — явная опечатка, форма возвращается с ошибкой."""
+    client, _ = _auth(client, user_factory, session_factory,
+                      vk_id=100_112, profile_completed=False)
+    resp = client.post("/cabinet/profile", data={
+        "first_name": "Игорь", "last_name": "Петров",
+        "birth_date": "1905-04-02", "city": "Пермь", "timezone": "2",
+        "phone": "+79001112233", "parent_phone": "+79002223344",
+        "parent_name": "Нина Сергеевна",
+        "vk_profile_url": "vk.com/igor_petrov",
+        "sdek_address": "Пермь, Ленина 5, ПВЗ",
+        "email": "igor@example.com", "tariff": "Я сам",
+        "tg_username": "igor_art", "university_year": "2027",
+    })
+    assert resp.status_code == 200
+    assert "Проверь дату рождения" in resp.text
+
+
+def test_profile_form_limits_birth_date_field(client, user_factory, session_factory):
+    """Поле даты ограничено теми же границами, что проверяет сервер."""
+    client, _ = _auth(client, user_factory, session_factory,
+                      vk_id=100_113, profile_completed=False)
+    resp = client.get("/cabinet/profile")
+    assert resp.status_code == 200
+    from app.services.tz import today_msk
+    assert 'min="1960-01-01"' in resp.text
+    # Верхняя граница — сегодня по Москве: контейнер живёт в UTC, и date.today()
+    # ночью отняло бы у именинника его собственный день рождения.
+    assert f'max="{today_msk().isoformat()}"' in resp.text
+
+
 def test_vk_profile_url_accepts_both_domains():
     """Ссылка с vk.ru и m.vk.ru принимается и приводится к каноническому vk.com."""
     from app.api.cabinet_student import VK_RE, normalize_vk_profile_url

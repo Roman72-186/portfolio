@@ -49,6 +49,7 @@
                 <div class="prf-field">
                     <label class="prf-field-label" for="profile-birth-date">Дата рождения <span class="prf-required">*</span></label>
                     <input class="prf-field-input" type="date" id="profile-birth-date" name="birth_date" required
+                           min="{{ birth_date_min }}" max="{{ birth_date_max }}"
                            value="{{ form.birth_date if form else (user.birth_date.isoformat() if user.birth_date else '') }}">
                 </div>
                 <div class="prf-field">

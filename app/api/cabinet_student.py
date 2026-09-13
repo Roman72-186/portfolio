@@ -241,7 +241,12 @@ EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 # vk.ru — новый российский домен ВК: мобильное приложение копирует ссылку
 # именно в виде m.vk.ru/<ник>, и до 13.09.2026 такая ссылка не проходила.
 VK_RE = re.compile(r'^(?:https?://)?(?i:www\.|m\.)?(?i:vk\.(?:com|ru))/([A-Za-z0-9_.]{2,60})/?(?:\?\S*)?$')
-_MIN_BIRTH_YEAR = 1995
+# Нижняя граница года рождения — только защита от опечатки в годе (1905
+# вместо 1995), а не возрастной ценз. До 13.09.2026 здесь стоял 1995, и
+# ученик постарше не мог сохранить анкету вовсе: поле даты в браузере
+# ограничений не имело, а сервер отвечал «Проверь дату рождения», не
+# называя причину. Владелец 13.09.2026 опустил порог до 1960.
+_MIN_BIRTH_YEAR = 1960
 
 
 def normalize_vk_profile_url(raw: str) -> str:
@@ -274,6 +279,10 @@ def _profile_template_ctx(request, user, errors=None, form=None):
         "tariffs": TARIFF_LABELS,
         "tariff_display": TARIFF_DISPLAY,
         "university_years": _university_year_options(user),
+        # Границы поля даты: те же, что проверяет сервер ниже, иначе браузер
+        # даст выбрать год, который форма потом молча не примет.
+        "birth_date_min": f"{_MIN_BIRTH_YEAR}-01-01",
+        "birth_date_max": today_msk().isoformat(),
         "timezones": TIMEZONES,
         **({"errors": errors} if errors else {}),
         **({"form": form} if form else {}),
@@ -346,7 +355,9 @@ def profile_post(
     if birth_date.strip():
         try:
             parsed_birth_date = date.fromisoformat(birth_date.strip())
-            today = date.today()
+            # Контейнер крутится в UTC, поэтому «сегодня» берём московское:
+            # иначе ночью по Москве именинник получал бы «дата в будущем».
+            today = today_msk()
             if parsed_birth_date > today:
                 errors.append("Дата рождения не может быть в будущем")
             elif parsed_birth_date.year < _MIN_BIRTH_YEAR:
