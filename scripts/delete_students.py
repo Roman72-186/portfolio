@@ -27,6 +27,8 @@ delete_students.py — массовое удаление учеников (ра�
 
     docker exec portfolio-saas-app-1 python scripts/delete_students.py --keep 155 --apply
 
+    docker exec portfolio-saas-app-1 python scripts/delete_students.py --only 156 157 158 --apply
+
 Без `--apply` скрипт ничего не пишет: показывает, кого бы удалил.
 """
 import argparse
@@ -99,6 +101,8 @@ def main() -> None:
                         help="id тех, кого оставить")
     parser.add_argument("--keep-none", action="store_true",
                         help="удалить вообще всех учеников")
+    parser.add_argument("--only", type=int, nargs="*", default=None,
+                        help="удалить только перечисленные id, остальных не трогать")
     parser.add_argument("--performed-by", type=int, default=None,
                         help="id суперадмина, от чьего имени пишется аудит-лог")
     parser.add_argument("--apply", action="store_true",
@@ -114,21 +118,34 @@ def main() -> None:
                 print("  ", _display(u))
             return
 
+        only_ids = set(args.only or [])
         keep_ids = set(args.keep or [])
-        if not keep_ids and not args.keep_none:
-            print("Не указано, кого оставить. Задайте --keep <id> [<id> …] или --keep-none.")
+        if not only_ids and not keep_ids and not args.keep_none:
+            print("Не указано, кого удалять. Задайте --only <id> [<id> …], "
+                  "--keep <id> [<id> …] или --keep-none.")
+            sys.exit(1)
+        if only_ids and (keep_ids or args.keep_none):
+            print("--only нельзя сочетать с --keep/--keep-none.")
             sys.exit(1)
 
         all_students = {u.id: u for u in _students(db, include_deleted=True)}
-        unknown = sorted(keep_ids - set(all_students))
-        if unknown:
-            print(f"Эти id не найдены среди учеников: {unknown}")
-            sys.exit(1)
 
-        for uid in sorted(keep_ids):
-            print(f"Остаётся: {_display(all_students[uid])}")
+        if only_ids:
+            unknown = sorted(only_ids - set(all_students))
+            if unknown:
+                print(f"Эти id не найдены среди учеников: {unknown}")
+                sys.exit(1)
+            targets = [all_students[uid] for uid in sorted(only_ids)]
+        else:
+            unknown = sorted(keep_ids - set(all_students))
+            if unknown:
+                print(f"Эти id не найдены среди учеников: {unknown}")
+                sys.exit(1)
 
-        targets = [u for u in _students(db) if u.id not in keep_ids]
+            for uid in sorted(keep_ids):
+                print(f"Остаётся: {_display(all_students[uid])}")
+
+            targets = [u for u in _students(db) if u.id not in keep_ids]
         print(f"\nБудут удалены: {len(targets)}")
         for u in targets:
             print("  ", _display(u))
