@@ -15,6 +15,7 @@ FORM: Operate, список, а не карточка-витрина.
 <link rel="stylesheet" href="/static/css/profile_hero.css?v=6">
 {% endblock %}
 {% block content %}
+{% from "components/hint.html" import hint %}
 <div class="trk-page ios-tracker">
     <header class="ios-navbar" id="iosNavbar" aria-hidden="true">
         <span class="ios-navbar-title">Личный трекер</span>
@@ -57,7 +58,7 @@ FORM: Operate, список, а не карточка-витрина.
 
     <div class="trk-head">
         <div class="trk-head-copy">
-            <h1>Личный трекер</h1>
+            <h1>Личный трекер {{ hint("Тут весь долг сразу, по всем неделям. Что актуально прямо сейчас – смотри в «Обучении».") }}</h1>
             <p>Что не сдано и что горит — время московское.</p>
         </div>
     </div>
@@ -155,6 +156,7 @@ FORM: Operate, список, а не карточка-витрина.
     <div style="height:96px"></div>
 </div>
 
+<script src="/static/js/hint.js?v=1"></script>
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};

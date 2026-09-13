@@ -4,11 +4,13 @@
 <link rel="stylesheet" href="/static/css/cycle_ios.css?v=4">
 {% endblock %}
 {% block content %}
+{% from "components/hint.html" import hint %}
 <div class="cyc-page ios-cycle">
     <section class="cyc-hero">
         <h1>Обратная связь</h1>
         <p>Здесь хранится диалог с куратором и статус проверки работ.</p>
         <span class="badge">Циклов всего: {{ cycles_count }}</span>
+        {{ hint("Цикл – это один пробник: билет, твоя работа и оценка куратора.") }}
         {% set total_unread = open_cycles|sum(attribute='unread_count') %}
         {% if total_unread and total_unread > 0 %}<span class="badge">Новых сообщений: {{ total_unread }}</span>{% endif %}
     </section>
@@ -66,5 +68,6 @@
 {% set active_tab = "feedback" %}
 {% include "partials/bottom_nav.html" %}
 {% include "partials/lightbox.html" %}
+<script src="/static/js/hint.js?v=1"></script>
 
 {% endblock %}
