@@ -10,6 +10,9 @@ def test_curator_nav_items_keep_current_contract():
         ("students_review", "/cabinet/staff/students-review", "Проверка"),
         ("reports", "/cabinet/curator/reports", "Отчёты"),
         ("statistics", "/cabinet/students?tab=statistics", "Статистика"),
+        # Добавлен 12.09.2026 вместе с первым экраном уведомлений для
+        # персонала: туда падают напоминания о дне рождения ученика.
+        ("notifications", "/cabinet/staff/notifications", "Уведомления"),
     ]
 
 
