@@ -78,3 +78,7 @@ def test_template_podklyuchaet_masku_i_pomechaet_polya(template):
     html = template.read_text(encoding="utf-8")
     assert "/static/js/phone-mask.js" in html, "шаблон не подключает скрипт маски"
     assert html.count("data-phone-mask") == 2, "размечены не оба поля телефона"
+    # `Cache-Control: immutable` на статике: ссылка без `?v=<число>` отдаст
+    # ученику старый файл до ручной чистки кэша (та же проверка, что фикстура
+    # `assert_static_versioned` делает для отрисованных страниц).
+    assert re.search(r'/static/js/phone-mask\.js\?v=\d+"', html), "ссылка на скрипт без версии"
