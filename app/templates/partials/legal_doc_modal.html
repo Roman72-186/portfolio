@@ -1,0 +1,58 @@
+<div id="legal-modal" class="legal-modal" role="dialog" aria-modal="true" aria-label="Документ" aria-hidden="true" onclick="closeLegalDoc(event)">
+    <div class="legal-modal-sheet" onclick="event.stopPropagation()">
+        <div class="legal-modal-head">
+            <h2 id="legal-modal-title"></h2>
+            <button type="button" class="legal-modal-close" onclick="closeLegalDoc()" aria-label="Закрыть">&times;</button>
+        </div>
+        <div class="legal-modal-body" id="legal-modal-body"></div>
+        <div class="legal-modal-foot">
+            <a id="legal-modal-download" class="btn-outline btn-full" href="#" download>Скачать .docx</a>
+        </div>
+    </div>
+</div>
+<script>
+(function(){
+    var modal = document.getElementById('legal-modal');
+    var body = document.getElementById('legal-modal-body');
+    var titleEl = document.getElementById('legal-modal-title');
+    var downloadEl = document.getElementById('legal-modal-download');
+    var lastFocusedEl = null;
+    var cache = {};
+
+    window.openLegalDoc = function(slug, title, downloadUrl, downloadName){
+        lastFocusedEl = document.activeElement;
+        titleEl.textContent = title;
+        downloadEl.href = downloadUrl;
+        downloadEl.setAttribute('download', downloadName);
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+
+        if (cache[slug]) {
+            body.innerHTML = cache[slug];
+        } else {
+            body.innerHTML = '<div class="legal-modal-loading">Загрузка…</div>';
+            fetch('/cabinet/personal/legal/' + slug)
+                .then(function(r){ if (!r.ok) throw new Error('http ' + r.status); return r.text(); })
+                .then(function(html){ cache[slug] = html; body.innerHTML = html; })
+                .catch(function(){
+                    body.innerHTML = '<p class="legal-modal-error">Не удалось загрузить текст документа. Попробуй ещё раз или скачай файл ниже.</p>';
+                });
+        }
+        modal.querySelector('.legal-modal-close').focus();
+    };
+
+    window.closeLegalDoc = function(){
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        if (lastFocusedEl && typeof lastFocusedEl.focus === 'function') lastFocusedEl.focus();
+        lastFocusedEl = null;
+    };
+
+    document.addEventListener('keydown', function(e){
+        if (!modal.classList.contains('open')) return;
+        if (e.key === 'Escape') window.closeLegalDoc();
+    });
+})();
+</script>

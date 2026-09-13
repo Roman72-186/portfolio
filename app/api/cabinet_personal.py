@@ -3,9 +3,16 @@
 Два экрана:
 
 - `/cabinet/personal` — просмотр: свои контакты + документы. Оферта, согласие
-  на обработку ПДн, политика обработки ПДн и согласие на рассылку — статичные
-  .docx в `app/static/legal/` (добавлены 13.09.2026), ссылки открывают файл в
-  новой вкладке. Чеки и FAQ — по-прежнему заглушки, их в проекте ещё нет;
+  на обработку ПДн, политика обработки ПДн и согласие на рассылку лежат как
+  .docx в `app/static/legal/` (добавлены 13.09.2026) и одновременно как
+  HTML-текст в `app/templates/partials/legal/*.html` — конвертация одноразовая
+  (`.docx` → HTML через python-docx, скрипт не хранится в репозитории), при
+  правке исходного документа переконвертировать вручную. Строка открывает
+  поп-ап с текстом (`GET /cabinet/personal/legal/{slug}` отдаёт HTML-фрагмент),
+  внизу — ссылка «Скачать .docx». Чеки и FAQ — по-прежнему заглушки, их в
+  проекте ещё нет;
+- `/cabinet/personal/legal/{slug}` — HTML-фрагмент документа для поп-апа,
+  без `base.html` (голая разметка, не страница);
 - `/cabinet/personal/contacts` — правка **только контактов**: телефон, телефон
   родителя, ник в Telegram.
 
@@ -23,7 +30,7 @@
 import asyncio
 from typing import Annotated
 
-from fastapi import APIRouter, Request, Depends, Form
+from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session as DBSession
 
@@ -47,6 +54,27 @@ from app.tmpl import templates
 router = APIRouter(prefix="/cabinet")
 
 
+# slug -> HTML-фрагмент документа для поп-апа. Заголовок и ссылка на .docx
+# заданы прямо в cabinet_personal.html (там же кнопка вызова) — здесь только
+# то, что нужно роуту фрагмента.
+LEGAL_DOC_PARTIALS = {
+    "oferta": "partials/legal/oferta.html",
+    "soglasie-pdn": "partials/legal/soglasie-pdn.html",
+    "politika-pdn": "partials/legal/politika-pdn.html",
+    "soglasie-rassylka": "partials/legal/soglasie-rassylka.html",
+}
+
+
+@router.get("/personal/legal/{slug}", response_class=HTMLResponse)
+def cabinet_personal_legal_doc(
+    request: Request,
+    user: Annotated[dict, Depends(require_student)],
+    slug: str,
+):
+    partial = LEGAL_DOC_PARTIALS.get(slug)
+    if partial is None:
+        raise HTTPException(404)
+    return templates.TemplateResponse(request, partial, {"request": request})
 
 
 @router.get("/personal", response_class=HTMLResponse)

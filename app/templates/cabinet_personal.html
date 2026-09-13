@@ -4,7 +4,7 @@
 {% block title %}Личная информация{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/account_actions.css?v=1">
-<link rel="stylesheet" href="/static/css/personal_ios.css?v=8">
+<link rel="stylesheet" href="/static/css/personal_ios.css?v=9">
 {% endblock %}
 {% block content %}
 <div class="prs-page ios-personal">
@@ -68,10 +68,10 @@
 
     <div class="prs-section-title">Документы</div>
     <div class="prs-group">
-        <a class="prs-row prs-row-link" href="/static/legal/oferta-2026.docx" download="Публичная оферта.docx"><span>Публичная оферта</span></a>
-        <a class="prs-row prs-row-link" href="/static/legal/soglasie-pdn.docx" download="Согласие на обработку персональных данных.docx"><span>Согласие на обработку персональных данных</span></a>
-        <a class="prs-row prs-row-link" href="/static/legal/politika-pdn.docx" download="Политика обработки персональных данных.docx"><span>Политика обработки персональных данных</span></a>
-        <a class="prs-row prs-row-link" href="/static/legal/soglasie-rassylka.docx" download="Согласие на рассылку электронных сообщений.docx"><span>Согласие на рассылку электронных сообщений</span></a>
+        <button type="button" class="prs-row prs-row-link" onclick="openLegalDoc('oferta', 'Публичная оферта', '/static/legal/oferta-2026.docx', 'Публичная оферта.docx')"><span>Публичная оферта</span></button>
+        <button type="button" class="prs-row prs-row-link" onclick="openLegalDoc('soglasie-pdn', 'Согласие на обработку персональных данных', '/static/legal/soglasie-pdn.docx', 'Согласие на обработку персональных данных.docx')"><span>Согласие на обработку персональных данных</span></button>
+        <button type="button" class="prs-row prs-row-link" onclick="openLegalDoc('politika-pdn', 'Политика обработки персональных данных', '/static/legal/politika-pdn.docx', 'Политика обработки персональных данных.docx')"><span>Политика обработки персональных данных</span></button>
+        <button type="button" class="prs-row prs-row-link" onclick="openLegalDoc('soglasie-rassylka', 'Согласие на рассылку электронных сообщений', '/static/legal/soglasie-rassylka.docx', 'Согласие на рассылку электронных сообщений.docx')"><span>Согласие на рассылку электронных сообщений</span></button>
         <div class="prs-row prs-row--stacked">
             <span class="prs-row-label">Оплата и чеки</span>
             <div class="prs-row-note">Загрузка чеков — отдельная задача, скоро.</div>
@@ -140,5 +140,6 @@
 
 {% set active_tab = "personal" %}
 {% include "partials/bottom_nav.html" %}
+{% include "partials/legal_doc_modal.html" %}
 <script src="/static/js/hint.js?v=1"></script>
 {% endblock %}
