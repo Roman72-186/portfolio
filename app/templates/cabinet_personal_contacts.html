@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {#
-Правка контактов ученика (`/cabinet/personal/contacts`). Меняются три поля:
-телефон, телефон родителя, ник в Telegram. Установочные данные (ФИО, тариф,
-даты) показаны рядом заблокированными — их правит куратор, см. docstring
-`app/api/cabinet_personal.py`.
+Правка контактов ученика (`/cabinet/personal/contacts`). Меняются: телефон,
+телефон родителя, ник в Telegram, город, часовой пояс, email, ссылка
+ВКонтакте, адрес СДЭК (последние пять открыты владельцем 13.09.2026).
+Установочные данные, которые ученик менять не может (ФИО, дата рождения,
+родитель, тариф, даты обучения), показаны рядом заблокированными — их правит
+куратор, см. docstring `app/api/cabinet_personal.py`.
 
 Своего блока <style> здесь нет: экран говорит теми же `.prs-*` классами, что и
 `cabinet_personal.html`, стили формы дописаны в app/static/css/personal_ios.css.
@@ -50,6 +52,35 @@
                        value="{{ form.tg_username }}" placeholder="@username"
                        maxlength="32" pattern="@?[A-Za-z0-9_]{4,31}">
                 <p class="prs-field-note">По этому нику твои работы находятся в облаке. Меняешь ник – скажи куратору, иначе загруженное раньше потеряется.</p>
+            </div>
+            <div class="prs-field">
+                <label class="prs-field-label" for="contacts-city">Город</label>
+                <input class="prs-field-input" type="text" id="contacts-city" name="city" required
+                       value="{{ form.city }}" placeholder="Город" maxlength="100">
+            </div>
+            <div class="prs-field">
+                <label class="prs-field-label" for="contacts-timezone">Часовой пояс</label>
+                <select class="prs-field-input" id="contacts-timezone" name="timezone" required>
+                    <option value="" disabled {% if not form.timezone %}selected{% endif %}>Выбери часовой пояс</option>
+                    {% for tz_value, tz_label in timezones %}
+                    <option value="{{ tz_value }}" {% if form.timezone == tz_value %}selected{% endif %}>{{ tz_label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="prs-field">
+                <label class="prs-field-label" for="contacts-email">Электронная почта</label>
+                <input class="prs-field-input" type="email" id="contacts-email" name="email" required
+                       value="{{ form.email }}" placeholder="mail@example.com" maxlength="200">
+            </div>
+            <div class="prs-field">
+                <label class="prs-field-label" for="contacts-vk">Ссылка на ВКонтакте</label>
+                <input class="prs-field-input" type="text" id="contacts-vk" name="vk_profile_url" required
+                       value="{{ form.vk_profile_url }}" placeholder="vk.com/имя" maxlength="200">
+            </div>
+            <div class="prs-field">
+                <label class="prs-field-label" for="contacts-sdek">Ближайший адрес СДЭК</label>
+                <input class="prs-field-input" type="text" id="contacts-sdek" name="sdek_address" required
+                       value="{{ form.sdek_address }}" placeholder="Город, улица, номер дома, корпус и т. д." maxlength="300">
             </div>
         </div>
 

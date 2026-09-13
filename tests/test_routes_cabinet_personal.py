@@ -87,14 +87,21 @@ def test_contacts_form_shows_editable_and_locked_fields(auth_client, db):
 
     resp = client.get("/cabinet/personal/contacts")
     assert resp.status_code == 200
-    # контакты — поля ввода
+    # контакты и открытые 13.09.2026 поля анкеты — поля ввода
     assert 'name="phone"' in resp.text
     assert 'name="parent_phone"' in resp.text
     assert 'name="tg_username"' in resp.text
-    # установочные данные — только показ, поля для них нет
+    assert 'name="city"' in resp.text
+    assert 'name="timezone"' in resp.text
+    assert 'name="email"' in resp.text
+    assert 'name="vk_profile_url"' in resp.text
+    assert 'name="sdek_address"' in resp.text
+    # установочные данные, которые остаются у куратора — только показ, полей нет
     assert 'name="first_name"' not in resp.text
     assert 'name="last_name"' not in resp.text
     assert 'name="tariff"' not in resp.text
+    assert 'name="birth_date"' not in resp.text
+    assert 'name="parent_name"' not in resp.text
     assert "Анна Смирнова" in resp.text
 
 
@@ -108,6 +115,15 @@ def test_contacts_redirects_to_profile_when_incomplete(client, user_factory, ses
     assert resp.headers["location"] == "/cabinet/profile"
 
 
+_VALID_CONTACTS_EXTRA = {
+    "city": "Казань",
+    "timezone": "3",
+    "email": "anna@example.com",
+    "vk_profile_url": "vk.com/anna_smirnova",
+    "sdek_address": "Казань, ул. Ленина, 1",
+}
+
+
 def test_contacts_post_saves_phone_and_username(auth_client, db):
     from app.models.user import User
     client, user = auth_client
@@ -116,6 +132,7 @@ def test_contacts_post_saves_phone_and_username(auth_client, db):
         "phone": "+79001112233",
         "parent_phone": "+79002223344",
         "tg_username": "@new_nick",
+        **_VALID_CONTACTS_EXTRA,
     }, follow_redirects=False)
     assert resp.status_code == 302
     assert resp.headers["location"] == "/cabinet/personal?saved=1"
@@ -125,6 +142,11 @@ def test_contacts_post_saves_phone_and_username(auth_client, db):
     assert saved.phone == "+79001112233"
     assert saved.parent_phone == "+79002223344"
     assert saved.tg_username == "new_nick"  # «@» срезается на сохранении
+    assert saved.city == "Казань"
+    assert saved.timezone == "3"
+    assert saved.email == "anna@example.com"
+    assert saved.vk_profile_url == "https://vk.com/anna_smirnova"
+    assert saved.sdek_address == "Казань, ул. Ленина, 1"
 
 
 def test_contacts_post_does_not_touch_setup_fields(auth_client, db):
@@ -145,6 +167,7 @@ def test_contacts_post_does_not_touch_setup_fields(auth_client, db):
         "last_name": "Подменённый",
         "tariff": "МАКСИМУМ",
         "university_year": "2030",
+        **_VALID_CONTACTS_EXTRA,
     }, follow_redirects=False)
 
     db.expire_all()
@@ -162,6 +185,7 @@ def test_contacts_post_invalid_phone_shows_error(auth_client, db):
         "phone": "телефон",
         "parent_phone": "+79002223344",
         "tg_username": "anna_art",
+        **_VALID_CONTACTS_EXTRA,
     })
     assert resp.status_code == 200
     assert "Номер нужен российский" in resp.text
@@ -180,6 +204,7 @@ def test_contacts_post_normalizuet_nomer_s_vosmerkoy(auth_client, db):
         "phone": "8 (900) 111-22-33",
         "parent_phone": "+7 900 222-33-44",
         "tg_username": "anna_art",
+        **_VALID_CONTACTS_EXTRA,
     }, follow_redirects=False)
     assert resp.status_code == 302
 
@@ -195,6 +220,7 @@ def test_contacts_post_short_username_shows_error(auth_client):
         "phone": "+79001112233",
         "parent_phone": "+79002223344",
         "tg_username": "ab",
+        **_VALID_CONTACTS_EXTRA,
     })
     assert resp.status_code == 200
     assert "Ник Telegram" in resp.text
@@ -223,6 +249,7 @@ def test_contacts_post_rejects_username_taken_by_another_student(
         "phone": "+79001112233",
         "parent_phone": "+79002223344",
         "tg_username": "@Taken_Nick",
+        **_VALID_CONTACTS_EXTRA,
     })
     assert resp.status_code == 200
     assert "уже занят" in resp.text
@@ -244,6 +271,7 @@ def test_contacts_post_keeps_own_username(auth_client, db):
         "phone": "+79001112233",
         "parent_phone": "+79002223344",
         "tg_username": "my_nick",
+        **_VALID_CONTACTS_EXTRA,
     }, follow_redirects=False)
     assert resp.status_code == 302
 

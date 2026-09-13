@@ -13,6 +13,16 @@ from app.dependencies import TG_MISMATCH_DETAIL
 from app.models.user import User
 from app.services.exam_scheduler import _run_tg_username_check
 
+# Открыты владельцем 13.09.2026 — теперь обязательные поля формы контактов,
+# не только телефон/родитель/tg.
+_VALID_CONTACTS_EXTRA = {
+    "city": "Казань",
+    "timezone": "3",
+    "email": "anna@example.com",
+    "vk_profile_url": "vk.com/anna_smirnova",
+    "sdek_address": "Казань, ул. Ленина, 1",
+}
+
 
 # ── Гейт: что закрыто и что открыто ──────────────────────────────────────────
 
@@ -280,6 +290,7 @@ def test_contacts_save_rejects_when_still_mismatched(db, client, session_factory
             "phone": "+79001112233",
             "parent_phone": "+79002223344",
             "tg_username": "ivan",
+            **_VALID_CONTACTS_EXTRA,
         })
 
     assert resp.status_code == 200
@@ -304,6 +315,7 @@ def test_contacts_save_clears_mismatch_when_now_matches(db, client, session_fact
             "phone": "+79001112233",
             "parent_phone": "+79002223344",
             "tg_username": "new_nick",
+            **_VALID_CONTACTS_EXTRA,
         }, follow_redirects=False)
 
     assert resp.status_code == 302
@@ -331,6 +343,7 @@ def test_contacts_save_rejects_when_telegram_unreachable_and_blocked(db, client,
             "phone": "+79001112233",
             "parent_phone": "+79002223344",
             "tg_username": "new_nick",
+            **_VALID_CONTACTS_EXTRA,
         })
 
     assert resp.status_code == 200
@@ -358,6 +371,7 @@ def test_contacts_save_accepts_unverifiable_when_not_blocked(db, client, session
             "phone": "+79009998877",
             "parent_phone": "+79002223344",
             "tg_username": "old_nick",
+            **_VALID_CONTACTS_EXTRA,
         }, follow_redirects=False)
 
     assert resp.status_code == 302

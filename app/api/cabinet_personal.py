@@ -13,12 +13,15 @@
   проекте ещё нет;
 - `/cabinet/personal/legal/{slug}` — HTML-фрагмент документа для поп-апа,
   без `base.html` (голая разметка, не страница);
-- `/cabinet/personal/contacts` — правка **только контактов**: телефон, телефон
-  родителя, ник в Telegram.
+- `/cabinet/personal/contacts` — правка контактов: телефон, телефон родителя,
+  ник в Telegram, город, часовой пояс, email, ссылка ВКонтакте, адрес СДЭК
+  (последние пять открыты владельцем 13.09.2026 — до этого были частью
+  установочных данных анкеты и правились только через куратора).
 
-Установочные данные (ФИО, тариф, месяц/год начала обучения, год поступления в
-вуз) ученик заполняет один раз в анкете первого входа `/cabinet/profile` и
-дальше не меняет — их правит куратор через
+Установочные данные, которые ученик по-прежнему не может изменить сам (ФИО,
+дата рождения, имя и отчество родителя, тариф, месяц/год начала обучения, год
+поступления в вуз), заполняются один раз в анкете первого входа
+`/cabinet/profile` — их правит куратор через
 `POST /cabinet/students/{student_id}/profile`. На экране контактов они видны,
 но заблокированы: так ученик понимает, что данные учтены и куда идти за
 правкой. Owner-решение 25.08.2026.
@@ -34,9 +37,14 @@ from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session as DBSession
 
-from app.api.cabinet_student import needs_profile_setup
+from app.api.cabinet_student import (
+    EMAIL_RE,
+    VK_RE,
+    needs_profile_setup,
+    normalize_vk_profile_url,
+)
 from app.cache import invalidate_session
-from app.constants import TARIFF_DISPLAY, MONTHS, PAYMENT_URL, SUPPORT_URL
+from app.constants import TARIFF_DISPLAY, MONTHS, PAYMENT_URL, SUPPORT_URL, TIMEZONES
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
 from app.models.user import User
@@ -122,7 +130,13 @@ def _contacts_ctx(request, user, errors=None, form=None):
             "phone": user.get("phone") or "",
             "parent_phone": user.get("parent_phone") or "",
             "tg_username": user.get("tg_username") or "",
+            "city": user.get("city") or "",
+            "timezone": user.get("timezone") or "",
+            "email": user.get("email") or "",
+            "vk_profile_url": user.get("vk_profile_url") or "",
+            "sdek_address": user.get("sdek_address") or "",
         },
+        "timezones": TIMEZONES,
         **({"errors": errors} if errors else {}),
     }
 
@@ -148,6 +162,11 @@ def cabinet_personal_contacts_save(
     phone: Annotated[str, Form()] = "",
     parent_phone: Annotated[str, Form()] = "",
     tg_username: Annotated[str, Form()] = "",
+    city: Annotated[str, Form()] = "",
+    contacts_timezone: Annotated[str, Form(alias="timezone")] = "",
+    email: Annotated[str, Form()] = "",
+    vk_profile_url: Annotated[str, Form()] = "",
+    sdek_address: Annotated[str, Form()] = "",
 ):
     if needs_profile_setup(user):
         return RedirectResponse("/cabinet/profile", status_code=302)
@@ -155,8 +174,39 @@ def cabinet_personal_contacts_save(
     phone = normalize_phone(phone)
     parent_phone = normalize_phone(parent_phone)
     tg_username = normalize_tg_username(tg_username)
+    city = city.strip()
+    contacts_timezone = contacts_timezone.strip()
+    email = email.strip().lower()
+    vk_profile_url = normalize_vk_profile_url(vk_profile_url)
+    sdek_address = sdek_address.strip()
 
     errors = validate_contacts(phone, parent_phone, tg_username)
+
+    # Открыты владельцем 13.09.2026 — те же правила, что в анкете первого
+    # входа (`profile_post`, app/api/cabinet_student.py), валидация не
+    # продублирована случайно, а сознательно держит один канон формата.
+    if not city:
+        errors.append("Укажи город")
+    elif len(city) > 100:
+        errors.append("Название города слишком длинное")
+
+    if contacts_timezone not in {tz for tz, _ in TIMEZONES}:
+        errors.append("Укажи часовой пояс")
+
+    if not email:
+        errors.append("Укажи электронную почту")
+    elif not EMAIL_RE.match(email):
+        errors.append("Введи корректную электронную почту")
+
+    if not vk_profile_url:
+        errors.append("Укажи ссылку на ВКонтакте")
+    elif not VK_RE.match(vk_profile_url):
+        errors.append("Ссылка на ВКонтакте должна выглядеть как vk.com/имя или vk.ru/имя")
+
+    if not sdek_address:
+        errors.append("Укажи ближайший адрес СДЭК")
+    elif len(sdek_address) > 300:
+        errors.append("Адрес СДЭК слишком длинный")
     # Ник — ключ поиска: по нему n8n находит папку с работами в Google Drive
     # (services/drive.py) и суперадмин заводит учеников пачкой
     # (cabinet_superadmin.py). Двое с одним ником сливаются в одну карточку.
@@ -210,16 +260,27 @@ def cabinet_personal_contacts_save(
                 )
 
     if errors:
-        form = {"phone": phone, "parent_phone": parent_phone, "tg_username": tg_username}
+        form = {
+            "phone": phone, "parent_phone": parent_phone, "tg_username": tg_username,
+            "city": city, "timezone": contacts_timezone, "email": email,
+            "vk_profile_url": vk_profile_url, "sdek_address": sdek_address,
+        }
         return templates.TemplateResponse(request, "cabinet_personal_contacts.html",
             _contacts_ctx(request, user, errors=errors, form=form),
         )
 
-    # Поля из формы — только контакты. Всё остальное в записи не трогаем даже
-    # значением по умолчанию: установочные данные принадлежат куратору.
+    # Поля из формы — контакты и часть анкеты, открытая на самостоятельную
+    # правку 13.09.2026 (город/часовой пояс/email/ВК/СДЭК). Остальные
+    # установочные поля (ФИО, дата рождения, родитель, тариф, даты обучения)
+    # в записи не трогаем — они по-прежнему принадлежат куратору.
     db_user.phone = phone
     db_user.parent_phone = parent_phone
     db_user.tg_username = tg_username
+    db_user.city = city
+    db_user.timezone = contacts_timezone
+    db_user.email = email
+    db_user.vk_profile_url = vk_profile_url
+    db_user.sdek_address = sdek_address
     if tg_mismatch_after_save is not None:
         db_user.tg_username_mismatch = tg_mismatch_after_save
     db.commit()
