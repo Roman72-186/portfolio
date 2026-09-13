@@ -444,8 +444,21 @@
 /* Просрочка всегда красная, независимо от цвета типа задачи — это
    предупреждение о статусе, а не ярлык вида. Специфичность селектора
    (.trk-item.trk-item--overdue) равна селекторам выше — правило должно
-   идти строго после них, чтобы порядок в файле решал перевес. */
-.ios-tracker .trk-item.trk-item--overdue .trk-kind-dot { background: var(--ios-red); }
+   идти строго после них, чтобы порядок в файле решал перевес.
+   Точка просрочки крупнее остальных: на этом экране группа `.trk-group`
+   снимает левую полосу (`border-left: none`), поэтому кроме точки и красной
+   даты других признаков просрочки в строке нет. Диаметр держим в пределах
+   высоты соседнего бейджа (11px/1 + 3px padding ≈ 17px), а видимый размер
+   добираем кольцом через box-shadow: spread не занимает места и не двигает
+   высоту строки. `align-self` — потому что .trk-meta это flex со stretch, и
+   элемент с фиксированной высотой иначе прижимается к верху строки. */
+.ios-tracker .trk-item.trk-item--overdue .trk-kind-dot {
+    background: var(--ios-red);
+    width: 12px; height: 12px;
+    align-self: center;
+    margin-right: 2px;
+    box-shadow: 0 0 0 3px rgba(255,59,48,0.18);
+}
 
 .ios-tracker .trk-row-actions { align-items: center; gap: 10px; }
 .ios-tracker .trk-row-actions .btn-blue {
