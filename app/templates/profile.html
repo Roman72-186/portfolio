@@ -121,11 +121,11 @@
                        placeholder="Имя Отчество" maxlength="150">
             </div>
             <div class="prf-row prf-row--single">
-                <label class="prf-field-label" for="profile-sdek">Ближайший адрес СДЭК <span class="prf-required">*</span></label>
+                <label class="prf-field-label" for="profile-sdek">Ближайший к тебе адрес пункта выдачи СДЭК <span class="prf-required">*</span></label>
                 <input class="prf-field-input" type="text" id="profile-sdek" name="sdek_address" required
                        value="{{ form.sdek_address if form else (user.sdek_address or '') }}"
-                       placeholder="Город, улица, пункт выдачи" maxlength="300">
-                <p class="prf-field-note-inline">Пригодится, если решим отправить тебе подарок</p>
+                       placeholder="Город, улица, номер дома, корпус и т. д." maxlength="300">
+                <p class="prf-field-note-inline">Пригодится, когда решим отправить тебе подарок 🎁</p>
             </div>
         </div>
 
