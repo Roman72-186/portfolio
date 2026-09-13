@@ -188,6 +188,14 @@ async def unhandled_exception_handler(request: Request, exc):
 
 # Static files
 mimetypes.add_type("image/webp", ".webp")
+# .docx как zip-архив: без явной регистрации mimetypes на части машин отдаёт
+# None (реестр Windows и Linux-дистрибутивы расходятся), StaticFiles в этом
+# случае шлёт text/plain — браузер пытается отрисовать бинарник как текст,
+# получаются кракозябры вместо скачивания (13.09.2026, документы в личной
+# информации).
+mimetypes.add_type(
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx",
+)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
