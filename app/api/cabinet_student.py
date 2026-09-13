@@ -365,7 +365,7 @@ def profile_post(
     if not vk_profile_url:
         errors.append("Укажите ссылку на ВКонтакте")
     elif not VK_RE.match(vk_profile_url):
-        errors.append("Ссылка на ВКонтакте должна выглядеть как vk.com/имя")
+        errors.append("Ссылка на ВКонтакте должна выглядеть как vk.com/имя или vk.ru/имя")
 
     if not sdek_address:
         errors.append("Укажите ближайший адрес СДЭК")

@@ -134,7 +134,7 @@
             </div>
             <div class="prf-row prf-row--single">
                 <label class="prf-field-label" for="profile-vk">Ссылка на ВКонтакте <span class="prf-required">*</span>
-                    {{ hint("Ссылка на вашу страницу, например vk.com/имя — http, www и лишнее в конце уберём сами.") }}
+                    {{ hint("Ссылка на вашу страницу: подойдёт и vk.com/имя, и vk.ru/имя – http, www и лишнее в конце уберём сами.") }}
                 </label>
                 <input class="prf-field-input" type="text" id="profile-vk" name="vk_profile_url" required
                        value="{{ form.vk_profile_url if form else (user.vk_profile_url or '') }}"
