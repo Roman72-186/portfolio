@@ -140,6 +140,8 @@ ENROLLMENT_YEARS = list(range(2020, 2031))  # 2020–2030
 # (Калининград МСК-1 … Камчатка МСК+9), без геокодинга по городу.
 TIMEZONES = [(str(offset), f"МСК{'+' if offset > 0 else ''}{offset}" if offset else "МСК")
              for offset in range(-1, 10)]
+# Обратный словарь для показа: сырой код смещения ("3") -> подпись ("МСК+3").
+TIMEZONE_DISPLAY = dict(TIMEZONES)
 
 # ── Student tags (admin LK) ───────────────────────────────────────────────────
 

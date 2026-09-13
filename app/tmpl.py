@@ -5,7 +5,7 @@ import re
 from fastapi.templating import Jinja2Templates
 
 from app.config import settings
-from app.constants import TARIFF_DISPLAY, TARIFF_SLUGS
+from app.constants import TARIFF_DISPLAY, TARIFF_SLUGS, TIMEZONE_DISPLAY
 from app.csrf import generate_csrf_token
 from app.services.navigation import curator_nav_items, staff_nav_items, student_nav_items
 
@@ -84,6 +84,16 @@ def tariff_slug(tariff: str | None) -> str:
 
 templates.env.filters["tariff_label"] = tariff_label
 templates.env.filters["tariff_slug"] = tariff_slug
+
+
+def timezone_label(tz: str | None) -> str:
+    """Название часового пояса для показа: «МСК+3», не сырой код смещения."""
+    if not tz:
+        return ""
+    return TIMEZONE_DISPLAY.get(tz, tz)
+
+
+templates.env.filters["timezone_label"] = timezone_label
 
 
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)

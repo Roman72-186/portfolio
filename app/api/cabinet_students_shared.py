@@ -21,7 +21,7 @@ from sqlalchemy import func, or_, and_
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session, invalidate_unread
-from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, MONTHS, MONTH_TO_NUM, TARIFFS, COHORT_TAGS, COHORT_TAG_LABELS
+from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, MONTHS, MONTH_TO_NUM, TARIFFS, COHORT_TAGS, COHORT_TAG_LABELS, TIMEZONE_DISPLAY
 from app.db.database import get_db
 from app.dependencies import get_current_user, require_admin_role, require_csrf, require_curator
 from app.models.session import Session
@@ -571,8 +571,21 @@ def get_student_profile(
             "cohort_tag": student.cohort_tag,
             "phone": student.phone if can_see_contacts else None,
             "parent_phone": student.parent_phone if can_see_contacts else None,
+            "parent_name": student.parent_name if can_see_contacts else None,
             "tg_username": student.tg_username if can_see_contacts else None,
             "vk_id": student.vk_id if can_see_contacts else None,
+            "vk_profile_url": student.vk_profile_url if can_see_contacts else None,
+            "email": student.email if can_see_contacts else None,
+            "birth_date": (
+                student.birth_date.strftime("%d.%m.%Y")
+                if can_see_contacts and student.birth_date else None
+            ),
+            "city": student.city if can_see_contacts else None,
+            "timezone": (
+                TIMEZONE_DISPLAY.get(student.timezone, student.timezone)
+                if can_see_contacts else None
+            ),
+            "sdek_address": student.sdek_address if can_see_contacts else None,
             "can_see_contacts": can_see_contacts,
             "about": student.about,
             "tariff": student.tariff or "—",

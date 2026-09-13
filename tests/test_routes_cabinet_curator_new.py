@@ -1,5 +1,5 @@
 """Tests for new split-panel curator routes added in 2026-04-13."""
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -142,8 +142,14 @@ def test_curator_cannot_see_student_contact_fields(curator_client, db, student):
     client, _ = curator_client
     student.phone = "+79991234567"
     student.parent_phone = "+79997654321"
+    student.parent_name = "Иванова Мария Петровна"
     student.tg_username = "anna_ivanova"
     student.vk_id = 424242
+    student.vk_profile_url = "https://vk.com/anna_ivanova"
+    student.email = "anna@example.com"
+    student.city = "Казань"
+    student.timezone = "0"
+    student.sdek_address = "Казань, ул. Ленина, 1"
     db.add(student)
     db.commit()
 
@@ -153,14 +159,28 @@ def test_curator_cannot_see_student_contact_fields(curator_client, db, student):
     assert data["can_see_contacts"] is False
     assert data["phone"] is None
     assert data["parent_phone"] is None
+    assert data["parent_name"] is None
     assert data["tg_username"] is None
     assert data["vk_id"] is None
+    assert data["vk_profile_url"] is None
+    assert data["email"] is None
+    assert data["birth_date"] is None
+    assert data["city"] is None
+    assert data["timezone"] is None
+    assert data["sdek_address"] is None
 
 
 def test_admin_can_see_student_contact_fields(admin_client, db, user_factory):
     client, _ = admin_client
     student = user_factory(vk_id=800900, name="Admin View Student", role_name="ученик")
     student.phone = "+79991234567"
+    student.parent_name = "Иванова Мария Петровна"
+    student.vk_profile_url = "https://vk.com/anna_ivanova"
+    student.email = "anna@example.com"
+    student.birth_date = date(2008, 5, 20)
+    student.city = "Казань"
+    student.timezone = "3"
+    student.sdek_address = "Казань, ул. Ленина, 1"
     db.add(student)
     db.commit()
 
@@ -169,6 +189,13 @@ def test_admin_can_see_student_contact_fields(admin_client, db, user_factory):
     data = resp.json()["student"]
     assert data["can_see_contacts"] is True
     assert data["phone"] == "+79991234567"
+    assert data["parent_name"] == "Иванова Мария Петровна"
+    assert data["vk_profile_url"] == "https://vk.com/anna_ivanova"
+    assert data["email"] == "anna@example.com"
+    assert data["birth_date"] == "20.05.2008"
+    assert data["city"] == "Казань"
+    assert data["timezone"] == "МСК+3"
+    assert data["sdek_address"] == "Казань, ул. Ленина, 1"
 
 
 def test_portfolio_student_access_denied_other_curator(client, db, user_factory, session_factory):

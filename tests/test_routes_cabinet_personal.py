@@ -30,6 +30,34 @@ def test_personal_shows_own_contacts(auth_client, db):
     assert "@self_view" in resp.text
 
 
+def test_personal_shows_anketa_data(auth_client, db):
+    """Личная информация показывает поля анкеты первого входа (12-13.09.2026:
+    дата рождения, город, часовой пояс, email, ВКонтакте, родитель, СДЭК),
+    а не только контакты и тариф."""
+    from datetime import date
+
+    client, user = auth_client
+    user.birth_date = date(2008, 5, 20)
+    user.city = "Казань"
+    user.timezone = "3"
+    user.email = "anna@example.com"
+    user.vk_profile_url = "https://vk.com/anna_smirnova"
+    user.parent_name = "Смирнова Мария Петровна"
+    user.sdek_address = "Казань, ул. Ленина, 1"
+    db.add(user)
+    db.commit()
+
+    resp = client.get("/cabinet/personal")
+    assert resp.status_code == 200
+    assert "20.05.2008" in resp.text
+    assert "Казань" in resp.text
+    assert "МСК+3" in resp.text
+    assert "anna@example.com" in resp.text
+    assert "https://vk.com/anna_smirnova" in resp.text
+    assert "Смирнова Мария Петровна" in resp.text
+    assert "Казань, ул. Ленина, 1" in resp.text
+
+
 def test_personal_shows_placeholder_when_contact_missing(auth_client):
     client, _ = auth_client
     resp = client.get("/cabinet/personal")

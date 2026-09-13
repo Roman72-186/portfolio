@@ -1396,8 +1396,15 @@ function renderProfile(data) {
     if (s.can_see_contacts !== false) {
         html += profileField('Телефон', s.phone);
         html += profileField('Телефон родителя', s.parent_phone);
+        html += profileField('Имя и отчество родителя', s.parent_name);
         html += profileField('Telegram', s.tg_username ? '@' + s.tg_username : null);
         html += profileField('VK ID', s.vk_id);
+        html += profileField('Ссылка ВКонтакте', s.vk_profile_url);
+        html += profileField('Email', s.email);
+        html += profileField('Дата рождения', s.birth_date);
+        html += profileField('Город', s.city);
+        html += profileField('Часовой пояс', s.timezone);
+        html += profileField('Адрес СДЭК', s.sdek_address);
     }
     html += profileField('Тариф', s.tariff);
     html += profileField('Куратор', s.curator_name);

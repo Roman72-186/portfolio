@@ -66,6 +66,46 @@
         <a class="prs-row prs-row-link" href="/cabinet/personal/contacts"><span>Изменить контакты</span></a>
     </div>
 
+    {# Установочные данные анкеты первого входа (`/cabinet/profile`) — заполняются
+       один раз, дальше их правит куратор. Показываем здесь, рядом с контактами,
+       чтобы ученик видел, что данные учтены, см. docstring app/api/cabinet_personal.py. #}
+    <div class="prs-section-title">Данные анкеты</div>
+    <div class="prs-group">
+        <div class="prs-row">
+            <span class="prs-row-label">Фамилия и имя</span>
+            <span class="prs-row-value {{ '' if user.name else 'empty' }}">{{ user.name or 'Не указано' }}</span>
+        </div>
+        <div class="prs-row">
+            <span class="prs-row-label">Дата рождения</span>
+            <span class="prs-row-value {{ '' if user.birth_date else 'empty' }}">{{ user.birth_date.strftime('%d.%m.%Y') if user.birth_date else 'Не указано' }}</span>
+        </div>
+        <div class="prs-row">
+            <span class="prs-row-label">Город</span>
+            <span class="prs-row-value {{ '' if user.city else 'empty' }}">{{ user.city or 'Не указано' }}</span>
+        </div>
+        <div class="prs-row">
+            <span class="prs-row-label">Часовой пояс</span>
+            <span class="prs-row-value {{ '' if user.timezone else 'empty' }}">{{ user.timezone|timezone_label or 'Не указано' }}</span>
+        </div>
+        <div class="prs-row">
+            <span class="prs-row-label">Электронная почта</span>
+            <span class="prs-row-value {{ '' if user.email else 'empty' }}">{{ user.email or 'Не указано' }}</span>
+        </div>
+        <div class="prs-row">
+            <span class="prs-row-label">Ссылка ВКонтакте</span>
+            <span class="prs-row-value {{ '' if user.vk_profile_url else 'empty' }}">{{ user.vk_profile_url or 'Не указано' }}</span>
+        </div>
+        <div class="prs-row">
+            <span class="prs-row-label">Имя и отчество родителя</span>
+            <span class="prs-row-value {{ '' if user.parent_name else 'empty' }}">{{ user.parent_name or 'Не указано' }}</span>
+        </div>
+        <div class="prs-row">
+            <span class="prs-row-label">Адрес СДЭК</span>
+            <span class="prs-row-value {{ '' if user.sdek_address else 'empty' }}">{{ user.sdek_address or 'Не указано' }}</span>
+        </div>
+    </div>
+    <p class="prs-note">Эти данные заполнены при первом входе. Поменять их может куратор – напиши ему.</p>
+
     <div class="prs-section-title">Документы</div>
     <div class="prs-group">
         <button type="button" class="prs-row prs-row-link" onclick="openLegalDoc('oferta', 'Публичная оферта', '/static/legal/oferta-2026.docx', 'Публичная оферта.docx')"><span>Публичная оферта</span></button>
