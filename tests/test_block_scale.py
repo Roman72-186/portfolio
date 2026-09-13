@@ -212,6 +212,29 @@ def test_personal_page_shows_skills(auth_client, db):
 
     assert "Мои навыки" in page.text
     assert "Стрессоустойчивость" in page.text
+    # Закрашено ровно шесть делений из десяти (владелец 13.09.2026): профиль
+    # показывает уровень заливкой, а не точками по датам.
+    assert "6 из 10" in page.text
+    assert page.text.count('prs-skill-cell is-filled') == 6
+
+
+def test_personal_page_does_not_show_measurement_dates(auth_client, db):
+    """История замеров убрана с экрана (владелец 13.09.2026), но осталась в
+    базе: сервис по-прежнему отдаёт `points`, профиль их просто не рисует."""
+    client, user = auth_client
+    task = _task(db)
+    block = _scale(db, task, skills=("Уверенность",))
+    option = db.query(TaskBlockOption).filter(TaskBlockOption.block_id == block.id).one()
+    save_response(
+        db, task_id=task.id, user_id=user.id, blocks=[block],
+        answers={block.id: {"option_ids": [option.id], "option_texts": {option.id: "4"}}},
+    )
+    db.commit()
+
+    page = client.get("/cabinet/personal")
+
+    assert "prs-skill-point" not in page.text
+    assert "prs-skill-marker" not in page.text
 
 
 def test_personal_page_without_skills_has_no_section(auth_client):
@@ -296,6 +319,44 @@ def test_scale_score_of_zero_is_a_real_answer_not_a_blank(db, regular_user):
     history = skills_history(db, regular_user.id)
     assert history[0]["points"][0]["score"] == 0
     assert history[0]["points"][0]["percent"] == 0
+    # Ноль закрашенных делений — но строка навыка в профиле есть: это ответ
+    # «навык не развит», а не «ещё не отвечал».
+    assert history[0]["score"] == 0
+    assert history[0]["filled"] == 0
+    assert history[0]["total"] == 10
+
+
+def test_history_fills_cells_up_to_the_latest_score(db, regular_user):
+    """Профиль закрашивает шкалу по последнему ответу (владелец 13.09.2026),
+    а не по первому и не по среднему."""
+    first_task = _task(db, "Диагностика в начале")
+    first_block = _scale(db, first_task, skills=("Уверенность",))
+    first_option = db.query(TaskBlockOption).filter(
+        TaskBlockOption.block_id == first_block.id
+    ).one()
+    save_response(
+        db, task_id=first_task.id, user_id=regular_user.id, blocks=[first_block],
+        answers={first_block.id: {
+            "option_ids": [first_option.id], "option_texts": {first_option.id: "3"},
+        }},
+    )
+    second_task = _task(db, "Диагностика в середине")
+    second_block = _scale(db, second_task, skills=("Уверенность",))
+    second_option = db.query(TaskBlockOption).filter(
+        TaskBlockOption.block_id == second_block.id
+    ).one()
+    save_response(
+        db, task_id=second_task.id, user_id=regular_user.id, blocks=[second_block],
+        answers={second_block.id: {
+            "option_ids": [second_option.id], "option_texts": {second_option.id: "7"},
+        }},
+    )
+    db.commit()
+
+    history = skills_history(db, regular_user.id)
+
+    assert history[0]["score"] == 7
+    assert history[0]["filled"] == 7
 
 
 def test_history_matches_skill_names_ignoring_case_and_spacing(db, regular_user):

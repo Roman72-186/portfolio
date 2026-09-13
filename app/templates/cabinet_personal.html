@@ -123,37 +123,25 @@
         </div>
     </div>
 
-    {# Динамика самооценки навыков (владелец 03.09.2026): «в начале обучения
-       было так, в середине уже вот так, а к концу ещё более развито». Точки
-       по датам, чтобы шкалы можно было сравнить между собой. #}
+    {# Самооценка навыков (владелец 13.09.2026): закрашенная шкала вместо точек
+       по датам — «чтобы было именно закрашено, насколько у тебя это развито».
+       Прошлые замеры остались в базе (`row.points`), здесь их не показываем. #}
     {% if skills %}
-    <div class="prs-section-title">Мои навыки {{ hint("Каждая точка – твой ответ в свою дату. Так видно, как менялся навык со временем.") }}</div>
+    <div class="prs-section-title">Мои навыки {{ hint("Насколько развит навык по твоей последней самооценке.") }}</div>
     <div class="prs-group">
         {% for row in skills %}
         <div class="prs-row prs-row--stacked">
-            <span class="prs-row-label">{{ row.skill }}</span>
+            <div class="prs-skill-head">
+                <span class="prs-row-label">{{ row.skill }}</span>
+                <span class="prs-skill-score">{{ row.score }} из {{ row.total }}</span>
+            </div>
             {% if row.description %}
             <p class="prs-skill-desc">{{ row.description }}</p>
             {% endif %}
-            <div class="prs-skill-bar">
-                <div class="prs-skill-track">
-                    {% for point in row.points %}
-                    <span class="prs-skill-marker{% if loop.last %} prs-skill-marker--latest{% endif %}"
-                          style="left: {{ point.percent }}%"
-                          title="{{ point.score }} — {{ point.date.strftime('%d.%m.%y') }}"></span>
-                    {% endfor %}
-                </div>
-                <div class="prs-skill-scale-legend">
-                    <span>0</span>
-                    <span>10</span>
-                </div>
-            </div>
-            <div class="prs-skill-points">
-                {% for point in row.points %}
-                <span class="prs-skill-point{% if loop.last %} prs-skill-point--latest{% endif %}">
-                    <strong>{{ point.score }}</strong>
-                    <small>{{ point.date.strftime('%d.%m.%y') }}</small>
-                </span>
+            <div class="prs-skill-cells" role="img"
+                 aria-label="{{ row.skill }}: {{ row.score }} из {{ row.total }}">
+                {% for cell in range(row.total) %}
+                <span class="prs-skill-cell{% if cell < row.filled %} is-filled{% endif %}"></span>
                 {% endfor %}
             </div>
         </div>

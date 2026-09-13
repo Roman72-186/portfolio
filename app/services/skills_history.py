@@ -25,11 +25,13 @@ from app.models.task_block import (
 def skills_history(db: Session, user_id: int) -> list[dict]:
     """Оценки навыков ученика по датам, от ранних к поздним.
 
-    Возвращает `[{"skill": str, "description": str|None,
+    Возвращает `[{"skill": str, "description": str|None, "score": int,
+    "filled": int, "total": int,
     "points": [{"date": date, "score": int, "percent": int}]}]` — по строке
-    на навык, чтобы шкалы можно было наложить друг на друга. `percent` —
-    положение точки на шкале 0-100%, посчитано здесь, а не в шаблоне: Jinja
-    не должен знать про SCALE_MIN/SCALE_MAX константы модели. Навык
+    на навык. `score` — последняя по дате оценка, `filled` из `total` —
+    сколько делений шкалы закрашено; профиль рисует именно их. `percent` —
+    положение точки на шкале 0-100%. Всё посчитано здесь, а не в шаблоне:
+    Jinja не должен знать про SCALE_MIN/SCALE_MAX константы модели. Навык
     опознаётся по названию варианта, а не по его id: диагностику в разные
     периоды заводят разными блоками, но «Стрессоустойчивость» в них одна и та
     же.
@@ -82,4 +84,20 @@ def skills_history(db: Session, user_id: int) -> list[dict]:
             "score": score,
             "percent": max(0, min(100, percent)),
         })
+
+    # Текущая оценка и число закрашенных делений (владелец 13.09.2026:
+    # «чтобы было именно закрашено, насколько у тебя это развито»). Профиль
+    # показывает только её, `points` остаются в ответе: на них держится сбор
+    # последней формулировки навыка и они же понадобятся, если владелец
+    # вернёт показ динамики по датам.
+    for entry in by_skill.values():
+        last = entry["points"][-1]
+        entry["score"] = last["score"]
+        entry["total"] = SCALE_MAX - SCALE_MIN
+        # Клетки шкалы — деления между SCALE_MIN и SCALE_MAX, а не сами
+        # значения: их одиннадцать (0-10), а клеток десять. Оценка 0 — пустой
+        # ряд, это содержательный ответ «навык не развит» (владелец
+        # 12.09.2026), а не «ещё не отвечено».
+        entry["filled"] = max(0, min(entry["total"], last["score"] - SCALE_MIN))
+
     return sorted(by_skill.values(), key=lambda row: row["skill"])

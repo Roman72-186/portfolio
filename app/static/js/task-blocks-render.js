@@ -293,14 +293,23 @@
 
             // Шкала навыков (владелец 03.09.2026): «оцени, насколько ты
             // стрессоустойчивый… ребёнок отмечает 3 из 10». Каждый навык —
-            // своя строка с выбором от 1 до 10; верного ответа нет.
+            // своя строка с выбором от 0 до 10; верного ответа нет.
             //
-            // Ползунок вместо select (владелец 10.09.2026): у range нет
-            // пустого значения, поэтому «не тронуто» отслеживается отдельным
-            // флагом `dataset.touched`, а не самим `.value` — иначе после
-            // рендера все навыки шкалы считались бы отвеченными, хотя
-            // ученик ни один не подвинул. `collectAnswers` ниже читает
-            // именно этот флаг.
+            // Закрашенные деления вместо ползунка (владелец 13.09.2026):
+            // «выбираем от 0 до 10 с заполнением квадратиков». Клик по
+            // делению закрашивает всё до него включительно — та же картинка,
+            // что ученик потом видит в «Личной информации».
+            //
+            // Ноль — отдельная кнопка слева от ряда, а не «снять выделение»
+            // повторным кликом: делений между 0 и 10 десять, а значений
+            // одиннадцать, и нижний край шкалы — содержательный ответ
+            // (владелец 12.09.2026), он обязан выбираться явно.
+            //
+            // Значение по-прежнему живёт в скрытом `input` с атрибутом
+            // `data-scale-option`, а «не тронуто» — в его `dataset.touched`
+            // (владелец 10.09.2026): `collectAnswers` и кнопка «Сохранить»
+            // ниже читают именно их, иначе ответы молча перестанут уходить
+            // на сервер.
             function renderScale(block, index) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-scale'), block);
                 if (block.body) wrap.appendChild(el('p', 'lrn-blk-question-body', block.body));
@@ -317,32 +326,68 @@
                     }
                     var control = el('div', 'lrn-scale-control');
                     var input = el('input', 'lrn-scale-input');
-                    input.type = 'range';
-                    input.min = String(min);
-                    input.max = String(max);
-                    input.step = '1';
+                    input.type = 'hidden';
                     input.id = 'lrn-scale-' + api.uid + '-' + index + '-' + oi;
-                    input.setAttribute('aria-label', option.text);
                     input.setAttribute('data-scale-option', option.id);
-                    input.disabled = locked;
                     // savedValue может быть "0" — валидная оценка, не «ещё не
                     // отвечено». Строка "0" truthy в JS, но проверяем явно, а
                     // не полагаемся на это (владелец 12.09.2026: нижний край
                     // шкалы теперь содержательный ответ, не пустота).
                     var hasSaved = typeof saved[option.id] !== 'undefined' && saved[option.id] !== null;
-                    var savedValue = hasSaved ? saved[option.id] : null;
+                    var savedValue = hasSaved ? Number(saved[option.id]) : null;
                     var valueLabel = el('span', 'lrn-scale-value', hasSaved ? String(savedValue) : '—');
-                    if (hasSaved) {
-                        input.value = String(savedValue);
-                        input.dataset.touched = 'true';
-                    } else {
-                        input.value = String(Math.round((min + max) / 2));
+
+                    var cells = el('div', 'lrn-scale-cells');
+                    cells.setAttribute('role', 'group');
+                    cells.setAttribute('aria-label', option.text);
+                    var buttons = [];
+
+                    function paint(value) {
+                        buttons.forEach(function (btn) {
+                            var own = Number(btn.getAttribute('data-scale-value'));
+                            var filled = value !== null && own !== min && own <= value;
+                            btn.classList.toggle('is-filled', filled);
+                            btn.setAttribute('aria-pressed', value !== null && own === value ? 'true' : 'false');
+                        });
+                        valueLabel.textContent = value === null ? '—' : String(value);
                     }
-                    input.addEventListener('input', function () {
+
+                    function choose(value) {
+                        input.value = String(value);
                         input.dataset.touched = 'true';
-                        valueLabel.textContent = input.value;
-                    });
+                        paint(value);
+                    }
+
+                    // Кнопок на одну больше, чем делений: нулевая слева, затем
+                    // по делению на каждое значение от min+1 до max.
+                    for (var value = min; value <= max; value++) {
+                        var cell = el(
+                            'button',
+                            value === min ? 'lrn-scale-cell lrn-scale-cell--zero' : 'lrn-scale-cell',
+                            value === min ? String(min) : null
+                        );
+                        cell.type = 'button';
+                        cell.disabled = locked;
+                        cell.setAttribute('data-scale-value', String(value));
+                        cell.setAttribute('aria-pressed', 'false');
+                        cell.setAttribute('aria-label', 'оценка ' + value + ' из ' + max);
+                        cell.addEventListener('click', function () {
+                            choose(Number(this.getAttribute('data-scale-value')));
+                        });
+                        cells.appendChild(cell);
+                        buttons.push(cell);
+                    }
+
+                    // Без ответа значение пустое, а не серединное: пустой ряд
+                    // не должен выдавать за оценку то, чего ученик не выбирал.
+                    // На сервер такое значение всё равно не уйдёт — отправку
+                    // решает `dataset.touched`.
+                    input.value = hasSaved ? String(savedValue) : '';
+                    if (hasSaved) input.dataset.touched = 'true';
+                    paint(hasSaved ? savedValue : null);
+
                     control.appendChild(input);
+                    control.appendChild(cells);
                     control.appendChild(valueLabel);
                     row.appendChild(control);
                     if (option.scale_min_label || option.scale_max_label) {

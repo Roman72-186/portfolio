@@ -243,58 +243,32 @@
     .ios-personal.prs-page { padding: 16px 14px 100px; }
 }
 
-/* Динамика самооценки навыков (владелец 03.09.2026, доработано 11.09.2026 —
-   описание компетенции и полоса-градусник вместо голых цифр): описание под
-   названием, затем шкала 0-10 с точкой на каждый период, затем точный список
-   «число + дата» — полоса даёт общую картину, список даёт точные значения. */
+/* Самооценка навыков (владелец 03.09.2026, переделано 13.09.2026 — закрашенная
+   шкала вместо точек по датам): название и оценка числом в одну строку,
+   описание компетенции под ними, затем ряд делений, закрашенных до текущей
+   оценки. Оценка 0 — пустой ряд, это ответ «навык не развит», а не пустота. */
+.ios-personal .prs-skill-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+}
+.ios-personal .prs-skill-score {
+    flex: 0 0 auto;
+    font: 600 13px/1.2 var(--ios-font); color: var(--ios-blue);
+}
 .ios-personal .prs-skill-desc {
     margin: 2px 0 0; font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2);
 }
-.ios-personal .prs-skill-bar { margin-top: 10px; }
-.ios-personal .prs-skill-track {
-    position: relative;
-    height: 6px;
-    margin: 10px 4px;
+.ios-personal .prs-skill-cells {
+    display: flex;
+    gap: 3px;
+    margin-top: 10px;
+}
+.ios-personal .prs-skill-cell {
+    flex: 1 1 0;
+    height: 14px;
     background: var(--line);
     border-radius: 3px;
 }
-.ios-personal .prs-skill-marker {
-    position: absolute;
-    top: 50%; left: 0;
-    width: 12px; height: 12px;
-    transform: translate(-50%, -50%);
-    border-radius: 50%;
-    background: var(--ios-label-3);
-    border: 2px solid var(--ios-card-bg);
-}
-.ios-personal .prs-skill-marker--latest {
-    width: 16px; height: 16px;
-    background: var(--ios-blue);
-    z-index: 1;
-}
-.ios-personal .prs-skill-scale-legend {
-    display: flex; justify-content: space-between;
-    margin: 0 4px;
-    font: 400 11px/1.2 var(--ios-font); color: var(--ios-label-3);
-}
-.ios-personal .prs-skill-points {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-top: 10px;
-}
-.ios-personal .prs-skill-point {
-    display: inline-flex;
-    flex-direction: column;
-    align-items: center;
-    min-width: 44px;
-    padding: 6px 8px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-}
-.ios-personal .prs-skill-point--latest { border-color: var(--ios-blue); }
-.ios-personal .prs-skill-point strong { font-size: 15px; }
-.ios-personal .prs-skill-point small { font-size: 11px; color: var(--dim); }
+.ios-personal .prs-skill-cell.is-filled { background: var(--ios-blue); }
 
 /* ── Закрытый доступ (`User.access_until`) ────────────────────────────────
    Срок доступа истёк: ученику оставлен только этот экран, отсюда он уходит

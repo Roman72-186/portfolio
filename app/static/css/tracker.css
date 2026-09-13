@@ -1326,9 +1326,10 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 }
 .lrn-archive-note { margin: 0 0 12px; }
 
-/* Шкала навыков: название сверху, ползунок под ним — на узком экране
-   строка «имя + select» умещалась в 84px, у range такой ширины мало
-   (владелец 10.09.2026, замена select на ползунок). */
+/* Шкала навыков: название сверху, ряд делений под ним — на узком экране
+   строка «имя + select» умещалась в 84px, а ряду нужна вся ширина
+   (владелец 10.09.2026 — замена select, 13.09.2026 — деления вместо
+   ползунка). */
 .lrn-scale-row {
     display: flex;
     flex-direction: column;
@@ -1339,28 +1340,23 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-scale-row:last-child { border-bottom: none; }
 .lrn-scale-name { font-size: 14px; }
 .lrn-scale-control { display: flex; align-items: center; gap: 10px; width: 100%; }
-/* height:44px на самом input, а не только на видимом треке — у range hit-area
-   равна content-box элемента, а не пикселям ползунка, это и даёт тач-цель
-   ≥44px без ручного слушателя жестов. */
-.lrn-scale-input {
-    flex: 1 1 auto; min-width: 100px; height: 44px; padding: 0;
-    background: transparent; cursor: pointer;
-    -webkit-appearance: none; appearance: none;
+/* Деления-кнопки: клик закрашивает всё до выбранного включительно. Высота
+   40px — тач-цель по площади, шире на узком экране их не сделать: десять
+   делений плюс нулевая кнопка должны уместиться в строку на 375px. */
+.lrn-scale-cells { display: flex; gap: 3px; flex: 1 1 auto; min-width: 0; }
+.lrn-scale-cell {
+    flex: 1 1 0; min-width: 0; height: 40px; padding: 0;
+    background: var(--line); border: none; border-radius: 4px;
+    cursor: pointer; color: var(--muted);
+    font: 600 13px/1 var(--font-body);
 }
-.lrn-scale-input::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--line); }
-.lrn-scale-input::-moz-range-track { height: 4px; border-radius: 2px; background: var(--line); }
-.lrn-scale-input::-webkit-slider-thumb {
-    -webkit-appearance: none; appearance: none;
-    width: 20px; height: 20px; margin-top: -8px; border-radius: 50%;
-    background: var(--blue); border: 2px solid var(--surface);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-.lrn-scale-input::-moz-range-thumb {
-    width: 20px; height: 20px; border-radius: 50%;
-    background: var(--blue); border: 2px solid var(--surface);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-.lrn-scale-input:disabled { opacity: 0.5; cursor: default; }
+.lrn-scale-cell--zero { flex: 0 0 auto; width: 30px; }
+.lrn-scale-cell.is-filled { background: var(--blue); }
+/* Выбранный ноль закрашивать нечем — ряд остаётся пустым, поэтому отмечаем
+   саму нулевую кнопку, иначе ответ «навык не развит» неотличим от «ещё не
+   отвечал». */
+.lrn-scale-cell--zero[aria-pressed="true"] { background: var(--blue); color: var(--surface); }
+.lrn-scale-cell:disabled { opacity: 0.5; cursor: default; }
 .lrn-scale-value { min-width: 24px; flex: 0 0 auto; text-align: center; font: 700 14px/1 var(--font-body); color: var(--ink); }
 /* Пояснения к краям шкалы («навык совсем не развит» / «уверенно применяет») —
    владелец 11.09.2026, анкета «Метакомпетенции». */
