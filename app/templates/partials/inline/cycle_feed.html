@@ -115,7 +115,7 @@
                 window.location.reload();
             }).catch(function () {
                 button.disabled = false;
-                note.textContent = 'Не удалось отправить ответ. Попробуйте ещё раз.';
+                note.textContent = 'Не удалось отправить ответ. Попробуй ещё раз.';
                 note.classList.add('is-error');
             });
         });
@@ -133,7 +133,7 @@
             renderTask(taskId, data);
         }).catch(function () {
             feed.querySelectorAll('[data-task-id="' + taskId + '"]').forEach(function (step) {
-                fail(step, 'Не удалось загрузить содержимое. Попробуйте позже.');
+                fail(step, 'Не удалось загрузить содержимое. Попробуй позже.');
             });
         });
     });

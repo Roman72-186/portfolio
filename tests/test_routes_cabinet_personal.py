@@ -136,7 +136,7 @@ def test_contacts_post_invalid_phone_shows_error(auth_client, db):
         "tg_username": "anna_art",
     })
     assert resp.status_code == 200
-    assert "Введите корректный номер телефона" in resp.text
+    assert "Введи корректный номер телефона" in resp.text
 
     db.expire_all()
     saved = db.query(User).filter(User.id == user.id).first()

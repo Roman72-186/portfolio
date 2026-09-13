@@ -81,7 +81,7 @@
                             throw new Error((body && body.detail) || 'Видео недоступно.');
                         });
                     }
-                    if (!resp.ok) throw new Error('Не удалось загрузить видео. Попробуйте позже.');
+                    if (!resp.ok) throw new Error('Не удалось загрузить видео. Попробуй позже.');
                     return resp.json();
                 })
                 .then(function (data) {
@@ -345,7 +345,7 @@
                 window.setTimeout(measureWatermarkBounds, 250);
             }
             function reportFullscreenError() {
-                showStatus('Не удалось включить полноэкранный режим. Разрешите его в настройках браузера.', true);
+                showStatus('Не удалось включить полноэкранный режим. Разреши его в настройках браузера.', true);
             }
 
             var requestFullscreen = playerContainer.requestFullscreen
@@ -440,8 +440,8 @@
                         iframe.src = body.player_url;
                     })
                     .catch(function (error) {
-                        if (error.message === 'access_closed') showStatus('Доступ к уроку закрыт. Обновите страницу.', true);
-                        else if (error.message === 'session_expired') showStatus('Войдите заново, чтобы продолжить просмотр.', true);
+                        if (error.message === 'access_closed') showStatus('Доступ к уроку закрыт. Обнови страницу.', true);
+                        else if (error.message === 'session_expired') showStatus('Войди заново, чтобы продолжить просмотр.', true);
                     })
                     .finally(function () { playerUrlRefreshInFlight = false; });
             }
@@ -547,7 +547,7 @@
                     return response.json().catch(function () { return null; });
                 }).then(function (respData) {
                 }).catch(function (error) {
-                    if (error.message === 'session_expired') setStatus('Войдите заново, чтобы сохранять место просмотра.', true);
+                    if (error.message === 'session_expired') setStatus('Войди заново, чтобы сохранять место просмотра.', true);
                     else setStatus('Не удалось сохранить место. Видео продолжит работать.', true);
                 }).finally(function () {
                     saveInFlight = false;

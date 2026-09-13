@@ -39,17 +39,17 @@ def validate_contacts(phone: str, parent_phone: str, tg_username: str) -> list[s
     errors: list[str] = []
 
     if not phone:
-        errors.append("Введите номер телефона")
+        errors.append("Введи номер телефона")
     elif not PHONE_RE.match(phone):
-        errors.append("Введите корректный номер телефона (только цифры, пробелы, +, -, скобки)")
+        errors.append("Введи корректный номер телефона (только цифры, пробелы, +, -, скобки)")
 
     if not parent_phone:
-        errors.append("Введите номер телефона родителя")
+        errors.append("Введи номер телефона родителя")
     elif not PHONE_RE.match(parent_phone):
-        errors.append("Введите корректный номер телефона родителя")
+        errors.append("Введи корректный номер телефона родителя")
 
     if not tg_username:
-        errors.append("Укажите ник в Telegram")
+        errors.append("Укажи ник в Telegram")
     elif not TG_RE.match(tg_username):
         errors.append("Ник Telegram: только латиница, цифры, _ (4–32 символа)")
 

@@ -41,7 +41,7 @@ app/static/css/homework_ios.css, переопределяющем эти общ�
     </div>
 
     <div class="card hw-card">
-        <div class="card-title">Ваша работа</div>
+        <div class="card-title">Твоя работа</div>
         {% if final_image or intermediate_images %}
         <div data-gallery="hw-work-{{ submission.id }}">
         {% endif %}
@@ -97,7 +97,7 @@ app/static/css/homework_ios.css, переопределяющем эти общ�
         {% else %}
         <p class="card-desc">
             {% if viewer_role == 'student' %}Куратор ещё не оставил обратную связь.
-            {% else %}Сообщений пока нет — напишите первым.{% endif %}
+            {% else %}Сообщений пока нет – напиши первым.{% endif %}
         </p>
         {% endif %}
         {% if viewer_role != 'student' and final_image and submission.status != 'accepted' %}
@@ -132,7 +132,7 @@ app/static/css/homework_ios.css, переопределяющем эти общ�
             }).then(function (response) {
                 return response.json().catch(function () { return {}; }).then(function (data) {
                     if (!response.ok || data.ok === false) {
-                        throw new Error(data.error || 'Не получилось отправить, попробуйте ещё раз.');
+                        throw new Error(data.error || 'Не получилось отправить, попробуй ещё раз.');
                     }
                     return data;
                 });

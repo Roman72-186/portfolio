@@ -252,8 +252,8 @@
                 // ролик досмотрен: подсказка не должна звать досматривать то,
                 // что уже позади, иначе ученик перематывает заново вслепую.
                 checkHint.textContent = block.watched
-                    ? 'Ролик просмотрен — отметьте выполнение кружком выше.'
-                    : 'Досмотрите ролик до конца, чтобы отметить выполнение.';
+                    ? 'Ролик просмотрен – отметь выполнение кружком выше.'
+                    : 'Досмотри ролик до конца, чтобы отметить выполнение.';
                 wrap.appendChild(checkHint);
 
                 wireBlockCheck(check, block.confirm_endpoint, block, {
@@ -262,8 +262,8 @@
                         checkHint.hidden = false;
                         checkHint.classList.add('is-error');
                         checkHint.textContent = err && err.message === 'not_watched'
-                            ? 'Досмотрите ролик до конца, чтобы отметить выполнение.'
-                            : 'Не удалось отметить. Попробуйте ещё раз.';
+                            ? 'Досмотри ролик до конца, чтобы отметить выполнение.'
+                            : 'Не удалось отметить. Попробуй ещё раз.';
                     }
                 });
 
@@ -385,7 +385,7 @@
                                 optionTexts[optionId] = input.value;
                             });
                             if (!optionIds.length) {
-                                note.textContent = 'Сдвиньте хотя бы один ползунок.';
+                                note.textContent = 'Сдвинь хотя бы один ползунок.';
                                 note.classList.add('is-error');
                                 return;
                             }
@@ -421,7 +421,7 @@
                                 ));
                             }).catch(function () {
                                 saveBtn.disabled = false;
-                                note.textContent = 'Не удалось сохранить. Попробуйте ещё раз.';
+                                note.textContent = 'Не удалось сохранить. Попробуй ещё раз.';
                                 note.classList.add('is-error');
                             });
                         });
@@ -487,7 +487,7 @@
 
                 send.addEventListener('click', function () {
                     if (!input.files || !input.files.length) {
-                        note.textContent = 'Выберите хотя бы один файл.';
+                        note.textContent = 'Выбери хотя бы один файл.';
                         note.classList.add('is-error');
                         return;
                     }
@@ -517,7 +517,7 @@
                         send.disabled = false;
                         note.textContent = (err && err.message)
                             ? err.message
-                            : 'Не удалось загрузить. Попробуйте ещё раз.';
+                            : 'Не удалось загрузить. Попробуй ещё раз.';
                         note.classList.add('is-error');
                     });
                 });
@@ -602,7 +602,7 @@
                             window.location.reload();
                         }).catch(function () {
                             startBtn.disabled = false;
-                            note.textContent = 'Не удалось начать. Попробуйте ещё раз.';
+                            note.textContent = 'Не удалось начать. Попробуй ещё раз.';
                             note.classList.add('is-error');
                         });
                     });
@@ -698,7 +698,7 @@
                     // и ученик должен понимать почему, а не жать вслепую.
                     wrap.appendChild(el(
                         'p', 'lrn-card-note',
-                        'Отметьте все пункты — иначе шаг не закроется.'
+                        'Отметь все пункты – иначе шаг не закроется.'
                     ));
                 }
                 return wrap;

@@ -186,12 +186,12 @@ def test_profile_post_empty_form_shows_all_required_errors(client, user_factory,
         "enrollment_month": " ", "enrollment_year": " ", "about": " ",
     })
     assert resp.status_code == 200
-    for fragment in ("Введите имя", "Введите фамилию", "Введите номер телефона",
-                     "Укажите ник в Telegram", "Укажите год поступления",
-                     "Укажите месяц присоединения", "Укажите дату рождения",
-                     "Укажите город", "Укажите часовой пояс",
-                     "Введите имя и отчество родителя", "Укажите ссылку на ВКонтакте",
-                     "Укажите ближайший адрес СДЭК", "Укажите электронную почту"):
+    for fragment in ("Введи имя", "Введи фамилию", "Введи номер телефона",
+                     "Укажи ник в Telegram", "Укажи год поступления",
+                     "Укажи месяц присоединения", "Укажи дату рождения",
+                     "Укажи город", "Укажи часовой пояс",
+                     "Введи имя и отчество родителя", "Укажи ссылку на ВКонтакте",
+                     "Укажи ближайший адрес СДЭК", "Укажи электронную почту"):
         assert fragment in resp.text, f"Expected error: {fragment!r}"
 
 
@@ -238,7 +238,7 @@ def test_dashboard_shows_portfolio_cta_when_not_completed(client, user_factory, 
                       vk_id=100_108, portfolio_do_completed=False)
     resp = client.get("/cabinet/student")
     assert resp.status_code == 200
-    assert "Загрузите работы" in resp.text
+    assert "Загрузи работы" in resp.text
     assert 'href="/upload"' in resp.text
 
 
@@ -247,7 +247,7 @@ def test_dashboard_hides_portfolio_cta_when_completed(auth_client):
     client, _ = auth_client
     resp = client.get("/cabinet/student")
     assert resp.status_code == 200
-    assert "Загрузите работы" not in resp.text
+    assert "Загрузи работы" not in resp.text
 
 
 def test_dashboard_shows_mock_count_and_avg(auth_client, db):

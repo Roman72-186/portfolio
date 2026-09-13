@@ -18,7 +18,7 @@
 
     <div class="prs-hero">
         <h1>Контактные данные</h1>
-        <p>По ним с вами связывается куратор.</p>
+        <p>По ним с тобой связывается куратор.</p>
     </div>
 
     {% if errors %}
@@ -49,7 +49,7 @@
                 <input class="prs-field-input" type="text" id="contacts-tg" name="tg_username" required
                        value="{{ form.tg_username }}" placeholder="@username"
                        maxlength="32" pattern="@?[A-Za-z0-9_]{4,31}">
-                <p class="prs-field-note">По этому нику ваши работы находятся в облаке. Меняете ник – скажите куратору, иначе загруженное раньше потеряется.</p>
+                <p class="prs-field-note">По этому нику твои работы находятся в облаке. Меняешь ник – скажи куратору, иначе загруженное раньше потеряется.</p>
             </div>
         </div>
 
@@ -76,7 +76,7 @@
                 <span class="prs-row-value {{ '' if locked.university_year else 'empty' }}">{{ locked.university_year or 'Не указано' }}</span>
             </div>
         </div>
-        <p class="prs-note">Эти данные вы заполнили при первом входе. Поменять их может куратор – напишите ему.</p>
+        <p class="prs-note">Эти данные заполнены при первом входе. Поменять их может куратор – напиши ему.</p>
 
         <div class="prs-form-actions">
             <button type="submit" class="prs-save-btn">Сохранить</button>

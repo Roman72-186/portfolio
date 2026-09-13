@@ -89,7 +89,7 @@ async def send_photo_to_n8n(
         return result
     except httpx.TimeoutException:
         logger.error("n8n upload timeout after 90s")
-        return {"success": False, "error": "Таймаут загрузки. Попробуйте снова."}
+        return {"success": False, "error": "Таймаут загрузки. Попробуй снова."}
     except httpx.HTTPStatusError as e:
         logger.error("n8n upload HTTP error: %s %s", e.response.status_code, e.response.text[:200])
         return {"success": False, "error": f"Ошибка сервера: {e.response.status_code}"}

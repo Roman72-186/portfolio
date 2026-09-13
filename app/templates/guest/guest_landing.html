@@ -74,13 +74,13 @@
             </svg>
             Войти через Telegram
         </a>
-        <p class="guest-tg-hint">Если Telegram предложит на выбор способ входа – выбирайте вариант «по номеру телефона», а не «продолжить через приложение».</p>
+        <p class="guest-tg-hint">Если Telegram предложит на выбор способ входа – выбирай вариант «по номеру телефона», а не «продолжить через приложение».</p>
         {% else %}
         <form method="post" action="/guest/{{ config.token }}/start">
             <div class="guest-field">
-                <label for="guest-name" style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px">Ваше имя</label>
+                <label for="guest-name" style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px">Твоё имя</label>
                 <input id="guest-name" type="text" name="display_name" class="guest-input"
-                       placeholder="Как к вам обращаться" autocomplete="given-name" autofocus required maxlength="200">
+                       placeholder="Как к тебе обращаться" autocomplete="given-name" autofocus required maxlength="200">
             </div>
             <button type="submit" class="btn-blue btn-full">Начать</button>
         </form>

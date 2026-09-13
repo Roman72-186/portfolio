@@ -285,7 +285,7 @@
                         <input id="dlg-video-link-student" class="field-input" type="url" name="video_link" placeholder="https://...">
                     </div>
                     <div class="dlg-form-row">
-                        <textarea name="text" placeholder="Напишите сообщение или прикрепите фото/видео" rows="3"></textarea>
+                        <textarea name="text" placeholder="Напиши сообщение или прикрепи фото/видео" rows="3"></textarea>
                         <div class="dlg-form-actions">
                             <label class="dlg-attach">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
@@ -420,9 +420,9 @@ document.querySelectorAll('.dlg-attach input[type="file"]').forEach(input => {
         const label = wrap.querySelector('.dlg-attach-text');
         const f = input.files[0];
         if (f && f.size > maxSize) {
-            alert(kind === 'video' ? 'Видео больше 500 МБ. Выберите файл меньшего размера.'
-                : kind === 'audio' ? 'Голосовое больше 25 МБ. Выберите файл меньшего размера.'
-                : 'Фото больше 25 МБ. Выберите файл меньшего размера.');
+            alert(kind === 'video' ? 'Видео больше 500 МБ. Выбери файл меньшего размера.'
+                : kind === 'audio' ? 'Голосовое больше 25 МБ. Выбери файл меньшего размера.'
+                : 'Фото больше 25 МБ. Выбери файл меньшего размера.');
             input.value = '';
             if (label) label.textContent = defaultLabel;
             return;
@@ -587,7 +587,7 @@ document.querySelectorAll('form.dlg-form').forEach(form => {
         const btn = form.querySelector('.dlg-send');
         const anyText = Array.from(form.querySelectorAll('textarea')).some(t => (t.value || '').trim());
         const hasFile = Array.from(form.querySelectorAll('input[type="file"]')).some(i => i.files && i.files.length > 0);
-        if (!anyText && !hasFile) { alert('Заполните хотя бы один пункт или прикрепите фото/видео/голосовое'); return; }
+        if (!anyText && !hasFile) { alert('Заполни хотя бы один пункт или прикрепи фото/видео/голосовое'); return; }
         btn.disabled = true;
         const origText = btn.textContent;
         btn.textContent = 'Отправка…';
@@ -613,8 +613,8 @@ document.querySelectorAll('form.dlg-form').forEach(form => {
         } catch (e) {
             if (e && e.name === 'AbortError') {
                 alert(hasFile
-                    ? 'Отправка заняла слишком много времени. Проверьте размер файла и интернет, затем попробуйте ещё раз.'
-                    : 'Сервер долго не отвечает. Обновите страницу и попробуйте отправить ещё раз.');
+                    ? 'Отправка заняла слишком много времени. Проверь размер файла и интернет, затем попробуй ещё раз.'
+                    : 'Сервер долго не отвечает. Обнови страницу и попробуй отправить ещё раз.');
             } else {
                 alert('Сетевая ошибка');
             }

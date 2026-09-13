@@ -538,7 +538,7 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
                 .catch(function (err) {
                     label.style.opacity = '1';
                     label.style.pointerEvents = 'auto';
-                    alert(err.message || 'Не удалось загрузить фото. Попробуйте ещё раз.');
+                    alert(err.message || 'Не удалось загрузить фото. Попробуй ещё раз.');
                 });
         });
     })();
@@ -548,8 +548,8 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
     <!-- ── ЧТО ДАЛЬШЕ ── -->
     {% if not user.portfolio_do_completed %}
     <a href="/upload" class="next-card next-card--blue">
-        <div class="next-card-title">Загрузите работы «До»</div>
-        <div class="next-card-note">Первый шаг — покажите свои работы до обучения у нас. Это займёт пару минут.</div>
+        <div class="next-card-title">Загрузи работы «До»</div>
+        <div class="next-card-note">Первый шаг – покажи свои работы до обучения у нас. Это займёт пару минут.</div>
         <span class="next-card-cta">Загрузить фото →</span>
     </a>
     {% endif %}

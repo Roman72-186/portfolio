@@ -84,7 +84,7 @@
     <div class="pf-subtitle">Работы «до» оценены на {{ portfolio_before_score }} из 100. {{ hint("Общую оценку за все работы «до» один раз ставит Главный преподаватель – по ней потом видно прогресс.") }}</div>
     {% endif %}
 
-    {{ pf_flat('before', portfolio_before_works, 'Фотографий пока нет', 'Загрузите работы «до обучения» — это первый шаг') }}
+    {{ pf_flat('before', portfolio_before_works, 'Фотографий пока нет', 'Загрузи работы «до обучения» – это первый шаг') }}
 
     <div class="portfolio-bottom-action">
         <a href="/upload?section=before" class="portfolio-upload-btn">
@@ -96,7 +96,7 @@
     <!-- После обучения -->
     <div class="section-title" style="margin-top:32px">После обучения</div>
 
-    {{ pf_blocks('after', portfolio_after_groups, 'Здесь появятся ваши работы', 'Здесь будет виден ваш прогресс по работам после обучения.') }}
+    {{ pf_blocks('after', portfolio_after_groups, 'Здесь появятся твои работы', 'Здесь будет виден твой прогресс по работам после обучения.') }}
 
     {% if can_upload_portfolio_after %}
     <div class="portfolio-bottom-action">

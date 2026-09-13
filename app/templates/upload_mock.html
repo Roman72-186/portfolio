@@ -11,7 +11,7 @@
             Сдать пробник
         </h1>
         <p class="ios-subtitle">
-            Загрузите работы пробного экзамена. После проверки куратор выставит оценку.
+            Загрузи работы пробного экзамена. После проверки куратор выставит оценку.
         </p>
     </div>
 
@@ -49,7 +49,7 @@
         <div class="card" style="padding:20px">
             <label class="form-label" style="margin-bottom:12px">Предмет</label>
             {% if not subjects %}
-            <div class="alert alert-error" style="margin:0">Для вас пока не открыт ни один предмет пробника.</div>
+            <div class="alert alert-error" style="margin:0">Для тебя пока не открыт ни один предмет пробника.</div>
             {% endif %}
             <div style="display:flex;gap:10px;flex-wrap:wrap">
                 {% for s in subjects %}
@@ -70,9 +70,9 @@
                     </div>
                     {% if is_locked %}
                         {% if locked_reasons.get(s) == 'waiting' %}
-                    <span class="subject-locked-hint">работа сдана · ждите обратную связь</span>
+                    <span class="subject-locked-hint">работа сдана · жди обратную связь</span>
                         {% else %}
-                    <span class="subject-locked-hint">работа сдана · ждите следующий пробник</span>
+                    <span class="subject-locked-hint">работа сдана · жди следующий пробник</span>
                         {% endif %}
                     {% elif not has_ticket %}
                     <span class="subject-locked-hint">сдача недоступна</span>
@@ -87,10 +87,10 @@
         <!-- Подготовительное сообщение (показывается после выбора предмета) -->
         <div id="prepBlock" style="display:none">
             <div class="ios-prep-card">
-                <div class="ios-prep-title">📝 Подготовьтесь</div>
+                <div class="ios-prep-title">📝 Подготовься</div>
                 <p class="ios-prep-text" style="margin:0">
-                    Приготовьте карандаш и всё необходимое для выполнения пробного экзамена.<br>
-                    После нажатия кнопки «Начать» вам будет выдан билет и запущен таймер сдачи.
+                    Приготовь карандаш и всё необходимое для выполнения пробного экзамена.<br>
+                    После нажатия кнопки «Начать» тебе будет выдан билет и запущен таймер сдачи.
                 </p>
                 <div id="startWindowMsg" class="alert alert-error" style="display:none;margin-top:12px"></div>
             </div>
@@ -241,7 +241,7 @@ function updateStageExistingHint() {
     var afterSelected = Math.max(state.remaining - stageFiles.length, 0);
     if (state.existing > 0) {
         stageExistingHint.textContent = state.remaining <= 0
-            ? 'Этапные уже загружены: ' + state.existing + ' из ' + state.limit + '. Теперь загрузите финальное фото.'
+            ? 'Этапные уже загружены: ' + state.existing + ' из ' + state.limit + '. Теперь загрузи финальное фото.'
             : 'Уже загружено этапных: ' + state.existing +
                 ' из ' + state.limit + '. Можно добавить ещё ' + afterSelected + '.';
         stageExistingHint.style.display = 'block';
@@ -334,7 +334,7 @@ function showUploadMsg(text, isError) {
 }
 
 function showUploadError(text) {
-    showUploadMsg(text + ' Если ошибка повторится — обновите страницу (это обновит сессию) и попробуйте снова.', true);
+    showUploadMsg(text + ' Если ошибка повторится – обнови страницу (это обновит сессию) и попробуй снова.', true);
 }
 
 function stageWord(n) {
@@ -352,7 +352,7 @@ function parseUploadResponse(response) {
                 status: response.status,
                 body: {
                     success: false,
-                    error: 'Не удалось получить ответ. Обновите страницу и попробуйте снова.'
+                    error: 'Не удалось получить ответ. Обнови страницу и попробуй снова.'
                 }
             };
         });
@@ -458,7 +458,7 @@ function doUploadFinal() {
             }
             syncStageStateFromResponse(j);
             if (!j.verified || !j.final_work_id) {
-                showUploadError(j.error || 'Сервер не подтвердил финальную работу. Проверьте соединение и повторите отправку финального фото.');
+                showUploadError(j.error || 'Сервер не подтвердил финальную работу. Проверь соединение и повтори отправку финального фото.');
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = 'Повторить загрузку финального';
                 return;
@@ -489,7 +489,7 @@ function finishOk() {
     if (totalStageCount > 0) {
         msg += ' и ' + totalStageCount + ' ' + stageWord(totalStageCount);
     }
-    msg += '. Ожидайте обратной связи от куратора. ' +
+    msg += '. Ожидай обратной связи от куратора. ' +
         '<a href="/cabinet" style="font-weight:700">В кабинет →</a>';
     showUploadMsg(msg, false);
     setTimeout(function(){ window.location.href = '/cabinet'; }, 1200);
@@ -544,8 +544,8 @@ function stopCsrfHeartbeat() {
 }
 
 function showSessionExpired() {
-    showUploadMsg('Сессия истекла. Откройте сайт в новой вкладке и войдите снова, ' +
-        'затем вернитесь сюда и нажмите кнопку ещё раз — выбранные фото не потеряются.', true);
+    showUploadMsg('Сессия истекла. Открой сайт в новой вкладке и войди снова, ' +
+        'затем вернись сюда и нажми кнопку ещё раз – выбранные фото не потеряются.', true);
 }
 
 // Помечаем subject-кнопки «в процессе» если есть активная попытка
@@ -632,12 +632,12 @@ document.getElementById('startBtn').addEventListener('click', function(){
             if (res.status !== 200) {
                 var msg = {
                     'no_active_ticket': 'Сдача пробника сейчас недоступна',
-                    'already_submitted': 'Пробник уже сдан. Дождитесь следующего пробника.',
+                    'already_submitted': 'Пробник уже сдан. Дождись следующего пробника.',
                     'feature_closed': 'Раздел пробников сейчас закрыт',
-                    'invalid_subject': 'Выберите корректный предмет',
-                    'subject_forbidden': 'Этот предмет недоступен для вашей группы',
+                    'invalid_subject': 'Выбери корректный предмет',
+                    'subject_forbidden': 'Этот предмет недоступен для твоей группы',
                     'start_window_closed': res.body.message || 'Получение билета сейчас закрыто',
-                    'portfolio_not_completed': 'Сначала загрузите портфолио «До»',
+                    'portfolio_not_completed': 'Сначала загрузи портфолио «До»',
                 }[res.body.error] || res.body.message || 'Не удалось начать пробник';
                 alert(msg);
                 return;
@@ -667,7 +667,7 @@ document.getElementById('startBtn').addEventListener('click', function(){
             btn.disabled = false;
             btn.innerHTML = '▶ Начать пробник';
             if (err && err.message === 'auth') {
-                alert('Сессия истекла. Откройте сайт в новой вкладке, войдите снова и вернитесь сюда.');
+                alert('Сессия истекла. Открой сайт в новой вкладке, войди снова и вернись сюда.');
             } else {
                 alert('Не удалось связаться с сервером');
             }
@@ -727,7 +727,7 @@ function buildTicketImage(url) {
     errBox.style.display = 'none';
     var errText = document.createElement('div');
     errText.className = 'ticket-img-error-text';
-    errText.textContent = 'Не удалось загрузить изображение билета — проверьте интернет и попробуйте снова.';
+    errText.textContent = 'Не удалось загрузить изображение билета – проверь интернет и попробуй снова.';
     var retryBtn = document.createElement('button');
     retryBtn.type = 'button';
     retryBtn.className = 'ticket-img-retry';

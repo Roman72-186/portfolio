@@ -117,7 +117,7 @@ def test_new_start_membership_inconclusive_does_not_deny_or_create_user(client, 
     resp = client.post("/auth/telegram/webhook", json=_start_update(CHAT_ID), headers=_headers())
     assert resp.status_code == 200
     assert db.query(User).filter(User.telegram_chat_id == CHAT_ID).first() is None
-    assert "попробуйте" in sent_messages[0]["text"].lower()
+    assert "попробуй" in sent_messages[0]["text"].lower()
 
 
 def test_new_start_member_creates_user_immediately_no_tariff_dialog(client, db, monkeypatch, sent_messages):

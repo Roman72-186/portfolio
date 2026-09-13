@@ -343,7 +343,7 @@ def test_exam_page_replaces_second_ticket_button_with_lock_message(
 
     resp = client.get(f"/guest/{config.token}/exam")
     assert resp.status_code == 200
-    assert "Сначала загрузите работу по предмету" in resp.text
+    assert "Сначала загрузи работу по предмету" in resp.text
     assert 'action="/guest/{}/exam/Композиция/ticket"'.format(config.token) not in resp.text
 
 
@@ -462,8 +462,8 @@ def test_guest_routes_ignore_real_session_cookie(client, db, guest_config_factor
     student_resp = student_client.get(f"/guest/{config.token}")
 
     assert anon_resp.status_code == student_resp.status_code == 200
-    assert "Ваше имя" in anon_resp.text
-    assert "Ваше имя" in student_resp.text
+    assert "Твоё имя" in anon_resp.text
+    assert "Твоё имя" in student_resp.text
 
 
 def test_guest_module_does_not_touch_core_tables(client, db, guest_config_factory, guest_ticket_factory):

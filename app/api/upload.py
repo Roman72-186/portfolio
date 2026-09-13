@@ -317,7 +317,7 @@ def _retake_available_for_user(db: DBSession, user_id: int) -> tuple[bool, str |
     # работу ученика на отработку — а не ручное окно дат.
     if _has_retake_assignment(db, user_id):
         return True, None
-    return False, "Отработку назначает куратор. Дождитесь, когда он отправит вашу работу на отработку."
+    return False, "Отработку назначает куратор. Дождись, когда он отправит твою работу на отработку."
 
 
 _N8N_MAX_RETRIES = 3
@@ -524,7 +524,7 @@ async def _process_uploads(
         if not s3_configured and not settings.n8n_enabled:
             return {"success": False, "error": "Хранилище S3 не настроено. Загрузка временно недоступна."}
         if s3_configured and s3_url is None:
-            return {"success": False, "error": "Ошибка загрузки в хранилище. Попробуйте ещё раз."}
+            return {"success": False, "error": "Ошибка загрузки в хранилище. Попробуй ещё раз."}
         # Use compressed bytes for n8n as well — smaller base64 payload
         return {"success": True, "filename": filename, "photo_bytes": compressed_bytes,
                 "s3_url": s3_url, "s3_path": s3_path}
@@ -644,7 +644,7 @@ async def upload_photos(
     if mode == "before":
         month = _default_month()
     elif month not in MONTHS:
-        return _err("Выберите месяц")
+        return _err("Выбери месяц")
     files_data, err = await _validate_photos(photos)
     if err:
         return _err(err)
@@ -706,7 +706,7 @@ async def upload_photos_api(
     if mode == "before":
         month = _default_month()
     elif month not in MONTHS:
-        return JSONResponse({"success": False, "error": "Выберите месяц"}, status_code=422)
+        return JSONResponse({"success": False, "error": "Выбери месяц"}, status_code=422)
 
     files_data, err = await _validate_photos(photos)
     if err:
@@ -753,9 +753,9 @@ async def upload_mock_exam_api(
     if not fa:
         return JSONResponse({"success": False, "error": fm or "Пробники закрыты"}, status_code=403)
     if subject not in MOCK_SUBJECTS:
-        return JSONResponse({"success": False, "error": "Выберите предмет"}, status_code=422)
+        return JSONResponse({"success": False, "error": "Выбери предмет"}, status_code=422)
     if not is_subject_allowed_for_student(db, user["user_id"], subject):
-        return JSONResponse({"success": False, "error": "Этот предмет недоступен для вашей группы"}, status_code=403)
+        return JSONResponse({"success": False, "error": "Этот предмет недоступен для твоей группы"}, status_code=403)
 
     from app.services.exam_cycle import get_active_tickets
 
@@ -773,7 +773,7 @@ async def upload_mock_exam_api(
         return JSONResponse(
             {
                 "success": False,
-                "error": "Сначала нажмите «Начать пробник». После выдачи билета есть заданное время на сдачу.",
+                "error": "Сначала нажми «Начать пробник». После выдачи билета есть заданное время на сдачу.",
             },
             status_code=403,
         )
@@ -823,7 +823,7 @@ async def upload_mock_exam_api(
 
     api_error = last_error if fail_count and not success_count else None
     if success_count > 0 and not submission_state["verified"]:
-        api_error = "Финальное фото не подтверждено в базе. Проверьте соединение и попробуйте отправить ещё раз."
+        api_error = "Финальное фото не подтверждено в базе. Проверь соединение и попробуй отправить ещё раз."
 
     return JSONResponse({
         "success": success_count > 0 and bool(submission_state["verified"]),
@@ -851,7 +851,7 @@ async def upload_retake_api(
     if not fa:
         return JSONResponse({"success": False, "error": fm or "Пересдача закрыта"}, status_code=403)
     if subject not in MOCK_SUBJECTS:
-        return JSONResponse({"success": False, "error": "Выберите предмет: Рисунок или Композиция"}, status_code=422)
+        return JSONResponse({"success": False, "error": "Выбери предмет: Рисунок или Композиция"}, status_code=422)
     if not (0 <= student_score <= 100):
         return JSONResponse({"success": False, "error": "Балл должен быть от 0 до 100"}, status_code=422)
     student_score_int = int(round(student_score))
@@ -900,7 +900,7 @@ async def finish_before(
     if not has_before:
         return _render_upload(
             request, user, mode="before",
-            error="Загрузите хотя бы одно фото «До» перед завершением",
+            error="Загрузи хотя бы одно фото «До» перед завершением",
         )
 
     db_user = db.query(User).filter(User.id == user["user_id"]).first()
@@ -1282,9 +1282,9 @@ async def upload_mock_exam(
         return _render_mock(request, user, db, error=msg, selected_subject=subject)
 
     if subject not in MOCK_SUBJECTS:
-        return _err("Выберите предмет")
+        return _err("Выбери предмет")
     if not is_subject_allowed_for_student(db, user["user_id"], subject):
-        return _err("Этот предмет недоступен для вашей группы")
+        return _err("Этот предмет недоступен для твоей группы")
 
     now = datetime.now(timezone.utc)
     from app.services.exam_cycle import get_active_tickets, get_unsubmitted_active_tickets
@@ -1305,7 +1305,7 @@ async def upload_mock_exam(
         None,
     )
     if not active_ticket:
-        return _err("Сначала нажмите «Начать пробник». После выдачи билета есть заданное время на сдачу.")
+        return _err("Сначала нажми «Начать пробник». После выдачи билета есть заданное время на сдачу.")
     month = MONTHS[now.month - 1]
 
     files_data, err = await _validate_photos(photos)
@@ -1356,7 +1356,7 @@ async def upload_mock_exam(
         db.commit()
 
     if success_count > 0 and not submission_state["verified"] and error is None:
-        error = "Финальное фото не подтверждено в базе. Проверьте соединение и попробуйте отправить ещё раз."
+        error = "Финальное фото не подтверждено в базе. Проверь соединение и попробуй отправить ещё раз."
 
     return _render_mock(request, user, db, error=error,
                         success=success_count > 0 and bool(submission_state["verified"]),
@@ -1399,7 +1399,7 @@ async def upload_retake(
                               selected_subject=subject or "")
 
     if subject not in MOCK_SUBJECTS:
-        return _err("Выберите предмет: Рисунок или Композиция")
+        return _err("Выбери предмет: Рисунок или Композиция")
     if not (0 <= student_score <= 100):
         return _err("Балл должен быть от 0 до 100")
     student_score = int(round(student_score))

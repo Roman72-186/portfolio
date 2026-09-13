@@ -42,10 +42,10 @@ mock_exam-задания одной недели), синглтон-id стол�
 
     <div data-role="body" hidden>
         <div class="ios-prep-card" data-role="prep" hidden>
-            <div class="ios-prep-title">📝 Подготовьтесь</div>
+            <div class="ios-prep-title">📝 Подготовься</div>
             <p class="ios-prep-text">
-                Приготовьте карандаш и всё необходимое для выполнения пробного экзамена.
-                После нажатия кнопки «Начать» вам будет выдан билет и запущен таймер сдачи.
+                Приготовь карандаш и всё необходимое для выполнения пробного экзамена.
+                После нажатия кнопки «Начать» тебе будет выдан билет и запущен таймер сдачи.
             </p>
             <div class="alert alert-error" data-role="start-window-msg" hidden></div>
             <button type="button" class="btn-mock-primary" data-role="start-btn">▶ Начать пробник</button>
@@ -175,11 +175,11 @@ mock_exam-задания одной недели), синглтон-id стол�
                 if (resp.status === 403) {
                     return resp.json().then(function (body) {
                         throw new Error((body && body.error) === 'subject_forbidden'
-                            ? 'Этот предмет недоступен для вашей группы.'
+                            ? 'Этот предмет недоступен для твоей группы.'
                             : 'Пробник недоступен.');
                     });
                 }
-                if (!resp.ok) throw new Error('Не удалось загрузить пробник. Попробуйте позже.');
+                if (!resp.ok) throw new Error('Не удалось загрузить пробник. Попробуй позже.');
                 return resp.json();
             })
             .then(function (data) {
@@ -191,8 +191,8 @@ mock_exam-задания одной недели), синглтон-id стол�
                 }
                 if (data.locked) {
                     lockedTextEl.textContent = data.locked_reason === 'waiting'
-                        ? 'Работа сдана · ждите обратную связь куратора.'
-                        : 'Работа сдана · ждите следующий пробник.';
+                        ? 'Работа сдана · жди обратную связь куратора.'
+                        : 'Работа сдана · жди следующий пробник.';
                     lockedEl.hidden = false;
                     return;
                 }
@@ -232,7 +232,7 @@ mock_exam-задания одной недели), синглтон-id стол�
             var afterSelected = Math.max(stageState.remaining - stageFiles.length, 0);
             if (stageState.existing > 0) {
                 stageExistingHintEl.textContent = stageState.remaining <= 0
-                    ? 'Этапные уже загружены: ' + stageState.existing + ' из ' + stageState.limit + '. Теперь загрузите финальное фото.'
+                    ? 'Этапные уже загружены: ' + stageState.existing + ' из ' + stageState.limit + '. Теперь загрузи финальное фото.'
                     : 'Уже загружено этапных: ' + stageState.existing +
                         ' из ' + stageState.limit + '. Можно добавить ещё ' + afterSelected + '.';
                 stageExistingHintEl.hidden = false;
@@ -298,7 +298,7 @@ mock_exam-задания одной недели), синглтон-id стол�
             errBox.style.display = 'none';
             var errText = document.createElement('div');
             errText.className = 'ticket-img-error-text';
-            errText.textContent = 'Не удалось загрузить изображение билета — проверьте интернет и попробуйте снова.';
+            errText.textContent = 'Не удалось загрузить изображение билета – проверь интернет и попробуй снова.';
             var retryBtn = document.createElement('button');
             retryBtn.type = 'button';
             retryBtn.className = 'ticket-img-retry';
@@ -381,7 +381,7 @@ mock_exam-задания одной недели), синглтон-id стол�
         }
 
         function showSessionExpired() {
-            showUploadMsg('Сессия истекла. Обновите страницу и войдите снова — выбранные фото не потеряются.', true);
+            showUploadMsg('Сессия истекла. Обнови страницу и войди снова – выбранные фото не потеряются.', true);
         }
 
         // ── Начать пробник ──────────────────────────────────────────────────
@@ -403,10 +403,10 @@ mock_exam-задания одной недели), синглтон-id стол�
                     if (res.status !== 200) {
                         var msg = {
                             'no_active_ticket': 'Сдача пробника сейчас недоступна',
-                            'already_submitted': 'Пробник уже сдан. Дождитесь следующего пробника.',
+                            'already_submitted': 'Пробник уже сдан. Дождись следующего пробника.',
                             'feature_closed': 'Раздел пробников сейчас закрыт',
-                            'invalid_subject': 'Выберите корректный предмет',
-                            'subject_forbidden': 'Этот предмет недоступен для вашей группы',
+                            'invalid_subject': 'Выбери корректный предмет',
+                            'subject_forbidden': 'Этот предмет недоступен для твоей группы',
                             'start_window_closed': res.body.message || 'Получение билета сейчас закрыто',
                         }[res.body.error] || res.body.message || 'Не удалось начать пробник';
                         alert(msg);
@@ -429,7 +429,7 @@ mock_exam-задания одной недели), синглтон-id стол�
                     startBtn.disabled = false;
                     startBtn.innerHTML = '▶ Начать пробник';
                     alert(err && err.message === 'auth'
-                        ? 'Сессия истекла. Обновите страницу и войдите снова.'
+                        ? 'Сессия истекла. Обнови страницу и войди снова.'
                         : 'Не удалось связаться с сервером');
                 });
         });
@@ -528,7 +528,7 @@ mock_exam-задания одной недели), синглтон-id стол�
             uploadMsgEl.innerHTML = text;
         }
         function showUploadError(text) {
-            showUploadMsg(text + ' Если ошибка повторится — обновите страницу и попробуйте снова.', true);
+            showUploadMsg(text + ' Если ошибка повторится – обнови страницу и попробуй снова.', true);
         }
         function stageWord(n) { return (n % 10 === 1 && n % 100 !== 11) ? 'этапное фото' : 'этапных фото'; }
 
@@ -536,7 +536,7 @@ mock_exam-задания одной недели), синглтон-id стол�
             return response.json()
                 .then(function (body) { return { status: response.status, body: body }; })
                 .catch(function () {
-                    return { status: response.status, body: { success: false, error: 'Не удалось получить ответ. Обновите страницу и попробуйте снова.' } };
+                    return { status: response.status, body: { success: false, error: 'Не удалось получить ответ. Обнови страницу и попробуй снова.' } };
                 });
         }
 
@@ -634,7 +634,7 @@ mock_exam-задания одной недели), синглтон-id стол�
             submitBtn.innerHTML = 'Готово ✓';
             var msg = 'Сдано одно финальное фото';
             if (stageState.existing > 0) msg += ' и ' + stageState.existing + ' ' + stageWord(stageState.existing);
-            msg += '. Ожидайте обратной связи от куратора.';
+            msg += '. Ожидай обратной связи от куратора.';
             showUploadMsg(msg, false);
         }
     };

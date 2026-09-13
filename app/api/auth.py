@@ -106,7 +106,7 @@ def _load_pkce_cookie(request: Request) -> tuple[dict | None, str | None]:
     pkce_cookie = request.cookies.get("pkce_cv")
     if not pkce_cookie:
         logger.warning("VK callback: pkce_cv cookie missing (cookies=%s)", list(request.cookies.keys()))
-        return None, "Ошибка сессии. Попробуйте снова или очистите cookies."
+        return None, "Ошибка сессии. Попробуй снова или очисти cookies."
     try:
         pkce_data = _signer.loads(pkce_cookie, max_age=300)
         if not isinstance(pkce_data, dict):
@@ -115,10 +115,10 @@ def _load_pkce_cookie(request: Request) -> tuple[dict | None, str | None]:
         _ = pkce_data["st"]
     except SignatureExpired:
         logger.warning("VK callback: pkce_cv cookie expired (>5 min since login click)")
-        return None, "Ссылка истекла — вы слишком долго авторизовывались. Попробуйте снова."
+        return None, "Ссылка истекла: время на вход закончилось. Попробуй снова."
     except (BadSignature, KeyError) as exc:
         logger.warning("VK callback: pkce_cv bad signature or key: %s", exc)
-        return None, "Ссылка истекла. Попробуйте снова."
+        return None, "Ссылка истекла. Попробуй снова."
     return pkce_data, None
 
 
@@ -127,7 +127,7 @@ def _load_telegram_pkce_cookie(request: Request) -> tuple[dict | None, str | Non
     pkce_cookie = request.cookies.get("tg_pkce_cv")
     if not pkce_cookie:
         logger.warning("Telegram login callback: tg_pkce_cv cookie missing (cookies=%s)", list(request.cookies.keys()))
-        return None, "Ошибка сессии. Попробуйте снова или очистите cookies."
+        return None, "Ошибка сессии. Попробуй снова или очисти cookies."
     try:
         pkce_data = _signer.loads(pkce_cookie, max_age=600)
         if not isinstance(pkce_data, dict):
@@ -136,10 +136,10 @@ def _load_telegram_pkce_cookie(request: Request) -> tuple[dict | None, str | Non
         _ = pkce_data["st"]
     except SignatureExpired:
         logger.warning("Telegram login callback: tg_pkce_cv cookie expired")
-        return None, "Ссылка истекла — вы слишком долго авторизовывались. Попробуйте снова."
+        return None, "Ссылка истекла: время на вход закончилось. Попробуй снова."
     except (BadSignature, KeyError) as exc:
         logger.warning("Telegram login callback: tg_pkce_cv bad signature or key: %s", exc)
-        return None, "Ссылка истекла. Попробуйте снова."
+        return None, "Ссылка истекла. Попробуй снова."
     return pkce_data, None
 
 
@@ -250,7 +250,7 @@ async def entry_point(
                 return RedirectResponse("/cabinet", status_code=302)
 
     if error == "session_expired":
-        error = "Сессия истекла, войдите снова"
+        error = "Сессия истекла, войди снова"
     return _render_login(request, error)
 
 
@@ -299,7 +299,7 @@ async def vk_callback(
 
     if not state:
         logger.warning("VK callback: state missing from VK redirect")
-        return _render_login(request, "Ошибка безопасности. Попробуйте снова.")
+        return _render_login(request, "Ошибка безопасности. Попробуй снова.")
 
     code_verifier: str | None = None
     stored_state: str | None = None
@@ -316,18 +316,18 @@ async def vk_callback(
             return _render_login(request, cookie_error)
         if cookie_pkce.get("v") is not None:
             logger.warning("VK callback: cookie fallback skipped for current cookie version, state=%s", state[:12])
-            return _render_login(request, "Ошибка сессии. Попробуйте снова или очистите cookies.")
+            return _render_login(request, "Ошибка сессии. Попробуй снова или очисти cookies.")
         logger.info("VK callback: using cookie PKCE fallback for legacy flow state=%s", state[:12])
         code_verifier = cookie_pkce["cv"]
         stored_state = cookie_pkce["st"]
 
     if not code_verifier or not stored_state:
         logger.warning("VK callback: PKCE payload incomplete for state=%s", state[:12])
-        return _render_login(request, "Ошибка сессии. Попробуйте снова или очистите cookies.")
+        return _render_login(request, "Ошибка сессии. Попробуй снова или очисти cookies.")
 
     if stored_state != state:
         logger.warning("VK callback: state mismatch stored=%r url=%r", stored_state[:20], state[:20])
-        return _render_login(request, "Ошибка безопасности. Попробуйте снова.")
+        return _render_login(request, "Ошибка безопасности. Попробуй снова.")
 
     if not device_id:
         return _render_login(request, "Ошибка авторизации ВК: нет device_id.")
@@ -336,7 +336,7 @@ async def vk_callback(
         token_data = await exchange_code(code, code_verifier, device_id)
     except Exception as exc:
         logger.error("VK token exchange failed: %s", exc)
-        return _render_login(request, "Ошибка авторизации ВК. Попробуйте позже.")
+        return _render_login(request, "Ошибка авторизации ВК. Попробуй позже.")
 
     access_token = token_data.get("access_token")
     vk_user_id = token_data.get("user_id")
@@ -362,7 +362,7 @@ async def vk_callback(
         logger.warning("vk_callback: membership check inconclusive for user %s", vk_user_id)
         return templates.TemplateResponse(request, "denied.html", {
             "request": request,
-            "reason": "Не удалось проверить участие в сообществе ВК. Попробуйте войти ещё раз через минуту.",
+            "reason": "Не удалось проверить участие в сообществе ВК. Попробуй войти ещё раз через минуту.",
             "vk_group_id": settings.vk_group_id,
         })
 
@@ -374,7 +374,7 @@ async def vk_callback(
             db.commit()
         return templates.TemplateResponse(request, "denied.html", {
             "request": request,
-            "reason": "Доступ запрещён. Вы не являетесь участником сообщества.",
+            "reason": "Доступ запрещён. Ты не состоишь в сообществе.",
             "vk_group_id": settings.vk_group_id,
         })
 
@@ -613,7 +613,7 @@ async def telegram_login_callback(
 
     if not state:
         logger.warning("Telegram login callback: state missing")
-        return fail("Ошибка безопасности. Попробуйте снова.")
+        return fail("Ошибка безопасности. Попробуй снова.")
 
     code_verifier: str | None = None
     stored_state: str | None = None
@@ -637,17 +637,17 @@ async def telegram_login_callback(
         intake_slug = cookie_pkce.get("intake_slug")
 
     if not code_verifier or not stored_state:
-        return fail("Ошибка сессии. Попробуйте снова или очистите cookies.")
+        return fail("Ошибка сессии. Попробуй снова или очисти cookies.")
 
     if stored_state != state:
         logger.warning("Telegram login callback: state mismatch stored=%r url=%r", stored_state[:20], state[:20])
-        return fail("Ошибка безопасности. Попробуйте снова.")
+        return fail("Ошибка безопасности. Попробуй снова.")
 
     try:
         token_data = await tg_exchange_code(code, code_verifier)
     except Exception as exc:
         logger.error("Telegram login token exchange failed: %s", exc)
-        return fail("Ошибка авторизации Telegram. Попробуйте позже.")
+        return fail("Ошибка авторизации Telegram. Попробуй позже.")
 
     id_token = token_data.get("id_token")
     if not id_token:
@@ -657,7 +657,7 @@ async def telegram_login_callback(
         claims = await asyncio.to_thread(tg_verify_id_token, id_token)
     except Exception as exc:
         logger.error("Telegram login id_token verification failed: %s", exc)
-        return fail("Не удалось проверить данные Telegram. Попробуйте позже.")
+        return fail("Не удалось проверить данные Telegram. Попробуй позже.")
 
     chat_id = claims.get("id")
     if not chat_id:
@@ -674,9 +674,9 @@ async def telegram_login_callback(
         logger.warning("Telegram login callback: membership check inconclusive for chat_id=%s", chat_id)
         return templates.TemplateResponse(request, "denied.html", {
             "request": request,
-            "reason": "Не удалось проверить участие в закрытом канале. Попробуйте войти ещё раз через минуту.",
+            "reason": "Не удалось проверить участие в закрытом канале. Попробуй войти ещё раз через минуту.",
             "recheck_url": "/auth/telegram-login",
-            "recheck_note": "Попробуйте войти ещё раз через минуту.",
+            "recheck_note": "Попробуй войти ещё раз через минуту.",
             "support_url": _SUPPORT_URL,
         })
 
@@ -687,9 +687,9 @@ async def telegram_login_callback(
             db.commit()
         return templates.TemplateResponse(request, "denied.html", {
             "request": request,
-            "reason": "Доступ запрещён. Вы не являетесь участником закрытого канала.",
+            "reason": "Доступ запрещён. Ты не состоишь в закрытом канале.",
             "recheck_url": "/auth/telegram-login",
-            "recheck_note": "Вступите в канал, затем нажмите «Проверить снова» — это заново запустит вход.",
+            "recheck_note": "Вступи в канал, затем нажми «Проверить снова» – это заново запустит вход.",
             "support_url": _SUPPORT_URL,
         })
 
@@ -732,16 +732,16 @@ async def one_time_link_login(
     if consume_error == "invalid":
         return _render_login(request, "Ссылка входа недействительна.")
     if consume_error == "expired":
-        return _render_login(request, "Ссылка входа истекла. Запросите новую.")
+        return _render_login(request, "Ссылка входа истекла. Запроси новую.")
     if consume_error in {"used", "revoked"}:
-        return _render_login(request, "Эта ссылка уже использована. Запросите новую.")
+        return _render_login(request, "Эта ссылка уже использована. Запроси новую.")
     if not user:
         return _render_login(request, "Не удалось определить пользователя по ссылке.")
 
     if not user.is_active:
         return templates.TemplateResponse(request, "denied.html", {
             "request": request,
-            "reason": "Ваш доступ временно отключен. Напишите администратору.",
+            "reason": "Твой доступ временно отключен. Напиши администратору.",
         })
     # Allow: VK group members, legacy admins, and staff (role rank >= 2)
     role_rank = user.role.rank if user.role else 0
@@ -906,8 +906,8 @@ _SUPPORT_URL = SUPPORT_URL
 async def _send_membership_denied(chat_id: int) -> None:
     await telegram_service.send_message(
         chat_id,
-        "Доступ закрыт: вы не состоите в нашем закрытом канале. "
-        "Обратитесь в поддержку или к администратору.",
+        "Доступ закрыт: ты не состоишь в нашем закрытом канале. "
+        "Обратись в поддержку или к администратору.",
         reply_markup={"inline_keyboard": [[{"text": "Написать в поддержку", "url": _SUPPORT_URL}]]},
     )
 
@@ -990,14 +990,14 @@ async def _finish_membership_check_and_login(db: DBSession, user: User, chat_id:
     правила, что и у vk_callback (fail-closed только для роли «ученик»,
     неопределённый ответ API не трактуется как отказ)."""
     if not user.is_active or user.deleted_at is not None:
-        await telegram_service.send_message(chat_id, "Ваш доступ отключён. Обратитесь к администратору.")
+        await telegram_service.send_message(chat_id, "Твой доступ отключён. Обратись к администратору.")
         return
 
     is_member = await telegram_service.check_channel_membership(chat_id)
     if is_member is None:
         await telegram_service.send_message(
             chat_id,
-            "Не удалось проверить участие в канале. Попробуйте написать /start ещё раз через минуту.",
+            "Не удалось проверить участие в канале. Попробуй написать /start ещё раз через минуту.",
         )
         return
 
@@ -1021,9 +1021,9 @@ async def _handle_telegram_link_start(
     if error or not target_user:
         reason = {
             "invalid": "Ссылка-приглашение недействительна.",
-            "expired": "Ссылка-приглашение истекла — попросите новую у куратора.",
+            "expired": "Ссылка-приглашение истекла — попроси новую у куратора.",
             "used": "Эта ссылка уже была использована.",
-            "revoked": "Эта ссылка больше не действует — попросите новую у куратора.",
+            "revoked": "Эта ссылка больше не действует — попроси новую у куратора.",
         }.get(error or "invalid", "Не удалось привязать Telegram.")
         await telegram_service.send_message(chat_id, reason)
         return
@@ -1034,7 +1034,7 @@ async def _handle_telegram_link_start(
     if already_linked:
         await telegram_service.send_message(
             chat_id,
-            "Этот Telegram-аккаунт уже привязан к другому ученику. Обратитесь к куратору.",
+            "Этот Telegram-аккаунт уже привязан к другому ученику. Обратись к куратору.",
         )
         return
 
@@ -1064,7 +1064,7 @@ async def _handle_telegram_new_start(
     if is_member is None:
         await telegram_service.send_message(
             chat_id,
-            "Не удалось проверить участие в канале. Попробуйте написать /start ещё раз через минуту.",
+            "Не удалось проверить участие в канале. Попробуй написать /start ещё раз через минуту.",
         )
         return
     if not is_member:
@@ -1251,7 +1251,7 @@ async def vk_recheck(
 
     return templates.TemplateResponse(request, "denied.html", {
         "request": request,
-        "reason": "Вы всё ещё не являетесь участником сообщества. Вступите и попробуйте снова.",
+        "reason": "Ты всё ещё не состоишь в сообществе. Вступи и попробуй снова.",
         "vk_group_id": settings.vk_group_id,
     })
 

@@ -38,10 +38,10 @@
         <h1>{{ config.title }}</h1>
         <div style="font-size:14px;color:var(--dim);margin-bottom:10px">{{ participant.display_name }}</div>
         <div class="guest-code-box">
-            Ваш код: <strong>{{ participant.participant_code }}</strong>
+            Твой код: <strong>{{ participant.participant_code }}</strong>
         </div>
         <div style="font-size:12px;color:var(--muted);margin-top:8px">
-            Сохраните код — по нему можно вернуться с другого устройства и посмотреть результат.
+            Сохрани код – по нему можно вернуться с другого устройства и посмотреть результат.
         </div>
     </div>
 
@@ -62,7 +62,7 @@
             <div style="font-size:14px;color:var(--muted)">Билеты по этому предмету пока не готовы.</div>
             {% elif item.locked_by %}
             <div style="font-size:14px;color:var(--muted)">
-                Сначала загрузите работу по предмету «{{ item.locked_by }}» – после этого откроется билет здесь.
+                Сначала загрузи работу по предмету «{{ item.locked_by }}» – после этого откроется билет здесь.
             </div>
             {% elif is_open %}
             <form method="post" action="/guest/{{ config.token }}/exam/{{ subject }}/ticket">
@@ -96,7 +96,7 @@
         {% elif submission.status == "submitted" %}
             <div style="font-size:14px;color:var(--dim)">
                 Работа отправлена {{ submission.submitted_at.strftime('%d.%m %H:%M') }}.
-                Ждите балл и комментарий куратора — они появятся здесь же.
+                Жди балл и комментарий куратора – они появятся здесь же.
             </div>
 
         {% elif submission.status == "scored" %}

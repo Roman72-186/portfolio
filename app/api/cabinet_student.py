@@ -341,41 +341,41 @@ def profile_post(
             if parsed_birth_date > today:
                 errors.append("Дата рождения не может быть в будущем")
             elif parsed_birth_date.year < _MIN_BIRTH_YEAR:
-                errors.append("Проверьте дату рождения")
+                errors.append("Проверь дату рождения")
         except ValueError:
             errors.append("Дата рождения указана неверно")
     else:
-        errors.append("Укажите дату рождения")
+        errors.append("Укажи дату рождения")
 
     if not city:
-        errors.append("Укажите город")
+        errors.append("Укажи город")
     elif len(city) > 100:
         errors.append("Название города слишком длинное")
 
     if profile_timezone not in {tz for tz, _ in TIMEZONES}:
-        # Не "Выберите часовой пояс" — этот текст уже занят disabled-плейсхолдером
+        # Не "Выбери часовой пояс" — этот текст уже занят disabled-плейсхолдером
         # в самом select (profile.html), он в разметке всегда, ошибку с ним не отличить.
-        errors.append("Укажите часовой пояс")
+        errors.append("Укажи часовой пояс")
 
     if not parent_name:
-        errors.append("Введите имя и отчество родителя")
+        errors.append("Введи имя и отчество родителя")
     elif len(parent_name) > 150:
         errors.append("Имя родителя слишком длинное")
 
     if not vk_profile_url:
-        errors.append("Укажите ссылку на ВКонтакте")
+        errors.append("Укажи ссылку на ВКонтакте")
     elif not VK_RE.match(vk_profile_url):
         errors.append("Ссылка на ВКонтакте должна выглядеть как vk.com/имя или vk.ru/имя")
 
     if not sdek_address:
-        errors.append("Укажите ближайший адрес СДЭК")
+        errors.append("Укажи ближайший адрес СДЭК")
     elif len(sdek_address) > 300:
         errors.append("Адрес СДЭК слишком длинный")
 
     if not email:
-        errors.append("Укажите электронную почту")
+        errors.append("Укажи электронную почту")
     elif not EMAIL_RE.match(email):
-        errors.append("Введите корректную электронную почту")
+        errors.append("Введи корректную электронную почту")
 
     # university_year — required
     parsed_university_year: int | None = None
@@ -389,7 +389,7 @@ def profile_post(
         except ValueError:
             errors.append("Год поступления в ВУЗ должен быть числом")
     else:
-        errors.append("Укажите год поступления в ВУЗ")
+        errors.append("Укажи год поступления в ВУЗ")
 
     # Parse month + year → enrolled_at
     parsed_month: int | None = None
@@ -402,11 +402,11 @@ def profile_post(
             if 1 <= _m <= 12:
                 parsed_month = _m
             else:
-                errors.append("Выберите месяц присоединения")
+                errors.append("Выбери месяц присоединения")
         except ValueError:
-            errors.append("Выберите месяц присоединения")
+            errors.append("Выбери месяц присоединения")
     else:
-        errors.append("Укажите месяц присоединения к курсу")
+        errors.append("Укажи месяц присоединения к курсу")
 
     if enrollment_year.strip():
         try:
@@ -416,22 +416,22 @@ def profile_post(
         except ValueError:
             errors.append("Год поступления должен быть числом")
     else:
-        errors.append("Укажите год поступления")
+        errors.append("Укажи год поступления")
 
     if parsed_month and parsed_year:
         parsed_enrolled_at = datetime(parsed_year, parsed_month, 1, tzinfo=timezone.utc)
 
     if not first_name:
-        errors.append("Введите имя")
+        errors.append("Введи имя")
     elif len(first_name) > 50:
         errors.append("Имя слишком длинное (максимум 50 символов)")
     if not last_name:
-        errors.append("Введите фамилию")
+        errors.append("Введи фамилию")
     elif len(last_name) > 50:
         errors.append("Фамилия слишком длинная (максимум 50 символов)")
     errors.extend(validate_contacts(phone, parent_phone, tg_username))
     if tariff not in TARIFFS:
-        errors.append("Выберите тариф")
+        errors.append("Выбери тариф")
 
     past_tariffs = [t.upper() for t in past_tariffs if t.upper() in TARIFFS and t.upper() != tariff]
 
@@ -700,7 +700,7 @@ async def upload_avatar(
     if not s3_configured:
         return JSONResponse({"success": False, "error": "Хранилище S3 не настроено. Загрузка временно недоступна."}, status_code=502)
     if url is None:
-        return JSONResponse({"success": False, "error": "Ошибка загрузки в хранилище. Попробуйте ещё раз."}, status_code=502)
+        return JSONResponse({"success": False, "error": "Ошибка загрузки в хранилище. Попробуй ещё раз."}, status_code=502)
 
     db_user.custom_avatar_url = url
     db.commit()

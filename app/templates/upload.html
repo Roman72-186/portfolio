@@ -18,7 +18,7 @@
         </h1>
         {% if mode == "before" %}
         <p class="ios-subtitle">
-            Добавьте фото работ до начала обучения. Месяц выбирать не нужно.
+            Добавь фото работ до начала обучения. Месяц выбирать не нужно.
         </p>
         {% endif %}
     </div>
@@ -55,10 +55,10 @@
                 <!-- Месяц -->
                 <div class="card" style="padding:20px">
                     <label class="form-label" style="margin-bottom:10px">
-                        Выберите месяц <span class="ios-required" aria-hidden="true">*</span>
+                        Выбери месяц <span class="ios-required" aria-hidden="true">*</span>
                     </label>
                     <select name="month" required class="form-select" aria-required="true">
-                        <option value="">— выберите месяц —</option>
+                        <option value="">– выбери месяц –</option>
                         {% for m in months %}
                         <option value="{{ m }}">{{ m | capitalize }}</option>
                         {% endfor %}
@@ -109,7 +109,7 @@
                                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                             </svg>
                         </span>
-                        <div class="ios-tip-text">Перетащите фото в область загрузки или нажмите на неё</div>
+                        <div class="ios-tip-text">Перетащи фото в область загрузки или нажми на неё</div>
                     </div>
                     <div class="ios-tip-row">
                         <span aria-hidden="true">
@@ -130,9 +130,9 @@
                         </span>
                         <div class="ios-tip-text">
                             {% if mode == "before" %}
-                            Просто загрузите фото: для раздела «До» месяц выбирать не нужно
+                            Просто загрузи фото: для раздела «До» месяц выбирать не нужно
                             {% else %}
-                            Выберите месяц, к которому относятся работы
+                            Выбери месяц, к которому относятся работы
                             {% endif %}
                         </div>
                     </div>
@@ -146,7 +146,7 @@
             {% else %}
             <div class="card ios-note-card ios-note-card--after" style="padding:20px">
                 <div class="ios-note-title">Раздел «После»</div>
-                <div class="ios-note-text">Здесь загружаются работы, которые вы создали во время обучения.</div>
+                <div class="ios-note-text">Здесь загружаются работы, созданные во время обучения.</div>
             </div>
             {% endif %}
         </div>
@@ -313,7 +313,7 @@ uploadForm.addEventListener('submit', function(ev) {
     xhr.onerror = function() {
         submitBtn.disabled = false;
         submitBtn.innerHTML = btnOriginal;
-        showAlert('error', 'Ошибка сети. Попробуйте ещё раз.');
+        showAlert('error', 'Ошибка сети. Попробуй ещё раз.');
     };
     xhr.onload = function() {
         submitBtn.disabled = false;

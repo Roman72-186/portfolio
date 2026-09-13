@@ -379,7 +379,7 @@ def test_probnik_final_allowed_after_window_closes_with_open_attempt(auth_client
 def test_probnik_final_resubmit_blocked_in_open_cycle(auth_client, db):
     """После сдачи финала перезалив запрещён даже в ОТКРЫТОМ цикле (по запросу
     владельца): ученик НЕ может перезагрузить работу по своей воле. Повторный POST →
-    409 «работа сдана, ждите обратной связи». Финал остаётся прежним, цикл один."""
+    409 «работа сдана, жди обратной связи». Финал остаётся прежним, цикл один."""
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
     from app.models.exam_cycle import ExamCycle
 
@@ -400,7 +400,7 @@ def test_probnik_final_resubmit_blocked_in_open_cycle(auth_client, db):
     r2 = _final(client, "Рисунок",
                 photos=[("photos", ("second.jpg", _JPG_BYTES, "image/jpeg"))])
     assert r2.status_code == 409
-    assert r2.json()["error"] == "работа сдана, ждите обратной связи"
+    assert r2.json()["error"] == "работа сдана, жди обратной связи"
 
     db.expire_all()
     finals = db.query(Work).filter(
@@ -426,7 +426,7 @@ def test_probnik_intermediate_blocked_after_final_submitted(auth_client, db):
 
     resp = _intermediate(client, "Рисунок", n=1)
     assert resp.status_code == 409
-    assert resp.json()["error"] == "работа сдана, ждите обратной связи"
+    assert resp.json()["error"] == "работа сдана, жди обратной связи"
 
 
 def test_probnik_redo_after_revision_notifies_scorer(auth_client, db):
@@ -841,7 +841,7 @@ def test_probnik_blocks_other_ticket_in_same_assignment_while_cycle_open(auth_cl
     second_resp = _final(client, "Рисунок")
 
     assert second_resp.status_code == 409
-    assert second_resp.json()["error"] == "работа сдана, ждите обратной связи"
+    assert second_resp.json()["error"] == "работа сдана, жди обратной связи"
 
     cycles = (
         db.query(ExamCycle)
@@ -971,7 +971,7 @@ def test_revision_reopens_submission_for_same_ticket(
     resp3 = _final(client, "Рисунок",
                    photos=[("photos", ("redo2.jpg", _JPG_BYTES, "image/jpeg"))])
     assert resp3.status_code == 409
-    assert resp3.json()["error"] == "работа сдана, ждите обратной связи"
+    assert resp3.json()["error"] == "работа сдана, жди обратной связи"
     db.expire_all()
     final = db.query(Work).filter(Work.id == work_id).first()
     assert final.filename == "redo.jpg"  # не перезаписан повторно
@@ -1075,7 +1075,7 @@ def test_otrabotka_final_denied_without_personal_assignment(auth_client, db):
 
     assert resp.status_code == 403
     assert resp.json()["error"] == (
-        "Отработку назначает куратор. Дождитесь, когда он отправит вашу работу на отработку."
+        "Отработку назначает куратор. Дождись, когда он отправит твою работу на отработку."
     )
 
 

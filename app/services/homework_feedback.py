@@ -129,7 +129,7 @@ def notify_counterpart(
     n = Notification(
         user_id=recipient_id,
         title=title,
-        text=f"По домашней работе #{submission.id} есть новое сообщение — откройте обратную связь.",
+        text=f"По домашней работе #{submission.id} есть новое сообщение – открой обратную связь.",
         homework_submission_id=submission.id,
     )
     db.add(n)

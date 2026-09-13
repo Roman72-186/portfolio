@@ -317,7 +317,7 @@ async def upload_probnik_final(
     subject: str = Form(...),
 ):
     if subject not in MOCK_SUBJECTS:
-        return JSONResponse({"success": False, "error": "Выберите предмет"}, status_code=422)
+        return JSONResponse({"success": False, "error": "Выбери предмет"}, status_code=422)
 
     active_tickets = get_active_tickets(db, user["user_id"], subject)
     if not active_tickets:
@@ -340,7 +340,7 @@ async def upload_probnik_final(
             {
                 "success": False,
                 "error": "пробник уже оценён и закрыт" if closed
-                else "работа сдана, ждите обратной связи",
+                else "работа сдана, жди обратной связи",
             },
             status_code=409,
         )
@@ -353,7 +353,7 @@ async def upload_probnik_final(
         return JSONResponse(
             {
                 "success": False,
-                "error": "Сначала нажмите «Начать пробник». После выдачи билета есть заданное время на сдачу.",
+                "error": "Сначала нажми «Начать пробник». После выдачи билета есть заданное время на сдачу.",
             },
             status_code=403,
         )
@@ -438,7 +438,7 @@ async def upload_probnik_final(
                 "cycle_created": created,
                 "attempt_number": attempt,
                 "work_ids": created_ids,
-                "error": "Финальное фото не подтверждено в базе. Проверьте соединение и попробуйте отправить ещё раз.",
+                "error": "Финальное фото не подтверждено в базе. Проверь соединение и попробуй отправить ещё раз.",
                 **submission_state,
             }, status_code=500)
 
@@ -518,7 +518,7 @@ async def upload_probnik_intermediate(
     subject: str = Form(...),
 ):
     if subject not in MOCK_SUBJECTS:
-        return JSONResponse({"success": False, "error": "Выберите предмет"}, status_code=422)
+        return JSONResponse({"success": False, "error": "Выбери предмет"}, status_code=422)
 
     active_tickets = get_active_tickets(db, user["user_id"], subject)
     if not active_tickets:
@@ -540,7 +540,7 @@ async def upload_probnik_intermediate(
             {
                 "success": False,
                 "error": "пробник уже оценён и закрыт" if closed
-                else "работа сдана, ждите обратной связи",
+                else "работа сдана, жди обратной связи",
             },
             status_code=409,
         )
@@ -551,7 +551,7 @@ async def upload_probnik_intermediate(
         return JSONResponse(
             {
                 "success": False,
-                "error": "Сначала нажмите «Начать пробник». После выдачи билета есть заданное время на сдачу.",
+                "error": "Сначала нажми «Начать пробник». После выдачи билета есть заданное время на сдачу.",
             },
             status_code=403,
         )
@@ -641,11 +641,11 @@ async def upload_otrabotka_final(
     from app.api.upload import _has_retake_assignment
     if not _has_retake_assignment(db, user["user_id"]):
         return JSONResponse(
-            {"success": False, "error": "Отработку назначает куратор. Дождитесь, когда он отправит вашу работу на отработку."},
+            {"success": False, "error": "Отработку назначает куратор. Дождись, когда он отправит твою работу на отработку."},
             status_code=403,
         )
     if subject not in MOCK_SUBJECTS:
-        return JSONResponse({"success": False, "error": "Выберите предмет"}, status_code=422)
+        return JSONResponse({"success": False, "error": "Выбери предмет"}, status_code=422)
 
     cycle = find_latest_cycle(db, user["user_id"], subject)
     if not cycle:

@@ -86,7 +86,7 @@
                     render(data);
                 }).catch(function () {
                     button.disabled = false;
-                    note.textContent = 'Не удалось отправить ответ. Попробуйте ещё раз.';
+                    note.textContent = 'Не удалось отправить ответ. Попробуй ещё раз.';
                     note.classList.add('is-error');
                 });
             });
@@ -127,7 +127,7 @@
             })
             .then(render)
             .catch(function () {
-                statusEl.textContent = 'Не удалось загрузить содержимое. Попробуйте позже.';
+                statusEl.textContent = 'Не удалось загрузить содержимое. Попробуй позже.';
                 statusEl.classList.add('is-error');
             });
     };

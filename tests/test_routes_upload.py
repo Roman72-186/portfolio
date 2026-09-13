@@ -455,7 +455,7 @@ def test_mock_exam_locked_subjects_do_not_disable_form(auth_client, db):
 
 def test_mock_exam_current_period_submission_locks_subject(auth_client, db):
     """Сданный по текущему билету пробник в ОТКРЫТОМ цикле БЛОКИРУЕТ предмет:
-    подсказка «работа сдана · ждите обратную связь», кнопка недоступна (перезалив по своей воле
+    подсказка «работа сдана · жди обратную связь», кнопка недоступна (перезалив по своей воле
     запрещён — открыть заново можно только следующим пробником/новой revision)."""
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
     from app.models.exam_cycle import ExamCycle
@@ -489,7 +489,7 @@ def test_mock_exam_current_period_submission_locks_subject(auth_client, db):
 
     assert resp.status_code == 200
     # открытый сданный цикл → предмет заблокирован с подсказкой «ждите ОС»
-    assert "работа сдана · ждите обратную связь" in resp.text
+    assert "работа сдана · жди обратную связь" in resp.text
     assert "subject-locked" in resp.text
     # режима свободного перезалива больше нет
     assert "можно перезалить" not in resp.text
@@ -1341,7 +1341,7 @@ def test_upload_after_open_without_feature_period(auth_client, db):
 
     assert resp.status_code == 200
     assert "Загрузка закрыта" not in resp.text
-    assert "Выберите месяц" in resp.text
+    assert "Выбери месяц" in resp.text
 
 
 def test_upload_after_post_accepted_without_feature_period(auth_client, db):

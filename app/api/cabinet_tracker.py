@@ -196,7 +196,7 @@ def cabinet_tracker_toggle(
         db, task_id=task_id, user_id=user["user_id"]
     ) is None:
         raise HTTPException(
-            status_code=409, detail="Сначала ответьте на вопросы задания"
+            status_code=409, detail="Сначала ответь на вопросы задания"
         )
 
     state = (
@@ -756,10 +756,10 @@ def submit_cabinet_tracker_task_blocks(
     visible = questions
     questions = [block for block in visible if block.id not in already]
     if not questions:
-        raise HTTPException(status_code=409, detail="Вы уже отвечали на это задание")
+        raise HTTPException(status_code=409, detail="Ответ на это задание уже есть")
     known = {block.id for block in questions}
     if [a.block_id for a in payload.answers if a.block_id in already]:
-        raise HTTPException(status_code=409, detail="На этот вопрос вы уже ответили")
+        raise HTTPException(status_code=409, detail="На этот вопрос уже есть ответ")
     unknown = [a.block_id for a in payload.answers if a.block_id not in known]
     if unknown:
         raise HTTPException(status_code=422, detail="Ответ на чужой вопрос")

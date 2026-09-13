@@ -44,7 +44,7 @@ async def read_image_uploads(
     *,
     max_files: int,
     max_size: int = MAX_UPLOAD_FILE_SIZE,
-    empty_error: str = "Выберите хотя бы одно фото",
+    empty_error: str = "Выбери хотя бы одно фото",
     too_many_error: str = "Максимум {max_files} фото за раз",
     unsupported_format_error: str = "Файл «{filename}» — неподдерживаемый формат",
     too_large_error: str = "Файл «{filename}» слишком большой (макс. 10 МБ)",

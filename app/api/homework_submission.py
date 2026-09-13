@@ -223,7 +223,7 @@ async def student_homework_feedback_page(
     _guard_student_access(db, task, user["user_id"])
     submission = get_submission(db, tracker_task_id=task.id, user_id=user["user_id"])
     if submission is None:
-        raise HTTPException(status_code=404, detail="Сначала отправьте работу")
+        raise HTTPException(status_code=404, detail="Сначала отправь работу")
     return await _render_feedback_page(
         request, db, task=task, homework=homework, submission=submission,
         user=user, viewer_role="student", back_url=f"/cabinet/homework/{task.id}",
@@ -371,7 +371,7 @@ async def student_send_homework_message(
     _guard_student_access(db, task, user["user_id"])
     submission = get_submission(db, tracker_task_id=task.id, user_id=user["user_id"])
     if submission is None:
-        raise HTTPException(status_code=404, detail="Сначала отправьте работу")
+        raise HTTPException(status_code=404, detail="Сначала отправь работу")
     # Тот же порядок, что у пробника: пока куратор не написал первым —
     # диалога ещё нет, ученику отвечать нечему.
     fb = (
@@ -381,7 +381,7 @@ async def student_send_homework_message(
     )
     if fb is None:
         raise HTTPException(
-            status_code=403, detail="Куратор ещё не ответил — дождитесь первого сообщения"
+            status_code=403, detail="Куратор ещё не ответил – дождись первого сообщения"
         )
     return await _post_message(
         request, submission, fb, db, user, text, photo,

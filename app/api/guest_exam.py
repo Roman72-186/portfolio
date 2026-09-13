@@ -55,7 +55,7 @@ def require_guest_csrf(
     if not validate_csrf_token(raw, csrf_token):
         raise HTTPException(
             status_code=403,
-            detail="Неверный CSRF-токен. Обновите страницу и попробуйте снова.",
+            detail="Неверный CSRF-токен. Обнови страницу и попробуй снова.",
         )
 
 
@@ -123,19 +123,19 @@ def guest_start(
     if code.strip():
         participant = guest_exam_service.get_participant_by_code(db, config.id, code)
         if not participant:
-            error = "Код не найден. Проверьте и попробуйте снова."
+            error = "Код не найден. Проверь и попробуй снова."
     elif telegram_login_enabled():
         # Когда вход через Telegram включён, свободный ввод имени на лендинге не
         # показывается — и через прямой POST тоже не работает, иначе личность
         # участника обходилась бы одним запросом мимо Telegram.
         participant = None
-        error = "Войдите через Telegram или продолжите по коду участника."
+        error = "Войди через Telegram или продолжи по коду участника."
     else:
         try:
             participant = guest_exam_service.create_participant(db, config, display_name)
         except ValueError:
             participant = None
-            error = "Введите имя"
+            error = "Введи имя"
 
     if not participant:
         return templates.TemplateResponse(request, "guest/guest_landing.html", {
@@ -230,7 +230,7 @@ async def guest_upload(
 
     submission = guest_exam_service.get_submission(db, participant.id, subject)
     if not submission or submission.status != "issued":
-        raise HTTPException(status_code=400, detail="Сначала получите билет")
+        raise HTTPException(status_code=400, detail="Сначала получи билет")
 
     files_data, error = await read_image_uploads([photo], max_files=1)
     if error:

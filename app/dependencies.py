@@ -306,7 +306,7 @@ def require_csrf(
             bool(token),
             token[:10] if token else "(empty)",
         )
-        raise HTTPException(status_code=403, detail="Неверный CSRF-токен. Обновите страницу и попробуйте снова.")
+        raise HTTPException(status_code=403, detail="Неверный CSRF-токен. Обнови страницу и попробуй снова.")
 
 
 def require_csrf_header(
@@ -325,7 +325,7 @@ def require_csrf_header(
         )
         raise HTTPException(
             status_code=403,
-            detail="Неверный CSRF-токен. Обновите страницу и попробуйте снова.",
+            detail="Неверный CSRF-токен. Обнови страницу и попробуй снова.",
         )
 
 

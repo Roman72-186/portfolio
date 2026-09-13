@@ -546,7 +546,7 @@ def curator_score_work(
 
     notification = Notification(
         user_id=work.user_id,
-        title=f"Куратор проверил вашу работу — {int(work.score)} / 100",
+        title=f"Куратор проверил твою работу – {int(work.score)} / 100",
         text=work.comment if work.comment else None,
         work_id=work.id,
     )

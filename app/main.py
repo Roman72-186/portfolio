@@ -103,7 +103,7 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(
         status_code=429,
-        content={"detail": "Слишком много запросов. Подождите минуту."},
+        content={"detail": "Слишком много запросов. Подожди минуту."},
     )
 
 
@@ -135,7 +135,7 @@ async def forbidden_handler(request: Request, exc):
         return RedirectResponse("/cabinet/personal", status_code=302)
     from app.tmpl import templates
     if "заблокирован" in detail.lower():
-        reason = "Ваш аккаунт заблокирован. Обратитесь к администратору."
+        reason = "Твой аккаунт заблокирован. Обратись к администратору."
     elif "удалён" in detail.lower():
         reason = "Аккаунт был удалён."
     else:
