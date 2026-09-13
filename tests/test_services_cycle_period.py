@@ -190,3 +190,38 @@ def test_future_cycle_is_not_handed_out_early(db, regular_user):
            ends_on=today + timedelta(days=21), title="Будущий")
 
     assert effective_cycle(db, regular_user.id, today) is None
+
+
+# ── Пересечение: два резолвера отвечают по-разному (13.09.2026) ──────────────
+#
+# `cycle_for_day` отдаёт позже начавшийся, `effective_cycle` — раньше
+# начавшийся из незакрытых. Расхождение намеренное (долг важнее новизны), но до
+# 13.09.2026 не было описано и не было покрыто тестами: поведение держалось на
+# порядке `accessible_cycles` и менялось бы молча.
+
+def test_overlapping_cycles_keep_the_debtor_on_the_earlier_one(db, regular_user):
+    """Начался новый цикл, старый не закрыт — ученик остаётся на старом.
+
+    Обратное поведению `cycle_for_day` на той же дате: там ответ — поздний.
+    """
+    today = today_msk()
+    earlier = _cycle(db, regular_user, starts_on=today - timedelta(days=5),
+                     ends_on=today + timedelta(days=5), title="Ранний")
+    _cycle(db, regular_user, starts_on=today - timedelta(days=2),
+           ends_on=today + timedelta(days=10), title="Поздний")
+    _task(db, regular_user, due_on=today - timedelta(days=4))
+
+    assert effective_cycle(db, regular_user.id, today).id == earlier.id
+    assert cycle_for_day(db, regular_user.id, today).id != earlier.id
+
+
+def test_overlapping_cycles_without_debt_agree_with_cycle_for_day(db, regular_user):
+    """Долгов нет — оба резолвера дают один и тот же поздний цикл."""
+    today = today_msk()
+    _cycle(db, regular_user, starts_on=today - timedelta(days=5),
+           ends_on=today + timedelta(days=5), title="Ранний")
+    later = _cycle(db, regular_user, starts_on=today - timedelta(days=2),
+                   ends_on=today + timedelta(days=10), title="Поздний")
+
+    assert effective_cycle(db, regular_user.id, today).id == later.id
+    assert cycle_for_day(db, regular_user.id, today).id == later.id

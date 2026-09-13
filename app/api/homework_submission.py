@@ -12,7 +12,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
+from fastapi import (
+    APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, File, Form,
+)
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session as DBSession
 
@@ -43,6 +45,7 @@ from app.services.homework_submission import (
     list_submissions_for_task,
     set_final_image,
 )
+from app.services.notify import notify
 from app.services.student_access import get_student_for_staff_access
 from app.services.tracker import accessible_task_ids, close_task_for_user
 from app.services.tracker import homework_images as list_homework_reference_images
@@ -310,6 +313,7 @@ async def _post_message(
     user: dict,
     text: str | None,
     photo: UploadFile | None,
+    background_tasks: BackgroundTasks,
     video_link: str = "",
 ) -> JSONResponse:
     photo_payload = None
@@ -333,12 +337,21 @@ async def _post_message(
     recipient_id = (
         submission.user_id if _viewer_role(user) != "student" else feedback.curator_id
     )
+    notification = None
     if recipient_id and recipient_id != user["user_id"]:
-        notify_counterpart(
+        notification = notify_counterpart(
             db, submission=submission, recipient_id=recipient_id,
             sender_role=_viewer_role(user),
         )
     db.commit()
+    # Фан-аут в Telegram и Web Push — тем же диспетчером, что у пробника
+    # (`app/api/feedback.py`). До 13.09.2026 домашка создавала только строку в
+    # `notifications`: колокольчик в кабинете загорался, наружу не уходило
+    # ничего, хотя подписки и бот у ученика те же самые. Задача ставится
+    # строго после `commit` — иначе фон прочитает уведомление, которого в базе
+    # ещё нет.
+    if notification is not None:
+        background_tasks.add_task(notify, notification.id)
     return JSONResponse({"ok": True})
 
 
@@ -346,6 +359,7 @@ async def _post_message(
 async def student_send_homework_message(
     task_id: int,
     request: Request,
+    background_tasks: BackgroundTasks,
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
@@ -369,7 +383,10 @@ async def student_send_homework_message(
         raise HTTPException(
             status_code=403, detail="Куратор ещё не ответил — дождитесь первого сообщения"
         )
-    return await _post_message(request, submission, fb, db, user, text, photo, video_link)
+    return await _post_message(
+        request, submission, fb, db, user, text, photo,
+        background_tasks=background_tasks, video_link=video_link,
+    )
 
 
 # ── Куратор/staff ────────────────────────────────────────────────────────
@@ -494,6 +511,7 @@ async def accept_homework_submission(
 async def staff_send_homework_message(
     submission_id: int,
     request: Request,
+    background_tasks: BackgroundTasks,
     user: Annotated[dict, Depends(require_curator)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
@@ -510,4 +528,7 @@ async def staff_send_homework_message(
         forbidden_detail="Это не ваш студент",
     )
     fb, _ = get_or_create_feedback(db, submission_id=submission.id, initiator_id=user["user_id"])
-    return await _post_message(request, submission, fb, db, user, text, photo, video_link)
+    return await _post_message(
+        request, submission, fb, db, user, text, photo,
+        background_tasks=background_tasks, video_link=video_link,
+    )

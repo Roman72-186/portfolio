@@ -11,6 +11,7 @@ from app.models.homework_submission import HomeworkSubmission, HomeworkSubmissio
 from app.models.notification import Notification
 from app.models.tracker import ITEM_HOMEWORK, SOURCE_HOMEWORK, STATUS_DONE, TrackerTaskState
 from app.services import s3 as s3_service
+from app.services.notify import notify as notify_service
 from app.services.tracker import create_homework, create_task, set_homework_images
 
 FAKE_URL = "https://s3.example.com/domashka/photo.jpg"
@@ -391,3 +392,33 @@ def test_curator_submissions_list_excludes_foreign_students(auth_client, db, use
     assert resp.status_code == 200
     assert f"/cabinet/staff/homework/submissions/{own_submission.id}" in resp.text
     assert f"/cabinet/staff/homework/submissions/{foreign_submission.id}" not in resp.text
+
+
+def test_homework_message_queues_outside_delivery(auth_client, db, user_factory, session_factory):
+    """Сообщение по домашке уходит в Telegram и Web Push, а не только в базу.
+
+    До 13.09.2026 роуты домашки не ставили фоновую задачу вовсе: уведомление
+    создавалось, колокольчик в кабинете загорался, наружу не уходило ничего —
+    в отличие от пробника, где фан-аут был с самого начала.
+    """
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    client.get(f"/cabinet/homework/{task.id}")
+    submission = db.query(HomeworkSubmission).one()
+
+    curator = user_factory(vk_id=777_009, name="Куратор Оля", role_name="куратор")
+    user.curator_id = curator.id
+    db.commit()
+    client.cookies.set("session_id", session_factory(curator).id)
+
+    with patch("app.api.homework_submission.BackgroundTasks.add_task") as add_task:
+        resp = client.post(
+            f"/cabinet/staff/homework/submissions/{submission.id}/message",
+            data={"text": "Тени доработай"},
+        )
+
+    assert resp.status_code == 200
+    notif = db.query(Notification).filter(Notification.user_id == user.id).one()
+    assert add_task.call_count == 1
+    assert add_task.call_args.args[0] is notify_service
+    assert add_task.call_args.args[1] == notif.id

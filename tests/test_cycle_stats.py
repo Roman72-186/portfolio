@@ -9,6 +9,7 @@ from datetime import timedelta, timezone
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.models.task_block import BLOCK_TEXT, TaskBlock
 from app.services.cycle_stats import cycle_stats
+from app.services.tracker import cycle_label
 from app.services.program import day_bounds
 from app.services.task_blocks import close_block_for_user
 from app.services.tracker import close_task_for_user, create_task
@@ -172,6 +173,24 @@ def test_stats_page_opens_for_admin(admin_client, db, regular_user):
     assert page.status_code == 200
     assert "Видео знакомства" in page.text
     assert "Цикл 19–21" in page.text
+
+
+def test_stats_page_shows_dates_when_cycle_has_no_title(admin_client, db, regular_user):
+    """Название цикла необязательно с 10.09.2026 — заголовок берёт период.
+
+    До 13.09.2026 экран подставлял `title` напрямую, и у безымянного цикла
+    заголовок страницы был пустым. Список циклов и лента ученика в этом случае
+    показывают период датами (`cycle_label`) — статистика теперь тоже.
+    """
+    client, _ = admin_client
+    topic = _cycle(db, regular_user)
+    topic.title = ""
+    db.commit()
+
+    page = client.get(f"/cabinet/staff/program/cycles/{topic.id}/stats")
+
+    assert page.status_code == 200
+    assert cycle_label(topic) in page.text
 
 
 def test_stats_page_404_for_missing_cycle(admin_client):
