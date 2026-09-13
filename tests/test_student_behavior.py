@@ -152,6 +152,26 @@ def test_profile_post_valid_data_sets_profile_completed(client, db, user_factory
     assert db_user.enrollment_year == 2024
 
 
+def test_vk_profile_url_accepts_both_domains():
+    """Ссылка с vk.ru и m.vk.ru принимается и приводится к каноническому vk.com."""
+    from app.api.cabinet_student import VK_RE, normalize_vk_profile_url
+    accepted = [
+        "https://vk.com/al_vetv",
+        "vk.com/al_vetv",
+        "https://vk.ru/al_vetv",          # новый российский домен ВК
+        "https://m.vk.ru/al_vetv",        # так копирует мобильное приложение
+        "m.vk.ru/al_vetv/",
+        "VK.RU/al_vetv",
+        "https://vk.ru/al_vetv?from=groups",
+    ]
+    for raw in accepted:
+        assert VK_RE.match(raw), raw
+        assert normalize_vk_profile_url(raw) == "https://vk.com/al_vetv", raw
+
+    for raw in ["https://ok.ru/al_vetv", "https://vk.xx/al_vetv", "vk.ru/"]:
+        assert not VK_RE.match(raw), raw
+
+
 def test_profile_post_empty_form_shows_all_required_errors(client, user_factory, session_factory):
     """Whitespace-only fields (stripped to empty) return all required-field errors."""
     client, _ = _auth(client, user_factory, session_factory,
