@@ -18,12 +18,38 @@ from sqlalchemy.orm import Session as DBSession
 from app.models.role import Role
 from app.models.user import User
 
-PHONE_RE = re.compile(r'^[\d\s\+\-\(\)]{7,20}$')
+# Номера принимаем только российские, в каноническом виде `+7XXXXXXXXXX`:
+# ученик и родитель живут в РФ, а разнобой форматов («8 999…», «+7 (999) …»,
+# «9991234567») делал одного и того же человека разным номером в выгрузках и
+# при поиске. Приводит к канону `normalize_phone`, сюда значение приходит уже
+# нормализованным — регулярка лишь ловит то, что нормализовать не удалось.
+PHONE_RE = re.compile(r'^\+7\d{10}$')
 TG_RE = re.compile(r'^[A-Za-z0-9_]{4,32}$')
 
 
 def normalize_phone(raw: str) -> str:
-    return (raw or "").strip()
+    """Российский номер к единому виду `+7XXXXXXXXXX`.
+
+    Человек вводит номер как привык: «8 999 123-45-67», «+7 (999) 123 45 67»,
+    «79991234567», «9991234567». Все эти записи — один номер, и в базе он
+    должен лежать одной строкой, иначе поиск по номеру и выгрузка контактов
+    считают их разными людьми.
+
+    Ведущие «7» и «8» при полной длине — код страны, дальше идут те же десять
+    цифр. Чего разобрать не вышло (иностранный номер, обрывок, буквы) —
+    возвращаем как есть: решение о показе ошибки принимает `validate_contacts`,
+    а не эта функция, иначе ученик увидел бы пустое поле вместо своего ввода.
+    """
+    value = (raw or "").strip()
+    if not value:
+        return ""
+
+    digits = re.sub(r"\D", "", value)
+    if len(digits) == 11 and digits[0] in "78":
+        digits = digits[1:]
+    if len(digits) == 10:
+        return "+7" + digits
+    return value
 
 
 def normalize_tg_username(raw: str) -> str:
@@ -41,12 +67,12 @@ def validate_contacts(phone: str, parent_phone: str, tg_username: str) -> list[s
     if not phone:
         errors.append("Введи номер телефона")
     elif not PHONE_RE.match(phone):
-        errors.append("Введи корректный номер телефона (только цифры, пробелы, +, -, скобки)")
+        errors.append("Номер нужен российский – +7 и 10 цифр")
 
     if not parent_phone:
         errors.append("Введи номер телефона родителя")
     elif not PHONE_RE.match(parent_phone):
-        errors.append("Введи корректный номер телефона родителя")
+        errors.append("Номер родителя нужен российский – +7 и 10 цифр")
 
     if not tg_username:
         errors.append("Укажи ник в Telegram")

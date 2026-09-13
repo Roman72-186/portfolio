@@ -82,14 +82,14 @@
                     <label class="prf-field-label" for="profile-phone">Номер телефона <span class="prf-required">*</span></label>
                     <input class="prf-field-input" type="tel" id="profile-phone" name="phone" required
                            value="{{ form.phone if form else (user.phone or '') }}"
-                           placeholder="+7 (___) ___-__-__"
+                           placeholder="+7 (___) ___-__-__" data-phone-mask
                            maxlength="20" pattern="[\d\s\+\-\(\)]{7,20}">
                 </div>
                 <div class="prf-field">
                     <label class="prf-field-label" for="profile-parent-phone">Телефон родителя <span class="prf-required">*</span></label>
                     <input class="prf-field-input" type="tel" id="profile-parent-phone" name="parent_phone" required
                            value="{{ form.parent_phone if form else (user.parent_phone or '') }}"
-                           placeholder="+7 (___) ___-__-__"
+                           placeholder="+7 (___) ___-__-__" data-phone-mask
                            maxlength="20" pattern="[\d\s\+\-\(\)]{7,20}">
                 </div>
             </div>
@@ -169,6 +169,7 @@
     </form>
 </div>
 <script src="/static/js/hint.js?v=1"></script>
+<script src="/static/js/phone-mask.js?v=1"></script>
 <script>
 document.querySelector('form').addEventListener('submit', function() {
     var btn = document.getElementById('profile-submit-btn');

@@ -136,11 +136,29 @@ def test_contacts_post_invalid_phone_shows_error(auth_client, db):
         "tg_username": "anna_art",
     })
     assert resp.status_code == 200
-    assert "Введи корректный номер телефона" in resp.text
+    assert "Номер нужен российский" in resp.text
 
     db.expire_all()
     saved = db.query(User).filter(User.id == user.id).first()
     assert saved.phone != "телефон"
+
+
+def test_contacts_post_normalizuet_nomer_s_vosmerkoy(auth_client, db):
+    """Привычный ввод «8 (900) …» ложится в базу каноном `+7XXXXXXXXXX`."""
+    from app.models.user import User
+    client, user = auth_client
+
+    resp = client.post("/cabinet/personal/contacts", data={
+        "phone": "8 (900) 111-22-33",
+        "parent_phone": "+7 900 222-33-44",
+        "tg_username": "anna_art",
+    }, follow_redirects=False)
+    assert resp.status_code == 302
+
+    db.expire_all()
+    saved = db.query(User).filter(User.id == user.id).first()
+    assert saved.phone == "+79001112233"
+    assert saved.parent_phone == "+79002223344"
 
 
 def test_contacts_post_short_username_shows_error(auth_client):
