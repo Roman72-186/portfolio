@@ -658,52 +658,66 @@ def test_cycle_page_shows_closed_mock_cycle(auth_client, db):
     assert "75 / 100" in resp.text
 
 
-def test_portfolio_wires_score_neighbors_peer_strip(auth_client, db, user_factory):
-    """/cabinet/portfolio включает showPeers и пробрасывает score_neighbors
-    в JSON календаря (подборка по баллу, владелец 11.09.2026)."""
-    from app.models.exam_assignment import ExamAssignment, ExamTicket
-    from app.models.exam_cycle import ExamCycle
+def test_portfolio_has_no_separate_mock_exam_tab(auth_client):
+    """Отдельная вкладка «Пробные экзамены» снесена на этой странице
+    (владелец 14.09.2026) — календарь предметов и showPeers с неё ушли."""
+    client, _ = auth_client
+    resp = client.get("/cabinet/portfolio")
+    assert resp.status_code == 200
+    assert "Пробные экзамены" not in resp.text
+    assert "showPeers" not in resp.text
+
+
+def test_mock_exam_final_shows_in_after_group(auth_client, db):
+    """Оценённый финал пробника попадает в «В процессе обучения» вместо
+    снесённой вкладки «Пробные экзамены» (владелец 14.09.2026: «все сданные
+    работы будут попадать в В процессе обучения»)."""
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
 
     client, user = auth_client
-    other = user_factory(vk_id=830_001, name="Other")
-
-    assignment = ExamAssignment(
-        title="Пробник", subject="Рисунок", created_by_id=other.id, status="published",
-    )
-    db.add(assignment)
-    db.flush()
-    ticket = ExamTicket(
-        assignment_id=assignment.id, ticket_number=1, title="Билет",
-        start_date=date(2026, 1, 1), end_date=date(2026, 1, 31), assign_to_all=True,
-    )
-    db.add(ticket)
-    db.flush()
-
-    other_cycle = ExamCycle(user_id=other.id, subject="Рисунок", ticket_id=ticket.id, started_at=date(2026, 1, 5))
-    own_cycle = ExamCycle(user_id=user.id, subject="Рисунок", ticket_id=ticket.id, started_at=date(2026, 1, 5))
-    db.add_all([other_cycle, own_cycle])
-    db.flush()
     db.add(Work(
-        user_id=other.id, work_type=WORK_TYPE_MOCK_EXAM, month="01", year=2026,
-        filename="other-final.jpg", subject="Рисунок", status="success",
-        s3_url="https://example.test/other-final.jpg",
-        cycle_id=other_cycle.id, is_final=True, attempt_number=1, score=65,
-    ))
-    db.add(Work(
-        user_id=user.id, work_type=WORK_TYPE_MOCK_EXAM, month="01", year=2026,
-        filename="own-final.jpg", subject="Рисунок", status="success",
-        s3_url="https://example.test/own-final.jpg",
-        cycle_id=own_cycle.id, is_final=True, attempt_number=1, score=70,
+        user_id=user.id, work_type=WORK_TYPE_MOCK_EXAM, month="Январь", year=2026,
+        filename="final.jpg", subject="Рисунок", status="success",
+        s3_url="https://example.test/final.jpg",
+        is_final=True, attempt_number=1, score=70,
     ))
     db.commit()
 
     resp = client.get("/cabinet/portfolio")
 
     assert resp.status_code == 200
-    assert "showPeers: true" in resp.text
-    assert "score_neighbors" in resp.text
-    assert "/cabinet/api/portfolio/peer-photo/" in resp.text
+    assert "https://example.test/final.jpg" in resp.text
+
+
+def test_ungraded_mock_exam_does_not_show_in_after_group(auth_client, db):
+    """Неоценённая попытка (нет score) в «После» не попадает — та же граница,
+    что раньше держала вкладку «Пробные экзамены» (только закрытые/оценённые)."""
+    from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+
+    client, user = auth_client
+    db.add(Work(
+        user_id=user.id, work_type=WORK_TYPE_MOCK_EXAM, month="Январь", year=2026,
+        filename="draft.jpg", subject="Рисунок", status="success",
+        s3_url="https://example.test/draft.jpg",
+        is_final=False, attempt_number=1, score=None,
+    ))
+    db.commit()
+
+    resp = client.get("/cabinet/portfolio")
+
+    assert resp.status_code == 200
+    assert "https://example.test/draft.jpg" not in resp.text
+
+
+def test_portfolio_before_upload_button_hidden_once_completed(auth_client):
+    """`portfolio_do_completed=True` (дефолт фикстуры) — кнопка «Загрузить
+    фото» в разделе «До обучения» больше не нужна, это разовая загрузка."""
+    client, _ = auth_client
+    resp = client.get("/cabinet/portfolio")
+    assert resp.status_code == 200
+    assert 'href="/upload?section=before"' not in resp.text
+    # Кнопка «После» остаётся — её показывает свой отдельный флаг.
+    assert 'href="/upload?section=after"' in resp.text
 
 
 # 5. Gallery and history

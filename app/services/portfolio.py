@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.constants import MONTHS
 from app.models.task_block import TaskBlockSubmission, TaskBlockSubmissionImage
-from app.models.work import WORK_TYPE_AFTER, Work
+from app.models.work import WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, Work
 from app.services.program import msk_date
 from app.services.utils import group_works
 
@@ -124,6 +124,57 @@ def after_gallery_groups(
             1 for item in group["works"] if getattr(item, "source", SOURCE_WORK) == SOURCE_WORK
         )
     return groups
+
+
+def student_portfolio_after_groups(
+    db: DBSession,
+    user_id: int,
+    *,
+    work_limit: int = 300,
+    submission_limit: int = 300,
+    mock_limit: int = 300,
+) -> list[dict]:
+    """То же, что `after_gallery_groups`, плюс оценённые финалы пробников —
+    только для собственной страницы «Портфолио» ученика (владелец 14.09.2026:
+    убрали отдельную вкладку «Пробные экзамены», «все сданные работы будут
+    попадать в В процессе обучения»).
+
+    Не расширяет саму `after_gallery_groups`: она общая со staff-карточкой
+    ученика (`cabinet_students_shared.py`), у которой уже есть свой блок
+    «Пробные экзамены» и массовое удаление месяца по `work_total` — заведи
+    пробники туда же, staff получил бы возможность стереть оценённый финал
+    через путь, который ничего не знает про `ExamCycle`/балл/этапы.
+
+    Фильтр повторяет `cabinet_student.py::_collect_cycle_works(closed_only=True)`:
+    только с выставленным баллом и не этапные (`parent_work_id IS NULL`) — это
+    ровно то, что раньше показывала вкладка «Пробные экзамены».
+    """
+    works = (
+        db.query(Work)
+        .filter(
+            Work.user_id == user_id,
+            Work.work_type == WORK_TYPE_AFTER,
+            Work.status == "success",
+        )
+        .order_by(Work.created_at.desc())
+        .limit(work_limit)
+        .all()
+    )
+    mock_works = (
+        db.query(Work)
+        .filter(
+            Work.user_id == user_id,
+            Work.work_type == WORK_TYPE_MOCK_EXAM,
+            Work.status == "success",
+            Work.score.isnot(None),
+            Work.parent_work_id.is_(None),
+        )
+        .order_by(Work.created_at.desc())
+        .limit(mock_limit)
+        .all()
+    )
+    photos = _submission_photos(db, user_id, limit=submission_limit)
+    return group_works(list(works) + mock_works + photos)
 
 
 def item_source(item) -> str:

@@ -46,7 +46,7 @@ from app.services.mock_exam_access import (
 from app.services.contacts import normalize_phone, normalize_tg_username, validate_contacts
 from app.services.tz import MSK_TZ, now_msk, today_msk
 from app.services.user_management import log_tariff_change
-from app.services.portfolio import after_gallery_groups
+from app.services.portfolio import student_portfolio_after_groups
 from app.services.utils import compress_image
 from app.services.video_catalog import list_published_videos
 from app.tmpl import templates, format_ticket_description
@@ -818,21 +818,14 @@ async def cabinet_portfolio(
         .limit(500)
         .all()
     )
-    # «После» собирает и работы портфолио, и то, что ученик сдал внутри
-    # заданий (владелец 09.09.2026). Сборка — `services/portfolio.py`, одна на
-    # кабинет ученика и на экраны staff.
-    after_groups = after_gallery_groups(db, user["user_id"])
+    # «После» собирает работы портфолио, то, что ученик сдал внутри заданий, и
+    # (с 14.09.2026, владелец: «все сданные работы будут попадать в В процессе
+    # обучения») оценённые финалы пробников — отдельной вкладки «Пробные
+    # экзамены» на этой странице больше нет. Сборка именно для своей страницы
+    # ученика — `student_portfolio_after_groups`, не общая `after_gallery_groups`
+    # (та осталась прежней ради staff-карточки, см. её докстринг).
+    after_groups = student_portfolio_after_groups(db, user["user_id"])
     after_works = [w for g in after_groups for w in g["works"]]
-
-    # Пробные экзамены: финалки ЗАКРЫТЫХ циклов в формате дневного календаря
-    # (по предметам, со score/этапами) — тот же сборщик, что и во вкладке Пробники.
-    mock_works_by_subject = _collect_cycle_works(
-        db, user["user_id"], WORK_TYPE_MOCK_EXAM, closed_only=True, include_peers=True
-    )
-    mock_subjects = list(MOCK_SUBJECTS)
-    if "Без предмета" in mock_works_by_subject:
-        mock_subjects.append("Без предмета")
-    has_mock = any(mock_works_by_subject.get(s) for s in mock_subjects)
 
     # Fetch Drive thumbnail URLs for works that came from Drive (no s3_url)
     drive_thumbnails: dict[str, str] = {}
@@ -868,11 +861,6 @@ async def cabinet_portfolio(
         "portfolio_before_score": portfolio_before_score,
         "portfolio_before_works": [serialize_work(w) for w in before_works],
         "portfolio_after_groups": [serialize_portfolio_group(g) for g in after_groups],
-        "mock_works_by_subject": mock_works_by_subject,
-        "mock_subjects": mock_subjects,
-        "has_mock": has_mock,
-        "months": MONTHS,
-        "current_year": today_msk().year,
         "page_size": PAGE_SIZE,
         "unread_count": _get_unread_count(user["user_id"], db),
         "drive_thumbnails": drive_thumbnails,
