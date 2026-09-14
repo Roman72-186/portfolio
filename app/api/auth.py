@@ -713,6 +713,16 @@ async def telegram_login_callback(
         deadline = intake_link_service.deadline_for_slug(db, intake_slug)
         if deadline is not None:
             user.access_until = deadline
+            # Новичок знакомится без тарифа и выбирает его потом, когда срок
+            # заканчивается (владелец 14.09.2026). Аккаунт при создании
+            # получает «УВЕРЕННЫЙ» по умолчанию, поэтому тариф здесь снимаем —
+            # иначе пробнику молча открылись бы материалы старшего тарифа.
+            # Колонка `users.tariff` NOT NULL, «без тарифа» в базе — пустая
+            # строка: её понимают и экраны (`{% if user.tariff %}`), и отчёты
+            # (`u.tariff or "—"`). Чистим только вместе с простановкой срока:
+            # без срока человека не видно фильтром «Со сроком доступа», и
+            # тариф ему снимать нельзя.
+            user.tariff = ""
 
     db.commit()
     return _create_session_response(db, user)

@@ -272,10 +272,29 @@ def _university_year_options(user):
     return list(UNIVERSITY_YEAR_CHOICES)
 
 
+def _is_intake_student(user) -> bool:
+    """Новичок, пришедший по ссылке пробного набора: у него стоит срок доступа
+    (`User.access_until`), у действующего ученика поле пустое.
+
+    Владелец 14.09.2026: такой человек заходит знакомиться без тарифа, тариф
+    выбирает потом, когда срок заканчивается. Поэтому шаг «Тариф обучения» в
+    анкете ему не показываем и значение не пишем.
+
+    Отдельной колонки «пришёл по ссылке» в базе нет — срок доступа ставится
+    только что созданному пользователю при входе через `/proba`
+    (`app/api/auth.py`), он же лежит в основе фильтра «Со сроком доступа» в
+    списке учеников. Следствия, о которых владелец знает: вошедший напрямую с
+    apparchi.ru срока не получит и тариф в анкете увидит, а ученику, которому
+    срок проставил куратор руками, шаг тарифа тоже скроется.
+    """
+    return (user.get("access_until") if isinstance(user, dict) else None) is not None
+
+
 def _profile_template_ctx(request, user, errors=None, form=None):
     return {
         "request": request,
         "user": user,
+        "show_tariff_step": not _is_intake_student(user),
         "tariffs": TARIFF_LABELS,
         "tariff_display": TARIFF_DISPLAY,
         "university_years": _university_year_options(user),
@@ -312,7 +331,10 @@ def profile_post(
     last_name: Annotated[str, Form()],
     phone: Annotated[str, Form()],
     parent_phone: Annotated[str, Form()],
-    tariff: Annotated[str, Form()],
+    # Тариф — не обязательное поле формы: новичку по ссылке пробного набора
+    # шаг тарифа не рисуется вовсе, и без значения по умолчанию его анкета
+    # падала бы с 422 ещё до валидации.
+    tariff: Annotated[str, Form()] = "",
     # Новые поля анкеты (12.09.2026) — required через ручную валидацию ниже,
     # а не через FastAPI Form(...), чтобы не ловить 422 на старых вызовах
     # (например, ранний редирект при повторном POST уже заполненной анкеты).
@@ -420,7 +442,14 @@ def profile_post(
     elif len(last_name) > 50:
         errors.append("Фамилия слишком длинная (максимум 50 символов)")
     errors.extend(validate_contacts(phone, parent_phone, tg_username))
-    if tariff not in TARIFFS:
+    # У новичка по пробной ссылке шага с тарифом в форме нет, поэтому и
+    # присланное значение игнорируем целиком: иначе подделанный POST записал бы
+    # тариф в обход правила.
+    intake_student = _is_intake_student(user)
+    if intake_student:
+        tariff = ""
+        past_tariffs = []
+    elif tariff not in TARIFFS:
         errors.append("Выбери тариф")
 
     past_tariffs = [t.upper() for t in past_tariffs if t.upper() in TARIFFS and t.upper() != tariff]
@@ -468,7 +497,8 @@ def profile_post(
     enrolled_at = datetime(enrollment_moment.year, enrollment_moment.month, 1, tzinfo=timezone.utc)
 
     db_user = db.query(User).filter(User.id == user["user_id"]).first()
-    log_tariff_change(db, db_user.id, db_user.id, db_user.tariff, tariff)
+    if not intake_student:
+        log_tariff_change(db, db_user.id, db_user.id, db_user.tariff, tariff)
     db_user.first_name = first_name
     db_user.last_name = last_name
     db_user.name = f"{first_name} {last_name}"
@@ -481,12 +511,16 @@ def profile_post(
     db_user.vk_profile_url = vk_profile_url
     db_user.sdek_address = sdek_address
     db_user.email = email
-    db_user.tariff = tariff
+    # Пустой строкой тариф не затираем: у новичка его просто нет, а куратор мог
+    # проставить значение заранее.
+    if not intake_student:
+        db_user.tariff = tariff
     db_user.tg_username = tg_username or None
     db_user.enrollment_year = enrollment_moment.year
     db_user.enrolled_at = enrolled_at
     db_user.university_year = parsed_university_year
-    db_user.past_tariffs = ",".join(past_tariffs) if past_tariffs else None
+    if not intake_student:
+        db_user.past_tariffs = ",".join(past_tariffs) if past_tariffs else None
     db_user.profile_completed = True
     if db_user.profile_completed_at is None:
         db_user.profile_completed_at = now

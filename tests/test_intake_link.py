@@ -167,6 +167,45 @@ def test_new_user_via_intake_gets_deadline(client, db, monkeypatch):
     assert user.access_until == DEADLINE
 
 
+def test_new_user_via_intake_gets_no_tariff(client, db, monkeypatch):
+    """Новичок заходит знакомиться без тарифа (владелец 14.09.2026): аккаунт
+    при создании получает «УВЕРЕННЫЙ» по умолчанию, и вход по ссылке его
+    снимает — иначе пробнику открылись бы материалы старшего тарифа."""
+    _make_link(db, is_active=True)
+    _mock_callback(monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
+
+    client.get("/auth/telegram-login/callback?code=good&state=redis-state", follow_redirects=False)
+
+    user = db.query(User).filter(User.telegram_chat_id == CHAT_ID).first()
+    assert not user.tariff
+
+
+def test_existing_student_via_intake_keeps_tariff(client, db, monkeypatch, user_factory):
+    """Действующий ученик, кликнувший по той же ссылке, тариф не теряет."""
+    _make_link(db, is_active=True)
+    user = user_factory(vk_id=-904, tariff="УВЕРЕННЫЙ")
+    user.telegram_chat_id = CHAT_ID
+    db.commit()
+    _mock_callback(monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
+
+    client.get("/auth/telegram-login/callback?code=good&state=redis-state", follow_redirects=False)
+
+    db.refresh(user)
+    assert user.tariff == "УВЕРЕННЫЙ"
+
+
+def test_new_user_without_deadline_keeps_default_tariff(client, db, monkeypatch):
+    """Ссылка без даты никого не помечает: ни срока, ни снятого тарифа —
+    иначе человек остался бы без тарифа и без метки, по которой его ищут."""
+    _make_link(db, is_active=False, access_until=None)
+    _mock_callback(monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)
+
+    client.get("/auth/telegram-login/callback?code=good&state=redis-state", follow_redirects=False)
+
+    user = db.query(User).filter(User.telegram_chat_id == CHAT_ID).first()
+    assert user.tariff == "УВЕРЕННЫЙ"
+
+
 def test_repeat_login_by_intake_link_does_not_move_deadline(client, db, monkeypatch):
     link = _make_link(db, is_active=True)
     _mock_callback(monkeypatch, chat_id=CHAT_ID, intake_slug=INTAKE_TRIAL_SLUG)

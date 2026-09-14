@@ -1257,6 +1257,21 @@ def edit_student_profile(
     if parsed_university_year is not None:
         student.university_year = parsed_university_year
     student.cohort_tag = cohort_tag or None
+    # Срок появился у человека с незаполненной анкетой — это новичок пробного
+    # набора, которого куратор пометил руками (тот, кто вошёл напрямую с
+    # apparchi.ru, минуя ссылку `/proba`). Тариф ему снимаем по тому же
+    # правилу, что и на входе по ссылке: анкета шаг «Тариф обучения» ему уже не
+    # покажет, и без этой строки он молча остался бы на «УВЕРЕННЫЙ» из дефолта
+    # при создании аккаунта. Заполненную анкету не трогаем: там тариф человек
+    # выбрал сам, а срок куратор мог поставить оплатившему по своей причине.
+    # Явно выбранный в этой же форме тариф выигрывает — он записан выше.
+    if (
+        parsed_access_until is not None
+        and student.access_until is None
+        and not student.profile_completed
+        and not tariff
+    ):
+        student.tariff = ""
     student.access_until = parsed_access_until
     db.commit()
 

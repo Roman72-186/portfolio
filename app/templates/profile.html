@@ -27,7 +27,15 @@
     <form method="post" action="/cabinet/profile">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
 
-        <div class="prf-section-title">Шаг 1 из 4 · Основные данные
+        {#
+        Новичок по ссылке пробного набора заполняет анкету без тарифа — шаг
+        «Тариф обучения» скрыт, и нумерация всех шагов съезжает на 3
+        (владелец 14.09.2026). Флаг `show_tariff_step` приходит из
+        `cabinet_student.py::_profile_template_ctx`.
+        #}
+        {% set steps_total = 4 if show_tariff_step else 3 %}
+
+        <div class="prf-section-title">Шаг 1 из {{ steps_total }} · Основные данные
             <span class="prf-field-note-inline">· имя и фамилию пиши как в паспорте – по ним тебя ищут преподаватели</span>
         </div>
         <div class="prf-group">
@@ -76,7 +84,7 @@
             </div>
         </div>
 
-        <div class="prf-section-title">Шаг 2 из 4 · Контакты</div>
+        <div class="prf-section-title">Шаг 2 из {{ steps_total }} · Контакты</div>
         <div class="prf-group">
             <div class="prf-row prf-row--pair">
                 <div class="prf-field">
@@ -130,7 +138,8 @@
             </div>
         </div>
 
-        <div class="prf-section-title">Шаг 3 из 4 · Тариф обучения</div>
+        {% if show_tariff_step %}
+        <div class="prf-section-title">Шаг 3 из {{ steps_total }} · Тариф обучения</div>
         <div class="prf-group">
             <div class="prf-row prf-row--single">
                 <label class="prf-field-label" for="tariff-select">Выбери свой тариф <span class="prf-required">*</span></label>
@@ -146,8 +155,9 @@
                 </select>
             </div>
         </div>
+        {% endif %}
 
-        <div class="prf-section-title">Шаг 4 из 4 · Учёба</div>
+        <div class="prf-section-title">Шаг {{ steps_total }} из {{ steps_total }} · Учёба</div>
         <div class="prf-group">
             <div class="prf-row prf-row--single">
                 <label class="prf-field-label" for="university-year-select">Год поступления в вуз <span class="prf-required">*</span></label>
