@@ -65,6 +65,36 @@ def is_path_allowed_when_tg_mismatch(path: str) -> bool:
     return path.startswith(TG_MISMATCH_ALLOWED_PREFIXES)
 
 
+# Маркер отказа по несданному портфолио «До» (`User.portfolio_do_completed`,
+# добавлено 14.09.2026) — тем же приёмом, что ACCESS_EXPIRED_DETAIL/
+# TG_MISMATCH_DETAIL выше: обработчик 403 в app/main.py узнаёт этот текст и
+# уводит на «Актуальное образовательное пространство» вместо заглушки
+# «Нет доступа». Это подпорка к клиентскому поп-апу в partials/bottom_nav.html
+# (перехватывает клик по меню) — без этой проверки прямой переход по ссылке
+# или старой закладке поп-ап не ловил и раздел просто открывался.
+PORTFOLIO_GATE_DETAIL = "Портфолио «До» не загружено"
+
+# Точный путь — не префикс: `/cabinet/tracker/blocks/*` и
+# `/cabinet/tracker/tasks/{id}/blocks` использует и разрешённая лента
+# `/cabinet/learning` (общий рендерер задачи-блоков, `static/js/task-blocks-render.js`),
+# префиксная блокировка отдавала бы 403 на каждое действие внутри открытого
+# раздела — страница грузилась бы, а сдать блок или отметить видео было бы нельзя.
+PORTFOLIO_GATE_BLOCKED_EXACT = ("/cabinet/tracker",)
+PORTFOLIO_GATE_BLOCKED_PREFIXES = (
+    "/cabinet/portfolio",
+    "/cabinet/gallery",
+    "/cabinet/history",
+    "/cabinet/feedback",
+    "/3dlab",
+    "/cabinet/3dlab",
+    "/lab",
+)
+
+
+def is_path_blocked_by_portfolio_gate(path: str) -> bool:
+    return path in PORTFOLIO_GATE_BLOCKED_EXACT or path.startswith(PORTFOLIO_GATE_BLOCKED_PREFIXES)
+
+
 def get_current_user(
     request: Request,
     response: Response,
@@ -172,6 +202,20 @@ def get_current_user(
     )
     if tg_username_mismatch and not is_path_allowed_when_tg_mismatch(request.url.path):
         raise HTTPException(status_code=403, detail=TG_MISMATCH_DETAIL)
+
+    # Гейт «Портфолио «До»» — держим на завершённой анкете (`profile_completed`)
+    # тем же приёмом, что и расхождение Telegram-ника выше: пока идёт самая
+    # первая анкета, приоритетнее её редирект на /cabinet/profile
+    # (`needs_profile_setup` в самих роутах), а не этот гейт.
+    portfolio_gate = (
+        role_rank == 1
+        and user.profile_completed
+        and not user.portfolio_do_completed
+        and not access_expired
+        and not tg_username_mismatch
+    )
+    if portfolio_gate and is_path_blocked_by_portfolio_gate(request.url.path):
+        raise HTTPException(status_code=403, detail=PORTFOLIO_GATE_DETAIL)
 
     result = {
         "session_id": session.id,

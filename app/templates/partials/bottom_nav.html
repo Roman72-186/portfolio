@@ -62,6 +62,7 @@
         </a>
         {% else %}
         <a href="{{ item.desktop_href }}" class="desk-nav-item {% if active_tab == item.key %}desk-nav-active{% endif %}"
+           data-nav-key="{{ item.key }}"
            {% if active_tab == item.key %}aria-current="page"{% endif %}>
             <span class="desk-nav-icon" aria-hidden="true">
                 {{ student_nav_icon(item.icon, 20) }}
@@ -94,6 +95,7 @@
             </a>
             {% else %}
             <a href="{{ item.mobile_href }}" class="fan-item {% if active_tab == item.key %}fan-item-active{% endif %}"
+               data-nav-key="{{ item.key }}"
                tabindex="-1" {% if active_tab == item.key %}aria-current="page"{% endif %} aria-label="{{ item.aria_label }}">
                 <span aria-hidden="true">{{ student_nav_icon(item.icon, 20) }}</span>
             </a>
@@ -197,6 +199,15 @@
             return;
         }
         if (link.classList.contains('nav-disabled') || link.classList.contains('fan-item-active')) return;
+        // Гейт «Портфолио «До»» (см. блок в конце файла): window.openPortfolioGate
+        // определена, только когда гейт активен, и к моменту клика уже
+        // выполнена — оба script-блока грузятся синхронно при загрузке страницы.
+        if (window.openPortfolioGate && link.getAttribute('data-nav-key') !== 'learning') {
+            e.preventDefault();
+            setOpen(false);
+            window.openPortfolioGate();
+            return;
+        }
         if (loader) loader.classList.add('active');
     });
 
@@ -352,3 +363,77 @@
     });
 })();
 </script>
+
+{% if user.role_rank == 1 and not user.portfolio_do_completed and not user.access_expired and not user.tg_username_mismatch %}
+<!-- Гейт «Портфолио «До»» (владелец 14.09.2026): пока ученик не сдал работы
+     «До», из всего меню остаётся кликабельным только «Актуальное
+     образовательное пространство» (key=learning) — по остальным пунктам
+     клик перехватывается и вместо перехода показывает это окно. С 14.09.2026
+     это не только UX: сервер (`is_path_blocked_by_portfolio_gate` в
+     dependencies.py) отдаёт 403 → редирект сюда же с `?locked=portfolio` на
+     тот же набор путей, если зайти прямой ссылкой или старой закладкой.
+     Приёмник открыт не на всё меню — `/cabinet/tracker` в блок-листе только
+     точным путём: его вложенные эндпоинты (`/cabinet/tracker/blocks/*`)
+     использует и сама открытая лента заданий, см. комментарий в dependencies.py. -->
+{% set portfolio_gate_forced_open = request.query_params.get('locked') == 'portfolio' %}
+<div class="gate-modal{% if portfolio_gate_forced_open %} open{% endif %}" id="portfolioGateModal" role="dialog" aria-modal="true" aria-label="Портфолио «До» не загружено" aria-hidden="{{ 'false' if portfolio_gate_forced_open else 'true' }}">
+    <div class="card status-card gate-modal-card">
+        <button type="button" class="gate-modal-close" id="portfolioGateClose" aria-label="Закрыть">&times;</button>
+        <div class="card-title">Сначала загрузи работы «До»</div>
+        <p class="card-desc">Остальные разделы кабинета откроются сразу после того, как ты покажешь свои работы «До» — это займёт пару минут.</p>
+        <div class="modal-actions" style="justify-content:center">
+            <a href="/upload" class="btn-blue">Загрузить портфолио →</a>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    var modal = document.getElementById('portfolioGateModal');
+    var closeBtn = document.getElementById('portfolioGateClose');
+    if (!modal || !closeBtn) return;
+    var lastFocused = null;
+
+    // Сервер может отрисовать модалку уже открытой (редирект с `?locked=
+    // portfolio` при попытке прямого перехода на закрытый раздел, см.
+    // forbidden_handler в main.py) — тогда фон блокируем сразу, без клика.
+    if (modal.classList.contains('open')) {
+        document.body.style.overflow = 'hidden';
+    }
+
+    function openGate(e) {
+        if (e && e.preventDefault) e.preventDefault();
+        lastFocused = document.activeElement;
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        closeBtn.focus();
+    }
+    function closeGate() {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        if (lastFocused && typeof lastFocused.focus === 'function') lastFocused.focus();
+        lastFocused = null;
+    }
+
+    // Веер мобильного меню (скрипт выше в этом же файле) вызывает это напрямую
+    // вместо перехода — у него уже своя обработка клика и её нельзя дублировать
+    // вторым обработчиком на том же <a>, иначе поверх поп-апа мигнёт #nav-loader.
+    window.openPortfolioGate = openGate;
+
+    closeBtn.addEventListener('click', closeGate);
+    modal.addEventListener('click', function (e) { if (e.target === modal) closeGate(); });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && modal.classList.contains('open')) closeGate();
+    });
+
+    // Десктопный сайдбар — обычные ссылки без своего обработчика клика,
+    // перехватываем здесь напрямую. Мобильный веер перехватывается выше.
+    Array.prototype.forEach.call(document.querySelectorAll('.desk-nav-item[data-nav-key]'), function (link) {
+        if (link.classList.contains('nav-disabled')) return;
+        if (link.getAttribute('data-nav-key') === 'learning') return;
+        link.addEventListener('click', openGate);
+    });
+})();
+</script>
+{% endif %}

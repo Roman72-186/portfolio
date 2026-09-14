@@ -25,7 +25,7 @@ from app.api import homework_submission
 from app.api import lab_assets
 from app.api import student_review
 from app.api import cabinet_staff_notifications
-from app.dependencies import ACCESS_EXPIRED_DETAIL, TG_MISMATCH_DETAIL
+from app.dependencies import ACCESS_EXPIRED_DETAIL, TG_MISMATCH_DETAIL, PORTFOLIO_GATE_DETAIL
 from app.limiter import limiter
 from app.services.rbac import seed_roles_and_permissions
 from app.services import n8n as n8n_service
@@ -133,6 +133,14 @@ async def forbidden_handler(request: Request, exc):
     # `/cabinet/personal` в белом списке `dependencies.py` и 403 не отдаёт.
     if detail in (ACCESS_EXPIRED_DETAIL, TG_MISMATCH_DETAIL):
         return RedirectResponse("/cabinet/personal", status_code=302)
+    # Гейт «Портфолио «До»» — своя переадресация, не «Личная информация»:
+    # единственное, что остаётся открытым при этом отказе — «Актуальное
+    # образовательное пространство». `?locked=portfolio` там же поднимает
+    # тот же поп-ап, что и клик по заблокированному пункту меню
+    # (partials/bottom_nav.html), а не молча подсовывает открытую страницу
+    # без объяснения, почему остальные разделы недоступны.
+    if detail == PORTFOLIO_GATE_DETAIL:
+        return RedirectResponse("/cabinet/learning?locked=portfolio", status_code=302)
     from app.tmpl import templates
     if "заблокирован" in detail.lower():
         reason = "Твой аккаунт заблокирован. Обратись к администратору."

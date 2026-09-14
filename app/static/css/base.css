@@ -1002,6 +1002,29 @@ audio { max-width: 100%; }
 .lightbox-thumb.is-current { border-color: var(--blue); }
 .lightbox-thumb.is-current img { opacity: 1; }
 
+/* ═══════════════════════════════════════
+   GATE MODAL — портфолио «До» не загружено (14.09.2026)
+   Блокирующий поп-ап поверх экрана: пока ученик не сдал работы «До», клик
+   по любому разделу меню, кроме «Актуального образовательного пространства»,
+   должен не открывать раздел, а показывать это окно. Оверлей и карточка
+   переиспользуют существующий язык — .lightbox для fixed+backdrop,
+   .card/.status-card для самой карточки, .modal-actions/.btn-blue для кнопки.
+   ═══════════════════════════════════════ */
+.gate-modal {
+    position: fixed; inset: 0; z-index: 300;
+    background: rgba(10,10,30,0.55);
+    display: none; align-items: center; justify-content: center; padding: 20px;
+}
+.gate-modal.open { display: flex; }
+.gate-modal-card { position: relative; text-align: center; }
+.gate-modal-close {
+    position: absolute; top: 10px; right: 10px;
+    width: 32px; height: 32px; border-radius: 50%;
+    border: none; background: var(--surface-2); color: var(--dim);
+    font-size: 18px; line-height: 1; cursor: pointer;
+}
+.gate-modal-close:hover { background: var(--line); color: var(--ink); }
+
 /* ── Spinner ── */
 .spinner {
     width: 16px; height: 16px;

@@ -314,6 +314,89 @@ def test_dashboard_hides_portfolio_cta_when_completed(auth_client):
     assert "Загрузи работы" not in resp.text
 
 
+def test_bottom_nav_shows_portfolio_gate_when_not_completed(client, user_factory, session_factory):
+    """Пока portfolio_do_completed=False, меню несёт гейт-поп-ап и блокирует
+    клик по всем пунктам, кроме «Актуального образовательного пространства»."""
+    client, _ = _auth(client, user_factory, session_factory,
+                      vk_id=100_109, portfolio_do_completed=False)
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert 'id="portfolioGateModal"' in resp.text
+    assert 'data-nav-key="learning"' in resp.text
+    assert 'href="/upload"' in resp.text
+
+
+def test_bottom_nav_hides_portfolio_gate_when_completed(auth_client):
+    """Student with portfolio_do_completed=True (the fixture default) doesn't get the gate."""
+    client, _ = auth_client
+    resp = client.get("/cabinet/learning")
+    assert resp.status_code == 200
+    assert 'id="portfolioGateModal"' not in resp.text
+
+
+# ---------------------------------------------------------------------------
+# 2b. Server-side enforcement of the "Portfolio До" gate (not just the popup)
+# ---------------------------------------------------------------------------
+
+def test_portfolio_gate_blocks_direct_url_to_locked_pages(client, user_factory, session_factory):
+    """Прямой переход по ссылке (не клик по меню) на закрытый раздел тоже
+    должен упираться в гейт — редиректом на ленту с открытым поп-апом."""
+    client, _ = _auth(client, user_factory, session_factory,
+                      vk_id=100_110, portfolio_do_completed=False)
+    for path in ("/cabinet/tracker", "/cabinet/portfolio", "/cabinet/feedback/", "/3dlab"):
+        resp = client.get(path, follow_redirects=False)
+        assert resp.status_code == 302, path
+        assert resp.headers["location"] == "/cabinet/learning?locked=portfolio", path
+
+
+def test_portfolio_gate_allows_direct_url_when_completed(auth_client):
+    """Student with portfolio_do_completed=True (the fixture default) isn't gated."""
+    client, _ = auth_client
+    for path in ("/cabinet/tracker", "/cabinet/portfolio"):
+        resp = client.get(path)
+        assert resp.status_code == 200, path
+
+
+def test_portfolio_gate_defers_to_profile_setup(client, user_factory, session_factory):
+    """Пока не заполнена самая первая анкета, приоритетнее её редирект —
+    гейт портфолио тут ни при чём (см. `user.profile_completed` в условии)."""
+    client, _ = _auth(client, user_factory, session_factory,
+                      vk_id=100_111, profile_completed=False, portfolio_do_completed=False)
+    resp = client.get("/cabinet/tracker", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/cabinet/profile"
+
+
+def test_locked_query_param_opens_the_gate_modal(client, user_factory, session_factory):
+    """`?locked=portfolio` (куда редиректит гейт) рисует поп-ап уже открытым."""
+    client, _ = _auth(client, user_factory, session_factory,
+                      vk_id=100_112, portfolio_do_completed=False)
+    resp = client.get("/cabinet/learning?locked=portfolio")
+    assert resp.status_code == 200
+    assert 'class="gate-modal open"' in resp.text
+
+
+def test_portfolio_gate_does_not_block_tracker_block_endpoints(client, db, user_factory, session_factory):
+    """`/cabinet/tracker` в блок-листе только точным путём: вложенные
+    эндпоинты блоков (использует и открытая лента `/cabinet/learning`,
+    общий рендерер task-blocks-render.js) должны продолжать работать."""
+    from app.services.tracker import create_task
+    from app.models.task_block import TaskBlock, BLOCK_TEXT
+
+    staff = user_factory(vk_id=550_310, name="Стафф", is_admin=True, role_name="админ")
+    task = create_task(db, title="Материал", user_id=staff.id, kind="material", assign_to_all=True)
+    task.is_published = True
+    db.add(TaskBlock(task_id=task.id, sort_order=0, block_type=BLOCK_TEXT, body="Текст"))
+    db.commit()
+    db.refresh(task)
+
+    client, _ = _auth(client, user_factory, session_factory,
+                      vk_id=100_113, portfolio_do_completed=False)
+    resp = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks")
+    assert resp.status_code == 200
+    assert resp.json()["blocks"][0]["body"] == "Текст"
+
+
 def test_dashboard_shows_mock_count_and_avg(auth_client, db):
     """Dashboard shows correct mock exam count and average score."""
     from app.models.work import Work, WORK_TYPE_MOCK_EXAM
