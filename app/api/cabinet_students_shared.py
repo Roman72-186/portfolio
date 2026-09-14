@@ -6,8 +6,9 @@
     plans/2026-09-01-apparchi-student-centric-review.md) может ставить балл
     Work (`score_work`) — остальное на карточке по-прежнему только просмотр
   - rank=3 (модератор) — заглушка, нет доступа
-  - rank=4 (админ)     — все студенты, оценивание + разблокировка
-  - rank=5 (суперадмин) — все студенты, оценивание + разблокировка
+  - rank=4 (админ/ГП)  — все студенты, оценивание + разблокировка, архив прошлых
+    потоков на чтение (`/cabinet/archive`)
+  - rank=5 (суперадмин) — всё то же, что rank=4
 """
 import asyncio
 import logging
@@ -112,13 +113,13 @@ def _get_accessible_students(
     набора новичок анкету обычно ещё не заполнил, поэтому этот фильтр тоже
     снимает отсев по profile_completed — иначе он был бы не виден вовсе.
 
-    archived=True — режим архива для суперадмина: вместо действующих учеников
-    отдаются архивные (прошлые потоки), их данные открыты только на чтение.
+    archived=True — режим архива для ГП/суперадмина (rank>=4): вместо действующих
+    учеников отдаются архивные (прошлые потоки), их данные открыты только на чтение.
     """
     hide_pre_cohort = not (show_hidden and user["role_rank"] >= 5) and not has_access_deadline
 
     if archived:
-        if user["role_rank"] < 5:
+        if user["role_rank"] < 4:
             return []
         student_role = db.query(Role).filter(Role.rank == 1).first()
         if not student_role:
@@ -184,15 +185,15 @@ def _parse_bool(s: str) -> bool:
 
 
 def _check_access(student_id: int, user: dict, db: DBSession, *, read_archive: bool = False) -> User:
-    """read_archive=True открывает архивного ученика на чтение — только суперадмину
-    и только в GET-роутах панели. Мутации архива отсекаются сами: без этого флага
-    архивный ученик не находится вовсе, значит POST/PATCH/DELETE отвечают 404."""
+    """read_archive=True открывает архивного ученика на чтение — только ГП/суперадмину
+    (rank>=4) и только в GET-роутах панели. Мутации архива отсекаются сами: без этого
+    флага архивный ученик не находится вовсе, значит POST/PATCH/DELETE отвечают 404."""
     return get_student_for_staff_access(
         db,
         user,
         student_id,
         active_only=True,
-        allow_archived=read_archive and user["role_rank"] >= 5,
+        allow_archived=read_archive and user["role_rank"] >= 4,
         not_found_detail="Ученик не найден",
         forbidden_detail="Нет доступа к этому ученику",
     )
@@ -248,8 +249,8 @@ def students_archive_panel(
     student: int = Query(0),
     tab: str = Query("portfolio"),
 ):
-    if user["role_rank"] < 5:
-        raise HTTPException(status_code=403, detail="Архив доступен только суперадмину")
+    if user["role_rank"] < 4:
+        raise HTTPException(status_code=403, detail="Архив доступен только Главному преподавателю и суперадмину")
     return _render_students_panel(
         request, user, db, student=student, tab=tab, archived="1",
     )
@@ -296,8 +297,8 @@ def _render_students_panel(
     mock_submitted = is_admin_panel and _parse_bool(mock_period_submitted)
     show_hidden_b = user["role_rank"] >= 5 and _parse_bool(show_hidden)
     has_access_deadline_b = is_admin_panel and _parse_bool(has_access_deadline)
-    # Архив прошлых потоков — только суперадмину и только на чтение.
-    archived_b = user["role_rank"] >= 5 and _parse_bool(archived)
+    # Архив прошлых потоков — ГП и суперадмину (rank>=4), только на чтение.
+    archived_b = user["role_rank"] >= 4 and _parse_bool(archived)
 
     students = _get_accessible_students(
         user, db,

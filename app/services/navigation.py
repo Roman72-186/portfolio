@@ -232,7 +232,7 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         aria_label="Архив учеников",
         tooltip="Архив прошлых потоков: работы и переписки, только просмотр",
         icon="students",
-        min_rank=5,
+        min_rank=4,
     ),
     StaffNavItem(
         key="guest_exam",

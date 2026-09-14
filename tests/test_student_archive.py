@@ -1,4 +1,4 @@
-"""Архив учеников: отправка в архив, чтение архива суперадмином, запрет правок.
+"""Архив учеников: отправка в архив, чтение архива ГП/суперадмином, запрет правок.
 
 Смысл механики — выпуск потока: ученики уходят из рабочих списков, но их
 работы, оценки и переписки остаются целыми и открыты суперадмину.
@@ -177,14 +177,52 @@ def test_archive_button_visible_to_superadmin(superadmin_client):
     assert "/cabinet/archive" in resp.text
 
 
-def test_archive_button_hidden_from_admin(client, user_factory, session_factory):
+def test_archive_button_visible_to_admin(client, user_factory, session_factory):
+    """Админ = ГП (Главный преподаватель) — с 14.09.2026 видит архив на чтение."""
     admin = user_factory(vk_id=910010, name="Админ", role_name="админ")
     sess = session_factory(admin)
     client.cookies.set("session_id", sess.id)
 
     resp = client.get("/cabinet/students")
     assert resp.status_code == 200
-    assert "/cabinet/archive" not in resp.text
+    assert "/cabinet/archive" in resp.text
+
+
+def test_archive_page_readable_by_admin(db, student, user_factory, client, session_factory):
+    admin = user_factory(vk_id=910012, name="Админ", role_name="админ")
+    sess = session_factory(admin)
+    client.cookies.set("session_id", sess.id)
+
+    archive_user(db, target_user_id=student.id, performed_by_id=admin.id)
+
+    resp = client.get("/cabinet/archive")
+    assert resp.status_code == 200
+    assert "Прошлый" in resp.text
+
+
+def test_archive_visible_on_admin_dashboard(client, user_factory, session_factory):
+    """Пункт меню считается динамически по role_rank в partials/staff_nav.html,
+    поэтому проверяем именно посадочный экран ГП (`/cabinet/admin-panel`),
+    а не только `/cabinet/students`."""
+    admin = user_factory(vk_id=910013, name="Админ", role_name="админ")
+    sess = session_factory(admin)
+    client.cookies.set("session_id", sess.id)
+
+    resp = client.get("/cabinet/admin-panel")
+    assert resp.status_code == 200
+    assert "/cabinet/archive" in resp.text
+
+
+def test_archived_student_not_writable_by_admin(db, student, user_factory, client, session_factory):
+    """ГП получил чтение архива, но не запись — тот же 404, что у суперадмина."""
+    admin = user_factory(vk_id=910014, name="Админ", role_name="админ")
+    sess = session_factory(admin)
+    client.cookies.set("session_id", sess.id)
+
+    archive_user(db, target_user_id=student.id, performed_by_id=admin.id)
+
+    resp = client.post(f"/cabinet/students/{student.id}/profile", data={"tariff": "МАКСИМУМ"})
+    assert resp.status_code == 404
 
 
 # ── переписки архивного ученика ──────────────────────────────────────────────

@@ -19,7 +19,7 @@ def get_student_for_staff_access(
     forbidden_detail: str,
 ) -> User:
     """allow_archived=True пропускает архивного ученика мимо active_only — это
-    режим чтения архива для суперадмина. Заблокированный (is_active=False без
+    режим чтения архива для ГП/суперадмина. Заблокированный (is_active=False без
     archived_at) остаётся недоступным: у блокировки другой смысл."""
     query = db.query(User).filter(User.id == student_id)
     if active_only and not allow_archived:
