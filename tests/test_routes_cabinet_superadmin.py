@@ -761,6 +761,55 @@ def test_superadmin_delete_user_ajax_returns_json(superadmin_client, db, user_fa
     assert student.is_active is False
 
 
+def test_superadmin_hard_delete_requires_matching_confirmation(superadmin_client, db, user_factory):
+    client, _ = superadmin_client
+    student = user_factory(vk_id=900203, name="Student Hard Delete", role_name="ученик")
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{student.id}/hard-delete",
+        data={"csrf_token": "bypass", "confirm_name": "не то имя"},
+        headers={"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 400
+    db.refresh(student)
+    assert db.query(User).filter(User.id == student.id).first() is not None
+
+
+def test_superadmin_hard_delete_by_id_removes_user(superadmin_client, db, user_factory):
+    client, _ = superadmin_client
+    student = user_factory(vk_id=900204, name="Student Hard Delete 2", role_name="ученик")
+    student_id = student.id
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{student_id}/hard-delete",
+        data={"csrf_token": "bypass", "confirm_name": str(student_id)},
+        headers={"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "user_id": student_id, "hard_deleted": True}
+    assert db.query(User).filter(User.id == student_id).first() is None
+
+
+def test_superadmin_hard_delete_forbidden_for_admin_rank(client, db, user_factory, session_factory):
+    admin = user_factory(vk_id=900205, name="Admin Not Superadmin", role_name="админ", is_admin=True)
+    sess = session_factory(admin)
+    client.cookies.set("session_id", sess.id)
+    student = user_factory(vk_id=900206, name="Student Untouched", role_name="ученик")
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{student.id}/hard-delete",
+        data={"csrf_token": "bypass", "confirm_name": str(student.id)},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 403
+    assert db.query(User).filter(User.id == student.id).first() is not None
+
+
 # ---------------------------------------------------------------------------
 # GET /cabinet/superadmin/stats — раздел «Полученные билеты»
 # ---------------------------------------------------------------------------

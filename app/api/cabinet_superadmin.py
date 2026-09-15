@@ -1711,6 +1711,7 @@ from app.services.user_management import (
     can_assign_role_rank,
     can_manage_user_by_rank,
     get_curator_for_assignment,
+    hard_delete_user,
     log_curator_change,
     log_tariff_change,
     soft_delete_user,
@@ -2703,6 +2704,37 @@ def superadmin_delete_user(
         raise HTTPException(status_code=400, detail="Невозможно удалить пользователя")
     if _wants_json_response(request):
         return JSONResponse({"ok": True, "user_id": target_id, "deleted": True})
+    return RedirectResponse("/cabinet/superadmin/users", status_code=303)
+
+
+@router.post("/superadmin/users/{target_id}/hard-delete")
+def superadmin_hard_delete_user(
+    target_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(require_superadmin)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    confirm_name: str = Form(""),
+):
+    """Безвозвратное удаление ученика и всех его данных (кнопка «Удалить
+    навсегда»). Только суперадмин. Клиент уже спросил подтверждение вводом
+    имени/id в модалке — здесь та же проверка повторяется на сервере,
+    потому что клиентская сверка защищает только от опечатки, не от
+    прямого запроса в обход UI."""
+    target = db.query(User).filter(User.id == target_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    typed = confirm_name.strip().lower()
+    expected = {str(target.id), (target.name or "").strip().lower()}
+    if not typed or typed not in expected:
+        raise HTTPException(status_code=400, detail="Подтверждение не совпадает с именем или id ученика")
+
+    ok, error = hard_delete_user(db, target_user_id=target_id, performed_by_id=user["user_id"])
+    if not ok:
+        raise HTTPException(status_code=400, detail=error or "Невозможно удалить пользователя")
+    if _wants_json_response(request):
+        return JSONResponse({"ok": True, "user_id": target_id, "hard_deleted": True})
     return RedirectResponse("/cabinet/superadmin/users", status_code=303)
 
 

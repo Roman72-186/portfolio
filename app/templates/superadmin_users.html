@@ -234,7 +234,8 @@
                     <div class="actions-cell"
                          data-user-actions="{{ u.id }}"
                          data-can-access="{% if user.role_rank >= 4 and u_rank < user.role_rank %}1{% else %}0{% endif %}"
-                         data-has-login="{% if u.staff_login %}1{% else %}0{% endif %}">
+                         data-has-login="{% if u.staff_login %}1{% else %}0{% endif %}"
+                         data-user-rank="{{ u_rank }}">
                         {% if u.archived_at %}
                         {# Архивному блокировка не нужна: он и так вне рабочих списков. #}
                         {% elif u.is_active %}
@@ -252,6 +253,12 @@
                             onclick="openConfirm('delete', {{ u.id }}, userNameFromRow({{ u.id }}), false)">
                             Удалить
                         </button>
+                        {% if current_user_rank >= 5 and u_rank == 1 %}
+                        <button type="button" class="btn-danger"
+                            onclick="openConfirm('hard-delete', {{ u.id }}, userNameFromRow({{ u.id }}), false)">
+                            Удалить навсегда
+                        </button>
+                        {% endif %}
                         {% if current_user_rank >= 5 and u_rank < current_user_rank %}
                         {% if u.archived_at %}
                         <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/unarchive" class="su-inline-form"
@@ -337,6 +344,8 @@
     <div class="modal">
         <h2 class="modal-title" id="modalTitle">Подтверждение</h2>
         <div class="modal-text" id="modalText"></div>
+        <input type="text" id="modalConfirmInput" class="su-input--search" hidden
+               autocomplete="off" oninput="_onConfirmInputChange()">
         <div class="modal-actions">
             <button class="modal-cancel" id="modalCancelBtn" onclick="closeModal()">Отмена</button>
             <button class="modal-confirm" id="modalConfirmBtn" onclick="submitAction()">Подтвердить</button>
@@ -353,6 +362,7 @@
 <script>
 let _action = null, _userId = null;
 let _triggerEl = null;
+const CURRENT_USER_RANK = {{ current_user_rank }};
 
 const USERS_LIST_EXPANDED_KEY = 'superadminUsersListExpanded';
 
@@ -386,6 +396,16 @@ function copyText(elemId, btn) {
     });
 }
 
+let _hardDeleteExpected = null;
+
+function _onConfirmInputChange() {
+    if (_action !== 'hard-delete') return;
+    const input = document.getElementById('modalConfirmInput');
+    const btn = document.getElementById('modalConfirmBtn');
+    const typed = input.value.trim().toLowerCase();
+    btn.disabled = !_hardDeleteExpected.has(typed);
+}
+
 function openConfirm(action, userId, name, isUnblock) {
     _action = action;
     _userId = userId;
@@ -394,12 +414,25 @@ function openConfirm(action, userId, name, isUnblock) {
     const title = document.getElementById('modalTitle');
     const text = document.getElementById('modalText');
     const btn = document.getElementById('modalConfirmBtn');
+    const input = document.getElementById('modalConfirmInput');
     name = name.trim() || 'пользователь';
+    input.hidden = true;
+    input.value = '';
+    btn.disabled = false;
     if (action === 'delete') {
         title.textContent = 'Удалить пользователя?';
         text.textContent = `Пользователь «${name}» будет скрыт из системы. Данные сохранятся в базе.`;
         btn.textContent = 'Удалить';
         btn.className = 'modal-confirm';
+    } else if (action === 'hard-delete') {
+        title.textContent = 'Удалить навсегда?';
+        text.textContent = `Работы, оценки, переписки, домашние задания и вся история «${name}» будут удалены безвозвратно — восстановить их будет нельзя. Чтобы подтвердить, введи имя или id (${userId}) ученика ниже.`;
+        btn.textContent = 'Удалить навсегда';
+        btn.className = 'modal-confirm';
+        _hardDeleteExpected = new Set([String(userId), name.trim().toLowerCase()]);
+        input.hidden = false;
+        input.placeholder = `${name} или ${userId}`;
+        btn.disabled = true;
     } else {
         if (isUnblock) {
             title.textContent = 'Разблокировать пользователя?';
@@ -414,13 +447,18 @@ function openConfirm(action, userId, name, isUnblock) {
         }
     }
     modal.classList.add('open');
-    document.getElementById('modalConfirmBtn').focus();
+    if (action === 'hard-delete') {
+        input.focus();
+    } else {
+        document.getElementById('modalConfirmBtn').focus();
+    }
 }
 
 function closeModal(restoreFocus) {
     if (restoreFocus === undefined) restoreFocus = true;
     document.getElementById('confirmModal').classList.remove('open');
-    _action = null; _userId = null;
+    document.getElementById('modalConfirmInput').hidden = true;
+    _action = null; _userId = null; _hardDeleteExpected = null;
     if (restoreFocus && _triggerEl) { _triggerEl.focus(); }
     _triggerEl = null;
 }
@@ -468,6 +506,17 @@ function renderUserActions(userId, isActive) {
 
     actions.appendChild(toggleBtn);
     actions.appendChild(deleteBtn);
+
+    if (CURRENT_USER_RANK >= 5 && actions.dataset.userRank === '1') {
+        const hardDeleteBtn = document.createElement('button');
+        hardDeleteBtn.type = 'button';
+        hardDeleteBtn.className = 'btn-danger';
+        hardDeleteBtn.textContent = 'Удалить навсегда';
+        hardDeleteBtn.addEventListener('click', function() {
+            openConfirm('hard-delete', userId, userNameFromRow(userId), false);
+        });
+        actions.appendChild(hardDeleteBtn);
+    }
 
     if (isActive && actions.dataset.canAccess === '1') {
         const credsForm = document.createElement('form');
@@ -528,8 +577,12 @@ function submitAction() {
     const form = document.getElementById('actionForm');
     const action = _action;
     const userId = _userId;
-    const endpoint = `/cabinet/superadmin/users/${userId}/${action === 'delete' ? 'delete' : 'toggle-active'}`;
+    const endpointAction = action === 'delete' ? 'delete' : action === 'hard-delete' ? 'hard-delete' : 'toggle-active';
+    const endpoint = `/cabinet/superadmin/users/${userId}/${endpointAction}`;
     const fd = new FormData(form);
+    if (action === 'hard-delete') {
+        fd.set('confirm_name', document.getElementById('modalConfirmInput').value.trim());
+    }
 
     setModalBusy(true);
     fetch(endpoint, {
@@ -550,7 +603,7 @@ function submitAction() {
                 throw new Error(result.data.detail || 'Не удалось выполнить действие');
             }
             closeModal(false);
-            if (action === 'delete') {
+            if (action === 'delete' || action === 'hard-delete') {
                 removeUserRow(userId);
             } else {
                 applyUserStatus(userId, !!result.data.is_active);
