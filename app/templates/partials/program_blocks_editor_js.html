@@ -243,10 +243,11 @@ function blockSettingsHTML() {
         + '    <p class="prg-hint">Кого обязать выполнить: не отметили ни одного — обязательно для всех, кому видно.</p>'
         + requiredTariffChecksHTML()
         + '  </div>'
-        + '  <label class="prg-field prg-field--row prg-blk-setting">'
-        + '    <input type="checkbox" data-b-bypass>'
-        + '    <span>Не ждать очереди — доступен, даже если выше есть незакрытое</span>'
-        + '  </label>'
+        // Владелец 15.09.2026: галочку «не ждать очереди» из формы убрали —
+        // преподавателю она не нужна. Поле осталось скрытым, чтобы у блоков,
+        // где флаг уже включён, он не слетал при следующем сохранении:
+        // сервер пишет bypass_sequence из присланного значения.
+        + '  <input type="checkbox" data-b-bypass hidden aria-hidden="true" tabindex="-1" style="display:none">'
         + '</details>';
 }
 

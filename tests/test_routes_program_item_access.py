@@ -217,5 +217,9 @@ def test_day_page_has_access_fields_for_task_and_block(admin_client, db):
 
     assert "data-x-starts" in page.text
     for field in ("data-b-required", "data-b-opens", "data-b-subject",
-                  "data-b-tariff", "data-b-bypass"):
+                  "data-b-tariff"):
         assert field in page.text
+    # bypass_sequence владелец убрал из формы 15.09.2026, но поле осталось
+    # скрытым: без него сервер обнулил бы флаг у блоков, где он уже включён.
+    assert 'data-b-bypass hidden' in page.text
+    assert "Не ждать очереди" not in page.text
