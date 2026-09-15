@@ -299,6 +299,7 @@ FORM: Operate.
             <textarea data-v-description maxlength="5000"
                       aria-label="Описание, необязательно"
                       placeholder="Описание, необязательно"></textarea>
+            <span class="prg-hint">Поддерживается: **жирный**, *курсив*, «- пункт» — список, [текст](https://…) — ссылка.</span>
         </label>
         {% if catalog_videos %}
         <label class="prg-field">
@@ -368,6 +369,7 @@ FORM: Operate.
         <label class="prg-field">
             <textarea data-h-description maxlength="5000"
                       aria-label="Что нужно сделать" placeholder="Что нужно сделать"></textarea>
+            <span class="prg-hint">Поддерживается: **жирный**, *курсив*, «- пункт» — список, [текст](https://…) — ссылка.</span>
         </label>
         <div class="prg-grid2">
             <label class="prg-field prg-field--row">
@@ -416,7 +418,7 @@ FORM: Operate.
             <div>
                 <span class="prg-badge">{{ kind_labels.get(item.kind, item.kind) }}</span>
                 <h3>{{ item.title }}</h3>
-                {% if item.description %}<p>{{ item.description }}</p>{% endif %}
+                {% if item.description %}<p>{{ item.description | rich_text | safe }}</p>{% endif %}
                 <div class="prg-meta">
                     {% if item.subject %}<span>{{ item.subject }}</span>{% endif %}
                     {% if detail.video %}
@@ -571,7 +573,7 @@ FORM: Operate.
             + '  <div class="prg-ticket-content">'
             + '    <div class="prg-thumbs" data-t-thumb></div>'
             + '    <label class="prg-field"><input type="text" data-t-title maxlength="200" autocomplete="off" aria-label="Название билета" placeholder="Название билета"></label>'
-            + '    <label class="prg-field"><textarea data-t-description maxlength="2000" aria-label="Описание задания, необязательно" placeholder="Описание задания, необязательно"></textarea></label>'
+            + '    <label class="prg-field"><textarea data-t-description maxlength="2000" aria-label="Описание задания, необязательно" placeholder="Описание задания, необязательно"></textarea>' + BODY_FORMAT_HINT + '</label>'
             + '  </div>'
             + '</div>';
     }

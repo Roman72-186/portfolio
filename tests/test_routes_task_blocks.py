@@ -376,6 +376,24 @@ def test_blocks_endpoint_shows_content_before_task_done(client, db, user_factory
     assert body["submit_endpoint"] == f"/cabinet/tracker/tasks/{task.id}/blocks"
 
 
+def test_blocks_endpoint_includes_rendered_html_alongside_raw_body(client, db, user_factory, session_factory):
+    """`body_html` — отрендеренная версия для JS (task-blocks-render.js), рядом
+    с сырым `body` для конструктора. Владелец 15.09.2026: жирный/курсив/список/
+    ссылка в тексте задания (app/tmpl.py::format_rich_text)."""
+    staff = user_factory(vk_id=550_302, name="Стафф", is_admin=True, role_name="админ")
+    task = _material_task_with_blocks(
+        db, staff.id,
+        blocks=[{"block_type": BLOCK_TEXT, "body": "**Важно**: сдай до пятницы"}],
+    )
+    _student_client(client, user_factory, session_factory)
+
+    resp = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks")
+    assert resp.status_code == 200
+    block = resp.json()["blocks"][0]
+    assert block["body"] == "**Важно**: сдай до пятницы"
+    assert block["body_html"] == "<strong>Важно</strong>: сдай до пятницы"
+
+
 def test_blocks_endpoint_without_questions_has_no_submit(client, db, user_factory, session_factory):
     staff = user_factory(vk_id=550_302, name="Стафф", is_admin=True, role_name="админ")
     task = _material_task_with_blocks(

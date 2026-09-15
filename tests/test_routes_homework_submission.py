@@ -50,6 +50,22 @@ def test_page_creates_submission_lazily_and_shows_description(auth_client, db):
     assert submission.homework_id == homework.id
 
 
+def test_page_renders_description_formatting_with_link(auth_client, db):
+    """Владелец 15.09.2026: **жирный**/*курсив*/список/ссылка в описании
+    домашки (app/tmpl.py::format_rich_text). Не внутри `<a>`-обёртки, в
+    отличие от карточки видео — ссылка здесь рендерится по-настоящему."""
+    client, user = auth_client
+    task, homework = _homework_task(db, user.id)
+    homework.description = "**Формат:** А4. Пример — [референс](https://example.com)."
+    db.commit()
+
+    resp = client.get(f"/cabinet/homework/{task.id}")
+
+    assert resp.status_code == 200
+    assert "<strong>Формат:</strong>" in resp.text
+    assert '<a href="https://example.com" target="_blank" rel="noopener noreferrer">референс</a>' in resp.text
+
+
 def test_page_is_404_without_addressing(auth_client, db):
     """Задача есть, но не адресована этому ученику (assign_to_all=False, без тегов)."""
     client, user = auth_client

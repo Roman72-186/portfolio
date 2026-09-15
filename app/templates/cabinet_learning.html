@@ -31,7 +31,7 @@
             {{ hint("Здесь только текущая неделя. Весь список того, что нужно сдать, – в «Личном трекере».") }}
         </h1>
         {% if feed.topic and feed.topic.description %}
-        <p>{{ feed.topic.description }}</p>
+        <p>{{ feed.topic.description | rich_text | safe }}</p>
         {% else %}
         <p>Задания идут по порядку: следующее открывается, когда сделано предыдущее.</p>
         {% endif %}
@@ -117,7 +117,7 @@
                     {%- if step.block and step.block.title -%}{{ step.block.title }}
                     {%- else -%}{{ step.task.title }}{%- endif -%}
                 </h3>
-                {% if not step.block and step.task.description %}<p class="lrn-card-note">{{ step.task.description }}</p>{% endif %}
+                {% if not step.block and step.task.description %}<p class="lrn-card-note">{{ step.task.description | rich_text | safe }}</p>{% endif %}
                 {% if step.entry.due_label %}
                 <div class="trk-meta">
                     <span class="{{ 'is-overdue' if step.entry.status == 'overdue' }}">до {{ step.entry.due_label }}</span>

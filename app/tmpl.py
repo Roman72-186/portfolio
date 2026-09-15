@@ -98,20 +98,36 @@ templates.env.filters["timezone_label"] = timezone_label
 
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
 _ITALIC_RE = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", re.DOTALL)
+# Ссылка вида [текст](url) — экранированный текст уже прошёл html.escape(),
+# поэтому здесь ищем &quot;-свободный url в скобках, без вложенных ] или ).
+_LINK_RE = re.compile(r"\[([^\[\]]+)\]\(([^()\s]+)\)")
+_LINK_SAFE_SCHEMES = ("http://", "https://")
 
 
-def format_ticket_description(text: str | None) -> str:
+def _link_sub(match: "re.Match[str]") -> str:
+    label, url = match.group(1), match.group(2)
+    if not url.lower().startswith(_LINK_SAFE_SCHEMES):
+        return match.group(0)
+    return f'<a href="{url}" target="_blank" rel="noopener noreferrer">{label}</a>'
+
+
+def format_rich_text(text: str | None, links: bool = True) -> str:
     """
-    Минимальная разметка для описаний билетов пробников.
+    Минимальная разметка для текстов преподавателя/куратора, которые видит ученик.
 
     Синтаксис:
-      **жирный**      → <strong>
-      *курсив*        → <em>
+      **жирный**       → <strong>
+      *курсив*         → <em>
       строки "- …" или "• …"  → <ul><li>…</li></ul>
-      пустая строка   → разделитель абзацев
-      \\n             → <br>
+      [текст](url)     → <a> (только http/https, иначе остаётся как есть)
+      пустая строка    → разделитель абзацев
+      \\n              → <br>
 
     Принимает plain text (экранируется), возвращает безопасный HTML.
+
+    `links=False` — для мест, где вывод уже сам лежит внутри `<a>` (например
+    строка списка видео, целиком обёрнутая в ссылку на карточку): вложенный
+    `<a>` внутри `<a>` невалиден и ломает кликабельность строки.
     """
     if not text:
         return ""
@@ -138,7 +154,9 @@ def format_ticket_description(text: str | None) -> str:
     flush()
     result = "\n".join(out_lines)
 
-    # Жирный и курсив
+    # Ссылки, жирный и курсив
+    if links:
+        result = _LINK_RE.sub(_link_sub, result)
     result = _BOLD_RE.sub(r"<strong>\1</strong>", result)
     result = _ITALIC_RE.sub(r"<em>\1</em>", result)
 
@@ -148,4 +166,10 @@ def format_ticket_description(text: str | None) -> str:
     return "<br><br>".join(parts)
 
 
-templates.env.filters["ticket_desc"] = format_ticket_description
+# Историческое имя оставлено алиасом — уже используется в шаблонах билетов
+# пробников (superadmin_exam_assignment_detail.html, guest/guest_exam.html)
+# и на клиенте после серверного рендера (upload_mock.html, mock_exam.html).
+format_ticket_description = format_rich_text
+
+templates.env.filters["rich_text"] = format_rich_text
+templates.env.filters["ticket_desc"] = format_rich_text

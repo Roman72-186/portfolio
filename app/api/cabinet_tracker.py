@@ -89,7 +89,7 @@ from app.services.upload_validation import read_image_uploads
 from app.services.utils import compress_image
 from app.services.video_progress import get_video_progress
 from app.services.video_topics import accessible_topic_ids
-from app.tmpl import templates
+from app.tmpl import format_rich_text, templates
 
 router = APIRouter(prefix="/cabinet")
 
@@ -328,6 +328,10 @@ def _submission_payload(db: DBSession, block, user_id: int) -> dict:
         "submitted_comment": submission.comment if submission else None,
         "reviewed": bool(submission and submission.reviewed_at),
         "review_comment": submission.review_comment if submission else None,
+        "review_comment_html": (
+            format_rich_text(submission.review_comment)
+            if submission and submission.review_comment else None
+        ),
     }
 
 
@@ -401,6 +405,7 @@ def cabinet_tracker_task_blocks(
             "block_type": block.block_type,
             "title": block.title,
             "body": block.body,
+            "body_html": format_rich_text(block.body) if block.body else None,
             # Запирается отдельный вопрос, а не форма разом: на пропущенный
             # ученик должен иметь возможность вернуться.
             "answered": block.id in answered_ids,
@@ -443,6 +448,9 @@ def cabinet_tracker_task_blocks(
                     "id": o.id,
                     "text": o.text,
                     "description": o.description,
+                    "description_html": (
+                        format_rich_text(o.description) if o.description else None
+                    ),
                     "scale_min_label": o.scale_min_label,
                     "scale_max_label": o.scale_max_label,
                 }

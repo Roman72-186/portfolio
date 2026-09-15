@@ -43,7 +43,7 @@
             <div>
                 <h2 class="video-row-title">{{ item.video.title }}</h2>
                 {% if item.video.description %}
-                <p class="video-row-description">{{ item.video.description }}</p>
+                <p class="video-row-description">{{ item.video.description | rich_text(links=False) | safe }}</p>
                 {% endif %}
             </div>
             {% if item.state == 'completed' %}

@@ -28,7 +28,7 @@ app/static/css/homework_ios.css, переопределяющем эти общ�
 
     <div class="card hw-card">
         <div class="card-title">Задание</div>
-        {% if homework.description %}<p class="card-desc">{{ homework.description }}</p>{% endif %}
+        {% if homework.description %}<p class="card-desc">{{ homework.description | rich_text | safe }}</p>{% endif %}
         {% if reference_images %}
         <div class="photo-grid" data-gallery="hw-ref-{{ task.id }}">
             {% for img in reference_images %}

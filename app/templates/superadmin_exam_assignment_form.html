@@ -221,7 +221,8 @@ function buildTicketHTML(n) {
 
         // Description
         + '<div class="field"><label>Описание задания</label>'
-        + '<textarea name="ticket_' + n + '_description" data-ticket="description" placeholder="Опишите условия задания подробно…" maxlength="2000"></textarea></div>'
+        + '<textarea name="ticket_' + n + '_description" data-ticket="description" placeholder="Опишите условия задания подробно…" maxlength="2000"></textarea>'
+        + '<div class="field-hint">Поддерживается разметка: **жирный**, *курсив*, «- пункт» — список, [текст](https://…) — ссылка.</div></div>'
 
         // Image upload
         + '<div class="field"><label>Фото задания</label>'

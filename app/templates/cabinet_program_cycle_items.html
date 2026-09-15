@@ -29,7 +29,7 @@
     <div class="prg-head">
         <div class="prg-head-copy">
             <h1>{{ cycle_label }}</h1>
-            {% if topic.description %}<p>{{ topic.description }}</p>{% endif %}
+            {% if topic.description %}<p>{{ topic.description | rich_text | safe }}</p>{% endif %}
             <p class="prg-hint" data-role-note>
                 {# TODO(владелец): пояснение о смысле цикла — формулировка ещё
                    не дана, не придумывать самостоятельно (10.09.2026). #}
@@ -69,6 +69,7 @@
             <textarea data-item-description maxlength="5000"
                       aria-label="Описание, необязательно"
                       placeholder="Описание, необязательно"></textarea>
+            <span class="prg-hint">Поддерживается: **жирный**, *курсив*, «- пункт» — список, [текст](https://…) — ссылка.</span>
         </label>
         <label class="prg-field prg-field--row">
             <input type="checkbox" data-item-required checked>
@@ -113,7 +114,7 @@
         <article class="prg-item" data-item-id="{{ item.id }}">
             <div>
                 <h3>{{ item.title }}</h3>
-                {% if item.description %}<p>{{ item.description }}</p>{% endif %}
+                {% if item.description %}<p>{{ item.description | rich_text | safe }}</p>{% endif %}
                 {% if item.subject %}<span class="prg-badge">{{ item.subject }}</span>{% endif %}
             </div>
             <div class="prg-item-actions">

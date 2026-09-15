@@ -30,6 +30,16 @@
         return node;
     }
 
+    // Только для *_html-полей — сервер уже прогнал текст через
+    // app.tmpl.format_rich_text (html.escape + безопасная разметка),
+    // сырой пользовательский ввод сюда не должен попадать (app/tmpl.py).
+    function elHtml(tag, className, html) {
+        var node = document.createElement(tag);
+        if (className) node.className = className;
+        node.innerHTML = html || '';
+        return node;
+    }
+
     window.lrnBlockRender = {
         el: el,
         create: function (options) {
@@ -49,7 +59,7 @@
 
             function renderText(block) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-text'), block);
-                wrap.appendChild(el('p', 'lrn-blk-body', block.body || ''));
+                wrap.appendChild(elHtml('p', 'lrn-blk-body', block.body_html || ''));
                 return wrap;
             }
 
@@ -95,7 +105,7 @@
 
                 var urls = (block.images || []).map(function (image) { return image.url; });
                 wrap.appendChild(photoGallery(urls, block.title || 'Изображение к заданию'));
-                if (block.body) wrap.appendChild(el('p', 'video-help', block.body));
+                if (block.body_html) wrap.appendChild(elHtml('p', 'video-help', block.body_html));
 
                 wireBlockCheck(check, block.confirm_endpoint, block);
                 return wrap;
@@ -110,7 +120,7 @@
                 a.target = '_blank';
                 a.rel = 'noopener noreferrer';
                 wrap.appendChild(a);
-                if (block.body) wrap.appendChild(el('p', 'video-help', block.body));
+                if (block.body_html) wrap.appendChild(elHtml('p', 'video-help', block.body_html));
                 return wrap;
             }
 
@@ -279,7 +289,7 @@
             // содержимого у блока нет — только заголовок, пояснение и кнопка.
             function renderPortfolio(block) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-portfolio'), block);
-                if (block.body) wrap.appendChild(el('p', 'lrn-blk-body', block.body));
+                if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-body', block.body_html));
                 var a = el('a', 'btn-blue', 'Загрузить портфолио');
                 a.href = block.upload_url || '/upload';
                 wrap.appendChild(a);
@@ -312,7 +322,7 @@
             // на сервер.
             function renderScale(block, index) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-scale'), block);
-                if (block.body) wrap.appendChild(el('p', 'lrn-blk-question-body', block.body));
+                if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-question-body', block.body_html));
                 var min = typeof block.scale_min === 'number' ? block.scale_min : 0;
                 var max = block.scale_max || 10;
                 var saved = block.answer_option_texts || {};
@@ -321,8 +331,8 @@
                 (block.options || []).forEach(function (option, oi) {
                     var row = el('div', 'lrn-scale-row');
                     row.appendChild(el('span', 'lrn-scale-name', option.text));
-                    if (option.description) {
-                        row.appendChild(el('p', 'trk-hint', option.description));
+                    if (option.description_html) {
+                        row.appendChild(elHtml('p', 'trk-hint', option.description_html));
                     }
                     var control = el('div', 'lrn-scale-control');
                     var input = el('input', 'lrn-scale-input');
@@ -504,8 +514,8 @@
                 if (block.reviewed) {
                     wrap.appendChild(el('p', 'lrn-blk-verdict is-ok', '✓ Работу проверил куратор'));
                 }
-                if (block.review_comment) {
-                    wrap.appendChild(el('p', 'video-help', block.review_comment));
+                if (block.review_comment_html) {
+                    wrap.appendChild(elHtml('p', 'video-help', block.review_comment_html));
                 }
 
                 var left = (block.max_files || 10) - (block.submitted_files || []).length;
@@ -585,7 +595,7 @@
             // Блок «Загрузить работы» — приём файлов на месте.
             function renderUpload(block) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-upload-block'), block);
-                if (block.body) wrap.appendChild(el('p', 'lrn-blk-body', block.body));
+                if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-body', block.body_html));
                 if (block.done) {
                     wrap.appendChild(el('p', 'lrn-blk-verdict is-ok', '✓ Работа сдана'));
                 }
@@ -603,7 +613,7 @@
                 if (urls.length) {
                     wrap.appendChild(photoGallery(urls, block.title || 'Изображение к заданию'));
                 }
-                if (block.body) wrap.appendChild(el('p', 'lrn-blk-body', block.body));
+                if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-body', block.body_html));
                 if (block.done) {
                     wrap.appendChild(el('p', 'lrn-blk-verdict is-ok', '✓ Работа сдана'));
                 }
@@ -616,7 +626,7 @@
             // сдать — оно только видно.
             function renderTimed(block) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-timed'), block);
-                if (block.body) wrap.appendChild(el('p', 'lrn-blk-body', block.body));
+                if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-body', block.body_html));
                 var limit = block.time_limit_minutes;
                 if (limit) {
                     wrap.appendChild(el('p', 'video-help', 'На работу отводится ' + limit + ' мин.'));
@@ -682,7 +692,7 @@
                 var fieldId = 'lrn-blk-' + api.uid + '-' + index;
                 // Это сам вопрос, а не подпись поля — field-label занижал его
                 // до заголовка блока, хотя это главный текст (ревью 03.09.2026).
-                var label = el('label', 'lrn-blk-question-body', block.body || '');
+                var label = elHtml('label', 'lrn-blk-question-body', block.body_html || '');
                 label.setAttribute('for', fieldId);
                 wrap.appendChild(label);
 
@@ -728,7 +738,7 @@
             // получали розовую полосу вопроса и в ленте от него не отличались.
             function renderRules(block, index) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-rules'), block);
-                if (block.body) wrap.appendChild(el('p', 'lrn-blk-question-body', block.body));
+                if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-question-body', block.body_html));
                 var chosen = block.answer_option_ids || [];
                 var locked = api.answered || !!block.answered;
                 (block.options || []).forEach(function (option, oi) {

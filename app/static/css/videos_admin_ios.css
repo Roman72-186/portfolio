@@ -71,6 +71,9 @@
 .ios-videos-admin .vam-field input:focus, .ios-videos-admin .vam-field textarea:focus {
     outline: none; box-shadow: 0 0 0 2px var(--ios-blue);
 }
+/* .vam-field — сам label, поэтому uppercase/letter-spacing иначе унаследует
+   и подсказка синтаксиса разметки под textarea (owner 15.09.2026). */
+.ios-videos-admin .vam-field .field-hint { text-transform: none; letter-spacing: normal; }
 .ios-videos-admin .vam-file-note { margin: 6px 0 0; color: var(--ios-label-3); font: 400 12px/1.45 var(--ios-font); }
 .ios-videos-admin .vam-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
 .ios-videos-admin .vam-actions button { min-height: 44px; }
@@ -133,6 +136,9 @@
 .ios-videos-admin .vam-edit { margin-top: 12px; border-top: 0.5px solid var(--ios-sep); padding-top: 12px; }
 .ios-videos-admin .vam-edit summary { cursor: pointer; color: var(--ios-blue); font: 600 12px/1 var(--ios-font); }
 .ios-videos-admin .vam-edit-fields { display: grid; grid-template-columns: 1fr 1.4fr auto; gap: 10px; align-items: end; margin-top: 10px; }
+/* Описание с подсказкой синтаксиса стало выше однострочных полей ряда —
+   растягиваем на всю ширину, тот же приём, что у vam-quiz-field ниже. */
+.ios-videos-admin .vam-edit-fields label:has(textarea) { grid-column: 1 / -1; }
 /* Конструктор мини-опроса — вопросы прибавляются по одному кнопкой «+»
    (владелец 29.08.2026, было ровно три фиксированных поля). Растягивается на
    всю ширину `.vam-edit-fields`, иначе его строкам некуда деться внутри

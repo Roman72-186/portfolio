@@ -37,6 +37,7 @@ FORM: Operate, расширение существующего кабинета 
                 </label>
                 <label class="vam-field">Описание
                     <textarea id="video-description" maxlength="5000" placeholder="Коротко: о чём этот урок"></textarea>
+                    <div class="field-hint">Поддерживается разметка: **жирный**, *курсив*, «- пункт» — список, [текст](https://…) — ссылка.</div>
                 </label>
                 <label class="vam-field">Обложка, необязательно
                     <input id="video-cover" type="file" accept="image/*">
@@ -110,7 +111,9 @@ FORM: Operate, расширение существующего кабинета 
                     <summary>Изменить название, описание и тему</summary>
                     <div class="vam-edit-fields">
                         <label class="vam-field">Название<input data-edit-title value="{{ video.title }}" maxlength="200"></label>
-                        <label class="vam-field">Описание<input data-edit-description value="{{ video.description or '' }}" maxlength="5000"></label>
+                        <label class="vam-field">Описание<textarea data-edit-description maxlength="5000">{{ video.description or '' }}</textarea>
+                            <div class="field-hint">Поддерживается разметка: **жирный**, *курсив*, «- пункт» — список, [текст](https://…) — ссылка.</div>
+                        </label>
                         {# Мини-опрос отсюда убран 31.08.2026: вопросы стали
                            блоками задания и настраиваются в дне программы, а
                            не на самом ролике. #}

@@ -38,6 +38,7 @@
             <textarea data-c-description maxlength="5000"
                       aria-label="Описание, необязательно"
                       placeholder="Описание, необязательно"></textarea>
+            <span class="prg-hint">Поддерживается: **жирный**, *курсив*, «- пункт» — список, [текст](https://…) — ссылка.</span>
         </label>
         <div class="prg-grid2">
             <label class="prg-field">
@@ -68,7 +69,7 @@
             <div>
                 <span class="prg-badge">{{ 'Виден ученикам' if cycle.is_published else 'Скрыт' }}</span>
                 <h3>{{ cycle.label }}</h3>
-                {% if cycle.description %}<p>{{ cycle.description }}</p>{% endif %}
+                {% if cycle.description %}<p>{{ cycle.description | rich_text | safe }}</p>{% endif %}
                 <div class="prg-meta">
                     <span>с {{ cycle.starts_on }}</span>
                     {% if cycle.ends_on %}

@@ -84,7 +84,7 @@ FORM: Operate, список, а не карточка-витрина.
                 {% if entry.task.subject %}<span class="trk-badge trk-badge--kind">{{ entry.task.subject }}</span>{% endif %}
             </div>
             <h3>{{ entry.task.title }}</h3>
-            {% if entry.task.description %}<p>{{ entry.task.description }}</p>{% endif %}
+            {% if entry.task.description %}<p>{{ entry.task.description | rich_text | safe }}</p>{% endif %}
             <div class="trk-meta"><span class="is-overdue">{% if entry.day %}до {{ entry.day.strftime('%d.%m') }}, {{ entry.due_label }}{% else %}без даты{% endif %}</span></div>
         </div>
         <div class="trk-row-actions">
@@ -112,7 +112,7 @@ FORM: Operate, список, а не карточка-витрина.
                 {% if entry.task.subject %}<span class="trk-badge trk-badge--kind">{{ entry.task.subject }}</span>{% endif %}
             </div>
             <h3>{{ entry.task.title }}</h3>
-            {% if entry.task.description %}<p>{{ entry.task.description }}</p>{% endif %}
+            {% if entry.task.description %}<p>{{ entry.task.description | rich_text | safe }}</p>{% endif %}
             <div class="trk-meta"><span>{% if entry.day %}до {{ entry.day.strftime('%d.%m') }}, {{ entry.due_label }}{% else %}без даты{% endif %}</span></div>
         </div>
         <div class="trk-row-actions">
@@ -155,7 +155,7 @@ FORM: Operate, список, а не карточка-витрина.
     <div class="trk-row trk-goal-card">
         <div>
             <h3>{{ goal.title }}</h3>
-            {% if goal.description %}<p>{{ goal.description }}</p>{% endif %}
+            {% if goal.description %}<p>{{ goal.description | rich_text | safe }}</p>{% endif %}
             <div class="trk-meta">
                 {% if goal.starts_on and goal.ends_on %}
                 <span>{{ goal.starts_on.strftime('%d.%m') }} — {{ goal.ends_on.strftime('%d.%m.%Y') }}</span>

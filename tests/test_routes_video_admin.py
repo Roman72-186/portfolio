@@ -302,6 +302,35 @@ def test_publish_and_student_catalogue_use_local_source_of_truth(
     assert "Опубликованный урок" not in catalogue.text
 
 
+def test_catalogue_renders_description_formatting_without_nested_link(
+    admin_client, db, monkeypatch
+):
+    """Владелец 15.09.2026: **жирный**/*курсив*/список рендерятся в описании
+    видео (app/tmpl.py::format_rich_text). Ссылки здесь намеренно выключены
+    (`rich_text(links=False)`, cabinet_videos.html) — вся строка уже лежит
+    внутри своего `<a class="video-row">`, вложенный `<a>` невалиден и ломает
+    клик по карточке."""
+    _configure_upload(monkeypatch)
+    client, admin = admin_client
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Урок с разметкой",
+        status="ready",
+        is_published=False,
+        description="**Важно**: посмотри до конца, см. [запись созвона](https://example.com)",
+    )
+    db.add(video)
+    db.commit()
+    client.post(f"/cabinet/admin/videos/{video.id}/publish", json={})
+
+    catalogue = client.get("/cabinet/videos")
+    assert catalogue.status_code == 200
+    assert "<strong>Важно</strong>" in catalogue.text
+    assert "<a href=\"https://example.com\"" not in catalogue.text
+    assert "[запись созвона](https://example.com)" in catalogue.text
+
+
 def test_admin_creates_and_publishes_topic(admin_client, db, monkeypatch):
     """Блок «Темы недели» убран со страницы 27.08.2026, маршруты остались.
 
