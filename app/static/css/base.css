@@ -688,6 +688,73 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 }
 .back-link:hover { color: var(--blue); opacity: 1; }
 
+/* Возврат в АОП на мобилке (шаблон partials/back_to_learning, владелец
+   15.09.2026) — фиксированная кнопка в верхнем левом углу каждого экрана
+   ученика. До неё выход в «Обучение» был только через бургер внизу: два тапа
+   вместо одного, а на под-экранах (сдача работы, видео, загрузка фото) ещё и
+   неочевидно, что бургер вообще откроется на нужный пункт.
+
+   Отличается от .back-link по задаче, а не по виду: .back-link стоит в потоке
+   контента и ведёт на предыдущий экран цепочки, эта кнопка всегда висит
+   поверх страницы и всегда ведёт в одно место — домой.
+
+   Место под неё резервируем padding'ом .main, а не отступом в каждом шаблоне.
+   Зацепка — класс `has-learning-back`, который партиал вешает на body сам:
+   там, где он себя не вывел (сам АОП, истёкший доступ, не-ученик), класса
+   нет и вёрстка остаётся прежней. Не `body:has(...)` — :has() не понимают
+   старые мобильные браузеры, а это правило несёт вёрстку, и его отказ клал
+   бы кнопку на первый заголовок экрана.
+
+   z-index 95 — ниже бургера и лайтбокса (оба 100): у кнопки свой угол экрана,
+   перекрывать просмотр фото или открытое меню ей незачем. */
+.learning-back {
+    position: fixed;
+    top: calc(12px + env(safe-area-inset-top, 0px));
+    left: 16px;
+    z-index: 95;
+    display: none;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 16px 0 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-pill);
+    background: var(--surface);
+    box-shadow: var(--sh-sm);
+    color: var(--text);
+    font-size: 13px; font-weight: 700;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: background var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+.learning-back:hover { background: var(--surface-2); }
+.learning-back:active { transform: scale(.97); }
+.learning-back:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.learning-back svg { display: block; flex-shrink: 0; color: var(--blue); }
+
+/* Граница 1023px, а не 768px: бургер ученика живёт до той же ширины
+   (bottom_nav_burger.css), с 1024px включается десктопный сайдбар, где пункт
+   «Обучение» и так на виду. */
+@media (max-width: 1023px) {
+    .learning-back { display: inline-flex; }
+    body.has-learning-back .main { padding-top: 68px; }
+    /* Часть экранов держит собственную ссылку «← Кабинет» в начале контента,
+       и ведёт она туда же: /cabinet у ученика редиректом уходит на
+       /cabinet/learning (api/cabinet.py, ROLE_CABINET_MAP). Рядом с кнопкой
+       это две стрелки назад в одно место — вторую на мобилке убираем.
+       Правилом по href, а не правкой шаблонов: под него попадает и
+       динамический back_url, когда он указывает на АОП. Десктоп не трогаем —
+       там кнопки нет, ссылка остаётся единственным выходом. */
+    body.has-learning-back .back-link[href="/cabinet/learning"],
+    body.has-learning-back .back-link[href="/cabinet"] { display: none; }
+}
+
+/* Узкий экран: .main сужает боковой отступ до 12px — кнопка идёт следом,
+   иначе её левый край не совпадает с краем карточек под ней. */
+@media (max-width: 480px) {
+    .learning-back { left: 12px; }
+}
+
 /* Native trigger for image lightboxes. Keeps gallery thumbnails keyboard-accessible. */
 .photo-zoom-button {
     display: block; max-width: 100%; padding: 0; border: 0;

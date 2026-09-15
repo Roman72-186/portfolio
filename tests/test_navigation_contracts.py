@@ -5,6 +5,8 @@ They guard against accidentally turning different role menus into one shared
 list or changing the role dispatcher while extracting navigation helpers.
 """
 
+import io
+
 import pytest
 
 
@@ -245,3 +247,66 @@ def test_cycle_calendar_exactly_one_nav_per_role(
     else:
         assert 'aria-label="Меню персонала"' in resp.text
         assert 'aria-label="Меню куратора"' not in resp.text
+
+
+# ── Кнопка возврата в АОП на мобилке (partials/back_to_learning.html) ──────
+
+
+BACK_MARKER = 'class="learning-back"'
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/cabinet/tracker", "/cabinet/portfolio", "/cabinet/personal", "/cabinet/notifications"],
+)
+def test_student_screens_have_back_to_learning(client, session_factory, user_factory, path):
+    """Кнопка приходит вместе с partials/bottom_nav.html, то есть на любом
+    экране кабинета ученика без правки самого экрана."""
+    student = user_factory(vk_id=304001, name="Back Nav Student", role_name="ученик")
+    _login_as(client, session_factory, student)
+
+    resp = client.get(path)
+
+    assert resp.status_code == 200
+    assert BACK_MARKER in resp.text
+    assert 'href="/cabinet/learning"' in resp.text
+
+
+def test_learning_itself_has_no_back_to_learning(client, session_factory, user_factory):
+    """На самом АОП кнопки нет — она вела бы на текущую страницу."""
+    student = user_factory(vk_id=304002, name="Back Nav Learning", role_name="ученик")
+    _login_as(client, session_factory, student)
+
+    resp = client.get("/cabinet/learning")
+
+    assert resp.status_code == 200
+    assert BACK_MARKER not in resp.text
+
+
+def test_submission_screen_keeps_back_to_learning(auth_client, db):
+    """Экран сдачи работы ставит active_tab = "learning" ради подсветки пункта в
+    бургере, оставаясь отдельной страницей: видимость кнопки сверяется с путём
+    запроса, а не с active_tab, иначе она пропала бы там, где нужнее всего."""
+    from app.models.tracker import ITEM_HOMEWORK, SOURCE_HOMEWORK
+    from app.services.tracker import create_homework, create_task
+
+    client, user = auth_client
+    homework = create_homework(
+        db, title="Нарисуй куб", user_id=user.id,
+        description="Со всех сторон, карандашом.", submission_required=True, max_files=1,
+    )
+    task = create_task(
+        db, title="Нарисуй куб", user_id=user.id, kind=ITEM_HOMEWORK,
+        source_kind=SOURCE_HOMEWORK, source_id=homework.id, assign_to_all=True,
+    )
+    task.is_published = True
+    db.commit()
+    db.refresh(task)
+
+    resp = client.get(f"/cabinet/homework/{task.id}")
+
+    assert resp.status_code == 200
+    assert 'set active_tab = "learning"' in io.open(
+        "app/templates/homework_submission.html", encoding="utf-8"
+    ).read()
+    assert BACK_MARKER in resp.text
