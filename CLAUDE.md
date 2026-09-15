@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Ядро проекта и критичные правила инфраструктуры — в `../AGENTS.md` (родительский `../CLAUDE.md` — только указатель на него). Архитектура, RBAC, модели, интеграции и устройство тестов — в `../docs/architecture.md`, читать по требованию. Стиль кода и правила PR — в соседнем `AGENTS.md`. Дизайн-система и Spark-классы — в `DESIGN.md`.
 
-Перед правкой роута, сервиса или модели — `.codegraph/` (индексированный граф кода): `codegraph_explore`/`codegraph_search` находят определение и использования, `codegraph_impact`/`codegraph_callers` показывают, что сломается. Индекс обновляется сам.
+Перед правкой роута, сервиса или модели — `.codegraph/` (индексированный граф кода), через CLI: `codegraph sync` первым, затем `codegraph query`/`codegraph impact`/`codegraph callers`. MCP-инструментов `codegraph_*` нет — раздел «Codegraph» в `../AGENTS.md`.
 
 ## Quick commands (run from this directory)
 
