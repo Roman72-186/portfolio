@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Циклы программы{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=24">
+<link rel="stylesheet" href="/static/css/program.css?v=25">
 {% endblock %}
 {% block content %}
 {#
@@ -78,11 +78,19 @@
                     {% endif %}
                 </div>
             </div>
+            {# Названия кнопок — отзыв с теста 15.09.2026: «чем задания отличаются
+               от править, если и то, и то ведёт в изменение блока». Каждая
+               кнопка теперь называет предмет, а не действие: «Задания» —
+               содержимое цикла, «Название и даты» — сама эта карточка.
+               «Прохождение» читалось как «пройти цикл глазами ученика», хотя
+               там статистика — отсюда «Статистика». Заход в задания
+               главный (туда же уводит сохранение нового цикла), поэтому он
+               синий, а не третья одинаковая рамка. #}
             <div class="prg-item-actions">
-                <a class="btn-outline" href="/cabinet/staff/program/cycles/{{ cycle.id }}">Задания</a>
-                <a class="btn-outline" href="/cabinet/staff/program/cycles/{{ cycle.id }}/stats">Прохождение</a>
+                <a class="btn-blue" href="/cabinet/staff/program/cycles/{{ cycle.id }}">Задания</a>
+                <a class="btn-outline" href="/cabinet/staff/program/cycles/{{ cycle.id }}/stats">Статистика</a>
                 <button type="button" class="btn-outline" data-cycle-edit
-                        data-payload='{{ cycle|tojson }}'>Править</button>
+                        data-payload='{{ cycle|tojson }}'>Название и даты</button>
             </div>
         </article>
         {% endfor %}
@@ -131,7 +139,10 @@
             fields.start.value = data.starts_on || '';
             fields.end.value = data.ends_on || '';
             fields.published.checked = !!data.is_published;
-            formTitle.textContent = 'Правка цикла';
+            // Заголовок формы повторяет текст кнопки: человек нажал «Название и
+            // даты» и должен увидеть его же там, куда его перебросило (отзыв с
+            // теста 15.09.2026 — «я не поняла, куда мне жать»).
+            formTitle.textContent = 'Название и даты';
             resetBtn.hidden = false;
             form.scrollIntoView({ block: 'start' });
         });

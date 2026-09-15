@@ -112,7 +112,18 @@
 .prg-item h3 { margin: 6px 0 4px; font: 700 15px/1.35 var(--font-display); color: var(--text); }
 .prg-item p { margin: 0 0 6px; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .prg-meta { display: flex; flex-wrap: wrap; gap: 7px 12px; color: var(--muted); font-size: 12px; }
-.prg-item-actions button { min-height: 36px; padding: 7px 12px; font-size: 12px; }
+/* Своего display у блока действий не было: на широком экране кнопки стояли в
+   строку сами собой, а на телефоне `.prg-item` схлопывается в одну колонку
+   (медиазапрос ниже), кнопки переносятся обычным потоком — и третья липнет к
+   первым двум без отступа (отзыв с теста 15.09.2026: «тут слипаются
+   кнопочки»). Чиним в общем классе, а не на одном экране: блок действий есть
+   на семи экранах программы и проверки. */
+.prg-item-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+/* Размер задавался только тегу button, и ссылки-кнопки рядом выходили крупнее
+   соседней кнопки в той же строке. */
+.prg-item-actions button,
+.prg-item-actions .btn-outline,
+.prg-item-actions .btn-blue { min-height: 36px; padding: 7px 12px; font-size: 12px; }
 
 .prg-badge {
     display: inline-flex; align-items: center; min-height: 24px; padding: 3px 9px;
@@ -149,6 +160,11 @@
 .prg-page--point-a .prg-item-copy,
 .prg-page--point-a .prg-item-actions { min-width: 0; }
 .prg-page--point-a .prg-item-actions form { display: grid; gap: 8px; justify-items: start; }
+/* Здесь балл и «Сохранить» стоят друг под другом, а не в строку: общий блок
+   действий стал flex-строкой (15.09.2026), и на этом экране поле с кнопкой
+   поехали в один ряд с названием работы. Возвращаем колонку — но уже с
+   отступом между строками. */
+.prg-page--point-a .prg-item-actions { display: grid; gap: 8px; justify-items: start; }
 .prg-page--point-a .prg-field--row { flex-wrap: wrap; }
 .prg-page--point-a .prg-field--row input { width: 88px; }
 
