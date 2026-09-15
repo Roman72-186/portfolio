@@ -32,12 +32,15 @@ DOMAIN_EXAM_CYCLE = "exam_cycle"
 # домен, а не строка внутри DOMAIN_TASK_BLOCK: там ответы на вопросы, тут
 # файлы, и «проверено» у них снимается разными действиями куратора.
 DOMAIN_BLOCK_WORK = "block_work"
-# Точка А — набор работ «До» целиком, с одной общей оценкой Главного
-# преподавателя (владелец 09.09.2026: «оценку должен ГП ставит общую по всем
-# работам, не для каждой»). Свой домен, а не строка в DOMAIN_WORK: там
-# оценивается отдельная работа, здесь — весь стартовый набор ученика, и
-# сущности под эту оценку нет вовсе, она лежит колонкой на ученике.
-DOMAIN_PORTFOLIO_BEFORE = "portfolio_before"
+
+# Домена «точка А» здесь больше нет (15.09.2026). С 09.09.2026 набор работ
+# «До» показывался карточкой прямо в этом списке, и балл за него ставился
+# отсюда. Теперь у точки А свой экран — `/cabinet/staff/point-a`, где рядом
+# стоят ещё пять элементов входной оценки (пробники, контрольные, портфолио
+# «После»), и две точки простановки одного балла были бы дублем. Сам балл
+# по-прежнему пишет `student_review.py::score_portfolio_before` — эндпоинт
+# остался на своём URL вместе со своими тестами, экран точки А шлёт запрос
+# туда же. Подробности решения — докстринг `app/services/point_a.py`.
 
 # С этого ранга видно всех учеников без ограничения по curator_id. Ранг 3
 # (модератор) попадает под то же ограничение, что куратор — владелец про
@@ -70,12 +73,9 @@ class ReviewItem:
     chosen: list[str] | None = None
     correct: list[str] | None = None
     text: str | None = None
-    # Файлы сданной работы — у `block_work` и `portfolio_before`: проверяющий
-    # смотрит их прямо в карточке, отдельного экрана у этих доменов нет.
+    # Файлы сданной работы — у `block_work`: проверяющий смотрит их прямо в
+    # карточке, отдельного экрана у этого домена нет.
     images: list[str] | None = None
-    # Текущая оценка — только у `portfolio_before`: форма балла стоит в самой
-    # карточке, ей нужно показать уже выставленное значение.
-    score: int | None = None
 
 
 def _task_block_items(
@@ -292,118 +292,6 @@ def _block_work_items(
     return items
 
 
-def _portfolio_before_items(
-    db: DBSession,
-    *,
-    curator_id: int | None = None,
-    student_id: int | None = None,
-    subject: str | None = None,
-    tariff: str | None = None,
-    week_start: datetime | None = None,
-    week_end: datetime | None = None,
-    role_rank: int = 0,
-) -> list[ReviewItem]:
-    """Набор работ «До» с одной общей оценкой — «точка А».
-
-    Только для Главного преподавателя (`FULL_ACCESS_RANK`): владелец 09.09.2026
-    на вопрос «кто ставит оценку» ответил «только Главный преподаватель», и
-    куратору эта строка не нужна ни в списке, ни в счётчике непроверенного.
-
-    Карточка существует, только если у ученика есть хотя бы одна успешная
-    работа «До»: иначе каждый новичок висел бы у ГП вечным «непроверено» без
-    способа снять.
-
-    Неделю обходим намеренно. Работы «До» ученик грузит один раз в
-    предобучении, и обычный недельный фильтр спрятал бы карточку из очереди
-    уже на следующей неделе — оценить её стало бы негде. Поэтому:
-    неоценённый набор виден в любой неделе, оценённый — только в неделе,
-    когда балл выставили (его естественный якорь даты, как `created_at` у
-    остальных доменов).
-
-    `subject` не применяется: оценка общая по всем работам, а `subject` у
-    работ «До» почти всегда пуст — фильтр по предмету просто прятал бы
-    карточку.
-    """
-    from app.models.user import User
-    from app.models.work import WORK_TYPE_BEFORE, Work
-    from sqlalchemy import func
-
-    if role_rank < FULL_ACCESS_RANK:
-        return []
-
-    q = (
-        db.query(
-            User,
-            func.count(Work.id).label("works_count"),
-            func.max(Work.created_at).label("last_upload_at"),
-        )
-        .join(Work, Work.user_id == User.id)
-        .filter(
-            Work.work_type == WORK_TYPE_BEFORE,
-            Work.status == "success",
-            User.is_active == True,  # noqa: E712
-        )
-        .group_by(User.id)
-    )
-    if curator_id is not None:
-        q = q.filter(User.curator_id == curator_id)
-    if student_id is not None:
-        q = q.filter(User.id == student_id)
-    if tariff:
-        q = q.filter(User.tariff == tariff)
-
-    items = []
-    for student, works_count, last_upload_at in q.all():
-        if not works_count:
-            continue
-        scored_at = student.portfolio_before_scored_at
-        is_reviewed = student.portfolio_before_score is not None
-        if is_reviewed:
-            if week_start is not None and (scored_at is None or scored_at < week_start):
-                continue
-            if week_end is not None and (scored_at is None or scored_at >= week_end):
-                continue
-        images = None
-        if student_id is not None:
-            # Фотографии нужны только в карточке одного ученика: на списке со
-            # счётчиками их никто не показывает, а запрос там идёт по всем.
-            images = [
-                url for (url,) in (
-                    db.query(Work.s3_url)
-                    .filter(
-                        Work.user_id == student.id,
-                        Work.work_type == WORK_TYPE_BEFORE,
-                        Work.status == "success",
-                        Work.s3_url.isnot(None),
-                    )
-                    .order_by(Work.created_at.desc())
-                    .limit(50)
-                    .all()
-                )
-            ]
-        # Дата приходит из агрегата `max(Work.created_at)`, а не с ORM-объекта:
-        # хук conftest, который навешивает UTC при загрузке, её не касается, и
-        # в SQLite она наивная. `student_review_items` сортирует все домены
-        # одним ключом — наивное значение уронило бы сортировку по TypeError
-        # (та же поломка, что уже чинили у циклов Пробника ниже).
-        submitted_at = scored_at or last_upload_at
-        if isinstance(submitted_at, datetime) and submitted_at.tzinfo is None:
-            submitted_at = submitted_at.replace(tzinfo=timezone.utc)
-        items.append(ReviewItem(
-            domain=DOMAIN_PORTFOLIO_BEFORE,
-            item_id=student.id,
-            student_id=student.id,
-            title=f"Портфолио «До» — точка А ({works_count} фото)",
-            subject=None,
-            submitted_at=submitted_at,
-            is_reviewed=is_reviewed,
-            review_url="",
-            images=images,
-            score=student.portfolio_before_score,
-        ))
-    return items
-
-
 def _exam_cycle_items(
     db: DBSession,
     *,
@@ -511,16 +399,15 @@ def _unreviewed_counts_by_student(
     написаны и протестированы — второй параллельный набор запросов ради
     счётчика того не стоит.
 
-    `role_rank` прокидывается в адаптеры: у домена «точка А» он решает саму
-    видимость строки (её ставит только Главный преподаватель). Без него
-    счётчик у ГП недосчитывал бы ровно этот домен.
+    `role_rank` прокидывается в адаптеры: по нему цикл Пробника выбирает, на
+    какой из трёх диалогов вести ссылку (`/cabinet/curator|admin|superadmin`).
     """
     from collections import Counter
 
     counts: Counter[int] = Counter()
     for adapter in (
         _task_block_items, _work_items, _homework_items, _exam_cycle_items,
-        _block_work_items, _portfolio_before_items,
+        _block_work_items,
     ):
         for item in adapter(db, curator_id=curator_id, role_rank=role_rank):
             if not item.is_reviewed:
@@ -577,7 +464,7 @@ def student_review_items(
     items: list[ReviewItem] = []
     for adapter in (
         _task_block_items, _work_items, _homework_items, _exam_cycle_items,
-        _block_work_items, _portfolio_before_items,
+        _block_work_items,
     ):
         items.extend(adapter(
             db, curator_id=curator_id, student_id=student_id,

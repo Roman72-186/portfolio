@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{#
+Карточка ученика на экране «Оценка точки А» (Лиза 14.09.2026): плашки идут
+сверху вниз ровно в порядке эскиза — пробники, оба портфолио, контрольные.
+Внутри плашки работы сеткой, клик открывает слайдер (partials/lightbox.html),
+внизу плашки поле балла.
+
+Балл ставится тремя разными путями, и это осознанно, а не недоделка:
+- работы (пробник, контрольная) — обычной формой на существующий
+  POST /cabinet/admin/works/{id}/score, он же шлёт ученику уведомление;
+- портфолио «До» — существующим JSON-эндпоинтом экрана проверки;
+- портфолио «После» — парным JSON-эндпоинтом этого экрана.
+Копии логики простановки здесь нет: она разошлась бы с оригиналом молча.
+
+Без своего <style> — только prg-* (program.css) и глобальные классы base.css
+(photo-grid): новый блок стилей запрещает tests/test_reuse_ratchet.py.
+#}
+{% block title %}{{ student.name }} — точка А{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=24">
+{% endblock %}
+{% block content %}
+<div class="prg-page prg-page--point-a">
+    <div class="prg-head">
+        <div class="prg-head-copy">
+            <h1>{{ student.name }}</h1>
+            <p>
+                {% if student.tariff %}{{ student.tariff }} · {% endif %}
+                {% if point_a.average is not none %}
+                Средний балл точки А — {{ point_a.average }}{% if not point_a.is_done %} (пока оценено {{ point_a.scored_count }} из {{ point_a.plates|length }}){% endif %}
+                {% else %}
+                Средний балл появится, когда поставите оценки
+                {% endif %}
+            </p>
+        </div>
+    </div>
+
+    {% if point_a.plates %}
+    <div class="prg-items">
+        {% for plate in point_a.plates %}
+        <article class="prg-item{{ ' is-done' if plate.is_scored }}" data-plate data-kind="{{ plate.kind }}">
+            <div class="prg-item-copy">
+                <h3>{{ plate.title }}</h3>
+                <div class="prg-meta">
+                    <span>{{ plate.images|length }} фото</span>
+                    <span>{{ 'оценено' if plate.is_scored else 'не оценено' }}</span>
+                </div>
+                {% if plate.comment %}<p>{{ plate.comment }}</p>{% endif %}
+                {% if plate.images %}
+                <div class="photo-grid" data-gallery="point-a-{{ plate.key }}">
+                    {% for url in plate.images %}
+                    <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть работу ученика">
+                        <img src="{{ url }}" alt="Работа ученика" loading="lazy">
+                    </button>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            <div class="prg-item-actions">
+                {% if plate.kind == 'work' %}
+                {# Работа: обычная форма на существующий эндпоинт, он вернёт нас
+                   обратно на этот же экран (redirect_to проверяется сервером). #}
+                <form method="post" action="/cabinet/admin/works/{{ plate.work_id }}/score">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    <input type="hidden" name="redirect_to" value="/cabinet/staff/point-a/{{ student.id }}">
+                    <label class="prg-field prg-field--row">Балл 0–100
+                        <input type="number" name="score" min="0" max="100" step="1" required
+                               value="{{ plate.score if plate.score is not none else '' }}">
+                    </label>
+                    <button type="submit" class="btn-blue">Сохранить</button>
+                </form>
+                {% else %}
+                <label class="prg-field prg-field--row">Балл 0–100
+                    <input type="number" min="0" max="100" step="1" data-plate-score
+                           value="{{ plate.score if plate.score is not none else '' }}">
+                </label>
+                <button type="button" class="btn-blue" data-plate-save>Сохранить</button>
+                {% endif %}
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="prg-empty">Ученик пока ничего не сдал — оценивать нечего.</p>
+    {% endif %}
+
+    <p><a class="btn-outline" href="/cabinet/staff/point-a">← Ко всем ученикам</a></p>
+</div>
+
+{% include "partials/lightbox.html" %}
+
+<script>
+(function () {
+    var csrfToken = {{ csrf_token(request)|tojson }};
+    var studentId = {{ student.id|tojson }};
+    var ENDPOINTS = {
+        // Точка А за работы «До» живёт на экране проверки с 09.09.2026 —
+        // вместе со своими тестами. Сюда её не переносили намеренно.
+        portfolio_before: '/cabinet/staff/students-review/portfolio-before/' + studentId + '/score',
+        portfolio_after: '/cabinet/staff/point-a/' + studentId + '/portfolio-after/score'
+    };
+
+    document.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-plate-save]');
+        if (!button) return;
+        var plate = button.closest('[data-plate]');
+        var input = plate.querySelector('[data-plate-score]');
+        var value = parseInt(input.value, 10);
+        if (isNaN(value) || value < 0 || value > 100) {
+            input.focus();
+            return;
+        }
+        var url = ENDPOINTS[plate.getAttribute('data-kind')];
+        if (!url) return;
+        button.disabled = true;
+        fetch(url, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify({score: value})
+        }).then(function (resp) {
+            if (!resp.ok) throw new Error();
+            // Перезагрузка, а не точечная правка DOM: средний балл в шапке
+            // считает сервер, и держать вторую копию формулы в JS — верный
+            // способ показать Лизе число, которого нет в базе.
+            window.location.reload();
+        }).catch(function () {
+            button.disabled = false;
+            button.textContent = 'Не вышло, ещё раз';
+        });
+    });
+})();
+</script>
+{% endblock %}

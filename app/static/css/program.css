@@ -119,6 +119,38 @@
     border-radius: var(--r-pill); color: var(--blue-on-soft); background: var(--surface-2);
     font: 700 11px/1 var(--font-body);
 }
+.prg-badge--done { color: var(--success); background: rgba(21, 128, 61, 0.10); }
+
+/* Разобранная строка гаснет, но остаётся читаемой и кликабельной: Лиза
+   14.09.2026 просила «чтобы они просто помечались серым, и я могла листать и
+   видеть, кого я уже проверила». Класс `is-done` вешал ещё экран проверки
+   (`staff_student_review_detail.html`), но своего вида у него не было. */
+.prg-item.is-done { background: var(--surface-2); border-color: var(--line); }
+.prg-item.is-done h3 { color: var(--muted); }
+
+/* Экран точки А: работы показываем «маленькими окошечками» (эскиз Лизы
+   14.09.2026). Общая `.photo-grid` из base.css делит карточку на три колонки
+   во всю ширину, и единственное фото пробника раздувалось на треть экрана,
+   пока шесть фото портфолио рядом лежали нормально. Скоуп по странице, а не
+   правка общего класса: те же три колонки нужны экрану проверки и домашкам. */
+.prg-page--point-a .photo-grid {
+    /* `min(104px, 100%)` вместо голых 104px: без него на узком экране колонка
+       не сжимается ниже своей минимальной ширины, и четвёртое фото портфолио
+       уезжало за правый край вместе с горизонтальной прокруткой страницы. */
+    grid-template-columns: repeat(auto-fill, minmax(min(104px, 100%), 1fr));
+    max-width: 540px;
+    min-width: 0;
+}
+/* Колонка с баллом не должна распирать карточку. Поле `.prg-field input`
+   тянется на всю ширину (общее правило program.css), и в колонке `auto`
+   грида его минимальная ширина складывалась с подписью — карточка вырастала
+   до 474px в окне 390px и страница ехала вбок. Трёхзначному баллу хватает
+   88px, а обе колонки получают `min-width: 0`, чтобы сжиматься. */
+.prg-page--point-a .prg-item-copy,
+.prg-page--point-a .prg-item-actions { min-width: 0; }
+.prg-page--point-a .prg-item-actions form { display: grid; gap: 8px; justify-items: start; }
+.prg-page--point-a .prg-field--row { flex-wrap: wrap; }
+.prg-page--point-a .prg-field--row input { width: 88px; }
 
 .prg-empty {
     padding: 24px 20px; text-align: center; color: var(--muted); background: var(--surface);

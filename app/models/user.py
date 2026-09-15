@@ -98,6 +98,22 @@ class User(Base):
     portfolio_before_scored_by_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
+    # Тот же приём для набора работ «После» предобучения (Лиза 14.09.2026:
+    # «портфолио после предобучения — вижу, что не оценено»). Вторая плашка
+    # экрана точки А, шкала и правила те же, что у `portfolio_before_score`:
+    # одна оценка за весь набор, ставит ранг ≥ 4, в user-dict сессии не кладём.
+    #
+    # Почему колонкой, а не `Work.score` у каждой работы: у портфолио в
+    # интерфейсе нет и не должно быть пооценочной формы — иначе каждая
+    # загруженная работа висела бы «непроверенной» без способа это снять
+    # (см. докстринг `_work_items` в `services/review_aggregate.py`).
+    portfolio_after_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    portfolio_after_scored_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    portfolio_after_scored_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
     curator_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     curator_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
