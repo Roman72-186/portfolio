@@ -1,0 +1,165 @@
+/* Бургер-меню ученика (partials/bottom_nav.html), мобильный экран.
+
+   15.09.2026 — радиальное FAB-меню (01.09.2026) заменено на бургер (решение
+   владельца): одна кнопка на всю ширину экрана внизу, по тапу раскрывает
+   вверх подписанный список всех пунктов с плавной каскадной анимацией,
+   вместо веера безымянных иконок вокруг круглой кнопки. Партиал общий на все
+   экраны кабинета ученика, поэтому эффект намеренно глобальный. Десктопный
+   .app-sidebar (из base.css) не трогаем — там пункты уже подписаны в
+   вертикальный список, бургер ему не нужен. Токены — из base.css.
+   `prefers-reduced-motion` гасит все transition/animation глобально
+   (base.css:1341) — отдельно тут не дублируем.
+
+   Файл переименован из bottom_nav_fan.css 15.09.2026 (реюз-храповик,
+   scripts/reuse_check.py — старое имя описывало веер, а не список). Меняешь
+   файл — подними ?v= в partials/bottom_nav.html, иначе кеш
+   (Cache-Control: immutable) отдаёт старую версию. */
+
+.bottom-nav {
+    position: fixed; left: 16px; right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0));
+    z-index: 100;
+    pointer-events: none;
+}
+.burger-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(15, 15, 20, 0);
+    transition: background var(--duration-base) var(--ease-out);
+    pointer-events: none;
+    z-index: -1;
+}
+.bottom-nav.open .burger-backdrop { background: rgba(15, 15, 20, .38); pointer-events: auto; }
+
+/* Панель абсолютно спозиционирована над кнопкой (не участвует в layout,
+   пока закрыта) — иначе высота nav скакала бы вместе с её max-height и
+   двигала кнопку по экрану при открытии/закрытии. */
+.burger-panel {
+    position: absolute; left: 0; right: 0;
+    bottom: calc(100% + 10px);
+    max-height: min(60vh, 420px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    box-shadow: var(--sh-md);
+    padding: 8px;
+    transform-origin: bottom center;
+    transform: translateY(12px) scale(.96);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform .32s var(--ease-out), opacity .22s ease, visibility 0s linear .32s;
+}
+.bottom-nav.open .burger-panel {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: transform .32s var(--ease-out), opacity .22s ease, visibility 0s;
+}
+
+.burger-list { display: flex; flex-direction: column; gap: 2px; }
+
+/* Каждый пункт въезжает снизу вверх со своей задержкой — та же каскадная
+   идея, что была у веера (35ms на лепесток), только по вертикали. */
+.burger-item-wrap {
+    opacity: 0;
+    transform: translateY(10px);
+    transition: transform .3s var(--ease-out), opacity .22s ease;
+    transition-delay: calc(var(--i, 0) * 28ms);
+}
+.bottom-nav.open .burger-item-wrap { opacity: 1; transform: translateY(0); }
+.bottom-nav:not(.open) .burger-item-wrap { transition-delay: 0ms; }
+
+.burger-item {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%; padding: 12px 14px; border-radius: 14px;
+    border: none; background: none; cursor: pointer;
+    color: var(--text); font-family: inherit; font-size: 14px; font-weight: 600;
+    text-decoration: none; -webkit-tap-highlight-color: transparent;
+    transition: background .16s ease, color .16s ease;
+}
+.burger-item:hover, .burger-item:active { background: var(--surface-2); }
+.burger-item:focus-visible { outline: 2px solid var(--ios-purple); outline-offset: -2px; }
+.burger-item.burger-item-active { background: var(--blue-soft); color: var(--blue-on-soft); }
+.burger-item.burger-item-active .burger-item-icon { color: var(--blue-on-soft); }
+.burger-item.nav-disabled { opacity: .45; pointer-events: none; }
+
+.burger-item-icon {
+    position: relative;
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    color: var(--muted);
+    transition: color .16s ease;
+}
+/* Без явного display:block для дочерних svg — flex уже блочит детей сам по
+   себе (align-items:center без baseline), а явное правило било бы по
+   специфичности `.theme-toggle-icon--moon{display:none}` из base.css и
+   показывало солнце с луной одновременно в пункте «Тема». */
+.burger-item-label {
+    flex: 1; text-align: left;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.nav-soon-badge {
+    font-size: 8px; font-weight: 600; letter-spacing: 0.02em;
+    background: rgba(255,149,0,0.15); color: #C93400;
+    border-radius: 6px; padding: 1px 5px; text-transform: uppercase;
+}
+
+/* ── Кнопка-бургер во всю ширину ── */
+.burger-toggle {
+    position: relative; z-index: 1;
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; height: 56px; padding: 0 18px;
+    border: none; border-radius: 18px;
+    background: var(--ios-purple); color: #fff;
+    box-shadow: var(--sh-blue);
+    pointer-events: auto; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    font-family: inherit;
+    transition: background .2s ease, transform .2s var(--ease-out);
+}
+.burger-toggle:active { transform: scale(.98); }
+.burger-toggle:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.bottom-nav.open .burger-toggle { background: #8E3FBF; }
+.burger-toggle-icon {
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.burger-toggle-icon svg { display: block; }
+.burger-toggle-label {
+    flex: 1; text-align: left;
+    font-size: 15px; font-weight: 700;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.burger-toggle-chevron {
+    display: flex; flex-shrink: 0;
+    transition: transform .28s var(--ease-out);
+}
+.bottom-nav.open .burger-toggle-chevron { transform: rotate(180deg); }
+
+/* Тема и колокольчик — последние два пункта списка (владелец 03.09.2026),
+   не отдельная плавающая пара кнопок. Тему рисует .theme-toggle-icon
+   солнце/луна из base.css (тот же класс, что и у кнопки в подвале
+   десктопного сайдбара — правило переключения по [data-theme] общее).
+   Колокольчик — независимая от плавающего виджета уведомлений копия:
+   тот же .notif-pop под общим слушателем клика (см. base.html), но своя
+   кнопка и свой бейдж, потому что этот пункт и тот виджет живут в разных
+   родителях и не могут быть одним DOM-узлом одновременно на двух местах
+   экрана. */
+@media (max-width: 1023px) {
+    /* На мобилке-с-бургером колокольчик уже в списке — плавающий виджет
+       для этой же роли был бы дублем. У персонала бургера в DOM нет,
+       body:has(.bottom-nav) не сработает, их колокольчик не трогаем. */
+    body:has(.bottom-nav) .floating-widget-tray .notif-bell {
+        display: none;
+    }
+}
+
+/* Узкий экран и низкий экран: панель не должна упираться в статус-бар —
+   резервируем больше воздуха сверху, чем даёт фиксированный 60vh. */
+@media (max-height: 620px) {
+    .burger-panel { max-height: min(72vh, 420px); }
+}

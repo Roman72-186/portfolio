@@ -1,4 +1,4 @@
-﻿<link rel="stylesheet" href="/static/css/bottom_nav_fan.css?v=4">
+﻿<link rel="stylesheet" href="/static/css/bottom_nav_burger.css?v=2">
 
 {% macro student_nav_icon(icon, size) -%}
     <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -82,106 +82,98 @@
     </div>
 </aside>
 
-<!-- ── Mobile radial FAB-меню (заменяет таб-бар, 01.09.2026) ── -->
+<!-- ── Mobile бургер-меню (заменяет радиальный FAB-веер, 15.09.2026) ── -->
 <div id="nav-loader"></div>
-<nav class="bottom-nav" id="studentFan" aria-label="Главное меню">
-    <div class="fan-backdrop" id="fanBackdrop"></div>
-    <div class="fan-items" id="fanItems">
-        {% for item in student_items %}
-        <div class="fan-item-wrap" data-idx="{{ loop.index0 }}" data-key="{{ item.key }}">
-            {% if item.soon %}
-            <a href="#" class="fan-item nav-disabled" aria-disabled="true" tabindex="-1" aria-label="{{ item.aria_label }}" onclick="return false;">
-                <span aria-hidden="true">{{ student_nav_icon(item.icon, 20) }}</span>
-            </a>
-            {% else %}
-            <a href="{{ item.mobile_href }}" class="fan-item {% if active_tab == item.key %}fan-item-active{% endif %}"
-               data-nav-key="{{ item.key }}"
-               tabindex="-1" {% if active_tab == item.key %}aria-current="page"{% endif %} aria-label="{{ item.aria_label }}">
-                <span aria-hidden="true">{{ student_nav_icon(item.icon, 20) }}</span>
-            </a>
-            {% endif %}
-            <span class="fan-item-label" aria-hidden="true">
-                {{ item.mobile_label }}{% if item.soon %} <span class="nav-soon-badge">Скоро</span>{% endif %}
-            </span>
+<nav class="bottom-nav" id="studentBurger" aria-label="Главное меню">
+    <div class="burger-backdrop" id="burgerBackdrop"></div>
+    <div class="burger-panel" id="burgerPanel">
+        <div class="burger-list" id="burgerList">
+            {% for item in student_items %}
+            <div class="burger-item-wrap" data-idx="{{ loop.index0 }}" data-key="{{ item.key }}" style="--i:{{ loop.index0 }}">
+                {% if item.soon %}
+                <a href="#" class="burger-item nav-disabled" aria-disabled="true" tabindex="-1" aria-label="{{ item.aria_label }}" onclick="return false;">
+                    <span class="burger-item-icon" aria-hidden="true">{{ student_nav_icon(item.icon, 20) }}</span>
+                    <span class="burger-item-label">{{ item.mobile_label }} <span class="nav-soon-badge">Скоро</span></span>
+                </a>
+                {% else %}
+                <a href="{{ item.mobile_href }}" class="burger-item {% if active_tab == item.key %}burger-item-active{% endif %}"
+                   data-nav-key="{{ item.key }}"
+                   tabindex="-1" {% if active_tab == item.key %}aria-current="page"{% endif %} aria-label="{{ item.aria_label }}">
+                    <span class="burger-item-icon" aria-hidden="true">{{ student_nav_icon(item.icon, 20) }}</span>
+                    <span class="burger-item-label">{{ item.mobile_label }}</span>
+                </a>
+                {% endif %}
+            </div>
+            {% endfor %}
+            {% set _unread = unread_count_for(user) %}
+            <div class="burger-item-wrap" data-key="theme" style="--i:{{ student_items|length }}">
+                <button type="button" class="burger-item" data-theme-toggle-btn aria-pressed="false" tabindex="-1" aria-label="Тёмная тема">
+                    <span class="burger-item-icon" aria-hidden="true">
+                        <svg class="theme-toggle-icon theme-toggle-icon--sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="12" r="4"/>
+                            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+                        </svg>
+                        <svg class="theme-toggle-icon theme-toggle-icon--moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>
+                        </svg>
+                    </span>
+                    <span class="burger-item-label">Тема</span>
+                </button>
+            </div>
+            <div class="burger-item-wrap" data-key="bell" style="--i:{{ student_items|length + 1 }}">
+                <button type="button" class="burger-item" data-notif-bell tabindex="-1" aria-haspopup="dialog" aria-expanded="false"
+                    aria-label="Уведомления{% if _unread %} ({{ _unread }} непрочитанных){% endif %}">
+                    <span class="burger-item-icon" aria-hidden="true">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                        </svg>
+                        <span class="notif-bell-badge" data-notif-bell-badge aria-hidden="true" {% if not _unread %}hidden{% endif %}>{{ _unread }}</span>
+                    </span>
+                    <span class="burger-item-label">Уведомления</span>
+                </button>
+            </div>
         </div>
-        {% endfor %}
-        {% set _unread = unread_count_for(user) %}
-        <div class="fan-item-wrap" data-key="theme">
-            <button type="button" class="fan-item" data-theme-toggle-btn aria-pressed="false" tabindex="-1" aria-label="Тёмная тема">
-                <svg class="theme-toggle-icon theme-toggle-icon--sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <circle cx="12" cy="12" r="4"/>
-                    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
-                </svg>
-                <svg class="theme-toggle-icon theme-toggle-icon--moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>
-                </svg>
-            </button>
-            <span class="fan-item-label" aria-hidden="true">Тема</span>
-        </div>
-        <div class="fan-item-wrap" data-key="bell">
-            <button type="button" class="fan-item" data-notif-bell tabindex="-1" aria-haspopup="dialog" aria-expanded="false"
-                aria-label="Уведомления{% if _unread %} ({{ _unread }} непрочитанных){% endif %}">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-                </svg>
-                <span class="notif-bell-badge" data-notif-bell-badge aria-hidden="true" {% if not _unread %}hidden{% endif %}>{{ _unread }}</span>
-            </button>
-            <span class="fan-item-label" aria-hidden="true">Уведомления</span>
-        </div>
-        <button type="button" class="fan-fab" id="fanFab" aria-haspopup="true" aria-expanded="false" aria-controls="fanItems" aria-label="Открыть меню">
-            <span class="fan-fab-icon fan-fab-icon--default" aria-hidden="true">
-                {% if active_item %}{{ student_nav_icon(active_item.icon, 24) }}{% else %}{{ student_nav_icon('menu', 24) }}{% endif %}
-            </span>
-            <span class="fan-fab-icon fan-fab-icon--close" aria-hidden="true">{{ student_nav_icon('close', 24) }}</span>
-        </button>
     </div>
+    <button type="button" class="burger-toggle" id="burgerToggle" aria-haspopup="true" aria-expanded="false" aria-controls="burgerList" aria-label="Открыть меню">
+        <span class="burger-toggle-icon" aria-hidden="true">
+            {% if active_item %}{{ student_nav_icon(active_item.icon, 20) }}{% else %}{{ student_nav_icon('menu', 20) }}{% endif %}
+        </span>
+        <span class="burger-toggle-label">{% if active_item %}{{ active_item.mobile_label }}{% else %}Меню{% endif %}</span>
+        <span class="burger-toggle-chevron" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
+        </span>
+    </button>
 </nav>
 
 <script>
 (function () {
-    var nav = document.getElementById('studentFan');
-    var fab = document.getElementById('fanFab');
-    var backdrop = document.getElementById('fanBackdrop');
-    var wraps = Array.prototype.slice.call(nav.querySelectorAll('.fan-item-wrap'));
+    var nav = document.getElementById('studentBurger');
+    var toggle = document.getElementById('burgerToggle');
+    var backdrop = document.getElementById('burgerBackdrop');
+    var items = Array.prototype.slice.call(nav.querySelectorAll('.burger-item'));
     var loader = document.getElementById('nav-loader');
-
-    function layout() {
-        var n = wraps.length;
-        var radius = Math.max(92, Math.min(128, window.innerWidth / 2 - 42));
-        wraps.forEach(function (wrap, idx) {
-            var deg = n > 1 ? 180 - (180 / (n - 1)) * idx : 90;
-            var rad = deg * Math.PI / 180;
-            var x = Math.cos(rad) * radius;
-            var y = -Math.sin(rad) * radius;
-            wrap.style.setProperty('--x', x.toFixed(1) + 'px');
-            wrap.style.setProperty('--y', y.toFixed(1) + 'px');
-            wrap.style.setProperty('--i', idx);
-            wrap.classList.remove('lbl-left', 'lbl-right');
-            wrap.classList.add(idx < n / 2 ? 'lbl-left' : 'lbl-right');
-        });
-    }
 
     function setOpen(open) {
         nav.classList.toggle('open', open);
-        fab.setAttribute('aria-expanded', String(open));
-        fab.setAttribute('aria-label', open ? 'Закрыть меню' : 'Открыть меню');
-        wraps.forEach(function (wrap) {
-            var link = wrap.querySelector('.fan-item');
-            if (link && !link.classList.contains('nav-disabled')) {
+        toggle.setAttribute('aria-expanded', String(open));
+        toggle.setAttribute('aria-label', open ? 'Закрыть меню' : 'Открыть меню');
+        items.forEach(function (link) {
+            if (!link.classList.contains('nav-disabled')) {
                 link.tabIndex = open ? 0 : -1;
             }
         });
-        // Фокус на первый лепесток при открытии сюда не переносим (раньше
-        // переносили): programmatic focus() браузер на мобилке засчитывает
-        // за focus-visible и рисует постоянное фиолетовое кольцо на первом
-        // пункте при каждом открытии веера тапом — воспроизведено 04.09.2026
-        // (владелец прислал скриншот). Кнопка остаётся с роль-tabindex-
-        // управлением (см. выше) — таб после открытия уже ведёт в лепестки.
-        if (!open) fab.focus();
+        // Фокус на первый пункт при открытии сюда не переносим (раньше
+        // переносили у веера): programmatic focus() браузер на мобилке
+        // засчитывает за focus-visible и рисует постоянное фиолетовое
+        // кольцо на первом пункте при каждом открытии меню тапом —
+        // воспроизведено 04.09.2026 (владелец прислал скриншот). Кнопка
+        // остаётся с роль-tabindex-управлением (см. выше) — таб после
+        // открытия уже ведёт в пункты списка.
+        if (!open) toggle.focus();
     }
 
-    fab.addEventListener('click', function () {
+    toggle.addEventListener('click', function () {
         setOpen(!nav.classList.contains('open'));
     });
     backdrop.addEventListener('click', function () { setOpen(false); });
@@ -189,16 +181,16 @@
         if (e.key === 'Escape' && nav.classList.contains('open')) setOpen(false);
     });
     nav.addEventListener('click', function (e) {
-        var link = e.target.closest('.fan-item');
+        var link = e.target.closest('.burger-item');
         if (!link) return;
-        // Тема и колокольчик — лепестки веера, но не переход на экран: своя
+        // Тема и колокольчик — пункты списка, но не переход на экран: своя
         // логика клика уже навешана в базовом шаблоне (тема) и ниже в этом
-        // файле (колокольчик), здесь только закрываем веер следом.
+        // файле (колокольчик), здесь только закрываем меню следом.
         if (link.hasAttribute('data-theme-toggle-btn') || link.hasAttribute('data-notif-bell')) {
             setOpen(false);
             return;
         }
-        if (link.classList.contains('nav-disabled') || link.classList.contains('fan-item-active')) return;
+        if (link.classList.contains('nav-disabled') || link.classList.contains('burger-item-active')) return;
         // Гейт «Портфолио «До»» (см. блок в конце файла): window.openPortfolioGate
         // определена, только когда гейт активен, и к моменту клика уже
         // выполнена — оба script-блока грузятся синхронно при загрузке страницы.
@@ -210,9 +202,6 @@
         }
         if (loader) loader.classList.add('active');
     });
-
-    layout();
-    window.addEventListener('resize', layout);
 })();
 </script>
 <script>
@@ -416,7 +405,7 @@
         lastFocused = null;
     }
 
-    // Веер мобильного меню (скрипт выше в этом же файле) вызывает это напрямую
+    // Бургер-меню (скрипт выше в этом же файле) вызывает это напрямую
     // вместо перехода — у него уже своя обработка клика и её нельзя дублировать
     // вторым обработчиком на том же <a>, иначе поверх поп-апа мигнёт #nav-loader.
     window.openPortfolioGate = openGate;
