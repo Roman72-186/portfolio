@@ -199,6 +199,7 @@ document.addEventListener('DOMContentLoaded', lrnApplySubjectFilter);
 </script>
 
 {# Нижняя навигация и лайтбокс — общие для экранов ученика. #}
+{% set active_tab = "learning" %}
 {% include "partials/bottom_nav.html" %}
 {% include "partials/lightbox.html" %}
 <script src="/static/js/hint.js?v=1"></script>
