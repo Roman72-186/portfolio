@@ -11,8 +11,7 @@ FORM: Operate, список, а не карточка-витрина.
 #}
 {% block title %}Личный трекер{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=54">
-<link rel="stylesheet" href="/static/css/program.css?v=30">
+<link rel="stylesheet" href="/static/css/tracker.css?v=55">
 <link rel="stylesheet" href="/static/css/profile_hero.css?v=7">
 {% endblock %}
 {% block content %}
@@ -22,15 +21,7 @@ FORM: Operate, список, а не карточка-витрина.
         <span class="ios-navbar-title">Личный трекер</span>
     </header>
 
-    {% if digest %}
-    {% include "partials/digest_calendar.html" %}
-    {% endif %}
-
     {% include "partials/profile_hero.html" %}
-
-    {% if is_behind_schedule %}
-    <div class="alert alert-error" style="margin-bottom:14px;">Ты отстаёшь от текущей программы</div>
-    {% endif %}
 
     <div class="trk-head">
         <div class="trk-head-copy">
@@ -38,6 +29,29 @@ FORM: Operate, список, а не карточка-витрина.
             <p>Что не сдано и что горит — время московское.</p>
         </div>
     </div>
+
+    {# Вкладки «Задачи» / «Дайджест» (решение владельца 17.09.2026: «просто
+       показываем по вкладке в трекере Дайджест»). Полоса появляется только
+       когда дайджест ученику адресован — иначе переключать нечего.
+       Переключение на клиенте: обе панели уже в разметке, второго роута под
+       дайджест нет. Полоса — общий `.nav-pill` из base.css, своей третьей
+       линейки вкладок в проекте не заводим. #}
+    {% if digest %}
+    <div class="nav-pill trk-tabs" role="tablist" aria-label="Разделы трекера">
+        <button type="button" class="nav-pill-item active" role="tab" id="trkTabTasks"
+                aria-controls="trkPanelTasks" aria-selected="true"
+                data-trk-tab="tasks">Задачи</button>
+        <button type="button" class="nav-pill-item" role="tab" id="trkTabDigest"
+                aria-controls="trkPanelDigest" aria-selected="false"
+                data-trk-tab="digest">Дайджест</button>
+    </div>
+    {% endif %}
+
+    <div id="trkPanelTasks" role="tabpanel" aria-labelledby="trkTabTasks">
+
+    {% if is_behind_schedule %}
+    <div class="alert alert-error" style="margin-bottom:14px;">Ты отстаёшь от текущей программы</div>
+    {% endif %}
 
     {% if not overdue and not upcoming and not done %}
     <p class="trk-empty">Задач нет.</p>
@@ -144,6 +158,14 @@ FORM: Operate, список, а не карточка-витрина.
     </div>
     {% endif %}
 
+    </div>{# /trkPanelTasks #}
+
+    {% if digest %}
+    <div id="trkPanelDigest" role="tabpanel" aria-labelledby="trkTabDigest" hidden>
+        {% include "partials/digest_list.html" %}
+    </div>
+    {% endif %}
+
     <div style="height:96px"></div>
 </div>
 
@@ -230,4 +252,32 @@ document.addEventListener('animationend', function (event) {
    include клик по фото в трекере ничего не делал бы (window.openGallery
    не определён). #}
 {% include "partials/lightbox.html" %}
+
+<script>
+(function () {
+    // Переключатель вкладок «Задачи» / «Дайджест». Панели прячем через
+    // `el.hidden`, а не инлайновым display: у .trk-group и прочих блоков
+    // внутри свой display, но hidden стоит на самой панели — обычном div без
+    // собственного правила, и UA-стиль [hidden] его гасит.
+    var tabs = document.querySelectorAll('[data-trk-tab]');
+    if (!tabs.length) return;
+    var panels = {
+        tasks: document.getElementById('trkPanelTasks'),
+        digest: document.getElementById('trkPanelDigest')
+    };
+    tabs.forEach(function (tab) {
+        tab.addEventListener('click', function () {
+            var key = tab.getAttribute('data-trk-tab');
+            tabs.forEach(function (other) {
+                var isActive = other === tab;
+                other.classList.toggle('active', isActive);
+                other.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            });
+            Object.keys(panels).forEach(function (name) {
+                if (panels[name]) panels[name].hidden = name !== key;
+            });
+        });
+    });
+})();
+</script>
 {% endblock %}

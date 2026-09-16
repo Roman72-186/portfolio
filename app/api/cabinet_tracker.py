@@ -40,7 +40,6 @@ from app.models.task_block import (
     SCALE_MAX, SCALE_MIN, SUBMISSION_BLOCK_TYPES, TaskBlock,
 )
 from app.models.tracker import (
-    EVENT_KIND_LABELS,
     ITEM_HOMEWORK,
     ITEM_MOCK_EXAM,
     STATUS_DONE,
@@ -50,7 +49,6 @@ from app.models.tracker import (
 )
 from app.models.work import WORK_TYPE_BEFORE, Work
 from app.services.program import (
-    WEEKDAY_LABELS,
     day_bounds,
     item_details,
     msk_date,
@@ -86,7 +84,6 @@ from app.services.tracker import (
     accessible_task_ids,
     active_digest_for_student,
     active_goal_for_student,
-    digest_calendar,
     digest_heading,
     effective_week_start,
     format_event_dates,
@@ -123,7 +120,8 @@ def cabinet_tracker(
         db, user["user_id"], start=None, end=week_end, include_undated=True,
     )
 
-    # Дайджест месяца — первый блок на экране (решение владельца 22.08).
+    # Дайджест месяца — вкладка рядом с задачами (решение владельца 17.09.2026,
+    # отменяет «первый блок на экране» от 22.08).
     digest = active_digest_for_student(db, user["user_id"], year=today.year, month=today.month)
     digest_events = list_events(db, digest.id) if digest is not None else []
     goal = active_goal_for_student(db, user["user_id"], today=today)
@@ -154,17 +152,11 @@ def cabinet_tracker(
         "done": done,
         "digest": digest,
         "digest_events": digest_events,
-        # Календарь месяца — то, на что ученик опирается (решение владельца
-        # 16.09.2026). Сетку строит общая month_days из services/program.py,
-        # та же, что рисует календарь программы у преподавателя.
+        # Заголовок «Сентябрь · тема месяца». Календарной сетки у ученика нет
+        # (решение владельца 17.09.2026: «календарь не нужен, просто список»),
+        # дайджест лежит на своей вкладке списком событий.
         "digest_heading": digest_heading(digest) if digest is not None else None,
-        "digest_days": (
-            digest_calendar(digest, digest_events, today=today)
-            if digest is not None else []
-        ),
-        "digest_weekday_labels": WEEKDAY_LABELS,
         "format_event_dates": format_event_dates,
-        "event_kind_labels": EVENT_KIND_LABELS,
         "goal": goal,
         # Красное предупреждение (решение владельца 23.08, гейт «блок → неделя
         # → месяц»): ученик застрял на прошлой неделе, а не идёт по текущей.

@@ -1,0 +1,50 @@
+{#
+  Дайджест месяца у ученика: заголовок «месяц · тема» и список событий.
+
+  Решение владельца 17.09.2026: «календарь не нужен, просто показываем по
+  вкладке в трекере Дайджест, там весь список из дайджеста». Отменяет
+  календарную сетку от 16.09 — ученик читает месяц списком, а не по клеткам.
+  Второй сетки календаря в проекте по-прежнему нет: у ученика её теперь нет
+  вовсе, `.prg-grid`/`.prg-day` остались только у преподавателя.
+
+  Партиал лежит внутри вкладки «Дайджест» (cabinet_tracker.html) и своего
+  места в потоке страницы не занимает.
+
+  Подписи типов свои, не EVENT_KIND_LABELS: там служебное «Дедлайн», а ученику
+  нужна «сдача работ» — тот же текст, что стоял в легенде календаря.
+
+  Ждёт в контексте: digest_heading, digest_events, format_event_dates.
+#}
+{% set kind_labels = {
+    'deadline': 'Сдача работ',
+    'lesson': 'Занятие',
+    'mock_exam': 'Пробник',
+    'broadcast': 'Эфир',
+} %}
+<section class="dgst" aria-label="Дайджест месяца">
+    <header class="dgst-head">
+        <span class="dgst-kicker">Дайджест месяца</span>
+        <h2 class="dgst-title">{{ digest_heading }}</h2>
+    </header>
+
+    {% if digest_events %}
+    <ul class="dgst-list">
+        {% for event in digest_events %}
+        <li class="dgst-event">
+            <span class="dgst-event-date">{{ format_event_dates(event) }}</span>
+            <span class="dgst-event-title">
+                {{ event.title }}
+                <span class="trk-badge trk-badge--kind dgst-event-kind">{{ kind_labels.get(event.kind, 'Событие') }}</span>
+            </span>
+            {% if event.note %}<p class="dgst-event-note">{{ event.note }}</p>{% endif %}
+            {% if event.meeting_url %}
+            <a class="btn-outline dgst-event-link" href="{{ event.meeting_url }}"
+               target="_blank" rel="noopener">Подключиться</a>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="dgst-empty">В этом месяце пока нет событий.</p>
+    {% endif %}
+</section>

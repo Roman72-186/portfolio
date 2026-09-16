@@ -47,7 +47,6 @@ from app.models.user import User
 from app.services.program import (
     MONTH_NAMES,
     day_bounds,
-    month_days,
     msk_date,
     week_start,
 )
@@ -1310,8 +1309,8 @@ def update_event(
     event.sort_order = sort_order
 
 
-# Родительный падеж месяца: заголовок читается как «Сентябрь · Тема», а
-# подпись под календарём — «сентября». MONTH_NAMES из program.py даёт
+# Родительный падеж месяца: заголовок читается как «Сентябрь · Тема», а дата
+# события в списке — «25–30 сентября». MONTH_NAMES из program.py даёт
 # именительный, склонять его правилами дороже и без пользы — здесь двенадцать
 # значений, они не меняются.
 MONTH_GENITIVE = (
@@ -1335,32 +1334,8 @@ def digest_heading(digest: ScheduleDigest) -> str:
     return f"{month_name} · {theme}"
 
 
-def digest_calendar(
-    digest: ScheduleDigest, events: list[ScheduleEvent], *, today: date | None = None
-) -> list[dict]:
-    """Сетка месяца дайджеста с событиями, разложенными по дням.
-
-    Событие-диапазон («пробник с 25 по 30») закрашивает каждый свой день, а не
-    только первый: ученик смотрит на число и должен видеть, идёт ли окно
-    сегодня. Дни чужих месяцев в сетке есть (иначе недели не выстроятся в
-    строки), но события в них не показываем — у соседнего месяца свой дайджест.
-    """
-    days = month_days(digest.year, digest.month, today)
-    by_day: dict[str, list[ScheduleEvent]] = {}
-    for event in events:
-        cursor = event.starts_on
-        # Диапазон задом наперёд форма не пропускает (EventPayload.check_range),
-        # но данные старше той проверки нам неизвестны — цикл просто не выполнится.
-        while cursor <= event.ends_on:
-            by_day.setdefault(cursor.isoformat(), []).append(event)
-            cursor += timedelta(days=1)
-    for day in days:
-        day["events"] = by_day.get(day["iso"], []) if day["in_month"] else []
-    return days
-
-
 def format_event_dates(event: ScheduleEvent) -> str:
-    """«25–30 сентября» или «7 сентября» — подпись под списком событий."""
+    """«25–30 сентября» или «7 сентября» — дата в списке событий дайджеста."""
     if event.starts_on == event.ends_on:
         return f"{event.starts_on.day} {MONTH_GENITIVE[event.starts_on.month]}"
     if event.starts_on.month == event.ends_on.month:

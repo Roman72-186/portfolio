@@ -1,12 +1,12 @@
-"""Дайджест месяца на экране ученика (/cabinet/tracker) — первый блок сверху."""
+"""Дайджест месяца на экране ученика (/cabinet/tracker) — вкладка рядом с задачами."""
 
-from datetime import date
+from datetime import date, timedelta
 
 from app.models.tag import Tag, UserTag
 from app.services.tracker import (
+    MONTH_GENITIVE,
     create_digest,
     create_event,
-    digest_calendar,
     digest_heading,
     publish_digest,
     set_digest_tags,
@@ -116,67 +116,13 @@ def test_digest_heading_falls_back_to_title_without_theme(db, user_factory):
     assert digest_heading(digest) == "Сентябрь — топ-тариф"
 
 
-def test_calendar_paints_every_day_of_a_range_event(db, user_factory):
-    """«Пробник с 25 по 30» закрашивает все шесть дней, а не только первый."""
-    staff = user_factory(vk_id=430_012, name="Препод", role_name="ученик")
-    digest = create_digest(
-        db, title="Сентябрь", year=2026, month=9,
-        assign_to_all=True, user_id=staff.id, theme="Объём",
-    )
-    event = create_event(
-        db, digest.id, kind="mock_exam", title="Окно пробника", note=None,
-        starts_on=date(2026, 9, 25), ends_on=date(2026, 9, 30), meeting_url=None,
-    )
-    db.commit()
+def test_digest_lives_on_its_own_tab(client, db, user_factory, session_factory):
+    """Дайджест лежит во вкладке «Дайджест», задачи открыты по умолчанию.
 
-    days = digest_calendar(digest, [event], today=date(2026, 9, 1))
-    painted = [day["number"] for day in days if day["events"]]
-    assert painted == [25, 26, 27, 28, 29, 30]
-
-
-def test_calendar_keeps_neighbour_month_cells_empty(db, user_factory):
-    """У дней чужого месяца в сетке событий нет: у соседнего месяца свой дайджест."""
-    staff = user_factory(vk_id=430_013, name="Препод", role_name="ученик")
-    digest = create_digest(
-        db, title="Октябрь", year=2026, month=10,
-        assign_to_all=True, user_id=staff.id, theme="Свет",
-    )
-    # 30 сентября попадает в сетку октября: месяц начинается с четверга.
-    event = create_event(
-        db, digest.id, kind="deadline", title="Сдача работ", note=None,
-        starts_on=date(2026, 9, 30), ends_on=date(2026, 9, 30), meeting_url=None,
-    )
-    db.commit()
-
-    days = digest_calendar(digest, [event], today=date(2026, 10, 1))
-    outside = [day for day in days if not day["in_month"]]
-    assert outside, "в сетке октября должны быть дни соседних месяцев"
-    assert all(not day["events"] for day in outside)
-
-
-def test_empty_month_renders_calendar_without_events(client, db, user_factory, session_factory):
-    """Дайджест без событий показывает календарь и говорит, что событий нет."""
-    student = user_factory(vk_id=430_014, name="Ученик", role_name="ученик")
-    session = session_factory(student)
-    client.cookies.set("session_id", session.id)
-
-    today = today_msk()
-    digest = create_digest(
-        db, title="Пустой месяц", year=today.year, month=today.month,
-        assign_to_all=True, user_id=student.id, theme="Разбор ошибок",
-    )
-    publish_digest(digest, user_id=student.id)
-    db.commit()
-
-    response = client.get(PAGE)
-    assert response.status_code == 200
-    assert "Календарь месяца" in response.text
-    assert "В этом месяце пока нет событий." in response.text
-
-
-def test_student_sees_calendar_open_without_a_click(client, db, user_factory, session_factory):
-    """Календарь открыт сразу: расписание, на которое опираются, за клик не прячут."""
-    student = user_factory(vk_id=430_015, name="Ученик", role_name="ученик")
+    Решение владельца 17.09.2026 отменяет и «первый блок сверху» (22.08), и
+    «открыт без клика» (16.09): дайджест переехал за вкладку.
+    """
+    student = user_factory(vk_id=430_012, name="Ученик", role_name="ученик")
     session = session_factory(student)
     client.cookies.set("session_id", session.id)
 
@@ -194,34 +140,72 @@ def test_student_sees_calendar_open_without_a_click(client, db, user_factory, se
 
     response = client.get(PAGE)
     assert response.status_code == 200
-    assert "<details" not in response.text.split('class="dgst"')[1][:2000]
+    assert 'data-trk-tab="tasks"' in response.text
+    assert 'data-trk-tab="digest"' in response.text
+    assert 'id="trkPanelDigest"' in response.text
+    # Панель задач открыта, дайджест спрятан до клика по вкладке.
+    assert 'id="trkPanelTasks" role="tabpanel" aria-labelledby="trkTabTasks">' in response.text
+    assert 'id="trkPanelDigest" role="tabpanel" aria-labelledby="trkTabDigest" hidden' in response.text
     assert "Общий эфир" in response.text
     # Ученик читает тему месяца, а не служебное имя дайджеста.
     assert "Композиция" in response.text
     assert "Служебное имя" not in response.text
 
 
-def test_day_with_two_events_keeps_both(db, user_factory):
-    """Два события в одном дне не вытесняют друг друга: в клетке обе метки.
+def test_no_tab_strip_without_a_digest(client, db, user_factory, session_factory):
+    """Нет дайджеста — нет и полосы вкладок: переключать нечего."""
+    student = user_factory(vk_id=430_013, name="Ученик", role_name="ученик")
+    session = session_factory(student)
+    client.cookies.set("session_id", session.id)
 
-    Шаблон схлопывает повторы одного типа (в клетке телефона больше не
-    помещается), но разные типы показывает оба.
-    """
-    staff = user_factory(vk_id=430_016, name="Препод", role_name="ученик")
+    response = client.get(PAGE)
+    assert response.status_code == 200
+    # Ищем саму полосу, а не `data-trk-tab`: эта строка есть и в скрипте
+    # переключения, он в разметке всегда и без кнопок просто ничего не делает.
+    assert 'class="nav-pill trk-tabs"' not in response.text
+    assert 'class="dgst"' not in response.text
+
+
+def test_empty_month_says_so_instead_of_an_empty_list(client, db, user_factory, session_factory):
+    """Дайджест без событий не молчит — прямо говорит, что событий нет."""
+    student = user_factory(vk_id=430_014, name="Ученик", role_name="ученик")
+    session = session_factory(student)
+    client.cookies.set("session_id", session.id)
+
+    today = today_msk()
     digest = create_digest(
-        db, title="Сентябрь", year=2026, month=9,
-        assign_to_all=True, user_id=staff.id, theme="Объём",
+        db, title="Пустой месяц", year=today.year, month=today.month,
+        assign_to_all=True, user_id=student.id, theme="Разбор ошибок",
     )
-    lesson = create_event(
-        db, digest.id, kind="lesson", title="Занятие по рисунку", note=None,
-        starts_on=date(2026, 9, 11), ends_on=date(2026, 9, 11), meeting_url=None,
-    )
-    deadline = create_event(
-        db, digest.id, kind="deadline", title="Сдача композиции", note=None,
-        starts_on=date(2026, 9, 11), ends_on=date(2026, 9, 11), meeting_url=None,
-    )
+    publish_digest(digest, user_id=student.id)
     db.commit()
 
-    days = digest_calendar(digest, [lesson, deadline], today=date(2026, 9, 1))
-    day = next(d for d in days if d["number"] == 11 and d["in_month"])
-    assert {e.kind for e in day["events"]} == {"lesson", "deadline"}
+    response = client.get(PAGE)
+    assert response.status_code == 200
+    assert "В этом месяце пока нет событий." in response.text
+
+
+def test_event_list_shows_dates_and_kind(client, db, user_factory, session_factory):
+    """В списке видны дата диапазоном и тип события — легенды календаря больше нет."""
+    student = user_factory(vk_id=430_015, name="Ученик", role_name="ученик")
+    session = session_factory(student)
+    client.cookies.set("session_id", session.id)
+
+    today = today_msk()
+    digest = create_digest(
+        db, title="Сентябрь", year=today.year, month=today.month,
+        assign_to_all=True, user_id=student.id, theme="Объём",
+    )
+    start = date(today.year, today.month, 1)
+    create_event(
+        db, digest.id, kind="mock_exam", title="Окно пробника", note=None,
+        starts_on=start, ends_on=start + timedelta(days=5), meeting_url=None,
+    )
+    publish_digest(digest, user_id=student.id)
+    db.commit()
+
+    response = client.get(PAGE)
+    assert response.status_code == 200
+    assert "Окно пробника" in response.text
+    assert "Пробник" in response.text
+    assert f"1–6 {MONTH_GENITIVE[today.month]}" in response.text
