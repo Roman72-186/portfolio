@@ -246,6 +246,24 @@ def test_cycle_item_form_hides_text_and_photo_add_buttons(
     assert 'data-add-block="photo_upload"' in page.text
 
 
+def test_cycle_item_preview_keeps_block_captions(
+    client, db, user_factory, session_factory
+):
+    """Предпросмотр «глазами ученика» подписывает блоки сам.
+
+    Флаг `titlesOutside` (16.09.2026) снимает заголовок внутри блока и уходит
+    только в ленту ученика, где подпись печатает карточка шага. Здесь такой
+    карточки нет — без внутреннего заголовка блок остался бы безымянным.
+    """
+    _csrf_client(client, user_factory, session_factory)
+    cycle_id = _make_cycle(client)
+
+    page = client.get(f"/cabinet/staff/program/cycles/{cycle_id}")
+
+    assert "lrnBlockRender.create" in page.text
+    assert "titlesOutside" not in page.text
+
+
 def test_cycle_without_title_shows_period_as_label(client, db, user_factory, session_factory):
     """Название цикла необязательно (владелец 10.09.2026) — список и экран
     заданий показывают период вместо пустой строки."""

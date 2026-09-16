@@ -462,3 +462,28 @@ def test_no_waiting_hint_when_blocked_by_own_debt(db, regular_user):
     )
 
     assert feed["waiting_for"] is None
+
+
+# ── какой шаг подписывает задание (16.09.2026) ──────────────────────────────
+
+def test_step_knows_it_is_the_first_of_its_task(db, regular_user):
+    """Имя задания печатается над первым его блоком, дальше — только свои
+    заголовки блоков (владелец 16.09.2026)."""
+    task = _task(db, regular_user, title="Задание")
+    _block(db, task, title="Первый", order=0)
+    _block(db, task, title="Второй", order=1)
+
+    steps = _feed(db, regular_user)
+
+    assert [step["first_in_task"] for step in steps] == [True, False]
+
+
+def test_task_without_blocks_is_its_own_first_step(db, regular_user):
+    """Сторож: задание без блоков — одна карточка, и она подписана. Забытый
+    флаг в этой ветке снял бы подпись со всех «Материалов задания»."""
+    _task(db, regular_user, title="Задание без блоков")
+
+    steps = _feed(db, regular_user)
+
+    assert [step["block"] for step in steps] == [None]
+    assert steps[0]["first_in_task"] is True

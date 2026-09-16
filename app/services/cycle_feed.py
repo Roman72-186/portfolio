@@ -138,9 +138,14 @@ def build_cycle_feed(
 ) -> list[dict]:
     """Шаги ленты за период `[start, end]`, сверху вниз, со статусом ученика.
 
-    Шаг — словарь `{"block", "task", "status", "state", "entry"}`. `block` —
-    `None` у задачи без блоков: она идёт в ленте одной карточкой и закрывается
-    так же, как закрывалась во вкладках.
+    Шаг — словарь `{"block", "task", "status", "state", "entry",
+    "first_in_task"}`. `block` — `None` у задачи без блоков: она идёт в ленте
+    одной карточкой и закрывается так же, как закрывалась во вкладках.
+
+    `first_in_task` — шаг первого видимого блока задания. Экран печатает имя
+    задания только над ним (владелец 16.09.2026): у блоков без своего
+    заголовка карточка подставляла имя задания, и два видео подряд выходили
+    подписаны одинаково.
 
     Статус: `"done"` — закрыт, `"current"` — можно делать сейчас, `"locked"` —
     ждёт того, что выше. Блокировка считается сквозной: список блоков всех
@@ -251,6 +256,9 @@ def build_cycle_feed(
                 "lock_reason": lock_reason,
                 "opens_on": opens_on,
                 "subject": task.subject,
+                # Задание без блоков — одна карточка, и она же первая: иначе
+                # экран «Материалы задания» остался бы вообще без подписи.
+                "first_in_task": True,
             })
             if (
                 not done
@@ -260,7 +268,7 @@ def build_cycle_feed(
                 blocked = True
             continue
 
-        for block in task_blocks:
+        for position, block in enumerate(task_blocks):
             state = states.get(block.id)
             done = state is not None and state.status == STATUS_DONE
             block_waits_date = _not_open_yet(block.opens_at, now)
@@ -304,6 +312,9 @@ def build_cycle_feed(
                 # деления на Рисунок и Композицию, часть — с делением
                 # (владелец 03.09.2026).
                 "subject": block.subject or task.subject,
+                # Первый **видимый** блок: `task_blocks` выше уже очищен от
+                # блоков `hidden_until_done` незакрытого задания.
+                "first_in_task": position == 0,
             })
             block_index += 1
     return steps

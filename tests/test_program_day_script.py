@@ -249,3 +249,8 @@ def test_preview_uses_the_student_renderer_not_its_own(
         if "block_type ===" in line and "'video'" not in line
     ]
     assert not own_branches, own_branches
+
+    # Заголовок блока внутри предпросмотра — единственная его подпись: карточки
+    # шага с `.lrn-step-title`, как в ленте ученика, здесь нет. Флаг
+    # `titlesOutside` (16.09.2026) передаёт только лента.
+    assert "titlesOutside" not in script

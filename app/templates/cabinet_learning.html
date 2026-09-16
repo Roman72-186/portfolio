@@ -113,10 +113,17 @@
                     {% if step.status == 'done' %}<span class="trk-badge trk-badge--draft">Сделано</span>{% endif %}
                 </div>
                 {% endif %}
-                <h3 class="lrn-step-title">
-                    {%- if step.block and step.block.title -%}{{ step.block.title }}
-                    {%- else -%}{{ step.task.title }}{%- endif -%}
-                </h3>
+                {# Имя задания — только над первым его блоком (владелец
+                   16.09.2026): раньше его подставляло каждому блоку без
+                   своего заголовка, и два видео подряд выходили подписаны
+                   одинаково. `<h3>` именно опускается, а не рендерится
+                   пустым, — `.lrn-step-head` flex column с gap, пустой узел
+                   оставил бы дырку; тот же приём, что у `.trk-meta` выше. #}
+                {% if step.block and step.block.title %}
+                <h3 class="lrn-step-title">{{ step.block.title }}</h3>
+                {% elif step.first_in_task %}
+                <h3 class="lrn-step-title">{{ step.task.title }}</h3>
+                {% endif %}
                 {% if not step.block and step.task.description %}<p class="lrn-card-note">{{ step.task.description | rich_text | safe }}</p>{% endif %}
                 {% if step.entry.due_label %}
                 <div class="trk-meta">

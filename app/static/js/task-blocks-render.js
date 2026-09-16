@@ -8,9 +8,17 @@
 любая правка (водяной знак, вердикт, скрытые вопросы) чинится дважды и
 разъезжается — ровно то, за чем следит `tests/test_reuse_ratchet.py`.
 
-Точка входа: `window.lrnBlockRender.create({ csrfToken, answered })` возвращает
-рендерер с методами `render(block, index)`, `collectAnswers(blocks, scope)` и
-свойством `answered` (одна попытка: после ответа поля запираются).
+Точка входа: `window.lrnBlockRender.create({ csrfToken, answered, titlesOutside })`
+возвращает рендерер с методами `render(block, index)`, `collectAnswers(blocks,
+scope)` и свойством `answered` (одна попытка: после ответа поля запираются).
+
+`titlesOutside` — подпись блока печатает сам экран, внутри блока её не нужно
+(владелец 16.09.2026). Флаг передаёт только лента цикла: `cabinet_learning.html`
+рисует заголовок шага `<h3 class="lrn-step-title">`, и та же строка внутри блока
+шла второй подряд. Четыре остальных потребителя (панель «Материалы задания» в
+трекере и в самой ленте у задания без блоков, предпросмотр «глазами ученика» в
+конструкторе дня и в элементах цикла) флаг не передают — там внутренний
+заголовок единственная подпись блока.
 
 Одна попытка считается **по вопросу**, не по заданию (уточнено 07.09.2026):
 поле запирает либо общий `api.answered` (отвечено всё), либо `block.answered`
@@ -44,6 +52,9 @@
         el: el,
         create: function (options) {
             var csrfToken = (options || {}).csrfToken;
+            // Локальной переменной, не полем `api`: снаружи флаг никто не
+            // читает, в отличие от `answered`.
+            var titlesOutside = !!(options || {}).titlesOutside;
             var api = {
                 answered: !!(options || {}).answered,
                 uid: Math.random().toString(36).slice(2)
@@ -53,7 +64,9 @@
                 // Не field-label: тот же класс держит подписи полей форм по
                 // всему приложению, а здесь заголовок блока должен быть
                 // заметнее тела текста под ним (ревью 03.09.2026).
-                if (block.title) wrap.appendChild(el('p', 'lrn-blk-title', block.title));
+                // `titlesOutside` — экран печатает подпись сам, см. докстринг
+                // файла: в ленте она шла второй раз подряд.
+                if (!titlesOutside && block.title) wrap.appendChild(el('p', 'lrn-blk-title', block.title));
                 return wrap;
             }
 
@@ -97,8 +110,7 @@
                 // Кружок выполнения — по аналогии с видео (владелец
                 // 12.09.2026): у фото нет своего сигнала вроде `VideoProgress`,
                 // отметку ставит и подтверждает сам клик.
-                var head = el('div', 'lrn-blk-head');
-                if (block.title) head.appendChild(el('p', 'lrn-blk-title', block.title));
+                var head = withTitle(el('div', 'lrn-blk-head'), block);
                 var check = renderBlockCheck(block);
                 head.appendChild(check);
                 wrap.appendChild(head);
@@ -186,8 +198,7 @@
             // несколько видео-блоков сразу, у каждого свой endpoint.
             function renderVideo(block) {
                 var wrap = el('div', 'lrn-blk lrn-blk-video');
-                var head = el('div', 'lrn-blk-head');
-                if (block.title) head.appendChild(el('p', 'lrn-blk-title', block.title));
+                var head = withTitle(el('div', 'lrn-blk-head'), block);
                 var check = renderBlockCheck(block);
                 head.appendChild(check);
                 wrap.appendChild(head);

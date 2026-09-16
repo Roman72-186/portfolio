@@ -414,3 +414,75 @@ def test_learning_hides_cycle_chips_when_there_is_one_cycle(auth_client, db):
     resp = client.get("/cabinet/learning")
 
     assert 'class="lrn-cycles"' not in resp.text
+
+
+# ── подпись шага: ровно одна (16.09.2026) ───────────────────────────────────
+
+def test_feed_lets_the_page_print_the_block_caption(auth_client, db):
+    """Подпись блока печатает карточка шага, рендерер внутри блока молчит.
+
+    До 16.09.2026 её печатали оба, и ученик читал заголовок дважды подряд —
+    видно на проде в цикле «Ранний старт». Флаг `titlesOutside` уходит только
+    в ленту, JS под TestClient не исполняется, поэтому проверяем шов.
+    """
+    client, user = auth_client
+    task = _task(db, user, title="Задание")
+    _block(db, task, title="Оцени себя")
+
+    resp = client.get("/cabinet/learning")
+
+    assert "titlesOutside: true" in resp.text
+    # Сторож от «убрали дубль, убрав не ту подпись»: внешняя остаётся.
+    assert 'class="lrn-step-title"' in resp.text
+    assert "Оцени себя" in resp.text
+
+
+def test_block_panel_keeps_its_own_captions(auth_client, db):
+    """В «Личном трекере» заголовок внутри блока — единственная подпись,
+    флаг туда не уходит."""
+    client, user = auth_client
+    task = _task(db, user, title="Задание")
+    _block(db, task, title="Оцени себя")
+
+    resp = client.get("/cabinet/tracker")
+
+    assert resp.status_code == 200
+    assert "lrnBlockRender.create" in resp.text
+    assert "titlesOutside" not in resp.text
+
+
+def test_block_renderer_is_included_at_one_version():
+    """Версия скрипта одна на все включения: лента и панель задания живут на
+    одной странице, разъезд версий — два разных файла в одной вкладке, и
+    браузер отдаёт ленте старый, без флага."""
+    templates = pathlib.Path(__file__).parent.parent / "app" / "templates"
+    versions = set()
+    for path in templates.rglob("*.html"):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if "task-blocks-render.js?v=" in line:
+                versions.add(line.split("task-blocks-render.js?v=")[1].split('"')[0])
+    assert len(versions) == 1, versions
+
+
+def test_feed_prints_the_task_name_once_for_untitled_blocks(auth_client, db):
+    """Имя задания — только над первым блоком (владелец 16.09.2026): раньше
+    его получал каждый блок без своего заголовка, и два видео подряд были
+    подписаны одинаково."""
+    client, user = auth_client
+    task = _task(db, user, title="Архитектурное эскизирование")
+    _block(db, task, title=None, order=1)
+    _block(db, task, title=None, order=2)
+
+    resp = client.get("/cabinet/learning")
+
+    assert resp.text.count("Архитектурное эскизирование") == 1
+
+
+def test_feed_still_names_a_task_without_blocks(auth_client, db):
+    """Задание без блоков идёт одной карточкой — подпись у неё остаётся."""
+    client, user = auth_client
+    _task(db, user, title="Сдать композицию")
+
+    resp = client.get("/cabinet/learning")
+
+    assert "Сдать композицию" in resp.text

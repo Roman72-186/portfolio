@@ -15,7 +15,7 @@
 задания.
 #}
 {% include "partials/inline/_video_player.html" %}
-<script src="/static/js/task-blocks-render.js?v=13"></script>
+<script src="/static/js/task-blocks-render.js?v=14"></script>
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};
@@ -48,9 +48,16 @@
     }
 
     function renderTask(taskId, data) {
+        // `titlesOutside` — подпись шага печатает сервер
+        // (`cabinet_learning.html`, `<h3 class="lrn-step-title">`), поэтому
+        // внутри блока она не нужна: до 16.09.2026 ученик читал её дважды
+        // подряд. Флаг только здесь — у панели «Материалы задания»
+        // (`task_blocks.html`) и у обоих предпросмотров преподавателя
+        // внутренний заголовок единственная подпись блока.
         var renderer = window.lrnBlockRender.create({
             csrfToken: csrfToken,
-            answered: !!data.answered
+            answered: !!data.answered,
+            titlesOutside: true
         });
         var blocks = data.blocks || [];
         var lastQuestionBody = null;
