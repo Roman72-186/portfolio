@@ -199,3 +199,29 @@ def test_student_sees_calendar_open_without_a_click(client, db, user_factory, se
     # Ученик читает тему месяца, а не служебное имя дайджеста.
     assert "Композиция" in response.text
     assert "Служебное имя" not in response.text
+
+
+def test_day_with_two_events_keeps_both(db, user_factory):
+    """Два события в одном дне не вытесняют друг друга: в клетке обе метки.
+
+    Шаблон схлопывает повторы одного типа (в клетке телефона больше не
+    помещается), но разные типы показывает оба.
+    """
+    staff = user_factory(vk_id=430_016, name="Препод", role_name="ученик")
+    digest = create_digest(
+        db, title="Сентябрь", year=2026, month=9,
+        assign_to_all=True, user_id=staff.id, theme="Объём",
+    )
+    lesson = create_event(
+        db, digest.id, kind="lesson", title="Занятие по рисунку", note=None,
+        starts_on=date(2026, 9, 11), ends_on=date(2026, 9, 11), meeting_url=None,
+    )
+    deadline = create_event(
+        db, digest.id, kind="deadline", title="Сдача композиции", note=None,
+        starts_on=date(2026, 9, 11), ends_on=date(2026, 9, 11), meeting_url=None,
+    )
+    db.commit()
+
+    days = digest_calendar(digest, [lesson, deadline], today=date(2026, 9, 1))
+    day = next(d for d in days if d["number"] == 11 and d["in_month"])
+    assert {e.kind for e in day["events"]} == {"lesson", "deadline"}

@@ -83,6 +83,12 @@
    Типы событий свои — дедлайн, занятие, пробник, эфир (EVENT_KINDS). */
 
 .prg-dot--deadline { color: #fff; background: var(--error); }
+/* В тёмной теме --error и --success светлеют (#F87171 и #34D399), и белая
+   буква на них почти пропадает — тот же класс поломки, что у тёмных клеток
+   выходных ниже. Текст здесь тёмный, а не var(--text): на светлой заливке он
+   в тёмной теме сам стал бы белым. */
+:root[data-theme="dark"] .prg-dot--deadline,
+:root[data-theme="dark"] .prg-dot--broadcast { color: #12161F; }
 /* Занятие — на тон плотнее пары soft/on-soft: на белой клетке календаря та
    пара давала бледную метку, которую не видно рядом с заливками пробника и
    дедлайна (визуальная проверка 16.09.2026). */
@@ -111,10 +117,13 @@
 .dgst-title { margin: 0; font: 700 20px/1.25 var(--font-display); color: var(--text); }
 
 .dgst-list { display: grid; gap: 10px; margin-top: 16px; padding: 0; list-style: none; }
-/* Колонка даты фиксированной ширины: при `auto` «25–30 сентября» шире, чем
-   «4 сентября», и названия событий вставали лесенкой. */
+/* Колонка даты с нижней границей ширины: при чистом `auto` «25–30 сентября»
+   шире, чем «4 сентября», и названия событий вставали лесенкой. Верхнюю
+   границу не ставим — событие на стыке месяцев даёт «30 сентября – 2 октября»,
+   и в жёсткой колонке эта дата (у неё `white-space: nowrap`) залезла бы на
+   название. */
 .dgst-event {
-    display: grid; grid-template-columns: 9.5em minmax(0, 1fr); gap: 4px 10px;
+    display: grid; grid-template-columns: minmax(9.5em, auto) minmax(0, 1fr); gap: 4px 10px;
     align-items: baseline;
 }
 .dgst-event-date { color: var(--muted); font: 700 13px/1.4 var(--font-body); white-space: nowrap; }
