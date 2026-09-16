@@ -1,0 +1,82 @@
+{#
+  Дайджест месяца у ученика: заголовок «месяц · тема», календарь месяца с
+  событиями и список событий под ним.
+
+  Требование владельца 16.09.2026: «чтобы у ребёнка был именно календарь с
+  событиями в месяце, на который он может опереться». Поэтому блок открыт
+  сразу, без <details> — расписание, на которое опираются, за клик не прячут.
+
+  Сетка — общие .prg-grid/.prg-day из program.css, те же, что рисуют календарь
+  программы у преподавателя. Клетка здесь не ссылка (.prg-day--static):
+  ученику некуда проваливаться, месяц читается целиком.
+
+  Ждёт в контексте: digest, digest_heading, digest_days, digest_events,
+  digest_weekday_labels, event_kind_labels, format_event_dates.
+#}
+{% set kind_marks = {
+    'deadline': ('Д', 'deadline'),
+    'lesson': ('З', 'lesson'),
+    'mock_exam': ('П', 'mock'),
+    'broadcast': ('Э', 'broadcast'),
+} %}
+<section class="dgst" aria-label="Дайджест месяца">
+    <header class="dgst-head">
+        <span class="dgst-kicker">Дайджест месяца</span>
+        <h2 class="dgst-title">{{ digest_heading }}</h2>
+    </header>
+
+    <div class="prg-grid" role="grid" aria-label="Календарь месяца">
+        {% for label in digest_weekday_labels %}
+        <div class="prg-dowhead" aria-hidden="true">{{ label }}</div>
+        {% endfor %}
+
+        {% for day in digest_days %}
+        <div class="prg-day prg-day--static{% if not day.in_month %} is-outside{% endif %}{% if day.is_today %} is-today{% endif %}{% if day.is_past %} is-past{% endif %}"
+             data-dow="{{ day.dow }}"
+             {% if day.events %}aria-label="{{ day.number }} число: {{ day.events | map(attribute='title') | join(', ') }}"{% endif %}>
+            <span class="prg-daynum">{{ day.number }}</span>
+            {% if day.events %}
+            <span class="prg-marks">
+                {# Один тип — одна метка, даже если событий этого типа в дне
+                   несколько: в клетке телефона больше не помещается, названия
+                   ученик читает в списке под календарём. #}
+                {% set shown = [] %}
+                {% for event in day.events %}
+                {% if event.kind not in shown %}
+                {% set _ = shown.append(event.kind) %}
+                {% set mark = kind_marks.get(event.kind, ('·', 'other')) %}
+                <span class="prg-dot prg-dot--{{ mark[1] }}"
+                      title="{{ event_kind_labels.get(event.kind, event.kind) }}">{{ mark[0] }}</span>
+                {% endif %}
+                {% endfor %}
+            </span>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+
+    <p class="prg-legend">
+        <span class="prg-dot prg-dot--deadline">Д</span> сдача работ
+        <span class="prg-dot prg-dot--mock">П</span> пробник
+        <span class="prg-dot prg-dot--lesson">З</span> занятие
+        <span class="prg-dot prg-dot--broadcast">Э</span> эфир
+    </p>
+
+    {% if digest_events %}
+    <ul class="dgst-list">
+        {% for event in digest_events %}
+        <li class="dgst-event">
+            <span class="dgst-event-date">{{ format_event_dates(event) }}</span>
+            <span class="dgst-event-title">{{ event.title }}</span>
+            {% if event.note %}<p class="dgst-event-note">{{ event.note }}</p>{% endif %}
+            {% if event.meeting_url %}
+            <a class="btn-outline dgst-event-link" href="{{ event.meeting_url }}"
+               target="_blank" rel="noopener">Подключиться</a>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="dgst-empty">В этом месяце пока нет событий.</p>
+    {% endif %}
+</section>

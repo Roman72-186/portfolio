@@ -258,7 +258,12 @@ class ScheduleDigest(Base):
     __tablename__ = "schedule_digests"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Служебное имя для списка преподавателя: им различают дайджесты одного
+    # месяца между собой по аудитории («Сентябрь — топ-тариф»).
     title: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Тема месяца — то, что читает ученик над календарём (решение владельца
+    # 16.09.2026). Пустая у старых записей, тогда ученику показывается `title`.
+    theme: Mapped[str | None] = mapped_column(String(120), nullable=True)
     year: Mapped[int] = mapped_column(Integer, nullable=False)
     month: Mapped[int] = mapped_column(Integer, nullable=False)  # 1–12
 

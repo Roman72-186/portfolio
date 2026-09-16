@@ -61,6 +61,9 @@ class DigestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1, max_length=200)
+    # Тема месяца: её ученик читает над календарём. Необязательна — у
+    # дайджестов, заведённых до 16.09.2026, темы нет, им показывается title.
+    theme: str | None = Field(default=None, max_length=120)
     year: int = Field(ge=2020, le=2100)
     month: int = Field(ge=1, le=12)
     assign_to_all: bool = False
@@ -74,6 +77,12 @@ class DigestPayload(BaseModel):
         if not value:
             raise ValueError("Title cannot be empty")
         return value
+
+    @field_validator("theme")
+    @classmethod
+    def strip_theme(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        return value or None
 
 
 class EventPayload(BaseModel):
@@ -209,6 +218,7 @@ def create_digest_route(
     digest = create_digest(
         db,
         title=payload.title,
+        theme=payload.theme,
         year=payload.year,
         month=payload.month,
         assign_to_all=payload.assign_to_all,
@@ -240,6 +250,7 @@ def update_digest_route(
     update_digest(
         digest,
         title=payload.title,
+        theme=payload.theme,
         year=payload.year,
         month=payload.month,
         assign_to_all=payload.assign_to_all,

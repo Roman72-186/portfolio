@@ -28,6 +28,11 @@ FORM: Operate, расширение существующего кабинета 
         <div class="trk-grid trk-grid--two">
             <label class="trk-field">Название
                 <input data-digest-title type="text" maxlength="200" placeholder="Например: Сентябрь — топ-тариф" autocomplete="off">
+                <span class="trk-hint">Служебное: по нему вы различаете дайджесты месяца в этом списке.</span>
+            </label>
+            <label class="trk-field">Тема месяца
+                <input data-digest-theme type="text" maxlength="120" placeholder="Например: Композиция и объём" autocomplete="off">
+                <span class="trk-hint">Её видит ученик над календарём: «Сентябрь · Композиция и объём».</span>
             </label>
             <div class="trk-grid trk-grid--two dg-year-month">
                 <label class="trk-field">Год
@@ -76,6 +81,7 @@ FORM: Operate, расширение существующего кабинета 
         {% for digest in digests %}
         <article class="trk-row" data-digest-row data-id="{{ digest.id }}"
                  data-title="{{ digest.title }}"
+                 data-theme="{{ digest.theme or '' }}"
                  data-year="{{ digest.year }}"
                  data-month="{{ digest.month }}"
                  data-all="{{ '1' if digest.assign_to_all else '' }}"
@@ -85,6 +91,7 @@ FORM: Operate, расширение существующего кабинета 
                 <h3>{{ digest.title }}</h3>
                 <div class="trk-meta">
                     <span>{{ month_names[digest.month] }} {{ digest.year }}</span>
+                    {% if digest.theme %}<span>Тема: {{ digest.theme }}</span>{% else %}<span>Тема не задана</span>{% endif %}
                     {% if digest.assign_to_all %}
                     <span>Всем ученикам</span>
                     {% else %}
@@ -186,6 +193,7 @@ FORM: Operate, расширение существующего кабинета 
         var now = new Date();
         field('id').value = row ? row.dataset.id : '';
         field('title').value = row ? row.dataset.title : '';
+        field('theme').value = row ? (row.dataset.theme || '') : '';
         field('year').value = row ? row.dataset.year : now.getFullYear();
         field('month').value = row ? row.dataset.month : (now.getMonth() + 1);
         field('all').checked = row ? row.dataset.all === '1' : false;
@@ -230,6 +238,7 @@ FORM: Operate, расширение существующего кабинета 
             saveButton.disabled = true;
             api('/cabinet/staff/digest' + (digestId ? '/' + digestId : ''), {
                 title: title,
+                theme: field('theme').value.trim(),
                 year: Number(field('year').value),
                 month: Number(field('month').value),
                 assign_to_all: isForAll,

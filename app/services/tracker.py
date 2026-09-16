@@ -44,7 +44,13 @@ from app.models.tracker import (
     TrackerTaskTag,
 )
 from app.models.user import User
-from app.services.program import day_bounds, msk_date, week_start
+from app.services.program import (
+    MONTH_NAMES,
+    day_bounds,
+    month_days,
+    msk_date,
+    week_start,
+)
 from app.services.tags import parse_usernames
 from app.services.tz import MSK_TZ, now_msk
 # Неделя программы — это тема недели видеомодуля: расписание, публикация и
@@ -1116,10 +1122,18 @@ def get_digest(db: Session, digest_id: int) -> ScheduleDigest | None:
 
 
 def create_digest(
-    db: Session, *, title: str, year: int, month: int, assign_to_all: bool, user_id: int
+    db: Session,
+    *,
+    title: str,
+    year: int,
+    month: int,
+    assign_to_all: bool,
+    user_id: int,
+    theme: str | None = None,
 ) -> ScheduleDigest:
     digest = ScheduleDigest(
         title=title,
+        theme=theme,
         year=year,
         month=month,
         assign_to_all=assign_to_all,
@@ -1131,9 +1145,16 @@ def create_digest(
 
 
 def update_digest(
-    digest: ScheduleDigest, *, title: str, year: int, month: int, assign_to_all: bool
+    digest: ScheduleDigest,
+    *,
+    title: str,
+    year: int,
+    month: int,
+    assign_to_all: bool,
+    theme: str | None = None,
 ) -> None:
     digest.title = title
+    digest.theme = theme
     digest.year = year
     digest.month = month
     digest.assign_to_all = assign_to_all
@@ -1287,6 +1308,70 @@ def update_event(
     event.ends_on = ends_on
     event.meeting_url = meeting_url
     event.sort_order = sort_order
+
+
+# Родительный падеж месяца: заголовок читается как «Сентябрь · Тема», а
+# подпись под календарём — «сентября». MONTH_NAMES из program.py даёт
+# именительный, склонять его правилами дороже и без пользы — здесь двенадцать
+# значений, они не меняются.
+MONTH_GENITIVE = (
+    "", "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+)
+
+
+def digest_heading(digest: ScheduleDigest) -> str:
+    """Заголовок дайджеста для ученика: «Сентябрь · Композиция и объём».
+
+    Тема пустая у дайджестов, заведённых до 16.09.2026, — тогда показываем
+    `title` как есть. Склеивать месяц с `title` нельзя: в прод-названиях месяц
+    уже вписан руками вместе с тарифом («Сентябрь — топ-тариф»), вышло бы
+    «Сентябрь · Сентябрь — топ-тариф».
+    """
+    month_name = MONTH_NAMES[digest.month - 1].capitalize()
+    theme = (digest.theme or "").strip()
+    if not theme:
+        return digest.title
+    return f"{month_name} · {theme}"
+
+
+def digest_calendar(
+    digest: ScheduleDigest, events: list[ScheduleEvent], *, today: date | None = None
+) -> list[dict]:
+    """Сетка месяца дайджеста с событиями, разложенными по дням.
+
+    Событие-диапазон («пробник с 25 по 30») закрашивает каждый свой день, а не
+    только первый: ученик смотрит на число и должен видеть, идёт ли окно
+    сегодня. Дни чужих месяцев в сетке есть (иначе недели не выстроятся в
+    строки), но события в них не показываем — у соседнего месяца свой дайджест.
+    """
+    days = month_days(digest.year, digest.month, today)
+    by_day: dict[str, list[ScheduleEvent]] = {}
+    for event in events:
+        cursor = event.starts_on
+        # Диапазон задом наперёд форма не пропускает (EventPayload.check_range),
+        # но данные старше той проверки нам неизвестны — цикл просто не выполнится.
+        while cursor <= event.ends_on:
+            by_day.setdefault(cursor.isoformat(), []).append(event)
+            cursor += timedelta(days=1)
+    for day in days:
+        day["events"] = by_day.get(day["iso"], []) if day["in_month"] else []
+    return days
+
+
+def format_event_dates(event: ScheduleEvent) -> str:
+    """«25–30 сентября» или «7 сентября» — подпись под списком событий."""
+    if event.starts_on == event.ends_on:
+        return f"{event.starts_on.day} {MONTH_GENITIVE[event.starts_on.month]}"
+    if event.starts_on.month == event.ends_on.month:
+        return (
+            f"{event.starts_on.day}–{event.ends_on.day} "
+            f"{MONTH_GENITIVE[event.ends_on.month]}"
+        )
+    return (
+        f"{event.starts_on.day} {MONTH_GENITIVE[event.starts_on.month]} – "
+        f"{event.ends_on.day} {MONTH_GENITIVE[event.ends_on.month]}"
+    )
 
 
 def delete_event(db: Session, event: ScheduleEvent) -> None:

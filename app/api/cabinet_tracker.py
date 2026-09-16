@@ -49,7 +49,13 @@ from app.models.tracker import (
     TrackerTaskState,
 )
 from app.models.work import WORK_TYPE_BEFORE, Work
-from app.services.program import day_bounds, item_details, msk_date, week_start
+from app.services.program import (
+    WEEKDAY_LABELS,
+    day_bounds,
+    item_details,
+    msk_date,
+    week_start,
+)
 from app.services.stats import avg_score_by_subject_all_time
 from app.services import s3 as s3_service
 from app.services.task_blocks import (
@@ -80,7 +86,10 @@ from app.services.tracker import (
     accessible_task_ids,
     active_digest_for_student,
     active_goal_for_student,
+    digest_calendar,
+    digest_heading,
     effective_week_start,
+    format_event_dates,
     list_events,
     task_status,
 )
@@ -145,6 +154,16 @@ def cabinet_tracker(
         "done": done,
         "digest": digest,
         "digest_events": digest_events,
+        # Календарь месяца — то, на что ученик опирается (решение владельца
+        # 16.09.2026). Сетку строит общая month_days из services/program.py,
+        # та же, что рисует календарь программы у преподавателя.
+        "digest_heading": digest_heading(digest) if digest is not None else None,
+        "digest_days": (
+            digest_calendar(digest, digest_events, today=today)
+            if digest is not None else []
+        ),
+        "digest_weekday_labels": WEEKDAY_LABELS,
+        "format_event_dates": format_event_dates,
         "event_kind_labels": EVENT_KIND_LABELS,
         "goal": goal,
         # Красное предупреждение (решение владельца 23.08, гейт «блок → неделя
