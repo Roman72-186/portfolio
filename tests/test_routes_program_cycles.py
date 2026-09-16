@@ -10,6 +10,8 @@
 from datetime import timedelta
 
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
+from app.models.learning_video import LearningVideo
+from app.services.cycle_feed import feed_for_student
 from app.services.program import msk_date
 from app.services.tz import today_msk
 
@@ -108,6 +110,96 @@ def test_editing_a_missing_cycle_gives_404(admin_client):
     client, _ = admin_client
     resp = client.post(f"{PAGE}/999999", json=_payload())
     assert resp.status_code == 404
+
+
+# ── удаление ────────────────────────────────────────────────────────────────
+
+def test_admin_deletes_cycle(admin_client, db):
+    """Удаление мягкое: строка остаётся с `deleted_at`, из списка цикл уходит.
+
+    Физического удаления нет намеренно — ошибочный клик отменяется правкой
+    одной колонки, а задания внутри цикла сохраняют историю ответов.
+    """
+    client, _ = admin_client
+    client.post(PAGE, json=_payload(title="Предобучение"))
+    cycle_id = _cycles(db)[0].id
+
+    resp = client.post(f"{PAGE}/{cycle_id}/delete")
+    assert resp.status_code == 200
+
+    db.expire_all()
+    cycle = db.get(LearningTopic, cycle_id)
+    assert cycle is not None
+    assert cycle.deleted_at is not None
+    assert cycle.is_published is False
+    assert "Предобучение" not in client.get(PAGE).text
+
+
+def test_deleted_cycle_disappears_from_student_feed(admin_client, db, regular_user):
+    """Главное, ради чего кнопка и заводилась: цикл уходит у учеников.
+
+    Задания внутри остаются неудалёнными — ленте они не видны потому, что без
+    живого цикла окно падает на календарную неделю, а бездатные задания в неё
+    не подмешиваются.
+    """
+    client, _ = admin_client
+    client.post(PAGE, json=_payload(starts_on=today_msk().isoformat()))
+    cycle_id = _cycles(db)[0].id
+    assert client.post(
+        f"{PAGE}/{cycle_id}/items/material", json={"title": "Первое задание"}
+    ).status_code == 200
+
+    def steps():
+        db.expire_all()
+        return feed_for_student(
+            db, user_id=regular_user.id, user_tariff=regular_user.tariff,
+            today=today_msk(),
+        )
+
+    assert [s["task"].title for s in steps()["steps"]] == ["Первое задание"]
+
+    assert client.post(f"{PAGE}/{cycle_id}/delete").status_code == 200
+
+    after = steps()
+    assert after["topic"] is None
+    assert after["steps"] == []
+    assert after["cycles"] == []
+
+
+def test_cycle_card_warns_about_videos_bound_to_the_topic(admin_client, db):
+    """Ролики старой привязки (`LearningVideo.topic_id`) тоже уходят у учеников.
+
+    В счёт заданий они не входят, и без отдельного числа человек увидел бы
+    «внутри 0» — а доступ к ролику потерял бы (прецедент гейта в
+    `video_admin.py::delete_video_topic`).
+    """
+    client, _ = admin_client
+    client.post(PAGE, json=_payload())
+    cycle = _cycles(db)[0]
+    db.add(
+        LearningVideo(
+            bunny_library_id=720058,
+            bunny_video_id="guid-cycle-1",
+            title="Лекция недели",
+            status="ready",
+            topic_id=cycle.id,
+        )
+    )
+    db.commit()
+
+    text = client.get(PAGE).text
+    assert 'data-items="0"' in text
+    assert 'data-videos="1"' in text
+
+
+def test_student_cannot_delete_cycle(auth_client):
+    client, _ = auth_client
+    assert client.post(f"{PAGE}/1/delete").status_code in (302, 403)
+
+
+def test_deleting_a_missing_cycle_gives_404(admin_client):
+    client, _ = admin_client
+    assert client.post(f"{PAGE}/999999/delete").status_code == 404
 
 
 def test_cycles_page_lists_existing(admin_client, db):

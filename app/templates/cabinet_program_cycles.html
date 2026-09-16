@@ -92,6 +92,14 @@
                 <a class="btn-outline" href="/cabinet/staff/program/cycles/{{ cycle.id }}/stats">Статистика</a>
                 <button type="button" class="btn-outline" data-cycle-edit
                         data-payload='{{ cycle|tojson }}'>Название и даты</button>
+                {# Удаление мягкое: цикл пропадает у учеников и из этого списка,
+                   задания внутри остаются в базе (см. `delete_program_cycle`).
+                   Кнопка отделена цветом от трёх остальных — это единственное
+                   действие на карточке, которое не отменяется тем же кликом. #}
+                <button type="button" class="btn-danger" data-cycle-delete
+                        data-label="{{ cycle.label }}"
+                        data-items="{{ cycle.items_count }}"
+                        data-videos="{{ cycle.videos_count }}">Удалить</button>
             </div>
         </article>
         {% endfor %}
@@ -150,6 +158,48 @@
     });
 
     resetBtn.addEventListener('click', reset);
+
+    // Сколько уносит с собой цикл — в предупреждении словами, а не «7
+    // задание»: число без падежа читается как опечатка.
+    function plural(count, one, few, many) {
+        var tail = count % 100;
+        if (tail >= 11 && tail <= 14) return many;
+        var last = count % 10;
+        if (last === 1) return one;
+        if (last >= 2 && last <= 4) return few;
+        return many;
+    }
+
+    document.querySelectorAll('[data-cycle-delete]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var card = button.closest('[data-cycle-id]');
+            var items = Number(button.getAttribute('data-items')) || 0;
+            // Ролики старой привязки к теме (`LearningVideo.topic_id`) уходят
+            // у учеников вместе с рамкой, и в счёт заданий они не входят —
+            // без этой строки человек увидел бы «внутри 0» и потерял доступ.
+            var videos = Number(button.getAttribute('data-videos')) || 0;
+            var inside = [];
+            if (items) inside.push(items + ' ' + plural(items, 'задание', 'задания', 'заданий'));
+            if (videos) inside.push(videos + ' ' + plural(videos, 'ролик', 'ролика', 'роликов'));
+            var question = 'Удалить цикл «' + button.getAttribute('data-label') + '»?';
+            question += inside.length
+                ? ' Внутри ' + inside.join(' и ') + ' – они пропадут у учеников вместе с ним.'
+                : ' Ученики его больше не увидят.';
+            if (!window.confirm(question)) return;
+            button.disabled = true;
+            fetch('/cabinet/staff/program/cycles/' + card.getAttribute('data-cycle-id') + '/delete', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json', 'X-CSRF-Token': csrfToken }
+            }).then(function (resp) {
+                if (!resp.ok) throw new Error('');
+                window.location.reload();
+            }).catch(function () {
+                button.disabled = false;
+                window.alert('Не удалось удалить цикл.');
+            });
+        });
+    });
 
     form.querySelector('[data-cycle-save]').addEventListener('click', function () {
         var id = fields.id.value;

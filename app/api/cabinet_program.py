@@ -95,6 +95,7 @@ from app.services.program import (
     videos_for_picker,
 )
 from app.services.tracker import (
+    count_week_items,
     create_homework,
     create_task,
     cycle_label,
@@ -121,6 +122,7 @@ from app.services.video_topics import (
     ambiguous_tag_names,
     count_topic_audience,
     create_topic,
+    delete_topic,
     get_assignee_ids,
     get_tag_ids,
     get_topic,
@@ -434,6 +436,25 @@ def _cycle_dates(payload: CyclePayload) -> tuple[datetime, datetime]:
     )
 
 
+def _cycle_video_count(db: DBSession, topic_id: int) -> int:
+    """Сколько роликов привязано к циклу старой связью `LearningVideo.topic_id`.
+
+    Наследство блока, который убрали со страницы загрузки: ролик цикла нового
+    образца лежит в блоке задания (`task_blocks.video_id`) и в этот счёт не
+    попадает. Но у тем, заведённых до 31.08.2026, привязка осталась, и
+    удаление рамки уносит доступ к ним тоже (`accessible_topic_ids`). Поэтому
+    число показывается человеку до клика, а не выясняется после.
+    """
+    return (
+        db.query(LearningVideo.id)
+        .filter(
+            LearningVideo.topic_id == topic_id,
+            LearningVideo.deleted_at.is_(None),
+        )
+        .count()
+    )
+
+
 @router.get("/cycles", response_class=HTMLResponse)
 def program_cycles(
     request: Request,
@@ -449,6 +470,10 @@ def program_cycles(
             "starts_on": msk_date(topic.opens_at).isoformat(),
             "ends_on": msk_date(topic.ends_at).isoformat() if topic.ends_at else None,
             "is_published": topic.is_published,
+            # Сколько заданий и роликов внутри — только для предупреждения
+            # перед удалением: человек должен понимать, что уносит с собой рамка.
+            "items_count": count_week_items(db, topic.id),
+            "videos_count": _cycle_video_count(db, topic.id),
         }
         for topic in list_week_topics(db)
     ]
@@ -526,6 +551,53 @@ def update_program_cycle(
         publish_topic(topic, user_id=user["user_id"])
     else:
         unpublish_topic(topic)
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/cycles/{topic_id}/delete", response_class=JSONResponse)
+def delete_program_cycle(
+    topic_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Убрать цикл из программы (владелец 16.09.2026).
+
+    Мягкое удаление рамки: `delete_topic` ставит `deleted_at`, и цикл пропадает
+    и из списка staff (`list_topics` фильтрует удалённые), и у ученика —
+    `accessible_topic_ids` удалённые темы не отдаёт, поэтому `accessible_cycles`
+    его не видит, `effective_cycle` возвращает `None`, а лента падает на
+    календарную неделю, куда бездатные задания цикла не попадают
+    (`accessible_task_entries` подмешивает их только по id живого цикла).
+
+    Задания внутри намеренно не удаляются каскадом: ответы учеников и история
+    остаются на месте, а ошибочное удаление отменяется правкой самой темы —
+    `deleted_at` обратно в NULL **и** `is_published` в true: `delete_topic`
+    снимает публикацию заодно, и цикл, которому вернули только `deleted_at`,
+    поднимется скрытым от учеников. Единственное место, где эти задания после удаления
+    ещё видны, — выбор «взять содержимое» (`blocks_source_list` смотрит только
+    на `TrackerTask.deleted_at`), и это скорее польза: набор блоков
+    переносится в новый цикл.
+    """
+    topic = get_topic(db, topic_id, kinds=(TOPIC_KIND_WEEK,))
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Цикл не найден")
+    # Ролики считаем до удаления и пишем в журнал: у легаси-темы это
+    # единственный след того, к чему именно закрылся доступ.
+    items_count = count_week_items(db, topic.id)
+    videos_count = _cycle_video_count(db, topic.id)
+    delete_topic(topic)
+    db.add(
+        AuditLog(
+            action="program_cycle_delete",
+            performed_by_id=user["user_id"],
+            details=json.dumps(
+                {"topic_id": topic.id, "items": items_count, "videos": videos_count},
+                ensure_ascii=False,
+            ),
+        )
+    )
     db.commit()
     return JSONResponse({"ok": True})
 
