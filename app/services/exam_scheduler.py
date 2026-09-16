@@ -656,7 +656,7 @@ def start_scheduler() -> None:
     )
     _scheduler.start()
     logger.info(
-        "Exam scheduler started (exam_notifications=1h, mock_exam_progress=1min, "
+        "Exam scheduler started (exam_notifications=1h, "
         "mock_exam_expiry=5min, cleanup=6h, video_status_sync=2min, "
         "tg_username_check=daily@04:00 UTC, birthday_check=daily@05:00 UTC)"
     )
