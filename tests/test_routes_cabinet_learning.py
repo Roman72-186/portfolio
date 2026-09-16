@@ -12,6 +12,8 @@
 import pathlib
 from datetime import timedelta, timezone
 
+import pytest
+
 from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, TOPIC_KIND_WEEK, LearningTopic
 from app.models.learning_video import LearningVideo
 from app.models.task_block import BLOCK_TEXT, TaskBlock
@@ -451,16 +453,21 @@ def test_block_panel_keeps_its_own_captions(auth_client, db):
     assert "titlesOutside" not in resp.text
 
 
-def test_block_renderer_is_included_at_one_version():
-    """Версия скрипта одна на все включения: лента и панель задания живут на
-    одной странице, разъезд версий — два разных файла в одной вкладке, и
-    браузер отдаёт ленте старый, без флага."""
+@pytest.mark.parametrize("asset", ["task-blocks-render.js?v=", "tracker.css?v="])
+def test_block_assets_are_included_at_one_version(asset):
+    """Версия файла одна на все включения.
+
+    Лента и панель задания живут на одной странице: разъезд версий — два
+    разных файла в одной вкладке. Отдельно важна версия `tracker.css` — в нём
+    правило, которое держит кружок отметки справа у блока без заголовка;
+    вернувшийся ученик со старым файлом увидит кружок слева.
+    """
     templates = pathlib.Path(__file__).parent.parent / "app" / "templates"
     versions = set()
     for path in templates.rglob("*.html"):
         for line in path.read_text(encoding="utf-8").splitlines():
-            if "task-blocks-render.js?v=" in line:
-                versions.add(line.split("task-blocks-render.js?v=")[1].split('"')[0])
+            if asset in line:
+                versions.add(line.split(asset)[1].split('"')[0])
     assert len(versions) == 1, versions
 
 

@@ -127,7 +127,11 @@ scope)` и свойством `answered` (одна попытка: после о
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-link'), block);
                 // Ссылка кнопкой, а не текстом для копирования — решение 17.08
                 // по ссылке на созвон, здесь тот же приём.
-                var a = el('a', 'btn-outline', block.title || 'Открыть ссылку');
+                // Заголовком подписана и кнопка — но только там, где над блоком
+                // его нет: в ленте заголовок печатает карточка шага, и кнопка
+                // с тем же текстом была бы третьей копией одной строки.
+                var a = el('a', 'btn-outline',
+                    (!titlesOutside && block.title) || 'Открыть ссылку');
                 a.href = block.url;
                 a.target = '_blank';
                 a.rel = 'noopener noreferrer';
