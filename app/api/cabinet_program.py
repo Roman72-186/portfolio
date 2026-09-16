@@ -35,6 +35,7 @@ from app.models.task_block import (
     QUESTION_TYPES,
     BLOCK_TYPE_LABELS,
     BLOCK_TYPES,
+    BLOCK_TYPES_ADDABLE,
     MAX_BLOCK_IMAGES,
     MAX_BLOCKS,
     QUESTION_TEXT,
@@ -787,6 +788,11 @@ def program_cycle_items(
             # ролик по-прежнему можно положить блоком внутрь «Задания».
             "catalog_videos": videos_for_picker(db),
             "block_types": [(t, BLOCK_TYPE_LABELS[t]) for t in BLOCK_TYPES],
+            # Подписи (`block_types`) отдаются по всем типам — ими
+            # редактор называет карточки уже сохранённых блоков. Кнопки
+            # рисуются по `block_add_types`, он уже: «+ Текст» и «+ Фото»
+            # сняты (владелец 16.09.2026).
+            "block_add_types": [(t, BLOCK_TYPE_LABELS[t]) for t in BLOCK_TYPES_ADDABLE],
             "max_block_images": MAX_BLOCK_IMAGES,
             "tariffs": TARIFFS_CURRENT,
         },
@@ -1027,9 +1033,14 @@ def program_day(
             # вкладке. Занятость больше не блокирует выбор — один ролик можно
             # поставить блоком в несколько заданий (владелец 31.08.2026).
             "catalog_videos": videos_for_picker(db),
-            # Кнопки «что добавить» в редакторе блоков. Порядок здесь и есть
-            # порядок кнопок в форме.
+            # Типы блоков в редакторе. Порядок здесь и есть порядок кнопок
+            # в форме.
             "block_types": [(t, BLOCK_TYPE_LABELS[t]) for t in BLOCK_TYPES],
+            # Подписи (`block_types`) отдаются по всем типам — ими
+            # редактор называет карточки уже сохранённых блоков. Кнопки
+            # рисуются по `block_add_types`, он уже: «+ Текст» и «+ Фото»
+            # сняты (владелец 16.09.2026).
+            "block_add_types": [(t, BLOCK_TYPE_LABELS[t]) for t in BLOCK_TYPES_ADDABLE],
             "max_block_images": MAX_BLOCK_IMAGES,
         },
     )

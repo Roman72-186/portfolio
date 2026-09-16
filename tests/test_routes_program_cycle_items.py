@@ -225,6 +225,27 @@ def test_cycle_item_form_has_no_tariff_field(client, db, user_factory, session_f
     assert resp.status_code == 422
 
 
+def test_cycle_item_form_hides_text_and_photo_add_buttons(
+    client, db, user_factory, session_factory
+):
+    """Кнопок «+ Текст» и «+ Фото» нет и здесь (владелец 16.09.2026).
+
+    Второй экран конструктора: `cabinet_program_day.html` и этот шаблон
+    рисуют ряд добавления каждый своим циклом, и правка одного из них
+    исторически обгоняла второй. Пара на экране дня — в
+    `tests/test_routes_task_blocks.py`.
+    """
+    _csrf_client(client, user_factory, session_factory)
+    cycle_id = _make_cycle(client)
+
+    page = client.get(f"/cabinet/staff/program/cycles/{cycle_id}")
+
+    assert 'data-add-block="text"' not in page.text
+    assert 'data-add-block="photo"' not in page.text
+    assert 'data-add-block="upload"' in page.text
+    assert 'data-add-block="photo_upload"' in page.text
+
+
 def test_cycle_without_title_shows_period_as_label(client, db, user_factory, session_factory):
     """Название цикла необязательно (владелец 10.09.2026) — список и экран
     заданий показывают период вместо пустой строки."""

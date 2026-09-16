@@ -592,7 +592,7 @@
                 return wrap;
             }
 
-            // Блок «Загрузить работы» — приём файлов на месте.
+            // Блок «Домашнее задание» (тип upload) — приём файлов на месте.
             function renderUpload(block) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-upload-block'), block);
                 if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-body', block.body_html));
@@ -606,7 +606,7 @@
             // Фото + сдача работы (владелец 12.09.2026): фото-задание — та же
             // галерея, что у renderPhoto, приём результата — та же форма, что
             // у renderUpload. Своего кружка подтверждения нет: блок закрывает
-            // сама сдача, как и «Загрузить работы».
+            // сама сдача, как и «Домашнее задание».
             function renderPhotoUpload(block) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-photo-upload'), block);
                 var urls = (block.images || []).map(function (image) { return image.url; });

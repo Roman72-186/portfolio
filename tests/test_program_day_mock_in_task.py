@@ -68,8 +68,9 @@ def test_task_form_carries_the_ticket_section(
     assert "data-add-mock" in form
     assert "data-simple-mock" in form
 
-    # Кнопка стоит в общем ряду добавления, рядом с «+ Текст» и «+ Фото»
+    # Кнопка стоит в общем ряду добавления, рядом с остальными типами блока
     # (владелец 08.09.2026: «перенести в общий список добавления кнопок»).
+    # «+ Текст» и «+ Фото» из ряда сняты 16.09.2026, остальные на месте.
     add_row_start = form.index("prg-blocks-add")
     add_row = form[add_row_start:form.index("</div>", form.index("data-add-mock"))]
     assert "data-add-mock" in add_row
