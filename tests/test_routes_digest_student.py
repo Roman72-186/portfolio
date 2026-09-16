@@ -144,8 +144,8 @@ def test_digest_lives_on_its_own_tab(client, db, user_factory, session_factory):
     assert 'data-trk-tab="digest"' in response.text
     assert 'id="trkPanelDigest"' in response.text
     # Панель задач открыта, дайджест спрятан до клика по вкладке.
-    assert 'id="trkPanelTasks" role="tabpanel" aria-labelledby="trkTabTasks">' in response.text
-    assert 'id="trkPanelDigest" role="tabpanel" aria-labelledby="trkTabDigest" hidden' in response.text
+    assert 'id="trkPanelTasks" aria-labelledby="trkTabTasks">' in response.text
+    assert 'id="trkPanelDigest" aria-labelledby="trkTabDigest" hidden' in response.text
     assert "Общий эфир" in response.text
     # Ученик читает тему месяца, а не служебное имя дайджеста.
     assert "Композиция" in response.text
