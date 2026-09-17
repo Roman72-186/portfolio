@@ -86,4 +86,4 @@ async def point_a_audio_upload(
         raise HTTPException(status_code=502, detail="Не удалось загрузить файл в хранилище")
     db.commit()
 
-    return RedirectResponse("/cabinet/staff/point-a-audio?ok=1", status_code=302)
+    return RedirectResponse(f"/cabinet/staff/point-a-audio?ok={level}", status_code=302)
