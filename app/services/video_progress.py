@@ -44,9 +44,15 @@ def get_video_progress(
 def get_resume_position(progress: VideoProgress | None) -> float:
     if progress is None or progress.position_seconds < 5:
         return 0.0
+    # Возвращаемся в начало только после подтверждённого события `ended` и
+    # позиции в самом конце. Близкая к концу позиция сама по себе не означает
+    # завершение: ученик мог обновить страницу за несколько секунд до конца и
+    # должен продолжить с сохранённого места. После начала повторного просмотра
+    # completed_at сохраняется исторически, поэтому позиция снова возобновляется.
     if (
-        progress.duration_seconds is not None
-        and progress.duration_seconds - progress.position_seconds <= 10
+        progress.completed_at is not None
+        and progress.duration_seconds is not None
+        and progress.position_seconds >= progress.duration_seconds
     ):
         return 0.0
     return round(progress.position_seconds, 1)

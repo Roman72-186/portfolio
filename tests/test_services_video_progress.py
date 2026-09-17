@@ -105,7 +105,7 @@ def test_completion_starts_next_open_at_zero_but_rewatch_can_resume(db, regular_
     assert get_resume_position(rewound) == 45.0
 
 
-def test_position_near_end_does_not_resume(db, regular_user):
+def test_position_near_end_resumes_when_not_completed(db, regular_user):
     save_video_progress(
         db,
         user_id=regular_user.id,
@@ -116,7 +116,7 @@ def test_position_near_end_does_not_resume(db, regular_user):
     )
 
     progress = get_video_progress(db, user_id=regular_user.id, video_id=VIDEO_ID)
-    assert get_resume_position(progress) == 0
+    assert get_resume_position(progress) == 595.0
 
 
 def test_save_video_progress_persists_watched_seconds(db, regular_user):

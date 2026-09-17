@@ -730,7 +730,7 @@
                     frameWrap.classList.add('is-ready');
                     player.getDuration(function (value) {
                         durationSeconds = finiteNumber(value);
-                        if (resumeSeconds >= 5 && (!durationSeconds || resumeSeconds < durationSeconds - 10)) {
+                        if (resumeSeconds >= 5) {
                             player.setCurrentTime(resumeSeconds);
                             currentSeconds = resumeSeconds;
                             setStatus('Продолжили с ' + formatTime(resumeSeconds) + '.', false);

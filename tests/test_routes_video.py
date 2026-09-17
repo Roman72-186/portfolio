@@ -627,6 +627,7 @@ def test_video_page_has_throttled_playerjs_progress_contract(auth_client, monkey
     assert "player.on('seeked'" in response.text
     assert "player.on('ended'" in response.text
     assert "player.setCurrentTime(resumeSeconds)" in response.text
+    assert "if (resumeSeconds >= 5) {" in response.text
     assert "Date.now() - lastAutomaticSaveAt >= 10000" in response.text
     assert "'X-CSRF-Token': csrfToken" in response.text
     assert "keepalive: Boolean(keepalive)" in response.text
