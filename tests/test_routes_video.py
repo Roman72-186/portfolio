@@ -137,6 +137,11 @@ def test_video_watermark_fades_in_and_out_at_random_spots(auth_client, monkeypat
     assert "activePlayer.play()" in response.text
     assert "coverPlay.hidden = false" in response.text
     assert "if (!activePlayer || typeof activePlayer.play !== 'function') return" in response.text
+    assert "window.matchMedia('(pointer: coarse)').matches" in response.text
+    assert "activePlayer.mute()" in response.text
+    assert "activePlayer.unmute()" in response.text
+    assert "needsMutedStart() && muteButton" in response.text
+    assert "muteButton.hidden = false" in response.text
     assert "activePlayer.play();\n                hideCover();" in response.text
     assert "hideCover();\n            });" in response.text
     assert "video-frame.is-started .video-cover" in response.text

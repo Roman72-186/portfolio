@@ -126,9 +126,32 @@
             frameWrap.classList.add('is-started');
         }
 
+        function needsMutedStart() {
+            return window.matchMedia
+                && window.matchMedia('(pointer: coarse)').matches;
+        }
+
+        if (muteButton) {
+            muteButton.addEventListener('click', function () {
+                if (!activePlayer || typeof activePlayer.unmute !== 'function') return;
+                activePlayer.unmute();
+                muteButton.hidden = true;
+            });
+        }
+
         if (coverPlay) {
             coverPlay.addEventListener('click', function () {
                 if (!activePlayer || typeof activePlayer.play !== 'function') return;
+                // Mobile browsers do not reliably carry user activation from
+                // this page through Player.js postMessage into Bunny's
+                // cross-origin iframe. An unmuted play() is therefore blocked
+                // on iOS/Android even though the command comes from our button.
+                // Muted playback is allowed; sound is restored by the explicit
+                // button above after the video has actually started.
+                if (needsMutedStart() && muteButton && typeof activePlayer.mute === 'function') {
+                    activePlayer.mute();
+                    muteButton.hidden = false;
+                }
                 activePlayer.play();
                 hideCover();
             });
