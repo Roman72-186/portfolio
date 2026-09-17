@@ -284,8 +284,9 @@ scope)` и свойством `answered` (одна попытка: после о
             function renderVideo(block) {
                 var wrap = el('div', 'lrn-blk lrn-blk-video');
                 var head = withTitle(el('div', 'lrn-blk-head'), block);
-                var check = renderBlockCheck(block);
-                head.appendChild(check);
+                var requiresWatch = block.requires_watch !== false;
+                var check = requiresWatch ? renderBlockCheck(block) : null;
+                if (check) head.appendChild(check);
                 wrap.appendChild(head);
 
                 if (!block.video_embed_endpoint) {
@@ -295,27 +296,29 @@ scope)` и свойством `answered` (одна попытка: после о
 
                 wrap.appendChild(videoPlayer(block));
 
-                var checkHint = el('p', 'lrn-blk-video-check-hint');
-                checkHint.setAttribute('aria-live', 'polite');
-                checkHint.hidden = !!block.done;
-                // `block.watched` — сервер уже видит по `VideoProgress`, что
-                // ролик досмотрен: подсказка не должна звать досматривать то,
-                // что уже позади, иначе ученик перематывает заново вслепую.
-                checkHint.textContent = block.watched
-                    ? 'Ролик просмотрен – отметь выполнение кружком выше.'
-                    : 'Досмотри ролик до конца, чтобы отметить выполнение.';
-                wrap.appendChild(checkHint);
+                if (requiresWatch) {
+                    var checkHint = el('p', 'lrn-blk-video-check-hint');
+                    checkHint.setAttribute('aria-live', 'polite');
+                    checkHint.hidden = !!block.done;
+                    // `block.watched` — сервер уже видит по `VideoProgress`, что
+                    // ролик досмотрен: подсказка не должна звать досматривать то,
+                    // что уже позади, иначе ученик перематывает заново вслепую.
+                    checkHint.textContent = block.watched
+                        ? 'Ролик просмотрен – отметь выполнение кружком выше.'
+                        : 'Досмотри ролик до конца, чтобы отметить выполнение.';
+                    wrap.appendChild(checkHint);
 
-                wireBlockCheck(check, block.confirm_endpoint, block, {
-                    onSuccess: function () { checkHint.hidden = true; },
-                    onError: function (err) {
-                        checkHint.hidden = false;
-                        checkHint.classList.add('is-error');
-                        checkHint.textContent = err && err.message === 'not_watched'
-                            ? 'Досмотри ролик до конца, чтобы отметить выполнение.'
-                            : 'Не удалось отметить. Попробуй ещё раз.';
-                    }
-                });
+                    wireBlockCheck(check, block.confirm_endpoint, block, {
+                        onSuccess: function () { checkHint.hidden = true; },
+                        onError: function (err) {
+                            checkHint.hidden = false;
+                            checkHint.classList.add('is-error');
+                            checkHint.textContent = err && err.message === 'not_watched'
+                                ? 'Досмотри ролик до конца, чтобы отметить выполнение.'
+                                : 'Не удалось отметить. Попробуй ещё раз.';
+                        }
+                    });
+                }
                 return wrap;
             }
 

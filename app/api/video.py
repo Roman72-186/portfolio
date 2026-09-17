@@ -389,6 +389,8 @@ def _close_video_task_once(db: DBSession, *, user_id: int, topic_id: int) -> Non
     )
     if task is None:
         return
+    if not task.is_required:
+        return
     try:
         close_task_for_user(db, task, user_id, source="auto")
         db.commit()

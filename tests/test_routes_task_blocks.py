@@ -378,10 +378,13 @@ def test_edit_payload_includes_blocks_for_prefill(client, db, user_factory, sess
 
 # ── Ученик ───────────────────────────────────────────────────────────────────
 
-def _material_task_with_blocks(db, staff_user_id, *, blocks=None) -> TrackerTask:
+def _material_task_with_blocks(
+    db, staff_user_id, *, blocks=None, is_required=True
+) -> TrackerTask:
     from app.services.tracker import create_task
     task = create_task(
-        db, title="Материал", user_id=staff_user_id, kind="material", assign_to_all=True,
+        db, title="Материал", user_id=staff_user_id, kind="material",
+        assign_to_all=True, is_required=is_required,
     )
     task.is_published = True
     db.flush()
@@ -644,7 +647,8 @@ def _video_task_with_block(db, staff_user_id):
     db.add(video)
     db.flush()
     task = _material_task_with_blocks(
-        db, staff_user_id, blocks=[{"block_type": BLOCK_VIDEO, "video_id": video.id}],
+        db, staff_user_id,
+        blocks=[{"block_type": BLOCK_VIDEO, "video_id": video.id, "is_required": True}],
     )
     [block] = _blocks_of(db, task.id)
     return task, block, video
@@ -671,6 +675,25 @@ def test_video_block_confirm_rejected_when_not_watched(client, db, user_factory,
 
     body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
     assert body["blocks"][0]["done"] is False
+
+
+def test_optional_video_block_does_not_require_watch(
+    client, db, user_factory, session_factory
+):
+    staff = user_factory(vk_id=550_326, name="Стафф", is_admin=True, role_name="админ")
+    task, block, _video = _video_task_with_block(db, staff.id)
+    task.is_required = False
+    block.is_required = True
+    db.commit()
+    _student_client(client, user_factory, session_factory)
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert body["blocks"][0]["requires_watch"] is False
+    assert body["blocks"][0]["confirm_endpoint"] is None
+
+    resp = client.post(f"/cabinet/tracker/blocks/{block.id}/watched")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["ok"] is True
 
 
 def test_video_block_confirm_closes_when_watched(client, db, user_factory, session_factory):

@@ -84,6 +84,25 @@ def test_first_completion_closes_tracker_task(auth_client, db, monkeypatch):
     assert state.completed_by_id is None
 
 
+def test_optional_video_completion_does_not_close_tracker_task(
+    auth_client, db, monkeypatch
+):
+    client, user = auth_client
+    _configure_bunny(monkeypatch)
+    task, video = _video_with_task(db, user.id)
+    task.is_required = False
+    db.commit()
+    _seed_watch_time(db, user_id=user.id, video_id=VIDEO_ID, watched_seconds=590.0)
+
+    resp = client.post(
+        f"/cabinet/videos/{video.id}/progress",
+        json={"position_seconds": 598, "duration_seconds": 600},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["completed"] is True
+    assert db.query(TrackerTaskState).count() == 0
+
+
 def test_manual_close_is_not_reopened_by_later_heartbeat(auth_client, db, monkeypatch):
     """Ручная отметка «сделано» не должна откатываться авто-событием позже."""
     client, user = auth_client

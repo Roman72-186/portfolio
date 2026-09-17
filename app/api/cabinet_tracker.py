@@ -325,6 +325,15 @@ def _video_block_watched(db: DBSession, block, user_id: int) -> bool:
     return bool(progress and progress.completed_at is not None)
 
 
+def _video_block_requires_completion(task: TrackerTask, block: TaskBlock) -> bool:
+    """Нужно ли требовать просмотр видео для закрытия блока."""
+    return bool(
+        task.is_required
+        and task.kind != ITEM_MOCK_EXAM
+        and block.is_required
+    )
+
+
 def _submission_payload(db: DBSession, block, user_id: int) -> dict:
     """Что ученик уже сдал в этом блоке — общая часть «загрузки работ» и
     «работы на время»: у них одна механика приёма, разная только обёртка."""
@@ -378,7 +387,7 @@ def cabinet_tracker_task_blocks(
     попадают. Доступ к такому ролику считается по блокам
     (`video_catalog.is_video_accessible`).
     """
-    _accessible_task_or_404(db, user["user_id"], task_id)
+    task = _accessible_task_or_404(db, user["user_id"], task_id)
 
     task_done = _is_task_done(db, task_id, user["user_id"])
     # Скрытый вопрос появляется только после закрытия задания — и весь блок
@@ -437,13 +446,20 @@ def cabinet_tracker_task_blocks(
             item["video_embed_endpoint"] = (
                 f"/cabinet/videos/{block.video_id}/embed" if block.video_id else None
             )
-            # Кружок в углу карточки: закрыт ученик отмечает сам, но кнопка
-            # принимает отметку, только когда сервер видит по `VideoProgress`,
-            # что ролик действительно досмотрен (владелец 12.09.2026).
+            # Кружок и проверка просмотра нужны только эффективному
+            # обязательному блоку: флаг задания имеет приоритет над флагом
+            # блока, поэтому необязательное задание не создаёт скрытый гейт.
             state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
             item["done"] = bool(state and state.status == STATUS_DONE)
-            item["watched"] = _video_block_watched(db, block, user["user_id"])
-            item["confirm_endpoint"] = f"/cabinet/tracker/blocks/{block.id}/watched"
+            item["requires_watch"] = _video_block_requires_completion(task, block)
+            item["watched"] = (
+                _video_block_watched(db, block, user["user_id"])
+                if item["requires_watch"] else False
+            )
+            item["confirm_endpoint"] = (
+                f"/cabinet/tracker/blocks/{block.id}/watched"
+                if item["requires_watch"] else None
+            )
         elif block.block_type == BLOCK_PHOTO:
             item["images"] = [
                 {"url": i.image_s3_url} for i in images.get(block.id, [])
@@ -640,18 +656,18 @@ def confirm_video_block_watched(
 ):
     """Ученик отмечает видео-блок выполненным кружком в углу карточки.
 
-    Отметку ставит ученик кликом, а не факт просмотра сам по себе — иначе
-    кружок закрывался бы раньше, чем ученик успел это увидеть (владелец
-    12.09.2026). Но отправка принимается, только когда сервер сам видит по
-    `VideoProgress`, что ролик действительно досмотрен: без этой проверки
-    кружок был бы обходом того же гейта, ради которого у видео-задачи целиком
-    нет ручной кнопки «Отметить» (`partials/task_action.html`).
+    Отметку ставит ученик кликом, а для эффективного обязательного блока
+    сервер дополнительно проверяет `VideoProgress`. Необязательный блок не
+    должен превращаться в скрытый гейт, поэтому для него эта проверка
+    отключается.
     """
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type != BLOCK_VIDEO:
         raise HTTPException(status_code=404, detail="Блок не найден")
-    _accessible_task_or_404(db, user["user_id"], block.task_id)
-    if not _video_block_watched(db, block, user["user_id"]):
+    task = _accessible_task_or_404(db, user["user_id"], block.task_id)
+    if _video_block_requires_completion(task, block) and not _video_block_watched(
+        db, block, user["user_id"]
+    ):
         return JSONResponse({"ok": False, "error": "not_watched"}, status_code=409)
     close_task_block_for_user(db, block=block, user_id=user["user_id"], source="video_watched")
     db.commit()
