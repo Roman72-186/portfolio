@@ -135,9 +135,9 @@ def test_video_watermark_fades_in_and_out_at_random_spots(auth_client, monkeypat
     assert "coverFallbackTimer = window.setTimeout(hideCover, 5000)" in response.text
     assert 'data-role="cover-play"' in response.text
     assert "activePlayer.play()" in response.text
-    assert "playRequested = true" in response.text
-    assert "if (playRequested" in response.text
-    assert "activePlayer.play();\n                } else" in response.text
+    assert "coverPlay.hidden = false" in response.text
+    assert "if (!activePlayer || typeof activePlayer.play !== 'function') return" in response.text
+    assert "activePlayer.play();\n                hideCover();" in response.text
     assert "hideCover();\n            });" in response.text
     assert "video-frame.is-started .video-cover" in response.text
     assert "autoplay; encrypted-media" not in response.text
