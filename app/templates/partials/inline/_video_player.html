@@ -55,7 +55,9 @@
         var frameWrap = root.querySelector('[data-role="frame-wrap"]');
         var iframe = root.querySelector('[data-role="iframe"]');
         var cover = root.querySelector('[data-role="cover"]');
+        var coverPlay = root.querySelector('[data-role="cover-play"]');
         var coverFallbackTimer = null;
+        var activePlayer = null;
         var watermark = root.querySelector('[data-role="watermark"]');
         var fullscreenButton = root.querySelector('[data-role="fullscreen-btn"]');
         var muteButton = root.querySelector('[data-role="mute-btn"]');
@@ -107,6 +109,7 @@
             }
             if (cover && cover.getAttribute('src')) {
                 cover.hidden = false;
+                if (coverPlay) coverPlay.hidden = false;
                 frameWrap.classList.remove('is-started');
             }
         }
@@ -117,7 +120,20 @@
                 coverFallbackTimer = null;
             }
             if (cover) cover.hidden = true;
+            if (coverPlay) coverPlay.hidden = true;
             frameWrap.classList.add('is-started');
+        }
+
+        if (coverPlay) {
+            coverPlay.addEventListener('click', function () {
+                if (activePlayer && typeof activePlayer.play === 'function') {
+                    activePlayer.play();
+                } else {
+                    // Резервный путь: после ошибки Player.js показываем
+                    // встроенные контролы Bunny, где доступен Play.
+                    hideCover();
+                }
+            });
         }
 
         function populatePlayer(data) {
@@ -622,6 +638,7 @@
             function attachPlayer() {
                 var generation = ++playerGeneration;
                 var player = new window.playerjs.Player(iframe);
+                activePlayer = player;
 
                 player.on('ready', function () {
                     if (generation !== playerGeneration) return;

@@ -902,6 +902,20 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
     transition: opacity var(--duration-base) var(--ease-out), visibility 0s linear var(--duration-base);
 }
 .lrn-inline-video .video-cover[hidden] { display: none; }
+.lrn-inline-video .video-cover-play {
+    position: absolute; inset: 50% auto auto 50%; z-index: 4;
+    transform: translate(-50%, -50%);
+    display: inline-flex; align-items: center; gap: 10px;
+    min-height: 52px; padding: 13px 20px;
+    border: 1px solid rgba(255,255,255,.3); border-radius: var(--r-pill);
+    background: rgba(15,18,28,.86); color: #fff;
+    font: 700 15px/1 var(--font-body); cursor: pointer;
+    box-shadow: 0 8px 28px rgba(0,0,0,.28);
+}
+.lrn-inline-video .video-cover-play:hover { background: rgba(15,18,28,.96); }
+.lrn-inline-video .video-cover-play:active { transform: translate(-50%, -50%) scale(.96); }
+.lrn-inline-video .video-cover-play:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.lrn-inline-video .video-cover-play[hidden] { display: none; }
 .lrn-inline-video .video-frame.is-started .video-cover {
     opacity: 0; visibility: hidden; pointer-events: none;
 }

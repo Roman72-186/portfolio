@@ -27,6 +27,9 @@ JSON-эндпоинтом `/cabinet/videos/{id}/embed` (app/api/video.py) тол
                 allow="accelerometer; gyroscope; encrypted-media"
                 referrerpolicy="strict-origin-when-cross-origin"></iframe>
             <img class="video-cover" data-role="cover" alt="" hidden>
+            <button type="button" class="video-cover-play" data-role="cover-play" hidden>
+                <span aria-hidden="true">▶</span> Смотреть
+            </button>
             <div class="video-watermark" aria-hidden="true">
                 <div class="video-watermark-copy" data-role="watermark"></div>
             </div>

@@ -133,6 +133,8 @@ def test_video_watermark_fades_in_and_out_at_random_spots(auth_client, monkeypat
     assert "safeCorners" in response.text
     assert "Math.random() * 9" not in response.text
     assert "coverFallbackTimer = window.setTimeout(hideCover, 5000)" in response.text
+    assert 'data-role="cover-play"' in response.text
+    assert "activePlayer.play()" in response.text
     assert "video-frame.is-started .video-cover" in response.text
     assert "autoplay; encrypted-media" not in response.text
     assert "new ResizeObserver(measureWatermarkBounds)" in response.text

@@ -239,6 +239,12 @@ scope)` и свойством `answered` (одна попытка: после о
                 cover.alt = '';
                 cover.hidden = true;
 
+                var coverPlay = el('button', 'video-cover-play');
+                coverPlay.type = 'button';
+                coverPlay.setAttribute('data-role', 'cover-play');
+                coverPlay.hidden = true;
+                coverPlay.innerHTML = '<span aria-hidden="true">▶</span> Смотреть';
+
                 var watermark = el('div', 'video-watermark');
                 watermark.setAttribute('aria-hidden', 'true');
                 var watermarkCopy = el('div', 'video-watermark-copy');
@@ -261,6 +267,7 @@ scope)` и свойством `answered` (одна попытка: после о
                 frameWrap.appendChild(loading);
                 frameWrap.appendChild(iframe);
                 frameWrap.appendChild(cover);
+                frameWrap.appendChild(coverPlay);
                 frameWrap.appendChild(watermark);
                 frameWrap.appendChild(muteButton);
                 frameWrap.appendChild(fullscreenButton);
