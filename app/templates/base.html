@@ -148,10 +148,14 @@
                     'text-align:center;box-shadow:0 16px 48px rgba(0,0,0,0.35);');
                 card.innerHTML =
                     '<div style="font-size:40px;line-height:1;margin-bottom:12px">🌐</div>' +
-                    '<div style="font-size:18px;font-weight:800;color:#0F121C;margin-bottom:8px">Открой во внешнем браузере</div>' +
-                    '<div style="font-size:13px;color:#5B6172;line-height:1.55;margin-bottom:18px">' +
-                    'Встроенный браузер Telegram мешает входу и загрузке фото. ' +
-                    'Нажми кнопку – сайт откроется в обычном браузере, и ты останешься в системе.</div>';
+                    '<div style="font-size:18px;font-weight:800;color:#0F121C;margin-bottom:8px">Открой в обычном браузере</div>' +
+                    '<div style="font-size:13px;color:#5B6172;line-height:1.5;margin-bottom:14px">' +
+                    'Встроенный браузер Telegram сбоит на входе и на загрузке фото.</div>' +
+                    '<ol style="text-align:left;font-size:13px;color:#5B6172;line-height:1.6;margin:0 0 18px;padding-left:20px">' +
+                    '<li>Нажми «Открыть в браузере» – сайт откроется в обычном браузере телефона.</li>' +
+                    '<li>Если он попросит войти – нажми «Войти через Telegram» и подтверди.</li>' +
+                    '<li>Вернись в этот браузер и продолжай – ты уже в личном кабинете.</li>' +
+                    '</ol>';
                 var openBtn = document.createElement('button');
                 openBtn.type = 'button';
                 openBtn.textContent = 'Открыть в браузере';
@@ -182,14 +186,8 @@
                         } catch (e2) {}
                     }
                 };
-                var stay = document.createElement('div');
-                stay.textContent = 'Остаться здесь';
-                stay.setAttribute('style',
-                    'margin-top:14px;font-size:12px;color:#9AA0AE;cursor:pointer;text-decoration:underline');
-                stay.onclick = function(){ ov.remove(); };
                 card.appendChild(openBtn);
                 card.appendChild(copyBtn);
-                card.appendChild(stay);
                 ov.appendChild(card);
                 (document.body || document.documentElement).appendChild(ov);
             }
