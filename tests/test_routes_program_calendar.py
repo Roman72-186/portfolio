@@ -49,7 +49,7 @@ def test_admin_opens_the_month(
     page = client.get(PROGRAM)
 
     assert page.status_code == 200
-    assert "Учебные программы" in page.text
+    assert "Актуальное образовательное пространство" in page.text
     assert "Август 2026" in page.text
     assert_static_versioned(page.text)
 

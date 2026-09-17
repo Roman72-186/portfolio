@@ -2,6 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Единое название раздела программ у всех ролей (владелец 16.09.2026, созвон:
+# «раздел с программами назвать одинаково у всех ролей — «Актуальное
+# образовательное пространство»»). До этой правки текст расходился
+# независимо в восьми местах — у ученика было три разных варианта
+# («Обучение»/«Актуальное образовательное пространство»/«Образовательное
+# пространство»), у персонала три других («Учебные программы»/«Программы»/
+# «Циклы учебных программ»). Меняем только текст самого раздела — короткие
+# подписи дочерних экранов (`pill_label`, `tooltip`, заголовки
+# `cabinet_program_cycles.html` и т.п.) владелец просил не трогать: пункт
+# меню персонала (`min_rank=4`) видимость не меняет, куратору и модератору
+# его как не показывали, так и не показывают.
+LEARNING_SPACE_LABEL = "Актуальное образовательное пространство"
+
 
 @dataclass(frozen=True)
 class NavItem:
@@ -83,9 +96,11 @@ STUDENT_NAV_ITEMS: tuple[StudentNavItem, ...] = (
         key="learning",
         desktop_href="/cabinet/learning",
         mobile_href="/cabinet/learning",
-        desktop_label="Актуальное образовательное пространство",
-        mobile_label="Обучение",
-        aria_label="Актуальное образовательное пространство",
+        desktop_label=LEARNING_SPACE_LABEL,
+        # Полный текст не влезает в мобильную кнопку — CSS-обрезка
+        # (`.learning-back`/`base.css`), не второй текстовый вариант.
+        mobile_label=LEARNING_SPACE_LABEL,
+        aria_label=LEARNING_SPACE_LABEL,
         icon="learning",
     ),
     StudentNavItem(
@@ -210,9 +225,9 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         # (`program_tabs.html`), но точку входа из бокового меню забыли
         # переключить вместе с ним — она вела на старый календарь.
         href="/cabinet/staff/program/cycles",
-        sidebar_label="Учебные программы",
+        sidebar_label=LEARNING_SPACE_LABEL,
         pill_label="Программы",
-        aria_label="Учебные программы",
+        aria_label=LEARNING_SPACE_LABEL,
         tooltip="Циклы учебных программ",
         icon="program",
         min_rank=4,
@@ -220,8 +235,8 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
     # «Задачи», «Кейсы», «Дайджест», «Цели» и «Видео» здесь больше не пункты
     # меню. Задачи трекера и Кейсы скрыты совсем — страницы живут по прямым
     # ссылкам `/cabinet/staff/tracker` и `/cabinet/cases`; остальные три стали
-    # вкладками раздела «Учебные программы» —
-    # `templates/partials/program_tabs.html`.
+    # вкладками раздела «Актуальное образовательное пространство»
+    # (LEARNING_SPACE_LABEL) — `templates/partials/program_tabs.html`.
     StaffNavItem(
         key="3dlab",
         href="/3dlab",
