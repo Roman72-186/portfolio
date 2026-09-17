@@ -194,8 +194,20 @@ def build_cycle_feed(
 
     # Сквозной список блоков в порядке ленты — на нём и считается блокировка.
     ordered_blocks = []
+    required_by_block: dict[int, bool] = {}
     for entry in entries:
-        ordered_blocks.extend(blocks_by_task.get(entry["task"].id, []))
+        task = entry["task"]
+        task_blocks = blocks_by_task.get(task.id, [])
+        ordered_blocks.extend(task_blocks)
+        # Флаг задания стоит над флагами его блоков. Если преподаватель снял
+        # обязательность у задания целиком, ни один дочерний блок не должен
+        # запирать хвост ленты или следующий цикл. Пробник сохраняет прежнее
+        # исключение: он блокирует месяц, а не учебную ленту.
+        task_blocks_progress = task.is_required and task.kind != ITEM_MOCK_EXAM
+        for block in task_blocks:
+            required_by_block[block.id] = bool(
+                task_blocks_progress and block.is_required
+            )
     block_ids = [block.id for block in ordered_blocks]
     states = get_states(db, block_ids=block_ids, user_id=user_id)
     tariffs_by_block = get_tariffs(db, block_ids)
@@ -283,6 +295,7 @@ def build_cycle_feed(
                     tariffs_by_block=tariffs_by_block,
                     user_tariff=user_tariff,
                     required_tariffs_by_block=required_tariffs_by_block,
+                    required_by_block=required_by_block,
                     now=now,
                 )
             )

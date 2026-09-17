@@ -225,10 +225,10 @@ def test_cycle_item_form_has_no_tariff_field(client, db, user_factory, session_f
     assert resp.status_code == 422
 
 
-def test_cycle_item_form_hides_text_and_photo_add_buttons(
+def test_cycle_item_form_hides_text_but_offers_photo_add_button(
     client, db, user_factory, session_factory
 ):
-    """Кнопок «+ Текст» и «+ Фото» нет и здесь (владелец 16.09.2026).
+    """Текст не добавляется отдельно, фото снова доступно для примеров.
 
     Второй экран конструктора: `cabinet_program_day.html` и этот шаблон
     рисуют ряд добавления каждый своим циклом, и правка одного из них
@@ -241,7 +241,7 @@ def test_cycle_item_form_hides_text_and_photo_add_buttons(
     page = client.get(f"/cabinet/staff/program/cycles/{cycle_id}")
 
     assert 'data-add-block="text"' not in page.text
-    assert 'data-add-block="photo"' not in page.text
+    assert 'data-add-block="photo"' in page.text
     assert 'data-add-block="upload"' in page.text
     assert 'data-add-block="photo_upload"' in page.text
 

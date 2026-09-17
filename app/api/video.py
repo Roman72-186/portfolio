@@ -115,6 +115,7 @@ def _player_payload(
     payload = {
         "video_title": video.title,
         "video_description": getattr(video, "description", None),
+        "cover_url": getattr(video, "cover_s3_url", None),
         "progress_endpoint": progress_endpoint,
         "player_url_endpoint": player_url_endpoint,
         "player_url_ttl_seconds": settings.bunny_stream_token_ttl_seconds,
@@ -153,6 +154,7 @@ def _player_payload(
 _PLAYER_DATA_KEYS = (
     "player_url",
     "video_title",
+    "cover_url",
     "viewer_watermark",
     "resume_position_seconds",
     "progress_endpoint",

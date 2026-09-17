@@ -31,6 +31,7 @@ def _video_open_to_all(db, user_id: int) -> LearningVideo:
         topic_id=topic.id,
         status="ready",
         is_published=True,
+        cover_s3_url="https://s3.example.com/covers/cover.jpg",
     )
     db.add(video)
     db.commit()
@@ -50,6 +51,7 @@ def test_embed_returns_player_data_for_group_member(auth_client, db, monkeypatch
     assert body["ok"] is True
     assert f"https://iframe.mediadelivery.net/embed/720058/{VIDEO_ID}" in body["player_url"]
     assert body["progress_endpoint"] == f"/cabinet/videos/{video.id}/progress"
+    assert body["cover_url"] == "https://s3.example.com/covers/cover.jpg"
     # Мини-опрос из плеера убран 31.08.2026: вопросы к ролику стали блоками
     # задания и показываются общей панелью содержимого на карточке.
     assert "quiz_submit_endpoint" not in body

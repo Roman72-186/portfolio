@@ -11,7 +11,7 @@
 #}
 {% block title %}{{ student.name }} — проверка{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=31">
+<link rel="stylesheet" href="/static/css/program.css?v=32">
 {% endblock %}
 {% block content %}
 <div class="prg-page">
@@ -95,6 +95,18 @@
                     {% endfor %}
                 </div>
                 {% endif %}
+                <div class="prg-review-feedback" data-review-comment-form>
+                    <label class="prg-field" for="review-comment-{{ item.item_id }}">
+                        Обратная связь ученику
+                        <textarea id="review-comment-{{ item.item_id }}" maxlength="4000"
+                                  data-review-comment>{{ item.review_comment or '' }}</textarea>
+                        <span class="prg-hint">Один комментарий. Его можно изменить после сохранения.</span>
+                    </label>
+                    <div class="prg-actions">
+                        <button type="button" class="btn-blue" data-save-review-comment>Сохранить комментарий</button>
+                        <p class="prg-message" data-review-comment-status aria-live="polite"></p>
+                    </div>
+                </div>
                 {% endif %}
             </div>
             <div class="prg-item-actions">
@@ -145,6 +157,43 @@
         }).catch(function () {
             button.disabled = false;
             button.textContent = 'Не вышло, ещё раз';
+        });
+    });
+
+    document.addEventListener('click', function (event) {
+        var saveButton = event.target.closest('[data-save-review-comment]');
+        if (!saveButton) return;
+        var row = saveButton.closest('[data-review-row]');
+        var input = row.querySelector('[data-review-comment]');
+        var status = row.querySelector('[data-review-comment-status]');
+        var toggle = row.querySelector('[data-review-toggle]');
+        saveButton.disabled = true;
+        status.classList.remove('is-error');
+        status.textContent = 'Сохраняем…';
+        fetch('/cabinet/staff/students-review/block-work/' + row.getAttribute('data-id') + '/reviewed', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify({reviewed: true, comment: input.value})
+        }).then(function (resp) {
+            if (!resp.ok) throw new Error();
+            return resp.json();
+        }).then(function () {
+            saveButton.disabled = false;
+            status.textContent = 'Комментарий сохранён';
+            row.classList.add('is-done');
+            if (toggle) {
+                toggle.setAttribute('data-reviewed', 'true');
+                toggle.textContent = 'Вернуть в очередь';
+            }
+        }).catch(function () {
+            saveButton.disabled = false;
+            status.classList.add('is-error');
+            status.textContent = 'Не удалось сохранить. Попробуйте ещё раз.';
         });
     });
 

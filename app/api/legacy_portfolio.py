@@ -46,7 +46,9 @@ def legacy_portfolio_view(
     user: Annotated[dict, Depends(_require_student_panel)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    student = _check_access(student_id, user, db)
+    # GET остаётся read-only, поэтому Главный преподаватель и суперадмин
+    # могут открыть исторические фото архивного ученика из его карточки.
+    student = _check_access(student_id, user, db, read_archive=True)
 
     photos = (
         db.query(LegacyPortfolioPhoto)

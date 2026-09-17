@@ -407,8 +407,8 @@ def staff_homework_submissions(
     students = {
         u.id: u for u in db.query(User).filter(User.id.in_(student_ids)).all()
     } if student_ids else {}
-    if user["role_rank"] == 2:
-        # Куратор видит сдачи только своих учеников — как везде остальных.
+    if user["role_rank"] < 4:
+        # Куратор и преподаватель видят сдачи только своих учеников.
         submissions = [
             s for s in submissions
             if students.get(s.user_id) and students[s.user_id].curator_id == user["user_id"]

@@ -822,6 +822,7 @@ def is_block_accessible(
     tariffs_by_block: dict[int, set[str]],
     user_tariff: str | None,
     required_tariffs_by_block: dict[int, set[str]] | None = None,
+    required_by_block: dict[int, bool] | None = None,
     now=None,
 ) -> bool:
     """Доступен ли ученику блок `blocks[block_index]` прямо сейчас.
@@ -892,7 +893,11 @@ def is_block_accessible(
     if target.bypass_sequence:
         return True
     for prior in blocks[:block_index]:
-        if not prior.is_required:
+        prior_is_required = (
+            required_by_block.get(prior.id, prior.is_required)
+            if required_by_block is not None else prior.is_required
+        )
+        if not prior_is_required:
             continue
         prior_tariffs = tariffs_by_block.get(prior.id)
         if prior_tariffs and user_tariff not in prior_tariffs:
@@ -974,7 +979,17 @@ def feed_state(
     TaskBlockState | None}` в порядке `sort_order` — ровно то, что нужно
     шаблону единой ленты для рендера, без похода в базу на каждый блок.
     """
+    from app.models.tracker import ITEM_MOCK_EXAM, TrackerTask
+
     blocks = get_blocks(db, task_id)
+    task = db.get(TrackerTask, task_id)
+    task_blocks_progress = bool(
+        task and task.is_required and task.kind != ITEM_MOCK_EXAM
+    )
+    required_by_block = {
+        block.id: bool(task_blocks_progress and block.is_required)
+        for block in blocks
+    }
     block_ids = [block.id for block in blocks]
     states = get_states(db, block_ids=block_ids, user_id=user_id)
     tariffs_by_block = get_tariffs(db, block_ids)
@@ -987,6 +1002,7 @@ def feed_state(
             states=states,
             tariffs_by_block=tariffs_by_block,
             user_tariff=user_tariff,
+            required_by_block=required_by_block,
             now=now,
         )
         state = states.get(block.id)
@@ -1297,6 +1313,7 @@ def submission_review_queue(
             "block_title": block.title or BLOCK_TYPE_LABELS.get(block.block_type, ""),
             "subject": block.subject or task.subject,
             "comment": submission.comment,
+            "review_comment": submission.review_comment,
             "images": [i.image_s3_url for i in image_map.get(submission.id, [])],
             "overrun": timed_overrun(
                 block, get_state(db, block_id=block.id, user_id=student.id)

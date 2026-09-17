@@ -54,6 +54,7 @@
         var shell = root.querySelector('[data-role="shell"]');
         var frameWrap = root.querySelector('[data-role="frame-wrap"]');
         var iframe = root.querySelector('[data-role="iframe"]');
+        var cover = root.querySelector('[data-role="cover"]');
         var watermark = root.querySelector('[data-role="watermark"]');
         var fullscreenButton = root.querySelector('[data-role="fullscreen-btn"]');
         var muteButton = root.querySelector('[data-role="mute-btn"]');
@@ -106,6 +107,15 @@
                 watermark.appendChild(span);
             });
             iframe.title = data.video_title || '';
+            if (cover) {
+                if (data.cover_url) {
+                    cover.src = data.cover_url;
+                    cover.hidden = false;
+                } else {
+                    cover.removeAttribute('src');
+                    cover.hidden = true;
+                }
+            }
             iframe.addEventListener('load', function () { frameWrap.classList.add('is-ready'); }, { once: true });
 
             progressStatus.hidden = false;
@@ -207,18 +217,31 @@
 
             function pickWatermarkSpot() {
                 if (!watermarkBounds) return null;
-                // Сетка 3x3 вместо чистого Math.random(): два случайных числа подряд
-                // нередко ложатся почти в одну точку, и надпись выглядит застывшей.
-                var cell = Math.floor(Math.random() * 9);
+                // Четыре угловые зоны оставляют центр кадра свободным. Небольшой
+                // случайный сдвиг внутри угла мешает надписи застыть в одной
+                // точке, но не уводит её на лицо, чертёж или основной текст.
+                var safeCorners = [
+                    { x: 0, y: 0 },
+                    { x: 1, y: 0 },
+                    { x: 0, y: 1 },
+                    { x: 1, y: 1 }
+                ];
+                var cell = Math.floor(Math.random() * safeCorners.length);
                 if (cell === lastWatermarkCell) {
-                    cell = (cell + 1 + Math.floor(Math.random() * 8)) % 9;
+                    cell = (cell + 1 + Math.floor(Math.random() * (safeCorners.length - 1)))
+                        % safeCorners.length;
                 }
                 lastWatermarkCell = cell;
-                var spanX = (watermarkBounds.maxX - watermarkBounds.minX) / 3;
-                var spanY = (watermarkBounds.maxY - watermarkBounds.minY) / 3;
+                var corner = safeCorners[cell];
+                var jitterX = (watermarkBounds.maxX - watermarkBounds.minX) * 0.08 * Math.random();
+                var jitterY = (watermarkBounds.maxY - watermarkBounds.minY) * 0.08 * Math.random();
                 return {
-                    x: watermarkBounds.minX + spanX * ((cell % 3) + Math.random()),
-                    y: watermarkBounds.minY + spanY * (Math.floor(cell / 3) + Math.random())
+                    x: corner.x
+                        ? watermarkBounds.maxX - jitterX
+                        : watermarkBounds.minX + jitterX,
+                    y: corner.y
+                        ? watermarkBounds.maxY - jitterY
+                        : watermarkBounds.minY + jitterY
                 };
             }
 

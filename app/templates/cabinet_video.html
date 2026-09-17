@@ -49,6 +49,17 @@ body.has-video-pseudo-fullscreen {
     transition: opacity var(--duration-base) var(--ease-out);
 }
 .video-frame.is-ready iframe { opacity: 1; }
+.video-cover {
+    position: absolute; inset: 0; z-index: 2;
+    width: 100%; height: 100%; object-fit: cover;
+    opacity: 1; visibility: visible;
+    transition: opacity var(--duration-base) var(--ease-out), visibility 0s linear var(--duration-base);
+}
+.video-cover[hidden] { display: none; }
+.video-frame.is-ready .video-cover { opacity: 0; visibility: hidden; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+    .video-cover { transition: none; }
+}
 .video-watermark {
     position: absolute;
     inset: 0;
@@ -177,6 +188,7 @@ body.has-video-pseudo-fullscreen {
                        причине у iframe нет allowfullscreen — фуллскрин только свой. #}
                     allow="accelerometer; gyroscope; autoplay; encrypted-media"
                     referrerpolicy="strict-origin-when-cross-origin"></iframe>
+                <img class="video-cover" data-role="cover" alt="" hidden>
                 <div class="video-watermark" aria-hidden="true">
                     <div class="video-watermark-copy" data-role="watermark"></div>
                 </div>

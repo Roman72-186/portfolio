@@ -34,7 +34,9 @@ def get_student_for_staff_access(
     if active_only and not student.is_active and student.archived_at is None:
         raise HTTPException(status_code=not_found_status_code, detail=not_found_detail)
 
-    if user["role_rank"] == 2 and student.curator_id != user["user_id"]:
+    # Куратор и преподаватель работают только со своими учениками. Полный
+    # доступ начинается с Главного преподавателя (rank 4).
+    if user["role_rank"] < 4 and student.curator_id != user["user_id"]:
         raise HTTPException(status_code=403, detail=forbidden_detail)
 
     return student

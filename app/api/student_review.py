@@ -48,10 +48,8 @@ def _check_student_access(
 ) -> User:
     """rank < FULL_ACCESS_RANK (куратор и модератор) — только свои ученики.
 
-    Не `get_student_for_staff_access`: её owner-проверка срабатывает только
-    при `role_rank == 2`, а сюда пускает `require_curator` (rank ≥ 2) — без
-    этой явной проверки модератор видел бы чужих учеников (advisor-ревью
-    01.09.2026)."""
+    Проверка явно охватывает обе staff-роли ниже ГП: без неё модератор,
+    которого пропускает `require_curator`, видел бы чужих учеников."""
     student = db.query(User).filter(User.id == student_id, User.is_active == True).first()  # noqa: E712
     if student is None:
         raise HTTPException(status_code=404, detail=not_found_detail)
@@ -184,6 +182,7 @@ def mark_cycle_viewed(
 class TaskBlockReviewMark(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reviewed: bool = True
+    comment: str | None = Field(default=None, max_length=4000)
 
 
 @router.post("/task-block/{answer_id}/reviewed", response_class=JSONResponse)
@@ -246,9 +245,14 @@ def mark_block_work_reviewed(
     submission = set_submission_reviewed(
         db, submission_id=submission_id, user_id=user["user_id"],
         reviewed=payload.reviewed,
+        comment=payload.comment.strip() if payload.comment is not None else None,
     )
     db.commit()
-    return JSONResponse({"ok": True, "reviewed": submission.reviewed_at is not None})
+    return JSONResponse({
+        "ok": True,
+        "reviewed": submission.reviewed_at is not None,
+        "comment": submission.review_comment,
+    })
 
 
 class PortfolioBeforeScore(BaseModel):

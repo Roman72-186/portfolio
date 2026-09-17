@@ -216,6 +216,22 @@ def test_optional_block_does_not_lock_the_tail(db, regular_user):
     assert [step["status"] for step in steps] == ["current", "current"]
 
 
+def test_optional_task_does_not_lock_required_task_below(db, regular_user):
+    """Отключённая обязательность задания не должна закрывать следующий шаг."""
+    _cycle(db, regular_user)
+    optional = _task(
+        db, regular_user, title="Необязательное задание", order=0,
+        is_required=False,
+    )
+    _block(db, optional, title="Обязательный блок", order=1, is_required=True)
+    later = _task(db, regular_user, title="Следующее задание", order=1)
+    _block(db, later, title="Следующий блок", order=1, is_required=True)
+
+    steps = _feed(db, regular_user)
+
+    assert [step["status"] for step in steps] == ["current", "current"]
+
+
 # ── задачи без блоков ───────────────────────────────────────────────────────
 
 def test_task_without_blocks_is_a_step_of_its_own(db, regular_user):

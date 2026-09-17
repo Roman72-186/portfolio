@@ -288,6 +288,13 @@
 .prg-message { min-height: 20px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .prg-message.is-error { color: var(--error); }
 
+.prg-review-feedback {
+    display: grid; gap: 10px; margin-top: 14px; padding-top: 14px;
+    border-top: 1px solid var(--line);
+}
+.prg-review-feedback .prg-actions { align-items: center; }
+.prg-review-feedback .prg-message { flex: 1 1 180px; }
+
 .prg-thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
 .prg-thumbs img {
     width: 84px; height: 84px; object-fit: cover;

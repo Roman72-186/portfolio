@@ -73,6 +73,7 @@ class ReviewItem:
     chosen: list[str] | None = None
     correct: list[str] | None = None
     text: str | None = None
+    review_comment: str | None = None
     # Файлы сданной работы — у `block_work`: проверяющий смотрит их прямо в
     # карточке, отдельного экрана у этого домена нет.
     images: list[str] | None = None
@@ -287,6 +288,7 @@ def _block_work_items(
             is_reviewed=row["reviewed"],
             review_url="",
             text=row["comment"],
+            review_comment=row["review_comment"],
             images=row["images"],
         ))
     return items

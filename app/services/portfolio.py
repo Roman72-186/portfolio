@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.constants import MONTHS
 from app.models.task_block import TaskBlockSubmission, TaskBlockSubmissionImage
-from app.models.work import WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, Work
+from app.models.work import WORK_TYPE_AFTER, WORK_TYPE_BEFORE, WORK_TYPE_MOCK_EXAM, Work
 from app.services.program import msk_date
 from app.services.utils import group_works
 
@@ -33,6 +33,39 @@ from app.services.utils import group_works
 # ничего: отдать его туда — удалить или перенести чужой `Work`.
 SOURCE_WORK = "work"
 SOURCE_SUBMISSION = "submission"
+
+
+def portfolio_item_count(db: DBSession, user_id: int) -> int:
+    """Число современных элементов портфолио, которое совпадает с галереей.
+
+    Одна строка `Work` считается одним элементом. У сдачи внутри задания
+    галерея показывает каждый снимок отдельно, поэтому считаются изображения
+    только завершённых сдач. Исторические `LegacyPortfolioPhoto` сюда не
+    входят: у них отдельный read-only архив и отдельный счётчик.
+    """
+    work_count = (
+        db.query(Work.id)
+        .filter(
+            Work.user_id == user_id,
+            Work.work_type.in_((WORK_TYPE_BEFORE, WORK_TYPE_AFTER)),
+            Work.status == "success",
+        )
+        .count()
+    )
+    submission_photo_count = (
+        db.query(TaskBlockSubmissionImage.id)
+        .join(
+            TaskBlockSubmission,
+            TaskBlockSubmission.id == TaskBlockSubmissionImage.submission_id,
+        )
+        .filter(
+            TaskBlockSubmission.user_id == user_id,
+            TaskBlockSubmission.submitted_at.isnot(None),
+            TaskBlockSubmissionImage.image_s3_url != "",
+        )
+        .count()
+    )
+    return work_count + submission_photo_count
 
 
 @dataclass(frozen=True)

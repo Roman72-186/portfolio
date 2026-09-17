@@ -318,6 +318,31 @@ def test_curator_can_mark_the_work_reviewed(admin_client, db, regular_user):
     assert submission.reviewed_at is not None
 
 
+def test_curator_can_save_editable_feedback_for_work(admin_client, db, regular_user):
+    task = _task(db, regular_user)
+    block = _upload_block(db, task)
+    submission = TaskBlockSubmission(
+        block_id=block.id, user_id=regular_user.id, submitted_at=TODAY_TS,
+    )
+    db.add(submission)
+    db.commit()
+
+    client, _ = admin_client
+    resp = client.post(
+        f"/cabinet/staff/students-review/block-work/{submission.id}/reviewed",
+        json={"reviewed": True, "comment": "Сильная работа"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["comment"] == "Сильная работа"
+    db.refresh(submission)
+    assert submission.review_comment == "Сильная работа"
+
+    items = student_review_items(db, student_id=regular_user.id, role_rank=5)
+    work = next(item for item in items if item.domain == DOMAIN_BLOCK_WORK)
+    assert work.review_comment == "Сильная работа"
+
+
 def test_new_upload_returns_the_work_to_the_queue(auth_client, db):
     """Догрузил лист — работа снова ждёт куратора, а не висит проверенной."""
     client, user = auth_client

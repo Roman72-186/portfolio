@@ -1096,12 +1096,13 @@
                 {% endfor %}
             </select>
             {% endif %}
-            {% if enrollment_years %}
+            {% if enrollment_years or has_missing_enrollment_year %}
             <select class="sidebar-select" id="filter-year" aria-label="Фильтр по году присоединения" onchange="filterSidebar()">
                 <option value="">Все годы</option>
                 {% for y in enrollment_years %}
                 <option value="{{ y }}">{{ y }}</option>
                 {% endfor %}
+                {% if has_missing_enrollment_year %}<option value="0">Год не указан</option>{% endif %}
             </select>
             {% endif %}
         </div>

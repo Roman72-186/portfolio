@@ -122,10 +122,10 @@ def test_material_accepts_every_block_type(client, db, user_factory, session_fac
     assert rows[3].url == "https://example.org"
 
 
-def test_constructor_hides_text_and_photo_add_buttons(
+def test_constructor_hides_text_but_offers_photo_add_button(
     client, db, user_factory, session_factory, monkeypatch
 ):
-    """Кнопок «+ Текст» и «+ Фото» в конструкторе нет (владелец 16.09.2026).
+    """Текст не добавляется отдельно, фото снова доступно для примеров.
 
     Сторож пары «кнопка снята, тип живёт»: рядом с ним
     `test_material_accepts_every_block_type` сохраняет оба типа через тот же
@@ -138,7 +138,7 @@ def test_constructor_hides_text_and_photo_add_buttons(
     page = client.get(f"{PROGRAM}/{_future_day_iso()}")
 
     assert 'data-add-block="text"' not in page.text
-    assert 'data-add-block="photo"' not in page.text
+    assert 'data-add-block="photo"' in page.text
     # Остальные кнопки на месте — проверка ловит снятие двух, а не всего ряда.
     assert 'data-add-block="upload"' in page.text
     assert 'data-add-block="photo_upload"' in page.text

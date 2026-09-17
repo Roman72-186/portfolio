@@ -130,6 +130,8 @@ def test_video_watermark_fades_in_and_out_at_random_spots(auth_client, monkeypat
     assert "Math.random()" in response.text
     assert "watermarkCopy.classList.add('is-visible')" in response.text
     assert "watermarkCopy.classList.remove('is-visible')" in response.text
+    assert "safeCorners" in response.text
+    assert "Math.random() * 9" not in response.text
     assert "new ResizeObserver(measureWatermarkBounds)" in response.text
     assert "(prefers-reduced-motion: reduce)" in response.text
     assert "bottomPadding" in response.text

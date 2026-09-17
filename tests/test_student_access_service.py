@@ -49,6 +49,32 @@ def test_curator_cannot_access_other_curator_student(db, user_factory):
     assert exc.value.detail == "Нет доступа к этому ученику"
 
 
+def test_teacher_can_access_only_own_student(db, user_factory):
+    teacher = user_factory(vk_id=920014, name="Teacher", role_name="модератор")
+    owner = user_factory(vk_id=920015, name="Owner", role_name="куратор")
+    student = user_factory(vk_id=920016, name="Student", role_name="ученик")
+    student.curator_id = teacher.id
+    db.add(student)
+    db.commit()
+
+    assert get_student_for_staff_access(
+        db, _user_dict(teacher, 3), student.id, active_only=True,
+        not_found_detail="Ученик не найден", forbidden_detail="Нет доступа к этому ученику",
+    ).id == student.id
+
+    other_student = user_factory(vk_id=920017, name="Other Student", role_name="ученик")
+    other_student.curator_id = owner.id
+    db.add(other_student)
+    db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        get_student_for_staff_access(
+            db, _user_dict(teacher, 3), other_student.id, active_only=True,
+            not_found_detail="Ученик не найден", forbidden_detail="Нет доступа к этому ученику",
+        )
+    assert exc.value.status_code == 403
+
+
 def test_admin_can_access_any_active_student(db, user_factory):
     owner = user_factory(vk_id=920006, name="Owner", role_name="куратор")
     admin = user_factory(vk_id=920007, name="Admin", role_name="админ")

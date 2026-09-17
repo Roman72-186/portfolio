@@ -69,6 +69,22 @@ def test_curator_sees_own_student_archive(curator_client, db, student):
     assert 'role="dialog"' in resp.text
 
 
+def test_admin_can_open_archived_student_legacy_portfolio(client, db, user_factory, session_factory):
+    admin = user_factory(vk_id=810011, name="Admin", role_name="админ")
+    archived = user_factory(vk_id=810012, name="Archived", role_name="ученик")
+    archived.archived_at = datetime.now(timezone.utc)
+    archived.is_active = False
+    db.add(archived)
+    db.commit()
+    _add_photo(db, archived.id)
+    client.cookies.set("session_id", session_factory(admin).id)
+
+    resp = client.get(f"/cabinet/students/{archived.id}/legacy-portfolio")
+
+    assert resp.status_code == 200
+    assert "Архивных фото нет" not in resp.text
+
+
 def test_empty_state_when_no_photos(curator_client, student):
     client, _ = curator_client
     resp = client.get(f"/cabinet/students/{student.id}/legacy-portfolio")

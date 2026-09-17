@@ -234,6 +234,11 @@ scope)` и свойством `answered` (одна попытка: после о
                 iframe.allow = 'accelerometer; gyroscope; autoplay; encrypted-media';
                 iframe.referrerPolicy = 'strict-origin-when-cross-origin';
 
+                var cover = el('img', 'video-cover');
+                cover.setAttribute('data-role', 'cover');
+                cover.alt = '';
+                cover.hidden = true;
+
                 var watermark = el('div', 'video-watermark');
                 watermark.setAttribute('aria-hidden', 'true');
                 var watermarkCopy = el('div', 'video-watermark-copy');
@@ -255,6 +260,7 @@ scope)` и свойством `answered` (одна попытка: после о
 
                 frameWrap.appendChild(loading);
                 frameWrap.appendChild(iframe);
+                frameWrap.appendChild(cover);
                 frameWrap.appendChild(watermark);
                 frameWrap.appendChild(muteButton);
                 frameWrap.appendChild(fullscreenButton);
@@ -527,10 +533,13 @@ scope)` и свойством `answered` (одна попытка: после о
                     wrap.appendChild(el('p', 'lrn-blk-body', block.submitted_comment));
                 }
                 if (block.reviewed) {
-                    wrap.appendChild(el('p', 'lrn-blk-verdict is-ok', '✓ Работу проверил куратор'));
+                    wrap.appendChild(el('p', 'lrn-blk-verdict is-ok', '✓ Работу проверил преподаватель'));
                 }
                 if (block.review_comment_html) {
-                    wrap.appendChild(elHtml('p', 'video-help', block.review_comment_html));
+                    var feedback = el('div', 'lrn-blk-feedback');
+                    feedback.appendChild(el('strong', 'lrn-blk-feedback-title', 'Комментарий преподавателя'));
+                    feedback.appendChild(elHtml('div', 'lrn-blk-feedback-text', block.review_comment_html));
+                    wrap.appendChild(feedback);
                 }
 
                 var left = (block.max_files || 10) - (block.submitted_files || []).length;

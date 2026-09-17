@@ -5,7 +5,7 @@
   - rank=2 (куратор)   — только свои студенты; с 01.09.2026 (решение владельца,
     plans/2026-09-01-apparchi-student-centric-review.md) может ставить балл
     Work (`score_work`) — остальное на карточке по-прежнему только просмотр
-  - rank=3 (модератор) — заглушка, нет доступа
+  - rank=3 (преподаватель) — только свои студенты
   - rank=4 (админ/ГП)  — все студенты, оценивание + разблокировка, архив прошлых
     потоков на чтение (`/cabinet/archive`)
   - rank=5 (суперадмин) — всё то же, что rank=4
@@ -44,7 +44,7 @@ from app.services import s3 as s3_service
 from app.services.exam_cycle import get_active_ticket, has_submitted_for_ticket
 from app.services.feature_periods import get_active_period
 from app.services.stats import avg_score_by_subject_all_time
-from app.services.portfolio import after_gallery_groups, item_source
+from app.services.portfolio import after_gallery_groups, item_source, portfolio_item_count
 from app.services.student_access import get_student_for_staff_access
 from app.services.tz import MSK_TZ, msk_input_value, msk_midnight, parse_msk_local
 from app.services.utils import compress_image, study_duration_text, group_works, has_case_growth
@@ -80,10 +80,9 @@ def _delete_work_rows_with_dependents(db: DBSession, works: list[Work]) -> int:
 def _require_student_panel(
     user: Annotated[dict, Depends(get_current_user)],
 ) -> dict:
-    """Разрешает доступ куратору (rank=2) и admin/superadmin (rank>=4).
-    Модератор (rank=3) — заглушка, нет доступа к студентам."""
+    """Разрешает доступ персоналу начиная с куратора (rank>=2)."""
     rank = user["role_rank"]
-    if rank == 2 or rank >= 4:
+    if rank >= 2:
         return user
     raise HTTPException(status_code=403, detail="Нет доступа")
 
@@ -135,9 +134,9 @@ def _get_accessible_students(
             .all()
         )
 
-    if user["role_rank"] == 2:
-        # Куратор ВСЕГДА видит всех своих активных учеников, включая тех, кто
-        # ещё не завершил онбординг (profile_completed=False) — анкету заполняет
+    if user["role_rank"] < 4:
+        # Куратор и преподаватель видят всех своих активных учеников, включая
+        # тех, кто ещё не завершил онбординг (profile_completed=False) – анкету заполняет
         # сам ученик (персонал — не может), поэтому только-что привязанный
         # ученик иначе «пропадал» у куратора без сигнала. Незавершённые
         # помечаются бейджем needs_setup в сайдбаре.
@@ -491,6 +490,7 @@ def _render_students_panel(
         {s.enrollment_year for s in students if s.enrollment_year},
         reverse=True,
     )
+    has_missing_enrollment_year = any(not s.enrollment_year for s in students)
 
     return templates.TemplateResponse(request, "cabinet_students.html", {
         "request": request,
@@ -507,6 +507,7 @@ def _render_students_panel(
         "show_curator_filter": show_curator_filter,
         "curators": curators,
         "enrollment_years": enrollment_years,
+        "has_missing_enrollment_year": has_missing_enrollment_year,
         "active_hard_filters": active_hard_filters,
         "is_admin_panel": is_admin_panel,
         "is_superadmin": user["role_rank"] >= 5,
@@ -542,7 +543,7 @@ def get_student_profile(
         .filter(Work.user_id == student_id, Work.status == "success")
         .all()
     )
-    portfolio_count = sum(1 for w in works if w.work_type in (WORK_TYPE_BEFORE, WORK_TYPE_AFTER))
+    portfolio_count = portfolio_item_count(db, student_id)
     mock_works = [w for w in works if w.work_type == WORK_TYPE_MOCK_EXAM]
     retake_count = sum(1 for w in works if w.work_type == WORK_TYPE_RETAKE)
     scored = [w for w in mock_works if w.score is not None]
