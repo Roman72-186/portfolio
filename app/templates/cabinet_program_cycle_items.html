@@ -22,7 +22,7 @@
 {% block content %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
-<script src="/static/js/task-blocks-render.js?v=15"></script>
+<script src="/static/js/task-blocks-render.js?v=16"></script>
 <div class="prg-page ios-prg-day" data-topic="{{ topic.id }}">
     {% include "partials/program_tabs.html" %}
 
@@ -304,6 +304,15 @@ function uploadBlockPhotos(row, files) {
                 // Тип, которого рендерер не знает: показываем хотя бы
                 // название, молчать про блок нельзя — он у ученика будет.
                 node = el('p', 'prg-hint', block.title || 'Блок «' + block.block_type + '»');
+            }
+            // Плеер в предпросмотре не грузим (см. previewVideoNote) — у
+            // кнопки «Загрузить портфолио» называем ролик строкой над ней.
+            if (block.block_type === 'portfolio' && block.video_id) {
+                wrap.appendChild(el(
+                    'p', 'prg-hint',
+                    'Видеоинструкция: ' + (VIDEO_TITLES[block.video_id] || 'ролик')
+                    + ' — плеер откроется у ученика.'
+                ));
             }
             wrap.appendChild(node);
             if (block.hidden_until_done) {

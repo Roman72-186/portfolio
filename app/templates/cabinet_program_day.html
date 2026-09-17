@@ -18,7 +18,7 @@ FORM: Operate.
 {% block content %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
-<script src="/static/js/task-blocks-render.js?v=15"></script>
+<script src="/static/js/task-blocks-render.js?v=16"></script>
 {# Время сдачи пробника (владелец 09.09.2026: «выставляем время сдачи»).
    30.08.2026 эти поля из конструктора убрали, окно ставил сервер; теперь они
    вернулись, но заполнены расписанием по умолчанию — 11:45–18:30 этого дня и
@@ -985,6 +985,15 @@ FORM: Operate.
                 // Тип, которого рендерер не знает: показываем хотя бы
                 // название, молчать про блок нельзя — он у ученика будет.
                 node = el('p', 'prg-hint', block.title || 'Блок «' + block.block_type + '»');
+            }
+            // Плеер в предпросмотре не грузим (см. previewVideoNote) — у
+            // кнопки «Загрузить портфолио» называем ролик строкой над ней.
+            if (block.block_type === 'portfolio' && block.video_id) {
+                wrap.appendChild(el(
+                    'p', 'prg-hint',
+                    'Видеоинструкция: ' + (VIDEO_TITLES[block.video_id] || 'ролик')
+                    + ' — плеер откроется у ученика.'
+                ));
             }
             wrap.appendChild(node);
             if (block.hidden_until_done) {

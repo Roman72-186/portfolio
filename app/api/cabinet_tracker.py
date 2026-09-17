@@ -508,6 +508,15 @@ def cabinet_tracker_task_blocks(
             # кладёт `section` скрытым полем формы.
             item["upload_url"] = "/upload?section=before"
             item["done"] = _portfolio_block_done(db, block, user["user_id"])
+            # Видеоинструкция и примеры над кнопкой (владелец 17.09.2026).
+            # Оба необязательны; закрытие шага от них не зависит — только
+            # загрузка работы, кружка «просмотрено» у видео здесь нет.
+            item["video_embed_endpoint"] = (
+                f"/cabinet/videos/{block.video_id}/embed" if block.video_id else None
+            )
+            item["images"] = [
+                {"url": i.image_s3_url} for i in images.get(block.id, [])
+            ]
         elif block.block_type == BLOCK_QUESTION:
             item["question_type"] = block.question_type
             item["options"] = [

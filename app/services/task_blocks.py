@@ -23,7 +23,9 @@ from app.models.task_block import (
     BLOCK_TYPE_LABELS,
     BLOCK_TYPES,
     BLOCK_VIDEO,
+    IMAGE_BLOCK_TYPES,
     MAX_BLOCK_IMAGES,
+    VIDEO_BLOCK_TYPES,
     QUESTION_TEXT,
     QUESTION_TYPES,
     TaskBlock,
@@ -476,7 +478,7 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         row.body = (item.get("body") or "").strip() or None
         # Специализированные поля чистим у чужих типов: блок могли переключить
         # с видео на текст, и старый video_id тянул бы за собой плеер.
-        row.video_id = item.get("video_id") if block_type == BLOCK_VIDEO else None
+        row.video_id = item.get("video_id") if block_type in VIDEO_BLOCK_TYPES else None
         row.url = _clean(item.get("url"), 500) if block_type == BLOCK_LINK else None
         row.hidden_until_done = bool(
             item.get("hidden_until_done") if block_type == BLOCK_QUESTION else False
@@ -527,11 +529,12 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
             _sync_options(db, row, item.get("options") or [])
         else:
             _sync_options(db, row, [])
-        # Картинки — у галереи и у комбинированного «Фото + сдача работы»;
+        # Картинки — у галереи, у комбинированного «Фото + сдача работы» и у
+        # кнопки «Загрузить портфолио» (примеры и скриншоты к инструкции);
         # блок могли переключить с фото на текст.
         _sync_images(
             db, row,
-            item.get("images") if row.block_type in (BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD) else [],
+            item.get("images") if row.block_type in IMAGE_BLOCK_TYPES else [],
         )
         _sync_tariffs(db, row, item.get("tariffs"))
         _sync_required_tariffs(db, row, item.get("required_tariffs"))

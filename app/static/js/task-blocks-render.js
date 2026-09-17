@@ -200,18 +200,10 @@ scope)` и свойством `answered` (одна попытка: после о
             // Разметка — та же, что у `partials/inline/video.html` (совпадающие
             // `data-role`), только собрана в рантайме: у задачи может быть
             // несколько видео-блоков сразу, у каждого свой endpoint.
-            function renderVideo(block) {
-                var wrap = el('div', 'lrn-blk lrn-blk-video');
-                var head = withTitle(el('div', 'lrn-blk-head'), block);
-                var check = renderBlockCheck(block);
-                head.appendChild(check);
-                wrap.appendChild(head);
-
-                if (!block.video_embed_endpoint) {
-                    wrap.appendChild(el('p', 'video-progress-status is-error', 'Ролик недоступен.'));
-                    return wrap;
-                }
-
+            //
+            // Сам плеер вынесен в `videoPlayer`: его же ставит над кнопкой
+            // блок «Загрузить портфолио» (видеоинструкция, 17.09.2026).
+            function videoPlayer(block) {
                 var root = el('div', 'lrn-inline-video');
                 var statusEl = el('p', 'video-progress-status', 'Загружаем видео…');
                 statusEl.setAttribute('aria-live', 'polite');
@@ -281,7 +273,27 @@ scope)` и свойством `answered` (одна попытка: после о
                 root.appendChild(statusEl);
                 root.appendChild(shell);
                 root.appendChild(progressStatus);
-                wrap.appendChild(root);
+
+                window.lrnVideoPlayer.mount(root, {
+                    endpoint: block.video_embed_endpoint,
+                    csrfToken: csrfToken
+                });
+                return root;
+            }
+
+            function renderVideo(block) {
+                var wrap = el('div', 'lrn-blk lrn-blk-video');
+                var head = withTitle(el('div', 'lrn-blk-head'), block);
+                var check = renderBlockCheck(block);
+                head.appendChild(check);
+                wrap.appendChild(head);
+
+                if (!block.video_embed_endpoint) {
+                    wrap.appendChild(el('p', 'video-progress-status is-error', 'Ролик недоступен.'));
+                    return wrap;
+                }
+
+                wrap.appendChild(videoPlayer(block));
 
                 var checkHint = el('p', 'lrn-blk-video-check-hint');
                 checkHint.setAttribute('aria-live', 'polite');
@@ -304,19 +316,21 @@ scope)` и свойством `answered` (одна попытка: после о
                             : 'Не удалось отметить. Попробуй ещё раз.';
                     }
                 });
-
-                window.lrnVideoPlayer.mount(root, {
-                    endpoint: block.video_embed_endpoint,
-                    csrfToken: csrfToken
-                });
                 return wrap;
             }
 
             // Кнопка «Загрузить портфолио» (владелец 03.09.2026): ведёт на
-            // готовый экран загрузки работ и возвращает обратно. Своего
-            // содержимого у блока нет — только заголовок, пояснение и кнопка.
+            // готовый экран загрузки работ и возвращает обратно. С 17.09.2026
+            // над кнопкой может стоять цельная инструкция (владелец): видео,
+            // фото и скриншоты-примеры, текст — и уже под ними сама кнопка.
+            // Всё необязательно; шаг закрывает только загрузка работы.
             function renderPortfolio(block) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-portfolio'), block);
+                if (block.video_embed_endpoint) wrap.appendChild(videoPlayer(block));
+                var urls = (block.images || []).map(function (image) { return image.url; });
+                if (urls.length) {
+                    wrap.appendChild(photoGallery(urls, block.title || 'Пример к инструкции'));
+                }
                 if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-body', block.body_html));
                 var a = el('a', 'btn-blue', 'Загрузить портфолио');
                 a.href = block.upload_url || '/upload';

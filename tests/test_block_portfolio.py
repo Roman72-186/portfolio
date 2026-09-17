@@ -240,3 +240,101 @@ def test_button_points_at_the_before_section(auth_client, db):
     payload = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
 
     assert payload["blocks"][0]["upload_url"] == "/upload?section=before"
+
+
+# ── инструкция над кнопкой: видео и фото (владелец 17.09.2026) ─────────────
+# «В кнопку «Загрузить портфолио» добавить видеоинструкцию, фотографии,
+# скриншоты, а ниже — сама кнопка».
+
+def _video(db):
+    from app.models.learning_video import LearningVideo
+
+    video = LearningVideo(
+        bunny_library_id=1, bunny_video_id="portfolio-howto",
+        title="Как загрузить портфолио", status="ready", is_published=True,
+    )
+    db.add(video)
+    db.commit()
+    return video
+
+
+def test_portfolio_block_keeps_video_and_images(db, regular_user):
+    from app.services.task_blocks import get_images, sync_blocks
+
+    task = _task(db, regular_user)
+    video = _video(db)
+
+    sync_blocks(db, task_id=task.id, items=[{
+        "block_type": "portfolio", "video_id": video.id,
+        "images": [{"url": "https://example.com/a.jpg", "path": "blocks/a.jpg"},
+                   {"url": "https://example.com/b.jpg", "path": "blocks/b.jpg"}],
+    }])
+    db.commit()
+
+    block = db.query(TaskBlock).filter(TaskBlock.task_id == task.id).one()
+    assert block.video_id == video.id
+    assert [i.image_s3_url for i in get_images(db, [block.id])[block.id]] == [
+        "https://example.com/a.jpg", "https://example.com/b.jpg",
+    ]
+
+
+def test_student_payload_carries_video_and_images_above_button(auth_client, db):
+    from app.services.task_blocks import sync_blocks
+
+    client, user = auth_client
+    task = _task(db, user)
+    video = _video(db)
+    sync_blocks(db, task_id=task.id, items=[{
+        "block_type": "portfolio", "video_id": video.id,
+        "images": [{"url": "https://example.com/a.jpg", "path": None}],
+    }])
+    db.commit()
+
+    block = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()["blocks"][0]
+
+    assert block["video_embed_endpoint"] == f"/cabinet/videos/{video.id}/embed"
+    assert block["images"] == [{"url": "https://example.com/a.jpg"}]
+    assert block["upload_url"] == "/upload?section=before"
+
+
+def test_portfolio_block_without_instruction_stays_a_plain_button(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user)
+    _portfolio_block(db, task)
+
+    block = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()["blocks"][0]
+
+    assert block["video_embed_endpoint"] is None
+    assert block["images"] == []
+
+
+def test_video_in_portfolio_block_follows_block_access(db, user_factory):
+    """Ролик в кнопке портфолио — тоже «ролик в блоке»: открыт ровно тем, кому
+    открыто задание, а не всей школе по правилу «без темы — всем»."""
+    from app.models.tracker import TrackerTask
+    from app.services.task_blocks import sync_blocks
+    from app.services.video_catalog import block_bound_video_ids, is_video_accessible
+
+    student = user_factory(vk_id=710_901, name="Ученик")
+    video = _video(db)
+    task = TrackerTask(title="Не для всех", kind="material",
+                       is_published=True, assign_to_all=False)
+    db.add(task)
+    db.flush()
+    sync_blocks(db, task_id=task.id,
+                items=[{"block_type": "portfolio", "video_id": video.id}])
+    db.commit()
+
+    viewer = {"user_id": student.id, "role_rank": 1, "tariff": student.tariff}
+    assert video.id in block_bound_video_ids(db)
+    assert is_video_accessible(db, video, viewer) is False
+
+
+def test_constructor_portfolio_block_has_video_and_photo_fields(admin_client):
+    client, _ = admin_client
+    day = (TODAY + timedelta(days=14)).isoformat()
+
+    page = client.get(f"/cabinet/staff/program/{day}")
+
+    assert "Без видеоинструкции" in page.text
+    assert "Фото и скриншоты, необязательно" in page.text

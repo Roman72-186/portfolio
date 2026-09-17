@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
 from app.models.learning_video import LearningVideo
-from app.models.task_block import BLOCK_VIDEO, TaskBlock
+from app.models.task_block import VIDEO_BLOCK_TYPES, TaskBlock
 from app.models.tracker import TrackerTask
 from app.services.bunny_stream import get_video, is_bunny_stream_available, normalize_bunny_status
 from app.services.video_topics import accessible_topic_ids
@@ -38,7 +38,7 @@ def block_bound_video_ids(db: Session) -> set[int]:
     """
     rows = (
         db.query(TaskBlock.video_id)
-        .filter(TaskBlock.block_type == BLOCK_VIDEO, TaskBlock.video_id.isnot(None))
+        .filter(TaskBlock.block_type.in_(VIDEO_BLOCK_TYPES), TaskBlock.video_id.isnot(None))
         .distinct()
         .all()
     )
@@ -75,7 +75,7 @@ def _accessible_block_video_ids(
         db.query(TaskBlock.id, TaskBlock.video_id)
         .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
         .filter(
-            TaskBlock.block_type == BLOCK_VIDEO,
+            TaskBlock.block_type.in_(VIDEO_BLOCK_TYPES),
             TaskBlock.video_id.isnot(None),
             TrackerTask.is_published.is_(True),
             TrackerTask.deleted_at.is_(None),
