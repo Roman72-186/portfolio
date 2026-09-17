@@ -58,6 +58,7 @@
         var coverPlay = root.querySelector('[data-role="cover-play"]');
         var coverFallbackTimer = null;
         var activePlayer = null;
+        var playRequested = false;
         var watermark = root.querySelector('[data-role="watermark"]');
         var fullscreenButton = root.querySelector('[data-role="fullscreen-btn"]');
         var muteButton = root.querySelector('[data-role="mute-btn"]');
@@ -109,9 +110,9 @@
             }
             if (cover && cover.getAttribute('src')) {
                 cover.hidden = false;
-                // Кнопка станет доступна после Player.js `ready`, когда
-                // команда play() гарантированно принимается iframe.
-                if (coverPlay) coverPlay.hidden = true;
+                // Кнопка не должна зависеть от Player.js ready: на мобильном
+                // iframe может сообщить ready позже, а обложка уже видна.
+                if (coverPlay) coverPlay.hidden = false;
                 frameWrap.classList.remove('is-started');
             }
         }
@@ -141,7 +142,10 @@
 
         if (coverPlay) {
             coverPlay.addEventListener('click', function () {
-                if (!activePlayer || typeof activePlayer.play !== 'function') return;
+                if (!activePlayer || typeof activePlayer.play !== 'function') {
+                    playRequested = true;
+                    return;
+                }
                 // Mobile browsers do not reliably carry user activation from
                 // this page through Player.js postMessage into Bunny's
                 // cross-origin iframe. An unmuted play() is therefore blocked
@@ -663,7 +667,19 @@
 
                 player.on('ready', function () {
                     if (generation !== playerGeneration) return;
-                    if (coverPlay && cover && cover.getAttribute('src')) coverPlay.hidden = false;
+                    if (playRequested && typeof player.play === 'function') {
+                        playRequested = false;
+                        if (needsMutedStart() && muteButton && typeof player.mute === 'function') {
+                            player.mute();
+                            muteButton.hidden = false;
+                        }
+                        player.play();
+                        hideCover();
+                    }
+                    if (coverPlay && cover && cover.getAttribute('src')
+                        && !frameWrap.classList.contains('is-started')) {
+                        coverPlay.hidden = false;
+                    }
                     frameWrap.classList.add('is-ready');
                     player.getDuration(function (value) {
                         durationSeconds = finiteNumber(value);
