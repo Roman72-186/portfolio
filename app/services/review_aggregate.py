@@ -254,10 +254,13 @@ def _block_work_items(
     """Работы, сданные в блоке задания — обёртка над
     `task_blocks.py::submission_review_queue`.
 
-    Отдельного экрана у них нет и заводить его нельзя (инвариант проекта:
-    новый тип сдачи получает адаптер, а не свой роут и пункт меню) — работы
-    видны на том же `/cabinet/staff/students-review/{id}`, что и всё
-    остальное по ученику.
+    Отдельного *списка* сдач у них нет и заводить его нельзя (инвариант
+    проекта: новый тип сдачи получает адаптер, а не свой роут и пункт меню) —
+    сдачи видны в том же общем списке на `/cabinet/staff/students-review/{id}`,
+    что и всё остальное по ученику. Сам диалог с оценкой при этом, как и у
+    домашки (`_homework_items`) и пробника (`_exam_cycle_items`), живёт на
+    своей странице — `review_url` ведёт в `task_block_feedback.py`
+    (`/cabinet/staff/task-block-submissions/{id}/feedback`).
     """
     from app.services.task_blocks import submission_review_queue
 
@@ -286,7 +289,7 @@ def _block_work_items(
             subject=row["subject"],
             submitted_at=row["submitted_at"],
             is_reviewed=row["reviewed"],
-            review_url="",
+            review_url=f"/cabinet/staff/task-block-submissions/{row['submission_id']}/feedback",
             text=row["comment"],
             review_comment=row["review_comment"],
             images=row["images"],

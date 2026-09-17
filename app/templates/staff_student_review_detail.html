@@ -103,7 +103,7 @@
             <div class="prg-item-actions">
                 {% if item.domain in ('task_block', 'block_work') %}
                 {% if item.domain == 'block_work' %}
-                <a class="btn-blue" href="/cabinet/staff/task-block-submissions/{{ item.item_id }}/feedback">Оценить и ответить</a>
+                <a class="btn-blue" href="{{ item.review_url }}">Оценить и ответить</a>
                 {% endif %}
                 <button type="button" class="btn-outline" data-review-toggle
                         data-reviewed="{{ 'true' if item.is_reviewed else 'false' }}">
