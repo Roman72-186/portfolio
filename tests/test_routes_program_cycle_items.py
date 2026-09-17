@@ -228,7 +228,8 @@ def test_cycle_item_form_has_no_tariff_field(client, db, user_factory, session_f
 def test_cycle_item_form_hides_text_but_offers_photo_add_button(
     client, db, user_factory, session_factory
 ):
-    """Текст не добавляется отдельно, фото снова доступно для примеров.
+    """Текст не добавляется отдельно, фото — отдельной галереей примеров, а
+    «Домашнее задание» и «Фото + сдача работы» слиты в одну кнопку.
 
     Второй экран конструктора: `cabinet_program_day.html` и этот шаблон
     рисуют ряд добавления каждый своим циклом, и правка одного из них
@@ -242,7 +243,7 @@ def test_cycle_item_form_hides_text_but_offers_photo_add_button(
 
     assert 'data-add-block="text"' not in page.text
     assert 'data-add-block="photo"' in page.text
-    assert 'data-add-block="upload"' in page.text
+    assert 'data-add-block="upload"' not in page.text
     assert 'data-add-block="photo_upload"' in page.text
 
 

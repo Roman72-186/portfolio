@@ -125,11 +125,12 @@ def test_material_accepts_every_block_type(client, db, user_factory, session_fac
 def test_constructor_hides_text_but_offers_photo_add_button(
     client, db, user_factory, session_factory, monkeypatch
 ):
-    """Текст не добавляется отдельно, фото снова доступно для примеров.
+    """Текст не добавляется отдельно, фото — отдельной галереей примеров, а
+    «Домашнее задание» и «Фото + сдача работы» слиты в одну кнопку.
 
-    Сторож пары «кнопка снята, тип живёт»: рядом с ним
-    `test_material_accepts_every_block_type` сохраняет оба типа через тот же
-    роут. Если когда-нибудь вычеркнуть BLOCK_TEXT/BLOCK_PHOTO из BLOCK_TYPES
+    Сторож тройки «кнопка снята/слита, тип живёт»: рядом с ним
+    `test_material_accepts_every_block_type` сохраняет все типы через тот же
+    роут. Если когда-нибудь вычеркнуть BLOCK_TEXT/BLOCK_UPLOAD из BLOCK_TYPES
     вместо BLOCK_TYPES_ADDABLE, упадёт именно тот тест, а этот промолчит.
     """
     _freeze(monkeypatch, date.today())
@@ -139,8 +140,8 @@ def test_constructor_hides_text_but_offers_photo_add_button(
 
     assert 'data-add-block="text"' not in page.text
     assert 'data-add-block="photo"' in page.text
-    # Остальные кнопки на месте — проверка ловит снятие двух, а не всего ряда.
-    assert 'data-add-block="upload"' in page.text
+    # Домашнее задание слито в фото+сдачу (17.09.2026) — своей кнопки нет.
+    assert 'data-add-block="upload"' not in page.text
     assert 'data-add-block="photo_upload"' in page.text
     # Подписи типов по-прежнему приходят все: ими редактор называет карточки
     # уже сохранённых текстовых и фото-блоков (BLOCK_LABELS в partial).

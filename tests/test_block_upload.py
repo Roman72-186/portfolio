@@ -361,15 +361,16 @@ def test_new_upload_returns_the_work_to_the_queue(auth_client, db):
 
 # ── конструктор ─────────────────────────────────────────────────────────────
 
-def test_constructor_offers_the_upload_block(admin_client):
+def test_constructor_no_longer_offers_a_standalone_upload_button(admin_client):
+    """Кнопка «+ Домашнее задание» на BLOCK_UPLOAD снята 17.09.2026 — слита
+    с «Фото + сдача работы» в один тип BLOCK_PHOTO_UPLOAD. Тип BLOCK_UPLOAD
+    жив в базе (старые блоки), подпись «Домашнее задание» не менялась."""
     client, _ = admin_client
     day = (TODAY + timedelta(days=14)).isoformat()
 
     page = client.get(f"/cabinet/staff/program/{day}")
 
-    assert 'data-add-block="upload"' in page.text
-    # Подпись «Домашнее задание» вместо прежней «Загрузить работы»
-    # (владелец 16.09.2026). Механика блока не менялась, только название.
+    assert 'data-add-block="upload"' not in page.text
     assert "Домашнее задание" in page.text
     assert "Загрузить работы" not in page.text
 
@@ -410,6 +411,7 @@ def test_constructor_offers_the_photo_upload_block(admin_client):
     page = client.get(f"/cabinet/staff/program/{day}")
 
     assert 'data-add-block="photo_upload"' in page.text
-    assert "Фото + сдача работы" in page.text
+    # Подпись сменилась с «Фото + сдача работы» на «Домашнее задание»
+    # (владелец 16.09.2026: слить фотоблок и «Домашнее задание» в один тип).
     assert "type === 'photo_upload'" in page.text
 
