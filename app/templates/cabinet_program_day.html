@@ -14,11 +14,15 @@ FORM: Operate.
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
    показывались бы голой разметкой. #}
 <link rel="stylesheet" href="/static/css/tracker.css?v=56">
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
 <script src="/static/js/task-blocks-render.js?v=16"></script>
+{# WYSIWYG для полей с разметкой (**жирный**/*курсив*/список/ссылка) — стоит до
+   `program_blocks_editor_js.html`, тот вызывает window.RichTextField напрямую. #}
+<script src="/static/js/rich-text-field.js?v=1"></script>
 {# Время сдачи пробника (владелец 09.09.2026: «выставляем время сдачи»).
    30.08.2026 эти поля из конструктора убрали, окно ставил сервер; теперь они
    вернулись, но заполнены расписанием по умолчанию — 11:45–18:30 этого дня и
@@ -152,7 +156,7 @@ FORM: Operate.
             </label>
         </div>
         <label class="prg-field">
-            <textarea data-m-description maxlength="5000"
+            <textarea data-rich-text data-m-description maxlength="5000"
                       aria-label="Описание, необязательно"
                       placeholder="Описание, необязательно"></textarea>
         </label>
@@ -232,7 +236,7 @@ FORM: Operate.
             </label>
         </div>
         <label class="prg-field">
-            <textarea data-x-description maxlength="5000"
+            <textarea data-rich-text data-x-description maxlength="5000"
                       aria-label="Описание, необязательно"
                       placeholder="Описание, необязательно"></textarea>
         </label>
@@ -303,10 +307,9 @@ FORM: Operate.
                    aria-label="Тема учебного дня" placeholder="Тема учебного дня">
         </label>
         <label class="prg-field">
-            <textarea data-v-description maxlength="5000"
+            <textarea data-rich-text data-v-description maxlength="5000"
                       aria-label="Описание, необязательно"
                       placeholder="Описание, необязательно"></textarea>
-            <span class="prg-hint">Поддерживается: **жирный**, *курсив*, «- пункт» — список, [текст](https://…) — ссылка.</span>
         </label>
         {% if catalog_videos %}
         <label class="prg-field">
@@ -374,9 +377,8 @@ FORM: Operate.
             </label>
         </div>
         <label class="prg-field">
-            <textarea data-h-description maxlength="5000"
+            <textarea data-rich-text data-h-description maxlength="5000"
                       aria-label="Что нужно сделать" placeholder="Что нужно сделать"></textarea>
-            <span class="prg-hint">Поддерживается: **жирный**, *курсив*, «- пункт» — список, [текст](https://…) — ссылка.</span>
         </label>
         <div class="prg-grid2">
             <label class="prg-field prg-field--row">
@@ -1064,6 +1066,7 @@ FORM: Operate.
                 holder.insertAdjacentHTML('beforeend', blockRowHTML(block.block_type));
                 var row = holder.lastElementChild;
                 fillBlockRow(row, block);
+                window.RichTextField.enhanceAll(row);
                 row.classList.add('prg-blk--new');
                 if (!firstNew) firstNew = row;
             });
@@ -1189,6 +1192,7 @@ FORM: Operate.
         delete mockForm.dataset.editingTaskId;
         mockForm.querySelector('[data-m-title]').value = '';
         mockForm.querySelector('[data-m-description]').value = '';
+        window.RichTextField.refresh(mockForm.querySelector('[data-m-description]'));
         fillMockSchedule(mockForm, MOCK_DEFAULT_SCHEDULE);
         mockForm.querySelector('[data-subject-picker]').hidden = false;
         mockForm.querySelectorAll('[data-add-subject]').forEach(function (button) { button.hidden = false; });
@@ -1220,6 +1224,7 @@ FORM: Operate.
         renderFormBlocks(videoForm, []);
         videoForm.querySelector('[data-v-title]').value = '';
         videoForm.querySelector('[data-v-description]').value = '';
+        window.RichTextField.refresh(videoForm.querySelector('[data-v-description]'));
         videoForm.querySelector('[data-v-subject]').value = '';
         videoForm.querySelector('[data-v-required]').checked = true;
         resetTariffFields(videoForm);
@@ -1230,6 +1235,7 @@ FORM: Operate.
         delete homeworkForm.dataset.editingTaskId;
         homeworkForm.querySelector('[data-h-title]').value = '';
         homeworkForm.querySelector('[data-h-description]').value = '';
+        window.RichTextField.refresh(homeworkForm.querySelector('[data-h-description]'));
         homeworkForm.querySelector('[data-h-subject]').value = '';
         homeworkForm.querySelector('[data-h-required]').checked = true;
         homeworkForm.querySelector('[data-h-files]').value = 1;
@@ -1296,6 +1302,7 @@ FORM: Operate.
         delete form.dataset.editingTaskId;
         form.querySelector('[data-x-title]').value = '';
         form.querySelector('[data-x-description]').value = '';
+        window.RichTextField.refresh(form.querySelector('[data-x-description]'));
         form.querySelector('[data-x-subject]').value = '';
         form.querySelector('[data-x-required]').checked = true;
         form.querySelector('[data-x-starts]').value = '';
@@ -1312,6 +1319,7 @@ FORM: Operate.
         mockForm.dataset.editingTaskId = String(taskId);
         mockForm.querySelector('[data-m-title]').value = data.title || '';
         mockForm.querySelector('[data-m-description]').value = data.description || '';
+        window.RichTextField.refresh(mockForm.querySelector('[data-m-description]'));
         mockForm.querySelector('[data-subject-picker]').hidden = true;
         mockForm.querySelectorAll('[data-subject-block]').forEach(function (block) {
             var isThis = block.dataset.subjectBlock === data.subject;
@@ -1351,6 +1359,7 @@ FORM: Operate.
         videoForm.dataset.editingTaskId = String(taskId);
         videoForm.querySelector('[data-v-title]').value = data.title || '';
         videoForm.querySelector('[data-v-description]').value = data.description || '';
+        window.RichTextField.refresh(videoForm.querySelector('[data-v-description]'));
         videoForm.querySelector('[data-v-subject]').value = data.subject || '';
         videoForm.querySelector('[data-v-required]').checked = data.is_required !== false;
         populateTariffFields(videoForm, data);
@@ -1374,6 +1383,7 @@ FORM: Operate.
         homeworkForm.dataset.editingTaskId = String(taskId);
         homeworkForm.querySelector('[data-h-title]').value = data.title || '';
         homeworkForm.querySelector('[data-h-description]').value = data.description || '';
+        window.RichTextField.refresh(homeworkForm.querySelector('[data-h-description]'));
         homeworkForm.querySelector('[data-h-subject]').value = data.subject || '';
         homeworkForm.querySelector('[data-h-required]').checked = data.submission_required !== false;
         homeworkForm.querySelector('[data-h-files]').value = data.max_files != null ? data.max_files : 1;
@@ -1391,6 +1401,7 @@ FORM: Operate.
         form.dataset.editingTaskId = String(taskId);
         form.querySelector('[data-x-title]').value = data.title || '';
         form.querySelector('[data-x-description]').value = data.description || '';
+        window.RichTextField.refresh(form.querySelector('[data-x-description]'));
         form.querySelector('[data-x-subject]').value = data.subject || '';
         form.querySelector('[data-x-required]').checked = data.is_required !== false;
         form.querySelector('[data-x-starts]').value = data.starts_on || '';
@@ -1426,6 +1437,7 @@ FORM: Operate.
             if (preset && preset.default_block && emptyEditor) {
                 var holder = openForm.querySelector('[data-blocks]');
                 holder.insertAdjacentHTML('beforeend', blockRowHTML(preset.default_block));
+                window.RichTextField.enhanceAll(holder.lastElementChild);
                 syncBlockOptions(holder.lastElementChild);
             }
             return;
@@ -1650,6 +1662,7 @@ FORM: Operate.
                 'beforeend', blockRowHTML(addBlock.getAttribute('data-add-block'))
             );
             var newBlock = blocksHolder.lastElementChild;
+            window.RichTextField.enhanceAll(newBlock);
             syncBlockOptions(newBlock);
             renumberBlocks(blocksHolder);
             // На длинном списке новый блок в конце легко оказывается за
@@ -1694,6 +1707,7 @@ FORM: Operate.
             var optionsHolder = optionsOwner.querySelector('[data-b-options]');
             var ownerType = optionsOwner.getAttribute('data-block-type');
             optionsHolder.insertAdjacentHTML('beforeend', blockOptionHTML(ownerType));
+            window.RichTextField.enhanceAll(optionsHolder.lastElementChild);
             // У шкалы и правил верного варианта нет по устройству: там пункт —
             // это навык или правило. Прячем отметку сразу при добавлении, как
             // она уже прячется при открытии сохранённого блока.

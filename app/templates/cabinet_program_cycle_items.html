@@ -18,11 +18,14 @@
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
    показывались бы голой разметкой (см. cabinet_program_day.html). #}
 <link rel="stylesheet" href="/static/css/tracker.css?v=56">
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
 <script src="/static/js/task-blocks-render.js?v=16"></script>
+{# WYSIWYG для полей с разметкой — стоит до `program_blocks_editor_js.html`. #}
+<script src="/static/js/rich-text-field.js?v=1"></script>
 <div class="prg-page ios-prg-day" data-topic="{{ topic.id }}">
     {% include "partials/program_tabs.html" %}
 
@@ -66,10 +69,9 @@
             </label>
         </div>
         <label class="prg-field">
-            <textarea data-item-description maxlength="5000"
+            <textarea data-rich-text data-item-description maxlength="5000"
                       aria-label="Описание, необязательно"
                       placeholder="Описание, необязательно"></textarea>
-            <span class="prg-hint">Поддерживается: **жирный**, *курсив*, «- пункт» — список, [текст](https://…) — ссылка.</span>
         </label>
         <label class="prg-field prg-field--row">
             <input type="checkbox" data-item-required checked>
@@ -332,6 +334,7 @@ function uploadBlockPhotos(row, files) {
         fields.title.value = '';
         fields.subject.value = '';
         fields.description.value = '';
+        window.RichTextField.refresh(fields.description);
         fields.required.checked = true;
         fields.starts.value = '';
         renderFormBlocks(form, []);
@@ -363,6 +366,7 @@ function uploadBlockPhotos(row, files) {
             fields.title.value = data.title || '';
             fields.subject.value = data.subject || '';
             fields.description.value = data.description || '';
+            window.RichTextField.refresh(fields.description);
             fields.required.checked = !!data.is_required;
             fields.starts.value = data.starts_on || '';
             renderFormBlocks(form, data.blocks || []);
@@ -442,6 +446,7 @@ function uploadBlockPhotos(row, files) {
         if (addBlock) {
             var holder = form.querySelector('[data-blocks]');
             holder.insertAdjacentHTML('beforeend', blockRowHTML(addBlock.getAttribute('data-add-block')));
+            window.RichTextField.enhanceAll(holder.lastElementChild);
             renumberBlocks(holder);
             holder.lastElementChild.scrollIntoView({behavior: 'smooth', block: 'nearest'});
             return;
@@ -472,6 +477,7 @@ function uploadBlockPhotos(row, files) {
             var optionsHolder = optionsOwner.querySelector('[data-b-options]');
             var ownerType = optionsOwner.getAttribute('data-block-type');
             optionsHolder.insertAdjacentHTML('beforeend', blockOptionHTML(ownerType));
+            window.RichTextField.enhanceAll(optionsHolder.lastElementChild);
             // Та же логика, что на экране дня: у шкалы и правил нет верного
             // варианта, прячем отметку сразу при добавлении.
             if (ownerType === 'scale' || ownerType === 'rules') {

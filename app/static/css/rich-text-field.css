@@ -1,0 +1,89 @@
+/* Нативный WYSIWYG поверх textarea с разметкой (rich-text-field.js).
+   Токены — Spark (base.css), см. DESIGN.md. */
+
+.rt-field {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    overflow: hidden;
+}
+
+.rt-field:focus-within {
+    border-color: var(--blue);
+    box-shadow: var(--sh-blue);
+}
+
+.rt-toolbar {
+    display: flex;
+    gap: var(--s-1);
+    padding: var(--s-1);
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+}
+
+.rt-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0 var(--s-1);
+    border: 1px solid transparent;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color var(--duration-fast) var(--ease-out),
+        border-color var(--duration-fast) var(--ease-out);
+}
+
+.rt-btn:hover,
+.rt-btn:focus-visible {
+    background: var(--blue-tint);
+    border-color: var(--blue-soft);
+}
+
+.rt-editable {
+    min-height: 96px;
+    padding: var(--s-2);
+    font: inherit;
+    color: var(--text);
+    outline: none;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.rt-editable:empty::before {
+    content: attr(data-placeholder);
+    color: var(--dim);
+}
+
+.rt-editable ul {
+    margin: 0;
+    padding-left: 1.25em;
+}
+
+.rt-editable a {
+    color: var(--blue);
+}
+
+.rt-source-hidden {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    .rt-btn {
+        min-width: 44px;
+        min-height: 44px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .rt-btn {
+        transition: none;
+    }
+}

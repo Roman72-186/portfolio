@@ -10,6 +10,7 @@ FORM: Operate, расширение существующего кабинета 
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/tracker.css?v=55">
 <link rel="stylesheet" href="/static/css/digest_goal_ios.css?v=4">
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
 <div class="trk-page ios-goals">
@@ -37,7 +38,7 @@ FORM: Operate, расширение существующего кабинета 
         </div>
         <div class="trk-grid trk-grid--two">
             <label class="trk-field">Описание, необязательно
-                <input data-goal-description type="text" maxlength="2000" placeholder="Короткая подпись под карточкой">
+                <input data-rich-text data-goal-description type="text" maxlength="2000" placeholder="Короткая подпись под карточкой">
             </label>
             <label class="trk-field">Целевой балл, необязательно
                 <input data-goal-score type="number" min="0" max="100">
@@ -130,6 +131,7 @@ FORM: Operate, расширение существующего кабинета 
     {% endif %}
 </div>
 
+<script src="/static/js/rich-text-field.js?v=1"></script>
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};
@@ -195,6 +197,7 @@ FORM: Operate, расширение существующего кабинета 
         field('id').value = row ? row.dataset.id : '';
         field('title').value = row ? row.dataset.title : '';
         field('description').value = row ? row.dataset.description : '';
+        window.RichTextField.refresh(field('description'));
         field('score').value = row ? row.dataset.score : '';
         field('starts').value = row ? row.dataset.starts : '';
         field('ends').value = row ? row.dataset.ends : '';

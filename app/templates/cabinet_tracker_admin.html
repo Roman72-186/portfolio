@@ -9,6 +9,7 @@ FORM: Operate, расширение существующего кабинета 
 {% block title %}Задачи трекера{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/tracker.css?v=55">
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
 <div class="trk-page">
@@ -40,8 +41,7 @@ FORM: Operate, расширение существующего кабинета 
             </label>
         </div>
         <label class="trk-field">Описание, необязательно
-            <textarea data-task-description maxlength="5000" placeholder="Что именно нужно сделать"></textarea>
-            <div class="field-hint">Поддерживается разметка: **жирный**, *курсив*, «- пункт» — список, [текст](https://…) — ссылка.</div>
+            <textarea data-rich-text data-task-description maxlength="5000" placeholder="Что именно нужно сделать"></textarea>
         </label>
         <label class="trk-field">Предмет
             <select data-task-subject>
@@ -138,6 +138,7 @@ FORM: Operate, расширение существующего кабинета 
     {% endif %}
 </div>
 
+<script src="/static/js/rich-text-field.js?v=1"></script>
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};
@@ -209,6 +210,7 @@ FORM: Operate, расширение существующего кабинета 
         field('id').value = row ? row.dataset.id : '';
         field('title').value = row ? row.dataset.title : '';
         field('description').value = row ? row.dataset.description : '';
+        window.RichTextField.refresh(field('description'));
         field('due').value = row ? row.dataset.due : '';
         field('starts').value = row ? row.dataset.starts : '';
         field('subject').value = row ? row.dataset.subject : '';

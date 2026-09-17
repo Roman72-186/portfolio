@@ -2,6 +2,7 @@
 {% block title %}{% if is_edit %}Редактировать задание{% else %}Создать задание для пробника{% endif %}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/superadmin_exam_ios.css?v=5">
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
 <div class="ea-form-wrap ios-ea-form">
@@ -59,6 +60,7 @@
     </form>
 </div>
 
+<script src="/static/js/rich-text-field.js?v=1"></script>
 <script>
 var ALL_STUDENTS = {{ student_list | tojson }};
 var ALL_TAGS = {{ tag_list | tojson }};
@@ -118,6 +120,7 @@ function addTicket() {
     div.id = 'ticket-block-' + ticketCount;
     div.innerHTML = buildTicketHTML(ticketCount);
     container.appendChild(div);
+    window.RichTextField.enhanceAll(div);
 
     updateAddBtn();
     initImageUpload(ticketCount);
@@ -221,8 +224,7 @@ function buildTicketHTML(n) {
 
         // Description
         + '<div class="field"><label>Описание задания</label>'
-        + '<textarea name="ticket_' + n + '_description" data-ticket="description" placeholder="Опишите условия задания подробно…" maxlength="2000"></textarea>'
-        + '<div class="field-hint">Поддерживается разметка: **жирный**, *курсив*, «- пункт» — список, [текст](https://…) — ссылка.</div></div>'
+        + '<textarea data-rich-text name="ticket_' + n + '_description" data-ticket="description" placeholder="Опишите условия задания подробно…" maxlength="2000"></textarea></div>'
 
         // Image upload
         + '<div class="field"><label>Фото задания</label>'
@@ -625,6 +627,7 @@ function populateTicket(n, t) {
     var descInput = document.querySelector('[name="ticket_' + n + '_description"]');
     if (descInput && t.description) {
         descInput.value = t.description;
+        window.RichTextField.refresh(descInput);
         descInput.dispatchEvent(new Event('input'));
     }
     // image

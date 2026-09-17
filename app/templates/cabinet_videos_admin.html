@@ -9,6 +9,7 @@ FORM: Operate, расширение существующего кабинета 
 {% block title %}Загрузка видео{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/videos_admin_ios.css?v=7">
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
 {% set status_labels = {'uploading':'Загрузка', 'processing':'Обработка', 'ready':'Готово', 'failed':'Ошибка', 'deleting':'Удаление', 'delete_failed':'Ошибка удаления'} %}
@@ -36,8 +37,7 @@ FORM: Operate, расширение существующего кабинета 
                     <input id="video-title" type="text" maxlength="200" autocomplete="off">
                 </label>
                 <label class="vam-field">Описание
-                    <textarea id="video-description" maxlength="5000" placeholder="Коротко: о чём этот урок"></textarea>
-                    <div class="field-hint">Поддерживается разметка: **жирный**, *курсив*, «- пункт» — список, [текст](https://…) — ссылка.</div>
+                    <textarea data-rich-text id="video-description" maxlength="5000" placeholder="Коротко: о чём этот урок"></textarea>
                 </label>
                 <label class="vam-field">Обложка, необязательно
                     <input id="video-cover" type="file" accept="image/*">
@@ -111,8 +111,7 @@ FORM: Operate, расширение существующего кабинета 
                     <summary>Изменить название, описание и тему</summary>
                     <div class="vam-edit-fields">
                         <label class="vam-field">Название<input data-edit-title value="{{ video.title }}" maxlength="200"></label>
-                        <label class="vam-field">Описание<textarea data-edit-description maxlength="5000">{{ video.description or '' }}</textarea>
-                            <div class="field-hint">Поддерживается разметка: **жирный**, *курсив*, «- пункт» — список, [текст](https://…) — ссылка.</div>
+                        <label class="vam-field">Описание<textarea data-rich-text data-edit-description maxlength="5000">{{ video.description or '' }}</textarea>
                         </label>
                         {# Мини-опрос отсюда убран 31.08.2026: вопросы стали
                            блоками задания и настраиваются в дне программы, а
@@ -130,6 +129,7 @@ FORM: Operate, расширение существующего кабинета 
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js" integrity="sha384-UlHjK3F7TCQCEUpnoa1ohMbP2oaWB3Aypv4gMo511vaZ86uUZ0Zv7UzZ0J1zRUT1" crossorigin="anonymous"></script>
+<script src="/static/js/rich-text-field.js?v=1"></script>
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};

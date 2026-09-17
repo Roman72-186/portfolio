@@ -2,6 +2,7 @@
 {% block title %}Циклы программы{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=34">
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
 {#
@@ -35,10 +36,9 @@
                    aria-label="Название цикла, необязательно" placeholder="Название цикла, необязательно">
         </label>
         <label class="prg-field">
-            <textarea data-c-description maxlength="5000"
+            <textarea data-rich-text data-c-description maxlength="5000"
                       aria-label="Описание, необязательно"
                       placeholder="Описание, необязательно"></textarea>
-            <span class="prg-hint">Поддерживается: **жирный**, *курсив*, «- пункт» — список, [текст](https://…) — ссылка.</span>
         </label>
         <div class="prg-grid2">
             <label class="prg-field">
@@ -109,6 +109,7 @@
     </section>
 </div>
 
+<script src="/static/js/rich-text-field.js?v=1"></script>
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};
@@ -131,6 +132,7 @@
         fields.id.value = '';
         fields.title.value = '';
         fields.description.value = '';
+        window.RichTextField.refresh(fields.description);
         fields.start.value = '';
         fields.end.value = '';
         fields.published.checked = true;
@@ -145,6 +147,7 @@
             fields.id.value = data.id;
             fields.title.value = data.title || '';
             fields.description.value = data.description || '';
+            window.RichTextField.refresh(fields.description);
             fields.start.value = data.starts_on || '';
             fields.end.value = data.ends_on || '';
             fields.published.checked = !!data.is_published;
