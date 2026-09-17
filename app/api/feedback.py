@@ -338,8 +338,9 @@ async def post_dialog_message(
             raise HTTPException(status_code=403, detail="Жди обратной связи куратора, потом сможешь ответить")
         recipient_id = fb.curator_id
     else:
-        # feedback.write: куратор/админ/суперадмин, но не модератор (rank 3
-        # роль по факту без реальных прав — см. app/services/rbac.py ROLE_PERMISSIONS)
+        # feedback.write: куратор/админ/суперадмин. Модератор (rank 3) видит
+        # фидбек своих учеников, но писать в него не может — это отдельное
+        # право, не связанное с доступом на чтение.
         if role_rank < 2 or role_rank == 3:
             raise HTTPException(status_code=403, detail="Нет прав на запись feedback")
         fb, _created = fb_service.get_or_create_feedback(
