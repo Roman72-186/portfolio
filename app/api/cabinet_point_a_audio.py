@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -54,8 +55,19 @@ async def point_a_audio_upload(
 ):
     if level not in LEVELS:
         raise HTTPException(status_code=404, detail="Такого уровня нет")
+
+    # Отклонённый файл (плохой формат, размер, пустышка) — это ошибка
+    # пользователя на обычной HTML-форме без JS, не fetch. Голый
+    # HTTPException(422/413) отдаёт браузеру сырой JSON вместо страницы —
+    # владелец 17.09.2026 попросил вместо этого текст рядом с формой.
+    def rejected(message: str) -> RedirectResponse:
+        return RedirectResponse(
+            f"/cabinet/staff/point-a-audio?error={quote(message)}&level={level}",
+            status_code=302,
+        )
+
     if not audio.filename:
-        raise HTTPException(status_code=422, detail="Выберите файл")
+        return rejected("Выберите файл")
 
     ext = Path(audio.filename).suffix.lower()
     content_type = (audio.content_type or "").lower()
@@ -63,16 +75,15 @@ async def point_a_audio_upload(
         content_type not in fb_service.ALLOWED_FEEDBACK_AUDIO_TYPES
         and ext not in fb_service.ALLOWED_FEEDBACK_AUDIO_EXTENSIONS
     ):
-        raise HTTPException(
-            status_code=422,
-            detail="Голосовое должно быть в формате mp3, ogg, opus, webm, wav, m4a, aac, amr или 3gp",
+        return rejected(
+            "Голосовое должно быть в формате mp3, ogg, opus, webm, wav, m4a, aac, amr или 3gp"
         )
 
     data = await audio.read(MAX_POINT_A_AUDIO_SIZE + 1)
     if len(data) > MAX_POINT_A_AUDIO_SIZE:
-        raise HTTPException(status_code=413, detail="Голосовое больше 15 МБ")
+        return rejected("Голосовое больше 15 МБ")
     if not data:
-        raise HTTPException(status_code=422, detail="Файл пустой")
+        return rejected("Файл пустой")
 
     saved = upsert_level_audio(
         db,

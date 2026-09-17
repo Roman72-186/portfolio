@@ -131,6 +131,7 @@
     font: 700 11px/1 var(--font-body);
 }
 .prg-badge--done { color: var(--success); background: rgba(21, 128, 61, 0.10); }
+.prg-badge--error { color: var(--error); background: rgba(220, 38, 38, 0.10); }
 
 /* Разобранная строка гаснет, но остаётся читаемой и кликабельной: Лиза
    14.09.2026 просила «чтобы они просто помечались серым, и я могла листать и

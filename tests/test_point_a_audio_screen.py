@@ -91,7 +91,8 @@ def test_bad_format_rejected(client, admin, session_factory):
         "/cabinet/staff/point-a-audio/1",
         files={"audio": ("notes.txt", b"hello", "text/plain")},
     )
-    assert resp.status_code == 422
+    assert resp.status_code == 200
+    assert "формате mp3" in resp.text
 
 
 def test_over_size_limit_rejected(client, admin, session_factory):
@@ -101,7 +102,20 @@ def test_over_size_limit_rejected(client, admin, session_factory):
             "/cabinet/staff/point-a-audio/1",
             files={"audio": ("voice.mp3", b"x" * 11, "audio/mpeg")},
         )
-    assert resp.status_code == 413
+    assert resp.status_code == 200
+    assert "больше 15" in resp.text
+
+
+def test_rejection_shown_only_under_its_own_card(client, admin, session_factory):
+    _as(client, session_factory, admin)
+    resp = client.post(
+        "/cabinet/staff/point-a-audio/2",
+        files={"audio": ("notes.txt", b"hello", "text/plain")},
+    )
+    assert resp.status_code == 200
+    level_1_card, level_2_card = resp.text.split('data-level="2"')
+    assert "формате mp3" not in level_1_card
+    assert "формате mp3" in level_2_card
 
 
 def test_unknown_level_is_404(client, admin, session_factory):

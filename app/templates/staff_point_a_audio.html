@@ -9,7 +9,7 @@
 #}
 {% block title %}Голосовые точки А{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=33">
+<link rel="stylesheet" href="/static/css/program.css?v=34">
 {% endblock %}
 {% block content %}
 <div class="prg-page prg-page--point-a">
@@ -41,6 +41,9 @@
                 {% endif %}
             </div>
             <div class="prg-item-actions">
+                {% if request.query_params.get('error') and request.query_params.get('level') == level|string %}
+                <p class="prg-badge prg-badge--error">{{ request.query_params.get('error') }}</p>
+                {% endif %}
                 <form method="post" action="/cabinet/staff/point-a-audio/{{ level }}" enctype="multipart/form-data">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                     <label class="prg-field prg-field--row">{{ 'Заменить файл' if audio else 'Загрузить файл' }}
