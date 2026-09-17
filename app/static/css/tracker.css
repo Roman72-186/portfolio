@@ -902,7 +902,7 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
     transition: opacity var(--duration-base) var(--ease-out), visibility 0s linear var(--duration-base);
 }
 .lrn-inline-video .video-cover[hidden] { display: none; }
-.lrn-inline-video .video-frame.is-ready .video-cover {
+.lrn-inline-video .video-frame.is-started .video-cover {
     opacity: 0; visibility: hidden; pointer-events: none;
 }
 .lrn-inline-video .video-watermark {

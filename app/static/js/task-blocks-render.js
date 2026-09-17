@@ -231,7 +231,7 @@ scope)` и свойством `answered` (одна попытка: после о
                 var iframe = el('iframe');
                 iframe.setAttribute('data-role', 'iframe');
                 iframe.loading = 'eager';
-                iframe.allow = 'accelerometer; gyroscope; autoplay; encrypted-media';
+                iframe.allow = 'accelerometer; gyroscope; encrypted-media';
                 iframe.referrerPolicy = 'strict-origin-when-cross-origin';
 
                 var cover = el('img', 'video-cover');

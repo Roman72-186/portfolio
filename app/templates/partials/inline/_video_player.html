@@ -55,6 +55,7 @@
         var frameWrap = root.querySelector('[data-role="frame-wrap"]');
         var iframe = root.querySelector('[data-role="iframe"]');
         var cover = root.querySelector('[data-role="cover"]');
+        var coverFallbackTimer = null;
         var watermark = root.querySelector('[data-role="watermark"]');
         var fullscreenButton = root.querySelector('[data-role="fullscreen-btn"]');
         var muteButton = root.querySelector('[data-role="mute-btn"]');
@@ -99,6 +100,26 @@
                 });
         }
 
+        function showCover() {
+            if (coverFallbackTimer) {
+                window.clearTimeout(coverFallbackTimer);
+                coverFallbackTimer = null;
+            }
+            if (cover && cover.getAttribute('src')) {
+                cover.hidden = false;
+                frameWrap.classList.remove('is-started');
+            }
+        }
+
+        function hideCover() {
+            if (coverFallbackTimer) {
+                window.clearTimeout(coverFallbackTimer);
+                coverFallbackTimer = null;
+            }
+            if (cover) cover.hidden = true;
+            frameWrap.classList.add('is-started');
+        }
+
         function populatePlayer(data) {
             watermark.innerHTML = '';
             [data.viewer_watermark.name, data.viewer_watermark.username].forEach(function (line) {
@@ -116,6 +137,7 @@
                     cover.hidden = true;
                 }
             }
+            showCover();
             iframe.addEventListener('load', function () { frameWrap.classList.add('is-ready'); }, { once: true });
 
             progressStatus.hidden = false;
@@ -456,6 +478,7 @@
                         if (body.ttl_seconds) playerUrlTtlSeconds = body.ttl_seconds;
                         playerUrlMintedAt = Date.now();
                         frameWrap.classList.remove('is-ready');
+                        showCover();
                         iframe.addEventListener('load', function () {
                             frameWrap.classList.add('is-ready');
                             if (reattachPlayer) reattachPlayer();
@@ -503,6 +526,10 @@
                 // чтобы не висеть нерабочей.
                 if (muteButton) muteButton.hidden = true;
                 iframe.src = data.player_url;
+                // Без player.js событие play из iframe недоступно. Оставляем
+                // обложку на пять секунд, затем отдаём управление нативному
+                // плееру Bunny.
+                coverFallbackTimer = window.setTimeout(hideCover, 5000);
                 return;
             }
 
@@ -626,6 +653,7 @@
                     if (generation !== playerGeneration) return;
                     isPlaying = true;
                     hasEverPlayed = true;
+                    hideCover();
                 });
                 player.on('pause', function () {
                     if (generation !== playerGeneration) return;

@@ -132,6 +132,9 @@ def test_video_watermark_fades_in_and_out_at_random_spots(auth_client, monkeypat
     assert "watermarkCopy.classList.remove('is-visible')" in response.text
     assert "safeCorners" in response.text
     assert "Math.random() * 9" not in response.text
+    assert "coverFallbackTimer = window.setTimeout(hideCover, 5000)" in response.text
+    assert "video-frame.is-started .video-cover" in response.text
+    assert "autoplay; encrypted-media" not in response.text
     assert "new ResizeObserver(measureWatermarkBounds)" in response.text
     assert "(prefers-reduced-motion: reduce)" in response.text
     assert "bottomPadding" in response.text
@@ -159,7 +162,7 @@ def test_video_fullscreen_keeps_watermark_inside_fullscreen_container(
     assert "requestFullscreen.call(playerContainer)" in response.text
     assert "document.exitFullscreen" in response.text
     assert "document.addEventListener('fullscreenchange'" in response.text
-    assert 'allow="accelerometer; gyroscope; autoplay; encrypted-media"' in response.text
+    assert 'allow="accelerometer; gyroscope; encrypted-media"' in response.text
     assert "allowfullscreen" not in response.text.lower()
     # Ни фуллскрина, ни картинки-в-картинке у iframe: оба режима выносят кадр
     # из-под слоя с данными зрителя, и видео поехало бы дальше без ватермарки.
