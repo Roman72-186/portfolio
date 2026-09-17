@@ -166,7 +166,10 @@
    отступом между строками. */
 .prg-page--point-a .prg-item-actions { display: grid; gap: 8px; justify-items: start; }
 .prg-page--point-a .prg-field--row { flex-wrap: wrap; }
-.prg-page--point-a .prg-field--row input { width: 88px; }
+/* :not([type="file"]) — иначе то же правило душит инпут загрузки голосового
+   на /cabinet/staff/point-a-audio (Фаза 1, 17.09.2026): «Choose File» резался
+   до «Choose Fil», выбранное имя файла было не видно вовсе. */
+.prg-page--point-a .prg-field--row input:not([type="file"]) { width: 88px; }
 
 .prg-empty {
     padding: 24px 20px; text-align: center; color: var(--muted); background: var(--surface);
