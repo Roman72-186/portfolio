@@ -49,7 +49,7 @@ def test_done_notifies_once(db, student, monkeypatch):
 
     assert result is not None
     assert result.user_id == student.id
-    assert "уровень 1" in result.title
+    assert "уровень 2" in result.title
     assert student.point_a_notified_at is not None
 
 
@@ -64,7 +64,7 @@ def test_second_call_does_not_renotify(db, student, monkeypatch):
     assert second is None
 
 
-@pytest.mark.parametrize("average,expected_level", [(70, 1), (69, 2), (100, 1), (0, 2)])
+@pytest.mark.parametrize("average,expected_level", [(70, 2), (69, 1), (100, 2), (0, 1)])
 def test_level_boundary(db, student, monkeypatch, average, expected_level):
     _patch(monkeypatch, student, is_done=True, average=average)
 
@@ -85,8 +85,8 @@ def test_without_uploaded_audio_sends_text_only_not_blocked(db, student, monkeyp
 
 def test_with_uploaded_audio_attaches_it(db, student, admin, monkeypatch):
     db.add(PointALevelAudio(
-        level=1, audio_s3_path="point-a-audio/1/x.mp3",
-        audio_s3_url="https://s3.example/point-a-audio/1/x.mp3",
+        level=2, audio_s3_path="point-a-audio/2/x.mp3",
+        audio_s3_url="https://s3.example/point-a-audio/2/x.mp3",
         uploaded_by_id=admin.id,
     ))
     db.commit()
@@ -94,5 +94,5 @@ def test_with_uploaded_audio_attaches_it(db, student, admin, monkeypatch):
 
     result = maybe_notify_point_a_level(db, student)
 
-    assert result.audio_url == "https://s3.example/point-a-audio/1/x.mp3"
+    assert result.audio_url == "https://s3.example/point-a-audio/2/x.mp3"
 

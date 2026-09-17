@@ -35,10 +35,12 @@ from app.models.work import WORK_TYPE_BEFORE, WORK_TYPE_MOCK_EXAM, Work
 from app.services.point_a_level_audio import get_level_audio
 from app.services.portfolio import after_gallery_groups
 
-# Порог уровня по среднему баллу (владелец 17.09.2026): ≥70 — уровень 1,
-# ≤69 — уровень 2. Разворот записи созвона 26.08.2026 («уровень ученику не
-# сообщается напрямую») — новое решение, не забытая старая политика.
-POINT_A_LEVEL_1_MIN_AVERAGE = 70
+# Порог уровня по среднему баллу (владелец 17.09.2026, вечерняя правка того
+# же дня после уточнения): ≤69 — уровень 1, ≥70 — уровень 2 — как и было на
+# созвоне 26.08.2026. Более ранняя версия этого дня разворачивала цифры
+# (≥70 — уровень 1); тот разворот был ошибкой прочтения записи, а не новым
+# решением — не восстанавливать её.
+POINT_A_LEVEL_2_MIN_AVERAGE = 70
 
 # Ранг, с которого видна точка А. Тот же порог, что у снятой карточки
 # `_portfolio_before_items` (владелец 09.09.2026: «только Главный
@@ -296,7 +298,7 @@ def student_point_a(db: DBSession, student: User, *, with_images: bool = True) -
 
 
 def point_a_level(average: int) -> int:
-    return 1 if average >= POINT_A_LEVEL_1_MIN_AVERAGE else 2
+    return 2 if average >= POINT_A_LEVEL_2_MIN_AVERAGE else 1
 
 
 def maybe_notify_point_a_level(db: DBSession, student: User) -> Notification | None:

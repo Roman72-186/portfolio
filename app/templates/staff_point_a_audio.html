@@ -26,7 +26,7 @@
         {% for level, audio in audios.items() %}
         <article class="prg-item{{ ' is-done' if audio }}" data-level="{{ level }}">
             <div class="prg-item-copy">
-                <h3>Уровень {{ level }} — {% if level == 1 %}средний балл 70 и выше{% else %}средний балл 69 и ниже{% endif %}
+                <h3>Уровень {{ level }} — {% if level == 1 %}средний балл 69 и ниже{% else %}средний балл 70 и выше{% endif %}
                     {% if request.query_params.get('ok') == level|string %}
                     <span class="prg-badge prg-badge--done">Сохранено</span>
                     {% endif %}

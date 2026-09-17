@@ -1,6 +1,6 @@
 """Экран загрузки голосовых для уведомления по уровню точки А (Фаза 1,
 владелец 17.09.2026). Две карточки — уровень 1 и уровень 2 (см. порог в
-`app/services/point_a.py::POINT_A_LEVEL_1_MIN_AVERAGE`), каждая с текущим
+`app/services/point_a.py::POINT_A_LEVEL_2_MIN_AVERAGE`), каждая с текущим
 файлом, плеером и формой замены. Само уведомление это сюда не заходит —
 только читает `PointALevelAudio` через `point_a_level_audio.get_level_audio`.
 
