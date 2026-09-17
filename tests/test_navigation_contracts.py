@@ -150,7 +150,7 @@ def test_admin_and_superadmin_keep_staff_nav_contract(
     assert 'href="/upload/mock-exam"' not in staff_nav
 
 
-def test_moderator_keeps_current_student_redirect_but_no_student_panel_access(
+def test_moderator_keeps_current_student_redirect_and_has_scoped_student_panel_access(
     client,
     user_factory,
     session_factory,
@@ -163,7 +163,7 @@ def test_moderator_keeps_current_student_redirect_but_no_student_panel_access(
     assert resp.headers["location"] == "/cabinet/student"
 
     student_panel = client.get("/cabinet/students", follow_redirects=False)
-    assert student_panel.status_code == 403
+    assert student_panel.status_code == 200
 
 
 # ── Фаза 3 (2026-07-05): cabinet_feedback_detail.html / cabinet_cycle_calendar.html
@@ -188,7 +188,7 @@ def test_feedback_detail_exactly_one_nav_per_role(
 
     actor = user_factory(vk_id=vk_id, name="Nav Actor", role_name=role_name)
     student = user_factory(vk_id=vk_id + 1, name="Nav Student", role_name="ученик")
-    if role_name == "куратор":
+    if role_name in ("куратор", "модератор"):
         student.curator_id = actor.id
         db.add(student)
         db.commit()
@@ -232,7 +232,7 @@ def test_cycle_calendar_exactly_one_nav_per_role(
 ):
     actor = user_factory(vk_id=vk_id, name="Cal Nav Actor", role_name=role_name)
     student = user_factory(vk_id=vk_id + 1, name="Cal Nav Student", role_name="ученик")
-    if role_name == "куратор":
+    if role_name in ("куратор", "модератор"):
         student.curator_id = actor.id
         db.add(student)
         db.commit()
