@@ -788,6 +788,75 @@ def test_score_flow_saves_feedback_image_and_redirects_to_works_tab(admin_client
     assert submission.feedback_image_path == "guest-exam/feedback/feedback.jpg"
     assert submission.comment is None
 
+
+def test_score_flow_saves_feedback_video_and_audio(admin_client, db, guest_config_factory, guest_ticket_factory):
+    """Владелец 17.09.2026: гостевая ОС должна нести те же вложения, что у
+    эталонного диалога Feedback — видео-файл и голосовое, не только фото."""
+    admin_ui_client, admin = admin_client
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = guest_exam_service.create_participant(db, config, "Гость")
+    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+    guest_exam_service.record_upload(db, submission, "https://s3.example/x.jpg", "guest-exam/x.jpg")
+
+    resp = admin_ui_client.post(
+        f"/cabinet/staff/guest-exam/works/{submission.id}/score",
+        data={
+            "score": "85",
+            "comment": "",
+            "feedback_video_url": "https://s3.example/feedback.mp4",
+            "feedback_video_path": "feedback-guest/1/x.mp4",
+            "feedback_audio_url": "https://s3.example/feedback.mp3",
+            "feedback_audio_path": "feedback-guest/1/x.mp3",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    db.refresh(submission)
+    assert submission.feedback_video_url == "https://s3.example/feedback.mp4"
+    assert submission.feedback_video_path == "feedback-guest/1/x.mp4"
+    assert submission.feedback_audio_url == "https://s3.example/feedback.mp3"
+    assert submission.feedback_audio_path == "feedback-guest/1/x.mp3"
+
+
+def test_upload_feedback_video_endpoint(admin_client, db, guest_config_factory, guest_ticket_factory):
+    from unittest.mock import patch
+    from app.services import s3 as s3_service
+
+    admin_ui_client, admin = admin_client
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = guest_exam_service.create_participant(db, config, "Гость")
+    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+
+    with patch.object(s3_service, "upload_to_s3", return_value="https://s3.example/feedback.mp4"):
+        resp = admin_ui_client.post(
+            "/cabinet/staff/guest-exam/upload-feedback-video",
+            data={"submission_id": str(submission.id)},
+            files={"file": ("review.mp4", b"video-bytes", "video/mp4")},
+        )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["success"] is True
+    assert body["url"] == "https://s3.example/feedback.mp4"
+
+
+def test_upload_feedback_audio_endpoint_rejects_bad_type(admin_client, db, guest_config_factory, guest_ticket_factory):
+    admin_ui_client, admin = admin_client
+    config = guest_config_factory()
+    guest_ticket_factory(config, subject="Рисунок")
+    participant = guest_exam_service.create_participant(db, config, "Гость")
+    submission = guest_exam_service.issue_ticket(db, participant, "Рисунок")
+
+    resp = admin_ui_client.post(
+        "/cabinet/staff/guest-exam/upload-feedback-audio",
+        data={"submission_id": str(submission.id)},
+        files={"file": ("bad.txt", b"not-audio", "text/plain")},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["success"] is False
+
 # ---------------------------------------------------------------------------
 # Вкладка «Участники» — удаление тестовых прохождений, только суперадмин
 # ---------------------------------------------------------------------------

@@ -134,6 +134,8 @@
 .ios-homework .hw-msg.from-me .hw-msg-bubble { background: rgba(175,82,222,0.10); border-bottom-right-radius: 5px; }
 .ios-homework .hw-msg-text { margin: 0; word-break: break-word; white-space: pre-wrap; font: 400 15px/1.4 var(--ios-font); color: var(--ios-label); }
 .ios-homework .hw-msg-photo { display: block; max-width: 240px; width: 100%; border-radius: 10px; cursor: zoom-in; }
+.ios-homework .hw-msg-video { display: block; max-width: 280px; width: 100%; border-radius: 10px; background: #000; }
+.ios-homework .hw-msg-audio { display: block; width: 100%; max-width: 280px; }
 .ios-homework .hw-msg-meta { font: 400 11px/1.3 var(--ios-font); color: var(--ios-label-3); }
 @media (max-width: 480px) {
     .ios-homework.prg-page { padding: 16px 14px 100px; }

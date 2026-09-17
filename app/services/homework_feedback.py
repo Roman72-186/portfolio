@@ -69,6 +69,50 @@ async def _upload_photo(submission_id: int, filename: str, data: bytes) -> tuple
     return s3_path, (s3_url or "")
 
 
+async def _upload_video(
+    submission_id: int, filename: str, data: bytes, content_type: str
+) -> tuple[str, str] | None:
+    """Положить видео в S3 как есть (без сжатия). Returns (s3_path, s3_url) или None."""
+    loop = asyncio.get_running_loop()
+    s3_path = s3_service.s3_path_homework_feedback(submission_id, filename)
+    ct = content_type or "video/mp4"
+
+    def _do() -> str | None:
+        return s3_service.upload_to_s3(s3_path, data, ct)
+
+    try:
+        s3_url = await loop.run_in_executor(None, _do)
+    except Exception as exc:
+        logger.warning("homework feedback video upload exception for submission_id=%s: %s", submission_id, exc)
+        return None
+    if s3_service.is_configured() and not s3_url:
+        logger.warning("homework feedback video upload failed for submission_id=%s", submission_id)
+        return None
+    return s3_path, (s3_url or "")
+
+
+async def _upload_audio(
+    submission_id: int, filename: str, data: bytes, content_type: str
+) -> tuple[str, str] | None:
+    """Положить голосовое в S3 как есть. Returns (s3_path, s3_url) или None."""
+    loop = asyncio.get_running_loop()
+    s3_path = s3_service.s3_path_homework_feedback(submission_id, filename)
+    ct = content_type or "audio/mpeg"
+
+    def _do() -> str | None:
+        return s3_service.upload_to_s3(s3_path, data, ct)
+
+    try:
+        s3_url = await loop.run_in_executor(None, _do)
+    except Exception as exc:
+        logger.warning("homework feedback audio upload exception for submission_id=%s: %s", submission_id, exc)
+        return None
+    if s3_service.is_configured() and not s3_url:
+        logger.warning("homework feedback audio upload failed for submission_id=%s", submission_id)
+        return None
+    return s3_path, (s3_url or "")
+
+
 async def send_message(
     db: DBSession,
     *,
@@ -77,14 +121,18 @@ async def send_message(
     sender_role: str,
     text: str | None,
     photo: tuple[str, bytes] | None,
+    video: tuple[str, bytes, str] | None = None,
+    audio: tuple[str, bytes, str] | None = None,
     video_link: str | None = None,
 ) -> HomeworkFeedbackMessage:
-    """Создать сообщение в диалоге. Хотя бы одно из (text, photo, video_link).
+    """Создать сообщение в диалоге. Хотя бы одно из (text, photo, video,
+    audio, video_link) — по образцу `app/services/feedback.py::send_message`
+    (владелец 17.09.2026: у домашки должны быть те же вложения, что у
+    эталонного диалога пробника/портфолио).
 
-    Загрузки видео-файла у домашки нет вообще (владелец 10.09.2026: только
-    ссылка на внешнее видео — загрузка файла со сжатием отдельная задача без
-    срока). `video_link` — уже провалидированная (http/https) ссылка,
-    валидация на вызывающей стороне (`app/services/utils.py::validate_video_link`).
+    `video_link` — уже провалидированная (http/https) ссылка, альтернатива
+    загрузке файла, валидация на вызывающей стороне
+    (`app/services/utils.py::validate_video_link`).
 
     Без commit."""
     text_clean = (text or "").strip() or None
@@ -95,8 +143,25 @@ async def send_message(
         uploaded = await _upload_photo(feedback.submission_id, filename, data)
         if uploaded is not None:
             photo_path, photo_url = uploaded
-    if text_clean is None and photo_url is None and not video_link:
-        raise ValueError("Сообщение должно содержать текст, фото или ссылку на видео")
+    video_path: str | None = None
+    video_url: str | None = None
+    if video is not None:
+        vfilename, vdata, vcontent_type = video
+        uploaded = await _upload_video(feedback.submission_id, vfilename, vdata, vcontent_type)
+        if uploaded is not None:
+            video_path, video_url = uploaded
+    audio_path: str | None = None
+    audio_url: str | None = None
+    if audio is not None:
+        afilename, adata, acontent_type = audio
+        uploaded = await _upload_audio(feedback.submission_id, afilename, adata, acontent_type)
+        if uploaded is not None:
+            audio_path, audio_url = uploaded
+    if (
+        text_clean is None and photo_url is None and video_url is None
+        and audio_url is None and not video_link
+    ):
+        raise ValueError("Сообщение должно содержать текст, фото, видео, ссылку на видео или голосовое")
 
     msg = HomeworkFeedbackMessage(
         feedback_id=feedback.id,
@@ -105,6 +170,10 @@ async def send_message(
         text=text_clean,
         photo_s3_path=photo_path,
         photo_s3_url=photo_url,
+        video_s3_path=video_path,
+        video_s3_url=video_url,
+        audio_s3_path=audio_path,
+        audio_s3_url=audio_url,
         video_url=video_link,
     )
     db.add(msg)
@@ -152,7 +221,9 @@ def serialize_messages(
             "sender_role_label": role_label_ru(m.sender_role),
             "text": m.text,
             "photo_s3_url": m.photo_s3_url,
+            "video_s3_url": m.video_s3_url,
             "video_url": m.video_url,
+            "audio_s3_url": m.audio_s3_url,
             "created_at": m.created_at.isoformat() if m.created_at else None,
         }
         for m in messages

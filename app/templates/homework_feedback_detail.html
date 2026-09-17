@@ -13,7 +13,7 @@ tests/test_reuse_ratchet.py.
 {% block title %}Обратная связь — {{ homework.title }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=34">
-<link rel="stylesheet" href="/static/css/homework_ios.css?v=5">
+<link rel="stylesheet" href="/static/css/homework_ios.css?v=6">
 {% endblock %}
 {% block content %}
 <div class="ios-homework prg-page">
@@ -36,8 +36,14 @@ tests/test_reuse_ratchet.py.
                     {% if m.photo_s3_url %}
                     <img class="hw-msg-photo" src="{{ m.photo_s3_url }}" alt="">
                     {% endif %}
+                    {% if m.video_s3_url %}
+                    <video class="hw-msg-video" controls preload="metadata" src="{{ m.video_s3_url }}"></video>
+                    {% endif %}
                     {% if m.video_url %}
                     <a class="btn-outline hw-msg-video-link" href="{{ m.video_url }}" target="_blank" rel="noopener noreferrer">▶ Смотреть видео</a>
+                    {% endif %}
+                    {% if m.audio_s3_url %}
+                    <audio class="hw-msg-audio" controls preload="metadata" src="{{ m.audio_s3_url }}"></audio>
                     {% endif %}
                     <div class="hw-msg-meta">{{ m.created_at[:16].replace('T', ' ') if m.created_at }}</div>
                 </div>
@@ -70,6 +76,10 @@ tests/test_reuse_ratchet.py.
             <input type="file" class="field-input" name="photo" accept="image/*">
             <label class="form-label hw-label-gap">Ссылка на видео, необязательно</label>
             <input type="url" class="field-input" name="video_link" placeholder="https://...">
+            <label class="form-label hw-label-gap">Видео-файл, необязательно (до 500 МБ)</label>
+            <input type="file" class="field-input" name="video" accept="video/*">
+            <label class="form-label hw-label-gap">Голосовое, необязательно (до 25 МБ)</label>
+            <input type="file" class="field-input" name="audio" accept="audio/*">
             <button type="submit" class="btn-blue hw-submit">Отправить</button>
             <p class="prg-message"></p>
         </form>
@@ -81,6 +91,10 @@ tests/test_reuse_ratchet.py.
             <input type="file" class="field-input" name="photo" accept="image/*">
             <label class="form-label hw-label-gap">Ссылка на видео, необязательно</label>
             <input type="url" class="field-input" name="video_link" placeholder="https://...">
+            <label class="form-label hw-label-gap">Видео-файл, необязательно (до 500 МБ)</label>
+            <input type="file" class="field-input" name="video" accept="video/*">
+            <label class="form-label hw-label-gap">Голосовое, необязательно (до 25 МБ)</label>
+            <input type="file" class="field-input" name="audio" accept="audio/*">
             <button type="submit" class="btn-blue hw-submit">Отправить</button>
             <p class="prg-message"></p>
         </form>

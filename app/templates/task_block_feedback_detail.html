@@ -2,7 +2,7 @@
 {% block title %}Обратная связь – {{ task.title }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=35">
-<link rel="stylesheet" href="/static/css/homework_ios.css?v=5">
+<link rel="stylesheet" href="/static/css/homework_ios.css?v=6">
 {% endblock %}
 {% block content %}
 <div class="ios-homework prg-page">
@@ -70,7 +70,9 @@
                     <span class="chip">{{ message.sender_role_label }}{% if message.sender_name %} · {{ message.sender_name }}{% endif %}</span>
                     {% if message.text %}<p class="hw-msg-text">{{ message.text }}</p>{% endif %}
                     {% if message.photo_s3_url %}<img class="hw-msg-photo" src="{{ message.photo_s3_url }}" alt="Фото к обратной связи" loading="lazy">{% endif %}
+                    {% if message.video_s3_url %}<video class="hw-msg-video" controls preload="metadata" src="{{ message.video_s3_url }}"></video>{% endif %}
                     {% if message.video_url %}<a class="btn-outline hw-msg-video-link" href="{{ message.video_url }}" target="_blank" rel="noopener noreferrer">Смотреть видео</a>{% endif %}
+                    {% if message.audio_s3_url %}<audio class="hw-msg-audio" controls preload="metadata" src="{{ message.audio_s3_url }}"></audio>{% endif %}
                     <div class="hw-msg-meta">{{ message.created_at[:16].replace('T', ' ') if message.created_at }}</div>
                 </div>
             </div>
@@ -93,6 +95,10 @@
             <input id="feedback-photo" type="file" class="field-input" name="photo" accept="image/*">
             <label class="form-label hw-label-gap" for="feedback-video-link">Ссылка на видео, необязательно</label>
             <input id="feedback-video-link" type="url" class="field-input" name="video_link" placeholder="https://...">
+            <label class="form-label hw-label-gap" for="feedback-video">Видео-файл, необязательно (до 500 МБ)</label>
+            <input id="feedback-video" type="file" class="field-input" name="video" accept="video/*">
+            <label class="form-label hw-label-gap" for="feedback-audio">Голосовое, необязательно (до 25 МБ)</label>
+            <input id="feedback-audio" type="file" class="field-input" name="audio" accept="audio/*">
             <button type="submit" class="btn-blue hw-submit">Отправить</button>
             <p class="prg-message" aria-live="polite"></p>
         </form>

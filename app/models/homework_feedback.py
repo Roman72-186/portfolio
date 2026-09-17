@@ -49,7 +49,7 @@ class HomeworkFeedback(Base):
 
 
 class HomeworkFeedbackMessage(Base):
-    """Сообщение в диалоге: текст, фото ИЛИ видео — хотя бы одно."""
+    """Сообщение в диалоге: текст, фото, видео или голосовое — хотя бы одно."""
 
     __tablename__ = "homework_feedback_messages"
 
@@ -68,6 +68,10 @@ class HomeworkFeedbackMessage(Base):
     # 10.09.2026, созвон 09-10.09): сжатия видео ещё нет, а 500 МБ файлом
     # через диск — не единственный удобный способ поделиться роликом.
     video_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Голосовое — владелец 17.09.2026: у домашки должны быть те же вложения,
+    # что в эталонном диалоге Feedback (app/models/feedback.py).
+    audio_s3_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    audio_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
@@ -83,7 +87,7 @@ class HomeworkFeedbackMessage(Base):
         CheckConstraint(
             "(text IS NOT NULL AND length(text) > 0) "
             "OR (photo_s3_url IS NOT NULL) OR (video_s3_url IS NOT NULL) "
-            "OR (video_url IS NOT NULL)",
+            "OR (video_url IS NOT NULL) OR (audio_s3_url IS NOT NULL)",
             name="ck_homework_feedback_messages_text_or_photo",
         ),
     )

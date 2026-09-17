@@ -51,6 +51,13 @@ class TaskBlockFeedbackMessage(Base):
     photo_s3_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     photo_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     video_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Видео-файл и голосовое — владелец 17.09.2026: у диалога по блокам
+    # задания должны быть те же вложения, что в эталонном Feedback
+    # (app/models/feedback.py), а не только фото и ссылка на видео.
+    video_s3_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    video_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    audio_s3_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    audio_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
@@ -66,7 +73,8 @@ class TaskBlockFeedbackMessage(Base):
         ),
         CheckConstraint(
             "(text IS NOT NULL AND length(text) > 0) "
-            "OR (photo_s3_url IS NOT NULL) OR (video_url IS NOT NULL)",
+            "OR (photo_s3_url IS NOT NULL) OR (video_url IS NOT NULL) "
+            "OR (video_s3_url IS NOT NULL) OR (audio_s3_url IS NOT NULL)",
             name="ck_task_block_feedback_messages_content",
         ),
     )

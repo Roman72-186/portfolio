@@ -153,6 +153,12 @@ class GuestSubmission(Base):
     # обратной связи (например, разметка поверх присланной работы).
     feedback_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     feedback_image_path: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Видео-файл и голосовое — владелец 17.09.2026: гостевая ОС должна нести
+    # те же типы вложений, что эталонный диалог Feedback у реальных учеников.
+    feedback_video_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    feedback_video_path: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    feedback_audio_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    feedback_audio_path: Mapped[str | None] = mapped_column(String(300), nullable=True)
     scored_by_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

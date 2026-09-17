@@ -72,10 +72,64 @@ async def _upload_photo(
     return path, (url or "")
 
 
+async def _upload_video(
+    submission_id: int, filename: str, data: bytes, content_type: str,
+) -> tuple[str, str] | None:
+    """Положить видео в S3 как есть (без сжатия). Returns (s3_path, s3_url) или None."""
+    loop = asyncio.get_running_loop()
+    path = s3_service.s3_path_task_block_feedback(submission_id, filename)
+    ct = content_type or "video/mp4"
+
+    def _do() -> str | None:
+        return s3_service.upload_to_s3(path, data, ct)
+
+    try:
+        url = await loop.run_in_executor(None, _do)
+    except Exception as exc:
+        logger.warning(
+            "task block feedback video upload failed for submission_id=%s: %s",
+            submission_id, exc,
+        )
+        raise ValueError("Не удалось загрузить видео. Попробуй ещё раз.") from exc
+    if not url:
+        raise ValueError("Не удалось загрузить видео. Попробуй ещё раз.")
+    return path, url
+
+
+async def _upload_audio(
+    submission_id: int, filename: str, data: bytes, content_type: str,
+) -> tuple[str, str] | None:
+    """Положить голосовое в S3 как есть. Returns (s3_path, s3_url) или None."""
+    loop = asyncio.get_running_loop()
+    path = s3_service.s3_path_task_block_feedback(submission_id, filename)
+    ct = content_type or "audio/mpeg"
+
+    def _do() -> str | None:
+        return s3_service.upload_to_s3(path, data, ct)
+
+    try:
+        url = await loop.run_in_executor(None, _do)
+    except Exception as exc:
+        logger.warning(
+            "task block feedback audio upload failed for submission_id=%s: %s",
+            submission_id, exc,
+        )
+        raise ValueError("Не удалось загрузить голосовое. Попробуй ещё раз.") from exc
+    if not url:
+        raise ValueError("Не удалось загрузить голосовое. Попробуй ещё раз.")
+    return path, url
+
+
 async def send_message(
     db: DBSession, *, feedback: TaskBlockFeedback, sender_id: int, sender_role: str,
-    text: str | None, photo: tuple[str, bytes] | None, video_link: str | None = None,
+    text: str | None, photo: tuple[str, bytes] | None,
+    video: tuple[str, bytes, str] | None = None,
+    audio: tuple[str, bytes, str] | None = None,
+    video_link: str | None = None,
 ) -> TaskBlockFeedbackMessage:
+    """По образцу `app/services/feedback.py::send_message` (владелец
+    17.09.2026: у диалога по блокам задания должны быть те же вложения,
+    что у эталонного диалога пробника/портфолио)."""
     text_clean = (text or "").strip() or None
     photo_path = None
     photo_url = None
@@ -83,8 +137,23 @@ async def send_message(
         uploaded = await _upload_photo(feedback.submission_id, photo[0], photo[1])
         if uploaded is not None:
             photo_path, photo_url = uploaded
-    if text_clean is None and photo_url is None and not video_link:
-        raise ValueError("Сообщение должно содержать текст, фото или ссылку на видео")
+    video_path = None
+    video_url = None
+    if video is not None:
+        uploaded = await _upload_video(feedback.submission_id, video[0], video[1], video[2])
+        if uploaded is not None:
+            video_path, video_url = uploaded
+    audio_path = None
+    audio_url = None
+    if audio is not None:
+        uploaded = await _upload_audio(feedback.submission_id, audio[0], audio[1], audio[2])
+        if uploaded is not None:
+            audio_path, audio_url = uploaded
+    if (
+        text_clean is None and photo_url is None and video_url is None
+        and audio_url is None and not video_link
+    ):
+        raise ValueError("Сообщение должно содержать текст, фото, видео, ссылку на видео или голосовое")
     message = TaskBlockFeedbackMessage(
         feedback_id=feedback.id,
         sender_id=sender_id,
@@ -92,6 +161,10 @@ async def send_message(
         text=text_clean,
         photo_s3_path=photo_path,
         photo_s3_url=photo_url,
+        video_s3_path=video_path,
+        video_s3_url=video_url,
+        audio_s3_path=audio_path,
+        audio_s3_url=audio_url,
         video_url=video_link,
     )
     db.add(message)
@@ -133,7 +206,9 @@ def serialize_messages(
             "sender_role_label": role_label_ru(message.sender_role),
             "text": message.text,
             "photo_s3_url": message.photo_s3_url,
+            "video_s3_url": message.video_s3_url,
             "video_url": message.video_url,
+            "audio_s3_url": message.audio_s3_url,
             "created_at": message.created_at.isoformat() if message.created_at else None,
         }
         for message in messages

@@ -590,11 +590,19 @@ def score_submission(
     scored_by_id: int,
     feedback_image_url: str | None = None,
     feedback_image_path: str | None = None,
+    feedback_video_url: str | None = None,
+    feedback_video_path: str | None = None,
+    feedback_audio_url: str | None = None,
+    feedback_audio_path: str | None = None,
 ) -> GuestSubmission:
     submission.score = score
     submission.comment = (comment or "").strip() or None
     submission.feedback_image_url = feedback_image_url or None
     submission.feedback_image_path = feedback_image_path or None
+    submission.feedback_video_url = feedback_video_url or None
+    submission.feedback_video_path = feedback_video_path or None
+    submission.feedback_audio_url = feedback_audio_url or None
+    submission.feedback_audio_path = feedback_audio_path or None
     submission.scored_by_id = scored_by_id
     submission.scored_at = datetime.now(timezone.utc)
     submission.status = "scored"

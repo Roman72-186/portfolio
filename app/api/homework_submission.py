@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import (
@@ -28,6 +29,14 @@ from app.models.homework_submission import STATUS_ACCEPTED, HomeworkSubmission
 from app.models.tracker import ITEM_HOMEWORK, SOURCE_HOMEWORK, TrackerTask
 from app.models.user import User
 from app.services import s3 as s3_service
+from app.services.feedback import (  # переиспользование лимитов/типов, не завязано на Work
+    ALLOWED_FEEDBACK_AUDIO_EXTENSIONS,
+    ALLOWED_FEEDBACK_AUDIO_TYPES,
+    ALLOWED_FEEDBACK_VIDEO_EXTENSIONS,
+    ALLOWED_FEEDBACK_VIDEO_TYPES,
+    MAX_FEEDBACK_AUDIO_SIZE,
+    MAX_FEEDBACK_VIDEO_SIZE,
+)
 from app.services.homework_feedback import (
     get_or_create_feedback,
     notify_counterpart,
@@ -315,12 +324,51 @@ async def _post_message(
     photo: UploadFile | None,
     background_tasks: BackgroundTasks,
     video_link: str = "",
+    video: UploadFile | None = None,
+    audio: UploadFile | None = None,
 ) -> JSONResponse:
     photo_payload = None
     if photo is not None and photo.filename:
         data = await photo.read()
         if data:
             photo_payload = (photo.filename, data)
+
+    video_payload: tuple[str, bytes, str] | None = None
+    if video is not None and video.filename:
+        ext = Path(video.filename).suffix.lower()
+        content_type = (video.content_type or "").lower()
+        if (
+            content_type not in ALLOWED_FEEDBACK_VIDEO_TYPES
+            and ext not in ALLOWED_FEEDBACK_VIDEO_EXTENSIONS
+        ):
+            return JSONResponse(
+                {"ok": False, "error": "Видео должно быть в формате mp4, mov, webm, avi, mkv, wmv или 3gp"},
+                status_code=422,
+            )
+        vdata = await video.read(MAX_FEEDBACK_VIDEO_SIZE + 1)
+        if len(vdata) > MAX_FEEDBACK_VIDEO_SIZE:
+            return JSONResponse({"ok": False, "error": "Видео больше 500 МБ"}, status_code=413)
+        if vdata:
+            video_payload = (video.filename, vdata, content_type or "video/mp4")
+
+    audio_payload: tuple[str, bytes, str] | None = None
+    if audio is not None and audio.filename:
+        ext = Path(audio.filename).suffix.lower()
+        audio_content_type = (audio.content_type or "").lower()
+        if (
+            audio_content_type not in ALLOWED_FEEDBACK_AUDIO_TYPES
+            and ext not in ALLOWED_FEEDBACK_AUDIO_EXTENSIONS
+        ):
+            return JSONResponse(
+                {"ok": False, "error": "Голосовое должно быть в формате mp3, ogg, opus, webm, wav, m4a, aac, amr или 3gp"},
+                status_code=422,
+            )
+        adata = await audio.read(MAX_FEEDBACK_AUDIO_SIZE + 1)
+        if len(adata) > MAX_FEEDBACK_AUDIO_SIZE:
+            return JSONResponse({"ok": False, "error": "Голосовое больше 25 МБ"}, status_code=413)
+        if adata:
+            audio_payload = (audio.filename, adata, audio_content_type or "audio/mpeg")
+
     try:
         video_link_clean = validate_video_link(video_link)
     except ValueError as exc:
@@ -329,6 +377,7 @@ async def _post_message(
         await send_feedback_message(
             db, feedback=feedback, sender_id=user["user_id"],
             sender_role=_viewer_role(user), text=text, photo=photo_payload,
+            video=video_payload, audio=audio_payload,
             video_link=video_link_clean,
         )
     except ValueError as exc:
@@ -366,6 +415,8 @@ async def student_send_homework_message(
     text: str = Form(default=""),
     photo: UploadFile | None = File(default=None),
     video_link: str = Form(default=""),
+    video: UploadFile | None = File(default=None),
+    audio: UploadFile | None = File(default=None),
 ):
     task, _ = _resolve_homework_task(db, task_id)
     _guard_student_access(db, task, user["user_id"])
@@ -386,6 +437,7 @@ async def student_send_homework_message(
     return await _post_message(
         request, submission, fb, db, user, text, photo,
         background_tasks=background_tasks, video_link=video_link,
+        video=video, audio=audio,
     )
 
 
@@ -518,6 +570,8 @@ async def staff_send_homework_message(
     text: str = Form(default=""),
     photo: UploadFile | None = File(default=None),
     video_link: str = Form(default=""),
+    video: UploadFile | None = File(default=None),
+    audio: UploadFile | None = File(default=None),
 ):
     submission = db.get(HomeworkSubmission, submission_id)
     if submission is None:
@@ -531,4 +585,5 @@ async def staff_send_homework_message(
     return await _post_message(
         request, submission, fb, db, user, text, photo,
         background_tasks=background_tasks, video_link=video_link,
+        video=video, audio=audio,
     )

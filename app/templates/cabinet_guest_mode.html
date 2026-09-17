@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Гостевой режим{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/guest_mode_ios.css?v=6">
+<link rel="stylesheet" href="/static/css/guest_mode_ios.css?v=7">
 {% endblock %}
 {% block content %}
 <div class="gexam-page ios-gexam">
@@ -313,6 +313,12 @@
                         <img src="{{ sub.feedback_image_url }}" alt="" class="gexam-feedback-img">
                     </a>
                     {% endif %}
+                    {% if sub.feedback_video_url %}
+                    <video class="gexam-feedback-video" controls preload="metadata" src="{{ sub.feedback_video_url }}"></video>
+                    {% endif %}
+                    {% if sub.feedback_audio_url %}
+                    <audio class="gexam-feedback-audio" controls preload="metadata" src="{{ sub.feedback_audio_url }}"></audio>
+                    {% endif %}
                     {% else %}
                     <form class="gexam-form-row" method="post" action="/cabinet/staff/guest-exam/works/{{ sub.id }}/score" id="score-form-{{ sub.id }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
@@ -330,6 +336,20 @@
                             <div class="gexam-upload-preview" id="fb-preview-{{ sub.id }}"><img id="fb-preview-img-{{ sub.id }}" alt=""></div>
                             <input type="hidden" name="feedback_image_url" id="fb-image-url-{{ sub.id }}">
                             <input type="hidden" name="feedback_image_path" id="fb-image-path-{{ sub.id }}">
+                        </div>
+                        <div class="gexam-form-row-full">
+                            <label class="form-label">Видео обратной связи, необязательно (до 500 МБ)</label>
+                            <input type="file" accept="video/*" onchange="onFeedbackMediaSelected(event, {{ sub.id }}, 'video')">
+                            <div class="gexam-upload-progress" id="fb-video-progress-{{ sub.id }}">Загружаем…</div>
+                            <input type="hidden" name="feedback_video_url" id="fb-video-url-{{ sub.id }}">
+                            <input type="hidden" name="feedback_video_path" id="fb-video-path-{{ sub.id }}">
+                        </div>
+                        <div class="gexam-form-row-full">
+                            <label class="form-label">Голосовое обратной связи, необязательно (до 25 МБ)</label>
+                            <input type="file" accept="audio/*" onchange="onFeedbackMediaSelected(event, {{ sub.id }}, 'audio')">
+                            <div class="gexam-upload-progress" id="fb-audio-progress-{{ sub.id }}">Загружаем…</div>
+                            <input type="hidden" name="feedback_audio_url" id="fb-audio-url-{{ sub.id }}">
+                            <input type="hidden" name="feedback_audio_path" id="fb-audio-path-{{ sub.id }}">
                         </div>
                         <div class="gexam-form-actions">
                             <button type="submit" class="btn-blue">Оценить</button>
@@ -490,6 +510,46 @@ function uploadFeedbackImage(file, subId){
             document.getElementById('fb-preview-img-' + subId).src = data.url;
             document.getElementById('fb-preview-' + subId).style.display = 'block';
             document.getElementById('fb-area-' + subId).style.display = 'none';
+        } else {
+            progress.textContent = 'Ошибка загрузки' + (data && data.error ? ': ' + data.error : '');
+        }
+    };
+    xhr.send(fd);
+}
+
+// Видео/голосовое обратной связи — общая функция для обоих типов вложения
+// (владелец 17.09.2026: гостевая ОС должна нести те же вложения, что у
+// эталонного диалога Feedback). endpoint отличается, разбор ответа общий.
+function onFeedbackMediaSelected(e, subId, kind){
+    var file = e.target.files[0];
+    if (file) uploadFeedbackMedia(file, subId, kind);
+}
+function uploadFeedbackMedia(file, subId, kind){
+    var progress = document.getElementById('fb-' + kind + '-progress-' + subId);
+    progress.style.display = 'block';
+    progress.textContent = 'Загружаем…';
+
+    var csrf = document.querySelector('#score-form-' + subId + ' input[name="csrf_token"]').value;
+    var fd = new FormData();
+    fd.append('file', file);
+    fd.append('submission_id', subId);
+    fd.append('csrf_token', csrf);
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/cabinet/staff/guest-exam/upload-feedback-' + kind);
+    xhr.setRequestHeader('X-CSRF-Token', csrf);
+    xhr.upload.onprogress = function(e){
+        if (!e.lengthComputable) return;
+        progress.textContent = 'Загружаем ' + Math.round((e.loaded / e.total) * 100) + '%…';
+    };
+    xhr.onerror = function(){ progress.textContent = 'Ошибка сети'; };
+    xhr.onload = function(){
+        var data = null;
+        try { data = JSON.parse(xhr.responseText); } catch (_) {}
+        if (xhr.status >= 200 && xhr.status < 300 && data && data.success && data.url) {
+            progress.textContent = 'Загружено';
+            document.getElementById('fb-' + kind + '-url-' + subId).value = data.url;
+            document.getElementById('fb-' + kind + '-path-' + subId).value = data.path || '';
         } else {
             progress.textContent = 'Ошибка загрузки' + (data && data.error ? ': ' + data.error : '');
         }

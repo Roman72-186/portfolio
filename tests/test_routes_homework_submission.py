@@ -177,6 +177,64 @@ def test_curator_first_message_then_student_reply(auth_client, db, user_factory,
     assert [m.sender_role for m in messages] == ["curator", "student"]
 
 
+def test_curator_message_with_video_and_audio_attachments(auth_client, db, user_factory, session_factory):
+    """Владелец 17.09.2026: у домашки должны быть те же вложения, что у
+    эталонного диалога Feedback — видео-файл и голосовое, не только фото."""
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    client.get(f"/cabinet/homework/{task.id}")
+    submission = db.query(HomeworkSubmission).one()
+
+    curator = user_factory(vk_id=777_010, name="Куратор Вера", role_name="куратор")
+    user.curator_id = curator.id
+    db.commit()
+    curator_session = session_factory(curator)
+    client.cookies.set("session_id", curator_session.id)
+
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        resp = client.post(
+            f"/cabinet/staff/homework/submissions/{submission.id}/message",
+            data={"text": "Разбор по видео и голосовым"},
+            files={
+                "video": ("review.mp4", b"fake-video-bytes", "video/mp4"),
+                "audio": ("review.mp3", b"fake-audio-bytes", "audio/mpeg"),
+            },
+        )
+    assert resp.status_code == 200, resp.text
+
+    fb = db.query(HomeworkFeedback).filter(HomeworkFeedback.submission_id == submission.id).one()
+    msg = db.query(HomeworkFeedbackMessage).filter(HomeworkFeedbackMessage.feedback_id == fb.id).one()
+    assert msg.video_s3_url == FAKE_URL
+    assert msg.audio_s3_url == FAKE_URL
+
+    student_session = session_factory(user)
+    client.cookies.set("session_id", student_session.id)
+    page = client.get(f"/cabinet/homework/{task.id}/feedback")
+    assert page.status_code == 200
+    assert 'class="hw-msg-video"' in page.text
+    assert 'class="hw-msg-audio"' in page.text
+
+
+def test_curator_message_rejects_bad_video_type(auth_client, db, user_factory, session_factory):
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    client.get(f"/cabinet/homework/{task.id}")
+    submission = db.query(HomeworkSubmission).one()
+
+    curator = user_factory(vk_id=777_011, name="Куратор Гоша", role_name="куратор")
+    user.curator_id = curator.id
+    db.commit()
+    curator_session = session_factory(curator)
+    client.cookies.set("session_id", curator_session.id)
+
+    resp = client.post(
+        f"/cabinet/staff/homework/submissions/{submission.id}/message",
+        data={"text": "текст"},
+        files={"video": ("bad.txt", b"not-a-video", "text/plain")},
+    )
+    assert resp.status_code == 422
+
+
 def test_feedback_moved_to_separate_page(auth_client, db, user_factory, session_factory):
     """Обратная связь 10.09.2026 вынесена из карточки на странице задания в
     отдельное окно — страница задания больше не содержит текст сообщений,

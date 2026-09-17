@@ -20,10 +20,11 @@ app/services/guest_exam.py), Ссылка (бессрочная, только в
 plans/2026-08-18-apparchi-student-cabinet-and-guest-trial.md, трек B.
 """
 from datetime import date
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session as DBSession
 
 from app.constants import MOCK_SUBJECTS
@@ -32,6 +33,14 @@ from app.dependencies import require_admin_role, require_csrf, require_superadmi
 from app.models.guest_exam import GuestExamConfig, GuestSubmission
 from app.services import guest_exam as guest_exam_service
 from app.services import s3 as s3_service
+from app.services.feedback import (  # переиспользование лимитов/типов, не завязано на Work
+    ALLOWED_FEEDBACK_AUDIO_EXTENSIONS,
+    ALLOWED_FEEDBACK_AUDIO_TYPES,
+    ALLOWED_FEEDBACK_VIDEO_EXTENSIONS,
+    ALLOWED_FEEDBACK_VIDEO_TYPES,
+    MAX_FEEDBACK_AUDIO_SIZE,
+    MAX_FEEDBACK_VIDEO_SIZE,
+)
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/staff/guest-exam")
@@ -190,6 +199,65 @@ def guest_mode_delete_ticket(
 
 # ── Вкладка «Работы» ─────────────────────────────────────────────────────────
 
+@router.post("/upload-feedback-video")
+async def upload_guest_feedback_video(
+    user: Annotated[dict, Depends(require_admin_role)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    submission_id: Annotated[int, Form()],
+    file: UploadFile = File(...),
+):
+    """AJAX-загрузка видео обратной связи — по образцу `/cabinet/upload-ticket-image`,
+    но с лимитами и типами видео из эталонного диалога (владелец 17.09.2026)."""
+    ct = (file.content_type or "").lower()
+    fname = file.filename or "video.mp4"
+    ext = Path(fname).suffix.lower()
+    if ct not in ALLOWED_FEEDBACK_VIDEO_TYPES and ext not in ALLOWED_FEEDBACK_VIDEO_EXTENSIONS:
+        return JSONResponse(
+            {"success": False, "error": "Видео должно быть в формате mp4, mov, webm, avi, mkv, wmv или 3gp"},
+            status_code=422,
+        )
+    data = await file.read(MAX_FEEDBACK_VIDEO_SIZE + 1)
+    if len(data) > MAX_FEEDBACK_VIDEO_SIZE:
+        return JSONResponse({"success": False, "error": "Видео больше 500 МБ"}, status_code=413)
+    if not data:
+        return JSONResponse({"success": False, "error": "Пустой файл"}, status_code=422)
+
+    s3_path = s3_service.s3_path_guest_feedback(submission_id, fname)
+    url = s3_service.upload_to_s3(s3_path, data, ct or "video/mp4")
+    if s3_service.is_configured() and not url:
+        return JSONResponse({"success": False, "error": "Ошибка загрузки в хранилище"}, status_code=502)
+    return JSONResponse({"success": True, "url": url, "path": s3_path if url else None})
+
+
+@router.post("/upload-feedback-audio")
+async def upload_guest_feedback_audio(
+    user: Annotated[dict, Depends(require_admin_role)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    submission_id: Annotated[int, Form()],
+    file: UploadFile = File(...),
+):
+    """AJAX-загрузка голосового обратной связи — та же схема, что у видео выше."""
+    ct = (file.content_type or "").lower()
+    fname = file.filename or "audio.mp3"
+    ext = Path(fname).suffix.lower()
+    if ct not in ALLOWED_FEEDBACK_AUDIO_TYPES and ext not in ALLOWED_FEEDBACK_AUDIO_EXTENSIONS:
+        return JSONResponse(
+            {"success": False, "error": "Голосовое должно быть в формате mp3, ogg, opus, webm, wav, m4a, aac, amr или 3gp"},
+            status_code=422,
+        )
+    data = await file.read(MAX_FEEDBACK_AUDIO_SIZE + 1)
+    if len(data) > MAX_FEEDBACK_AUDIO_SIZE:
+        return JSONResponse({"success": False, "error": "Голосовое больше 25 МБ"}, status_code=413)
+    if not data:
+        return JSONResponse({"success": False, "error": "Пустой файл"}, status_code=422)
+
+    s3_path = s3_service.s3_path_guest_feedback(submission_id, fname)
+    url = s3_service.upload_to_s3(s3_path, data, ct or "audio/mpeg")
+    if s3_service.is_configured() and not url:
+        return JSONResponse({"success": False, "error": "Ошибка загрузки в хранилище"}, status_code=502)
+    return JSONResponse({"success": True, "url": url, "path": s3_path if url else None})
+
+
 @router.post("/works/{submission_id}/score")
 def guest_mode_score(
     submission_id: int,
@@ -200,6 +268,10 @@ def guest_mode_score(
     comment: Annotated[str, Form()] = "",
     feedback_image_url: Annotated[str, Form()] = "",
     feedback_image_path: Annotated[str, Form()] = "",
+    feedback_video_url: Annotated[str, Form()] = "",
+    feedback_video_path: Annotated[str, Form()] = "",
+    feedback_audio_url: Annotated[str, Form()] = "",
+    feedback_audio_path: Annotated[str, Form()] = "",
 ):
     submission = db.query(GuestSubmission).filter(GuestSubmission.id == submission_id).first()
     if not submission:
@@ -214,6 +286,10 @@ def guest_mode_score(
         scored_by_id=user["user_id"],
         feedback_image_url=feedback_image_url.strip() or None,
         feedback_image_path=feedback_image_path.strip() or None,
+        feedback_video_url=feedback_video_url.strip() or None,
+        feedback_video_path=feedback_video_path.strip() or None,
+        feedback_audio_url=feedback_audio_url.strip() or None,
+        feedback_audio_path=feedback_audio_path.strip() or None,
     )
     return RedirectResponse("/cabinet/staff/guest-exam?tab=works", status_code=303)
 

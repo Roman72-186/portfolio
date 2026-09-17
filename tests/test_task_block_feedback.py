@@ -215,6 +215,61 @@ def test_teacher_photo_message_opens_dialog_and_notifies_student(
     assert item["href"] == f"/cabinet/task-block-submissions/{submission.id}/feedback"
 
 
+def test_teacher_video_and_audio_message(db, user_factory, session_factory, client):
+    """Владелец 17.09.2026: у диалога по блокам задания должны быть те же
+    вложения, что у эталонного диалога Feedback — видео-файл и голосовое."""
+    curator = user_factory(vk_id=970_012, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=970_013, name="Ученик")
+    student.curator_id = curator.id
+    db.commit()
+    submission = _submission(db, student)
+    _login(client, session_factory, curator)
+
+    with (
+        patch(
+            "app.services.task_block_feedback.s3_service.upload_to_s3",
+            return_value="https://s3.example.com/feedback.mp4",
+        ),
+        patch("app.api.task_block_feedback.notify"),
+    ):
+        response = client.post(
+            f"/cabinet/staff/task-block-submissions/{submission.id}/messages",
+            data={"text": "Разбор голосом"},
+            files={
+                "video": ("review.mp4", b"video-bytes", "video/mp4"),
+                "audio": ("review.mp3", b"audio-bytes", "audio/mpeg"),
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    feedback = db.query(TaskBlockFeedback).filter_by(submission_id=submission.id).one()
+    message = db.query(TaskBlockFeedbackMessage).filter_by(feedback_id=feedback.id).one()
+    assert message.video_s3_url == "https://s3.example.com/feedback.mp4"
+    assert message.audio_s3_url == "https://s3.example.com/feedback.mp4"
+
+    _login(client, session_factory, student)
+    page = client.get(f"/cabinet/task-block-submissions/{submission.id}/feedback")
+    assert page.status_code == 200
+    assert 'class="hw-msg-video"' in page.text
+    assert 'class="hw-msg-audio"' in page.text
+
+
+def test_video_message_rejects_bad_type(db, user_factory, session_factory, client):
+    curator = user_factory(vk_id=970_016, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=970_017, name="Ученик")
+    student.curator_id = curator.id
+    db.commit()
+    submission = _submission(db, student)
+    _login(client, session_factory, curator)
+
+    response = client.post(
+        f"/cabinet/staff/task-block-submissions/{submission.id}/messages",
+        data={"text": "текст"},
+        files={"video": ("bad.txt", b"not-a-video", "text/plain")},
+    )
+    assert response.status_code == 422
+
+
 def test_failed_photo_upload_does_not_save_text_only_message(
     db, user_factory, session_factory, client,
 ):
