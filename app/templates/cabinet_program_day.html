@@ -582,7 +582,7 @@ FORM: Operate.
             + '  <div class="prg-ticket-content">'
             + '    <div class="prg-thumbs" data-t-thumb></div>'
             + '    <label class="prg-field"><input type="text" data-t-title maxlength="200" autocomplete="off" aria-label="Название билета" placeholder="Название билета"></label>'
-            + '    <label class="prg-field"><textarea data-t-description maxlength="2000" aria-label="Описание задания, необязательно" placeholder="Описание задания, необязательно"></textarea>' + BODY_FORMAT_HINT + '</label>'
+            + '    <label class="prg-field"><textarea data-rich-text data-t-description maxlength="2000" aria-label="Описание задания, необязательно" placeholder="Описание задания, необязательно"></textarea>' + BODY_FORMAT_HINT + '</label>'
             + '  </div>'
             + '</div>';
     }
@@ -702,6 +702,7 @@ FORM: Operate.
         // остаётся как запас для билетов, пришедших без поля.
         row.querySelector('[data-t-title]').value = (ticket && ticket.title) || '';
         row.querySelector('[data-t-description]').value = (ticket && ticket.description) || '';
+        window.RichTextField.enhanceAll(row);
         if (ticket && ticket.image_url) {
             var thumb = row.querySelector('[data-t-thumb]');
             thumb.dataset.url = ticket.image_url;

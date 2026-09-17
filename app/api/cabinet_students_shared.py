@@ -49,7 +49,7 @@ from app.services.portfolio import after_gallery_groups, item_source, portfolio_
 from app.services.student_access import get_student_for_staff_access
 from app.services.tz import MSK_TZ, msk_input_value, msk_midnight, parse_msk_local
 from app.services.utils import compress_image, study_duration_text, group_works, has_case_growth
-from app.tmpl import templates
+from app.tmpl import format_rich_text, templates
 
 logger = logging.getLogger(__name__)
 
@@ -591,6 +591,7 @@ def get_student_profile(
             "sdek_address": student.sdek_address if can_see_contacts else None,
             "can_see_contacts": can_see_contacts,
             "about": student.about,
+            "about_html": format_rich_text(student.about) if student.about else None,
             "tariff": student.tariff or "—",
             "past_tariffs": student.past_tariffs,
             "study_mode": student.study_mode,
@@ -746,6 +747,7 @@ def get_mock_exams(
             "filename": w.filename,
             "score": float(w.score) if w.score is not None else None,
             "comment": w.comment,
+            "comment_html": format_rich_text(w.comment) if w.comment else None,
             "created_at": created_at.isoformat() if created_at else None,
             "work_date": local_dt.date().isoformat() if local_dt else "",
             "date_label": local_dt.strftime("%d.%m.%Y") if local_dt else "",
@@ -872,6 +874,7 @@ def get_retakes(
             "student_score": float(w.student_score) if w.student_score is not None else None,
             "curator_score": float(w.score) if w.score is not None else None,
             "comment": w.comment,
+            "comment_html": format_rich_text(w.comment) if w.comment else None,
             "is_mock": w.work_type == WORK_TYPE_MOCK_EXAM,
             "subject": w.subject or "",
             "created_at": w.created_at.isoformat() if w.created_at else None,

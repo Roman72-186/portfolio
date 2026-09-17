@@ -24,7 +24,7 @@ from app.services import s3 as s3_service
 from app.services.student_access import get_student_for_staff_access
 from app.services.tz import MSK_TZ
 from app.services.utils import study_duration_text, group_works
-from app.tmpl import templates
+from app.tmpl import format_rich_text, templates
 
 router = APIRouter(prefix="/cabinet")
 
@@ -392,6 +392,7 @@ def get_mock_exams_data(
             "filename": w.filename,
             "score": float(w.score) if w.score is not None else None,
             "comment": w.comment,
+            "comment_html": format_rich_text(w.comment) if w.comment else None,
             "created_at": created_at.isoformat() if created_at else None,
             "work_date": local_dt.date().isoformat() if local_dt else "",
             "date_label": local_dt.strftime("%d.%m.%Y") if local_dt else "",
@@ -473,6 +474,7 @@ def get_retakes_data(
                         "student_score": float(w.student_score) if w.student_score is not None else None,
                         "curator_score": float(w.score) if w.score is not None else None,
                         "comment": w.comment,
+            "comment_html": format_rich_text(w.comment) if w.comment else None,
                     }
                     for w in g["works"]
                 ],

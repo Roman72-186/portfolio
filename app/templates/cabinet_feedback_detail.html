@@ -2,6 +2,7 @@
 {% block title %}Диалог: {{ cycle.subject }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/feedback_ios.css?v=5">
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
 <div class="dlg-page ios-feedback">
@@ -179,7 +180,7 @@
                             {# Бабл — white-space: pre-wrap: держать разметку без отступов
                                вокруг текста, иначе индентация шаблона рендерится пробелами. #}
                             <div class="dlg-msg-bubble">
-                                {%- if m.text %}{{ m.text }}{% endif -%}
+                                {%- if m.text %}{{ m.text | rich_text | safe }}{% endif -%}
                                 {%- if m.photo_s3_url -%}
                                     <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото">
                                         <img src="{{ m.photo_s3_url }}" alt="" loading="lazy">
@@ -206,7 +207,7 @@
                                 <button type="button" class="dlg-msg-edit" onclick="startEditMsg({{ m.id }})">✎ Изменить</button>
                                 <form class="dlg-msg-edit-form" id="edit-form-{{ m.id }}" style="display:none" onsubmit="return submitEditMsg(event, {{ m.id }})">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                                    <textarea maxlength="4000">{{ m.text }}</textarea>
+                                    <textarea data-rich-text maxlength="4000">{{ m.text }}</textarea>
                                     <div class="dlg-msg-edit-actions">
                                         <button type="button" class="dlg-score-edit" onclick="cancelEditMsg({{ m.id }})">Отмена</button>
                                         <button type="submit" class="btn-blue dlg-send">Сохранить</button>
@@ -232,19 +233,19 @@
                     <div class="dlg-sf-title">Первая обратная связь</div>
                     <div class="dlg-sf-field">
                         <label class="dlg-sf-label">Общее впечатление</label>
-                        <textarea name="impression" rows="2" placeholder="Как работа в целом"></textarea>
+                        <textarea data-rich-text name="impression" rows="2" placeholder="Как работа в целом"></textarea>
                     </div>
                     <div class="dlg-sf-field">
                         <label class="dlg-sf-label">Что хорошо</label>
-                        <textarea name="good" rows="2" placeholder="Сильные стороны работы"></textarea>
+                        <textarea data-rich-text name="good" rows="2" placeholder="Сильные стороны работы"></textarea>
                     </div>
                     <div class="dlg-sf-field">
                         <label class="dlg-sf-label">Что улучшить</label>
-                        <textarea name="strengthen" rows="2" placeholder="Зоны роста и над чем поработать"></textarea>
+                        <textarea data-rich-text name="strengthen" rows="2" placeholder="Зоны роста и над чем поработать"></textarea>
                     </div>
                     <div class="dlg-sf-field">
                         <label class="dlg-sf-label">Рекомендации</label>
-                        <textarea name="recommendations" rows="2" placeholder="Что доработать, на что обратить внимание"></textarea>
+                        <textarea data-rich-text name="recommendations" rows="2" placeholder="Что доработать, на что обратить внимание"></textarea>
                     </div>
                     <div class="dlg-sf-score">
                         <label class="dlg-sf-label" for="dlg-intermediate-score">Промежуточный балл для отработки</label>
@@ -285,7 +286,7 @@
                         <input id="dlg-video-link-student" class="field-input" type="url" name="video_link" placeholder="https://...">
                     </div>
                     <div class="dlg-form-row">
-                        <textarea name="text" placeholder="Напиши сообщение или прикрепи фото/видео" rows="3"></textarea>
+                        <textarea data-rich-text name="text" placeholder="Напиши сообщение или прикрепи фото/видео" rows="3"></textarea>
                         <div class="dlg-form-actions">
                             <label class="dlg-attach">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
@@ -335,7 +336,7 @@
                         </button>
                     </div>
                     {% if a.comment %}
-                        <div class="dlg-score-current-comment" id="score-comment-{{ a.work_id }}">{{ a.comment }}</div>
+                        <div class="dlg-score-current-comment" id="score-comment-{{ a.work_id }}">{{ a.comment | rich_text | safe }}</div>
                     {% endif %}
                 {% endif %}
                 <div class="dlg-score-form" id="score-form-{{ a.work_id }}"
@@ -346,7 +347,7 @@
                                placeholder="0–100">
                         <span class="dlg-score-hint">из 100</span>
                     </div>
-                    <textarea name="comment" placeholder="Комментарий (необязательно)" maxlength="500">{{ a.comment or '' }}</textarea>
+                    <textarea data-rich-text name="comment" placeholder="Комментарий (необязательно)" maxlength="500">{{ a.comment or '' }}</textarea>
                     <div class="dlg-score-actions">
                         {% if a.score is not none %}
                             <button type="button" class="dlg-score-edit" onclick="toggleScoreEdit({{ a.work_id }}, false)">
@@ -399,6 +400,7 @@
 {% endif %}
 {% include "partials/lightbox.html" %}
 
+<script src="/static/js/rich-text-field.js?v=1"></script>
 <script>
 // AJAX submit, name preview, и автоскролл к низу ленты.
 document.querySelectorAll('.dlg-messages').forEach(el => { el.scrollTop = el.scrollHeight; });

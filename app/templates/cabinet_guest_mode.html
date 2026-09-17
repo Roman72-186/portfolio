@@ -2,6 +2,7 @@
 {% block title %}Гостевой режим{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/guest_mode_ios.css?v=7">
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
 <div class="gexam-page ios-gexam">
@@ -59,7 +60,7 @@
                     </div>
                     <div class="gexam-field">
                         <label for="gt-desc">Описание задания</label>
-                        <textarea id="gt-desc" name="description" rows="3" placeholder="Что нарисовать / скомпоновать"></textarea>
+                        <textarea data-rich-text id="gt-desc" name="description" rows="3" placeholder="Что нарисовать / скомпоновать"></textarea>
                     </div>
                     <div class="gexam-field">
                         <label>Фото задания</label>
@@ -323,7 +324,7 @@
                     <form class="gexam-form-row" method="post" action="/cabinet/staff/guest-exam/works/{{ sub.id }}/score" id="score-form-{{ sub.id }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <input type="number" name="score" step="0.1" min="0" max="100" placeholder="Балл" required>
-                        <textarea name="comment" placeholder="Комментарий (необязательно)"></textarea>
+                        <textarea data-rich-text name="comment" placeholder="Комментарий (необязательно)"></textarea>
                         <div class="gexam-form-row-full">
                             <div class="gexam-upload-area" id="fb-area-{{ sub.id }}" onclick="document.getElementById('fb-file-{{ sub.id }}').click()"
                                  ondragover="event.preventDefault(); this.classList.add('dragover')"
@@ -401,6 +402,7 @@
 
     {% endif %}
 </div>
+<script src="/static/js/rich-text-field.js?v=1"></script>
 <script>
 function dropTicketImage(e){
     e.preventDefault();

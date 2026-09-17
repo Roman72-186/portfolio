@@ -14,6 +14,7 @@ tests/test_reuse_ratchet.py.
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=34">
 <link rel="stylesheet" href="/static/css/homework_ios.css?v=6">
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
 <div class="ios-homework prg-page">
@@ -32,7 +33,7 @@ tests/test_reuse_ratchet.py.
             <div class="hw-msg {{ 'from-me' if m.sender_id == user.user_id else 'from-them' }}">
                 <div class="hw-msg-bubble">
                     <span class="chip">{{ m.sender_role_label }}{% if m.sender_name %} · {{ m.sender_name }}{% endif %}</span>
-                    {% if m.text %}<p class="hw-msg-text">{{ m.text }}</p>{% endif %}
+                    {% if m.text %}<p class="hw-msg-text">{{ m.text | rich_text | safe }}</p>{% endif %}
                     {% if m.photo_s3_url %}
                     <img class="hw-msg-photo" src="{{ m.photo_s3_url }}" alt="">
                     {% endif %}
@@ -71,7 +72,7 @@ tests/test_reuse_ratchet.py.
         {% endif %}
         <form class="hw-async-form hw-form" method="post" action="/cabinet/staff/homework/submissions/{{ submission.id }}/message" enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-            <textarea class="field-input" name="text" rows="3" placeholder="Сообщение ученику"></textarea>
+            <textarea data-rich-text class="field-input" name="text" rows="3" placeholder="Сообщение ученику"></textarea>
             <label class="form-label hw-label-gap">Фото, необязательно</label>
             <input type="file" class="field-input" name="photo" accept="image/*">
             <label class="form-label hw-label-gap">Ссылка на видео, необязательно</label>
@@ -86,7 +87,7 @@ tests/test_reuse_ratchet.py.
         {% elif messages %}
         <form class="hw-async-form hw-form" method="post" action="/cabinet/homework/{{ task.id }}/message" enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-            <textarea class="field-input" name="text" rows="3" placeholder="Твой ответ"></textarea>
+            <textarea data-rich-text class="field-input" name="text" rows="3" placeholder="Твой ответ"></textarea>
             <label class="form-label hw-label-gap">Фото, необязательно</label>
             <input type="file" class="field-input" name="photo" accept="image/*">
             <label class="form-label hw-label-gap">Ссылка на видео, необязательно</label>
@@ -104,6 +105,7 @@ tests/test_reuse_ratchet.py.
     </div>
 </div>
 
+<script src="/static/js/rich-text-field.js?v=1"></script>
 <script>
 (function () {
     document.querySelectorAll('.hw-async-form').forEach(function (form) {

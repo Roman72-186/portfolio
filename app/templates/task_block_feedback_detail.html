@@ -3,6 +3,7 @@
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=35">
 <link rel="stylesheet" href="/static/css/homework_ios.css?v=6">
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
 <div class="ios-homework prg-page">
@@ -68,7 +69,7 @@
             <div class="hw-msg {{ 'from-me' if message.sender_id == user.user_id else 'from-them' }}">
                 <div class="hw-msg-bubble">
                     <span class="chip">{{ message.sender_role_label }}{% if message.sender_name %} · {{ message.sender_name }}{% endif %}</span>
-                    {% if message.text %}<p class="hw-msg-text">{{ message.text }}</p>{% endif %}
+                    {% if message.text %}<p class="hw-msg-text">{{ message.text | rich_text | safe }}</p>{% endif %}
                     {% if message.photo_s3_url %}<img class="hw-msg-photo" src="{{ message.photo_s3_url }}" alt="Фото к обратной связи" loading="lazy">{% endif %}
                     {% if message.video_s3_url %}<video class="hw-msg-video" controls preload="metadata" src="{{ message.video_s3_url }}"></video>{% endif %}
                     {% if message.video_url %}<a class="btn-outline hw-msg-video-link" href="{{ message.video_url }}" target="_blank" rel="noopener noreferrer">Смотреть видео</a>{% endif %}
@@ -90,7 +91,7 @@
               enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
             <label class="form-label" for="feedback-text">{{ 'Твой ответ' if viewer_role == 'student' else 'Сообщение ученику' }}</label>
-            <textarea id="feedback-text" class="field-input" name="text" rows="3"></textarea>
+            <textarea data-rich-text id="feedback-text" class="field-input" name="text" rows="3"></textarea>
             <label class="form-label hw-label-gap" for="feedback-photo">Фото, необязательно</label>
             <input id="feedback-photo" type="file" class="field-input" name="photo" accept="image/*">
             <label class="form-label hw-label-gap" for="feedback-video-link">Ссылка на видео, необязательно</label>
@@ -109,6 +110,7 @@
 </div>
 
 {% include "partials/lightbox.html" %}
+<script src="/static/js/rich-text-field.js?v=1"></script>
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};

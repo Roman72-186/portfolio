@@ -991,8 +991,10 @@
     .mobile-back-btn .svg-icon { width: 16px; height: 16px; }
 }
 </style>
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
+<script src="/static/js/rich-text-field.js?v=1"></script>
 <script>const CSRF_TOKEN = "{{ csrf_token(request) }}";</script>
 
 <div class="students-page-wrap">
@@ -1422,7 +1424,7 @@ function renderProfile(data) {
     if (s.about) {
         html += '<div class="profile-field full-width">'
             + '<div class="profile-field-label">О себе</div>'
-            + '<div class="profile-about">' + esc(s.about) + '</div></div>';
+            + '<div class="profile-about">' + (s.about_html || esc(s.about)) + '</div></div>';
     }
 
     // Status badges
@@ -1473,7 +1475,9 @@ function renderProfile(data) {
           ) : '')
         + '</div>';
 
-    document.getElementById('main-panel').innerHTML = html;
+    var mainPanel = document.getElementById('main-panel');
+    mainPanel.innerHTML = html;
+    window.RichTextField.enhanceAll(mainPanel);
 }
 
 function profileField(label, value, fullWidth) {
@@ -2283,8 +2287,8 @@ function buildMockDayPanel(sid, subject, grouped, state) {
     }
 
     // Комментарий куратора — только по primary
-    if (primary.comment) {
-        html += '<div style="font-size:12px;color:var(--muted);margin-top:8px;white-space:pre-wrap">' + esc(primary.comment) + '</div>';
+    if (primary.comment_html) {
+        html += '<div style="font-size:12px;color:var(--muted);margin-top:8px">' + primary.comment_html + '</div>';
     }
     if (CAN_SCORE) {
         html += buildScoreFormOrEditButton(sid, primary.id, 'mock-exams', primary.score, primary.comment);
@@ -2459,8 +2463,8 @@ function buildRetakeChipsAndComment(w) {
         html += '<span class="scored-chip" title="Оценка куратора">⭐ ' + Math.round(w.curator_score) + ' / 100</span>';
     }
     var chips = html ? '<div class="retake-chips-row" style="padding:0 0 8px">' + html + '</div>' : '';
-    var comment = w.comment
-        ? '<div style="font-size:12px;color:var(--muted);margin:0 0 8px;white-space:pre-wrap">' + esc(w.comment) + '</div>'
+    var comment = w.comment_html
+        ? '<div style="font-size:12px;color:var(--muted);margin:0 0 8px">' + w.comment_html + '</div>'
         : '';
     return chips + comment;
 }
@@ -2587,7 +2591,7 @@ function buildScoreForm(sid, workId, tab, currentScore, currentComment) {
         + ' placeholder="0–100" required>'
         + '<span style="font-size:13px;color:var(--dim)">/ 100</span>'
         + '</div>'
-        + '<textarea name="comment" class="comment-input" placeholder="Комментарий (необязательно)" maxlength="500">'
+        + '<textarea data-rich-text name="comment" class="comment-input" placeholder="Комментарий (необязательно)" maxlength="500">'
         + (currentComment ? esc(currentComment) : '')
         + '</textarea>'
         + '<div class="score-form-actions">'
@@ -2623,7 +2627,9 @@ function showMockScoreForm(btn) {
     var wrap = btn.closest('.edit-score-wrap');
     if (!wrap) return;
     var score = btn.dataset.score !== '' ? +btn.dataset.score : null;
+    var parent = wrap.parentNode;
     wrap.outerHTML = buildScoreForm(+btn.dataset.sid, +btn.dataset.wid, btn.dataset.tab || 'mock-exams', score, btn.dataset.comment || '');
+    window.RichTextField.enhanceAll(parent);
 }
 
 // ── Toggle edit form (scored works) ──────────────────────────────────────────
@@ -2846,7 +2852,9 @@ function startEditProfile() {
         + '</div>';
     html += '</div></div>';
 
-    document.getElementById('main-panel').innerHTML = html;
+    var editPanel = document.getElementById('main-panel');
+    editPanel.innerHTML = html;
+    window.RichTextField.enhanceAll(editPanel);
 }
 
 function editField(label, id, value) {

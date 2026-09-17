@@ -2,6 +2,7 @@
 {% block title %}Видеоотчёты{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/curator_reports_ios.css?v=4">
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
 {% include "_curator_nav.html" %}
@@ -43,7 +44,7 @@
 
             <div class="report-field">
                 <label class="field-label" for="text">Комментарий (необязательно)</label>
-                <textarea class="report-textarea" id="text" name="text"
+                <textarea data-rich-text class="report-textarea" id="text" name="text"
                           maxlength="2000" placeholder="Кратко: о чём отчёт, на что обратить внимание…"></textarea>
             </div>
 
@@ -57,7 +58,7 @@
         {% for r in history %}
         <div class="history-item">
             <div class="history-date">{% if r.curator_name %}{{ r.curator_name }} · {% endif %}{{ r.date_label }}</div>
-            {% if r.text %}<div class="history-text">{{ r.text }}</div>{% endif %}
+            {% if r.text %}<div class="history-text">{{ r.text | rich_text | safe }}</div>{% endif %}
             <video class="history-video" controls preload="metadata" src="{{ r.video_url }}"></video>
             {% if is_staff %}
             <div class="history-actions">
@@ -75,4 +76,5 @@
     {% endif %}
 
 </div>
+<script src="/static/js/rich-text-field.js?v=1"></script>
 {% endblock %}

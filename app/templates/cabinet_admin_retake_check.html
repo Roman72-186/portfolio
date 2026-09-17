@@ -298,8 +298,10 @@
     .retake-thumb, .retake-thumb-ph { width: 64px; height: 64px; }
 }
 </style>
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
+<script src="/static/js/rich-text-field.js?v=1"></script>
 <script>const CSRF_TOKEN = "{{ csrf_token(request) }}";</script>
 <div class="split-wrap">
     {% from "partials/staff_check_sidebar.html" import check_sidebar %}
@@ -434,7 +436,9 @@ function renderRetakes(data) {
         }
     }
 
-    document.getElementById('main-panel').innerHTML = html;
+    var mainPanel = document.getElementById('main-panel');
+    mainPanel.innerHTML = html;
+    window.RichTextField.enhanceAll(mainPanel);
 }
 
 function buildSubjectRetakeBlock(sid, subject, works, isUnassigned, subjects) {
@@ -517,8 +521,8 @@ function buildChipsAndComment(w) {
     if (w.curator_score != null) {
         chips += '<span class="scored-chip" title="Оценка куратора">⭐ ' + Math.round(w.curator_score) + ' / 100</span>';
     }
-    var commentBlock = w.comment
-        ? '<div class="student-comment" style="margin:6px 16px 0">' + esc(w.comment) + '</div>'
+    var commentBlock = w.comment_html
+        ? '<div class="student-comment" style="margin:6px 16px 0">' + w.comment_html + '</div>'
         : '';
     return (chips ? '<div class="retake-chips-row">' + chips + '</div>' : '') + commentBlock;
 }
@@ -639,7 +643,7 @@ function buildScoreForm(sid, workId, currentScore, currentComment) {
         +   '<input type="number" min="0" max="100" step="1" name="score" value="' + scoreVal + '" placeholder="0–100" required>'
         +   '<span style="font-size:12px;color:var(--dim)">из 100</span>'
         + '</div>'
-        + '<textarea name="comment" placeholder="Комментарий (необязательно)" maxlength="500">' + commentVal + '</textarea>'
+        + '<textarea data-rich-text name="comment" placeholder="Комментарий (необязательно)" maxlength="500">' + commentVal + '</textarea>'
         + '<div style="margin-top:8px">'
         +   '<button type="button" class="btn-blue btn-save" onclick="submitScore(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Сохранить балл</button>'
         + '</div>'
@@ -667,7 +671,9 @@ function showScoreForm(btn) {
     var wrap = btn.closest('.edit-score-wrap');
     if (!wrap) return;
     var score = btn.dataset.score !== '' ? +btn.dataset.score : null;
+    var formId = 'sform-' + btn.dataset.wid;
     wrap.outerHTML = buildScoreForm(+btn.dataset.sid, +btn.dataset.wid, score, btn.dataset.comment || '');
+    window.RichTextField.enhanceAll(document.getElementById(formId));
 }
 
 function scoreFormValue(root, selector) {

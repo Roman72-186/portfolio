@@ -2,6 +2,7 @@
 {% block title %}Карточка ученика — {{ target.last_name or '' }} {{ target.first_name or target.name }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/superadmin_users_ios.css?v=4">
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
 <div class="uc-wrap ios-uc">
@@ -131,7 +132,7 @@
                 </label>
                 <label class="uc-full">
                     Заметка куратора (видна главным преподавателям и куратору)
-                    <textarea name="about" class="form-input" maxlength="500" placeholder="Внутренняя заметка о ребёнке…">{{ target.about or '' }}</textarea>
+                    <textarea data-rich-text name="about" class="form-input" maxlength="500" placeholder="Внутренняя заметка о ребёнке…">{{ target.about or '' }}</textarea>
                 </label>
             </div>
 
@@ -150,4 +151,5 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     </form>
 </div>
+<script src="/static/js/rich-text-field.js?v=1"></script>
 {% endblock %}

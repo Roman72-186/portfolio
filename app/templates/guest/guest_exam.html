@@ -102,7 +102,7 @@
         {% elif submission.status == "scored" %}
             <div class="guest-score">{{ submission.score }}</div>
             {% if submission.comment %}
-            <div class="guest-comment">{{ submission.comment }}</div>
+            <div class="guest-comment">{{ submission.comment | rich_text | safe }}</div>
             {% endif %}
         {% endif %}
     </div>

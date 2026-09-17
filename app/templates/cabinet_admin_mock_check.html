@@ -444,8 +444,10 @@
     }
 }
 </style>
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
+<script src="/static/js/rich-text-field.js?v=1"></script>
 <script>
 const CSRF_TOKEN = "{{ csrf_token(request) }}";
 const IS_SUPERADMIN = {{ (user.role_rank >= 5) | tojson }};
@@ -573,7 +575,9 @@ function renderMockExams(data) {
     });
     html += '</div>';
 
-    document.getElementById('main-panel').innerHTML = html;
+    var mainPanel = document.getElementById('main-panel');
+    mainPanel.innerHTML = html;
+    window.RichTextField.enhanceAll(mainPanel);
 }
 
 function buildSubjectCard(subject, data, subjectIndex) {
@@ -624,9 +628,9 @@ function buildSubjectCard(subject, data, subjectIndex) {
                 + '<div class="scored-state-score"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> ' + Math.round(latest.score) + ' / 100</div>'
                 + '<span class="scored-state-label">Проверено</span>'
                 + '</div>';
-            if (latest.comment) {
-                html += '<div style="font-size:13px;color:var(--muted);background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 12px;margin-bottom:10px;white-space:pre-wrap">'
-                    + esc(latest.comment) + '</div>';
+            if (latest.comment_html) {
+                html += '<div style="font-size:13px;color:var(--muted);background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 12px;margin-bottom:10px">'
+                    + latest.comment_html + '</div>';
             }
         }
 
@@ -893,7 +897,7 @@ function buildScoreForm(sid, workId, currentScore, currentComment) {
         +   '<input type="number" min="0" max="100" step="1" name="score" value="' + scoreVal + '" placeholder="0–100" required>'
         +   '<span style="font-size:12px;color:var(--dim)">из 100</span>'
         + '</div>'
-        + '<textarea name="comment" placeholder="Комментарий" maxlength="500">' + commentVal + '</textarea>'
+        + '<textarea data-rich-text name="comment" placeholder="Комментарий" maxlength="500">' + commentVal + '</textarea>'
         + '<div class="score-form-btns">'
         +   '<button type="button" class="btn-blue btn-save" onclick="submitScore(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Сохранить балл</button>'
         +   '<button type="button" class="btn-retake" onclick="submitRetake(' + sid + ',' + workId + ',\'' + formId + '\')" title="Поставить оценку и отправить работу на отработку"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Отправить на отработку</button>'
@@ -923,7 +927,9 @@ function showScoreForm(btn) {
     var wrap = btn.closest('.edit-score-wrap');
     if (!wrap) return;
     var score = btn.dataset.score !== '' ? +btn.dataset.score : null;
+    var formId = 'sform-' + btn.dataset.wid;
     wrap.outerHTML = buildScoreForm(+btn.dataset.sid, +btn.dataset.wid, score, btn.dataset.comment || '');
+    window.RichTextField.enhanceAll(document.getElementById(formId));
 }
 
 function _readForm(formId) {
