@@ -6,7 +6,7 @@
         </div>
         <div class="legal-modal-body" id="legal-modal-body"></div>
         <div class="legal-modal-foot">
-            <a id="legal-modal-download" class="btn-outline btn-full" href="#" download>Скачать .docx</a>
+            <a id="legal-modal-download" class="btn-outline btn-full" href="#" download>Скачать файл</a>
         </div>
     </div>
 </div>
@@ -24,6 +24,10 @@
         titleEl.textContent = title;
         downloadEl.href = downloadUrl;
         downloadEl.setAttribute('download', downloadName);
+        // Подпись кнопки — по расширению файла: оферта с 16.09.2026 лежит в PDF,
+        // остальные три документа по-прежнему .docx.
+        var ext = (downloadName.split('.').pop() || '').toLowerCase();
+        downloadEl.textContent = ext ? 'Скачать .' + ext : 'Скачать файл';
         modal.classList.add('open');
         modal.setAttribute('aria-hidden', 'false');
         document.body.style.overflow = 'hidden';
