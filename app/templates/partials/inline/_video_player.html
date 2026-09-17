@@ -59,6 +59,7 @@
         var coverFallbackTimer = null;
         var activePlayer = null;
         var playRequested = false;
+        var playHandler = null;
         var watermark = root.querySelector('[data-role="watermark"]');
         var fullscreenButton = root.querySelector('[data-role="fullscreen-btn"]');
         var muteButton = root.querySelector('[data-role="mute-btn"]');
@@ -142,6 +143,10 @@
 
         if (coverPlay) {
             coverPlay.addEventListener('click', function () {
+                if (playHandler) {
+                    playHandler();
+                    return;
+                }
                 if (!activePlayer || typeof activePlayer.play !== 'function') {
                     playRequested = true;
                     return;
@@ -152,10 +157,6 @@
                 // on iOS/Android even though the command comes from our button.
                 // Muted playback is allowed; sound is restored by the explicit
                 // button above after the video has actually started.
-                if (needsMutedStart() && muteButton && typeof activePlayer.mute === 'function') {
-                    activePlayer.mute();
-                    muteButton.hidden = false;
-                }
                 activePlayer.play();
                 hideCover();
             });
@@ -493,6 +494,41 @@
             var isPlaying = false;
             var hasEverPlayed = false;
 
+            function playThroughBunny(player) {
+                if (!player || typeof player.play !== 'function') return;
+                if (!needsMutedStart()) {
+                    player.play();
+                    hideCover();
+                    return;
+                }
+                if (muteButton && typeof player.mute === 'function') {
+                    player.mute();
+                    muteButton.hidden = false;
+                }
+                // Player.js sends play() through postMessage. Mobile browsers
+                // may reject that command as untrusted, even after our button
+                // was tapped. Reloading Bunny with muted autoplay is allowed by
+                // iOS/Android and is done only in response to this tap.
+                try {
+                    var mobileUrl = new URL(data.player_url, window.location.href);
+                    mobileUrl.searchParams.set('autoplay', 'true');
+                    mobileUrl.searchParams.set('muted', 'true');
+                    if (iframe.src !== mobileUrl.href) {
+                        frameWrap.classList.remove('is-ready');
+                        iframe.addEventListener('load', function () {
+                            frameWrap.classList.add('is-ready');
+                            if (reattachPlayer) reattachPlayer();
+                        }, { once: true });
+                        iframe.src = mobileUrl.href;
+                        hideCover();
+                        return;
+                    }
+                } catch (error) { /* use Player.js fallback below */ }
+                player.play();
+                hideCover();
+            }
+            playHandler = function () { playThroughBunny(activePlayer); };
+
             function showStatus(message, isError) {
                 progressStatus.hidden = false;
                 progressStatus.textContent = message;
@@ -669,12 +705,7 @@
                     if (generation !== playerGeneration) return;
                     if (playRequested && typeof player.play === 'function') {
                         playRequested = false;
-                        if (needsMutedStart() && muteButton && typeof player.mute === 'function') {
-                            player.mute();
-                            muteButton.hidden = false;
-                        }
-                        player.play();
-                        hideCover();
+                        playThroughBunny(player);
                     }
                     if (coverPlay && cover && cover.getAttribute('src')
                         && !frameWrap.classList.contains('is-started')) {
