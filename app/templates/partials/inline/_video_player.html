@@ -493,12 +493,24 @@
             var playerGeneration = 0;
             var isPlaying = false;
             var hasEverPlayed = false;
+            var playbackAttemptTimer = null;
+
+            function armPlaybackAttemptTimer() {
+                if (playbackAttemptTimer) window.clearTimeout(playbackAttemptTimer);
+                playbackAttemptTimer = window.setTimeout(function () {
+                    playbackAttemptTimer = null;
+                    if (!isPlaying) {
+                        showStatus('Не удалось запустить видео. Нажми «Смотреть» ещё раз.', true);
+                        if (coverPlay) coverPlay.hidden = false;
+                    }
+                }, 8000);
+            }
 
             function playThroughBunny(player) {
                 if (!player || typeof player.play !== 'function') return;
                 if (!needsMutedStart()) {
+                    armPlaybackAttemptTimer();
                     player.play();
-                    hideCover();
                     return;
                 }
                 if (muteButton && typeof player.mute === 'function') {
@@ -520,12 +532,12 @@
                             if (reattachPlayer) reattachPlayer();
                         }, { once: true });
                         iframe.src = mobileUrl.href;
-                        hideCover();
+                        armPlaybackAttemptTimer();
                         return;
                     }
                 } catch (error) { /* use Player.js fallback below */ }
+                armPlaybackAttemptTimer();
                 player.play();
-                hideCover();
             }
             playHandler = function () { playThroughBunny(activePlayer); };
 
@@ -552,6 +564,10 @@
                     })
                     .then(function (body) {
                         if (!body || !body.player_url) throw new Error('refresh_failed');
+                        // `playThroughBunny` closes over this object. Keep the
+                        // refreshed signed URL there too, otherwise a later
+                        // mobile tap rebuilds an expired URL from stale data.
+                        data.player_url = body.player_url;
                         if (body.ttl_seconds) playerUrlTtlSeconds = body.ttl_seconds;
                         playerUrlMintedAt = Date.now();
                         frameWrap.classList.remove('is-ready');
@@ -737,6 +753,10 @@
                 });
                 player.on('play', function () {
                     if (generation !== playerGeneration) return;
+                    if (playbackAttemptTimer) {
+                        window.clearTimeout(playbackAttemptTimer);
+                        playbackAttemptTimer = null;
+                    }
                     isPlaying = true;
                     hasEverPlayed = true;
                     hideCover();

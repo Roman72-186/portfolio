@@ -148,8 +148,10 @@ def test_video_watermark_fades_in_and_out_at_random_spots(auth_client, monkeypat
     assert "searchParams.set('autoplay', 'true')" in response.text
     assert "searchParams.set('muted', 'true')" in response.text
     assert "playThroughBunny" in response.text
-    assert "activePlayer.play();\n                hideCover();" in response.text
-    assert "hideCover();\n            });" in response.text
+    assert "activePlayer.play();" in response.text
+    assert "data.player_url = body.player_url" in response.text
+    assert "player.on('play'" in response.text
+    assert "hideCover();" in response.text
     assert "video-frame.is-started .video-cover" in response.text
     # Разрешение iframe нужно для программного play() из нашей кнопки.
     # Сам автостарт выключен в подписанном URL параметром autoplay=false.
