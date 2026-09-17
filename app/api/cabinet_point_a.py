@@ -24,15 +24,17 @@ students-review` — см. докстринг `app/services/point_a.py`. Зде�
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session as DBSession
 
+from app.cache import invalidate_unread
 from app.db.database import get_db
-from app.dependencies import require_admin_role, require_csrf_header
+from app.dependencies import require_admin_role, require_csrf, require_csrf_header
 from app.models.user import User
-from app.services.point_a import point_a_rows, student_point_a
+from app.services.notify import notify
+from app.services.point_a import maybe_notify_point_a_level, point_a_rows, student_point_a
 from app.services.review_aggregate import _accessible_students
 from app.tmpl import templates
 
@@ -97,6 +99,7 @@ def score_portfolio_after(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf_header)],
+    background_tasks: BackgroundTasks,
 ):
     """Одна оценка за весь набор работ «После» — пара к «До».
 
@@ -109,5 +112,34 @@ def score_portfolio_after(
     student.portfolio_after_score = payload.score
     student.portfolio_after_scored_at = datetime.now(timezone.utc)
     student.portfolio_after_scored_by_id = user["user_id"]
+    notification = maybe_notify_point_a_level(db, student)
     db.commit()
+    if notification is not None:
+        invalidate_unread(student.id)
+        background_tasks.add_task(notify, notification.id)
     return JSONResponse({"ok": True, "score": payload.score})
+
+
+@router.post("/{student_id}/renotify")
+def point_a_renotify(
+    student_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    background_tasks: BackgroundTasks,
+):
+    """Сбросить `point_a_notified_at` и отправить уведомление заново.
+
+    Для случая «поставили не тот балл, средний счёт сменился, ученик уже
+    получил старое голосовое» (владелец 17.09.2026). Переиспользует
+    `maybe_notify_point_a_level` — сброс флага делает функцию тем же
+    путём, что и самое первое уведомление, второй копии логики нет.
+    """
+    student = _student_or_404(db, student_id)
+    student.point_a_notified_at = None
+    notification = maybe_notify_point_a_level(db, student)
+    db.commit()
+    if notification is not None:
+        invalidate_unread(student.id)
+        background_tasks.add_task(notify, notification.id)
+    return RedirectResponse(f"/cabinet/staff/point-a/{student_id}", status_code=302)

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{#
+Экран загрузки голосовых по уровню точки А (Фаза 1, владелец 17.09.2026).
+Две карточки, level 1 и level 2 — по одной записи `PointALevelAudio` на
+уровень, перезалив обновляет ту же строку (`point_a_level_audio.py`).
+
+Без своего <style> — только prg-* (program.css), как у остальных экранов
+точки А: новый блок стилей запрещает tests/test_reuse_ratchet.py.
+#}
+{% block title %}Голосовые точки А{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=31">
+{% endblock %}
+{% block content %}
+<div class="prg-page prg-page--point-a">
+    <div class="prg-head">
+        <div class="prg-head-copy">
+            <h1>Голосовые точки А</h1>
+            <p>Ученик получает это голосовое вместе с уведомлением, когда точка А
+                полностью оценена. Пока файла нет — уведомление всё равно уходит,
+                только текстом.</p>
+        </div>
+    </div>
+
+    {% if request.query_params.get('ok') %}
+    <p class="prg-badge prg-badge--done">Сохранено</p>
+    {% endif %}
+
+    <div class="prg-items">
+        {% for level, audio in audios.items() %}
+        <article class="prg-item{{ ' is-done' if audio }}" data-level="{{ level }}">
+            <div class="prg-item-copy">
+                <h3>Уровень {{ level }} — {% if level == 1 %}средний балл 70 и выше{% else %}средний балл 69 и ниже{% endif %}</h3>
+                {% if audio %}
+                <div class="prg-meta">
+                    <span>Загружено {{ audio.uploaded_at.strftime('%d.%m.%Y %H:%M') if audio.uploaded_at else '' }}</span>
+                </div>
+                <audio controls preload="metadata" src="{{ audio.audio_s3_url }}"></audio>
+                {% else %}
+                <p>Голосовое ещё не загружено.</p>
+                {% endif %}
+            </div>
+            <div class="prg-item-actions">
+                <form method="post" action="/cabinet/staff/point-a-audio/{{ level }}" enctype="multipart/form-data">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                    <label class="prg-field prg-field--row">{{ 'Заменить файл' if audio else 'Загрузить файл' }}
+                        <input type="file" name="audio" accept="audio/*" required>
+                    </label>
+                    <button type="submit" class="btn-blue">Сохранить</button>
+                </form>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+
+    <p><a class="btn-outline" href="/cabinet/staff/point-a">← К оценке точки А</a></p>
+</div>
+{% endblock %}

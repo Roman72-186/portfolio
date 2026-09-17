@@ -32,6 +32,19 @@
                 Средний балл появится, когда поставите оценки
                 {% endif %}
             </p>
+            {% if point_a.is_done %}
+            <p>
+                {% if student.point_a_notified_at %}
+                Уведомление отправлено {{ student.point_a_notified_at.strftime('%d.%m.%Y %H:%M') }}
+                {% else %}
+                Уведомление ещё не отправлено
+                {% endif %}
+            </p>
+            <form method="post" action="/cabinet/staff/point-a/{{ student.id }}/renotify">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" class="btn-outline">{{ 'Отправить уведомление ещё раз' if student.point_a_notified_at else 'Отправить уведомление' }}</button>
+            </form>
+            {% endif %}
         </div>
     </div>
 

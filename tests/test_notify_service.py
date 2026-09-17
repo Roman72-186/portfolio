@@ -46,3 +46,34 @@ def test_telegram_sent_when_enabled(db, user_factory, monkeypatch):
     asyncio.run(notify_module.notify(n.id))
 
     send_mock.assert_called_once_with(777_778, "Тест\n\nТекст")
+
+
+def test_audio_url_sends_voice_instead_of_text(db, user_factory, monkeypatch):
+    """Точка А (Фаза 1): уведомление с `audio_url` уходит `sendVoice`, а не
+    `sendMessage` — caption несёт тот же текст, что обычно уходил бы в
+    сообщении."""
+    user = user_factory()
+    user.telegram_chat_id = 777_779
+    db.commit()
+
+    n = Notification(
+        user_id=user.id, title="Точка А разобрана — уровень 1",
+        text="Средний балл: 85 / 100.",
+        audio_url="https://s3.example.com/point-a-audio/1/x.mp3",
+    )
+    db.add(n)
+    db.commit()
+
+    voice_mock = AsyncMock()
+    message_mock = AsyncMock()
+    monkeypatch.setattr(notify_module.telegram_service, "send_voice", voice_mock)
+    monkeypatch.setattr(notify_module.telegram_service, "send_message", message_mock)
+    monkeypatch.setattr(notify_module.settings, "vapid_private_key", "")
+
+    asyncio.run(notify_module.notify(n.id))
+
+    voice_mock.assert_called_once_with(
+        777_779, "https://s3.example.com/point-a-audio/1/x.mp3",
+        caption="Точка А разобрана — уровень 1\n\nСредний балл: 85 / 100.",
+    )
+    message_mock.assert_not_called()

@@ -25,6 +25,7 @@ from app.api import homework_submission
 from app.api import lab_assets
 from app.api import student_review
 from app.api import cabinet_point_a
+from app.api import cabinet_point_a_audio
 from app.api import cabinet_staff_notifications
 from app.dependencies import ACCESS_EXPIRED_DETAIL, TG_MISMATCH_DETAIL, PORTFOLIO_GATE_DETAIL
 from app.limiter import limiter
@@ -340,6 +341,7 @@ app.include_router(homework_submission.router)
 app.include_router(lab_assets.router)
 app.include_router(student_review.router)
 app.include_router(cabinet_point_a.router)
+app.include_router(cabinet_point_a_audio.router)
 app.include_router(cabinet_staff_notifications.router)
 
 

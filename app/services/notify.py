@@ -86,6 +86,9 @@ async def _send_telegram(chat_id: int, notification: Notification) -> None:
     text = notification.title
     if notification.text:
         text = f"{text}\n\n{notification.text}"
+    if notification.audio_url:
+        await telegram_service.send_voice(chat_id, notification.audio_url, caption=text)
+        return
     await telegram_service.send_message(chat_id, text)
 
 

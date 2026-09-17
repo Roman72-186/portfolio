@@ -114,6 +114,14 @@ class User(Base):
     portfolio_after_scored_by_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id"), nullable=True
     )
+    # Момент, когда ученику ушло уведомление об уровне точки А (голосовое +
+    # текст). Идемпотентность: уведомляем один раз при переходе всех плашек
+    # в «оценено» (`point_a.py::student_point_a().is_done`), повторная
+    # правка отдельного балла заново не шлёт. NULL — ещё не уведомляли или
+    # ГП сбросила флаг кнопкой «переуведомить» (`cabinet_point_a.py`).
+    point_a_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     curator_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     curator_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

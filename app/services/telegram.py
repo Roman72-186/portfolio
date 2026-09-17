@@ -88,6 +88,44 @@ async def send_message(chat_id: int, text: str, *, reply_markup: dict | None = N
     return True
 
 
+async def send_voice(chat_id: int, audio_url: str, *, caption: str = "") -> bool:
+    """Отправить голосовое по публичному HTTPS URL (Bot API `sendVoice` берёт
+    файл по URL сам — заливать заново не нужно, TimeWeb/Selectel S3-ссылки
+    публичные). `caption` — до 1024 символов, Telegram обрежет длиннее сам.
+
+    Как и `send_message`, ошибок не поднимает — логирует и возвращает False,
+    включая блокировку бота (403).
+    """
+    if not settings.telegram_bot_token:
+        logger.warning("telegram.send_voice: TELEGRAM_BOT_TOKEN не настроен")
+        return False
+
+    client = await _get_client()
+    payload: dict = {"chat_id": chat_id, "voice": audio_url}
+    if caption:
+        payload["caption"] = caption
+
+    try:
+        resp = await request_with_retry(
+            lambda: client.post(_api_url("sendVoice"), json=payload),
+            label="Telegram sendVoice",
+        )
+    except Exception as exc:
+        logger.warning("Telegram sendVoice failed chat_id=%s: %s", chat_id, exc)
+        return False
+
+    if resp.status_code == 403:
+        logger.info("Telegram sendVoice: бот заблокирован chat_id=%s", chat_id)
+        return False
+    if resp.status_code >= 400:
+        logger.warning(
+            "Telegram sendVoice HTTP %s chat_id=%s body=%s",
+            resp.status_code, chat_id, resp.text[:300],
+        )
+        return False
+    return True
+
+
 async def check_channel_membership(user_id: int) -> bool | None:
     """Проверить членство user_id в settings.telegram_channel_id.
 

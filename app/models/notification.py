@@ -20,6 +20,9 @@ class Notification(Base):
     homework_submission_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("homework_submissions.id", ondelete="SET NULL"), nullable=True
     )
+    # Голосовое по уровню точки А (`point_a.py::maybe_notify_point_a_level`).
+    # NULL у всех остальных уведомлений — только это уведомление несёт звук.
+    audio_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     # Момент первого прочтения (для метрики «время реакции»); NULL у непрочитанных
     # и у прочитанных до введения поля.

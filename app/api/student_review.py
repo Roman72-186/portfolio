@@ -14,11 +14,12 @@ Work/ExamCycle расширены отдельно (`cabinet_students_shared.py:
 from datetime import date, datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session as DBSession
 
+from app.cache import invalidate_unread
 from app.constants import MOCK_SUBJECTS, TARIFFS
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf_header, require_curator
@@ -26,6 +27,8 @@ from app.models.exam_cycle import ExamCycle
 from app.models.task_block import TaskBlockAnswer, TaskBlockResponse, TaskBlockSubmission
 from app.models.user import User
 from app.models.work import Work
+from app.services.notify import notify
+from app.services.point_a import maybe_notify_point_a_level
 from app.services.review_aggregate import (
     FULL_ACCESS_RANK,
     aggregate_student_review_counts,
@@ -267,6 +270,7 @@ def score_portfolio_before(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf_header)],
+    background_tasks: BackgroundTasks,
 ):
     """Точка А — одна оценка за весь набор работ «До».
 
@@ -291,5 +295,9 @@ def score_portfolio_before(
     student.portfolio_before_score = payload.score
     student.portfolio_before_scored_at = datetime.now(timezone.utc)
     student.portfolio_before_scored_by_id = user["user_id"]
+    notification = maybe_notify_point_a_level(db, student)
     db.commit()
+    if notification is not None:
+        invalidate_unread(student.id)
+        background_tasks.add_task(notify, notification.id)
     return JSONResponse({"ok": True, "score": payload.score})

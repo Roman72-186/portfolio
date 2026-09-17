@@ -40,6 +40,9 @@
                 {% if n.text %}
                 <div class="notif-text">{{ n.text }}</div>
                 {% endif %}
+                {% if n.audio_url %}
+                <audio class="notif-audio" controls preload="metadata" src="{{ n.audio_url }}"></audio>
+                {% endif %}
                 <div class="notif-meta">{{ n.created_at.strftime('%d.%m.%Y %H:%M') if n.created_at else '' }}</div>
             </div>
             {% if href %}

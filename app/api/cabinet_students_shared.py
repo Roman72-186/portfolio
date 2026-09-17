@@ -33,6 +33,7 @@ from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
 from app.services.notify import notify
+from app.services.point_a import maybe_notify_point_a_level
 from app.models.role import Role
 from app.models.upload_log import UploadLog
 from app.models.user import User
@@ -992,9 +993,13 @@ def score_work(
         work_id=work.id,
     )
     db.add(notification)
+    student = db.get(User, work.user_id)
+    point_a_notification = maybe_notify_point_a_level(db, student) if student else None
     db.commit()
     invalidate_unread(work.user_id)
     background_tasks.add_task(notify, notification.id)
+    if point_a_notification is not None:
+        background_tasks.add_task(notify, point_a_notification.id)
     return RedirectResponse(
         f"/cabinet/students?student={student_id}&tab={tab}&saved=1", status_code=302
     )
@@ -1042,9 +1047,13 @@ def send_mock_exam_to_retake(
         work_id=work.id,
     )
     db.add(notification)
+    student = db.get(User, work.user_id)
+    point_a_notification = maybe_notify_point_a_level(db, student) if student else None
     db.commit()
     invalidate_unread(work.user_id)
     background_tasks.add_task(notify, notification.id)
+    if point_a_notification is not None:
+        background_tasks.add_task(notify, point_a_notification.id)
 
     return JSONResponse({"ok": True, "score": int(round(score)), "comment": comment_clean})
 

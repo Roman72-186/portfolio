@@ -15,6 +15,7 @@ from app.models.feature_period import FeaturePeriod
 from app.services.tz import today_msk, msk_midnight
 from app.services.feature_periods import get_active_period
 from app.services.notify import notify
+from app.services.point_a import maybe_notify_point_a_level
 from app.models.notification import Notification
 from app.models.role import Role
 from app.models.user import User
@@ -412,9 +413,13 @@ def admin_score_work(
         work_id=work.id,
     )
     db.add(notification)
+    student = db.get(User, work.user_id)
+    point_a_notification = maybe_notify_point_a_level(db, student) if student else None
     db.commit()
     invalidate_unread(work.user_id)
     background_tasks.add_task(notify, notification.id)
+    if point_a_notification is not None:
+        background_tasks.add_task(notify, point_a_notification.id)
 
     dest = redirect_to or f"/cabinet/students?student={work.user_id}&tab=mock-exams"
     return RedirectResponse(dest, status_code=302)

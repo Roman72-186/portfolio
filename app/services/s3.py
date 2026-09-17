@@ -145,6 +145,13 @@ def s3_path_feedback(work_id: int, filename: str) -> str:
     return f"feedback/{work_id}/{rnd}.{ext}"
 
 
+def s3_path_point_a_level_audio(level: int, filename: str) -> str:
+    """Голосовое уведомления точки А: point-a-audio/{level}/{filename}."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "mp3"
+    rnd = uuid.uuid4().hex[:8]
+    return f"point-a-audio/{level}/{rnd}.{ext}"
+
+
 def s3_path_curator_report(curator_id: int, filename: str) -> str:
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "mp4"
     rnd = uuid.uuid4().hex[:12]

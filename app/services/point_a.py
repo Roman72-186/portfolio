@@ -23,14 +23,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session as DBSession
 
 from app.models.exam_assignment import ExamAssignment, ExamTicket
 from app.models.exam_cycle import ExamCycle
+from app.models.notification import Notification
 from app.models.user import User
 from app.models.work import WORK_TYPE_BEFORE, WORK_TYPE_MOCK_EXAM, Work
+from app.services.point_a_level_audio import get_level_audio
 from app.services.portfolio import after_gallery_groups
+
+# Порог уровня по среднему баллу (владелец 17.09.2026): ≥70 — уровень 1,
+# ≤69 — уровень 2. Разворот записи созвона 26.08.2026 («уровень ученику не
+# сообщается напрямую») — новое решение, не забытая старая политика.
+POINT_A_LEVEL_1_MIN_AVERAGE = 70
 
 # Ранг, с которого видна точка А. Тот же порог, что у снятой карточки
 # `_portfolio_before_items` (владелец 09.09.2026: «только Главный
@@ -285,6 +293,52 @@ def student_point_a(db: DBSession, student: User, *, with_images: bool = True) -
         is_done=bool(plates) and all(plate.is_scored for plate in plates),
         scored_count=sum(1 for plate in plates if plate.is_scored),
     )
+
+
+def point_a_level(average: int) -> int:
+    return 1 if average >= POINT_A_LEVEL_1_MIN_AVERAGE else 2
+
+
+def maybe_notify_point_a_level(db: DBSession, student: User) -> Notification | None:
+    """Уведомление об уровне точки А — один раз, в момент, когда разобрана
+    последняя плашка.
+
+    Идемпотентность держит `student.point_a_notified_at`: непустое поле
+    значит «уже уведомляли», повторная правка отдельного балла ничего не
+    шлёт заново. Вызывается из всех пяти мест простановки балла, влияющих
+    на плашки (см. `AGENTS.md`), до `db.commit()` — коммитить обязан
+    вызывающий код, в одной транзакции с самим баллом: раздельные commit
+    дали бы окно, где балл сохранён, а уведомление не будет отправлено
+    никогда (флаг не выставлен, повторного шанса не будет).
+
+    Если голосовое для уровня ещё не загружено — уведомление всё равно
+    уходит текстом, не блокируется (владелец 17.09.2026): иначе ученику
+    пришлось бы ждать голосовое «задним числом» в момент, когда его
+    наконец загрузят, а флаг уже стоял бы.
+
+    Не делает commit. Возвращает None, если уведомлять рано (не все плашки
+    оценены) или уже уведомляли.
+    """
+    if student.point_a_notified_at is not None:
+        return None
+
+    point_a = student_point_a(db, student, with_images=False)
+    if not point_a.is_done or point_a.average is None:
+        return None
+
+    level = point_a_level(point_a.average)
+    audio = get_level_audio(db, level)
+
+    notification = Notification(
+        user_id=student.id,
+        title=f"Точка А разобрана — уровень {level}",
+        text=f"Средний балл: {point_a.average} / 100.",
+        audio_url=audio.audio_s3_url if audio else None,
+    )
+    db.add(notification)
+    student.point_a_notified_at = datetime.now(timezone.utc)
+    db.flush()
+    return notification
 
 
 def point_a_rows(db: DBSession, students: list[User]) -> list[dict]:
