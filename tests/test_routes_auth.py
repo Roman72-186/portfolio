@@ -474,22 +474,22 @@ def test_3dlab_enter_requires_auth(client):
     assert resp.status_code == 302
 
 
-def test_3dlab_enter_lab3d_not_configured_returns_503(auth_client):
-    client, _ = auth_client
+def test_3dlab_enter_lab3d_not_configured_returns_503(admin_client):
+    client, _ = admin_client
     with patch.object(_app_settings, "lab3d_url", ""):
         resp = client.get("/cabinet/3dlab/enter", follow_redirects=False)
     assert resp.status_code == 503
 
 
-def test_3dlab_enter_redirects_with_token(auth_client, db):
+def test_3dlab_enter_student_redirected_to_learning_while_lab_closed(auth_client, db):
+    """Лаборатория закрыта ученикам на сентябрь 2026 (`LAB3D_OPEN_FOR_STUDENTS`):
+    SSO-токен ученику не выдаётся."""
     client, _ = auth_client
     with patch.object(_app_settings, "lab3d_url", "https://3dlab.example.com"), \
          patch.object(_app_settings, "sso_token_ttl_minutes", 2):
         resp = client.get("/cabinet/3dlab/enter", follow_redirects=False)
     assert resp.status_code == 302
-    location = resp.headers["location"]
-    assert "3dlab.example.com/auth/sso" in location
-    assert "token=" in location
+    assert resp.headers["location"] == "/cabinet/learning"
 
 
 def test_3dlab_enter_admin_group_member_redirects_with_token(admin_client):
@@ -503,11 +503,13 @@ def test_3dlab_enter_admin_group_member_redirects_with_token(admin_client):
     assert "token=" in location
 
 
-def test_embedded_3dlab_available_for_student(auth_client):
+def test_embedded_3dlab_closed_for_student(auth_client):
+    """Созвон 16.09.2026: на сентябрь лаборатория ученикам закрыта. Прямая
+    ссылка уводит в ленту, а не на `/denied` про «закрытое сообщество»."""
     client, _ = auth_client
     resp = client.get("/3dlab", follow_redirects=False)
-    assert resp.status_code == 200
-    assert b"/static/3dlab/js/app.js" in resp.content
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/cabinet/learning"
 
 
 def test_embedded_3dlab_available_for_admin(admin_client):
@@ -517,8 +519,11 @@ def test_embedded_3dlab_available_for_admin(admin_client):
     assert b"/static/3dlab/js/app.js" in resp.content
 
 
-def test_embedded_3dlab_available_for_student_outside_vk_group(client, db, user_factory, session_factory):
-    """Since 2026-07-05, an assigned student role grants 3D Lab access."""
+def test_embedded_3dlab_available_for_student_outside_vk_group(client, db, user_factory, session_factory, monkeypatch):
+    """Since 2026-07-05, an assigned student role grants 3D Lab access —
+    когда лаборатория открыта ученикам (`LAB3D_OPEN_FOR_STUDENTS`)."""
+    from app.services import navigation
+    monkeypatch.setattr(navigation, "LAB3D_OPEN_FOR_STUDENTS", True)
     user = user_factory(is_group_member=False)
     sess = session_factory(user)
     client.cookies.set("session_id", sess.id)
@@ -527,22 +532,15 @@ def test_embedded_3dlab_available_for_student_outside_vk_group(client, db, user_
     assert b"/static/3dlab/js/app.js" in resp.content
 
 
-def test_embedded_3dlab_student_role_does_not_redirect_to_denied(client, db, user_factory, session_factory):
-    user = user_factory(is_group_member=False)
-    sess = session_factory(user)
-    client.cookies.set("session_id", sess.id)
-    resp = client.get("/3dlab", follow_redirects=True)
-    assert resp.status_code == 200
-    assert resp.url.path == "/3dlab"
-
-
 def test_denied_page_exists(client):
     resp = client.get("/denied", follow_redirects=False)
     assert resp.status_code == 403
     assert "404" not in resp.text
 
 
-def test_3dlab_enter_student_outside_vk_group_redirects_with_token(client, db, user_factory, session_factory):
+def test_3dlab_enter_student_outside_vk_group_redirects_with_token(client, db, user_factory, session_factory, monkeypatch):
+    from app.services import navigation
+    monkeypatch.setattr(navigation, "LAB3D_OPEN_FOR_STUDENTS", True)
     user = user_factory(is_group_member=False)
     sess = session_factory(user)
     client.cookies.set("session_id", sess.id)

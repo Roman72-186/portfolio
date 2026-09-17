@@ -9,8 +9,8 @@
 чтение. Внутри репозитория его нет: 4.8 ГБ в git не место, да и полный деплой
 заливает ровно индекс git, так что мимо него каталог не поедет.
 
-Условие доступа то же, что у самой страницы `/3dlab` в `api/auth.py`. Если оно
-там меняется — менять и здесь, иначе картинка разойдётся со страницей.
+Условие доступа то же, что у самой страницы `/3dlab` в `api/auth.py`: обе
+проверки идут через `services/navigation.py::can_open_3dlab`.
 """
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse
 
 from app.config import settings
 from app.dependencies import get_current_user
+from app.services.navigation import can_open_3dlab
 
 router = APIRouter()
 
@@ -63,7 +64,7 @@ def lab_asset(
     Без сессии `get_current_user` сам вернёт 401 — для fetch и <video> это
     правильнее, чем редирект на страницу входа, который они молча проглотят.
     """
-    if not user.get("is_group_member") and not user.get("is_admin") and user.get("role_rank", 0) < 1:
+    if not can_open_3dlab(user):
         raise HTTPException(status_code=403, detail="Нет доступа к 3D-лаборатории")
 
     file_path = _resolve_asset(asset_path)

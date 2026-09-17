@@ -44,6 +44,7 @@ from app.services.telegram_login import (
     verify_id_token as tg_verify_id_token,
 )
 from app.services import drive as drive_service
+from app.services.navigation import can_open_3dlab
 from app.services import guest_exam as guest_exam_service
 from app.services import intake_link as intake_link_service
 from app.services import telegram as telegram_service
@@ -1123,14 +1124,23 @@ async def telegram_webhook(
 # ── 3D Лаборатория ──────────────────────────────────────────────────────────
 
 
+def _lab3d_closed_redirect(user: dict) -> RedirectResponse:
+    """Ученика, пока лаборатория закрыта (`LAB3D_OPEN_FOR_STUDENTS`), — в ленту:
+    `/denied` говорит «только участникам закрытого сообщества», а ученик в нём
+    состоит, и текст читался бы как ошибка. Постороннему — прежний `/denied`."""
+    if user.get("role_rank", 0) == 1:
+        return RedirectResponse("/cabinet/learning", status_code=302)
+    return RedirectResponse("/denied", status_code=302)
+
+
 @router.get("/3dlab", response_class=HTMLResponse)
 def lab3d_page(
     request: Request,
     user: Annotated[dict, Depends(get_current_user)],
 ):
     """Serve the 3D Lab app for VK group members, students, and staff."""
-    if not user.get("is_group_member") and not user.get("is_admin") and user.get("role_rank", 0) < 1:
-        return RedirectResponse("/denied", status_code=302)
+    if not can_open_3dlab(user):
+        return _lab3d_closed_redirect(user)
     return templates.TemplateResponse(request, "3dlab.html", {
         "request": request,
         "lab_user": {"id": user["vk_id"], "name": user["name"]},
@@ -1144,8 +1154,8 @@ def enter_3dlab(
     db: Annotated[DBSession, Depends(get_db)],
 ):
     """Issue a short-lived SSO token and redirect the user to 3D Lab."""
-    if not user.get("is_group_member") and not user.get("is_admin") and user.get("role_rank", 0) < 1:
-        return RedirectResponse("/denied", status_code=302)
+    if not can_open_3dlab(user):
+        return _lab3d_closed_redirect(user)
 
     if not settings.lab3d_url:
         raise HTTPException(status_code=503, detail="3D Lab не настроена")

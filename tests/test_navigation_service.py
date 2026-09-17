@@ -31,7 +31,6 @@ def test_student_nav_items_keep_current_contract():
         )
         for item in items
     ] == [
-        ("3dlab", "/3dlab", "/3dlab", "3D Лаб", "3D Лаб", "3D Лаб", False),
         ("tracker", "/cabinet/tracker", "/cabinet/tracker", "Личный трекер", "Трекер", "Личный трекер", False),
         (
             "learning",
@@ -114,14 +113,6 @@ def test_staff_nav_items_keep_admin_contract():
             "Архив учеников",
             "Архив прошлых потоков: работы и переписки, только просмотр",
         ),
-        (
-            "guest_exam",
-            "/cabinet/staff/guest-exam",
-            "Гостевой режим",
-            "Гости",
-            "Гостевой режим",
-            "Гостевой режим — пробник для участников без регистрации",
-        ),
     ]
 
 
@@ -156,9 +147,10 @@ def test_staff_nav_items_keep_rank_specific_visibility_contract():
     assert "reports" not in [item.key for item in rank_3_items]
     assert "reports" in [item.key for item in rank_4_items]
     assert "reports" in [item.key for item in rank_5_items]
+    # Гостевой режим снят из меню у всех (созвон 16.09.2026), экран живёт по ссылке.
     assert "guest_exam" not in [item.key for item in rank_3_items]
-    assert "guest_exam" in [item.key for item in rank_4_items]
-    assert "guest_exam" in [item.key for item in rank_5_items]
+    assert "guest_exam" not in [item.key for item in rank_4_items]
+    assert "guest_exam" not in [item.key for item in rank_5_items]
     # Архив прошлых потоков открыт ГП с 14.09.2026 (владелец) — ранее только суперадмину.
     assert "archive" not in [item.key for item in rank_3_items]
     assert "archive" in [item.key for item in rank_4_items]

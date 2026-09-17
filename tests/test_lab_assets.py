@@ -34,8 +34,8 @@ def test_anonymous_gets_401(client, assets_dir):
     assert "text/html" not in r.headers.get("content-type", "")
 
 
-def test_logged_in_student_gets_file(client, assets_dir, regular_user, session_factory):
-    _login(client, session_factory, regular_user)
+def test_logged_in_staff_gets_file(client, assets_dir, admin_user, session_factory):
+    _login(client, session_factory, admin_user)
     r = client.get("/lab/asset/models/doric.gltf")
     assert r.status_code == 200
     assert r.content == b'{"asset":{"version":"2.0"}}'
@@ -44,16 +44,16 @@ def test_logged_in_student_gets_file(client, assets_dir, regular_user, session_f
     assert "private" in r.headers["cache-control"]
 
 
-def test_bin_served_as_octet_stream(client, assets_dir, regular_user, session_factory):
-    _login(client, session_factory, regular_user)
+def test_bin_served_as_octet_stream(client, assets_dir, admin_user, session_factory):
+    _login(client, session_factory, admin_user)
     r = client.get("/lab/asset/models/doric.bin")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("application/octet-stream")
 
 
-def test_range_request_supported(client, assets_dir, regular_user, session_factory):
+def test_range_request_supported(client, assets_dir, admin_user, session_factory):
     """Перемотка видео опирается на диапазоны — без них плеер не отматывает."""
-    _login(client, session_factory, regular_user)
+    _login(client, session_factory, admin_user)
     r = client.get("/lab/asset/models/doric.bin", headers={"Range": "bytes=1-2"})
     assert r.status_code == 206
     assert r.content == b"\x01\x02"
@@ -66,16 +66,24 @@ def test_range_request_supported(client, assets_dir, regular_user, session_facto
     "/etc/passwd",
     "models\doric.gltf",
 ])
-def test_escape_attempts_rejected(client, assets_dir, regular_user, session_factory, path):
-    _login(client, session_factory, regular_user)
+def test_escape_attempts_rejected(client, assets_dir, admin_user, session_factory, path):
+    _login(client, session_factory, admin_user)
     r = client.get(f"/lab/asset/{path}")
     assert r.status_code == 404, f"путь {path!r} не должен отдаваться"
     assert b"\xd0\xbd\xd0\xb5 \xd0\xbe\xd1\x82\xd0\xb4\xd0\xb0\xd0\xb2\xd0\xb0\xd1\x82\xd1\x8c" not in r.content
 
 
-def test_missing_file_is_404(client, assets_dir, regular_user, session_factory):
-    _login(client, session_factory, regular_user)
+def test_missing_file_is_404(client, assets_dir, admin_user, session_factory):
+    _login(client, session_factory, admin_user)
     assert client.get("/lab/asset/models/nope.gltf").status_code == 404
+
+
+def test_student_gets_403_while_lab_closed(client, assets_dir, regular_user, session_factory):
+    """Лаборатория закрыта ученикам на сентябрь 2026 (`LAB3D_OPEN_FOR_STUDENTS`):
+    файлы моделей по прямой ссылке ученик тоже не получает."""
+    _login(client, session_factory, regular_user)
+    r = client.get("/lab/asset/models/doric.gltf", follow_redirects=False)
+    assert r.status_code == 403
 
 
 def test_outsider_gets_403(client, assets_dir, user_factory, session_factory):

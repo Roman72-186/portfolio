@@ -15,6 +15,22 @@ from dataclasses import dataclass
 # его как не показывали, так и не показывают.
 LEARNING_SPACE_LABEL = "Актуальное образовательное пространство"
 
+# 3D-лаборатория закрыта ученикам на сентябрь 2026 (созвон 16.09.2026: «на
+# сентябрь лабораторию для детей отключить, с октября будем открывать часть
+# карточек»). Закрыто и в меню, и по прямой ссылке — страница, SSO-вход и
+# файлы моделей проверяют один и тот же `can_open_3dlab`. Персонал и
+# участники сообщества без роли ученика лабораторию видят как раньше.
+# Открыть обратно — поставить True.
+LAB3D_OPEN_FOR_STUDENTS = False
+
+
+def can_open_3dlab(user: dict) -> bool:
+    """Пускать ли пользователя в 3D-лабораторию: страница, SSO и ассеты."""
+    role_rank = user.get("role_rank", 0)
+    if role_rank == 1 and not LAB3D_OPEN_FOR_STUDENTS:
+        return False
+    return bool(user.get("is_group_member") or user.get("is_admin") or role_rank >= 1)
+
 
 @dataclass(frozen=True)
 class NavItem:
@@ -266,16 +282,10 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         icon="students",
         min_rank=4,
     ),
-    StaffNavItem(
-        key="guest_exam",
-        href="/cabinet/staff/guest-exam",
-        sidebar_label="Гостевой режим",
-        pill_label="Гости",
-        aria_label="Гостевой режим",
-        tooltip="Гостевой режим — пробник для участников без регистрации",
-        icon="mock",
-        min_rank=4,
-    ),
+    # «Гостевой режим» снят из меню (созвон 16.09.2026: «гостевой режим можно
+    # скрыть, он уже не нужен»). Скрыт только пункт: экран
+    # `/cabinet/staff/guest-exam` и гостевые ссылки работают, а данные гостей
+    # сносить нельзя — AGENTS.md, инвариант 9 (перенос в точку А не решён).
 )
 
 
@@ -291,6 +301,8 @@ def student_nav_items(access_expired: bool = False) -> tuple[StudentNavItem, ...
     закрытый доступ."""
     if access_expired:
         return tuple(item for item in STUDENT_NAV_ITEMS if item.key == "personal")
+    if not LAB3D_OPEN_FOR_STUDENTS:
+        return tuple(item for item in STUDENT_NAV_ITEMS if item.key != "3dlab")
     return STUDENT_NAV_ITEMS
 
 
