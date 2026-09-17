@@ -28,7 +28,8 @@
     {% if notifications %}
     <div class="notif-list">
         {% for n in notifications %}
-        {% set href = '/cabinet/cycle' if n.work_id else (homework_feedback_urls.get(n.homework_submission_id) if n.homework_submission_id else none) %}
+        {% set task_feedback_href = (('/cabinet/staff/task-block-submissions/' if user.role_rank >= 2 else '/cabinet/task-block-submissions/') ~ n.task_block_submission_id ~ '/feedback') if n.task_block_submission_id else none %}
+        {% set href = '/cabinet/cycle' if n.work_id else (homework_feedback_urls.get(n.homework_submission_id) if n.homework_submission_id else task_feedback_href) %}
         {% if href %}
         <a href="{{ href }}" class="notif-card {% if not n.is_read %}unread{% endif %}">
         {% else %}

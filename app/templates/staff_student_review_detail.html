@@ -95,22 +95,16 @@
                     {% endfor %}
                 </div>
                 {% endif %}
-                <div class="prg-review-feedback" data-review-comment-form>
-                    <label class="prg-field" for="review-comment-{{ item.item_id }}">
-                        Обратная связь ученику
-                        <textarea id="review-comment-{{ item.item_id }}" maxlength="4000"
-                                  data-review-comment>{{ item.review_comment or '' }}</textarea>
-                        <span class="prg-hint">Один комментарий. Его можно изменить после сохранения.</span>
-                    </label>
-                    <div class="prg-actions">
-                        <button type="button" class="btn-blue" data-save-review-comment>Сохранить комментарий</button>
-                        <p class="prg-message" data-review-comment-status aria-live="polite"></p>
-                    </div>
-                </div>
+                {% if item.review_comment %}
+                <div class="alert alert-success"><strong>Ранее сохранённый комментарий</strong><p>{{ item.review_comment }}</p></div>
+                {% endif %}
                 {% endif %}
             </div>
             <div class="prg-item-actions">
                 {% if item.domain in ('task_block', 'block_work') %}
+                {% if item.domain == 'block_work' %}
+                <a class="btn-blue" href="/cabinet/staff/task-block-submissions/{{ item.item_id }}/feedback">Оценить и ответить</a>
+                {% endif %}
                 <button type="button" class="btn-outline" data-review-toggle
                         data-reviewed="{{ 'true' if item.is_reviewed else 'false' }}">
                     {{ 'Вернуть в очередь' if item.is_reviewed else 'Просмотрено' }}

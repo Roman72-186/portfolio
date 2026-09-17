@@ -611,7 +611,17 @@ def notifications_feed(
             "work_id": n.work_id,
             "href": (
                 "/cabinet/cycle" if n.work_id
-                else homework_feedback_urls.get(n.homework_submission_id)
+                else (
+                    homework_feedback_urls.get(n.homework_submission_id)
+                    or (
+                        (
+                            f"/cabinet/staff/task-block-submissions/{n.task_block_submission_id}/feedback"
+                            if user["role_rank"] >= 2
+                            else f"/cabinet/task-block-submissions/{n.task_block_submission_id}/feedback"
+                        )
+                        if n.task_block_submission_id else None
+                    )
+                )
             ),
             "created_at": n.created_at.strftime("%d.%m.%Y %H:%M") if n.created_at else "",
         }

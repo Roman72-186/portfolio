@@ -562,6 +562,14 @@ scope)` и свойством `answered` (одна попытка: после о
                     feedback.appendChild(elHtml('div', 'lrn-blk-feedback-text', block.review_comment_html));
                     wrap.appendChild(feedback);
                 }
+                if (block.score !== null && block.score !== undefined) {
+                    wrap.appendChild(el('p', 'lrn-blk-feedback-title', 'Оценка: ' + block.score + ' / 100'));
+                }
+                if (block.feedback_url) {
+                    var feedbackLink = el('a', 'btn-outline', 'Открыть обратную связь');
+                    feedbackLink.href = block.feedback_url;
+                    wrap.appendChild(feedbackLink);
+                }
 
                 var left = (block.max_files || 10) - (block.submitted_files || []).length;
                 if (left <= 0) {

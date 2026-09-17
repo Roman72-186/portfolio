@@ -46,7 +46,8 @@ feed-implementation-plan.md`. Роуты/шаблоны единой ленты 
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint,
+    Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, Numeric, String, Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -634,6 +635,14 @@ class TaskBlockSubmission(Base):
     )
     review_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Итоговая оценка за сдачу. Не связана с reviewed_at: преподаватель может
+    # сначала открыть диалог и дать рекомендации, а оценить после доработки.
+    score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    scored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scored_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )
@@ -647,6 +656,10 @@ class TaskBlockSubmission(Base):
     __table_args__ = (
         UniqueConstraint("block_id", "user_id", name="uq_task_block_submission_block_user"),
         Index("ix_task_block_submissions_user", "user_id"),
+        CheckConstraint(
+            "score IS NULL OR (score >= 0 AND score <= 100)",
+            name="ck_task_block_submissions_score_range",
+        ),
     )
 
 

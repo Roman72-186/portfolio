@@ -20,6 +20,9 @@ class Notification(Base):
     homework_submission_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("homework_submissions.id", ondelete="SET NULL"), nullable=True
     )
+    task_block_submission_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("task_block_submissions.id", ondelete="SET NULL"), nullable=True
+    )
     # Голосовое по уровню точки А (`point_a.py::maybe_notify_point_a_level`).
     # NULL у всех остальных уведомлений — только это уведомление несёт звук.
     audio_url: Mapped[str | None] = mapped_column(String(500), nullable=True)

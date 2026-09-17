@@ -1224,6 +1224,11 @@ def mark_submitted(
         submission.comment = comment or None
     submission.reviewed_at = None
     submission.reviewed_by_id = None
+    # Новая версия работы требует новой оценки. История диалога сохраняется,
+    # чтобы ученик и преподаватель видели причину пересдачи.
+    submission.score = None
+    submission.scored_at = None
+    submission.scored_by_id = None
     db.flush()
     return submission
 

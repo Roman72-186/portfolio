@@ -332,6 +332,12 @@ def _submission_payload(db: DBSession, block, user_id: int) -> dict:
     images = (
         list_task_block_submission_images(db, submission.id) if submission else []
     )
+    from app.models.task_block_feedback import TaskBlockFeedback
+    has_feedback = bool(
+        submission and db.query(TaskBlockFeedback.id).filter(
+            TaskBlockFeedback.submission_id == submission.id
+        ).first()
+    )
     return {
         "upload_endpoint": f"/cabinet/tracker/blocks/{block.id}/upload",
         "max_files": MAX_SUBMISSION_IMAGES,
@@ -342,6 +348,11 @@ def _submission_payload(db: DBSession, block, user_id: int) -> dict:
         "review_comment_html": (
             format_rich_text(submission.review_comment)
             if submission and submission.review_comment else None
+        ),
+        "score": float(submission.score) if submission and submission.score is not None else None,
+        "feedback_url": (
+            f"/cabinet/task-block-submissions/{submission.id}/feedback"
+            if submission and (has_feedback or submission.score is not None) else None
         ),
     }
 

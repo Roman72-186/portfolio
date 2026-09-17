@@ -351,12 +351,16 @@ def test_new_upload_returns_the_work_to_the_queue(auth_client, db):
     _post(client, block.id)
     submission = get_submission(db, block_id=block.id, user_id=user.id)
     submission.reviewed_at = submission.created_at
+    submission.score = 91
+    submission.scored_at = submission.created_at
     db.commit()
 
     _post(client, block.id)
 
     db.refresh(submission)
     assert submission.reviewed_at is None
+    assert submission.score is None
+    assert submission.scored_at is None
 
 
 # ── конструктор ─────────────────────────────────────────────────────────────

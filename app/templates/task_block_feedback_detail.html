@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Обратная связь – {{ task.title }}{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=35">
+<link rel="stylesheet" href="/static/css/homework_ios.css?v=5">
+{% endblock %}
+{% block content %}
+<div class="ios-homework prg-page">
+    <a class="back-link" href="{{ back_url }}">← Назад</a>
+    <div class="prg-head">
+        <div class="prg-head-copy">
+            <h1>Обратная связь по работе</h1>
+            <p>{{ task.title }}{% if block.title %} · {{ block.title }}{% endif %}{% if student %} · {{ student.name }}{% endif %}</p>
+        </div>
+    </div>
+
+    <section class="card">
+        <h2 class="section-label">Работа ученика</h2>
+        {% if submission.comment %}<p>{{ submission.comment }}</p>{% endif %}
+        {% if submission_images %}
+        <div class="photo-grid" data-gallery="submission-{{ submission.id }}">
+            {% for image in submission_images %}
+            <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото работы">
+                <img src="{{ image.image_s3_url }}" alt="Работа ученика" loading="lazy">
+            </button>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% if submission.review_comment %}
+        <div class="alert alert-success">
+            <strong>Ранее сохранённый комментарий</strong>
+            <p>{{ submission.review_comment }}</p>
+        </div>
+        {% endif %}
+    </section>
+
+    <section class="card">
+        <h2 class="section-label">Оценка</h2>
+        {% if viewer_role != 'student' %}
+        <form class="prg-form" data-score-form data-submission-id="{{ submission.id }}">
+            <label class="prg-field" for="submission-score">Оценка от 0 до 100
+                <input id="submission-score" class="field-input" name="score" type="number" min="0" max="100" step="1" required value="{{ submission.score|int if submission.score is not none else '' }}">
+            </label>
+            <div class="prg-actions">
+                <button type="submit" class="btn-blue">Сохранить оценку</button>
+                <p class="prg-message" aria-live="polite"></p>
+            </div>
+        </form>
+        <div class="prg-actions">
+            <button type="button" class="btn-outline" data-review-toggle
+                    data-reviewed="{{ 'true' if submission.reviewed_at else 'false' }}">
+                {{ 'Вернуть в очередь' if submission.reviewed_at else 'Пометить проверенной' }}
+            </button>
+            <p class="prg-message" data-review-status aria-live="polite"></p>
+        </div>
+        {% elif submission.score is not none %}
+        <p><strong>{{ submission.score|int }} / 100</strong></p>
+        {% else %}
+        <p class="card-desc">Оценка появится после проверки.</p>
+        {% endif %}
+    </section>
+
+    <section class="card">
+        <h2 class="section-label">Диалог</h2>
+        {% if messages %}
+        <div class="hw-messages">
+            {% for message in messages %}
+            <div class="hw-msg {{ 'from-me' if message.sender_id == user.user_id else 'from-them' }}">
+                <div class="hw-msg-bubble">
+                    <span class="chip">{{ message.sender_role_label }}{% if message.sender_name %} · {{ message.sender_name }}{% endif %}</span>
+                    {% if message.text %}<p class="hw-msg-text">{{ message.text }}</p>{% endif %}
+                    {% if message.photo_s3_url %}<img class="hw-msg-photo" src="{{ message.photo_s3_url }}" alt="Фото к обратной связи" loading="lazy">{% endif %}
+                    {% if message.video_url %}<a class="btn-outline hw-msg-video-link" href="{{ message.video_url }}" target="_blank" rel="noopener noreferrer">Смотреть видео</a>{% endif %}
+                    <div class="hw-msg-meta">{{ message.created_at[:16].replace('T', ' ') if message.created_at }}</div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state"><div class="empty-text">
+            {% if viewer_role == 'student' %}Преподаватель ещё не оставил обратную связь.{% else %}Сообщений пока нет – напиши первым.{% endif %}
+        </div></div>
+        {% endif %}
+
+        {% if viewer_role != 'student' or messages %}
+        <form class="hw-async-form hw-form" method="post"
+              action="{{ '/cabinet/task-block-submissions/' ~ submission.id ~ '/messages' if viewer_role == 'student' else '/cabinet/staff/task-block-submissions/' ~ submission.id ~ '/messages' }}"
+              enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <label class="form-label" for="feedback-text">{{ 'Твой ответ' if viewer_role == 'student' else 'Сообщение ученику' }}</label>
+            <textarea id="feedback-text" class="field-input" name="text" rows="3"></textarea>
+            <label class="form-label hw-label-gap" for="feedback-photo">Фото, необязательно</label>
+            <input id="feedback-photo" type="file" class="field-input" name="photo" accept="image/*">
+            <label class="form-label hw-label-gap" for="feedback-video-link">Ссылка на видео, необязательно</label>
+            <input id="feedback-video-link" type="url" class="field-input" name="video_link" placeholder="https://...">
+            <button type="submit" class="btn-blue hw-submit">Отправить</button>
+            <p class="prg-message" aria-live="polite"></p>
+        </form>
+        {% else %}
+        <p class="card-desc hw-hint">Ответить можно после первого сообщения преподавателя.</p>
+        {% endif %}
+    </section>
+</div>
+
+{% include "partials/lightbox.html" %}
+<script>
+(function () {
+    var csrfToken = {{ csrf_token(request)|tojson }};
+    var scoreForm = document.querySelector('[data-score-form]');
+    if (scoreForm) scoreForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        var button = scoreForm.querySelector('button[type=submit]');
+        var message = scoreForm.querySelector('.prg-message');
+        var score = Number(scoreForm.elements.score.value);
+        button.disabled = true;
+        fetch('/cabinet/staff/task-block-submissions/' + scoreForm.dataset.submissionId + '/score', {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+            body: JSON.stringify({score: score})
+        }).then(function (response) {
+            if (!response.ok) throw new Error('Проверь оценку: допустимо от 0 до 100.');
+            message.classList.remove('is-error');
+            message.textContent = 'Оценка сохранена';
+        }).catch(function (error) {
+            message.classList.add('is-error');
+            message.textContent = error.message;
+        }).finally(function () { button.disabled = false; });
+    });
+
+    var reviewButton = document.querySelector('[data-review-toggle]');
+    if (reviewButton) reviewButton.addEventListener('click', function () {
+        var reviewed = reviewButton.dataset.reviewed !== 'true';
+        var status = document.querySelector('[data-review-status]');
+        reviewButton.disabled = true;
+        fetch('/cabinet/staff/students-review/block-work/{{ submission.id }}/reviewed', {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+            body: JSON.stringify({reviewed: reviewed})
+        }).then(function (response) {
+            if (!response.ok) throw new Error('Не получилось изменить статус.');
+            reviewButton.dataset.reviewed = reviewed ? 'true' : 'false';
+            reviewButton.textContent = reviewed ? 'Вернуть в очередь' : 'Пометить проверенной';
+            status.classList.remove('is-error');
+            status.textContent = reviewed ? 'Работа проверена' : 'Работа возвращена в очередь';
+        }).catch(function (error) {
+            status.classList.add('is-error');
+            status.textContent = error.message;
+        }).finally(function () { reviewButton.disabled = false; });
+    });
+
+    document.querySelectorAll('.hw-async-form').forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+            event.preventDefault();
+            var message = form.querySelector('.prg-message');
+            var button = form.querySelector('button[type=submit]');
+            button.disabled = true;
+            fetch(form.action, {
+                method: 'POST', credentials: 'same-origin',
+                headers: {'X-CSRF-Token': csrfToken}, body: new FormData(form)
+            }).then(function (response) {
+                return response.json().catch(function () { return {}; }).then(function (data) {
+                    if (!response.ok || data.ok === false) throw new Error(data.error || 'Не получилось отправить сообщение.');
+                });
+            }).then(function () { window.location.reload(); }).catch(function (error) {
+                button.disabled = false;
+                message.classList.add('is-error');
+                message.textContent = error.message;
+            });
+        });
+    });
+})();
+</script>
+{% if viewer_role == 'student' %}
+{% set active_tab = "learning" %}
+{% include "partials/bottom_nav.html" %}
+{% endif %}
+{% endblock %}

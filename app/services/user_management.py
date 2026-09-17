@@ -16,6 +16,8 @@ from app.models.feature_period import FeaturePeriod
 from app.models.feedback import Feedback, FeedbackMessage
 from app.models.homework_feedback import HomeworkFeedback, HomeworkFeedbackMessage
 from app.models.homework_submission import HomeworkSubmission
+from app.models.task_block import TaskBlockSubmission
+from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.models.legacy_portfolio_photo import LegacyPortfolioPhoto
 from app.models.login_token import LoginToken
 from app.models.mock_exam_lock import MockExamLock
@@ -154,7 +156,8 @@ def soft_delete_user(db: DBSession, target_user_id: int, performed_by_id: int) -
 
 
 def _foreign_actor_refs(db: DBSession, target_user_id: int, *,
-                         work_ids: list[int], submission_ids: list[int]) -> list[str]:
+                         work_ids: list[int], submission_ids: list[int],
+                         block_submission_ids: list[int]) -> list[str]:
     """Ищет строки, где target_user_id — актор (куратор/отправитель) в ЧУЖИХ
     диалогах/данных, а не в своих собственных (те и так исчезнут вместе с её
     работами/сдачами домашки). Для роли «ученик» такое в норме невозможно
@@ -194,6 +197,28 @@ def _foreign_actor_refs(db: DBSession, target_user_id: int, *,
         q = q.filter(~HomeworkFeedbackMessage.feedback_id.in_(db.query(own_hw_feedback_ids.c.id)))
     if q.count():
         problems.append("homework_feedback_messages.sender_id (чужие сообщения по домашке)")
+
+    q = db.query(TaskBlockFeedback.id).filter(TaskBlockFeedback.curator_id == target_user_id)
+    if block_submission_ids:
+        q = q.filter(~TaskBlockFeedback.submission_id.in_(block_submission_ids))
+    if q.count():
+        problems.append("task_block_feedbacks.curator_id (чужие диалоги по заданиям)")
+
+    q = db.query(TaskBlockFeedbackMessage.id).filter(
+        TaskBlockFeedbackMessage.sender_id == target_user_id
+    )
+    own_block_feedback_ids = (
+        db.query(TaskBlockFeedback.id).filter(
+            TaskBlockFeedback.submission_id.in_(block_submission_ids)
+        ).subquery()
+        if block_submission_ids else None
+    )
+    if own_block_feedback_ids is not None:
+        q = q.filter(
+            ~TaskBlockFeedbackMessage.feedback_id.in_(db.query(own_block_feedback_ids.c.id))
+        )
+    if q.count():
+        problems.append("task_block_feedback_messages.sender_id (чужие сообщения по заданиям)")
 
     if db.query(CuratorReport.id).filter(CuratorReport.curator_id == target_user_id).count():
         problems.append("curator_reports.curator_id (видео-отчёты куратора)")
@@ -249,9 +274,14 @@ def hard_delete_user(
         r[0] for r in db.query(HomeworkSubmission.id)
         .filter(HomeworkSubmission.user_id == target_user_id).all()
     ]
+    block_submission_ids = [
+        row[0] for row in db.query(TaskBlockSubmission.id)
+        .filter(TaskBlockSubmission.user_id == target_user_id).all()
+    ]
 
     foreign_refs = _foreign_actor_refs(
-        db, target_user_id, work_ids=work_ids, submission_ids=submission_ids
+        db, target_user_id, work_ids=work_ids, submission_ids=submission_ids,
+        block_submission_ids=block_submission_ids,
     )
     if foreign_refs:
         return False, (
@@ -265,6 +295,7 @@ def hard_delete_user(
             db.query(Feedback.id).filter(Feedback.work_id.in_(work_ids)).count() if work_ids else 0
         ),
         "сдачи домашних работ": len(submission_ids),
+        "сдачи работ в заданиях": len(block_submission_ids),
         "экзаменационные циклы": db.query(ExamCycle.id).filter(ExamCycle.user_id == target_user_id).count(),
         "уведомления": db.query(Notification.id).filter(Notification.user_id == target_user_id).count(),
     }

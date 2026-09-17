@@ -131,6 +131,13 @@ def s3_path_homework_feedback(submission_id: int, filename: str) -> str:
     return f"feedback-domashka/{submission_id}/{rnd}.{ext}"
 
 
+def s3_path_task_block_feedback(submission_id: int, filename: str) -> str:
+    """Фото ОС по блоку задания: feedback-zadaniya/{submission_id}/{random}.ext."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpg"
+    rnd = uuid.uuid4().hex[:8]
+    return f"feedback-zadaniya/{submission_id}/{rnd}.{ext}"
+
+
 def s3_path_avatar(vk_id: int, filename: str) -> str:
     """Аватар, загруженный учеником вручную: Аватары/{vk_id}/{vk_id}_{random8}.ext."""
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpg"
