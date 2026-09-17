@@ -200,7 +200,7 @@ body.has-video-pseudo-fullscreen {
                     {# picture-in-picture не выдаём намеренно: PiP выносит кадр из DOM
                        страницы, и ватермарка со зрителем остаётся здесь. По той же
                        причине у iframe нет allowfullscreen — фуллскрин только свой. #}
-                    allow="accelerometer; gyroscope; encrypted-media"
+                    allow="accelerometer; gyroscope; autoplay; encrypted-media"
                     referrerpolicy="strict-origin-when-cross-origin"></iframe>
                 <img class="video-cover" data-role="cover" alt="" hidden>
                 <button type="button" class="video-cover-play" data-role="cover-play" hidden>
