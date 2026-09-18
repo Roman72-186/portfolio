@@ -580,7 +580,7 @@
                     })
                     .catch(function (error) {
                         if (error.message === 'access_closed') showStatus('Доступ к уроку закрыт. Обнови страницу.', true);
-                        else if (error.message === 'session_expired') showStatus('Войди заново, чтобы продолжить просмотр.', true);
+                        else if (error.message === 'session_expired') showStatus('Обнови страницу, чтобы продолжить просмотр.', true);
                     })
                     .finally(function () { playerUrlRefreshInFlight = false; });
             }
@@ -635,6 +635,13 @@
             var pendingProgress = null;
             var savingDisabled = false;
             var hasReportedSaved = false;
+            // Разовый сбой сохранения ученику не показываем: выкатка
+            // перезапускает приложение на 10–20 секунд, и heartbeat (раз в
+            // 10 сек) попадает в эту паузу. До 18.09.2026 красная надпись
+            // появлялась с первого же сбоя и не уходила после успешных
+            // сохранений следом. Порог — три сбоя подряд, около 30 секунд.
+            var SAVE_FAILURES_BEFORE_ERROR = 3;
+            var saveFailures = 0;
 
             function finiteNumber(value) {
                 var number = Number(value);
@@ -682,6 +689,9 @@
                     if (response.status === 403) { savingDisabled = true; throw new Error('session_expired'); }
                     if (!response.ok) throw new Error('save_failed');
                     lastSavedSeconds = progress.position_seconds;
+                    var recovered = saveFailures >= SAVE_FAILURES_BEFORE_ERROR;
+                    saveFailures = 0;
+                    if (recovered && !progress.completed) setStatus('Место просмотра сохранено.', false);
                     if (!hasReportedSaved && !progress.completed) {
                         hasReportedSaved = true;
                         setStatus('Место просмотра сохранено.', false);
@@ -690,8 +700,12 @@
                     return response.json().catch(function () { return null; });
                 }).then(function (respData) {
                 }).catch(function (error) {
-                    if (error.message === 'session_expired') setStatus('Войди заново, чтобы сохранять место просмотра.', true);
-                    else setStatus('Не удалось сохранить место. Видео продолжит работать.', true);
+                    if (error.message === 'session_expired') setStatus('Обнови страницу, чтобы сохранять место просмотра.', true);
+                    // Сохранение в конце ролика следом уже не повторится —
+                    // его сбой показываем сразу.
+                    else if (++saveFailures >= SAVE_FAILURES_BEFORE_ERROR || progress.completed) {
+                        setStatus('Не удалось сохранить место. Видео продолжит работать.', true);
+                    }
                 }).finally(function () {
                     saveInFlight = false;
                     if (pendingProgress) {
