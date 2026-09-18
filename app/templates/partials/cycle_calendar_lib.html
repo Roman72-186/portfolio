@@ -291,10 +291,10 @@ window.CYCCAL = window.CYCCAL || (function () {
         if (!inst.showFeedback) return '';
         if (!w.cycle_id) return '';
         if (!w.feedback) {
-            return '<div class="cal-fb"><div class="cal-fb-title">Обратная связь куратора</div><div class="cal-fb-empty">Куратор пока не оставил обратную связь по этой работе.</div></div>';
+            return '<div class="cal-fb"><div class="cal-fb-title">Обратная связь по работе</div><div class="cal-fb-empty">Обратной связи по этой работе пока нет.</div></div>';
         }
         const f = w.feedback;
-        let html = '<div class="cal-fb"><div class="cal-fb-title">Обратная связь куратора</div>';
+        let html = '<div class="cal-fb"><div class="cal-fb-title">Обратная связь по работе</div>';
         if (f.greeting)        html += '<p><strong>Приветствие.</strong> '+nl2br(f.greeting)+'</p>';
         if (f.strengths)       html += '<p><strong>Сильные стороны.</strong> '+nl2br(f.strengths)+'</p>';
         if (f.weaknesses)      html += '<p><strong>Слабые стороны.</strong> '+nl2br(f.weaknesses)+'</p>';
@@ -305,7 +305,7 @@ window.CYCCAL = window.CYCCAL || (function () {
             html += '</div>';
         }
         if (!f.greeting && !f.strengths && !f.weaknesses && !f.recommendations && !(f.photos && f.photos.length)) {
-            html += '<div class="cal-fb-empty">Куратор пока не оставил обратную связь по этой работе.</div>';
+            html += '<div class="cal-fb-empty">Обратной связи по этой работе пока нет.</div>';
         }
         html += '</div>';
         return html;

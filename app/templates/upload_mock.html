@@ -11,7 +11,7 @@
             Сдать пробник
         </h1>
         <p class="ios-subtitle">
-            Загрузи работы пробного экзамена. После проверки куратор выставит оценку.
+            Загрузи работы пробного экзамена. После проверки здесь появятся оценка и обратная связь.
         </p>
     </div>
 
@@ -25,7 +25,7 @@
 
     {% if success %}
     <div class="alert alert-success" style="margin-bottom:20px">
-        Загружено {{ success_count }} фото! Куратор проверит и выставит оценку.
+        Загружено {{ success_count }} фото! После проверки здесь появится оценка.
         <a href="/cabinet" style="margin-left:8px;font-weight:700">В кабинет →</a>
     </div>
     {% endif %}
@@ -489,7 +489,7 @@ function finishOk() {
     if (totalStageCount > 0) {
         msg += ' и ' + totalStageCount + ' ' + stageWord(totalStageCount);
     }
-    msg += '. Ожидай обратной связи от куратора. ' +
+    msg += '. Жди результат проверки. ' +
         '<a href="/cabinet" style="font-weight:700">В кабинет →</a>';
     showUploadMsg(msg, false);
     setTimeout(function(){ window.location.href = '/cabinet'; }, 1200);

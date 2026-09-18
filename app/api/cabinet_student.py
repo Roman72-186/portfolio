@@ -1117,7 +1117,7 @@ def render_cycle_calendar(
         # куратором отработки конкретному ученику, а не общее окно дат.
         from app.api.upload import _has_retake_assignment
         upload_open = _has_retake_assignment(db, target_user_id)
-        upload_msg = None if upload_open else "Отработку назначает куратор."
+        upload_msg = None if upload_open else "Отработка пока недоступна."
     else:
         upload_open, upload_msg = is_feature_available(db, feature_key)
     return templates.TemplateResponse(request, "cabinet_cycle_calendar.html", {

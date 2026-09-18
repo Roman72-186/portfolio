@@ -8,9 +8,9 @@
 <div class="cyc-page ios-cycle">
     <section class="cyc-hero">
         <h1>Обратная связь</h1>
-        <p>Здесь хранится диалог с куратором и статус проверки работ.</p>
+        <p>Здесь хранится обратная связь и статус проверки работ.</p>
         <span class="badge">Циклов всего: {{ cycles_count }}</span>
-        {{ hint("Цикл – это один пробник: билет, твоя работа и оценка куратора.") }}
+        {{ hint("Цикл – это один пробник: билет, твоя работа и результат проверки.") }}
         {% set total_unread = open_cycles|sum(attribute='unread_count') %}
         {% if total_unread and total_unread > 0 %}<span class="badge">Новых сообщений: {{ total_unread }}</span>{% endif %}
     </section>

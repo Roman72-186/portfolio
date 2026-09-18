@@ -921,7 +921,7 @@ def test_retake_form_denied_without_assignment_even_with_active_period(auth_clie
 
     assert resp.status_code == 200
     assert "Отработки закрыты" in resp.text
-    assert "Отработку назначает куратор" in resp.text
+    assert "Отработка пока недоступна" in resp.text
 
 
 def test_send_mock_to_retake_keeps_subject_locked(admin_client, db, user_factory):

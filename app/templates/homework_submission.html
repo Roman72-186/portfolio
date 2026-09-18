@@ -96,7 +96,7 @@ app/static/css/homework_ios.css, переопределяющем эти общ�
         <p class="card-desc">Сообщений: {{ message_count }}.</p>
         {% else %}
         <p class="card-desc">
-            {% if viewer_role == 'student' %}Куратор ещё не оставил обратную связь.
+            {% if viewer_role == 'student' %}Обратной связи пока нет.
             {% else %}Сообщений пока нет – напиши первым.{% endif %}
         </p>
         {% endif %}

@@ -1075,7 +1075,7 @@ def test_otrabotka_final_denied_without_personal_assignment(auth_client, db):
 
     assert resp.status_code == 403
     assert resp.json()["error"] == (
-        "Отработку назначает куратор. Дождись, когда он отправит твою работу на отработку."
+        "Отработка пока недоступна. Дождись, когда она появится в заданиях."
     )
 
 

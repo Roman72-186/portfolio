@@ -268,7 +268,7 @@ def notify_counterpart(
     if sender_role == ROLE_STUDENT:
         title = "Ученик ответил в обратной связи"
     else:
-        title = "Куратор оставил обратную связь"
+        title = "По работе появилась обратная связь"
     n = Notification(
         user_id=recipient_id,
         title=title,

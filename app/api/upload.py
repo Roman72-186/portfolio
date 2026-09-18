@@ -119,7 +119,7 @@ WINDOW_CLOSED_FALLBACK = (
 )
 WINDOW_DELETE_CLOSED = "Окно загрузки закрыто, удалить работу уже нельзя."
 WINDOW_DELETE_REVIEWED = (
-    "Работу проверил преподаватель, удалить её нельзя. Напиши куратору."
+    "Работа уже проверена, поэтому удалить её нельзя. Напиши в поддержку."
 )
 
 
@@ -128,7 +128,7 @@ def _window_closed_message(closed: PortfolioWindow | None) -> str:
         return WINDOW_CLOSED_FALLBACK
     return (
         f"Работы принимали до {format_deadline_msk(closed.closes_at)}. "
-        "Если нужно что-то добавить или заменить, напиши куратору."
+        "Если нужно что-то добавить или заменить, напиши в поддержку."
     )
 
 
@@ -427,7 +427,7 @@ def _retake_available_for_user(db: DBSession, user_id: int) -> tuple[bool, str |
     # работу ученика на отработку — а не ручное окно дат.
     if _has_retake_assignment(db, user_id):
         return True, None
-    return False, "Отработку назначает куратор. Дождись, когда он отправит твою работу на отработку."
+    return False, "Отработка пока недоступна. Дождись, когда она появится в заданиях."
 
 
 _N8N_MAX_RETRIES = 3
@@ -1514,7 +1514,7 @@ async def upload_mock_exam(
     available_tickets = get_unsubmitted_active_tickets(db, user["user_id"], subject)
     if not available_tickets:
         return _err(
-            f"Пробник по «{subject}» уже сдан в текущем цикле. Дождись обратной связи куратора."
+            f"Пробник по «{subject}» уже сдан в текущем цикле. Дождись результата проверки."
         )
     active_ticket = next(
         (

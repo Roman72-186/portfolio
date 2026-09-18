@@ -324,7 +324,7 @@ async def post_dialog_message(
             raise HTTPException(status_code=403, detail="Это не ваш цикл")
         fb = db.query(Feedback).filter(Feedback.work_id == work_id).first()
         if fb is None:
-            raise HTTPException(status_code=403, detail="Жди обратной связи куратора, потом сможешь ответить")
+            raise HTTPException(status_code=403, detail="Жди первое сообщение, потом сможешь ответить")
         has_staff_msg = (
             db.query(FeedbackMessage)
             .filter(
@@ -335,7 +335,7 @@ async def post_dialog_message(
             is not None
         )
         if not has_staff_msg:
-            raise HTTPException(status_code=403, detail="Жди обратной связи куратора, потом сможешь ответить")
+            raise HTTPException(status_code=403, detail="Жди первое сообщение, потом сможешь ответить")
         recipient_id = fb.curator_id
     else:
         # feedback.write: куратор/админ/суперадмин. Модератор (rank 3) видит
@@ -820,7 +820,7 @@ def edit_feedback_message(
 
     notification = Notification(
         user_id=work.user_id,
-        title="Куратор обновил обратную связь",
+        title="Обратная связь по работе обновлена",
         text=f"По работе #{work.id} ({work.subject or ''}) обратная связь была изменена.",
         work_id=work.id,
     )

@@ -150,7 +150,7 @@ def is_mock_exam_attempt_open(
 def mock_exam_window_error(*, for_start: bool, ticket: "ExamTicket | None" = None) -> str:
     if ticket is None:
         action = "Начать пробник" if for_start else "Сдать пробник"
-        return f"{action} можно в период доступа, назначенный куратором"
+        return f"{action} можно в назначенный период доступа"
     opens = ticket_opens_at(ticket)
     if for_start:
         cutoff = ticket_start_cutoff_at(ticket)

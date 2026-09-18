@@ -641,7 +641,7 @@ async def upload_otrabotka_final(
     from app.api.upload import _has_retake_assignment
     if not _has_retake_assignment(db, user["user_id"]):
         return JSONResponse(
-            {"success": False, "error": "Отработку назначает куратор. Дождись, когда он отправит твою работу на отработку."},
+            {"success": False, "error": "Отработка пока недоступна. Дождись, когда она появится в заданиях."},
             status_code=403,
         )
     if subject not in MOCK_SUBJECTS:

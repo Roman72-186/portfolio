@@ -54,7 +54,7 @@ tests/test_reuse_ratchet.py.
         {% else %}
         <div class="empty-state">
             <div class="empty-text">
-                {% if viewer_role == 'student' %}Куратор ещё не оставил обратную связь.
+                {% if viewer_role == 'student' %}Обратной связи пока нет.
                 {% else %}Сообщений пока нет – напиши первым.{% endif %}
             </div>
         </div>
@@ -100,7 +100,7 @@ tests/test_reuse_ratchet.py.
             <p class="prg-message"></p>
         </form>
         {% else %}
-        <p class="card-desc hw-hint">Жди первое сообщение куратора – тогда сможешь ответить.</p>
+        <p class="card-desc hw-hint">Жди первое сообщение – тогда сможешь ответить.</p>
         {% endif %}
     </div>
 </div>

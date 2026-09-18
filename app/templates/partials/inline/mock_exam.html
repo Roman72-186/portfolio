@@ -191,7 +191,7 @@ mock_exam-задания одной недели), синглтон-id стол�
                 }
                 if (data.locked) {
                     lockedTextEl.textContent = data.locked_reason === 'waiting'
-                        ? 'Работа сдана · жди обратную связь куратора.'
+                        ? 'Работа сдана · жди результат проверки.'
                         : 'Работа сдана · жди следующий пробник.';
                     lockedEl.hidden = false;
                     return;
@@ -634,7 +634,7 @@ mock_exam-задания одной недели), синглтон-id стол�
             submitBtn.innerHTML = 'Готово ✓';
             var msg = 'Сдано одно финальное фото';
             if (stageState.existing > 0) msg += ' и ' + stageState.existing + ' ' + stageWord(stageState.existing);
-            msg += '. Ожидай обратной связи от куратора.';
+            msg += '. Жди результат проверки.';
             showUploadMsg(msg, false);
         }
     };

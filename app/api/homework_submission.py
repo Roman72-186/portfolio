@@ -432,7 +432,7 @@ async def student_send_homework_message(
     )
     if fb is None:
         raise HTTPException(
-            status_code=403, detail="Куратор ещё не ответил – дождись первого сообщения"
+            status_code=403, detail="Обратной связи пока нет – дождись первого сообщения"
         )
     return await _post_message(
         request, submission, fb, db, user, text, photo,

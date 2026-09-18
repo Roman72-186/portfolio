@@ -96,7 +96,7 @@
         {% elif submission.status == "submitted" %}
             <div style="font-size:14px;color:var(--dim)">
                 Работа отправлена {{ submission.submitted_at.strftime('%d.%m %H:%M') }}.
-                Жди балл и комментарий куратора – они появятся здесь же.
+                Жди балл и комментарий – они появятся здесь же.
             </div>
 
         {% elif submission.status == "scored" %}

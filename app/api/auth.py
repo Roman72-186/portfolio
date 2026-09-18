@@ -1032,9 +1032,9 @@ async def _handle_telegram_link_start(
     if error or not target_user:
         reason = {
             "invalid": "Ссылка-приглашение недействительна.",
-            "expired": "Ссылка-приглашение истекла — попроси новую у куратора.",
+            "expired": "Ссылка-приглашение истекла – напиши в поддержку и попроси новую.",
             "used": "Эта ссылка уже была использована.",
-            "revoked": "Эта ссылка больше не действует — попроси новую у куратора.",
+            "revoked": "Эта ссылка больше не действует – напиши в поддержку и попроси новую.",
         }.get(error or "invalid", "Не удалось привязать Telegram.")
         await telegram_service.send_message(chat_id, reason)
         return
@@ -1045,7 +1045,7 @@ async def _handle_telegram_link_start(
     if already_linked:
         await telegram_service.send_message(
             chat_id,
-            "Этот Telegram-аккаунт уже привязан к другому ученику. Обратись к куратору.",
+            "Этот Telegram-аккаунт уже привязан к другому ученику. Напиши в поддержку.",
         )
         return
 
