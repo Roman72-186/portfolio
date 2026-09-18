@@ -311,6 +311,28 @@ def test_no_window_does_not_grant_the_right_to_delete(auth_client, db):
     assert db.query(Work).filter(Work.id == work.id).first() is not None
 
 
+def test_after_section_uploads_any_time_even_when_before_is_closed(auth_client, db):
+    """«После» грузится всегда (владелец 18.09.2026: «в портфолио После грузить
+    могут в любое время»). Сроки — только про «До», и закрытое окно «До» не
+    должно перекрывать учебные работы, которые ученик сдаёт весь год.
+    """
+    client, user = auth_client
+    _closed_window(db, user)
+
+    page = client.get("/upload?section=after")
+    with patch(_MOCK_N8N, new_callable=AsyncMock, return_value=_OK_RESULT):
+        upload = client.post(
+            "/upload/api",
+            data={"section": "after", "month": "сентябрь"},
+            files=[("photos", ("p.jpg", _JPG_BYTES, "image/jpeg"))],
+        )
+
+    assert "Загрузка закрыта" not in page.text
+    assert upload.status_code == 200
+    assert upload.json()["success"] is True
+    assert db.query(Work).filter(Work.work_type == "after").count() == 1
+
+
 def test_after_section_shows_no_delete_buttons(auth_client, db):
     """Экран «После» остаётся прежним: окон для него пока нет."""
     client, user = auth_client
