@@ -16,18 +16,27 @@
         <h1 class="text-accent">
             {% if mode == "before" %}Загрузка фото «До»{% else %}Загрузка фото «После»{% endif %}
         </h1>
-        {% if mode == "before" %}
+        {# Призыв добавить фото — только пока это возможно: под баннером
+           «Загрузка закрыта» он звал бы делать то, что уже не работает. #}
+        {% if mode == "before" and window_open %}
         <p class="ios-subtitle">
             Добавь фото работ до начала обучения. Месяц выбирать не нужно.
         </p>
         {% endif %}
+        {# Срок окна (владелец 18.09.2026): ученик должен видеть, сколько у него
+           времени на исправления, а не узнавать о закрытии по факту. #}
+        {% if window_open and window_deadline %}
+        <p class="ios-subtitle">
+            Загрузить и заменить работы можно до {{ window_deadline }}.
+        </p>
+        {% endif %}
     </div>
 
-    {% if not feature_available and mode == "after" %}
+    {% if not window_open or (not feature_available and mode == "after") %}
     <div class="ios-closed-banner">
         <div class="ios-closed-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
         <div class="ios-closed-title">Загрузка закрыта</div>
-        <div class="ios-closed-text">{{ feature_message }}</div>
+        <div class="ios-closed-text">{% if not window_open %}{{ window_closed_message }}{% else %}{{ feature_message }}{% endif %}</div>
     </div>
     {% else %}
 
@@ -95,6 +104,32 @@
                     </button>
                 </div>
             </form>
+
+            {# Уже отправленные работы (владелец 18.09.2026): ученик правит сам,
+               пока открыто окно. Живёт здесь, а не на странице «Портфолио»:
+               до сдачи «До» та страница закрыта гейтом (dependencies.py). #}
+            {% if existing_works %}
+            <div class="card" id="existingCard" style="padding:20px;margin-top:20px">
+                <div class="ios-eyebrow" style="margin-bottom:14px">
+                    Уже загружено: <span id="existingCount">{{ existing_works|length }}</span>
+                </div>
+                <div class="photo-grid" id="existingGrid">
+                    {% for work in existing_works %}
+                    <div class="preview-cell" data-work-id="{{ work.id }}">
+                        {% if work.can_delete %}
+                        <button type="button" class="preview-remove" data-delete-work="{{ work.id }}"
+                                aria-label="Удалить фото {{ work.filename }}">✕</button>
+                        {% endif %}
+                        <img src="{{ work.thumb }}" alt="Работа {{ work.filename }}" loading="lazy">
+                    </div>
+                    {% endfor %}
+                </div>
+                <p class="ios-hint-text" style="margin-top:12px">
+                    Удалить фото можно до {{ window_deadline or "закрытия окна" }}.
+                    Работы, которые уже проверил преподаватель, остаются без крестика.
+                </p>
+            </div>
+            {% endif %}
 
         </div>
 
@@ -324,13 +359,17 @@ uploadForm.addEventListener('submit', function(ev) {
         if (xhr.status >= 200 && xhr.status < 300 && data && data.success) {
             var msg = 'Загружено ' + data.created + ' фото!';
             if (data.failed) msg += ' <span style="color:#fbbf24">Не удалось: ' + data.failed + '</span>';
-            showAlert('success', msg + ' <a href="/upload?section=' + encodeURIComponent(CURRENT_SECTION) + '" style="margin-left:8px;font-weight:700">Ещё →</a>', { autoHide: false });
+            showAlert('success', msg, { autoHide: false });
             resetForm();
             window.scrollTo({ top: 0, behavior: 'smooth' });
-            if (data.mode_changed) {
-                // BEFORE → AFTER: нужно перезагрузить страницу для обновления режима
-                setTimeout(function() { window.location.reload(); }, 1200);
-            }
+            // Возвращаемся на страницу заново (18.09.2026): только так в списке
+            // «Уже загружено» появятся свежие фото с кнопкой удаления — их id и
+            // ссылки знает сервер, а не этот ответ. Итог загрузки переезжает
+            // параметрами, иначе после перехода ученик не увидит подтверждения.
+            var back = '/upload?section=' + encodeURIComponent(CURRENT_SECTION)
+                + '&uploaded=' + encodeURIComponent(data.created)
+                + '&failed=' + encodeURIComponent(data.failed || 0);
+            setTimeout(function() { window.location.assign(back); }, 900);
         } else {
             var err = (data && (data.error || data.detail)) || ('Ошибка ' + xhr.status);
             showAlert('error', err);
@@ -340,5 +379,47 @@ uploadForm.addEventListener('submit', function(ev) {
     xhr.send(fd);
 });
 }
+
+// ── Удаление своих работ, пока окно открыто (владелец 18.09.2026) ────────────
+// Живёт вне проверки формы выше: карточка «Уже загружено» рисуется и тогда,
+// когда форма не собралась, и ученик всё равно должен убрать лишнее фото.
+(function () {
+    var existingGrid = document.getElementById('existingGrid');
+    if (!existingGrid) return;
+    var DELETE_CSRF = "{{ csrf_token(request) }}";
+    var countLabel = document.getElementById('existingCount');
+
+    existingGrid.addEventListener('click', function (ev) {
+        var btn = ev.target.closest('[data-delete-work]');
+        if (!btn) return;
+        if (!window.confirm('Удалить это фото? Вернуть его не получится, придётся загрузить заново.')) return;
+
+        var cell = btn.closest('.preview-cell');
+        btn.disabled = true;
+        fetch('/upload/works/' + btn.getAttribute('data-delete-work'), {
+            method: 'DELETE',
+            headers: { 'X-CSRF-Token': DELETE_CSRF, 'X-Requested-With': 'XMLHttpRequest' },
+        }).then(function (response) {
+            return response.json().catch(function () { return null; }).then(function (data) {
+                if (!response.ok || !data || !data.ok) {
+                    btn.disabled = false;
+                    var text = (data && (data.error || data.detail)) || 'Не получилось удалить. Попробуй ещё раз.';
+                    window.alert(text);
+                    return;
+                }
+                if (cell) cell.remove();
+                var left = existingGrid.querySelectorAll('.preview-cell').length;
+                if (countLabel) countLabel.textContent = left;
+                if (!left) {
+                    var card = document.getElementById('existingCard');
+                    if (card) card.remove();
+                }
+            });
+        }).catch(function () {
+            btn.disabled = false;
+            window.alert('Ошибка сети. Попробуй ещё раз.');
+        });
+    });
+})();
 </script>
 {% endblock %}

@@ -533,7 +533,11 @@ def cabinet_tracker_task_blocks(
             # сам по `portfolio_do_completed`, и ученик, уже грузивший работы,
             # попадал в «После». Раздел доезжает и до отправки: `upload.html`
             # кладёт `section` скрытым полем формы.
-            item["upload_url"] = "/upload?section=before"
+            # `block` — подсказка экрану загрузки, какое окно ученик открыл
+            # (18.09.2026): при двух открытых окнах он покажет срок того, с
+            # кнопки которого пришли. Прав ссылка не даёт — окно проверяется
+            # на сервере целиком, см. `services/portfolio_window.py`.
+            item["upload_url"] = f"/upload?section=before&block={block.id}"
             item["done"] = _portfolio_block_done(db, block, user["user_id"])
             # Видеоинструкция и примеры над кнопкой (владелец 17.09.2026).
             # Оба необязательны; закрытие шага от них не зависит — только

@@ -239,7 +239,10 @@ def test_button_points_at_the_before_section(auth_client, db):
 
     payload = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
 
-    assert payload["blocks"][0]["upload_url"] == "/upload?section=before"
+    # `block` в ссылке (18.09.2026) — подсказка экрану загрузки, какое окно
+    # ученик открыл: при двух открытых он покажет срок того, с кнопки которого
+    # пришли. Права ссылка не даёт, окно сервер проверяет сам.
+    assert payload["blocks"][0]["upload_url"].startswith("/upload?section=before&block=")
 
 
 # ── инструкция над кнопкой: видео и фото (владелец 17.09.2026) ─────────────
@@ -294,7 +297,7 @@ def test_student_payload_carries_video_and_images_above_button(auth_client, db):
 
     assert block["video_embed_endpoint"] == f"/cabinet/videos/{video.id}/embed"
     assert block["images"] == [{"url": "https://example.com/a.jpg"}]
-    assert block["upload_url"] == "/upload?section=before"
+    assert block["upload_url"].startswith("/upload?section=before&block=")
 
 
 def test_portfolio_block_without_instruction_stays_a_plain_button(auth_client, db):

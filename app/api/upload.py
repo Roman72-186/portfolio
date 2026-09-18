@@ -37,6 +37,7 @@ from app.csrf import generate_csrf_token
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf, require_csrf_header, get_current_user
 from app.models.exam_assignment import ExamTicket
+from app.models.feedback import Feedback
 from app.models.exam_cycle import ExamCycle
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
@@ -45,6 +46,13 @@ from app.models.upload_log import UploadLog
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.n8n import send_photo_to_n8n
+from app.services.portfolio_window import (
+    PortfolioWindow,
+    find_open_portfolio_window,
+    format_deadline_msk,
+    snapshot,
+)
+from app.services.works import delete_works_with_dependents
 from app.services import s3 as s3_service
 from app.services.upload_validation import (
     MAX_UPLOAD_FILE_SIZE,
@@ -78,7 +86,9 @@ def _resolve_upload_mode(user: dict, requested_section: str | None) -> str:
 
 
 def _render_upload(request, user, *, mode: str = "after", error=None, success=False,
-                   success_count=0, fail_count=0, feature_available=True, feature_message=None):
+                   success_count=0, fail_count=0, feature_available=True, feature_message=None,
+                   window_open: bool = True, window_deadline: str = "",
+                   window_closed_message: str = "", existing_works=None):
     return templates.TemplateResponse(request, "upload.html", {
         "request": request,
         "user": user,
@@ -91,7 +101,107 @@ def _render_upload(request, user, *, mode: str = "after", error=None, success=Fa
         "fail_count": fail_count,
         "feature_available": feature_available,
         "feature_message": feature_message,
+        # Окно загрузки (владелец 18.09.2026) — сроки держит блок «Загрузить
+        # портфолио», см. app/services/portfolio_window.py.
+        "window_open": window_open,
+        "window_deadline": window_deadline,
+        "window_closed_message": window_closed_message,
+        "existing_works": existing_works or [],
     })
+
+
+# ── Окно загрузки портфолио ──────────────────────────────────────────────────
+
+# Тексты ученику держим здесь, а не в шаблоне: их видит и HTML-форма, и JSON-
+# ответ на отказ, и роут удаления — три места, одна формулировка.
+WINDOW_CLOSED_FALLBACK = (
+    "Сейчас загрузка работ закрыта. Она откроется в задании учебной программы."
+)
+WINDOW_DELETE_CLOSED = "Окно загрузки закрыто, удалить работу уже нельзя."
+WINDOW_DELETE_REVIEWED = (
+    "Работу проверил преподаватель, удалить её нельзя. Напиши куратору."
+)
+
+
+def _window_closed_message(closed: PortfolioWindow | None) -> str:
+    if closed is None or not closed.closes_at:
+        return WINDOW_CLOSED_FALLBACK
+    return (
+        f"Работы принимали до {format_deadline_msk(closed.closes_at)}. "
+        "Если нужно что-то добавить или заменить, напиши куратору."
+    )
+
+
+def _resolve_window(db: DBSession, user: dict, mode: str, block_id: int | None = None):
+    """Можно ли ученику сейчас грузить и удалять работы раздела `mode`.
+
+    Возвращает `(window, allowed, context)`. `allowed=False` — ни загрузить,
+    ни удалить. `window is None` при `allowed=True` — это послабление для групп
+    без блока: грузить можно, а удалять нечего разрешать, права на удаление
+    отсутствие окна не выдаёт.
+
+    **У кого блока портфолио нет вовсе — загрузка открыта, как раньше.** Сроки
+    задаёт блок, и там, где его никто не заводил, запирать нечего: иначе
+    правило, написанное ради потока предобучения, молча отрезало бы загрузку
+    ученикам старых групп. Блок есть, но закрыт по календарю — это уже
+    закрытое окно, и оно запирает.
+    """
+    state = snapshot(
+        db,
+        user_id=user["user_id"],
+        user_tariff=user.get("tariff"),
+        section=mode,
+        preferred_block_id=block_id,
+    )
+    if state.open is not None:
+        return state.open, True, {
+            "window_open": True,
+            "window_deadline": format_deadline_msk(state.open.closes_at),
+        }
+    if not state.any_exists:
+        return None, True, {"window_open": True, "window_deadline": ""}
+    return None, False, {
+        "window_open": False,
+        "window_closed_message": _window_closed_message(state.last_closed),
+    }
+
+
+def _existing_works(db: DBSession, user_id: int, mode: str) -> list[dict]:
+    """Свои работы раздела — чтобы ученик видел, что уже отправил, и мог убрать
+    лишнее, пока окно открыто.
+
+    Показываем на `/upload`, а не на странице портфолио: пока
+    `portfolio_do_completed == False`, гейт (`dependencies.py`) отдаёт на
+    `/cabinet/portfolio` 403, а первая же успешная загрузка «До» этот флаг
+    ставит — вместе эти два экрана ученик почти никогда не видит.
+    """
+    works = (
+        db.query(Work)
+        .filter(
+            Work.user_id == user_id,
+            Work.work_type == mode,
+            Work.status == "success",
+        )
+        .order_by(Work.created_at.desc())
+        .limit(500)
+        .all()
+    )
+    return [
+        {
+            "id": w.id,
+            "filename": w.filename,
+            "thumb": w.s3_url or "",
+            "can_delete": _work_is_deletable(w),
+        }
+        for w in works
+    ]
+
+
+def _work_is_deletable(work: Work) -> bool:
+    """Проверенную работу ученик не удаляет: оценка и комментарий куратора
+    остались бы висеть без предмета разговора (решение владельца 18.09.2026).
+    """
+    return work.viewed_at is None and work.score is None and not (work.comment or "").strip()
 
 
 def _serialize_attempt(a: MockExamAttempt, ticket: ExamTicket | None = None) -> dict:
@@ -608,6 +718,9 @@ def upload_form(
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
     section: str | None = None,
+    block: int | None = None,
+    uploaded: int | None = None,
+    failed: int | None = None,
 ):
     # Загрузка портфолио больше не заперта глобальным окном FeaturePeriod
     # (владелец 09.09.2026: «ранее открывали загрузку портфолио. Эти триггеры
@@ -615,9 +728,22 @@ def upload_form(
     # портфолио, пробникам либо остальным уже в учебных программах. Остальное
     # ничего не должно влиять»). Ученик приходил сюда по кнопке блока
     # «Загрузить портфолио» из задания и упирался в баннер «Загрузка закрыта».
-    # Доступ теперь определяет только само задание в учебной программе.
+    # Доступ определяет само задание: с 18.09.2026 — сроки его блока
+    # «Загрузить портфолио» (`services/portfolio_window.py`).
     mode = _resolve_upload_mode(user, section)
-    return _render_upload(request, user, mode=mode)
+    window, allowed, window_ctx = _resolve_window(db, user, mode, block)
+    # Карточка с крестиками — только при настоящем окне: без него удаление
+    # запрещено, и рисовать кнопку, которая ответит отказом, незачем.
+    existing = _existing_works(db, user["user_id"], mode) if window is not None else []
+    # `uploaded`/`failed` приносит редирект после XHR-загрузки: страница
+    # перечитывается, чтобы показать свежие работы, и без этих чисел ученик
+    # остался бы без подтверждения, что отправка прошла.
+    created = max(uploaded or 0, 0)
+    return _render_upload(
+        request, user, mode=mode, existing_works=existing,
+        success=created > 0, success_count=created, fail_count=max(failed or 0, 0),
+        **window_ctx,
+    )
 
 
 # ── POST /upload ─────────────────────────────────────────────────────────────
@@ -637,9 +763,21 @@ async def upload_photos(
     # иначе форма открывалась бы, а отправка возвращала «Загрузка закрыта».
     mode = _resolve_upload_mode(user, section)
     work_type = WORK_TYPE_BEFORE if mode == "before" else WORK_TYPE_AFTER
+    window, allowed, window_ctx = _resolve_window(db, user, mode)
 
     def _err(msg):
-        return _render_upload(request, user, mode=mode, error=msg)
+        return _render_upload(
+            request, user, mode=mode, error=msg,
+            existing_works=(
+                _existing_works(db, user["user_id"], mode) if window is not None else []
+            ),
+            **window_ctx,
+        )
+
+    # Окно закрыто — форму не принимаем даже при прямой отправке: иначе
+    # старая вкладка или закладка обошла бы срок в одно нажатие.
+    if not allowed:
+        return _render_upload(request, user, mode=mode, **window_ctx)
 
     if mode == "before":
         month = _default_month()
@@ -672,7 +810,12 @@ async def upload_photos(
 
     return _render_upload(request, user, mode=mode,
                           error=error, success=success_count > 0,
-                          success_count=success_count, fail_count=fail_count)
+                          success_count=success_count, fail_count=fail_count,
+                          existing_works=(
+                              _existing_works(db, user["user_id"], mode)
+                              if window is not None else []
+                          ),
+                          **window_ctx)
 
 
 # ── POST /upload/api (JSON) ──────────────────────────────────────────────────
@@ -683,7 +826,10 @@ async def _validate_photos(photos: list[UploadFile]) -> tuple[list[tuple[str, by
         photos,
         max_files=MAX_FILES,
         max_size=MAX_SIZE,
-        unsupported_format_error="Файл «{filename}» — неподдерживаемый формат. Допустимы: JPG, PNG, WebP",
+        # Список форматов в ошибке раньше обещал только JPG, PNG и WebP, хотя
+        # `is_allowed_image` принимает и HEIC с iPhone, и подсказка на экране
+        # говорит «любые фото» — ученик читал два разных правила (18.09.2026).
+        unsupported_format_error="Файл «{filename}» — неподходящий формат. Подойдёт любое фото: JPG, PNG, WebP, HEIC с iPhone",
     )
 
 
@@ -699,9 +845,18 @@ async def upload_photos_api(
     section: str | None = Form(default=None),
 ):
     """AJAX-friendly вариант POST /upload — возвращает JSON вместо редиректа."""
-    # Без гейта FeaturePeriod, как и обычный POST /upload (владелец 09.09.2026).
+    # Без гейта FeaturePeriod, как и обычный POST /upload (владелец 09.09.2026),
+    # но со сроком блока портфолио — иначе страница, открытая до закрытия окна,
+    # продолжала бы грузить работы через XHR (это основной путь отправки).
     mode = _resolve_upload_mode(user, section)
     work_type = WORK_TYPE_BEFORE if mode == "before" else WORK_TYPE_AFTER
+
+    _window, allowed, window_ctx = _resolve_window(db, user, mode)
+    if not allowed:
+        return JSONResponse(
+            {"success": False, "error": window_ctx["window_closed_message"]},
+            status_code=422,
+        )
 
     if mode == "before":
         month = _default_month()
@@ -876,6 +1031,70 @@ async def upload_retake_api(
         "failed": fail_count,
         "error": last_error if fail_count and not success_count else None,
     })
+
+
+# ── DELETE /upload/works/{work_id} ───────────────────────────────────────────
+
+@router.delete("/upload/works/{work_id}")
+def delete_own_work(
+    work_id: int,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Ученик убирает своё фото портфолио, пока открыто окно загрузки.
+
+    Владелец 18.09.2026: «они загружают, и вот сегодня он ошибся, хочет
+    отредактировать, отредактировал» — правка живёт ровно столько, сколько
+    открыт блок «Загрузить портфолио». Окно закрылось — правит только куратор
+    (`cabinet_students_shared`, rank>=4).
+
+    `portfolio_do_completed` при удалении НЕ сбрасываем, даже если ученик убрал
+    все работы «До»: флаг означает «первый шаг пройден», а его сброс закрыл бы
+    гейтом (`dependencies.py`) портфолио, галерею, историю и обратную связь —
+    посреди окна, ради которого ученик и удалял.
+    """
+    work = (
+        db.query(Work)
+        .filter(Work.id == work_id, Work.user_id == user["user_id"])
+        .first()
+    )
+    if work is None:
+        raise HTTPException(status_code=404, detail="Работа не найдена")
+    if work.work_type not in (WORK_TYPE_BEFORE, WORK_TYPE_AFTER):
+        # Пробники и пересдачи живут по своим правилам сдачи, к окну портфолио
+        # отношения не имеют.
+        raise HTTPException(status_code=403, detail="Эту работу удалить нельзя")
+
+    # Послабление «нет блока — грузи как раньше» на удаление НЕ распространяется:
+    # отсутствие окна не выдаёт новых прав, иначе ученик сносил бы работы «После»
+    # круглый год, а вместе с ними и файлы из хранилища.
+    window = find_open_portfolio_window(
+        db,
+        user_id=user["user_id"],
+        user_tariff=user.get("tariff"),
+        section=work.work_type,
+    )
+    if window is None:
+        return JSONResponse(
+            {"ok": False, "error": WINDOW_DELETE_CLOSED}, status_code=422
+        )
+    if not _work_is_deletable(work):
+        return JSONResponse(
+            {"ok": False, "error": WINDOW_DELETE_REVIEWED}, status_code=422
+        )
+    # Обратная связь ссылается на работу жёстким внешним ключом (feedbacks.work_id
+    # NOT NULL, без ondelete) — удаление такой строки упало бы на уровне базы.
+    # До этого места работа с обратной связью и так не доходит: её всегда
+    # предваряет просмотр куратором, но проверка стоит явно, а не «по счастью».
+    if db.query(Feedback.id).filter(Feedback.work_id == work.id).first():
+        return JSONResponse(
+            {"ok": False, "error": WINDOW_DELETE_REVIEWED}, status_code=422
+        )
+
+    delete_works_with_dependents(db, [work])
+    db.commit()
+    return JSONResponse({"ok": True, "deleted": work_id})
 
 
 # ── POST /upload/finish-before ───────────────────────────────────────────────

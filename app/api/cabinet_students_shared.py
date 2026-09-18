@@ -47,6 +47,7 @@ from app.services.feature_periods import get_active_period
 from app.services.stats import avg_score_by_subject_all_time
 from app.services.portfolio import after_gallery_groups, item_source, portfolio_item_count
 from app.services.student_access import get_student_for_staff_access
+from app.services.works import delete_works_with_dependents
 from app.services.tz import MSK_TZ, msk_input_value, msk_midnight, parse_msk_local
 from app.services.utils import compress_image, study_duration_text, group_works, has_case_growth
 from app.tmpl import format_rich_text, templates
@@ -56,24 +57,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/cabinet")
 
 
-def _delete_work_rows_with_dependents(db: DBSession, works: list[Work]) -> int:
-    """Delete selected works and direct stage-photo dependents in FK-safe order."""
-    by_id = {w.id: w for w in works}
-    final_ids = [w.id for w in works if w.is_final]
-    if final_ids:
-        for child in (
-            db.query(Work)
-            .filter(Work.parent_work_id.in_(final_ids))
-            .all()
-        ):
-            by_id[child.id] = child
-
-    ordered = sorted(by_id.values(), key=lambda w: 1 if w.is_final else 0)
-    for work in ordered:
-        if work.s3_path:
-            s3_service.delete_from_s3(work.s3_path)
-        db.delete(work)
-    return len(ordered)
+# Тело удаления переехало в `app/services/works.py` (18.09.2026): ту же
+# операцию делает роут ученика на `/upload`, а хранилище и порядок FK должны
+# сниматься одинаково у обоих. Имя оставлено локальным алиасом — на него
+# ссылаются вызовы ниже по файлу.
+_delete_work_rows_with_dependents = delete_works_with_dependents
 
 
 # ── Access control ────────────────────────────────────────────────────────────
