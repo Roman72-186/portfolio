@@ -1415,6 +1415,21 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
     padding: 18px;
     background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
 }
+
+.lrn-step[id] {
+    scroll-margin-top: var(--s-4);
+}
+
+.lrn-step:target,
+.lrn-step:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 3px;
+}
+
+.lrn-task-completion {
+    padding-top: var(--s-3);
+    border-top: 1px solid var(--line);
+}
 .dgst-head { margin-bottom: 16px; }
 .dgst-kicker {
     display: block; margin-bottom: 4px; color: var(--muted);

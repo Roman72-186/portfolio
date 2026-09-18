@@ -50,10 +50,10 @@ from app.models.tracker import (
 from app.models.work import WORK_TYPE_BEFORE, Work
 from app.services.program import (
     day_bounds,
-    item_details,
     msk_date,
     week_start,
 )
+from app.services.cycle_feed import current_feed_task_ids
 from app.services.portfolio_window import (
     format_deadline_msk,
     portfolio_windows,
@@ -147,6 +147,9 @@ def cabinet_tracker(
         if e["status"] == "done"
         and (e["completed_on"] is None or e["completed_on"] >= week_monday)
     ]
+    learning_task_ids = current_feed_task_ids(
+        db, user_id=user["user_id"], today=today
+    )
 
     return templates.TemplateResponse(request, "cabinet_tracker.html", {
         "request": request,
@@ -154,6 +157,7 @@ def cabinet_tracker(
         "overdue": overdue,
         "upcoming": upcoming,
         "done": done,
+        "learning_task_ids": learning_task_ids,
         "digest": digest,
         "digest_events": digest_events,
         # Заголовок «Сентябрь · тема месяца». Календарной сетки у ученика нет
@@ -167,9 +171,6 @@ def cabinet_tracker(
         "is_behind_schedule": effective_week_start(db, user["user_id"], today) < week_monday,
         "active_tab": "tracker",
         "avg_score_by_subject": avg_score_by_subject_all_time(db, user["user_id"]),
-        # Нужен partial'у `partials/task_action.html`: видео, пробник и домашка
-        # ведут на свой экран, галочка остаётся только у остального.
-        "details": item_details(db, [e["task"] for e in entries]),
     })
 
 

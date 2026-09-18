@@ -102,6 +102,28 @@ def feed_window(
     return None, monday, monday + timedelta(days=6)
 
 
+def current_feed_task_ids(db: Session, *, user_id: int, today: date) -> set[int]:
+    """IDs заданий, которые сейчас есть в основной ленте ученика.
+
+    Это read-only версия первого шага ``feed_for_student``. Трекеру нужен
+    только ответ, можно ли вести ученика кнопкой «Перейти» в текущую ленту;
+    строить ради этого все блоки нельзя, потому что сборка ленты запускает
+    персональные окна портфолио при первом показе.
+    """
+    topic, start, end = feed_window(db, user_id, today)
+    window_start, _ = day_bounds(start)
+    _, window_end = day_bounds(end)
+    entries = accessible_task_entries(
+        db,
+        user_id,
+        start=window_start,
+        end=window_end,
+        topic_id=topic.id if topic is not None else None,
+        include_undated=topic is not None,
+    )
+    return {entry["task"].id for entry in entries}
+
+
 def _task_done(entry: dict) -> bool:
     return entry["status"] == STATUS_DONE
 
@@ -298,6 +320,7 @@ def build_cycle_feed(
                 # Задание без блоков — одна карточка, и она же первая: иначе
                 # экран «Материалы задания» остался бы вообще без подписи.
                 "first_in_task": True,
+                "last_in_task": True,
             })
             if (
                 not done
@@ -372,6 +395,7 @@ def build_cycle_feed(
                 # Первый **видимый** блок: `task_blocks` выше уже очищен от
                 # блоков `hidden_until_done` незакрытого задания.
                 "first_in_task": position == 0,
+                "last_in_task": position == len(task_blocks) - 1,
             })
             block_index += 1
     if started_portfolio_window:

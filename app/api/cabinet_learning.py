@@ -48,6 +48,7 @@ def cabinet_learning(
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
     cycle: int | None = None,
+    task: int | None = None,
 ):
     if needs_profile_setup(user):
         return RedirectResponse("/cabinet/profile", status_code=302)
@@ -62,11 +63,25 @@ def cabinet_learning(
         today=today_msk(),
         cycle_id=cycle,
     )
+    # Ссылка из трекера фокусирует только задание текущей ленты. Архивный
+    # цикл по task_id не подбираем: владелец выбрал оставлять старые долги в
+    # трекере без кнопки перехода.
+    focus_task_id = None
+    focus_subject = None
+    if cycle is None and task is not None:
+        target = next(
+            (step for step in feed["steps"] if step["task"].id == task), None
+        )
+        if target is not None:
+            focus_task_id = task
+            focus_subject = target["subject"]
 
     return templates.TemplateResponse(request, "cabinet_learning.html", {
         "request": request,
         "user": user,
         "feed": feed,
+        "focus_task_id": focus_task_id,
+        "focus_subject": focus_subject,
         # Нужен partial'у `partials/task_action.html` у шагов без блоков: без
         # него видео получило бы кнопку «Отметить» вместо ссылки на плеер.
         "details": item_details(db, [step["task"] for step in feed["steps"]]),

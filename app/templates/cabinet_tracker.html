@@ -4,18 +4,25 @@ THESIS: ученик за секунду видит, что горит, что �
        без календаря, плоским списком, как чеклист.
 OWN-WORLD: существующий Spark UI трекера (trk-*), без новой визуальной системы.
 STORY: открыл вкладку — сверху просрочка, потом то, что ещё можно успеть,
-       внизу недавно сделанное. Отметил галочкой — карточка гаснет и уходит
-       в «Сделано», ничего никуда не переходит.
+       внизу недавно сделанное. Текущее задание открывается в основной ленте,
+       где живут материалы и завершение.
 FIRST VIEWPORT: заголовок, сразу под ним — просрочка, если она есть.
 FORM: Operate, список, а не карточка-витрина.
 #}
 {% block title %}Личный трекер{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=55">
+<link rel="stylesheet" href="/static/css/tracker.css?v=57">
 <link rel="stylesheet" href="/static/css/profile_hero.css?v=7">
 {% endblock %}
 {% block content %}
 {% from "components/hint.html" import hint %}
+{% macro learning_link(task, learning_task_ids) -%}
+    {% if task.id in learning_task_ids %}
+    <div class="trk-row-actions">
+        <a class="btn-blue" href="/cabinet/learning?task={{ task.id }}#learning-task-{{ task.id }}">Перейти</a>
+    </div>
+    {% endif %}
+{%- endmacro %}
 <div class="trk-page ios-tracker">
     <header class="ios-navbar" id="iosNavbar" aria-hidden="true">
         <span class="ios-navbar-title">Личный трекер</span>
@@ -81,9 +88,7 @@ FORM: Operate, список, а не карточка-витрина.
             {% if entry.task.description %}<p>{{ entry.task.description | rich_text | safe }}</p>{% endif %}
             <div class="trk-meta"><span class="is-overdue">{% if entry.day %}до {{ entry.day.strftime('%d.%m') }}, {{ entry.due_label }}{% else %}без даты{% endif %}</span></div>
         </div>
-        <div class="trk-row-actions">
-            {% include "partials/task_action.html" %}
-        </div>
+        {{ learning_link(entry.task, learning_task_ids) }}
     </div>
     {% endfor %}
     </div>
@@ -109,9 +114,7 @@ FORM: Operate, список, а не карточка-витрина.
             {% if entry.task.description %}<p>{{ entry.task.description | rich_text | safe }}</p>{% endif %}
             <div class="trk-meta"><span>{% if entry.day %}до {{ entry.day.strftime('%d.%m') }}, {{ entry.due_label }}{% else %}без даты{% endif %}</span></div>
         </div>
-        <div class="trk-row-actions">
-            {% include "partials/task_action.html" %}
-        </div>
+        {{ learning_link(entry.task, learning_task_ids) }}
     </div>
     {% endfor %}
     </div>
@@ -136,9 +139,7 @@ FORM: Operate, список, а не карточка-витрина.
             <h3>{{ entry.task.title }}</h3>
             <div class="trk-meta">{% if entry.day %}<span>{{ entry.day.strftime('%d.%m') }}</span>{% endif %}</div>
         </div>
-        <div class="trk-row-actions">
-            {% include "partials/task_action.html" %}
-        </div>
+        {{ learning_link(entry.task, learning_task_ids) }}
     </div>
     {% endfor %}
     </div>
@@ -176,43 +177,6 @@ FORM: Operate, список, а не карточка-витрина.
 <script src="/static/js/hint.js?v=1"></script>
 <script>
 (function () {
-    var csrfToken = {{ csrf_token(request)|tojson }};
-    document.querySelectorAll('[data-toggle-task]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            // Отметка необратима (решение владельца 26.08.2026) — спрашиваем
-            // явное подтверждение перед отправкой, отменить потом будет нельзя.
-            if (!window.confirm('Отметить как выполнено? Отменить будет нельзя.')) return;
-            var taskId = btn.getAttribute('data-toggle-task');
-            var row = btn.closest('.trk-item');
-            btn.disabled = true;
-            fetch('/cabinet/tracker/tasks/' + taskId + '/toggle', {
-                method: 'POST',
-                headers: {'X-CSRF-Token': csrfToken},
-                cache: 'no-store'
-            }).then(function (resp) {
-                if (!resp.ok) throw new Error();
-                return resp.json();
-            }).then(function (data) {
-                var done = data.status === 'done';
-                row.classList.remove('trk-item--overdue', 'trk-item--upcoming', 'trk-item--done');
-                row.classList.add('trk-item--' + data.status);
-                btn.classList.toggle('is-done', done);
-                btn.setAttribute('aria-pressed', done ? 'true' : 'false');
-                btn.textContent = done ? 'Выполнено' : 'Отметить выполнение';
-                // Кнопка остаётся задизейбленной навсегда — отжать обратно
-                // нельзя, ниже в .catch() она включится только при ошибке.
-                btn.disabled = done;
-            }).catch(function () {
-                btn.textContent = 'Не получилось, ещё раз';
-                btn.disabled = false;
-            });
-        });
-    });
-})();
-</script>
-
-<script>
-(function () {
     var head = document.querySelector('.ios-tracker .trk-head');
     var bar = document.getElementById('iosNavbar');
     if (!head || !bar || !('IntersectionObserver' in window)) return;
@@ -225,37 +189,8 @@ FORM: Operate, список, а не карточка-витрина.
 })();
 </script>
 
-<script>
-// Тот же баг, что чинили на АОП 31.08.2026 (там — `ios-learning-rise`),
-// здесь никогда не чинился: вход в CSS-анимацию карточки (`ios-rise`,
-// `transform: translateY(8px) → none`) с `animation-fill-mode: both`
-// держит эффект «в силе» даже после её завершения — computed `transform`
-// сериализуется не словом `none`, а матрицей, и по спеке CSS Transforms
-// это заводит свой containing block для потомков `position:absolute`/
-// `position:fixed`. Видео и водяной знак внутри блоков «Личного трекера»
-// от этого позиционируются не относительно рамки видео, а относительно
-// всей карточки задачи — отсюда «водяной знак летает выше/ниже видео»
-// (владелец 02.09.2026, поймано на мобильном). Снимаем анимацию с
-// элемента сразу по её завершению: конечное состояние совпадает с
-// состоянием без анимации вовсе, визуально ничего не меняется.
-document.addEventListener('animationend', function (event) {
-    if (event.animationName === 'ios-rise') event.target.style.animation = 'none';
-});
-</script>
-
-{# Блоки конструктора (владелец 31.08.2026) раскрываются и здесь, не только на
-   АОП: у содержимого задания нет отдельной страницы, и без этой раскрывашки
-   ученик, работающий из трекера, не увидел бы ни видео, ни текста, ни
-   вопросов. Видео и Пробник по-прежнему уводят отсюда на свои страницы. #}
-{% include "partials/inline/panels_init.html" %}
-
 {% set active_tab = "tracker" %}
 {% include "partials/bottom_nav.html" %}
-{# Фото-блоки задания (task_action.html → task_blocks.html) открывают карусель
-   через тот же лайтбокс, что и остальные фото-гриды кабинета — без этого
-   include клик по фото в трекере ничего не делал бы (window.openGallery
-   не определён). #}
-{% include "partials/lightbox.html" %}
 
 <script>
 (function () {

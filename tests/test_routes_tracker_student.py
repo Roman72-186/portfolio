@@ -6,7 +6,13 @@ from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.models.tag import Tag, UserTag
 from app.models.tracker import STATUS_DONE, STATUS_OPEN, TrackerTask, TrackerTaskState
 from app.services.program import day_bounds, week_start
-from app.services.tracker import create_task, set_task_assignees, set_task_tags, task_status
+from app.services.tracker import (
+    close_task_for_user,
+    create_task,
+    set_task_assignees,
+    set_task_tags,
+    task_status,
+)
 from app.services.tz import msk_midnight, today_msk
 
 PAGE = "/cabinet/tracker"
@@ -386,30 +392,52 @@ def _video_task_with_video(db, user_id, *, due_at):
     return task, video
 
 
-def test_video_task_links_to_player_instead_of_checkbox(auth_client, db):
-    """Видео на трекере ведёт в плеер, а не закрывается галочкой.
-
-    Иначе ученик отмечает урок просмотренным, не открыв его — а если на такие
-    отметки повесят доступ к следующей неделе (Р1), это обход в одно нажатие.
-    """
+def test_video_task_links_to_current_learning_task(auth_client, db):
+    """Трекер ведёт к началу задания в ленте, где уже находится плеер."""
     client, user = auth_client
     _, due = _current_week_due(offset_days=1)
     task, video = _video_task_with_video(db, user.id, due_at=due)
 
     resp = client.get(PAGE)
     assert resp.status_code == 200
-    assert f'href="/cabinet/videos/{video.id}"' in resp.text
+    assert f'href="/cabinet/learning?task={task.id}#learning-task-{task.id}"' in resp.text
     assert f'data-toggle-task="{task.id}"' not in resp.text
 
 
-def test_task_without_own_screen_keeps_checkbox(auth_client, db):
-    """У задачи без своего экрана галочка остаётся — она единственный способ закрыть."""
+def test_regular_task_links_to_learning_instead_of_checkbox(auth_client, db):
+    """Ручное завершение живёт внутри задания, а трекер остаётся обзором."""
     client, user = auth_client
     _, due = _current_week_due(offset_days=1)
     task = _standalone_task(db, user_id=user.id, due_at=due, assign_to_all=True)
 
     resp = client.get(PAGE)
-    assert f'data-toggle-task="{task.id}"' in resp.text
+    assert f'href="/cabinet/learning?task={task.id}#learning-task-{task.id}"' in resp.text
+    assert f'data-toggle-task="{task.id}"' not in resp.text
+
+
+def test_past_completed_task_has_no_learning_link(auth_client, db):
+    """Старую выполненную задачу видно в истории недели, но в архив не ведём."""
+    client, user = auth_client
+    _, current_due = _current_week_due(offset_days=1)
+    current = _standalone_task(
+        db, user_id=user.id, due_at=current_due, assign_to_all=True,
+    )
+    past = _standalone_task(
+        db,
+        user_id=user.id,
+        due_at=current_due - timedelta(days=14),
+        assign_to_all=True,
+    )
+    past.title = "Старая выполненная задача"
+    db.commit()
+    close_task_for_user(db, past, user.id, source="manual")
+
+    resp = client.get(PAGE)
+
+    assert "Старая выполненная задача" in resp.text
+    assert f'/cabinet/learning?task={past.id}' not in resp.text
+    assert f'/cabinet/learning?task={current.id}#learning-task-{current.id}' in resp.text
+    assert "task-completion.js" not in resp.text
 
 
 def test_mock_exam_task_has_no_manual_checkbox(auth_client, db):
@@ -433,7 +461,8 @@ def test_mock_exam_task_has_no_manual_checkbox(auth_client, db):
     db.commit()
 
     resp = client.get(PAGE)
-    assert "Начать пробник" in resp.text
+    assert f'href="/cabinet/learning?task={task.id}#learning-task-{task.id}"' in resp.text
+    assert "Начать пробник" not in resp.text
     assert f'data-toggle-task="{task.id}"' not in resp.text
 
 

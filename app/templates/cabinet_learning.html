@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Актуальное образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=56">
+<link rel="stylesheet" href="/static/css/tracker.css?v=57">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=1">
 {% endblock %}
 {% block content %}
@@ -68,7 +68,7 @@
     {% if feed.subjects %}
     <div class="lrn-subject-toggle" role="tablist" aria-label="Направление">
         {% for subject in feed.subjects %}
-        <button type="button" class="lrn-subject-btn{{ ' active' if loop.first }}"
+        <button type="button" class="lrn-subject-btn{{ ' active' if (focus_subject and subject == focus_subject) or (not focus_subject and loop.first) }}"
                 data-subject="{{ subject }}" onclick="lrnSwitchSubject(this)">{{ subject }}</button>
         {% endfor %}
     </div>
@@ -96,6 +96,7 @@
             class="lrn-step lrn-step--{{ step.status }}"
             data-subject="{{ step.subject or '' }}"
             data-task-id="{{ step.task.id }}"
+            {% if step.first_in_task %}id="learning-task-{{ step.task.id }}" tabindex="-1"{% endif %}
             {% if step.block %}data-block-id="{{ step.block.id }}"{% endif %}
         >
             <header class="lrn-step-head">
@@ -165,6 +166,16 @@
                 {% include "partials/task_action.html" %}
             </div>
             {% endif %}
+
+            {% if step.block and step.last_in_task and step.status != 'locked'
+                  and step.task.kind not in ('video', 'homework', 'mock_exam')
+                  and not feed.is_archive %}
+            <div class="trk-row-actions lrn-step-actions lrn-task-completion">
+                {% set task = step.task %}
+                {% set entry = step.entry %}
+                {% include "partials/task_completion_button.html" %}
+            </div>
+            {% endif %}
         </article>
         {% endfor %}
     </div>
@@ -203,7 +214,13 @@ function lrnApplySubjectFilter() {
     if (empty) empty.hidden = shown > 0 || !document.querySelector('.lrn-feed');
 }
 
-document.addEventListener('DOMContentLoaded', lrnApplySubjectFilter);
+document.addEventListener('DOMContentLoaded', function () {
+    lrnApplySubjectFilter();
+    var focusTaskId = {{ focus_task_id | tojson }};
+    if (focusTaskId === null) return;
+    var target = document.getElementById('learning-task-' + focusTaskId);
+    if (target) target.focus({preventScroll: true});
+});
 </script>
 
 {# Нижняя навигация и лайтбокс — общие для экранов ученика. #}
@@ -211,5 +228,6 @@ document.addEventListener('DOMContentLoaded', lrnApplySubjectFilter);
 {% include "partials/bottom_nav.html" %}
 {% include "partials/lightbox.html" %}
 {% include "partials/student_onboarding_guide.html" %}
+<script src="/static/js/task-completion.js?v=1" data-csrf-token="{{ csrf_token(request) }}"></script>
 <script src="/static/js/hint.js?v=1"></script>
 {% endblock %}

@@ -1,0 +1,9 @@
+{# Единое ручное завершение задания в основной ленте обучения. Трекер эту
+   кнопку намеренно не подключает: он только показывает превью и переход. #}
+<button
+    type="button"
+    class="trk-toggle-btn{{ ' is-done' if entry.status == 'done' }}"
+    data-toggle-task="{{ task.id }}"
+    aria-pressed="{{ 'true' if entry.status == 'done' else 'false' }}"
+    {{ 'disabled' if entry.status == 'done' }}
+>{{ 'Задание выполнено' if entry.status == 'done' else 'Завершить задание' }}</button>

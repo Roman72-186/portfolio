@@ -11,7 +11,12 @@ from datetime import timedelta
 
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.models.task_block import BLOCK_TEXT, TaskBlock
-from app.services.cycle_feed import build_cycle_feed, feed_for_student, feed_window
+from app.services.cycle_feed import (
+    build_cycle_feed,
+    current_feed_task_ids,
+    feed_for_student,
+    feed_window,
+)
 from app.services.program import day_bounds
 from app.services.task_blocks import close_block_for_user
 from app.services.tracker import close_task_for_user, create_task
@@ -94,6 +99,16 @@ def test_without_a_cycle_window_falls_back_to_the_week(db, regular_user):
 
     assert topic is None
     assert (end - start).days == 6
+
+
+def test_current_feed_task_ids_excludes_future_tasks(db, regular_user):
+    current = _task(db, regular_user, title="Текущее", due_on=TODAY)
+    future = _task(db, regular_user, title="Будущее", due_on=TODAY + timedelta(days=20))
+
+    task_ids = current_feed_task_ids(db, user_id=regular_user.id, today=TODAY)
+
+    assert current.id in task_ids
+    assert future.id not in task_ids
 
 
 # ── задания без даты внутри цикла (владелец 10.09.2026) ────────────────────
@@ -244,6 +259,7 @@ def test_task_without_blocks_is_a_step_of_its_own(db, regular_user):
     assert len(steps) == 1
     assert steps[0]["block"] is None
     assert steps[0]["task"].title == "Видео недели"
+    assert steps[0]["last_in_task"] is True
 
 
 def test_unfinished_task_without_blocks_locks_the_tail(db, regular_user):
@@ -492,6 +508,7 @@ def test_step_knows_it_is_the_first_of_its_task(db, regular_user):
     steps = _feed(db, regular_user)
 
     assert [step["first_in_task"] for step in steps] == [True, False]
+    assert [step["last_in_task"] for step in steps] == [False, True]
 
 
 def test_task_without_blocks_is_its_own_first_step(db, regular_user):
@@ -503,3 +520,4 @@ def test_task_without_blocks_is_its_own_first_step(db, regular_user):
 
     assert [step["block"] for step in steps] == [None]
     assert steps[0]["first_in_task"] is True
+    assert steps[0]["last_in_task"] is True

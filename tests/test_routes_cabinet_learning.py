@@ -10,6 +10,7 @@
 План — plans/2026-09-06-apparchi-block-feed-replaces-week-tabs.md, этап 2.
 """
 import pathlib
+import re
 from datetime import timedelta, timezone
 
 import pytest
@@ -339,6 +340,38 @@ def test_learning_marks_task_subject_for_the_switch(auth_client, db):
     assert 'class="lrn-subject-toggle"' in resp.text
 
 
+def test_task_query_focuses_task_and_activates_its_subject(auth_client, db):
+    client, user = auth_client
+    first = _task(db, user, title="Рисунок", kind="material", order=0)
+    first.subject = "Рисунок"
+    _block(db, first, title="Шаг рисунка")
+    target = _task(db, user, title="Композиция", kind="material", order=1)
+    target.subject = "Композиция"
+    _block(db, target, title="Шаг композиции")
+    db.commit()
+
+    resp = client.get(f"/cabinet/learning?task={target.id}")
+
+    assert f'id="learning-task-{target.id}" tabindex="-1"' in resp.text
+    assert re.search(
+        r'class="lrn-subject-btn active"[^>]*data-subject="Композиция"',
+        resp.text,
+    )
+    assert f"var focusTaskId = {target.id};" in resp.text
+
+
+def test_regular_task_completion_is_only_in_learning(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user, title="Материал", kind="material")
+    _block(db, task, title="Последний шаг")
+
+    resp = client.get("/cabinet/learning")
+
+    assert resp.text.count(f'data-toggle-task="{task.id}"') == 1
+    assert "Завершить задание" in resp.text
+    assert "task-completion.js?v=1" in resp.text
+
+
 def test_learning_hides_the_switch_without_subjects(auth_client, db):
     """Владелец 03.09.2026: «в предыдущих циклах эти кнопки не нужны — мы
     просто не будем ставить разделение, и кнопок в принципе не будет».
@@ -452,9 +485,8 @@ def test_feed_lets_the_page_print_the_block_caption(auth_client, db):
     assert "Оцени себя" in resp.text
 
 
-def test_block_panel_keeps_its_own_captions(auth_client, db):
-    """В «Личном трекере» заголовок внутри блока — единственная подпись,
-    флаг туда не уходит."""
+def test_tracker_does_not_embed_task_blocks(auth_client, db):
+    """Трекер показывает превью и переход, содержимое остаётся в ленте."""
     client, user = auth_client
     task = _task(db, user, title="Задание")
     _block(db, task, title="Оцени себя")
@@ -462,8 +494,9 @@ def test_block_panel_keeps_its_own_captions(auth_client, db):
     resp = client.get("/cabinet/tracker")
 
     assert resp.status_code == 200
-    assert "lrnBlockRender.create" in resp.text
+    assert "lrnBlockRender.create" not in resp.text
     assert "titlesOutside" not in resp.text
+    assert "Материалы задания" not in resp.text
 
 
 @pytest.mark.parametrize("asset", ["task-blocks-render.js?v=", "tracker.css?v="])
