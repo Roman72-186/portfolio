@@ -84,7 +84,7 @@
                                required multiple id="photoInput">
                         <div class="upload-circle">+</div>
                         <div class="upload-drop-title">Нажми или перенеси фото</div>
-                        <div class="upload-drop-hint">Любые фото · до 10 МБ · до {{ max_files }} штук</div>
+                        <div class="upload-drop-hint">Любые фото · до {{ max_files }} штук</div>
                     </label>
                     <div class="preview-area" id="previewArea">
                         <div class="preview-header">
@@ -153,7 +153,7 @@
                                 <circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
                             </svg>
                         </span>
-                        <div class="ios-tip-text">Любые фото (в т.ч. HEIC с iPhone) · до 10 МБ каждый · до {{ max_files }} штук за раз</div>
+                        <div class="ios-tip-text">Любые фото (в т.ч. HEIC с iPhone) · слишком тяжёлые уменьшим сами · до {{ max_files }} штук за раз</div>
                     </div>
                     <div class="ios-tip-row">
                         <span aria-hidden="true">
@@ -252,26 +252,109 @@ function renderPreviews() {
     });
 }
 
-function addFiles(newFiles) {
-    var files = Array.from(newFiles);
+// Тяжёлые фото ужимаем в браузере, а не отбрасываем (18.09.2026). Камеры в
+// режиме 50–200 Мп дают снимки больше 10 МБ; раньше такое фото молча
+// выпадало из выбора: предупреждение шло через alert(), который браузер
+// внутри Telegram/VK и Chrome сразу после возврата из галереи не показывают.
+// Ученик видел «выбрал, нажал Готово — тишина». 4000 px по длинной стороне —
+// около 240 точек на дюйм для листа A3, штриховка и тонкие линии читаются.
+// Площадь 4000×4000 = 16 Мп укладывается в предел canvas у iOS Safari.
+const SHRINK_STEPS = [[4000, 0.9], [4000, 0.8], [3000, 0.85]];
+
+function escapeText(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+function loadImage(file) {
+    return new Promise(function(resolve, reject) {
+        var url = URL.createObjectURL(file);
+        var img = new Image();
+        img.onload = function() { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('decode')); };
+        img.src = url;
+    });
+}
+
+function canvasToBlob(canvas, quality) {
+    return new Promise(function(resolve) { canvas.toBlob(resolve, 'image/jpeg', quality); });
+}
+
+// Фото до лимита уходит как есть — пережимать его незачем.
+async function shrinkPhoto(file) {
+    if (file.size <= MAX_SIZE) return file;
+    var img = await loadImage(file);
+    var longSide = Math.max(img.naturalWidth, img.naturalHeight);
+    for (var s = 0; s < SHRINK_STEPS.length; s++) {
+        var scale = Math.min(1, SHRINK_STEPS[s][0] / longSide);
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.naturalWidth * scale);
+        canvas.height = Math.round(img.naturalHeight * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        var blob = await canvasToBlob(canvas, SHRINK_STEPS[s][1]);
+        if (blob && blob.size <= MAX_SIZE) {
+            var name = file.name.replace(/\.[^.]*$/, '') + '.jpg';
+            return new File([blob], name, { type: 'image/jpeg', lastModified: file.lastModified });
+        }
+    }
+    throw new Error('too-big');
+}
+
+// Сколько выборов ещё ужимается: пока не ноль, отправлять нечего.
+let preparing = 0;
+// Растёт на «Сбросить» — фото, дожатые после сброса, в выбор не попадают.
+let selectionEpoch = 0;
+
+async function addFiles(newFiles) {
+    // Копию снимаем сразу: FileList живой, а syncInputFiles его подменит.
+    var files = Array.from(newFiles || []);
+    var epoch = selectionEpoch;
+    var problems = [];
+    if (!files.length) {
+        showAlert('error', 'Фото не выбрались. Если они лежат только в облаке, сначала скачай их на телефон.');
+        return;
+    }
+    preparing++;
+    submitBtn.disabled = true;
+    counter.textContent = 'Готовим фото…';
+    dropZone.style.display = 'none';
+    previewArea.style.display = 'block';
     for (var j = 0; j < files.length; j++) {
         var f = files[j];
-        if (f.size > MAX_SIZE) { alert(f.name + ' — слишком большой (макс. 10 МБ)'); continue; }
-        if (selectedFiles.length >= MAX_FILES) { alert('Максимум ' + MAX_FILES + ' фото'); break; }
-        selectedFiles.push(f);
+        if (selectedFiles.length >= MAX_FILES) {
+            problems.push('Больше ' + MAX_FILES + ' фото за раз не загрузить — остальные отправь следующим заходом.');
+            break;
+        }
+        try {
+            var ready = await shrinkPhoto(f);
+            if (epoch !== selectionEpoch) break;
+            selectedFiles.push(ready);
+        } catch (_) {
+            problems.push('«' + f.name + '» не получилось подготовить: фото тяжелее 10 МБ, и браузер не смог его уменьшить. Сделай снимок в обычном режиме камеры или пришли скриншот.');
+        }
     }
+    // После «Сбросить» счётчик уже обнулён — вычитать из него нельзя.
+    if (epoch !== selectionEpoch) return;
+    preparing--;
     syncInputFiles();
     renderPreviews();
+    if (problems.length) {
+        showAlert('error', problems.map(escapeText).join('<br>'));
+    }
     if (selectedFiles.length) {
-        dropZone.style.display = 'none';
-        previewArea.style.display = 'block';
-        submitBtn.disabled = false;
+        submitBtn.disabled = preparing > 0;
+    } else if (!preparing) {
+        previewArea.style.display = 'none';
+        dropZone.style.display = 'flex';
     }
 }
 
 input.addEventListener('change', function() { addFiles(input.files); });
 
 reselectBtn.addEventListener('click', function() {
+    selectionEpoch++;
+    preparing = 0;
     selectedFiles = [];
     input.value = '';
     grid.innerHTML = '';
@@ -313,6 +396,8 @@ function showAlert(kind, msg, opts) {
 }
 
 function resetForm() {
+    selectionEpoch++;
+    preparing = 0;
     selectedFiles = [];
     input.value = '';
     grid.innerHTML = '';
@@ -322,6 +407,7 @@ function resetForm() {
 }
 
 uploadForm.addEventListener('submit', function(ev) {
+    if (preparing > 0) { ev.preventDefault(); return; }
     syncInputFiles();
     if (!selectedFiles.length) return;
 
