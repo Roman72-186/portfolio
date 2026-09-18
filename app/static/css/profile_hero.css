@@ -12,7 +12,13 @@
    25.08.2026 — полный ре-скин под нативный iOS (решение владельца): системный
    шрифт вместо Manrope/Figtree, палитра iOS (systemBlue и т.д.), «стеклянные»
    плашки на blur. Действует только здесь — partial сейчас подключён только
-   в cabinet_tracker.html, на другие экраны не влияет. */
+   в cabinet_tracker.html, на другие экраны не влияет.
+
+   18.09.2026 — баллы Р/К переехали в правый верхний угол карточки узкой
+   мини-таблицей (`align-self: flex-start`, вне ширины имени), тариф остался
+   один в нижней строке. Раньше обе плашки вместе съедали ~305 px в общем ряду
+   с именем — теперь корпус мини-таблицы занимает ~90 px и не в счёт имени,
+   см. комментарий у `.profile-scores` ниже и в `profile_hero.html`. */
 
 .profile-hero {
     font-family: var(--ios-font);
@@ -101,13 +107,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
-/* Баллы и тариф — своей строкой под именем (13.09.2026). Пока они стояли
-   правой колонкой, ширину карточки делили трое, и имени на телефоне 390 px
-   доставалось 103 px: «Александрия» (122 px) не влезала и рвалась посреди
-   слова. Сжать было нечего — ширину задавала плашка баллов, а у неё внутри
-   цифры. Отдельной строкой обе плашки помещаются рядом (баллы + тариф
-   ≈ 305 px), а имя получает всю ширину минус аватар. `wrap` — на узкие
-   экраны (320–360 px), там тариф уходит на следующую строку. */
+/* Тариф — своей строкой под именем (13.09.2026, баллы уехали в угол
+   18.09.2026 — см. ниже). Строка держит только одну плашку, но остаётся
+   отдельным блоком: так у тарифа фиксированный отступ от строки имени
+   независимо от того, есть тариф или нет. */
 .profile-hero-meta {
     display: flex; align-items: center; flex-wrap: wrap;
     gap: 8px;
@@ -115,39 +118,58 @@
     position: relative; z-index: 1;
 }
 /* Плашка тарифа общая — `.profile-tariff` в base.css (белый фон, надпись в
-   цвет тарифа). Здесь только запрет переноса: в своей строке места хватает,
-   а двухэтажная «таблетка» рядом с плашкой баллов выглядит сбоем вёрстки.
-   На узких экранах она целиком уходит на следующую строку — см. wrap выше. */
+   цвет тарифа). Здесь только запрет переноса середины надписи. */
 .profile-tariff { white-space: nowrap; }
 
+/* Мини-таблица баллов Р/К — правый верхний угол карточки, третий ребёнок
+   `.profile-hero-top` (18.09.2026, решение владельца по скетчу). `flex: 0 0
+   auto` не даёт ей растягиваться, `align-self: flex-start` — не даёт
+   центрироваться по высоте вместе с аватаром и именем, а сидеть у верхнего
+   края, как в макете. Заняла ~90 px вместо прежних ~305 px общей строки
+   с тарифом — имени точно хватает даже на узких экранах. */
 .profile-scores {
     flex: 0 0 auto;
-    display: flex; align-items: center; gap: 10px;
+    align-self: flex-start;
     background: rgba(255,255,255,0.14);
     backdrop-filter: blur(12px) saturate(160%);
     -webkit-backdrop-filter: blur(12px) saturate(160%);
     border: 0.5px solid rgba(255,255,255,0.3);
-    border-radius: 14px;
-    padding: 8px 12px;
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative; z-index: 1;
+}
+.profile-scores-row {
+    display: flex; align-items: center;
 }
 .profile-score-cell {
-    display: flex; flex-direction: column; align-items: center; gap: 3px;
-    min-width: 22px;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    min-width: 24px;
+    padding: 6px 8px 5px;
 }
 .profile-score-label {
-    font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.72);
+    font-size: 9px; font-weight: 600; color: rgba(255,255,255,0.72);
     letter-spacing: 0.02em;
 }
 .profile-score-value {
-    font-size: 16px; font-weight: 700; color: #fff; line-height: 1;
+    font-size: 14px; font-weight: 700; color: #fff; line-height: 1;
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.01em;
 }
 .profile-score-divider { width: 0.5px; align-self: stretch; background: rgba(255,255,255,0.28); }
+/* Год поступления — отдельной строкой под баллами, через тонкую границу,
+   как в макете (таблица «Р/К» сверху, год снизу на всю ширину). */
+.profile-score-year {
+    font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.85);
+    text-align: center;
+    padding: 4px 8px 5px;
+    border-top: 0.5px solid rgba(255,255,255,0.28);
+    font-variant-numeric: tabular-nums;
+}
 
 @media (max-width: 480px) {
     .profile-hero-top { gap: 10px; }
-    .profile-scores { padding: 6px 9px; gap: 8px; }
+    .profile-score-cell { padding: 5px 7px 4px; min-width: 20px; }
+    .profile-score-year { padding: 3px 7px 4px; }
 }
 @media (min-width: 1024px) {
     .profile-hero { padding: 28px 32px 30px; }

@@ -19,6 +19,11 @@
 рвалось посреди слова — «Алекса / ндрия». Причина была не в тарифе, а в плашке
 баллов: её ширину не сжать, она и задавала границу. Теперь имени достаётся вся
 ширина карточки минус аватар — 252 px, влезает любое разумное имя.
+
+Владелец 18.09.2026: баллы Р/К вернулись в правый верхний угол карточки —
+но не как раньше (широкая плашка в потоке рядом с именем), а узкой мини-
+таблицей на `align-self: flex-start` вне общей ширины имени, поэтому 252 px
+у имени не отбираются. Тариф остался один в своей строке снизу.
 #}
 <div class="profile-hero">
     <div class="profile-hero-top">
@@ -45,28 +50,26 @@
             <div class="profile-name-line">{{ user.first_name }}</div>
             <div class="profile-name-line">{{ user.last_name }}</div>
         </div>
+
+        <div class="profile-scores">
+            <div class="profile-scores-row">
+                <div class="profile-score-cell">
+                    <span class="profile-score-label" title="Рисунок">Р</span>
+                    <span class="profile-score-value">{{ avg_score_by_subject.get('Рисунок', '-') }}</span>
+                </div>
+                <div class="profile-score-divider"></div>
+                <div class="profile-score-cell">
+                    <span class="profile-score-label" title="Композиция">К</span>
+                    <span class="profile-score-value">{{ avg_score_by_subject.get('Композиция', '-') }}</span>
+                </div>
+            </div>
+            {% if user.university_year %}
+            <div class="profile-score-year" title="Год поступления">{{ user.university_year }}</div>
+            {% endif %}
+        </div>
     </div>
 
     <div class="profile-hero-meta">
-        <div class="profile-scores">
-            <div class="profile-score-cell">
-                <span class="profile-score-label" title="Рисунок">Р</span>
-                <span class="profile-score-value">{{ avg_score_by_subject.get('Рисунок', '-') }}</span>
-            </div>
-            <div class="profile-score-divider"></div>
-            <div class="profile-score-cell">
-                <span class="profile-score-label" title="Композиция">К</span>
-                <span class="profile-score-value">{{ avg_score_by_subject.get('Композиция', '-') }}</span>
-            </div>
-            {% if user.university_year %}
-            <div class="profile-score-divider"></div>
-            <div class="profile-score-cell">
-                <span class="profile-score-label" title="Год поступления">Год</span>
-                <span class="profile-score-value">{{ user.university_year }}</span>
-            </div>
-            {% endif %}
-        </div>
-
         {% if user.tariff %}
         <span class="profile-tariff profile-tariff--{{ user.tariff|tariff_slug }}">
             <span class="profile-tariff-dot"></span>
