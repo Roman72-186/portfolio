@@ -276,7 +276,11 @@ scope)` и свойством `answered` (одна попытка: после о
 
                 window.lrnVideoPlayer.mount(root, {
                     endpoint: block.video_embed_endpoint,
-                    csrfToken: csrfToken
+                    csrfToken: csrfToken,
+                    // Инструкция в блоке портфолио и необязательное видео
+                    // ничего не ждут от просмотра — предупреждение плеера о
+                    // неподтверждённом просмотре там только пугает.
+                    watchRequired: block.block_type === 'video' && block.requires_watch !== false
                 });
                 return root;
             }
@@ -285,8 +289,12 @@ scope)` и свойством `answered` (одна попытка: после о
                 var wrap = el('div', 'lrn-blk lrn-blk-video');
                 var head = withTitle(el('div', 'lrn-blk-head'), block);
                 var requiresWatch = block.requires_watch !== false;
-                var check = requiresWatch ? renderBlockCheck(block) : null;
-                if (check) head.appendChild(check);
+                // Кружок есть и у необязательного видео: блок входит в счётчик
+                // «Сделано N из M», и без кружка закрыть его было нечем — шаг
+                // висел недоделанным навсегда (владелец 18.09.2026). Проверку
+                // просмотра сервер для такого блока не делает.
+                var check = renderBlockCheck(block);
+                head.appendChild(check);
                 wrap.appendChild(head);
 
                 if (!block.video_embed_endpoint) {
@@ -296,29 +304,31 @@ scope)` и свойством `answered` (одна попытка: после о
 
                 wrap.appendChild(videoPlayer(block));
 
-                if (requiresWatch) {
-                    var checkHint = el('p', 'lrn-blk-video-check-hint');
-                    checkHint.setAttribute('aria-live', 'polite');
-                    checkHint.hidden = !!block.done;
-                    // `block.watched` — сервер уже видит по `VideoProgress`, что
-                    // ролик досмотрен: подсказка не должна звать досматривать то,
-                    // что уже позади, иначе ученик перематывает заново вслепую.
+                var checkHint = el('p', 'lrn-blk-video-check-hint');
+                checkHint.setAttribute('aria-live', 'polite');
+                checkHint.hidden = !!block.done;
+                // `block.watched` — сервер уже видит по `VideoProgress`, что
+                // ролик досмотрен: подсказка не должна звать досматривать то,
+                // что уже позади, иначе ученик перематывает заново вслепую.
+                if (!requiresWatch) {
+                    checkHint.textContent = 'Посмотри ролик и отметь выполнение кружком выше.';
+                } else {
                     checkHint.textContent = block.watched
                         ? 'Ролик просмотрен – отметь выполнение кружком выше.'
                         : 'Досмотри ролик до конца, чтобы отметить выполнение.';
-                    wrap.appendChild(checkHint);
-
-                    wireBlockCheck(check, block.confirm_endpoint, block, {
-                        onSuccess: function () { checkHint.hidden = true; },
-                        onError: function (err) {
-                            checkHint.hidden = false;
-                            checkHint.classList.add('is-error');
-                            checkHint.textContent = err && err.message === 'not_watched'
-                                ? 'Досмотри ролик до конца, чтобы отметить выполнение.'
-                                : 'Не удалось отметить. Попробуй ещё раз.';
-                        }
-                    });
                 }
+                wrap.appendChild(checkHint);
+
+                wireBlockCheck(check, block.confirm_endpoint, block, {
+                    onSuccess: function () { checkHint.hidden = true; },
+                    onError: function (err) {
+                        checkHint.hidden = false;
+                        checkHint.classList.add('is-error');
+                        checkHint.textContent = err && err.message === 'not_watched'
+                            ? 'Досмотри ролик до конца, чтобы отметить выполнение.'
+                            : 'Не удалось отметить. Попробуй ещё раз.';
+                    }
+                });
                 return wrap;
             }
 

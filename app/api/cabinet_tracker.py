@@ -470,9 +470,11 @@ def cabinet_tracker_task_blocks(
             item["video_embed_endpoint"] = (
                 f"/cabinet/videos/{block.video_id}/embed" if block.video_id else None
             )
-            # Кружок и проверка просмотра нужны только эффективному
-            # обязательному блоку: флаг задания имеет приоритет над флагом
-            # блока, поэтому необязательное задание не создаёт скрытый гейт.
+            # Проверка просмотра нужна только эффективному обязательному
+            # блоку: флаг задания имеет приоритет над флагом блока, поэтому
+            # необязательное задание не создаёт скрытый гейт. Кружок же нужен
+            # всем: блок входит в счётчик «Сделано N из M» ленты, и без кружка
+            # необязательное видео было не закрыть ничем (владелец 18.09.2026).
             state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
             item["done"] = bool(state and state.status == STATUS_DONE)
             item["requires_watch"] = _video_block_requires_completion(task, block)
@@ -480,10 +482,7 @@ def cabinet_tracker_task_blocks(
                 _video_block_watched(db, block, user["user_id"])
                 if item["requires_watch"] else False
             )
-            item["confirm_endpoint"] = (
-                f"/cabinet/tracker/blocks/{block.id}/watched"
-                if item["requires_watch"] else None
-            )
+            item["confirm_endpoint"] = f"/cabinet/tracker/blocks/{block.id}/watched"
         elif block.block_type == BLOCK_PHOTO:
             item["images"] = [
                 {"url": i.image_s3_url} for i in images.get(block.id, [])

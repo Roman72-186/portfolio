@@ -689,7 +689,9 @@ def test_optional_video_block_does_not_require_watch(
 
     body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
     assert body["blocks"][0]["requires_watch"] is False
-    assert body["blocks"][0]["confirm_endpoint"] is None
+    # Кружок остаётся: иначе необязательный блок не закрыть ничем, а в
+    # счётчике «Сделано N из M» он висит недоделанным.
+    assert body["blocks"][0]["confirm_endpoint"] == f"/cabinet/tracker/blocks/{block.id}/watched"
 
     resp = client.post(f"/cabinet/tracker/blocks/{block.id}/watched")
     assert resp.status_code == 200, resp.text

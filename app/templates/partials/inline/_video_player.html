@@ -21,7 +21,10 @@
 сервером при рендере страницы, второй одинаковый запрос был бы лишним и вдобавок
 удвоил счётчик просмотров, `log_video_view` пишется по факту рендера страницы,
 до JS). `options.csrfToken` — токен для сохранения прогресса, нужен в обоих
-режимах.
+режимах. `options.watchRequired === false` — просмотр ролика ничего не
+открывает (необязательный видео-блок, инструкция в блоке портфолио): тогда
+красное «Просмотр пока не подтверждён» в конце ролика не показываем, ученик
+принимал его за поломку (владелец 18.09.2026).
 #}
 <script>
 (function () {
@@ -49,6 +52,7 @@
         var endpoint = options && options.endpoint;
         var csrfToken = options && options.csrfToken;
         var preloadedData = options && options.data;
+        var watchRequired = !(options && options.watchRequired === false);
 
         var statusEl = root.querySelector('[data-role="status"]');
         var shell = root.querySelector('[data-role="shell"]');
@@ -703,6 +707,8 @@
                     if (!progress.completed) return;
                     if (respData && respData.completed === true) {
                         setStatus('Видео просмотрено. Можно отметить выполнение.', false);
+                    } else if (!watchRequired) {
+                        setStatus('Место просмотра сохранено.', false);
                     } else {
                         setStatus('Просмотр пока не подтверждён. Обнови страницу и продолжи с сохранённого места.', true);
                     }
