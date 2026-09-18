@@ -498,14 +498,21 @@
             var isPlaying = false;
             var hasEverPlayed = false;
             var playbackAttemptTimer = null;
+            var START_BLOCKED_MESSAGE = 'Видео не запустилось само. Нажми на кнопку воспроизведения в самом видео.';
 
             function armPlaybackAttemptTimer() {
                 if (playbackAttemptTimer) window.clearTimeout(playbackAttemptTimer);
                 playbackAttemptTimer = window.setTimeout(function () {
                     playbackAttemptTimer = null;
+                    // Обложку не возвращаем, а убираем (владелец 18.09.2026).
+                    // iPhone в режиме энергосбережения запрещает любой
+                    // автозапуск, даже без звука, и повтор нашей кнопки снова
+                    // упирался в тот же запрет: ученица 14 раз подряд видела
+                    // эту ошибку. Тап по кнопке внутри самого плеера Bunny
+                    // iOS пропускает — до неё и открываем дорогу.
                     if (!isPlaying) {
-                        showStatus('Не удалось запустить видео. Нажми «Смотреть» ещё раз.', true);
-                        if (coverPlay) coverPlay.hidden = false;
+                        hideCover();
+                        showStatus(START_BLOCKED_MESSAGE, true);
                     }
                 }, 8000);
             }
@@ -789,6 +796,11 @@
                     isPlaying = true;
                     hasEverPlayed = true;
                     hideCover();
+                    // Ученица всё-таки запустила видео кнопкой плеера — подсказка
+                    // про неудачный старт больше не нужна.
+                    if (progressStatus.textContent.trim() === START_BLOCKED_MESSAGE) {
+                        showStatus('Место просмотра сохраняется автоматически.', false);
+                    }
                 });
                 player.on('pause', function () {
                     if (generation !== playerGeneration) return;
