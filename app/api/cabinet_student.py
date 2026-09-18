@@ -527,7 +527,9 @@ def profile_post(
     db.commit()
     invalidate_session(user["session_id"])
 
-    return RedirectResponse("/cabinet/learning", status_code=302)
+    # После первой анкеты показываем единственную вводную инструкцию поверх
+    # учебной ленты. Повторно её можно открыть из «Личной информации».
+    return RedirectResponse("/cabinet/learning?welcome=1", status_code=302)
 
 
 @router.get("/notifications", response_class=HTMLResponse)

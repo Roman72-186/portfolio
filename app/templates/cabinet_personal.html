@@ -5,6 +5,7 @@
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/account_actions.css?v=1">
 <link rel="stylesheet" href="/static/css/personal_ios.css?v=11">
+<link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=1">
 {% endblock %}
 {% block content %}
 <div class="prs-page ios-personal">
@@ -107,6 +108,13 @@
     </div>
     <p class="prs-note">Эти данные заполнены при первом входе. Поменять их может куратор – напиши ему.</p>
 
+    <div class="prs-section-title">Помощь</div>
+    <div class="prs-group">
+        <button type="button" class="prs-row prs-row-link prs-guide-row" onclick="openStudentOnboardingGuide()">
+            <span>Как пользоваться платформой</span>
+        </button>
+    </div>
+
     <div class="prs-section-title">Документы</div>
     <div class="prs-group">
         <button type="button" class="prs-row prs-row-link" onclick="openLegalDoc('oferta', 'Публичная оферта', '/static/legal/oferta-2026.pdf', 'Публичная оферта.pdf')"><span>Публичная оферта</span></button>
@@ -170,5 +178,9 @@
 {% set active_tab = "personal" %}
 {% include "partials/bottom_nav.html" %}
 {% include "partials/legal_doc_modal.html" %}
+{% set onboarding_auto_open = false %}
+{% set onboarding_on_learning = false %}
+{% set onboarding_access_until_text = access_until_text %}
+{% include "partials/student_onboarding_guide.html" %}
 <script src="/static/js/hint.js?v=1"></script>
 {% endblock %}

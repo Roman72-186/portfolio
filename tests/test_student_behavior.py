@@ -135,6 +135,7 @@ def test_profile_post_valid_data_sets_profile_completed(client, db, user_factory
         "lessons_count": "8",
     }, follow_redirects=False)
     assert resp.status_code == 302
+    assert resp.headers["location"] == "/cabinet/learning?welcome=1"
     db.expire_all()
     db_user = db.query(User).filter(User.id == user.id).first()
     assert db_user.profile_completed is True

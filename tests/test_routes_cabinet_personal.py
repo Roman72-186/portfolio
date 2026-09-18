@@ -73,6 +73,16 @@ def test_personal_bottom_nav_highlights_personal_tab(auth_client):
     assert 'class="bottom-nav"' in resp.text
 
 
+def test_personal_keeps_platform_guide_available(auth_client):
+    client, _ = auth_client
+    resp = client.get("/cabinet/personal")
+
+    assert resp.status_code == 200
+    assert "Как пользоваться платформой" in resp.text
+    assert 'onclick="openStudentOnboardingGuide()"' in resp.text
+    assert 'id="studentOnboardingGuide"' in resp.text
+
+
 # ── /cabinet/personal/contacts — правка только контактов ─────────────────────
 
 def test_contacts_form_shows_editable_and_locked_fields(auth_client, db):

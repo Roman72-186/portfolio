@@ -2,6 +2,7 @@
 {% block title %}Актуальное образовательное пространство{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/tracker.css?v=56">
+<link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=1">
 {% endblock %}
 {% block content %}
 {#
@@ -87,7 +88,7 @@
     {% endif %}
 
     {% if feed.steps %}
-    <div class="lrn-feed">
+    <div class="lrn-feed" id="learningStart">
         {% for step in feed.steps %}
         {# data-subject пустой у задач без предмета — такие видны в обоих
            направлениях, прятать их переключателем нельзя. #}
@@ -209,5 +210,6 @@ document.addEventListener('DOMContentLoaded', lrnApplySubjectFilter);
 {% set active_tab = "learning" %}
 {% include "partials/bottom_nav.html" %}
 {% include "partials/lightbox.html" %}
+{% include "partials/student_onboarding_guide.html" %}
 <script src="/static/js/hint.js?v=1"></script>
 {% endblock %}

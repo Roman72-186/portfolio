@@ -35,7 +35,8 @@ from app.db.database import get_db
 from app.dependencies import require_student
 from app.services.cycle_feed import feed_for_student
 from app.services.program import item_details
-from app.services.tz import today_msk
+from app.services.tz import msk_text, today_msk
+from app.constants import SUPPORT_URL
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet")
@@ -69,4 +70,8 @@ def cabinet_learning(
         # Нужен partial'у `partials/task_action.html` у шагов без блоков: без
         # него видео получило бы кнопку «Отметить» вместо ссылки на плеер.
         "details": item_details(db, [step["task"] for step in feed["steps"]]),
+        "onboarding_auto_open": request.query_params.get("welcome") == "1",
+        "onboarding_on_learning": True,
+        "onboarding_access_until_text": msk_text(user.get("access_until")),
+        "support_url": SUPPORT_URL,
     })

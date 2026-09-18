@@ -100,6 +100,19 @@ def test_learning_never_shows_the_old_no_week_banner(auth_client):
     assert "Актуальное образовательное пространство" in resp.text
 
 
+def test_learning_welcome_query_opens_onboarding_guide(auth_client):
+    client, _ = auth_client
+
+    regular = client.get("/cabinet/learning")
+    welcome = client.get("/cabinet/learning?welcome=1")
+
+    assert 'id="studentOnboardingGuide"' in welcome.text
+    assert 'class="obg-modal is-open"' in welcome.text
+    assert 'aria-hidden="false"' in welcome.text
+    assert 'class="obg-modal is-open"' not in regular.text
+    assert "Как проходить задания" in welcome.text
+
+
 def test_learning_has_no_week_tabs_anymore(auth_client, db):
     """Восемь вкладок сняты решением владельца 06.09.2026 — «никаких вкладок,
     только конструктор с фильтрами»."""

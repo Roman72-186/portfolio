@@ -1,0 +1,105 @@
+<div class="obg-modal{% if onboarding_auto_open %} is-open{% endif %}" id="studentOnboardingGuide"
+     role="dialog" aria-modal="true" aria-labelledby="studentOnboardingTitle"
+     aria-hidden="{{ 'false' if onboarding_auto_open else 'true' }}">
+    <div class="obg-backdrop" data-obg-close></div>
+    <div class="obg-sheet" role="document">
+        <div class="obg-head">
+            <div>
+                <p class="obg-kicker">Быстрый старт</p>
+                <h2 id="studentOnboardingTitle">Как устроена платформа</h2>
+            </div>
+            <button type="button" class="obg-close" data-obg-close aria-label="Закрыть инструкцию">&times;</button>
+        </div>
+
+        <div class="obg-body">
+            <section aria-labelledby="obg-welcome-title">
+                <h3 id="obg-welcome-title">Анкета готова. Можно начинать</h3>
+                <p>Иди по заданиям сверху вниз. Следующее задание откроется, когда ты выполнишь предыдущее или наступит нужная дата.</p>
+                {% if onboarding_access_until_text %}
+                <p class="obg-deadline">Доступ к пробному обучению открыт до <strong>{{ onboarding_access_until_text }}</strong> по Москве.</p>
+                {% endif %}
+            </section>
+
+            <section aria-labelledby="obg-nav-title">
+                <h3 id="obg-nav-title">Куда ведут кнопки</h3>
+                <div class="obg-nav-list">
+                    <div class="obg-nav-row"><strong>Актуальное образовательное пространство</strong><span>Задания и материалы, которые нужно пройти сейчас.</span></div>
+                    <div class="obg-nav-row"><strong>Личный трекер</strong><span>Весь план: текущие задачи, сроки и расписание. Откроется после загрузки портфолио «До».</span></div>
+                    <div class="obg-nav-row"><strong>Портфолио</strong><span>Твои работы до и после обучения. Начни с загрузки работ «До».</span></div>
+                    <div class="obg-nav-row"><strong>Обратная связь</strong><span>Комментарии куратора и переписка по сданным работам.</span></div>
+                    <div class="obg-nav-row"><strong>Личная информация</strong><span>Контакты, настройки уведомлений, документы и эта инструкция.</span></div>
+                </div>
+                <p class="obg-note">На телефоне эти разделы находятся в кнопке меню внизу экрана.</p>
+            </section>
+
+            <section aria-labelledby="obg-task-title">
+                <h3 id="obg-task-title">Как проходить задания</h3>
+                <ol class="obg-steps">
+                    <li><strong>Открой первый доступный блок.</strong> Прочитай задание, посмотри видео или изучи материал.</li>
+                    <li><strong>Выполни действие внутри блока.</strong> Ответь на вопрос, отметь выполнение или загрузи работу в указанном формате.</li>
+                    <li><strong>Дождись сохранения.</strong> После отправки проверь, что блок отмечен как выполненный.</li>
+                    <li><strong>Переходи дальше.</strong> Если следующий блок закрыт, платформа покажет причину: нужно завершить предыдущий или дождаться даты открытия.</li>
+                </ol>
+            </section>
+
+            <section class="obg-help" aria-labelledby="obg-help-title">
+                <h3 id="obg-help-title">Если что-то не получается</h3>
+                <p>Проверь «Обратную связь» и уведомления. Если нужна помощь со входом или работой платформы, напиши в поддержку.</p>
+                {% if support_url %}<a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" class="obg-support-link">Написать в поддержку</a>{% endif %}
+            </section>
+        </div>
+
+        <div class="obg-foot">
+            {% if user.access_expired|default(false) %}
+            <button type="button" class="btn-blue btn-full" data-obg-close>Закрыть инструкцию</button>
+            {% elif onboarding_on_learning %}
+            <button type="button" class="btn-blue btn-full" data-obg-start>Понятно, перейти к заданиям</button>
+            {% else %}
+            <a href="/cabinet/learning" class="btn-blue btn-full">Перейти к заданиям</a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var modal = document.getElementById('studentOnboardingGuide');
+    if (!modal) return;
+    var closeButton = modal.querySelector('.obg-close');
+    var lastFocus = null;
+    function focusable() { return Array.prototype.slice.call(modal.querySelectorAll('a[href], button:not([disabled])')); }
+    window.openStudentOnboardingGuide = function () {
+        lastFocus = document.activeElement;
+        modal.classList.add('is-open');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('obg-lock');
+        closeButton.focus();
+    };
+    window.closeStudentOnboardingGuide = function () {
+        modal.classList.remove('is-open');
+        modal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('obg-lock');
+        if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
+    };
+    modal.querySelectorAll('[data-obg-close]').forEach(function (node) { node.addEventListener('click', window.closeStudentOnboardingGuide); });
+    var start = modal.querySelector('[data-obg-start]');
+    if (start) start.addEventListener('click', function () {
+        window.closeStudentOnboardingGuide();
+        var target = document.getElementById('learningStart');
+        if (target) target.scrollIntoView({behavior: 'smooth', block: 'start'});
+    });
+    modal.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') { window.closeStudentOnboardingGuide(); return; }
+        if (event.key !== 'Tab') return;
+        var nodes = focusable();
+        if (!nodes.length) return;
+        var first = nodes[0], last = nodes[nodes.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    });
+    if (modal.classList.contains('is-open')) {
+        document.body.classList.add('obg-lock');
+        requestAnimationFrame(function () { closeButton.focus(); });
+    }
+})();
+</script>
