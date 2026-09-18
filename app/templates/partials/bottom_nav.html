@@ -194,7 +194,8 @@
         // Гейт «Портфолио «До»» (см. блок в конце файла): window.openPortfolioGate
         // определена, только когда гейт активен, и к моменту клика уже
         // выполнена — оба script-блока грузятся синхронно при загрузке страницы.
-        if (window.openPortfolioGate && link.getAttribute('data-nav-key') !== 'learning') {
+        var navKey = link.getAttribute('data-nav-key');
+        if (window.openPortfolioGate && navKey !== 'learning' && navKey !== 'personal') {
             e.preventDefault();
             setOpen(false);
             window.openPortfolioGate();
@@ -355,9 +356,10 @@
 
 {% if user.role_rank == 1 and not user.portfolio_do_completed and not user.access_expired and not user.tg_username_mismatch %}
 <!-- Гейт «Портфолио «До»» (владелец 14.09.2026): пока ученик не сдал работы
-     «До», из всего меню остаётся кликабельным только «Актуальное
-     образовательное пространство» (key=learning) — по остальным пунктам
-     клик перехватывается и вместо перехода показывает это окно. С 14.09.2026
+     «До», открыты «Актуальное образовательное пространство» (key=learning)
+     и «Личная информация» (key=personal) — она нужна для контактов, помощи и
+     документов в любой момент. По учебным разделам клик перехватывается и
+     вместо перехода показывает это окно. С 14.09.2026
      это не только UX: сервер (`is_path_blocked_by_portfolio_gate` в
      dependencies.py) отдаёт 403 → редирект сюда же с `?locked=portfolio` на
      тот же набор путей, если зайти прямой ссылкой или старой закладкой.
@@ -369,7 +371,7 @@
     <div class="card status-card gate-modal-card">
         <button type="button" class="gate-modal-close" id="portfolioGateClose" aria-label="Закрыть">&times;</button>
         <div class="card-title">Сначала загрузи работы «До»</div>
-        <p class="card-desc">Остальные разделы кабинета откроются сразу после того, как ты покажешь свои работы «До» — это займёт пару минут.</p>
+        <p class="card-desc">Остальные учебные разделы откроются сразу после того, как ты покажешь свои работы «До» — это займёт пару минут.</p>
         <div class="modal-actions" style="justify-content:center">
             <a href="/upload" class="btn-blue">Загрузить портфолио →</a>
         </div>
@@ -420,7 +422,8 @@
     // перехватываем здесь напрямую. Мобильный веер перехватывается выше.
     Array.prototype.forEach.call(document.querySelectorAll('.desk-nav-item[data-nav-key]'), function (link) {
         if (link.classList.contains('nav-disabled')) return;
-        if (link.getAttribute('data-nav-key') === 'learning') return;
+        var navKey = link.getAttribute('data-nav-key');
+        if (navKey === 'learning' || navKey === 'personal') return;
         link.addEventListener('click', openGate);
     });
 })();

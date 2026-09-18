@@ -89,6 +89,22 @@ def test_student_cabinet_uses_student_bottom_nav_only(
     assert 'href="/cabinet/curator/reports"' not in resp.text
 
 
+def test_portfolio_gate_keeps_personal_open_on_mobile_and_desktop(
+    client,
+    user_factory,
+    session_factory,
+):
+    user = user_factory(vk_id=302011, role_name="ученик", portfolio_do_completed=False)
+    _login_as(client, session_factory, user)
+
+    resp = client.get("/cabinet/learning")
+
+    assert resp.status_code == 200
+    assert "navKey !== 'learning' && navKey !== 'personal'" in resp.text
+    assert "navKey === 'learning' || navKey === 'personal'" in resp.text
+    assert client.get("/cabinet/personal").status_code == 200
+
+
 def test_curator_reports_use_curator_nav_not_admin_staff_nav(
     client,
     user_factory,
