@@ -9,7 +9,7 @@
 Своего хранилища у блока нет: он ведёт на существующий экран загрузки работ и
 закрывается фактом загрузки, а не галочкой ученика.
 """
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.models.task_block import (
@@ -190,6 +190,65 @@ def test_upload_opens_the_rest_of_the_feed(db, regular_user):
     assert [s["status"] for s in steps] == ["done", "current"]
 
 
+def test_intake_student_can_skip_portfolio_when_setting_is_off(db, user_factory):
+    """Новичок по ссылке «Проба» идёт дальше, если куратор
+    снял для него обязательность загрузки портфолио."""
+    student = user_factory(vk_id=710_902, name="Новичок", tariff="")
+    student.access_until = datetime.now(timezone.utc) + timedelta(days=2)
+    _cycle(db, student)
+    task = _task(db, student)
+    block = _portfolio_block(db, task, order=1)
+    block.is_required_for_intake = False
+    db.add(TaskBlock(
+        task_id=task.id, block_type=BLOCK_TEXT, title="Следующий шаг",
+        body="Можно продолжать", sort_order=2, is_required=True,
+    ))
+    db.commit()
+
+    steps = _feed(db, student)
+
+    assert [s["status"] for s in steps] == ["current", "current"]
+
+
+def test_intake_requirement_is_independent_from_general_setting(db, user_factory):
+    """Портфолио можно сделать необязательным для обычных учеников,
+    но обязательным для пришедших по «Пробе»."""
+    student = user_factory(vk_id=710_904, name="Новичок", tariff="")
+    student.access_until = datetime.now(timezone.utc) + timedelta(days=2)
+    _cycle(db, student)
+    task = _task(db, student)
+    block = _portfolio_block(db, task, order=1)
+    block.is_required = False
+    block.is_required_for_intake = True
+    db.add(TaskBlock(
+        task_id=task.id, block_type=BLOCK_TEXT, title="Следующий шаг",
+        body="Можно продолжать", sort_order=2, is_required=True,
+    ))
+    db.commit()
+
+    steps = _feed(db, student)
+
+    assert [s["status"] for s in steps] == ["current", "locked"]
+
+
+def test_regular_student_still_obeys_general_portfolio_requirement(db, user_factory):
+    """Отдельная настройка «Пробы» не меняет правило для обычных учеников."""
+    student = user_factory(vk_id=710_903, name="Ученик")
+    _cycle(db, student)
+    task = _task(db, student)
+    block = _portfolio_block(db, task, order=1)
+    block.is_required_for_intake = False
+    db.add(TaskBlock(
+        task_id=task.id, block_type=BLOCK_TEXT, title="Следующий шаг",
+        body="Можно продолжать", sort_order=2, is_required=True,
+    ))
+    db.commit()
+
+    steps = _feed(db, student)
+
+    assert [s["status"] for s in steps] == ["current", "locked"]
+
+
 def test_expired_personal_window_releases_the_rest_of_the_feed(db, regular_user):
     _cycle(db, regular_user)
     task = _task(db, regular_user)
@@ -257,6 +316,7 @@ def test_portfolio_block_saves_without_content(admin_client, db):
         "starts_on": None,
         "blocks": [{"block_type": "portfolio", "title": None, "body": None,
                     "is_required": True, "subject": None, "tariffs": [],
+                    "is_required_for_intake": False,
                     "opens_at": None, "bypass_sequence": False,
                     "portfolio_window_hours": 72}],
         "audience": {"assign_to_all": True, "tag_ids": [], "assignee_usernames": ""},
@@ -266,6 +326,7 @@ def test_portfolio_block_saves_without_content(admin_client, db):
     block = db.query(TaskBlock).filter(TaskBlock.block_type == BLOCK_PORTFOLIO).first()
     assert block is not None
     assert block.is_required is True
+    assert block.is_required_for_intake is False
     assert block.portfolio_window_hours == 72
 
 
@@ -391,3 +452,5 @@ def test_constructor_portfolio_block_has_video_and_photo_fields(admin_client):
     assert "Без видеоинструкции" in page.text
     assert "Фото и скриншоты, необязательно" in page.text
     assert "Окно загрузки для ученика, часов" in page.text
+    assert 'data-b-required-for-intake' in page.text
+    assert "Для новичков по ссылке «Проба»" in page.text

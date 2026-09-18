@@ -221,6 +221,10 @@ function blockBodyHTML(type) {
 function blockSettingsHTML(type) {
     var portfolioWindowSetting = type === 'portfolio'
         ? ''
+            + '  <label class="prg-field prg-field--row prg-blk-setting">'
+            + '    <input type="checkbox" data-b-required-for-intake checked>'
+            + '    <span>Для новичков по ссылке «Проба» загрузка портфолио обязательна</span>'
+            + '  </label>'
             + '  <label class="prg-field prg-blk-setting">Окно загрузки для ученика, часов'
             + '    <input type="number" min="1" max="8760" step="1" value="72" data-b-portfolio-window-hours aria-label="Сколько часов ученик может загружать портфолио">'
             + '    <span class="prg-hint">Отсчёт начнётся, когда блок станет доступен ученику. Можно указать 24, 48, 72 часа или другой срок.</span>'
@@ -343,6 +347,10 @@ function fillBlockRow(row, block) {
     if (hiddenBox) hiddenBox.checked = !!block.hidden_until_done;
     var requiredBox = row.querySelector('[data-b-required]');
     if (requiredBox) requiredBox.checked = !!block.is_required;
+    var requiredForIntakeBox = row.querySelector('[data-b-required-for-intake]');
+    if (requiredForIntakeBox) {
+        requiredForIntakeBox.checked = block.is_required_for_intake !== false;
+    }
     var opensAt = row.querySelector('[data-b-opens]');
     if (opensAt) opensAt.value = block.opens_at || '';
     var closesAt = row.querySelector('[data-b-closes]');
@@ -448,6 +456,9 @@ function collectFormBlocks(form) {
         // Доступность блока — одинаково у всех типов.
         var requiredBox = row.querySelector('[data-b-required]');
         item.is_required = !!(requiredBox && requiredBox.checked);
+        var requiredForIntakeBox = row.querySelector('[data-b-required-for-intake]');
+        item.is_required_for_intake = requiredForIntakeBox
+            ? requiredForIntakeBox.checked : false;
         var opensAt = row.querySelector('[data-b-opens]');
         item.opens_at = (opensAt && opensAt.value) ? opensAt.value : null;
         var closesAt = row.querySelector('[data-b-closes]');

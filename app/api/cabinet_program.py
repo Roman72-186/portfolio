@@ -312,6 +312,7 @@ def _edit_payloads(
                 "question_type": b.question_type,
                 "hidden_until_done": b.hidden_until_done,
                 "is_required": b.is_required,
+                "is_required_for_intake": b.is_required_for_intake,
                 "subject": b.subject,
                 "tariffs": sorted(block_tariffs.get(b.id, set())),
                 "required_tariffs": sorted(block_required_tariffs.get(b.id, set())),
@@ -676,6 +677,9 @@ class BlockItem(BaseModel):
     # сервисный слой (`sync_blocks`/`_sync_tariffs`), не эта схема — то же
     # разделение ответственности, что уже было для block_type/question_type.
     is_required: bool = False
+    # Отдельная обязательность для новичка по ссылке «Проба».
+    # Сервис учитывает её только у блока загрузки портфолио.
+    is_required_for_intake: bool = True
     subject: str | None = Field(default=None, max_length=50)
     tariffs: list[str] = Field(default_factory=list, max_length=10)
     # Кого обязать выполнить, если блок обязательный — отдельная ось от
@@ -1022,6 +1026,7 @@ def blocks_source_content(
             "question_type": b.question_type,
             "hidden_until_done": b.hidden_until_done,
             "is_required": b.is_required,
+            "is_required_for_intake": b.is_required_for_intake,
             "subject": b.subject,
             "tariffs": sorted(tariffs.get(b.id, set())),
             "required_tariffs": sorted(required_tariffs.get(b.id, set())),

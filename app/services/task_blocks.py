@@ -484,6 +484,10 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
             item.get("hidden_until_done") if block_type == BLOCK_QUESTION else False
         )
         row.is_required = bool(item.get("is_required"))
+        row.is_required_for_intake = bool(
+            item.get("is_required_for_intake", True)
+            if block_type == BLOCK_PORTFOLIO else False
+        )
         subject = _clean(item.get("subject"), 50)
         row.subject = subject if subject in MOCK_SUBJECTS else None
         row.bypass_sequence = bool(item.get("bypass_sequence"))
@@ -1034,6 +1038,19 @@ def block_status(
     return "current"
 
 
+def is_block_required_for_user(
+    block: TaskBlock, *, is_intake_student: bool
+) -> bool:
+    """Какой флаг обязательности действует для этого ученика.
+
+    Отдельное правило «Пробы» пока есть только у загрузки
+    портфолио. Остальные типы всегда смотрят на общий `is_required`.
+    """
+    if is_intake_student and block.block_type == BLOCK_PORTFOLIO:
+        return block.is_required_for_intake
+    return block.is_required
+
+
 def feed_state(
     db: DBSession, *, task_id: int, user_id: int, user_tariff: str | None
 ) -> list[dict]:
@@ -1044,14 +1061,22 @@ def feed_state(
     шаблону единой ленты для рендера, без похода в базу на каждый блок.
     """
     from app.models.tracker import ITEM_MOCK_EXAM, TrackerTask
+    from app.models.user import User
 
     blocks = get_blocks(db, task_id)
     task = db.get(TrackerTask, task_id)
+    student = db.get(User, user_id)
+    is_intake_student = bool(student and student.access_until is not None)
     task_blocks_progress = bool(
         task and task.is_required and task.kind != ITEM_MOCK_EXAM
     )
     required_by_block = {
-        block.id: bool(task_blocks_progress and block.is_required)
+        block.id: bool(
+            task_blocks_progress
+            and is_block_required_for_user(
+                block, is_intake_student=is_intake_student
+            )
+        )
         for block in blocks
     }
     block_ids = [block.id for block in blocks]

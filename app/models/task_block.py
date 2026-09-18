@@ -267,6 +267,14 @@ class TaskBlock(Base):
     # проставит куратор в новой ленте.
     is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # Новички, вошедшие по ссылке «Проба», могут иметь отдельное
+    # правило обязательности. Пока оно применяется только к блоку
+    # загрузки портфолио. True сохраняет прежнее поведение уже
+    # созданных блоков после миграции.
+    is_required_for_intake: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+
     # Предмет блока — «Рисунок»|«Композиция»|None (доступен обоим). Зеркало
     # TrackerTask.subject, значения — app.constants.MOCK_SUBJECTS. Нужен
     # именно на блоке, а не на всём задании: предобучение часть цикла ведёт

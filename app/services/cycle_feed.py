@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from app.models.learning_topic import LearningTopic
 from app.models.task_block import BLOCK_PORTFOLIO
 from app.models.tracker import ITEM_MOCK_EXAM, STATUS_DONE
+from app.models.user import User
 from app.models.work import WORK_TYPE_BEFORE, Work
 from app.services.program import day_bounds, msk_date
 from app.services.task_blocks import (
@@ -38,6 +39,7 @@ from app.services.task_blocks import (
     get_states,
     get_tariffs,
     is_block_accessible,
+    is_block_required_for_user,
     portfolio_window_expired,
     start_portfolio_window,
 )
@@ -203,6 +205,8 @@ def build_cycle_feed(
         return []
 
     now = datetime.now(timezone.utc)
+    student = db.get(User, user_id)
+    is_intake_student = bool(student and student.access_until is not None)
 
     tasks = [entry["task"] for entry in entries]
     blocks_by_task = get_blocks_for_tasks(db, [task.id for task in tasks])
@@ -236,7 +240,10 @@ def build_cycle_feed(
         task_blocks_progress = task.is_required and task.kind != ITEM_MOCK_EXAM
         for block in task_blocks:
             required_by_block[block.id] = bool(
-                task_blocks_progress and block.is_required
+                task_blocks_progress
+                and is_block_required_for_user(
+                    block, is_intake_student=is_intake_student
+                )
             )
     block_ids = [block.id for block in ordered_blocks]
     states = get_states(db, block_ids=block_ids, user_id=user_id)
