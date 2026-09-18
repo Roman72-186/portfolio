@@ -111,6 +111,22 @@ def _portfolio_blocks_by_task(db: DBSession, user_id: int) -> dict[int, list[Tas
     return by_task
 
 
+def intake_portfolio_gate_required(db: DBSession, *, user_id: int) -> bool:
+    """Нужно ли новичку с «Пробы» закрывать кабинет портфолио-гейтом.
+
+    Глобальный гейт должен следовать той же настройке, что и блок в учебной
+    ленте. Учитываем только опубликованные задания, доступные конкретному
+    ученику; необязательное задание не может закрывать остальные разделы.
+    """
+    for task_id, blocks in _portfolio_blocks_by_task(db, user_id).items():
+        task = db.get(TrackerTask, task_id)
+        if task and task.is_required and any(
+            block.is_required_for_intake for block in blocks
+        ):
+            return True
+    return False
+
+
 def portfolio_windows(
     db: DBSession,
     *,

@@ -13,6 +13,7 @@ from app.csrf import validate_csrf_token
 from app.db.database import get_db
 from app.models.session import Session
 from app.models.user import User
+from app.services.portfolio_window import intake_portfolio_gate_required
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -207,10 +208,15 @@ def get_current_user(
     # тем же приёмом, что и расхождение Telegram-ника выше: пока идёт самая
     # первая анкета, приоритетнее её редирект на /cabinet/profile
     # (`needs_profile_setup` в самих роутах), а не этот гейт.
+    portfolio_required = (
+        user.access_until is None
+        or intake_portfolio_gate_required(db, user_id=user.id)
+    )
     portfolio_gate = (
         role_rank == 1
         and user.profile_completed
         and not user.portfolio_do_completed
+        and portfolio_required
         and not access_expired
         and not tg_username_mismatch
     )
@@ -237,6 +243,7 @@ def get_current_user(
         "about": user.about,
         "profile_completed": user.profile_completed,
         "portfolio_do_completed": user.portfolio_do_completed,
+        "portfolio_gate": portfolio_gate,
         "drive_folder_id": user.drive_folder_id,
         "curator_id": user.curator_id,
         "tariff": user.tariff,

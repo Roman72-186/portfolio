@@ -354,7 +354,7 @@
 })();
 </script>
 
-{% if user.role_rank == 1 and not user.portfolio_do_completed and not user.access_expired and not user.tg_username_mismatch %}
+{% if user.portfolio_gate %}
 <!-- Гейт «Портфолио «До»» (владелец 14.09.2026): пока ученик не сдал работы
      «До», открыты «Актуальное образовательное пространство» (key=learning)
      и «Личная информация» (key=personal) — она нужна для контактов, помощи и

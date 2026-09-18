@@ -335,6 +335,51 @@ def test_bottom_nav_hides_portfolio_gate_when_completed(auth_client):
     assert 'id="portfolioGateModal"' not in resp.text
 
 
+def test_intake_student_skips_portfolio_gate_when_accessible_block_is_optional(
+    client, db, user_factory, session_factory,
+):
+    """Настройка блока для «Пробы» снимает и поп-ап, и серверный гейт."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.task_block import BLOCK_PORTFOLIO, TaskBlock
+    from app.services.tracker import create_task
+
+    staff = user_factory(
+        vk_id=550_311, name="Стафф", is_admin=True, role_name="админ"
+    )
+    task = create_task(
+        db,
+        title="Портфолио",
+        user_id=staff.id,
+        assign_to_all=True,
+        is_required=True,
+    )
+    task.is_published = True
+    db.add(TaskBlock(
+        task_id=task.id,
+        sort_order=0,
+        block_type=BLOCK_PORTFOLIO,
+        is_required_for_intake=False,
+    ))
+    db.commit()
+
+    client, student = _auth(
+        client,
+        user_factory,
+        session_factory,
+        vk_id=100_114,
+        portfolio_do_completed=False,
+    )
+    student.access_until = datetime.now(timezone.utc) + timedelta(days=7)
+    db.commit()
+    learning = client.get("/cabinet/learning")
+    assert learning.status_code == 200
+    assert 'id="portfolioGateModal"' not in learning.text
+
+    tracker = client.get("/cabinet/tracker", follow_redirects=False)
+    assert tracker.status_code == 200
+
+
 # ---------------------------------------------------------------------------
 # 2b. Server-side enforcement of the "Portfolio До" gate (not just the popup)
 # ---------------------------------------------------------------------------
