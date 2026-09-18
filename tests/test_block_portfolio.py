@@ -12,12 +12,17 @@
 from datetime import timedelta, timezone
 
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
-from app.models.task_block import BLOCK_PORTFOLIO, BLOCK_TEXT, TaskBlock
+from app.models.task_block import (
+    BLOCK_PORTFOLIO,
+    BLOCK_TEXT,
+    TaskBlock,
+    TaskBlockState,
+)
 from app.models.work import Work
 from app.services.cycle_feed import build_cycle_feed, has_portfolio_upload
 from app.services.program import day_bounds
 from app.services.tracker import create_task
-from app.services.tz import msk_midnight, today_msk
+from app.services.tz import msk_midnight, now_msk, today_msk
 
 TODAY = today_msk()
 CYCLE_START = TODAY - timedelta(days=2)
@@ -185,6 +190,48 @@ def test_upload_opens_the_rest_of_the_feed(db, regular_user):
     assert [s["status"] for s in steps] == ["done", "current"]
 
 
+def test_expired_personal_window_releases_the_rest_of_the_feed(db, regular_user):
+    _cycle(db, regular_user)
+    task = _task(db, regular_user)
+    block = _portfolio_block(db, task, order=1)
+    block.portfolio_window_hours = 24
+    db.add(TaskBlock(
+        task_id=task.id, block_type=BLOCK_TEXT, title="Следующий шаг",
+        body="Можно продолжать", sort_order=2, is_required=True,
+    ))
+    db.commit()
+
+    first = _feed(db, regular_user)
+    state = db.query(TaskBlockState).filter_by(
+        block_id=block.id, user_id=regular_user.id
+    ).one()
+    state.started_at = _utc(now_msk() - timedelta(hours=25))
+    db.commit()
+
+    expired = _feed(db, regular_user)
+
+    assert [s["status"] for s in first] == ["current", "locked"]
+    assert [s["status"] for s in expired] == ["locked", "current"]
+
+
+def test_work_uploaded_before_personal_window_does_not_close_it(db, regular_user):
+    _cycle(db, regular_user)
+    task = _task(db, regular_user)
+    block = _portfolio_block(db, task)
+    block.portfolio_window_hours = 72
+    db.commit()
+    _work(db, regular_user)
+
+    steps = _feed(db, regular_user)
+
+    assert steps[0]["status"] == "current"
+    state = db.query(TaskBlockState).filter_by(
+        block_id=block.id, user_id=regular_user.id
+    ).one()
+    assert state.started_at is not None
+    assert state.status != "done"
+
+
 # ── конструктор ─────────────────────────────────────────────────────────────
 
 def test_constructor_offers_the_portfolio_block(admin_client):
@@ -210,7 +257,8 @@ def test_portfolio_block_saves_without_content(admin_client, db):
         "starts_on": None,
         "blocks": [{"block_type": "portfolio", "title": None, "body": None,
                     "is_required": True, "subject": None, "tariffs": [],
-                    "opens_at": None, "bypass_sequence": False}],
+                    "opens_at": None, "bypass_sequence": False,
+                    "portfolio_window_hours": 72}],
         "audience": {"assign_to_all": True, "tag_ids": [], "assignee_usernames": ""},
     })
 
@@ -218,6 +266,7 @@ def test_portfolio_block_saves_without_content(admin_client, db):
     block = db.query(TaskBlock).filter(TaskBlock.block_type == BLOCK_PORTFOLIO).first()
     assert block is not None
     assert block.is_required is True
+    assert block.portfolio_window_hours == 72
 
 
 # ── ссылка кнопки ───────────────────────────────────────────────────────────
@@ -341,3 +390,4 @@ def test_constructor_portfolio_block_has_video_and_photo_fields(admin_client):
 
     assert "Без видеоинструкции" in page.text
     assert "Фото и скриншоты, необязательно" in page.text
+    assert "Окно загрузки, часов" in page.text

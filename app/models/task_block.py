@@ -299,6 +299,12 @@ class TaskBlock(Base):
     # выхода.
     closes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Персональное окно загрузки портфолио в часах (владелец 18.09.2026).
+    # Отсчёт начинается один раз, когда блок становится доступен конкретному
+    # ученику; момент хранится в TaskBlockState.started_at. NULL сохраняет
+    # прежнюю механику абсолютных opens_at/closes_at.
+    portfolio_window_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Текст, который видит ученик вместо стандартной фразы «Откроется …» /
     # «Доступ закрыт», пока блок заперт по календарю — ни `opens_at`, ни
     # `closes_at` сами по себе объяснить причину так, как это нужно куратору,
@@ -552,8 +558,9 @@ class TaskBlockState(Base):
     )
 
     status: Mapped[str] = mapped_column(String(20), nullable=False, default=STATUS_OPEN)
-    # Когда ученик нажал «Начать» у блока «Работа на время». У остальных типов
-    # пусто: строка состояния там заводится в момент выполнения, а не старта.
+    # Когда ученик нажал «Начать» у блока «Работа на время» или когда
+    # персональный блок портфолио впервые стал ему доступен. Повторный вход
+    # момент не сдвигает.
     started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

@@ -323,6 +323,7 @@ def _edit_payloads(
                 "locked_message": b.locked_message,
                 "bypass_sequence": b.bypass_sequence,
                 "time_limit_minutes": b.time_limit_minutes,
+                "portfolio_window_hours": b.portfolio_window_hours,
                 # Варианты нужны форме правки у трёх типов: вопрос (текст +
                 # верный ответ), шкала навыков (текст + описание + подписи
                 # краёв) и правила (только текст). До 12.09.2026 сюда попадал
@@ -703,6 +704,10 @@ class BlockItem(BaseModel):
     # Лимит работы на время в минутах (владелец 03.09.2026, «давай сделаем
     # один час»). У остальных типов игнорируется сервисом.
     time_limit_minutes: int | None = Field(default=None, ge=5, le=600)
+    # Для блока портфолио: сколько часов доступна загрузка каждому ученику с
+    # момента, когда блок впервые стал ему доступен. Поддерживает 24, 48, 72
+    # и любое другое целое значение в разумных пределах.
+    portfolio_window_hours: int | None = Field(default=None, ge=1, le=8760)
 
     @model_validator(mode="after")
     def choice_question_needs_a_right_answer(self) -> "BlockItem":
@@ -1028,6 +1033,10 @@ def blocks_source_content(
             # текст — он от даты не зависит.
             "locked_message": b.locked_message,
             "bypass_sequence": b.bypass_sequence,
+            # Относительная длительность переносится в новый день: в отличие
+            # от абсолютных opens_at/closes_at она начнёт отсчёт заново у
+            # каждого ученика, когда копия блока станет доступна.
+            "portfolio_window_hours": b.portfolio_window_hours,
             "images": [
                 {"url": i.image_s3_url, "path": i.image_s3_path}
                 for i in images.get(b.id, [])

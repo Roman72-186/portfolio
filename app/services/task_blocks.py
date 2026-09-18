@@ -5,7 +5,7 @@
 свежим запросом, кэша между запросами нет.
 """
 
-from datetime import date as date_type, timezone
+from datetime import date as date_type, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session as DBSession
 
@@ -492,6 +492,11 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         row.time_limit_minutes = (
             int(limit) if block_type == BLOCK_TIMED and limit else None
         )
+        window_hours = item.get("portfolio_window_hours")
+        row.portfolio_window_hours = (
+            int(window_hours)
+            if block_type == BLOCK_PORTFOLIO and window_hours else None
+        )
         opens_at_date = item.get("opens_at")
         row.opens_at = (
             msk_midnight(opens_at_date).astimezone(timezone.utc)
@@ -794,6 +799,45 @@ def get_states(db: DBSession, *, block_ids: list[int], user_id: int) -> dict[int
     return {row.block_id: row for row in rows}
 
 
+def portfolio_window_deadline(
+    block: TaskBlock, state: TaskBlockState | None
+) -> datetime | None:
+    """Персональный дедлайн блока или None, пока отсчёт не начался."""
+    if (
+        block.block_type != BLOCK_PORTFOLIO
+        or not block.portfolio_window_hours
+        or state is None
+        or state.started_at is None
+    ):
+        return None
+    started_at = state.started_at
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    return started_at + timedelta(hours=block.portfolio_window_hours)
+
+
+def portfolio_window_expired(
+    block: TaskBlock, state: TaskBlockState | None, *, now=None
+) -> bool:
+    deadline = portfolio_window_deadline(block, state)
+    return deadline is not None and deadline <= (now or _now())
+
+
+def start_portfolio_window(
+    db: DBSession, *, block: TaskBlock, user_id: int, now=None
+) -> TaskBlockState:
+    """Запомнить первый момент доступности, не продлевая окно при возврате."""
+    state = get_state(db, block_id=block.id, user_id=user_id)
+    if state is None:
+        state = TaskBlockState(block_id=block.id, user_id=user_id, status=STATUS_OPEN)
+        db.add(state)
+        db.flush()
+    if state.started_at is None:
+        state.started_at = now or _now()
+        db.flush()
+    return state
+
+
 def close_block_for_user(
     db: DBSession, block: TaskBlock, user_id: int, *, source: str
 ) -> TaskBlockState:
@@ -884,12 +928,19 @@ def is_block_accessible(
             opens_at = opens_at.replace(tzinfo=timezone.utc)
         if opens_at > moment:
             return False
-    closes_at = target.closes_at
-    if closes_at is not None:
-        if closes_at.tzinfo is None:
-            closes_at = closes_at.replace(tzinfo=timezone.utc)
-        if closes_at <= moment:
+    target_state = states.get(target.id)
+    # У нового портфолио абсолютный closes_at заменён персональным окном:
+    # каждому ученику даётся одинаковое число часов с его момента старта.
+    if target.block_type == BLOCK_PORTFOLIO and target.portfolio_window_hours:
+        if portfolio_window_expired(target, target_state, now=moment):
             return False
+    else:
+        closes_at = target.closes_at
+        if closes_at is not None:
+            if closes_at.tzinfo is None:
+                closes_at = closes_at.replace(tzinfo=timezone.utc)
+            if closes_at <= moment:
+                return False
     target_tariffs = tariffs_by_block.get(target.id)
     if target_tariffs and user_tariff not in target_tariffs:
         return False
@@ -910,7 +961,18 @@ def is_block_accessible(
         )
         if prior_required_tariffs and user_tariff not in prior_required_tariffs:
             continue
-        prior_closes_at = prior.closes_at
+        state = states.get(prior.id)
+        if (
+            prior.block_type == BLOCK_PORTFOLIO
+            and prior.portfolio_window_hours
+            and portfolio_window_expired(prior, state, now=moment)
+        ):
+            continue
+        prior_closes_at = (
+            None
+            if prior.block_type == BLOCK_PORTFOLIO and prior.portfolio_window_hours
+            else prior.closes_at
+        )
         if prior_closes_at is not None:
             prior_closes = (
                 prior_closes_at if prior_closes_at.tzinfo
@@ -918,7 +980,6 @@ def is_block_accessible(
             )
             if prior_closes <= moment:
                 continue
-        state = states.get(prior.id)
         if state is None or state.status != STATUS_DONE:
             return False
     return True

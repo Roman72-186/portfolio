@@ -335,9 +335,28 @@ scope)` и свойством `answered` (одна попытка: после о
                     wrap.appendChild(photoGallery(urls, block.title || 'Пример к инструкции'));
                 }
                 if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-body', block.body_html));
-                var a = el('a', 'btn-blue', 'Загрузить портфолио');
-                a.href = block.upload_url || '/upload';
-                wrap.appendChild(a);
+                if (block.window_open !== false) {
+                    var a = el('a', 'btn-blue', 'Загрузить портфолио');
+                    a.href = block.upload_url || '/upload';
+                    wrap.appendChild(a);
+                    if (block.window_deadline) {
+                        wrap.appendChild(el(
+                            'p', 'video-help',
+                            'Загрузить или заменить работы можно до ' + block.window_deadline + ' по Москве.'
+                        ));
+                    }
+                } else {
+                    var disabled = el('button', 'btn-blue', 'Окно загрузки закрыто');
+                    disabled.type = 'button';
+                    disabled.disabled = true;
+                    wrap.appendChild(disabled);
+                    wrap.appendChild(el(
+                        'p', 'video-help',
+                        block.window_deadline
+                            ? 'Срок загрузки закончился ' + block.window_deadline + ' по Москве.'
+                            : 'Сначала завершите предыдущие шаги.'
+                    ));
+                }
                 if (block.done) {
                     wrap.appendChild(el('p', 'lrn-blk-verdict is-ok', '✓ Работа загружена'));
                 } else {

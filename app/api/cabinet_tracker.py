@@ -54,6 +54,10 @@ from app.services.program import (
     msk_date,
     week_start,
 )
+from app.services.portfolio_window import (
+    format_deadline_msk,
+    portfolio_windows,
+)
 from app.services.stats import avg_score_by_subject_all_time
 from app.services import s3 as s3_service
 from app.services.task_blocks import (
@@ -277,8 +281,14 @@ def _portfolio_block_done(db: DBSession, block, user_id: int) -> bool:
     state = get_task_block_state(db, block_id=block.id, user_id=user_id)
     if state is not None and state.status == STATUS_DONE:
         return True
+    if block.portfolio_window_hours and (state is None or state.started_at is None):
+        return False
     task = db.get(TrackerTask, block.task_id)
-    since = block.opens_at or (task.starts_at if task else None)
+    since = (
+        state.started_at
+        if block.portfolio_window_hours and state is not None and state.started_at
+        else block.opens_at or (task.starts_at if task else None)
+    )
     if since is None and task is not None and task.due_at is not None:
         since = day_bounds(msk_date(task.due_at))[0]
     if since is None:
@@ -396,6 +406,19 @@ def cabinet_tracker_task_blocks(
         b for b in get_task_blocks(db, task_id)
         if not (b.block_type == BLOCK_QUESTION and b.hidden_until_done and not task_done)
     ]
+    portfolio_by_block = (
+        {
+            window.block_id: window
+            for window in portfolio_windows(
+                db,
+                user_id=user["user_id"],
+                user_tariff=user.get("tariff"),
+                section=WORK_TYPE_BEFORE,
+            )
+        }
+        if any(b.block_type == BLOCK_PORTFOLIO for b in blocks)
+        else {}
+    )
     # `question_blocks` отдаёт и вопросы, и шкалы навыков — у обоих есть
     # варианты и ответы ученика.
     questions = task_question_blocks(blocks)
@@ -537,7 +560,13 @@ def cabinet_tracker_task_blocks(
             # (18.09.2026): при двух открытых окнах он покажет срок того, с
             # кнопки которого пришли. Прав ссылка не даёт — окно проверяется
             # на сервере целиком, см. `services/portfolio_window.py`.
+            window = portfolio_by_block.get(block.id)
             item["upload_url"] = f"/upload?section=before&block={block.id}"
+            item["window_open"] = window.is_open if window is not None else True
+            item["window_deadline"] = (
+                format_deadline_msk(window.closes_at)
+                if window is not None and window.closes_at is not None else None
+            )
             item["done"] = _portfolio_block_done(db, block, user["user_id"])
             # Видеоинструкция и примеры над кнопкой (владелец 17.09.2026).
             # Оба необязательны; закрытие шага от них не зависит — только

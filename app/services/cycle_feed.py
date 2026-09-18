@@ -38,6 +38,8 @@ from app.services.task_blocks import (
     get_states,
     get_tariffs,
     is_block_accessible,
+    portfolio_window_expired,
+    start_portfolio_window,
 )
 from app.services.tracker import (
     accessible_cycles,
@@ -104,7 +106,7 @@ def _task_done(entry: dict) -> bool:
     return entry["status"] == STATUS_DONE
 
 
-def has_portfolio_upload(db: Session, user_id: int, *, since: date) -> bool:
+def has_portfolio_upload(db: Session, user_id: int, *, since: date | datetime) -> bool:
     """Загружал ли ученик работу «До» начиная с `since` (московская дата).
 
     Блок «Загрузить портфолио» закрывается фактом загрузки, а не галочкой
@@ -118,7 +120,13 @@ def has_portfolio_upload(db: Session, user_id: int, *, since: date) -> bool:
     `api/cabinet_tracker.py::_portfolio_block_done`: разойдутся — блок будет
     рисоваться закрытым и при этом запирать ленту, или наоборот.
     """
-    start, _ = day_bounds(since)
+    start = (
+        day_bounds(since)[0]
+        if isinstance(since, date) and not isinstance(since, datetime)
+        else since
+    )
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
     return (
         db.query(Work.id)
         .filter(
@@ -224,13 +232,31 @@ def build_cycle_feed(
     # закрывал бы их любой посторонней работой, загруженной на общем экране.
     pending_uploads = [
         block for block in ordered_blocks
-        if block.block_type == BLOCK_PORTFOLIO and block.id not in states
+        if block.block_type == BLOCK_PORTFOLIO
+        and (block.id not in states or states[block.id].status != STATUS_DONE)
     ]
-    if pending_uploads and has_portfolio_upload(db, user_id, since=start):
-        for block in pending_uploads:
+    closed_upload = False
+    for block in pending_uploads:
+        state = states.get(block.id)
+        # Для персонального окна работа, загруженная до его старта, не может
+        # закрыть новый шаг. Первый показ ниже создаст started_at; со
+        # следующего запроса считаем только более свежие загрузки.
+        if (
+            block.portfolio_window_hours
+            and (state is None or state.started_at is None)
+        ):
+            continue
+        upload_since = (
+            state.started_at
+            if block.portfolio_window_hours and state is not None and state.started_at
+            else start
+        )
+        if has_portfolio_upload(db, user_id, since=upload_since):
             close_block_for_user(
                 db, block=block, user_id=user_id, source="portfolio_upload"
             )
+            closed_upload = True
+    if closed_upload:
         db.commit()
         states = get_states(db, block_ids=block_ids, user_id=user_id)
 
@@ -240,6 +266,7 @@ def build_cycle_feed(
     blocked = False
     steps: list[dict] = []
     block_index = 0
+    started_portfolio_window = False
     for entry in entries:
         task = entry["task"]
         task_blocks = blocks_by_task.get(task.id, [])
@@ -284,7 +311,11 @@ def build_cycle_feed(
             state = states.get(block.id)
             done = state is not None and state.status == STATUS_DONE
             block_waits_date = _not_open_yet(block.opens_at, now)
-            block_closed = _already_closed(block.closes_at, now)
+            block_closed = (
+                portfolio_window_expired(block, state, now=now)
+                if block.block_type == BLOCK_PORTFOLIO and block.portfolio_window_hours
+                else _already_closed(block.closes_at, now)
+            )
             accessible = (
                 not blocked
                 and not task_waits_date
@@ -299,6 +330,19 @@ def build_cycle_feed(
                     now=now,
                 )
             )
+            if (
+                accessible
+                and block.block_type == BLOCK_PORTFOLIO
+                and block.portfolio_window_hours
+            ):
+                was_started = state is not None and state.started_at is not None
+                state = start_portfolio_window(
+                    db, block=block, user_id=user_id, now=now
+                )
+                states[block.id] = state
+                started_portfolio_window = (
+                    started_portfolio_window or not was_started
+                )
             if done:
                 status, lock_reason = STATUS_DONE, None
             elif accessible:
@@ -330,6 +374,8 @@ def build_cycle_feed(
                 "first_in_task": position == 0,
             })
             block_index += 1
+    if started_portfolio_window:
+        db.commit()
     return steps
 
 

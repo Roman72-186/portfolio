@@ -189,6 +189,10 @@ function blockBodyHTML(type) {
             + '<p class="prg-hint" data-b-photo-status></p>'
             + '<div class="prg-blk-gallery" data-b-images></div>'
             + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Пояснение, необязательно" placeholder="Пояснение: что именно загрузить"></textarea>' + BODY_FORMAT_HINT + '</label>'
+            + '<label class="prg-field">Окно загрузки, часов'
+            + '  <input type="number" min="1" max="8760" step="1" value="72" data-b-portfolio-window-hours aria-label="Сколько часов открыта загрузка портфолио">'
+            + '  <span class="prg-hint">Отсчёт начнётся, когда блок станет доступен ученику. Можно указать 24, 48, 72 часа или другой срок.</span>'
+            + '</label>'
             + '<p class="prg-hint">Ученик увидит видео, фото и пояснение, а под ними кнопку. Она ведёт на экран загрузки работ, шаг закроется сам, когда работа загружена.</p>';
     }
     if (type === 'link') {
@@ -344,6 +348,8 @@ function fillBlockRow(row, block) {
     if (bypass) bypass.checked = !!block.bypass_sequence;
     var limitField = row.querySelector('[data-b-time-limit]');
     if (limitField && block.time_limit_minutes) limitField.value = block.time_limit_minutes;
+    var portfolioWindow = row.querySelector('[data-b-portfolio-window-hours]');
+    if (portfolioWindow) portfolioWindow.value = block.portfolio_window_hours || '';
     (block.tariffs || []).forEach(function (tariff) {
         var box = row.querySelector('[data-b-tariff][value="' + tariff + '"]');
         if (box) box.checked = true;
@@ -449,6 +455,9 @@ function collectFormBlocks(form) {
         var limitField = row.querySelector('[data-b-time-limit]');
         item.time_limit_minutes = (limitField && limitField.value)
             ? Number(limitField.value) : null;
+        var portfolioWindow = row.querySelector('[data-b-portfolio-window-hours]');
+        item.portfolio_window_hours = (portfolioWindow && portfolioWindow.value)
+            ? Number(portfolioWindow.value) : null;
         item.tariffs = [];
         row.querySelectorAll('[data-b-tariff]:checked').forEach(function (box) {
             item.tariffs.push(box.value);

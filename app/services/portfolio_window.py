@@ -2,8 +2,10 @@
 
 Владелец 18.09.2026: «Есть открытое окно — может загружать и удалять фото из
 ДО, нет открытого окна — уже не может ни загрузить, ни удалить». Сроки берём
-не из отдельной настройки, а из самого блока конструктора: у него уже есть
-`opens_at`/`closes_at`, и куратор выставляет их там же, где собирает задание.
+не из отдельной настройки, а из самого блока конструктора. Для новых блоков
+куратор задаёт длительность в часах: отсчёт начинается отдельно у каждого
+ученика, когда блок впервые становится ему доступен. Старые блоки без
+длительности продолжают использовать `opens_at`/`closes_at`.
 
 Экран `/upload` до этого модуля жил сам по себе — открытый всегда и никак не
 связанный с заданием (гейт `FeaturePeriod` сняли 09.09.2026, оставив доступ
@@ -30,7 +32,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.models.task_block import BLOCK_PORTFOLIO, TaskBlock
 from app.models.tracker import TrackerTask
 from app.models.work import WORK_TYPE_AFTER, WORK_TYPE_BEFORE
-from app.services.task_blocks import feed_state
+from app.services.task_blocks import feed_state, portfolio_window_deadline
 from app.services.tracker import MONTH_GENITIVE, accessible_task_ids
 from app.services.tz import MSK_TZ, now_msk
 from app.services.video_topics import accessible_topic_ids
@@ -134,14 +136,27 @@ def portfolio_windows(
             block_sec = block_section(block)
             if section is not None and block_sec != section:
                 continue
+            state = entry["state"]
+            personal_deadline = portfolio_window_deadline(block, state)
+            uses_personal_window = bool(block.portfolio_window_hours)
             windows.append(
                 PortfolioWindow(
                     block_id=block.id,
                     task_id=task_id,
                     section=block_sec,
-                    opens_at=_as_utc(block.opens_at),
-                    closes_at=_as_utc(block.closes_at),
-                    is_open=entry["status"] != "locked",
+                    opens_at=(
+                        _as_utc(state.started_at)
+                        if uses_personal_window and state is not None
+                        else _as_utc(block.opens_at)
+                    ),
+                    closes_at=(
+                        _as_utc(personal_deadline)
+                        if uses_personal_window else _as_utc(block.closes_at)
+                    ),
+                    is_open=(
+                        entry["status"] != "locked"
+                        and (not uses_personal_window or personal_deadline is not None)
+                    ),
                 )
             )
     return windows
@@ -170,7 +185,10 @@ def snapshot(
     preferred_block_id: int | None = None,
 ) -> WindowSnapshot:
     windows = portfolio_windows(
-        db, user_id=user_id, user_tariff=user_tariff, section=section
+        db,
+        user_id=user_id,
+        user_tariff=user_tariff,
+        section=section,
     )
     now = now_msk()
     open_windows = [w for w in windows if w.is_open]

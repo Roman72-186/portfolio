@@ -15,9 +15,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.models.task_block import BLOCK_PORTFOLIO, TaskBlock
+from app.models.task_block import BLOCK_PORTFOLIO, TaskBlock, TaskBlockState
 from app.models.user import User
 from app.models.work import Work
+from app.services.cycle_feed import build_cycle_feed
 from app.services.program import day_bounds
 from app.services.tracker import create_task
 from app.services.tz import now_msk, today_msk
@@ -47,11 +48,14 @@ def _task(db, owner, title="День портфолио"):
     return task
 
 
-def _portfolio_block(db, task, *, opens_at=None, closes_at=None):
+def _portfolio_block(
+    db, task, *, opens_at=None, closes_at=None, window_hours=None
+):
     block = TaskBlock(
         task_id=task.id, block_type=BLOCK_PORTFOLIO,
         title="Загрузите портфолио", sort_order=1, is_required=True,
         opens_at=opens_at, closes_at=closes_at,
+        portfolio_window_hours=window_hours,
     )
     db.add(block)
     db.commit()
@@ -187,6 +191,63 @@ def test_open_window_shows_the_form_and_the_deadline(auth_client, db):
     assert resp.status_code == 200
     assert 'id="photoInput"' in resp.text
     assert "Загрузить и заменить работы можно до" in resp.text
+
+
+def test_personal_window_starts_once_and_uses_configured_hours(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user)
+    block = _portfolio_block(
+        db,
+        task,
+        window_hours=48,
+        # Персональная длительность заменяет старую общую дату закрытия.
+        closes_at=_utc(now_msk() - timedelta(days=1)),
+    )
+    build_cycle_feed(
+        db,
+        user_id=user.id,
+        user_tariff=user.tariff,
+        start=TODAY,
+        end=TODAY,
+    )
+
+    first = client.get(f"/upload?section=before&block={block.id}")
+    state = db.query(TaskBlockState).filter_by(
+        block_id=block.id, user_id=user.id
+    ).one()
+    started_at = state.started_at
+    second = client.get(f"/upload?section=before&block={block.id}")
+    db.refresh(state)
+
+    assert first.status_code == 200
+    assert 'id="photoInput"' in first.text
+    assert "Загрузить и заменить работы можно до" in first.text
+    assert second.status_code == 200
+    assert state.started_at == started_at
+
+
+def test_personal_window_closes_after_its_own_deadline(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user)
+    block = _portfolio_block(db, task, window_hours=24)
+    build_cycle_feed(
+        db,
+        user_id=user.id,
+        user_tariff=user.tariff,
+        start=TODAY,
+        end=TODAY,
+    )
+    state = db.query(TaskBlockState).filter_by(
+        block_id=block.id, user_id=user.id
+    ).one()
+    state.started_at = _utc(now_msk() - timedelta(hours=25))
+    db.commit()
+
+    resp = client.get(f"/upload?section=before&block={block.id}")
+
+    assert resp.status_code == 200
+    assert "Загрузка закрыта" in resp.text
+    assert 'id="photoInput"' not in resp.text
 
 
 def test_open_window_shows_already_uploaded_works(auth_client, db):
