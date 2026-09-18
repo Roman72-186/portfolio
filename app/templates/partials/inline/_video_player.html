@@ -682,7 +682,9 @@
                     },
                     body: JSON.stringify({
                         position_seconds: progress.position_seconds,
-                        duration_seconds: progress.duration_seconds
+                        duration_seconds: progress.duration_seconds,
+                        playback_active: Boolean(progress.playback_active),
+                        ended: Boolean(progress.ended)
                     })
                 }).then(function (response) {
                     if (response.status === 401) { savingDisabled = true; throw new Error('session_expired'); }
@@ -696,9 +698,14 @@
                         hasReportedSaved = true;
                         setStatus('Место просмотра сохранено.', false);
                     }
-                    if (progress.completed) setStatus('Видео просмотрено. При следующем открытии начнём сначала.', false);
                     return response.json().catch(function () { return null; });
                 }).then(function (respData) {
+                    if (!progress.completed) return;
+                    if (respData && respData.completed === true) {
+                        setStatus('Видео просмотрено. Можно отметить выполнение.', false);
+                    } else {
+                        setStatus('Просмотр пока не подтверждён. Обнови страницу и продолжи с сохранённого места.', true);
+                    }
                 }).catch(function (error) {
                     if (error.message === 'session_expired') setStatus('Обнови страницу, чтобы сохранять место просмотра.', true);
                     // Сохранение в конце ролика следом уже не повторится —
@@ -722,7 +729,9 @@
                 sendProgress({
                     position_seconds: Math.max(0, currentSeconds),
                     duration_seconds: durationSeconds && durationSeconds > 0 ? durationSeconds : null,
-                    completed: Boolean(completed)
+                    completed: Boolean(completed),
+                    playback_active: Boolean(isPlaying),
+                    ended: Boolean(completed)
                 }, keepalive);
             }
 
@@ -777,8 +786,10 @@
                 });
                 player.on('pause', function () {
                     if (generation !== playerGeneration) return;
-                    isPlaying = false;
+                    // Последний кусок до паузы тоже был просмотрен. Флаг активного
+                    // воспроизведения должен попасть в тело запроса до смены состояния.
                     saveProgress(true, false, false);
+                    isPlaying = false;
                 });
                 player.on('seeked', function () {
                     if (generation !== playerGeneration) return;

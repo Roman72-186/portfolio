@@ -669,7 +669,9 @@ def test_completion_uses_server_duration_not_client_claim(
 
     assert forged.status_code == 200
     assert forged.json()["completed"] is False
-    assert db.get(VideoProgress, (user.id, VIDEO_ID)).completed_at is None
+    saved_forged = db.get(VideoProgress, (user.id, VIDEO_ID))
+    assert saved_forged.completed_at is None
+    assert saved_forged.duration_seconds == 3600.0
 
     # Защита от перемотки (владелец 05.09.2026) требует накопленного реального
     # времени просмотра — симулируем, что ученик уже почти досмотрел урок.
@@ -683,6 +685,54 @@ def test_completion_uses_server_duration_not_client_claim(
     )
 
     assert honest.json()["completed"] is True
+    assert db.get(VideoProgress, (user.id, VIDEO_ID)).completed_at is not None
+
+
+def test_ended_event_allows_small_catalog_duration_mismatch(
+    auth_client, db, monkeypatch
+):
+    """Событие Bunny `ended` надёжнее последней дробной позиции.
+
+    Каталог и поток могут расходиться больше чем на 5 секунд. Накопленное
+    время всё равно остаётся обязательным, поэтому подделка флага не открывает
+    перемотку.
+    """
+    from app.models.video_progress import VideoProgress
+
+    client, user = auth_client
+    monkeypatch.setattr(settings, "bunny_stream_enabled", True)
+    monkeypatch.setattr(settings, "bunny_stream_library_id", 720058)
+    monkeypatch.setattr(settings, "bunny_stream_token_key", "playback-key")
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Урок с расхождением длительности",
+        status="ready",
+        is_published=True,
+        duration_seconds=600.0,
+    )
+    db.add(video)
+    db.flush()
+    db.add(VideoProgress(
+        user_id=user.id,
+        video_id=VIDEO_ID,
+        position_seconds=590.0,
+        watched_seconds=590.0,
+    ))
+    db.commit()
+
+    response = client.post(
+        f"/cabinet/videos/{video.id}/progress",
+        json={
+            "position_seconds": 594,
+            "duration_seconds": 594,
+            "playback_active": False,
+            "ended": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["completed"] is True
     assert db.get(VideoProgress, (user.id, VIDEO_ID)).completed_at is not None
 
 

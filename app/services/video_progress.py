@@ -6,7 +6,9 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.constants import (
-    VIDEO_WATCH_HEARTBEAT_GAP_CAP_SECONDS,
+    VIDEO_WATCH_MAX_PLAYBACK_RATE,
+    VIDEO_WATCH_MIN_PLAYBACK_RATE,
+    VIDEO_WATCH_POSITION_JITTER_SECONDS,
     VIDEO_WATCH_TOLERANCE_SECONDS,
 )
 from app.models.video_progress import VideoProgress
@@ -59,7 +61,11 @@ def get_resume_position(progress: VideoProgress | None) -> float:
 
 
 def compute_watched_seconds(
-    previous: VideoProgress | None, *, now: datetime | None = None
+    previous: VideoProgress | None,
+    *,
+    position_seconds: float,
+    playback_active: bool,
+    now: datetime | None = None,
 ) -> float:
     """Накопленное реальное время просмотра — не позиция плеера, а сумма
     промежутков календарного времени между соседними heartbeat'ами.
@@ -69,13 +75,15 @@ def compute_watched_seconds(
     ролик реально был на экране. Этот счётчик — про то самое реальное время,
     защита от перемотки строится на нём (владелец 05.09.2026).
 
-    Промежуток длиннее `VIDEO_WATCH_HEARTBEAT_GAP_CAP_SECONDS` не
-    засчитывается — трактуется как «закрыл вкладку, вернулся другим днём»,
-    а не непрерывный просмотр, иначе один открытый на ночь плеер засчитал бы
-    сутки просмотра за пару секунд ролика.
+    Одного календарного интервала недостаточно: так открытый на ночь плеер
+    засчитал бы часы. Поэтому сервер также требует активное воспроизведение и
+    правдоподобное движение позиции. Задержка сети не теряет время, а пауза,
+    спящая вкладка и перемотка ничего не добавляют.
     """
     if previous is None:
         return 0.0
+    if not playback_active:
+        return previous.watched_seconds
     now = now or datetime.now(timezone.utc)
     updated_at = previous.updated_at
     if updated_at is None:
@@ -83,9 +91,17 @@ def compute_watched_seconds(
     if updated_at.tzinfo is None:
         updated_at = updated_at.replace(tzinfo=timezone.utc)
     gap = (now - updated_at).total_seconds()
-    if gap <= 0 or gap > VIDEO_WATCH_HEARTBEAT_GAP_CAP_SECONDS:
+    if gap <= 0:
         return previous.watched_seconds
-    return previous.watched_seconds + gap
+    position_delta = position_seconds - previous.position_seconds
+    if position_delta <= 0:
+        return previous.watched_seconds
+    if position_delta > (
+        gap * VIDEO_WATCH_MAX_PLAYBACK_RATE + VIDEO_WATCH_POSITION_JITTER_SECONDS
+    ):
+        return previous.watched_seconds
+    credited = min(gap, position_delta / VIDEO_WATCH_MIN_PLAYBACK_RATE)
+    return previous.watched_seconds + credited
 
 
 def watched_enough(watched_seconds: float, duration_seconds: float | None) -> bool:

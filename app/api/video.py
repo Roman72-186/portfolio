@@ -43,6 +43,8 @@ class VideoProgressUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     position_seconds: float = Field(ge=0, le=604_800, allow_inf_nan=False)
     duration_seconds: float | None = Field(default=None, gt=0, le=604_800, allow_inf_nan=False)
+    playback_active: bool = False
+    ended: bool = False
 
     @model_validator(mode="after")
     def validate_position(self):
@@ -448,11 +450,16 @@ def _save_progress(
     now = datetime.now(timezone.utc)
     existing = get_video_progress(db, user_id=user["user_id"], video_id=bunny_video_id)
     was_completed = existing is not None and existing.completed_at is not None
-    watched_seconds = compute_watched_seconds(existing, now=now)
+    watched_seconds = compute_watched_seconds(
+        existing,
+        position_seconds=payload.position_seconds,
+        playback_active=payload.playback_active or payload.ended,
+        now=now,
+    )
 
-    position_near_end = (
+    position_near_end = bool(
         duration is not None
-        and duration - payload.position_seconds <= 5
+        and (payload.ended or duration - payload.position_seconds <= 5)
     )
     completed = position_near_end and watched_enough(watched_seconds, duration)
     try:
@@ -461,7 +468,9 @@ def _save_progress(
             user_id=user["user_id"],
             video_id=bunny_video_id,
             position_seconds=payload.position_seconds,
-            duration_seconds=payload.duration_seconds,
+            # Для каталожного ролика храним длительность Bunny, а не значение из
+            # браузера. Иначе один запрос с другой длительностью ломал бы возобновление.
+            duration_seconds=duration,
             completed=completed,
             watched_seconds=watched_seconds,
         )

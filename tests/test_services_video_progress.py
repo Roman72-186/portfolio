@@ -2,10 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from app.constants import (
-    VIDEO_WATCH_HEARTBEAT_GAP_CAP_SECONDS,
-    VIDEO_WATCH_TOLERANCE_SECONDS,
-)
+from app.constants import VIDEO_WATCH_TOLERANCE_SECONDS
 from app.models.video_progress import VideoProgress
 from app.services.video_progress import (
     compute_watched_seconds,
@@ -163,41 +160,102 @@ def test_save_video_progress_without_watched_seconds_keeps_old_value(db, regular
 
 
 def test_compute_watched_seconds_no_previous_row_is_zero():
-    assert compute_watched_seconds(None) == 0.0
+    assert compute_watched_seconds(
+        None, position_seconds=10.0, playback_active=True
+    ) == 0.0
 
 
 def test_compute_watched_seconds_accumulates_over_normal_heartbeat_gap():
     previous = VideoProgress(
+        position_seconds=50.0,
         watched_seconds=50.0,
         updated_at=datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc),
     )
     now = datetime(2026, 9, 5, 12, 0, 10, tzinfo=timezone.utc)  # +10 сек, обычный heartbeat
 
-    assert compute_watched_seconds(previous, now=now) == 60.0
+    assert compute_watched_seconds(
+        previous, position_seconds=60.0, playback_active=True, now=now
+    ) == 60.0
 
 
-def test_compute_watched_seconds_ignores_gap_longer_than_cap():
+def test_compute_watched_seconds_keeps_honest_delayed_heartbeat():
     previous = VideoProgress(
+        position_seconds=50.0,
         watched_seconds=50.0,
         updated_at=datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc),
     )
-    gap = timedelta(seconds=VIDEO_WATCH_HEARTBEAT_GAP_CAP_SECONDS + 1)
+    gap = timedelta(seconds=45)
     now = datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc) + gap
 
-    # Разрыв длиннее допустимого — трактуется как «ушёл и вернулся», не
-    # непрерывный просмотр. Накопленное время не растёт, но и не обнуляется.
-    assert compute_watched_seconds(previous, now=now) == 50.0
+    assert compute_watched_seconds(
+        previous, position_seconds=95.0, playback_active=True, now=now
+    ) == 95.0
 
 
 def test_compute_watched_seconds_ignores_negative_gap():
     """Часы клиента/сервера могут разъехаться — не должно уходить в минус."""
     previous = VideoProgress(
+        position_seconds=50.0,
         watched_seconds=50.0,
         updated_at=datetime(2026, 9, 5, 12, 0, 10, tzinfo=timezone.utc),
     )
     now = datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc)  # «в прошлом»
 
-    assert compute_watched_seconds(previous, now=now) == 50.0
+    assert compute_watched_seconds(
+        previous, position_seconds=60.0, playback_active=True, now=now
+    ) == 50.0
+
+
+def test_compute_watched_seconds_ignores_paused_requests():
+    previous = VideoProgress(
+        position_seconds=50.0,
+        watched_seconds=50.0,
+        updated_at=datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    now = datetime(2026, 9, 5, 12, 1, 0, tzinfo=timezone.utc)
+
+    assert compute_watched_seconds(
+        previous, position_seconds=50.0, playback_active=False, now=now
+    ) == 50.0
+
+
+def test_compute_watched_seconds_rejects_seek_jump():
+    previous = VideoProgress(
+        position_seconds=50.0,
+        watched_seconds=50.0,
+        updated_at=datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    now = datetime(2026, 9, 5, 12, 0, 10, tzinfo=timezone.utc)
+
+    assert compute_watched_seconds(
+        previous, position_seconds=500.0, playback_active=True, now=now
+    ) == 50.0
+
+
+def test_compute_watched_seconds_supports_half_speed():
+    previous = VideoProgress(
+        position_seconds=50.0,
+        watched_seconds=50.0,
+        updated_at=datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    now = datetime(2026, 9, 5, 12, 0, 10, tzinfo=timezone.utc)
+
+    assert compute_watched_seconds(
+        previous, position_seconds=55.0, playback_active=True, now=now
+    ) == 60.0
+
+
+def test_compute_watched_seconds_supports_double_speed_without_double_credit():
+    previous = VideoProgress(
+        position_seconds=50.0,
+        watched_seconds=50.0,
+        updated_at=datetime(2026, 9, 5, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    now = datetime(2026, 9, 5, 12, 0, 10, tzinfo=timezone.utc)
+
+    assert compute_watched_seconds(
+        previous, position_seconds=70.0, playback_active=True, now=now
+    ) == 60.0
 
 
 def test_watched_enough_requires_close_to_full_duration():
