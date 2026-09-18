@@ -17,24 +17,18 @@
   проекте ещё нет;
 - `/cabinet/personal/legal/{slug}` — HTML-фрагмент документа для поп-апа,
   без `base.html` (голая разметка, не страница);
-- `/cabinet/personal/contacts` — правка контактов: телефон, телефон родителя,
-  ник в Telegram, город, часовой пояс, email, ссылка ВКонтакте, адрес СДЭК
-  (последние пять открыты владельцем 13.09.2026 — до этого были частью
-  установочных данных анкеты и правились только через куратора).
-
-Установочные данные, которые ученик по-прежнему не может изменить сам (ФИО,
-дата рождения, имя и отчество родителя, тариф, месяц/год начала обучения, год
-поступления в вуз), заполняются один раз в анкете первого входа
-`/cabinet/profile` — их правит куратор через
-`POST /cabinet/students/{student_id}/profile`. На экране контактов они видны,
-но заблокированы: так ученик понимает, что данные учтены и куда идти за
-правкой. Owner-решение 25.08.2026.
+- `/cabinet/personal/contacts` — правка личных данных: ФИО, дата рождения,
+  контакты, данные родителя, город, часовой пояс, email, ссылка ВКонтакте,
+  адрес СДЭК и год поступления в вуз. Тариф и начало обучения остаются
+  системными данными: они определяют доступ и учебный прогресс, поэтому
+  ученик видит их в форме, но не меняет.
 
 Только self-view: staff-просмотр чужой личной информации через этот роут не
 подключён ни к одному экрану персонала — заводить нечего, пока не появится
 реальный сценарий.
 """
 import asyncio
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Request, Depends, Form, HTTPException
@@ -44,6 +38,8 @@ from sqlalchemy.orm import Session as DBSession
 from app.api.cabinet_student import (
     EMAIL_RE,
     VK_RE,
+    _MIN_BIRTH_YEAR,
+    _university_year_options,
     needs_profile_setup,
     normalize_vk_profile_url,
 )
@@ -54,7 +50,7 @@ from app.dependencies import require_student, require_csrf
 from app.models.user import User
 from app.services.skills_history import skills_history
 from app.services import telegram as telegram_service
-from app.services.tz import msk_text
+from app.services.tz import msk_text, today_msk
 from app.services.contacts import (
     find_student_by_tg_username,
     normalize_phone,
@@ -116,7 +112,7 @@ def cabinet_personal(
 
 
 def _contacts_ctx(request, user, errors=None, form=None):
-    """Контекст экрана правки. `locked` — установочные данные для показа."""
+    """Контекст единой формы самостоятельной правки личных данных."""
     enrolled_at = user.get("enrolled_at")
     enrollment_month = MONTHS[enrolled_at.month - 1].capitalize() if enrolled_at else None
 
@@ -124,22 +120,28 @@ def _contacts_ctx(request, user, errors=None, form=None):
         "request": request,
         "user": user,
         "locked": {
-            "name": user.get("name") or "",
             "tariff": TARIFF_DISPLAY.get(user.get("tariff") or "", user.get("tariff") or ""),
             "enrollment_month": enrollment_month,
             "enrollment_year": user.get("enrollment_year"),
-            "university_year": user.get("university_year"),
         },
         "form": form or {
+            "first_name": user.get("first_name") or "",
+            "last_name": user.get("last_name") or "",
+            "birth_date": user.get("birth_date").isoformat() if user.get("birth_date") else "",
             "phone": user.get("phone") or "",
             "parent_phone": user.get("parent_phone") or "",
+            "parent_name": user.get("parent_name") or "",
             "tg_username": user.get("tg_username") or "",
             "city": user.get("city") or "",
             "timezone": user.get("timezone") or "",
             "email": user.get("email") or "",
             "vk_profile_url": user.get("vk_profile_url") or "",
             "sdek_address": user.get("sdek_address") or "",
+            "university_year": user.get("university_year") or "",
         },
+        "birth_date_min": f"{_MIN_BIRTH_YEAR}-01-01",
+        "birth_date_max": today_msk().isoformat(),
+        "university_years": _university_year_options(user),
         "timezones": TIMEZONES,
         **({"errors": errors} if errors else {}),
     }
@@ -163,28 +165,77 @@ def cabinet_personal_contacts_save(
     user: Annotated[dict, Depends(require_student)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
+    first_name: Annotated[str, Form()] = "",
+    last_name: Annotated[str, Form()] = "",
+    birth_date: Annotated[str, Form()] = "",
     phone: Annotated[str, Form()] = "",
     parent_phone: Annotated[str, Form()] = "",
+    parent_name: Annotated[str, Form()] = "",
     tg_username: Annotated[str, Form()] = "",
     city: Annotated[str, Form()] = "",
     contacts_timezone: Annotated[str, Form(alias="timezone")] = "",
     email: Annotated[str, Form()] = "",
     vk_profile_url: Annotated[str, Form()] = "",
     sdek_address: Annotated[str, Form()] = "",
+    university_year: Annotated[str, Form()] = "",
 ):
     if needs_profile_setup(user):
         return RedirectResponse("/cabinet/profile", status_code=302)
 
+    first_name = first_name.strip()
+    last_name = last_name.strip()
+    birth_date = birth_date.strip()
     phone = normalize_phone(phone)
     parent_phone = normalize_phone(parent_phone)
+    parent_name = parent_name.strip()
     tg_username = normalize_tg_username(tg_username)
     city = city.strip()
     contacts_timezone = contacts_timezone.strip()
     email = email.strip().lower()
     vk_profile_url = normalize_vk_profile_url(vk_profile_url)
     sdek_address = sdek_address.strip()
+    university_year = university_year.strip()
 
     errors = validate_contacts(phone, parent_phone, tg_username)
+
+    if not first_name:
+        errors.append("Введи имя")
+    elif len(first_name) > 50:
+        errors.append("Имя слишком длинное (максимум 50 символов)")
+
+    if not last_name:
+        errors.append("Введи фамилию")
+    elif len(last_name) > 50:
+        errors.append("Фамилия слишком длинная (максимум 50 символов)")
+
+    parsed_birth_date = None
+    if birth_date:
+        try:
+            parsed_birth_date = date.fromisoformat(birth_date)
+            if parsed_birth_date > today_msk():
+                errors.append("Дата рождения не может быть в будущем")
+            elif parsed_birth_date.year < _MIN_BIRTH_YEAR:
+                errors.append("Проверь дату рождения")
+        except ValueError:
+            errors.append("Дата рождения указана неверно")
+    else:
+        errors.append("Укажи дату рождения")
+
+    if not parent_name:
+        errors.append("Введи имя и отчество родителя")
+    elif len(parent_name) > 150:
+        errors.append("Имя родителя слишком длинное")
+
+    parsed_university_year = None
+    if university_year:
+        try:
+            parsed_university_year = int(university_year)
+            if not 2000 <= parsed_university_year <= 2100:
+                errors.append("Год поступления в вуз должен быть реальным годом")
+        except ValueError:
+            errors.append("Год поступления в вуз должен быть числом")
+    else:
+        errors.append("Укажи год поступления в вуз")
 
     # Открыты владельцем 13.09.2026 — те же правила, что в анкете первого
     # входа (`profile_post`, app/api/cabinet_student.py), валидация не
@@ -265,26 +316,32 @@ def cabinet_personal_contacts_save(
 
     if errors:
         form = {
+            "first_name": first_name, "last_name": last_name,
+            "birth_date": birth_date,
             "phone": phone, "parent_phone": parent_phone, "tg_username": tg_username,
+            "parent_name": parent_name,
             "city": city, "timezone": contacts_timezone, "email": email,
             "vk_profile_url": vk_profile_url, "sdek_address": sdek_address,
+            "university_year": university_year,
         }
         return templates.TemplateResponse(request, "cabinet_personal_contacts.html",
             _contacts_ctx(request, user, errors=errors, form=form),
         )
 
-    # Поля из формы — контакты и часть анкеты, открытая на самостоятельную
-    # правку 13.09.2026 (город/часовой пояс/email/ВК/СДЭК). Остальные
-    # установочные поля (ФИО, дата рождения, родитель, тариф, даты обучения)
-    # в записи не трогаем — они по-прежнему принадлежат куратору.
+    db_user.first_name = first_name
+    db_user.last_name = last_name
+    db_user.name = f"{first_name} {last_name}"
+    db_user.birth_date = parsed_birth_date
     db_user.phone = phone
     db_user.parent_phone = parent_phone
+    db_user.parent_name = parent_name
     db_user.tg_username = tg_username
     db_user.city = city
     db_user.timezone = contacts_timezone
     db_user.email = email
     db_user.vk_profile_url = vk_profile_url
     db_user.sdek_address = sdek_address
+    db_user.university_year = parsed_university_year
     if tg_mismatch_after_save is not None:
         db_user.tg_username_mismatch = tg_mismatch_after_save
     db.commit()

@@ -16,7 +16,7 @@
     </div>
 
     {% if saved %}
-    <div class="prs-saved">Контакты сохранены.</div>
+    <div class="prs-saved">Личные данные сохранены.</div>
     {% endif %}
 
     {% if user.access_expired %}
@@ -84,13 +84,11 @@
             <span class="prs-row-label">Адрес СДЭК</span>
             <span class="prs-row-value {{ '' if user.sdek_address else 'empty' }}">{{ user.sdek_address or 'Не указано' }}</span>
         </div>
-        <a class="prs-row prs-row-link" href="/cabinet/personal/contacts"><span>Изменить контакты</span></a>
+        <a class="prs-row prs-row-link" href="/cabinet/personal/contacts"><span>Изменить личные данные</span></a>
     </div>
 
-    {# Установочные данные анкеты первого входа (`/cabinet/profile`), которые
-       ученик по-прежнему не может изменить сам — дальше их правит куратор.
-       Город/часовой пояс/email/ВКонтакте/СДЭК открыты на самостоятельную
-       правку 13.09.2026 и переехали выше, в «Контакты». #}
+    {# Личные данные анкеты первого входа. Ученик меняет их на том же экране,
+       что и контакты; тариф и начало обучения остаются системными полями. #}
     <div class="prs-section-title">Данные анкеты</div>
     <div class="prs-group">
         <div class="prs-row">
@@ -106,7 +104,6 @@
             <span class="prs-row-value {{ '' if user.parent_name else 'empty' }}">{{ user.parent_name or 'Не указано' }}</span>
         </div>
     </div>
-    <p class="prs-note">Эти данные заполнены при первом входе. Чтобы изменить их, напиши в поддержку.</p>
 
     <div class="prs-section-title">Часто задаваемые вопросы</div>
     <div class="prs-group">

@@ -83,9 +83,9 @@ def test_personal_keeps_platform_guide_available(auth_client):
     assert 'id="studentOnboardingGuide"' in resp.text
 
 
-# ── /cabinet/personal/contacts — правка только контактов ─────────────────────
+# ── /cabinet/personal/contacts — правка личных данных ────────────────────────
 
-def test_contacts_form_shows_editable_and_locked_fields(auth_client, db):
+def test_contacts_form_shows_personal_fields_and_locks_access_fields(auth_client, db):
     client, user = auth_client
     user.first_name = "Анна"
     user.last_name = "Смирнова"
@@ -97,22 +97,25 @@ def test_contacts_form_shows_editable_and_locked_fields(auth_client, db):
 
     resp = client.get("/cabinet/personal/contacts")
     assert resp.status_code == 200
-    # контакты и открытые 13.09.2026 поля анкеты — поля ввода
+    # Все личные данные ученика доступны для правки.
+    assert 'name="first_name"' in resp.text
+    assert 'name="last_name"' in resp.text
+    assert 'name="birth_date"' in resp.text
     assert 'name="phone"' in resp.text
     assert 'name="parent_phone"' in resp.text
+    assert 'name="parent_name"' in resp.text
     assert 'name="tg_username"' in resp.text
     assert 'name="city"' in resp.text
     assert 'name="timezone"' in resp.text
     assert 'name="email"' in resp.text
     assert 'name="vk_profile_url"' in resp.text
     assert 'name="sdek_address"' in resp.text
-    # установочные данные, которые остаются у куратора — только показ, полей нет
-    assert 'name="first_name"' not in resp.text
-    assert 'name="last_name"' not in resp.text
+    assert 'name="university_year"' in resp.text
+    # Поля, управляющие доступом и учебным прогрессом, доступны только staff.
     assert 'name="tariff"' not in resp.text
-    assert 'name="birth_date"' not in resp.text
-    assert 'name="parent_name"' not in resp.text
-    assert "Анна Смирнова" in resp.text
+    assert 'name="enrollment_year"' not in resp.text
+    assert 'value="Анна"' in resp.text
+    assert 'value="Смирнова"' in resp.text
 
 
 def test_contacts_redirects_to_profile_when_incomplete(client, user_factory, session_factory):
@@ -126,6 +129,11 @@ def test_contacts_redirects_to_profile_when_incomplete(client, user_factory, ses
 
 
 _VALID_CONTACTS_EXTRA = {
+    "first_name": "Анна",
+    "last_name": "Смирнова",
+    "birth_date": "2008-05-20",
+    "parent_name": "Мария Петровна",
+    "university_year": "2027",
     "city": "Казань",
     "timezone": "3",
     "email": "anna@example.com",
@@ -159,8 +167,8 @@ def test_contacts_post_saves_phone_and_username(auth_client, db):
     assert saved.sdek_address == "Казань, ул. Ленина, 1"
 
 
-def test_contacts_post_does_not_touch_setup_fields(auth_client, db):
-    """Установочные данные не меняются, даже если их подложили в форму."""
+def test_contacts_post_saves_personal_fields_but_not_access_fields(auth_client, db):
+    """Ученик меняет личные поля, но не тариф и даты учебного доступа."""
     from app.models.user import User
     client, user = auth_client
     user.first_name = "Анна"
@@ -173,18 +181,24 @@ def test_contacts_post_does_not_touch_setup_fields(auth_client, db):
         "phone": "+79001112233",
         "parent_phone": "+79002223344",
         "tg_username": "anna_art",
-        "first_name": "Взломщик",
-        "last_name": "Подменённый",
-        "tariff": "МАКСИМУМ",
-        "university_year": "2030",
         **_VALID_CONTACTS_EXTRA,
+        "first_name": "Мария",
+        "last_name": "Петрова",
+        "birth_date": "2007-04-19",
+        "parent_name": "Ольга Сергеевна",
+        "university_year": "2028",
+        "tariff": "МАКСИМУМ",
+        "enrollment_year": "2030",
     }, follow_redirects=False)
 
     db.expire_all()
     saved = db.query(User).filter(User.id == user.id).first()
-    assert saved.name == "Анна Смирнова"
+    assert saved.name == "Мария Петрова"
+    assert saved.birth_date.isoformat() == "2007-04-19"
+    assert saved.parent_name == "Ольга Сергеевна"
+    assert saved.university_year == 2028
     assert saved.tariff == "УВЕРЕННЫЙ"
-    assert saved.university_year is None
+    assert saved.enrollment_year is None
 
 
 def test_contacts_post_invalid_phone_shows_error(auth_client, db):

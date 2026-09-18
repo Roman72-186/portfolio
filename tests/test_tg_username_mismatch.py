@@ -13,9 +13,13 @@ from app.dependencies import TG_MISMATCH_DETAIL
 from app.models.user import User
 from app.services.exam_scheduler import _run_tg_username_check
 
-# Открыты владельцем 13.09.2026 — теперь обязательные поля формы контактов,
-# не только телефон/родитель/tg.
+# Обязательные поля единой формы личных данных.
 _VALID_CONTACTS_EXTRA = {
+    "first_name": "Анна",
+    "last_name": "Смирнова",
+    "birth_date": "2008-05-20",
+    "parent_name": "Мария Петровна",
+    "university_year": "2027",
     "city": "Казань",
     "timezone": "3",
     "email": "anna@example.com",
