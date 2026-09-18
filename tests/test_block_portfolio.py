@@ -390,4 +390,4 @@ def test_constructor_portfolio_block_has_video_and_photo_fields(admin_client):
 
     assert "Без видеоинструкции" in page.text
     assert "Фото и скриншоты, необязательно" in page.text
-    assert "Окно загрузки, часов" in page.text
+    assert "Окно загрузки для ученика, часов" in page.text
