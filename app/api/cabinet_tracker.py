@@ -342,10 +342,19 @@ def _video_block_watched(db: DBSession, block, user_id: int) -> bool:
     return completed_at >= block_created_at
 
 
+# Контроль просмотра видео выключен владельцем 19.09.2026 («отключи полностью
+# контроль просмотра видео»): плеер Bunny не у всех учеников грузится (сеть,
+# VPN, блокировщики), и ученик упирался в кружок, который нельзя поставить.
+# Кружок видео-блока ставится кликом без проверки `VideoProgress`, как у фото.
+# Вернуть проверку — поставить True: правило ниже осталось как было.
+VIDEO_WATCH_CONTROL_ENABLED = False
+
+
 def _video_block_requires_completion(task: TrackerTask, block: TaskBlock) -> bool:
     """Нужно ли требовать просмотр видео для закрытия блока."""
     return bool(
-        task.is_required
+        VIDEO_WATCH_CONTROL_ENABLED
+        and task.is_required
         and task.kind != ITEM_MOCK_EXAM
         and block.is_required
     )

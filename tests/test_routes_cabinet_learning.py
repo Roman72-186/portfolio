@@ -292,6 +292,23 @@ def test_learning_video_task_expands_inline_instead_of_linking_away(auth_client,
     assert 'href="/cabinet/videos/' not in resp.text
 
 
+def test_learning_video_task_has_manual_completion(auth_client, db):
+    """Владелец 19.09.2026 отключил контроль просмотра: у видео-задания
+    обычная кнопка «Завершить задание», а не ожидание досмотра."""
+    client, user = auth_client
+    task = _task(db, user, title="Видео без контроля", kind="video")
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+    assert f'data-toggle-task="{task.id}"' in resp.text
+
+    toggle = client.post(
+        f"/cabinet/tracker/tasks/{task.id}/toggle",
+        headers={"X-CSRF-Token": client.cookies.get("csrf_token", "")},
+    )
+    assert toggle.status_code == 200, toggle.text
+
+
 def test_learning_task_without_blocks_locks_the_tail(auth_client, db):
     client, user = auth_client
     _task(db, user, title="Видео", kind="video",

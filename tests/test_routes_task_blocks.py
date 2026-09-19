@@ -12,6 +12,7 @@ Staff-сторона — конструктор дня (`cabinet_program.py`), �
 блоки — содержимое самой задачи.
 """
 
+import pytest
 import json as _json
 from datetime import date, datetime, timedelta, timezone
 
@@ -666,7 +667,35 @@ def _mark_watched(db, *, user_id, bunny_video_id):
     db.commit()
 
 
-def test_video_block_confirm_rejected_when_not_watched(client, db, user_factory, session_factory):
+@pytest.fixture
+def watch_control_on(monkeypatch):
+    """Контроль просмотра выключен владельцем 19.09.2026
+    (`VIDEO_WATCH_CONTROL_ENABLED`). Тесты правила включают его на время
+    прогона: если контроль вернут, правило должно работать как раньше."""
+    monkeypatch.setattr("app.api.cabinet_tracker.VIDEO_WATCH_CONTROL_ENABLED", True)
+
+
+def test_required_video_block_closes_without_watch_when_control_off(
+    client, db, user_factory, session_factory
+):
+    """Владелец 19.09.2026: «отключи полностью контроль просмотра видео».
+    Обязательный блок закрывается кружком без единой секунды просмотра."""
+    staff = user_factory(vk_id=550_327, name="Стафф", is_admin=True, role_name="админ")
+    task, block, _video = _video_task_with_block(db, staff.id)
+    _student_client(client, user_factory, session_factory)
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert body["blocks"][0]["requires_watch"] is False
+
+    resp = client.post(f"/cabinet/tracker/blocks/{block.id}/watched")
+    assert resp.status_code == 200, resp.text
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert body["blocks"][0]["done"] is True
+
+
+def test_video_block_confirm_rejected_when_not_watched(
+    client, db, user_factory, session_factory, watch_control_on
+):
     staff = user_factory(vk_id=550_320, name="Стафф", is_admin=True, role_name="админ")
     task, block, _video = _video_task_with_block(db, staff.id)
     _student_client(client, user_factory, session_factory)
@@ -700,7 +729,9 @@ def test_optional_video_block_does_not_require_watch(
     assert resp.json()["ok"] is True
 
 
-def test_video_block_confirm_closes_when_watched(client, db, user_factory, session_factory):
+def test_video_block_confirm_closes_when_watched(
+    client, db, user_factory, session_factory, watch_control_on
+):
     staff = user_factory(vk_id=550_321, name="Стафф", is_admin=True, role_name="админ")
     task, block, video = _video_task_with_block(db, staff.id)
     student = _student_client(client, user_factory, session_factory)
@@ -725,7 +756,7 @@ def test_video_block_confirm_closes_when_watched(client, db, user_factory, sessi
 
 
 def test_video_block_rejects_completion_from_before_block_creation(
-    client, db, user_factory, session_factory
+    client, db, user_factory, session_factory, watch_control_on
 ):
     """Если один каталожный ролик позже положили в новый блок,
     просмотр из прошлого занятия не закрывает его заранее.
