@@ -115,7 +115,7 @@ def get_tariff_registration_stats(db: DBSession) -> TariffRegistrationStats:
 def build_tariff_registration_csv(stats: TariffRegistrationStats) -> str:
     """Serialize the visible registration list for spreadsheet downloads."""
     output = io.StringIO(newline="")
-    writer = csv.writer(output)
+    writer = csv.writer(output, delimiter=";")
     writer.writerow(["Имя", "Username", "Тариф", "Дата регистрации"])
     for student in stats["students"]:
         created_at = student["created_at"]

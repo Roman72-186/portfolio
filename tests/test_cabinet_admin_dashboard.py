@@ -167,5 +167,5 @@ def test_registration_tariff_stats_match_for_chief_teacher_and_superadmin(
     assert chief_csv.status_code == 200
     assert superadmin_csv.status_code == 200
     assert chief_csv.headers["content-disposition"] == "attachment; filename=registration-stats.csv"
-    assert "Имя,Username,Тариф,Дата регистрации" in chief_csv.content.decode("utf-8-sig")
+    assert "Имя;Username;Тариф;Дата регистрации" in chief_csv.content.decode("utf-8-sig")
     assert "@student_self" in superadmin_csv.content.decode("utf-8-sig")

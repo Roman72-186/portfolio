@@ -89,5 +89,5 @@ def test_tariff_registration_csv_contains_visible_students_and_headers(db, user_
 
     csv_text = build_tariff_registration_csv(get_tariff_registration_stats(db))
 
-    assert csv_text.startswith("\ufeffИмя,Username,Тариф,Дата регистрации\r\n")
-    assert "CSV Student,@csv_student" in csv_text
+    assert csv_text.startswith("\ufeffИмя;Username;Тариф;Дата регистрации\r\n")
+    assert "CSV Student;@csv_student;" in csv_text
