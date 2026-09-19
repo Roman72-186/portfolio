@@ -172,7 +172,8 @@
     background: var(--ios-card-bg); border: none; border-radius: 16px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow: hidden;
 }
-.ios-staff-dashboard .panel--periods { margin-bottom: 16px; }
+.ios-staff-dashboard .panel--periods,
+.ios-staff-dashboard .panel--registration-stats { margin-bottom: 16px; }
 .ios-staff-dashboard .panel-header {
     padding: 13px 16px; border-bottom: none; position: relative;
     display: flex; align-items: center; justify-content: space-between;
@@ -276,6 +277,94 @@
 .ios-staff-dashboard .type-cell:nth-last-child(-n+2) { border-bottom: none; }
 .ios-staff-dashboard .type-label { font: 600 11px/1.3 var(--ios-font); color: var(--ios-label-2); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 4px; }
 .ios-staff-dashboard .type-val { font: 700 22px/1.2 var(--ios-font); color: var(--ios-label); }
+.ios-staff-dashboard .registration-tariff-label {
+    text-transform: none;
+    letter-spacing: -0.01em;
+    font-size: 12px;
+}
+.ios-staff-dashboard .registration-tariff-label--confident-max { color: var(--tariff-confident-max); }
+.ios-staff-dashboard .registration-tariff-label--with-you { color: var(--tariff-with-you); }
+.ios-staff-dashboard .registration-tariff-label--self { color: var(--tariff-self); }
+.ios-staff-dashboard .registration-tariff-label--legacy { color: var(--tariff-legacy); }
+.ios-staff-dashboard .registration-stats-total {
+    padding: 12px 16px;
+    border-top: 0.5px solid var(--ios-sep);
+    font: 400 12px/1.4 var(--ios-font);
+    color: var(--ios-label-2);
+}
+.ios-staff-dashboard .registration-stats-total strong {
+    color: var(--ios-label);
+    font-weight: 700;
+}
+.ios-staff-dashboard .registration-student-list {
+    border-top: 0.5px solid var(--ios-sep);
+}
+.ios-staff-dashboard .registration-student-list summary {
+    min-height: 44px;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    cursor: pointer;
+    font: 600 13px/1.3 var(--ios-font);
+    color: var(--ios-label);
+}
+.ios-staff-dashboard .registration-student-list summary::marker { color: var(--ios-blue); }
+.ios-staff-dashboard .registration-student-list summary span {
+    color: var(--ios-label-2);
+    font-size: 12px;
+}
+.ios-staff-dashboard .registration-student-head,
+.ios-staff-dashboard .registration-student-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(160px, 1fr);
+    gap: 16px;
+    align-items: center;
+}
+.ios-staff-dashboard .registration-student-head {
+    padding: 9px 16px;
+    background: var(--ios-grouped-bg);
+    font: 600 11px/1.3 var(--ios-font);
+    color: var(--ios-label-2);
+}
+.ios-staff-dashboard .registration-student-rows {
+    max-height: 440px;
+    overflow-y: auto;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.ios-staff-dashboard .registration-student-row {
+    min-height: 44px;
+    padding: 8px 16px;
+    position: relative;
+}
+.ios-staff-dashboard .registration-student-row:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    left: 16px;
+    right: 0;
+    bottom: 0;
+    height: 0.5px;
+    background: var(--ios-sep);
+}
+.ios-staff-dashboard .registration-student-name {
+    min-width: 0;
+    font: 600 13px/1.35 var(--ios-font);
+    color: var(--ios-label);
+}
+.ios-staff-dashboard .registration-student-username {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 400 12px/1.35 var(--ios-font);
+    color: var(--ios-label-2);
+}
+.ios-staff-dashboard .registration-student-tariff {
+    font: 600 12px/1.35 var(--ios-font);
+}
 
 /* ── Recent feed (role_rank < 4 — недостижимо через текущие маршруты
    ГП/СА, но остаётся в шаблоне: стилизуем для полноты, без удаления) ── */
@@ -337,4 +426,14 @@
     .ios-staff-dashboard .staff-info { min-width: 130px; }
     .ios-staff-dashboard .stats-grid { gap: 10px; }
     .ios-staff-dashboard .stat-tile { padding: 12px 14px; }
+    .ios-staff-dashboard .registration-student-head { display: none; }
+    .ios-staff-dashboard .registration-student-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 4px 12px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+    .ios-staff-dashboard .registration-student-name { grid-column: 1 / -1; }
+    .ios-staff-dashboard .registration-student-tariff { text-align: right; }
+    .ios-staff-dashboard .registration-student-rows { padding-bottom: 72px; }
 }

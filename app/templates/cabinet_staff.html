@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{% if user.role_rank >= 5 %}Суперадмин{% else %}Главный преподаватель{% endif %} — дашборд{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=4">
+<link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=5">
 {% endblock %}
 {% block content %}
 <div class="staff-wrap ios-staff-dashboard">
@@ -107,6 +107,41 @@
             <div class="stat-tile-value">{{ new_users_month }}</div>
         </div>
     </div>
+
+    <section class="panel panel--registration-stats" aria-labelledby="registration-stats-title">
+        <div class="panel-header">
+            <h2 class="panel-title" id="registration-stats-title">Регистрации по тарифам</h2>
+            <span class="sfd-meta-text">Учёт с {{ tariff_registration_stats.since_label }}</span>
+        </div>
+        <div class="type-grid">
+            {% for item in tariff_registration_stats.by_tariff %}
+            <div class="type-cell" data-registration-tariff="{{ item.tariff }}">
+                <div class="type-label registration-tariff-label registration-tariff-label--{{ item.tariff | tariff_slug }}">{{ item.label }}</div>
+                <div class="type-val">{{ item.count }}</div>
+            </div>
+            {% endfor %}
+            <div class="type-cell" data-registration-without-tariff>
+                <div class="type-label registration-tariff-label registration-tariff-label--legacy">Без тарифа</div>
+                <div class="type-val">{{ tariff_registration_stats.without_tariff }}</div>
+            </div>
+        </div>
+        <div class="registration-stats-total">Всего зарегистрировались: <strong>{{ tariff_registration_stats.total }}</strong></div>
+        <details class="registration-student-list">
+            <summary>Список учеников <span>{{ tariff_registration_stats.students | length }}</span></summary>
+            <div class="registration-student-head" aria-hidden="true">
+                <span>Имя</span><span>Username</span><span>Тариф</span>
+            </div>
+            <ul class="registration-student-rows" aria-label="Зарегистрированные ученики">
+                {% for student in tariff_registration_stats.students %}
+                <li class="registration-student-row" data-registration-student-id="{{ student.id }}">
+                    <span class="registration-student-name">{{ student.name }}</span>
+                    <span class="registration-student-username">{{ student.username }}</span>
+                    <span class="registration-student-tariff registration-tariff-label--{{ student.tariff | tariff_slug }}">{{ student.tariff_label }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </details>
+    </section>
 
     <!-- Quick Tools -->
     <div class="grid-3 qt-grid">

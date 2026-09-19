@@ -59,6 +59,7 @@ from app.services.mock_exam_access import (
     ticket_opens_at,
     ticket_start_cutoff_at,
 )
+from app.services.staff_dashboard import get_tariff_registration_stats
 from app.services.utils import compress_image, rotate_image_bytes
 from app.tmpl import templates
 
@@ -339,6 +340,7 @@ def _load_dashboard_data(db: DBSession, now: datetime) -> dict:
         "recent_works": recent_works,
         "month_name": _month_name_prep(now.month),
         "feature_statuses": feature_statuses,
+        "tariff_registration_stats": get_tariff_registration_stats(db),
     }
 
 

@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM
+from app.services.staff_dashboard import REGISTRATION_STATS_SINCE
+from app.services.tz import msk_midnight
 
 
 def _stat_pair(text: str, value, label: str) -> bool:
@@ -90,3 +92,67 @@ def test_dashboard_unscored_mocks_is_zero_without_active_period(admin_client, db
     resp = client.get("/cabinet/admin-panel")
     assert resp.status_code == 200
     assert "пробных экзамен" not in resp.text  # блок рендерится только при unscored_mocks > 0
+
+
+def _registration_counts(text: str) -> dict[str, int]:
+    tariff_counts = {
+        tariff: int(value)
+        for tariff, value in re.findall(
+            r'data-registration-tariff="([^"]+)">.*?<div class="type-val">(\d+)</div>',
+            text,
+            flags=re.S,
+        )
+    }
+    no_tariff = re.search(
+        r'data-registration-without-tariff>.*?<div class="type-val">(\d+)</div>',
+        text,
+        flags=re.S,
+    )
+    tariff_counts["Без тарифа"] = int(no_tariff.group(1)) if no_tariff else -1
+    return tariff_counts
+
+
+def test_registration_tariff_stats_match_for_chief_teacher_and_superadmin(
+    client, db, user_factory, session_factory
+):
+    cutoff = msk_midnight(REGISTRATION_STATS_SINCE)
+    students = [
+        user_factory(vk_id=820_001, tariff="Я САМ"),
+        user_factory(vk_id=820_002, tariff="Я С ВАМИ"),
+        user_factory(vk_id=820_003, tariff="УВЕРЕННЫЙ МАКСИМУМ"),
+        user_factory(vk_id=820_004, tariff=""),
+    ]
+    students[0].tg_username = "student_self"
+    for student in students:
+        student.created_at = cutoff
+    chief_teacher = user_factory(
+        vk_id=820_010, name="Главный преподаватель", role_name="админ"
+    )
+    superadmin = user_factory(
+        vk_id=820_011, name="Суперадмин", role_name="суперадмин"
+    )
+    db.commit()
+
+    chief_session = session_factory(chief_teacher)
+    client.cookies.set("session_id", chief_session.id)
+    chief_response = client.get("/cabinet/admin-panel")
+
+    superadmin_session = session_factory(superadmin)
+    client.cookies.set("session_id", superadmin_session.id)
+    superadmin_response = client.get("/cabinet/superadmin")
+
+    assert chief_response.status_code == 200
+    assert superadmin_response.status_code == 200
+    assert "Регистрации по тарифам" in chief_response.text
+    assert "Учёт с 18.09.2026" in chief_response.text
+    assert "Список учеников" in chief_response.text
+    assert "@student_self" in chief_response.text
+    assert _registration_counts(chief_response.text) == {
+        "Я САМ": 1,
+        "Я С ВАМИ": 1,
+        "УВЕРЕННЫЙ МАКСИМУМ": 1,
+        "Без тарифа": 1,
+    }
+    assert _registration_counts(superadmin_response.text) == _registration_counts(
+        chief_response.text
+    )

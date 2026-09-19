@@ -16,6 +16,7 @@ from app.services.tz import today_msk, msk_midnight
 from app.services.feature_periods import get_active_period
 from app.services.notify import notify
 from app.services.point_a import maybe_notify_point_a_level
+from app.services.staff_dashboard import get_tariff_registration_stats
 from app.models.notification import Notification
 from app.models.role import Role
 from app.models.user import User
@@ -200,6 +201,7 @@ def _load_dashboard_data(db: DBSession, now: datetime) -> dict:
         "recent_works": recent_works,
         "month_name": _month_name_prep(now.month),
         "feature_statuses": feature_statuses,
+        "tariff_registration_stats": get_tariff_registration_stats(db),
     }
 
 
