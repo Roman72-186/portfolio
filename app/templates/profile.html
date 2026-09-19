@@ -96,15 +96,19 @@
                     <label class="prf-field-label" for="profile-phone">Номер телефона <span class="prf-required">*</span></label>
                     <input class="prf-field-input" type="tel" id="profile-phone" name="phone" required
                            value="{{ form.phone if form else (user.phone or '') }}"
-                           placeholder="+7 (___) ___-__-__" data-phone-mask
-                           maxlength="20" pattern="[\d\s\+\-\(\)]{7,20}">
+                           placeholder="+7 999 123-45-67" data-phone-mask
+                           autocomplete="tel" inputmode="tel" maxlength="32"
+                           pattern="[\d\s\+\.\-\(\)]{8,32}"
+                           aria-describedby="profile-phone-hint">
+                    <p class="prf-field-note" id="profile-phone-hint">Для номера другой страны укажи код, например +375.</p>
                 </div>
                 <div class="prf-field">
                     <label class="prf-field-label" for="profile-parent-phone">Телефон родителя <span class="prf-required">*</span></label>
                     <input class="prf-field-input" type="tel" id="profile-parent-phone" name="parent_phone" required
                            value="{{ form.parent_phone if form else (user.parent_phone or '') }}"
-                           placeholder="+7 (___) ___-__-__" data-phone-mask
-                           maxlength="20" pattern="[\d\s\+\-\(\)]{7,20}">
+                           placeholder="+7 999 123-45-67" data-phone-mask
+                           autocomplete="tel" inputmode="tel" maxlength="32"
+                           pattern="[\d\s\+\.\-\(\)]{8,32}">
                 </div>
             </div>
             <div class="prf-row prf-row--single">
@@ -185,7 +189,7 @@
     </form>
 </div>
 <script src="/static/js/hint.js?v=1"></script>
-<script src="/static/js/phone-mask.js?v=1"></script>
+<script src="/static/js/phone-mask.js?v=2"></script>
 <script>
 document.querySelector('form').addEventListener('submit', function() {
     var btn = document.getElementById('profile-submit-btn');

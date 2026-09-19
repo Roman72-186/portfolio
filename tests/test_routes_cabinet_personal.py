@@ -212,7 +212,7 @@ def test_contacts_post_invalid_phone_shows_error(auth_client, db):
         **_VALID_CONTACTS_EXTRA,
     })
     assert resp.status_code == 200
-    assert "Номер нужен российский" in resp.text
+    assert "Укажи код страны" in resp.text
 
     db.expire_all()
     saved = db.query(User).filter(User.id == user.id).first()
@@ -236,6 +236,24 @@ def test_contacts_post_normalizuet_nomer_s_vosmerkoy(auth_client, db):
     saved = db.query(User).filter(User.id == user.id).first()
     assert saved.phone == "+79001112233"
     assert saved.parent_phone == "+79002223344"
+
+
+def test_contacts_post_saves_international_phone(auth_client, db):
+    from app.models.user import User
+    client, user = auth_client
+
+    resp = client.post("/cabinet/personal/contacts", data={
+        "phone": "+375 29 123-45-67",
+        "parent_phone": "+1 (202) 555-0100",
+        "tg_username": "anna_art",
+        **_VALID_CONTACTS_EXTRA,
+    }, follow_redirects=False)
+    assert resp.status_code == 302
+
+    db.expire_all()
+    saved = db.query(User).filter(User.id == user.id).first()
+    assert saved.phone == "+375291234567"
+    assert saved.parent_phone == "+12025550100"
 
 
 def test_contacts_post_short_username_shows_error(auth_client):
