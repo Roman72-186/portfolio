@@ -874,11 +874,10 @@ def auth_handoff(
 # ── Telegram bot login ───────────────────────────────────────────────────────
 #
 # Прямая интеграция с Telegram Bot API (без n8n): пользователь пишет боту
-# /start, бот проверяет членство в закрытом канале через
-# services/telegram.check_channel_membership, затем выпускает такую же
-# одноразовую ссылку входа, что и /auth/link (issue_one_time_login_link), и
-# присылает её сообщением в чат. Действующие ученики с историей на VK-входе
-# получают от персонала отдельную ссылку-приглашение (см.
+# /start, бот проверяет членство в закрытом канале и привязывает Telegram-чат
+# к учётной записи. Ссылку для входа бот не отправляет: вход выполняется через
+# сайт. Действующие ученики с историей на VK-входе получают от персонала
+# отдельную ссылку-приглашение (см.
 # cabinet_superadmin.py::superadmin_user_issue_telegram_link), которая через
 # consume_telegram_link_token привязывает Telegram к их текущему аккаунту
 # вместо создания нового — портфолио и оценки остаются на месте.
@@ -986,18 +985,21 @@ def _upsert_telegram_user(
     return user, True
 
 
-async def _issue_and_send_login_link(db: DBSession, user: User, chat_id: int, base_url: str) -> None:
-    login_url, _token = issue_one_time_login_link(db, user=user, base_url=base_url, issued_by="telegram-bot")
+async def _confirm_telegram_connection(chat_id: int) -> None:
+    """Подтвердить привязку без выдачи одноразовой ссылки входа.
+
+    Бот нужен для привязки Telegram и уведомлений. Вход в кабинет пользователь
+    начинает на сайте, поэтому URL с токеном в чат не отправляем.
+    """
     await telegram_service.send_message(
         chat_id,
-        "Добро пожаловать! Ссылка для входа в кабинет "
-        f"(одноразовая, действует {settings.one_time_link_ttl_minutes} мин):\n{login_url}",
+        "Готово, Telegram подключён. Сюда будут приходить уведомления от Apparchi.",
     )
 
 
-async def _finish_membership_check_and_login(db: DBSession, user: User, chat_id: int, base_url: str) -> None:
-    """Общий хвост для входа уже привязанного Telegram-аккаунта: перепроверяет
-    членство в канале и либо выпускает ссылку, либо отказывает — те же
+async def _finish_membership_check_and_confirm(db: DBSession, user: User, chat_id: int) -> None:
+    """Общий хвост для уже привязанного Telegram-аккаунта: перепроверяет
+    членство в канале и либо подтверждает привязку, либо отказывает — те же
     правила, что и у vk_callback (fail-closed только для роли «ученик»,
     неопределённый ответ API не трактуется как отказ)."""
     if not user.is_active or user.deleted_at is not None:
@@ -1020,11 +1022,11 @@ async def _finish_membership_check_and_login(db: DBSession, user: User, chat_id:
         await _send_membership_denied(chat_id)
         return
 
-    await _issue_and_send_login_link(db, user, chat_id, base_url)
+    await _confirm_telegram_connection(chat_id)
 
 
 async def _handle_telegram_link_start(
-    db: DBSession, *, chat_id: int, raw_token: str, tg_from: _TgFrom | None, base_url: str,
+    db: DBSession, *, chat_id: int, raw_token: str, tg_from: _TgFrom | None,
 ) -> None:
     """/start <token> — токен, выданный персоналом конкретному действующему
     ученику (см. superadmin_user_issue_telegram_link)."""
@@ -1055,20 +1057,19 @@ async def _handle_telegram_link_start(
         target_user.tg_username_mismatch = False  # см. комментарий в _upsert_telegram_user
     db.commit()
 
-    await _finish_membership_check_and_login(db, target_user, chat_id, base_url)
+    await _finish_membership_check_and_confirm(db, target_user, chat_id)
 
 
 async def _handle_telegram_new_start(
-    db: DBSession, *, chat_id: int, tg_from: _TgFrom | None, base_url: str,
+    db: DBSession, *, chat_id: int, tg_from: _TgFrom | None,
 ) -> None:
-    """Обычный /start без payload — новый ученик либо повторный вход уже
+    """Обычный /start без payload — новый ученик либо повторная проверка уже
     привязанного Telegram-аккаунта. Членство в канале проверяется сразу;
-    если подтверждено — учётка заводится немедленно и уходит ссылка входа,
-    без диалога с ботом (тариф и остальные данные ученик заполнит в анкете —
-    `/cabinet/profile`, редирект туда сработает сам по `needs_profile_setup`)."""
+    если подтверждено — учётка заводится и чат привязывается. Вход в кабинет
+    пользователь начинает на сайте."""
     existing = db.query(User).filter(User.telegram_chat_id == chat_id).first()
     if existing:
-        await _finish_membership_check_and_login(db, existing, chat_id, base_url)
+        await _finish_membership_check_and_confirm(db, existing, chat_id)
         return
 
     is_member = await telegram_service.check_channel_membership(chat_id)
@@ -1084,10 +1085,10 @@ async def _handle_telegram_new_start(
 
     user, _created = _upsert_telegram_user(db, chat_id=chat_id, tg_from=tg_from, is_group_member=True)
     db.commit()
-    await _issue_and_send_login_link(db, user, chat_id, base_url)
+    await _confirm_telegram_connection(chat_id)
 
 
-async def _handle_telegram_message(db: DBSession, message: _TgMessage, base_url: str) -> None:
+async def _handle_telegram_message(db: DBSession, message: _TgMessage) -> None:
     text = (message.text or "").strip()
     command, _sep, payload = text.partition(" ")
     if command.split("@")[0] != "/start":
@@ -1096,9 +1097,9 @@ async def _handle_telegram_message(db: DBSession, message: _TgMessage, base_url:
     chat_id = message.chat.id
     payload = payload.strip()
     if payload:
-        await _handle_telegram_link_start(db, chat_id=chat_id, raw_token=payload, tg_from=message.from_user, base_url=base_url)
+        await _handle_telegram_link_start(db, chat_id=chat_id, raw_token=payload, tg_from=message.from_user)
     else:
-        await _handle_telegram_new_start(db, chat_id=chat_id, tg_from=message.from_user, base_url=base_url)
+        await _handle_telegram_new_start(db, chat_id=chat_id, tg_from=message.from_user)
 
 
 @router.post("/auth/telegram/webhook")
@@ -1115,8 +1116,7 @@ async def telegram_webhook(
         return {"ok": True}
 
     if update.message is not None and update.message.text:
-        base_url = _public_base_url(request)
-        await _handle_telegram_message(db, update.message, base_url)
+        await _handle_telegram_message(db, update.message)
 
     return {"ok": True}
 

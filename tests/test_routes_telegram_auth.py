@@ -120,10 +120,9 @@ def test_new_start_membership_inconclusive_does_not_deny_or_create_user(client, 
     assert "попробуй" in sent_messages[0]["text"].lower()
 
 
-def test_new_start_member_creates_user_immediately_no_tariff_dialog(client, db, monkeypatch, sent_messages):
-    """Подтверждённый member заводится и логинится без диалога с ботом —
-    тариф и остальные поля соберёт анкета /cabinet/profile при первом
-    визите в кабинет (needs_profile_setup в cabinet_student.py)."""
+def test_new_start_member_creates_user_and_confirms_connection_without_login_link(client, db, monkeypatch, sent_messages):
+    """Подтверждённый участник получает учётку и привязку Telegram без
+    одноразовой ссылки: вход начинается на сайте."""
     _mock_membership(monkeypatch, True)
 
     resp = client.post("/auth/telegram/webhook", json=_start_update(CHAT_ID), headers=_headers())
@@ -135,7 +134,8 @@ def test_new_start_member_creates_user_immediately_no_tariff_dialog(client, db, 
     assert user.profile_completed is False  # анкета ещё не заполнена
     assert user.vk_id < 0  # синтетическая идентичность, next_manual_vk_id
     assert len(sent_messages) == 1
-    assert "ссылка" in sent_messages[0]["text"].lower()
+    assert "подключён" in sent_messages[0]["text"].lower()
+    assert "http" not in sent_messages[0]["text"].lower()
 
 
 def test_new_start_existing_linked_chat_id_relogs_in_instead_of_duplicating(client, db, monkeypatch, sent_messages, user_factory):
@@ -150,7 +150,8 @@ def test_new_start_existing_linked_chat_id_relogs_in_instead_of_duplicating(clie
     assert db.query(User).filter(User.telegram_chat_id == CHAT_ID).count() == 1
     db.refresh(user)
     assert user.is_group_member is True
-    assert "ссылка" in sent_messages[-1]["text"].lower()
+    assert "подключён" in sent_messages[-1]["text"].lower()
+    assert "http" not in sent_messages[-1]["text"].lower()
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +175,8 @@ def test_link_start_valid_token_links_existing_user_preserving_history(client, d
     assert existing.telegram_chat_id == CHAT_ID
     assert existing.id == existing_id  # same account, not a new one
     assert db.query(User).count() == 1
-    assert "ссылка" in sent_messages[-1]["text"].lower()
+    assert "подключён" in sent_messages[-1]["text"].lower()
+    assert "http" not in sent_messages[-1]["text"].lower()
 
 
 def test_link_start_invalid_token_sends_error(client, db, sent_messages):
@@ -278,7 +280,7 @@ def test_relogin_curator_bypasses_membership_gate(client, db, sent_messages, use
 
     db.refresh(curator)
     assert curator.is_group_member is False  # flag updated honestly...
-    assert "ссылка" in sent_messages[-1]["text"].lower()  # ...but staff still gets in
+    assert "подключён" in sent_messages[-1]["text"].lower()  # ...but staff всё равно получает подтверждение
 
 
 # ---------------------------------------------------------------------------
