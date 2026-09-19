@@ -182,7 +182,7 @@ def test_closed_window_rejects_the_form_upload(auth_client, db):
 
 # ── открытое окно ───────────────────────────────────────────────────────────
 
-def test_open_window_shows_the_form_and_the_deadline(auth_client, db):
+def test_open_window_shows_the_form_without_deadline_in_before(auth_client, db):
     client, user = auth_client
     _open_window(db, user)
 
@@ -190,7 +190,7 @@ def test_open_window_shows_the_form_and_the_deadline(auth_client, db):
 
     assert resp.status_code == 200
     assert 'id="photoInput"' in resp.text
-    assert "Загрузить и заменить работы можно до" in resp.text
+    assert "Загрузить и заменить работы можно до" not in resp.text
 
 
 def test_personal_window_starts_once_and_uses_configured_hours(auth_client, db):
@@ -221,7 +221,7 @@ def test_personal_window_starts_once_and_uses_configured_hours(auth_client, db):
 
     assert first.status_code == 200
     assert 'id="photoInput"' in first.text
-    assert "Загрузить и заменить работы можно до" in first.text
+    assert "Загрузить и заменить работы можно до" not in first.text
     assert second.status_code == 200
     assert state.started_at == started_at
 
