@@ -95,6 +95,8 @@ def get_tariff_registration_stats(db: DBSession) -> TariffRegistrationStats:
             }
         )
 
+    students.sort(key=lambda student: (student["tariff_label"].casefold(), student["name"].casefold()))
+
     by_tariff = [
         {
             "tariff": tariff,

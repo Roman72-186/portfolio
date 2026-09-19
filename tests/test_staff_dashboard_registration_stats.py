@@ -69,6 +69,8 @@ def test_tariff_registration_stats_use_tracking_window_and_student_role(
     assert stats["without_tariff"] == 1
     assert stats["total"] == 6
     assert len(stats["students"]) == 7  # шесть в сводке + legacy для проверки
+    tariff_labels = [student["tariff_label"] for student in stats["students"]]
+    assert tariff_labels == sorted(tariff_labels, key=str.casefold)
     assert stats["students"][-1]["username"] == "@self_student"
     assert all(student["id"] != 199 for student in stats["students"])
 
