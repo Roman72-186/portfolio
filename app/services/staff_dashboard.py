@@ -1,5 +1,7 @@
 """Shared aggregates for the Chief Teacher and Superadmin dashboards."""
 
+import csv
+import io
 from datetime import date, datetime
 from typing import TypedDict
 
@@ -108,3 +110,19 @@ def get_tariff_registration_stats(db: DBSession) -> TariffRegistrationStats:
         "total": sum(item["count"] for item in by_tariff) + without_tariff,
         "students": students,
     }
+
+
+def build_tariff_registration_csv(stats: TariffRegistrationStats) -> str:
+    """Serialize the visible registration list for spreadsheet downloads."""
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow(["Имя", "Username", "Тариф", "Дата регистрации"])
+    for student in stats["students"]:
+        created_at = student["created_at"]
+        writer.writerow([
+            student["name"],
+            student["username"],
+            student["tariff_label"],
+            created_at.strftime("%d.%m.%Y %H:%M") if created_at else "",
+        ])
+    return "\ufeff" + output.getvalue()

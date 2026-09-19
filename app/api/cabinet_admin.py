@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Request, Depends, Form, HTTPException, Query
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession, aliased
 
@@ -16,7 +16,7 @@ from app.services.tz import today_msk, msk_midnight
 from app.services.feature_periods import get_active_period
 from app.services.notify import notify
 from app.services.point_a import maybe_notify_point_a_level
-from app.services.staff_dashboard import get_tariff_registration_stats
+from app.services.staff_dashboard import build_tariff_registration_csv, get_tariff_registration_stats
 from app.models.notification import Notification
 from app.models.role import Role
 from app.models.user import User
@@ -217,6 +217,19 @@ def cabinet_admin(
     ctx = _load_dashboard_data(db, now)
     ctx.update({"request": request, "user": user})
     return templates.TemplateResponse(request, "cabinet_staff.html", ctx)
+
+
+@router.get("/admin/registration-stats.csv")
+def download_admin_registration_stats(
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    stats = get_tariff_registration_stats(db)
+    return Response(
+        content=build_tariff_registration_csv(stats),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=registration-stats.csv"},
+    )
 
 
 # ── Mock exam check (dedicated split-panel) ──────────────────────────────────

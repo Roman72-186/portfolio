@@ -156,3 +156,16 @@ def test_registration_tariff_stats_match_for_chief_teacher_and_superadmin(
     assert _registration_counts(superadmin_response.text) == _registration_counts(
         chief_response.text
     )
+    assert 'href="/cabinet/admin/registration-stats.csv"' in chief_response.text
+    assert 'href="/cabinet/superadmin/registration-stats.csv"' in superadmin_response.text
+
+    chief_csv = client.get("/cabinet/admin/registration-stats.csv", cookies={"session_id": chief_session.id})
+    superadmin_csv = client.get(
+        "/cabinet/superadmin/registration-stats.csv",
+        cookies={"session_id": superadmin_session.id},
+    )
+    assert chief_csv.status_code == 200
+    assert superadmin_csv.status_code == 200
+    assert chief_csv.headers["content-disposition"] == "attachment; filename=registration-stats.csv"
+    assert "Имя,Username,Тариф,Дата регистрации" in chief_csv.content.decode("utf-8-sig")
+    assert "@student_self" in superadmin_csv.content.decode("utf-8-sig")

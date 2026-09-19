@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{% if user.role_rank >= 5 %}Суперадмин{% else %}Главный преподаватель{% endif %} — дашборд{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=5">
+<link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=6">
 {% endblock %}
 {% block content %}
 <div class="staff-wrap ios-staff-dashboard">
@@ -111,7 +111,10 @@
     <section class="panel panel--registration-stats" aria-labelledby="registration-stats-title">
         <div class="panel-header">
             <h2 class="panel-title" id="registration-stats-title">Регистрации по тарифам</h2>
-            <span class="sfd-meta-text">Учёт с {{ tariff_registration_stats.since_label }}</span>
+            <div class="registration-stats-actions">
+                <span class="sfd-meta-text">Учёт с {{ tariff_registration_stats.since_label }}</span>
+                <a class="registration-download-btn" href="{% if user.role_rank >= 5 %}/cabinet/superadmin/registration-stats.csv{% else %}/cabinet/admin/registration-stats.csv{% endif %}" download aria-label="Скачать статистику регистраций в CSV">Скачать CSV</a>
+            </div>
         </div>
         <div class="type-grid">
             {% for item in tariff_registration_stats.by_tariff %}

@@ -222,6 +222,21 @@
 
 .ios-staff-dashboard .sfd-row-actions { display: flex; align-items: center; gap: 10px; }
 .ios-staff-dashboard .sfd-meta-text { font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-2); }
+.ios-staff-dashboard .registration-stats-actions {
+    display: inline-flex; align-items: center; gap: 12px;
+}
+.ios-staff-dashboard .registration-download-btn {
+    display: inline-flex; align-items: center; justify-content: center; min-height: 40px;
+    padding: 0 14px; border: 1px solid var(--ios-blue); border-radius: 10px;
+    color: var(--ios-blue); background: rgba(175,82,222,0.10);
+    font: 700 12px/1 var(--ios-font); text-decoration: none; white-space: nowrap;
+    transition: background-color 120ms var(--ios-ease), color 120ms var(--ios-ease), border-color 120ms var(--ios-ease);
+}
+.ios-staff-dashboard .registration-download-btn:hover,
+.ios-staff-dashboard .registration-download-btn:focus-visible {
+    color: #fff; background: var(--ios-blue); border-color: var(--ios-blue);
+}
+.ios-staff-dashboard .registration-download-btn:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 2px; }
 .ios-staff-dashboard .sfd-btn-group { display: flex; gap: 6px; flex-shrink: 0; }
 .ios-staff-dashboard .sfd-inline-form { margin: 0; }
 .ios-staff-dashboard .sfd-empty-row { padding: 20px 16px; font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); }
@@ -426,6 +441,7 @@
     .ios-staff-dashboard .staff-info { min-width: 130px; }
     .ios-staff-dashboard .stats-grid { gap: 10px; }
     .ios-staff-dashboard .stat-tile { padding: 12px 14px; }
+    .ios-staff-dashboard .registration-stats-actions { flex-direction: column; align-items: flex-end; gap: 6px; }
     .ios-staff-dashboard .registration-student-head { display: none; }
     .ios-staff-dashboard .registration-student-row {
         grid-template-columns: minmax(0, 1fr) auto;

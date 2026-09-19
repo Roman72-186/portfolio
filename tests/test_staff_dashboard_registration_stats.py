@@ -9,6 +9,7 @@ from app.models.role import Role
 from app.models.user import User
 from app.services.staff_dashboard import (
     REGISTRATION_STATS_SINCE,
+    build_tariff_registration_csv,
     get_tariff_registration_stats,
 )
 from app.services.tz import msk_midnight
@@ -79,3 +80,14 @@ def test_tariff_registration_stats_return_zero_buckets(db):
     assert stats["without_tariff"] == 0
     assert stats["total"] == 0
     assert stats["students"] == []
+
+
+def test_tariff_registration_csv_contains_visible_students_and_headers(db, user_factory):
+    student = user_factory(vk_id=810_100, tariff=TARIFF_SELF, name="CSV Student")
+    student.tg_username = "csv_student"
+    db.commit()
+
+    csv_text = build_tariff_registration_csv(get_tariff_registration_stats(db))
+
+    assert csv_text.startswith("\ufeffИмя,Username,Тариф,Дата регистрации\r\n")
+    assert "CSV Student,@csv_student" in csv_text

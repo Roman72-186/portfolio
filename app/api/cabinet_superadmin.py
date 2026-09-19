@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 import bcrypt as _bcrypt_lib
 from fastapi import APIRouter, BackgroundTasks, Request, Depends, Form, HTTPException, Query, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from sqlalchemy import func, case
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session as DBSession, aliased
@@ -59,7 +59,7 @@ from app.services.mock_exam_access import (
     ticket_opens_at,
     ticket_start_cutoff_at,
 )
-from app.services.staff_dashboard import get_tariff_registration_stats
+from app.services.staff_dashboard import build_tariff_registration_csv, get_tariff_registration_stats
 from app.services.utils import compress_image, rotate_image_bytes
 from app.tmpl import templates
 
@@ -354,6 +354,19 @@ def cabinet_superadmin(
     ctx = _load_dashboard_data(db, now)
     ctx.update({"request": request, "user": user})
     return templates.TemplateResponse(request, "cabinet_staff.html", ctx)
+
+
+@router.get("/superadmin/registration-stats.csv")
+def download_superadmin_registration_stats(
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    stats = get_tariff_registration_stats(db)
+    return Response(
+        content=build_tariff_registration_csv(stats),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=registration-stats.csv"},
+    )
 
 
 @router.post("/superadmin/set-credentials", response_class=HTMLResponse)
