@@ -53,6 +53,9 @@
         var csrfToken = options && options.csrfToken;
         var preloadedData = options && options.data;
         var watchRequired = !(options && options.watchRequired === false);
+        var onCompleted = options && typeof options.onCompleted === 'function'
+            ? options.onCompleted
+            : null;
 
         var statusEl = root.querySelector('[data-role="status"]');
         var shell = root.querySelector('[data-role="shell"]');
@@ -197,6 +200,10 @@
                 progressStatus.textContent = 'Автосохранение временно недоступно. Видео продолжит работать.';
                 progressStatus.classList.add('is-error');
                 iframe.src = data.player_url;
+                // Player.js может не загрузиться из-за сети, CSP или
+                // несовпавшего SRI. Под обложкой при этом уже живёт родной
+                // плеер Bunny: через пять секунд открываем к нему доступ.
+                coverFallbackTimer = window.setTimeout(hideCover, 5000);
             });
         }
 
@@ -646,6 +653,7 @@
             var pendingProgress = null;
             var savingDisabled = false;
             var hasReportedSaved = false;
+            var completionReported = false;
             // Разовый сбой сохранения ученику не показываем: выкатка
             // перезапускает приложение на 10–20 секунд, и heartbeat (раз в
             // 10 сек) попадает в эту паузу. До 18.09.2026 красная надпись
@@ -711,9 +719,17 @@
                     }
                     return response.json().catch(function () { return null; });
                 }).then(function (respData) {
-                    if (!progress.completed) return;
                     if (respData && respData.completed === true) {
-                        setStatus('Видео просмотрено. Можно отметить выполнение.', false);
+                        setStatus(
+                            onCompleted
+                                ? 'Видео просмотрено. Можно отметить выполнение.'
+                                : 'Видео просмотрено.',
+                            false
+                        );
+                        if (!completionReported && onCompleted) onCompleted();
+                        completionReported = true;
+                    } else if (!progress.completed) {
+                        return;
                     } else if (!watchRequired) {
                         setStatus('Место просмотра сохранено.', false);
                     } else {
@@ -796,6 +812,11 @@
                     isPlaying = true;
                     hasEverPlayed = true;
                     hideCover();
+                    // Каждый play создаёт серверную точку отсчёта. Без неё короткий
+                    // ролик успевал закончиться до первого 10-секундного heartbeat и навсегда
+                    // оставался с watched_seconds=0. Точка при каждом возобновлении ещё и
+                    // отсекает время, проведённое на паузе.
+                    saveProgress(true, false, false);
                     // Ученица всё-таки запустила видео кнопкой плеера — подсказка
                     // про неудачный старт больше не нужна.
                     if (progressStatus.textContent.trim() === START_BLOCKED_MESSAGE) {

@@ -736,6 +736,75 @@ def test_ended_event_allows_small_catalog_duration_mismatch(
     assert db.get(VideoProgress, (user.id, VIDEO_ID)).completed_at is not None
 
 
+def test_rewatch_requires_fresh_watch_time_after_previous_completion(
+    auth_client, db, monkeypatch
+):
+    """Старый накопленный просмотр не подтверждает новое назначение ролика."""
+    from app.models.video_progress import VideoProgress
+
+    client, user = auth_client
+    monkeypatch.setattr(settings, "bunny_stream_enabled", True)
+    monkeypatch.setattr(settings, "bunny_stream_library_id", 720058)
+    monkeypatch.setattr(settings, "bunny_stream_token_key", "playback-key")
+    completed_at = datetime.now(timezone.utc)
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Повторный урок",
+        status="ready",
+        is_published=True,
+        duration_seconds=600.0,
+    )
+    db.add(video)
+    db.flush()
+    progress = VideoProgress(
+        user_id=user.id,
+        video_id=VIDEO_ID,
+        position_seconds=600.0,
+        duration_seconds=600.0,
+        watched_seconds=600.0,
+        completed_at=completed_at,
+        last_completed_at=completed_at,
+        last_completion_watched_seconds=600.0,
+    )
+    db.add(progress)
+    db.commit()
+
+    skipped = client.post(
+        f"/cabinet/videos/{video.id}/progress",
+        json={
+            "position_seconds": 600,
+            "duration_seconds": 600,
+            "playback_active": True,
+            "ended": True,
+        },
+    )
+    assert skipped.status_code == 200
+    assert skipped.json()["completed"] is False
+
+    progress = db.get(VideoProgress, (user.id, VIDEO_ID))
+    progress.position_seconds = 590.0
+    progress.watched_seconds = 1190.0
+    db.commit()
+
+    rewatched = client.post(
+        f"/cabinet/videos/{video.id}/progress",
+        json={
+            "position_seconds": 600,
+            "duration_seconds": 600,
+            "playback_active": True,
+            "ended": True,
+        },
+    )
+    assert rewatched.status_code == 200
+    assert rewatched.json()["completed"] is True
+
+    saved = db.get(VideoProgress, (user.id, VIDEO_ID))
+    assert saved.completed_at == completed_at
+    assert saved.last_completed_at >= completed_at
+    assert saved.last_completion_watched_seconds == saved.watched_seconds
+
+
 def test_catalog_progress_requires_real_csrf(auth_client, db, monkeypatch):
     """`conftest` глушит CSRF на всю сессию, поэтому проверяем настоящую зависимость.
 

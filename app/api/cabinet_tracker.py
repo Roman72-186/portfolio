@@ -21,7 +21,7 @@ Hero-карточка (аватар/имя/тариф/баллы Р-К/год п
 `app/services/stats.py::avg_score_by_subject_all_time` (тот же, что у карточки
 ученика для персонала).
 """
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -308,7 +308,7 @@ def _portfolio_block_done(db: DBSession, block, user_id: int) -> bool:
 
 
 def _video_block_watched(db: DBSession, block, user_id: int) -> bool:
-    """Досмотрел ли ученик ролик видео-блока — по `VideoProgress.completed_at`,
+    """Досмотрел ли ученик ролик видео-блока — по последнему подтверждённому просмотру,
     той же проверке антиперемотки, что уже стоит на видео-задаче целиком
     (`api/video.py::_save_progress`: сервер сам решает «досмотрел», клиенту не
     верим). «Просмотрено» — это только допуск к кнопке ниже, не сама отметка
@@ -316,16 +316,12 @@ def _video_block_watched(db: DBSession, block, user_id: int) -> bool:
     «кружок нужно отметить, но проверяем, просмотрено видео или нет» — кто
     ставит отметку и кто её проверяет, две разные роли).
 
-    `completed_at` — отметка на всю жизнь ролика (`video_progress.py::
-    save_video_progress`: «preserve the first completion timestamp», не
-    сбрасывается новым апсертом), не на конкретный блок или цикл. Если один
-    и тот же каталожный ролик когда-нибудь привяжут вторым блоком к другому
-    занятию — старый просмотр молча откроет кружок там без нового просмотра.
-    Не чиним искусственным окном по датам блока (как `_portfolio_block_done`
-    от загрузок): у видео-задачи `TrackerTask.kind == 'video'` то же
-    поведение уже много месяцев (`_close_video_task_once` смотрит на тот же
-    `completed_at`), и один ролик под два разных блока/задачи на практике не
-    заводят — у каждого урока свой каталожный ролик.
+    `completed_at` хранит первый просмотр для истории, а `last_completed_at` — последний
+    подтверждённый полный просмотр. Для конкретного блока требуем просмотр после
+    `block.created_at`. Если тот же ролик позже добавят в
+    другое занятие, старый просмотр не откроет новый кружок. Правка соседних полей
+    сохраняет id и created_at блока, поэтому уже засчитанный просмотр от обычного
+    редактирования задания не слетает.
     """
     if not block.video_id:
         return False
@@ -333,7 +329,17 @@ def _video_block_watched(db: DBSession, block, user_id: int) -> bool:
     if video is None:
         return False
     progress = get_video_progress(db, user_id=user_id, video_id=video.bunny_video_id)
-    return bool(progress and progress.completed_at is not None)
+    if progress is None or block.created_at is None:
+        return False
+    completed_at = progress.last_completed_at or progress.completed_at
+    if completed_at is None:
+        return False
+    block_created_at = block.created_at
+    if completed_at.tzinfo is None:
+        completed_at = completed_at.replace(tzinfo=timezone.utc)
+    if block_created_at.tzinfo is None:
+        block_created_at = block_created_at.replace(tzinfo=timezone.utc)
+    return completed_at >= block_created_at
 
 
 def _video_block_requires_completion(task: TrackerTask, block: TaskBlock) -> bool:

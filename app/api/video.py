@@ -461,7 +461,15 @@ def _save_progress(
         duration is not None
         and (payload.ended or duration - payload.position_seconds <= 5)
     )
-    completed = position_near_end and watched_enough(watched_seconds, duration)
+    watched_for_current_completion = watched_seconds
+    if was_completed:
+        watched_for_current_completion = max(
+            0.0,
+            watched_seconds - existing.last_completion_watched_seconds,
+        )
+    completed = position_near_end and watched_enough(
+        watched_for_current_completion, duration
+    )
     try:
         completed = persist_video_progress(
             db,

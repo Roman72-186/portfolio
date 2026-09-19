@@ -84,9 +84,14 @@ def test_completion_starts_next_open_at_zero_but_rewatch_can_resume(db, regular_
         position_seconds=600.0,
         duration_seconds=600.0,
         completed=True,
+        watched_seconds=600.0,
     )
     completed = get_video_progress(db, user_id=regular_user.id, video_id=VIDEO_ID)
     assert completed.completed_at is not None
+    assert completed.last_completed_at == completed.completed_at
+    assert completed.last_completion_watched_seconds == completed.watched_seconds
+    first_completed_at = completed.completed_at
+    last_completed_at = completed.last_completed_at
     assert get_resume_position(completed) == 0
 
     save_video_progress(
@@ -98,8 +103,42 @@ def test_completion_starts_next_open_at_zero_but_rewatch_can_resume(db, regular_
         completed=False,
     )
     rewound = get_video_progress(db, user_id=regular_user.id, video_id=VIDEO_ID)
-    assert rewound.completed_at is not None
+    assert rewound.completed_at == first_completed_at
+    assert rewound.last_completed_at == last_completed_at
+    assert rewound.last_completion_watched_seconds == completed.watched_seconds
     assert get_resume_position(rewound) == 45.0
+
+
+def test_rewatch_updates_last_completion_but_preserves_first(db, regular_user):
+    save_video_progress(
+        db,
+        user_id=regular_user.id,
+        video_id=VIDEO_ID,
+        position_seconds=600.0,
+        duration_seconds=600.0,
+        completed=True,
+        watched_seconds=1200.0,
+    )
+    progress = get_video_progress(db, user_id=regular_user.id, video_id=VIDEO_ID)
+    first_completed_at = progress.completed_at
+    previous_last_completed_at = first_completed_at - timedelta(days=1)
+    progress.last_completed_at = previous_last_completed_at
+    progress.last_completion_watched_seconds = 300.0
+    db.commit()
+
+    save_video_progress(
+        db,
+        user_id=regular_user.id,
+        video_id=VIDEO_ID,
+        position_seconds=600.0,
+        duration_seconds=600.0,
+        completed=True,
+    )
+
+    rewatched = get_video_progress(db, user_id=regular_user.id, video_id=VIDEO_ID)
+    assert rewatched.completed_at == first_completed_at
+    assert rewatched.last_completed_at > previous_last_completed_at
+    assert rewatched.last_completion_watched_seconds == rewatched.watched_seconds
 
 
 def test_position_near_end_resumes_when_not_completed(db, regular_user):
@@ -114,6 +153,26 @@ def test_position_near_end_resumes_when_not_completed(db, regular_user):
 
     progress = get_video_progress(db, user_id=regular_user.id, video_id=VIDEO_ID)
     assert get_resume_position(progress) == 595.0
+
+
+def test_position_at_end_restarts_when_watch_time_is_not_completed(db, regular_user):
+    """Ролик может дойти до ended раньше порога watched_seconds на
+    ускорении. Возобновление с duration/duration не дало бы добрать
+    недостающее календарное время.
+    """
+    save_video_progress(
+        db,
+        user_id=regular_user.id,
+        video_id=VIDEO_ID,
+        position_seconds=600.0,
+        duration_seconds=600.0,
+        completed=False,
+        watched_seconds=300.0,
+    )
+
+    progress = get_video_progress(db, user_id=regular_user.id, video_id=VIDEO_ID)
+    assert progress.completed_at is None
+    assert get_resume_position(progress) == 0.0
 
 
 def test_save_video_progress_persists_watched_seconds(db, regular_user):

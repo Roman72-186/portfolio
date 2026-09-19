@@ -28,6 +28,16 @@ class VideoProgress(Base):
     # ::compute_watched_seconds.
     watched_seconds: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # completed_at keeps the first successful watch for historical reporting;
+    # last_completed_at scopes a later rewatch to a newly created task block.
+    last_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Lifetime watched_seconds at the latest confirmed completion. A repeated
+    # assignment must accumulate a fresh video's worth after this checkpoint.
+    last_completion_watched_seconds: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

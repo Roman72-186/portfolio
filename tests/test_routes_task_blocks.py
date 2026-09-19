@@ -656,10 +656,12 @@ def _video_task_with_block(db, staff_user_id):
 
 def _mark_watched(db, *, user_id, bunny_video_id):
     from app.models.video_progress import VideoProgress
+    completed_at = datetime.now(timezone.utc)
     db.add(VideoProgress(
         user_id=user_id, video_id=bunny_video_id,
         position_seconds=120.0, duration_seconds=120.0, watched_seconds=120.0,
-        completed_at=datetime.now(timezone.utc),
+        completed_at=completed_at, last_completed_at=completed_at,
+        last_completion_watched_seconds=120.0,
     ))
     db.commit()
 
@@ -720,6 +722,38 @@ def test_video_block_confirm_closes_when_watched(client, db, user_factory, sessi
         TaskBlockState.block_id == block.id, TaskBlockState.user_id == student.id,
     ).one()
     assert state.completion_source == "video_watched"
+
+
+def test_video_block_rejects_completion_from_before_block_creation(
+    client, db, user_factory, session_factory
+):
+    """Если один каталожный ролик позже положили в новый блок,
+    просмотр из прошлого занятия не закрывает его заранее.
+    """
+    staff = user_factory(vk_id=550_323, name="Стафф", is_admin=True, role_name="админ")
+    task, block, video = _video_task_with_block(db, staff.id)
+    student = _student_client(client, user_factory, session_factory)
+    _mark_watched(db, user_id=student.id, bunny_video_id=video.bunny_video_id)
+
+    from app.models.video_progress import VideoProgress
+
+    progress = db.get(VideoProgress, (student.id, video.bunny_video_id))
+    progress.completed_at = block.created_at - timedelta(seconds=1)
+    progress.last_completed_at = progress.completed_at
+    db.commit()
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert body["blocks"][0]["watched"] is False
+
+    resp = client.post(f"/cabinet/tracker/blocks/{block.id}/watched")
+    assert resp.status_code == 409
+    assert resp.json()["error"] == "not_watched"
+
+    progress.last_completed_at = block.created_at + timedelta(seconds=1)
+    db.commit()
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert body["blocks"][0]["watched"] is True
 
 
 def test_video_block_confirm_is_idempotent(client, db, user_factory, session_factory):

@@ -46,14 +46,13 @@ def get_video_progress(
 def get_resume_position(progress: VideoProgress | None) -> float:
     if progress is None or progress.position_seconds < 5:
         return 0.0
-    # Возвращаемся в начало только после подтверждённого события `ended` и
-    # позиции в самом конце. Близкая к концу позиция сама по себе не означает
-    # завершение: ученик мог обновить страницу за несколько секунд до конца и
-    # должен продолжить с сохранённого места. После начала повторного просмотра
-    # completed_at сохраняется исторически, поэтому позиция снова возобновляется.
+    # Точная позиция в конце возвращает в начало даже при ещё не подтверждённом
+    # просмотре. Такая строка возникает, если ролик закончился раньше, чем
+    # накопилось требуемое календарное время (например, на скорости 2×). Возврат
+    # в начало даёт добрать время вместо тупика на duration/duration. Позицию рядом с
+    # концом сохраняем: ученик мог уйти за несколько секунд до `ended`.
     if (
-        progress.completed_at is not None
-        and progress.duration_seconds is not None
+        progress.duration_seconds is not None
         and progress.position_seconds >= progress.duration_seconds
     ):
         return 0.0
@@ -133,7 +132,7 @@ def save_video_progress(
     completed: bool,
     watched_seconds: float | None = None,
 ) -> bool:
-    """Persist the latest position and preserve the first completion timestamp.
+    """Persist position, first completion, and latest confirmed completion.
 
     `watched_seconds` — накопленное реальное время просмотра (см.
     `compute_watched_seconds`), уже посчитанное вызывающим кодом. `None`
@@ -151,6 +150,10 @@ def save_video_progress(
         "duration_seconds": duration_seconds,
         "watched_seconds": watched_seconds or 0.0,
         "completed_at": completed_at,
+        "last_completed_at": completed_at,
+        "last_completion_watched_seconds": (
+            (watched_seconds or 0.0) if completed else 0.0
+        ),
         "created_at": now,
         "updated_at": now,
     }
@@ -158,6 +161,20 @@ def save_video_progress(
         "position_seconds": position_seconds,
         "duration_seconds": duration_seconds,
         "completed_at": func.coalesce(VideoProgress.completed_at, completed_at),
+        "last_completed_at": (
+            completed_at
+            if completed
+            else VideoProgress.last_completed_at
+        ),
+        "last_completion_watched_seconds": (
+            (
+                watched_seconds
+                if watched_seconds is not None
+                else VideoProgress.watched_seconds
+            )
+            if completed
+            else VideoProgress.last_completion_watched_seconds
+        ),
         "updated_at": now,
     }
     if watched_seconds is not None:
@@ -194,6 +211,13 @@ def save_video_progress(
             progress.updated_at = now
             if completed and progress.completed_at is None:
                 progress.completed_at = now
+            if completed:
+                progress.last_completed_at = now
+                progress.last_completion_watched_seconds = (
+                    watched_seconds
+                    if watched_seconds is not None
+                    else progress.watched_seconds
+                )
 
     db.commit()
     db.expire_all()

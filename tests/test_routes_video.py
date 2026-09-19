@@ -152,6 +152,7 @@ def test_video_watermark_fades_in_and_out_at_random_spots(auth_client, monkeypat
     assert "data.player_url = body.player_url" in response.text
     assert "player.on('play'" in response.text
     assert "hideCover();" in response.text
+    assert "saveProgress(true, false, false);" in response.text
     assert "video-frame.is-started .video-cover" in response.text
     # Разрешение iframe нужно для программного play() из нашей кнопки.
     # Сам автостарт выключен в подписанном URL параметром autoplay=false.
@@ -633,3 +634,5 @@ def test_video_page_has_throttled_playerjs_progress_contract(auth_client, monkey
     assert "keepalive: Boolean(keepalive)" in response.text
     assert "if (saveInFlight)" in response.text
     assert "body: JSON.stringify({" in response.text
+    assert "typeof options.onCompleted === 'function'" in response.text
+    assert "if (!completionReported && onCompleted) onCompleted();" in response.text

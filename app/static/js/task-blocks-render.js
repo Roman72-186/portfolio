@@ -203,7 +203,7 @@ scope)` и свойством `answered` (одна попытка: после о
             //
             // Сам плеер вынесен в `videoPlayer`: его же ставит над кнопкой
             // блок «Загрузить портфолио» (видеоинструкция, 17.09.2026).
-            function videoPlayer(block) {
+            function videoPlayer(block, callbacks) {
                 var root = el('div', 'lrn-inline-video');
                 var statusEl = el('p', 'video-progress-status', 'Загружаем видео…');
                 statusEl.setAttribute('aria-live', 'polite');
@@ -280,7 +280,8 @@ scope)` и свойством `answered` (одна попытка: после о
                     // Инструкция в блоке портфолио и необязательное видео
                     // ничего не ждут от просмотра — предупреждение плеера о
                     // неподтверждённом просмотре там только пугает.
-                    watchRequired: block.block_type === 'video' && block.requires_watch !== false
+                    watchRequired: block.block_type === 'video' && block.requires_watch !== false,
+                    onCompleted: callbacks && callbacks.onCompleted
                 });
                 return root;
             }
@@ -302,8 +303,6 @@ scope)` и свойством `answered` (одна попытка: после о
                     return wrap;
                 }
 
-                wrap.appendChild(videoPlayer(block));
-
                 var checkHint = el('p', 'lrn-blk-video-check-hint');
                 checkHint.setAttribute('aria-live', 'polite');
                 checkHint.hidden = !!block.done;
@@ -317,6 +316,15 @@ scope)` и свойством `answered` (одна попытка: после о
                         ? 'Ролик просмотрен – отметь выполнение кружком выше.'
                         : 'Досмотри ролик до конца, чтобы отметить выполнение.';
                 }
+                wrap.appendChild(videoPlayer(block, {
+                    onCompleted: function () {
+                        block.watched = true;
+                        if (block.done) return;
+                        checkHint.hidden = false;
+                        checkHint.classList.remove('is-error');
+                        checkHint.textContent = 'Ролик просмотрен – отметь выполнение кружком выше.';
+                    }
+                }));
                 wrap.appendChild(checkHint);
 
                 wireBlockCheck(check, block.confirm_endpoint, block, {
