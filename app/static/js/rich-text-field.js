@@ -276,6 +276,15 @@
             syncFromEditable(editable);
         });
 
+        editable.addEventListener('click', function (event) {
+            // Большинство редакторов лежат внутри <label>. После появления
+            // toolbar первым labelable-контролом в таком label стала кнопка
+            // «Ж»: обычный клик по тексту активировал её и уводил фокус из
+            // contenteditable. Каретка уже установлена на mousedown, поэтому
+            // отменяем только click-действие оборачивающего label.
+            if (editable.closest('label')) event.preventDefault();
+        });
+
         editable.addEventListener('keydown', function (e) {
             if (!(e.ctrlKey || e.metaKey)) return;
             var key = e.key.toLowerCase();

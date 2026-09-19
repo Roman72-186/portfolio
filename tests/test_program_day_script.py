@@ -115,6 +115,21 @@ def test_day_page_scripts_are_valid_javascript(
             )
 
 
+def test_rich_text_editor_does_not_let_wrapping_label_steal_focus():
+    """Клик по WYSIWYG не должен активировать первую кнопку toolbar.
+
+    После оборачивания textarea в редактор большинство экземпляров остаются
+    внутри ``<label>``. Без отмены стандартного click-действия label браузер
+    переводит фокус на первую вложенную кнопку, и в описание нельзя печатать.
+    """
+    source = pathlib.Path("app/static/js/rich-text-field.js").read_text(encoding="utf-8")
+
+    handler = source.split("editable.addEventListener('click'", 1)[1]
+    handler = handler.split("});", 1)[0]
+    assert "editable.closest('label')" in handler
+    assert "event.preventDefault()" in handler
+
+
 def test_day_page_uses_school_day_copy_and_inline_optional_hints(
     client, db, user_factory, session_factory
 ):
