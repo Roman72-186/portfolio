@@ -5,7 +5,7 @@
 <link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=7">
 {% endblock %}
 {% block content %}
-<div class="su-wrap ios-su-users">
+<div class="su-wrap ios-su-users ios-staff-dashboard">
 
     <div class="su-header">
         <a href="/cabinet" class="back-link">← Дашборд</a>
@@ -15,13 +15,12 @@
         {% endif %}
         <a href="/cabinet/superadmin/assign-curator" class="action-btn btn-tags">🔗 Привязка к куратору</a>
         <a href="/cabinet/superadmin/tags" class="action-btn btn-tags">🏷️ Назначить теги</a>
-        <a href="/cabinet/periods" class="action-btn btn-tags">📅 Периоды и набор</a>
     </div>
 
     <nav class="su-tabs" aria-label="Разделы пользователей">
-        <a class="su-tab{% if view == 'users' %} is-active{% endif %}" href="/cabinet/superadmin/users?view=users">Пользователи</a>
-        <a class="su-tab{% if view == 'registration' %} is-active{% endif %}" href="/cabinet/superadmin/users?view=registration">Регистрации по тарифам</a>
-        <a class="su-tab{% if view == 'activity' %} is-active{% endif %}" href="/cabinet/superadmin/users?view=activity">Активность учеников</a>
+        <a class="su-tab{% if view == 'users' %} is-active{% endif %}" href="/cabinet/superadmin/users?view=users"{% if view == 'users' %} aria-current="page"{% endif %}>Пользователи</a>
+        <a class="su-tab{% if view == 'registration' %} is-active{% endif %}" href="/cabinet/superadmin/users?view=registration"{% if view == 'registration' %} aria-current="page"{% endif %}>Регистрации по тарифам</a>
+        <a class="su-tab{% if view == 'activity' %} is-active{% endif %}" href="/cabinet/superadmin/users?view=activity"{% if view == 'activity' %} aria-current="page"{% endif %}>Активность учеников</a>
         <a class="su-tab" href="/cabinet/periods">Периоды и набор</a>
     </nav>
 

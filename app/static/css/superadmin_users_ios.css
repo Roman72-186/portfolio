@@ -292,5 +292,5 @@
     .ios-uc .uc-grid { grid-template-columns: 1fr; }
 }
 .ios-su-users .su-tabs { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 16px; }
-.ios-su-users .su-tab { display:inline-flex; align-items:center; min-height:36px; padding:0 13px; border:1px solid var(--ios-sep); border-radius:9px; color:var(--ios-label-2); text-decoration:none; font:600 12px/1 var(--ios-font); background:var(--ios-card); }
+.ios-su-users .su-tab { display:inline-flex; align-items:center; min-height:44px; padding:0 14px; border:1px solid var(--ios-sep); border-radius:9px; color:var(--ios-label-2); text-decoration:none; font:600 12px/1.2 var(--ios-font); background:var(--ios-card); }
 .ios-su-users .su-tab.is-active, .ios-su-users .su-tab:hover { color:var(--ios-blue); border-color:var(--ios-blue); background:rgba(175,82,222,.1); }
