@@ -75,6 +75,12 @@ def test_page_does_not_turn_the_bridge_on_for_students(admin_client, db, monkeyp
 
 
 def test_page_warns_when_bridge_is_already_on_for_everyone(admin_client, db, monkeypatch):
+    """Мост включён ученикам – предупреждаем, но страница остаётся рабочей.
+
+    Правый плеер собирается с явным пустым адресом, поэтому идёт в Bunny
+    напрямую при любой глобальной настройке. Проверяем это здесь же: иначе
+    текст предупреждения однажды разъедется с тем, что страница делает.
+    """
     _configure_bunny(monkeypatch, proxy_base=BRIDGE)
     _published_video(db)
     client, _ = admin_client
@@ -83,6 +89,8 @@ def test_page_warns_when_bridge_is_already_on_for_everyone(admin_client, db, mon
 
     assert response.status_code == 200
     assert "Мост сейчас включён для всех" in response.text
+    assert f"https://iframe.mediadelivery.net/embed/720058/{VIDEO_ID}" in response.text
+    assert f"{BRIDGE}/embed/720058/{VIDEO_ID}" in response.text
 
 
 def test_unknown_bridge_address_is_rejected(admin_client, db, monkeypatch):
