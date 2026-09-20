@@ -17,6 +17,15 @@
         <a href="/cabinet/periods" class="action-btn btn-tags">📅 Периоды и набор</a>
     </div>
 
+    <nav class="su-tabs" aria-label="Разделы пользователей">
+        <a class="su-tab{% if view == 'users' %} is-active{% endif %}" href="/cabinet/superadmin/users?view=users">Пользователи</a>
+        <a class="su-tab{% if view == 'registration' %} is-active{% endif %}" href="/cabinet/superadmin/users?view=registration">Регистрации по тарифам</a>
+        <a class="su-tab{% if view == 'activity' %} is-active{% endif %}" href="/cabinet/superadmin/users?view=activity">Активность учеников</a>
+        <a class="su-tab" href="/cabinet/periods">Периоды и набор</a>
+    </nav>
+
+    {% include "partials/staff_registration_activity.html" %}
+
     <!-- Filters -->
     <form method="get" action="/cabinet/superadmin/users" class="su-filters">
         <label>

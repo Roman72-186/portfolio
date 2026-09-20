@@ -1,0 +1,39 @@
+{% if view == 'registration' %}
+<section class="panel panel--registration-stats" aria-labelledby="registration-stats-title">
+    <div class="panel-header">
+        <h2 class="panel-title" id="registration-stats-title">Регистрации по тарифам</h2>
+        <a class="registration-download-btn" href="{% if user.role_rank >= 5 %}/cabinet/superadmin/registration-stats.csv{% else %}/cabinet/admin/registration-stats.csv{% endif %}?registration_from={{ tariff_registration_stats.period_from }}{% if tariff_registration_stats.period_to %}&amp;registration_to={{ tariff_registration_stats.period_to }}{% endif %}{% if tariff_registration_stats.tariff_filter %}&amp;registration_tariff={{ tariff_registration_stats.tariff_filter }}{% endif %}" download>Скачать CSV</a>
+    </div>
+    <form class="registration-stats-filters" method="get" action="{{ request.url.path }}">
+        <input type="hidden" name="view" value="registration">
+        <label>С даты <input type="date" name="registration_from" value="{{ tariff_registration_stats.period_from }}"></label>
+        <label>По дату <input type="date" name="registration_to" value="{{ tariff_registration_stats.period_to }}"></label>
+        <label>Тариф <select name="registration_tariff">
+            <option value="">Все тарифы</option>
+            {% for item in tariff_registration_stats.by_tariff %}<option value="{{ item.tariff }}"{% if tariff_registration_stats.tariff_filter == item.tariff %} selected{% endif %}>{{ item.label }}</option>{% endfor %}
+            <option value="__none__"{% if tariff_registration_stats.tariff_filter == '__none__' %} selected{% endif %}>Без тарифа</option>
+        </select></label>
+        <button type="submit">Применить</button>
+        <a href="{{ request.url.path }}?view=registration">Сбросить</a>
+    </form>
+    <div class="type-grid">
+        {% for item in tariff_registration_stats.by_tariff %}<div class="type-cell"><div class="type-label registration-tariff-label">{{ item.label }}</div><div class="type-val">{{ item.count }}</div></div>{% endfor %}
+        <div class="type-cell"><div class="type-label registration-tariff-label">Без тарифа</div><div class="type-val">{{ tariff_registration_stats.without_tariff }}</div></div>
+    </div>
+    <div class="registration-stats-total">Всего зарегистрировались: <strong>{{ tariff_registration_stats.total }}</strong></div>
+    <details class="registration-student-list" open><summary>Список учеников <span>{{ tariff_registration_stats.students | length }}</span></summary>
+        <div class="registration-student-head"><span>Имя</span><span>Username</span><span>Тариф</span></div>
+        <ul class="registration-student-rows">{% for student in tariff_registration_stats.students %}<li class="registration-student-row"><span>{{ student.name }}</span><span>{{ student.username }}</span><span>{{ student.tariff_label }}</span></li>{% else %}<li class="registration-student-row"><span>Нет записей</span></li>{% endfor %}</ul>
+    </details>
+</section>
+{% elif view == 'activity' %}
+<section class="panel panel--student-activity" aria-labelledby="student-activity-title">
+    <div class="panel-header"><h2 class="panel-title" id="student-activity-title">Активность учеников</h2><span class="sfd-meta-text">Входы, загрузки и журнал действий</span></div>
+    <details class="student-activity-block" open><summary>Сводка по ученикам <span>{{ student_activity.students | length }}</span></summary>
+        <div class="student-activity-table-wrap"><table class="student-activity-table"><thead><tr><th>Ученик</th><th>Регистрация</th><th>Последний вход</th><th>Входов</th><th>Портфолио</th><th>Последняя загрузка</th></tr></thead><tbody>
+        {% for student in student_activity.students %}<tr><td><strong>{{ student.name }}</strong><small>{{ student.username }} · {{ student.tariff }}</small></td><td>{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td><td>{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td><td>{{ student.login_count }}</td><td><strong>{{ student.upload_count }}</strong></td><td>{{ student.last_upload.strftime('%d.%m.%Y %H:%M') if student.last_upload else 'Не загружал' }}</td></tr>{% else %}<tr><td colspan="6">Нет данных.</td></tr>{% endfor %}
+        </tbody></table></div>
+    </details>
+    <details class="student-activity-block"><summary>Журнал действий <span>{{ student_activity.events | length }}</span></summary><div class="student-activity-table-wrap"><table class="student-activity-table student-activity-table--journal"><thead><tr><th>Когда</th><th>Ученик</th><th>Действие</th><th>Детали</th></tr></thead><tbody>{% for event in student_activity.events %}<tr><td>{{ event.created_at.strftime('%d.%m.%Y %H:%M') if event.created_at else '—' }}</td><td>{{ event.student_name }}<small>{{ event.username }}</small></td><td>{{ event.action }}</td><td>{{ event.details or '—' }}</td></tr>{% else %}<tr><td colspan="4">Журнал пуст.</td></tr>{% endfor %}</tbody></table></div></details>
+</section>
+{% endif %}
