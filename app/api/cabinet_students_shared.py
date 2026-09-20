@@ -47,6 +47,7 @@ from app.services.feature_periods import get_active_period
 from app.services.stats import avg_score_by_subject_all_time
 from app.services.portfolio import after_gallery_groups, item_source, portfolio_item_count
 from app.services.student_access import get_student_for_staff_access
+from app.services.user_management import log_tariff_change
 from app.services.works import delete_works_with_dependents
 from app.services.tz import MSK_TZ, msk_input_value, msk_midnight, parse_msk_local
 from app.services.utils import compress_image, study_duration_text, group_works, has_case_growth
@@ -200,6 +201,7 @@ def _enrich(s: User, counts_by_user: dict, avg_by_user: dict,
         "photo_url": s.photo_url,
         "cohort_tag": s.cohort_tag,
         "tariff": s.tariff,
+        "access_until": s.access_until,
         "exam_dates": s.exam_dates,
         "exam_subjects": s.exam_subjects,
         "study_mode": s.study_mode,
@@ -492,6 +494,7 @@ def _render_students_panel(
         "sidebar_title": sidebar_title,
         "mock_subjects": MOCK_SUBJECTS,
         "months": MONTHS,
+        "tariffs": TARIFFS,
         "current_year": datetime.now(timezone.utc).year,
         "show_curator_filter": show_curator_filter,
         "curators": curators,

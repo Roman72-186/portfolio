@@ -13,6 +13,8 @@
 пункт, и обычное сохранение карточки молча переведёт человека с «МАКСИМУМА»
 на «Я САМ».
 """
+from datetime import datetime, timezone
+
 from app.constants import (
     TARIFFS,
     TARIFFS_CURRENT,
@@ -188,6 +190,39 @@ def test_user_filter_still_finds_the_archive(superadmin_client):
 
     for legacy in TARIFFS_LEGACY:
         assert f'<option value="{legacy}"' in page
+
+
+def test_students_sidebar_uses_current_tariffs_and_marks_intake_newcomers(
+    admin_client, db, user_factory
+):
+    client, _ = admin_client
+    newcomer = user_factory(
+        vk_id=901001,
+        name="Пробный Новичок",
+        role_name="ученик",
+        tariff="",
+        profile_completed=True,
+    )
+    newcomer.access_until = datetime(2026, 9, 27, 18, 30, tzinfo=timezone.utc)
+    regular = user_factory(
+        vk_id=901002,
+        name="Без Тарифа",
+        role_name="ученик",
+        tariff="",
+        profile_completed=True,
+    )
+    db.commit()
+
+    page = client.get("/cabinet/students").text
+
+    for tariff in TARIFFS_CURRENT:
+        assert f'data-tariff="{tariff}"' in page
+        assert f'>{TARIFF_DISPLAY[tariff]}</button>' in page
+    newcomer_row = page.split(f'id="srow-{newcomer.id}"', 1)[1].split("</button>", 1)[0]
+    regular_row = page.split(f'id="srow-{regular.id}"', 1)[1].split("</button>", 1)[0]
+    assert 'data-tariff="__newcomer__"' in newcomer_row
+    assert "Новенький" in newcomer_row
+    assert "Новенький" not in regular_row
 
 
 def test_every_tariff_has_a_colour_group():
