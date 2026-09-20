@@ -131,6 +131,20 @@
             <button type="submit">Применить</button>
             <a href="{{ request.url.path }}">Сбросить</a>
         </form>
+        <script>
+        (function () {
+            var form = document.querySelector('.registration-stats-filters');
+            var download = document.querySelector('.registration-download-btn');
+            if (!form || !download) return;
+            function syncDownload() {
+                var query = new URLSearchParams(new FormData(form)).toString();
+                var base = download.href.split('?')[0];
+                download.href = base + (query ? '?' + query : '');
+            }
+            form.addEventListener('change', syncDownload);
+            syncDownload();
+        })();
+        </script>
         <div class="type-grid">
             {% for item in tariff_registration_stats.by_tariff %}
             <div class="type-cell" data-registration-tariff="{{ item.tariff }}">
