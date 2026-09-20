@@ -192,7 +192,7 @@ def test_user_filter_still_finds_the_archive(superadmin_client):
         assert f'<option value="{legacy}"' in page
 
 
-def test_students_sidebar_uses_current_tariffs_and_marks_intake_newcomers(
+def test_students_sidebar_uses_current_tariffs_and_marks_students_without_tariff_as_newcomers(
     admin_client, db, user_factory
 ):
     client, _ = admin_client
@@ -203,7 +203,6 @@ def test_students_sidebar_uses_current_tariffs_and_marks_intake_newcomers(
         tariff="",
         profile_completed=True,
     )
-    newcomer.access_until = datetime(2026, 9, 27, 18, 30, tzinfo=timezone.utc)
     regular = user_factory(
         vk_id=901002,
         name="Без Тарифа",
@@ -226,7 +225,8 @@ def test_students_sidebar_uses_current_tariffs_and_marks_intake_newcomers(
     regular_row = page.split(f'id="srow-{regular.id}"', 1)[1].split("</button>", 1)[0]
     assert 'data-tariff="__newcomer__"' in newcomer_row
     assert "Новенький" in newcomer_row
-    assert "Новенький" not in regular_row
+    assert 'data-tariff="__newcomer__"' in regular_row
+    assert "Новенький" in regular_row
 
 
 def test_every_tariff_has_a_colour_group():

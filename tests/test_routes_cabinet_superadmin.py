@@ -616,7 +616,6 @@ def test_admin_users_page_has_quick_tariff_control_and_newcomer_tag(
     newcomer = user_factory(
         vk_id=900212, name="New Student", role_name="ученик", tariff=""
     )
-    newcomer.access_until = datetime(2026, 9, 27, 18, 30, tzinfo=timezone.utc)
     regular_without_tariff = user_factory(
         vk_id=900215, name="Regular Without Tariff", role_name="ученик", tariff=""
     )
@@ -628,7 +627,7 @@ def test_admin_users_page_has_quick_tariff_control_and_newcomer_tag(
     regular_row = page.split(f'data-user-row="{regular_without_tariff.id}"', 1)[1].split("</tr>", 1)[0]
     assert "Новенький" in newcomer_row
     assert "profile-tariff-dot" in newcomer_row
-    assert "Новенький" not in regular_row
+    assert "Новенький" in regular_row
 
 
 def test_superadmin_quick_tariff_update_changes_student_tariff(

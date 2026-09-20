@@ -189,7 +189,7 @@
                 <td data-label="Пользователь">
                     <div class="u-name-row">
                         <a href="/cabinet/superadmin/users/{{ u.id }}" class="u-name">{{ u.last_name or '' }} {{ u.first_name or u.name }}</a>
-                        {% if u_rank == 1 and u.access_until %}
+                        {% if u_rank == 1 %}
                         <span class="profile-tariff u-newcomer"{% if u.tariff %} hidden{% endif %}>
                             <span class="profile-tariff-dot"></span>
                             Новенький
@@ -199,7 +199,6 @@
                     <div class="u-meta">id={{ u.id }}{% if u.tg_username %} · @{{ u.tg_username }}{% endif %}</div>
                     {% if u_rank == 1 and not u.deleted_at %}
                     <form class="tariff-quick-form" data-tariff-form="{{ u.id }}"
-                          data-intake-student="{{ '1' if u.access_until else '0' }}"
                           action="/cabinet/superadmin/users/{{ u.id }}/tariff" method="post">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <label for="tariff-{{ u.id }}">Тариф</label>
@@ -458,7 +457,7 @@ function setUserTariff(select) {
             status.textContent = 'Сохранено';
             const newcomer = form.closest('td').querySelector('.u-newcomer');
             if (newcomer) {
-                newcomer.hidden = Boolean(payload.tariff) || form.dataset.intakeStudent !== '1';
+                newcomer.hidden = Boolean(payload.tariff);
             }
             window.setTimeout(function() {
                 if (status.textContent === 'Сохранено') status.textContent = '';
