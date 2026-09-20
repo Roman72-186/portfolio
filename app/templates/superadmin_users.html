@@ -2,6 +2,7 @@
 {% block title %}Управление пользователями{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/superadmin_users_ios.css?v=4">
+<link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=7">
 {% endblock %}
 {% block content %}
 <div class="su-wrap ios-su-users">
@@ -26,6 +27,7 @@
 
     {% include "partials/staff_registration_activity.html" %}
 
+    {% if view == 'users' %}
     <!-- Filters -->
     <form method="get" action="/cabinet/superadmin/users" class="su-filters">
         <label>
@@ -367,6 +369,8 @@
 </form>
 
 </div>
+
+    {% endif %}
 
 <script>
 let _action = null, _userId = null;
