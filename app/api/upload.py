@@ -43,6 +43,7 @@ from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.tracker import SOURCE_EXAM_ASSIGNMENT, TrackerTask
 from app.models.upload_log import UploadLog
+from app.models.activity_event import StudentActivityEvent
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.n8n import send_photo_to_n8n
@@ -694,6 +695,11 @@ async def _process_uploads(
     if success_count > 0:
         # Source of truth for a successful student upload: S3 + Work/UploadLog.
         # The optional n8n/Drive mirror is scheduled only after this commit.
+        db.add(StudentActivityEvent(
+            user_id=user["user_id"],
+            event_type="portfolio_upload" if work_type in (WORK_TYPE_BEFORE, WORK_TYPE_AFTER) else "work_upload",
+            details=f"{success_count} файл(ов), раздел: {work_type}",
+        ))
         db.commit()
         # After commit work.id is available
         if settings.n8n_enabled:

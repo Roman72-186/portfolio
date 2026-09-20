@@ -381,6 +381,35 @@
     font: 600 12px/1.35 var(--ios-font);
 }
 
+.ios-staff-dashboard .panel--student-activity { margin-bottom: 16px; }
+.ios-staff-dashboard .student-activity-block { border-top: 0.5px solid var(--ios-sep); }
+.ios-staff-dashboard .student-activity-block > summary {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    min-height: 44px; padding: 10px 16px; cursor: pointer;
+    font: 600 13px/1.3 var(--ios-font); color: var(--ios-label);
+    list-style: none;
+}
+.ios-staff-dashboard .student-activity-block > summary::-webkit-details-marker { display: none; }
+.ios-staff-dashboard .student-activity-block > summary::after { content: '›'; color: var(--ios-label-2); transform: rotate(90deg); }
+.ios-staff-dashboard .student-activity-block:not([open]) > summary::after { transform: rotate(0); }
+.ios-staff-dashboard .student-activity-block > summary span {
+    margin-left: auto; padding: 3px 9px; border-radius: 999px;
+    color: var(--ios-blue); background: rgba(175,82,222,0.12); font-size: 11px;
+}
+.ios-staff-dashboard .student-activity-table-wrap { overflow-x: auto; }
+.ios-staff-dashboard .student-activity-table { width: 100%; min-width: 850px; border-collapse: collapse; }
+.ios-staff-dashboard .student-activity-table th,
+.ios-staff-dashboard .student-activity-table td {
+    padding: 9px 12px; border-top: 0.5px solid var(--ios-sep); text-align: left;
+    font: 400 12px/1.35 var(--ios-font); color: var(--ios-label-2); white-space: nowrap;
+}
+.ios-staff-dashboard .student-activity-table th { color: var(--ios-label-2); font-weight: 600; }
+.ios-staff-dashboard .student-activity-table td:first-child { padding-left: 16px; color: var(--ios-label); }
+.ios-staff-dashboard .student-activity-table td:last-child { padding-right: 16px; }
+.ios-staff-dashboard .student-activity-table strong { display: block; color: var(--ios-label); font-weight: 600; }
+.ios-staff-dashboard .student-activity-table small { display: block; margin-top: 2px; color: var(--ios-label-2); font-size: 11px; }
+.ios-staff-dashboard .student-activity-table--journal { min-width: 620px; }
+
 /* ── Recent feed (role_rank < 4 — недостижимо через текущие маршруты
    ГП/СА, но остаётся в шаблоне: стилизуем для полноты, без удаления) ── */
 .ios-staff-dashboard .feed-wrap {

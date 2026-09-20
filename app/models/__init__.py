@@ -16,6 +16,7 @@ from app.models.exam_assignment import (
 from app.models.feature_period import FeaturePeriod
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.audit_log import AuditLog
+from app.models.activity_event import StudentActivityEvent
 from app.models.exam_cycle import ExamCycle
 from app.models.feedback import Feedback, FeedbackPhoto, FeedbackMessage
 from app.models.curator_report import CuratorReport

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{% if user.role_rank >= 5 %}Суперадмин{% else %}Главный преподаватель{% endif %} — дашборд{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=6">
+<link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=7">
 {% endblock %}
 {% block content %}
 <div class="staff-wrap ios-staff-dashboard">
@@ -143,6 +143,48 @@
                 </li>
                 {% endfor %}
             </ul>
+        </details>
+    </section>
+
+    <section class="panel panel--student-activity" aria-labelledby="student-activity-title">
+        <div class="panel-header">
+            <h2 class="panel-title" id="student-activity-title">Активность учеников</h2>
+            <span class="sfd-meta-text">Входы и портфолио</span>
+        </div>
+        <details class="student-activity-block" open>
+            <summary>Сводка по ученикам <span>{{ student_activity.students | length }}</span></summary>
+            <div class="student-activity-table-wrap">
+                <table class="student-activity-table">
+                    <thead>
+                        <tr><th>Ученик</th><th>Зарегистрирован</th><th>Последний вход</th><th>Входов</th><th>Портфолио</th><th>Последняя загрузка</th></tr>
+                    </thead>
+                    <tbody>
+                    {% for student in student_activity.students %}
+                    <tr>
+                        <td><strong>{{ student.name }}</strong><small>{{ student.username }} · {{ student.tariff }}</small></td>
+                        <td>{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td>
+                        <td>{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td>
+                        <td>{{ student.login_count }}</td>
+                        <td><strong>{{ student.upload_count }}</strong>{% if student.first_upload %}<small>с {{ student.first_upload.strftime('%d.%m.%Y') }}</small>{% endif %}</td>
+                        <td>{{ student.last_upload.strftime('%d.%m.%Y %H:%M') if student.last_upload else 'Не загружал' }}</td>
+                    </tr>
+                    {% else %}<tr><td colspan="6">Пока нет учеников для статистики.</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </details>
+        <details class="student-activity-block">
+            <summary>Журнал действий <span>{{ student_activity.events | length }}</span></summary>
+            <div class="student-activity-table-wrap">
+                <table class="student-activity-table student-activity-table--journal">
+                    <thead><tr><th>Когда</th><th>Ученик</th><th>Действие</th><th>Детали</th></tr></thead>
+                    <tbody>
+                    {% for event in student_activity.events %}
+                    <tr><td>{{ event.created_at.strftime('%d.%m.%Y %H:%M') if event.created_at else '—' }}</td><td><strong>{{ event.student_name }}</strong><small>{{ event.username }}</small></td><td>{{ event.action }}</td><td>{{ event.details or '—' }}</td></tr>
+                    {% else %}<tr><td colspan="4">Журнал пока пуст.</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </details>
     </section>
 

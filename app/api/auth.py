@@ -29,6 +29,7 @@ from app.models.role import Role
 from app.tmpl import templates
 from app.models.session import Session
 from app.models.user import User
+from app.models.activity_event import StudentActivityEvent
 from app.services.auth_links import (
     consume_one_time_login_token, consume_telegram_link_token,
     issue_one_time_login_link, issue_sso_token, issue_telegram_link_token,
@@ -210,6 +211,7 @@ def _create_session_response(db: DBSession, user: User) -> RedirectResponse:
     # Все настоящие логины (VK, magic link, staff) проходят здесь; сессия
     # имперсонации создаётся отдельно и last_login_at цели не трогает.
     user.last_login_at = _now()
+    db.add(StudentActivityEvent(user_id=user.id, event_type="login"))
     db.commit()
 
     response = RedirectResponse("/cabinet", status_code=302)

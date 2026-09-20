@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.constants import (
     TARIFF_CONFIDENT_MAX,
@@ -6,10 +6,13 @@ from app.constants import (
     TARIFF_WITH_YOU,
 )
 from app.models.role import Role
+from app.models.session import Session
 from app.models.user import User
+from app.models.work import Work, WORK_TYPE_BEFORE
 from app.services.staff_dashboard import (
     REGISTRATION_STATS_SINCE,
     build_tariff_registration_csv,
+    get_student_activity_overview,
     get_tariff_registration_stats,
 )
 from app.services.tz import msk_midnight
@@ -93,3 +96,36 @@ def test_tariff_registration_csv_contains_visible_students_and_headers(db, user_
 
     assert csv_text.startswith("\ufeffИмя;Username;Тариф;Дата регистрации\r\n")
     assert "CSV Student;@csv_student;" in csv_text
+
+
+def test_student_activity_overview_tracks_logins_and_portfolio_uploads(db, user_factory):
+    student = user_factory(vk_id=810_101, tariff=TARIFF_SELF, name="Activity Student")
+    first_login = datetime(2026, 9, 18, 8, tzinfo=timezone.utc)
+    last_login = datetime(2026, 9, 19, 8, tzinfo=timezone.utc)
+    db.add_all([
+        Session(user_id=student.id, expires_at=last_login),
+        Session(user_id=student.id, expires_at=last_login),
+        Work(
+            user_id=student.id,
+            work_type=WORK_TYPE_BEFORE,
+            month="Сентябрь",
+            year=2026,
+            filename="portfolio.jpg",
+            status="success",
+            created_at=last_login,
+        ),
+    ])
+    db.flush()
+    sessions = db.query(Session).filter(Session.user_id == student.id).all()
+    sessions[0].created_at = first_login
+    sessions[1].created_at = last_login
+    db.commit()
+
+    overview = get_student_activity_overview(db)
+    row = next(item for item in overview["students"] if item["id"] == student.id)
+
+    assert row["login_count"] == 2
+    assert row["first_login"].replace(tzinfo=timezone.utc) == first_login
+    assert row["last_login"].replace(tzinfo=timezone.utc) == last_login
+    assert row["upload_count"] == 1
+    assert row["last_upload"].replace(tzinfo=timezone.utc) == last_login
