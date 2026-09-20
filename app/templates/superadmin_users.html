@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Управление пользователями{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/superadmin_users_ios.css?v=5">
+<link rel="stylesheet" href="/static/css/superadmin_users_ios.css?v=6">
 <link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=7">
 {% endblock %}
 {% block content %}
@@ -189,11 +189,17 @@
                 <td data-label="Пользователь">
                     <div class="u-name-row">
                         <a href="/cabinet/superadmin/users/{{ u.id }}" class="u-name">{{ u.last_name or '' }} {{ u.first_name or u.name }}</a>
-                        {% if u_rank == 1 %}<span class="u-newcomer"{% if u.tariff %} hidden{% endif %}>Новенький</span>{% endif %}
+                        {% if u_rank == 1 and u.access_until %}
+                        <span class="profile-tariff u-newcomer"{% if u.tariff %} hidden{% endif %}>
+                            <span class="profile-tariff-dot"></span>
+                            Новенький
+                        </span>
+                        {% endif %}
                     </div>
                     <div class="u-meta">id={{ u.id }}{% if u.tg_username %} · @{{ u.tg_username }}{% endif %}</div>
                     {% if u_rank == 1 and not u.deleted_at %}
                     <form class="tariff-quick-form" data-tariff-form="{{ u.id }}"
+                          data-intake-student="{{ '1' if u.access_until else '0' }}"
                           action="/cabinet/superadmin/users/{{ u.id }}/tariff" method="post">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <label for="tariff-{{ u.id }}">Тариф</label>
@@ -451,7 +457,9 @@ function setUserTariff(select) {
             select.dataset.savedValue = payload.tariff || '__none__';
             status.textContent = 'Сохранено';
             const newcomer = form.closest('td').querySelector('.u-newcomer');
-            if (newcomer) newcomer.hidden = Boolean(payload.tariff);
+            if (newcomer) {
+                newcomer.hidden = Boolean(payload.tariff) || form.dataset.intakeStudent !== '1';
+            }
             window.setTimeout(function() {
                 if (status.textContent === 'Сохранено') status.textContent = '';
             }, 1800);

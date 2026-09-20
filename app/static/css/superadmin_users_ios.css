@@ -144,9 +144,7 @@
 .ios-su-users .u-name { color: var(--ios-label); font-weight: 600; text-decoration: none; }
 .ios-su-users .u-name-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .ios-su-users .u-newcomer {
-    display: inline-flex; align-items: center; min-height: 20px; padding: 2px 8px;
-    border-radius: 999px; background: rgba(255,149,0,0.14); color: #92590A;
-    font: 700 10px/1.2 var(--ios-font);
+    color: var(--ios-orange); padding: 3px 9px; font-size: 10px;
 }
 .ios-su-users .u-newcomer[hidden] { display: none; }
 .ios-su-users .tariff-quick-form {
