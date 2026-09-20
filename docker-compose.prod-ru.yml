@@ -62,7 +62,13 @@ services:
       - "traefik.http.middlewares.sec-headers.headers.frameDeny=true"
       - "traefik.http.middlewares.sec-headers.headers.referrerPolicy=strict-origin-when-cross-origin"
       - "traefik.http.middlewares.sec-headers.headers.permissionsPolicy=geolocation=(), microphone=(), camera=()"
-      - "traefik.http.middlewares.sec-headers.headers.contentSecurityPolicy=default-src 'self'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'unsafe-inline' https://telegram.org https://assets.mediadelivery.net https://cdn.jsdelivr.net; worker-src 'self'; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' blob: https:; frame-src https://iframe.mediadelivery.net; frame-ancestors 'none'"
+      # video.assaru.space — своё зеркало Bunny для тех, у кого провайдер режет
+      # домены видеохранилища. Стоит и в script-src, и в frame-src: без первого
+      # браузер не берёт Player.js, без второго не открывает сам плеер, причём
+      # блокирует до всякой сети — в логе зеркала запросов тогда не видно вовсе
+      # (этим и кончились две попытки включить мост 20.09.2026). Записи
+      # mediadelivery.net не убирать: пока мост выключен, ученики ходят напрямую.
+      - "traefik.http.middlewares.sec-headers.headers.contentSecurityPolicy=default-src 'self'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'unsafe-inline' https://telegram.org https://assets.mediadelivery.net https://video.assaru.space https://cdn.jsdelivr.net; worker-src 'self'; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' blob: https:; frame-src https://iframe.mediadelivery.net https://video.assaru.space; frame-ancestors 'none'"
       - "traefik.http.middlewares.sec-headers.headers.customResponseHeaders.Server="
       - "traefik.http.middlewares.sec-headers.headers.customResponseHeaders.X-Powered-By="
     networks:
