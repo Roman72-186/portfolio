@@ -214,10 +214,14 @@ def test_students_sidebar_uses_current_tariffs_and_marks_intake_newcomers(
     db.commit()
 
     page = client.get("/cabinet/students").text
+    tariff_filters = page.split('<div class="tariff-pills">', 1)[1].split("</div>", 1)[0]
 
     for tariff in TARIFFS_CURRENT:
-        assert f'data-tariff="{tariff}"' in page
-        assert f'>{TARIFF_DISPLAY[tariff]}</button>' in page
+        assert f'data-tariff="{tariff}"' in tariff_filters
+        assert f'>{TARIFF_DISPLAY[tariff]}</button>' in tariff_filters
+    for legacy in TARIFFS_LEGACY:
+        assert f'data-tariff="{legacy}"' not in tariff_filters
+    assert 'data-tariff="__newcomer__"' in tariff_filters
     newcomer_row = page.split(f'id="srow-{newcomer.id}"', 1)[1].split("</button>", 1)[0]
     regular_row = page.split(f'id="srow-{regular.id}"', 1)[1].split("</button>", 1)[0]
     assert 'data-tariff="__newcomer__"' in newcomer_row
