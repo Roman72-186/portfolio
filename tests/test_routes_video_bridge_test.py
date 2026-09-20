@@ -143,6 +143,21 @@ def test_video_can_be_chosen_by_id(admin_client, db, monkeypatch):
     assert second.bunny_video_id in response.text
 
 
+def test_staff_dashboard_links_to_the_bridge_test(admin_client, db):
+    """Кнопка стоит на главном экране, куда владелец попадает и так.
+
+    Просьба владельца 20.09.2026: адрес из переписки открывается в браузере
+    без входа и уводит на этот самый экран, поэтому вход должен быть здесь.
+    """
+    client, _ = admin_client
+
+    response = client.get("/cabinet/superadmin")
+
+    assert response.status_code == 200
+    assert PAGE in response.text
+    assert "Проверка моста" in response.text
+
+
 def test_videos_admin_page_links_to_the_bridge_test(admin_client):
     """Со страницы видео на проверку моста ведёт ссылка.
 
