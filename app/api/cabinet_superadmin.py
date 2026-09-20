@@ -2615,6 +2615,9 @@ def superadmin_user_save_tags(
     curator_tag_v = curator_tag.strip()[:100] or None
 
     tariff_v = tariff.strip()
+    clear_tariff = tariff_v.upper() == "__NONE__"
+    if clear_tariff:
+        tariff_v = ""
     if tariff_v and tariff_v not in TARIFFS:
         raise HTTPException(status_code=400, detail="Неверный тариф")
 
@@ -2626,8 +2629,9 @@ def superadmin_user_save_tags(
     cohort_tag_v = cohort_tag_v or None
 
     log_curator_change(db, user["user_id"], target.id, target.curator_id, curator_id_v)
-    if tariff_v:
-        log_tariff_change(db, user["user_id"], target.id, target.tariff, tariff_v)
+    if tariff_v or clear_tariff:
+        if target.tariff != tariff_v:
+            log_tariff_change(db, user["user_id"], target.id, target.tariff, tariff_v)
 
     target.exam_dates = exam_dates_v
     target.exam_subjects = exam_subjects_v
@@ -2635,7 +2639,7 @@ def superadmin_user_save_tags(
     target.is_publishable = is_publishable_v
     target.curator_id = curator_id_v
     target.curator_tag = curator_tag_v
-    if tariff_v:
+    if tariff_v or clear_tariff:
         target.tariff = tariff_v
     target.about = about_v
     target.cohort_tag = cohort_tag_v

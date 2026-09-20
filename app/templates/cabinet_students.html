@@ -2826,6 +2826,7 @@ function startEditProfile() {
     html += editField('Telegram', 'tg_username', s.tg_username || '');
     html += '<div class="profile-field"><div class="profile-field-label">Тариф</div>'
         + '<select class="profile-edit-select" id="edit-tariff">'
+        + '<option value="__NONE__"' + (!s.tariff ? ' selected' : '') + '>Без тарифа</option>'
         + '<option value="МАКСИМУМ"' + (s.tariff === 'МАКСИМУМ' ? ' selected' : '') + '>МАКСИМУМ</option>'
         + '<option value="УВЕРЕННЫЙ"' + (s.tariff === 'УВЕРЕННЫЙ' ? ' selected' : '') + '>УВЕРЕННЫЙ</option>'
         + '<option value="Я С ВАМИ"' + (s.tariff === 'Я С ВАМИ' ? ' selected' : '') + '>Я С ВАМИ</option>'

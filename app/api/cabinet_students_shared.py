@@ -1198,6 +1198,9 @@ def edit_student_profile(
     parent_phone = parent_phone.strip()
     tg_username = tg_username.strip().lstrip("@")
     tariff = tariff.strip().upper()
+    clear_tariff = tariff == "__NONE__"
+    if clear_tariff:
+        tariff = ""
     cohort_tag = cohort_tag.strip().lower()
 
     if not first_name:
@@ -1251,7 +1254,9 @@ def edit_student_profile(
         student.parent_phone = parent_phone
     if tg_username:
         student.tg_username = tg_username
-    if tariff:
+    if tariff or clear_tariff:
+        if student.tariff != tariff:
+            log_tariff_change(db, user["user_id"], student.id, student.tariff, tariff)
         student.tariff = tariff
     if parsed_enrollment_year is not None:
         student.enrollment_year = parsed_enrollment_year

@@ -94,6 +94,7 @@
                 <label>
                     Тариф
                     <select name="tariff" class="form-select">
+                        <option value="__none__" {% if not target.tariff %}selected{% endif %}>Без тарифа</option>
                         {% for t in tariffs %}
                         <option value="{{ t }}" {% if target.tariff == t %}selected{% endif %}>{{ t }}</option>
                         {% endfor %}
