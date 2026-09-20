@@ -10,11 +10,6 @@
     <div class="su-header">
         <a href="/cabinet" class="back-link">← Дашборд</a>
         <h1 class="su-title">Управление пользователями</h1>
-        {% if user.role_rank >= 5 %}
-        <a href="/cabinet/superadmin/create-staff" class="action-btn btn-tags">👤 Создать сотрудника</a>
-        {% endif %}
-        <a href="/cabinet/superadmin/assign-curator" class="action-btn btn-tags">🔗 Привязка к куратору</a>
-        <a href="/cabinet/superadmin/tags" class="action-btn btn-tags">🏷️ Назначить теги</a>
     </div>
 
     <nav class="su-tabs" aria-label="Разделы пользователей">
@@ -22,6 +17,9 @@
         <a class="su-tab{% if view == 'registration' %} is-active{% endif %}" href="/cabinet/superadmin/users?view=registration"{% if view == 'registration' %} aria-current="page"{% endif %}>Регистрации по тарифам</a>
         <a class="su-tab{% if view == 'activity' %} is-active{% endif %}" href="/cabinet/superadmin/users?view=activity"{% if view == 'activity' %} aria-current="page"{% endif %}>Активность учеников</a>
         <a class="su-tab" href="/cabinet/periods">Периоды и набор</a>
+        {% if user.role_rank >= 5 %}<a class="su-tab" href="/cabinet/superadmin/create-staff">Создать сотрудника</a>{% endif %}
+        <a class="su-tab" href="/cabinet/superadmin/assign-curator">Привязка к куратору</a>
+        <a class="su-tab" href="/cabinet/superadmin/tags">Назначить теги</a>
     </nav>
 
     {% include "partials/staff_registration_activity.html" %}
