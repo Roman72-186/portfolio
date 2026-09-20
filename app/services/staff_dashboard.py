@@ -17,7 +17,7 @@ from app.models.work import Work, WORK_TYPE_AFTER, WORK_TYPE_BEFORE
 from app.services.tz import msk_midnight
 
 
-REGISTRATION_STATS_SINCE = date(2026, 9, 18)
+REGISTRATION_STATS_SINCE = date(2026, 9, 19)
 # Владелец платформы зарегистрировался для проверки потока как ученик.
 # По его просьбе тестовый аккаунт не входит в продуктовую статистику.
 REGISTRATION_STATS_EXCLUDED_USER_IDS = frozenset({199})
