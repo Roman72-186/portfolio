@@ -134,10 +134,26 @@ def build_signed_embed_url(
             "disableIosPlayer": "true",
         }
     )
-    return (
-        f"https://iframe.mediadelivery.net/embed/{library_id}/"
-        f"{normalized_video_id}?{query}"
-    )
+    # Мост вместо прямого адреса Bunny (владелец 20.09.2026): у части учеников
+    # домены Bunny режет провайдер, видео открывалось только с VPN. Зеркало
+    # отдаёт ту же страницу плеера и тот же поток, подпись в адресе не
+    # меняется — считается она по video_id и expires, домен в неё не входит.
+    host = (settings.bunny_player_proxy_base or "https://iframe.mediadelivery.net").rstrip("/")
+    return f"{host}/embed/{library_id}/{normalized_video_id}?{query}"
+
+
+def player_js_url() -> str:
+    """Адрес Player.js — тоже через мост, когда он включён.
+
+    Скрипт грузится с `assets.mediadelivery.net` уже со страницы Apparchi, а не
+    из iframe: без подмены он упирался бы в ту же блокировку, и у ученика
+    пропадало бы сохранение места просмотра. Содержимое файла мост не меняет,
+    поэтому SRI-хэш в шаблоне остаётся прежним (сверено 20.09.2026).
+    """
+    base = (settings.bunny_player_proxy_base or "").rstrip("/")
+    if base:
+        return f"{base}/__a/playerjs/player-0.1.0.min.js"
+    return "https://assets.mediadelivery.net/playerjs/player-0.1.0.min.js"
 
 
 def build_tus_credentials(video_id: str, *, now: int | None = None) -> dict:

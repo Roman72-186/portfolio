@@ -30,12 +30,15 @@
 (function () {
     window.lrnVideoPlayer = window.lrnVideoPlayer || {};
 
-    function loadPlayerJs() {
+    // `sourceUrl` приходит из данных плеера (`player_js_url`): при включённом
+    // мосте это зеркало, иначе прежний адрес Bunny. Файл через мост идёт
+    // байт в байт, поэтому SRI-хэш ниже общий для обоих адресов.
+    function loadPlayerJs(sourceUrl) {
         if (window.playerjs && window.playerjs.Player) return Promise.resolve();
         if (window.__lrnPlayerJsPromise) return window.__lrnPlayerJsPromise;
         window.__lrnPlayerJsPromise = new Promise(function (resolve, reject) {
             var script = document.createElement('script');
-            script.src = 'https://assets.mediadelivery.net/playerjs/player-0.1.0.min.js';
+            script.src = sourceUrl || 'https://assets.mediadelivery.net/playerjs/player-0.1.0.min.js';
             script.integrity = 'sha384-FzNVGZdy6ImmE/3LFewUFSxAVlmjM0wP4aKlUJYalPvzGkIEva94s2WZgmeQPVvC';
             script.crossOrigin = 'anonymous';
             script.onload = function () { resolve(); };
@@ -194,7 +197,7 @@
                 ? 'Продолжим с сохранённого места.'
                 : 'Место просмотра сохраняется автоматически.';
 
-            loadPlayerJs().then(function () {
+            loadPlayerJs(data.player_js_url).then(function () {
                 attachPlayerBehaviour(data);
             }).catch(function () {
                 progressStatus.textContent = 'Автосохранение временно недоступно. Видео продолжит работать.';

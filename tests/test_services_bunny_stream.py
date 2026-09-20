@@ -190,3 +190,37 @@ def test_unknown_bunny_status_is_treated_as_processing():
 
     assert normalize_bunny_status(None) == "processing"
     assert normalize_bunny_status(99) == "processing"
+
+
+def test_player_urls_go_through_bridge_when_configured(monkeypatch):
+    """Мост подменяет домен, но не подпись (владелец 20.09.2026).
+
+    Подпись считается по `video_id` и `expires`, домен в неё не входит, поэтому
+    зеркало отдаёт тот же адрес с тем же токеном. Player.js уезжает на мост
+    вместе с плеером: он грузится со страницы Apparchi и упирался бы в ту же
+    блокировку.
+    """
+    from app.services.bunny_stream import player_js_url
+
+    _configure_bunny(monkeypatch)
+    monkeypatch.setattr(settings, "bunny_player_proxy_base", "https://video.assaru.space/")
+    now = datetime(2026, 9, 20, 9, 0, tzinfo=timezone.utc)
+    expires = int(now.timestamp()) + 300
+    token = hashlib.sha256(
+        f"private-test-key{VIDEO_ID}{expires}".encode("utf-8")
+    ).hexdigest()
+
+    url = build_signed_embed_url(VIDEO_ID, now=now)
+    assert url.startswith(f"https://video.assaru.space/embed/720058/{VIDEO_ID}?")
+    assert f"token={token}" in url
+    assert "iframe.mediadelivery.net" not in url
+    assert player_js_url() == "https://video.assaru.space/__a/playerjs/player-0.1.0.min.js"
+
+
+def test_player_urls_stay_direct_without_bridge(monkeypatch):
+    from app.services.bunny_stream import player_js_url
+
+    _configure_bunny(monkeypatch)
+    monkeypatch.setattr(settings, "bunny_player_proxy_base", "")
+    assert build_signed_embed_url(VIDEO_ID).startswith("https://iframe.mediadelivery.net/embed/")
+    assert player_js_url() == "https://assets.mediadelivery.net/playerjs/player-0.1.0.min.js"

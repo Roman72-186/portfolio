@@ -17,7 +17,11 @@ from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_learning_content_access
 from app.models.learning_video import LearningVideo
 from app.models.tracker import ITEM_VIDEO, TrackerTask
-from app.services.bunny_stream import BunnyStreamConfigError, build_signed_embed_url
+from app.services.bunny_stream import (
+    BunnyStreamConfigError,
+    build_signed_embed_url,
+    player_js_url,
+)
 from app.services.tracker import close_task_for_user
 from app.services.video_catalog import (
     get_published_video,
@@ -121,6 +125,8 @@ def _player_payload(
         "progress_endpoint": progress_endpoint,
         "player_url_endpoint": player_url_endpoint,
         "player_url_ttl_seconds": settings.bunny_stream_token_ttl_seconds,
+        # Адрес Player.js — через мост, когда он включён (см. `player_js_url`).
+        "player_js_url": player_js_url(),
         "viewer_watermark": {
             "name": viewer_name,
             "username": f"@{viewer_username}" if viewer_username else "Username не указан",
@@ -162,6 +168,7 @@ _PLAYER_DATA_KEYS = (
     "progress_endpoint",
     "player_url_endpoint",
     "player_url_ttl_seconds",
+    "player_js_url",
 )
 
 

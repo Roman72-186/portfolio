@@ -103,6 +103,12 @@ class Settings(BaseSettings):
     bunny_stream_api_key: str = ""
     bunny_stream_token_ttl_seconds: int = 300
     bunny_stream_video_title: str = "Тестовый видеоурок"
+    # Мост до Bunny (владелец 20.09.2026): российские провайдеры режут домены
+    # Bunny, у части учеников видео открывалось только с VPN. Зеркало стоит на
+    # сервере в Нидерландах (`video.assaru.space`, nginx на 72.56.77.253) и
+    # проксирует страницу плеера, его скрипты и сам поток. Пустое значение —
+    # ходить в Bunny напрямую, как раньше.
+    bunny_player_proxy_base: str = ""
 
     class Config:
         env_file = ".env"
