@@ -15,6 +15,7 @@ from app.services.bunny_stream import (
     delete_video,
     build_signed_embed_url,
     is_bunny_stream_available,
+    player_js_url,
 )
 
 
@@ -224,3 +225,31 @@ def test_player_urls_stay_direct_without_bridge(monkeypatch):
     monkeypatch.setattr(settings, "bunny_player_proxy_base", "")
     assert build_signed_embed_url(VIDEO_ID).startswith("https://iframe.mediadelivery.net/embed/")
     assert player_js_url() == "https://assets.mediadelivery.net/playerjs/player-0.1.0.min.js"
+
+
+def test_proxy_base_override_builds_both_variants_independently(monkeypatch):
+    """Страница проверки моста собирает мостовой и прямой адрес рядом.
+
+    Глобальная переменная при этом пустая — ученики ходят напрямую, — поэтому
+    оба варианта нужны явным параметром, а не переключением настройки.
+    """
+    _configure_bunny(monkeypatch)
+    monkeypatch.setattr(settings, "bunny_player_proxy_base", "")
+
+    bridged = build_signed_embed_url(VIDEO_ID, proxy_base="https://video.assaru.space")
+    direct = build_signed_embed_url(VIDEO_ID, proxy_base="")
+
+    assert bridged.startswith(f"https://video.assaru.space/embed/720058/{VIDEO_ID}?")
+    assert direct.startswith(f"https://iframe.mediadelivery.net/embed/720058/{VIDEO_ID}?")
+    # Домен в подпись не входит: у обоих адресов совпадает всё после «?».
+    assert bridged.split("?", 1)[1] == direct.split("?", 1)[1]
+
+
+def test_proxy_base_none_keeps_global_setting(monkeypatch):
+    """Без параметра поведение прежнее — тот путь, которым ходит ученик."""
+    _configure_bunny(monkeypatch)
+    monkeypatch.setattr(settings, "bunny_player_proxy_base", "https://video.assaru.space")
+
+    assert build_signed_embed_url(VIDEO_ID).startswith("https://video.assaru.space/embed/")
+    assert player_js_url() == "https://video.assaru.space/__a/playerjs/player-0.1.0.min.js"
+    assert player_js_url("") == "https://assets.mediadelivery.net/playerjs/player-0.1.0.min.js"

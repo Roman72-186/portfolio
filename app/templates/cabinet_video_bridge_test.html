@@ -1,0 +1,420 @@
+{% extends "base.html" %}
+{#
+Страница проверки моста до Bunny. Только для владельца и админов, ученикам не
+видна и в меню не выводится (маршрут `/cabinet/admin/video-bridge-test`,
+зависимость `require_admin_role`).
+
+Зачем она есть. Мост `video.assaru.space` включали на всех дважды, и оба раза
+ученики оставались без видео — притом в логе моста не было ни одного запроса с
+их адресов. Значит рвётся участок «браузер ученика → мост», а не сервер.
+Проверить это можно только с живого устройства, где нет консоли браузера
+(телефон, iPad), поэтому страница печатает результат каждой проверки текстом.
+
+Три вещи, ради которых она устроена именно так:
+  * рядом стоят два плеера, мостовой и прямой, на одном ролике — видно, какой
+    из них играет, а какой нет;
+  * у каждой проверки свой адрес с меткой прогона (`probe_id`), поэтому в логе
+    nginx на мосту прогон владельца отделяется от чужого трафика: сама метка
+    напечатана на экране крупно;
+  * рядом с каждой проверкой моста идёт такая же проверка своего сервера.
+    «Мост не ответил» в одиночку не значит ничего, а «мост не ответил, свой
+    сервер ответил» уже указывает на конкретный домен или адрес.
+
+Стили держим здесь же, а не в отдельном CSS: страница служебная и выкатывается
+одним файлом, лишний файл в поштучном деплое легко забыть.
+#}
+{% block title %}Проверка моста до видео{% endblock %}
+{% block extra_styles %}
+<style>
+.vbt { max-width: 900px; margin: 0 auto; padding: 16px 16px 64px; }
+.vbt h1 { font-size: 22px; margin: 0 0 8px; }
+.vbt p.vbt-lead { margin: 0 0 16px; color: #4a5568; line-height: 1.5; }
+.vbt-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.vbt-card h2 { font-size: 17px; margin: 0 0 12px; }
+.vbt-id { display: inline-block; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 20px; font-weight: 700;
+          background: #edf2f7; border-radius: 8px; padding: 6px 12px; letter-spacing: 1px; }
+.vbt-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.vbt-btn { flex: 1 1 auto; min-width: 150px; min-height: 44px; padding: 10px 14px; border-radius: 10px;
+           border: 1px solid #cbd5e0; background: #fff; color: #1a202c; font-size: 15px; cursor: pointer; }
+.vbt-btn:disabled { opacity: .55; cursor: default; }
+.vbt-btn-main { background: #2b6cb0; border-color: #2b6cb0; color: #fff; }
+.vbt-log { list-style: none; margin: 12px 0 0; padding: 0; font-size: 14px; }
+.vbt-log li { border-top: 1px solid #edf2f7; padding: 8px 0; display: flex; gap: 8px; align-items: baseline; }
+.vbt-log li:first-child { border-top: 0; }
+.vbt-mark { flex: 0 0 auto; font-size: 16px; line-height: 1.3; }
+.vbt-log-body { flex: 1 1 auto; min-width: 0; }
+.vbt-log-name { font-weight: 600; }
+.vbt-log-detail { color: #4a5568; word-break: break-word; }
+.vbt-ok .vbt-log-name { color: #22543d; }
+.vbt-fail .vbt-log-name { color: #822727; }
+.vbt-players { display: grid; gap: 16px; }
+@media (min-width: 720px) { .vbt-players { grid-template-columns: 1fr 1fr; } }
+.vbt-player h3 { font-size: 16px; margin: 0 0 4px; }
+.vbt-player .vbt-host { font-size: 13px; color: #718096; word-break: break-all; margin: 0 0 10px; }
+.vbt-frame { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #1a202c; border-radius: 10px; overflow: hidden; }
+.vbt-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
+.vbt-frame-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+                   color: #a0aec0; font-size: 14px; text-align: center; padding: 12px; }
+.vbt-player-status { font-size: 14px; color: #4a5568; margin: 8px 0 0; min-height: 20px; }
+.vbt-note { font-size: 13px; color: #718096; line-height: 1.5; margin: 12px 0 0; }
+.vbt-warn { background: #fffaf0; border: 1px solid #f6ad55; border-radius: 10px; padding: 12px; margin-bottom: 16px; font-size: 14px; }
+.vbt-report { width: 100%; min-height: 140px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
+              border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; margin-top: 12px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="vbt">
+    <p><a href="{{ back_url }}">← Назад в админку видео</a></p>
+    <h1>Проверка моста до видео</h1>
+    <p class="vbt-lead">
+        Эта страница открыта только вам. Ученики её не видят и смотрят видео как раньше – напрямую.
+        Задача проверки – понять, доходит ли ваше устройство до моста <b>{{ bridge_base|replace('https://', '') }}</b>,
+        и на каком шаге всё обрывается, если не доходит.
+    </p>
+
+    {% if bridge_enabled_globally %}
+    <div class="vbt-warn">
+        Мост сейчас включён для всех: в настройках сервера стоит адрес моста. Значит оба плеера ниже идут
+        через мост, и сравнить их не получится. Сначала выключите мост для учеников.
+    </div>
+    {% endif %}
+
+    {% if config_error %}
+    <div class="vbt-warn">Видео не настроено: {{ config_error }}</div>
+    {% endif %}
+
+    {% if not video %}
+    <div class="vbt-warn">
+        Нет ни одного опубликованного ролика, на котором можно проверить. Опубликуйте видео в админке и вернитесь сюда.
+    </div>
+    {% endif %}
+
+    <div class="vbt-card">
+        <h2>Шаг 1. Связь</h2>
+        <p class="vbt-lead" style="margin-bottom:12px;">
+            Жмите кнопки сверху вниз. Каждая проверка держится не дольше восьми секунд, потом сама сдаётся
+            и пишет «не ответил». Рядом с каждой проверкой моста идёт такая же проверка нашего сервера:
+            если не отвечают обе, дело в интернете на устройстве, а не в мосте.
+        </p>
+        <p style="margin:0 0 6px; font-size:14px; color:#4a5568;">Метка прогона – назовите её, когда пришлёте результат:</p>
+        <p style="margin:0 0 14px;"><span class="vbt-id">{{ probe_id }}</span></p>
+        <div class="vbt-buttons">
+            <button type="button" class="vbt-btn vbt-btn-main" data-probe="all">Проверить всё подряд</button>
+            <button type="button" class="vbt-btn" data-probe="host">Домен моста</button>
+            <button type="button" class="vbt-btn" data-probe="script">Скрипт плеера</button>
+            <button type="button" class="vbt-btn" data-probe="page">Страница плеера</button>
+        </div>
+        <ul class="vbt-log" data-role="log">
+            <li class="vbt-log-empty"><span class="vbt-log-detail">Проверок пока не было.</span></li>
+        </ul>
+    </div>
+
+    <div class="vbt-card">
+        <h2>Шаг 2. Видео</h2>
+        <p class="vbt-lead" style="margin-bottom:12px;">
+            {% if video %}Ролик: <b>{{ video.title }}</b>. {% endif %}Включайте по очереди, сначала левый.
+            Под каждым плеером пишется, сколько секунд он реально проиграл.
+        </p>
+        <div class="vbt-players">
+            <div class="vbt-player">
+                <h3>Через мост</h3>
+                <p class="vbt-host">{{ bridge_base }}</p>
+                <div class="vbt-frame" data-frame="bridge">
+                    <div class="vbt-frame-empty">Плеер не запущен</div>
+                </div>
+                <button type="button" class="vbt-btn" data-play="bridge" style="margin-top:10px;"
+                        {% if not bridge_player_url %}disabled{% endif %}>Включить через мост</button>
+                <p class="vbt-player-status" data-play-status="bridge"></p>
+            </div>
+            <div class="vbt-player">
+                <h3>Напрямую</h3>
+                <p class="vbt-host">iframe.mediadelivery.net</p>
+                <div class="vbt-frame" data-frame="direct">
+                    <div class="vbt-frame-empty">Плеер не запущен</div>
+                </div>
+                <button type="button" class="vbt-btn" data-play="direct" style="margin-top:10px;"
+                        {% if not direct_player_url %}disabled{% endif %}>Включить напрямую</button>
+                <p class="vbt-player-status" data-play-status="direct"></p>
+            </div>
+        </div>
+        <p class="vbt-note">
+            Ссылка на видео живёт несколько минут. Если плеер показал заглушку через полчаса после открытия
+            страницы – обновите страницу и включите заново, дело в сроке ссылки, а не в мосте.
+        </p>
+    </div>
+
+    <div class="vbt-card">
+        <h2>Шаг 3. Отчёт</h2>
+        <p class="vbt-lead" style="margin-bottom:12px;">
+            Нажмите кнопку и пришлите текст – в нём есть всё то же самое, что на экране, плюс метка прогона
+            и модель браузера. Скриншот тоже подойдёт, но текст точнее.
+        </p>
+        <div class="vbt-buttons">
+            <button type="button" class="vbt-btn vbt-btn-main" data-role="copy-report">Собрать отчёт</button>
+        </div>
+        <textarea class="vbt-report" data-role="report" readonly hidden></textarea>
+    </div>
+</div>
+
+<script>
+(function () {
+    var CONFIG = {
+        probeId: {{ probe_id|tojson }},
+        bridgeBase: {{ bridge_base|tojson }},
+        bridgePlayerUrl: {{ bridge_player_url|tojson }},
+        directPlayerUrl: {{ direct_player_url|tojson }},
+        bridgePlayerJsUrl: {{ bridge_player_js_url|tojson }},
+        directPlayerJsUrl: {{ direct_player_js_url|tojson }},
+        // Тот же хэш, что и в боевом плеере: мост отдаёт файл байт в байт,
+        // поэтому несовпадение здесь означает подмену содержимого по дороге.
+        playerJsIntegrity: 'sha384-FzNVGZdy6ImmE/3LFewUFSxAVlmjM0wP4aKlUJYalPvzGkIEva94s2WZgmeQPVvC'
+    };
+    var TIMEOUT_MS = 8000;
+    // Браузер не даёт прочитать ответ с чужого домена, поэтому проверка видит
+    // только сам факт соединения: и «всё хорошо», и «доступ запрещён» выглядят
+    // отсюда одинаково. Говорим об этом прямо, иначе зелёная галочка рядом с
+    // мёртвым плеером собьёт с толку.
+    var CONNECTED_ONLY = 'Соединение прошло. Что именно ответил сервер, отсюда не видно – это показывает шаг 2.';
+
+    var logList = document.querySelector('[data-role="log"]');
+    var records = [];
+
+    function mark(url, suffix) {
+        // Метка прогона в адресе — единственный способ потом найти именно этот
+        // заход в логе моста. Заодно обходит кэш: повторная проверка обязана
+        // сходить в сеть, а не отчитаться о старом ответе.
+        var joiner = url.indexOf('?') === -1 ? '?' : '&';
+        return url + joiner + 'probe=' + encodeURIComponent(CONFIG.probeId + '-' + suffix);
+    }
+
+    function write(name, ok, detail, ms) {
+        records.push({ name: name, ok: ok, detail: detail, ms: ms });
+        var empty = logList.querySelector('.vbt-log-empty');
+        if (empty) empty.remove();
+        var li = document.createElement('li');
+        li.className = ok ? 'vbt-ok' : 'vbt-fail';
+        var icon = document.createElement('span');
+        icon.className = 'vbt-mark';
+        icon.textContent = ok ? '✓' : '✕';
+        var body = document.createElement('div');
+        body.className = 'vbt-log-body';
+        var title = document.createElement('div');
+        title.className = 'vbt-log-name';
+        title.textContent = name + (ok ? ' – ответил' : ' – не ответил');
+        if (typeof ms === 'number') title.textContent += ' (' + ms + ' мс)';
+        var note = document.createElement('div');
+        note.className = 'vbt-log-detail';
+        note.textContent = detail || '';
+        body.appendChild(title);
+        if (detail) body.appendChild(note);
+        li.appendChild(icon);
+        li.appendChild(body);
+        logList.appendChild(li);
+    }
+
+    // `mode: 'no-cors'` намеренно: проверяем доходимость, а не содержимое.
+    // Обычный fetch без разрешения CORS упал бы с той же ошибкой, что и
+    // обрыв сети, и мы бы приняли одно за другое.
+    function reach(url) {
+        var started = Date.now();
+        var controller = ('AbortController' in window) ? new AbortController() : null;
+        var timer = window.setTimeout(function () { if (controller) controller.abort(); }, TIMEOUT_MS);
+        var options = { mode: 'no-cors', cache: 'no-store' };
+        if (controller) options.signal = controller.signal;
+        return fetch(url, options).then(function () {
+            window.clearTimeout(timer);
+            return { ok: true, ms: Date.now() - started };
+        }, function (error) {
+            window.clearTimeout(timer);
+            var elapsed = Date.now() - started;
+            var reason = (error && error.name === 'AbortError')
+                ? 'Ответа не было восемь секунд – адрес не отвечает или его режут.'
+                : 'Соединение не установилось. Так выглядит и блокировка, и отсутствие сети.';
+            return { ok: false, ms: elapsed, reason: reason };
+        });
+    }
+
+    function probeHost() {
+        var bridgeUrl = mark(CONFIG.bridgeBase + '/__a/playerjs/player-0.1.0.min.js', 'host');
+        var controlUrl = mark(location.origin + '/static/img/favicon.png', 'control');
+        return reach(bridgeUrl).then(function (result) {
+            write('Домен моста', result.ok, result.ok ? CONFIG.bridgeBase : result.reason, result.ms);
+            return reach(controlUrl);
+        }).then(function (result) {
+            write('Наш сервер, для сравнения', result.ok,
+                result.ok ? location.origin : result.reason, result.ms);
+        });
+    }
+
+    function loadScript(url) {
+        var started = Date.now();
+        return new Promise(function (resolve) {
+            var script = document.createElement('script');
+            var done = false;
+            var finish = function (ok, reason) {
+                if (done) return;
+                done = true;
+                resolve({ ok: ok, ms: Date.now() - started, reason: reason });
+            };
+            script.src = url;
+            script.integrity = CONFIG.playerJsIntegrity;
+            script.crossOrigin = 'anonymous';
+            script.onload = function () { finish(true); };
+            script.onerror = function () {
+                finish(false, 'Браузер не взял скрипт: не дошёл, нет разрешения на чужой домен или не совпала подпись файла.');
+            };
+            window.setTimeout(function () { finish(false, 'Скрипт не загрузился за восемь секунд.'); }, TIMEOUT_MS);
+            document.head.appendChild(script);
+        });
+    }
+
+    var playerJsReady = null;
+    function probeScript() {
+        return loadScript(mark(CONFIG.bridgePlayerJsUrl, 'js')).then(function (result) {
+            write('Скрипт плеера с моста', result.ok,
+                result.ok ? 'Значит и сохранение места просмотра переживёт мост.' : result.reason, result.ms);
+            if (result.ok) playerJsReady = true;
+            if (result.ok) return null;
+            return loadScript(mark(CONFIG.directPlayerJsUrl, 'js-direct')).then(function (direct) {
+                write('Скрипт плеера напрямую, для сравнения', direct.ok,
+                    direct.ok ? 'Напрямую берётся, через мост нет – причина в мосте.' : direct.reason, direct.ms);
+                if (direct.ok) playerJsReady = true;
+            });
+        });
+    }
+
+    function probePage() {
+        if (!CONFIG.bridgePlayerUrl) {
+            write('Страница плеера на мосту', false, 'Ссылку собрать не удалось: видео не настроено.');
+            return Promise.resolve();
+        }
+        // Метку прогона к адресу плеера не приписываем: ключ доступа Bunny
+        // живёт прямо в адресе, и лишний хвост рискует сломать подпись сразу у
+        // обоих плееров. Тогда экран показал бы «мост не работает» там, где
+        // виноват хвост, — ровно та ошибка, из-за которой мост уже дважды
+        // выключали. В логе моста этот заход и так видно по пути `/embed/`.
+        return reach(CONFIG.bridgePlayerUrl).then(function (result) {
+            write('Страница плеера на мосту', result.ok,
+                result.ok ? CONNECTED_ONLY : result.reason, result.ms);
+            return reach(CONFIG.directPlayerUrl);
+        }).then(function (result) {
+            write('Страница плеера напрямую, для сравнения', result.ok,
+                result.ok ? CONNECTED_ONLY : result.reason, result.ms);
+        });
+    }
+
+    var PROBES = { host: probeHost, script: probeScript, page: probePage };
+
+    function run(names, button) {
+        var buttons = document.querySelectorAll('[data-probe]');
+        Array.prototype.forEach.call(buttons, function (item) { item.disabled = true; });
+        var original = button ? button.textContent : '';
+        if (button) button.textContent = 'Проверяю…';
+        var chain = Promise.resolve();
+        names.forEach(function (name) {
+            chain = chain.then(function () { return PROBES[name](); });
+        });
+        return chain.catch(function (error) {
+            write('Проверка сорвалась', false, String(error && error.message || error));
+        }).then(function () {
+            Array.prototype.forEach.call(buttons, function (item) { item.disabled = false; });
+            if (button) button.textContent = original;
+        });
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-probe]'), function (button) {
+        button.addEventListener('click', function () {
+            var which = button.getAttribute('data-probe');
+            run(which === 'all' ? ['host', 'script', 'page'] : [which], button);
+        });
+    });
+
+    // Плееры. Обычный iframe с подписанной ссылкой — ровно то же, что видит
+    // ученик. Водяной знак и сохранение прогресса здесь намеренно не
+    // повторяем: они живут на нашем домене и от моста не зависят, а лишний
+    // просмотр засчитался бы ученику в статистику.
+    var playedSeconds = { bridge: 0, direct: 0 };
+
+    function watchPlayback(side, iframe) {
+        if (!playerJsReady || !window.playerjs || !window.playerjs.Player) return;
+        try {
+            var player = new window.playerjs.Player(iframe);
+            player.on('ready', function () {
+                player.on('timeupdate', function (state) {
+                    var seconds = Math.floor((state && state.seconds) || 0);
+                    if (seconds > playedSeconds[side]) {
+                        playedSeconds[side] = seconds;
+                        setStatus(side, 'Проиграло секунд: ' + seconds);
+                    }
+                });
+            });
+        } catch (error) {
+            // Плееру без скрипта счётчик не нужен: видео от этого не страдает.
+        }
+    }
+
+    function setStatus(side, text) {
+        var node = document.querySelector('[data-play-status="' + side + '"]');
+        if (node) node.textContent = text;
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-play]'), function (button) {
+        button.addEventListener('click', function () {
+            var side = button.getAttribute('data-play');
+            var url = side === 'bridge' ? CONFIG.bridgePlayerUrl : CONFIG.directPlayerUrl;
+            if (!url) return;
+            var wrap = document.querySelector('[data-frame="' + side + '"]');
+            wrap.innerHTML = '';
+            var iframe = document.createElement('iframe');
+            iframe.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+            iframe.allowFullscreen = true;
+            iframe.setAttribute('playsinline', '');
+            // Адрес плеера идёт как есть, без метки прогона: см. probePage.
+            iframe.src = url;
+            var loaded = false;
+            iframe.addEventListener('load', function () {
+                loaded = true;
+                setStatus(side, 'Плеер открылся. Нажмите в нём «play».');
+                watchPlayback(side, iframe);
+            });
+            wrap.appendChild(iframe);
+            setStatus(side, 'Открываю плеер…');
+            window.setTimeout(function () {
+                if (!loaded) setStatus(side, 'Плеер не открылся за восемь секунд – адрес не отвечает.');
+            }, TIMEOUT_MS);
+        });
+    });
+
+    // Отчёт текстом: владелец проверяет с телефона, пересылать текст надёжнее,
+    // чем разбирать скриншот.
+    document.querySelector('[data-role="copy-report"]').addEventListener('click', function () {
+        var lines = [
+            'Проверка моста до видео',
+            'Метка прогона: ' + CONFIG.probeId,
+            'Мост: ' + CONFIG.bridgeBase,
+            'Время: ' + new Date().toISOString(),
+            'Браузер: ' + navigator.userAgent,
+            ''
+        ];
+        if (!records.length) lines.push('Проверок не было.');
+        records.forEach(function (item) {
+            lines.push((item.ok ? '[ок] ' : '[нет] ') + item.name
+                + (typeof item.ms === 'number' ? ' (' + item.ms + ' мс)' : '')
+                + (item.detail ? ' – ' + item.detail : ''));
+        });
+        lines.push('');
+        lines.push('Проиграло через мост, секунд: ' + playedSeconds.bridge);
+        lines.push('Проиграло напрямую, секунд: ' + playedSeconds.direct);
+        var text = lines.join('\n');
+        var field = document.querySelector('[data-role="report"]');
+        field.hidden = false;
+        field.value = text;
+        field.focus();
+        field.select();
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).catch(function () { /* останется выделенным вручную */ });
+        }
+    });
+})();
+</script>
+{% endblock %}

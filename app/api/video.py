@@ -2,6 +2,7 @@
 
 import json
 import logging
+import secrets
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -14,7 +15,11 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.config import settings
 from app.db.database import get_db
-from app.dependencies import require_csrf_header, require_learning_content_access
+from app.dependencies import (
+    require_admin_role,
+    require_csrf_header,
+    require_learning_content_access,
+)
 from app.models.learning_video import LearningVideo
 from app.models.tracker import ITEM_VIDEO, TrackerTask
 from app.services.bunny_stream import (
@@ -333,6 +338,88 @@ def save_catalog_video_progress(
         bunny_video_id=video.bunny_video_id,
         known_duration_seconds=video.duration_seconds,
         topic_id=video.topic_id,
+    )
+
+
+# Адреса моста, которые странице проверки разрешено открывать. Значение уходит
+# в `src` скрипта и в `src` iframe, поэтому произвольную строку из `?bridge=`
+# сюда не пускаем даже на странице для администратора.
+BRIDGE_TEST_DEFAULT_BASE = "https://video.assaru.space"
+BRIDGE_TEST_ALLOWED_BASES = (BRIDGE_TEST_DEFAULT_BASE,)
+
+
+@router.get("/admin/video-bridge-test", response_class=HTMLResponse)
+def video_bridge_test(
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    video_id: int | None = None,
+    bridge: str | None = None,
+):
+    """Страница проверки моста до Bunny — только для владельца и админов.
+
+    Зачем отдельная страница (владелец 20.09.2026): мост включали дважды на
+    всех сразу, и оба раза ученики оставались без видео, причём в логе моста не
+    было ни одного запроса с их адресов. Значит обрыв где-то между устройством
+    ученика и `video.assaru.space`, а серверная сторона выглядит здоровой.
+    Здесь мостовой и прямой плееры стоят рядом, а проверки связи печатают
+    результат прямо на экране: владелец тестирует с телефона и iPad, консоли
+    браузера там нет.
+
+    Адрес моста берётся из этого маршрута, а не из `BUNNY_PLAYER_PROXY_BASE`.
+    Глобальная переменная на проде остаётся пустой, ученики смотрят как
+    раньше — напрямую.
+    """
+    bridge_base = (bridge or "").strip().rstrip("/") or BRIDGE_TEST_DEFAULT_BASE
+    if bridge_base not in BRIDGE_TEST_ALLOWED_BASES:
+        raise HTTPException(status_code=400, detail="Этот адрес моста не разрешён")
+
+    videos = list_published_videos(db, viewer=user)
+    video = None
+    if video_id is not None:
+        video = next((item for item in videos if getattr(item, "id", None) == video_id), None)
+    elif videos:
+        video = videos[0]
+
+    bridge_player_url = None
+    direct_player_url = None
+    config_error = None
+    if video is not None:
+        try:
+            library_id = getattr(video, "bunny_library_id", None)
+            bridge_player_url = build_signed_embed_url(
+                video.bunny_video_id, library_id=library_id, proxy_base=bridge_base
+            )
+            direct_player_url = build_signed_embed_url(
+                video.bunny_video_id, library_id=library_id, proxy_base=""
+            )
+        except BunnyStreamConfigError as exc:
+            logger.error("Bunny Stream playback configuration error: %s", exc)
+            config_error = str(exc)
+
+    return templates.TemplateResponse(
+        request,
+        "cabinet_video_bridge_test.html",
+        {
+            "request": request,
+            "user": user,
+            "back_url": "/cabinet/admin/videos",
+            "video": video,
+            "videos": videos,
+            "bridge_base": bridge_base,
+            "bridge_player_url": bridge_player_url,
+            "direct_player_url": direct_player_url,
+            "bridge_player_js_url": player_js_url(bridge_base),
+            "direct_player_js_url": player_js_url(""),
+            "config_error": config_error,
+            # Мост включён глобально — значит эта страница уже не отличается от
+            # ученической, и об этом честнее сказать вслух.
+            "bridge_enabled_globally": bool(settings.bunny_player_proxy_base),
+            # Метка попадает в адрес каждой проверки, поэтому её видно в логе
+            # моста: по ней прогон с устройства владельца отделяется от чужого
+            # трафика.
+            "probe_id": secrets.token_hex(3),
+        },
     )
 
 

@@ -95,6 +95,7 @@ def build_signed_embed_url(
     video_id: str | None = None,
     now: datetime | None = None,
     library_id: int | None = None,
+    proxy_base: str | None = None,
 ) -> str:
     """Build a short-lived Bunny iframe URL without exposing the private key."""
     if not settings.bunny_stream_enabled:
@@ -138,11 +139,16 @@ def build_signed_embed_url(
     # домены Bunny режет провайдер, видео открывалось только с VPN. Зеркало
     # отдаёт ту же страницу плеера и тот же поток, подпись в адресе не
     # меняется — считается она по video_id и expires, домен в неё не входит.
-    host = (settings.bunny_player_proxy_base or "https://iframe.mediadelivery.net").rstrip("/")
+    # `proxy_base=None` — взять глобальную настройку (обычный путь ученика).
+    # Явная строка перебивает её и нужна ровно одному месту: странице проверки
+    # моста, где рядом живут два плеера, мостовой и прямой, а глобальная
+    # переменная при этом пустая. Пустая строка здесь значит «напрямую в Bunny».
+    base = settings.bunny_player_proxy_base if proxy_base is None else proxy_base
+    host = (base or "https://iframe.mediadelivery.net").rstrip("/")
     return f"{host}/embed/{library_id}/{normalized_video_id}?{query}"
 
 
-def player_js_url() -> str:
+def player_js_url(proxy_base: str | None = None) -> str:
     """Адрес Player.js — тоже через мост, когда он включён.
 
     Скрипт грузится с `assets.mediadelivery.net` уже со страницы Apparchi, а не
@@ -150,7 +156,8 @@ def player_js_url() -> str:
     пропадало бы сохранение места просмотра. Содержимое файла мост не меняет,
     поэтому SRI-хэш в шаблоне остаётся прежним (сверено 20.09.2026).
     """
-    base = (settings.bunny_player_proxy_base or "").rstrip("/")
+    source = settings.bunny_player_proxy_base if proxy_base is None else proxy_base
+    base = (source or "").rstrip("/")
     if base:
         return f"{base}/__a/playerjs/player-0.1.0.min.js"
     return "https://assets.mediadelivery.net/playerjs/player-0.1.0.min.js"
