@@ -108,6 +108,7 @@
         </div>
     </div>
 
+    {% if show_registration_stats_on_dashboard %}
     <section id="registration-stats" class="panel panel--registration-stats" aria-labelledby="registration-stats-title">
         <div class="panel-header">
             <h2 class="panel-title" id="registration-stats-title">Регистрации по тарифам</h2>
@@ -174,6 +175,7 @@
             </ul>
         </details>
     </section>
+    {% endif %}
 
     <section class="panel panel--student-activity" aria-labelledby="student-activity-title">
         <div class="panel-header">
@@ -254,6 +256,16 @@
             <div class="card-icon-wrap">📈</div>
             <h2 class="card-title">Статистика активности</h2>
             <div class="card-desc">Логины, проверки, правки, аудит</div>
+        </a>
+        {# Служебная проверка моста до видеохранилища. Стоит на главном экране
+           по просьбе владельца 20.09.2026: адрес из переписки открывается в
+           браузере без входа и уводит сюда же, на главный экран. Ученики
+           страницу не видят, маршрут требует тот же ранг роли >= 4, что и
+           карточки выше. #}
+        <a href="/cabinet/admin/video-bridge-test" class="card qt-card">
+            <div class="card-icon-wrap">🌉</div>
+            <h2 class="card-title">Проверка моста</h2>
+            <div class="card-desc">Видео через своё зеркало, тест для владельца</div>
         </a>
         {% endif %}
     </div>
