@@ -50,6 +50,10 @@
 .ios-videos-admin .vam-head h1 { margin: 0 0 4px; font: 700 24px/1.25 var(--ios-font); letter-spacing: -0.3px; color: var(--ios-label); }
 .ios-videos-admin .vam-head p { margin: 0; color: var(--ios-label-2); font: 400 14px/1.45 var(--ios-font); }
 .ios-videos-admin .vam-head .btn-outline { text-decoration: none; }
+/* Две ссылки в шапке: каталог и служебная проверка моста. На узком
+   экране шапка становится сеткой в одну колонку, поэтому переносим
+   ссылки, а не сжимаем их. */
+.ios-videos-admin .vam-head-links { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
 
 .ios-videos-admin .vam-upload {
     display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, .7fr); gap: 20px;

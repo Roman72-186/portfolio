@@ -8,7 +8,7 @@ FORM: Operate, расширение существующего кабинета 
 #}
 {% block title %}Загрузка видео{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/videos_admin_ios.css?v=7">
+<link rel="stylesheet" href="/static/css/videos_admin_ios.css?v=8">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
@@ -20,7 +20,15 @@ FORM: Operate, расширение существующего кабинета 
             <h1>Загрузка видео</h1>
             <p>Название, описание, обложка и файл – и ролик встаёт в общий список ниже. Файл уходит в видеохранилище напрямую из браузера. После обработки проверьте ролик и опубликуйте его для учеников. Можно выбрать сразу несколько файлов – до трёх грузятся одновременно, остальные встают в очередь, а название каждому дадим по имени файла.</p>
         </div>
-        <a class="btn-outline" href="/cabinet/videos">Открыть каталог</a>
+        <div class="vam-head-links">
+            <a class="btn-outline" href="/cabinet/videos">Открыть каталог</a>
+            {# Вход на служебную страницу проверки моста до видеохранилища.
+               Ученикам она недоступна (ранг роли >= 4), в меню не выводится, а
+               набирать адрес руками неудобно: с телефона переход по ссылке из
+               переписки попадает в браузер без входа и уводит на главный
+               экран. Отсюда владелец кликает уже внутри кабинета. #}
+            <a class="btn-outline" href="/cabinet/admin/video-bridge-test">Проверка моста</a>
+        </div>
     </div>
 
     {% if not upload_available %}

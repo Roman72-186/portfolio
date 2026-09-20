@@ -141,3 +141,18 @@ def test_video_can_be_chosen_by_id(admin_client, db, monkeypatch):
 
     assert response.status_code == 200
     assert second.bunny_video_id in response.text
+
+
+def test_videos_admin_page_links_to_the_bridge_test(admin_client):
+    """Со страницы видео на проверку моста ведёт ссылка.
+
+    Без неё адрес приходится набирать руками, а переход по ссылке из
+    переписки открывает браузер без входа и уводит на главный экран –
+    на этом владелец и споткнулся 20.09.2026.
+    """
+    client, _ = admin_client
+
+    response = client.get("/cabinet/admin/videos")
+
+    assert response.status_code == 200
+    assert PAGE in response.text
