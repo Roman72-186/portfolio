@@ -2709,6 +2709,40 @@ def superadmin_user_set_curator(
     })
 
 
+@router.post("/superadmin/users/{target_id}/tariff")
+def superadmin_user_set_tariff(
+    target_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    tariff: str = Form(""),
+):
+    """Quick endpoint for changing a student's tariff from the users list."""
+    target = db.query(User).filter(User.id == target_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if not target.role or target.role.rank != 1:
+        raise HTTPException(status_code=400, detail="Тариф можно менять только ученику")
+
+    tariff_v = tariff.strip()
+    if tariff_v.upper() == "__NONE__":
+        tariff_v = ""
+    if tariff_v and tariff_v not in TARIFFS:
+        raise HTTPException(status_code=400, detail="Неверный тариф")
+
+    if target.tariff != tariff_v:
+        log_tariff_change(db, user["user_id"], target.id, target.tariff, tariff_v)
+        target.tariff = tariff_v
+        db.commit()
+        _invalidate_user_sessions(db, target.id)
+
+    return JSONResponse({
+        "ok": True,
+        "user_id": target.id,
+        "tariff": target.tariff or None,
+    })
+
+
 @router.post("/superadmin/users/{target_id}/cohort-tag")
 def superadmin_user_set_cohort_tag(
     target_id: int,

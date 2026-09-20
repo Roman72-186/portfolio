@@ -605,6 +605,61 @@ def test_superadmin_set_curator_ajax_returns_json(superadmin_client, db, user_fa
     assert student.curator_id == curator_user.id
 
 
+def test_admin_users_page_has_quick_tariff_control_and_newcomer_tag(
+    client, user_factory, session_factory
+):
+    chief_teacher = user_factory(
+        vk_id=900211, name="Chief Teacher", role_name="админ"
+    )
+    session = session_factory(chief_teacher)
+    client.cookies.set("session_id", session.id)
+    newcomer = user_factory(
+        vk_id=900212, name="New Student", role_name="ученик", tariff=""
+    )
+
+    page = client.get("/cabinet/superadmin/users").text
+
+    assert f'data-tariff-form="{newcomer.id}"' in page
+    assert '<span class="u-newcomer">Новенький</span>' in page
+
+
+def test_superadmin_quick_tariff_update_changes_student_tariff(
+    superadmin_client, db, user_factory
+):
+    client, _ = superadmin_client
+    student = user_factory(
+        vk_id=900213, name="Quick Tariff", role_name="ученик", tariff=""
+    )
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{student.id}/tariff",
+        data={"tariff": "Я С ВАМИ", "csrf_token": "bypass"},
+    )
+
+    db.refresh(student)
+    assert resp.status_code == 200
+    assert resp.json()["tariff"] == "Я С ВАМИ"
+    assert student.tariff == "Я С ВАМИ"
+
+
+def test_superadmin_quick_tariff_update_rejects_staff(
+    superadmin_client, db, user_factory
+):
+    client, _ = superadmin_client
+    curator = user_factory(
+        vk_id=900214, name="Staff Tariff", role_name="куратор", tariff=""
+    )
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{curator.id}/tariff",
+        data={"tariff": "Я САМ", "csrf_token": "bypass"},
+    )
+
+    db.refresh(curator)
+    assert resp.status_code == 400
+    assert curator.tariff == ""
+
+
 def test_superadmin_set_cohort_tag_ajax_returns_json(superadmin_client, db, user_factory):
     client, _ = superadmin_client
     student = user_factory(vk_id=900210, name="Student Cohort Tag", role_name="ученик")

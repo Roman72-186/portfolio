@@ -142,6 +142,27 @@
 .ios-su-users .u-deleted { background: rgba(60,60,67,0.03); }
 .ios-su-users .u-deleted td { color: var(--ios-label-2); }
 .ios-su-users .u-name { color: var(--ios-label); font-weight: 600; text-decoration: none; }
+.ios-su-users .u-name-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.ios-su-users .u-newcomer {
+    display: inline-flex; align-items: center; min-height: 20px; padding: 2px 8px;
+    border-radius: 999px; background: rgba(255,149,0,0.14); color: #92590A;
+    font: 700 10px/1.2 var(--ios-font);
+}
+.ios-su-users .u-newcomer[hidden] { display: none; }
+.ios-su-users .tariff-quick-form {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px;
+}
+.ios-su-users .tariff-quick-form label {
+    color: var(--ios-label-2); font: 600 11px/1.3 var(--ios-font);
+}
+.ios-su-users .tariff-quick-form select {
+    max-width: 190px; padding: 5px 26px 5px 8px; border: none; border-radius: 8px;
+    background: var(--ios-grouped-bg); color: var(--ios-label); font: 600 11px/1.3 var(--ios-font);
+}
+.ios-su-users .tariff-quick-form select:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 1px; }
+.ios-su-users .tariff-quick-form select:disabled { opacity: 0.6; cursor: wait; }
+.ios-su-users .tariff-save-status { color: #1E9147; font: 600 10px/1.3 var(--ios-font); }
+.ios-su-users .tariff-save-status.is-error { color: var(--ios-red); }
 .ios-su-users .su-tag-pills-gap { margin-top: 5px; }
 .ios-su-users .su-dim-text { color: var(--ios-label-2); font-size: 12px; }
 .ios-su-users .su-status { font: 700 12px/1.3 var(--ios-font); }

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Управление пользователями{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/superadmin_users_ios.css?v=4">
+<link rel="stylesheet" href="/static/css/superadmin_users_ios.css?v=5">
 <link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=7">
 {% endblock %}
 {% block content %}
@@ -182,12 +182,32 @@
             </thead>
             <tbody>
             {% for u in users %}
+            {% set u_rank = u.role.rank if u.role else 0 %}
             <tr class="{% if u.deleted_at %}u-deleted{% elif not u.is_active %}u-inactive{% endif %}"
                 data-user-row="{{ u.id }}"
                 data-user-name="{{ ((u.last_name or '') ~ ' ' ~ (u.first_name or u.name))|trim }}">
                 <td data-label="Пользователь">
-                    <a href="/cabinet/superadmin/users/{{ u.id }}" class="u-name">{{ u.last_name or '' }} {{ u.first_name or u.name }}</a>
-                    <div class="u-meta">id={{ u.id }} · {{ u.tariff or '—' }}{% if u.tg_username %} · @{{ u.tg_username }}{% endif %}</div>
+                    <div class="u-name-row">
+                        <a href="/cabinet/superadmin/users/{{ u.id }}" class="u-name">{{ u.last_name or '' }} {{ u.first_name or u.name }}</a>
+                        {% if u_rank == 1 %}<span class="u-newcomer"{% if u.tariff %} hidden{% endif %}>Новенький</span>{% endif %}
+                    </div>
+                    <div class="u-meta">id={{ u.id }}{% if u.tg_username %} · @{{ u.tg_username }}{% endif %}</div>
+                    {% if u_rank == 1 and not u.deleted_at %}
+                    <form class="tariff-quick-form" data-tariff-form="{{ u.id }}"
+                          action="/cabinet/superadmin/users/{{ u.id }}/tariff" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                        <label for="tariff-{{ u.id }}">Тариф</label>
+                        <select id="tariff-{{ u.id }}" name="tariff"
+                                data-saved-value="{{ u.tariff or '__none__' }}"
+                                onchange="setUserTariff(this)">
+                            <option value="__none__" {% if not u.tariff %}selected{% endif %}>Без тарифа</option>
+                            {% for t in tariffs %}
+                            <option value="{{ t }}" {% if u.tariff == t %}selected{% endif %}>{{ t|tariff_label }}</option>
+                            {% endfor %}
+                        </select>
+                        <span class="tariff-save-status" role="status" aria-live="polite"></span>
+                    </form>
+                    {% endif %}
                     {% set s_has_case = has_case_by_user.get(u.id, False) if has_case_by_user else False %}
                     {% set s = {
                         'exam_dates': u.exam_dates,
@@ -204,7 +224,6 @@
                     </div>
                 </td>
                 <td data-label="Роль">
-                    {% set u_rank = u.role.rank if u.role else 0 %}
                     {% if u.id != current_user_id and u_rank < current_user_rank %}
                     <form method="post" action="/cabinet/superadmin/users/{{ u.id }}/role" class="role-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
@@ -404,6 +423,47 @@ function copyText(elemId, btn) {
         window.getSelection().removeAllRanges();
         window.getSelection().addRange(range);
     });
+}
+
+function setUserTariff(select) {
+    const form = select.closest('[data-tariff-form]');
+    const status = form.querySelector('.tariff-save-status');
+    const previousValue = select.dataset.savedValue;
+    const formData = new FormData(form);
+
+    select.disabled = true;
+    status.textContent = 'Сохраняем…';
+    status.classList.remove('is-error');
+
+    fetch(form.action, {
+        method: 'POST',
+        body: formData,
+        headers: { 'Accept': 'application/json' },
+    })
+        .then(async function(response) {
+            if (!response.ok) {
+                const payload = await response.json().catch(function() { return {}; });
+                throw new Error(payload.detail || 'Не удалось сохранить тариф');
+            }
+            return response.json();
+        })
+        .then(function(payload) {
+            select.dataset.savedValue = payload.tariff || '__none__';
+            status.textContent = 'Сохранено';
+            const newcomer = form.closest('td').querySelector('.u-newcomer');
+            if (newcomer) newcomer.hidden = Boolean(payload.tariff);
+            window.setTimeout(function() {
+                if (status.textContent === 'Сохранено') status.textContent = '';
+            }, 1800);
+        })
+        .catch(function(error) {
+            select.value = previousValue;
+            status.textContent = error.message;
+            status.classList.add('is-error');
+        })
+        .finally(function() {
+            select.disabled = false;
+        });
 }
 
 let _hardDeleteExpected = null;
