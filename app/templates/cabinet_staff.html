@@ -116,6 +116,21 @@
                 <a class="registration-download-btn" href="{% if user.role_rank >= 5 %}/cabinet/superadmin/registration-stats.csv{% else %}/cabinet/admin/registration-stats.csv{% endif %}" download aria-label="Скачать статистику регистраций в CSV">Скачать CSV</a>
             </div>
         </div>
+        <form class="registration-stats-filters" method="get" action="{{ request.url.path }}">
+            <label>С даты <input type="date" name="registration_from" value="{{ tariff_registration_stats.period_from }}"></label>
+            <label>По дату <input type="date" name="registration_to" value="{{ tariff_registration_stats.period_to }}"></label>
+            <label>Тариф
+                <select name="registration_tariff">
+                    <option value="">Все тарифы</option>
+                    {% for item in tariff_registration_stats.by_tariff %}
+                    <option value="{{ item.tariff }}"{% if tariff_registration_stats.tariff_filter == item.tariff %} selected{% endif %}>{{ item.label }}</option>
+                    {% endfor %}
+                    <option value="__none__"{% if tariff_registration_stats.tariff_filter == "__none__" %} selected{% endif %}>Без тарифа</option>
+                </select>
+            </label>
+            <button type="submit">Применить</button>
+            <a href="{{ request.url.path }}">Сбросить</a>
+        </form>
         <div class="type-grid">
             {% for item in tariff_registration_stats.by_tariff %}
             <div class="type-cell" data-registration-tariff="{{ item.tariff }}">

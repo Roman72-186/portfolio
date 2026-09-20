@@ -63,6 +63,7 @@ from app.services.staff_dashboard import (
     build_tariff_registration_csv,
     get_student_activity_overview,
     get_tariff_registration_stats,
+    parse_registration_date,
 )
 from app.services.utils import compress_image, rotate_image_bytes
 from app.tmpl import templates
@@ -183,7 +184,7 @@ def _month_name_prep(month: int) -> str:
     return names[month] if 1 <= month <= 12 else ""
 
 
-def _load_dashboard_data(db: DBSession, now: datetime) -> dict:
+def _load_dashboard_data(db: DBSession, now: datetime, *, registration_from=None, registration_to=None, registration_tariff="") -> dict:
     month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
 
     # ── Users by role ─────────────────────────────────────────────────────────
@@ -344,7 +345,7 @@ def _load_dashboard_data(db: DBSession, now: datetime) -> dict:
         "recent_works": recent_works,
         "month_name": _month_name_prep(now.month),
         "feature_statuses": feature_statuses,
-        "tariff_registration_stats": get_tariff_registration_stats(db),
+        "tariff_registration_stats": get_tariff_registration_stats(db, period_from=parse_registration_date(registration_from), period_to=parse_registration_date(registration_to), tariff_filter=registration_tariff),
         "student_activity": get_student_activity_overview(db),
     }
 
@@ -354,9 +355,12 @@ def cabinet_superadmin(
     request: Request,
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
+    registration_from: str | None = Query(None),
+    registration_to: str | None = Query(None),
+    registration_tariff: str = Query(""),
 ):
     now = datetime.now(timezone.utc)
-    ctx = _load_dashboard_data(db, now)
+    ctx = _load_dashboard_data(db, now, registration_from=registration_from, registration_to=registration_to, registration_tariff=registration_tariff)
     ctx.update({"request": request, "user": user})
     return templates.TemplateResponse(request, "cabinet_staff.html", ctx)
 
@@ -365,8 +369,11 @@ def cabinet_superadmin(
 def download_superadmin_registration_stats(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
+    registration_from: str | None = Query(None),
+    registration_to: str | None = Query(None),
+    registration_tariff: str = Query(""),
 ):
-    stats = get_tariff_registration_stats(db)
+    stats = get_tariff_registration_stats(db, period_from=parse_registration_date(registration_from), period_to=parse_registration_date(registration_to), tariff_filter=registration_tariff)
     return Response(
         content=build_tariff_registration_csv(stats),
         media_type="text/csv; charset=utf-8",

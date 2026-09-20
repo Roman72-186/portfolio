@@ -2,10 +2,10 @@
 
 import csv
 import io
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import TypedDict
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session as DBSession
 
 from app.models.activity_event import StudentActivityEvent
@@ -23,6 +23,13 @@ REGISTRATION_STATS_SINCE = date(2026, 9, 18)
 REGISTRATION_STATS_EXCLUDED_USER_IDS = frozenset({199})
 
 
+def parse_registration_date(raw: str | None, fallback: date | None = None) -> date | None:
+    try:
+        return date.fromisoformat(raw) if raw else fallback
+    except ValueError:
+        return fallback
+
+
 class TariffRegistrationItem(TypedDict):
     tariff: str
     label: str
@@ -35,6 +42,9 @@ class TariffRegistrationStats(TypedDict):
     without_tariff: int
     total: int
     students: list["TariffRegistrationStudent"]
+    period_from: str
+    period_to: str
+    tariff_filter: str
 
 
 class TariffRegistrationStudent(TypedDict):
@@ -46,13 +56,20 @@ class TariffRegistrationStudent(TypedDict):
     created_at: datetime
 
 
-def get_tariff_registration_stats(db: DBSession) -> TariffRegistrationStats:
+def get_tariff_registration_stats(
+    db: DBSession,
+    *,
+    period_from: date | None = None,
+    period_to: date | None = None,
+    tariff_filter: str = "",
+) -> TariffRegistrationStats:
     """Count student registrations since tariff tracking started in Moscow time.
 
     The metric records registrations, so inactive, archived and soft-deleted
     students remain in the aggregate. Staff accounts never enter it.
     """
-    rows = (
+    period_from = period_from or REGISTRATION_STATS_SINCE
+    query = (
         db.query(
             User.id,
             User.name,
@@ -65,12 +82,17 @@ def get_tariff_registration_stats(db: DBSession) -> TariffRegistrationStats:
         .join(Role, User.role_id == Role.id)
         .filter(
             Role.rank == 1,
-            User.created_at >= msk_midnight(REGISTRATION_STATS_SINCE),
+            User.created_at >= msk_midnight(period_from),
             User.id.notin_(REGISTRATION_STATS_EXCLUDED_USER_IDS),
         )
-        .order_by(User.created_at.desc(), User.id.desc())
-        .all()
     )
+    if period_to:
+        query = query.filter(User.created_at < msk_midnight(period_to + timedelta(days=1)))
+    if tariff_filter in TARIFFS_CURRENT:
+        query = query.filter(User.tariff == tariff_filter)
+    elif tariff_filter == "__none__":
+        query = query.filter(or_(User.tariff.is_(None), User.tariff == ""))
+    rows = query.order_by(User.created_at.desc(), User.id.desc()).all()
     raw_counts = {tariff: 0 for tariff in TARIFFS_CURRENT}
     without_tariff = 0
     students: list[TariffRegistrationStudent] = []
@@ -110,11 +132,14 @@ def get_tariff_registration_stats(db: DBSession) -> TariffRegistrationStats:
         for tariff in TARIFFS_CURRENT
     ]
     return {
-        "since_label": REGISTRATION_STATS_SINCE.strftime("%d.%m.%Y"),
+        "since_label": period_from.strftime("%d.%m.%Y"),
         "by_tariff": by_tariff,
         "without_tariff": without_tariff,
         "total": sum(item["count"] for item in by_tariff) + without_tariff,
         "students": students,
+        "period_from": period_from.isoformat(),
+        "period_to": period_to.isoformat() if period_to else "",
+        "tariff_filter": tariff_filter,
     }
 
 
