@@ -1,6 +1,6 @@
 """add append-only student activity journal
 
-Revision ID: a7b8c9d0e1f2
+Revision ID: a9f1c3e7d2b4
 Revises: f8e2c4a6d1b3
 Create Date: 2026-09-20
 """
@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "a7b8c9d0e1f2"
+revision: str = "a9f1c3e7d2b4"
 down_revision: Union[str, None] = "f8e2c4a6d1b3"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
