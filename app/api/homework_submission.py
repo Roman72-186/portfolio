@@ -25,7 +25,7 @@ from app.db.database import get_db
 from app.dependencies import require_csrf, require_curator, require_student
 from app.models.homework import HomeworkAssignment
 from app.models.homework_feedback import HomeworkFeedback
-from app.models.homework_submission import STATUS_ACCEPTED, HomeworkSubmission
+from app.models.homework_submission import STATUS_ACCEPTED, HomeworkSubmission, HomeworkSubmissionImage
 from app.models.tracker import ITEM_HOMEWORK, SOURCE_HOMEWORK, TrackerTask
 from app.models.user import User
 from app.services import s3 as s3_service
@@ -56,6 +56,7 @@ from app.services.homework_submission import (
 )
 from app.services.notify import notify
 from app.services.student_access import get_student_for_staff_access
+from app.services.submission_edit import homework_reason
 from app.services.tracker import accessible_task_ids, close_task_for_user
 from app.services.tracker import homework_images as list_homework_reference_images
 from app.services.upload_validation import read_image_uploads
@@ -113,6 +114,7 @@ async def _render_submission_page(
     images = list_images(db, submission.id)
     final_image = next((i for i in images if i.is_final), None)
     intermediate = [i for i in images if not i.is_final]
+    edit_reason = homework_reason(db, task, submission) if viewer_role == "student" else None
 
     fb = (
         db.query(HomeworkFeedback)
@@ -149,6 +151,7 @@ async def _render_submission_page(
         "final_image": final_image,
         "intermediate_images": intermediate,
         "max_intermediate": _submission_intermediate_limit(homework),
+        "edit_reason": edit_reason,
         "message_count": message_count,
         "unread_feedback": unread_feedback,
         "feedback_url": feedback_url,
@@ -249,6 +252,10 @@ async def upload_homework_final(
 ):
     task, homework = _resolve_homework_task(db, task_id)
     _guard_student_access(db, task, user["user_id"])
+    submission = get_submission(db, tracker_task_id=task.id, user_id=user["user_id"])
+    reason = homework_reason(db, task, submission)
+    if reason:
+        return JSONResponse({"ok": False, "error": reason}, status_code=409)
     submission, _ = get_or_create_submission(db, task=task, user_id=user["user_id"])
 
     files, err = await read_image_uploads([photo], max_files=1, max_size=MAX_UPLOAD_FILE_SIZE)
@@ -283,6 +290,10 @@ async def upload_homework_intermediate(
 ):
     task, homework = _resolve_homework_task(db, task_id)
     _guard_student_access(db, task, user["user_id"])
+    submission = get_submission(db, tracker_task_id=task.id, user_id=user["user_id"])
+    reason = homework_reason(db, task, submission)
+    if reason:
+        return JSONResponse({"ok": False, "error": reason}, status_code=409)
     submission, _ = get_or_create_submission(db, task=task, user_id=user["user_id"])
 
     limit = _submission_intermediate_limit(homework)
@@ -310,6 +321,33 @@ async def upload_homework_intermediate(
         created += 1
     db.commit()
     return JSONResponse({"ok": True, "created": created})
+
+
+@router.post("/homework/{task_id}/intermediate/{image_id}/delete", response_class=JSONResponse)
+def delete_homework_intermediate(
+    task_id: int, image_id: int,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+):
+    task, _ = _resolve_homework_task(db, task_id)
+    _guard_student_access(db, task, user["user_id"])
+    submission = get_submission(db, tracker_task_id=task.id, user_id=user["user_id"])
+    if submission is None:
+        raise HTTPException(status_code=404, detail="Работа не найдена")
+    reason = homework_reason(db, task, submission)
+    if reason:
+        return JSONResponse({"ok": False, "error": reason}, status_code=409)
+    image = db.query(HomeworkSubmissionImage).filter(
+        HomeworkSubmissionImage.id == image_id,
+        HomeworkSubmissionImage.submission_id == submission.id,
+        HomeworkSubmissionImage.is_final.is_(False),
+    ).one_or_none()
+    if image is None:
+        raise HTTPException(status_code=404, detail="Фото не найдено")
+    db.delete(image)
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 # ── Обратная связь (ученик и куратор) ───────────────────────────────────────

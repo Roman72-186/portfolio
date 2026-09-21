@@ -29,6 +29,7 @@ from app.models.task_block import (
     QUESTION_SINGLE,
     QUESTION_TEXT,
     TaskBlock,
+    TaskBlockAnswer,
     TaskBlockOption,
     TaskBlockResponse,
 )
@@ -1024,9 +1025,8 @@ def test_verdict_is_not_leaked_before_answering(client, db, user_factory, sessio
     assert all("is_correct" not in o for o in body["blocks"][0]["options"])
 
 
-def test_second_attempt_is_rejected(client, db, user_factory, session_factory):
-    """Одна попытка: иначе, увидев «неверно», можно было бы переотправить до
-    победы, и счёт перестал бы что-либо значить."""
+def test_text_answer_can_be_edited_before_review(client, db, user_factory, session_factory):
+    """Свободный текст можно уточнить до срока и проверки преподавателем."""
     staff = user_factory(vk_id=550_403, name="Стафф", is_admin=True, role_name="админ")
     task = _material_task_with_blocks(db, staff.id)
     [block] = _blocks_of(db, task.id)
@@ -1041,9 +1041,42 @@ def test_second_attempt_is_rejected(client, db, user_factory, session_factory):
         f"/cabinet/tracker/tasks/{task.id}/blocks",
         json={"answers": [{"block_id": block.id, "text": "Два"}]},
     )
-    assert second.status_code == 409
-    # И форма больше не предлагается.
-    assert client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()["submit_endpoint"] is None
+    assert second.status_code == 200
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert body["blocks"][0]["answer_text"] == "Два"
+    assert body["submit_endpoint"] is not None
+
+
+def test_reviewed_text_answer_cannot_be_edited(client, db, user_factory, session_factory):
+    staff = user_factory(vk_id=550_413, name="Стафф", is_admin=True, role_name="админ")
+    task = _material_task_with_blocks(db, staff.id)
+    [block] = _blocks_of(db, task.id)
+    _student_client(client, user_factory, session_factory)
+    endpoint = f"/cabinet/tracker/tasks/{task.id}/blocks"
+    assert client.post(endpoint, json={"answers": [{"block_id": block.id, "text": "Первый"}]}).status_code == 200
+    answer = db.query(TaskBlockAnswer).filter_by(block_id=block.id).one()
+    answer.reviewed_at = datetime.now(timezone.utc)
+    db.commit()
+
+    response = client.post(endpoint, json={"answers": [{"block_id": block.id, "text": "Второй"}]})
+    assert response.status_code == 409
+    assert client.get(endpoint).json()["blocks"][0]["edit_reason"]
+
+
+def test_auto_graded_answer_keeps_one_attempt(client, db, user_factory, session_factory):
+    staff = user_factory(vk_id=550_414, name="Стафф", is_admin=True, role_name="админ")
+    task = _material_task_with_blocks(db, staff.id, blocks=[{
+        "block_type": BLOCK_QUESTION, "question_type": QUESTION_SINGLE, "body": "Сколько?"
+    }])
+    [block] = _blocks_of(db, task.id)
+    option = TaskBlockOption(block_id=block.id, text="Один", is_correct=True, sort_order=0)
+    db.add(option)
+    db.commit()
+    _student_client(client, user_factory, session_factory)
+    endpoint = f"/cabinet/tracker/tasks/{task.id}/blocks"
+    payload = {"answers": [{"block_id": block.id, "option_ids": [option.id]}]}
+    assert client.post(endpoint, json=payload).status_code == 200
+    assert client.post(endpoint, json=payload).status_code == 409
 
 
 def test_hidden_question_is_invisible_until_task_is_done(client, db, user_factory, session_factory):

@@ -55,11 +55,11 @@ app/static/css/homework_ios.css, переопределяющем эти общ�
         <p class="card-desc">Финальное фото ещё не загружено.</p>
         {% endif %}
 
-        {% if viewer_role == 'student' %}
+        {% if viewer_role == 'student' and not edit_reason %}
         <form class="hw-async-form hw-form" method="post" action="/cabinet/homework/{{ task.id }}/final" enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-            <label class="form-label">{{ 'Пересдать финальное фото' if final_image else 'Загрузить финальное фото' }}</label>
-            <input type="file" class="field-input" name="photo" accept="image/*" required>
+            <label class="form-label" for="hw-final-input">{{ 'Заменить финальное фото' if final_image else 'Загрузить финальное фото' }}</label>
+            <input id="hw-final-input" type="file" class="field-input" name="photo" accept="image/*" required>
             <button type="submit" class="btn-blue hw-submit">Отправить</button>
             <p class="prg-message"></p>
         </form>
@@ -72,6 +72,13 @@ app/static/css/homework_ios.css, переопределяющем эти общ�
             <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть промежуточное фото">
                 <img src="{{ img.image_s3_url }}" alt="Промежуточное фото" loading="lazy">
             </button>
+            {% if viewer_role == 'student' and not edit_reason %}
+            <form class="hw-async-form" method="post" action="/cabinet/homework/{{ task.id }}/intermediate/{{ img.id }}/delete">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" class="btn-outline">Удалить фото {{ loop.index }}</button>
+                <p class="prg-message" aria-live="polite"></p>
+            </form>
+            {% endif %}
             {% endfor %}
         </div>
         {% endif %}
@@ -79,11 +86,14 @@ app/static/css/homework_ios.css, переопределяющем эти общ�
         </div>
         {% endif %}
 
-        {% if viewer_role == 'student' %}
+        {% if viewer_role == 'student' and edit_reason %}
+        <p class="card-desc">{{ edit_reason }}</p>
+        {% endif %}
+        {% if viewer_role == 'student' and not edit_reason and intermediate_images|length < max_intermediate %}
         <form class="hw-async-form hw-form" method="post" action="/cabinet/homework/{{ task.id }}/intermediate" enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-            <label class="form-label">Добавить промежуточные фото (до {{ max_intermediate }})</label>
-            <input type="file" class="field-input" name="photos" accept="image/*" multiple required>
+            <label class="form-label" for="hw-intermediate-input">Добавить промежуточные фото (до {{ max_intermediate }})</label>
+            <input id="hw-intermediate-input" type="file" class="field-input" name="photos" accept="image/*" multiple required>
             <button type="submit" class="btn-outline hw-submit">Добавить</button>
             <p class="prg-message"></p>
         </form>

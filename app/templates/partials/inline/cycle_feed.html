@@ -15,7 +15,7 @@
 задания.
 #}
 {% include "partials/inline/_video_player.html" %}
-<script src="/static/js/task-blocks-render.js?v=18"></script>
+<script src="/static/js/task-blocks-render.js?v=19"></script>
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};
@@ -91,8 +91,8 @@
 
     function appendSubmit(taskId, data, renderer, host) {
         var form = el('form', 'lrn-blk-submit');
-        form.appendChild(el('p', 'lrn-blk-title', 'Готовы отправить ответы?'));
-        var button = el('button', 'btn-blue', 'Отправить ответы');
+        form.appendChild(el('p', 'lrn-blk-title', 'Ответы можно менять до проверки и срока сдачи.'));
+        var button = el('button', 'btn-blue', 'Сохранить ответы');
         button.type = 'submit';
         var note = el('p', 'video-progress-status');
         note.setAttribute('aria-live', 'polite');

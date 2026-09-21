@@ -28,7 +28,7 @@
 {# Рендер блоков вынесен в общий файл 06.09.2026: те же блоки рисует лента
    цикла (`partials/inline/cycle_feed.html`), и второй копии рендереров в
    проекте быть не должно — за этим следит `tests/test_reuse_ratchet.py`. #}
-<script src="/static/js/task-blocks-render.js?v=18"></script>
+<script src="/static/js/task-blocks-render.js?v=19"></script>
 <script>
 (function () {
     window.lrnPanelInit = window.lrnPanelInit || {};
@@ -48,8 +48,8 @@
             // Форма рисовалась как ещё один пункт списка блоков — заголовок
             // + рамка сверху (в CSS) отделяют её как конец задания, а не
             // очередной блок (ревью 03.09.2026).
-            form.appendChild(el('p', 'lrn-blk-title', 'Готовы отправить ответы?'));
-            var button = el('button', 'btn-blue', 'Отправить ответы');
+            form.appendChild(el('p', 'lrn-blk-title', 'Ответы можно менять до проверки и срока сдачи.'));
+            var button = el('button', 'btn-blue', 'Сохранить ответы');
             button.type = 'submit';
             var note = el('p', 'video-progress-status');
             note.setAttribute('aria-live', 'polite');
@@ -70,20 +70,8 @@
                 }).then(function (resp) {
                     if (!resp.ok) throw new Error();
                     return resp.json();
-                }).then(function (verdict) {
-                    // Попытка одна: перерисовываем панель ответом сервера —
-                    // с отметками «верно/неверно», счётом и закрытой формой.
-                    renderer.answered = true;
-                    data.blocks.forEach(function (block) {
-                        (verdict.results || []).forEach(function (r) {
-                            if (r.block_id === block.id) block.is_correct = r.is_correct;
-                        });
-                    });
-                    data.answered = true;
-                    data.correct_count = verdict.correct_count;
-                    data.gradable_count = verdict.gradable_count;
-                    listEl.innerHTML = '';
-                    render(data);
+                }).then(function () {
+                    window.location.reload();
                 }).catch(function () {
                     button.disabled = false;
                     note.textContent = 'Не удалось отправить ответ. Попробуй ещё раз.';

@@ -4,6 +4,7 @@
 MAX_INTERMEDIATE_PER_SUBMISSION промежуточных. Диалог — куратор пишет первым
 (как у Feedback/пробника), студент отвечает только после этого.
 """
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from app.models.homework_feedback import HomeworkFeedback, HomeworkFeedbackMessage
@@ -109,6 +110,55 @@ def test_resubmit_final_replaces_previous(auth_client, db):
 
     finals = db.query(HomeworkSubmissionImage).filter(HomeworkSubmissionImage.is_final.is_(True)).all()
     assert len(finals) == 1
+
+
+def test_deadline_blocks_homework_upload_but_page_stays_visible(auth_client, db):
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    task.due_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    db.commit()
+
+    page = client.get(f"/cabinet/homework/{task.id}")
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        upload = client.post(f"/cabinet/homework/{task.id}/final", files={"photo": ("a.jpg", b"1", "image/jpeg")})
+
+    assert page.status_code == 200
+    assert "Срок сдачи истёк" in page.text
+    assert upload.status_code == 409
+
+
+def test_first_curator_reply_locks_homework_edits(auth_client, db, user_factory):
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        assert client.post(f"/cabinet/homework/{task.id}/final", files={"photo": ("a.jpg", b"1", "image/jpeg")}).status_code == 200
+    submission = db.query(HomeworkSubmission).one()
+    curator = user_factory(vk_id=777_023, name="Куратор", role_name="куратор")
+    feedback = HomeworkFeedback(submission_id=submission.id, curator_id=curator.id)
+    db.add(feedback)
+    db.flush()
+    db.add(HomeworkFeedbackMessage(feedback_id=feedback.id, sender_id=curator.id, sender_role="curator", text="Проверил"))
+    db.commit()
+
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        upload = client.post(f"/cabinet/homework/{task.id}/final", files={"photo": ("b.jpg", b"2", "image/jpeg")})
+    assert upload.status_code == 409
+    assert "Преподаватель уже ответил" in client.get(f"/cabinet/homework/{task.id}").text
+
+
+def test_homework_intermediate_can_be_deleted_before_review(auth_client, db):
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        uploaded = client.post(
+            f"/cabinet/homework/{task.id}/intermediate",
+            files=[("photos", ("a.jpg", b"1", "image/jpeg"))],
+        )
+    assert uploaded.status_code == 200
+    image = db.query(HomeworkSubmissionImage).filter_by(is_final=False).one()
+    response = client.post(f"/cabinet/homework/{task.id}/intermediate/{image.id}/delete")
+    assert response.status_code == 200
+    assert db.query(HomeworkSubmissionImage).count() == 0
 
 
 def test_upload_intermediate_respects_limit(auth_client, db):

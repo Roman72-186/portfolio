@@ -37,7 +37,8 @@ from app.models.task_block import (
     BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_RULES,
     BLOCK_SCALE, BLOCK_TIMED, BLOCK_UPLOAD, BLOCK_VIDEO, MAX_BLOCKS,
     MAX_SUBMISSION_IMAGES, QUESTION_TEXT,
-    SCALE_MAX, SCALE_MIN, SUBMISSION_BLOCK_TYPES, TaskBlock,
+    SCALE_MAX, SCALE_MIN, SUBMISSION_BLOCK_TYPES, TaskBlock, TaskBlockAnswer,
+    TaskBlockSubmissionImage,
 )
 from app.models.tracker import (
     ITEM_HOMEWORK,
@@ -59,6 +60,7 @@ from app.services.portfolio_window import (
     portfolio_windows,
 )
 from app.services.stats import avg_score_by_subject_all_time
+from app.services.submission_edit import block_work_reason, deadline_reason
 from app.services import s3 as s3_service
 from app.services.task_blocks import (
     add_submission_image as add_task_block_submission_image,
@@ -360,7 +362,7 @@ def _video_block_requires_completion(task: TrackerTask, block: TaskBlock) -> boo
     )
 
 
-def _submission_payload(db: DBSession, block, user_id: int) -> dict:
+def _submission_payload(db: DBSession, task: TrackerTask, block, user_id: int) -> dict:
     """Что ученик уже сдал в этом блоке — общая часть «загрузки работ» и
     «работы на время»: у них одна механика приёма, разная только обёртка."""
     submission = get_task_block_submission(db, block_id=block.id, user_id=user_id)
@@ -376,7 +378,10 @@ def _submission_payload(db: DBSession, block, user_id: int) -> dict:
     return {
         "upload_endpoint": f"/cabinet/tracker/blocks/{block.id}/upload",
         "max_files": MAX_SUBMISSION_IMAGES,
-        "submitted_files": [i.image_s3_url for i in images],
+        "submitted_files": [{"id": i.id, "url": i.image_s3_url} for i in images],
+        "edit_reason": block_work_reason(db, task, block, submission),
+        "delete_endpoint": f"/cabinet/tracker/blocks/{block.id}/images",
+        "comment_endpoint": f"/cabinet/tracker/blocks/{block.id}/comment",
         "submitted_comment": submission.comment if submission else None,
         "reviewed": bool(submission and submission.reviewed_at),
         "review_comment": submission.review_comment if submission else None,
@@ -511,6 +516,14 @@ def cabinet_tracker_task_blocks(
         elif block.block_type == "link":
             item["url"] = block.url
         elif block.block_type == BLOCK_SCALE:
+            item["edit_reason"] = deadline_reason(task, block) or (
+                "Преподаватель уже проверил ответ."
+                if response and db.query(TaskBlockAnswer.id).filter(
+                    TaskBlockAnswer.response_id == response.id,
+                    TaskBlockAnswer.block_id == block.id,
+                    TaskBlockAnswer.reviewed_at.isnot(None),
+                ).first() else None
+            )
             # Диагностика навыков: варианты — навыки, ответ — оценка каждому.
             item["scale_max"] = SCALE_MAX
             item["scale_min"] = SCALE_MIN
@@ -545,14 +558,14 @@ def cabinet_tracker_task_blocks(
             item["done"] = bool(state and state.status == STATUS_DONE)
             item["overrun"] = task_block_timed_overrun(block, state)
             item["start_endpoint"] = f"/cabinet/tracker/blocks/{block.id}/start"
-            item.update(_submission_payload(db, block, user["user_id"]))
+            item.update(_submission_payload(db, task, block, user["user_id"]))
         elif block.block_type == BLOCK_UPLOAD:
             # Работы грузятся здесь же, ученик никуда не уходит (владелец
             # 07.09.2026). `done` берём из состояния блока: его ставит сам
             # роут загрузки, а не пересчёт по портфолио.
             state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
             item["done"] = bool(state and state.status == STATUS_DONE)
-            item.update(_submission_payload(db, block, user["user_id"]))
+            item.update(_submission_payload(db, task, block, user["user_id"]))
         elif block.block_type == BLOCK_PHOTO_UPLOAD:
             # Фото + сдача работы (владелец 12.09.2026): фото-задание — та же
             # галерея, что у BLOCK_PHOTO, приём результата — тот же приём, что
@@ -563,7 +576,7 @@ def cabinet_tracker_task_blocks(
             ]
             state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
             item["done"] = bool(state and state.status == STATUS_DONE)
-            item.update(_submission_payload(db, block, user["user_id"]))
+            item.update(_submission_payload(db, task, block, user["user_id"]))
         elif block.block_type == BLOCK_PORTFOLIO:
             # Ведём на существующий экран загрузки работ, своего у блока нет.
             # Всегда в раздел «До» (владелец 09.09.2026: «по этой кнопке работы
@@ -610,7 +623,19 @@ def cabinet_tracker_task_blocks(
                 if option_id in selected.get(block.id, set())
             }
             item["is_correct"] = correct_by_block.get(block.id)
+            item["edit_reason"] = (
+                deadline_reason(task, block)
+                or ("Этот ответ уже проверен системой." if block.question_type != QUESTION_TEXT and block.id in answered_ids else None)
+                or ("Преподаватель уже проверил ответ." if response and db.query(TaskBlockAnswer.id).filter(
+                    TaskBlockAnswer.response_id == response.id,
+                    TaskBlockAnswer.block_id == block.id,
+                    TaskBlockAnswer.reviewed_at.isnot(None),
+                ).first() else None)
+            )
         elif block.block_type == BLOCK_RULES:
+            item["edit_reason"] = deadline_reason(task, block) or (
+                "Согласие с правилами уже сохранено." if block.id in answered_ids else None
+            )
             # Правила школы: варианты — сами правила, `body` — текст согласия.
             # Отмеченные отдаём, чтобы уже закрытый блок открывался с
             # проставленными галочками, а не пустым.
@@ -621,6 +646,12 @@ def cabinet_tracker_task_blocks(
             item["answer_option_ids"] = sorted(selected.get(block.id, set()))
         payload.append(item)
 
+    editable_answers = [
+        item for item in payload
+        if item["block_type"] in (BLOCK_QUESTION, BLOCK_SCALE)
+        and item.get("edit_reason") is None
+        and (item["block_type"] == BLOCK_SCALE or item.get("question_type") == QUESTION_TEXT)
+    ]
     return JSONResponse({
         "blocks": payload,
         "has_questions": bool(questions),
@@ -630,7 +661,7 @@ def cabinet_tracker_task_blocks(
         "answered": answered,
         "submit_endpoint": (
             f"/cabinet/tracker/tasks/{task_id}/blocks"
-            if questions_left else None
+            if questions_left or editable_answers else None
         ),
         "correct_count": verdict["correct_count"] if verdict else None,
         "gradable_count": verdict["gradable_count"] if verdict else None,
@@ -770,11 +801,13 @@ async def upload_task_block_work(
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type not in SUBMISSION_BLOCK_TYPES:
         raise HTTPException(status_code=404, detail="Блок не найден")
-    _accessible_task_or_404(db, user["user_id"], block.task_id)
+    task = _accessible_task_or_404(db, user["user_id"], block.task_id)
 
-    submission = get_or_create_task_block_submission(
-        db, block=block, user_id=user["user_id"]
-    )
+    submission = get_task_block_submission(db, block_id=block.id, user_id=user["user_id"])
+    reason = block_work_reason(db, task, block, submission)
+    if reason:
+        return JSONResponse({"ok": False, "error": reason}, status_code=409)
+    submission = submission or get_or_create_task_block_submission(db, block=block, user_id=user["user_id"])
     existing = count_task_block_submission_images(db, submission.id)
     if existing >= MAX_SUBMISSION_IMAGES:
         return JSONResponse(
@@ -820,6 +853,61 @@ async def upload_task_block_work(
     return JSONResponse({"ok": True, "created": created})
 
 
+@router.post("/tracker/blocks/{block_id}/comment", response_class=JSONResponse)
+def edit_task_block_comment(
+    block_id: int, payload: dict,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    block = db.get(TaskBlock, block_id)
+    if block is None or block.block_type not in SUBMISSION_BLOCK_TYPES:
+        raise HTTPException(status_code=404, detail="Блок не найден")
+    task = _accessible_task_or_404(db, user["user_id"], block.task_id)
+    submission = get_task_block_submission(db, block_id=block.id, user_id=user["user_id"])
+    if submission is None or submission.submitted_at is None:
+        raise HTTPException(status_code=404, detail="Работа не найдена")
+    reason = block_work_reason(db, task, block, submission)
+    if reason:
+        return JSONResponse({"ok": False, "error": reason}, status_code=409)
+    comment = payload.get("comment")
+    if not isinstance(comment, str) or len(comment) > 2000:
+        raise HTTPException(status_code=422, detail="Описание должно быть короче 2000 символов")
+    submission.comment = comment.strip() or None
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/tracker/blocks/{block_id}/images/{image_id}/delete", response_class=JSONResponse)
+def delete_task_block_image(
+    block_id: int, image_id: int,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    block = db.get(TaskBlock, block_id)
+    if block is None or block.block_type not in SUBMISSION_BLOCK_TYPES:
+        raise HTTPException(status_code=404, detail="Блок не найден")
+    task = _accessible_task_or_404(db, user["user_id"], block.task_id)
+    submission = get_task_block_submission(db, block_id=block.id, user_id=user["user_id"])
+    if submission is None:
+        raise HTTPException(status_code=404, detail="Работа не найдена")
+    reason = block_work_reason(db, task, block, submission)
+    if reason:
+        return JSONResponse({"ok": False, "error": reason}, status_code=409)
+    image = db.query(TaskBlockSubmissionImage).filter(
+        TaskBlockSubmissionImage.id == image_id,
+        TaskBlockSubmissionImage.submission_id == submission.id,
+    ).one_or_none()
+    if image is None:
+        raise HTTPException(status_code=404, detail="Фото не найдено")
+    if count_task_block_submission_images(db, submission.id) <= 1:
+        return JSONResponse({"ok": False, "error": "Нельзя удалить последнее фото. Сначала загрузи замену."}, status_code=409)
+    db.delete(image)
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
 # ── POST /cabinet/tracker/tasks/{id}/blocks ──────────────────────────────────
 
 @router.post("/tracker/tasks/{task_id}/blocks", response_class=JSONResponse)
@@ -840,7 +928,7 @@ def submit_cabinet_tracker_task_blocks(
     и вернуться позже, поэтому «число ответов равно числу вопросов» больше не
     требуется — сохраняется то, что прислали.
     """
-    _accessible_task_or_404(db, user["user_id"], task_id)
+    task = _accessible_task_or_404(db, user["user_id"], task_id)
     task_done = _is_task_done(db, task_id, user["user_id"])
     all_blocks = get_task_blocks(db, task_id)
     questions = [
@@ -849,28 +937,40 @@ def submit_cabinet_tracker_task_blocks(
     ]
     if not questions:
         raise HTTPException(status_code=404, detail="У задачи нет вопросов")
-    # Одна попытка — на вопрос, а не на задание целиком (уточнено 07.09.2026).
-    # Правило 31.08 не даёт переотправлять ответ до победы, и оно остаётся:
-    # уже отвеченный вопрос сюда не пройдёт. Но пропущенный ученик обязан
-    # иметь возможность дослать — иначе обязательный вопрос без ответа
-    # запирает ленту навсегда, а форма отправки уже исчезла.
+    # Автоматически оцениваемые вопросы и подтверждение правил по-прежнему
+    # имеют одну попытку. Текст и шкала допускают правку до срока и проверки.
     response = get_task_block_response(db, task_id=task_id, user_id=user["user_id"])
     already = task_block_answered_ids(db, response_id=response.id) if response else set()
     visible = questions
-    questions = [block for block in visible if block.id not in already]
-    if not questions:
-        raise HTTPException(status_code=409, detail="Ответ на это задание уже есть")
-    known = {block.id for block in questions}
-    if [a.block_id for a in payload.answers if a.block_id in already]:
-        raise HTTPException(status_code=409, detail="На этот вопрос уже есть ответ")
+    known = {block.id for block in visible}
     unknown = [a.block_id for a in payload.answers if a.block_id not in known]
     if unknown:
         raise HTTPException(status_code=422, detail="Ответ на чужой вопрос")
+    if not payload.answers:
+        raise HTTPException(status_code=422, detail="Нет ответов для сохранения")
+    for answer in payload.answers:
+        block = next(b for b in visible if b.id == answer.block_id)
+        reason = deadline_reason(task, block)
+        if reason:
+            raise HTTPException(status_code=409, detail=reason)
+        if block.id in already:
+            if block.block_type == BLOCK_RULES or (
+                block.block_type == BLOCK_QUESTION and block.question_type != QUESTION_TEXT
+            ):
+                raise HTTPException(status_code=409, detail="На этот вопрос уже есть ответ")
+            reviewed = db.query(TaskBlockAnswer.id).filter(
+                TaskBlockAnswer.response_id == response.id,
+                TaskBlockAnswer.block_id == block.id,
+                TaskBlockAnswer.reviewed_at.isnot(None),
+            ).first()
+            if reviewed:
+                raise HTTPException(status_code=409, detail="Преподаватель уже проверил ответ")
+    selected = {answer.block_id for answer in payload.answers}
     response = save_task_block_response(
         db,
         task_id=task_id,
         user_id=user["user_id"],
-        blocks=questions,
+        blocks=[block for block in visible if block.id in selected],
         answers={
             a.block_id: {
                 "text": a.text, "option_ids": a.option_ids,

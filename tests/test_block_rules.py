@@ -63,7 +63,7 @@ def _cycle(db, owner):
 def _task(db, owner, *, title="18 сентября"):
     task = create_task(
         db, title=title, user_id=owner.id, kind="material",
-        due_at=day_bounds(TODAY)[0] + timedelta(hours=6),
+        due_at=day_bounds(TODAY + timedelta(days=2))[0] + timedelta(hours=6),
         assign_to_all=True, is_required=True,
     )
     task.is_published = True

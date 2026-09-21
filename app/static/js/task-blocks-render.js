@@ -400,7 +400,7 @@ scope)` и свойством `answered` (одна попытка: после о
                 var min = typeof block.scale_min === 'number' ? block.scale_min : 0;
                 var max = block.scale_max || 10;
                 var saved = block.answer_option_texts || {};
-                var locked = api.answered || !!block.answered;
+                var locked = !!block.edit_reason;
                 var inputs = [];
                 (block.options || []).forEach(function (option, oi) {
                     var row = el('div', 'lrn-scale-row');
@@ -499,15 +499,12 @@ scope)` и свойством `answered` (одна попытка: после о
                 // частичную отправку (`submit_cabinet_tracker_task_blocks`:
                 // «ответы принимаются частями»), другие блоки задания это
                 // не затрагивает.
-                if (block.submit_endpoint) {
+                if (block.submit_endpoint && !block.edit_reason) {
                     var note = el('p', 'video-progress-status');
                     note.setAttribute('aria-live', 'polite');
-                    if (locked) {
-                        wrap.appendChild(el(
-                            'p', 'lrn-blk-verdict is-ok',
-                            'Сохранено — результат в «Личной информации».'
-                        ));
-                    } else {
+                    if (block.answered) {
+                        wrap.appendChild(el('p', 'lrn-blk-verdict is-ok', 'Сохранено. До проверки можно изменить оценку.'));
+                    }
                         var saveBtn = el('button', 'btn-blue', 'Сохранить');
                         saveBtn.type = 'button';
                         saveBtn.addEventListener('click', function () {
@@ -562,8 +559,8 @@ scope)` и свойством `answered` (одна попытка: после о
                         });
                         wrap.appendChild(saveBtn);
                         wrap.appendChild(note);
-                    }
                 }
+                if (block.edit_reason) wrap.appendChild(el('p', 'video-help', block.edit_reason));
                 return wrap;
             }
 
@@ -572,7 +569,7 @@ scope)` и свойством `answered` (одна попытка: после о
             function submittedGallery(block) {
                 var files = block.submitted_files || [];
                 if (!files.length) return null;
-                return photoGallery(files, 'Загруженная работа');
+                return photoGallery(files.map(function (file) { return file.url; }), 'Загруженная работа');
             }
 
             // Приём работ прямо в блоке (владелец 07.09.2026: «работы нужно
@@ -603,11 +600,33 @@ scope)` и свойством `answered` (одна попытка: после о
                     wrap.appendChild(feedbackLink);
                 }
 
-                var left = (block.max_files || 10) - (block.submitted_files || []).length;
-                if (left <= 0) {
-                    wrap.appendChild(el('p', 'video-help', 'Загружено максимальное число файлов.'));
+                if (block.edit_reason) {
+                    wrap.appendChild(el('p', 'video-help', block.edit_reason));
                     return wrap;
                 }
+                (block.submitted_files || []).forEach(function (file, index) {
+                    var remove = el('button', 'btn-outline', 'Удалить фото ' + (index + 1));
+                    remove.type = 'button';
+                    remove.addEventListener('click', function () {
+                        remove.disabled = true;
+                        fetch(block.delete_endpoint + '/' + file.id + '/delete', {
+                            method: 'POST', credentials: 'same-origin',
+                            headers: {'X-CSRF-Token': csrfToken}
+                        }).then(function (resp) {
+                            return resp.json().then(function (body) {
+                                if (!resp.ok) throw new Error(body.error || 'Не удалось удалить фото.');
+                                window.location.reload();
+                            });
+                        }).catch(function (error) {
+                            remove.disabled = false;
+                            window.alert(error.message);
+                        });
+                    });
+                    wrap.appendChild(remove);
+                });
+
+                var left = (block.max_files || 10) - (block.submitted_files || []).length;
+                if (left <= 0) wrap.appendChild(el('p', 'video-help', 'Загружено максимальное число файлов.'));
 
                 var fileId = 'lrn-upl-' + api.uid + '-' + block.id;
                 var label = el('label', 'field-label', 'Фото работы (до ' + left + ')');
@@ -625,6 +644,29 @@ scope)` и свойством `answered` (одна попытка: после о
                 comment.id = commentId;
                 comment.rows = 3;
                 comment.value = block.submitted_comment || '';
+                if (block.submitted_files && block.submitted_files.length) {
+                    var saveComment = el('button', 'btn-outline', 'Сохранить описание');
+                    saveComment.type = 'button';
+                    saveComment.addEventListener('click', function () {
+                        saveComment.disabled = true;
+                        fetch(block.comment_endpoint, {
+                            method: 'POST', credentials: 'same-origin',
+                            headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+                            body: JSON.stringify({comment: comment.value})
+                        }).then(function (resp) {
+                            return resp.json().then(function (body) {
+                                if (!resp.ok) throw new Error(body.error || 'Не удалось сохранить описание.');
+                                window.location.reload();
+                            });
+                        }).catch(function (error) {
+                            saveComment.disabled = false;
+                            window.alert(error.message);
+                        });
+                    });
+                    wrap.appendChild(commentLabel);
+                    wrap.appendChild(comment);
+                    wrap.appendChild(saveComment);
+                }
 
                 var send = el('button', 'btn-blue', 'Отправить работу');
                 send.type = 'button';
@@ -668,12 +710,16 @@ scope)` и свойством `answered` (одна попытка: после о
                     });
                 });
 
-                wrap.appendChild(label);
-                wrap.appendChild(input);
-                wrap.appendChild(commentLabel);
-                wrap.appendChild(comment);
-                wrap.appendChild(send);
-                wrap.appendChild(note);
+                if (left > 0) {
+                    wrap.appendChild(label);
+                    wrap.appendChild(input);
+                    if (!block.submitted_files || !block.submitted_files.length) {
+                        wrap.appendChild(commentLabel);
+                        wrap.appendChild(comment);
+                    }
+                    wrap.appendChild(send);
+                    wrap.appendChild(note);
+                }
                 return wrap;
             }
 
@@ -788,10 +834,11 @@ scope)` и свойством `answered` (одна попытка: после о
                     textarea.maxLength = 2000;
                     textarea.value = block.answer_text || '';
                     textarea.setAttribute('data-answer-text', block.id);
-                    textarea.disabled = api.answered || !!block.answered;
+                    textarea.disabled = !!block.edit_reason;
                     wrap.appendChild(textarea);
                     var freeMark = verdictMark(block);
                     if (freeMark) wrap.appendChild(freeMark);
+                    if (block.edit_reason) wrap.appendChild(el('p', 'video-help', block.edit_reason));
                     return wrap;
                 }
 
@@ -805,13 +852,14 @@ scope)` и свойством `answered` (одна попытка: после о
                     input.value = option.id;
                     input.checked = chosen.indexOf(option.id) !== -1;
                     input.setAttribute('data-answer-option', block.id);
-                    input.disabled = api.answered || !!block.answered;
+                    input.disabled = !!block.edit_reason;
                     row.appendChild(input);
                     row.appendChild(el('span', null, option.text));
                     wrap.appendChild(row);
                 });
                 var mark = verdictMark(block);
                 if (mark) wrap.appendChild(mark);
+                if (block.edit_reason) wrap.appendChild(el('p', 'video-help', block.edit_reason));
                 return wrap;
             }
 
@@ -825,7 +873,7 @@ scope)` и свойством `answered` (одна попытка: после о
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-rules'), block);
                 if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-question-body', block.body_html));
                 var chosen = block.answer_option_ids || [];
-                var locked = api.answered || !!block.answered;
+                var locked = !!block.edit_reason || !!block.answered;
                 (block.options || []).forEach(function (option, oi) {
                     var row = el('label', 'lrn-blk-option');
                     var input = el('input');
@@ -877,7 +925,7 @@ scope)` и свойством `answered` (одна попытка: после о
                 (blocks || []).forEach(function (block) {
                     // Уже отвеченный вопрос в отправку не идёт: сервер такой
                     // ответ отклоняет, и вся отправка вместе с ним пропала бы.
-                    if (block.answered) return;
+                    if (block.edit_reason || (block.answered && block.block_type === 'rules')) return;
                     if (block.block_type === 'scale') {
                         // Оценка приходит текстом варианта: у шкалы «выбран»
                         // каждый навык, которому ученик поставил число.

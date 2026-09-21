@@ -25,6 +25,7 @@ from app.models.task_block import (
     TaskBlockSubmission,
     TaskBlockSubmissionImage,
 )
+from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.services import s3 as s3_service
 from app.services.cycle_feed import build_cycle_feed
 from app.services.program import day_bounds
@@ -65,7 +66,7 @@ def _cycle(db, owner):
 def _task(db, owner, *, title="Задание со сдачей"):
     task = create_task(
         db, title=title, user_id=owner.id, kind="material",
-        due_at=day_bounds(TODAY)[0] + timedelta(hours=6),
+        due_at=day_bounds(TODAY + timedelta(days=2))[0] + timedelta(hours=6),
         assign_to_all=True, is_required=True,
     )
     task.is_published = True
@@ -140,6 +141,37 @@ def test_second_upload_adds_a_file_and_keeps_one_submission(auth_client, db):
 
     assert db.query(TaskBlockSubmission).count() == 1
     assert db.query(TaskBlockSubmissionImage).count() == 2
+
+
+def test_student_can_edit_description_and_remove_photo(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user)
+    block = _upload_block(db, task)
+    _post(client, block.id, comment="Первый вариант")
+    _post(client, block.id)
+    submission = get_submission(db, block_id=block.id, user_id=user.id)
+    images = db.query(TaskBlockSubmissionImage).filter_by(submission_id=submission.id).order_by(TaskBlockSubmissionImage.id).all()
+
+    edited = client.post(f"/cabinet/tracker/blocks/{block.id}/comment", json={"comment": "Исправил описание"})
+    deleted = client.post(f"/cabinet/tracker/blocks/{block.id}/images/{images[0].id}/delete")
+
+    assert edited.status_code == 200
+    assert deleted.status_code == 200
+    db.refresh(submission)
+    assert submission.comment == "Исправил описание"
+    assert db.query(TaskBlockSubmissionImage).filter_by(submission_id=submission.id).count() == 1
+
+
+def test_deadline_blocks_first_upload_and_edit(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user)
+    block = _upload_block(db, task)
+    block.closes_at = day_bounds(TODAY - timedelta(days=1))[0]
+    db.commit()
+
+    assert _post(client, block.id).status_code == 409
+    assert get_submission(db, block_id=block.id, user_id=user.id) is None
+    assert client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()["blocks"][0]["edit_reason"]
 
 
 def test_limit_of_files_is_enforced(auth_client, db):
@@ -343,8 +375,8 @@ def test_curator_can_save_editable_feedback_for_work(admin_client, db, regular_u
     assert work.review_comment == "Сильная работа"
 
 
-def test_new_upload_returns_the_work_to_the_queue(auth_client, db):
-    """Догрузил лист — работа снова ждёт куратора, а не висит проверенной."""
+def test_reviewed_work_cannot_be_changed(auth_client, db):
+    """После проверки работа остаётся неизменной даже до дедлайна."""
     client, user = auth_client
     task = _task(db, user)
     block = _upload_block(db, task)
@@ -355,12 +387,30 @@ def test_new_upload_returns_the_work_to_the_queue(auth_client, db):
     submission.scored_at = submission.created_at
     db.commit()
 
-    _post(client, block.id)
+    response = _post(client, block.id)
 
     db.refresh(submission)
-    assert submission.reviewed_at is None
-    assert submission.score is None
-    assert submission.scored_at is None
+    assert response.status_code == 409
+    assert submission.reviewed_at is not None
+    assert submission.score == 91
+    assert submission.scored_at is not None
+
+
+def test_curator_reply_locks_work_before_review_flag(auth_client, db, user_factory):
+    client, user = auth_client
+    task = _task(db, user)
+    block = _upload_block(db, task)
+    _post(client, block.id)
+    submission = get_submission(db, block_id=block.id, user_id=user.id)
+    curator = user_factory(vk_id=777_022, name="Куратор", role_name="куратор")
+    feedback = TaskBlockFeedback(submission_id=submission.id, curator_id=curator.id)
+    db.add(feedback)
+    db.flush()
+    db.add(TaskBlockFeedbackMessage(feedback_id=feedback.id, sender_id=curator.id, sender_role="curator", text="Исправь"))
+    db.commit()
+
+    assert _post(client, block.id).status_code == 409
+    assert client.post(f"/cabinet/tracker/blocks/{block.id}/comment", json={"comment": "Исправил"}).status_code == 409
 
 
 # ── конструктор ─────────────────────────────────────────────────────────────
