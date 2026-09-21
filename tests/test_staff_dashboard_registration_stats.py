@@ -8,7 +8,7 @@ from app.constants import (
 from app.models.role import Role
 from app.models.session import Session
 from app.models.user import User
-from app.models.work import Work, WORK_TYPE_BEFORE
+from app.models.work import Work, WORK_TYPE_AFTER, WORK_TYPE_BEFORE
 from app.services.staff_dashboard import (
     REGISTRATION_STATS_SINCE,
     build_tariff_registration_csv,
@@ -128,4 +128,38 @@ def test_student_activity_overview_tracks_logins_and_portfolio_uploads(db, user_
     assert row["first_login"].replace(tzinfo=timezone.utc) == first_login
     assert row["last_login"].replace(tzinfo=timezone.utc) == last_login
     assert row["upload_count"] == 1
+    assert row["has_portfolio_before"] is True
     assert row["last_upload"].replace(tzinfo=timezone.utc) == last_login
+
+
+def test_student_activity_portfolio_flag_uses_successful_before_work_and_active_students(
+    db, user_factory
+):
+    after_only = user_factory(vk_id=810_102, name="After Only")
+    failed_before = user_factory(vk_id=810_103, name="Failed Before")
+    inactive = user_factory(vk_id=810_104, name="Inactive", is_active=False)
+    db.add_all([
+        Work(
+            user_id=after_only.id,
+            work_type=WORK_TYPE_AFTER,
+            month="Сентябрь",
+            year=2026,
+            filename="after.jpg",
+            status="success",
+        ),
+        Work(
+            user_id=failed_before.id,
+            work_type=WORK_TYPE_BEFORE,
+            month="Сентябрь",
+            year=2026,
+            filename="failed.jpg",
+            status="failed",
+        ),
+    ])
+    db.commit()
+
+    rows = {item["id"]: item for item in get_student_activity_overview(db)["students"]}
+
+    assert rows[after_only.id]["has_portfolio_before"] is False
+    assert rows[failed_before.id]["has_portfolio_before"] is False
+    assert inactive.id not in rows

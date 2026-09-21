@@ -29,11 +29,87 @@
 {% elif view == 'activity' %}
 <section class="panel panel--student-activity" aria-labelledby="student-activity-title">
     <div class="panel-header"><h2 class="panel-title" id="student-activity-title">Активность учеников</h2><span class="sfd-meta-text">Входы, загрузки и журнал действий</span></div>
-    <details class="student-activity-block" open><summary>Сводка по ученикам <span>{{ student_activity.students | length }}</span></summary>
+    <details class="student-activity-block" open data-activity-portfolio>
+        <summary>Сводка по ученикам <span data-activity-count>{{ student_activity.students | length }}</span></summary>
+        <div class="student-activity-tools">
+            <label for="activity-portfolio-filter">Портфолио
+                <select id="activity-portfolio-filter" data-activity-filter>
+                    <option value="all">Все</option>
+                    <option value="missing">Не загрузили</option>
+                    <option value="uploaded">Загрузили</option>
+                </select>
+            </label>
+            <button type="button" class="student-activity-copy" data-activity-copy>Скопировать имена и username</button>
+            <span class="student-activity-copy-status" data-activity-copy-status role="status" aria-live="polite"></span>
+        </div>
         <div class="student-activity-table-wrap"><table class="student-activity-table"><thead><tr><th>Ученик</th><th>Регистрация</th><th>Последний вход</th><th>Входов</th><th>Портфолио</th><th>Последняя загрузка</th></tr></thead><tbody>
-        {% for student in student_activity.students %}<tr><td><strong>{{ student.name }}</strong><small>{{ student.username }} · {{ student.tariff }}</small></td><td>{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td><td>{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td><td>{{ student.login_count }}</td><td><strong>{{ student.upload_count }}</strong></td><td>{{ student.last_upload.strftime('%d.%m.%Y %H:%M') if student.last_upload else 'Не загружал' }}</td></tr>{% else %}<tr><td colspan="6">Нет данных.</td></tr>{% endfor %}
+        {% for student in student_activity.students %}<tr data-activity-student data-portfolio-uploaded="{{ '1' if student.has_portfolio_before else '0' }}" data-student-name="{{ student.name }}" data-student-username="{{ student.username if student.username.startswith('@') else '' }}"><td><strong>{{ student.name }}</strong><small>{{ student.username }} · {{ student.tariff }}</small></td><td>{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td><td>{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td><td>{{ student.login_count }}</td><td><strong>{{ student.upload_count }}</strong></td><td>{{ student.last_upload.strftime('%d.%m.%Y %H:%M') if student.last_upload else 'Не загружал' }}</td></tr>{% endfor %}
+        <tr data-activity-empty hidden><td colspan="6">По этому фильтру учеников нет.</td></tr>
         </tbody></table></div>
     </details>
     <details class="student-activity-block"><summary>Журнал действий <span>{{ student_activity.events | length }}</span></summary><div class="student-activity-table-wrap"><table class="student-activity-table student-activity-table--journal"><thead><tr><th>Когда</th><th>Ученик</th><th>Действие</th><th>Детали</th></tr></thead><tbody>{% for event in student_activity.events %}<tr><td>{{ event.created_at.strftime('%d.%m.%Y %H:%M') if event.created_at else '—' }}</td><td>{{ event.student_name }}<small>{{ event.username }}</small></td><td>{{ event.action }}</td><td>{{ event.details or '—' }}</td></tr>{% else %}<tr><td colspan="4">Журнал пуст.</td></tr>{% endfor %}</tbody></table></div></details>
 </section>
+<script>
+(function () {
+    const root = document.querySelector('[data-activity-portfolio]');
+    if (!root) return;
+    const filter = root.querySelector('[data-activity-filter]');
+    const rows = Array.from(root.querySelectorAll('[data-activity-student]'));
+    const count = root.querySelector('[data-activity-count]');
+    const empty = root.querySelector('[data-activity-empty]');
+    const copyButton = root.querySelector('[data-activity-copy]');
+    const status = root.querySelector('[data-activity-copy-status]');
+
+    function visibleRows() {
+        return rows.filter(function (row) { return !row.hidden; });
+    }
+
+    function applyFilter() {
+        const value = filter.value;
+        rows.forEach(function (row) {
+            const uploaded = row.dataset.portfolioUploaded === '1';
+            row.hidden = (value === 'missing' && uploaded) || (value === 'uploaded' && !uploaded);
+        });
+        const visible = visibleRows().length;
+        count.textContent = visible;
+        empty.hidden = visible !== 0;
+        copyButton.disabled = visible === 0;
+        status.textContent = '';
+    }
+
+    function fallbackCopy(text) {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copied = document.execCommand('copy');
+        textarea.remove();
+        return copied;
+    }
+
+    copyButton.addEventListener('click', async function () {
+        const text = visibleRows().map(function (row) {
+            const username = row.dataset.studentUsername;
+            return row.dataset.studentName + (username ? ' – ' + username : '');
+        }).join('\n');
+        if (!text) return;
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+            } else if (!fallbackCopy(text)) {
+                throw new Error('copy failed');
+            }
+            status.textContent = 'Скопировано';
+        } catch (error) {
+            status.textContent = 'Не удалось скопировать';
+        }
+    });
+
+    filter.addEventListener('change', applyFilter);
+    applyFilter();
+})();
+</script>
 {% endif %}

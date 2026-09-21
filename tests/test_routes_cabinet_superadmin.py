@@ -630,6 +630,43 @@ def test_admin_users_page_has_quick_tariff_control_and_newcomer_tag(
     assert "Новенький" in regular_row
 
 
+def test_admin_activity_page_has_portfolio_filter_and_copy_action(
+    client, db, user_factory, session_factory
+):
+    chief_teacher = user_factory(
+        vk_id=900216, name="Chief Teacher Activity", role_name="админ"
+    )
+    session = session_factory(chief_teacher)
+    client.cookies.set("session_id", session.id)
+    missing = user_factory(
+        vk_id=900217, name="Missing Portfolio", role_name="ученик"
+    )
+    missing.tg_username = "missing_portfolio"
+    uploaded = user_factory(
+        vk_id=900218, name="Uploaded Portfolio", role_name="ученик"
+    )
+    db.add(Work(
+        user_id=uploaded.id,
+        work_type="before",
+        month="Сентябрь",
+        year=2026,
+        filename="portfolio.jpg",
+        status="success",
+    ))
+    db.commit()
+
+    page = client.get("/cabinet/superadmin/users?view=activity").text
+
+    assert 'data-activity-filter' in page
+    assert '<option value="missing">Не загрузили</option>' in page
+    assert 'data-activity-copy' in page
+    missing_row = page.split('data-student-name="Missing Portfolio"', 1)[0].rsplit("<tr", 1)[1]
+    uploaded_row = page.split('data-student-name="Uploaded Portfolio"', 1)[0].rsplit("<tr", 1)[1]
+    assert 'data-portfolio-uploaded="0"' in missing_row
+    assert 'data-student-username="@missing_portfolio"' in page
+    assert 'data-portfolio-uploaded="1"' in uploaded_row
+
+
 def test_superadmin_quick_tariff_update_changes_student_tariff(
     superadmin_client, db, user_factory
 ):

@@ -171,7 +171,13 @@ def get_student_activity_overview(db: DBSession, event_limit: int = 200) -> dict
     students = (
         db.query(User)
         .join(Role, User.role_id == Role.id)
-        .filter(Role.rank == 1, User.id.notin_(REGISTRATION_STATS_EXCLUDED_USER_IDS))
+        .filter(
+            Role.rank == 1,
+            User.id.notin_(REGISTRATION_STATS_EXCLUDED_USER_IDS),
+            User.is_active.is_(True),
+            User.deleted_at.is_(None),
+            User.archived_at.is_(None),
+        )
         .order_by(User.last_name, User.first_name, User.id)
         .all()
     )
@@ -207,6 +213,19 @@ def get_student_activity_overview(db: DBSession, event_limit: int = 200) -> dict
     )
     login_by_user = {row.user_id: row for row in login_rows}
     upload_by_user = {row.user_id: row for row in upload_rows}
+    portfolio_before_user_ids = {
+        row.user_id
+        for row in (
+            db.query(Work.user_id)
+            .filter(
+                Work.user_id.in_(student_ids),
+                Work.status == "success",
+                Work.work_type == WORK_TYPE_BEFORE,
+            )
+            .distinct()
+            .all()
+        )
+    }
     events = (
         db.query(StudentActivityEvent, User)
         .join(User, StudentActivityEvent.user_id == User.id)
@@ -234,6 +253,7 @@ def get_student_activity_overview(db: DBSession, event_limit: int = 200) -> dict
             "last_login": login.last_login if login else None,
             "login_count": int(login.login_count) if login else 0,
             "upload_count": int(upload.upload_count) if upload else 0,
+            "has_portfolio_before": student.id in portfolio_before_user_ids,
             "first_upload": upload.first_upload if upload else None,
             "last_upload": upload.last_upload if upload else None,
             "last_action_at": latest_event.created_at if latest_event else (login.last_login if login else None),
