@@ -154,6 +154,19 @@
     </div>
     {% endif %}
 
+    {% if archi_profile %}
+    <div class="prs-section-title">Мой АРХИ-ПРОФИЛЬ</div>
+    <div class="prs-group">
+        <div class="prs-row prs-row--stacked">
+            <strong>{{ archi_profile.title }}</strong>
+            <span class="prs-row-label">{{ archi_profile.traits }}</span>
+            <p class="prs-skill-desc">{{ archi_profile.formula }}</p>
+            <p class="prs-skill-desc">Похожие черты можно увидеть в работах: {{ archi_profile.architects }}. Архитекторы часто сочетают разные профили.</p>
+            <p class="prs-skill-desc">Твои ответы: {{ archi_profile.combination }}. Профиль может меняться с опытом.</p>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="prs-section-title">Аккаунт</div>
     <div class="prs-actions">
         {{ notif_gear_widget(label='Настройки') }}

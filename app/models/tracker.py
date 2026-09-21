@@ -57,12 +57,13 @@ ITEM_SURVEY = "survey"        # анкета
 ITEM_LESSON = "lesson"        # занятие или эфир
 ITEM_MATERIAL = "material"    # материалы недели
 ITEM_QUIZ = "quiz"            # тест по теории
+ITEM_ARCHI_PROFILE = "archi_profile"  # стартовая диагностика АРХИ-ПРОФИЛЯ
 ITEM_CHECKLIST = "checklist"  # чек-лист и проверки
 ITEM_OTHER = "other"          # всё остальное, в том числе разовые задачи вне недели
 
 ITEM_KINDS = (
     ITEM_VIDEO, ITEM_HOMEWORK, ITEM_MOCK_EXAM, ITEM_SURVEY, ITEM_LESSON,
-    ITEM_MATERIAL, ITEM_QUIZ, ITEM_CHECKLIST, ITEM_OTHER,
+    ITEM_MATERIAL, ITEM_QUIZ, ITEM_ARCHI_PROFILE, ITEM_CHECKLIST, ITEM_OTHER,
 )
 
 # Подписи рядом с типами: их показывают и конструктор, и календарь программы, и
@@ -75,6 +76,7 @@ ITEM_KIND_LABELS = {
     ITEM_LESSON: "Занятие",
     ITEM_MATERIAL: "Материал",
     ITEM_QUIZ: "Тест по теории",
+    ITEM_ARCHI_PROFILE: "Диагностика АРХИ-ПРОФИЛЯ",
     ITEM_CHECKLIST: "Чек-лист и проверки",
     ITEM_OTHER: "Другое",
 }

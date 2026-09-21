@@ -48,6 +48,9 @@ from app.constants import TARIFF_DISPLAY, MONTHS, PAYMENT_URL, SUPPORT_URL, TIME
 from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
 from app.models.user import User
+from app.models.tracker import ITEM_ARCHI_PROFILE, TrackerTask
+from app.models.task_block import TaskBlockResponse
+from app.services.archi_profile import result_for_answers
 from app.services.skills_history import skills_history
 from app.services import telegram as telegram_service
 from app.services.tz import msk_text, today_msk
@@ -98,6 +101,25 @@ def cabinet_personal(
     if not user.get("access_expired") and needs_profile_setup(user):
         return RedirectResponse("/cabinet/profile", status_code=302)
 
+    diagnostic_responses = (
+        db.query(TaskBlockResponse)
+        .join(TrackerTask, TrackerTask.id == TaskBlockResponse.task_id)
+        .filter(
+            TaskBlockResponse.user_id == user["user_id"],
+            TrackerTask.kind == ITEM_ARCHI_PROFILE,
+        )
+        .order_by(TaskBlockResponse.updated_at.desc(), TaskBlockResponse.id.desc())
+        .all()
+    )
+    archi_profile = next(
+        (
+            result
+            for response in diagnostic_responses
+            if (result := result_for_answers(db, response.task_id, user["user_id"]))
+        ),
+        None,
+    )
+
     return templates.TemplateResponse(request, "cabinet_personal.html", {
         "request": request,
         "user": user,
@@ -108,6 +130,7 @@ def cabinet_personal(
         # Динамика самооценки навыков (владелец 03.09.2026): «в начале
         # обучения было так, в середине уже вот так» — сравнение по датам.
         "skills": skills_history(db, user["user_id"]),
+        "archi_profile": archi_profile,
     })
 
 

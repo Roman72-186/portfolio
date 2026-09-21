@@ -51,6 +51,7 @@ from app.services.task_blocks import (
 from app.services.cycle_stats import cycle_stats
 from app.services.video_catalog import publish_video
 from app.models.tracker import (
+    ITEM_ARCHI_PROFILE,
     ITEM_CHECKLIST,
     ITEM_HOMEWORK,
     ITEM_KIND_LABELS,
@@ -64,6 +65,11 @@ from app.models.tracker import (
     SOURCE_HOMEWORK,
     SOURCE_LEARNING_TOPIC,
     TrackerTask,
+)
+from app.services.archi_profile import (
+    INTRO as ARCHI_INTRO,
+    QUESTIONS as ARCHI_QUESTIONS,
+    TITLE as ARCHI_TITLE,
 )
 from app.services import s3 as s3_service
 from app.services.exam_tickets import (
@@ -188,6 +194,7 @@ MONTH_NAMES = (
 # `MOCK_EXAM_DEFAULT_DURATION_MINUTES` (240, то есть 4 часа) на работу.
 PROGRAM_ITEM_PRESETS = [
     {"kind": ITEM_MATERIAL, "label": "Задание", "icon": "📄", "hint": "Любое содержимое: текст, фото, видео, ссылка, вопросы", "capability": "generic", "default_block": "text"},
+    {"kind": ITEM_ARCHI_PROFILE, "label": "Диагностика", "icon": "◈", "hint": "Три вопроса и личный АРХИ-ПРОФИЛЬ"},
 ]
 
 # Виды, для которых на экране дня рендерится универсальная форма. Шире, чем
@@ -195,6 +202,7 @@ PROGRAM_ITEM_PRESETS = [
 # анкет, тестов, занятий и чек-листов должна открываться по-прежнему —
 # кнопка «Изменить» ищет форму по `data-form="{kind}"`.
 PROGRAM_ITEM_FORM_KINDS = [
+    {"kind": ITEM_ARCHI_PROFILE, "label": "Диагностика АРХИ-ПРОФИЛЯ", "hint": "Три готовых вопроса. После ответов ученик увидит профиль, результат сохранится в личной информации."},
     # `mock_capable` включает внутри формы секцию билетов: только у «Задания»,
     # потому что остальные виды здесь лишь правятся, а не заводятся.
     {"kind": ITEM_MATERIAL, "label": "Задание", "hint": "Любое содержимое: текст, фото, видео, ссылка, вопросы", "mock_capable": True},
@@ -240,11 +248,12 @@ def _edit_payloads(
     for item in items:
         if item.kind not in (
             ITEM_VIDEO, ITEM_HOMEWORK, ITEM_MATERIAL, ITEM_QUIZ, ITEM_LESSON, ITEM_CHECKLIST,
-            ITEM_MOCK_EXAM, ITEM_SURVEY,
+            ITEM_MOCK_EXAM, ITEM_SURVEY, ITEM_ARCHI_PROFILE,
         ):
             continue
         detail = details.get(item.id, {})
         payload: dict = {
+            "kind": item.kind,
             "title": item.title,
             "description": item.description or "",
             "subject": item.subject,
@@ -860,6 +869,9 @@ def program_cycle_items(
             "items": items,
             "edit_payloads": _edit_payloads(db, items, {t.id: {} for t in items}),
             "kind_labels": ITEM_KIND_LABELS,
+            "archi_questions": ARCHI_QUESTIONS,
+            "archi_title": ARCHI_TITLE,
+            "archi_intro": ARCHI_INTRO,
             "subjects": MOCK_SUBJECTS,
             "question_types": [
                 {"value": t, "label": QUESTION_TYPE_LABELS[t]} for t in QUESTION_TYPES
@@ -888,6 +900,21 @@ def create_cycle_material_item(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
+    return _create_cycle_item(topic_id, payload, user, db, ITEM_MATERIAL)
+
+
+@router.post("/cycles/{topic_id}/items/archi_profile", response_class=JSONResponse)
+def create_cycle_archi_profile_item(
+    topic_id: int,
+    payload: CycleItemPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    return _create_cycle_item(topic_id, payload, user, db, ITEM_ARCHI_PROFILE)
+
+
+def _create_cycle_item(topic_id: int, payload: CycleItemPayload, user: dict, db: DBSession, kind: str):
     """Новое задание в цикле — без дня и без своей темы: `topic_id` ставится
     прямо на цикл (`LearningTopic(kind='week')`), а не на одноразовую тему
     элемента, как это делает `ensure_item_topic` на дне (владелец 10.09.2026:
@@ -904,8 +931,8 @@ def create_cycle_material_item(
         due_at=None,
         subject=payload.subject,
         topic_id=topic.id,
-        kind=ITEM_MATERIAL,
-        is_required=payload.is_required,
+        kind=kind,
+        is_required=True if kind == ITEM_ARCHI_PROFILE else payload.is_required,
         sort_order=next_sort_order_in_topic(db, topic.id),
         user_id=user["user_id"],
     )
@@ -915,9 +942,12 @@ def create_cycle_material_item(
     )
     task.is_published = True
     db.flush()
-    sync_task_blocks(
-        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
-    )
+    if kind == ITEM_ARCHI_PROFILE:
+        from app.services.archi_profile import preset_blocks
+        block_items = preset_blocks()
+    else:
+        block_items = [b.model_dump() for b in payload.blocks]
+    sync_task_blocks(db, task_id=task.id, items=block_items)
     db.add(
         AuditLog(
             action="program_cycle_item_create",
@@ -1092,10 +1122,13 @@ def program_day(
             # _edit_payloads: только пока шаблон стоит ровно в одном дне).
             "editable_kinds": [
                 ITEM_VIDEO, ITEM_HOMEWORK, ITEM_MATERIAL, ITEM_QUIZ, ITEM_LESSON, ITEM_CHECKLIST,
-                ITEM_MOCK_EXAM, ITEM_SURVEY,
+                ITEM_MOCK_EXAM, ITEM_SURVEY, ITEM_ARCHI_PROFILE,
             ],
             "edit_payloads": _edit_payloads(db, items, details),
             "kind_labels": ITEM_KIND_LABELS,
+            "archi_questions": ARCHI_QUESTIONS,
+            "archi_title": ARCHI_TITLE,
+            "archi_intro": ARCHI_INTRO,
             "item_presets": PROGRAM_ITEM_PRESETS,
             "item_form_kinds": PROGRAM_ITEM_FORM_KINDS,
             "subjects": MOCK_SUBJECTS,
@@ -1925,6 +1958,7 @@ def create_homework_item(
 
 
 _SIMPLE_ITEM_TOPIC_PREFIX = {
+    ITEM_ARCHI_PROFILE: "Диагностика",
     ITEM_MATERIAL: "Материал",
     ITEM_QUIZ: "Тест по теории",
     ITEM_LESSON: "Занятие",
@@ -1977,7 +2011,7 @@ def _create_simple_item(
         subject=payload.subject,
         topic_id=topic.id,
         kind=kind,
-        is_required=payload.is_required,
+        is_required=True if kind == ITEM_ARCHI_PROFILE else payload.is_required,
         user_id=user["user_id"],
     )
     # Полночь МСК выбранной даты, в UTC: колонка `DateTime(timezone=True)`, и
@@ -1988,9 +2022,12 @@ def _create_simple_item(
     )
     task.is_published = True
     db.flush()
-    sync_task_blocks(
-        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
-    )
+    if kind == ITEM_ARCHI_PROFILE:
+        from app.services.archi_profile import preset_blocks
+        block_items = preset_blocks()
+    else:
+        block_items = [b.model_dump() for b in payload.blocks]
+    sync_task_blocks(db, task_id=task.id, items=block_items)
     db.add(
         AuditLog(
             action=f"program_{kind}_create",
@@ -2024,6 +2061,17 @@ def create_quiz_item(
     """Тест по теории — отдельная вкладка недели, не путать с мини-опросом
     из трёх вопросов после видео (`app/models/video_quiz.py`)."""
     return _create_simple_item(iso, ITEM_QUIZ, payload, user, db)
+
+
+@router.post("/{iso}/archi_profile", response_class=JSONResponse)
+def create_archi_profile_item(
+    iso: str,
+    payload: SimpleItemPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    return _create_simple_item(iso, ITEM_ARCHI_PROFILE, payload, user, db)
 
 
 @router.post("/{iso}/lesson", response_class=JSONResponse)
@@ -2357,13 +2405,14 @@ def _update_simple_item(
         subject=payload.subject,
         assign_to_all=task.assign_to_all,
         kind=kind,
-        is_required=payload.is_required,
+        is_required=True if kind == ITEM_ARCHI_PROFILE else payload.is_required,
     )
     # Полный текущий список, не дельта (та же семантика, что у остальных
     # полей формы) — пустой список на правке чистит мини-опрос целиком.
-    sync_task_blocks(
-        db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
-    )
+    if kind != ITEM_ARCHI_PROFILE:
+        sync_task_blocks(
+            db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
+        )
     db.add(
         AuditLog(
             action=f"program_{kind}_update",
@@ -2395,6 +2444,17 @@ def update_quiz_item(
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
     return _update_simple_item(task_id, ITEM_QUIZ, payload, user, db)
+
+
+@router.post("/items/{task_id}/archi_profile", response_class=JSONResponse)
+def update_archi_profile_item(
+    task_id: int,
+    payload: SimpleItemPayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    return _update_simple_item(task_id, ITEM_ARCHI_PROFILE, payload, user, db)
 
 
 @router.post("/items/{task_id}/lesson", response_class=JSONResponse)

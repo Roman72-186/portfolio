@@ -50,6 +50,17 @@ scope)` и свойством `answered` (одна попытка: после о
 
     window.lrnBlockRender = {
         el: el,
+        profileResult: function (profile) {
+            var wrap = el('section', 'lrn-blk lrn-blk-profile');
+            wrap.setAttribute('aria-label', 'Результат диагностики АРХИ-ПРОФИЛЯ');
+            wrap.appendChild(el('p', 'lrn-card-note', 'Твой АРХИ-ПРОФИЛЬ на данный момент'));
+            wrap.appendChild(el('h4', 'lrn-blk-title', profile.title));
+            wrap.appendChild(el('p', 'lrn-blk-body', profile.traits));
+            wrap.appendChild(el('p', 'lrn-blk-body', profile.formula));
+            wrap.appendChild(el('p', 'lrn-card-note', 'Похожие черты можно увидеть в работах: ' + profile.architects + '. Архитекторы часто сочетают разные профили.'));
+            wrap.appendChild(el('p', 'lrn-card-note', 'Твои ответы: ' + profile.combination + '. Профиль может меняться с опытом.'));
+            return wrap;
+        },
         create: function (options) {
             var csrfToken = (options || {}).csrfToken;
             // Локальной переменной, не полем `api`: снаружи флаг никто не
@@ -846,6 +857,7 @@ scope)` и свойством `answered` (одна попытка: после о
                 var chosen = block.answer_option_ids || [];
                 (block.options || []).forEach(function (option, oi) {
                     var row = el('label', 'lrn-blk-option');
+                    if (option.description) row.classList.add('lrn-blk-option--detailed');
                     var input = el('input');
                     input.type = multiple ? 'checkbox' : 'radio';
                     input.name = fieldId + (multiple ? '-' + oi : '');
@@ -854,7 +866,14 @@ scope)` и свойством `answered` (одна попытка: после о
                     input.setAttribute('data-answer-option', block.id);
                     input.disabled = !!block.edit_reason;
                     row.appendChild(input);
-                    row.appendChild(el('span', null, option.text));
+                    var optionCopy = el('span');
+                    if (option.description) {
+                        optionCopy.appendChild(el('strong', null, option.text));
+                        optionCopy.appendChild(el('span', 'lrn-card-note', option.description));
+                    } else {
+                        optionCopy.textContent = option.text;
+                    }
+                    row.appendChild(optionCopy);
                     wrap.appendChild(row);
                 });
                 var mark = verdictMark(block);

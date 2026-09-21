@@ -41,6 +41,7 @@ from app.models.task_block import (
     TaskBlockSubmissionImage,
 )
 from app.models.tracker import (
+    ITEM_ARCHI_PROFILE,
     ITEM_HOMEWORK,
     ITEM_MOCK_EXAM,
     STATUS_DONE,
@@ -210,9 +211,12 @@ def cabinet_tracker_toggle(
         block for block in task_question_blocks(get_task_blocks(db, task_id))
         if not block.hidden_until_done
     ]
-    if pending and get_task_block_response(
-        db, task_id=task_id, user_id=user["user_id"]
-    ) is None:
+    response = get_task_block_response(db, task_id=task_id, user_id=user["user_id"])
+    if task.kind == ITEM_ARCHI_PROFILE:
+        from app.services.archi_profile import result_for_answers
+        if result_for_answers(db, task_id, user["user_id"]) is None:
+            raise HTTPException(status_code=409, detail="Сначала ответь на три вопроса диагностики")
+    elif pending and response is None:
         raise HTTPException(
             status_code=409, detail="Сначала ответь на вопросы задания"
         )
@@ -472,6 +476,10 @@ def cabinet_tracker_task_blocks(
     correct_by_block = (
         {r["block_id"]: r["is_correct"] for r in verdict["results"]} if verdict else {}
     )
+    profile_result = None
+    if task.kind == ITEM_ARCHI_PROFILE:
+        from app.services.archi_profile import result_for_answers
+        profile_result = result_for_answers(db, task_id, user["user_id"])
 
     payload = []
     for block in blocks:
@@ -612,7 +620,7 @@ def cabinet_tracker_task_blocks(
                 # правильный ответ в теле ответа сервера. `requires_text`
                 # нужен фронту, чтобы понять, под каким вариантом раскрывать
                 # поле свободного текста (владелец 05.09.2026).
-                {"id": o.id, "text": o.text, "requires_text": o.requires_text}
+                {"id": o.id, "text": o.text, "description": o.description if task.kind == ITEM_ARCHI_PROFILE else None, "requires_text": o.requires_text}
                 for o in options.get(block.id, [])
             ]
             item["answer_text"] = answers_map.get(block.id, "")
@@ -625,7 +633,7 @@ def cabinet_tracker_task_blocks(
             item["is_correct"] = correct_by_block.get(block.id)
             item["edit_reason"] = (
                 deadline_reason(task, block)
-                or ("Этот ответ уже проверен системой." if block.question_type != QUESTION_TEXT and block.id in answered_ids else None)
+                or (("Ответ сохранён." if task.kind == ITEM_ARCHI_PROFILE else "Этот ответ уже проверен системой.") if block.question_type != QUESTION_TEXT and block.id in answered_ids else None)
                 or ("Преподаватель уже проверил ответ." if response and db.query(TaskBlockAnswer.id).filter(
                     TaskBlockAnswer.response_id == response.id,
                     TaskBlockAnswer.block_id == block.id,
@@ -654,6 +662,8 @@ def cabinet_tracker_task_blocks(
     ]
     return JSONResponse({
         "blocks": payload,
+        "is_archi_profile": task.kind == ITEM_ARCHI_PROFILE,
+        "questions_left_count": len(questions_left),
         "has_questions": bool(questions),
         # Одна попытка (владелец 31.08.2026): ответил — форма закрывается.
         # Иначе, увидев «неверно», можно было бы переотправить до победы, и
@@ -665,6 +675,7 @@ def cabinet_tracker_task_blocks(
         ),
         "correct_count": verdict["correct_count"] if verdict else None,
         "gradable_count": verdict["gradable_count"] if verdict else None,
+        "archi_profile": profile_result,
     })
 
 
@@ -948,6 +959,12 @@ def submit_cabinet_tracker_task_blocks(
         raise HTTPException(status_code=422, detail="Ответ на чужой вопрос")
     if not payload.answers:
         raise HTTPException(status_code=422, detail="Нет ответов для сохранения")
+    if task.kind == ITEM_ARCHI_PROFILE:
+        if len({answer.block_id for answer in payload.answers}) != len(payload.answers):
+            raise HTTPException(status_code=422, detail="Один ответ на каждый вопрос")
+        for answer in payload.answers:
+            if len(answer.option_ids) != 1 or answer.text:
+                raise HTTPException(status_code=422, detail="Выбери один вариант в каждом вопросе")
     for answer in payload.answers:
         block = next(b for b in visible if b.id == answer.block_id)
         reason = deadline_reason(task, block)

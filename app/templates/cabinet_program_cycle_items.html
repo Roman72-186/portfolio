@@ -17,13 +17,13 @@
 {# Предпросмотр «Глазами ученика» рисует блоки общим рендерером ученика, а
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
    показывались бы голой разметкой (см. cabinet_program_day.html). #}
-<link rel="stylesheet" href="/static/css/tracker.css?v=59">
+<link rel="stylesheet" href="/static/css/tracker.css?v=60">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
-<script src="/static/js/task-blocks-render.js?v=19"></script>
+<script src="/static/js/task-blocks-render.js?v=20"></script>
 {# WYSIWYG для полей с разметкой — стоит до `program_blocks_editor_js.html`. #}
 <script src="/static/js/rich-text-field.js?v=2"></script>
 <div class="prg-page ios-prg-day" data-topic="{{ topic.id }}">
@@ -48,6 +48,10 @@
                 <strong>Задание</strong>
                 <small>Любое содержимое: текст, фото, видео, ссылка, вопросы</small>
             </span>
+        </button>
+        <button type="button" class="prg-tile" data-open-diagnostic>
+            <span class="prg-tile-icon" aria-hidden="true">◈</span>
+            <span><strong>Диагностика</strong><small>Три вопроса и личный АРХИ-ПРОФИЛЬ</small></span>
         </button>
     </div>
 
@@ -82,6 +86,16 @@
             <span class="prg-hint">Пусто – задание видно сразу после публикации.</span>
         </label>
 
+        <div data-diagnostic-note hidden>
+            <p class="prg-hint">Три готовых вопроса появятся у ученика. После ответов он увидит свой профиль; результат сохранится в личной информации.</p>
+            <details class="prg-hint">
+                <summary>Посмотреть готовые вопросы</summary>
+                {% for body, options in archi_questions %}
+                <p><strong>Вопрос {{ loop.index }}.</strong> {{ body }}</p>
+                <ol>{% for option in options %}<li>{{ option }}</li>{% endfor %}</ol>
+                {% endfor %}
+            </details>
+        </div>
         <div class="prg-blocks" data-blocks-wrap>
             <h3>Задачи учебного дня</h3>
             <p class="prg-hint">Добавьте, что должен увидеть ученик: видео из загруженных, ссылку, вопрос, фото для примеров, домашнее задание. Порядок меняется стрелками ↑ ↓.</p>
@@ -101,7 +115,7 @@
            11.09.2026): куратор собирает задание вслепую, а увидеть глазами
            ученика можно только сохранив и зайдя под ним. Рисуем прямо из
            формы, ничего не сохраняя. #}
-        <div class="prg-actions prg-blocks-take">
+        <div class="prg-actions prg-blocks-take" data-preview-wrap>
             <button type="button" class="btn-outline" data-preview-blocks>Глазами ученика</button>
         </div>
         <div class="prg-preview" data-preview hidden></div>
@@ -330,6 +344,11 @@ function uploadBlockPhotos(row, files) {
     }
 
     function resetForm() {
+        form.dataset.itemKind = 'material';
+        fields.required.closest('.prg-field').hidden = false;
+        form.querySelector('[data-blocks-wrap]').hidden = false;
+        form.querySelector('[data-preview-wrap]').hidden = false;
+        form.querySelector('[data-diagnostic-note]').hidden = true;
         fields.id.value = '';
         fields.title.value = '';
         fields.subject.value = '';
@@ -351,6 +370,19 @@ function uploadBlockPhotos(row, files) {
         resetForm();
         openForm();
     });
+    document.querySelector('[data-open-diagnostic]').addEventListener('click', function () {
+        resetForm();
+        form.dataset.itemKind = 'archi_profile';
+        fields.required.closest('.prg-field').hidden = true;
+        fields.title.value = {{ archi_title|tojson }};
+        fields.description.value = {{ archi_intro|tojson }};
+        window.RichTextField.refresh(fields.description);
+        form.querySelector('[data-blocks-wrap]').hidden = true;
+        form.querySelector('[data-preview-wrap]').hidden = true;
+        form.querySelector('[data-diagnostic-note]').hidden = false;
+        formTitle.textContent = 'Новая диагностика';
+        openForm();
+    });
 
     form.querySelector('[data-form-cancel]').addEventListener('click', function () {
         form.hidden = true;
@@ -362,6 +394,13 @@ function uploadBlockPhotos(row, files) {
             var data = editPayloads[itemId];
             if (!data) return;
             resetForm();
+            form.dataset.itemKind = data.kind || 'material';
+            if (form.dataset.itemKind === 'archi_profile') {
+                fields.required.closest('.prg-field').hidden = true;
+                form.querySelector('[data-blocks-wrap]').hidden = true;
+                form.querySelector('[data-preview-wrap]').hidden = true;
+                form.querySelector('[data-diagnostic-note]').hidden = false;
+            }
             fields.id.value = itemId;
             fields.title.value = data.title || '';
             fields.subject.value = data.subject || '';
@@ -370,7 +409,7 @@ function uploadBlockPhotos(row, files) {
             fields.required.checked = !!data.is_required;
             fields.starts.value = data.starts_on || '';
             renderFormBlocks(form, data.blocks || []);
-            formTitle.textContent = 'Правка задания';
+            formTitle.textContent = form.dataset.itemKind === 'archi_profile' ? 'Правка диагностики' : 'Правка задания';
             openForm();
         });
     });
@@ -392,9 +431,10 @@ function uploadBlockPhotos(row, files) {
             blocks: collectFormBlocks(form)
         };
         var id = fields.id.value;
+        var itemKind = form.dataset.itemKind || 'material';
         var url = id
-            ? '/cabinet/staff/program/items/' + id + '/material'
-            : '/cabinet/staff/program/cycles/' + topicId + '/items/material';
+            ? '/cabinet/staff/program/items/' + id + '/' + itemKind
+            : '/cabinet/staff/program/cycles/' + topicId + '/items/' + itemKind;
         api(url, payload).then(function () {
             window.location.reload();
         }).catch(function (err) {

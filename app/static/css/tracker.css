@@ -1272,6 +1272,15 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 }
 .lrn-blk-option:hover { background: var(--surface-2); }
 .lrn-blk-option input { flex: none; margin: 0; }
+.lrn-blk-option--detailed { align-items: flex-start; }
+.lrn-blk-option--detailed input { margin-top: 3px; }
+.lrn-blk-option > span { display: block; min-width: 0; }
+.lrn-blk-option > span > strong { display: block; font-weight: 650; }
+.lrn-blk-option > span > .lrn-card-note { display: block; margin-top: var(--s-1); font-size: 14px; line-height: 1.5; color: var(--text); }
+.lrn-blk-option:focus-within { outline: 2px solid var(--blue); outline-offset: 2px; }
+.lrn-blk-profile { padding: var(--s-4); border-radius: var(--r-md); background: var(--blue-soft); }
+.lrn-blk-profile .lrn-blk-title { margin: var(--s-2) 0; color: var(--ink); }
+.lrn-blk-profile .lrn-blk-body { margin: var(--s-2) 0; }
 
 /* Рамка сверху отделяет форму отправки от блоков-вопросов над ней — иначе
    она читалась как ещё один пункт списка, а не как конец задания. */
