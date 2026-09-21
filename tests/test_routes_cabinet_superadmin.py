@@ -660,10 +660,12 @@ def test_admin_activity_page_has_portfolio_filter_and_copy_action(
     assert 'data-activity-filter' in page
     assert '<option value="missing">Не загрузили</option>' in page
     assert 'data-activity-copy' in page
+    assert "Скопировать имена, username и тариф" in page
     missing_row = page.split('data-student-name="Missing Portfolio"', 1)[0].rsplit("<tr", 1)[1]
     uploaded_row = page.split('data-student-name="Uploaded Portfolio"', 1)[0].rsplit("<tr", 1)[1]
     assert 'data-portfolio-uploaded="0"' in missing_row
     assert 'data-student-username="@missing_portfolio"' in page
+    assert 'data-student-tariff=' in page
     assert 'data-portfolio-uploaded="1"' in uploaded_row
 
 

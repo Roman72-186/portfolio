@@ -39,11 +39,11 @@
                     <option value="uploaded">Загрузили</option>
                 </select>
             </label>
-            <button type="button" class="student-activity-copy" data-activity-copy>Скопировать имена и username</button>
+            <button type="button" class="student-activity-copy" data-activity-copy>Скопировать имена, username и тариф</button>
             <span class="student-activity-copy-status" data-activity-copy-status role="status" aria-live="polite"></span>
         </div>
         <div class="student-activity-table-wrap"><table class="student-activity-table"><thead><tr><th>Ученик</th><th>Регистрация</th><th>Последний вход</th><th>Входов</th><th>Портфолио</th><th>Последняя загрузка</th></tr></thead><tbody>
-        {% for student in student_activity.students %}<tr data-activity-student data-portfolio-uploaded="{{ '1' if student.has_portfolio_before else '0' }}" data-student-name="{{ student.name }}" data-student-username="{{ student.username if student.username.startswith('@') else '' }}"><td><strong>{{ student.name }}</strong><small>{{ student.username }} · {{ student.tariff }}</small></td><td>{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td><td>{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td><td>{{ student.login_count }}</td><td><strong>{{ student.upload_count }}</strong></td><td>{{ student.last_upload.strftime('%d.%m.%Y %H:%M') if student.last_upload else 'Не загружал' }}</td></tr>{% endfor %}
+        {% for student in student_activity.students %}<tr data-activity-student data-portfolio-uploaded="{{ '1' if student.has_portfolio_before else '0' }}" data-student-name="{{ student.name }}" data-student-username="{{ student.username if student.username.startswith('@') else '' }}" data-student-tariff="{{ student.tariff }}"><td><strong>{{ student.name }}</strong><small>{{ student.username }} · {{ student.tariff }}</small></td><td>{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td><td>{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td><td>{{ student.login_count }}</td><td><strong>{{ student.upload_count }}</strong></td><td>{{ student.last_upload.strftime('%d.%m.%Y %H:%M') if student.last_upload else 'Не загружал' }}</td></tr>{% endfor %}
         <tr data-activity-empty hidden><td colspan="6">По этому фильтру учеников нет.</td></tr>
         </tbody></table></div>
     </details>
@@ -93,7 +93,10 @@
     copyButton.addEventListener('click', async function () {
         const text = visibleRows().map(function (row) {
             const username = row.dataset.studentUsername;
-            return row.dataset.studentName + (username ? ' – ' + username : '');
+            const parts = [row.dataset.studentName];
+            if (username) parts.push(username);
+            parts.push(row.dataset.studentTariff);
+            return parts.join(' – ');
         }).join('\n');
         if (!text) return;
         try {
