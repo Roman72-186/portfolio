@@ -134,28 +134,29 @@ def test_video_watermark_fades_in_and_out_at_random_spots(auth_client, monkeypat
     assert "Math.random() * 9" not in response.text
     assert "coverFallbackTimer = window.setTimeout(hideCover, 5000)" in response.text
     assert 'data-role="cover-play"' in response.text
-    assert "activePlayer.play()" in response.text
-    assert "playRequested = false" in response.text
-    assert "playRequested = true" in response.text
     assert "coverPlay.hidden = false" in response.text
-    assert "if (!activePlayer || typeof activePlayer.play !== 'function')" in response.text
-    assert "playRequested = true" in response.text
-    assert "window.matchMedia('(pointer: coarse)').matches" in response.text
-    assert "player.mute()" in response.text
-    assert "activePlayer.unmute()" in response.text
-    assert "if (muteButton && typeof player.mute === 'function')" in response.text
-    assert "muteButton.hidden = false" in response.text
-    assert "searchParams.set('autoplay', 'true')" in response.text
-    assert "searchParams.set('muted', 'true')" in response.text
-    assert "playThroughBunny" in response.text
-    assert "activePlayer.play();" in response.text
+    # Автозапуска нет совсем (владелец 21.09.2026): кнопка «Смотреть» только
+    # убирает обложку, дальше зритель жмёт play внутри самого плеера. Прежняя
+    # попытка запускать видео за него упиралась в запрет iOS и показывала
+    # красное «Видео не запустилось само» вместо картинки.
+    assert "Видео не запустилось само" not in response.text
+    assert "playThroughBunny" not in response.text
+    assert "armPlaybackAttemptTimer" not in response.text
+    assert "searchParams.set('autoplay', 'true')" not in response.text
+    assert "searchParams.set('muted', 'true')" not in response.text
+    assert "playRequested" not in response.text
+    assert "window.matchMedia('(pointer: coarse)').matches" not in response.text
+    # Кнопка звука жила только ради беззвучного автозапуска.
+    assert 'data-role="mute-btn"' not in response.text
     assert "data.player_url = body.player_url" in response.text
     assert "player.on('play'" in response.text
     assert "hideCover();" in response.text
     assert "saveProgress(true, false, false);" in response.text
     assert "video-frame.is-started .video-cover" in response.text
-    # Разрешение iframe нужно для программного play() из нашей кнопки.
-    # Сам автостарт выключен в подписанном URL параметром autoplay=false.
+    # Разрешение `autoplay` в iframe оставлено сознательно: программного play()
+    # у нас больше нет (21.09.2026), но плеер Bunny внутри сам решает, что делать
+    # после тапа зрителя, и урезать ему права смысла нет. Автостарт при этом
+    # выключен в подписанном URL параметром autoplay=false.
     assert 'allow="accelerometer; gyroscope; autoplay; encrypted-media"' in response.text
     assert "new ResizeObserver(measureWatermarkBounds)" in response.text
     assert "(prefers-reduced-motion: reduce)" in response.text

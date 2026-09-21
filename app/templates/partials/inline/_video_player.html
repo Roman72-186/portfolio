@@ -12,7 +12,7 @@
 
 `root` — контейнер с той же разметкой `data-role`, что в `video.html`
 (`status`/`shell`/`frame-wrap`/`iframe`/`watermark`/`fullscreen-btn`/
-`mute-btn`/`progress-status`) — неважно, отрисована она Jinja'ой заранее или
+`progress-status`) — неважно, отрисована она Jinja'ой заранее или
 собрана в рантайме через `document.createElement`, лишь бы узлы находились по
 тем же атрибутам. Два способа передать данные: `options.endpoint` — URL
 `/cabinet/videos/{id}/embed`, грузит их фетчем (вкладка «Видео», видео-блок
@@ -68,11 +68,8 @@
         var coverPlay = root.querySelector('[data-role="cover-play"]');
         var coverFallbackTimer = null;
         var activePlayer = null;
-        var playRequested = false;
-        var playHandler = null;
         var watermark = root.querySelector('[data-role="watermark"]');
         var fullscreenButton = root.querySelector('[data-role="fullscreen-btn"]');
-        var muteButton = root.querySelector('[data-role="mute-btn"]');
         var progressStatus = root.querySelector('[data-role="progress-status"]');
 
         function showError(message) {
@@ -138,36 +135,18 @@
             frameWrap.classList.add('is-started');
         }
 
-        function needsMutedStart() {
-            return window.matchMedia
-                && window.matchMedia('(pointer: coarse)').matches;
-        }
-
-        if (muteButton) {
-            muteButton.addEventListener('click', function () {
-                if (!activePlayer || typeof activePlayer.unmute !== 'function') return;
-                activePlayer.unmute();
-                muteButton.hidden = true;
-            });
-        }
-
+        // Кнопка «Смотреть» открывает плеер и больше ничего не делает — так
+        // решил владелец 21.09.2026. Раньше она пыталась запустить видео сама:
+        // на мобильном перезагружала iframe с `autoplay=true&muted=true`, ждала
+        // 8 секунд и, если запуск не случился, показывала красным «Видео не
+        // запустилось само». iOS этот автозапуск запрещает (энергосбережение тут
+        // ни при чём, проверено на iPhone без него), поэтому предупреждение
+        // выскакивало у каждого второго и выглядело поломкой. Теперь путь
+        // прямой: обложка уходит, зритель жмёт play внутри самого плеера —
+        // этот тап iOS пропускает всегда. Отметка просмотра не страдает, она
+        // живёт на событиях `play` и `timeupdate` от плеера.
         if (coverPlay) {
             coverPlay.addEventListener('click', function () {
-                if (playHandler) {
-                    playHandler();
-                    return;
-                }
-                if (!activePlayer || typeof activePlayer.play !== 'function') {
-                    playRequested = true;
-                    return;
-                }
-                // Mobile browsers do not reliably carry user activation from
-                // this page through Player.js postMessage into Bunny's
-                // cross-origin iframe. An unmuted play() is therefore blocked
-                // on iOS/Android even though the command comes from our button.
-                // Muted playback is allowed; sound is restored by the explicit
-                // button above after the video has actually started.
-                activePlayer.play();
                 hideCover();
             });
         }
@@ -507,60 +486,6 @@
             var playerGeneration = 0;
             var isPlaying = false;
             var hasEverPlayed = false;
-            var playbackAttemptTimer = null;
-            var START_BLOCKED_MESSAGE = 'Видео не запустилось само. Нажми на кнопку воспроизведения в самом видео.';
-
-            function armPlaybackAttemptTimer() {
-                if (playbackAttemptTimer) window.clearTimeout(playbackAttemptTimer);
-                playbackAttemptTimer = window.setTimeout(function () {
-                    playbackAttemptTimer = null;
-                    // Обложку не возвращаем, а убираем (владелец 18.09.2026).
-                    // iPhone в режиме энергосбережения запрещает любой
-                    // автозапуск, даже без звука, и повтор нашей кнопки снова
-                    // упирался в тот же запрет: ученица 14 раз подряд видела
-                    // эту ошибку. Тап по кнопке внутри самого плеера Bunny
-                    // iOS пропускает — до неё и открываем дорогу.
-                    if (!isPlaying) {
-                        hideCover();
-                        showStatus(START_BLOCKED_MESSAGE, true);
-                    }
-                }, 8000);
-            }
-
-            function playThroughBunny(player) {
-                if (!player || typeof player.play !== 'function') return;
-                if (!needsMutedStart()) {
-                    armPlaybackAttemptTimer();
-                    player.play();
-                    return;
-                }
-                if (muteButton && typeof player.mute === 'function') {
-                    player.mute();
-                    muteButton.hidden = false;
-                }
-                // Player.js sends play() through postMessage. Mobile browsers
-                // may reject that command as untrusted, even after our button
-                // was tapped. Reloading Bunny with muted autoplay is allowed by
-                // iOS/Android and is done only in response to this tap.
-                try {
-                    var mobileUrl = new URL(data.player_url, window.location.href);
-                    mobileUrl.searchParams.set('autoplay', 'true');
-                    mobileUrl.searchParams.set('muted', 'true');
-                    if (iframe.src !== mobileUrl.href) {
-                        frameWrap.classList.remove('is-ready');
-                        iframe.addEventListener('load', function () {
-                            frameWrap.classList.add('is-ready');
-                            if (reattachPlayer) reattachPlayer();
-                        }, { once: true });
-                        iframe.src = mobileUrl.href;
-                        armPlaybackAttemptTimer();
-                        return;
-                    }
-                } catch (error) { /* use Player.js fallback below */ }
-                armPlaybackAttemptTimer();
-                player.play();
-            }
-            playHandler = function () { playThroughBunny(activePlayer); };
 
             function showStatus(message, isError) {
                 progressStatus.hidden = false;
@@ -585,9 +510,9 @@
                     })
                     .then(function (body) {
                         if (!body || !body.player_url) throw new Error('refresh_failed');
-                        // `playThroughBunny` closes over this object. Keep the
-                        // refreshed signed URL there too, otherwise a later
-                        // mobile tap rebuilds an expired URL from stale data.
+                        // Свежий подписанный адрес держим в `data`: отсюда его
+                        // берёт следующая перезагрузка iframe, иначе она собрала
+                        // бы адрес с истёкшим токеном.
                         data.player_url = body.player_url;
                         if (body.ttl_seconds) playerUrlTtlSeconds = body.ttl_seconds;
                         playerUrlMintedAt = Date.now();
@@ -635,10 +560,6 @@
             if (!window.playerjs || !window.playerjs.Player) {
                 playerUrlRefreshDisabled = true;
                 showStatus('Автосохранение временно недоступно. Видео продолжит работать.', true);
-                // Без playerjs звонить unmute() некому — родная кнопка звука
-                // самого плеера Bunny внутри iframe остаётся, наша прячется,
-                // чтобы не висеть нерабочей.
-                if (muteButton) muteButton.hidden = true;
                 iframe.src = data.player_url;
                 // Без player.js событие play из iframe недоступно. Оставляем
                 // обложку на пять секунд, затем отдаём управление нативному
@@ -774,10 +695,6 @@
 
                 player.on('ready', function () {
                     if (generation !== playerGeneration) return;
-                    if (playRequested && typeof player.play === 'function') {
-                        playRequested = false;
-                        playThroughBunny(player);
-                    }
                     if (coverPlay && cover && cover.getAttribute('src')
                         && !frameWrap.classList.contains('is-started')) {
                         coverPlay.hidden = false;
@@ -808,10 +725,6 @@
                 });
                 player.on('play', function () {
                     if (generation !== playerGeneration) return;
-                    if (playbackAttemptTimer) {
-                        window.clearTimeout(playbackAttemptTimer);
-                        playbackAttemptTimer = null;
-                    }
                     isPlaying = true;
                     hasEverPlayed = true;
                     hideCover();
@@ -820,11 +733,6 @@
                     // оставался с watched_seconds=0. Точка при каждом возобновлении ещё и
                     // отсекает время, проведённое на паузе.
                     saveProgress(true, false, false);
-                    // Ученица всё-таки запустила видео кнопкой плеера — подсказка
-                    // про неудачный старт больше не нужна.
-                    if (progressStatus.textContent.trim() === START_BLOCKED_MESSAGE) {
-                        showStatus('Место просмотра сохраняется автоматически.', false);
-                    }
                 });
                 player.on('pause', function () {
                     if (generation !== playerGeneration) return;

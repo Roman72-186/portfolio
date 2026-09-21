@@ -243,13 +243,6 @@ scope)` и свойством `answered` (одна попытка: после о
                 watermarkCopy.setAttribute('data-role', 'watermark');
                 watermark.appendChild(watermarkCopy);
 
-                var muteButton = el('button', 'video-mute-button', '🔇 Включить звук');
-                muteButton.type = 'button';
-                muteButton.hidden = true;
-                muteButton.setAttribute('data-role', 'mute-btn');
-                muteButton.setAttribute('aria-label', 'Включить звук');
-                muteButton.title = 'Включить звук';
-
                 var fullscreenButton = el('button', 'video-fullscreen-button', '⛶');
                 fullscreenButton.type = 'button';
                 fullscreenButton.setAttribute('data-role', 'fullscreen-btn');
@@ -261,7 +254,6 @@ scope)` и свойством `answered` (одна попытка: после о
                 frameWrap.appendChild(cover);
                 frameWrap.appendChild(coverPlay);
                 frameWrap.appendChild(watermark);
-                frameWrap.appendChild(muteButton);
                 frameWrap.appendChild(fullscreenButton);
                 shell.appendChild(frameWrap);
 
