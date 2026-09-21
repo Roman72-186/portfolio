@@ -546,3 +546,117 @@ def test_homework_message_queues_outside_delivery(auth_client, db, user_factory,
     assert add_task.call_count == 1
     assert add_task.call_args.args[0] is notify_service
     assert add_task.call_args.args[1] == notif.id
+
+
+def test_curator_send_to_revision_sets_status_and_notifies(auth_client, db, user_factory, session_factory):
+    """Куратор возвращает сдачу на доработку — статус меняется, комментарий
+    уходит в диалог обратной связи, ученику приходит уведомление и фан-аут."""
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        client.post(f"/cabinet/homework/{task.id}/final", files={"photo": ("a.jpg", b"1", "image/jpeg")})
+    submission = db.query(HomeworkSubmission).one()
+
+    curator = user_factory(vk_id=888_001, name="Куратор Аня", role_name="куратор")
+    user.curator_id = curator.id
+    db.commit()
+    client.cookies.set("session_id", session_factory(curator).id)
+
+    with patch("app.api.homework_submission.BackgroundTasks.add_task") as add_task:
+        resp = client.post(
+            f"/cabinet/staff/homework/submissions/{submission.id}/revision",
+            data={"comment": "Добавь тени"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+    db.refresh(submission)
+    assert submission.status == "needs_revision"
+    assert submission.needs_revision_at is not None
+
+    message = db.query(HomeworkFeedbackMessage).filter(HomeworkFeedbackMessage.text == "Добавь тени").one()
+    assert message.sender_role == "curator"
+
+    notif = db.query(Notification).filter(Notification.user_id == user.id).one()
+    assert notif.title == "Работу нужно доработать"
+    assert "Добавь тени" in notif.text
+    assert add_task.call_count == 1
+    assert add_task.call_args.args[0] is notify_service
+    assert add_task.call_args.args[1] == notif.id
+
+
+def test_send_to_revision_without_comment_still_notifies(auth_client, db, user_factory, session_factory):
+    """Комментарий необязателен — без него сообщение в чат не пишется, но
+    уведомление ученику всё равно уходит."""
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        client.post(f"/cabinet/homework/{task.id}/final", files={"photo": ("a.jpg", b"1", "image/jpeg")})
+    submission = db.query(HomeworkSubmission).one()
+
+    curator = user_factory(vk_id=888_002, name="Куратор Боря", role_name="куратор")
+    user.curator_id = curator.id
+    db.commit()
+    client.cookies.set("session_id", session_factory(curator).id)
+
+    resp = client.post(f"/cabinet/staff/homework/submissions/{submission.id}/revision")
+
+    assert resp.status_code == 200
+    assert db.query(HomeworkFeedbackMessage).count() == 0
+    notif = db.query(Notification).filter(Notification.user_id == user.id).one()
+    assert notif.title == "Работу нужно доработать"
+
+
+def test_revision_unlocks_student_resubmit(auth_client, db, user_factory, session_factory):
+    """После возврата на доработку ученик снова может загрузить финал —
+    submission_edit.py::homework_reason пропускает needs_revision."""
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        client.post(f"/cabinet/homework/{task.id}/final", files={"photo": ("a.jpg", b"1", "image/jpeg")})
+    submission = db.query(HomeworkSubmission).one()
+
+    curator = user_factory(vk_id=888_003, name="Куратор Вера", role_name="куратор")
+    user.curator_id = curator.id
+    db.commit()
+    client.cookies.set("session_id", session_factory(curator).id)
+    client.post(f"/cabinet/staff/homework/submissions/{submission.id}/revision", data={"comment": "Переделай"})
+
+    client.cookies.set("session_id", session_factory(user).id)
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        resp = client.post(f"/cabinet/homework/{task.id}/final", files={"photo": ("b.jpg", b"2", "image/jpeg")})
+
+    assert resp.status_code == 200
+    db.refresh(submission)
+    assert submission.status == "submitted"
+
+
+def test_curator_cannot_send_accepted_submission_to_revision(auth_client, db, user_factory, session_factory):
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        client.post(f"/cabinet/homework/{task.id}/final", files={"photo": ("a.jpg", b"1", "image/jpeg")})
+    submission = db.query(HomeworkSubmission).one()
+
+    curator = user_factory(vk_id=888_004, name="Куратор Гриша", role_name="куратор")
+    user.curator_id = curator.id
+    db.commit()
+    client.cookies.set("session_id", session_factory(curator).id)
+    client.post(f"/cabinet/staff/homework/submissions/{submission.id}/accept")
+
+    resp = client.post(f"/cabinet/staff/homework/submissions/{submission.id}/revision")
+    assert resp.status_code == 409
+
+
+def test_curator_cannot_send_revision_foreign_submission(auth_client, db, user_factory, session_factory):
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        client.post(f"/cabinet/homework/{task.id}/final", files={"photo": ("a.jpg", b"1", "image/jpeg")})
+    submission = db.query(HomeworkSubmission).one()
+
+    other_curator = user_factory(vk_id=888_005, name="Куратор Чужой", role_name="куратор")
+    client.cookies.set("session_id", session_factory(other_curator).id)
+
+    resp = client.post(f"/cabinet/staff/homework/submissions/{submission.id}/revision")
+    assert resp.status_code == 403

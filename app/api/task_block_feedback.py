@@ -155,6 +155,11 @@ class ScorePayload(BaseModel):
     score: int = Field(ge=0, le=100)
 
 
+class RevisionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    comment: str = Field(default="", max_length=2000)
+
+
 @router.post("/staff/task-block-submissions/{submission_id}/score", response_class=JSONResponse)
 def score_submission(
     submission_id: int,
@@ -185,6 +190,44 @@ def score_submission(
     if notification is not None:
         background_tasks.add_task(notify, notification.id)
     return JSONResponse({"ok": True, "score": payload.score})
+
+
+@router.post("/staff/task-block-submissions/{submission_id}/revision", response_class=JSONResponse)
+def send_submission_to_revision(
+    submission_id: int,
+    payload: RevisionPayload,
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Куратор возвращает сданную в блоке работу на доработку. Флаг снимает
+    пересдача (`task_blocks.py::mark_submitted`) — она же открывает ученику
+    новую попытку правки (`submission_edit.py::block_work_reason`)."""
+    submission = _submission_or_404(db, submission_id)
+    _staff_guard(db, user, submission)
+
+    comment_clean = payload.comment.strip()
+    submission.needs_revision = True
+    submission.needs_revision_at = datetime.now(timezone.utc)
+    if comment_clean:
+        submission.review_comment = comment_clean
+
+    notification = Notification(
+        user_id=submission.user_id,
+        title="Работу нужно доработать",
+        text=(
+            f"{comment_clean}\n\nМожно отредактировать и отправить работу заново."
+            if comment_clean else "Можно отредактировать и отправить работу заново."
+        ),
+        task_block_submission_id=submission.id,
+    )
+    db.add(notification)
+    db.flush()
+    invalidate_unread(submission.user_id)
+    db.commit()
+    background_tasks.add_task(notify, notification.id)
+    return JSONResponse({"ok": True})
 
 
 async def _photo_payload(photo: UploadFile | None) -> tuple[str, bytes] | None:

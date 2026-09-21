@@ -47,6 +47,10 @@ class HomeworkSubmission(Base):
 
     status: Mapped[str] = mapped_column(String(20), nullable=False, default=STATUS_SUBMITTED)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Когда куратор последний раз вернул сдачу на доработку; при пересдаче
+    # (status снова становится STATUS_SUBMITTED) НЕ зануляется — история для
+    # статистики, как у Work.needs_revision_at.
+    needs_revision_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)

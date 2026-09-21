@@ -244,6 +244,38 @@ def test_homework_items_accepted_is_reviewed(db, user_factory):
     assert _homework_items(db)[0].is_reviewed is True
 
 
+def test_homework_items_needs_revision_flag(db, user_factory):
+    student = user_factory(vk_id=820_104, name="Ученик")
+    _homework_submission(db, student.id, status="needs_revision")
+
+    item = _homework_items(db)[0]
+    assert item.needs_revision is True
+    assert item.is_reviewed is False
+
+
+def test_block_work_items_needs_revision_flag(db, user_factory):
+    from app.models.task_block import BLOCK_UPLOAD, TaskBlock, TaskBlockSubmission
+    from app.services.review_aggregate import DOMAIN_BLOCK_WORK, _block_work_items
+
+    task = _task(db, title="Сдай листы")
+    student = user_factory(vk_id=820_105, name="Ученик")
+    block = TaskBlock(task_id=task.id, block_type=BLOCK_UPLOAD, title="Сдать листы")
+    db.add(block)
+    db.flush()
+    submission = TaskBlockSubmission(
+        block_id=block.id, user_id=student.id,
+        submitted_at=datetime.now(timezone.utc),
+        needs_revision=True, review_comment="Переделай тени",
+    )
+    db.add(submission)
+    db.commit()
+
+    item = _block_work_items(db)[0]
+    assert item.domain == DOMAIN_BLOCK_WORK
+    assert item.needs_revision is True
+    assert item.is_reviewed is False
+
+
 def test_homework_items_skips_lazily_created_submission_without_photo(db, user_factory):
     """Сдача заводится лениво при первом заходе на страницу, до загрузки
     фото submitted_at пуст — такую строку показывать преподавателю рано."""

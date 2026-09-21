@@ -69,6 +69,10 @@ class ReviewItem:
     submitted_at: datetime | None
     is_reviewed: bool
     review_url: str
+    # Куратор вернул сдачу на доработку (`homework`, `block_work`) — своя
+    # пометка в списке, отдельная от is_reviewed: сдача на доработке не
+    # считается проверенной, но и не должна выглядеть как обычное «на проверку».
+    needs_revision: bool = False
     question: str | None = None
     chosen: list[str] | None = None
     correct: list[str] | None = None
@@ -198,7 +202,11 @@ def _homework_items(
 ) -> list[ReviewItem]:
     """Сдачи домашки. Непроверено — `status != accepted`. `submitted_at` — дата
     сдачи финального фото, не дедлайн постановки (`TrackerTask.due_at`)."""
-    from app.models.homework_submission import STATUS_ACCEPTED, HomeworkSubmission
+    from app.models.homework_submission import (
+        STATUS_ACCEPTED,
+        STATUS_NEEDS_REVISION,
+        HomeworkSubmission,
+    )
     from app.models.tracker import TrackerTask
     from app.models.user import User
 
@@ -235,6 +243,7 @@ def _homework_items(
             submitted_at=submission.submitted_at,
             is_reviewed=submission.status == STATUS_ACCEPTED,
             review_url=f"/cabinet/staff/homework/submissions/{submission.id}",
+            needs_revision=submission.status == STATUS_NEEDS_REVISION,
         ))
     return items
 
@@ -293,6 +302,7 @@ def _block_work_items(
             text=row["comment"],
             review_comment=row["review_comment"],
             images=row["images"],
+            needs_revision=row["needs_revision"],
         ))
     return items
 

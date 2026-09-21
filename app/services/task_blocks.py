@@ -1315,6 +1315,11 @@ def mark_submitted(
     submission.score = None
     submission.scored_at = None
     submission.scored_by_id = None
+    # Пересдача закрывает «на доработке» и старый комментарий проверки —
+    # иначе review_comment тут же снова блокирует правку следующей попытки
+    # (block_work_reason), а флаг молча остаётся висеть на новой версии.
+    submission.needs_revision = False
+    submission.review_comment = None
     db.flush()
     return submission
 
@@ -1413,6 +1418,7 @@ def submission_review_queue(
                 block, get_state(db, block_id=block.id, user_id=student.id)
             ),
             "reviewed": submission.reviewed_at is not None,
+            "needs_revision": submission.needs_revision,
             "submitted_at": submission.submitted_at,
         })
     return items

@@ -187,18 +187,30 @@ def notify_counterpart(
     submission: HomeworkSubmission,
     recipient_id: int,
     sender_role: str,
+    title_override: str | None = None,
+    text_override: str | None = None,
 ) -> Notification:
     """In-app уведомление с deep-линком на отдельное окно чата домашки
     (владелец 10.09.2026: `Notification.homework_submission_id`, чат
-    домашки больше не встроен в страницу задания)."""
-    if sender_role == ROLE_STUDENT:
+    домашки больше не встроен в страницу задания).
+
+    `title_override`/`text_override` — для действий с более конкретным
+    смыслом, чем «появилось сообщение» (например, возврат на доработку из
+    `send_homework_to_revision`), чтобы не заводить второй канал уведомлений
+    ради одной другой формулировки."""
+    if title_override is not None:
+        title = title_override
+    elif sender_role == ROLE_STUDENT:
         title = "Ученик ответил по домашке"
     else:
         title = "По домашней работе появилась обратная связь"
+    text = text_override if text_override is not None else (
+        f"По домашней работе #{submission.id} есть новое сообщение – открой обратную связь."
+    )
     n = Notification(
         user_id=recipient_id,
         title=title,
-        text=f"По домашней работе #{submission.id} есть новое сообщение – открой обратную связь.",
+        text=text,
         homework_submission_id=submission.id,
     )
     db.add(n)

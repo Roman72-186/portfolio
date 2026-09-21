@@ -30,16 +30,27 @@ def block_work_reason(
     reason = deadline_reason(task, block, now=now)
     if reason or submission is None:
         return reason
+    # Куратор явно вернул работу на доработку — правка разрешена, даже если
+    # до этого уже была оценка/комментарий (иначе кнопка «Вернуть на
+    # доработку» ничего не открывала бы ученику).
+    if submission.needs_revision:
+        return None
     if submission.reviewed_at is not None or submission.score is not None:
         return "Преподаватель уже проверил работу. Изменить её нельзя."
-    replied = (
+    replied_query = (
         db.query(TaskBlockFeedbackMessage.id)
         .join(TaskBlockFeedback, TaskBlockFeedback.id == TaskBlockFeedbackMessage.feedback_id)
         .filter(TaskBlockFeedback.submission_id == submission.id,
                 TaskBlockFeedbackMessage.sender_role != "student")
-        .first()
     )
-    if replied or submission.review_comment:
+    if submission.submitted_at is not None:
+        # Считать «ответил» только сообщения после текущей сдачи — иначе
+        # старое сообщение куратора (например, само возвращение на
+        # доработку) навсегда блокирует следующую попытку правки.
+        replied_query = replied_query.filter(
+            TaskBlockFeedbackMessage.created_at > submission.submitted_at
+        )
+    if replied_query.first() or submission.review_comment:
         return "Преподаватель уже ответил по работе. Изменить её нельзя."
     return None
 
@@ -53,15 +64,19 @@ def homework_reason(
         return reason
     if submission.status == STATUS_ACCEPTED:
         return "Работа уже принята. Изменить её нельзя."
+    # Куратор явно вернул работу на доработку — правка разрешена.
     if submission.status == STATUS_NEEDS_REVISION:
-        return "Преподаватель уже проверил работу. Изменить её нельзя."
-    replied = (
+        return None
+    replied_query = (
         db.query(HomeworkFeedbackMessage.id)
         .join(HomeworkFeedback, HomeworkFeedback.id == HomeworkFeedbackMessage.feedback_id)
         .filter(HomeworkFeedback.submission_id == submission.id,
                 HomeworkFeedbackMessage.sender_role != "student")
-        .first()
     )
-    if replied:
+    if submission.submitted_at is not None:
+        replied_query = replied_query.filter(
+            HomeworkFeedbackMessage.created_at > submission.submitted_at
+        )
+    if replied_query.first():
         return "Преподаватель уже ответил по работе. Изменить её нельзя."
     return None

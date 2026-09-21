@@ -339,3 +339,121 @@ def test_student_can_reply_after_teacher_started_dialog(
     page = client.get("/cabinet/staff/notifications")
     assert page.status_code == 200
     assert f'/cabinet/staff/task-block-submissions/{submission.id}/feedback' in page.text
+
+
+def test_staff_can_send_submission_to_revision_and_notify(
+    db, user_factory, session_factory, client,
+):
+    curator = user_factory(vk_id=970_020, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=970_021, name="Ученик")
+    student.curator_id = curator.id
+    db.commit()
+    submission = _submission(db, student)
+    _login(client, session_factory, curator)
+
+    with patch("app.api.task_block_feedback.notify"):
+        response = client.post(
+            f"/cabinet/staff/task-block-submissions/{submission.id}/revision",
+            json={"comment": "Добавь фон"},
+        )
+
+    assert response.status_code == 200
+    db.refresh(submission)
+    assert submission.needs_revision is True
+    assert submission.needs_revision_at is not None
+    assert submission.review_comment == "Добавь фон"
+    notification = db.query(Notification).filter_by(
+        user_id=student.id, task_block_submission_id=submission.id
+    ).one()
+    assert notification.title == "Работу нужно доработать"
+    assert "Добавь фон" in notification.text
+
+
+def test_revision_without_comment_keeps_previous_review_comment(
+    db, user_factory, session_factory, client,
+):
+    curator = user_factory(vk_id=970_022, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=970_023, name="Ученик")
+    student.curator_id = curator.id
+    db.commit()
+    submission = _submission(db, student, legacy_comment="Старый комментарий")
+    _login(client, session_factory, curator)
+
+    with patch("app.api.task_block_feedback.notify"):
+        response = client.post(
+            f"/cabinet/staff/task-block-submissions/{submission.id}/revision", json={},
+        )
+
+    assert response.status_code == 200
+    db.refresh(submission)
+    assert submission.needs_revision is True
+    assert submission.review_comment == "Старый комментарий"
+
+
+def test_revision_unlocks_edit_even_after_score(
+    db, user_factory, session_factory, client,
+):
+    """block_work_reason блокирует правку у оценённой/просмотренной сдачи —
+    возврат на доработку обязан это разрешение снимать."""
+    from app.models.task_block import TaskBlock
+    from app.services.submission_edit import block_work_reason
+
+    curator = user_factory(vk_id=970_024, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=970_025, name="Ученик")
+    student.curator_id = curator.id
+    db.commit()
+    submission = _submission(db, student)
+    submission.reviewed_at = datetime.now(timezone.utc)
+    submission.score = 90
+    db.commit()
+    block = db.get(TaskBlock, submission.block_id)
+    task = db.get(TrackerTask, block.task_id)
+
+    assert block_work_reason(db, task, block, submission) is not None
+
+    _login(client, session_factory, curator)
+    with patch("app.api.task_block_feedback.notify"):
+        client.post(
+            f"/cabinet/staff/task-block-submissions/{submission.id}/revision",
+            json={"comment": "Переделай тени"},
+        )
+    db.refresh(submission)
+
+    assert block_work_reason(db, task, block, submission) is None
+
+
+def test_mark_submitted_clears_revision_flag_and_old_comment(db, user_factory):
+    from app.services.task_blocks import mark_submitted
+
+    student = user_factory(vk_id=970_026, name="Ученик")
+    submission = _submission(db, student, legacy_comment="Старый комментарий")
+    submission.needs_revision = True
+    submission.needs_revision_at = datetime.now(timezone.utc)
+    db.commit()
+
+    mark_submitted(db, submission=submission)
+    db.commit()
+    db.refresh(submission)
+
+    assert submission.needs_revision is False
+    assert submission.review_comment is None
+    assert submission.needs_revision_at is not None  # история сохраняется
+
+
+def test_rank_three_cannot_send_revision_foreign_submission(
+    db, user_factory, session_factory, client,
+):
+    owner = user_factory(vk_id=970_027, name="Владелец", role_name="куратор")
+    teacher = user_factory(vk_id=970_028, name="Преподаватель", role_name="модератор")
+    student = user_factory(vk_id=970_029, name="Ученик")
+    student.curator_id = owner.id
+    db.commit()
+    submission = _submission(db, student)
+    _login(client, session_factory, teacher)
+
+    response = client.post(
+        f"/cabinet/staff/task-block-submissions/{submission.id}/revision",
+        json={"comment": "Чужая работа"},
+    )
+
+    assert response.status_code == 403

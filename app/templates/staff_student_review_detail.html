@@ -67,7 +67,11 @@
                 <div class="prg-meta">
                     {% if item.subject %}<span>{{ item.subject }}</span>{% endif %}
                     {% if item.submitted_at %}<span>{{ item.submitted_at.strftime('%d.%m %H:%M') }}</span>{% endif %}
+                    {% if item.needs_revision %}
+                    <span class="chip">На доработке</span>
+                    {% else %}
                     <span>{{ 'проверено' if item.is_reviewed else 'на проверку' }}</span>
+                    {% endif %}
                 </div>
                 {% if item.domain == 'task_block' %}
                 {% if item.question %}<p class="prg-hint">{{ item.question }}</p>{% endif %}

@@ -650,6 +650,12 @@ class TaskBlockSubmission(Base):
     )
     review_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Куратор вернул работу на доработку — тот же смысл, что у Work.needs_revision.
+    # Снимается пересдачей (mark_submitted), needs_revision_at при этом не
+    # зануляется — история для статистики.
+    needs_revision: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    needs_revision_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Итоговая оценка за сдачу. Не связана с reviewed_at: преподаватель может
     # сначала открыть диалог и дать рекомендации, а оценить после доработки.
     score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)

@@ -54,6 +54,18 @@
             </button>
             <p class="prg-message" data-review-status aria-live="polite"></p>
         </div>
+        <form class="prg-form" data-revision-form data-submission-id="{{ submission.id }}">
+            <label class="prg-field" for="submission-revision-comment">Вернуть на доработку — комментарий ученику, необязательно
+                <textarea id="submission-revision-comment" class="field-input" name="comment" rows="3" maxlength="2000"></textarea>
+            </label>
+            <div class="prg-actions">
+                <button type="submit" class="btn-outline">Вернуть на доработку</button>
+                <p class="prg-message" data-revision-status aria-live="polite"></p>
+            </div>
+        </form>
+        {% if submission.needs_revision %}
+        <span class="chip">На доработке</span>
+        {% endif %}
         {% elif submission.score is not none %}
         <p><strong>{{ submission.score|int }} / 100</strong></p>
         {% else %}
@@ -154,6 +166,27 @@
             status.classList.add('is-error');
             status.textContent = error.message;
         }).finally(function () { reviewButton.disabled = false; });
+    });
+
+    var revisionForm = document.querySelector('[data-revision-form]');
+    if (revisionForm) revisionForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        var button = revisionForm.querySelector('button[type=submit]');
+        var status = revisionForm.querySelector('[data-revision-status]');
+        var comment = revisionForm.elements.comment.value;
+        button.disabled = true;
+        fetch('/cabinet/staff/task-block-submissions/' + revisionForm.dataset.submissionId + '/revision', {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+            body: JSON.stringify({comment: comment})
+        }).then(function (response) {
+            if (!response.ok) throw new Error('Не получилось вернуть на доработку.');
+            window.location.reload();
+        }).catch(function (error) {
+            status.classList.add('is-error');
+            status.textContent = error.message;
+            button.disabled = false;
+        });
     });
 
     document.querySelectorAll('.hw-async-form').forEach(function (form) {

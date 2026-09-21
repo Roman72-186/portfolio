@@ -116,8 +116,18 @@ app/static/css/homework_ios.css, переопределяющем эти общ�
             <button type="submit" class="btn-blue">Принять работу</button>
             <p class="prg-message"></p>
         </form>
+        <form class="hw-async-form hw-form" method="post" action="/cabinet/staff/homework/submissions/{{ submission.id }}/revision">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+            <label class="form-label" for="hw-revision-comment">Комментарий ученику (необязательно)</label>
+            <textarea id="hw-revision-comment" class="field-input" name="comment" rows="3" maxlength="500"></textarea>
+            <button type="submit" class="btn-outline">Вернуть на доработку</button>
+            <p class="prg-message"></p>
+        </form>
         {% elif viewer_role != 'student' and submission.status == 'accepted' %}
         <span class="chip hw-accepted">Работа принята</span>
+        {% endif %}
+        {% if submission.status == 'needs_revision' %}
+        <span class="chip">На доработке</span>
         {% endif %}
         <a class="btn-outline hw-submit" href="{{ feedback_url }}">Открыть обратную связь</a>
     </div>
