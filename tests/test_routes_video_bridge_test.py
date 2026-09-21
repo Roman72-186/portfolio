@@ -209,17 +209,22 @@ def test_staff_gets_the_bridge_on_the_lesson_page_with_flag(admin_client, db, mo
     assert f"/cabinet/videos/{video.id}/player-url?bridge=1" in response.text
 
 
-def test_student_flag_is_ignored_on_the_lesson_page(auth_client, db, monkeypatch):
-    """Ученик тот же адрес открыть может, но моста не получит."""
+def test_flag_works_for_any_viewer_including_students(auth_client, db, monkeypatch):
+    """Флаг работает у любого, кто его дописал, — в том числе у ученика.
+
+    Ограничение по роли пришлось снять 21.09.2026: владелец смотрит из кабинета
+    ученика, роль в сессии ученическая, и флаг молча игнорировался. Прятать
+    нечего — адрес зеркала задан константой в коде, а видео и подпись те же.
+    Заодно ссылку можно выдать ученику, у которого видео не открывается.
+    """
     _configure_bunny(monkeypatch)
     video = _catalog_video(db)
-    client, user = auth_client
+    client, _ = auth_client
 
     response = client.get(f"/cabinet/videos/{video.id}", params={"bridge": "1"})
 
     assert response.status_code == 200
-    assert BRIDGE not in response.text
-    assert f"https://iframe.mediadelivery.net/embed/720058/{VIDEO_ID}" in response.text
+    assert f"{BRIDGE}/embed/720058/{VIDEO_ID}" in response.text
 
 
 def test_lesson_page_without_flag_stays_direct_for_staff(admin_client, db, monkeypatch):
@@ -248,7 +253,7 @@ def test_player_url_refresh_honours_the_flag_for_staff(admin_client, db, monkeyp
     assert response.json()["player_url"].startswith(f"{BRIDGE}/embed/")
 
 
-def test_player_url_refresh_ignores_the_flag_for_students(auth_client, db, monkeypatch):
+def test_player_url_refresh_honours_the_flag_for_students_too(auth_client, db, monkeypatch):
     _configure_bunny(monkeypatch)
     video = _catalog_video(db)
     client, _ = auth_client
@@ -256,7 +261,20 @@ def test_player_url_refresh_ignores_the_flag_for_students(auth_client, db, monke
     response = client.get(f"/cabinet/videos/{video.id}/player-url", params={"bridge": "1"})
 
     assert response.status_code == 200
-    assert response.json()["player_url"].startswith("https://iframe.mediadelivery.net/embed/")
+    assert response.json()["player_url"].startswith(f"{BRIDGE}/embed/")
+
+
+def test_lesson_page_stays_direct_without_the_flag(auth_client, db, monkeypatch):
+    """Без флага ничего не меняется — это главный инвариант правки."""
+    _configure_bunny(monkeypatch)
+    video = _catalog_video(db)
+    client, _ = auth_client
+
+    response = client.get(f"/cabinet/videos/{video.id}")
+
+    assert response.status_code == 200
+    assert BRIDGE not in response.text
+    assert f"https://iframe.mediadelivery.net/embed/720058/{VIDEO_ID}" in response.text
 
 
 def test_impersonated_student_session_accepts_the_flag(client, db, session_factory, admin_user, user_factory, monkeypatch):
