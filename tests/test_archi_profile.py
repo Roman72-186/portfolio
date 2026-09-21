@@ -7,6 +7,7 @@ import re
 from app.models.task_block import TaskBlock
 from app.models.tracker import ITEM_ARCHI_PROFILE, TrackerTask
 from app.services.archi_profile import COMBINATIONS, PROFILES, result_for_answers
+from app.services.cycle_feed import build_cycle_feed
 from app.services.tz import today_msk
 
 
@@ -44,6 +45,7 @@ def test_diagnostic_creates_questions_shows_result_and_gates_next_step(
     day_page = client.get(f"/cabinet/staff/program/{(today + timedelta(days=1)).isoformat()}")
     assert day_page.status_code == 200
     assert re.search(add_row, day_page.text, re.S)
+    assert day_page.text.count('data-add-diagnostic') >= 3
     assert 'data-open-form="archi_profile"' not in day_page.text
     created = client.post(
         f"/cabinet/staff/program/cycles/{cycle_id}/items/archi_profile",
@@ -57,6 +59,13 @@ def test_diagnostic_creates_questions_shows_result_and_gates_next_step(
     assert db.query(TaskBlock).filter_by(task_id=task_id).count() == 3
 
     student = user_factory(vk_id=887_002, name="Ученик", role_name="ученик")
+    feed = build_cycle_feed(
+        db, user_id=student.id, user_tariff=student.tariff,
+        start=today, end=today + timedelta(days=5), topic_id=cycle_id,
+    )
+    diagnostic_steps = [step for step in feed if step["task"].id == task_id]
+    assert len(diagnostic_steps) == 3
+    assert [step["status"] for step in diagnostic_steps] == ["current"] * 3
     client.cookies.set("session_id", session_factory(student).id)
     endpoint = f"/cabinet/tracker/tasks/{task_id}/blocks"
     question_data = client.get(endpoint)

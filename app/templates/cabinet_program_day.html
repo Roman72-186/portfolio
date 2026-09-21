@@ -93,9 +93,7 @@ FORM: Operate.
         {% for kind, label in block_add_types %}
         <button type="button" class="btn-outline" data-add-block="{{ kind }}">+ {{ label }}</button>
         {% endfor %}
-        {% if with_mock %}
         <button type="button" class="btn-outline" data-add-diagnostic>+ Диагностика</button>
-        {% endif %}
         {# Пробник стоит в общем ряду (владелец 08.09.2026), хотя заводит не
            блок, а другой вид элемента: для преподавателя это такой же пункт
            «что положить в день», и разделять их значило бы объяснять разницу,
