@@ -93,6 +93,9 @@ FORM: Operate.
         {% for kind, label in block_add_types %}
         <button type="button" class="btn-outline" data-add-block="{{ kind }}">+ {{ label }}</button>
         {% endfor %}
+        {% if with_mock %}
+        <button type="button" class="btn-outline" data-add-diagnostic>+ Диагностика</button>
+        {% endif %}
         {# Пробник стоит в общем ряду (владелец 08.09.2026), хотя заводит не
            блок, а другой вид элемента: для преподавателя это такой же пункт
            «что положить в день», и разделять их значило бы объяснять разницу,
@@ -254,7 +257,7 @@ FORM: Operate.
         {{ tariff_fields() }}
         {% if kind == 'archi_profile' %}
         <p class="prg-hint">Вопросы и варианты уже настроены. Ученик получит один из шести профилей после трёх ответов.</p>
-        <details class="prg-hint">
+        <details class="prg-hint" open>
             <summary>Посмотреть готовые вопросы</summary>
             {% for body, options in archi_questions %}
             <p><strong>Вопрос {{ loop.index }}.</strong> {{ body }}</p>
@@ -1465,6 +1468,17 @@ FORM: Operate.
         }
 
         if (event.target.closest('[data-form-cancel]')) { hideForms(); return; }
+
+        if (event.target.closest('[data-add-diagnostic]')) {
+            resetSimpleFormForCreate('archi_profile');
+            var diagnosticForm = document.querySelector('[data-form="archi_profile"]');
+            diagnosticForm.querySelector('[data-x-title]').value = {{ archi_title|tojson }};
+            var diagnosticDescription = diagnosticForm.querySelector('[data-x-description]');
+            diagnosticDescription.value = {{ archi_intro|tojson }};
+            window.RichTextField.refresh(diagnosticDescription);
+            showForm('archi_profile');
+            return;
+        }
 
         var editButton = event.target.closest('[data-item-edit]');
         if (editButton) {

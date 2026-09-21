@@ -194,7 +194,6 @@ MONTH_NAMES = (
 # `MOCK_EXAM_DEFAULT_DURATION_MINUTES` (240, то есть 4 часа) на работу.
 PROGRAM_ITEM_PRESETS = [
     {"kind": ITEM_MATERIAL, "label": "Задание", "icon": "📄", "hint": "Любое содержимое: текст, фото, видео, ссылка, вопросы", "capability": "generic", "default_block": "text"},
-    {"kind": ITEM_ARCHI_PROFILE, "label": "Диагностика", "icon": "◈", "hint": "Три вопроса и личный АРХИ-ПРОФИЛЬ"},
 ]
 
 # Виды, для которых на экране дня рендерится универсальная форма. Шире, чем

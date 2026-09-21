@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 from itertools import product
+import re
 
 from app.models.task_block import TaskBlock
 from app.models.tracker import ITEM_ARCHI_PROFILE, TrackerTask
@@ -35,6 +36,15 @@ def test_diagnostic_creates_questions_shows_result_and_gates_next_step(
     )
     assert cycle.status_code == 200, cycle.text
     cycle_id = cycle.json()["cycle_id"]
+    cycle_page = client.get(f"/cabinet/staff/program/cycles/{cycle_id}")
+    assert cycle_page.status_code == 200
+    add_row = r'<div class="prg-actions prg-blocks-add">(?:(?!</div>).)*data-add-diagnostic'
+    assert re.search(add_row, cycle_page.text, re.S)
+    assert 'data-open-diagnostic' not in cycle_page.text
+    day_page = client.get(f"/cabinet/staff/program/{(today + timedelta(days=1)).isoformat()}")
+    assert day_page.status_code == 200
+    assert re.search(add_row, day_page.text, re.S)
+    assert 'data-open-form="archi_profile"' not in day_page.text
     created = client.post(
         f"/cabinet/staff/program/cycles/{cycle_id}/items/archi_profile",
         json={"title": "Диагностика АРХИ-ПРОФИЛЯ", "is_required": False, "blocks": []},

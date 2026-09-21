@@ -49,10 +49,6 @@
                 <small>Любое содержимое: текст, фото, видео, ссылка, вопросы</small>
             </span>
         </button>
-        <button type="button" class="prg-tile" data-open-diagnostic>
-            <span class="prg-tile-icon" aria-hidden="true">◈</span>
-            <span><strong>Диагностика</strong><small>Три вопроса и личный АРХИ-ПРОФИЛЬ</small></span>
-        </button>
     </div>
 
     <form class="prg-form" data-item-form hidden>
@@ -88,7 +84,7 @@
 
         <div data-diagnostic-note hidden>
             <p class="prg-hint">Три готовых вопроса появятся у ученика. После ответов он увидит свой профиль; результат сохранится в личной информации.</p>
-            <details class="prg-hint">
+            <details class="prg-hint" open>
                 <summary>Посмотреть готовые вопросы</summary>
                 {% for body, options in archi_questions %}
                 <p><strong>Вопрос {{ loop.index }}.</strong> {{ body }}</p>
@@ -108,6 +104,7 @@
                 {% for kind, label in block_add_types %}
                 <button type="button" class="btn-outline" data-add-block="{{ kind }}">+ {{ label }}</button>
                 {% endfor %}
+                <button type="button" class="btn-outline" data-add-diagnostic>+ Диагностика</button>
             </div>
         </div>
 
@@ -370,19 +367,6 @@ function uploadBlockPhotos(row, files) {
         resetForm();
         openForm();
     });
-    document.querySelector('[data-open-diagnostic]').addEventListener('click', function () {
-        resetForm();
-        form.dataset.itemKind = 'archi_profile';
-        fields.required.closest('.prg-field').hidden = true;
-        fields.title.value = {{ archi_title|tojson }};
-        fields.description.value = {{ archi_intro|tojson }};
-        window.RichTextField.refresh(fields.description);
-        form.querySelector('[data-blocks-wrap]').hidden = true;
-        form.querySelector('[data-preview-wrap]').hidden = true;
-        form.querySelector('[data-diagnostic-note]').hidden = false;
-        formTitle.textContent = 'Новая диагностика';
-        openForm();
-    });
 
     form.querySelector('[data-form-cancel]').addEventListener('click', function () {
         form.hidden = true;
@@ -477,6 +461,28 @@ function uploadBlockPhotos(row, files) {
     // одному, у формы здесь нет соседей вроде билетов Пробника, ради которых
     // на дне устроен общий обработчик кликов на всю страницу.
     form.addEventListener('click', function (event) {
+        if (event.target.closest('[data-add-diagnostic]')) {
+            if (fields.id.value || form.querySelector('[data-block]')) {
+                message.textContent = 'Сначала сохраните текущее задание. Диагностика добавляется отдельным шагом.';
+                message.classList.add('is-error');
+                return;
+            }
+            message.textContent = '';
+            message.classList.remove('is-error');
+            form.dataset.itemKind = 'archi_profile';
+            fields.required.checked = true;
+            fields.required.closest('.prg-field').hidden = true;
+            if (!fields.title.value.trim()) fields.title.value = {{ archi_title|tojson }};
+            if (!fields.description.value.trim()) {
+                fields.description.value = {{ archi_intro|tojson }};
+                window.RichTextField.refresh(fields.description);
+            }
+            form.querySelector('[data-blocks-wrap]').hidden = true;
+            form.querySelector('[data-preview-wrap]').hidden = true;
+            form.querySelector('[data-diagnostic-note]').hidden = false;
+            formTitle.textContent = 'Новая диагностика';
+            return;
+        }
         var previewBtn = event.target.closest('[data-preview-blocks]');
         if (previewBtn) {
             previewBlocks(form);
