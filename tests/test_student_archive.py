@@ -305,3 +305,66 @@ def test_archive_button_on_superadmin_dashboard(superadmin_client):
     resp = client.get("/cabinet/superadmin")
     assert resp.status_code == 200
     assert "/cabinet/archive" in resp.text
+
+
+# ── «Архив» = все фото в одном месте (владелец 21.09.2026) ──────────────────
+
+def _mk_work_photo(db, user_id, work_type, *, month="май", year=2026):
+    from app.models.work import Work
+
+    work = Work(
+        user_id=user_id,
+        work_type=work_type,
+        month=month, year=year,
+        filename=f"{work_type}.jpg",
+        status="success",
+        s3_url=f"https://example.test/{work_type}.jpg",
+    )
+    db.add(work)
+    db.commit()
+    return work
+
+
+def test_students_page_reports_archive_view_flag_false(superadmin_client):
+    client, _ = superadmin_client
+    resp = client.get("/cabinet/students")
+    assert resp.status_code == 200
+    assert "const IS_ARCHIVE_VIEW = false;" in resp.text
+
+
+def test_archive_page_reports_archive_view_flag_true(superadmin_client):
+    client, _ = superadmin_client
+    resp = client.get("/cabinet/archive")
+    assert resp.status_code == 200
+    assert "const IS_ARCHIVE_VIEW = true;" in resp.text
+
+
+def test_legacy_portfolio_merges_all_photos_for_archived_student(superadmin_client, db, student):
+    from app.models.work import WORK_TYPE_AFTER, WORK_TYPE_BEFORE
+
+    client, actor = superadmin_client
+    _mk_work_photo(db, student.id, WORK_TYPE_BEFORE)
+    _mk_work_photo(db, student.id, WORK_TYPE_AFTER)
+    archive_user(db, target_user_id=student.id, performed_by_id=actor.id)
+
+    resp = client.get(f"/cabinet/students/{student.id}/legacy-portfolio")
+    assert resp.status_code == 200
+    assert "До обучения" in resp.text
+    assert "В процессе обучения" in resp.text
+    assert "before.jpg" in resp.text
+    assert "after.jpg" in resp.text
+
+
+def test_legacy_portfolio_stays_legacy_only_for_active_student(superadmin_client, db, student):
+    """Действующего ученика эта правка не касается: без исторических фото
+    бота страница остаётся пустой, работы «До»/«После» сюда не подмешиваются
+    — у активного ученика для них есть рабочие вкладки «Портфолио»/«Пробники»."""
+    from app.models.work import WORK_TYPE_BEFORE
+
+    client, _ = superadmin_client
+    _mk_work_photo(db, student.id, WORK_TYPE_BEFORE)
+
+    resp = client.get(f"/cabinet/students/{student.id}/legacy-portfolio")
+    assert resp.status_code == 200
+    assert "До обучения" not in resp.text
+    assert "Архивных фото нет" in resp.text

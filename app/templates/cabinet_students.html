@@ -1282,6 +1282,7 @@ const CURRENT_YEAR   = {{ current_year }};
 const INITIAL_STUDENT_ID = {{ initial_student_id }};
 const INITIAL_TAB    = "{{ initial_tab }}";
 const IS_SUPERADMIN  = {{ is_superadmin | tojson }};
+const IS_ARCHIVE_VIEW = {{ is_archive_view | tojson }};
 const USER_ROLE_RANK = {{ user.role_rank | tojson }};
 const COHORT_TAG_LABELS = {{ cohort_tag_labels | tojson }};
 
@@ -1467,13 +1468,22 @@ function renderProfile(data) {
         +   '<div class="profile-action-label">Статистика</div>'
         +   '<div class="profile-action-count">динамика баллов</div>'
         + '</button>'
-        + (s.legacy_photo_count ? (
+        + (IS_ARCHIVE_VIEW ? (
+            // Для архивного ученика «Архив» — единая страница со всеми фото
+            // (До/После + импорт из старого чат-бота), поэтому кнопка видна
+            // всегда, а не только когда есть исторические фото бота.
+            '<a class="profile-action-btn" href="/cabinet/students/' + s.id + '/legacy-portfolio" target="_blank" rel="noopener">'
+            +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg></div>'
+            +   '<div class="profile-action-label">Архив</div>'
+            +   '<div class="profile-action-count">' + ((s.portfolio_count || 0) + (s.legacy_photo_count || 0)) + ' фото</div>'
+            + '</a>'
+          ) : (s.legacy_photo_count ? (
             '<a class="profile-action-btn" href="/cabinet/students/' + s.id + '/legacy-portfolio" target="_blank" rel="noopener">'
             +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg></div>'
             +   '<div class="profile-action-label">Архив</div>'
             +   '<div class="profile-action-count">' + s.legacy_photo_count + ' фото</div>'
             + '</a>'
-          ) : '')
+          ) : ''))
         + '</div>';
 
     var mainPanel = document.getElementById('main-panel');

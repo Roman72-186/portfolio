@@ -46,7 +46,34 @@
 .work-cell:hover img { opacity: 0.88; }
 </style>
 {% endblock %}
+{% macro month_gallery(groups, gid_prefix) %}
+{% for group in groups %}
+{% set gid = gid_prefix ~ loop.index %}
+<div class="month-item{% if loop.first %} open{% endif %}" data-group-id="{{ gid }}">
+    <button class="month-header" type="button"
+            aria-expanded="{{ 'true' if loop.first else 'false' }}" aria-controls="body-{{ gid }}"
+            onclick="toggleLegacyGroup(this.parentElement)">
+        <div class="month-header-left">
+            <span class="month-name">{{ group.year }} — {{ group.month | capitalize }}</span>
+            <span class="month-count">{{ group.total }} фото</span>
+        </div>
+        <span class="month-chevron">▼</span>
+    </button>
+    <div class="month-body" id="body-{{ gid }}">
+        <div class="works-grid" data-gallery>
+            {% for p in group.photos %}
+            <button type="button" class="work-cell" onclick="openGallery(this.querySelector('img'))" aria-label="Открыть фото {{ p.original_filename }}">
+                <img src="{{ p.s3_url }}" alt="{{ p.original_filename }}" loading="lazy">
+            </button>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% endmacro %}
 {% block content %}
+{% set after_total = after_groups | sum(attribute='total') %}
+{% set combined_total = total + (before_photos | length) + after_total %}
 <div class="legacy-wrap">
 
     <div style="margin-bottom:20px">
@@ -55,39 +82,45 @@
             Архив: {{ student.last_name or '' }} {{ student.first_name or student.name }}
         </h1>
         <p style="color:var(--muted);font-size:14px;margin-top:6px">
-            {% if total %}Всего {{ total }} фото из архива до перехода на новую платформу{% else %}Архивных фото нет{% endif %}
+            {% if is_archived_student %}
+                {% if combined_total %}Всего {{ combined_total }} фото{% else %}Фото нет{% endif %}
+            {% else %}
+                {% if total %}Всего {{ total }} фото из архива до перехода на новую платформу{% else %}Архивных фото нет{% endif %}
+            {% endif %}
         </p>
     </div>
 
-    {% if not total %}
+    {% if not combined_total %}
     <div class="card" style="text-align:center;padding:48px 24px">
+        {% if is_archived_student %}
+        <div style="font-size:17px;font-weight:700;margin-bottom:8px">Фото нет</div>
+        <div style="color:var(--dim);font-size:14px">Для этого ученика не нашлось ни работ, ни фото в архиве старого чат-бота</div>
+        {% else %}
         <div style="font-size:17px;font-weight:700;margin-bottom:8px">Архивных фото нет</div>
         <div style="color:var(--dim);font-size:14px">Для этого ученика не нашлось фото в архиве старого чат-бота</div>
+        {% endif %}
     </div>
     {% else %}
-        {% for group in groups %}
-        {% set gid = "lg-" ~ loop.index %}
-        <div class="month-item{% if loop.first %} open{% endif %}" data-group-id="{{ gid }}">
-            <button class="month-header" type="button"
-                    aria-expanded="{{ 'true' if loop.first else 'false' }}" aria-controls="body-{{ gid }}"
-                    onclick="toggleLegacyGroup(this.parentElement)">
-                <div class="month-header-left">
-                    <span class="month-name">{{ group.year }} — {{ group.month | capitalize }}</span>
-                    <span class="month-count">{{ group.total }} фото</span>
-                </div>
-                <span class="month-chevron">▼</span>
+        {% if before_photos %}
+        <h2 style="font-size:16px;font-weight:800;margin:0 0 10px;color:var(--ink)">До обучения</h2>
+        <div class="works-grid" data-gallery style="margin-bottom:24px">
+            {% for p in before_photos %}
+            <button type="button" class="work-cell" onclick="openGallery(this.querySelector('img'))" aria-label="Открыть фото {{ p.original_filename }}">
+                <img src="{{ p.s3_url }}" alt="{{ p.original_filename }}" loading="lazy">
             </button>
-            <div class="month-body" id="body-{{ gid }}">
-                <div class="works-grid" data-gallery>
-                    {% for p in group.photos %}
-                    <button type="button" class="work-cell" onclick="openGallery(this.querySelector('img'))" aria-label="Открыть фото {{ p.original_filename }}">
-                        <img src="{{ p.s3_url }}" alt="{{ p.original_filename }}" loading="lazy">
-                    </button>
-                    {% endfor %}
-                </div>
-            </div>
+            {% endfor %}
         </div>
-        {% endfor %}
+        {% endif %}
+
+        {% if after_groups %}
+        <h2 style="font-size:16px;font-weight:800;margin:0 0 10px;color:var(--ink)">В процессе обучения</h2>
+        {{ month_gallery(after_groups, "ag-") }}
+        {% endif %}
+
+        {% if total %}
+        <h2 style="font-size:16px;font-weight:800;margin:24px 0 10px;color:var(--ink)">Импорт из старого чат-бота</h2>
+        {{ month_gallery(groups, "lg-") }}
+        {% endif %}
     {% endif %}
 
     <div style="height:60px"></div>
