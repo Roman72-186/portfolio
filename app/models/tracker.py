@@ -19,7 +19,7 @@ TrackerTaskState: одна задача адресована многим, ст�
 from datetime import date, datetime, timezone
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, ForeignKey, Index, Integer, String, Text,
+    Boolean, Date, DateTime, ForeignKey, Index, Integer, JSON, String, Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -99,6 +99,7 @@ class TrackerTask(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    diagnostic_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Дедлайн: от него считается цвет строки у ученика. Считать только через
     # app/services/tz.py — в контейнере UTC, date.today() сдвигает границу на

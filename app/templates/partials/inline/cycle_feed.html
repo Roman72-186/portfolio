@@ -15,7 +15,7 @@
 задания.
 #}
 {% include "partials/inline/_video_player.html" %}
-<script src="/static/js/task-blocks-render.js?v=21"></script>
+<script src="/static/js/task-blocks-render.js?v=22"></script>
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};
@@ -109,7 +109,7 @@
             event.preventDefault();
             var answers = renderer.collectAnswers(data.blocks, feed);
             if (data.is_archi_profile && (answers.length !== data.questions_left_count || answers.some(function (answer) { return answer.option_ids.length !== 1; }))) {
-                note.textContent = 'Выбери по одному варианту в каждом из трёх вопросов.';
+                note.textContent = 'Выбери по одному варианту в каждом вопросе.';
                 note.classList.add('is-error');
                 return;
             }

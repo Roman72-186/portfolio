@@ -936,9 +936,8 @@ def submit_cabinet_tracker_task_blocks(
     должен пройти — сервер сверяет каждый ответ с блоками именно этой задачи,
     клиенту не доверяет (та же дисциплина, что была у мини-опроса).
 
-    Ответы принимаются частями: ученик может ответить на один вопрос из трёх
-    и вернуться позже, поэтому «число ответов равно числу вопросов» больше не
-    требуется — сохраняется то, что прислали.
+    Обычные задания принимают ответы частями. Диагностика принимает все
+    оставшиеся вопросы одним запросом, чтобы результат был однозначным.
     """
     task = _accessible_task_or_404(db, user["user_id"], task_id)
     task_done = _is_task_done(db, task_id, user["user_id"])
@@ -961,8 +960,9 @@ def submit_cabinet_tracker_task_blocks(
     if not payload.answers:
         raise HTTPException(status_code=422, detail="Нет ответов для сохранения")
     if task.kind == ITEM_ARCHI_PROFILE:
-        if len(visible) != 3 or {answer.block_id for answer in payload.answers} != known - already:
-            raise HTTPException(status_code=422, detail="Выбери по одному варианту в каждом из трёх вопросов")
+        expected_count = len(task.diagnostic_config["questions"]) if task.diagnostic_config else 3
+        if len(visible) != expected_count or {answer.block_id for answer in payload.answers} != known - already:
+            raise HTTPException(status_code=422, detail="Выбери по одному варианту в каждом вопросе")
         if len({answer.block_id for answer in payload.answers}) != len(payload.answers):
             raise HTTPException(status_code=422, detail="Один ответ на каждый вопрос")
         for answer in payload.answers:

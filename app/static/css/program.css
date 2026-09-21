@@ -502,3 +502,12 @@
 }
 .prg-table th { font-weight: 800; color: var(--muted); }
 .prg-table td:first-child { white-space: normal; }
+.prg-diagnostic-card { margin: 1rem 0; padding: 1rem; border: 1px solid var(--border, #d9dee6); border-radius: 12px; }
+.prg-diagnostic-card h4 { margin: 0 0 .75rem; }
+.prg-diagnostic-option { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 140px) auto; gap: .75rem; align-items: end; margin: .75rem 0; }
+.prg-diagnostic-option .prg-field { min-width: 0; }
+.prg-diagnostic-combinations { display: grid; gap: .5rem; max-height: 28rem; overflow-y: auto; margin: 1rem 0; }
+.prg-diagnostic-match { display: grid; grid-template-columns: minmax(80px, 1fr) minmax(180px, 2fr); gap: .75rem; align-items: center; }
+.prg-diagnostic-match select { width: 100%; min-height: 42px; padding: .5rem .75rem; border: 1px solid var(--border, #d9dee6); border-radius: 10px; background: var(--surface, #fff); color: var(--text, #202938); font: inherit; }
+.prg-diagnostic-match select:focus-visible { outline: 2px solid var(--purple, #9146ff); outline-offset: 2px; }
+@media (max-width: 640px) { .prg-diagnostic-option, .prg-diagnostic-match { grid-template-columns: 1fr; } }

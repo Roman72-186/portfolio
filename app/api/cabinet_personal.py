@@ -111,14 +111,12 @@ def cabinet_personal(
         .order_by(TaskBlockResponse.updated_at.desc(), TaskBlockResponse.id.desc())
         .all()
     )
-    archi_profile = next(
-        (
-            result
-            for response in diagnostic_responses
-            if (result := result_for_answers(db, response.task_id, user["user_id"]))
-        ),
-        None,
-    )
+    diagnostic_results = []
+    for response in diagnostic_responses:
+        result = result_for_answers(db, response.task_id, user["user_id"])
+        if result:
+            result["diagnostic_title"] = db.get(TrackerTask, response.task_id).title
+            diagnostic_results.append(result)
 
     return templates.TemplateResponse(request, "cabinet_personal.html", {
         "request": request,
@@ -130,7 +128,7 @@ def cabinet_personal(
         # Динамика самооценки навыков (владелец 03.09.2026): «в начале
         # обучения было так, в середине уже вот так» — сравнение по датам.
         "skills": skills_history(db, user["user_id"]),
-        "archi_profile": archi_profile,
+        "diagnostic_results": diagnostic_results,
     })
 
 

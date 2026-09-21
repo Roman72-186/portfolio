@@ -260,6 +260,8 @@ def _edit_payloads(
             # Дата открытия задания — для предзаполнения формы правки.
             "starts_on": msk_date(item.starts_at).isoformat() if item.starts_at else None,
         }
+        if item.kind == ITEM_ARCHI_PROFILE:
+            payload["diagnostic"] = item.diagnostic_config
         # Тариф правится, только пока тема элемента — служебная тема ровно
         # этого элемента (TOPIC_KIND_PROGRAM_ITEM). Элементы, попавшие в день
         # через copy_week, делят тему на всю неделю — там чек-бокс тарифа не
@@ -803,6 +805,7 @@ class CycleItemPayload(BaseModel):
     description: str | None = Field(default=None, max_length=5000)
     subject: str | None = Field(default=None, max_length=50)
     is_required: bool = True
+    diagnostic: dict | None = None
     # Дата, с которой задание открывается ученику по календарю — независимый
     # гейт от последовательности внутри цикла (то же поле, что у
     # SimpleItemPayload.starts_on).
@@ -942,8 +945,12 @@ def _create_cycle_item(topic_id: int, payload: CycleItemPayload, user: dict, db:
     task.is_published = True
     db.flush()
     if kind == ITEM_ARCHI_PROFILE:
-        from app.services.archi_profile import preset_blocks
-        block_items = preset_blocks()
+        from app.services.archi_profile import blocks_from_config, preset_blocks, validate_diagnostic_config
+        try:
+            task.diagnostic_config = validate_diagnostic_config(payload.diagnostic) if payload.diagnostic else None
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        block_items = blocks_from_config(task.diagnostic_config) if task.diagnostic_config else preset_blocks()
     else:
         block_items = [b.model_dump() for b in payload.blocks]
     sync_task_blocks(db, task_id=task.id, items=block_items)
@@ -1701,6 +1708,7 @@ class SimpleItemPayload(BaseModel):
     description: str | None = Field(default=None, max_length=5000)
     subject: str | None = Field(default=None, max_length=50)
     is_required: bool = True
+    diagnostic: dict | None = None
     # Дата, с которой задание появляется у ученика, независимо от того, что он
     # успел сделать раньше (владелец 03.09.2026: «даже если ребёнок выполнил
     # опрос 22 сентября в 20:00, теория и задания откроются только с
@@ -2022,8 +2030,12 @@ def _create_simple_item(
     task.is_published = True
     db.flush()
     if kind == ITEM_ARCHI_PROFILE:
-        from app.services.archi_profile import preset_blocks
-        block_items = preset_blocks()
+        from app.services.archi_profile import blocks_from_config, preset_blocks, validate_diagnostic_config
+        try:
+            task.diagnostic_config = validate_diagnostic_config(payload.diagnostic) if payload.diagnostic else None
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        block_items = blocks_from_config(task.diagnostic_config) if task.diagnostic_config else preset_blocks()
     else:
         block_items = [b.model_dump() for b in payload.blocks]
     sync_task_blocks(db, task_id=task.id, items=block_items)
@@ -2408,7 +2420,20 @@ def _update_simple_item(
     )
     # Полный текущий список, не дельта (та же семантика, что у остальных
     # полей формы) — пустой список на правке чистит мини-опрос целиком.
-    if kind != ITEM_ARCHI_PROFILE:
+    if kind == ITEM_ARCHI_PROFILE and payload.diagnostic is not None:
+        from app.models.task_block import TaskBlockResponse
+        from app.services.archi_profile import blocks_from_config, validate_diagnostic_config
+
+        try:
+            new_config = validate_diagnostic_config(payload.diagnostic)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if new_config != task.diagnostic_config:
+            if db.query(TaskBlockResponse.id).filter_by(task_id=task.id).first():
+                raise HTTPException(status_code=409, detail="На диагностику уже ответили: вопросы и результаты менять нельзя")
+            task.diagnostic_config = new_config
+            sync_task_blocks(db, task_id=task.id, items=blocks_from_config(new_config))
+    elif kind != ITEM_ARCHI_PROFILE:
         sync_task_blocks(
             db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
         )

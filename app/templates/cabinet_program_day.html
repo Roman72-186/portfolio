@@ -8,7 +8,7 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=34">
+<link rel="stylesheet" href="/static/css/program.css?v=36">
 <link rel="stylesheet" href="/static/css/program_ios.css?v=15">
 {# Предпросмотр «Глазами ученика» рисует блоки общим рендерером ученика, а
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
@@ -19,7 +19,8 @@ FORM: Operate.
 {% block content %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
-<script src="/static/js/task-blocks-render.js?v=21"></script>
+<script src="/static/js/task-blocks-render.js?v=22"></script>
+<script src="/static/js/diagnostic-builder.js?v=2"></script>
 {# WYSIWYG для полей с разметкой (**жирный**/*курсив*/список/ссылка) — стоит до
    `program_blocks_editor_js.html`, тот вызывает window.RichTextField напрямую. #}
 <script src="/static/js/rich-text-field.js?v=2"></script>
@@ -254,14 +255,7 @@ FORM: Operate.
         </label>
         {{ tariff_fields() }}
         {% if kind == 'archi_profile' %}
-        <p class="prg-hint">Вопросы и варианты уже настроены. Ученик получит один из шести профилей после трёх ответов.</p>
-        <details class="prg-hint" open>
-            <summary>Посмотреть готовые вопросы</summary>
-            {% for body, options in archi_questions %}
-            <p><strong>Вопрос {{ loop.index }}.</strong> {{ body }}</p>
-            <ol>{% for option in options %}<li>{{ option }}</li>{% endfor %}</ol>
-            {% endfor %}
-        </details>
+        <div data-diagnostic-editor></div>
         {% else %}
         {{ blocks_editor(with_mock=mock_capable) }}
         {% endif %}
@@ -1200,6 +1194,7 @@ FORM: Operate.
     // предзаполненную текущими значениями. Сохранение идёт по task_id
     // (itemUrl выше), а не по dayIso — день элемента не меняется.
     var simpleEditableKinds = ['material', 'quiz', 'lesson', 'checklist', 'survey', 'archi_profile'];
+    var diagnosticBuilder = window.DiagnosticBuilder.create(document.querySelector('[data-form="archi_profile"] [data-diagnostic-editor]'));
 
     function resetMockFormForCreate() {
         delete mockForm.dataset.editingTaskId;
@@ -1322,6 +1317,7 @@ FORM: Operate.
         resetTariffFields(form);
         renderFormBlocks(form, []);
         resetSimpleMock(form);
+        if (kind === 'archi_profile') diagnosticBuilder.load(null);
         setMessage(form, '', false);
     }
 
@@ -1420,6 +1416,7 @@ FORM: Operate.
         form.querySelector('[data-x-starts]').value = data.starts_on || '';
         populateTariffFields(form, data);
         renderFormBlocks(form, data.blocks || []);
+        if (kind === 'archi_profile') diagnosticBuilder.load(data.diagnostic);
         // Билеты на правке не предлагаем: уже созданное задание нельзя
         // превратить в пробник — у `/items/{id}/material` и `/items/{id}/mock`
         // разные контракты, а пробник правится своей формой (openMockEdit).
@@ -1443,15 +1440,6 @@ FORM: Operate.
                 else if (openKind === 'mock') resetMockFormForCreate();
                 else if (simpleEditableKinds.indexOf(openKind) !== -1) resetSimpleFormForCreate(openKind);
             }
-            if (openKind === 'archi_profile' && openForm && !openForm.dataset.editingTaskId) {
-                var profileTitle = openForm.querySelector('[data-x-title]');
-                if (!profileTitle.value.trim()) profileTitle.value = {{ archi_title|tojson }};
-                var profileDescription = openForm.querySelector('[data-x-description]');
-                if (!profileDescription.value.trim()) {
-                    profileDescription.value = {{ archi_intro|tojson }};
-                    window.RichTextField.refresh(profileDescription);
-                }
-            }
             showForm(openKind);
             var preset = presetByKind[openKind];
             var emptyEditor = openForm && !openForm.dataset.editingTaskId
@@ -1469,11 +1457,6 @@ FORM: Operate.
 
         if (event.target.closest('[data-add-diagnostic]')) {
             resetSimpleFormForCreate('archi_profile');
-            var diagnosticForm = document.querySelector('[data-form="archi_profile"]');
-            diagnosticForm.querySelector('[data-x-title]').value = {{ archi_title|tojson }};
-            var diagnosticDescription = diagnosticForm.querySelector('[data-x-description]');
-            diagnosticDescription.value = {{ archi_intro|tojson }};
-            window.RichTextField.refresh(diagnosticDescription);
             showForm('archi_profile');
             return;
         }
@@ -1840,6 +1823,15 @@ FORM: Operate.
             }
 
             saveSimple.disabled = true;
+            var diagnostic = null;
+            if (kind === 'archi_profile') {
+                try { diagnostic = diagnosticBuilder.collect(); }
+                catch (error) {
+                    saveSimple.disabled = false;
+                    diagnosticBuilder.showError(error.message);
+                    return;
+                }
+            }
             api(itemUrl(kind, simpleForm), {
                 title: titleSimple,
                 description: simpleForm.querySelector('[data-x-description]').value,
@@ -1847,6 +1839,7 @@ FORM: Operate.
                 is_required: simpleForm.querySelector('[data-x-required]').checked,
                 starts_on: simpleForm.querySelector('[data-x-starts]').value || null,
                 blocks: collectFormBlocks(simpleForm),
+                diagnostic: diagnostic,
                 audience: audienceSimple
             }).then(afterSave).catch(function (error) {
                 saveSimple.disabled = false;

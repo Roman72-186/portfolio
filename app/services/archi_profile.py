@@ -1,4 +1,6 @@
-"""Fixed starter ARХИ profile diagnostic supplied by the course author."""
+"""Architectural diagnostics, including legacy starter profile results."""
+
+from itertools import product
 
 from app.models.task_block import BLOCK_QUESTION, QUESTION_SINGLE
 
@@ -78,12 +80,86 @@ def preset_blocks() -> list[dict]:
     ]
 
 
+def validate_diagnostic_config(raw: dict) -> dict:
+    """Normalize a complete teacher-authored diagnostic before publishing."""
+    if not isinstance(raw, dict):
+        raise ValueError("Добавьте вопросы и результаты диагностики")
+    questions = raw.get("questions")
+    results = raw.get("results")
+    if not isinstance(questions, list) or not 1 <= len(questions) <= 50:
+        raise ValueError("Добавьте от одного до 50 вопросов")
+    clean_questions = []
+    for question in questions:
+        if not isinstance(question, dict):
+            raise ValueError("Заполните текст каждого вопроса")
+        prompt = str(question.get("text") or "").strip()
+        options = question.get("options")
+        if not prompt or len(prompt) > 5000 or not isinstance(options, list) or not 2 <= len(options) <= 20:
+            raise ValueError("У каждого вопроса должен быть текст и от двух до 20 вариантов")
+        clean_options = []
+        values = set()
+        for option in options:
+            if not isinstance(option, dict):
+                raise ValueError("Заполните варианты ответа")
+            text = str(option.get("text") or "").strip()
+            value = str(option.get("value") or "").strip()
+            if not text or len(text) > 300 or not value or len(value) > 20 or not value.isalnum():
+                raise ValueError("Укажите текст и короткое буквенное или числовое значение каждого варианта")
+            if value in values:
+                raise ValueError("Значения внутри одного вопроса должны различаться")
+            values.add(value)
+            clean_options.append({"text": text, "value": value})
+        clean_questions.append({"text": prompt, "options": clean_options})
+    combinations = list(product(*[[option["value"] for option in q["options"]] for q in clean_questions]))
+    if len(combinations) > 4096:
+        raise ValueError("Слишком много сочетаний: сократите число вопросов или вариантов")
+    expected = set(combinations)
+    used = set()
+    if not isinstance(results, list) or not results:
+        raise ValueError("Добавьте хотя бы один результат")
+    clean_results = []
+    for result in results:
+        if not isinstance(result, dict):
+            raise ValueError("Заполните результаты")
+        title = str(result.get("title") or "").strip()
+        body = str(result.get("text") or "").strip()
+        assigned = result.get("combinations")
+        if not title or len(title) > 200 or not body or len(body) > 5000 or not isinstance(assigned, list) or not assigned:
+            raise ValueError("У каждого результата нужны заголовок, текст и сочетания ответов")
+        clean_assigned = []
+        for combination in assigned:
+            if not isinstance(combination, list):
+                raise ValueError("Неверное сочетание ответов")
+            key = tuple(str(value) for value in combination)
+            if key not in expected or key in used:
+                raise ValueError("Сочетание ответов не существует или назначено дважды")
+            used.add(key)
+            clean_assigned.append(list(key))
+        clean_results.append({"title": title, "text": body, "combinations": clean_assigned})
+    if used != expected:
+        raise ValueError(f"Назначьте результат каждому сочетанию ответов: осталось {len(expected - used)}")
+    return {"questions": clean_questions, "results": clean_results}
+
+
+def blocks_from_config(config: dict) -> list[dict]:
+    return [
+        {"block_type": BLOCK_QUESTION, "title": f"Вопрос {index}", "body": question["text"],
+         "question_type": QUESTION_SINGLE, "is_required": index == len(config["questions"]),
+         "options": [{"text": option["text"], "is_correct": False} for option in question["options"]]}
+        for index, question in enumerate(config["questions"], 1)
+    ]
+
+
 def result_for_answers(db, task_id: int, user_id: int) -> dict | None:
     from app.models.task_block import TaskBlockResponse
     from app.services.task_blocks import get_blocks, get_options, get_selected_options
 
+    from app.models.tracker import TrackerTask
+
+    task = db.get(TrackerTask, task_id)
+    config = task.diagnostic_config if task else None
     blocks = [b for b in get_blocks(db, task_id) if b.block_type == BLOCK_QUESTION]
-    if len(blocks) != 3:
+    if len(blocks) != (len(config["questions"]) if config else 3):
         return None
     response = db.query(TaskBlockResponse).filter_by(task_id=task_id, user_id=user_id).one_or_none()
     if response is None:
@@ -97,9 +173,16 @@ def result_for_answers(db, task_id: int, user_id: int) -> dict | None:
             return None
         option_id = next(iter(chosen))
         position = next((i for i, option in enumerate(options.get(block.id, []), 1) if option.id == option_id), None)
-        if position not in (1, 2, 3):
+        if position is None:
             return None
-        digits.append(str(position))
+        digits.append(config["questions"][len(digits)]["options"][position - 1]["value"] if config else str(position))
+    if config:
+        key = tuple(digits)
+        result = next((r for r in config["results"] if list(key) in r["combinations"]), None)
+        if result is None:
+            return None
+        combination = "".join(digits) if all(len(value) == 1 for value in digits) else " · ".join(digits)
+        return {"combination": combination, "title": result["title"], "traits": "", "formula": result["text"], "architects": ""}
     combination = "".join(digits)
     key = COMBINATIONS.get(combination)
     if key is None:

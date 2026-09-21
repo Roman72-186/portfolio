@@ -108,3 +108,67 @@ def test_diagnostic_creates_questions_shows_result_and_gates_next_step(
     assert removed.status_code == 200
     client.cookies.set("session_id", session_factory(student).id)
     assert "Архитектор-синтетик" in client.get("/cabinet/personal").text
+
+
+def test_teacher_authored_diagnostic_maps_all_combinations(client, db, user_factory, session_factory):
+    admin = user_factory(vk_id=887_101, name="Преподаватель", is_admin=True, role_name="админ")
+    client.cookies.set("session_id", session_factory(admin).id)
+    today = today_msk()
+    cycle = client.post(
+        "/cabinet/staff/program/cycles",
+        json={"title": "Новый цикл", "description": None, "starts_on": today.isoformat(),
+              "ends_on": (today + timedelta(days=5)).isoformat(), "is_published": True},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert cycle.status_code == 200
+    config = {
+        "questions": [
+            {"text": "Что важнее?", "options": [{"text": "Свет", "value": "1"}, {"text": "Форма", "value": "2"}]},
+            {"text": "Что ближе?", "options": [{"text": "Дом", "value": "A"}, {"text": "Город", "value": "B"}]},
+        ],
+        "results": [
+            {"title": "Исследователь", "text": "Ты ищешь связи.", "combinations": [["1", "A"], ["2", "B"]]},
+            {"title": "Создатель", "text": "Ты создаёшь формы.", "combinations": [["1", "B"], ["2", "A"]]},
+        ],
+    }
+    incomplete = {**config, "results": config["results"][:1]}
+    rejected = client.post(
+        f"/cabinet/staff/program/cycles/{cycle.json()['cycle_id']}/items/archi_profile",
+        json={"title": "Профиль", "description": "Выбери ответы", "diagnostic": incomplete},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert rejected.status_code == 422
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle.json()['cycle_id']}/items/archi_profile",
+        json={"title": "Профиль", "description": "Выбери ответы", "diagnostic": config},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert created.status_code == 200, created.text
+    task_id = created.json()["task_id"]
+    assert db.get(TrackerTask, task_id).diagnostic_config == config
+
+    student = user_factory(vk_id=887_102, name="Ученик", role_name="ученик")
+    client.cookies.set("session_id", session_factory(student).id)
+    endpoint = f"/cabinet/tracker/tasks/{task_id}/blocks"
+    blocks = client.get(endpoint).json()["blocks"]
+    assert len(blocks) == 2
+    assert [len(block["options"]) for block in blocks] == [2, 2]
+    answers = [
+        {"block_id": blocks[0]["id"], "option_ids": [blocks[0]["options"][1]["id"]]},
+        {"block_id": blocks[1]["id"], "option_ids": [blocks[1]["options"][0]["id"]]},
+    ]
+    assert client.post(endpoint, json={"answers": answers[:1]}, headers={"X-CSRF-Token": "x"}).status_code == 422
+    assert client.post(endpoint, json={"answers": answers}, headers={"X-CSRF-Token": "x"}).status_code == 200
+    result = client.get(endpoint).json()["archi_profile"]
+    assert result["title"] == "Создатель"
+    assert result["combination"] == "2A"
+    assert "Ты создаёшь формы." in client.get("/cabinet/personal").text
+    client.cookies.set("session_id", session_factory(admin).id)
+    changed_config = {**config, "questions": [{**config["questions"][0], "text": "Новый вопрос"}, config["questions"][1]]}
+    changed = client.post(
+        f"/cabinet/staff/program/items/{task_id}/archi_profile",
+        json={"title": "Профиль", "description": "Выбери ответы", "diagnostic": changed_config},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert changed.status_code == 409
+    assert db.get(TrackerTask, task_id).diagnostic_config == config

@@ -52,14 +52,13 @@ scope)` и свойством `answered` (одна попытка: после о
         el: el,
         profileResult: function (profile) {
             var wrap = el('section', 'lrn-blk lrn-blk-profile');
-            wrap.setAttribute('aria-label', 'Результат диагностики АРХИ-ПРОФИЛЯ');
+            wrap.setAttribute('aria-label', 'Результат диагностики');
             wrap.appendChild(el('p', 'lrn-blk-score', 'Твоя комбинация: ' + profile.combination));
-            wrap.appendChild(el('p', 'lrn-card-note', 'Твой АРХИ-ПРОФИЛЬ на данный момент'));
+            wrap.appendChild(el('p', 'lrn-card-note', 'Твой результат диагностики'));
             wrap.appendChild(el('h4', 'lrn-blk-title', profile.title));
-            wrap.appendChild(el('p', 'lrn-blk-body', profile.traits));
-            wrap.appendChild(el('p', 'lrn-blk-body', profile.formula));
-            wrap.appendChild(el('p', 'lrn-card-note', 'Похожие черты можно увидеть в работах: ' + profile.architects + '. Архитекторы часто сочетают разные профили.'));
-            wrap.appendChild(el('p', 'lrn-card-note', 'Профиль может меняться с опытом.'));
+            if (profile.traits) wrap.appendChild(el('p', 'lrn-blk-body', profile.traits));
+            if (profile.formula) wrap.appendChild(el('p', 'lrn-blk-body', profile.formula));
+            if (profile.architects) wrap.appendChild(el('p', 'lrn-card-note', 'Похожие черты можно увидеть в работах: ' + profile.architects + '. Архитекторы часто сочетают разные профили.'));
             return wrap;
         },
         create: function (options) {
