@@ -171,3 +171,89 @@ def test_videos_admin_page_links_to_the_bridge_test(admin_client):
 
     assert response.status_code == 200
     assert PAGE in response.text
+
+
+# --- личное зеркало на боевой странице урока (?bridge=1) ---------------------
+#
+# Появилось 21.09.2026: мост, включённый всем, на странице урока у владельца
+# видео не запустил, а на служебной странице то же видео через мост играло.
+# Значит проверять надо саму страницу урока, и только своим глазом — отсюда
+# параметр, который действует на одного зрителя.
+
+
+def _catalog_video(db):
+    video = LearningVideo(
+        bunny_library_id=720058,
+        bunny_video_id=VIDEO_ID,
+        title="Урок про мост",
+        status="ready",
+        is_published=True,
+    )
+    db.add(video)
+    db.commit()
+    return video
+
+
+def test_staff_gets_the_bridge_on_the_lesson_page_with_flag(admin_client, db, monkeypatch):
+    _configure_bunny(monkeypatch)
+    video = _catalog_video(db)
+    client, _ = admin_client
+
+    response = client.get(f"/cabinet/videos/{video.id}", params={"bridge": "1"})
+
+    assert response.status_code == 200
+    assert f"{BRIDGE}/embed/720058/{VIDEO_ID}" in response.text
+    assert f"{BRIDGE}/__a/playerjs/player-0.1.0.min.js" in response.text
+    # Перевыпуск ссылки тоже через мост, иначе через пять минут страница уедет
+    # на прямой Bunny — там у владельца без VPN видео не идёт.
+    assert f"/cabinet/videos/{video.id}/player-url?bridge=1" in response.text
+
+
+def test_student_flag_is_ignored_on_the_lesson_page(auth_client, db, monkeypatch):
+    """Ученик тот же адрес открыть может, но моста не получит."""
+    _configure_bunny(monkeypatch)
+    video = _catalog_video(db)
+    client, user = auth_client
+
+    response = client.get(f"/cabinet/videos/{video.id}", params={"bridge": "1"})
+
+    assert response.status_code == 200
+    assert BRIDGE not in response.text
+    assert f"https://iframe.mediadelivery.net/embed/720058/{VIDEO_ID}" in response.text
+
+
+def test_lesson_page_without_flag_stays_direct_for_staff(admin_client, db, monkeypatch):
+    _configure_bunny(monkeypatch)
+    video = _catalog_video(db)
+    client, _ = admin_client
+
+    response = client.get(f"/cabinet/videos/{video.id}")
+
+    assert response.status_code == 200
+    assert BRIDGE not in response.text
+
+
+# `admin_client` и `auth_client` делят один TestClient и перетирают друг другу
+# cookie сессии, поэтому staff и ученика проверяем отдельными тестами.
+
+
+def test_player_url_refresh_honours_the_flag_for_staff(admin_client, db, monkeypatch):
+    _configure_bunny(monkeypatch)
+    video = _catalog_video(db)
+    client, _ = admin_client
+
+    response = client.get(f"/cabinet/videos/{video.id}/player-url", params={"bridge": "1"})
+
+    assert response.status_code == 200
+    assert response.json()["player_url"].startswith(f"{BRIDGE}/embed/")
+
+
+def test_player_url_refresh_ignores_the_flag_for_students(auth_client, db, monkeypatch):
+    _configure_bunny(monkeypatch)
+    video = _catalog_video(db)
+    client, _ = auth_client
+
+    response = client.get(f"/cabinet/videos/{video.id}/player-url", params={"bridge": "1"})
+
+    assert response.status_code == 200
+    assert response.json()["player_url"].startswith("https://iframe.mediadelivery.net/embed/")

@@ -80,7 +80,34 @@ def _video_for_viewer(db: DBSession, *, catalog_id: int, user: dict):
     return None
 
 
-def _player_url_payload(video) -> JSONResponse:
+# Адрес зеркала Bunny. Дублирует BRIDGE_TEST_DEFAULT_BASE ниже намеренно: тот
+# объявлен рядом со страницей проверки, а этот нужен обычным маршрутам плеера
+# выше по файлу.
+BRIDGE_BASE = "https://video.assaru.space"
+
+
+def _personal_bridge(user: dict, bridge: str | None) -> str | None:
+    """Личное зеркало для staff: `?bridge=1` уводит через мост одного зрителя.
+
+    Зачем (21.09.2026): мост, включённый всем сразу, на странице урока у
+    владельца не запустил видео, хотя на служебной странице проверки то же
+    видео через мост играло 20 секунд. Разница в боевой цепочке запуска —
+    обложка, перезагрузка iframe с `autoplay`, сохранение прогресса, — а
+    воспроизвести её можно только на самой странице урока. Повторять её на
+    служебной странице бессмысленно: расхождение и будет причиной.
+
+    Возвращает `None`, если личное зеркало не запрошено или запрошено тем, кому
+    нельзя, — тогда `build_signed_embed_url` берёт глобальную настройку, то есть
+    ученики ходят как ходили.
+    """
+    if str(bridge or "").strip().lower() not in ("1", "true", "on"):
+        return None
+    if int(user.get("role_rank") or 0) < 4:
+        return None
+    return BRIDGE_BASE
+
+
+def _player_url_payload(video, *, proxy_base: str | None = None) -> JSONResponse:
     """Свежая подписанная ссылка для уже открытой страницы.
 
     Токен Bunny живёт минуты, а страница живёт часами: при любом перезапросе
@@ -90,7 +117,9 @@ def _player_url_payload(video) -> JSONResponse:
     """
     try:
         player_url = build_signed_embed_url(
-            video.bunny_video_id, library_id=getattr(video, "bunny_library_id", None)
+            video.bunny_video_id,
+            library_id=getattr(video, "bunny_library_id", None),
+            proxy_base=proxy_base,
         )
     except BunnyStreamConfigError as exc:
         logger.error("Bunny Stream playback configuration error: %s", exc)
@@ -111,6 +140,7 @@ def _player_payload(
     video,
     progress_endpoint: str,
     player_url_endpoint: str,
+    proxy_base: str | None = None,
 ) -> tuple[dict, bool]:
     """Данные плеера — общие для страницы `/cabinet/videos/{id}` и инлайн-эндпоинта
     АОП (`/cabinet/videos/{id}/embed`). Второй элемент — признак ошибки конфигурации
@@ -131,7 +161,7 @@ def _player_payload(
         "player_url_endpoint": player_url_endpoint,
         "player_url_ttl_seconds": settings.bunny_stream_token_ttl_seconds,
         # Адрес Player.js — через мост, когда он включён (см. `player_js_url`).
-        "player_js_url": player_js_url(),
+        "player_js_url": player_js_url(proxy_base),
         "viewer_watermark": {
             "name": viewer_name,
             "username": f"@{viewer_username}" if viewer_username else "Username не указан",
@@ -139,7 +169,9 @@ def _player_payload(
     }
     try:
         payload["player_url"] = build_signed_embed_url(
-            video.bunny_video_id, library_id=getattr(video, "bunny_library_id", None)
+            video.bunny_video_id,
+            library_id=getattr(video, "bunny_library_id", None),
+            proxy_base=proxy_base,
         )
     except BunnyStreamConfigError as exc:
         logger.error("Bunny Stream playback configuration error: %s", exc)
@@ -185,6 +217,7 @@ def _render_player(
     video,
     progress_endpoint: str,
     player_url_endpoint: str,
+    proxy_base: str | None = None,
 ):
     payload, has_error = _player_payload(
         user,
@@ -192,6 +225,7 @@ def _render_player(
         video=video,
         progress_endpoint=progress_endpoint,
         player_url_endpoint=player_url_endpoint,
+        proxy_base=proxy_base,
     )
     player_data = None
     if not has_error:
@@ -259,6 +293,7 @@ def cabinet_video_by_id(
     request: Request,
     user: Annotated[dict, Depends(require_learning_content_access)],
     db: Annotated[DBSession, Depends(get_db)],
+    bridge: str | None = None,
 ):
     video = _video_for_viewer(db, catalog_id=video_id, user=user)
     if video is None:
@@ -268,13 +303,21 @@ def cabinet_video_by_id(
     except SQLAlchemyError:
         logger.exception("Video view log failed for user_id=%s", user["user_id"])
         db.rollback()
+    # Личное зеркало держится и на перевыпуске ссылки: токен живёт минуты, и без
+    # `?bridge=1` в этом адресе страница через пять минут тихо уехала бы на
+    # прямой Bunny — а там у владельца без VPN видео не идёт.
+    proxy_base = _personal_bridge(user, bridge)
+    refresh_endpoint = f"/cabinet/videos/{video_id}/player-url"
+    if proxy_base:
+        refresh_endpoint += "?bridge=1"
     return _render_player(
         request,
         user,
         db,
         video=video,
         progress_endpoint=f"/cabinet/videos/{video_id}/progress",
-        player_url_endpoint=f"/cabinet/videos/{video_id}/player-url",
+        player_url_endpoint=refresh_endpoint,
+        proxy_base=proxy_base,
     )
 
 
@@ -313,11 +356,12 @@ def refresh_catalog_player_url(
     video_id: int,
     user: Annotated[dict, Depends(require_learning_content_access)],
     db: Annotated[DBSession, Depends(get_db)],
+    bridge: str | None = None,
 ):
     video = _video_for_viewer(db, catalog_id=video_id, user=user)
     if video is None:
         return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
-    return _player_url_payload(video)
+    return _player_url_payload(video, proxy_base=_personal_bridge(user, bridge))
 
 
 @router.post("/videos/{video_id}/progress", response_class=JSONResponse)
