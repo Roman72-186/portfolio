@@ -1338,6 +1338,24 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-step--done .lrn-step-body { display: none; }
 .lrn-step--done:hover { opacity: 1; }
 .lrn-step--done:hover .lrn-step-body { display: block; }
+/* Видео держит сделанный шаг раскрытым (владелец 21.09.2026: на ПК полный
+   экран показывал всю страницу вместо ролика). Тело сделанного шага видно
+   только под курсором, а полноэкранная рамка уходит в верхний слой поверх
+   страницы — курсор формально покидает карточку, `:hover` снимается, тело
+   получает `display: none`, и рамка в полном экране становится 0x0 (снято
+   из консоли у владельца: `lrn-step-body [none 0x0]`). Тот же механизм прятал
+   ролик посреди просмотра, стоило увести мышь в сторону.
+   Правила разнесены по одному: браузер, не знающий один из селекторов,
+   выбрасывает всю группу через запятую целиком. */
+.lrn-step--done:has(.video-frame.is-started) { opacity: 1; }
+.lrn-step--done:has(.video-frame.is-started) .lrn-step-body { display: block; }
+.lrn-step--done:has(.video-frame:fullscreen) .lrn-step-body { display: block; }
+.lrn-step--done:has(.video-frame:-webkit-full-screen) .lrn-step-body { display: block; }
+.lrn-step--done:has(.video-frame.is-pseudo-fullscreen) .lrn-step-body { display: block; }
+/* Псевдо-полный экран на телефоне — `position: fixed` внутри страницы, а не
+   верхний слой, поэтому `opacity` 0.6 у предка заводит свой контекст
+   наложения и гасит видео. Ровно тот же приём, что для `.trk-item` выше. */
+body.has-video-pseudo-fullscreen .lrn-step { opacity: 1 !important; }
 
 /* Запертый не притворяется кликабельным. */
 .lrn-step--locked { opacity: 0.5; }
