@@ -102,7 +102,11 @@ def _personal_bridge(user: dict, bridge: str | None) -> str | None:
     """
     if str(bridge or "").strip().lower() not in ("1", "true", "on"):
         return None
-    if int(user.get("role_rank") or 0) < 4:
+    # Сессия входа под учеником (`impersonated_by_id`) флаг тоже принимает: за
+    # рулём настоящий staff, а проверять мост нужно именно глазами ученика —
+    # у владельца иначе не выходит, кабинет ученика он смотрит через вход под
+    # ним (21.09.2026). У настоящего ученика этого признака не бывает.
+    if int(user.get("role_rank") or 0) < 4 and not user.get("impersonated_by_id"):
         return None
     return BRIDGE_BASE
 

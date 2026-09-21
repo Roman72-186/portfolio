@@ -257,3 +257,23 @@ def test_player_url_refresh_ignores_the_flag_for_students(auth_client, db, monke
 
     assert response.status_code == 200
     assert response.json()["player_url"].startswith("https://iframe.mediadelivery.net/embed/")
+
+
+def test_impersonated_student_session_accepts_the_flag(client, db, session_factory, admin_user, user_factory, monkeypatch):
+    """Вход под учеником: флаг работает, потому что за рулём staff.
+
+    Владелец проверяет мост из кабинета ученика — иначе не увидит ровно то, что
+    видит ученик. Признак `impersonated_by_id` есть только у такой сессии.
+    """
+    _configure_bunny(monkeypatch)
+    video = _catalog_video(db)
+    student = user_factory(is_group_member=True)
+    sess = session_factory(student)
+    sess.impersonated_by_id = admin_user.id
+    db.commit()
+    client.cookies.set("session_id", sess.id)
+
+    response = client.get(f"/cabinet/videos/{video.id}", params={"bridge": "1"})
+
+    assert response.status_code == 200
+    assert f"{BRIDGE}/embed/720058/{VIDEO_ID}" in response.text
