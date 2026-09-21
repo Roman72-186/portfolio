@@ -153,6 +153,9 @@ def test_video_watermark_fades_in_and_out_at_random_spots(auth_client, monkeypat
     assert "hideCover();" in response.text
     assert "saveProgress(true, false, false);" in response.text
     assert "video-frame.is-started .video-cover" in response.text
+    # Слой «Загружаем видео» обязан пропускать касания: автозапуска нет, видео
+    # стартует тапом внутри плеера, а этот слой лежит поверх него во весь размер.
+    assert "font-size: 13px; pointer-events: none;" in response.text
     # Разрешение `autoplay` в iframe оставлено сознательно: программного play()
     # у нас больше нет (21.09.2026), но плеер Bunny внутри сам решает, что делать
     # после тапа зрителя, и урезать ему права смысла нет. Автостарт при этом

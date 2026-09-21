@@ -978,9 +978,14 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-inline-video .video-frame.is-pseudo-fullscreen .video-mute-button {
     left: max(8px, env(safe-area-inset-left)); bottom: max(8px, env(safe-area-inset-bottom));
 }
+/* Надпись «Загружаем видео» лежит поверх всего плеера и фона не имеет —
+   кнопки Bunny видны сквозь неё. Касания она обязана пропускать: с 21.09.2026
+   автозапуска нет, видео стартует только тапом внутри плеера, и если слой по
+   какой-то причине не спрятался, тап уходил в него, а зритель видел «кнопка
+   play не работает, тишина». */
 .lrn-inline-video .video-loading {
     position: absolute; inset: 0; z-index: 1; display: grid; place-items: center;
-    color: rgba(255,255,255,.72); font-size: 13px;
+    color: rgba(255,255,255,.72); font-size: 13px; pointer-events: none;
 }
 .lrn-inline-video .video-frame.is-ready .video-loading { display: none; }
 .lrn-inline-video .video-progress-status {
