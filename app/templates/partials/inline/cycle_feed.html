@@ -15,7 +15,7 @@
 задания.
 #}
 {% include "partials/inline/_video_player.html" %}
-<script src="/static/js/task-blocks-render.js?v=22"></script>
+<script src="/static/js/task-blocks-render.js?v=23"></script>
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};
@@ -47,6 +47,22 @@
         status.classList.add('is-error');
     }
 
+    function postAnswers(endpoint, answers) {
+        return fetch(endpoint, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify({ answers: answers })
+        }).then(function (resp) {
+            if (!resp.ok) throw new Error();
+            return resp.json();
+        });
+    }
+
     function renderTask(taskId, data) {
         // `titlesOutside` — подпись шага печатает сервер
         // (`cabinet_learning.html`, `<h3 class="lrn-step-title">`), поэтому
@@ -60,6 +76,33 @@
             titlesOutside: true
         });
         var blocks = data.blocks || [];
+
+        // Диагностика без ответа — мастер «один вопрос за раз» (ТЗ
+        // «Диагностика», раздел 8): каждый вопрос уже своя карточка шага
+        // ленты (`data-block-id`), мастер прячет все, кроме текущей. Если
+        // хотя бы одна карточка ещё не пришла на экран (заперта, к примеру),
+        // откатываемся к обычному показу всех вопросов разом ниже.
+        if (data.is_archi_profile && !data.archi_profile && !data.answered) {
+            var wizardSteps = [];
+            var complete = blocks.length > 0 && blocks.every(function (block) {
+                var step = stepFor(taskId, block.id);
+                var body = step && step.querySelector('[data-role="block-body"]');
+                if (!step || !body) return false;
+                wizardSteps.push({ block: block, container: step, body: body });
+                return true;
+            });
+            if (complete) {
+                window.lrnBlockRender.runWizard(renderer, wizardSteps, {
+                    onFinish: function (answers, handlers) {
+                        postAnswers(data.submit_endpoint, answers).then(function () {
+                            window.location.reload();
+                        }).catch(function () { handlers.onError(); });
+                    }
+                });
+                return;
+            }
+        }
+
         var lastQuestionBody = null;
 
         blocks.forEach(function (block, index) {
@@ -116,21 +159,9 @@
             note.textContent = '';
             note.classList.remove('is-error');
             button.disabled = true;
-            fetch(data.submit_endpoint, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                    'X-CSRF-Token': csrfToken
-                },
-                // Ответы собираются со всей ленты: вопросы одного задания
-                // разъехались по разным карточкам шагов.
-                body: JSON.stringify({ answers: answers })
-            }).then(function (resp) {
-                if (!resp.ok) throw new Error();
-                return resp.json();
-            }).then(function () {
+            // Ответы собираются со всей ленты: вопросы одного задания
+            // разъехались по разным карточкам шагов.
+            postAnswers(data.submit_endpoint, answers).then(function () {
                 // Попытка одна, и статусы шагов считает сервер: после ответа
                 // перезагружаем экран, чтобы вердикт, счёт и открывшиеся
                 // ниже шаги пришли из одного источника.

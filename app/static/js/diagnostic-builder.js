@@ -79,6 +79,20 @@
                     row.dataset.diagnosticOption = String(oi);
                     field(row, 'Вариант ответа', option.text, 'option', true);
                     field(row, 'Значение', option.value, 'value', false);
+                    if (oi > 0) button(row, '↑', function () {
+                        readQuestions();
+                        var tmp = question.options[oi - 1];
+                        question.options[oi - 1] = question.options[oi];
+                        question.options[oi] = tmp;
+                        renderQuestions();
+                    });
+                    if (oi < question.options.length - 1) button(row, '↓', function () {
+                        readQuestions();
+                        var tmp = question.options[oi + 1];
+                        question.options[oi + 1] = question.options[oi];
+                        question.options[oi] = tmp;
+                        renderQuestions();
+                    });
                     button(row, 'Убрать', function () {
                         readQuestions();
                         question.options.splice(oi, 1);
@@ -89,6 +103,22 @@
                 button(card, '+ Добавить вариант', function () {
                     readQuestions();
                     question.options.push({text: '', value: String(question.options.length + 1)});
+                    renderQuestions();
+                });
+                if (index > 0) button(card, 'Вопрос вверх', function () {
+                    readQuestions();
+                    var tmp = state.questions[index - 1];
+                    state.questions[index - 1] = state.questions[index];
+                    state.questions[index] = tmp;
+                    state.assignments = {};
+                    renderQuestions();
+                });
+                if (index < state.questions.length - 1) button(card, 'Вопрос вниз', function () {
+                    readQuestions();
+                    var tmp = state.questions[index + 1];
+                    state.questions[index + 1] = state.questions[index];
+                    state.questions[index] = tmp;
+                    state.assignments = {};
                     renderQuestions();
                 });
                 button(card, 'Убрать вопрос', function () {
@@ -150,6 +180,17 @@
                 renderResults();
             });
             root.appendChild(node('h4', null, 'Какой результат соответствует сочетанию'));
+            var stats = node('p', 'caption');
+            function updateStats() {
+                var all = combinations();
+                var configured = all.filter(function (combination) {
+                    var value = state.assignments[combinationKey(combination)];
+                    return value != null && value !== '';
+                }).length;
+                stats.textContent = 'Всего возможных комбинаций: ' + all.length +
+                    ' · Настроено: ' + configured + ' · Не настроено: ' + (all.length - configured);
+            }
+            root.appendChild(stats);
             var table = node('div', 'prg-diagnostic-combinations');
             combinations().forEach(function (combination) {
                 var key = combinationKey(combination);
@@ -166,9 +207,14 @@
                     select.appendChild(option);
                 });
                 select.value = state.assignments[key] == null ? '' : state.assignments[key];
+                select.addEventListener('change', function () {
+                    state.assignments[key] = select.value;
+                    updateStats();
+                });
                 row.appendChild(select);
                 table.appendChild(row);
             });
+            updateStats();
             root.appendChild(table);
             button(root, 'Назад к вопросам', function () { readResults(); step = 'questions'; renderQuestions(); });
             root.appendChild(message);

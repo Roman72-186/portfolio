@@ -61,6 +61,94 @@ scope)` и свойством `answered` (одна попытка: после о
             if (profile.architects) wrap.appendChild(el('p', 'lrn-card-note', 'Похожие черты можно увидеть в работах: ' + profile.architects + '. Архитекторы часто сочетают разные профили.'));
             return wrap;
         },
+        // Мастер прохождения «один вопрос за раз» (диагностика АРХИ-ПРОФИЛЯ,
+        // ТЗ «Диагностика» раздел 8). Вопрос рендерит существующий
+        // `renderer.render` — вторая копия разметки вопроса не заводится, за
+        // этим следит `tests/test_reuse_ratchet.py`. Мастер только переключает
+        // видимость уже отрисованных шагов и копит выбранное в самом DOM
+        // (radio input не теряет состояние при скрытии), а на сервер уходит
+        // один запрос со всеми ответами сразу — диагностика не принимает
+        // частичную отправку («чтобы результат был однозначным», см.
+        // докстринг `submit_cabinet_tracker_task_blocks`), поэтому и здесь
+        // копим ответы локально, а не шлём их по одному.
+        //
+        // steps: [{ block, container, body }] — `container` прячется между
+        // шагами (для ленты цикла это весь `<article class="lrn-step">`, для
+        // панели «Материалы задания» — тот же div, что и `body`); `body` —
+        // куда рендерится сам вопрос. `callbacks.onFinish(answers, handlers)`
+        // получает собранные ответы всех шагов и `handlers.onError()` на
+        // случай неудачной отправки.
+        runWizard: function (renderer, steps, callbacks) {
+            var total = steps.length;
+
+            function show(index) {
+                steps.forEach(function (step, i) {
+                    if (step.container) step.container.hidden = i !== index;
+                });
+            }
+
+            steps.forEach(function (step, index) {
+                var body = step.body;
+                body.innerHTML = '';
+                var node = renderer.render(step.block, index);
+                if (node) body.appendChild(node);
+
+                // «Вопрос N из M» — дописываем к уже отрисованному заголовку
+                // блока («Вопрос N»), а не заводим вторую строку с тем же
+                // числом: заголовок либо серверный `.lrn-step-title` (лента
+                // цикла), либо `.lrn-blk-title` внутри самого рендера блока
+                // (панель «Материалы задания», `titlesOutside` не передан).
+                var titleEl = (step.container && step.container.querySelector('.lrn-step-title'))
+                    || body.querySelector('.lrn-blk-title');
+                if (titleEl && total > 1) titleEl.textContent = titleEl.textContent + ' из ' + total;
+
+                var isLast = index === total - 1;
+                var nav = el('div', 'form-actions');
+                var back = el('button', 'btn-outline', 'Назад');
+                back.type = 'button';
+                back.hidden = index === 0;
+                back.addEventListener('click', function () { show(index - 1); });
+
+                var next = el('button', 'btn-blue', isLast ? 'Получить результат' : 'Далее');
+                next.type = 'button';
+                next.disabled = true;
+
+                var note = el('p', 'video-progress-status');
+                note.setAttribute('aria-live', 'polite');
+
+                function checkFilled() {
+                    var answered = renderer.collectAnswers([step.block], body);
+                    next.disabled = !(answered.length && answered[0].option_ids.length);
+                }
+                body.addEventListener('change', checkFilled);
+                checkFilled();
+
+                next.addEventListener('click', function () {
+                    if (!isLast) { show(index + 1); return; }
+                    var answers = [];
+                    steps.forEach(function (s) {
+                        answers = answers.concat(renderer.collectAnswers([s.block], s.body));
+                    });
+                    next.disabled = true;
+                    note.textContent = '';
+                    note.classList.remove('is-error');
+                    callbacks.onFinish(answers, {
+                        onError: function () {
+                            next.disabled = false;
+                            note.textContent = 'Не удалось отправить ответ. Попробуй ещё раз.';
+                            note.classList.add('is-error');
+                        }
+                    });
+                });
+
+                nav.appendChild(back);
+                nav.appendChild(next);
+                body.appendChild(nav);
+                body.appendChild(note);
+            });
+
+            show(0);
+        },
         create: function (options) {
             var csrfToken = (options || {}).csrfToken;
             // Локальной переменной, не полем `api`: снаружи флаг никто не
