@@ -68,7 +68,7 @@ def preset_blocks() -> list[dict]:
             "title": f"Вопрос {index}",
             "body": body,
             "question_type": QUESTION_SINGLE,
-            "is_required": True,
+            "is_required": index == 3,
             "options": [
                 {"text": OPTION_LABELS[index - 1][number - 1], "description": option, "is_correct": False}
                 for number, option in enumerate(options, 1)

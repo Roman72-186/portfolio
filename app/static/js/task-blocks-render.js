@@ -53,12 +53,13 @@ scope)` и свойством `answered` (одна попытка: после о
         profileResult: function (profile) {
             var wrap = el('section', 'lrn-blk lrn-blk-profile');
             wrap.setAttribute('aria-label', 'Результат диагностики АРХИ-ПРОФИЛЯ');
+            wrap.appendChild(el('p', 'lrn-blk-score', 'Твоя комбинация: ' + profile.combination));
             wrap.appendChild(el('p', 'lrn-card-note', 'Твой АРХИ-ПРОФИЛЬ на данный момент'));
             wrap.appendChild(el('h4', 'lrn-blk-title', profile.title));
             wrap.appendChild(el('p', 'lrn-blk-body', profile.traits));
             wrap.appendChild(el('p', 'lrn-blk-body', profile.formula));
             wrap.appendChild(el('p', 'lrn-card-note', 'Похожие черты можно увидеть в работах: ' + profile.architects + '. Архитекторы часто сочетают разные профили.'));
-            wrap.appendChild(el('p', 'lrn-card-note', 'Твои ответы: ' + profile.combination + '. Профиль может меняться с опытом.'));
+            wrap.appendChild(el('p', 'lrn-card-note', 'Профиль может меняться с опытом.'));
             return wrap;
         },
         create: function (options) {
@@ -858,6 +859,7 @@ scope)` и свойством `answered` (одна попытка: после о
                 (block.options || []).forEach(function (option, oi) {
                     var row = el('label', 'lrn-blk-option');
                     if (option.description) row.classList.add('lrn-blk-option--detailed');
+                    if (block.is_archi_profile) row.classList.add('lrn-blk-option--diagnostic');
                     var input = el('input');
                     input.type = multiple ? 'checkbox' : 'radio';
                     input.name = fieldId + (multiple ? '-' + oi : '');

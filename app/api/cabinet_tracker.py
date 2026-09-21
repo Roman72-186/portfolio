@@ -615,6 +615,7 @@ def cabinet_tracker_task_blocks(
             ]
         elif block.block_type == BLOCK_QUESTION:
             item["question_type"] = block.question_type
+            item["is_archi_profile"] = task.kind == ITEM_ARCHI_PROFILE
             item["options"] = [
                 # `is_correct` наружу не отдаём: ученик не должен видеть
                 # правильный ответ в теле ответа сервера. `requires_text`
@@ -960,6 +961,8 @@ def submit_cabinet_tracker_task_blocks(
     if not payload.answers:
         raise HTTPException(status_code=422, detail="Нет ответов для сохранения")
     if task.kind == ITEM_ARCHI_PROFILE:
+        if len(visible) != 3 or {answer.block_id for answer in payload.answers} != known - already:
+            raise HTTPException(status_code=422, detail="Выбери по одному варианту в каждом из трёх вопросов")
         if len({answer.block_id for answer in payload.answers}) != len(payload.answers):
             raise HTTPException(status_code=422, detail="Один ответ на каждый вопрос")
         for answer in payload.answers:

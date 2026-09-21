@@ -1309,6 +1309,9 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-blk-gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s-2); }
 .lrn-blk-gallery.is-single { grid-template-columns: 1fr; }
 .lrn-blk-option input:disabled + span { color: var(--muted); }
+.lrn-blk-option--diagnostic input[type="radio"] { appearance: none; width: 18px; height: 18px; border: 2px solid var(--muted); border-radius: 4px; background: var(--surface); cursor: pointer; }
+.lrn-blk-option--diagnostic input[type="radio"]:checked { border-color: var(--blue); background: var(--blue); box-shadow: inset 0 0 0 3px var(--surface); }
+.lrn-blk-option--diagnostic input[type="radio"]:disabled { cursor: default; }
 
 /* ── Лента цикла (владелец 06.09.2026) ─────────────────────────────────────
    Заменила восемь вкладок недели: шаги идут сверху вниз в порядке, который

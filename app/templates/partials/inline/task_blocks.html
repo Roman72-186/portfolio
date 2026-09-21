@@ -28,7 +28,7 @@
 {# Рендер блоков вынесен в общий файл 06.09.2026: те же блоки рисует лента
    цикла (`partials/inline/cycle_feed.html`), и второй копии рендереров в
    проекте быть не должно — за этим следит `tests/test_reuse_ratchet.py`. #}
-<script src="/static/js/task-blocks-render.js?v=20"></script>
+<script src="/static/js/task-blocks-render.js?v=21"></script>
 <script>
 (function () {
     window.lrnPanelInit = window.lrnPanelInit || {};
@@ -52,7 +52,7 @@
                 ? 'Выбери по одному варианту в каждом вопросе. Здесь нет правильных ответов.'
                 : 'Ответы можно менять до проверки и срока сдачи.'));
             var button = el('button', 'btn-blue', data.is_archi_profile
-                ? (data.questions_left_count === 1 ? 'Узнать мой профиль' : 'Сохранить и продолжить')
+                ? 'Отправить'
                 : 'Сохранить ответы');
             button.type = 'submit';
             var note = el('p', 'video-progress-status');
@@ -61,6 +61,14 @@
             form.appendChild(note);
             form.addEventListener('submit', function (event) {
                 event.preventDefault();
+                var answers = renderer.collectAnswers(data.blocks, listEl);
+                if (data.is_archi_profile && (answers.length !== data.questions_left_count || answers.some(function (answer) { return answer.option_ids.length !== 1; }))) {
+                    note.textContent = 'Выбери по одному варианту в каждом из трёх вопросов.';
+                    note.classList.add('is-error');
+                    return;
+                }
+                note.textContent = '';
+                note.classList.remove('is-error');
                 button.disabled = true;
                 fetch(data.submit_endpoint, {
                     method: 'POST',
@@ -70,7 +78,7 @@
                         'Content-Type': 'application/json',
                         'X-CSRF-Token': csrfToken
                     },
-                    body: JSON.stringify({ answers: renderer.collectAnswers(data.blocks, listEl) })
+                    body: JSON.stringify({ answers: answers })
                 }).then(function (resp) {
                     if (!resp.ok) throw new Error();
                     return resp.json();

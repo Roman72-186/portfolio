@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.models.learning_topic import LearningTopic
 from app.models.task_block import BLOCK_PORTFOLIO
-from app.models.tracker import ITEM_MOCK_EXAM, STATUS_DONE
+from app.models.tracker import ITEM_ARCHI_PROFILE, ITEM_MOCK_EXAM, STATUS_DONE
 from app.models.user import User
 from app.models.work import WORK_TYPE_BEFORE, Work
 from app.services.program import day_bounds, msk_date
@@ -239,6 +239,9 @@ def build_cycle_feed(
         # исключение: он блокирует месяц, а не учебную ленту.
         task_blocks_progress = task.is_required and task.kind != ITEM_MOCK_EXAM
         for block in task_blocks:
+            if task.kind == ITEM_ARCHI_PROFILE:
+                required_by_block[block.id] = bool(task_blocks_progress and block is task_blocks[-1])
+                continue
             required_by_block[block.id] = bool(
                 task_blocks_progress
                 and is_block_required_for_user(

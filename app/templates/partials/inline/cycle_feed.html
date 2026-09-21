@@ -15,7 +15,7 @@
 задания.
 #}
 {% include "partials/inline/_video_player.html" %}
-<script src="/static/js/task-blocks-render.js?v=20"></script>
+<script src="/static/js/task-blocks-render.js?v=21"></script>
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};
@@ -98,7 +98,7 @@
             ? 'Выбери по одному варианту в каждом вопросе. Здесь нет правильных ответов.'
             : 'Ответы можно менять до проверки и срока сдачи.'));
         var button = el('button', 'btn-blue', data.is_archi_profile
-            ? (data.questions_left_count === 1 ? 'Узнать мой профиль' : 'Сохранить и продолжить')
+            ? 'Отправить'
             : 'Сохранить ответы');
         button.type = 'submit';
         var note = el('p', 'video-progress-status');
@@ -107,6 +107,14 @@
         form.appendChild(note);
         form.addEventListener('submit', function (event) {
             event.preventDefault();
+            var answers = renderer.collectAnswers(data.blocks, feed);
+            if (data.is_archi_profile && (answers.length !== data.questions_left_count || answers.some(function (answer) { return answer.option_ids.length !== 1; }))) {
+                note.textContent = 'Выбери по одному варианту в каждом из трёх вопросов.';
+                note.classList.add('is-error');
+                return;
+            }
+            note.textContent = '';
+            note.classList.remove('is-error');
             button.disabled = true;
             fetch(data.submit_endpoint, {
                 method: 'POST',
@@ -118,7 +126,7 @@
                 },
                 // Ответы собираются со всей ленты: вопросы одного задания
                 // разъехались по разным карточкам шагов.
-                body: JSON.stringify({ answers: renderer.collectAnswers(data.blocks, feed) })
+                body: JSON.stringify({ answers: answers })
             }).then(function (resp) {
                 if (!resp.ok) throw new Error();
                 return resp.json();

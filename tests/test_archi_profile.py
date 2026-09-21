@@ -76,14 +76,13 @@ def test_diagnostic_creates_questions_shows_result_and_gates_next_step(
         blocks[0]["options"][0]["id"], blocks[0]["options"][1]["id"]
     ]}]}, headers={"X-CSRF-Token": "x"})
     assert invalid.status_code == 422
-    for index, answer in enumerate(answers):
-        saved = client.post(endpoint, json={"answers": [answer]}, headers={"X-CSRF-Token": "x"})
-        assert saved.status_code == 200, saved.text
-        if index < 2:
-            still_locked = client.post(
-                f"/cabinet/tracker/tasks/{task_id}/toggle", headers={"X-CSRF-Token": "x"}
-            )
-            assert still_locked.status_code == 409
+    incomplete = client.post(endpoint, json={"answers": answers[:2]}, headers={"X-CSRF-Token": "x"})
+    assert incomplete.status_code == 422
+    assert client.get(endpoint).json()["archi_profile"] is None
+    saved = client.post(endpoint, json={"answers": answers}, headers={"X-CSRF-Token": "x"})
+    assert saved.status_code == 200, saved.text
+    changed = client.post(endpoint, json={"answers": [answers[0]]}, headers={"X-CSRF-Token": "x"})
+    assert changed.status_code in (409, 422)
     result = client.get(endpoint).json()["archi_profile"]
     assert result["combination"] == "121"
     assert result["title"] == "Архитектор-синтетик"
@@ -91,6 +90,7 @@ def test_diagnostic_creates_questions_shows_result_and_gates_next_step(
     personal = client.get("/cabinet/personal")
     assert personal.status_code == 200
     assert "Архитектор-синтетик" in personal.text
+    assert "121" in personal.text
     client.cookies.set("session_id", session_factory(admin).id)
     removed = client.post(
         f"/cabinet/staff/program/items/{task_id}/delete",
