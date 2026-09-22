@@ -6,6 +6,9 @@ from app.constants import (
     TARIFF_WITH_YOU,
 )
 from app.models.role import Role
+from app.models.learning_topic import LearningTopic
+from app.models.task_block import TaskBlock, TaskBlockSubmission, TaskBlockTariff
+from app.models.tracker import TrackerTask
 from app.models.session import Session
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_AFTER, WORK_TYPE_BEFORE
@@ -163,3 +166,31 @@ def test_student_activity_portfolio_flag_uses_successful_before_work_and_active_
     assert rows[after_only.id]["has_portfolio_before"] is False
     assert rows[failed_before.id]["has_portfolio_before"] is False
     assert inactive.id not in rows
+
+
+def test_student_activity_assignment_counts_submitted_work_and_eligible_students(db, user_factory):
+    submitted = user_factory(vk_id=810_210, name="Submitted", tariff=TARIFF_SELF)
+    missing = user_factory(vk_id=810_211, name="Missing", tariff=TARIFF_SELF)
+    other_tariff = user_factory(vk_id=810_212, name="Other", tariff=TARIFF_WITH_YOU)
+    topic = LearningTopic(title="Предобучение", kind="week", opens_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+                          is_published=True, assign_to_all=True)
+    db.add(topic)
+    db.flush()
+    task = TrackerTask(title="Архитектурное эскизирование", topic_id=topic.id, kind="material", is_published=True)
+    db.add(task)
+    db.flush()
+    block = TaskBlock(task_id=task.id, block_type="photo_upload", title="Эскизы")
+    db.add(block)
+    db.flush()
+    db.add(TaskBlockTariff(block_id=block.id, tariff=TARIFF_SELF))
+    db.add(TaskBlockSubmission(block_id=block.id, user_id=submitted.id,
+                               submitted_at=datetime(2026, 9, 20, tzinfo=timezone.utc), needs_revision=True))
+    db.commit()
+
+    assignments = get_student_activity_overview(db, include_assignments=True)["assignments"]
+
+    assert len(assignments) == 1
+    assert assignments[0]["label"] == "Архитектурное эскизирование · Эскизы"
+    assert set(assignments[0]["eligible"]) == {submitted.id, missing.id}
+    assert assignments[0]["submitted"] == [submitted.id]
+    assert other_tariff.id not in assignments[0]["eligible"]

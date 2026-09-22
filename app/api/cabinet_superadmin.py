@@ -2082,7 +2082,7 @@ def _render_superadmin_users(
         "page_error": page_error,
         "view": view if view in ("users", "registration", "activity") else "users",
         "tariff_registration_stats": get_tariff_registration_stats(db, period_from=parse_registration_date(registration_from), period_to=parse_registration_date(registration_to), tariff_filter=registration_tariff),
-        "student_activity": get_student_activity_overview(db),
+        "student_activity": get_student_activity_overview(db, include_assignments=view == "activity"),
     })
 
 

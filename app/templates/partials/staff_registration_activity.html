@@ -39,12 +39,26 @@
                     <option value="uploaded">Загрузили</option>
                 </select>
             </label>
+            <label for="activity-assignment-filter">Задание
+                <select id="activity-assignment-filter" data-assignment-filter>
+                    <option value="">Все ученики</option>
+                    {% for assignment in student_activity.assignments %}<option value="{{ assignment.id }}">{{ assignment.label }}</option>{% endfor %}
+                </select>
+            </label>
+            <label for="activity-submission-filter">Сдача
+                <select id="activity-submission-filter" data-submission-filter disabled>
+                    <option value="all">Все</option>
+                    <option value="submitted">Сдали</option>
+                    <option value="missing">Не сдали</option>
+                </select>
+            </label>
             <button type="button" class="student-activity-copy" data-activity-copy>Скопировать имена, username и тариф</button>
             <span class="student-activity-copy-status" data-activity-copy-status role="status" aria-live="polite"></span>
+            <p class="student-activity-stats" data-assignment-stats role="status" aria-live="polite" hidden></p>
         </div>
-        <div class="student-activity-table-wrap"><table class="student-activity-table"><thead><tr><th>Ученик</th><th>Регистрация</th><th>Последний вход</th><th>Входов</th><th>Портфолио</th><th>Последняя загрузка</th></tr></thead><tbody>
-        {% for student in student_activity.students %}<tr data-activity-student data-portfolio-uploaded="{{ '1' if student.has_portfolio_before else '0' }}" data-student-name="{{ student.name }}" data-student-username="{{ student.username if student.username.startswith('@') else '' }}" data-student-tariff="{{ student.tariff }}"><td><strong>{{ student.name }}</strong><small>{{ student.username }} · {{ student.tariff }}</small></td><td>{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td><td>{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td><td>{{ student.login_count }}</td><td><strong>{{ student.upload_count }}</strong></td><td>{{ student.last_upload.strftime('%d.%m.%Y %H:%M') if student.last_upload else 'Не загружал' }}</td></tr>{% endfor %}
-        <tr data-activity-empty hidden><td colspan="6">По этому фильтру учеников нет.</td></tr>
+        <div class="student-activity-table-wrap"><table class="student-activity-table"><thead><tr><th>Ученик</th><th>Регистрация</th><th>Последний вход</th><th>Входов</th><th>Портфолио</th><th>Последняя загрузка</th><th>Задание</th></tr></thead><tbody>
+        {% for student in student_activity.students %}<tr data-activity-student data-student-id="{{ student.id }}" data-portfolio-uploaded="{{ '1' if student.has_portfolio_before else '0' }}" data-student-name="{{ student.name }}" data-student-username="{{ student.username if student.username.startswith('@') else '' }}" data-student-tariff="{{ student.tariff }}"><td><strong>{{ student.name }}</strong><small>{{ student.username }} · {{ student.tariff }}</small></td><td>{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td><td>{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td><td>{{ student.login_count }}</td><td><strong>{{ student.upload_count }}</strong></td><td>{{ student.last_upload.strftime('%d.%m.%Y %H:%M') if student.last_upload else 'Не загружал' }}</td><td data-assignment-state>Выберите задание</td></tr>{% endfor %}
+        <tr data-activity-empty hidden><td colspan="7">По этому фильтру учеников нет.</td></tr>
         </tbody></table></div>
     </details>
     <details class="student-activity-block"><summary>Журнал действий <span>{{ student_activity.events | length }}</span></summary><div class="student-activity-table-wrap"><table class="student-activity-table student-activity-table--journal"><thead><tr><th>Когда</th><th>Ученик</th><th>Действие</th><th>Детали</th></tr></thead><tbody>{% for event in student_activity.events %}<tr><td>{{ event.created_at.strftime('%d.%m.%Y %H:%M') if event.created_at else '—' }}</td><td>{{ event.student_name }}<small>{{ event.username }}</small></td><td>{{ event.action }}</td><td>{{ event.details or '—' }}</td></tr>{% else %}<tr><td colspan="4">Журнал пуст.</td></tr>{% endfor %}</tbody></table></div></details>
@@ -54,11 +68,15 @@
     const root = document.querySelector('[data-activity-portfolio]');
     if (!root) return;
     const filter = root.querySelector('[data-activity-filter]');
+    const assignmentFilter = root.querySelector('[data-assignment-filter]');
+    const submissionFilter = root.querySelector('[data-submission-filter]');
+    const assignments = new Map({{ student_activity.assignments | tojson }}.map(function (item) { return [String(item.id), item]; }));
     const rows = Array.from(root.querySelectorAll('[data-activity-student]'));
     const count = root.querySelector('[data-activity-count]');
     const empty = root.querySelector('[data-activity-empty]');
     const copyButton = root.querySelector('[data-activity-copy]');
     const status = root.querySelector('[data-activity-copy-status]');
+    const stats = root.querySelector('[data-assignment-stats]');
 
     function visibleRows() {
         return rows.filter(function (row) { return !row.hidden; });
@@ -66,9 +84,42 @@
 
     function applyFilter() {
         const value = filter.value;
+        const assignment = assignments.get(assignmentFilter.value);
+        submissionFilter.disabled = !assignment;
+        if (!assignment) submissionFilter.value = 'all';
+        const eligible = assignment ? new Set(assignment.eligible) : null;
+        const submitted = assignment ? new Set(assignment.submitted) : null;
+        if (assignment) {
+            const byTariff = new Map();
+            rows.forEach(function (row) {
+                const userId = Number(row.dataset.studentId);
+                if (!eligible.has(userId)) return;
+                const tariff = row.dataset.studentTariff;
+                const counts = byTariff.get(tariff) || { submitted: 0, missing: 0 };
+                counts[submitted.has(userId) ? 'submitted' : 'missing'] += 1;
+                byTariff.set(tariff, counts);
+            });
+            const submittedCount = Array.from(byTariff.values()).reduce(function (sum, item) { return sum + item.submitted; }, 0);
+            const missingCount = Array.from(byTariff.values()).reduce(function (sum, item) { return sum + item.missing; }, 0);
+            stats.textContent = 'Сдали: ' + submittedCount + ' · Не сдали: ' + missingCount + '. По тарифам (сдали / не сдали): '
+                + Array.from(byTariff, function (entry) {
+                    return entry[0] + ': ' + entry[1].submitted + ' / ' + entry[1].missing;
+                }).join('; ');
+            stats.hidden = false;
+        } else {
+            stats.hidden = true;
+            stats.textContent = '';
+        }
         rows.forEach(function (row) {
             const uploaded = row.dataset.portfolioUploaded === '1';
-            row.hidden = (value === 'missing' && uploaded) || (value === 'uploaded' && !uploaded);
+            const userId = Number(row.dataset.studentId);
+            const hasSubmitted = submitted && submitted.has(userId);
+            row.querySelector('[data-assignment-state]').textContent = assignment
+                ? (hasSubmitted ? 'Сдал' : 'Не сдал') : 'Выберите задание';
+            row.hidden = (value === 'missing' && uploaded) || (value === 'uploaded' && !uploaded)
+                || (eligible && !eligible.has(userId))
+                || (assignment && submissionFilter.value === 'submitted' && !hasSubmitted)
+                || (assignment && submissionFilter.value === 'missing' && hasSubmitted);
         });
         const visible = visibleRows().length;
         count.textContent = visible;
@@ -112,6 +163,8 @@
     });
 
     filter.addEventListener('change', applyFilter);
+    assignmentFilter.addEventListener('change', applyFilter);
+    submissionFilter.addEventListener('change', applyFilter);
     applyFilter();
 })();
 </script>

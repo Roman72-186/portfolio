@@ -411,6 +411,11 @@
     min-height: 36px; padding: 0 32px 0 10px; border: 1px solid var(--ios-sep); border-radius: 8px;
     background: var(--ios-card); color: var(--ios-label); font: 500 12px/1 var(--ios-font);
 }
+.ios-staff-dashboard .student-activity-tools [data-assignment-filter] { max-width: min(320px, 80vw); }
+.ios-staff-dashboard .student-activity-stats {
+    flex-basis: 100%; margin: 0; color: var(--ios-label-2);
+    font: 500 12px/1.5 var(--ios-font);
+}
 .ios-staff-dashboard .student-activity-copy {
     min-height: 36px; padding: 0 12px; border: 1px solid var(--ios-blue); border-radius: 8px;
     background: var(--ios-blue); color: #fff; font: 700 12px/1 var(--ios-font); cursor: pointer;

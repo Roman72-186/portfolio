@@ -2,13 +2,17 @@
 
 import csv
 import io
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import TypedDict
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session as DBSession
 
 from app.models.activity_event import StudentActivityEvent
+from app.models.learning_topic import LearningTopic, LearningTopicAssignee, LearningTopicTag, LearningTopicTariff
+from app.models.tag import UserTag
+from app.models.task_block import TaskBlock, TaskBlockSubmission, TaskBlockTariff, SUBMISSION_BLOCK_TYPES
+from app.models.tracker import TrackerTask, TrackerTaskAssignee, TrackerTaskTag
 from app.constants import TARIFFS_CURRENT, TARIFF_DISPLAY
 from app.models.role import Role
 from app.models.session import Session as UserSession
@@ -166,7 +170,89 @@ _ACTIVITY_LABELS = {
 }
 
 
-def get_student_activity_overview(db: DBSession, event_limit: int = 200) -> dict:
+def _assignment_activity(db: DBSession, students: list[User]) -> list[dict]:
+    """Published upload blocks with their intended audience and actual submissions."""
+    now = datetime.now(timezone.utc)
+    candidates = (
+        db.query(TaskBlock, TrackerTask, LearningTopic)
+        .join(TrackerTask, TaskBlock.task_id == TrackerTask.id)
+        .outerjoin(LearningTopic, TrackerTask.topic_id == LearningTopic.id)
+        .filter(
+            TaskBlock.block_type.in_(SUBMISSION_BLOCK_TYPES),
+            TrackerTask.is_published.is_(True),
+            TrackerTask.deleted_at.is_(None),
+            or_(TrackerTask.starts_at.is_(None), TrackerTask.starts_at <= now),
+            or_(TaskBlock.opens_at.is_(None), TaskBlock.opens_at <= now),
+            or_(TrackerTask.topic_id.is_(None),
+                (LearningTopic.is_published.is_(True)) &
+                (LearningTopic.deleted_at.is_(None)) &
+                (LearningTopic.opens_at <= now)),
+        )
+        .order_by(TrackerTask.id.desc(), TaskBlock.sort_order, TaskBlock.id)
+        .all()
+    )
+    if not candidates:
+        return []
+
+    block_ids = [block.id for block, _, _ in candidates]
+    task_ids = {task.id for _, task, _ in candidates}
+    topic_ids = {topic.id for _, _, topic in candidates if topic}
+    student_ids = [student.id for student in students]
+    tags_by_user: dict[int, set[int]] = {}
+    for user_id, tag_id in db.query(UserTag.user_id, UserTag.tag_id).filter(UserTag.user_id.in_(student_ids)):
+        tags_by_user.setdefault(user_id, set()).add(tag_id)
+
+    def pairs(owner_column, value_column, owner_ids):
+        result: dict[int, set] = {}
+        for owner, value in db.query(owner_column, value_column).filter(owner_column.in_(owner_ids)):
+            result.setdefault(owner, set()).add(value)
+        return result
+
+    task_tags = pairs(TrackerTaskTag.task_id, TrackerTaskTag.tag_id, task_ids)
+    task_assignees = pairs(TrackerTaskAssignee.task_id, TrackerTaskAssignee.user_id, task_ids)
+    topic_tags = pairs(LearningTopicTag.topic_id, LearningTopicTag.tag_id, topic_ids)
+    topic_assignees = pairs(LearningTopicAssignee.topic_id, LearningTopicAssignee.user_id, topic_ids)
+    topic_tariffs = pairs(LearningTopicTariff.topic_id, LearningTopicTariff.tariff, topic_ids)
+    block_tariffs = pairs(TaskBlockTariff.block_id, TaskBlockTariff.tariff, block_ids)
+    submitted_by_block: dict[int, set[int]] = {}
+    for block_id, user_id in (
+        db.query(TaskBlockSubmission.block_id, TaskBlockSubmission.user_id)
+        .filter(TaskBlockSubmission.block_id.in_(block_ids),
+                TaskBlockSubmission.user_id.in_(student_ids),
+                TaskBlockSubmission.submitted_at.isnot(None))
+    ):
+        submitted_by_block.setdefault(block_id, set()).add(user_id)
+
+    assignments = []
+    for block, task, topic in candidates:
+        eligible = []
+        for student in students:
+            tags = tags_by_user.get(student.id, set())
+            if topic:
+                addressed = (topic.assign_to_all or student.id in topic_assignees.get(topic.id, set())
+                             or bool(tags & topic_tags.get(topic.id, set())))
+                tariff_allowed = (not topic.tariff_restricted or
+                                  (student.tariff or "").strip().upper() in topic_tariffs.get(topic.id, set()))
+            else:
+                addressed = (task.assign_to_all or student.id in task_assignees.get(task.id, set())
+                             or bool(tags & task_tags.get(task.id, set())))
+                tariff_allowed = True
+            if addressed and tariff_allowed and (not block_tariffs.get(block.id) or
+                                                  student.tariff in block_tariffs[block.id]):
+                eligible.append(student.id)
+        label = task.title
+        if block.title and block.title.strip() and block.title.strip().casefold() != task.title.casefold():
+            label += f" · {block.title.strip()}"
+        assignments.append({
+            "id": block.id,
+            "label": label,
+            "eligible": eligible,
+            "submitted": sorted(submitted_by_block.get(block.id, set())),
+        })
+    return assignments
+
+
+def get_student_activity_overview(db: DBSession, event_limit: int = 200, *, include_assignments: bool = False) -> dict:
     """Return per-student lifecycle metrics and the append-only action journal."""
     students = (
         db.query(User)
@@ -183,7 +269,7 @@ def get_student_activity_overview(db: DBSession, event_limit: int = 200) -> dict
     )
     student_ids = [student.id for student in students]
     if not student_ids:
-        return {"students": [], "events": []}
+        return {"students": [], "events": [], "assignments": []}
 
     login_rows = (
         db.query(
@@ -271,4 +357,5 @@ def get_student_activity_overview(db: DBSession, event_limit: int = 200) -> dict
         }
         for event, user in events
     ]
-    return {"students": overview, "events": journal}
+    return {"students": overview, "events": journal,
+            "assignments": _assignment_activity(db, students) if include_assignments else []}

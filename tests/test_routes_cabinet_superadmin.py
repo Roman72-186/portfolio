@@ -645,6 +645,13 @@ def test_admin_activity_page_has_portfolio_filter_and_copy_action(
     uploaded = user_factory(
         vk_id=900218, name="Uploaded Portfolio", role_name="ученик"
     )
+    from app.models.tracker import TrackerTask
+    from app.models.task_block import TaskBlock
+    task = TrackerTask(title="Практическое задание", kind="material", is_published=True, assign_to_all=True)
+    db.add(task)
+    db.flush()
+    block = TaskBlock(task_id=task.id, block_type="photo_upload", title="Эскизы")
+    db.add(block)
     db.add(Work(
         user_id=uploaded.id,
         work_type="before",
@@ -660,6 +667,9 @@ def test_admin_activity_page_has_portfolio_filter_and_copy_action(
     assert 'data-activity-filter' in page
     assert '<option value="missing">Не загрузили</option>' in page
     assert 'data-activity-copy' in page
+    assert 'data-assignment-filter' in page
+    assert 'data-submission-filter' in page
+    assert f'<option value="{block.id}">Практическое задание · Эскизы</option>' in page
     assert "Скопировать имена, username и тариф" in page
     missing_row = page.split('data-student-name="Missing Portfolio"', 1)[0].rsplit("<tr", 1)[1]
     uploaded_row = page.split('data-student-name="Uploaded Portfolio"', 1)[0].rsplit("<tr", 1)[1]
