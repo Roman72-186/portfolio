@@ -137,11 +137,50 @@
             });
             button(root, 'Далее: результаты', function () {
                 readQuestions();
-                if (!state.questions.length || state.questions.some(function (q) {
-                    return !q.text.trim() || q.options.length < 2 || q.options.some(function (o) { return !o.text.trim() || !o.value.trim(); }) ||
-                        new Set(q.options.map(function (o) { return o.value.trim(); })).size !== q.options.length;
-                })) {
-                    message.textContent = 'Заполните вопросы, варианты и разные значения внутри каждого вопроса.';
+                // Точный адрес ошибки — какой вопрос и какой вариант — а не
+                // общая фраза на все пять возможных причин сразу (владелец
+                // 22.09.2026: не было видно, что именно не так).
+                var problem = null;
+                if (!state.questions.length) {
+                    problem = 'Добавьте хотя бы один вопрос.';
+                } else {
+                    state.questions.some(function (question, qi) {
+                        if (!question.text.trim()) {
+                            problem = 'Вопрос ' + (qi + 1) + ': не заполнен текст вопроса.';
+                            return true;
+                        }
+                        if (question.options.length < 2) {
+                            problem = 'Вопрос ' + (qi + 1) + ': нужно минимум два варианта ответа.';
+                            return true;
+                        }
+                        var seen = {};
+                        return question.options.some(function (option, oi) {
+                            var text = option.text.trim();
+                            var value = option.value.trim();
+                            if (!text) {
+                                problem = 'Вопрос ' + (qi + 1) + ', вариант ' + (oi + 1) + ': не заполнен текст ответа.';
+                                return true;
+                            }
+                            if (!value) {
+                                problem = 'Вопрос ' + (qi + 1) + ', вариант ' + (oi + 1) + ': не заполнено значение.';
+                                return true;
+                            }
+                            if (!/^[\p{L}\p{N}]+$/u.test(value)) {
+                                problem = 'Вопрос ' + (qi + 1) + ', вариант ' + (oi + 1) + ': значение «' + value +
+                                    '» содержит недопустимый символ — можно только буквы и цифры, без пробелов и знаков.';
+                                return true;
+                            }
+                            if (seen[value]) {
+                                problem = 'Вопрос ' + (qi + 1) + ': значение «' + value + '» повторяется у двух вариантов.';
+                                return true;
+                            }
+                            seen[value] = true;
+                            return false;
+                        });
+                    });
+                }
+                if (problem) {
+                    message.textContent = problem;
                     return;
                 }
                 if (combinations().length > 4096) {

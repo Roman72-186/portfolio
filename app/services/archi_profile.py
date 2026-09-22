@@ -89,24 +89,44 @@ def validate_diagnostic_config(raw: dict) -> dict:
     if not isinstance(questions, list) or not 1 <= len(questions) <= 50:
         raise ValueError("Добавьте от одного до 50 вопросов")
     clean_questions = []
-    for question in questions:
+    # Номер вопроса и варианта — в каждое сообщение (владелец 22.09.2026,
+    # запрос после того, как общее «укажите текст и значение» не давало
+    # понять, какой именно из вопросов не сохраняется). Условия разнесены по
+    # одному: раньше один `raise` на пять причин через `or` называл только
+    # самый общий симптом, а не то, что реально сломано.
+    for qi, question in enumerate(questions, 1):
         if not isinstance(question, dict):
-            raise ValueError("Заполните текст каждого вопроса")
+            raise ValueError(f"Вопрос {qi}: заполните текст вопроса")
         prompt = str(question.get("text") or "").strip()
         options = question.get("options")
-        if not prompt or len(prompt) > 5000 or not isinstance(options, list) or not 2 <= len(options) <= 20:
-            raise ValueError("У каждого вопроса должен быть текст и от двух до 20 вариантов")
+        if not prompt:
+            raise ValueError(f"Вопрос {qi}: не заполнен текст вопроса")
+        if len(prompt) > 5000:
+            raise ValueError(f"Вопрос {qi}: текст вопроса длиннее 5000 символов")
+        if not isinstance(options, list) or not 2 <= len(options) <= 20:
+            raise ValueError(f"Вопрос {qi}: нужно от двух до 20 вариантов ответа")
         clean_options = []
         values = set()
-        for option in options:
+        for oi, option in enumerate(options, 1):
             if not isinstance(option, dict):
-                raise ValueError("Заполните варианты ответа")
+                raise ValueError(f"Вопрос {qi}, вариант {oi}: заполните вариант ответа")
             text = str(option.get("text") or "").strip()
             value = str(option.get("value") or "").strip()
-            if not text or len(text) > 300 or not value or len(value) > 20 or not value.isalnum():
-                raise ValueError("Укажите текст и короткое буквенное или числовое значение каждого варианта")
+            if not text:
+                raise ValueError(f"Вопрос {qi}, вариант {oi}: не заполнен текст ответа")
+            if len(text) > 300:
+                raise ValueError(f"Вопрос {qi}, вариант {oi}: текст ответа длиннее 300 символов")
+            if not value:
+                raise ValueError(f"Вопрос {qi}, вариант {oi}: не заполнено значение")
+            if len(value) > 20:
+                raise ValueError(f"Вопрос {qi}, вариант {oi}: значение длиннее 20 символов")
+            if not value.isalnum():
+                raise ValueError(
+                    f"Вопрос {qi}, вариант {oi}: значение «{value}» содержит недопустимый "
+                    "символ — можно только буквы и цифры, без пробелов и знаков"
+                )
             if value in values:
-                raise ValueError("Значения внутри одного вопроса должны различаться")
+                raise ValueError(f"Вопрос {qi}: значение «{value}» повторяется у двух вариантов")
             values.add(value)
             clean_options.append({"text": text, "value": value})
         clean_questions.append({"text": prompt, "options": clean_options})
@@ -118,9 +138,9 @@ def validate_diagnostic_config(raw: dict) -> dict:
     if not isinstance(results, list) or not results:
         raise ValueError("Добавьте хотя бы один результат")
     clean_results = []
-    for result in results:
+    for ri, result in enumerate(results, 1):
         if not isinstance(result, dict):
-            raise ValueError("Заполните результаты")
+            raise ValueError(f"Результат {ri}: заполните результат")
         title = str(result.get("title") or "").strip()
         body = str(result.get("text") or "").strip()
         # Необязательное поле (владелец 22.09.2026): у части диагностик нет
@@ -128,17 +148,28 @@ def validate_diagnostic_config(raw: dict) -> dict:
         # сохраняться и без него.
         architects = str(result.get("architects") or "").strip()
         assigned = result.get("combinations")
-        if not title or len(title) > 200 or not body or len(body) > 5000 or not isinstance(assigned, list) or not assigned:
-            raise ValueError("У каждого результата нужны архитектурный профиль, формула силы и сочетания ответов")
+        if not title:
+            raise ValueError(f"Результат {ri}: не заполнен архитектурный профиль (название)")
+        if len(title) > 200:
+            raise ValueError(f"Результат {ri}: архитектурный профиль длиннее 200 символов")
+        if not body:
+            raise ValueError(f"Результат {ri} («{title}»): не заполнена формула силы")
+        if len(body) > 5000:
+            raise ValueError(f"Результат {ri} («{title}»): формула силы длиннее 5000 символов")
         if len(architects) > 500:
-            raise ValueError("Список реальных архитекторов слишком длинный")
+            raise ValueError(f"Результат {ri} («{title}»): список реальных архитекторов слишком длинный")
+        if not isinstance(assigned, list) or not assigned:
+            raise ValueError(f"Результат {ri} («{title}»): назначьте хотя бы одно сочетание ответов")
         clean_assigned = []
         for combination in assigned:
             if not isinstance(combination, list):
-                raise ValueError("Неверное сочетание ответов")
+                raise ValueError(f"Результат {ri} («{title}»): неверное сочетание ответов")
             key = tuple(str(value) for value in combination)
-            if key not in expected or key in used:
-                raise ValueError("Сочетание ответов не существует или назначено дважды")
+            label = " · ".join(key)
+            if key not in expected:
+                raise ValueError(f"Результат {ri} («{title}»): сочетания {label} нет среди вариантов ответов")
+            if key in used:
+                raise ValueError(f"Сочетание {label} назначено сразу двум результатам")
             used.add(key)
             clean_assigned.append(list(key))
         clean_results.append({"title": title, "text": body, "architects": architects, "combinations": clean_assigned})
