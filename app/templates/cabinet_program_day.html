@@ -1451,7 +1451,15 @@ FORM: Operate.
         form.querySelector('[data-x-required]').checked = data.is_required !== false;
         form.querySelector('[data-x-starts]').value = data.starts_on || '';
         populateTariffFields(form, data);
-        renderFormBlocks(form, data.blocks || []);
+        // У диагностики свои вопросы уже есть блоками-«Вопрос» в базе (их
+        // создаёт archi_profile.blocks_from_config — так их видит ученик),
+        // но это не те блоки, что редактируются здесь: у варианта диагностики
+        // нет и не может быть «верного ответа». Общий редактор блоков для
+        // archi_profile спрятан на этом экране, но renderFormBlocks(data.blocks)
+        // всё равно клал бы их туда, а сохранение отправило бы их обратно на
+        // сервер как обычный тест — Pydantic отказывал бы с «отметьте хотя бы
+        // один верный ответ» на каждый вопрос (жалоба 22.09.2026).
+        renderFormBlocks(form, kind === 'archi_profile' ? [] : (data.blocks || []));
         if (kind === 'archi_profile') diagnosticBuilder.load(data.diagnostic);
         // Билеты на правке не предлагаем: уже созданное задание нельзя
         // превратить в пробник — у `/items/{id}/material` и `/items/{id}/mock`
@@ -1880,7 +1888,14 @@ FORM: Operate.
                 subject: simpleForm.querySelector('[data-x-subject]').value || null,
                 is_required: simpleForm.querySelector('[data-x-required]').checked,
                 starts_on: simpleForm.querySelector('[data-x-starts]').value || null,
-                blocks: collectFormBlocks(simpleForm),
+                // Сервер сам собирает блоки диагностики из diagnostic (см.
+                // _update_simple_item: `elif kind != ITEM_ARCHI_PROFILE`) —
+                // blocks для archi_profile ни для чего не используется, но
+                // Pydantic всё равно валидирует его ДО этой ветки. Раньше сюда
+                // попадали же вопросы диагностики (см. renderFormBlocks выше),
+                // а «верного ответа» у них нет — сохранение отказывало с
+                // ошибкой на каждый вопрос.
+                blocks: kind === 'archi_profile' ? [] : collectFormBlocks(simpleForm),
                 diagnostic: diagnostic,
                 audience: audienceSimple
             }).then(afterSave).catch(function (error) {

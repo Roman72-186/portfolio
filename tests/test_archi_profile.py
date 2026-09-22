@@ -4,6 +4,7 @@ from datetime import timedelta
 from itertools import product
 import re
 
+from app.api.cabinet_program import _edit_payloads
 from app.models.task_block import TaskBlock
 from app.models.tracker import ITEM_ARCHI_PROFILE, TrackerTask
 from app.services.archi_profile import COMBINATIONS, PROFILES, result_for_answers
@@ -181,3 +182,71 @@ def test_teacher_authored_diagnostic_maps_all_combinations(client, db, user_fact
     )
     assert changed.status_code == 409
     assert db.get(TrackerTask, task_id).diagnostic_config == config
+
+
+def test_editing_diagnostic_must_not_resend_its_own_question_blocks(
+    client, db, user_factory, session_factory
+):
+    """Регрессия (жалоба Лизы 22.09.2026 — «У вопроса с вариантами отметьте
+    хотя бы один верный ответ» повторялась по числу вопросов при сохранении).
+
+    `archi_profile.blocks_from_config` заводит вопросы диагностики как
+    обычные блоки-«Вопрос» в базе — так их видит ученик. `_edit_payloads`
+    отдаёт форме правки блоки конструктора «у всех видов элемента без
+    исключения», включая эти. Старый клиент подхватывал их в скрытый общий
+    редактор блоков и отправлял обратно при сохранении — а у варианта
+    диагностики нет и не может быть «верного ответа», поэтому
+    `BlockItem.choice_question_needs_a_right_answer` отказывал на каждый
+    вопрос. Сервер и так игнорирует `payload.blocks` для archi_profile
+    (`_update_simple_item`: `elif kind != ITEM_ARCHI_PROFILE`), но Pydantic
+    валидирует тело запроса раньше, чем эта ветка успевает сработать —
+    чинить нужно на клиенте, не отправлять эти блоки вовсе."""
+    admin = user_factory(vk_id=887_201, name="Преподаватель", is_admin=True, role_name="админ")
+    client.cookies.set("session_id", session_factory(admin).id)
+    today = today_msk()
+    cycle = client.post(
+        "/cabinet/staff/program/cycles",
+        json={"title": "Цикл", "description": None, "starts_on": today.isoformat(),
+              "ends_on": (today + timedelta(days=5)).isoformat(), "is_published": True},
+        headers={"X-CSRF-Token": "x"},
+    )
+    config = {
+        "questions": [
+            {"text": "Вопрос", "options": [{"text": "Свет", "value": "1"}, {"text": "Форма", "value": "2"}]},
+        ],
+        "results": [
+            {"title": "Итог", "text": "Формула", "architects": "", "combinations": [["1"], ["2"]]},
+        ],
+    }
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle.json()['cycle_id']}/items/archi_profile",
+        json={"title": "Профиль", "description": None, "diagnostic": config},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert created.status_code == 200, created.text
+    task_id = created.json()["task_id"]
+
+    # То, что реально уйдёт в форму правки — не собранное вручную, а то же,
+    # чем сервер отвечает на настоящий экран.
+    task = db.get(TrackerTask, task_id)
+    stale_blocks = _edit_payloads(db, [task], {})[task_id]["blocks"]
+    assert len(stale_blocks) == 1
+    assert stale_blocks[0]["block_type"] == "question"
+    assert all(not option["is_correct"] for option in stale_blocks[0]["options"])
+
+    # Старый (баг) клиент — те же блоки уходят обратно при сохранении.
+    broken = client.post(
+        f"/cabinet/staff/program/items/{task_id}/archi_profile",
+        json={"title": "Профиль", "description": None, "diagnostic": config, "blocks": stale_blocks},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert broken.status_code == 422
+    assert "верный ответ" in broken.text
+
+    # Починенный клиент — для archi_profile blocks всегда пустой список.
+    fixed = client.post(
+        f"/cabinet/staff/program/items/{task_id}/archi_profile",
+        json={"title": "Профиль", "description": None, "diagnostic": config, "blocks": []},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert fixed.status_code == 200, fixed.text

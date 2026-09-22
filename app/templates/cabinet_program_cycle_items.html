@@ -428,7 +428,16 @@ function uploadBlockPhotos(row, files) {
             window.RichTextField.refresh(fields.description);
             fields.required.checked = !!data.is_required;
             fields.starts.value = data.starts_on || '';
-            renderFormBlocks(form, data.blocks || []);
+            // У диагностики свои вопросы уже есть блоками-«Вопрос» в базе
+            // (их создаёт archi_profile.blocks_from_config — так их видит
+            // ученик), но это не те блоки, что редактируются здесь: у
+            // варианта диагностики нет и не может быть «верного ответа».
+            // Общий редактор блоков для archi_profile спрятан, но
+            // renderFormBlocks(data.blocks) всё равно клал бы их туда, а
+            // сохранение отправило бы обратно на сервер как обычный тест —
+            // Pydantic отказывал бы с «отметьте хотя бы один верный ответ»
+            // на каждый вопрос (жалоба 22.09.2026).
+            renderFormBlocks(form, form.dataset.itemKind === 'archi_profile' ? [] : (data.blocks || []));
             formTitle.textContent = form.dataset.itemKind === 'archi_profile' ? 'Правка диагностики' : 'Правка задания';
             openForm();
         });
@@ -448,7 +457,14 @@ function uploadBlockPhotos(row, files) {
             description: fields.description.value.trim() || null,
             is_required: fields.required.checked,
             starts_on: fields.starts.value || null,
-            blocks: collectFormBlocks(form)
+            // Сервер сам собирает блоки диагностики из payload.diagnostic
+            // (см. _update_simple_item: `elif kind != ITEM_ARCHI_PROFILE`) —
+            // payload.blocks для archi_profile ни для чего не используется,
+            // но Pydantic всё равно валидирует его ДО того, как эта ветка
+            // сработает. Раньше сюда попадали же вопросы диагностики (см.
+            // renderFormBlocks выше), и «верного ответа» у них нет — сохранение
+            // отказывало с ошибкой на каждый вопрос.
+            blocks: form.dataset.itemKind === 'archi_profile' ? [] : collectFormBlocks(form)
         };
         if (form.dataset.itemKind === 'archi_profile') {
             try { payload.diagnostic = diagnosticBuilder.collect(); }
