@@ -474,8 +474,17 @@ FORM: Operate.
         }).then(function (response) {
             return response.json().catch(function () { return {}; }).then(function (data) {
                 if (!response.ok) {
+                    // `detail` — либо своя строка (наши HTTPException), либо
+                    // список ошибок валидации Pydantic ([{msg, loc, ...}, ...]).
+                    // Без разбора список раньше молча превращался в общий
+                    // 'request_failed', и реальная причина терялась.
                     var reason = data.error
                         || (typeof data.detail === 'string' ? data.detail : '')
+                        || (Array.isArray(data.detail)
+                            ? data.detail.map(function (item) {
+                                return item && item.msg ? item.msg : String(item);
+                            }).join('; ')
+                            : '')
                         || 'request_failed';
                     var error = new Error(reason);
                     error.status = response.status;
