@@ -21,6 +21,7 @@ FORM: Operate.
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
 <script src="/static/js/task-blocks-render.js?v=24"></script>
 <script src="/static/js/diagnostic-builder.js?v=9"></script>
+<script src="/static/js/diagnostic-trainer.js?v=1"></script>
 {# WYSIWYG для полей с разметкой (**жирный**/*курсив*/список/ссылка) — стоит до
    `program_blocks_editor_js.html`, тот вызывает window.RichTextField напрямую. #}
 <script src="/static/js/rich-text-field.js?v=3"></script>
@@ -256,6 +257,17 @@ FORM: Operate.
         {{ tariff_fields() }}
         {% if kind == 'archi_profile' %}
         <div data-diagnostic-editor></div>
+        {# Тренажёр для ролей ≥ 4 (владелец 22.09.2026, вариант C развилки —
+           см. `NEXT-CHAT-PROMPT-ДИАГНОСТИКА-ДОСТУП.md`): реально ответить на
+           вопросы и увидеть результат, ничего не сохраняя. Доступен только у
+           уже сохранённой диагностики (`editingTaskId`) — вопросам и
+           вариантам нужны настоящие id из базы, у несохранённого черновика
+           их нет. Кнопку показывает/прячет JS (`openSimpleEdit`/
+           `resetSimpleFormForCreate`). #}
+        <div class="prg-actions">
+            <button type="button" class="btn-outline" data-diagnostic-trainer hidden>Пройти как тренажёр</button>
+        </div>
+        <div class="prg-preview" data-diagnostic-trainer-box hidden></div>
         {% else %}
         {{ blocks_editor(with_mock=mock_capable) }}
         {% endif %}
@@ -1356,7 +1368,13 @@ FORM: Operate.
         resetTariffFields(form);
         renderFormBlocks(form, []);
         resetSimpleMock(form);
-        if (kind === 'archi_profile') diagnosticBuilder.load(null);
+        if (kind === 'archi_profile') {
+            diagnosticBuilder.load(null);
+            var trainerBtn = form.querySelector('[data-diagnostic-trainer]');
+            if (trainerBtn) trainerBtn.hidden = true;
+            var trainerBox = form.querySelector('[data-diagnostic-trainer-box]');
+            if (trainerBox) { trainerBox.hidden = true; trainerBox.innerHTML = ''; }
+        }
         setMessage(form, '', false);
     }
 
@@ -1463,7 +1481,13 @@ FORM: Operate.
         // сервер как обычный тест — Pydantic отказывал бы с «отметьте хотя бы
         // один верный ответ» на каждый вопрос (жалоба 22.09.2026).
         renderFormBlocks(form, kind === 'archi_profile' ? [] : (data.blocks || []));
-        if (kind === 'archi_profile') diagnosticBuilder.load(data.diagnostic);
+        if (kind === 'archi_profile') {
+            diagnosticBuilder.load(data.diagnostic);
+            var trainerBtn = form.querySelector('[data-diagnostic-trainer]');
+            if (trainerBtn) trainerBtn.hidden = false;
+            var trainerBox = form.querySelector('[data-diagnostic-trainer-box]');
+            if (trainerBox) { trainerBox.hidden = true; trainerBox.innerHTML = ''; }
+        }
         // Билеты на правке не предлагаем: уже созданное задание нельзя
         // превратить в пробник — у `/items/{id}/material` и `/items/{id}/mock`
         // разные контракты, а пробник правится своей формой (openMockEdit).
@@ -1705,6 +1729,20 @@ FORM: Operate.
         var previewBtn = event.target.closest('[data-preview-blocks]');
         if (previewBtn) {
             previewBlocks(previewBtn.closest('[data-form]'));
+            return;
+        }
+
+        var trainerBtn = event.target.closest('[data-diagnostic-trainer]');
+        if (trainerBtn) {
+            var trainerForm = trainerBtn.closest('[data-form]');
+            var taskId = trainerForm && trainerForm.dataset.editingTaskId;
+            if (taskId) {
+                window.diagnosticTrainer.run({
+                    box: trainerForm.querySelector('[data-diagnostic-trainer-box]'),
+                    taskId: taskId,
+                    csrfToken: csrfToken
+                });
+            }
             return;
         }
 

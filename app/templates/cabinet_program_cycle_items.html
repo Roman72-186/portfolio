@@ -25,6 +25,7 @@
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
 <script src="/static/js/task-blocks-render.js?v=24"></script>
 <script src="/static/js/diagnostic-builder.js?v=9"></script>
+<script src="/static/js/diagnostic-trainer.js?v=1"></script>
 {# WYSIWYG для полей с разметкой — стоит до `program_blocks_editor_js.html`. #}
 <script src="/static/js/rich-text-field.js?v=3"></script>
 <div class="prg-page ios-prg-day" data-topic="{{ topic.id }}">
@@ -85,6 +86,16 @@
 
         <div data-diagnostic-note hidden>
             <div data-diagnostic-editor></div>
+            {# Тренажёр для ролей ≥ 4 (владелец 22.09.2026, вариант C развилки —
+               см. `NEXT-CHAT-PROMPT-ДИАГНОСТИКА-ДОСТУП.md`): реально ответить
+               и увидеть результат, ничего не сохраняя. Доступен только у уже
+               сохранённой диагностики (`fields.id.value`) — вопросам и
+               вариантам нужны настоящие id из базы, у несохранённого черновика
+               их нет. #}
+            <div class="prg-actions">
+                <button type="button" class="btn-outline" data-diagnostic-trainer hidden>Пройти как тренажёр</button>
+            </div>
+            <div class="prg-preview" data-diagnostic-trainer-box hidden></div>
         </div>
         <div class="prg-blocks" data-blocks-wrap>
             <h3>Задачи учебного дня</h3>
@@ -381,6 +392,10 @@ function uploadBlockPhotos(row, files) {
         form.querySelector('[data-blocks-wrap]').hidden = false;
         form.querySelector('[data-preview-wrap]').hidden = false;
         form.querySelector('[data-diagnostic-note]').hidden = true;
+        form.querySelector('[data-diagnostic-trainer]').hidden = true;
+        var resetTrainerBox = form.querySelector('[data-diagnostic-trainer-box]');
+        resetTrainerBox.hidden = true;
+        resetTrainerBox.innerHTML = '';
         fields.id.value = '';
         fields.title.value = '';
         fields.subject.value = '';
@@ -420,6 +435,7 @@ function uploadBlockPhotos(row, files) {
                 form.querySelector('[data-blocks-wrap]').hidden = true;
                 form.querySelector('[data-preview-wrap]').hidden = true;
                 form.querySelector('[data-diagnostic-note]').hidden = false;
+                form.querySelector('[data-diagnostic-trainer]').hidden = false;
             }
             fields.id.value = itemId;
             fields.title.value = data.title || '';
@@ -552,6 +568,17 @@ function uploadBlockPhotos(row, files) {
         var previewBtn = event.target.closest('[data-preview-blocks]');
         if (previewBtn) {
             previewBlocks(form);
+            return;
+        }
+        var trainerBtn = event.target.closest('[data-diagnostic-trainer]');
+        if (trainerBtn) {
+            if (fields.id.value) {
+                window.diagnosticTrainer.run({
+                    box: form.querySelector('[data-diagnostic-trainer-box]'),
+                    taskId: fields.id.value,
+                    csrfToken: csrfToken
+                });
+            }
             return;
         }
         var addBlock = event.target.closest('[data-add-block]');

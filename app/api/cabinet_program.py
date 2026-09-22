@@ -31,6 +31,7 @@ from app.models.task_block import (
     BLOCK_RULES,
     BLOCK_SCALE,
     TaskBlock,
+    QUESTION_SINGLE,
     QUESTION_TYPE_LABELS,
     QUESTION_TYPES,
     BLOCK_TYPE_LABELS,
@@ -70,6 +71,7 @@ from app.services.archi_profile import (
     INTRO as ARCHI_INTRO,
     QUESTIONS as ARCHI_QUESTIONS,
     TITLE as ARCHI_TITLE,
+    trainer_profile_for_answers,
 )
 from app.services import s3 as s3_service
 from app.services.exam_tickets import (
@@ -139,7 +141,7 @@ from app.services.video_topics import (
     unpublish_topic,
     update_topic,
 )
-from app.tmpl import templates
+from app.tmpl import format_rich_text, templates
 
 router = APIRouter(prefix="/cabinet/staff/program")
 
@@ -914,6 +916,85 @@ def create_cycle_archi_profile_item(
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
     return _create_cycle_item(topic_id, payload, user, db, ITEM_ARCHI_PROFILE)
+
+
+@router.get("/tasks/{task_id}/trainer-blocks", response_class=JSONResponse)
+def diagnostic_trainer_blocks(
+    task_id: int,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Вопросы диагностики для тренажёра ГП/СА (владелец 22.09.2026, вариант
+    C выбранной развилки — см. `NEXT-CHAT-PROMPT-ДИАГНОСТИКА-ДОСТУП.md`):
+    реально ответить и увидеть результат, но ничего не сохраняется.
+
+    Читает те же сохранённые `TaskBlock`/`TaskBlockOption`, что видит ученик
+    на `/cabinet/tracker/tasks/{id}/blocks`, но без похода через
+    `_accessible_task_or_404` — та фильтрует по тарифу и аудитории самого
+    входа, у staff их обычно нет (не тот путь для этой задачи). Доступ и так
+    ограничен рангом ≥ 4, как у остального конструктора.
+    """
+    task = db.get(TrackerTask, task_id)
+    if task is None or task.deleted_at is not None or task.kind != ITEM_ARCHI_PROFILE:
+        raise HTTPException(status_code=404, detail="Диагностика не найдена")
+    blocks = [b for b in get_task_blocks(db, task_id) if b.block_type == BLOCK_QUESTION]
+    if not blocks:
+        raise HTTPException(status_code=404, detail="Вопросы диагностики не сохранены — сначала сохраните задание")
+    options = get_task_block_options(db, [b.id for b in blocks])
+    payload = [
+        {
+            "id": block.id,
+            "block_type": BLOCK_QUESTION,
+            "title": block.title,
+            "body_html": format_rich_text(block.body) if block.body else None,
+            "question_type": QUESTION_SINGLE,
+            "is_archi_profile": True,
+            "options": [
+                {
+                    "id": o.id,
+                    "text": o.text,
+                    "text_html": format_rich_text(o.text) if o.text else None,
+                    "description": o.description,
+                    "requires_text": False,
+                }
+                for o in options.get(block.id, [])
+            ],
+        }
+        for block in blocks
+    ]
+    return JSONResponse({"blocks": payload})
+
+
+class TrainerAnswerItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    block_id: int = Field(ge=1)
+    option_ids: list[int] = Field(default_factory=list, max_length=1)
+
+
+class TrainerScoreSubmit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    answers: list[TrainerAnswerItem] = Field(min_length=1, max_length=MAX_BLOCKS)
+
+
+@router.post("/tasks/{task_id}/trainer-score", response_class=JSONResponse)
+def diagnostic_trainer_score(
+    task_id: int,
+    payload: TrainerScoreSubmit,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Результат тренажёра — считает и возвращает, в БД не пишет ничего:
+    `trainer_profile_for_answers` не коммитит и не трогает `TaskBlockResponse`
+    или состояние блока, поэтому реальный прогресс настоящего ученика не
+    затрагивается.
+    """
+    answers = {item.block_id: item.option_ids[0] for item in payload.answers if item.option_ids}
+    try:
+        result = trainer_profile_for_answers(db, task_id, answers)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=422)
+    return JSONResponse({"ok": True, "archi_profile": result})
 
 
 def _create_cycle_item(topic_id: int, payload: CycleItemPayload, user: dict, db: DBSession, kind: str):

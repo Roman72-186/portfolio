@@ -190,32 +190,14 @@ def blocks_from_config(config: dict) -> list[dict]:
     ]
 
 
-def result_for_answers(db, task_id: int, user_id: int) -> dict | None:
-    from app.models.task_block import TaskBlockResponse
-    from app.services.task_blocks import get_blocks, get_options, get_selected_options
-
-    from app.models.tracker import TrackerTask
-
-    task = db.get(TrackerTask, task_id)
-    config = task.diagnostic_config if task else None
-    blocks = [b for b in get_blocks(db, task_id) if b.block_type == BLOCK_QUESTION]
-    if len(blocks) != (len(config["questions"]) if config else 3):
-        return None
-    response = db.query(TaskBlockResponse).filter_by(task_id=task_id, user_id=user_id).one_or_none()
-    if response is None:
-        return None
-    selected = get_selected_options(db, response_id=response.id)
-    options = get_options(db, [block.id for block in blocks])
-    digits = []
-    for block in blocks:
-        chosen = selected.get(block.id, set())
-        if len(chosen) != 1:
-            return None
-        option_id = next(iter(chosen))
-        position = next((i for i, option in enumerate(options.get(block.id, []), 1) if option.id == option_id), None)
-        if position is None:
-            return None
-        digits.append(config["questions"][len(digits)]["options"][position - 1]["value"] if config else str(position))
+def _profile_for_digits(config: dict | None, digits: list[str]) -> dict | None:
+    """Найти результат по собранной комбинации значений — единственное место,
+    где живёт логика подбора (teacher-authored `config` и захардкоженный
+    легаси-набор `COMBINATIONS`/`PROFILES`). Используется и настоящим
+    прохождением ученика (`result_for_answers`), и тренажёром staff
+    (`trainer_profile_for_answers`) — вторая копия сравнения означала бы, что
+    подбор результата можно незаметно рассинхронизировать между ними.
+    """
     if config:
         key = tuple(digits)
         result = next((r for r in config["results"] if list(key) in r["combinations"]), None)
@@ -244,3 +226,70 @@ def result_for_answers(db, task_id: int, user_id: int) -> dict | None:
         "formula": formula, "architects": architects,
         "formula_html": format_rich_text(formula), "architects_html": format_rich_text(architects),
     }
+
+
+def result_for_answers(db, task_id: int, user_id: int) -> dict | None:
+    from app.models.task_block import TaskBlockResponse
+    from app.services.task_blocks import get_blocks, get_options, get_selected_options
+
+    from app.models.tracker import TrackerTask
+
+    task = db.get(TrackerTask, task_id)
+    config = task.diagnostic_config if task else None
+    blocks = [b for b in get_blocks(db, task_id) if b.block_type == BLOCK_QUESTION]
+    if len(blocks) != (len(config["questions"]) if config else 3):
+        return None
+    response = db.query(TaskBlockResponse).filter_by(task_id=task_id, user_id=user_id).one_or_none()
+    if response is None:
+        return None
+    selected = get_selected_options(db, response_id=response.id)
+    options = get_options(db, [block.id for block in blocks])
+    digits = []
+    for block in blocks:
+        chosen = selected.get(block.id, set())
+        if len(chosen) != 1:
+            return None
+        option_id = next(iter(chosen))
+        position = next((i for i, option in enumerate(options.get(block.id, []), 1) if option.id == option_id), None)
+        if position is None:
+            return None
+        digits.append(config["questions"][len(digits)]["options"][position - 1]["value"] if config else str(position))
+    return _profile_for_digits(config, digits)
+
+
+def trainer_profile_for_answers(db, task_id: int, answers: dict[int, int]) -> dict:
+    """Разовый расчёт результата диагностики для тренажёра ГП/СА — читает те
+    же сохранённые блоки и варианты, что видит ученик, но ничего не пишет:
+    ни `TaskBlockResponse`, ни состояние блока. `answers` — `{block_id:
+    option_id}`, ровно один выбранный вариант на вопрос.
+
+    Отдельно от `result_for_answers`, потому что тот требует реально
+    сохранённого ответа ученика (`TaskBlockResponse`) — тренажёр по замыслу
+    (владелец 22.09.2026, вариант C) ничего не сохраняет и не имперсонирует
+    реального ученика.
+    """
+    from app.services.task_blocks import get_blocks, get_options
+
+    from app.models.tracker import ITEM_ARCHI_PROFILE, TrackerTask
+
+    task = db.get(TrackerTask, task_id)
+    if task is None or task.kind != ITEM_ARCHI_PROFILE:
+        raise ValueError("Диагностика не найдена")
+    config = task.diagnostic_config
+    blocks = [b for b in get_blocks(db, task_id) if b.block_type == BLOCK_QUESTION]
+    if not blocks or len(blocks) != (len(config["questions"]) if config else 3):
+        raise ValueError("Вопросы диагностики не сохранены")
+    options = get_options(db, [block.id for block in blocks])
+    digits = []
+    for block in blocks:
+        option_id = answers.get(block.id)
+        if option_id is None:
+            raise ValueError("Ответь на все вопросы")
+        position = next((i for i, option in enumerate(options.get(block.id, []), 1) if option.id == option_id), None)
+        if position is None:
+            raise ValueError("Вариант ответа не найден")
+        digits.append(config["questions"][len(digits)]["options"][position - 1]["value"] if config else str(position))
+    result = _profile_for_digits(config, digits)
+    if result is None:
+        raise ValueError("Для этого сочетания ответов результат не настроен")
+    return result

@@ -5,7 +5,7 @@ from itertools import product
 import re
 
 from app.api.cabinet_program import _edit_payloads
-from app.models.task_block import TaskBlock
+from app.models.task_block import TaskBlock, TaskBlockResponse
 from app.models.tracker import ITEM_ARCHI_PROFILE, TrackerTask
 from app.services.archi_profile import COMBINATIONS, PROFILES, result_for_answers
 from app.services.cycle_feed import build_cycle_feed
@@ -250,3 +250,123 @@ def test_editing_diagnostic_must_not_resend_its_own_question_blocks(
         headers={"X-CSRF-Token": "x"},
     )
     assert fixed.status_code == 200, fixed.text
+
+
+def test_trainer_lets_staff_answer_the_legacy_diagnostic_without_saving_progress(
+    client, db, user_factory, session_factory
+):
+    """Тренажёр (владелец 22.09.2026, вариант C развилки «доступ ГП/СА к
+    диагностике» — см. `NEXT-CHAT-PROMPT-ДИАГНОСТИКА-ДОСТУП.md`): ГП и СА
+    реально отвечают и видят результат, но ничего не пишется в
+    `TaskBlockResponse` — реальный прогресс ученика не затрагивается, и
+    повторный запуск не запирается «одной попыткой», в отличие от настоящего
+    прохождения."""
+    admin = user_factory(vk_id=887_301, name="Преподаватель", is_admin=True, role_name="админ")
+    client.cookies.set("session_id", session_factory(admin).id)
+    today = today_msk()
+    cycle = client.post(
+        "/cabinet/staff/program/cycles",
+        json={"title": "Тренажёр", "description": None, "starts_on": today.isoformat(),
+              "ends_on": (today + timedelta(days=5)).isoformat(), "is_published": True},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert cycle.status_code == 200
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle.json()['cycle_id']}/items/archi_profile",
+        json={"title": "Диагностика АРХИ-ПРОФИЛЯ", "is_required": False, "blocks": []},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert created.status_code == 200, created.text
+    task_id = created.json()["task_id"]
+
+    superadmin = user_factory(vk_id=887_302, name="Суперадмин", is_admin=True, role_name="суперадмин")
+    for actor in (admin, superadmin):
+        client.cookies.set("session_id", session_factory(actor).id)
+        responses_before = db.query(TaskBlockResponse).count()
+        got = client.get(f"/cabinet/staff/program/tasks/{task_id}/trainer-blocks")
+        assert got.status_code == 200, got.text
+        blocks = got.json()["blocks"]
+        assert len(blocks) == 3
+        answers = [
+            {"block_id": block["id"], "option_ids": [block["options"][digit - 1]["id"]]}
+            for block, digit in zip(blocks, (1, 2, 1))
+        ]
+        # Один тренажёр можно пройти дважды подряд — не «одна попытка», как у
+        # настоящего прохождения ученика, потому что результат нигде не хранится.
+        for _ in range(2):
+            scored = client.post(
+                f"/cabinet/staff/program/tasks/{task_id}/trainer-score",
+                json={"answers": answers}, headers={"X-CSRF-Token": "x"},
+            )
+            assert scored.status_code == 200, scored.text
+            result = scored.json()["archi_profile"]
+            assert result["combination"] == "121"
+            assert result["title"] == "Архитектор-синтетик"
+        assert db.query(TaskBlockResponse).count() == responses_before
+
+    incomplete = client.post(
+        f"/cabinet/staff/program/tasks/{task_id}/trainer-score",
+        json={"answers": answers[:2]}, headers={"X-CSRF-Token": "x"},
+    )
+    assert incomplete.status_code == 422
+
+    student = user_factory(vk_id=887_303, name="Ученик", role_name="ученик")
+    client.cookies.set("session_id", session_factory(student).id)
+    assert client.get(f"/cabinet/staff/program/tasks/{task_id}/trainer-blocks").status_code == 403
+    assert client.post(
+        f"/cabinet/staff/program/tasks/{task_id}/trainer-score",
+        json={"answers": answers}, headers={"X-CSRF-Token": "x"},
+    ).status_code == 403
+
+
+def test_trainer_matches_teacher_authored_result_for_the_same_answers(
+    client, db, user_factory, session_factory
+):
+    """Тренажёр считает результат той же логикой (`_profile_for_digits`), что
+    и настоящее прохождение ученика — teacher-authored диагностика с
+    `diagnostic_config`, а не только легаси-набор из трёх вопросов."""
+    admin = user_factory(vk_id=887_401, name="Преподаватель", is_admin=True, role_name="админ")
+    client.cookies.set("session_id", session_factory(admin).id)
+    today = today_msk()
+    cycle = client.post(
+        "/cabinet/staff/program/cycles",
+        json={"title": "Цикл тренажёра", "description": None, "starts_on": today.isoformat(),
+              "ends_on": (today + timedelta(days=5)).isoformat(), "is_published": True},
+        headers={"X-CSRF-Token": "x"},
+    )
+    config = {
+        "questions": [
+            {"text": "Что важнее?", "options": [{"text": "Свет", "value": "1"}, {"text": "Форма", "value": "2"}]},
+            {"text": "Что ближе?", "options": [{"text": "Дом", "value": "A"}, {"text": "Город", "value": "B"}]},
+        ],
+        "results": [
+            {"title": "Исследователь", "text": "Ты ищешь связи.", "architects": "",
+             "combinations": [["1", "A"], ["2", "B"]]},
+            {"title": "Создатель", "text": "Ты создаёшь формы.", "architects": "",
+             "combinations": [["1", "B"], ["2", "A"]]},
+        ],
+    }
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle.json()['cycle_id']}/items/archi_profile",
+        json={"title": "Профиль", "description": "Выбери ответы", "diagnostic": config},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert created.status_code == 200, created.text
+    task_id = created.json()["task_id"]
+
+    got = client.get(f"/cabinet/staff/program/tasks/{task_id}/trainer-blocks")
+    assert got.status_code == 200, got.text
+    blocks = got.json()["blocks"]
+    answers = [
+        {"block_id": blocks[0]["id"], "option_ids": [blocks[0]["options"][1]["id"]]},
+        {"block_id": blocks[1]["id"], "option_ids": [blocks[1]["options"][0]["id"]]},
+    ]
+    scored = client.post(
+        f"/cabinet/staff/program/tasks/{task_id}/trainer-score",
+        json={"answers": answers}, headers={"X-CSRF-Token": "x"},
+    )
+    assert scored.status_code == 200, scored.text
+    result = scored.json()["archi_profile"]
+    assert result["title"] == "Создатель"
+    assert result["combination"] == "2A"
+    assert db.query(TaskBlockResponse).filter_by(task_id=task_id).count() == 0
