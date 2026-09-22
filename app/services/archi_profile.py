@@ -114,8 +114,10 @@ def validate_diagnostic_config(raw: dict) -> dict:
             value = str(option.get("value") or "").strip()
             if not text:
                 raise ValueError(f"Вопрос {qi}, вариант {oi}: не заполнен текст ответа")
-            if len(text) > 300:
-                raise ValueError(f"Вопрос {qi}, вариант {oi}: текст ответа длиннее 300 символов")
+            # Без верхней границы (владелец 22.09.2026): у встроенной
+            # диагностики варианты ответа — целые абзацы длиннее 300
+            # символов (см. QUESTIONS выше), они хранятся в обход этой
+            # проверки — значит планка была лишней и для teacher-authored.
             if not value:
                 raise ValueError(f"Вопрос {qi}, вариант {oi}: не заполнено значение")
             if len(value) > 20:
