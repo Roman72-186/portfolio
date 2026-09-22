@@ -145,63 +145,71 @@
                 state.questions.push({text: '', options: [{text: '', value: '1'}, {text: '', value: '2'}]});
                 renderQuestions();
             });
-            button(root, 'Далее: результаты', function () {
-                readQuestions();
-                // Точный адрес ошибки — какой вопрос и какой вариант — а не
-                // общая фраза на все пять возможных причин сразу (владелец
-                // 22.09.2026: не было видно, что именно не так).
-                var problem = null;
-                if (!state.questions.length) {
-                    problem = 'Добавьте хотя бы один вопрос.';
-                } else {
-                    state.questions.some(function (question, qi) {
-                        if (!question.text.trim()) {
-                            problem = 'Вопрос ' + (qi + 1) + ': не заполнен текст вопроса.';
-                            return true;
-                        }
-                        if (question.options.length < 2) {
-                            problem = 'Вопрос ' + (qi + 1) + ': нужно минимум два варианта ответа.';
-                            return true;
-                        }
-                        var seen = {};
-                        return question.options.some(function (option, oi) {
-                            var text = option.text.trim();
-                            var value = option.value.trim();
-                            if (!text) {
-                                problem = 'Вопрос ' + (qi + 1) + ', вариант ' + (oi + 1) + ': не заполнен текст ответа.';
-                                return true;
-                            }
-                            if (!value) {
-                                problem = 'Вопрос ' + (qi + 1) + ', вариант ' + (oi + 1) + ': не заполнено значение.';
-                                return true;
-                            }
-                            if (!/^[\p{L}\p{N}]+$/u.test(value)) {
-                                problem = 'Вопрос ' + (qi + 1) + ', вариант ' + (oi + 1) + ': значение «' + value +
-                                    '» содержит недопустимый символ — можно только буквы и цифры, без пробелов и знаков.';
-                                return true;
-                            }
-                            if (seen[value]) {
-                                problem = 'Вопрос ' + (qi + 1) + ': значение «' + value + '» повторяется у двух вариантов.';
-                                return true;
-                            }
-                            seen[value] = true;
-                            return false;
-                        });
-                    });
-                }
-                if (problem) {
-                    message.textContent = problem;
-                    return;
-                }
-                if (combinations().length > 4096) {
-                    message.textContent = 'Слишком много сочетаний. Сократите число вопросов или вариантов.';
-                    return;
-                }
-                step = 'results';
-                renderResults();
-            }, 'btn-blue');
+            button(root, 'Далее: результаты', tryAdvanceToResults, 'btn-blue');
             root.appendChild(message);
             window.RichTextField.enhanceAll(root);
+        }
+        // Общая для кнопки «Далее: результаты» и для внешней кнопки
+        // «Сохранить» (владелец 22.09.2026): «Сохранить» с экрана «Вопросы»
+        // сначала переводит на «Результаты» тем же способом и той же
+        // проверкой — второе нажатие «Сохранить», уже с «Результатов»,
+        // отправляет форму по-настоящему. Возвращает true, только если
+        // экран действительно переключился.
+        function tryAdvanceToResults() {
+            readQuestions();
+            // Точный адрес ошибки — какой вопрос и какой вариант — а не
+            // общая фраза на все пять возможных причин сразу (владелец
+            // 22.09.2026: не было видно, что именно не так).
+            var problem = null;
+            if (!state.questions.length) {
+                problem = 'Добавьте хотя бы один вопрос.';
+            } else {
+                state.questions.some(function (question, qi) {
+                    if (!question.text.trim()) {
+                        problem = 'Вопрос ' + (qi + 1) + ': не заполнен текст вопроса.';
+                        return true;
+                    }
+                    if (question.options.length < 2) {
+                        problem = 'Вопрос ' + (qi + 1) + ': нужно минимум два варианта ответа.';
+                        return true;
+                    }
+                    var seen = {};
+                    return question.options.some(function (option, oi) {
+                        var text = option.text.trim();
+                        var value = option.value.trim();
+                        if (!text) {
+                            problem = 'Вопрос ' + (qi + 1) + ', вариант ' + (oi + 1) + ': не заполнен текст ответа.';
+                            return true;
+                        }
+                        if (!value) {
+                            problem = 'Вопрос ' + (qi + 1) + ', вариант ' + (oi + 1) + ': не заполнено значение.';
+                            return true;
+                        }
+                        if (!/^[\p{L}\p{N}]+$/u.test(value)) {
+                            problem = 'Вопрос ' + (qi + 1) + ', вариант ' + (oi + 1) + ': значение «' + value +
+                                '» содержит недопустимый символ — можно только буквы и цифры, без пробелов и знаков.';
+                            return true;
+                        }
+                        if (seen[value]) {
+                            problem = 'Вопрос ' + (qi + 1) + ': значение «' + value + '» повторяется у двух вариантов.';
+                            return true;
+                        }
+                        seen[value] = true;
+                        return false;
+                    });
+                });
+            }
+            if (problem) {
+                message.textContent = problem;
+                return false;
+            }
+            if (combinations().length > 4096) {
+                message.textContent = 'Слишком много сочетаний. Сократите число вопросов или вариантов.';
+                return false;
+            }
+            step = 'results';
+            renderResults();
+            return true;
         }
         function renderResults() {
             clear();
@@ -315,7 +323,12 @@
                 // есть, даже незаполненные, потому что предпросмотр должен
                 // показывать текущее состояние формы, а не готовить её
                 // к сохранению.
-                questions: function () { read(); return state.questions; }
+                questions: function () { read(); return state.questions; },
+                // Для внешней кнопки «Сохранить» (владелец 22.09.2026): она
+                // проверяет экран сама, чтобы решить, переключать на
+                // «Результаты» или сохранять по-настоящему.
+                isOnResultsStep: function () { return step === 'results'; },
+                goToResults: tryAdvanceToResults
             };
     }
     window.DiagnosticBuilder = {create: editor};
