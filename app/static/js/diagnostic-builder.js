@@ -8,13 +8,23 @@
         return el;
     }
 
-    function field(host, label, value, key, multiline) {
+    // `rich` — то же ручное форматирование (жирный/курсив/список/ссылка), что
+    // у описания дня и тела остальных блоков конструктора (владелец
+    // 22.09.2026: «стилизация, как в остальных блоках», не своя разметка).
+    // Подключаем готовый `RichTextField.enhance` через атрибут `data-rich-text`
+    // — тот же приём, что везде в проекте, textarea остаётся источником
+    // истины значения. Короткие технические поля («Значение», «Архитектурный
+    // профиль» — подпись в выпадающем списке, HTML там не отрисуется) рич-текст
+    // не получают.
+    function field(host, label, value, key, multiline, rich) {
         var wrap = node('label', 'prg-field', label);
         var input = node(multiline ? 'textarea' : 'input');
         input.dataset.diagnosticField = key;
         input.value = value || '';
+        input.setAttribute('aria-label', label);
         if (multiline) input.rows = 3;
         else input.type = 'text';
+        if (rich) input.setAttribute('data-rich-text', '');
         wrap.appendChild(input);
         host.appendChild(wrap);
         return input;
@@ -74,11 +84,11 @@
                 var card = node('section', 'prg-diagnostic-card');
                 card.dataset.diagnosticQuestion = String(index);
                 card.appendChild(node('h4', null, 'Вопрос ' + (index + 1)));
-                field(card, 'Текст вопроса', question.text, 'question', true);
+                field(card, 'Текст вопроса', question.text, 'question', true, true);
                 question.options.forEach(function (option, oi) {
                     var row = node('div', 'prg-diagnostic-option');
                     row.dataset.diagnosticOption = String(oi);
-                    field(row, 'Вариант ответа', option.text, 'option', true);
+                    field(row, 'Вариант ответа', option.text, 'option', true, true);
                     field(row, 'Значение', option.value, 'value', false);
                     if (oi > 0) button(row, '↑', function () {
                         readQuestions();
@@ -191,6 +201,7 @@
                 renderResults();
             }, 'btn-blue');
             root.appendChild(message);
+            window.RichTextField.enhanceAll(root);
         }
         function renderResults() {
             clear();
@@ -205,8 +216,8 @@
                         option.textContent = titleInput.value.trim() || 'Результат ' + (index + 1);
                     });
                 });
-                field(card, 'Формула силы', result.text, 'text', true);
-                field(card, 'Реальные архитекторы (необязательно)', result.architects, 'architects', true);
+                field(card, 'Формула силы', result.text, 'text', true, true);
+                field(card, 'Реальные архитекторы (необязательно)', result.architects, 'architects', true, true);
                 button(card, 'Убрать результат', function () {
                     readResults();
                     state.results.splice(index, 1);
@@ -259,6 +270,7 @@
             root.appendChild(table);
             button(root, 'Назад к вопросам', function () { readResults(); step = 'questions'; renderQuestions(); });
             root.appendChild(message);
+            window.RichTextField.enhanceAll(root);
         }
         function collect() {
             read();

@@ -621,7 +621,15 @@ def cabinet_tracker_task_blocks(
                 # правильный ответ в теле ответа сервера. `requires_text`
                 # нужен фронту, чтобы понять, под каким вариантом раскрывать
                 # поле свободного текста (владелец 05.09.2026).
-                {"id": o.id, "text": o.text, "description": o.description if task.kind == ITEM_ARCHI_PROFILE else None, "requires_text": o.requires_text}
+                {
+                    "id": o.id, "text": o.text,
+                    # Тот же приём, что у `body_html` выше: преподаватель мог
+                    # стилизовать текст варианта (диагностика АРХИ-ПРОФИЛЯ) —
+                    # рендерер ученика ждёт готовый HTML, не сырую разметку.
+                    "text_html": format_rich_text(o.text) if o.text else None,
+                    "description": o.description if task.kind == ITEM_ARCHI_PROFILE else None,
+                    "requires_text": o.requires_text,
+                }
                 for o in options.get(block.id, [])
             ]
             item["answer_text"] = answers_map.get(block.id, "")

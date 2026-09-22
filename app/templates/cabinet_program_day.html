@@ -19,8 +19,8 @@ FORM: Operate.
 {% block content %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
-<script src="/static/js/task-blocks-render.js?v=23"></script>
-<script src="/static/js/diagnostic-builder.js?v=6"></script>
+<script src="/static/js/task-blocks-render.js?v=24"></script>
+<script src="/static/js/diagnostic-builder.js?v=7"></script>
 {# WYSIWYG для полей с разметкой (**жирный**/*курсив*/список/ссылка) — стоит до
    `program_blocks_editor_js.html`, тот вызывает window.RichTextField напрямую. #}
 <script src="/static/js/rich-text-field.js?v=3"></script>
@@ -952,7 +952,13 @@ FORM: Operate.
             // экспортировано в `rich-text-field.js` ровно для этого.
             body_html: window.RichTextField.markdownToHtml(block.body || ''),
             options: (block.options || []).map(function (option, position) {
-                return Object.assign({}, option, {id: option.id || -(position + 1)});
+                return Object.assign({}, option, {
+                    id: option.id || -(position + 1),
+                    // Тот же приём, что у body_html выше — без сохранённого
+                    // блока сервер ещё не прогнал текст варианта через
+                    // format_rich_text, зеркало делает то же на клиенте.
+                    text_html: window.RichTextField.markdownToHtml(option.text || '')
+                });
             })
         });
     }

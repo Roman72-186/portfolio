@@ -3,6 +3,7 @@
 from itertools import product
 
 from app.models.task_block import BLOCK_QUESTION, QUESTION_SINGLE
+from app.tmpl import format_rich_text
 
 TITLE = "Диагностика АРХИ-ПРОФИЛЯ"
 INTRO = (
@@ -221,13 +222,25 @@ def result_for_answers(db, task_id: int, user_id: int) -> dict | None:
         if result is None:
             return None
         combination = "".join(digits) if all(len(value) == 1 for value in digits) else " · ".join(digits)
+        formula = result["text"]
+        architects = result.get("architects", "")
         return {
             "combination": combination, "title": result["title"], "traits": "",
-            "formula": result["text"], "architects": result.get("architects", ""),
+            "formula": formula, "architects": architects,
+            # Формула силы и реальные архитекторы поддерживают ручную
+            # стилизацию преподавателя (жирный/курсив/список/ссылка) — тот же
+            # `format_rich_text`, что и у тела остальных блоков. Готовый HTML
+            # нужен клиенту (`task-blocks-render.js::profileResult`), Jinja на
+            # `/cabinet/personal` применяет фильтр `rich_text` сама.
+            "formula_html": format_rich_text(formula), "architects_html": format_rich_text(architects),
         }
     combination = "".join(digits)
     key = COMBINATIONS.get(combination)
     if key is None:
         return None
     title, traits, formula, architects = PROFILES[key]
-    return {"combination": combination, "title": title, "traits": traits, "formula": formula, "architects": architects}
+    return {
+        "combination": combination, "title": title, "traits": traits,
+        "formula": formula, "architects": architects,
+        "formula_html": format_rich_text(formula), "architects_html": format_rich_text(architects),
+    }

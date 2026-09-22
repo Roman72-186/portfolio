@@ -57,8 +57,17 @@ scope)` и свойством `answered` (одна попытка: после о
             wrap.appendChild(el('p', 'lrn-card-note', 'Твой результат диагностики'));
             wrap.appendChild(el('h4', 'lrn-blk-title', profile.title));
             if (profile.traits) wrap.appendChild(el('p', 'lrn-blk-body', profile.traits));
-            if (profile.formula) wrap.appendChild(el('p', 'lrn-blk-body', profile.formula));
-            if (profile.architects) wrap.appendChild(el('p', 'lrn-card-note', 'Похожие черты можно увидеть в работах: ' + profile.architects + '. Архитекторы часто сочетают разные профили.'));
+            // formula/architects поддерживают ручную стилизацию преподавателя
+            // (жирный/курсив/список/ссылка) — сервер уже прогнал их через
+            // format_rich_text (см. `elHtml` выше), поэтому вставляем HTML,
+            // а не сырой текст.
+            if (profile.formula_html) wrap.appendChild(elHtml('p', 'lrn-blk-body', profile.formula_html));
+            if (profile.architects_html) {
+                var architectsNote = el('p', 'lrn-card-note', 'Похожие черты можно увидеть в работах: ');
+                architectsNote.appendChild(elHtml('span', null, profile.architects_html));
+                architectsNote.appendChild(document.createTextNode('. Архитекторы часто сочетают разные профили.'));
+                wrap.appendChild(architectsNote);
+            }
             return wrap;
         },
         // Мастер прохождения «один вопрос за раз» (диагностика АРХИ-ПРОФИЛЯ,
@@ -955,12 +964,16 @@ scope)` и свойством `answered` (одна попытка: после о
                     input.setAttribute('data-answer-option', block.id);
                     input.disabled = !!block.edit_reason;
                     row.appendChild(input);
-                    var optionCopy = el('span');
+                    var optionCopy;
                     if (option.description) {
+                        optionCopy = el('span');
                         optionCopy.appendChild(el('strong', null, option.text));
                         optionCopy.appendChild(el('span', 'lrn-card-note', option.description));
                     } else {
-                        optionCopy.textContent = option.text;
+                        // Текст варианта поддерживает ручную стилизацию (диагностика
+                        // АРХИ-ПРОФИЛЯ и обычные вопросы) — сервер прогоняет его через
+                        // format_rich_text в `text_html`.
+                        optionCopy = elHtml('span', null, option.text_html || '');
                     }
                     row.appendChild(optionCopy);
                     wrap.appendChild(row);

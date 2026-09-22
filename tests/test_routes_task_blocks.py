@@ -461,6 +461,27 @@ def test_blocks_endpoint_hides_correct_answer(client, db, user_factory, session_
     assert all("is_correct" not in o for o in options)
 
 
+def test_blocks_endpoint_includes_rendered_html_for_option_text(client, db, user_factory, session_factory):
+    """Вариант ответа тоже поддерживает ручную стилизацию (владелец
+    22.09.2026, диагностика АРХИ-ПРОФИЛЯ: жирный/курсив в тексте вопроса и
+    варианта, как в остальных блоках) — `text_html` рядом с сырым `text`,
+    тот же приём, что у `body_html`."""
+    staff = user_factory(vk_id=550_305, name="Стафф", is_admin=True, role_name="админ")
+    task = _material_task_with_blocks(
+        db, staff.id,
+        blocks=[{"block_type": BLOCK_QUESTION, "question_type": QUESTION_SINGLE, "body": "Сколько?"}],
+    )
+    [block] = _blocks_of(db, task.id)
+    db.add(TaskBlockOption(block_id=block.id, text="**Одна**", is_correct=True, sort_order=0))
+    db.commit()
+    _student_client(client, user_factory, session_factory)
+
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    option = body["blocks"][0]["options"][0]
+    assert option["text"] == "**Одна**"
+    assert option["text_html"] == "<strong>Одна</strong>"
+
+
 def test_submit_blocks_round_trips(client, db, user_factory, session_factory):
     staff = user_factory(vk_id=550_304, name="Стафф", is_admin=True, role_name="админ")
     task = _material_task_with_blocks(db, staff.id)

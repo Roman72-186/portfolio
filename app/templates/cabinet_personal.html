@@ -162,8 +162,8 @@
             <span class="prs-row-label">{{ archi_profile.diagnostic_title }}</span>
             <strong>{{ archi_profile.title }}</strong>
             {% if archi_profile.traits %}<span class="prs-row-label">{{ archi_profile.traits }}</span>{% endif %}
-            {% if archi_profile.formula %}<p class="prs-skill-desc">{{ archi_profile.formula }}</p>{% endif %}
-            {% if archi_profile.architects %}<p class="prs-skill-desc">Похожие черты можно увидеть в работах: {{ archi_profile.architects }}. Архитекторы часто сочетают разные профили.</p>{% endif %}
+            {% if archi_profile.formula %}<p class="prs-skill-desc">{{ archi_profile.formula | rich_text | safe }}</p>{% endif %}
+            {% if archi_profile.architects %}<p class="prs-skill-desc">Похожие черты можно увидеть в работах: {{ archi_profile.architects | rich_text | safe }}. Архитекторы часто сочетают разные профили.</p>{% endif %}
             <p class="prs-skill-desc">Комбинация ответов: {{ archi_profile.combination }}</p>
         </div>
         {% endfor %}

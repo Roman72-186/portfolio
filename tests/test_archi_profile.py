@@ -129,7 +129,7 @@ def test_teacher_authored_diagnostic_maps_all_combinations(client, db, user_fact
         "results": [
             {"title": "Исследователь", "text": "Ты ищешь связи.", "architects": "Ван Шу, Тадао Андо",
              "combinations": [["1", "A"], ["2", "B"]]},
-            {"title": "Создатель", "text": "Ты создаёшь формы.", "architects": "",
+            {"title": "Создатель", "text": "Ты **создаёшь** формы.", "architects": "Ле Корбюзье",
              "combinations": [["1", "B"], ["2", "A"]]},
         ],
     }
@@ -164,7 +164,14 @@ def test_teacher_authored_diagnostic_maps_all_combinations(client, db, user_fact
     result = client.get(endpoint).json()["archi_profile"]
     assert result["title"] == "Создатель"
     assert result["combination"] == "2A"
-    assert "Ты создаёшь формы." in client.get("/cabinet/personal").text
+    # Ручная стилизация формулы силы и реальных архитекторов (владелец
+    # 22.09.2026: «стилизация, как в остальных блоках») — `*_html` рядом с
+    # сырым текстом, тот же `format_rich_text`, что у тела остальных блоков.
+    assert result["formula"] == "Ты **создаёшь** формы."
+    assert result["formula_html"] == "Ты <strong>создаёшь</strong> формы."
+    assert result["architects_html"] == "Ле Корбюзье"
+    personal_page = client.get("/cabinet/personal").text
+    assert "Ты <strong>создаёшь</strong> формы." in personal_page
     client.cookies.set("session_id", session_factory(admin).id)
     changed_config = {**config, "questions": [{**config["questions"][0], "text": "Новый вопрос"}, config["questions"][1]]}
     changed = client.post(
