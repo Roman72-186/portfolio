@@ -340,7 +340,15 @@
     window.RichTextField = {
         enhance: enhance,
         enhanceAll: enhanceAll,
-        refresh: refresh
+        refresh: refresh,
+        // Экспортирован для предпросмотра «Глазами ученика» (владелец
+        // 22.09.2026): та панель рисует блоки из ещё не сохранённой формы
+        // общим рендерером ученика, а он ждёт готовый `body_html`, который
+        // обычно даёт сервер (`app/tmpl.py::format_rich_text`). До сюда
+        // конвертация была только внутри этого IIFE — предпросмотр показывал
+        // пустой текст у любого блока с телом (см. докстринг файла: это то
+        // самое зеркало серверной разметки).
+        markdownToHtml: markdownToHtml
     };
 
     document.addEventListener('DOMContentLoaded', function () {

@@ -288,7 +288,17 @@
             renderQuestions();
         }
         load(null);
-        return {collect: collect, load: load, showError: function (text) { message.textContent = text; }};
+        return {
+                collect: collect, load: load,
+                showError: function (text) { message.textContent = text; },
+                // Для предпросмотра «Глазами ученика» (владелец 22.09.2026):
+                // в отличие от `collect()`, не требует дойти до экрана
+                // результатов и ничего не валидирует — отдаёт вопросы как
+                // есть, даже незаполненные, потому что предпросмотр должен
+                // показывать текущее состояние формы, а не готовить её
+                // к сохранению.
+                questions: function () { read(); return state.questions; }
+            };
     }
     window.DiagnosticBuilder = {create: editor};
 })();

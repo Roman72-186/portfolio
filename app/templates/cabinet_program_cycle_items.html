@@ -24,9 +24,9 @@
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
 <script src="/static/js/task-blocks-render.js?v=23"></script>
-<script src="/static/js/diagnostic-builder.js?v=5"></script>
+<script src="/static/js/diagnostic-builder.js?v=6"></script>
 {# WYSIWYG для полей с разметкой — стоит до `program_blocks_editor_js.html`. #}
-<script src="/static/js/rich-text-field.js?v=2"></script>
+<script src="/static/js/rich-text-field.js?v=3"></script>
 <div class="prg-page ios-prg-day" data-topic="{{ topic.id }}">
     {% include "partials/program_tabs.html" %}
 
@@ -262,6 +262,12 @@ function uploadBlockPhotos(row, files) {
             id: block.id || -(index + 1),
             done: false,
             answered: false,
+            // Рендерер ждёт готовый `body_html` — на сервере его даёт
+            // `format_rich_text`, а до сохранения блока сервера ещё не было
+            // (владелец 22.09.2026: без этого тело любого блока в
+            // предпросмотре было пустым). `markdownToHtml` — JS-зеркало той
+            // же разметки, экспортировано в `rich-text-field.js` для этого.
+            body_html: window.RichTextField.markdownToHtml(block.body || ''),
             options: (block.options || []).map(function (option, position) {
                 return Object.assign({}, option, {id: option.id || -(position + 1)});
             })
@@ -294,7 +300,21 @@ function uploadBlockPhotos(row, files) {
 
     function previewBlocks(form) {
         var box = form.querySelector('[data-preview]');
-        var blocks = collectFormBlocks(form);
+        // Диагностика не держит вопросы в общем редакторе блоков — у нее свой
+        // `[data-diagnostic-editor]` (владелец 22.09.2026: раньше предпросмотр
+        // диагностики всегда был пуст, потому что `collectFormBlocks` смотрит
+        // только в `[data-blocks]`, которого у archi_profile-формы нет вовсе).
+        var blocks = form.dataset.itemKind === 'archi_profile'
+            ? diagnosticBuilder.questions().map(function (question, index) {
+                return {
+                    block_type: 'question',
+                    title: 'Вопрос ' + (index + 1),
+                    body: question.text,
+                    question_type: 'single',
+                    options: (question.options || []).map(function (option) { return {text: option.text}; })
+                };
+            })
+            : collectFormBlocks(form);
         box.innerHTML = '';
         if (!blocks.length) {
             box.innerHTML = '<p class="prg-hint">Пока нечего показывать — добавьте блоки.</p>';

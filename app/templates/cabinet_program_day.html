@@ -20,10 +20,10 @@ FORM: Operate.
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
 <script src="/static/js/task-blocks-render.js?v=23"></script>
-<script src="/static/js/diagnostic-builder.js?v=5"></script>
+<script src="/static/js/diagnostic-builder.js?v=6"></script>
 {# WYSIWYG для полей с разметкой (**жирный**/*курсив*/список/ссылка) — стоит до
    `program_blocks_editor_js.html`, тот вызывает window.RichTextField напрямую. #}
-<script src="/static/js/rich-text-field.js?v=2"></script>
+<script src="/static/js/rich-text-field.js?v=3"></script>
 {# Время сдачи пробника (владелец 09.09.2026: «выставляем время сдачи»).
    30.08.2026 эти поля из конструктора убрали, окно ставил сервер; теперь они
    вернулись, но заполнены расписанием по умолчанию — 11:45–18:30 этого дня и
@@ -944,6 +944,13 @@ FORM: Operate.
             id: block.id || -(index + 1),
             done: false,
             answered: false,
+            // Рендерер ждёт готовый `body_html` — на сервере его даёт
+            // `format_rich_text`, а до сохранения блока сервера ещё не было
+            // (владелец 22.09.2026: без этого тело любого блока в
+            // предпросмотре было пустым — виден заголовок и кнопки, но не
+            // сам текст). `markdownToHtml` — JS-зеркало той же разметки,
+            // экспортировано в `rich-text-field.js` ровно для этого.
+            body_html: window.RichTextField.markdownToHtml(block.body || ''),
             options: (block.options || []).map(function (option, position) {
                 return Object.assign({}, option, {id: option.id || -(position + 1)});
             })
@@ -976,7 +983,21 @@ FORM: Operate.
 
     function previewBlocks(form) {
         var box = form.querySelector('[data-preview]');
-        var blocks = collectFormBlocks(form);
+        // Диагностика не держит вопросы в общем редакторе блоков — у нее свой
+        // `[data-diagnostic-editor]` (владелец 22.09.2026: раньше предпросмотр
+        // диагностики всегда был пуст, потому что `collectFormBlocks` смотрит
+        // только в `[data-blocks]`, которого у archi_profile-формы нет вовсе).
+        var blocks = form.getAttribute('data-form') === 'archi_profile'
+            ? diagnosticBuilder.questions().map(function (question, index) {
+                return {
+                    block_type: 'question',
+                    title: 'Вопрос ' + (index + 1),
+                    body: question.text,
+                    question_type: 'single',
+                    options: (question.options || []).map(function (option) { return {text: option.text}; })
+                };
+            })
+            : collectFormBlocks(form);
         box.innerHTML = '';
         if (!blocks.length) {
             box.innerHTML = '<p class="prg-hint">Пока нечего показывать — добавьте блоки.</p>';
