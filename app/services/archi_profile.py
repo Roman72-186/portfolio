@@ -123,9 +123,15 @@ def validate_diagnostic_config(raw: dict) -> dict:
             raise ValueError("Заполните результаты")
         title = str(result.get("title") or "").strip()
         body = str(result.get("text") or "").strip()
+        # Необязательное поле (владелец 22.09.2026): у части диагностик нет
+        # реальных архитекторов-примеров, карточка результата должна
+        # сохраняться и без него.
+        architects = str(result.get("architects") or "").strip()
         assigned = result.get("combinations")
         if not title or len(title) > 200 or not body or len(body) > 5000 or not isinstance(assigned, list) or not assigned:
-            raise ValueError("У каждого результата нужны заголовок, текст и сочетания ответов")
+            raise ValueError("У каждого результата нужны архитектурный профиль, формула силы и сочетания ответов")
+        if len(architects) > 500:
+            raise ValueError("Список реальных архитекторов слишком длинный")
         clean_assigned = []
         for combination in assigned:
             if not isinstance(combination, list):
@@ -135,7 +141,7 @@ def validate_diagnostic_config(raw: dict) -> dict:
                 raise ValueError("Сочетание ответов не существует или назначено дважды")
             used.add(key)
             clean_assigned.append(list(key))
-        clean_results.append({"title": title, "text": body, "combinations": clean_assigned})
+        clean_results.append({"title": title, "text": body, "architects": architects, "combinations": clean_assigned})
     if used != expected:
         raise ValueError(f"Назначьте результат каждому сочетанию ответов: осталось {len(expected - used)}")
     return {"questions": clean_questions, "results": clean_results}
@@ -182,7 +188,10 @@ def result_for_answers(db, task_id: int, user_id: int) -> dict | None:
         if result is None:
             return None
         combination = "".join(digits) if all(len(value) == 1 for value in digits) else " · ".join(digits)
-        return {"combination": combination, "title": result["title"], "traits": "", "formula": result["text"], "architects": ""}
+        return {
+            "combination": combination, "title": result["title"], "traits": "",
+            "formula": result["text"], "architects": result.get("architects", ""),
+        }
     combination = "".join(digits)
     key = COMBINATIONS.get(combination)
     if key is None:

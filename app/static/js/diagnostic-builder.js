@@ -52,6 +52,7 @@
             root.querySelectorAll('[data-diagnostic-result]').forEach(function (card, index) {
                 state.results[index].title = card.querySelector('[data-diagnostic-field="title"]').value;
                 state.results[index].text = card.querySelector('[data-diagnostic-field="text"]').value;
+                state.results[index].architects = card.querySelector('[data-diagnostic-field="architects"]').value;
             });
             root.querySelectorAll('[data-diagnostic-combination]').forEach(function (select) {
                 state.assignments[select.dataset.diagnosticCombination] = select.value;
@@ -159,13 +160,14 @@
                 var card = node('section', 'prg-diagnostic-card');
                 card.dataset.diagnosticResult = String(index);
                 card.appendChild(node('h4', null, 'Результат ' + (index + 1)));
-                var titleInput = field(card, 'Название результата', result.title, 'title', false);
+                var titleInput = field(card, 'Архитектурный профиль', result.title, 'title', false);
                 titleInput.addEventListener('input', function () {
                     root.querySelectorAll('[data-diagnostic-combination] option[value="' + index + '"]').forEach(function (option) {
                         option.textContent = titleInput.value.trim() || 'Результат ' + (index + 1);
                     });
                 });
-                field(card, 'Текст для ученика', result.text, 'text', true);
+                field(card, 'Формула силы', result.text, 'text', true);
+                field(card, 'Реальные архитекторы (необязательно)', result.architects, 'architects', true);
                 button(card, 'Убрать результат', function () {
                     readResults();
                     state.results.splice(index, 1);
@@ -176,7 +178,7 @@
             });
             button(root, '+ Добавить результат', function () {
                 readResults();
-                state.results.push({title: '', text: ''});
+                state.results.push({title: '', text: '', architects: ''});
                 renderResults();
             });
             root.appendChild(node('h4', null, 'Какой результат соответствует сочетанию'));
@@ -223,10 +225,10 @@
             read();
             if (step !== 'results') throw new Error('Перейдите к результатам диагностики.');
             if (!state.results.length || state.results.some(function (r) { return !r.title.trim() || !r.text.trim(); })) {
-                throw new Error('Заполните название и текст каждого результата.');
+                throw new Error('Заполните архитектурный профиль и формулу силы у каждого результата.');
             }
             var results = state.results.map(function (r) {
-                return {title: r.title.trim(), text: r.text.trim(), combinations: []};
+                return {title: r.title.trim(), text: r.text.trim(), architects: (r.architects || '').trim(), combinations: []};
             });
             combinations().forEach(function (combination) {
                 var index = state.assignments[combinationKey(combination)];
@@ -238,7 +240,7 @@
         }
         function load(config) {
             state.questions = config && config.questions ? JSON.parse(JSON.stringify(config.questions)) : [];
-            state.results = config && config.results ? config.results.map(function (r) { return {title: r.title, text: r.text}; }) : [];
+            state.results = config && config.results ? config.results.map(function (r) { return {title: r.title, text: r.text, architects: r.architects || ''}; }) : [];
             state.assignments = {};
             if (config && config.results) config.results.forEach(function (result, index) {
                 result.combinations.forEach(function (combination) { state.assignments[combinationKey(combination)] = String(index); });

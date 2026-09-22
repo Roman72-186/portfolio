@@ -127,8 +127,10 @@ def test_teacher_authored_diagnostic_maps_all_combinations(client, db, user_fact
             {"text": "Что ближе?", "options": [{"text": "Дом", "value": "A"}, {"text": "Город", "value": "B"}]},
         ],
         "results": [
-            {"title": "Исследователь", "text": "Ты ищешь связи.", "combinations": [["1", "A"], ["2", "B"]]},
-            {"title": "Создатель", "text": "Ты создаёшь формы.", "combinations": [["1", "B"], ["2", "A"]]},
+            {"title": "Исследователь", "text": "Ты ищешь связи.", "architects": "Ван Шу, Тадао Андо",
+             "combinations": [["1", "A"], ["2", "B"]]},
+            {"title": "Создатель", "text": "Ты создаёшь формы.", "architects": "",
+             "combinations": [["1", "B"], ["2", "A"]]},
         ],
     }
     incomplete = {**config, "results": config["results"][:1]}
