@@ -76,6 +76,29 @@
 }
 .ios-personal .prs-section-title:first-of-type { margin-top: 0; }
 
+/* ── Свёрнутые секции «Контакты»/«Данные анкеты» (владелец 24.09.2026):
+   результаты диагностики переехали в начало страницы первым блоком, эти
+   две секции с частыми, но не всегда нужными данными теперь скрыты за
+   клик. Тот же приём `<details>`, что уже есть в tracker.css
+   (.trk-row-expand) — скопирован сюда своим классом, а не через общий
+   `<link>` на tracker.css: тот файл весит на порядок больше и несёт
+   правила, не относящиеся к этой странице (видеоплеер, .lrn-*). Заголовок
+   — не `.prs-section-title`, чтобы не наследовать его `:first-of-type`
+   правило выше (внутри `<details>` `<summary>` всегда единственный своего
+   типа и получил бы margin-top: 0). */
+.ios-personal .prs-expand > summary {
+    margin: 22px 4px 8px; padding: 0 4px;
+    font: 600 13px/1.3 var(--ios-font); color: var(--ios-label-2);
+    text-transform: uppercase; letter-spacing: 0.02em;
+    display: inline-flex; align-items: center; gap: 6px;
+    cursor: pointer; list-style: none;
+}
+.ios-personal .prs-expand > summary::-webkit-details-marker { display: none; }
+.ios-personal .prs-expand > summary::after {
+    content: '▾'; font-size: 11px; transition: transform var(--duration-fast) var(--ease-out);
+}
+.ios-personal .prs-expand[open] > summary::after { transform: rotate(180deg); }
+
 /* ── Группа-карточка (UITableView .grouped) — общий вид для всех трёх
    секций: контакты, документы, аккаунт. Ряды сливаются в одну карточку с
    тонким инсет-разделителем вместо рамки на каждом. ── */

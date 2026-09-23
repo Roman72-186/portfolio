@@ -129,6 +129,70 @@ def accessible_topic_ids(db: Session, user_id: int) -> set[int]:
     return {row[0] for row in rows}
 
 
+def topic_audience_user_ids(db: Session, topic_id: int) -> set[int]:
+    """Активные ученики, которым открыта конкретная тема — зеркало
+    `accessible_topic_ids` (по ученику), но по теме: те же условия
+    (опубликована, наступил `opens_at`, адресация, тариф), без фильтра по
+    членству в группе — им управляет `require_learning_content_access`,
+    отдельно от того, видна ли тема вообще.
+
+    Нужен статистике прохождения диагностики (`archi_profile_stats.py`):
+    почти любая диагностика заведена внутри цикла/дня и получает свою
+    аудиторию не из `TrackerTask.assign_to_all`, а из темы, к которой
+    привязана (`_accessible_task_or_404` в `cabinet_tracker.py` проверяет
+    именно `task.topic_id in accessible_topic_ids(...)`).
+    """
+    topic = db.get(LearningTopic, topic_id)
+    if topic is None or topic.deleted_at is not None or not topic.is_published:
+        return set()
+    opens_at = topic.opens_at
+    # SQLite в тестах отдаёт наивное время из колонки DateTime(timezone=True) —
+    # тот же приём нормализации, что в `tracker.py::task_status`.
+    if opens_at.tzinfo is None:
+        opens_at = opens_at.replace(tzinfo=timezone.utc)
+    if opens_at > now_msk():
+        return set()
+    students = (
+        db.query(User.id)
+        .join(Role, User.role_id == Role.id)
+        .filter(
+            Role.rank == STUDENT_ROLE_RANK,
+            User.is_active.is_(True),
+            User.deleted_at.is_(None),
+        )
+    )
+    if topic.tariff_restricted:
+        tariffs = [
+            row[0] for row in
+            db.query(LearningTopicTariff.tariff).filter(LearningTopicTariff.topic_id == topic_id).all()
+        ]
+        students = students.filter(User.tariff.in_(tariffs or ()))
+
+    if topic.assign_to_all:
+        return {row[0] for row in students.all()}
+
+    tag_ids = [
+        row[0] for row in
+        db.query(LearningTopicTag.tag_id).filter(LearningTopicTag.topic_id == topic_id).all()
+    ]
+    assignee_ids = [
+        row[0] for row in
+        db.query(LearningTopicAssignee.user_id).filter(LearningTopicAssignee.topic_id == topic_id).all()
+    ]
+    reached: set[int] = set()
+    if tag_ids:
+        rows = (
+            students.join(UserTag, UserTag.user_id == User.id)
+            .filter(UserTag.tag_id.in_(tag_ids))
+            .all()
+        )
+        reached.update(row[0] for row in rows)
+    if assignee_ids:
+        rows = students.filter(User.id.in_(assignee_ids)).all()
+        reached.update(row[0] for row in rows)
+    return reached
+
+
 def create_topic(
     db: Session,
     *,

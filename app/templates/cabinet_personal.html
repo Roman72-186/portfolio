@@ -4,7 +4,7 @@
 {% block title %}Личная информация{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/account_actions.css?v=1">
-<link rel="stylesheet" href="/static/css/personal_ios.css?v=11">
+<link rel="stylesheet" href="/static/css/personal_ios.css?v=12">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=1">
 {% endblock %}
 {% block content %}
@@ -46,7 +46,24 @@
     </div>
     {% endif %}
 
-    <div class="prs-section-title">Контакты</div>
+    {% if diagnostic_results %}
+    <div class="prs-section-title">Результаты диагностики</div>
+    <div class="prs-group">
+        {% for archi_profile in diagnostic_results %}
+        <div class="prs-row prs-row--stacked">
+            <span class="prs-row-label">{{ archi_profile.diagnostic_title }}</span>
+            <strong>{{ archi_profile.title }}</strong>
+            {% if archi_profile.traits %}<span class="prs-row-label">{{ archi_profile.traits }}</span>{% endif %}
+            {% if archi_profile.formula %}<p class="prs-skill-desc">{{ archi_profile.formula | rich_text | safe }}</p>{% endif %}
+            {% if archi_profile.architects %}<p class="prs-skill-desc">Похожие черты можно увидеть в работах: {{ archi_profile.architects | rich_text | safe }}. Архитекторы часто сочетают разные профили.</p>{% endif %}
+            <p class="prs-skill-desc">Комбинация ответов: {{ archi_profile.combination }}</p>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <details class="prs-expand">
+    <summary>Контакты</summary>
     <div class="prs-group">
         <div class="prs-row">
             <span class="prs-row-label">Телефон</span>
@@ -86,10 +103,12 @@
         </div>
         <a class="prs-row prs-row-link" href="/cabinet/personal/contacts"><span>Изменить личные данные</span></a>
     </div>
+    </details>
 
     {# Личные данные анкеты первого входа. Ученик меняет их на том же экране,
        что и контакты; тариф и начало обучения остаются системными полями. #}
-    <div class="prs-section-title">Данные анкеты</div>
+    <details class="prs-expand">
+    <summary>Данные анкеты</summary>
     <div class="prs-group">
         <div class="prs-row">
             <span class="prs-row-label">Фамилия и имя</span>
@@ -104,6 +123,7 @@
             <span class="prs-row-value {{ '' if user.parent_name else 'empty' }}">{{ user.parent_name or 'Не указано' }}</span>
         </div>
     </div>
+    </details>
 
     <div class="prs-section-title">Часто задаваемые вопросы</div>
     <div class="prs-group">
@@ -121,10 +141,6 @@
         <div class="prs-row prs-row--stacked">
             <span class="prs-row-label">Оплата и чеки</span>
             <div class="prs-row-note">Загрузка чеков — отдельная задача, скоро.</div>
-        </div>
-        <div class="prs-row prs-row--stacked">
-            <span class="prs-row-label">Частые вопросы</span>
-            <div class="prs-row-note">Скоро появится здесь.</div>
         </div>
     </div>
 
@@ -149,22 +165,6 @@
                 <span class="prs-skill-cell{% if cell < row.filled %} is-filled{% endif %}"></span>
                 {% endfor %}
             </div>
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
-
-    {% if diagnostic_results %}
-    <div class="prs-section-title">Результаты диагностики</div>
-    <div class="prs-group">
-        {% for archi_profile in diagnostic_results %}
-        <div class="prs-row prs-row--stacked">
-            <span class="prs-row-label">{{ archi_profile.diagnostic_title }}</span>
-            <strong>{{ archi_profile.title }}</strong>
-            {% if archi_profile.traits %}<span class="prs-row-label">{{ archi_profile.traits }}</span>{% endif %}
-            {% if archi_profile.formula %}<p class="prs-skill-desc">{{ archi_profile.formula | rich_text | safe }}</p>{% endif %}
-            {% if archi_profile.architects %}<p class="prs-skill-desc">Похожие черты можно увидеть в работах: {{ archi_profile.architects | rich_text | safe }}. Архитекторы часто сочетают разные профили.</p>{% endif %}
-            <p class="prs-skill-desc">Комбинация ответов: {{ archi_profile.combination }}</p>
         </div>
         {% endfor %}
     </div>

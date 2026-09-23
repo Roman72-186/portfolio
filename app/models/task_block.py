@@ -338,6 +338,17 @@ class TaskBlock(Base):
     # время… пометить красненьким»).
     time_limit_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Блок-вопрос принадлежит диагностике АРХИ-ПРОФИЛЯ, а не обычному опросу
+    # задания (владелец 24.09.2026: диагностика может лежать в одном задании
+    # с остальными материалами). Раньше принадлежность диагностике решал
+    # `TrackerTask.kind == ITEM_ARCHI_PROFILE` целиком — все BLOCK_QUESTION
+    # задачи такого вида считались вопросами диагностики. Флаг на блоке
+    # позволяет диагностике и обычным вопросам сосуществовать в одном
+    # задании: `result_for_answers`/`blocks_from_config`
+    # (`app/services/archi_profile.py`) фильтруют по нему, а не по виду
+    # задачи целиком.
+    is_diagnostic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
     )

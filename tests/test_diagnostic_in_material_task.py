@@ -1,0 +1,260 @@
+"""Диагностика как блок внутри обычного «Задания» (владелец 24.09.2026,
+второй способ рядом с отдельным видом archi_profile) — доступность
+настраивается так же, как у остальных материалов, вопросы диагностики
+запираются поблочно, не всей формой."""
+
+from datetime import timedelta
+
+from app.api.cabinet_program import _edit_payloads
+from app.models.task_block import TaskBlock, TaskBlockResponse
+from app.models.tracker import ITEM_MATERIAL, TrackerTask
+from app.services.tz import today_msk
+
+CONFIG = {
+    "questions": [
+        {"text": "Что важнее?", "options": [{"text": "Свет", "value": "1"}, {"text": "Форма", "value": "2"}]},
+        {"text": "Что ближе?", "options": [{"text": "Дом", "value": "A"}, {"text": "Город", "value": "B"}]},
+    ],
+    "results": [
+        {"title": "Исследователь", "text": "Ты ищешь связи.", "architects": "",
+         "combinations": [["1", "A"], ["2", "B"]]},
+        {"title": "Создатель", "text": "Ты создаёшь формы.", "architects": "",
+         "combinations": [["1", "B"], ["2", "A"]]},
+    ],
+}
+
+
+def _make_cycle(client, today):
+    resp = client.post(
+        "/cabinet/staff/program/cycles",
+        json={"title": "Цикл", "description": None, "starts_on": today.isoformat(),
+              "ends_on": (today + timedelta(days=5)).isoformat(), "is_published": True},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["cycle_id"]
+
+
+def test_material_task_carries_diagnostic_blocks_alongside_regular_ones(
+    client, db, user_factory, session_factory
+):
+    admin = user_factory(vk_id=889_001, name="Преподаватель", is_admin=True, role_name="админ")
+    client.cookies.set("session_id", session_factory(admin).id)
+    cycle_id = _make_cycle(client, today_msk())
+
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={
+            "title": "Задание с диагностикой", "description": None, "subject": None,
+            "is_required": True, "starts_on": None,
+            "blocks": [{"block_type": "text", "body": "Прочитай перед началом"}],
+            "diagnostic": CONFIG,
+        },
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert created.status_code == 200, created.text
+    task_id = created.json()["task_id"]
+    task = db.get(TrackerTask, task_id)
+    assert task.kind == ITEM_MATERIAL
+    assert task.diagnostic_config == CONFIG
+
+    blocks = db.query(TaskBlock).filter_by(task_id=task_id).order_by(TaskBlock.sort_order).all()
+    assert [b.block_type for b in blocks] == ["text", "question", "question"]
+    assert [b.is_diagnostic for b in blocks] == [False, True, True]
+
+    # Форма правки не должна показывать блоки диагностики в общем редакторе —
+    # только текстовый блок и отдельно конфиг диагностики.
+    payload = _edit_payloads(db, [task], {})[task_id]
+    assert [b["block_type"] for b in payload["blocks"]] == ["text"]
+    assert payload["diagnostic"] == CONFIG
+
+
+def test_diagnostic_locks_per_block_not_the_whole_form(client, db, user_factory, session_factory):
+    """Подтверждённое владельцем решение: ответ на диагностику запирает
+    только её саму, несвязанный вопрос того же задания остаётся доступен."""
+    admin = user_factory(vk_id=889_101, name="Преподаватель", is_admin=True, role_name="админ")
+    client.cookies.set("session_id", session_factory(admin).id)
+    cycle_id = _make_cycle(client, today_msk())
+
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={
+            "title": "Задание с диагностикой и опросом", "description": None, "subject": None,
+            "is_required": True, "starts_on": None,
+            "blocks": [{
+                "block_type": "question", "body": "Свой вопрос куратора",
+                "question_type": "text",
+            }],
+            "diagnostic": CONFIG,
+        },
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert created.status_code == 200, created.text
+    task_id = created.json()["task_id"]
+
+    student = user_factory(vk_id=889_102, name="Ученик", role_name="ученик")
+    client.cookies.set("session_id", session_factory(student).id)
+    endpoint = f"/cabinet/tracker/tasks/{task_id}/blocks"
+
+    got = client.get(endpoint)
+    assert got.status_code == 200, got.text
+    blocks = got.json()["blocks"]
+    diagnostic_blocks = [b for b in blocks if b["block_type"] == "question" and b.get("is_archi_profile")]
+    own_question = [b for b in blocks if b["block_type"] == "question" and not b.get("is_archi_profile")]
+    assert len(diagnostic_blocks) == 2
+    assert len(own_question) == 1
+
+    # Отвечаем на диагностику целиком — своя очередь, свой запрос.
+    answers = [
+        {"block_id": diagnostic_blocks[0]["id"], "option_ids": [diagnostic_blocks[0]["options"][0]["id"]]},
+        {"block_id": diagnostic_blocks[1]["id"], "option_ids": [diagnostic_blocks[1]["options"][1]["id"]]},
+    ]
+    saved = client.post(endpoint, json={"answers": answers}, headers={"X-CSRF-Token": "x"})
+    assert saved.status_code == 200, saved.text
+
+    # Диагностика посчиталась.
+    after = client.get(endpoint).json()
+    assert after["archi_profile"]["title"] == "Создатель"
+    assert after["archi_profile"]["combination"] == "1B"
+
+    # Несвязанный вопрос куратора остаётся доступным для ответа — форма не
+    # заперлась целиком.
+    still_open = [b for b in after["blocks"] if b["id"] == own_question[0]["id"]][0]
+    assert still_open["edit_reason"] is None
+    answer_own = client.post(
+        endpoint,
+        json={"answers": [{"block_id": own_question[0]["id"], "text": "Мой ответ"}]},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert answer_own.status_code == 200, answer_own.text
+
+    # Повторная отправка диагностики отдельным вопросом — заперта (одна
+    # попытка): все вопросы уже отвечены, submit требует ровно неотвеченный
+    # остаток, а его больше нет.
+    relock = client.post(
+        endpoint,
+        json={"answers": [{
+            "block_id": diagnostic_blocks[0]["id"],
+            "option_ids": [diagnostic_blocks[0]["options"][1]["id"]],
+        }]},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert relock.status_code == 422
+
+
+def test_mixing_diagnostic_and_regular_answers_in_one_request_is_rejected(
+    client, db, user_factory, session_factory
+):
+    admin = user_factory(vk_id=889_201, name="Преподаватель", is_admin=True, role_name="админ")
+    client.cookies.set("session_id", session_factory(admin).id)
+    cycle_id = _make_cycle(client, today_msk())
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={
+            "title": "Задание", "description": None, "subject": None,
+            "is_required": True, "starts_on": None,
+            "blocks": [{"block_type": "question", "body": "Свой вопрос", "question_type": "text"}],
+            "diagnostic": CONFIG,
+        },
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert created.status_code == 200, created.text
+    task_id = created.json()["task_id"]
+
+    student = user_factory(vk_id=889_202, name="Ученик", role_name="ученик")
+    client.cookies.set("session_id", session_factory(student).id)
+    endpoint = f"/cabinet/tracker/tasks/{task_id}/blocks"
+    blocks = client.get(endpoint).json()["blocks"]
+    diagnostic_block = next(b for b in blocks if b.get("is_archi_profile"))
+    own_question = next(b for b in blocks if not b.get("is_archi_profile"))
+
+    mixed = client.post(
+        endpoint,
+        json={"answers": [
+            {"block_id": diagnostic_block["id"], "option_ids": [diagnostic_block["options"][0]["id"]]},
+            {"block_id": own_question["id"], "text": "Мой ответ"},
+        ]},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert mixed.status_code == 422
+
+
+def test_editing_regular_blocks_does_not_lose_the_embedded_diagnostic(
+    client, db, user_factory, session_factory
+):
+    admin = user_factory(vk_id=889_301, name="Преподаватель", is_admin=True, role_name="админ")
+    client.cookies.set("session_id", session_factory(admin).id)
+    cycle_id = _make_cycle(client, today_msk())
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={
+            "title": "Задание", "description": None, "subject": None,
+            "is_required": True, "starts_on": None,
+            "blocks": [{"block_type": "text", "body": "Старый текст"}],
+            "diagnostic": CONFIG,
+        },
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert created.status_code == 200, created.text
+    task_id = created.json()["task_id"]
+    diagnostic_block_ids_before = sorted(
+        b.id for b in db.query(TaskBlock).filter_by(task_id=task_id, is_diagnostic=True).all()
+    )
+
+    # Правка без упоминания diagnostic в payload — как это делает форма
+    # обычного «Задания», которая не трогала диагностику.
+    updated = client.post(
+        f"/cabinet/staff/program/items/{task_id}/material",
+        json={
+            "title": "Задание", "description": None, "subject": None,
+            "is_required": True, "starts_on": None,
+            "blocks": [{"block_type": "text", "body": "Новый текст"}],
+        },
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert updated.status_code == 200, updated.text
+
+    task = db.get(TrackerTask, task_id)
+    assert task.diagnostic_config == CONFIG
+    diagnostic_block_ids_after = sorted(
+        b.id for b in db.query(TaskBlock).filter_by(task_id=task_id, is_diagnostic=True).all()
+    )
+    # Те же строки, не новые — id сохранились (иначе ответы учеников,
+    # привязанные к TaskBlockAnswer.block_id, осиротели бы).
+    assert diagnostic_block_ids_after == diagnostic_block_ids_before
+    text_blocks = db.query(TaskBlock).filter_by(task_id=task_id, is_diagnostic=False).all()
+    assert [b.body for b in text_blocks] == ["Новый текст"]
+
+
+def test_diagnostic_result_shows_on_personal_page_for_embedded_diagnostic(
+    client, db, user_factory, session_factory
+):
+    admin = user_factory(vk_id=889_401, name="Преподаватель", is_admin=True, role_name="админ")
+    client.cookies.set("session_id", session_factory(admin).id)
+    cycle_id = _make_cycle(client, today_msk())
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={
+            "title": "Материал с диагностикой", "description": None, "subject": None,
+            "is_required": True, "starts_on": None, "blocks": [],
+            "diagnostic": CONFIG,
+        },
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert created.status_code == 200, created.text
+    task_id = created.json()["task_id"]
+
+    student = user_factory(vk_id=889_402, name="Ученик", role_name="ученик")
+    client.cookies.set("session_id", session_factory(student).id)
+    endpoint = f"/cabinet/tracker/tasks/{task_id}/blocks"
+    blocks = client.get(endpoint).json()["blocks"]
+    answers = [
+        {"block_id": blocks[0]["id"], "option_ids": [blocks[0]["options"][0]["id"]]},
+        {"block_id": blocks[1]["id"], "option_ids": [blocks[1]["options"][0]["id"]]},
+    ]
+    saved = client.post(endpoint, json={"answers": answers}, headers={"X-CSRF-Token": "x"})
+    assert saved.status_code == 200, saved.text
+
+    personal = client.get("/cabinet/personal")
+    assert personal.status_code == 200
+    assert "Исследователь" in personal.text

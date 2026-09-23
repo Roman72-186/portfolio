@@ -41,7 +41,6 @@ from app.models.task_block import (
     TaskBlockSubmissionImage,
 )
 from app.models.tracker import (
-    ITEM_ARCHI_PROFILE,
     ITEM_HOMEWORK,
     ITEM_MOCK_EXAM,
     STATUS_DONE,
@@ -95,6 +94,7 @@ from app.services.tracker import (
     effective_week_start,
     format_event_dates,
     list_events,
+    mark_task_started,
     task_status,
 )
 from app.services.tz import today_msk, now_msk
@@ -212,11 +212,15 @@ def cabinet_tracker_toggle(
         if not block.hidden_until_done
     ]
     response = get_task_block_response(db, task_id=task_id, user_id=user["user_id"])
-    if task.kind == ITEM_ARCHI_PROFILE:
+    # Диагностика проверяется отдельно от остальных вопросов задания
+    # (владелец 24.09.2026: она может лежать в одном задании с обычными
+    # блоками) — по признаку блока, а не по `task.kind` целиком.
+    if any(block.is_diagnostic for block in pending):
         from app.services.archi_profile import result_for_answers
         if result_for_answers(db, task_id, user["user_id"]) is None:
-            raise HTTPException(status_code=409, detail="Сначала ответь на три вопроса диагностики")
-    elif pending and response is None:
+            raise HTTPException(status_code=409, detail="Сначала ответь на вопросы диагностики")
+    non_diagnostic_pending = [block for block in pending if not block.is_diagnostic]
+    if non_diagnostic_pending and response is None:
         raise HTTPException(
             status_code=409, detail="Сначала ответь на вопросы задания"
         )
@@ -431,6 +435,14 @@ def cabinet_tracker_task_blocks(
         b for b in get_task_blocks(db, task_id)
         if not (b.block_type == BLOCK_QUESTION and b.hidden_until_done and not task_done)
     ]
+
+    # Статистика прохождения диагностики (владелец 24.09.2026): единственная
+    # точка, где сервер видит, что ученик открыл диагностику, — дальше ответы
+    # уходят одним запросом на последнем шаге мастера, без промежуточных
+    # сохранений. По блокам, не по `task.kind`: диагностика может лежать и
+    # внутри обычного «Задания».
+    if any(b.is_diagnostic for b in blocks):
+        mark_task_started(db, task_id=task_id, user_id=user["user_id"])
     portfolio_by_block = (
         {
             window.block_id: window
@@ -477,7 +489,8 @@ def cabinet_tracker_task_blocks(
         {r["block_id"]: r["is_correct"] for r in verdict["results"]} if verdict else {}
     )
     profile_result = None
-    if task.kind == ITEM_ARCHI_PROFILE:
+    has_diagnostic = any(b.is_diagnostic for b in blocks)
+    if has_diagnostic:
         from app.services.archi_profile import result_for_answers
         profile_result = result_for_answers(db, task_id, user["user_id"])
 
@@ -615,7 +628,7 @@ def cabinet_tracker_task_blocks(
             ]
         elif block.block_type == BLOCK_QUESTION:
             item["question_type"] = block.question_type
-            item["is_archi_profile"] = task.kind == ITEM_ARCHI_PROFILE
+            item["is_archi_profile"] = block.is_diagnostic
             item["options"] = [
                 # `is_correct` наружу не отдаём: ученик не должен видеть
                 # правильный ответ в теле ответа сервера. `requires_text`
@@ -627,7 +640,7 @@ def cabinet_tracker_task_blocks(
                     # стилизовать текст варианта (диагностика АРХИ-ПРОФИЛЯ) —
                     # рендерер ученика ждёт готовый HTML, не сырую разметку.
                     "text_html": format_rich_text(o.text) if o.text else None,
-                    "description": o.description if task.kind == ITEM_ARCHI_PROFILE else None,
+                    "description": o.description if block.is_diagnostic else None,
                     "requires_text": o.requires_text,
                 }
                 for o in options.get(block.id, [])
@@ -642,7 +655,7 @@ def cabinet_tracker_task_blocks(
             item["is_correct"] = correct_by_block.get(block.id)
             item["edit_reason"] = (
                 deadline_reason(task, block)
-                or (("Ответ сохранён." if task.kind == ITEM_ARCHI_PROFILE else "Этот ответ уже проверен системой.") if block.question_type != QUESTION_TEXT and block.id in answered_ids else None)
+                or (("Ответ сохранён." if block.is_diagnostic else "Этот ответ уже проверен системой.") if block.question_type != QUESTION_TEXT and block.id in answered_ids else None)
                 or ("Преподаватель уже проверил ответ." if response and db.query(TaskBlockAnswer.id).filter(
                     TaskBlockAnswer.response_id == response.id,
                     TaskBlockAnswer.block_id == block.id,
@@ -671,7 +684,7 @@ def cabinet_tracker_task_blocks(
     ]
     return JSONResponse({
         "blocks": payload,
-        "is_archi_profile": task.kind == ITEM_ARCHI_PROFILE,
+        "is_archi_profile": has_diagnostic,
         "questions_left_count": len(questions_left),
         "has_questions": bool(questions),
         # Одна попытка (владелец 31.08.2026): ответил — форма закрывается.
@@ -967,11 +980,23 @@ def submit_cabinet_tracker_task_blocks(
         raise HTTPException(status_code=422, detail="Ответ на чужой вопрос")
     if not payload.answers:
         raise HTTPException(status_code=422, detail="Нет ответов для сохранения")
-    if task.kind == ITEM_ARCHI_PROFILE:
+    diagnostic_ids = {b.id for b in visible if b.is_diagnostic}
+    answer_ids = {answer.block_id for answer in payload.answers}
+    if diagnostic_ids and answer_ids & diagnostic_ids:
+        # Диагностика — не завязана на `task.kind` (владелец 24.09.2026, она
+        # может лежать в одном задании с обычными вопросами): раз в
+        # запросе есть хоть один ответ на диагностику, весь запрос должен
+        # быть только про неё, и целиком — иначе комбинация ответов
+        # получится неоднозначной (правило от 31.08.2026, тут не менялось).
+        if answer_ids - diagnostic_ids:
+            raise HTTPException(
+                status_code=422,
+                detail="Ответы на диагностику и остальные вопросы нужно отправлять отдельно",
+            )
         expected_count = len(task.diagnostic_config["questions"]) if task.diagnostic_config else 3
-        if len(visible) != expected_count or {answer.block_id for answer in payload.answers} != known - already:
+        if len(diagnostic_ids) != expected_count or answer_ids != diagnostic_ids - already:
             raise HTTPException(status_code=422, detail="Выбери по одному варианту в каждом вопросе")
-        if len({answer.block_id for answer in payload.answers}) != len(payload.answers):
+        if len(payload.answers) != len(answer_ids):
             raise HTTPException(status_code=422, detail="Один ответ на каждый вопрос")
         for answer in payload.answers:
             if len(answer.option_ids) != 1 or answer.text:

@@ -224,6 +224,13 @@ class TrackerTaskState(Base):
     )
 
     status: Mapped[str] = mapped_column(String(20), nullable=False, default=STATUS_OPEN)
+    # Момент первого открытия задачи учеником (владелец 24.09.2026, статистика
+    # прохождения диагностики) — ставится один раз, дальнейшие визиты его не
+    # трогают. Нужен там, где у задачи, в отличие от блока (`TaskBlockState`),
+    # своего `started_at` не было: диагностика отправляет все ответы одним
+    # запросом на последнем шаге прохождения, и без этого поля сервер вообще
+    # не знал момента начала, только момент завершения.
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Кто закрыл: сам ученик, куратор или staff. None — закрыла система.
     completed_by_id: Mapped[int | None] = mapped_column(

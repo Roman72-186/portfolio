@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Статистика диагностики{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=34">
+{% endblock %}
+{% block content %}
+{#
+Прохождение диагностики АРХИ-ПРОФИЛЯ (владелец 24.09.2026): за какое время
+ученик прошёл, когда начал и закончил, сколько получили каждый профиль, кто
+не начал и кто начал, но бросил. Считает `services/archi_profile_stats.py`.
+Своего <style> здесь нет — классы общие с `cabinet_program_cycle_stats.html`
+и остальными экранами программы.
+#}
+<div class="prg-page">
+    {% include "partials/program_tabs.html" %}
+
+    <div class="prg-head">
+        <div>
+            <h1>{{ stats.task.title }}</h1>
+            <p class="prg-hint">
+                Учеников в аудитории: {{ stats.total }}.
+                Закончили: {{ stats.status_counts.finished }}.
+            </p>
+        </div>
+    </div>
+
+    <section class="prg-items">
+        <h2>По статусу</h2>
+        <div class="prg-meta">
+            {% for key, label in stats.status_labels.items() %}
+            <span>{{ label }}: {{ stats.status_counts[key] }}</span>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="prg-items">
+        <h2>По тарифам</h2>
+        {% if stats.total %}
+        <div class="table-scroll">
+            <table class="prg-table">
+                <thead>
+                    <tr>
+                        <th>Тариф</th>
+                        {% for key, label in stats.status_labels.items() %}<th>{{ label }}</th>{% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tariff in stats.tariffs %}
+                    <tr>
+                        <td>{{ tariff }}</td>
+                        {% for key in stats.status_labels %}
+                        <td>{{ stats.by_tariff[tariff][key] }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="prg-hint">Аудитория пуста — диагностика никому не адресована или не опубликована.</p>
+        {% endif %}
+    </section>
+
+    <section class="prg-items">
+        <h2>Профили</h2>
+        {% if stats.profile_counts %}
+        <div class="prg-meta">
+            {% for title, count in stats.profile_counts %}
+            <span>{{ title }}: {{ count }}</span>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="prg-hint">Пока никто не закончил диагностику.</p>
+        {% endif %}
+    </section>
+
+    <section class="prg-items">
+        <h2>Ученики</h2>
+        {% if stats.rows %}
+        <div class="table-scroll">
+            <table class="prg-table">
+                <thead>
+                    <tr>
+                        <th>Ученик</th>
+                        <th>Тариф</th>
+                        <th>Статус</th>
+                        <th>Начал</th>
+                        <th>Закончил</th>
+                        <th>За сколько</th>
+                        <th>Профиль</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in stats.rows %}
+                    <tr>
+                        <td>{{ row.student.name or row.student.tg_username or ('Ученик #' ~ row.student.id) }}</td>
+                        <td>{{ row.student.tariff|tariff_label or '—' }}</td>
+                        <td>{{ row.status_label }}</td>
+                        <td>{{ row.started_at_text or '—' }}</td>
+                        <td>{{ row.finished_at_text or '—' }}</td>
+                        <td>{{ row.duration_text or '—' }}</td>
+                        <td>{{ row.profile.title if row.profile else '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="prg-hint">Аудитория пуста — диагностика никому не адресована или не опубликована.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

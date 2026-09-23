@@ -49,6 +49,7 @@ from app.services.task_blocks import (
     get_tariffs as get_task_block_tariffs,
     sync_blocks as sync_task_blocks,
 )
+from app.services.archi_profile_stats import diagnostic_stats
 from app.services.cycle_stats import cycle_stats
 from app.services.video_catalog import publish_video
 from app.models.tracker import (
@@ -262,7 +263,10 @@ def _edit_payloads(
             # Дата открытия задания — для предзаполнения формы правки.
             "starts_on": msk_date(item.starts_at).isoformat() if item.starts_at else None,
         }
-        if item.kind == ITEM_ARCHI_PROFILE:
+        # Не только у archi_profile (владелец 24.09.2026): диагностика может
+        # лежать блоками и внутри обычного «Задания» — форма правки должна
+        # подхватить её конфиг оттуда же, что и у отдельного вида.
+        if item.diagnostic_config:
             payload["diagnostic"] = item.diagnostic_config
         # Тариф правится, только пока тема элемента — служебная тема ровно
         # этого элемента (TOPIC_KIND_PROGRAM_ITEM). Элементы, попавшие в день
@@ -358,7 +362,12 @@ def _edit_payloads(
                 if b.block_type in (BLOCK_QUESTION, BLOCK_SCALE, BLOCK_RULES)
                 else [],
             }
-            for b in blocks
+            # Блоки диагностики сюда не попадают ни у одного вида (владелец
+            # 24.09.2026): их редактирует `diagnostic`/`diagnosticBuilder`,
+            # не общий редактор блоков — у варианта диагностики нет и не
+            # может быть «верного ответа», отправка их обратно как обычных
+            # блоков уже один раз ловила ошибку валидации (жалоба 22.09.2026).
+            for b in blocks if not b.is_diagnostic
         ]
         payloads[item.id] = payload
     return payloads
@@ -918,6 +927,37 @@ def create_cycle_archi_profile_item(
     return _create_cycle_item(topic_id, payload, user, db, ITEM_ARCHI_PROFILE)
 
 
+def _task_has_diagnostic(db: DBSession, task: TrackerTask) -> bool:
+    """Есть ли у задачи диагностика — отдельным видом (`kind=archi_profile`,
+    легаси-путь) или блоком внутри обычного «Задания» (владелец 24.09.2026,
+    второй способ). Статистика и тренажёр должны находить оба варианта."""
+    if task.kind == ITEM_ARCHI_PROFILE:
+        return True
+    return db.query(TaskBlock.id).filter(
+        TaskBlock.task_id == task.id, TaskBlock.is_diagnostic.is_(True),
+    ).first() is not None
+
+
+@router.get("/tasks/{task_id}/diagnostic-stats", response_class=HTMLResponse)
+def program_diagnostic_stats(
+    task_id: int,
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Прохождение диагностики: кто не начал/начал/закончил, за сколько
+    времени и с каким результатом (владелец 24.09.2026) — тот же дух, что у
+    `program_cycle_stats`, только по одной задаче и с временем/профилями
+    вместо шагов ленты.
+    """
+    task = db.get(TrackerTask, task_id)
+    if task is None or task.deleted_at is not None or not _task_has_diagnostic(db, task):
+        raise HTTPException(status_code=404, detail="Диагностика не найдена")
+    return templates.TemplateResponse(request, "cabinet_program_archi_profile_stats.html",
+        {"request": request, "user": user, "stats": diagnostic_stats(db, task)},
+    )
+
+
 @router.get("/tasks/{task_id}/trainer-blocks", response_class=JSONResponse)
 def diagnostic_trainer_blocks(
     task_id: int,
@@ -935,9 +975,9 @@ def diagnostic_trainer_blocks(
     ограничен рангом ≥ 4, как у остального конструктора.
     """
     task = db.get(TrackerTask, task_id)
-    if task is None or task.deleted_at is not None or task.kind != ITEM_ARCHI_PROFILE:
+    if task is None or task.deleted_at is not None or not _task_has_diagnostic(db, task):
         raise HTTPException(status_code=404, detail="Диагностика не найдена")
-    blocks = [b for b in get_task_blocks(db, task_id) if b.block_type == BLOCK_QUESTION]
+    blocks = [b for b in get_task_blocks(db, task_id) if b.block_type == BLOCK_QUESTION and b.is_diagnostic]
     if not blocks:
         raise HTTPException(status_code=404, detail="Вопросы диагностики не сохранены — сначала сохраните задание")
     options = get_task_block_options(db, [b.id for b in blocks])
@@ -1034,6 +1074,17 @@ def _create_cycle_item(topic_id: int, payload: CycleItemPayload, user: dict, db:
         block_items = blocks_from_config(task.diagnostic_config) if task.diagnostic_config else preset_blocks()
     else:
         block_items = [b.model_dump() for b in payload.blocks]
+        # Диагностика внутри обычного «Задания» (владелец 24.09.2026, второй
+        # способ рядом с отдельным видом archi_profile) — добавляем её
+        # блоки-вопросы К обычным, а не вместо них: задание несёт и то, и
+        # другое разом, с общей аудиторией и публикацией.
+        if payload.diagnostic:
+            from app.services.archi_profile import blocks_from_config, validate_diagnostic_config
+            try:
+                task.diagnostic_config = validate_diagnostic_config(payload.diagnostic)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            block_items = block_items + blocks_from_config(task.diagnostic_config)
     sync_task_blocks(db, task_id=task.id, items=block_items)
     db.add(
         AuditLog(
@@ -2119,6 +2170,15 @@ def _create_simple_item(
         block_items = blocks_from_config(task.diagnostic_config) if task.diagnostic_config else preset_blocks()
     else:
         block_items = [b.model_dump() for b in payload.blocks]
+        # Диагностика внутри обычного «Задания» (владелец 24.09.2026) —
+        # добавляем её блоки-вопросы К обычным, не вместо них.
+        if payload.diagnostic:
+            from app.services.archi_profile import blocks_from_config, validate_diagnostic_config
+            try:
+                task.diagnostic_config = validate_diagnostic_config(payload.diagnostic)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            block_items = block_items + blocks_from_config(task.diagnostic_config)
     sync_task_blocks(db, task_id=task.id, items=block_items)
     db.add(
         AuditLog(
@@ -2435,6 +2495,30 @@ def update_mock_item(
     return JSONResponse({"ok": True})
 
 
+def _diagnostic_block_items_from_db(db: DBSession, task_id: int) -> list[dict]:
+    """Уже сохранённые блоки-вопросы диагностики этой задачи как `items` для
+    `sync_task_blocks` — с реальными `id`, чтобы `sync_blocks` их узнал и
+    оставил как есть, а не удалил как «не встретившиеся в списке» и не
+    завёл заново с новыми id (владелец 24.09.2026: при правке обычного
+    «Задания» с диагностикой внутри клиент шлёт только обычные блоки,
+    сама диагностика в форму не подгружена — эта функция достраивает список
+    её блоками, чтобы правка одного не стирала другое)."""
+    blocks = [b for b in get_task_blocks(db, task_id) if b.is_diagnostic]
+    options = get_task_block_options(db, [b.id for b in blocks])
+    return [
+        {
+            "id": b.id, "block_type": b.block_type, "title": b.title, "body": b.body,
+            "question_type": b.question_type, "is_required": b.is_required,
+            "is_diagnostic": True,
+            "options": [
+                {"text": o.text, "is_correct": o.is_correct}
+                for o in options.get(b.id, [])
+            ],
+        }
+        for b in blocks
+    ]
+
+
 @router.post("/items/{task_id}/survey", response_class=JSONResponse)
 def update_survey_item(
     task_id: int,
@@ -2515,9 +2599,27 @@ def _update_simple_item(
             task.diagnostic_config = new_config
             sync_task_blocks(db, task_id=task.id, items=blocks_from_config(new_config))
     elif kind != ITEM_ARCHI_PROFILE:
-        sync_task_blocks(
-            db, task_id=task.id, items=[b.model_dump() for b in payload.blocks]
-        )
+        block_items = [b.model_dump() for b in payload.blocks]
+        if payload.diagnostic is not None:
+            from app.models.task_block import TaskBlockResponse
+            from app.services.archi_profile import blocks_from_config, validate_diagnostic_config
+
+            try:
+                new_config = validate_diagnostic_config(payload.diagnostic)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            if new_config != task.diagnostic_config:
+                if db.query(TaskBlockResponse.id).filter_by(task_id=task.id).first():
+                    raise HTTPException(status_code=409, detail="На диагностику уже ответили: вопросы и результаты менять нельзя")
+                task.diagnostic_config = new_config
+                block_items = block_items + blocks_from_config(new_config)
+            else:
+                block_items = block_items + _diagnostic_block_items_from_db(db, task.id)
+        elif task.diagnostic_config is not None:
+            # Форма не касалась диагностики вовсе — оставляем её блоки как
+            # есть, а не теряем при пересборке обычных.
+            block_items = block_items + _diagnostic_block_items_from_db(db, task.id)
+        sync_task_blocks(db, task_id=task.id, items=block_items)
     db.add(
         AuditLog(
             action=f"program_{kind}_update",

@@ -72,6 +72,7 @@ def preset_blocks() -> list[dict]:
             "body": body,
             "question_type": QUESTION_SINGLE,
             "is_required": index == 3,
+            "is_diagnostic": True,
             "options": [
                 {"text": OPTION_LABELS[index - 1][number - 1], "description": option, "is_correct": False}
                 for number, option in enumerate(options, 1)
@@ -185,6 +186,7 @@ def blocks_from_config(config: dict) -> list[dict]:
     return [
         {"block_type": BLOCK_QUESTION, "title": f"Вопрос {index}", "body": question["text"],
          "question_type": QUESTION_SINGLE, "is_required": index == len(config["questions"]),
+         "is_diagnostic": True,
          "options": [{"text": option["text"], "is_correct": False} for option in question["options"]]}
         for index, question in enumerate(config["questions"], 1)
     ]
@@ -236,7 +238,11 @@ def result_for_answers(db, task_id: int, user_id: int) -> dict | None:
 
     task = db.get(TrackerTask, task_id)
     config = task.diagnostic_config if task else None
-    blocks = [b for b in get_blocks(db, task_id) if b.block_type == BLOCK_QUESTION]
+    # `is_diagnostic`, не «любой вопрос задачи» (владелец 24.09.2026,
+    # диагностика теперь может лежать в одном задании с обычными вопросами):
+    # без этого сужения посторонний вопрос задачи попал бы в подсчёт
+    # комбинации и сбил бы и длину, и порядок ответов.
+    blocks = [b for b in get_blocks(db, task_id) if b.block_type == BLOCK_QUESTION and b.is_diagnostic]
     if len(blocks) != (len(config["questions"]) if config else 3):
         return None
     response = db.query(TaskBlockResponse).filter_by(task_id=task_id, user_id=user_id).one_or_none()
@@ -270,13 +276,16 @@ def trainer_profile_for_answers(db, task_id: int, answers: dict[int, int]) -> di
     """
     from app.services.task_blocks import get_blocks, get_options
 
-    from app.models.tracker import ITEM_ARCHI_PROFILE, TrackerTask
+    from app.models.tracker import TrackerTask
 
     task = db.get(TrackerTask, task_id)
-    if task is None or task.kind != ITEM_ARCHI_PROFILE:
+    if task is None:
         raise ValueError("Диагностика не найдена")
     config = task.diagnostic_config
-    blocks = [b for b in get_blocks(db, task_id) if b.block_type == BLOCK_QUESTION]
+    # Не завязано на `task.kind` (владелец 24.09.2026): диагностика теперь
+    # может лежать и в обычном «Задании» — тренажёр должен работать и там,
+    # ровно тем же признаком блока, что и `result_for_answers`.
+    blocks = [b for b in get_blocks(db, task_id) if b.block_type == BLOCK_QUESTION and b.is_diagnostic]
     if not blocks or len(blocks) != (len(config["questions"]) if config else 3):
         raise ValueError("Вопросы диагностики не сохранены")
     options = get_options(db, [block.id for block in blocks])

@@ -9,6 +9,8 @@ from app.models.task_block import TaskBlock, TaskBlockResponse
 from app.models.tracker import ITEM_ARCHI_PROFILE, TrackerTask
 from app.services.archi_profile import COMBINATIONS, PROFILES, result_for_answers
 from app.services.cycle_feed import build_cycle_feed
+from app.services.task_blocks import get_blocks as get_task_blocks
+from app.services.task_blocks import get_options as get_task_block_options
 from app.services.tz import today_msk
 
 
@@ -191,16 +193,16 @@ def test_editing_diagnostic_must_not_resend_its_own_question_blocks(
     хотя бы один верный ответ» повторялась по числу вопросов при сохранении).
 
     `archi_profile.blocks_from_config` заводит вопросы диагностики как
-    обычные блоки-«Вопрос» в базе — так их видит ученик. `_edit_payloads`
-    отдаёт форме правки блоки конструктора «у всех видов элемента без
-    исключения», включая эти. Старый клиент подхватывал их в скрытый общий
-    редактор блоков и отправлял обратно при сохранении — а у варианта
-    диагностики нет и не может быть «верного ответа», поэтому
-    `BlockItem.choice_question_needs_a_right_answer` отказывал на каждый
-    вопрос. Сервер и так игнорирует `payload.blocks` для archi_profile
-    (`_update_simple_item`: `elif kind != ITEM_ARCHI_PROFILE`), но Pydantic
-    валидирует тело запроса раньше, чем эта ветка успевает сработать —
-    чинить нужно на клиенте, не отправлять эти блоки вовсе."""
+    обычные блоки-«Вопрос» в базе (`is_diagnostic=True`, владелец 24.09.2026)
+    — так их видит ученик, но это не те блоки, что редактируются общим
+    конструктором. Исходный баг чинился на клиенте («не отправлять эти блоки
+    вовсе»); 24.09.2026 фикс переехал на сервер и стал структурным —
+    `_edit_payloads` теперь сам исключает `is_diagnostic`-блоки из
+    `payload["blocks"]` у всех видов элемента без исключения, не только у
+    archi_profile (нужно было для диагностики, встроенной в обычное
+    «Задание»). Тест проверяет и это (`_edit_payloads` не отдаёт их вовсе),
+    и что сервер по-прежнему отказывает, если их всё-таки прислать вручную
+    (защита на случай будущего клиентского бага, а не только сегодняшнего)."""
     admin = user_factory(vk_id=887_201, name="Преподаватель", is_admin=True, role_name="админ")
     client.cookies.set("session_id", session_factory(admin).id)
     today = today_msk()
@@ -227,9 +229,23 @@ def test_editing_diagnostic_must_not_resend_its_own_question_blocks(
     task_id = created.json()["task_id"]
 
     # То, что реально уйдёт в форму правки — не собранное вручную, а то же,
-    # чем сервер отвечает на настоящий экран.
+    # чем сервер отвечает на настоящий экран. Структурный фикс 24.09.2026:
+    # блоков диагностики тут нет вовсе, а не «есть, но клиент их не шлёт».
     task = db.get(TrackerTask, task_id)
-    stale_blocks = _edit_payloads(db, [task], {})[task_id]["blocks"]
+    real_payload_blocks = _edit_payloads(db, [task], {})[task_id]["blocks"]
+    assert real_payload_blocks == []
+
+    # Собираем «протухшие» блоки напрямую из базы, в обход `_edit_payloads` —
+    # имитация клиента с багом, который раздобыл их как-то ещё. Сервер должен
+    # отказать сам, не полагаясь на то, что клиент их не пришлёт.
+    stale_blocks = [
+        {
+            "id": b.id, "block_type": b.block_type, "title": b.title, "body": b.body,
+            "question_type": b.question_type,
+            "options": [{"text": o.text, "is_correct": o.is_correct} for o in get_task_block_options(db, [b.id]).get(b.id, [])],
+        }
+        for b in get_task_blocks(db, task_id)
+    ]
     assert len(stale_blocks) == 1
     assert stale_blocks[0]["block_type"] == "question"
     assert all(not option["is_correct"] for option in stale_blocks[0]["options"])

@@ -483,6 +483,13 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         row.hidden_until_done = bool(
             item.get("hidden_until_done") if block_type == BLOCK_QUESTION else False
         )
+        # Блок-вопрос диагностики АРХИ-ПРОФИЛЯ (владелец 24.09.2026) —
+        # проставляется `archi_profile.blocks_from_config`/`preset_blocks`,
+        # чужим блокам-вопросам, добавленным тем же конструктором, не
+        # передаётся и остаётся False.
+        row.is_diagnostic = bool(
+            item.get("is_diagnostic") if block_type == BLOCK_QUESTION else False
+        )
         row.is_required = bool(item.get("is_required"))
         row.is_required_for_intake = bool(
             item.get("is_required_for_intake", True)

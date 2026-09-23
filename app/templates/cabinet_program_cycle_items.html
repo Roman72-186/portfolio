@@ -144,6 +144,9 @@
                     <button type="button" class="btn-outline" data-item-move="-1" aria-label="Выше" {% if loop.first %}disabled{% endif %}>↑</button>
                     <button type="button" class="btn-outline" data-item-move="1" aria-label="Ниже" {% if loop.last %}disabled{% endif %}>↓</button>
                 </span>
+                {% if item.kind == 'archi_profile' %}
+                <a class="btn-outline" href="/cabinet/staff/program/tasks/{{ item.id }}/diagnostic-stats">Статистика</a>
+                {% endif %}
                 <button type="button" class="btn-outline" data-item-edit>Изменить</button>
                 <button type="button" class="btn-outline" data-item-delete>Удалить</button>
             </div>
@@ -334,8 +337,11 @@ function uploadBlockPhotos(row, files) {
         // `[data-diagnostic-editor]` (владелец 22.09.2026: раньше предпросмотр
         // диагностики всегда был пуст, потому что `collectFormBlocks` смотрит
         // только в `[data-blocks]`, которого у archi_profile-формы нет вовсе).
-        var blocks = form.dataset.itemKind === 'archi_profile'
-            ? diagnosticBuilder.questions().map(function (question, index) {
+        // С 24.09.2026 диагностика может стоять рядом с обычными блоками —
+        // складываем оба набора, а не выбираем один вместо другого.
+        var blocks = collectFormBlocks(form);
+        if (!form.querySelector('[data-diagnostic-note]').hidden) {
+            blocks = blocks.concat(diagnosticBuilder.questions().map(function (question, index) {
                 return {
                     block_type: 'question',
                     title: 'Вопрос ' + (index + 1),
@@ -343,8 +349,8 @@ function uploadBlockPhotos(row, files) {
                     question_type: 'single',
                     options: (question.options || []).map(function (option) { return {text: option.text}; })
                 };
-            })
-            : collectFormBlocks(form);
+            }));
+        }
         box.innerHTML = '';
         if (!blocks.length) {
             box.innerHTML = '<p class="prg-hint">Пока нечего показывать — добавьте блоки.</p>';
@@ -429,11 +435,19 @@ function uploadBlockPhotos(row, files) {
             if (!data) return;
             resetForm();
             form.dataset.itemKind = data.kind || 'material';
+            // Отдельный вид archi_profile (легаси-заготовка, владелец
+            // 24.09.2026 оставил её как есть) — своё содержимое только
+            // диагностика, общий редактор блоков и предпросмотр ей не нужны.
             if (form.dataset.itemKind === 'archi_profile') {
-                diagnosticBuilder.load(data.diagnostic);
                 fields.required.closest('.prg-field').hidden = true;
                 form.querySelector('[data-blocks-wrap]').hidden = true;
                 form.querySelector('[data-preview-wrap]').hidden = true;
+            }
+            // Диагностика внутри обычного «Задания» — те же поля рядом с
+            // остальными блоками, а не вместо них (второй способ, владелец
+            // 24.09.2026).
+            if (data.diagnostic) {
+                diagnosticBuilder.load(data.diagnostic);
                 form.querySelector('[data-diagnostic-note]').hidden = false;
                 form.querySelector('[data-diagnostic-trainer]').hidden = false;
             }
@@ -444,16 +458,12 @@ function uploadBlockPhotos(row, files) {
             window.RichTextField.refresh(fields.description);
             fields.required.checked = !!data.is_required;
             fields.starts.value = data.starts_on || '';
-            // У диагностики свои вопросы уже есть блоками-«Вопрос» в базе
-            // (их создаёт archi_profile.blocks_from_config — так их видит
-            // ученик), но это не те блоки, что редактируются здесь: у
-            // варианта диагностики нет и не может быть «верного ответа».
-            // Общий редактор блоков для archi_profile спрятан, но
-            // renderFormBlocks(data.blocks) всё равно клал бы их туда, а
-            // сохранение отправило бы обратно на сервер как обычный тест —
-            // Pydantic отказывал бы с «отметьте хотя бы один верный ответ»
-            // на каждый вопрос (жалоба 22.09.2026).
-            renderFormBlocks(form, form.dataset.itemKind === 'archi_profile' ? [] : (data.blocks || []));
+            // Блоки диагностики сюда не попадают ни у одного вида — сервер
+            // уже отфильтровал их из `data.blocks` (`_edit_payloads`,
+            // владелец 24.09.2026): у варианта диагностики нет и не может
+            // быть «верного ответа», отправка их обратно как обычных
+            // блоков уже один раз ловила ошибку валидации (жалоба 22.09.2026).
+            renderFormBlocks(form, data.blocks || []);
             formTitle.textContent = form.dataset.itemKind === 'archi_profile' ? 'Правка диагностики' : 'Правка задания';
             openForm();
         });
@@ -467,22 +477,22 @@ function uploadBlockPhotos(row, files) {
             return;
         }
         message.classList.remove('is-error');
+        // Отдельный вид archi_profile ни во что не кладёт payload.blocks
+        // (сервер их игнорирует), поэтому у него это всегда пусто. Для
+        // «Задания» — обычные блоки, диагностика (если добавлена) идёт
+        // рядом отдельным полем, не вместо них (владелец 24.09.2026).
         var payload = {
             title: title,
             subject: fields.subject.value || null,
             description: fields.description.value.trim() || null,
             is_required: fields.required.checked,
             starts_on: fields.starts.value || null,
-            // Сервер сам собирает блоки диагностики из payload.diagnostic
-            // (см. _update_simple_item: `elif kind != ITEM_ARCHI_PROFILE`) —
-            // payload.blocks для archi_profile ни для чего не используется,
-            // но Pydantic всё равно валидирует его ДО того, как эта ветка
-            // сработает. Раньше сюда попадали же вопросы диагностики (см.
-            // renderFormBlocks выше), и «верного ответа» у них нет — сохранение
-            // отказывало с ошибкой на каждый вопрос.
             blocks: form.dataset.itemKind === 'archi_profile' ? [] : collectFormBlocks(form)
         };
-        if (form.dataset.itemKind === 'archi_profile') {
+        // Диагностика в форме — у отдельного вида archi_profile всегда, у
+        // «Задания» только если её добавили кнопкой «+ Диагностика» (панель
+        // `[data-diagnostic-note]` видна).
+        if (!form.querySelector('[data-diagnostic-note]').hidden) {
             // Первое «Сохранить» с экрана «Вопросы» только переводит на
             // «Результаты» — настоящая отправка формы (и выход) идёт со
             // второго нажатия, уже оттуда (владелец 22.09.2026).
@@ -549,20 +559,13 @@ function uploadBlockPhotos(row, files) {
     // на дне устроен общий обработчик кликов на всю страницу.
     form.addEventListener('click', function (event) {
         if (event.target.closest('[data-add-diagnostic]')) {
-            if (fields.id.value || form.querySelector('[data-block]')) {
-                message.textContent = 'Сначала сохраните текущее задание. Диагностика добавляется отдельным шагом.';
-                message.classList.add('is-error');
-                return;
-            }
+            // Диагностика — ещё один блок внутри текущего «Задания», не
+            // отдельный шаг (владелец 24.09.2026): доступность настраивается
+            // так же, как у остальных материалов, обычные блоки и
+            // предпросмотр никуда не прячутся.
             message.textContent = '';
             message.classList.remove('is-error');
-            form.dataset.itemKind = 'archi_profile';
-            fields.required.checked = true;
-            fields.required.closest('.prg-field').hidden = true;
-            form.querySelector('[data-blocks-wrap]').hidden = true;
-            form.querySelector('[data-preview-wrap]').hidden = true;
             form.querySelector('[data-diagnostic-note]').hidden = false;
-            formTitle.textContent = 'Новая диагностика';
             return;
         }
         var previewBtn = event.target.closest('[data-preview-blocks]');

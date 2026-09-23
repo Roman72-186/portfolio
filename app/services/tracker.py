@@ -63,6 +63,7 @@ from app.services.video_topics import (
     get_tag_ids as topic_tag_ids,
     set_topic_assignees,
     set_topic_tags,
+    topic_audience_user_ids,
 )
 
 STUDENT_ROLE_RANK = 1
@@ -807,6 +808,89 @@ def close_task_for_user(
         state.completed_by_id = None
         state.completion_source = source
     return state
+
+
+def mark_task_started(db: Session, *, task_id: int, user_id: int) -> TrackerTaskState:
+    """Запомнить первый момент, когда ученик открыл задачу (владелец
+    24.09.2026, статистика прохождения диагностики) — зеркало
+    `start_portfolio_window` (`app/services/task_blocks.py`), только на
+    уровне задачи, не блока: диагностика отправляет ответы одним запросом на
+    последнем шаге, и без этой метки сервер не знал бы момента начала,
+    только момент завершения.
+
+    Идемпотентно: `started_at` ставится один раз, повторные визиты его не
+    трогают и не переводят `status` в done — это делает только
+    `close_task_for_user`. Коммитит сам, только когда реально что-то
+    записал — тот же приём, что у `build_cycle_feed`
+    (`app/services/cycle_feed.py`, флаг `started_portfolio_window`): вызов
+    идёт из GET-роута, у которого нет своего коммита в конце запроса.
+    """
+    state = (
+        db.query(TrackerTaskState)
+        .filter(TrackerTaskState.task_id == task_id, TrackerTaskState.user_id == user_id)
+        .one_or_none()
+    )
+    if state is None:
+        state = TrackerTaskState(task_id=task_id, user_id=user_id, status=STATUS_OPEN)
+        db.add(state)
+        db.flush()
+    if state.started_at is None:
+        state.started_at = now_msk()
+        db.commit()
+    return state
+
+
+def task_audience_user_ids(db: Session, task_id: int) -> set[int]:
+    """Активные ученики, которым реально видна конкретная опубликованная
+    задача — зеркало `accessible_task_ids` (по ученику), но по задаче:
+    нужен статистике прохождения диагностики, чтобы не путать «не начал» с
+    «задача этому ученику вообще не адресована».
+
+    Задача с `topic_id` (а это почти любая диагностика — она заводится внутри
+    цикла или дня, и обе ветки сразу проставляют тему) своей адресации не
+    имеет: её аудиторию задаёт тема, и `_accessible_task_or_404`
+    (`cabinet_tracker.py`) проверяет именно `topic_id in
+    accessible_topic_ids(...)`, а не поля самой задачи. Считаем через
+    `topic_audience_user_ids` — тот же путь. Только у разовой задачи вне
+    программы (`topic_id IS NULL`) аудиторию задают её собственные
+    `assign_to_all`/теги/поимённые исключения.
+    """
+    task = db.get(TrackerTask, task_id)
+    if task is None or task.deleted_at is not None or not task.is_published:
+        return set()
+    if task.topic_id is not None:
+        return topic_audience_user_ids(db, task.topic_id)
+    students = (
+        db.query(User.id)
+        .join(Role, User.role_id == Role.id)
+        .filter(
+            Role.rank == STUDENT_ROLE_RANK,
+            User.is_active.is_(True),
+            User.deleted_at.is_(None),
+        )
+    )
+    if task.assign_to_all:
+        return {row[0] for row in students.all()}
+    tag_ids = [
+        row[0] for row in
+        db.query(TrackerTaskTag.tag_id).filter(TrackerTaskTag.task_id == task_id).all()
+    ]
+    assignee_ids = [
+        row[0] for row in
+        db.query(TrackerTaskAssignee.user_id).filter(TrackerTaskAssignee.task_id == task_id).all()
+    ]
+    reached: set[int] = set()
+    if tag_ids:
+        rows = (
+            students.join(UserTag, UserTag.user_id == User.id)
+            .filter(UserTag.tag_id.in_(tag_ids))
+            .all()
+        )
+        reached.update(row[0] for row in rows)
+    if assignee_ids:
+        rows = students.filter(User.id.in_(assignee_ids)).all()
+        reached.update(row[0] for row in rows)
+    return reached
 
 
 def count_completed(db: Session, task_id: int) -> int:

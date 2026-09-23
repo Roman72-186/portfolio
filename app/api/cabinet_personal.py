@@ -49,7 +49,8 @@ from app.db.database import get_db
 from app.dependencies import require_student, require_csrf
 from app.models.user import User
 from app.models.tracker import ITEM_ARCHI_PROFILE, TrackerTask
-from app.models.task_block import TaskBlockResponse
+from app.models.task_block import TaskBlock, TaskBlockResponse
+from sqlalchemy import or_
 from app.services.archi_profile import result_for_answers
 from app.services.skills_history import skills_history
 from app.services import telegram as telegram_service
@@ -101,12 +102,22 @@ def cabinet_personal(
     if not user.get("access_expired") and needs_profile_setup(user):
         return RedirectResponse("/cabinet/profile", status_code=302)
 
+    # Диагностика — отдельным видом задания (легаси-путь) или блоком внутри
+    # обычного «Задания» (владелец 24.09.2026, второй способ) — оба варианта
+    # должны попасть сюда, иначе результаты диагностик, добавленных новым
+    # способом, никогда не показались бы ученику.
+    diagnostic_task_ids = db.query(TaskBlock.task_id).filter(
+        TaskBlock.is_diagnostic.is_(True)
+    ).scalar_subquery()
     diagnostic_responses = (
         db.query(TaskBlockResponse)
         .join(TrackerTask, TrackerTask.id == TaskBlockResponse.task_id)
         .filter(
             TaskBlockResponse.user_id == user["user_id"],
-            TrackerTask.kind == ITEM_ARCHI_PROFILE,
+            or_(
+                TrackerTask.kind == ITEM_ARCHI_PROFILE,
+                TrackerTask.id.in_(diagnostic_task_ids),
+            ),
         )
         .order_by(TaskBlockResponse.updated_at.desc(), TaskBlockResponse.id.desc())
         .all()
