@@ -102,27 +102,17 @@
     color: var(--blue); background: var(--blue-soft); font-size: 18px;
 }
 
-/* Переключатель соседних циклов этапа (владелец 24.09.2026) — компактные
-   стеклянные «пилюли», не карточки `.prg-tile`: названия короткие («Цикл
-   1», «Цикл 2»), крупная карточка под них не нужна. Стекло — те же
-   значения, что уже приняты в tracker.css/cycle_carousel.css:
-   rgba(249,249,251,0.82) + blur(20px) saturate(180%). */
+/* Переключатель соседних циклов этапа (владелец 24.09.2026) — компактная
+   пилюля, тот же паттерн, что `.lrn-cycle-chip` в tracker.css (карусель
+   ученика): названия короткие («Цикл 1», «Цикл 2»), крупная карточка под
+   них не нужна. Без стекла и увеличения — владелец попросил проще. */
 .prg-cycle-switch { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
 .prg-cycle-pill {
-    display: inline-flex; align-items: center; padding: 8px 16px;
-    border-radius: var(--r-pill); border: 1.5px solid var(--line);
-    font: 700 13px/1 var(--font-body); color: var(--text); text-decoration: none;
-    background: rgba(249,249,251,0.82);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    box-shadow: var(--sh-sm);
-    transition: transform .12s ease, border-color .12s ease;
+    display: inline-flex; align-items: center; padding: 6px 12px;
+    border-radius: var(--r-pill); border: 1px solid var(--line);
+    font: 700 13px/1 var(--font-body); color: var(--muted); text-decoration: none;
 }
-.prg-cycle-pill:hover, .prg-cycle-pill:focus-visible { transform: scale(1.06); border-color: var(--blue); }
-.prg-cycle-pill.is-active {
-    border-color: var(--blue); background: var(--blue-soft); color: var(--blue-on-soft);
-    transform: scale(1.06);
-}
+.prg-cycle-pill.is-active { border-color: var(--blue); color: var(--blue); }
 
 .prg-items h2 { margin: 0 0 10px; font: 700 17px/1.3 var(--font-display); color: var(--text); }
 .prg-item {

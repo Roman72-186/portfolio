@@ -620,7 +620,7 @@ def test_stage_task_is_pinned_first_in_every_cycle_of_the_stage(db, regular_user
     feed = feed_for_student(db, user_id=regular_user.id, user_tariff=None, today=TODAY)
 
     assert feed["topic"].id == cycle_one.id
-    assert feed["pinned_tasks"] == [{"id": portfolio.id, "title": "Портфолио"}]
+    assert feed["pinned_tasks"] == [{"id": portfolio.id, "title": "Портфолио", "is_current": False}]
     assert feed["steps"][0]["task"].id == portfolio.id
 
 
@@ -655,5 +655,61 @@ def test_stage_task_stays_pinned_when_viewing_an_older_cycle(db, regular_user):
 
     assert feed["topic"].id == old_cycle.id
     assert feed["is_archive"] is True
-    assert feed["pinned_tasks"] == [{"id": portfolio.id, "title": "Портфолио"}]
+    assert feed["pinned_tasks"] == [{"id": portfolio.id, "title": "Портфолио", "is_current": False}]
     assert feed["steps"][0]["task"].id == portfolio.id
+
+
+def test_opening_stage_by_id_shows_all_its_own_tasks(db, regular_user):
+    """Клик по «Портфолио» открывает сам этап — все его задания, а не
+    прыгает к одному блоку внутри текущего цикла (владелец 24.09.2026:
+    «просто открываем все задания, которые есть»)."""
+    stage = _stage(db, regular_user, starts_on=TODAY - timedelta(days=10), ends_on=TODAY + timedelta(days=20))
+    portfolio = create_task(
+        db, title="Портфолио", user_id=regular_user.id, kind="material",
+        topic_id=stage.id, assign_to_all=True, is_required=False,
+    )
+    portfolio.is_published = True
+    db.commit()
+
+    cycle_one = _cycle(
+        db, regular_user, title="Цикл 1",
+        starts_on=TODAY - timedelta(days=1), ends_on=TODAY + timedelta(days=6),
+    )
+    cycle_one.parent_id = stage.id
+    cycle_task = _task(db, regular_user, title="Материал цикла 1", due_on=TODAY, is_required=False)
+    db.commit()
+
+    feed = feed_for_student(
+        db, user_id=regular_user.id, user_tariff=None, today=TODAY, cycle_id=stage.id,
+    )
+
+    assert feed["topic"].id == stage.id
+    # Не архив — этап не цикл, гейт read-only на него не распространяется.
+    assert feed["is_archive"] is False
+    assert [step["task"].id for step in feed["steps"]] == [portfolio.id]
+    assert cycle_task.id not in [step["task"].id for step in feed["steps"]]
+    assert feed["pinned_tasks"] == [{"id": portfolio.id, "title": "Портфолио", "is_current": True}]
+    # Ни один цикл не подсвечен текущим, пока открыт сам этап.
+    assert all(not c["is_current"] for c in feed["cycles"])
+
+
+def test_opening_foreign_stage_by_id_is_ignored(db, regular_user):
+    """Id в адресной строке не подобрать чужой этап — только тот, к
+    которому реально принадлежит текущий цикл ученика."""
+    stage = _stage(db, regular_user, starts_on=TODAY - timedelta(days=10), ends_on=TODAY + timedelta(days=20))
+    other_stage = _stage(
+        db, regular_user, starts_on=TODAY - timedelta(days=100), ends_on=TODAY - timedelta(days=90),
+        title="Чужой этап",
+    )
+    cycle_one = _cycle(
+        db, regular_user, title="Цикл 1",
+        starts_on=TODAY - timedelta(days=1), ends_on=TODAY + timedelta(days=6),
+    )
+    cycle_one.parent_id = stage.id
+    db.commit()
+
+    feed = feed_for_student(
+        db, user_id=regular_user.id, user_tariff=None, today=TODAY, cycle_id=other_stage.id,
+    )
+
+    assert feed["topic"].id == cycle_one.id

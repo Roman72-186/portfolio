@@ -1,9 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Актуальное образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=61">
+<link rel="stylesheet" href="/static/css/tracker.css?v=62">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=1">
-<link rel="stylesheet" href="/static/css/cycle_carousel.css?v=3">
 {% endblock %}
 {% block content %}
 {#
@@ -49,22 +48,20 @@
     {# Пройденные циклы: вернуться и перечитать свои ответы (владелец
        03.09.2026). Показываем, только когда есть куда возвращаться. #}
     {% if feed.pinned_tasks or feed.cycles|length > 1 %}
-    <div class="lrn-carousel" data-role="cycle-carousel"
-         aria-label="Циклы {{ feed.stage.label }}{% if not feed.stage %}обучения{% endif %}">
-        <div class="lrn-carousel-track">
-            {# Задания этапа («Портфолио») — отдельная кнопка перед циклами,
-               без дат: ведёт не на другой URL, а к тому же шагу, что уже
-               рендерится первым в текущей ленте (владелец 24.09.2026). #}
-            {% for pinned in feed.pinned_tasks %}
-            <a class="lrn-carousel-card"
-               href="#learning-task-{{ pinned.id }}" data-pinned-task-id="{{ pinned.id }}">{{ pinned.title }}</a>
-            {% endfor %}
-            {% for cycle in feed.cycles %}
-            <a class="lrn-carousel-card{{ ' is-current' if cycle.is_current }}"
-               href="/cabinet/learning{{ '' if cycle.is_current else '?cycle=' ~ cycle.id }}"
-               data-cycle-id="{{ cycle.id }}">{{ cycle.title }}</a>
-            {% endfor %}
-        </div>
+    <div class="lrn-cycles" aria-label="Циклы {{ feed.stage.label }}{% if not feed.stage %}обучения{% endif %}">
+        {# «Портфолио» — задание прямо на этапе, ведёт на сам этап (владелец
+           24.09.2026: «просто открываем все задания, которые есть», не
+           прыжок к одному блоку внутри текущего цикла). #}
+        {% for pinned in feed.pinned_tasks %}
+        <a class="lrn-cycle-chip{{ ' is-current' if pinned.is_current }}"
+           href="/cabinet/learning{{ '' if pinned.is_current else '?cycle=' ~ feed.stage.id }}"
+           data-pinned-task-id="{{ pinned.id }}">{{ pinned.title }}</a>
+        {% endfor %}
+        {% for cycle in feed.cycles %}
+        <a class="lrn-cycle-chip{{ ' is-current' if cycle.is_current }}"
+           href="/cabinet/learning{{ '' if cycle.is_current else '?cycle=' ~ cycle.id }}"
+           data-cycle-id="{{ cycle.id }}">{{ cycle.title }}</a>
+        {% endfor %}
     </div>
     {% endif %}
 
@@ -240,5 +237,4 @@ document.addEventListener('DOMContentLoaded', function () {
 {% include "partials/student_onboarding_guide.html" %}
 <script src="/static/js/task-completion.js?v=1" data-csrf-token="{{ csrf_token(request) }}"></script>
 <script src="/static/js/hint.js?v=1"></script>
-<script src="/static/js/cycle-carousel.js?v=1"></script>
 {% endblock %}

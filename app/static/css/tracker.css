@@ -1373,9 +1373,34 @@ body.has-video-pseudo-fullscreen .lrn-step { opacity: 1 !important; }
 .lrn-step--locked { opacity: 0.5; }
 .lrn-step-locked { margin-top: 10px; font-style: italic; }
 
-/* Переключатель циклов — свайп-карусель, `cycle_carousel.css` (владелец
-   24.09.2026, Этапы). Прежние `.lrn-cycles`/`.lrn-cycle-chip` (пилюли,
-   03.09.2026) сняты вместе с разметкой в `cabinet_learning.html`. */
+/* Пройденные циклы: возврат к своим ответам (владелец 03.09.2026). Версия со
+   стеклянной каруселью (24.09.2026, Этапы) не прижилась — владелец попросил
+   вернуть как было. Заодно этой же строкой теперь открывается и «Портфолио»
+   (задание прямо на этапе, владелец 24.09.2026) — оно ведёт на сам этап, не
+   на отдельный блок. */
+.lrn-cycles {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 2px 0 8px;
+    scrollbar-width: none;
+}
+.lrn-cycles::-webkit-scrollbar { display: none; }
+.lrn-cycle-chip {
+    flex: 0 0 auto;
+    padding: 6px 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--dim);
+    text-decoration: none;
+    white-space: nowrap;
+}
+.lrn-cycle-chip.is-current {
+    border-color: var(--blue);
+    color: var(--blue);
+}
 .lrn-archive-note { margin: 0 0 12px; }
 
 /* Шкала навыков: название сверху, ряд делений под ним — на узком экране

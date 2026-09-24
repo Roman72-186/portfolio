@@ -447,7 +447,7 @@ def test_learning_lists_past_cycles(auth_client, db):
 
     assert "Первый цикл" in resp.text
     assert "Второй цикл" in resp.text
-    assert 'data-role="cycle-carousel"' in resp.text
+    assert 'class="lrn-cycles"' in resp.text
 
 
 def test_learning_opens_a_past_cycle_read_only(auth_client, db):
@@ -478,7 +478,7 @@ def test_learning_hides_cycle_chips_when_there_is_one_cycle(auth_client, db):
 
     resp = client.get("/cabinet/learning")
 
-    assert 'data-role="cycle-carousel"' not in resp.text
+    assert 'class="lrn-cycles"' not in resp.text
 
 
 # ── подпись шага: ровно одна (16.09.2026) ───────────────────────────────────

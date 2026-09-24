@@ -26,7 +26,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
+from app.models.learning_topic import TOPIC_KIND_STAGE, TOPIC_KIND_WEEK, LearningTopic
 from app.models.task_block import BLOCK_PORTFOLIO
 from app.models.tracker import ITEM_ARCHI_PROFILE, ITEM_MOCK_EXAM, STATUS_DONE
 from app.models.user import User
@@ -508,6 +508,12 @@ def feed_for_student(
     `cycle_id` — открыть конкретный цикл вместо текущего: ученик возвращается в
     пройденное. Чужой или ещё не начавшийся цикл молча игнорируется — падать на
     подобранном в адресной строке номере незачем.
+
+    `cycle_id` также принимает id самого этапа — так открывается «Портфолио»
+    (владелец 24.09.2026: «просто открываем все задания, которые есть», не
+    прыжок к одному блоку внутри текущего цикла). Разрешён только этап
+    текущего цикла ученика — иначе подобранный в адресной строке id открыл
+    бы чужой этап.
     """
     current_topic, current_start, current_end = feed_window(db, user_id, today)
     chosen = None
@@ -515,23 +521,53 @@ def feed_for_student(
         chosen = next(
             (t for t in started_cycles(db, user_id, today) if t.id == cycle_id), None
         )
+    chosen_stage = None
+    if chosen is None and cycle_id is not None:
+        candidate_stage_id = current_topic.parent_id if current_topic is not None else None
+        if candidate_stage_id == cycle_id:
+            stage_candidate = db.get(LearningTopic, cycle_id)
+            if (
+                stage_candidate is not None
+                and stage_candidate.kind == TOPIC_KIND_STAGE
+                and stage_candidate.deleted_at is None
+            ):
+                chosen_stage = stage_candidate
     if chosen is not None:
         start, end = cycle_bounds(chosen)
         topic = chosen
+    elif chosen_stage is not None:
+        start, end = cycle_bounds(chosen_stage)
+        topic = chosen_stage
     else:
         topic, start, end = current_topic, current_start, current_end
     # Этап-родитель отображаемого цикла (`topic`) — задания, заведённые прямо
     # на этапе («Портфолио»), показываются первыми в ленте ЛЮБОГО его цикла,
-    # включая архивный, куда бы ни завела `cycle_id`.
-    pinned_stage_id = topic.parent_id if topic is not None else None
+    # включая архивный, куда бы ни завела `cycle_id`. Если сам `topic` — этап
+    # (открыли «Портфолио» напрямую), пристёгивать нечего: его задания и так
+    # придут по `topic_id` — `pinned_topic_id` совпадёт с ним же, и
+    # build_cycle_feed сам не станет запрашивать их второй раз.
+    if topic is not None and topic.kind == TOPIC_KIND_STAGE:
+        pinned_stage_id = topic.id
+    elif topic is not None:
+        pinned_stage_id = topic.parent_id
+    else:
+        pinned_stage_id = None
     steps = build_cycle_feed(
         db, user_id=user_id, user_tariff=user_tariff, start=start, end=end,
         topic_id=topic.id if topic is not None else None,
         pinned_topic_id=pinned_stage_id,
     )
+    if topic is not None and topic.kind == TOPIC_KIND_STAGE:
+        # `accessible_task_entries(topic_id=...)` сужает только бездатную
+        # ветку (см. её докстринг) — датная задача чужого цикла того же
+        # этапа могла попасть в окно просто по совпадению дат (окно этапа
+        # широкое, покрывает все его циклы разом). У «Портфолио» на этапе
+        # своих чужих задач не бывает — дофильтровать явно.
+        steps = [step for step in steps if step["task"].topic_id == topic.id]
     pinned_tasks = []
     if pinned_stage_id is not None:
         seen_pinned_ids: set[int] = set()
+        viewing_stage_directly = topic is not None and topic.kind == TOPIC_KIND_STAGE
         for step in steps:
             task = step["task"]
             if (
@@ -539,7 +575,9 @@ def feed_for_student(
                 and task.topic_id == pinned_stage_id
                 and task.id not in seen_pinned_ids
             ):
-                pinned_tasks.append({"id": task.id, "title": task.title})
+                pinned_tasks.append({
+                    "id": task.id, "title": task.title, "is_current": viewing_stage_directly,
+                })
                 seen_pinned_ids.add(task.id)
     # Карусель показывает циклы только текущего этапа — прямая ссылка на
     # старый цикл (`chosen` выше) при этом ищется без сужения по этапу,
