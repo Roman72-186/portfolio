@@ -8,22 +8,10 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.constants import (
     VIDEO_WATCH_MAX_PLAYBACK_RATE,
-    VIDEO_WATCH_MIN_PLAYBACK_RATE,
-    VIDEO_WATCH_POSITION_JITTER_SECONDS,
-    VIDEO_WATCH_TOLERANCE_SECONDS,
-    VIDEO_WATCH_TRIAL_TAIL_SECONDS,
+    VIDEO_WATCH_NETWORK_SLACK_SECONDS,
+    VIDEO_WATCH_TAIL_SECONDS,
 )
 from app.models.video_progress import VideoProgress
-
-# Запас на задержку сети для пробного правила (владелец 24.09.2026, проверка
-# на 2×: засчиталось 65–85% вместо 100%). Heartbeat идёт раз в 10 секунд, на
-# 2× ролик за это время проходит 20 секунд, а предел был 10 × 2,25 + 2 = 24,5.
-# Стоило одному запросу задержаться в сети на пару секунд, следующий приходил
-# «слишком рано» и весь кусок в 20 секунд выбрасывался как перемотка. Теперь
-# кусок не выбрасывается, а урезается до того, что ролик физически мог
-# проиграть, плюс этот запас. Живет здесь, а не в `constants.py`, пока
-# правило пробное.
-TRIAL_NETWORK_SLACK_SECONDS = 5
 from app.models.video_view_log import VideoViewLog
 
 
@@ -59,10 +47,10 @@ def get_resume_position(progress: VideoProgress | None) -> float:
     if progress is None or progress.position_seconds < 5:
         return 0.0
     # Точная позиция в конце возвращает в начало даже при ещё не подтверждённом
-    # просмотре. Такая строка возникает, если ролик закончился раньше, чем
-    # накопилось требуемое календарное время (например, на скорости 2×). Возврат
-    # в начало даёт добрать время вместо тупика на duration/duration. Позицию рядом с
-    # концом сохраняем: ученик мог уйти за несколько секунд до `ended`.
+    # просмотре: например, ученик перемотал в конец и ролик закончился раньше,
+    # чем набрался порог. Возврат в начало даёт досмотреть вместо тупика на
+    # duration/duration. Позицию рядом с концом сохраняем: ученик мог уйти за
+    # несколько секунд до `ended`.
     if (
         progress.duration_seconds is not None
         and progress.position_seconds >= progress.duration_seconds
@@ -77,20 +65,25 @@ def compute_watched_seconds(
     position_seconds: float,
     playback_active: bool,
     now: datetime | None = None,
-    credit_playback_speed: bool = False,
 ) -> float:
-    """Накопленное реальное время просмотра — не позиция плеера, а сумма
-    промежутков календарного времени между соседними heartbeat'ами.
+    """Засчитанные секунды ролика — сумма честных приростов позиции между
+    соседними heartbeat'ами.
 
-    Позицию (`position_seconds`) можно перемотать одним движением ползунка
-    или отправить руками — она ничего не говорит о том, сколько секунд
-    ролик реально был на экране. Этот счётчик — про то самое реальное время,
-    защита от перемотки строится на нём (владелец 05.09.2026).
+    Засчитываются секунды ролика, а не секунды на часах (владелец 24.09.2026:
+    «ускорение засчитывать»): 10 минут на 2× дают 10 минут. До этого
+    засчитывалось реальное время, и ускоренный просмотр за один проход
+    порога не набирал.
 
-    Одного календарного интервала недостаточно: так открытый на ночь плеер
-    засчитал бы часы. Поэтому сервер также требует активное воспроизведение и
-    правдоподобное движение позиции. Задержка сети не теряет время, а пауза,
-    спящая вкладка и перемотка ничего не добавляют.
+    Прирост засчитывается не больше, чем ролик физически мог проиграть за
+    промежуток между запросами на максимальной скорости плеера, плюс запас на
+    задержку сети. Перемотка поэтому даёт не больше честного просмотра на
+    2,25×, а пауза, спящая вкладка и перемотка назад не дают ничего: позиция
+    не растёт или воспроизведение не активно.
+
+    Кусок урезается, а не выбрасывается целиком (проверка владельца
+    24.09.2026): на 2× heartbeat раз в 10 секунд приносит 20 секунд ролика, и
+    задержка одного запроса в сети делала следующий «слишком ранним» — весь
+    кусок пропадал как перемотка, засчитывалось 65–85% вместо 100%.
     """
     if previous is None:
         return 0.0
@@ -108,50 +101,19 @@ def compute_watched_seconds(
     position_delta = position_seconds - previous.position_seconds
     if position_delta <= 0:
         return previous.watched_seconds
-    if credit_playback_speed:
-        # Пробное правило: засчитываем пройденные секунды ролика (ускорение в
-        # плюс), но не больше, чем ролик мог проиграть на максимальной
-        # скорости за этот промежуток. Перемотка даёт не больше честного
-        # просмотра на 2,25×, а задержанный сетью heartbeat почти ничего не
-        # теряет — см. `TRIAL_NETWORK_SLACK_SECONDS`.
-        allowed = gap * VIDEO_WATCH_MAX_PLAYBACK_RATE + TRIAL_NETWORK_SLACK_SECONDS
-        return previous.watched_seconds + min(position_delta, allowed)
-    if position_delta > (
-        gap * VIDEO_WATCH_MAX_PLAYBACK_RATE + VIDEO_WATCH_POSITION_JITTER_SECONDS
-    ):
-        return previous.watched_seconds
-    credited = min(gap, position_delta / VIDEO_WATCH_MIN_PLAYBACK_RATE)
-    return previous.watched_seconds + credited
+    allowed = gap * VIDEO_WATCH_MAX_PLAYBACK_RATE + VIDEO_WATCH_NETWORK_SLACK_SECONDS
+    return previous.watched_seconds + min(position_delta, allowed)
 
 
-def watched_enough(watched_seconds: float, duration_seconds: float | None) -> bool:
-    """Досмотрел по реальному времени — независимо от скорости
-    воспроизведения (владелец 05.09.2026, формулировка ровно такая: «длина
-    видео на любой скорости равна времени просмотра, с погрешностью
-    30–40 сек»). Без длительности проверить нечего — fail-closed.
-
-    Допуск ограничен половиной длительности ролика (ревью 05.09.2026, найдено
-    после первой реализации): без этого у любого ролика короче
-    `VIDEO_WATCH_TOLERANCE_SECONDS` (35 сек) порог уходил в отрицательные
-    числа, и `watched_seconds >= отрицательное` было истиной уже при нуле —
-    перемотка в конец короткого ролика проходила с первого heartbeat'а, без
-    единой секунды реального просмотра. Для роликов длиннее 70 сек допуск
-    остаётся ровно 35 сек, как просил владелец, ничего не меняется."""
-    if duration_seconds is None or duration_seconds <= 0:
-        return False
-    tolerance = min(VIDEO_WATCH_TOLERANCE_SECONDS, duration_seconds / 2)
-    return watched_seconds >= duration_seconds - tolerance
-
-
-def trial_threshold_seconds(duration_seconds: float) -> float:
-    """Пробное правило: до какой секунды досмотреть — «длительность минус
-    30 секунд», но хвост не больше половины ролика, иначе у коротких роликов
-    порог ушёл бы в ноль."""
-    return duration_seconds - min(VIDEO_WATCH_TRIAL_TAIL_SECONDS, duration_seconds / 2)
+def watch_threshold_seconds(duration_seconds: float) -> float:
+    """До какой секунды досмотреть: «длительность минус 30 секунд». Хвост не
+    больше половины ролика, иначе у коротких роликов порог ушёл бы в ноль и
+    засчитывался бы просмотр без единой секунды (ревью 05.09.2026)."""
+    return duration_seconds - min(VIDEO_WATCH_TAIL_SECONDS, duration_seconds / 2)
 
 
 @dataclass(frozen=True)
-class TrialWatchDecision:
+class WatchDecision:
     watched_seconds: float  # всего засчитано за все проходы
     credited_this_pass: float  # засчитано с прошлого зачёта (или с начала)
     threshold_seconds: float | None
@@ -159,7 +121,7 @@ class TrialWatchDecision:
     completed: bool
 
 
-def evaluate_trial_watch(
+def evaluate_watch(
     previous: VideoProgress | None,
     *,
     position_seconds: float,
@@ -167,29 +129,30 @@ def evaluate_trial_watch(
     playback_active: bool,
     ended: bool,
     now: datetime | None = None,
-) -> TrialWatchDecision:
-    """Решение пробного правила по одному heartbeat'у — для страницы проверки
-    у суперадмина и её панели, одна функция на оба места.
+) -> WatchDecision:
+    """Засчитан ли просмотр после этого heartbeat'а — одно решение для
+    сохранения прогресса (`api/video.py::_save_progress`) и панели проверки у
+    суперадмина.
 
-    Засчитано, когда позиция дошла до порога за 30 секунд до конца (или
-    плеер прислал `ended`) и честно пройденных секунд ролика набралось
-    столько же. После первого зачёта считается только новый проход, как и в
-    живом правиле (`last_completion_watched_seconds`)."""
+    Засчитано, когда позиция дошла до порога за 30 секунд до конца (или плеер
+    прислал `ended`) и честно пройденных секунд ролика набралось столько же.
+    После первого зачёта считается только новый проход
+    (`last_completion_watched_seconds`, 19.09.2026). Без длительности
+    проверить нечего — fail-closed."""
     watched = compute_watched_seconds(
         previous,
         position_seconds=position_seconds,
         playback_active=playback_active or ended,
         now=now,
-        credit_playback_speed=True,
     )
     credited = watched
     if previous is not None and previous.completed_at is not None:
         credited = max(0.0, watched - previous.last_completion_watched_seconds)
     if duration_seconds is None or duration_seconds <= 0:
-        return TrialWatchDecision(watched, credited, None, False, False)
-    threshold = trial_threshold_seconds(duration_seconds)
+        return WatchDecision(watched, credited, None, False, False)
+    threshold = watch_threshold_seconds(duration_seconds)
     reached = ended or position_seconds >= threshold
-    return TrialWatchDecision(watched, credited, threshold, reached, reached and credited >= threshold)
+    return WatchDecision(watched, credited, threshold, reached, reached and credited >= threshold)
 
 
 def save_video_progress(

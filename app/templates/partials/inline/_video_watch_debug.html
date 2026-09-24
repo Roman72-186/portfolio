@@ -1,11 +1,10 @@
 {#
-Панель пробного контроля просмотра под плеером — только на странице
-проверки у суперадмина (`/cabinet/admin/video-bridge-test/player`, флаг
-`watch_debug` из `api/video.py`). Ученику не выводится, и правило здесь
-пробное: у учеников зачёт считается по-прежнему.
+Панель контроля просмотра под плеером — только на странице проверки у
+суперадмина (`/cabinet/admin/video-bridge-test/player`, флаг `watch_debug` из
+`api/video.py`). Ученику не выводится. Правило то же, что у учеников.
 
 Цифры берутся с сервера (`/watch-state`), а не из плеера: зачёт решает сервер
-(`services/video_progress.py::evaluate_trial_watch`), и панель должна
+(`services/video_progress.py::evaluate_watch`), и панель должна
 показывать его решение, а не то, что думает браузер. Сервер получает позицию раз в
 10 секунд и на паузе, поэтому цифры отстают от плеера на несколько секунд.
 
@@ -13,7 +12,7 @@
 `btn-outline`, `badge` и строки статуса плеера.
 #}
 <section class="card" data-role="watch-debug" style="margin-top:16px;">
-    <div class="card-title">Пробный контроль просмотра – только для вас</div>
+    <div class="card-title">Контроль просмотра – только для вас</div>
     <p class="video-help" data-role="wd-rule">Загружаю правило…</p>
     <p class="video-help" data-role="wd-position"></p>
     <p class="video-help" data-role="wd-credited"></p>

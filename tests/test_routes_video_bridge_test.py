@@ -312,7 +312,7 @@ def _csrf(client):
     return {"X-CSRF-Token": client.cookies.get("csrf_token", "")}
 
 
-def test_trial_page_is_the_lesson_page_through_the_bridge(admin_client, db, monkeypatch):
+def test_check_page_is_the_lesson_page_through_the_bridge(admin_client, db, monkeypatch):
     _configure_bunny(monkeypatch)
     video = _duration_video(db)
     client, _ = admin_client
@@ -323,11 +323,11 @@ def test_trial_page_is_the_lesson_page_through_the_bridge(admin_client, db, monk
     assert f"{BRIDGE}/embed/720058/{VIDEO_ID}" in response.text
     assert 'data-role="watermark"' in response.text
     assert 'data-role="watch-debug"' in response.text
-    assert f"{PAGE}/progress?video_id={video.id}" in response.text
+    assert f"/cabinet/videos/{video.id}/progress" in response.text
     assert settings.bunny_player_proxy_base == ""
 
 
-def test_bridge_page_shows_trial_step_to_superadmin(admin_client, db, monkeypatch):
+def test_bridge_page_shows_watch_check_to_superadmin(admin_client, db, monkeypatch):
     _configure_bunny(monkeypatch)
     _duration_video(db)
     client, _ = admin_client
@@ -335,7 +335,7 @@ def test_bridge_page_shows_trial_step_to_superadmin(admin_client, db, monkeypatc
     assert "Как у ученика, с контролем просмотра" in client.get(PAGE).text
 
 
-def test_plain_admin_sees_no_trial_and_cannot_use_it(client, db, user_factory, session_factory, monkeypatch):
+def test_plain_admin_sees_no_watch_check(client, db, user_factory, session_factory, monkeypatch):
     _configure_bunny(monkeypatch)
     video = _duration_video(db)
     admin = user_factory(vk_id=770_010, name="Админ", is_admin=True, role_name="админ")
@@ -346,7 +346,7 @@ def test_plain_admin_sees_no_trial_and_cannot_use_it(client, db, user_factory, s
     assert client.get(f"{PAGE}/watch-state?video_id={video.id}").status_code == 403
 
 
-def test_student_cannot_use_trial_routes(auth_client, db, monkeypatch):
+def test_student_cannot_use_watch_check_routes(auth_client, db, monkeypatch):
     _configure_bunny(monkeypatch)
     video = _duration_video(db)
     client, _ = auth_client
@@ -367,9 +367,9 @@ def test_student_lesson_page_has_no_watch_panel(auth_client, db, monkeypatch):
     assert f"/cabinet/videos/{video.id}/progress" in response.text
 
 
-def test_trial_progress_counts_by_trial_rule(admin_client, db, monkeypatch):
-    """Прогресс пишется в строку суперадмина; до порога за 30 секунд до конца
-    не засчитано, перемотка в хвост тоже не засчитывает."""
+def test_check_page_writes_through_the_student_progress_route(admin_client, db, monkeypatch):
+    """Страница проверки пишет прогресс тем же маршрутом, что и ученик: правило
+    одно. До порога за 30 секунд до конца не засчитано, перемотка в хвост тоже."""
     _configure_bunny(monkeypatch)
     video = _duration_video(db)
     client, _ = admin_client
@@ -378,19 +378,16 @@ def test_trial_progress_counts_by_trial_rule(admin_client, db, monkeypatch):
     assert state["threshold_seconds"] == 570.0
     assert state["completed"] is False
 
-    first = client.post(
-        f"{PAGE}/progress?video_id={video.id}", headers=_csrf(client),
-        json={"position_seconds": 0, "playback_active": True},
-    )
+    progress_url = f"/cabinet/videos/{video.id}/progress"
+    first = client.post(progress_url, headers=_csrf(client),
+                        json={"position_seconds": 0, "playback_active": True})
     assert first.status_code == 200, first.text
-    jump = client.post(
-        f"{PAGE}/progress?video_id={video.id}", headers=_csrf(client),
-        json={"position_seconds": 590, "playback_active": True},
-    )
+    jump = client.post(progress_url, headers=_csrf(client),
+                       json={"position_seconds": 590, "playback_active": True})
     assert jump.json()["completed"] is False
 
 
-def test_trial_reset_clears_only_own_progress(admin_client, db, user_factory, monkeypatch):
+def test_watch_check_reset_clears_only_own_progress(admin_client, db, user_factory, monkeypatch):
     from app.models.video_progress import VideoProgress
     from app.services.video_progress import save_video_progress
 

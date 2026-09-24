@@ -3,7 +3,6 @@
 import json
 import logging
 import secrets
-from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -15,7 +14,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.config import settings
 from app.db.database import get_db
-from app.constants import VIDEO_WATCH_TRIAL_TAIL_SECONDS
+from app.constants import VIDEO_WATCH_TAIL_SECONDS
 from app.dependencies import (
     require_admin_role,
     require_csrf_header,
@@ -36,14 +35,12 @@ from app.services.video_catalog import (
     list_published_videos,
 )
 from app.services.video_progress import (
-    compute_watched_seconds,
     get_resume_position,
     get_video_progress,
     log_video_view,
-    evaluate_trial_watch,
+    evaluate_watch,
     save_video_progress as persist_video_progress,
-    trial_threshold_seconds,
-    watched_enough,
+    watch_threshold_seconds,
 )
 from app.tmpl import templates
 
@@ -475,27 +472,28 @@ def video_bridge_test(
             # моста: по ней прогон с устройства владельца отделяется от чужого
             # трафика.
             "probe_id": secrets.token_hex(3),
-            "watch_tail_seconds": VIDEO_WATCH_TRIAL_TAIL_SECONDS,
-            "can_trial_watch": user.get("role_rank", 0) >= 5,
+            "watch_tail_seconds": VIDEO_WATCH_TAIL_SECONDS,
+            "can_watch_check": user.get("role_rank", 0) >= 5,
         },
     )
 
 
-# ── Пробный контроль просмотра: только суперадмин (владелец 24.09.2026) ─────
+# ── Проверка контроля просмотра: только суперадмин (владелец 24.09.2026) ─────
 #
-# «Сделаем эту проверку только для меня, не для кого больше». Ученики живут по
-# прежнему правилу (`_save_progress`), а здесь владелец смотрит урок глазами
-# ученика через мост и проверяет пробное правило: зачёт за 30 секунд до конца,
-# ускорение засчитывается. Прогресс пишется в строку `VideoProgress` самого
-# суперадмина, задание трекера не закрывается.
+# «Сделаем эту проверку только для меня, не для кого больше». Здесь владелец
+# смотрит урок глазами ученика через мост и видит панель контроля просмотра.
+# Правило зачёта сначала жило только здесь, а после проверки на 1× и 2× в тот же
+# день перенесено на всех учеников (`_save_progress`) — поэтому прогресс
+# страница пишет через тот же маршрут, что и ученик, в строку самого
+# суперадмина.
 # Путь маршрута — без `/cabinet`: префикс уже стоит у роутера.
-TRIAL_ROUTE = "/admin/video-bridge-test"
-TRIAL_BASE = "/cabinet" + TRIAL_ROUTE
+WATCH_CHECK_ROUTE = "/admin/video-bridge-test"
+WATCH_CHECK_BASE = "/cabinet" + WATCH_CHECK_ROUTE
 
 
-def _trial_state(db: DBSession, *, user_id: int, video) -> dict:
-    """Состояние пробного контроля по сохранённой строке — те же формулы, что
-    у `evaluate_trial_watch`, чтобы панель не разошлась с решением."""
+def _watch_state(db: DBSession, *, user_id: int, video) -> dict:
+    """Состояние контроля просмотра по сохранённой строке — те же формулы, что
+    у `evaluate_watch`, чтобы панель не разошлась с решением."""
     progress = get_video_progress(db, user_id=user_id, video_id=video.bunny_video_id)
     duration = video.duration_seconds if video.duration_seconds and video.duration_seconds > 0 else None
     watched = progress.watched_seconds if progress else 0.0
@@ -506,7 +504,7 @@ def _trial_state(db: DBSession, *, user_id: int, video) -> dict:
     return {
         "ok": True,
         "duration_seconds": duration,
-        "threshold_seconds": trial_threshold_seconds(duration) if duration else None,
+        "threshold_seconds": watch_threshold_seconds(duration) if duration else None,
         "position_seconds": progress.position_seconds if progress else 0.0,
         "watched_seconds": watched,
         "credited_this_pass": credited,
@@ -514,15 +512,15 @@ def _trial_state(db: DBSession, *, user_id: int, video) -> dict:
     }
 
 
-@router.get(TRIAL_ROUTE + "/player", response_class=HTMLResponse)
-def video_trial_player(
+@router.get(WATCH_CHECK_ROUTE + "/player", response_class=HTMLResponse)
+def video_watch_check_player(
     request: Request,
     user: Annotated[dict, Depends(require_superadmin)],
     db: Annotated[DBSession, Depends(get_db)],
     video_id: int,
 ):
     """Урок глазами ученика через мост — тот же `cabinet_video.html` с тем же
-    плеером, водяным знаком и кнопками, плюс панель пробного контроля."""
+    плеером, водяным знаком и кнопками, плюс панель контроля просмотра."""
     video = _video_for_viewer(db, catalog_id=video_id, user=user)
     if video is None:
         return _not_found(request, user)
@@ -531,60 +529,21 @@ def video_trial_player(
         user,
         db,
         video=video,
-        progress_endpoint=f"{TRIAL_BASE}/progress?video_id={video_id}",
+        progress_endpoint=f"/cabinet/videos/{video_id}/progress",
         player_url_endpoint=f"/cabinet/videos/{video_id}/player-url?bridge=1",
         proxy_base=BRIDGE_BASE,
         extra_context={
-            "back_url": f"{TRIAL_BASE}?video_id={video_id}",
+            "back_url": f"{WATCH_CHECK_BASE}?video_id={video_id}",
             "watch_debug": {
-                "state_endpoint": f"{TRIAL_BASE}/watch-state?video_id={video_id}",
-                "reset_endpoint": f"{TRIAL_BASE}/reset?video_id={video_id}",
+                "state_endpoint": f"{WATCH_CHECK_BASE}/watch-state?video_id={video_id}",
+                "reset_endpoint": f"{WATCH_CHECK_BASE}/reset?video_id={video_id}",
             },
         },
     )
 
 
-@router.post(TRIAL_ROUTE + "/progress", response_class=JSONResponse)
-def video_trial_progress(
-    payload: VideoProgressUpdate,
-    user: Annotated[dict, Depends(require_superadmin)],
-    db: Annotated[DBSession, Depends(get_db)],
-    _csrf: Annotated[None, Depends(require_csrf_header)],
-    video_id: int,
-):
-    """Сохранение прогресса по пробному правилу. Длительность — своя, из
-    каталога, как у живого маршрута; клиентской не верим."""
-    video = _video_for_viewer(db, catalog_id=video_id, user=user)
-    if video is None:
-        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
-    duration = video.duration_seconds if video.duration_seconds and video.duration_seconds > 0 else None
-    existing = get_video_progress(db, user_id=user["user_id"], video_id=video.bunny_video_id)
-    decision = evaluate_trial_watch(
-        existing,
-        position_seconds=payload.position_seconds,
-        duration_seconds=duration,
-        playback_active=payload.playback_active,
-        ended=payload.ended,
-    )
-    try:
-        persist_video_progress(
-            db,
-            user_id=user["user_id"],
-            video_id=video.bunny_video_id,
-            position_seconds=payload.position_seconds,
-            duration_seconds=duration,
-            completed=decision.completed,
-            watched_seconds=decision.watched_seconds,
-        )
-    except SQLAlchemyError:
-        logger.exception("Trial video progress save failed for user_id=%s", user["user_id"])
-        db.rollback()
-        return JSONResponse({"ok": False, "error": "save_failed"}, status_code=503)
-    return JSONResponse({"ok": True, "completed": decision.completed})
-
-
-@router.get(TRIAL_ROUTE + "/watch-state", response_class=JSONResponse)
-def video_trial_watch_state(
+@router.get(WATCH_CHECK_ROUTE + "/watch-state", response_class=JSONResponse)
+def video_watch_check_state(
     user: Annotated[dict, Depends(require_superadmin)],
     db: Annotated[DBSession, Depends(get_db)],
     video_id: int,
@@ -593,11 +552,11 @@ def video_trial_watch_state(
     video = _video_for_viewer(db, catalog_id=video_id, user=user)
     if video is None:
         return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
-    return JSONResponse(_trial_state(db, user_id=user["user_id"], video=video))
+    return JSONResponse(_watch_state(db, user_id=user["user_id"], video=video))
 
 
-@router.post(TRIAL_ROUTE + "/reset", response_class=JSONResponse)
-def video_trial_reset(
+@router.post(WATCH_CHECK_ROUTE + "/reset", response_class=JSONResponse)
+def video_watch_check_reset(
     user: Annotated[dict, Depends(require_superadmin)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf_header)],
@@ -612,7 +571,7 @@ def video_trial_reset(
     if progress is not None:
         db.delete(progress)
         db.commit()
-    return JSONResponse(_trial_state(db, user_id=user["user_id"], video=video))
+    return JSONResponse(_watch_state(db, user_id=user["user_id"], video=video))
 
 
 @router.get("/video", response_class=HTMLResponse)
@@ -722,9 +681,10 @@ def _save_progress(
     Защита от перемотки (владелец 05.09.2026): позиция у конца ролика — не
     единственное условие. Перемотка ползунком выставляет `position_seconds`
     рядом с длительностью за одно движение, поэтому вдобавок требуем, чтобы
-    накопилось реальное (календарное) время просмотра, близкое к
-    длительности — независимо от скорости воспроизведения
-    (`watched_enough`/`compute_watched_seconds`, `app/services/video_progress.py`).
+    набрались честно проигранные секунды ролика. Порог — за 30 секунд до
+    конца, ускорение засчитывается (владелец 24.09.2026, после проверки на
+    странице моста). Решение целиком — `evaluate_watch` в
+    `app/services/video_progress.py`, его же показывает панель проверки.
     """
     if known_duration_seconds is not None and known_duration_seconds > 0:
         duration = known_duration_seconds
@@ -733,29 +693,17 @@ def _save_progress(
     else:
         duration = None
 
-    now = datetime.now(timezone.utc)
     existing = get_video_progress(db, user_id=user["user_id"], video_id=bunny_video_id)
     was_completed = existing is not None and existing.completed_at is not None
-    watched_seconds = compute_watched_seconds(
+    decision = evaluate_watch(
         existing,
         position_seconds=payload.position_seconds,
-        playback_active=payload.playback_active or payload.ended,
-        now=now,
+        duration_seconds=duration,
+        playback_active=payload.playback_active,
+        ended=payload.ended,
     )
-
-    position_near_end = bool(
-        duration is not None
-        and (payload.ended or duration - payload.position_seconds <= 5)
-    )
-    watched_for_current_completion = watched_seconds
-    if was_completed:
-        watched_for_current_completion = max(
-            0.0,
-            watched_seconds - existing.last_completion_watched_seconds,
-        )
-    completed = position_near_end and watched_enough(
-        watched_for_current_completion, duration
-    )
+    watched_seconds = decision.watched_seconds
+    completed = decision.completed
     try:
         completed = persist_video_progress(
             db,
