@@ -1,0 +1,116 @@
+{#
+Панель контроля просмотра под плеером — только на странице проверки у
+администратора (`/cabinet/admin/video-bridge-test/player`, флаг `watch_debug`
+из `api/video.py`). Ученику не выводится.
+
+Цифры берутся с сервера (`/watch-state`), а не из плеера: зачёт решает сервер
+(`services/video_progress.py::evaluate_watch`), и панель должна показывать
+его решение, а не то, что думает браузер. Сервер получает позицию раз в
+10 секунд и на паузе, поэтому цифры отстают от плеера на несколько секунд.
+
+Своих стилей нет намеренно (храповик переиспользования): общие `card`,
+`btn-outline`, `badge` и строки статуса плеера.
+#}
+<section class="card" data-role="watch-debug" style="margin-top:16px;">
+    <div class="card-title">Контроль просмотра – видно только вам</div>
+    <p class="video-help" data-role="wd-rule">Загружаю правило…</p>
+    <p class="video-help" data-role="wd-position"></p>
+    <p class="video-help" data-role="wd-credited"></p>
+    <p class="video-help" data-role="wd-block"></p>
+    <p style="margin:10px 0;">
+        <span class="badge badge-before" data-role="wd-verdict">Ещё не засчитано</span>
+    </p>
+    <div style="display:flex; flex-wrap:wrap; gap:8px;">
+        <button type="button" class="btn-outline" data-role="wd-refresh">Обновить</button>
+        <button type="button" class="btn-outline" data-role="wd-reset">Сбросить мой просмотр и начать заново</button>
+    </div>
+    <p class="video-progress-status" data-role="wd-note" aria-live="polite" hidden></p>
+</section>
+<script>
+(function () {
+    var CONFIG = {{ watch_debug|tojson }};
+    var csrfToken = {{ csrf_token(request)|tojson }};
+    var panel = document.querySelector('[data-role="watch-debug"]');
+    if (!panel) return;
+    function node(name) { return panel.querySelector('[data-role="' + name + '"]'); }
+
+    function clock(seconds) {
+        var whole = Math.max(0, Math.floor(Number(seconds) || 0));
+        var h = Math.floor(whole / 3600);
+        var m = Math.floor((whole % 3600) / 60);
+        var s = String(whole % 60).padStart(2, '0');
+        return h > 0 ? h + ':' + String(m).padStart(2, '0') + ':' + s : m + ':' + s;
+    }
+
+    function note(text, isError) {
+        var el = node('wd-note');
+        el.hidden = !text;
+        el.textContent = text || '';
+        el.classList.toggle('is-error', Boolean(isError));
+    }
+
+    function render(state) {
+        if (!state || !state.ok) { note('Не удалось получить данные контроля.', true); return; }
+        note('');
+        var duration = state.duration_seconds;
+        var threshold = state.threshold_seconds;
+        if (!duration) {
+            node('wd-rule').textContent = 'У ролика нет длительности – такой просмотр сервер не засчитывает никогда.';
+        } else {
+            node('wd-rule').textContent = 'Ролик ' + clock(duration) + '. Засчитаем, когда дойдёшь до '
+                + clock(threshold) + ' и честно проиграешь столько же. Последние '
+                + Math.round(duration - threshold) + ' с смотреть не обязательно. '
+                + 'Ускорение засчитывается, перемотка вперёд – нет.';
+        }
+        node('wd-position').textContent = 'Где ты сейчас (по данным сервера): ' + clock(state.position_seconds);
+        var credited = state.credited_this_pass || 0;
+        var line = 'Засчитано в этом проходе: ' + clock(credited);
+        if (threshold) {
+            var pct = Math.min(100, Math.floor(credited / threshold * 100));
+            line += ' из ' + clock(threshold) + ' (' + pct + '%)';
+        }
+        if (state.completed && Math.abs((state.watched_seconds || 0) - credited) > 1) {
+            line += '. Всего за все проходы: ' + clock(state.watched_seconds);
+        }
+        node('wd-credited').textContent = line;
+        node('wd-block').textContent = state.block_id
+            ? 'Кружок в ленте (блок ' + state.block_id + '): '
+                + (state.block_check_open ? 'открылся бы – можно отметить.' : 'пока был бы закрыт.')
+            : 'Этот ролик не стоит ни в одном видео-блоке ленты.';
+        var verdict = node('wd-verdict');
+        verdict.textContent = state.completed ? 'Просмотр засчитан' : 'Ещё не засчитано';
+        verdict.classList.toggle('badge-after', Boolean(state.completed));
+        verdict.classList.toggle('badge-before', !state.completed);
+    }
+
+    function refresh() {
+        return fetch(CONFIG.state_endpoint, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function (resp) { return resp.json(); })
+            .then(render)
+            .catch(function () { note('Не удалось получить данные контроля.', true); });
+    }
+
+    node('wd-refresh').addEventListener('click', refresh);
+    node('wd-reset').addEventListener('click', function () {
+        if (!window.confirm('Стереть твой прогресс по этому ролику? Ученикам это не мешает.')) return;
+        fetch(CONFIG.reset_endpoint, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json', 'X-CSRF-Token': csrfToken }
+        }).then(function (resp) {
+            if (!resp.ok) throw new Error('reset_failed');
+            // Плеер помнит место просмотра в памяти страницы — перезагрузка
+            // начинает ролик с нуля, как у нового зрителя.
+            window.location.reload();
+        }).catch(function () { note('Сбросить не удалось. Обнови страницу и попробуй ещё раз.', true); });
+    });
+
+    // Плеер сообщает о зачёте сразу после ответа сервера — обновляемся тут же,
+    // не дожидаясь следующего опроса.
+    window.lrnWatchDebugRefresh = refresh;
+    refresh();
+    window.setInterval(function () {
+        if (document.visibilityState === 'visible') refresh();
+    }, 3000);
+})();
+</script>

@@ -88,7 +88,7 @@ def test_page_warns_when_bridge_is_already_on_for_everyone(admin_client, db, mon
     response = client.get(PAGE)
 
     assert response.status_code == 200
-    assert "Мост сейчас включён для всех" in response.text
+    assert "Мост включён для всех" in response.text
     assert f"https://iframe.mediadelivery.net/embed/720058/{VIDEO_ID}" in response.text
     assert f"{BRIDGE}/embed/720058/{VIDEO_ID}" in response.text
 
@@ -295,3 +295,91 @@ def test_impersonated_student_session_accepts_the_flag(client, db, session_facto
 
     assert response.status_code == 200
     assert f"{BRIDGE}/embed/720058/{VIDEO_ID}" in response.text
+
+
+# --- «Как у ученика, с контролем просмотра» (владелец 24.09.2026) ----------
+
+
+def _duration_video(db) -> LearningVideo:
+    video = _published_video(db)
+    video.duration_seconds = 600.0
+    db.commit()
+    return video
+
+
+def test_student_view_page_is_the_lesson_page_through_the_bridge(admin_client, db, monkeypatch):
+    """Тот же урок, что у ученика: плеер через мост, водяной знак, плюс
+    панель контроля. Глобальная настройка при этом не меняется."""
+    _configure_bunny(monkeypatch)
+    video = _duration_video(db)
+    client, _ = admin_client
+
+    response = client.get(f"{PAGE}/player?video_id={video.id}")
+
+    assert response.status_code == 200
+    assert f"{BRIDGE}/embed/720058/{VIDEO_ID}" in response.text
+    assert 'data-role="watermark"' in response.text
+    assert 'data-role="watch-debug"' in response.text
+    assert f"/cabinet/videos/{video.id}/player-url?bridge=1" in response.text
+    assert settings.bunny_player_proxy_base == ""
+
+
+def test_student_lesson_page_has_no_watch_panel(auth_client, db, monkeypatch):
+    _configure_bunny(monkeypatch)
+    video = _duration_video(db)
+    client, _ = auth_client
+
+    response = client.get(f"/cabinet/videos/{video.id}")
+
+    assert response.status_code == 200
+    assert 'data-role="watch-debug"' not in response.text
+
+
+def test_student_cannot_use_watch_control_routes(auth_client, db, monkeypatch):
+    _configure_bunny(monkeypatch)
+    video = _duration_video(db)
+    client, _ = auth_client
+
+    assert client.get(f"{PAGE}/player?video_id={video.id}").status_code == 403
+    assert client.get(f"{PAGE}/watch-state?video_id={video.id}").status_code == 403
+
+
+def test_watch_state_follows_the_shared_rule(admin_client, db, monkeypatch):
+    """Порог за 30 секунд до конца; до первого просмотра ничего не засчитано."""
+    _configure_bunny(monkeypatch)
+    video = _duration_video(db)
+    client, _ = admin_client
+
+    body = client.get(f"{PAGE}/watch-state?video_id={video.id}").json()
+
+    assert body["ok"] is True
+    assert body["duration_seconds"] == 600.0
+    assert body["threshold_seconds"] == 570.0
+    assert body["credited_this_pass"] == 0.0
+    assert body["completed"] is False
+    assert body["block_id"] is None
+
+
+def test_reset_clears_only_own_progress(admin_client, db, user_factory, monkeypatch):
+    from app.models.video_progress import VideoProgress
+    from app.services.video_progress import save_video_progress
+
+    _configure_bunny(monkeypatch)
+    video = _duration_video(db)
+    client, admin = admin_client
+    other = user_factory(vk_id=770_001, name="Ученик")
+    for user_id in (admin.id, other.id):
+        save_video_progress(
+            db, user_id=user_id, video_id=VIDEO_ID, position_seconds=580.0,
+            duration_seconds=600.0, completed=True, watched_seconds=580.0,
+        )
+
+    response = client.post(
+        f"{PAGE}/reset?video_id={video.id}",
+        headers={"X-CSRF-Token": client.cookies.get("csrf_token", "")},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["completed"] is False
+    assert db.get(VideoProgress, (admin.id, VIDEO_ID)) is None
+    assert db.get(VideoProgress, (other.id, VIDEO_ID)) is not None

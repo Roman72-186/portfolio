@@ -247,7 +247,13 @@ body.has-video-pseudo-fullscreen {
         var root = document.querySelector('[data-role="root"]');
         window.lrnVideoPlayer.mount(root, {
             data: {{ player_data }},
-            csrfToken: {{ csrf_token(request)|tojson }}
+            csrfToken: {{ csrf_token(request)|tojson }}{% if watch_debug %},
+            // Страница проверки у администратора: зачёт показываем так же,
+            // как ученику в ленте («Можно отметить выполнение»), и сразу
+            // обновляем панель контроля.
+            onCompleted: function () {
+                if (window.lrnWatchDebugRefresh) window.lrnWatchDebugRefresh();
+            }{% endif %}
         });
 
         // iOS-подсказка про запуск с экрана «Домой» — только у отдельной
@@ -266,6 +272,9 @@ body.has-video-pseudo-fullscreen {
         }
     })();
     </script>
+    {% endif %}
+    {% if watch_debug and player_url %}
+    {% include "partials/inline/_video_watch_debug.html" %}
     {% endif %}
 </div>
 

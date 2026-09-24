@@ -3,7 +3,6 @@
 import json
 import logging
 import secrets
-from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -33,13 +32,14 @@ from app.services.video_catalog import (
     legacy_pilot_video,
     list_published_videos,
 )
+from app.constants import VIDEO_WATCH_TAIL_SECONDS
 from app.services.video_progress import (
-    compute_watched_seconds,
+    evaluate_watch,
     get_resume_position,
     get_video_progress,
     log_video_view,
     save_video_progress as persist_video_progress,
-    watched_enough,
+    watch_threshold_seconds,
 )
 from app.tmpl import templates
 
@@ -224,6 +224,7 @@ def _render_player(
     progress_endpoint: str,
     player_url_endpoint: str,
     proxy_base: str | None = None,
+    extra_context: dict | None = None,
 ):
     payload, has_error = _player_payload(
         user,
@@ -251,6 +252,7 @@ def _render_player(
         "back_url": "/cabinet/admin/videos" if user.get("role_rank", 0) >= 4 else "/cabinet/videos",
         "player_data": player_data,
         **payload,
+        **(extra_context or {}),
     }
     if has_error:
         return templates.TemplateResponse(request, "cabinet_video.html", context, status_code=503)
@@ -469,8 +471,122 @@ def video_bridge_test(
             # моста: по ней прогон с устройства владельца отделяется от чужого
             # трафика.
             "probe_id": secrets.token_hex(3),
+            "watch_tail_seconds": VIDEO_WATCH_TAIL_SECONDS,
         },
     )
+
+
+def _watch_state(db: DBSession, *, user_id: int, video) -> dict:
+    """Состояние контроля просмотра для панели проверки — по уже сохранённой
+    строке `VideoProgress`, теми же функциями, что решают зачёт на сервере.
+
+    Кружок видео-блока в ленте открывается не любым зачётом, а сделанным после
+    создания блока (`cabinet_tracker.py::_video_block_watched`). Показываем
+    это по самому свежему блоку с этим роликом: ученик смотрит в ленте, и
+    владелец должен видеть то же решение, что увидит кружок.
+    """
+    # Локальный импорт: `cabinet_tracker` тянет весь трекер, а нужна одна
+    # функция — та самая, что решает кружок у ученика.
+    from app.api.cabinet_tracker import _video_block_watched
+    from app.models.task_block import TaskBlock
+
+    progress = get_video_progress(db, user_id=user_id, video_id=video.bunny_video_id)
+    duration = video.duration_seconds if video.duration_seconds and video.duration_seconds > 0 else None
+    threshold = watch_threshold_seconds(duration) if duration else None
+    watched = progress.watched_seconds if progress else 0.0
+    credited = watched
+    if progress is not None and progress.completed_at is not None:
+        credited = max(0.0, watched - progress.last_completion_watched_seconds)
+    last_completed = (progress.last_completed_at or progress.completed_at) if progress else None
+
+    block = (
+        db.query(TaskBlock)
+        .filter(TaskBlock.video_id == video.id, TaskBlock.block_type == "video")
+        .order_by(TaskBlock.created_at.desc())
+        .first()
+    )
+    return {
+        "ok": True,
+        "duration_seconds": duration,
+        "threshold_seconds": threshold,
+        "position_seconds": progress.position_seconds if progress else 0.0,
+        "watched_seconds": watched,
+        "credited_this_pass": credited,
+        "completed": last_completed is not None,
+        "last_completed_at": last_completed.isoformat() if last_completed else None,
+        "block_id": block.id if block else None,
+        "block_check_open": bool(block and _video_block_watched(db, block, user_id)),
+    }
+
+
+@router.get("/admin/video-bridge-test/player", response_class=HTMLResponse)
+def video_bridge_test_player(
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    video_id: int,
+):
+    """Урок глазами ученика через мост — плюс панель контроля просмотра.
+
+    Владелец 24.09.2026: «всё то же самое, что увидит сейчас ученик, но ещё
+    плюс контроль просмотра». Поэтому здесь не свой плеер, а та же страница
+    урока `cabinet_video.html` с тем же плеером, водяным знаком и кнопками;
+    отличие одно — внизу панель, которая раз в пару секунд спрашивает
+    `/watch-state`. Прогресс пишется в строку самого администратора, ученикам
+    ничего не засчитывается.
+    """
+    video = _video_for_viewer(db, catalog_id=video_id, user=user)
+    if video is None:
+        return _not_found(request, user)
+    return _render_player(
+        request,
+        user,
+        db,
+        video=video,
+        progress_endpoint=f"/cabinet/videos/{video_id}/progress",
+        player_url_endpoint=f"/cabinet/videos/{video_id}/player-url?bridge=1",
+        proxy_base=BRIDGE_BASE,
+        extra_context={
+            "back_url": f"/cabinet/admin/video-bridge-test?video_id={video_id}",
+            "watch_debug": {
+                "state_endpoint": f"/cabinet/admin/video-bridge-test/watch-state?video_id={video_id}",
+                "reset_endpoint": f"/cabinet/admin/video-bridge-test/reset?video_id={video_id}",
+                "tail_seconds": VIDEO_WATCH_TAIL_SECONDS,
+            },
+        },
+    )
+
+
+@router.get("/admin/video-bridge-test/watch-state", response_class=JSONResponse)
+def video_bridge_test_watch_state(
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    video_id: int,
+):
+    """Только своя строка: `user_id` из запроса не берём."""
+    video = _video_for_viewer(db, catalog_id=video_id, user=user)
+    if video is None:
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+    return JSONResponse(_watch_state(db, user_id=user["user_id"], video=video))
+
+
+@router.post("/admin/video-bridge-test/reset", response_class=JSONResponse)
+def video_bridge_test_reset(
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+    video_id: int,
+):
+    """Стереть свой прогресс по ролику, чтобы проверить контроль с нуля.
+    Трогает только строку самого администратора."""
+    video = _video_for_viewer(db, catalog_id=video_id, user=user)
+    if video is None:
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+    progress = get_video_progress(db, user_id=user["user_id"], video_id=video.bunny_video_id)
+    if progress is not None:
+        db.delete(progress)
+        db.commit()
+    return JSONResponse(_watch_state(db, user_id=user["user_id"], video=video))
 
 
 @router.get("/video", response_class=HTMLResponse)
@@ -580,9 +696,10 @@ def _save_progress(
     Защита от перемотки (владелец 05.09.2026): позиция у конца ролика — не
     единственное условие. Перемотка ползунком выставляет `position_seconds`
     рядом с длительностью за одно движение, поэтому вдобавок требуем, чтобы
-    накопилось реальное (календарное) время просмотра, близкое к
-    длительности — независимо от скорости воспроизведения
-    (`watched_enough`/`compute_watched_seconds`, `app/services/video_progress.py`).
+    набрались честно проигранные секунды ролика. Порог — за 30 секунд до
+    конца, ускорение засчитывается (владелец 24.09.2026). Решение целиком —
+    `evaluate_watch` в `app/services/video_progress.py`, его же показывает
+    панель проверки у администратора.
     """
     if known_duration_seconds is not None and known_duration_seconds > 0:
         duration = known_duration_seconds
@@ -591,29 +708,17 @@ def _save_progress(
     else:
         duration = None
 
-    now = datetime.now(timezone.utc)
     existing = get_video_progress(db, user_id=user["user_id"], video_id=bunny_video_id)
     was_completed = existing is not None and existing.completed_at is not None
-    watched_seconds = compute_watched_seconds(
+    decision = evaluate_watch(
         existing,
         position_seconds=payload.position_seconds,
-        playback_active=payload.playback_active or payload.ended,
-        now=now,
+        duration_seconds=duration,
+        playback_active=payload.playback_active,
+        ended=payload.ended,
     )
-
-    position_near_end = bool(
-        duration is not None
-        and (payload.ended or duration - payload.position_seconds <= 5)
-    )
-    watched_for_current_completion = watched_seconds
-    if was_completed:
-        watched_for_current_completion = max(
-            0.0,
-            watched_seconds - existing.last_completion_watched_seconds,
-        )
-    completed = position_near_end and watched_enough(
-        watched_for_current_completion, duration
-    )
+    watched_seconds = decision.watched_seconds
+    completed = decision.completed
     try:
         completed = persist_video_progress(
             db,
