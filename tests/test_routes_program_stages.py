@@ -225,7 +225,7 @@ def test_cycle_page_shows_tiles_for_stage_siblings(admin_client, db):
 
     assert resp.status_code == 200
     tiles = re.findall(
-        r'<a class="prg-tile( is-active)?"\s+href="/cabinet/staff/program/cycles/(\d+)">',
+        r'<a class="prg-cycle-pill( is-active)?"\s+href="/cabinet/staff/program/cycles/(\d+)">',
         resp.text,
     )
     tiles_by_id = {int(cycle_id): bool(active) for active, cycle_id in tiles}
