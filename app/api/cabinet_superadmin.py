@@ -1510,6 +1510,7 @@ def superadmin_activity(
         get_audit_feed,
         get_curator_review_speed,
         get_cycle_duration_stats,
+        get_diagnostic_stats,
         get_feedback_curator_stats,
         get_login_link_stats,
         get_login_stats,
@@ -1537,6 +1538,7 @@ def superadmin_activity(
         "retakes": get_retake_stats(db),
         "login_links": get_login_link_stats(db),
         "self_scores": get_self_score_stats(db),
+        "diagnostics": get_diagnostic_stats(db),
         "audit_feed": get_audit_feed(db),
     })
 

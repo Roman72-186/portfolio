@@ -460,9 +460,6 @@ FORM: Operate.
             </div>
             {% if not is_past %}
             <div class="prg-item-actions">
-                {% if item.kind == 'archi_profile' %}
-                <a class="btn-outline" href="/cabinet/staff/program/tasks/{{ item.id }}/diagnostic-stats">Статистика</a>
-                {% endif %}
                 {% if can_edit_items and item.kind in editable_kinds and item.id in edit_payloads %}
                 <button type="button" class="btn-outline" data-item-edit data-item-kind="{{ item.kind }}">Изменить</button>
                 {% endif %}

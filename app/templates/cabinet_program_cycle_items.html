@@ -144,9 +144,6 @@
                     <button type="button" class="btn-outline" data-item-move="-1" aria-label="Выше" {% if loop.first %}disabled{% endif %}>↑</button>
                     <button type="button" class="btn-outline" data-item-move="1" aria-label="Ниже" {% if loop.last %}disabled{% endif %}>↓</button>
                 </span>
-                {% if item.kind == 'archi_profile' %}
-                <a class="btn-outline" href="/cabinet/staff/program/tasks/{{ item.id }}/diagnostic-stats">Статистика</a>
-                {% endif %}
                 <button type="button" class="btn-outline" data-item-edit>Изменить</button>
                 <button type="button" class="btn-outline" data-item-delete>Удалить</button>
             </div>

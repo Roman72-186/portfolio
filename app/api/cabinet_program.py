@@ -49,7 +49,6 @@ from app.services.task_blocks import (
     get_tariffs as get_task_block_tariffs,
     sync_blocks as sync_task_blocks,
 )
-from app.services.archi_profile_stats import diagnostic_stats
 from app.services.cycle_stats import cycle_stats
 from app.services.video_catalog import publish_video
 from app.models.tracker import (
@@ -936,26 +935,6 @@ def _task_has_diagnostic(db: DBSession, task: TrackerTask) -> bool:
     return db.query(TaskBlock.id).filter(
         TaskBlock.task_id == task.id, TaskBlock.is_diagnostic.is_(True),
     ).first() is not None
-
-
-@router.get("/tasks/{task_id}/diagnostic-stats", response_class=HTMLResponse)
-def program_diagnostic_stats(
-    task_id: int,
-    request: Request,
-    user: Annotated[dict, Depends(require_admin_role)],
-    db: Annotated[DBSession, Depends(get_db)],
-):
-    """Прохождение диагностики: кто не начал/начал/закончил, за сколько
-    времени и с каким результатом (владелец 24.09.2026) — тот же дух, что у
-    `program_cycle_stats`, только по одной задаче и с временем/профилями
-    вместо шагов ленты.
-    """
-    task = db.get(TrackerTask, task_id)
-    if task is None or task.deleted_at is not None or not _task_has_diagnostic(db, task):
-        raise HTTPException(status_code=404, detail="Диагностика не найдена")
-    return templates.TemplateResponse(request, "cabinet_program_archi_profile_stats.html",
-        {"request": request, "user": user, "stats": diagnostic_stats(db, task)},
-    )
 
 
 @router.get("/tasks/{task_id}/trainer-blocks", response_class=JSONResponse)

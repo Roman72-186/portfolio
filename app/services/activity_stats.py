@@ -459,6 +459,45 @@ _AUDIT_LABELS = {
 }
 
 
+def get_diagnostic_stats(db: DBSession) -> list[dict]:
+    """Прохождение диагностик АРХИ-ПРОФИЛЯ: по каждой опубликованной
+    диагностике — кто не начал/начал/закончил, за сколько времени, с каким
+    результатом (владелец 24.09.2026: статистика диагностики переехала сюда,
+    со своей отдельной страницы — вся статистика формируется на этой
+    странице, см. инвариант в AGENTS.md).
+
+    Диагностика бывает двух видов: отдельная задача (`kind=archi_profile`)
+    и блоки внутри обычного «Задания» (`TaskBlock.is_diagnostic=True`,
+    владелец 24.09.2026) — оба попадают в список одинаково. Подсчёт по
+    каждой — `archi_profile_stats.diagnostic_stats`, уже используется и
+    покрыт тестами, здесь только сбор списка диагностик.
+    """
+    from app.models.task_block import TaskBlock
+    from app.models.tracker import ITEM_ARCHI_PROFILE, TrackerTask
+    from app.services.archi_profile_stats import diagnostic_stats
+
+    embedded_task_ids = (
+        db.query(TaskBlock.task_id)
+        .filter(TaskBlock.is_diagnostic.is_(True))
+        .distinct()
+        .scalar_subquery()
+    )
+    tasks = (
+        db.query(TrackerTask)
+        .filter(
+            TrackerTask.deleted_at.is_(None),
+            TrackerTask.is_published.is_(True),
+            or_(
+                TrackerTask.kind == ITEM_ARCHI_PROFILE,
+                TrackerTask.id.in_(embedded_task_ids),
+            ),
+        )
+        .order_by(TrackerTask.created_at.desc())
+        .all()
+    )
+    return [diagnostic_stats(db, task) for task in tasks]
+
+
 def get_audit_feed(db: DBSession, limit: int = 50) -> list[dict]:
     """Последние записи аудита (смены куратора/тарифа + admin-действия)."""
     rows = (
