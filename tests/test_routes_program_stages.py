@@ -4,6 +4,7 @@
 сущности под этап нет — это `LearningTopic(kind='stage')`, тот же приём, что
 уже применён к циклу (`test_routes_program_cycles.py`).
 """
+import re
 from datetime import timedelta
 
 from app.models.learning_topic import TOPIC_KIND_STAGE, TOPIC_KIND_WEEK, LearningTopic
@@ -194,3 +195,73 @@ def test_legacy_cycle_without_stage_keeps_date_label(admin_client, db):
     label = cycle_label(db, cycle)
     assert "Цикл " not in label or "–" in label
     assert "." in label
+
+
+# ── переключатель циклов плашками (владелец 24.09.2026) ────────────────────
+
+def _linked_cycle(client, db, *, stage_id, offset):
+    client.post(
+        CYCLES_PAGE,
+        json={
+            "title": "",
+            "description": None,
+            "starts_on": (today_msk() + timedelta(days=offset)).isoformat(),
+            "ends_on": (today_msk() + timedelta(days=offset + 6)).isoformat(),
+            "is_published": True,
+            "stage_id": stage_id,
+        },
+    )
+    return sorted(_cycles(db), key=lambda c: c.opens_at)[-1]
+
+
+def test_cycle_page_shows_tiles_for_stage_siblings(admin_client, db):
+    client, _ = admin_client
+    client.post(STAGES_PAGE, json=_payload())
+    stage = _stages(db)[0]
+    cycle_1 = _linked_cycle(client, db, stage_id=stage.id, offset=1)
+    cycle_2 = _linked_cycle(client, db, stage_id=stage.id, offset=8)
+
+    resp = client.get(f"{CYCLES_PAGE}/{cycle_1.id}")
+
+    assert resp.status_code == 200
+    tiles = re.findall(
+        r'<a class="prg-tile( is-active)?"\s+href="/cabinet/staff/program/cycles/(\d+)">',
+        resp.text,
+    )
+    tiles_by_id = {int(cycle_id): bool(active) for active, cycle_id in tiles}
+    assert tiles_by_id == {cycle_1.id: True, cycle_2.id: False}
+
+
+def test_cycle_page_hides_tiles_when_alone_in_stage(admin_client, db):
+    client, _ = admin_client
+    client.post(STAGES_PAGE, json=_payload())
+    stage = _stages(db)[0]
+    cycle = _linked_cycle(client, db, stage_id=stage.id, offset=1)
+
+    resp = client.get(f"{CYCLES_PAGE}/{cycle.id}")
+
+    assert resp.status_code == 200
+    # Переключатель не рисуется вовсе, когда переключать не на что — «Этап
+    # «...»» появляется только вместе с ним.
+    assert "Этап «" not in resp.text
+
+
+def test_cycle_page_hides_tiles_for_legacy_cycle_without_stage(admin_client, db):
+    client, _ = admin_client
+    client.post(
+        CYCLES_PAGE,
+        json={
+            "title": "",
+            "description": None,
+            "starts_on": (today_msk() + timedelta(days=1)).isoformat(),
+            "ends_on": (today_msk() + timedelta(days=7)).isoformat(),
+            "is_published": True,
+        },
+    )
+    cycle = _cycles(db)[0]
+    assert cycle.parent_id is None
+
+    resp = client.get(f"{CYCLES_PAGE}/{cycle.id}")
+
+    assert resp.status_code == 200
+    assert "Этап «" not in resp.text

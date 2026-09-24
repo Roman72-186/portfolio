@@ -655,28 +655,37 @@ def cycle_label(db: Session, topic: LearningTopic) -> str:
     return f"{first.strftime('%d.%m')} — {last.strftime('%d.%m.%Y')}"
 
 
-def stage_cycle_ordinal(db: Session, topic: LearningTopic) -> int | None:
-    """Порядковый номер `topic` среди живых циклов его этапа, от 1.
+def stage_sibling_cycles(db: Session, stage_id: int) -> list[LearningTopic]:
+    """Живые циклы (`kind='week'`) конкретного этапа, по `opens_at`, потом `id`.
 
-    `None` — у цикла нет этапа (`parent_id`), либо (теоретически) сам цикл
-    уже не среди живых. Порядок — по `opens_at`, потом по `id` (тот же
-    тай-брейк, что у `accessible_cycles`). Удалённые циклы (`deleted_at`) не
-    считаются: удаление сдвигает номера соседей — то же поведение, что уже
-    есть у диапазона дат, который тоже не хранится, а пересчитывается заново
-    при каждом показе.
+    Общий запрос для `stage_cycle_ordinal` (нужен только индекс) и для
+    переключателя циклов плашками на экране заданий (нужны сами объекты,
+    владелец 24.09.2026) — второй копии этого запроса не заводить.
     """
-    if topic.parent_id is None:
-        return None
-    siblings = (
+    return (
         db.query(LearningTopic)
         .filter(
-            LearningTopic.parent_id == topic.parent_id,
+            LearningTopic.parent_id == stage_id,
             LearningTopic.kind == TOPIC_KIND_WEEK,
             LearningTopic.deleted_at.is_(None),
         )
         .order_by(LearningTopic.opens_at.asc(), LearningTopic.id.asc())
         .all()
     )
+
+
+def stage_cycle_ordinal(db: Session, topic: LearningTopic) -> int | None:
+    """Порядковый номер `topic` среди живых циклов его этапа, от 1.
+
+    `None` — у цикла нет этапа (`parent_id`), либо (теоретически) сам цикл
+    уже не среди живых. Удалённые циклы (`deleted_at`) не считаются:
+    удаление сдвигает номера соседей — то же поведение, что уже есть у
+    диапазона дат, который тоже не хранится, а пересчитывается заново при
+    каждом показе.
+    """
+    if topic.parent_id is None:
+        return None
+    siblings = stage_sibling_cycles(db, topic.parent_id)
     for index, sibling in enumerate(siblings, start=1):
         if sibling.id == topic.id:
             return index

@@ -121,6 +121,7 @@ from app.services.tracker import (
     next_sort_order_in_topic,
     resolve_assignees,
     set_homework_images,
+    stage_sibling_cycles,
     update_homework,
     update_task,
 )
@@ -1074,12 +1075,25 @@ def program_cycle_items(
     if topic is None:
         raise HTTPException(status_code=404, detail="Цикл не найден")
     items = list_week_items(db, topic_id)
+    # Переключатель соседних циклов плашками (владелец 24.09.2026) — только
+    # когда у цикла есть живой этап-родитель.
+    stage = (
+        get_topic(db, topic.parent_id, kinds=(TOPIC_KIND_STAGE,))
+        if topic.parent_id is not None else None
+    )
+    cycle_tiles = [
+        {"id": c.id, "label": cycle_label(db, c), "is_current": c.id == topic.id}
+        for c in stage_sibling_cycles(db, topic.parent_id)
+    ] if stage is not None else []
+    stage_label = cycle_label(db, stage) if stage is not None else None
     return templates.TemplateResponse(request, "cabinet_program_cycle_items.html",
         {
             "request": request,
             "user": user,
             "topic": topic,
             "cycle_label": cycle_label(db, topic),
+            "stage_label": stage_label,
+            "cycle_tiles": cycle_tiles,
             "items": items,
             "edit_payloads": _edit_payloads(db, items, {t.id: {} for t in items}),
             "kind_labels": ITEM_KIND_LABELS,

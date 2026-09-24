@@ -43,6 +43,23 @@
         <a class="btn-outline" href="/cabinet/staff/program/cycles">К циклам</a>
     </div>
 
+    {# Переключатель соседних циклов того же этапа — плашками, по аналогии с
+       тем, как раньше переключались типы заданий (владелец 24.09.2026).
+       Ссылка, не JS-переключение форм: соседний цикл — другой topic_id со
+       своими заданиями на сервере, не альтернативная форма этой страницы. #}
+    {% if cycle_tiles|length > 1 %}
+    <p class="prg-hint">Этап «{{ stage_label }}»</p>
+    <div class="prg-tiles">
+        {% for tile in cycle_tiles %}
+        <a class="prg-tile{{ ' is-active' if tile.is_current }}"
+           href="/cabinet/staff/program/cycles/{{ tile.id }}">
+            <span class="prg-tile-icon" aria-hidden="true">🔁</span>
+            <span><strong>{{ tile.label }}</strong></span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     <div class="prg-tiles">
         <button type="button" class="prg-tile" data-open-form>
             <span class="prg-tile-icon" aria-hidden="true">📄</span>
