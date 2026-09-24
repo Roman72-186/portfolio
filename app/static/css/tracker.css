@@ -1373,20 +1373,32 @@ body.has-video-pseudo-fullscreen .lrn-step { opacity: 1 !important; }
 .lrn-step--locked { opacity: 0.5; }
 .lrn-step-locked { margin-top: 10px; font-style: italic; }
 
-/* Пройденные циклы: возврат к своим ответам (владелец 03.09.2026). Версия со
-   стеклянной каруселью (24.09.2026, Этапы) не прижилась — владелец попросил
-   вернуть как было. Заодно этой же строкой теперь открывается и «Портфолио»
-   (задание прямо на этапе, владелец 24.09.2026) — оно ведёт на сам этап, не
-   на отдельный блок. */
+/* Пройденные циклы: возврат к своим ответам (владелец 03.09.2026). Заодно
+   этой же строкой теперь открывается и «Портфолио» (задание прямо на этапе,
+   владелец 24.09.2026) — оно ведёт на сам этап, не на отдельный блок.
+
+   Стекло на текущей плашке (владелец 24.09.2026, повторно после отката):
+   найден и переиспользован дословный приём `.is-centered` из вкладок недели
+   ниже по файлу (`.ios-learning .lrn-tabs .nav-pill-item.is-centered`,
+   написан 27-28.08.2026, осиротел после замены вкладок единой лентой в
+   28ef8a8) — тот же scale(1.2) и полупрозрачная плашка-стекло через ::after,
+   один в один. Отличие только в цвете подложки: там был хардкод
+   rgba(255,255,255,.55) под неизменно светлый .ios-learning, здесь
+   `color-mix(in srgb, var(--surface) …, transparent)` — от --surface, чтобы
+   стекло само перекрашивалось под тёмную тему вместе с остальной страницей.
+   Вертикальный padding контейнера увеличен под вылет масштабированной
+   плашки — тот же приём, что `.lrn-tabs-row .lrn-tabs` комментирует выше по
+   файлу, иначе `overflow-x: auto` обрежет её сверху/снизу. */
 .lrn-cycles {
     display: flex;
-    gap: 8px;
+    gap: 10px;
     overflow-x: auto;
-    padding: 2px 0 8px;
+    padding: 14px 4px 18px;
     scrollbar-width: none;
 }
 .lrn-cycles::-webkit-scrollbar { display: none; }
 .lrn-cycle-chip {
+    position: relative;
     flex: 0 0 auto;
     padding: 6px 12px;
     border: 1px solid var(--line);
@@ -1394,12 +1406,33 @@ body.has-video-pseudo-fullscreen .lrn-step { opacity: 1 !important; }
     font-size: 13px;
     font-weight: 700;
     color: var(--dim);
+    background: var(--surface);
     text-decoration: none;
     white-space: nowrap;
+    transition: transform 160ms ease, background 120ms ease, color 120ms ease, box-shadow 160ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+    .lrn-cycle-chip:hover:not(.is-current) {
+        background: color-mix(in srgb, var(--blue) 12%, var(--surface));
+        color: var(--blue);
+    }
 }
 .lrn-cycle-chip.is-current {
+    background: var(--blue);
     border-color: var(--blue);
-    color: var(--blue);
+    color: #fff;
+    transform: scale(1.2);
+    z-index: 2;
+}
+.lrn-cycle-chip.is-current::after {
+    content: '';
+    position: absolute; inset: -8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface) 55%, transparent);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.14);
+    z-index: -1;
 }
 .lrn-archive-note { margin: 0 0 12px; }
 
