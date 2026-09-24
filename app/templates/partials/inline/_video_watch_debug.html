@@ -1,22 +1,22 @@
 {#
-Панель контроля просмотра под плеером — только на странице проверки у
-администратора (`/cabinet/admin/video-bridge-test/player`, флаг `watch_debug`
-из `api/video.py`). Ученику не выводится.
+Панель пробного контроля просмотра под плеером — только на странице
+проверки у суперадмина (`/cabinet/admin/video-bridge-test/player`, флаг
+`watch_debug` из `api/video.py`). Ученику не выводится, и правило здесь
+пробное: у учеников зачёт считается по-прежнему.
 
 Цифры берутся с сервера (`/watch-state`), а не из плеера: зачёт решает сервер
-(`services/video_progress.py::evaluate_watch`), и панель должна показывать
-его решение, а не то, что думает браузер. Сервер получает позицию раз в
+(`services/video_progress.py::evaluate_trial_watch`), и панель должна
+показывать его решение, а не то, что думает браузер. Сервер получает позицию раз в
 10 секунд и на паузе, поэтому цифры отстают от плеера на несколько секунд.
 
 Своих стилей нет намеренно (храповик переиспользования): общие `card`,
 `btn-outline`, `badge` и строки статуса плеера.
 #}
 <section class="card" data-role="watch-debug" style="margin-top:16px;">
-    <div class="card-title">Контроль просмотра – видно только вам</div>
+    <div class="card-title">Пробный контроль просмотра – только для вас</div>
     <p class="video-help" data-role="wd-rule">Загружаю правило…</p>
     <p class="video-help" data-role="wd-position"></p>
     <p class="video-help" data-role="wd-credited"></p>
-    <p class="video-help" data-role="wd-block"></p>
     <p style="margin:10px 0;">
         <span class="badge badge-before" data-role="wd-verdict">Ещё не засчитано</span>
     </p>
@@ -73,10 +73,6 @@
             line += '. Всего за все проходы: ' + clock(state.watched_seconds);
         }
         node('wd-credited').textContent = line;
-        node('wd-block').textContent = state.block_id
-            ? 'Кружок в ленте (блок ' + state.block_id + '): '
-                + (state.block_check_open ? 'открылся бы – можно отметить.' : 'пока был бы закрыт.')
-            : 'Этот ролик не стоит ни в одном видео-блоке ленты.';
         var verdict = node('wd-verdict');
         verdict.textContent = state.completed ? 'Просмотр засчитан' : 'Ещё не засчитано';
         verdict.classList.toggle('badge-after', Boolean(state.completed));

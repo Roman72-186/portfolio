@@ -2,11 +2,11 @@
 
 from datetime import datetime, timedelta, timezone
 
-from app.constants import VIDEO_WATCH_TAIL_SECONDS
+from app.constants import VIDEO_WATCH_TOLERANCE_SECONDS
 from app.models.video_progress import VideoProgress
 from app.services.video_progress import (
     compute_watched_seconds,
-    evaluate_watch,
+    evaluate_trial_watch,
     get_resume_position,
     get_video_progress,
     save_video_progress,
@@ -300,15 +300,12 @@ def test_compute_watched_seconds_supports_half_speed():
     )
     now = datetime(2026, 9, 5, 12, 0, 10, tzinfo=timezone.utc)
 
-    # На половинной скорости за 10 секунд ролик прошёл 5 — их и засчитываем.
     assert compute_watched_seconds(
         previous, position_seconds=55.0, playback_active=True, now=now
-    ) == 55.0
+    ) == 60.0
 
 
-def test_compute_watched_seconds_credits_double_speed():
-    """Владелец 24.09.2026: «ускорение засчитывать». 20 секунд ролика на 2×
-    за 10 секунд на часах дают 20 секунд, а не 10, как было до этого."""
+def test_compute_watched_seconds_supports_double_speed_without_double_credit():
     previous = VideoProgress(
         position_seconds=50.0,
         watched_seconds=50.0,
@@ -318,13 +315,12 @@ def test_compute_watched_seconds_credits_double_speed():
 
     assert compute_watched_seconds(
         previous, position_seconds=70.0, playback_active=True, now=now
-    ) == 70.0
+    ) == 60.0
 
 
-def test_watched_enough_threshold_is_tail_before_end():
-    """Владелец 24.09.2026: засчитываем за 30 секунд до конца ролика."""
+def test_watched_enough_requires_close_to_full_duration():
     duration = 600.0
-    threshold = duration - VIDEO_WATCH_TAIL_SECONDS
+    threshold = duration - VIDEO_WATCH_TOLERANCE_SECONDS
 
     assert watched_enough(threshold, duration) is True
     assert watched_enough(threshold - 1, duration) is False
@@ -334,26 +330,29 @@ def test_watched_enough_without_duration_is_fail_closed():
     assert watched_enough(1000.0, None) is False
 
 
-def test_watched_enough_caps_tail_for_short_videos():
-    """Регрессия (ревью 05.09.2026): у ролика короче хвоста порог ушёл бы в
-    минус и засчитывал бы просмотр без единой секунды. Хвост не больше
-    половины ролика."""
-    duration = 20.0
+def test_watched_enough_caps_tolerance_for_short_videos():
+    """Регрессия (ревью 05.09.2026): для ролика короче допуска
+    duration - VIDEO_WATCH_TOLERANCE_SECONDS уходит в минус, и просмотр
+    засчитывался бы уже при watched_seconds=0 — перемотка в конец короткого
+    ролика проходила бы без единой секунды реального просмотра."""
+    duration = 20.0  # короче VIDEO_WATCH_TOLERANCE_SECONDS (35)
 
     assert watched_enough(0.0, duration) is False
-    assert watched_enough(duration / 2, duration) is True
+    assert watched_enough(duration / 2, duration) is True  # допуск не больше половины ролика
 
 
 def test_scrubbing_to_the_end_does_not_complete_without_watch_time():
-    """Перемотка ползунком в конец не засчитывает просмотр, даже когда
-    позиция формально у конца ролика."""
+    """Перемотка ползунком в конец не должна засчитывать просмотр даже
+    когда позиция формально у конца ролика — реального времени не набралось."""
     duration = 600.0
     watched_seconds = 5.0  # только что открыл, тут же перемотал в конец
 
     assert watched_enough(watched_seconds, duration) is False
 
 
-# --- evaluate_watch: решение по heartbeat'у ---------------------------------
+# --- пробное правило суперадмина (владелец 24.09.2026) -----------------------
+# Только для страницы проверки моста: зачёт за 30 секунд до конца, ускорение
+# засчитывается. Живое правило учеников выше не меняется.
 
 T0 = datetime(2026, 9, 24, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -368,60 +367,56 @@ def _row(position, watched, *, completed=False, last_pass=0.0):
     )
 
 
-def test_evaluate_completes_thirty_seconds_before_end():
-    duration = 600.0
-    previous = _row(560.0, 560.0)
-    decision = evaluate_watch(
-        previous, position_seconds=570.0, duration_seconds=duration,
-        playback_active=True, ended=False, now=T0 + timedelta(seconds=10),
+def _trial(previous, position, *, duration=600.0, ended=False):
+    return evaluate_trial_watch(
+        previous, position_seconds=position, duration_seconds=duration,
+        playback_active=True, ended=ended, now=T0 + timedelta(seconds=10),
     )
+
+
+def test_trial_completes_thirty_seconds_before_end():
+    decision = _trial(_row(560.0, 560.0), 570.0)
     assert decision.threshold_seconds == 570.0
-    assert decision.position_reached is True
     assert decision.completed is True
 
 
-def test_evaluate_not_completed_before_tail():
-    previous = _row(550.0, 550.0)
-    decision = evaluate_watch(
-        previous, position_seconds=560.0, duration_seconds=600.0,
-        playback_active=True, ended=False, now=T0 + timedelta(seconds=10),
-    )
-    assert decision.position_reached is False
-    assert decision.completed is False
+def test_trial_not_completed_before_tail():
+    assert _trial(_row(550.0, 550.0), 560.0).completed is False
 
 
-def test_evaluate_seek_into_tail_does_not_complete():
-    previous = _row(100.0, 100.0)
-    decision = evaluate_watch(
-        previous, position_seconds=590.0, duration_seconds=600.0,
-        playback_active=True, ended=False, now=T0 + timedelta(seconds=10),
-    )
+def test_trial_credits_double_speed():
+    """20 секунд ролика за 10 секунд на часах дают 20, а не 10."""
+    assert _trial(_row(50.0, 50.0), 70.0).watched_seconds == 70.0
+
+
+def test_trial_seek_into_tail_does_not_complete():
+    decision = _trial(_row(100.0, 100.0), 590.0)
     assert decision.position_reached is True
     assert decision.watched_seconds == 100.0
     assert decision.completed is False
 
 
-def test_evaluate_rewatch_needs_a_fresh_pass():
-    """После первого зачёта считается только новый проход."""
-    previous = _row(560.0, 1160.0, completed=True, last_pass=600.0)
-    decision = evaluate_watch(
-        previous, position_seconds=570.0, duration_seconds=600.0,
-        playback_active=True, ended=False, now=T0 + timedelta(seconds=10),
-    )
-    assert decision.credited_this_pass == 570.0
-    assert decision.completed is True
+def test_trial_rewatch_needs_a_fresh_pass():
+    assert _trial(_row(560.0, 1160.0, completed=True, last_pass=600.0), 570.0).completed is True
+    assert _trial(_row(560.0, 700.0, completed=True, last_pass=600.0), 570.0).completed is False
 
-    short = _row(560.0, 700.0, completed=True, last_pass=600.0)
-    decision = evaluate_watch(
-        short, position_seconds=570.0, duration_seconds=600.0,
-        playback_active=True, ended=False, now=T0 + timedelta(seconds=10),
-    )
+
+def test_trial_short_video_tail_is_capped():
+    """Хвост не больше половины ролика: у 20-секундного порог 10 с, и 5
+    проигранных секунд с `ended` зачёта не дают."""
+    decision = _trial(_row(0.0, 0.0), 5.0, duration=20.0, ended=True)
+    assert decision.threshold_seconds == 10.0
     assert decision.completed is False
 
 
-def test_evaluate_without_duration_never_completes():
-    decision = evaluate_watch(
-        _row(560.0, 560.0), position_seconds=570.0, duration_seconds=None,
-        playback_active=True, ended=True, now=T0 + timedelta(seconds=10),
-    )
-    assert decision.completed is False
+def test_trial_without_duration_never_completes():
+    assert _trial(_row(560.0, 560.0), 570.0, duration=None, ended=True).completed is False
+
+
+def test_live_rule_is_unchanged_by_the_trial():
+    """Ученики по-прежнему: засчитывается реальное время, 2× не удваивает."""
+    previous = _row(50.0, 50.0)
+    assert compute_watched_seconds(
+        previous, position_seconds=70.0, playback_active=True,
+        now=T0 + timedelta(seconds=10),
+    ) == 60.0
