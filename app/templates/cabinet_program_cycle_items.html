@@ -562,7 +562,14 @@ function uploadBlockPhotos(row, files) {
             // предпросмотр никуда не прячутся.
             message.textContent = '';
             message.classList.remove('is-error');
-            form.querySelector('[data-diagnostic-note]').hidden = false;
+            // Панель стоит выше кнопки, которая её открывает (сразу после
+            // «Откроется не раньше», до «Задачи учебного дня») — без прокрутки
+            // клик выглядел так, будто ничего не произошло: новый блок
+            // появлялся выше текущей позиции прокрутки, вне поля зрения
+            // (жалоба владельца 24.09.2026, «нажимаю и тишина»).
+            var note = form.querySelector('[data-diagnostic-note]');
+            note.hidden = false;
+            note.scrollIntoView({behavior: 'smooth', block: 'start'});
             return;
         }
         var previewBtn = event.target.closest('[data-preview-blocks]');
