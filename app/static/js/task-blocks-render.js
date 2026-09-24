@@ -927,7 +927,15 @@ scope)` и свойством `answered` (одна попытка: после о
             }
 
             function renderQuestion(block, index) {
-                var wrap = withTitle(el('div', 'lrn-blk lrn-blk-question'), block);
+                var wrap = el('div', 'lrn-blk lrn-blk-question');
+                // Название/описание диагностики (владелец 24.09.2026, третий
+                // раунд) — сервер кладёт их только на первый вопрос диагностики
+                // (`cabinet_tracker.py`), показываем один раз перед ним, теми
+                // же классами, что и у обычного текстового блока — не заводим
+                // новых ради `test_reuse_ratchet.py`.
+                if (block.diagnostic_intro_title) wrap.appendChild(el('p', 'lrn-blk-title', block.diagnostic_intro_title));
+                if (block.diagnostic_intro_body_html) wrap.appendChild(elHtml('p', 'lrn-blk-body', block.diagnostic_intro_body_html));
+                withTitle(wrap, block);
                 var fieldId = 'lrn-blk-' + api.uid + '-' + index;
                 // Это сам вопрос, а не подпись поля — field-label занижал его
                 // до заголовка блока, хотя это главный текст (ревью 03.09.2026).

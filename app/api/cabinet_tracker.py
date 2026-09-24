@@ -494,6 +494,10 @@ def cabinet_tracker_task_blocks(
         from app.services.archi_profile import result_for_answers
         profile_result = result_for_answers(db, task_id, user["user_id"])
 
+    # Название/описание диагностики (владелец 24.09.2026, третий раунд) —
+    # показываем один раз, перед первым вопросом диагностики, а не на каждом
+    # (иначе «Вопрос 2» и дальше повторяли бы один и тот же заголовок).
+    diagnostic_intro_shown = False
     payload = []
     for block in blocks:
         item = {
@@ -506,6 +510,14 @@ def cabinet_tracker_task_blocks(
             # ученик должен иметь возможность вернуться.
             "answered": block.id in answered_ids,
         }
+        if block.is_diagnostic and not diagnostic_intro_shown and task.diagnostic_config:
+            diagnostic_intro_shown = True
+            intro_title = task.diagnostic_config.get("title")
+            intro_body = task.diagnostic_config.get("intro")
+            if intro_title:
+                item["diagnostic_intro_title"] = intro_title
+            if intro_body:
+                item["diagnostic_intro_body_html"] = format_rich_text(intro_body)
         if block.block_type == BLOCK_VIDEO:
             item["video_id"] = block.video_id
             item["video_embed_endpoint"] = (

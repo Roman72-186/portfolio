@@ -86,6 +86,23 @@ def validate_diagnostic_config(raw: dict) -> dict:
     """Normalize a complete teacher-authored diagnostic before publishing."""
     if not isinstance(raw, dict):
         raise ValueError("Добавьте вопросы и результаты диагностики")
+    # Название/описание диагностики (владелец 24.09.2026, третий раунд:
+    # «добавить название, описание, аналогично настройки остальным блокам») —
+    # чисто оформительские поля, не влияют на подсчёт результата, поэтому не
+    # входят в сравнение «вопросы/результаты не поменялись» ниже по стеку
+    # (`_expand_diagnostic_entry`): их можно поправить даже после того, как
+    # на диагностику уже ответили.
+    # Не `title`/`intro` без приставки: те же имена переиспользует цикл по
+    # результатам ниже (`for ri, result in enumerate(results, 1): title = ...`)
+    # — совпадение имён внутри одной функции без блочной области видимости в
+    # Python перезаписало бы это значение последним результатом (поймано
+    # тестом `test_teacher_authored_diagnostic_maps_all_combinations`).
+    diagnostic_title = str(raw.get("title") or "").strip()
+    diagnostic_intro = str(raw.get("intro") or "").strip()
+    if len(diagnostic_title) > 200:
+        raise ValueError("Название диагностики длиннее 200 символов")
+    if len(diagnostic_intro) > 5000:
+        raise ValueError("Описание диагностики длиннее 5000 символов")
     questions = raw.get("questions")
     results = raw.get("results")
     if not isinstance(questions, list) or not 1 <= len(questions) <= 50:
@@ -179,7 +196,10 @@ def validate_diagnostic_config(raw: dict) -> dict:
         clean_results.append({"title": title, "text": body, "architects": architects, "combinations": clean_assigned})
     if used != expected:
         raise ValueError(f"Назначьте результат каждому сочетанию ответов: осталось {len(expected - used)}")
-    return {"questions": clean_questions, "results": clean_results}
+    return {
+        "questions": clean_questions, "results": clean_results,
+        "title": diagnostic_title or None, "intro": diagnostic_intro or None,
+    }
 
 
 def blocks_from_config(config: dict, availability: dict | None = None) -> list[dict]:

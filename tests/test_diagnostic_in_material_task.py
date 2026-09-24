@@ -16,6 +16,11 @@ from app.models.tracker import ITEM_MATERIAL, TrackerTask
 from app.services.tz import today_msk
 
 CONFIG = {
+    # `title`/`intro` — те же generic-поля блока, что у любого другого типа
+    # (владелец 24.09.2026, третий раунд); тесты ниже их не задают, поэтому
+    # `validate_diagnostic_config` возвращает их пустыми — это и есть форма
+    # хранения `TrackerTask.diagnostic_config`, с которой нужно сравнивать.
+    "title": None, "intro": None,
     "questions": [
         {"text": "Что важнее?", "options": [{"text": "Свет", "value": "1"}, {"text": "Форма", "value": "2"}]},
         {"text": "Что ближе?", "options": [{"text": "Дом", "value": "A"}, {"text": "Город", "value": "B"}]},
@@ -409,3 +414,79 @@ def test_diagnostic_result_shows_on_personal_page_for_embedded_diagnostic(
     personal = client.get("/cabinet/personal")
     assert personal.status_code == 200
     assert "Исследователь" in personal.text
+
+
+def test_diagnostic_title_and_body_are_generic_block_fields(
+    client, db, user_factory, session_factory
+):
+    """Владелец 24.09.2026, третий раунд: «добавить пункты Название,
+    описание, аналогично настройки остальным блокам» — те же generic-поля
+    блока (`data-b-title`/`data-b-body`), что и у любого другого типа,
+    хранятся внутри `diagnostic_config`, показываются ученику один раз перед
+    первым вопросом диагностики и переживают правку без диагностики."""
+    admin = user_factory(vk_id=889_501, name="Преподаватель", is_admin=True, role_name="админ")
+    client.cookies.set("session_id", session_factory(admin).id)
+    cycle_id = _make_cycle(client, today_msk())
+
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={
+            "title": "Задание", "description": None, "subject": None,
+            "is_required": True, "starts_on": None,
+            "blocks": [{
+                "block_type": "diagnostic", "diagnostic": {**CONFIG, "title": None, "intro": None},
+                "title": "Диагностика архитектурного профиля",
+                "body": "Ответь на пару вопросов — узнаешь свой профиль.",
+            }],
+        },
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert created.status_code == 200, created.text
+    task_id = created.json()["task_id"]
+
+    task = db.get(TrackerTask, task_id)
+    assert task.diagnostic_config["title"] == "Диагностика архитектурного профиля"
+    assert task.diagnostic_config["intro"] == "Ответь на пару вопросов — узнаешь свой профиль."
+
+    # Форма правки подхватывает их в ту же строку, что вопросы/результаты.
+    payload = _edit_payloads(db, [task], {})[task_id]
+    diagnostic_entry = payload["blocks"][0]
+    assert diagnostic_entry["title"] == "Диагностика архитектурного профиля"
+    assert diagnostic_entry["body"] == "Ответь на пару вопросов — узнаешь свой профиль."
+
+    # Ученику показывается один раз, на первом вопросе диагностики.
+    student = user_factory(vk_id=889_502, name="Ученик", role_name="ученик")
+    client.cookies.set("session_id", session_factory(student).id)
+    blocks = client.get(f"/cabinet/tracker/tasks/{task_id}/blocks").json()["blocks"]
+    assert blocks[0]["diagnostic_intro_title"] == "Диагностика архитектурного профиля"
+    assert "Ответь на пару вопросов" in blocks[0]["diagnostic_intro_body_html"]
+    assert "diagnostic_intro_title" not in blocks[1]
+
+    # Название/описание — не вопросы/результаты, правятся даже после ответа.
+    answers = [
+        {"block_id": b["id"], "option_ids": [b["options"][0]["id"]]} for b in blocks
+    ]
+    saved = client.post(
+        f"/cabinet/tracker/tasks/{task_id}/blocks", json={"answers": answers},
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert saved.status_code == 200, saved.text
+
+    client.cookies.set("session_id", session_factory(admin).id)
+    updated = client.post(
+        f"/cabinet/staff/program/items/{task_id}/material",
+        json={
+            "title": "Задание", "description": None, "subject": None,
+            "is_required": True, "starts_on": None,
+            "blocks": [{
+                "block_type": "diagnostic", "diagnostic": {**CONFIG, "title": None, "intro": None},
+                "title": "Новое название", "body": "Новое описание.",
+            }],
+        },
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert updated.status_code == 200, updated.text
+    db.expire_all()
+    task = db.get(TrackerTask, task_id)
+    assert task.diagnostic_config["title"] == "Новое название"
+    assert task.diagnostic_config["intro"] == "Новое описание."

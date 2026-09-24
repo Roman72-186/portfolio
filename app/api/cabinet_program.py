@@ -329,9 +329,15 @@ def _edit_payloads(
                 # пропускаются, они уже учтены этой одной строкой.
                 if item.kind != ITEM_ARCHI_PROFILE and not diagnostic_emitted:
                     diagnostic_emitted = True
+                    diagnostic_config = item.diagnostic_config or {}
                     item_blocks.append({
                         "id": None, "block_type": DIAGNOSTIC_PSEUDO_BLOCK_TYPE,
                         "diagnostic": item.diagnostic_config,
+                        # Название/описание диагностики (владелец 24.09.2026,
+                        # третий раунд) — те же generic-поля блока, что у
+                        # любого другого типа, форма подхватывает их сама.
+                        "title": diagnostic_config.get("title"),
+                        "body": diagnostic_config.get("intro"),
                         "is_required": b.is_required,
                         "subject": b.subject,
                         "tariffs": sorted(block_tariffs.get(b.id, set())),
@@ -1077,22 +1083,40 @@ def _expand_diagnostic_entry(db: DBSession, task: TrackerTask, entry: "BlockItem
     """Одна строка `block_type == "diagnostic"` → список словарей блоков-
     вопросов для `sync_task_blocks`, на месте этой строки в общем порядке.
 
-    Конфиг (вопросы/результаты) не поменялся — берём уже сохранённые блоки
-    по их реальным id (`_diagnostic_block_items_from_db`), только освежая
+    Название/описание диагностики (владелец 24.09.2026, третий раунд) едут
+    в `entry.title`/`entry.body` — те же generic-поля, что у любого блока
+    (`data-b-title`/`data-b-body`), собирает их `collectFormBlocks` сама,
+    без отдельного JS. Кладём их внутрь `diagnostic_config` вместе с
+    вопросами/результатами (`validate_diagnostic_config` принимает
+    `title`/`intro`), но в сравнении «поменялось ли что-то, что нельзя
+    трогать после ответа» участвуют только вопросы и результаты — название и
+    описание чисто оформительские, их можно поправить и после того, как на
+    диагностику уже ответили.
+
+    Вопросы/результаты не поменялись — берём уже сохранённые блоки по их
+    реальным id (`_diagnostic_block_items_from_db`), только освежая
     доступность: иначе `sync_blocks` считал бы каждое сохранение новым
-    набором блоков и терял бы уже собранные ответы учеников. Конфиг
-    поменялся — 409, если на диагностику уже ответили (та же защита, что
-    была у смены вопросов archi_profile-задания).
+    набором блоков и терял бы уже собранные ответы учеников. Поменялись —
+    409, если на диагностику уже ответили (та же защита, что была у смены
+    вопросов archi_profile-задания).
     """
     from app.models.task_block import TaskBlockResponse
     from app.services.archi_profile import blocks_from_config, validate_diagnostic_config
 
+    raw = dict(entry.diagnostic or {})
+    raw["title"] = entry.title
+    raw["intro"] = entry.body
     try:
-        new_config = validate_diagnostic_config(entry.diagnostic)
+        new_config = validate_diagnostic_config(raw)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     availability = _diagnostic_availability(entry)
-    if new_config != task.diagnostic_config:
+    old_config = task.diagnostic_config or {}
+    content_changed = (
+        new_config.get("questions") != old_config.get("questions")
+        or new_config.get("results") != old_config.get("results")
+    )
+    if content_changed:
         if db.query(TaskBlockResponse.id).filter_by(task_id=task.id).first():
             raise HTTPException(
                 status_code=409,
@@ -1100,6 +1124,7 @@ def _expand_diagnostic_entry(db: DBSession, task: TrackerTask, entry: "BlockItem
             )
         task.diagnostic_config = new_config
         return blocks_from_config(new_config, availability)
+    task.diagnostic_config = new_config
     return _diagnostic_block_items_from_db(db, task.id, availability)
 
 

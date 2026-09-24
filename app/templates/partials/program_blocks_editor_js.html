@@ -200,10 +200,17 @@ function blockBodyHTML(type) {
         // Псевдо-тип, которого нет в БД (владелец 24.09.2026, второй раунд) —
         // одна строка среди обычных блоков, а вопросы/результаты правятся
         // своим редактором (`DiagnosticBuilder`), не общими полями блока.
-        // Панель «Доступность блока» ниже (`blockSettingsHTML`) при этом та
-        // же самая, генерика ни во что не упирается — этого и просил
-        // владелец: «полностью те же фильтры, что и в других кнопках».
+        // Название/описание (владелец 24.09.2026, третий раунд: «аналогично
+        // настройки остальным блокам») — обычные `data-b-title`/`data-b-body`,
+        // их читает/пишет тот же generic-код, что у любого другого типа,
+        // отдельного JS не понадобилось. Показываются ученику перед первым
+        // вопросом (см. `task-blocks-render.js`). Панель «Доступность блока»
+        // ниже (`blockSettingsHTML`) — та же самая, генерика ни во что не
+        // упирается — этого и просил владелец во втором раунде: «полностью
+        // те же фильтры, что и в других кнопках».
         return ''
+            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название" placeholder="Название, например «Диагностика АРХИ-ПРОФИЛЯ»"></label>'
+            + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Описание, необязательно" placeholder="Описание перед вопросами, необязательно"></textarea>' + BODY_FORMAT_HINT + '</label>'
             + '<div data-diagnostic-editor></div>'
             + '<div class="prg-actions">'
             + '  <button type="button" class="btn-outline" data-diagnostic-trainer hidden>Пройти как тренажёр</button>'

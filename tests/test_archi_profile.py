@@ -150,7 +150,7 @@ def test_teacher_authored_diagnostic_maps_all_combinations(client, db, user_fact
     )
     assert created.status_code == 200, created.text
     task_id = created.json()["task_id"]
-    assert db.get(TrackerTask, task_id).diagnostic_config == config
+    assert db.get(TrackerTask, task_id).diagnostic_config == {**config, "title": None, "intro": None}
 
     student = user_factory(vk_id=887_102, name="Ученик", role_name="ученик")
     client.cookies.set("session_id", session_factory(student).id)
@@ -183,7 +183,7 @@ def test_teacher_authored_diagnostic_maps_all_combinations(client, db, user_fact
         headers={"X-CSRF-Token": "x"},
     )
     assert changed.status_code == 409
-    assert db.get(TrackerTask, task_id).diagnostic_config == config
+    assert db.get(TrackerTask, task_id).diagnostic_config == {**config, "title": None, "intro": None}
 
 
 def test_editing_diagnostic_must_not_resend_its_own_question_blocks(
