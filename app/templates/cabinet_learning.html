@@ -48,10 +48,19 @@
        принципе не будет»). В предобучении до 29 сентября деления нет вовсе. #}
     {# Пройденные циклы: вернуться и перечитать свои ответы (владелец
        03.09.2026). Показываем, только когда есть куда возвращаться. #}
-    {% if feed.cycles|length > 1 %}
+    {% if feed.pinned_tasks or feed.cycles|length > 1 %}
     <div class="lrn-carousel" data-role="cycle-carousel"
          aria-label="Циклы {{ feed.stage.label }}{% if not feed.stage %}обучения{% endif %}">
         <div class="lrn-carousel-track">
+            {# Задания этапа («Портфолио») — отдельная кнопка перед циклами,
+               без дат: ведёт не на другой URL, а к тому же шагу, что уже
+               рендерится первым в текущей ленте (владелец 24.09.2026). #}
+            {% for pinned in feed.pinned_tasks %}
+            <a class="lrn-carousel-card lrn-carousel-card--pinned"
+               href="#learning-task-{{ pinned.id }}" data-pinned-task-id="{{ pinned.id }}">
+                <span class="lrn-carousel-card-title">{{ pinned.title }}</span>
+            </a>
+            {% endfor %}
             {% for cycle in feed.cycles %}
             <a class="lrn-carousel-card{{ ' is-current' if cycle.is_current }}"
                href="/cabinet/learning{{ '' if cycle.is_current else '?cycle=' ~ cycle.id }}"

@@ -42,6 +42,18 @@
 .lrn-carousel-card.is-current {
     border-color: var(--blue);
 }
+/* «Портфолио» и другие задания этапа — кнопка, не карточка периода: своей
+   ширины по содержимому, без даты под названием (владелец 24.09.2026:
+   «отдельной кнопочкой»). */
+.lrn-carousel-card--pinned {
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 20px;
+}
+.lrn-carousel-card--pinned .lrn-carousel-card-title {
+    white-space: nowrap;
+}
 .lrn-carousel-card-title {
     font-size: 15px;
     font-weight: 800;

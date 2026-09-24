@@ -594,3 +594,66 @@ def test_direct_link_opens_cycle_from_closed_stage(db, regular_user):
 
     assert feed["topic"].id == old_cycle.id
     assert feed["is_archive"] is True
+
+
+def test_stage_task_is_pinned_first_in_every_cycle_of_the_stage(db, regular_user):
+    """«Портфолио» — задание прямо на этапе, не в цикле. Владелец 24.09.2026:
+    оно должно быть видно первым в ленте любого цикла этого этапа, а не
+    только в одном из них — ученик не обязан помнить, в каком цикле стоял,
+    когда сдавал портфолио."""
+    stage = _stage(db, regular_user, starts_on=TODAY - timedelta(days=10), ends_on=TODAY + timedelta(days=20))
+    portfolio = create_task(
+        db, title="Портфолио", user_id=regular_user.id, kind="material",
+        topic_id=stage.id, assign_to_all=True, is_required=False,
+    )
+    portfolio.is_published = True
+    db.commit()
+
+    cycle_one = _cycle(
+        db, regular_user, title="Цикл 1",
+        starts_on=TODAY - timedelta(days=1), ends_on=TODAY + timedelta(days=6),
+    )
+    cycle_one.parent_id = stage.id
+    _task(db, regular_user, title="Материал цикла 1", due_on=TODAY, is_required=False)
+    db.commit()
+
+    feed = feed_for_student(db, user_id=regular_user.id, user_tariff=None, today=TODAY)
+
+    assert feed["topic"].id == cycle_one.id
+    assert feed["pinned_tasks"] == [{"id": portfolio.id, "title": "Портфолио"}]
+    assert feed["steps"][0]["task"].id == portfolio.id
+
+
+def test_stage_task_stays_pinned_when_viewing_an_older_cycle(db, regular_user):
+    """Тот же якорь виден и в архивном цикле того же этапа, не только в
+    текущем — «Портфолио» достижимо независимо от того, где стоит ученик."""
+    stage = _stage(db, regular_user, starts_on=TODAY - timedelta(days=30), ends_on=TODAY + timedelta(days=30))
+    portfolio = create_task(
+        db, title="Портфолио", user_id=regular_user.id, kind="material",
+        topic_id=stage.id, assign_to_all=True, is_required=False,
+    )
+    portfolio.is_published = True
+    db.commit()
+
+    old_cycle = _cycle(
+        db, regular_user, title="Цикл 1",
+        starts_on=TODAY - timedelta(days=20), ends_on=TODAY - timedelta(days=10),
+    )
+    old_cycle.parent_id = stage.id
+    _task(db, regular_user, title="Материал цикла 1", due_on=TODAY - timedelta(days=15), is_required=False)
+
+    current_cycle = _cycle(
+        db, regular_user, title="Цикл 2",
+        starts_on=TODAY - timedelta(days=1), ends_on=TODAY + timedelta(days=6),
+    )
+    current_cycle.parent_id = stage.id
+    db.commit()
+
+    feed = feed_for_student(
+        db, user_id=regular_user.id, user_tariff=None, today=TODAY, cycle_id=old_cycle.id,
+    )
+
+    assert feed["topic"].id == old_cycle.id
+    assert feed["is_archive"] is True
+    assert feed["pinned_tasks"] == [{"id": portfolio.id, "title": "Портфолио"}]
+    assert feed["steps"][0]["task"].id == portfolio.id

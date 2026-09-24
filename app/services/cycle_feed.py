@@ -111,6 +111,10 @@ def current_feed_task_ids(db: Session, *, user_id: int, today: date) -> set[int]
     только ответ, можно ли вести ученика кнопкой «Перейти» в текущую ленту;
     строить ради этого все блоки нельзя, потому что сборка ленты запускает
     персональные окна портфолио при первом показе.
+
+    Включает и задания этапа-родителя («Портфолио») — они показываются в
+    самой ленте первыми (`build_cycle_feed(pinned_topic_id=...)`), трекер не
+    должен здесь с ней расходиться.
     """
     topic, start, end = feed_window(db, user_id, today)
     window_start, _ = day_bounds(start)
@@ -123,7 +127,18 @@ def current_feed_task_ids(db: Session, *, user_id: int, today: date) -> set[int]
         topic_id=topic.id if topic is not None else None,
         include_undated=topic is not None,
     )
-    return {entry["task"].id for entry in entries}
+    task_ids = {entry["task"].id for entry in entries}
+    stage_id = topic.parent_id if topic is not None else None
+    if stage_id is not None:
+        pinned_entries = accessible_task_entries(
+            db, user_id, start=window_start, end=window_end,
+            topic_id=stage_id, include_undated=True,
+        )
+        task_ids |= {
+            entry["task"].id for entry in pinned_entries
+            if entry["task"].topic_id == stage_id
+        }
+    return task_ids
 
 
 def _task_done(entry: dict) -> bool:
@@ -166,7 +181,7 @@ def has_portfolio_upload(db: Session, user_id: int, *, since: date | datetime) -
 
 def build_cycle_feed(
     db: Session, *, user_id: int, user_tariff: str | None, start: date, end: date,
-    topic_id: int | None = None,
+    topic_id: int | None = None, pinned_topic_id: int | None = None,
 ) -> list[dict]:
     """Шаги ленты за период `[start, end]`, сверху вниз, со статусом ученика.
 
@@ -194,6 +209,15 @@ def build_cycle_feed(
     тогда в выборку подмешиваются задания без даты (`include_undated=True`,
     см. `accessible_task_entries`) — у запасной календарной недели цикла нет,
     и бездатным заданиям там взяться неоткуда.
+
+    `pinned_topic_id` (владелец 24.09.2026, Этапы) — id этапа-родителя цикла,
+    если он есть. Задания, заведённые прямо на этапе (например, «Портфолио» —
+    отдельная кнопка перед циклами в карусели, не сам цикл), показываются
+    первыми в ленте любого цикла этого этапа, а не только в одном из них:
+    «Портфолио» должно быть видно и достижимо независимо от того, на каком
+    цикле стоит ученик сейчас. Список приклеивается к началу `entries` до
+    сквозной блокировки — у всех сегодняшних заданий этапа блоки
+    необязательные, поэтому запереть цикл под собой они не могут.
     """
     window_start, _ = day_bounds(start)
     _, window_end = day_bounds(end)
@@ -201,6 +225,19 @@ def build_cycle_feed(
         db, user_id, start=window_start, end=window_end,
         topic_id=topic_id, include_undated=topic_id is not None,
     )
+    if pinned_topic_id is not None and pinned_topic_id != topic_id:
+        # `accessible_task_entries(topic_id=...)` сужает только бездатную
+        # ветку выборки (см. её докстринг) — датные задания приходят по всем
+        # доступным темам ученика разом, независимо от `topic_id`. Без этого
+        # дофильтра сюда попала бы дублем и датная задача самого цикла.
+        pinned_entries = [
+            entry for entry in accessible_task_entries(
+                db, user_id, start=window_start, end=window_end,
+                topic_id=pinned_topic_id, include_undated=True,
+            )
+            if entry["task"].topic_id == pinned_topic_id
+        ]
+        entries = pinned_entries + entries
     if not entries:
         return []
 
@@ -483,10 +520,27 @@ def feed_for_student(
         topic = chosen
     else:
         topic, start, end = current_topic, current_start, current_end
+    # Этап-родитель отображаемого цикла (`topic`) — задания, заведённые прямо
+    # на этапе («Портфолио»), показываются первыми в ленте ЛЮБОГО его цикла,
+    # включая архивный, куда бы ни завела `cycle_id`.
+    pinned_stage_id = topic.parent_id if topic is not None else None
     steps = build_cycle_feed(
         db, user_id=user_id, user_tariff=user_tariff, start=start, end=end,
         topic_id=topic.id if topic is not None else None,
+        pinned_topic_id=pinned_stage_id,
     )
+    pinned_tasks = []
+    if pinned_stage_id is not None:
+        seen_pinned_ids: set[int] = set()
+        for step in steps:
+            task = step["task"]
+            if (
+                step["first_in_task"]
+                and task.topic_id == pinned_stage_id
+                and task.id not in seen_pinned_ids
+            ):
+                pinned_tasks.append({"id": task.id, "title": task.title})
+                seen_pinned_ids.add(task.id)
     # Карусель показывает циклы только текущего этапа — прямая ссылка на
     # старый цикл (`chosen` выше) при этом ищется без сужения по этапу,
     # владелец 24.09.2026 просил её не запирать.
@@ -528,6 +582,10 @@ def feed_for_student(
             for item in cycles
         ],
         "stage": stage,
+        # Кнопки перед циклами в карусели («Портфолио») — задания, заведённые
+        # прямо на этапе. Якорь на них уже есть у любого шага ленты
+        # (`id="learning-task-{{ task.id }}"` у первого блока задания).
+        "pinned_tasks": pinned_tasks,
         "waiting_for": waiting_for,
         # Открыт прошлый цикл, а не тот, на котором ученик стоит сейчас:
         # экран показывает его только для чтения.
