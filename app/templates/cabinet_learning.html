@@ -3,7 +3,7 @@
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/tracker.css?v=61">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=1">
-<link rel="stylesheet" href="/static/css/cycle_carousel.css?v=2">
+<link rel="stylesheet" href="/static/css/cycle_carousel.css?v=3">
 {% endblock %}
 {% block content %}
 {#
@@ -56,19 +56,13 @@
                без дат: ведёт не на другой URL, а к тому же шагу, что уже
                рендерится первым в текущей ленте (владелец 24.09.2026). #}
             {% for pinned in feed.pinned_tasks %}
-            <a class="lrn-carousel-card lrn-carousel-card--pinned"
-               href="#learning-task-{{ pinned.id }}" data-pinned-task-id="{{ pinned.id }}">
-                <span class="lrn-carousel-card-title">{{ pinned.title }}</span>
-            </a>
+            <a class="lrn-carousel-card"
+               href="#learning-task-{{ pinned.id }}" data-pinned-task-id="{{ pinned.id }}">{{ pinned.title }}</a>
             {% endfor %}
             {% for cycle in feed.cycles %}
             <a class="lrn-carousel-card{{ ' is-current' if cycle.is_current }}"
                href="/cabinet/learning{{ '' if cycle.is_current else '?cycle=' ~ cycle.id }}"
-               data-cycle-id="{{ cycle.id }}">
-                <span class="lrn-carousel-card-title">{{ cycle.title }}</span>
-                <span class="lrn-carousel-card-dates">{{ cycle.start.strftime('%d.%m') }} — {{ cycle.end.strftime('%d.%m') }}</span>
-                {% if cycle.is_current %}<span class="lrn-carousel-card-badge">Текущий</span>{% endif %}
-            </a>
+               data-cycle-id="{{ cycle.id }}">{{ cycle.title }}</a>
             {% endfor %}
         </div>
     </div>

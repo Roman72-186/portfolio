@@ -3,7 +3,14 @@
    (сняты из tracker.css вместе с разметкой в cabinet_learning.html):
    «стекляшка, можно листать, как раньше каруселью» — переключатель между
    циклами одного этапа, не между вкладками недели (те остаются снятыми,
-   владелец 06.09.2026). Свайп — нативный CSS scroll-snap, без JS-библиотек. */
+   владелец 06.09.2026). Свайп — нативный CSS scroll-snap, без JS-библиотек.
+
+   Второй заход (владелец 24.09.2026): первая версия делала карточки на 82%
+   ширины экрана — «плашки снова огромные, что на десктопе, что на
+   мобилке». Названия короткие («Цикл 1», «Цикл 2», «Портфолио»), даты под
+   названием убраны — карточка стала компактной «пилюлей» по содержимому,
+   тем же паттерном, что и переключатель циклов в админке
+   (`.prg-cycle-pill`, `program.css`) — один визуальный язык на оба экрана. */
 
 .lrn-carousel {
     margin: 0 0 14px;
@@ -11,68 +18,56 @@
 }
 .lrn-carousel-track {
     display: flex;
-    gap: 10px;
+    flex-wrap: wrap;
+    gap: 8px;
     overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    scroll-padding: 0 8%;
-    padding: 2px 8% 4px;
+    scroll-snap-type: x proximity;
+    padding: 2px 4px 4px;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
 }
 .lrn-carousel-track::-webkit-scrollbar { display: none; }
 
 .lrn-carousel-card {
-    flex: 0 0 82%;
-    scroll-snap-align: center;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 12px 16px;
-    border-radius: var(--r-lg);
-    border: 1px solid var(--line);
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+    display: inline-flex;
+    align-items: center;
+    padding: 9px 18px;
+    border-radius: var(--r-pill);
+    border: 1.5px solid var(--line);
     text-decoration: none;
     color: var(--text);
+    white-space: nowrap;
+    font-size: 14px;
+    font-weight: 800;
     /* Стекло — те же значения, что уже приняты в tracker.css (шапка ленты
-       и бургер-меню): rgba(249,249,251,0.82) + blur(20px) saturate(180%). */
+       и бургер-меню) и в переключателе циклов админки: rgba(249,249,251,0.82)
+       + blur(20px) saturate(180%). */
     background: rgba(249,249,251,0.82);
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    transition: transform .12s ease, border-color .12s ease;
 }
-.lrn-carousel-card.is-current {
+.lrn-carousel-card:hover,
+.lrn-carousel-card:focus-visible {
+    transform: scale(1.06);
     border-color: var(--blue);
 }
-/* «Портфолио» и другие задания этапа — кнопка, не карточка периода: своей
-   ширины по содержимому, без даты под названием (владелец 24.09.2026:
-   «отдельной кнопочкой»). */
-.lrn-carousel-card--pinned {
-    flex: 0 0 auto;
-    align-items: center;
-    justify-content: center;
-    padding: 12px 20px;
-}
-.lrn-carousel-card--pinned .lrn-carousel-card-title {
-    white-space: nowrap;
-}
-.lrn-carousel-card-title {
-    font-size: 15px;
-    font-weight: 800;
-}
-.lrn-carousel-card-dates {
-    font-size: 13px;
-    color: var(--dim);
-}
-.lrn-carousel-card-badge {
-    align-self: flex-start;
-    margin-top: 4px;
-    padding: 2px 8px;
-    border-radius: 999px;
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--blue);
-    background: rgba(0,122,255,0.12);
+/* Текущий цикл — не только цвет обводки (было «подсвечены непонятно»):
+   фон синим тоном и то же увеличение, что на hover, держится постоянно —
+   видно с первого взгляда, не только при наведении. */
+.lrn-carousel-card.is-current {
+    border-color: var(--blue);
+    background: var(--blue-soft);
+    color: var(--blue-on-soft);
+    transform: scale(1.06);
 }
 
 @media (prefers-reduced-motion: reduce) {
     .lrn-carousel-track { scroll-behavior: auto; }
+    .lrn-carousel-card,
+    .lrn-carousel-card.is-current,
+    .lrn-carousel-card:hover { transform: none; }
 }
