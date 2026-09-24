@@ -101,3 +101,26 @@ def test_can_still_read_blocks_of_archived_task(auth_client, db):
     resp = client.get(f"/cabinet/tracker/tasks/{old_task.id}/blocks")
 
     assert resp.status_code == 200
+
+
+def test_running_cycle_is_not_archive_even_if_another_is_current(auth_client, db):
+    """Прецедент 25.09.2026: «Цикл 1» (23–27.09) и «Цикл 2» (весь этап,
+    16.09–04.10) шли одновременно. Текущим сервер выбрал второй, и все отметки
+    в первом получали 403, хотя цикл ещё шёл. Архив — только закончившийся."""
+    client, user = auth_client
+    _cycle(
+        db, user, title="Длинный цикл",
+        starts_on=TODAY - timedelta(days=8), ends_on=TODAY + timedelta(days=10),
+    )
+    short = _cycle(
+        db, user, title="Короткий цикл внутри",
+        starts_on=TODAY - timedelta(days=1), ends_on=TODAY + timedelta(days=2),
+    )
+    other = _cycle(
+        db, user, title="Ещё один идущий",
+        starts_on=TODAY - timedelta(days=5), ends_on=TODAY + timedelta(days=5),
+    )
+    for topic in (short, other):
+        task = _task_in_topic(db, user, topic, title=f"Задание {topic.title}")
+        resp = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
+        assert resp.status_code == 200, (topic.title, resp.text)

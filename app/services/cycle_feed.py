@@ -480,8 +480,8 @@ def cycle_is_archived_for_user(
 ) -> bool:
     """Цикл `topic_id` для ученика — архив (только просмотр).
 
-    Архив — начавшийся цикл (`kind='week'`), который не совпадает с тем, на
-    котором ученик стоит сейчас (`effective_cycle`). Владелец 24.09.2026:
+    Архив — закончившийся цикл (`kind='week'`), который не совпадает с тем,
+    на котором ученик стоит сейчас (`effective_cycle`). Владелец 24.09.2026:
     пока этап открыт, прошлые циклы доступны только на чтение. Прямая ссылка
     на цикл закрытого этапа тоже остаётся архивом (не 404) — тот же принцип,
     что у прошедшей темы вообще («учебный архив», `models/learning_topic.py`).
@@ -489,10 +489,22 @@ def cycle_is_archived_for_user(
     topic = db.get(LearningTopic, topic_id)
     if topic is None or topic.kind != TOPIC_KIND_WEEK:
         return False
-    if cycle_bounds(topic)[0] > today:
+    if not _cycle_is_over(topic, today):
         return False
     current = effective_cycle(db, user_id, today)
     return current is None or current.id != topic.id
+
+
+def _cycle_is_over(topic: LearningTopic, today: date) -> bool:
+    """Цикл закончился — дата окончания уже прошла.
+
+    Архивом (только просмотр) бывает только закончившийся цикл. Идущий цикл
+    не архив, даже если «текущим» для ученика выбран другой: даты циклов в
+    этапе могут пересекаться. Прецедент 25.09.2026: «Цикл 1» (23–27.09) и
+    «Цикл 2» (16.09–04.10) шли одновременно, текущим стал второй, и все
+    отметки в первом сервер отклонял 403 «Цикл пройден», хотя цикл ещё шёл.
+    """
+    return cycle_bounds(topic)[1] < today
 
 
 def feed_for_student(
@@ -627,9 +639,13 @@ def feed_for_student(
         "waiting_for": waiting_for,
         # Открыт прошлый цикл, а не тот, на котором ученик стоит сейчас:
         # экран показывает его только для чтения.
+        # Только закончившийся цикл: то же правило, что у пишущих эндпоинтов
+        # (`cycle_is_archived_for_user`), иначе экран спрятал бы кнопки там,
+        # где сервер отметку примет.
         "is_archive": (
             chosen is not None
             and (current_topic is None or chosen.id != current_topic.id)
+            and _cycle_is_over(chosen, today)
         ),
         "done_count": sum(1 for step in steps if step["status"] == STATUS_DONE),
         "total_count": len(steps),
