@@ -212,7 +212,16 @@ function uploadBlockPhotos(row, files) {
 
 (function () {
     var form = document.querySelector('[data-item-form]');
+    // Статичный редактор ниже и `diagnosticBuilder`-одиночка — легаси-путь
+    // отдельного вида archi_profile (владелец 24.09.2026, оставлен как есть:
+    // у него нет тайла создания на этом экране, только правка старых задач).
+    // Новый способ — диагностика строкой в `[data-blocks]`, см. `data-add-diagnostic`
+    // и `program_blocks_editor_js.html::fillBlockRow`/`collectFormBlocks`.
     var diagnosticBuilder = window.DiagnosticBuilder.create(form.querySelector('[data-diagnostic-editor]'));
+    // `BLOCK_LABELS` собран из `block_types` сервера (общий partial) — там
+    // диагностики нет (не настоящий `TaskBlock.block_type`), подпись строки
+    // конструктора добавляем на этой странице отдельно.
+    BLOCK_LABELS.diagnostic = 'Диагностика';
     var tile = document.querySelector('[data-open-form]');
     var formTitle = form.querySelector('[data-item-form-title]');
     var message = form.querySelector('[data-form-message]');
@@ -328,26 +337,38 @@ function uploadBlockPhotos(row, files) {
         });
     }
 
+    // Вопросы диагностики как список псевдо-блоков «вопрос» для предпросмотра
+    // «Глазами ученика» — это ровно то, что ученик увидит, N отдельных
+    // вопросов, не один диагностический виджет (владелец 22.09.2026).
+    function diagnosticPreviewBlocks(questions) {
+        return (questions || []).map(function (question, index) {
+            return {
+                block_type: 'question',
+                title: 'Вопрос ' + (index + 1),
+                body: question.text,
+                question_type: 'single',
+                options: (question.options || []).map(function (option) { return {text: option.text}; })
+            };
+        });
+    }
+
     function previewBlocks(form) {
         var box = form.querySelector('[data-preview]');
-        // Диагностика не держит вопросы в общем редакторе блоков — у нее свой
-        // `[data-diagnostic-editor]` (владелец 22.09.2026: раньше предпросмотр
-        // диагностики всегда был пуст, потому что `collectFormBlocks` смотрит
-        // только в `[data-blocks]`, которого у archi_profile-формы нет вовсе).
-        // С 24.09.2026 диагностика может стоять рядом с обычными блоками —
-        // складываем оба набора, а не выбираем один вместо другого.
-        var blocks = collectFormBlocks(form);
+        var blocks = [];
+        // Отдельный вид archi_profile (легаси) — свой статичный редактор вне
+        // `[data-blocks]`, добавляем его вопросы отдельно.
         if (!form.querySelector('[data-diagnostic-note]').hidden) {
-            blocks = blocks.concat(diagnosticBuilder.questions().map(function (question, index) {
-                return {
-                    block_type: 'question',
-                    title: 'Вопрос ' + (index + 1),
-                    body: question.text,
-                    question_type: 'single',
-                    options: (question.options || []).map(function (option) { return {text: option.text}; })
-                };
-            }));
+            blocks = blocks.concat(diagnosticPreviewBlocks(diagnosticBuilder.questions()));
         }
+        // Диагностика внутри обычного «Задания» (владелец 24.09.2026, второй
+        // раунд) — одна строка `block_type: 'diagnostic'` среди обычных
+        // блоков; на месте этой строки разворачиваем её в N вопросов, чтобы
+        // предпросмотр показывал их так же, как их увидит ученик, и там же,
+        // где куратор поставил диагностику среди остальных блоков.
+        collectFormBlocks(form).forEach(function (block) {
+            if (block.block_type !== 'diagnostic') { blocks.push(block); return; }
+            blocks = blocks.concat(diagnosticPreviewBlocks(block.diagnostic && block.diagnostic.questions));
+        });
         box.innerHTML = '';
         if (!blocks.length) {
             box.innerHTML = '<p class="prg-hint">Пока нечего показывать — добавьте блоки.</p>';
@@ -455,12 +476,19 @@ function uploadBlockPhotos(row, files) {
             window.RichTextField.refresh(fields.description);
             fields.required.checked = !!data.is_required;
             fields.starts.value = data.starts_on || '';
-            // Блоки диагностики сюда не попадают ни у одного вида — сервер
-            // уже отфильтровал их из `data.blocks` (`_edit_payloads`,
-            // владелец 24.09.2026): у варианта диагностики нет и не может
-            // быть «верного ответа», отправка их обратно как обычных
-            // блоков уже один раз ловила ошибку валидации (жалоба 22.09.2026).
+            // У archi_profile (легаси) отдельные блоки-вопросы диагностики
+            // сюда не попадают вовсе — их редактирует статичная панель выше
+            // (`data.diagnostic`). У обычного «Задания» диагностика — одна
+            // строка `block_type: 'diagnostic'` внутри `data.blocks`, на
+            // своём месте среди остальных блоков (владелец 24.09.2026,
+            // второй раунд); `renderFormBlocks`/`fillBlockRow` подхватывают
+            // её тем же общим циклом, что и любой другой тип.
             renderFormBlocks(form, data.blocks || []);
+            // Тренажёр диагностики нужен реальные id из базы (владелец
+            // 22.09.2026) — они есть, только когда задание уже сохранено,
+            // то есть всегда в этом обработчике (правка, не создание).
+            var diagnosticEditRow = form.querySelector('[data-block][data-block-type="diagnostic"]');
+            if (diagnosticEditRow) diagnosticEditRow.querySelector('[data-diagnostic-trainer]').hidden = false;
             formTitle.textContent = form.dataset.itemKind === 'archi_profile' ? 'Правка диагностики' : 'Правка задания';
             openForm();
         });
@@ -475,9 +503,10 @@ function uploadBlockPhotos(row, files) {
         }
         message.classList.remove('is-error');
         // Отдельный вид archi_profile ни во что не кладёт payload.blocks
-        // (сервер их игнорирует), поэтому у него это всегда пусто. Для
-        // «Задания» — обычные блоки, диагностика (если добавлена) идёт
-        // рядом отдельным полем, не вместо них (владелец 24.09.2026).
+        // (сервер их игнорирует), поэтому у него это всегда пусто. У
+        // «Задания» — обычные блоки плюс, если добавлена, диагностика одной
+        // строкой среди них же (владелец 24.09.2026, второй раунд — та же
+        // строка ниже валидируется/дополняется отдельно, до отправки).
         var payload = {
             title: title,
             subject: fields.subject.value || null,
@@ -486,9 +515,8 @@ function uploadBlockPhotos(row, files) {
             starts_on: fields.starts.value || null,
             blocks: form.dataset.itemKind === 'archi_profile' ? [] : collectFormBlocks(form)
         };
-        // Диагностика в форме — у отдельного вида archi_profile всегда, у
-        // «Задания» только если её добавили кнопкой «+ Диагностика» (панель
-        // `[data-diagnostic-note]` видна).
+        // Отдельный вид archi_profile (легаси) — свой статичный редактор вне
+        // `[data-blocks]`, диагностика идёт отдельным полем `payload.diagnostic`.
         if (!form.querySelector('[data-diagnostic-note]').hidden) {
             // Первое «Сохранить» с экрана «Вопросы» только переводит на
             // «Результаты» — настоящая отправка формы (и выход) идёт со
@@ -502,6 +530,30 @@ function uploadBlockPhotos(row, files) {
                 message.textContent = error.message;
                 message.classList.add('is-error');
                 diagnosticBuilder.showError(error.message);
+                return;
+            }
+        }
+        // Диагностика внутри обычного «Задания» (владелец 24.09.2026, второй
+        // раунд) — одна строка среди `payload.blocks`, уже собранная
+        // `collectFormBlocks` нестрого (для порядка и предпросмотра). Перед
+        // реальной отправкой добираем её до конца тем же приёмом «Вопросы →
+        // Результаты», что и у легаси-панели выше, и заменяем черновой
+        // `.diagnostic` на провалидированный.
+        var diagnosticRow = form.querySelector('[data-block][data-block-type="diagnostic"]');
+        if (diagnosticRow) {
+            if (!diagnosticRow._diagnosticBuilder.isOnResultsStep()) {
+                diagnosticRow._diagnosticBuilder.goToResults();
+                diagnosticRow.scrollIntoView({behavior: 'smooth', block: 'start'});
+                return;
+            }
+            try {
+                var diagnosticItem = payload.blocks.filter(function (b) { return b.block_type === 'diagnostic'; })[0];
+                diagnosticItem.diagnostic = diagnosticRow._diagnosticBuilder.collect();
+            } catch (error) {
+                message.textContent = error.message;
+                message.classList.add('is-error');
+                diagnosticRow._diagnosticBuilder.showError(error.message);
+                diagnosticRow.scrollIntoView({behavior: 'smooth', block: 'start'});
                 return;
             }
         }
@@ -556,20 +608,27 @@ function uploadBlockPhotos(row, files) {
     // на дне устроен общий обработчик кликов на всю страницу.
     form.addEventListener('click', function (event) {
         if (event.target.closest('[data-add-diagnostic]')) {
-            // Диагностика — ещё один блок внутри текущего «Задания», не
-            // отдельный шаг (владелец 24.09.2026): доступность настраивается
-            // так же, как у остальных материалов, обычные блоки и
-            // предпросмотр никуда не прячутся.
+            // Диагностика — строка в общем списке блоков, на своём месте в
+            // порядке, с той же панелью «Доступность блока», что и у любого
+            // другого типа (владелец 24.09.2026, второй раунд: «полностью те
+            // же фильтры, что и в других кнопках»). Задание несёт не больше
+            // одной диагностики — повторный клик не заводит вторую строку, а
+            // прокручивает к уже существующей.
             message.textContent = '';
             message.classList.remove('is-error');
-            // Панель стоит выше кнопки, которая её открывает (сразу после
-            // «Откроется не раньше», до «Задачи учебного дня») — без прокрутки
-            // клик выглядел так, будто ничего не произошло: новый блок
-            // появлялся выше текущей позиции прокрутки, вне поля зрения
-            // (жалоба владельца 24.09.2026, «нажимаю и тишина»).
-            var note = form.querySelector('[data-diagnostic-note]');
-            note.hidden = false;
-            note.scrollIntoView({behavior: 'smooth', block: 'start'});
+            var existingRow = form.querySelector('[data-block][data-block-type="diagnostic"]');
+            if (existingRow) {
+                existingRow.scrollIntoView({behavior: 'smooth', block: 'start'});
+                return;
+            }
+            var diagnosticHolder = form.querySelector('[data-blocks]');
+            diagnosticHolder.insertAdjacentHTML('beforeend', blockRowHTML('diagnostic'));
+            var diagnosticRow = diagnosticHolder.lastElementChild;
+            diagnosticRow._diagnosticBuilder = window.DiagnosticBuilder.create(
+                diagnosticRow.querySelector('[data-diagnostic-editor]')
+            );
+            renumberBlocks(diagnosticHolder);
+            diagnosticRow.scrollIntoView({behavior: 'smooth', block: 'nearest'});
             return;
         }
         var previewBtn = event.target.closest('[data-preview-blocks]');
@@ -580,8 +639,15 @@ function uploadBlockPhotos(row, files) {
         var trainerBtn = event.target.closest('[data-diagnostic-trainer]');
         if (trainerBtn) {
             if (fields.id.value) {
+                // Ищем бокс результата в том же контейнере, что и нажатая
+                // кнопка (`[data-diagnostic-note]` у легаси archi_profile,
+                // `[data-block]` у строки внутри обычного «Задания») — оба
+                // могут одновременно присутствовать в DOM (первый скрытым),
+                // `form.querySelector` без уточнения контейнера всегда нашёл
+                // бы первый по document order, не тот, что рядом с кликом.
+                var trainerContainer = trainerBtn.closest('[data-diagnostic-note], [data-block]');
                 window.diagnosticTrainer.run({
-                    box: form.querySelector('[data-diagnostic-trainer-box]'),
+                    box: trainerContainer.querySelector('[data-diagnostic-trainer-box]'),
                     taskId: fields.id.value,
                     csrfToken: csrfToken
                 });

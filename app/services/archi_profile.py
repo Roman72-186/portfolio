@@ -182,11 +182,34 @@ def validate_diagnostic_config(raw: dict) -> dict:
     return {"questions": clean_questions, "results": clean_results}
 
 
-def blocks_from_config(config: dict) -> list[dict]:
+def blocks_from_config(config: dict, availability: dict | None = None) -> list[dict]:
+    """Вопросы диагностики как список блоков для `sync_task_blocks`.
+
+    `availability` — те же поля «Доступность блока», что у любого другого
+    типа (`is_required`/`opens_at`/`closes_at`/`tariffs`/`required_tariffs`/
+    `subject`/`locked_message`/`bypass_sequence`), накладываются одинаково на
+    КАЖДЫЙ вопрос (владелец 24.09.2026, второй раунд: «полностью те же
+    фильтры, что и в остальных кнопках» — куратор настраивает их один раз на
+    строке диагностики в конструкторе, а не по вопросу). До этого здесь было
+    жёстко зашито `is_required = index == len(questions)` (только последний
+    вопрос блокировал хвост ленты, без права куратора это выключить) —
+    заменено на явное значение из `availability`, единый источник для всех
+    типов блоков.
+    """
+    availability = availability or {}
+    base = {
+        "is_required": availability.get("is_required", False),
+        "opens_at": availability.get("opens_at"),
+        "closes_at": availability.get("closes_at"),
+        "tariffs": availability.get("tariffs") or [],
+        "required_tariffs": availability.get("required_tariffs") or [],
+        "subject": availability.get("subject"),
+        "locked_message": availability.get("locked_message"),
+        "bypass_sequence": availability.get("bypass_sequence", False),
+    }
     return [
-        {"block_type": BLOCK_QUESTION, "title": f"Вопрос {index}", "body": question["text"],
-         "question_type": QUESTION_SINGLE, "is_required": index == len(config["questions"]),
-         "is_diagnostic": True,
+        {**base, "block_type": BLOCK_QUESTION, "title": f"Вопрос {index}", "body": question["text"],
+         "question_type": QUESTION_SINGLE, "is_diagnostic": True,
          "options": [{"text": option["text"], "is_correct": False} for option in question["options"]]}
         for index, question in enumerate(config["questions"], 1)
     ]

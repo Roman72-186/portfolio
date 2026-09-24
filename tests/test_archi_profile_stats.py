@@ -161,7 +161,7 @@ def test_activity_aggregator_lists_both_kinds_and_skips_unpublished(
         f"/cabinet/staff/program/cycles/{cycle.json()['cycle_id']}/items/material",
         json={"title": "Материал со встроенной диагностикой", "description": None,
               "subject": None, "is_required": True, "starts_on": None,
-              "blocks": [], "diagnostic": config},
+              "blocks": [{"block_type": "diagnostic", "diagnostic": config}]},
         headers={"X-CSRF-Token": "x"},
     )
     assert embedded.status_code == 200, embedded.text

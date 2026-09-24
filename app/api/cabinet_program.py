@@ -262,10 +262,12 @@ def _edit_payloads(
             # Дата открытия задания — для предзаполнения формы правки.
             "starts_on": msk_date(item.starts_at).isoformat() if item.starts_at else None,
         }
-        # Не только у archi_profile (владелец 24.09.2026): диагностика может
-        # лежать блоками и внутри обычного «Задания» — форма правки должна
-        # подхватить её конфиг оттуда же, что и у отдельного вида.
-        if item.diagnostic_config:
+        # Только у отдельного вида archi_profile (легаси-заготовка, владелец
+        # 24.09.2026, второй раунд): его форма по-прежнему читает диагностику
+        # отдельным полем и своим статичным редактором — блоки конструктора у
+        # него скрыты целиком. Диагностика внутри обычного «Задания» с этого
+        # раунда — одна строка в `payload["blocks"]` (см. ниже), не это поле.
+        if item.diagnostic_config and item.kind == ITEM_ARCHI_PROFILE:
             payload["diagnostic"] = item.diagnostic_config
         # Тариф правится, только пока тема элемента — служебная тема ровно
         # этого элемента (TOPIC_KIND_PROGRAM_ITEM). Элементы, попавшие в день
@@ -312,8 +314,38 @@ def _edit_payloads(
         block_images = get_task_block_images(db, [b.id for b in blocks])
         block_tariffs = get_task_block_tariffs(db, [b.id for b in blocks])
         block_required_tariffs = get_task_block_required_tariffs(db, [b.id for b in blocks])
-        payload["blocks"] = [
-            {
+        item_blocks: list[dict] = []
+        diagnostic_emitted = False
+        for b in blocks:
+            if b.is_diagnostic:
+                # У archi_profile (легаси) диагностика не попадает в блоки
+                # вовсе — её редактирует отдельная static-панель (см.
+                # `payload["diagnostic"]` выше), а общий список блоков у неё
+                # скрыт целиком. У «Задания» — одна синтетическая строка
+                # `block_type == "diagnostic"` на месте первого блока-вопроса,
+                # с настройками доступности, снятыми с него же (все блоки
+                # диагностики несут одинаковые — см. `blocks_from_config`);
+                # остальные блоки-вопросы той же диагностики просто
+                # пропускаются, они уже учтены этой одной строкой.
+                if item.kind != ITEM_ARCHI_PROFILE and not diagnostic_emitted:
+                    diagnostic_emitted = True
+                    item_blocks.append({
+                        "id": None, "block_type": DIAGNOSTIC_PSEUDO_BLOCK_TYPE,
+                        "diagnostic": item.diagnostic_config,
+                        "is_required": b.is_required,
+                        "subject": b.subject,
+                        "tariffs": sorted(block_tariffs.get(b.id, set())),
+                        "required_tariffs": sorted(block_required_tariffs.get(b.id, set())),
+                        "opens_at": msk_date(b.opens_at).isoformat() if b.opens_at else None,
+                        "closes_at": (
+                            b.closes_at.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M")
+                            if b.closes_at else None
+                        ),
+                        "locked_message": b.locked_message,
+                        "bypass_sequence": b.bypass_sequence,
+                    })
+                continue
+            item_blocks.append({
                 "id": b.id,
                 "block_type": b.block_type,
                 "title": b.title,
@@ -360,14 +392,8 @@ def _edit_payloads(
                 ]
                 if b.block_type in (BLOCK_QUESTION, BLOCK_SCALE, BLOCK_RULES)
                 else [],
-            }
-            # Блоки диагностики сюда не попадают ни у одного вида (владелец
-            # 24.09.2026): их редактирует `diagnostic`/`diagnosticBuilder`,
-            # не общий редактор блоков — у варианта диагностики нет и не
-            # может быть «верного ответа», отправка их обратно как обычных
-            # блоков уже один раз ловила ошибку валидации (жалоба 22.09.2026).
-            for b in blocks if not b.is_diagnostic
-        ]
+            })
+        payload["blocks"] = item_blocks
         payloads[item.id] = payload
     return payloads
 
@@ -660,6 +686,16 @@ class BlockOptionItem(BaseModel):
         return value
 
 
+# Псевдо-тип блока, которого нет ни в одной строке `task_blocks` (владелец
+# 24.09.2026, второй раунд — «те же фильтры доступности, что и в остальных
+# кнопках»). В конструкторе диагностика — одна строка среди обычных блоков,
+# со своим местом в порядке и общей панелью «Доступность блока». На сервере
+# `_blocks_with_diagnostic_expanded` разворачивает её в N настоящих
+# блоков-вопросов (`block_type="question"`, `is_diagnostic=True`) ровно на
+# её месте — поэтому тип не входит в `BLOCK_TYPES`/`sync_blocks` вовсе.
+DIAGNOSTIC_PSEUDO_BLOCK_TYPE = "diagnostic"
+
+
 class BlockItem(BaseModel):
     """Один блок содержимого элемента (владелец 31.08.2026, универсальный
     конструктор — см. `app/models/task_block.py`).
@@ -732,6 +768,11 @@ class BlockItem(BaseModel):
     # момента, когда блок впервые стал ему доступен. Поддерживает 24, 48, 72
     # и любое другое целое значение в разумных пределах.
     portfolio_window_hours: int | None = Field(default=None, ge=1, le=8760)
+    # Только у `block_type == "diagnostic"` — вопросы и результаты диагностики
+    # (та же форма, что принимает `validate_diagnostic_config`). Остальные
+    # специализированные поля этого класса (`body`, `url`, `options`…) у
+    # диагностики не используются — она не хранится этой строкой напрямую.
+    diagnostic: dict | None = None
 
     @model_validator(mode="after")
     def choice_question_needs_a_right_answer(self) -> "BlockItem":
@@ -755,7 +796,7 @@ class BlockItem(BaseModel):
     @classmethod
     def validate_block_type(cls, value: str) -> str:
         value = (value or "").strip()
-        if value not in BLOCK_TYPES:
+        if value not in BLOCK_TYPES and value != DIAGNOSTIC_PSEUDO_BLOCK_TYPE:
             raise ValueError(f"Неизвестный тип блока: {value}")
         return value
 
@@ -1016,6 +1057,85 @@ def diagnostic_trainer_score(
     return JSONResponse({"ok": True, "archi_profile": result})
 
 
+def _diagnostic_availability(item: "BlockItem") -> dict:
+    """Общие поля «Доступность блока» с одной строки конструктора —
+    накладываются одинаково на каждый сгенерированный блок-вопрос (владелец
+    24.09.2026, второй раунд)."""
+    return {
+        "is_required": item.is_required,
+        "opens_at": item.opens_at,
+        "closes_at": item.closes_at,
+        "tariffs": item.tariffs,
+        "required_tariffs": item.required_tariffs,
+        "subject": item.subject,
+        "locked_message": item.locked_message,
+        "bypass_sequence": item.bypass_sequence,
+    }
+
+
+def _expand_diagnostic_entry(db: DBSession, task: TrackerTask, entry: "BlockItem") -> list[dict]:
+    """Одна строка `block_type == "diagnostic"` → список словарей блоков-
+    вопросов для `sync_task_blocks`, на месте этой строки в общем порядке.
+
+    Конфиг (вопросы/результаты) не поменялся — берём уже сохранённые блоки
+    по их реальным id (`_diagnostic_block_items_from_db`), только освежая
+    доступность: иначе `sync_blocks` считал бы каждое сохранение новым
+    набором блоков и терял бы уже собранные ответы учеников. Конфиг
+    поменялся — 409, если на диагностику уже ответили (та же защита, что
+    была у смены вопросов archi_profile-задания).
+    """
+    from app.models.task_block import TaskBlockResponse
+    from app.services.archi_profile import blocks_from_config, validate_diagnostic_config
+
+    try:
+        new_config = validate_diagnostic_config(entry.diagnostic)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    availability = _diagnostic_availability(entry)
+    if new_config != task.diagnostic_config:
+        if db.query(TaskBlockResponse.id).filter_by(task_id=task.id).first():
+            raise HTTPException(
+                status_code=409,
+                detail="На диагностику уже ответили: вопросы и результаты менять нельзя",
+            )
+        task.diagnostic_config = new_config
+        return blocks_from_config(new_config, availability)
+    return _diagnostic_block_items_from_db(db, task.id, availability)
+
+
+def _blocks_with_diagnostic_expanded(
+    db: DBSession, task: TrackerTask, blocks: list["BlockItem"]
+) -> list[dict]:
+    """Список блоков конструктора, готовый для `sync_task_blocks`, с
+    развёрнутой диагностикой на её месте (владелец 24.09.2026, второй раунд:
+    «должна добавляться по порядку с остальными заданиями», «полностью те
+    же фильтры по доступности, что и в других кнопках»).
+
+    В форме диагностика — одна строка `block_type == "diagnostic"` среди
+    обычных блоков; здесь она разворачивается в N настоящих блоков-вопросов
+    ровно на своём месте, остальные строки проходят как есть. Заданий несёт
+    не больше одной диагностики (`TrackerTask.diagnostic_config` один на
+    задачу) — 422, если строк с диагностикой пришло больше одной. Строка
+    пропала из формы, а диагностика в базе была — куратор её убрал: снимаем,
+    с той же защитой от потери уже отвеченного, что и у смены конфига.
+    """
+    diagnostic_entries = [b for b in blocks if b.block_type == DIAGNOSTIC_PSEUDO_BLOCK_TYPE]
+    if len(diagnostic_entries) > 1:
+        raise HTTPException(status_code=422, detail="Диагностика может быть только одна в задании")
+    items: list[dict] = []
+    for b in blocks:
+        if b.block_type == DIAGNOSTIC_PSEUDO_BLOCK_TYPE:
+            items.extend(_expand_diagnostic_entry(db, task, b))
+        else:
+            items.append(b.model_dump())
+    if not diagnostic_entries and task.diagnostic_config is not None:
+        from app.models.task_block import TaskBlockResponse
+        if db.query(TaskBlockResponse.id).filter_by(task_id=task.id).first():
+            raise HTTPException(status_code=409, detail="На диагностику уже ответили: удалить нельзя")
+        task.diagnostic_config = None
+    return items
+
+
 def _create_cycle_item(topic_id: int, payload: CycleItemPayload, user: dict, db: DBSession, kind: str):
     """Новое задание в цикле — без дня и без своей темы: `topic_id` ставится
     прямо на цикл (`LearningTopic(kind='week')`), а не на одноразовую тему
@@ -1052,18 +1172,10 @@ def _create_cycle_item(topic_id: int, payload: CycleItemPayload, user: dict, db:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         block_items = blocks_from_config(task.diagnostic_config) if task.diagnostic_config else preset_blocks()
     else:
-        block_items = [b.model_dump() for b in payload.blocks]
-        # Диагностика внутри обычного «Задания» (владелец 24.09.2026, второй
-        # способ рядом с отдельным видом archi_profile) — добавляем её
-        # блоки-вопросы К обычным, а не вместо них: задание несёт и то, и
-        # другое разом, с общей аудиторией и публикацией.
-        if payload.diagnostic:
-            from app.services.archi_profile import blocks_from_config, validate_diagnostic_config
-            try:
-                task.diagnostic_config = validate_diagnostic_config(payload.diagnostic)
-            except ValueError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
-            block_items = block_items + blocks_from_config(task.diagnostic_config)
+        # Диагностика внутри обычного «Задания» (владелец 24.09.2026) — одна
+        # строка среди обычных блоков, на своём месте в порядке, с общими
+        # для всей задачи аудиторией и публикацией.
+        block_items = _blocks_with_diagnostic_expanded(db, task, payload.blocks)
     sync_task_blocks(db, task_id=task.id, items=block_items)
     db.add(
         AuditLog(
@@ -2148,16 +2260,9 @@ def _create_simple_item(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         block_items = blocks_from_config(task.diagnostic_config) if task.diagnostic_config else preset_blocks()
     else:
-        block_items = [b.model_dump() for b in payload.blocks]
-        # Диагностика внутри обычного «Задания» (владелец 24.09.2026) —
-        # добавляем её блоки-вопросы К обычным, не вместо них.
-        if payload.diagnostic:
-            from app.services.archi_profile import blocks_from_config, validate_diagnostic_config
-            try:
-                task.diagnostic_config = validate_diagnostic_config(payload.diagnostic)
-            except ValueError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
-            block_items = block_items + blocks_from_config(task.diagnostic_config)
+        # Диагностика внутри обычного «Задания» (владелец 24.09.2026) — одна
+        # строка среди обычных блоков, на своём месте в порядке.
+        block_items = _blocks_with_diagnostic_expanded(db, task, payload.blocks)
     sync_task_blocks(db, task_id=task.id, items=block_items)
     db.add(
         AuditLog(
@@ -2474,25 +2579,29 @@ def update_mock_item(
     return JSONResponse({"ok": True})
 
 
-def _diagnostic_block_items_from_db(db: DBSession, task_id: int) -> list[dict]:
+def _diagnostic_block_items_from_db(
+    db: DBSession, task_id: int, availability: dict
+) -> list[dict]:
     """Уже сохранённые блоки-вопросы диагностики этой задачи как `items` для
     `sync_task_blocks` — с реальными `id`, чтобы `sync_blocks` их узнал и
     оставил как есть, а не удалил как «не встретившиеся в списке» и не
-    завёл заново с новыми id (владелец 24.09.2026: при правке обычного
-    «Задания» с диагностикой внутри клиент шлёт только обычные блоки,
-    сама диагностика в форму не подгружена — эта функция достраивает список
-    её блоками, чтобы правка одного не стирала другое)."""
+    завёл заново с новыми id (владелец 24.09.2026: правка не должна стирать
+    уже собранные ответы учеников только из-за того, что конфиг вопросов не
+    менялся). `availability` — свежие «Доступность блока» с только что
+    сохранённой строки формы: их куратор мог поменять, даже если вопросы
+    остались прежними, поэтому накладываем поверх устаревших значений из базы.
+    """
     blocks = [b for b in get_task_blocks(db, task_id) if b.is_diagnostic]
     options = get_task_block_options(db, [b.id for b in blocks])
     return [
         {
             "id": b.id, "block_type": b.block_type, "title": b.title, "body": b.body,
-            "question_type": b.question_type, "is_required": b.is_required,
-            "is_diagnostic": True,
+            "question_type": b.question_type, "is_diagnostic": True,
             "options": [
                 {"text": o.text, "is_correct": o.is_correct}
                 for o in options.get(b.id, [])
             ],
+            **availability,
         }
         for b in blocks
     ]
@@ -2578,26 +2687,9 @@ def _update_simple_item(
             task.diagnostic_config = new_config
             sync_task_blocks(db, task_id=task.id, items=blocks_from_config(new_config))
     elif kind != ITEM_ARCHI_PROFILE:
-        block_items = [b.model_dump() for b in payload.blocks]
-        if payload.diagnostic is not None:
-            from app.models.task_block import TaskBlockResponse
-            from app.services.archi_profile import blocks_from_config, validate_diagnostic_config
-
-            try:
-                new_config = validate_diagnostic_config(payload.diagnostic)
-            except ValueError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
-            if new_config != task.diagnostic_config:
-                if db.query(TaskBlockResponse.id).filter_by(task_id=task.id).first():
-                    raise HTTPException(status_code=409, detail="На диагностику уже ответили: вопросы и результаты менять нельзя")
-                task.diagnostic_config = new_config
-                block_items = block_items + blocks_from_config(new_config)
-            else:
-                block_items = block_items + _diagnostic_block_items_from_db(db, task.id)
-        elif task.diagnostic_config is not None:
-            # Форма не касалась диагностики вовсе — оставляем её блоки как
-            # есть, а не теряем при пересборке обычных.
-            block_items = block_items + _diagnostic_block_items_from_db(db, task.id)
+        # Диагностика внутри обычного «Задания» (владелец 24.09.2026) — одна
+        # строка среди обычных блоков, на своём месте в порядке.
+        block_items = _blocks_with_diagnostic_expanded(db, task, payload.blocks)
         sync_task_blocks(db, task_id=task.id, items=block_items)
     db.add(
         AuditLog(

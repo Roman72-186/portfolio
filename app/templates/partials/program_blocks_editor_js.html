@@ -196,6 +196,20 @@ function blockBodyHTML(type) {
             + '<label class="prg-field"><input type="url" data-b-url maxlength="500" aria-label="Адрес ссылки" placeholder="Адрес ссылки"></label>'
             + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Надпись на кнопке" placeholder="Надпись на кнопке"></label>';
     }
+    if (type === 'diagnostic') {
+        // Псевдо-тип, которого нет в БД (владелец 24.09.2026, второй раунд) —
+        // одна строка среди обычных блоков, а вопросы/результаты правятся
+        // своим редактором (`DiagnosticBuilder`), не общими полями блока.
+        // Панель «Доступность блока» ниже (`blockSettingsHTML`) при этом та
+        // же самая, генерика ни во что не упирается — этого и просил
+        // владелец: «полностью те же фильтры, что и в других кнопках».
+        return ''
+            + '<div data-diagnostic-editor></div>'
+            + '<div class="prg-actions">'
+            + '  <button type="button" class="btn-outline" data-diagnostic-trainer hidden>Пройти как тренажёр</button>'
+            + '</div>'
+            + '<div class="prg-preview" data-diagnostic-trainer-box hidden></div>';
+    }
     // question
     return ''
         + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Текст вопроса" placeholder="Текст вопроса"></textarea>' + BODY_FORMAT_HINT + '</label>'
@@ -413,6 +427,15 @@ function fillBlockRow(row, block) {
         });
         syncBlockOptions(row);
     }
+    // Диагностика (владелец 24.09.2026, второй раунд): своя строка среди
+    // обычных блоков, вопросы/результаты подгружает `DiagnosticBuilder`, не
+    // generic-поля выше. Билдер держим на самой строке (`row._diagnosticBuilder`)
+    // — его находят «Пройти как тренажёр» и сбор формы при сохранении.
+    if (row.getAttribute('data-block-type') === 'diagnostic' && window.DiagnosticBuilder) {
+        var editorMount = row.querySelector('[data-diagnostic-editor]');
+        row._diagnosticBuilder = window.DiagnosticBuilder.create(editorMount);
+        row._diagnosticBuilder.load(block.diagnostic || null);
+    }
 }
 
 // Тот же приём, что renumberTickets у билетов Пробника — при 7+ блоках
@@ -484,6 +507,17 @@ function collectFormBlocks(form) {
         row.querySelectorAll('[data-b-required-tariff]:checked').forEach(function (box) {
             item.required_tariffs.push(box.value);
         });
+        if (type === 'diagnostic') {
+            // Черновой (нестрогий) сбор — для позиции в списке и для
+            // предпросмотра «Глазами ученика». Полную проверку (вопросы +
+            // результаты + назначенные сочетания) перед реальной отправкой
+            // формы делает кнопка «Сохранить» отдельно, через
+            // `row._diagnosticBuilder.collect()` — так предпросмотр не падает
+            // на незаконченной диагностике, а сохранение её не пропускает.
+            item.diagnostic = row._diagnosticBuilder
+                ? {questions: row._diagnosticBuilder.questions(), results: []}
+                : {questions: [], results: []};
+        }
         if (type === 'link') {
             item.url = (row.querySelector('[data-b-url]').value || '').trim();
             if (!item.url) return;
