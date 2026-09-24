@@ -24,7 +24,12 @@ from app.dependencies import require_admin_role, require_csrf, require_csrf_head
 from app.models.audit_log import AuditLog
 from app.models.exam_assignment import ExamAssignment, ExamTicket
 from app.models.exam_cycle import ExamCycle
-from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, TOPIC_KIND_WEEK, LearningTopic
+from app.models.learning_topic import (
+    TOPIC_KIND_PROGRAM_ITEM,
+    TOPIC_KIND_STAGE,
+    TOPIC_KIND_WEEK,
+    LearningTopic,
+)
 from app.models.learning_video import LearningVideo
 from app.models.task_block import (
     BLOCK_QUESTION,
@@ -458,6 +463,9 @@ class CyclePayload(BaseModel):
     starts_on: str = Field(min_length=1, max_length=32)
     ends_on: str = Field(min_length=1, max_length=32)
     is_published: bool = True
+    # Этап-родитель (владелец 24.09.2026). `None` — легаси-цикл без этапа,
+    # как было до этой возможности.
+    stage_id: int | None = Field(default=None, ge=1)
 
     @field_validator("title")
     @classmethod
@@ -471,10 +479,38 @@ class CyclePayload(BaseModel):
         return value or None
 
 
-def _cycle_dates(payload: CyclePayload) -> tuple[datetime, datetime]:
-    """Период цикла в московском времени: начало суток и конец последних суток."""
-    start = parse_day_iso(payload.starts_on)
-    end = parse_day_iso(payload.ends_on)
+class StagePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Название необязательно — по той же логике, что и у цикла: список этапов
+    # показывает период дат вместо пустого названия.
+    title: str = Field(default="", max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    starts_on: str = Field(min_length=1, max_length=32)
+    ends_on: str = Field(min_length=1, max_length=32)
+    is_published: bool = True
+
+    @field_validator("title")
+    @classmethod
+    def strip_title(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("description")
+    @classmethod
+    def strip_description(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        return value or None
+
+
+def _period_dates(starts_on: str, ends_on: str) -> tuple[datetime, datetime]:
+    """Период в московском времени: начало суток и конец последних суток.
+
+    Общая для цикла и этапа (владелец 24.09.2026) — единственная точка,
+    которая переводит МСК-даты формы в UTC-границы периода, дублировать
+    критичный для проекта разбор таймзоны (`tz.py`) нельзя.
+    """
+    start = parse_day_iso(starts_on)
+    end = parse_day_iso(ends_on)
     if start is None or end is None:
         raise HTTPException(status_code=422, detail="Неверная дата периода")
     if end < start:
@@ -488,6 +524,11 @@ def _cycle_dates(payload: CyclePayload) -> tuple[datetime, datetime]:
         msk_midnight(start).astimezone(timezone.utc),
         (msk_midnight(end) + timedelta(hours=23, minutes=59, seconds=59)).astimezone(timezone.utc),
     )
+
+
+def _cycle_dates(payload: CyclePayload) -> tuple[datetime, datetime]:
+    """Период цикла в московском времени — см. `_period_dates`."""
+    return _period_dates(payload.starts_on, payload.ends_on)
 
 
 def _cycle_video_count(db: DBSession, topic_id: int) -> int:
@@ -509,17 +550,42 @@ def _cycle_video_count(db: DBSession, topic_id: int) -> int:
     )
 
 
+def _resolve_stage(db: DBSession, stage_id: int | None) -> LearningTopic | None:
+    if stage_id is None:
+        return None
+    stage = get_topic(db, stage_id, kinds=(TOPIC_KIND_STAGE,))
+    if stage is None:
+        raise HTTPException(status_code=422, detail="Этап не найден")
+    return stage
+
+
+def _stage_cycle_count(db: DBSession, stage_id: int) -> int:
+    """Сколько живых циклов внутри этапа — для списка этапов и предупреждения
+    перед удалением (само удаление в MVP не реализовано, владелец 24.09.2026)."""
+    return (
+        db.query(LearningTopic)
+        .filter(
+            LearningTopic.parent_id == stage_id,
+            LearningTopic.kind == TOPIC_KIND_WEEK,
+            LearningTopic.deleted_at.is_(None),
+        )
+        .count()
+    )
+
+
 @router.get("/cycles", response_class=HTMLResponse)
 def program_cycles(
     request: Request,
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
+    stage_topics = list_week_topics(db, kinds=(TOPIC_KIND_STAGE,))
+    stage_titles = {stage.id: cycle_label(db, stage) for stage in stage_topics}
     cycles = [
         {
             "id": topic.id,
             "title": topic.title,
-            "label": cycle_label(topic),
+            "label": cycle_label(db, topic),
             "description": topic.description,
             "starts_on": msk_date(topic.opens_at).isoformat(),
             "ends_on": msk_date(topic.ends_at).isoformat() if topic.ends_at else None,
@@ -528,12 +594,96 @@ def program_cycles(
             # перед удалением: человек должен понимать, что уносит с собой рамка.
             "items_count": count_week_items(db, topic.id),
             "videos_count": _cycle_video_count(db, topic.id),
+            "stage_id": topic.parent_id,
+            "stage_label": stage_titles.get(topic.parent_id) if topic.parent_id else None,
         }
         for topic in list_week_topics(db)
     ]
+    stages = [
+        {"id": stage.id, "label": cycle_label(db, stage)}
+        for stage in stage_topics
+    ]
     return templates.TemplateResponse(request, "cabinet_program_cycles.html",
-        {"request": request, "user": user, "cycles": cycles},
+        {"request": request, "user": user, "cycles": cycles, "stages": stages},
     )
+
+
+@router.get("/stages", response_class=HTMLResponse)
+def program_stages(
+    request: Request,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    stages = [
+        {
+            "id": stage.id,
+            "title": stage.title,
+            "label": cycle_label(db, stage),
+            "description": stage.description,
+            "starts_on": msk_date(stage.opens_at).isoformat(),
+            "ends_on": msk_date(stage.ends_at).isoformat() if stage.ends_at else None,
+            "is_published": stage.is_published,
+            "cycles_count": _stage_cycle_count(db, stage.id),
+        }
+        for stage in list_week_topics(db, kinds=(TOPIC_KIND_STAGE,))
+    ]
+    return templates.TemplateResponse(request, "cabinet_program_stages.html",
+        {"request": request, "user": user, "stages": stages},
+    )
+
+
+@router.post("/stages", response_class=JSONResponse)
+def create_program_stage(
+    payload: StagePayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    opens_at, ends_at = _period_dates(payload.starts_on, payload.ends_on)
+    stage = create_topic(
+        db,
+        title=payload.title,
+        description=payload.description,
+        opens_at=opens_at,
+        ends_at=ends_at,
+        # Этап сам по себе никому не адресуется — адресация живёт на циклах
+        # и заданиях внутри него, как и у цикла (см. комментарий выше).
+        assign_to_all=True,
+        user_id=user["user_id"],
+        kind=TOPIC_KIND_STAGE,
+    )
+    if payload.is_published:
+        publish_topic(stage, user_id=user["user_id"])
+    db.commit()
+    return JSONResponse({"ok": True, "stage_id": stage.id})
+
+
+@router.post("/stages/{stage_id}", response_class=JSONResponse)
+def update_program_stage(
+    stage_id: int,
+    payload: StagePayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    stage = get_topic(db, stage_id, kinds=(TOPIC_KIND_STAGE,))
+    if stage is None:
+        raise HTTPException(status_code=404, detail="Этап не найден")
+    opens_at, ends_at = _period_dates(payload.starts_on, payload.ends_on)
+    update_topic(
+        stage,
+        title=payload.title,
+        description=payload.description,
+        opens_at=opens_at,
+        ends_at=ends_at,
+        assign_to_all=True,
+    )
+    if payload.is_published:
+        publish_topic(stage, user_id=user["user_id"])
+    else:
+        unpublish_topic(stage)
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 @router.post("/cycles", response_class=JSONResponse)
@@ -544,6 +694,7 @@ def create_program_cycle(
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
     opens_at, ends_at = _cycle_dates(payload)
+    stage = _resolve_stage(db, payload.stage_id)
     topic = create_topic(
         db,
         title=payload.title,
@@ -554,6 +705,7 @@ def create_program_cycle(
         # (тариф, предмет), а не по самой рамке.
         assign_to_all=True,
         user_id=user["user_id"],
+        parent_id=stage.id if stage is not None else None,
     )
     if payload.is_published:
         publish_topic(topic, user_id=user["user_id"])
@@ -593,6 +745,7 @@ def update_program_cycle(
     if topic is None:
         raise HTTPException(status_code=404, detail="Цикл не найден")
     opens_at, ends_at = _cycle_dates(payload)
+    stage = _resolve_stage(db, payload.stage_id)
     update_topic(
         topic,
         title=payload.title,
@@ -600,6 +753,8 @@ def update_program_cycle(
         opens_at=opens_at,
         ends_at=ends_at,
         assign_to_all=True,
+        parent_id=stage.id if stage is not None else None,
+        set_parent=True,
     )
     if payload.is_published:
         publish_topic(topic, user_id=user["user_id"])
@@ -924,7 +1079,7 @@ def program_cycle_items(
             "request": request,
             "user": user,
             "topic": topic,
-            "cycle_label": cycle_label(topic),
+            "cycle_label": cycle_label(db, topic),
             "items": items,
             "edit_payloads": _edit_payloads(db, items, {t.id: {} for t in items}),
             "kind_labels": ITEM_KIND_LABELS,

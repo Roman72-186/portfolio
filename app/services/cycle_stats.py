@@ -171,7 +171,7 @@ def cycle_stats(db: Session, topic: LearningTopic) -> dict:
         # 10.09.2026, и у безымянного экран статистики показывал пустой
         # заголовок. `cycle_label` в этом случае отдаёт период датами — так же,
         # как список циклов и переключатель в ленте ученика.
-        "label": cycle_label(topic),
+        "label": cycle_label(db, topic),
         "start": first,
         "end": last,
         "students": total,

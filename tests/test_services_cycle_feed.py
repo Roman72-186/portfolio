@@ -521,3 +521,76 @@ def test_task_without_blocks_is_its_own_first_step(db, regular_user):
     assert [step["block"] for step in steps] == [None]
     assert steps[0]["first_in_task"] is True
     assert steps[0]["last_in_task"] is True
+
+
+# ── Этапы (владелец 24.09.2026) ───────────────────────────────────────────
+
+def _stage(db, owner, *, starts_on, ends_on, title="Этап"):
+    from app.models.learning_topic import TOPIC_KIND_STAGE
+    stage = LearningTopic(
+        title=title,
+        opens_at=_utc(msk_midnight(starts_on)),
+        ends_at=_utc(msk_midnight(ends_on) + timedelta(hours=23, minutes=59)),
+        assign_to_all=True,
+        is_published=True,
+        kind=TOPIC_KIND_STAGE,
+        created_by_id=owner.id,
+    )
+    db.add(stage)
+    db.commit()
+    db.refresh(stage)
+    return stage
+
+
+def test_carousel_narrows_to_current_stage(db, regular_user):
+    """Карусель показывает циклы только этапа, на котором ученик стоит сейчас
+    — не все пройденные циклы всех этапов подряд."""
+    stage_a = _stage(db, regular_user, starts_on=TODAY - timedelta(days=40), ends_on=TODAY - timedelta(days=1))
+    stage_b = _stage(db, regular_user, starts_on=TODAY, ends_on=TODAY + timedelta(days=40))
+
+    old_cycle = _cycle(
+        db, regular_user, title="Старый цикл",
+        starts_on=TODAY - timedelta(days=40), ends_on=TODAY - timedelta(days=20),
+    )
+    old_cycle.parent_id = stage_a.id
+
+    current_cycle = _cycle(
+        db, regular_user, title="Текущий цикл",
+        starts_on=TODAY - timedelta(days=1), ends_on=TODAY + timedelta(days=10),
+    )
+    current_cycle.parent_id = stage_b.id
+    db.commit()
+
+    feed = feed_for_student(db, user_id=regular_user.id, user_tariff=None, today=TODAY)
+
+    titles = [c["title"] for c in feed["cycles"]]
+    assert "Текущий цикл" in titles
+    assert "Старый цикл" not in titles
+    assert feed["stage"]["id"] == stage_b.id
+
+
+def test_direct_link_opens_cycle_from_closed_stage(db, regular_user):
+    """Прямая ссылка на цикл закрытого этапа открывается архивом, а не 404 —
+    владелец 24.09.2026 просил не запирать её, даже когда этап уже сменился."""
+    stage_a = _stage(db, regular_user, starts_on=TODAY - timedelta(days=40), ends_on=TODAY - timedelta(days=1))
+    stage_b = _stage(db, regular_user, starts_on=TODAY, ends_on=TODAY + timedelta(days=40))
+
+    old_cycle = _cycle(
+        db, regular_user, title="Старый цикл",
+        starts_on=TODAY - timedelta(days=40), ends_on=TODAY - timedelta(days=20),
+    )
+    old_cycle.parent_id = stage_a.id
+
+    current_cycle = _cycle(
+        db, regular_user, title="Текущий цикл",
+        starts_on=TODAY - timedelta(days=1), ends_on=TODAY + timedelta(days=10),
+    )
+    current_cycle.parent_id = stage_b.id
+    db.commit()
+
+    feed = feed_for_student(
+        db, user_id=regular_user.id, user_tariff=None, today=TODAY, cycle_id=old_cycle.id,
+    )
+
+    assert feed["topic"].id == old_cycle.id
+    assert feed["is_archive"] is True

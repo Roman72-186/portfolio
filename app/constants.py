@@ -107,6 +107,7 @@ VIDEO_WATCH_TOLERANCE_SECONDS = 35
 VIDEO_WATCH_MIN_PLAYBACK_RATE = 0.5
 VIDEO_WATCH_MAX_PLAYBACK_RATE = 2.25
 VIDEO_WATCH_POSITION_JITTER_SECONDS = 2
+VIDEO_WATCH_TAIL_SECONDS = 30
 
 # Пробное правило — только на странице проверки моста у суперадмина
 # (владелец 24.09.2026: «сделаем эту проверку только для меня, не для кого

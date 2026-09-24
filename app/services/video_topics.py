@@ -203,6 +203,7 @@ def create_topic(
     assign_to_all: bool = False,
     kind: str = TOPIC_KIND_WEEK,
     ends_at: datetime | None = None,
+    parent_id: int | None = None,
 ) -> LearningTopic:
     topic = LearningTopic(
         title=title,
@@ -212,6 +213,7 @@ def create_topic(
         assign_to_all=assign_to_all,
         kind=kind,
         created_by_id=user_id,
+        parent_id=parent_id,
     )
     db.add(topic)
     db.flush()
@@ -227,6 +229,8 @@ def update_topic(
     assign_to_all: bool = False,
     sort_order: int | None = None,
     ends_at: datetime | None = None,
+    parent_id: int | None = None,
+    set_parent: bool = False,
 ) -> None:
     topic.title = title
     topic.description = description
@@ -237,6 +241,11 @@ def update_topic(
     topic.assign_to_all = assign_to_all
     if sort_order is not None:
         topic.sort_order = sort_order
+    # `set_parent` — явный флаг, а не «parent_id is not None значит менять»:
+    # иначе снять у цикла этап (перевести обратно в бесхозный архив) было бы
+    # нечем, `None` в вызове читался бы как «не трогать».
+    if set_parent:
+        topic.parent_id = parent_id
 
 
 def set_topic_tags(db: Session, topic: LearningTopic, tag_ids: list[int]) -> None:

@@ -1,0 +1,66 @@
+/* Карусель циклов — /cabinet/learning (владелец 24.09.2026, Этапы).
+   Заменяет прежние пилюли-переключатели `.lrn-cycles`/`.lrn-cycle-chip`
+   (сняты из tracker.css вместе с разметкой в cabinet_learning.html):
+   «стекляшка, можно листать, как раньше каруселью» — переключатель между
+   циклами одного этапа, не между вкладками недели (те остаются снятыми,
+   владелец 06.09.2026). Свайп — нативный CSS scroll-snap, без JS-библиотек. */
+
+.lrn-carousel {
+    margin: 0 0 14px;
+    padding: 2px 0 10px;
+}
+.lrn-carousel-track {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-padding: 0 8%;
+    padding: 2px 8% 4px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+.lrn-carousel-track::-webkit-scrollbar { display: none; }
+
+.lrn-carousel-card {
+    flex: 0 0 82%;
+    scroll-snap-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 12px 16px;
+    border-radius: var(--r-lg);
+    border: 1px solid var(--line);
+    text-decoration: none;
+    color: var(--text);
+    /* Стекло — те же значения, что уже приняты в tracker.css (шапка ленты
+       и бургер-меню): rgba(249,249,251,0.82) + blur(20px) saturate(180%). */
+    background: rgba(249,249,251,0.82);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.lrn-carousel-card.is-current {
+    border-color: var(--blue);
+}
+.lrn-carousel-card-title {
+    font-size: 15px;
+    font-weight: 800;
+}
+.lrn-carousel-card-dates {
+    font-size: 13px;
+    color: var(--dim);
+}
+.lrn-carousel-card-badge {
+    align-self: flex-start;
+    margin-top: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--blue);
+    background: rgba(0,122,255,0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .lrn-carousel-track { scroll-behavior: auto; }
+}

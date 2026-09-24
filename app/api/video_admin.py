@@ -18,6 +18,7 @@ from app.constants import TARIFFS
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf_header, require_superadmin
 from app.models.audit_log import AuditLog
+from app.models.learning_topic import TOPIC_KIND_PROGRAM_ITEM, TOPIC_KIND_WEEK
 from app.models.learning_video import LearningVideo
 from app.models.role import Role
 from app.models.user import User
@@ -187,10 +188,11 @@ def video_admin_page(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    # Названия тем берём всех видов: у ролика из учебной программы тема
-    # служебная (`program_item`), и фильтр по неделям показывал бы «тема
-    # удалена» на живой привязке.
-    topics = list_topics(db, kinds=None)
+    # Названия тем берём обоих видов, что реально бывают у ролика: у ролика из
+    # учебной программы тема служебная (`program_item`), и фильтр по неделям
+    # показывал бы «тема удалена» на живой привязке. Этап (`kind='stage'`,
+    # владелец 24.09.2026) сюда не относится — ролики к нему не привязываются.
+    topics = list_topics(db, kinds=(TOPIC_KIND_WEEK, TOPIC_KIND_PROGRAM_ITEM))
     return templates.TemplateResponse(request, "cabinet_videos_admin.html",
         {
             "request": request,

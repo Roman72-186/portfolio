@@ -19,6 +19,10 @@
     <a class="prg-tab{% if _prg_cycles %} is-active{% endif %}"
        href="/cabinet/staff/program/cycles"
        {% if _prg_cycles %}aria-current="page"{% endif %}>Циклы</a>
+    {% set _prg_stages = _prg_p.startswith('/cabinet/staff/program/stages') %}
+    <a class="prg-tab{% if _prg_stages %} is-active{% endif %}"
+       href="/cabinet/staff/program/stages"
+       {% if _prg_stages %}aria-current="page"{% endif %}>Этапы</a>
     <span class="prg-tabs-sep" aria-hidden="true"></span>
     <a class="prg-tab{% if _prg_p.startswith('/cabinet/staff/digest') %} is-active{% endif %}"
        href="/cabinet/staff/digest"

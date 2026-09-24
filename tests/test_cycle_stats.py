@@ -190,7 +190,7 @@ def test_stats_page_shows_dates_when_cycle_has_no_title(admin_client, db, regula
     page = client.get(f"/cabinet/staff/program/cycles/{topic.id}/stats")
 
     assert page.status_code == 200
-    assert cycle_label(topic) in page.text
+    assert cycle_label(db, topic) in page.text
 
 
 def test_stats_page_404_for_missing_cycle(admin_client):

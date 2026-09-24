@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}Этапы программы{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=34">
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
+{% endblock %}
+{% block content %}
+{#
+Этапы учебной программы (владелец 24.09.2026) — крупный период («месяц»,
+«Предобучение»), группирующий несколько циклов подряд. Отдельной сущности под
+этап нет: это `LearningTopic(kind='stage')`, тот же приём, что уже применён к
+циклу. Удаление этапа в этой версии не реализовано намеренно (нельзя убрать
+этап, внутри которого ещё есть живые циклы) — сама возможность добавляется
+отдельной задачей, когда понадобится. Стили — общие `program.css`, своего
+<style> здесь нет: за инлайновым CSS следит `tests/test_reuse_ratchet.py`.
+#}
+<div class="prg-page">
+    {% include "partials/program_tabs.html" %}
+
+    <div class="prg-head">
+        <div>
+            <h1>Этапы программы</h1>
+            <p class="prg-hint">
+                Этап объединяет несколько циклов подряд — например, «Предобучение» или
+                учебный месяц. Внутри этапа преподаватель заводит циклы на вкладке «Циклы»
+                и привязывает их к этапу выпадающим списком.
+            </p>
+        </div>
+    </div>
+
+    <form class="prg-form" data-stage-form>
+        <h2 data-stage-form-title>Новый этап</h2>
+        <input type="hidden" data-s-id value="">
+        <label class="prg-field">
+            <input type="text" data-s-title maxlength="200" autocomplete="off"
+                   aria-label="Название этапа, необязательно" placeholder="Название этапа, необязательно">
+        </label>
+        <label class="prg-field">
+            <textarea data-rich-text data-s-description maxlength="5000"
+                      aria-label="Описание, необязательно"
+                      placeholder="Описание, необязательно"></textarea>
+        </label>
+        <div class="prg-grid2">
+            <label class="prg-field">
+                <span>С какого</span>
+                <input type="date" data-s-start aria-label="Начало этапа">
+            </label>
+            <label class="prg-field">
+                <span>По какое включительно</span>
+                <input type="date" data-s-end aria-label="Конец этапа">
+            </label>
+        </div>
+        <label class="prg-field prg-field--row">
+            <input type="checkbox" data-s-published checked>
+            <span>Показывать ученикам</span>
+        </label>
+        <div class="prg-actions">
+            <button type="button" class="btn-blue" data-stage-save>Сохранить</button>
+            <button type="button" class="btn-outline" data-stage-reset hidden>Отменить правку</button>
+        </div>
+        <p class="prg-message" data-stage-message></p>
+    </form>
+
+    <section class="prg-items">
+        <h2>Уже заведены</h2>
+        {% if stages %}
+        {% for stage in stages %}
+        <article class="prg-item" data-stage-id="{{ stage.id }}">
+            <div>
+                <span class="prg-badge">{{ 'Виден ученикам' if stage.is_published else 'Скрыт' }}</span>
+                <h3>{{ stage.label }}</h3>
+                {% if stage.description %}<p>{{ stage.description | rich_text | safe }}</p>{% endif %}
+                <div class="prg-meta">
+                    <span>с {{ stage.starts_on }}</span>
+                    {% if stage.ends_on %}<span>по {{ stage.ends_on }}</span>{% endif %}
+                    <span>{{ stage.cycles_count }} {{ 'цикл' if stage.cycles_count == 1 else 'циклов' }} внутри</span>
+                </div>
+            </div>
+            <div class="prg-item-actions">
+                <a class="btn-blue" href="/cabinet/staff/program/cycles">Циклы этапа</a>
+                <button type="button" class="btn-outline" data-stage-edit
+                        data-payload='{{ stage|tojson }}'>Название и даты</button>
+            </div>
+        </article>
+        {% endfor %}
+        {% else %}
+        <p class="prg-hint">Пока ни одного этапа. Циклы без этапа остаются общим архивом, как раньше.</p>
+        {% endif %}
+    </section>
+</div>
+
+<script src="/static/js/rich-text-field.js?v=3"></script>
+<script>
+(function () {
+    var csrfToken = {{ csrf_token(request)|tojson }};
+    var form = document.querySelector('[data-stage-form]');
+    if (!form) return;
+
+    var fields = {
+        id: form.querySelector('[data-s-id]'),
+        title: form.querySelector('[data-s-title]'),
+        description: form.querySelector('[data-s-description]'),
+        start: form.querySelector('[data-s-start]'),
+        end: form.querySelector('[data-s-end]'),
+        published: form.querySelector('[data-s-published]')
+    };
+    var message = form.querySelector('[data-stage-message]');
+    var formTitle = form.querySelector('[data-stage-form-title]');
+    var resetBtn = form.querySelector('[data-stage-reset]');
+
+    function reset() {
+        fields.id.value = '';
+        fields.title.value = '';
+        fields.description.value = '';
+        window.RichTextField.refresh(fields.description);
+        fields.start.value = '';
+        fields.end.value = '';
+        fields.published.checked = true;
+        formTitle.textContent = 'Новый этап';
+        resetBtn.hidden = true;
+        message.textContent = '';
+    }
+
+    document.querySelectorAll('[data-stage-edit]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var data = JSON.parse(button.getAttribute('data-payload'));
+            fields.id.value = data.id;
+            fields.title.value = data.title || '';
+            fields.description.value = data.description || '';
+            window.RichTextField.refresh(fields.description);
+            fields.start.value = data.starts_on || '';
+            fields.end.value = data.ends_on || '';
+            fields.published.checked = !!data.is_published;
+            formTitle.textContent = 'Название и даты';
+            resetBtn.hidden = false;
+            form.scrollIntoView({ block: 'start' });
+        });
+    });
+
+    resetBtn.addEventListener('click', reset);
+
+    form.querySelector('[data-stage-save]').addEventListener('click', function () {
+        var id = fields.id.value;
+        if (!fields.start.value || !fields.end.value) {
+            message.textContent = 'Заполните обе даты периода.';
+            return;
+        }
+        fetch('/cabinet/staff/program/stages' + (id ? '/' + id : ''), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify({
+                title: fields.title.value.trim(),
+                description: fields.description.value.trim() || null,
+                starts_on: fields.start.value,
+                ends_on: fields.end.value,
+                is_published: fields.published.checked
+            })
+        }).then(function (resp) {
+            if (!resp.ok) return resp.json().then(function (body) { throw new Error(body.detail || ''); });
+            return resp.json();
+        }).then(function () {
+            window.location.reload();
+        }).catch(function (err) {
+            message.textContent = err.message || 'Не удалось сохранить этап.';
+        });
+    });
+})();
+</script>
+{% endblock %}

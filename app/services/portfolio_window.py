@@ -32,9 +32,10 @@ from sqlalchemy.orm import Session as DBSession
 from app.models.task_block import BLOCK_PORTFOLIO, TaskBlock
 from app.models.tracker import TrackerTask
 from app.models.work import WORK_TYPE_AFTER, WORK_TYPE_BEFORE
+from app.services.cycle_feed import cycle_is_archived_for_user
 from app.services.task_blocks import feed_state, portfolio_window_deadline
 from app.services.tracker import MONTH_GENITIVE, accessible_task_ids
-from app.services.tz import MSK_TZ, now_msk
+from app.services.tz import MSK_TZ, now_msk, today_msk
 from app.services.video_topics import accessible_topic_ids
 
 # Раздел портфолио, в который грузит окно. Те же значения, что `Work.work_type`,
@@ -143,6 +144,16 @@ def portfolio_windows(
     windows: list[PortfolioWindow] = []
     for task_id, blocks in _portfolio_blocks_by_task(db, user_id).items():
         wanted_ids = {block.id for block in blocks}
+        # Этапы (владелец 24.09.2026): цикл задания стал архивным для ученика —
+        # окно портфолио запирается тем же условием, что трекер и домашка, не
+        # трогая саму `feed_state`/`is_block_accessible` (инвариант «не трогать
+        # precourse-логику» — архивность проверяется здесь дополнительно).
+        task = db.get(TrackerTask, task_id)
+        archived = (
+            task is not None
+            and task.topic_id is not None
+            and cycle_is_archived_for_user(db, user_id, task.topic_id, today_msk())
+        )
         for entry in feed_state(
             db, task_id=task_id, user_id=user_id, user_tariff=user_tariff
         ):
@@ -170,7 +181,8 @@ def portfolio_windows(
                         if uses_personal_window else _as_utc(block.closes_at)
                     ),
                     is_open=(
-                        entry["status"] != "locked"
+                        not archived
+                        and entry["status"] != "locked"
                         and (not uses_personal_window or personal_deadline is not None)
                     ),
                 )

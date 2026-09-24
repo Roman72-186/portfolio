@@ -17,6 +17,16 @@
 выпадающий список на странице «Видео» зарастёт служебными строками. Любой новый
 код, который пойдёт в `db.query(LearningTopic)` мимо `list_topics`, увидит и те
 и другие — фильтр придётся ставить руками.
+
+**Третий вид, `stage`** (владелец 24.09.2026, Этапы) — крупный период («месяц»,
+«Предобучение»), группирующий несколько циклов (`kind='week'`) подряд.
+Отдельной таблицы под этап не заводим — вторая сущность расписания в проекте
+запрещена (`app/api/cabinet_program.py`), поэтому этап — такая же
+`LearningTopic`, просто без `parent_id` и с `kind='stage'`. Цикл ссылается на
+свой этап через `parent_id`; у самого этапа `parent_id` всегда `NULL` —
+второго уровня вложенности не предусмотрено. Циклы, заведённые до 24.09.2026
+(или созданные без выбора этапа), остаются с `parent_id=NULL` — это легаси-
+архив без привязки к этапу, не ошибка данных.
 """
 
 from datetime import datetime, timezone
@@ -28,6 +38,7 @@ from app.db.database import Base
 
 TOPIC_KIND_WEEK = "week"
 TOPIC_KIND_PROGRAM_ITEM = "program_item"
+TOPIC_KIND_STAGE = "stage"
 
 
 class LearningTopic(Base):
@@ -39,6 +50,12 @@ class LearningTopic(Base):
     # элемента учебной программы, её создаёт календарь (см. докстринг модуля).
     kind: Mapped[str] = mapped_column(
         String(20), nullable=False, default=TOPIC_KIND_WEEK, server_default=TOPIC_KIND_WEEK
+    )
+    # Этап-родитель (владелец 24.09.2026): заполнен только у циклов (`week`),
+    # указывает на запись `kind='stage'`. У самого этапа всегда NULL — второй
+    # уровень вложенности не предусмотрен, см. докстринг модуля.
+    parent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("learning_topics.id", ondelete="SET NULL"), nullable=True
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Ссылка на созвон занятия недели (Zoom/Google Meet и т.п.), заполняется вручную.
@@ -92,6 +109,7 @@ class LearningTopic(Base):
     __table_args__ = (
         Index("ix_learning_topics_public", "is_published", "opens_at"),
         Index("ix_learning_topics_kind", "kind", "opens_at"),
+        Index("ix_learning_topics_parent", "parent_id"),
     )
 
 

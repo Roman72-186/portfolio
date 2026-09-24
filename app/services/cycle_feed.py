@@ -26,7 +26,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models.learning_topic import LearningTopic
+from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.models.task_block import BLOCK_PORTFOLIO
 from app.models.tracker import ITEM_ARCHI_PROFILE, ITEM_MOCK_EXAM, STATUS_DONE
 from app.models.user import User
@@ -413,18 +413,49 @@ def build_cycle_feed(
     return steps
 
 
-def started_cycles(db: Session, user_id: int, today: date) -> list[LearningTopic]:
+def started_cycles(
+    db: Session, user_id: int, today: date, *, stage_id: int | None = None
+) -> list[LearningTopic]:
     """Циклы ученика, которые уже начались, от поздних к ранним.
 
     Нужны для возврата в пройденное: «он может вернуться в этот цикл, зайти в
     этот цикл, потому что у каждого цикла своя тема в обучении» (владелец
     03.09.2026). Не начавшиеся не показываем — программа вперёд не выдаётся.
+
+    `stage_id` (владелец 24.09.2026, Этапы) сужает список до циклов
+    конкретного этапа — так задан архив в карусели: «пока этап не закрылся,
+    ученик видит прошлые циклы этого этапа», не всех этапов сразу. `None` —
+    старое поведение без сужения: единственный случай, когда он проставляется
+    явно, — легаси-цикл без `parent_id` (заведён до 24.09.2026 либо этапу не
+    назначен), тогда все такие бесхозные циклы по-прежнему показываются одним
+    общим архивом, как было до Этапов.
     """
     started = [
         topic for topic in accessible_cycles(db, user_id)
         if cycle_bounds(topic)[0] <= today
+        and (stage_id is None or topic.parent_id == stage_id)
     ]
     return list(reversed(started))
+
+
+def cycle_is_archived_for_user(
+    db: Session, user_id: int, topic_id: int, today: date
+) -> bool:
+    """Цикл `topic_id` для ученика — архив (только просмотр).
+
+    Архив — начавшийся цикл (`kind='week'`), который не совпадает с тем, на
+    котором ученик стоит сейчас (`effective_cycle`). Владелец 24.09.2026:
+    пока этап открыт, прошлые циклы доступны только на чтение. Прямая ссылка
+    на цикл закрытого этапа тоже остаётся архивом (не 404) — тот же принцип,
+    что у прошедшей темы вообще («учебный архив», `models/learning_topic.py`).
+    """
+    topic = db.get(LearningTopic, topic_id)
+    if topic is None or topic.kind != TOPIC_KIND_WEEK:
+        return False
+    if cycle_bounds(topic)[0] > today:
+        return False
+    current = effective_cycle(db, user_id, today)
+    return current is None or current.id != topic.id
 
 
 def feed_for_student(
@@ -456,7 +487,16 @@ def feed_for_student(
         db, user_id=user_id, user_tariff=user_tariff, start=start, end=end,
         topic_id=topic.id if topic is not None else None,
     )
-    cycles = started_cycles(db, user_id, today)
+    # Карусель показывает циклы только текущего этапа — прямая ссылка на
+    # старый цикл (`chosen` выше) при этом ищется без сужения по этапу,
+    # владелец 24.09.2026 просил её не запирать.
+    stage_id = current_topic.parent_id if current_topic is not None else None
+    stage = None
+    if stage_id is not None:
+        stage_topic = db.get(LearningTopic, stage_id)
+        if stage_topic is not None:
+            stage = {"id": stage_topic.id, "label": stage_topic.title or ""}
+    cycles = started_cycles(db, user_id, today, stage_id=stage_id)
     # «Следующее задание откроется 23 сентября» (владелец 03.09.2026): подсказка
     # тому, кто закрыл всё доступное и упёрся в календарь, а не в собственные
     # долги. Если впереди есть хоть один шаг, который можно делать сейчас,
@@ -480,13 +520,14 @@ def feed_for_student(
         "cycles": [
             {
                 "id": item.id,
-                "title": cycle_label(item),
+                "title": cycle_label(db, item),
                 "start": cycle_bounds(item)[0],
                 "end": cycle_bounds(item)[1],
                 "is_current": topic is not None and item.id == topic.id,
             }
             for item in cycles
         ],
+        "stage": stage,
         "waiting_for": waiting_for,
         # Открыт прошлый цикл, а не тот, на котором ученик стоит сейчас:
         # экран показывает его только для чтения.

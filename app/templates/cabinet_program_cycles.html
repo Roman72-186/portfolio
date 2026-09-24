@@ -50,6 +50,15 @@
                 <input type="date" data-c-end aria-label="Конец цикла">
             </label>
         </div>
+        <label class="prg-field">
+            <span>Этап (необязательно)</span>
+            <select data-c-stage aria-label="Этап">
+                <option value="">Без этапа</option>
+                {% for stage in stages %}
+                <option value="{{ stage.id }}">{{ stage.label }}</option>
+                {% endfor %}
+            </select>
+        </label>
         <label class="prg-field prg-field--row">
             <input type="checkbox" data-c-published checked>
             <span>Показывать ученикам</span>
@@ -68,6 +77,7 @@
         <article class="prg-item" data-cycle-id="{{ cycle.id }}">
             <div>
                 <span class="prg-badge">{{ 'Виден ученикам' if cycle.is_published else 'Скрыт' }}</span>
+                {% if cycle.stage_label %}<span class="prg-badge">{{ cycle.stage_label }}</span>{% endif %}
                 <h3>{{ cycle.label }}</h3>
                 {% if cycle.description %}<p>{{ cycle.description | rich_text | safe }}</p>{% endif %}
                 <div class="prg-meta">
@@ -122,6 +132,7 @@
         description: form.querySelector('[data-c-description]'),
         start: form.querySelector('[data-c-start]'),
         end: form.querySelector('[data-c-end]'),
+        stage: form.querySelector('[data-c-stage]'),
         published: form.querySelector('[data-c-published]')
     };
     var message = form.querySelector('[data-cycle-message]');
@@ -135,6 +146,7 @@
         window.RichTextField.refresh(fields.description);
         fields.start.value = '';
         fields.end.value = '';
+        fields.stage.value = '';
         fields.published.checked = true;
         formTitle.textContent = 'Новый цикл';
         resetBtn.hidden = true;
@@ -150,6 +162,7 @@
             window.RichTextField.refresh(fields.description);
             fields.start.value = data.starts_on || '';
             fields.end.value = data.ends_on || '';
+            fields.stage.value = data.stage_id || '';
             fields.published.checked = !!data.is_published;
             // Заголовок формы повторяет текст кнопки: человек нажал «Название и
             // даты» и должен увидеть его же там, куда его перебросило (отзыв с
@@ -226,6 +239,7 @@
                 description: fields.description.value.trim() || null,
                 starts_on: fields.start.value,
                 ends_on: fields.end.value,
+                stage_id: fields.stage.value ? Number(fields.stage.value) : null,
                 is_published: fields.published.checked
             })
         }).then(function (resp) {

@@ -54,7 +54,7 @@ from app.services.program import (
     msk_date,
     week_start,
 )
-from app.services.cycle_feed import current_feed_task_ids
+from app.services.cycle_feed import current_feed_task_ids, cycle_is_archived_for_user
 from app.services.portfolio_window import (
     format_deadline_msk,
     portfolio_windows,
@@ -202,6 +202,12 @@ def cabinet_tracker_toggle(
     )
     if not accessible:
         raise HTTPException(status_code=404, detail="Задача не найдена")
+    if task.topic_id is not None and cycle_is_archived_for_user(
+        db, user["user_id"], task.topic_id, today_msk()
+    ):
+        raise HTTPException(
+            status_code=403, detail="Цикл пройден — можно только посмотреть свои ответы"
+        )
 
     # Гейт «нельзя закрыть, пока не отвечены вопросы» (владелец 31.08.2026).
     # Считаем только **видимые сейчас** вопросы: скрытые до сдачи в проверку
@@ -263,6 +269,23 @@ def _accessible_task_or_404(db: DBSession, user_id: int, task_id: int) -> Tracke
     )
     if not accessible:
         raise HTTPException(status_code=404, detail="Задача не найдена")
+    return task
+
+
+def _writable_task_or_404(db: DBSession, user_id: int, task_id: int) -> TrackerTask:
+    """Как `_accessible_task_or_404`, плюс отказ, если задача лежит в
+    архивном цикле ученика (владелец 24.09.2026, Этапы: пройденный цикл —
+    только просмотр). Читающие эндпоинты эту обёртку не зовут и звать не
+    должны — ученик обязан видеть свои старые ответы в архиве, только не
+    менять их.
+    """
+    task = _accessible_task_or_404(db, user_id, task_id)
+    if task.topic_id is not None and cycle_is_archived_for_user(
+        db, user_id, task.topic_id, today_msk()
+    ):
+        raise HTTPException(
+            status_code=403, detail="Цикл пройден — можно только посмотреть свои ответы"
+        )
     return task
 
 
@@ -761,7 +784,7 @@ def start_timed_block_route(
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type != BLOCK_TIMED:
         raise HTTPException(status_code=404, detail="Блок не найден")
-    _accessible_task_or_404(db, user["user_id"], block.task_id)
+    _writable_task_or_404(db, user["user_id"], block.task_id)
     state = start_task_timed_block(db, block=block, user_id=user["user_id"])
     db.commit()
     return JSONResponse({
@@ -788,7 +811,7 @@ def confirm_video_block_watched(
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type != BLOCK_VIDEO:
         raise HTTPException(status_code=404, detail="Блок не найден")
-    task = _accessible_task_or_404(db, user["user_id"], block.task_id)
+    task = _writable_task_or_404(db, user["user_id"], block.task_id)
     if _video_block_requires_completion(task, block) and not _video_block_watched(
         db, block, user["user_id"]
     ):
@@ -814,7 +837,7 @@ def confirm_photo_block_done(
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type != BLOCK_PHOTO:
         raise HTTPException(status_code=404, detail="Блок не найден")
-    _accessible_task_or_404(db, user["user_id"], block.task_id)
+    _writable_task_or_404(db, user["user_id"], block.task_id)
     close_task_block_for_user(db, block=block, user_id=user["user_id"], source="photo_confirmed")
     db.commit()
     return JSONResponse({"ok": True})
@@ -846,7 +869,7 @@ async def upload_task_block_work(
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type not in SUBMISSION_BLOCK_TYPES:
         raise HTTPException(status_code=404, detail="Блок не найден")
-    task = _accessible_task_or_404(db, user["user_id"], block.task_id)
+    task = _writable_task_or_404(db, user["user_id"], block.task_id)
 
     submission = get_task_block_submission(db, block_id=block.id, user_id=user["user_id"])
     reason = block_work_reason(db, task, block, submission)
@@ -908,7 +931,7 @@ def edit_task_block_comment(
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type not in SUBMISSION_BLOCK_TYPES:
         raise HTTPException(status_code=404, detail="Блок не найден")
-    task = _accessible_task_or_404(db, user["user_id"], block.task_id)
+    task = _writable_task_or_404(db, user["user_id"], block.task_id)
     submission = get_task_block_submission(db, block_id=block.id, user_id=user["user_id"])
     if submission is None or submission.submitted_at is None:
         raise HTTPException(status_code=404, detail="Работа не найдена")
@@ -933,7 +956,7 @@ def delete_task_block_image(
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type not in SUBMISSION_BLOCK_TYPES:
         raise HTTPException(status_code=404, detail="Блок не найден")
-    task = _accessible_task_or_404(db, user["user_id"], block.task_id)
+    task = _writable_task_or_404(db, user["user_id"], block.task_id)
     submission = get_task_block_submission(db, block_id=block.id, user_id=user["user_id"])
     if submission is None:
         raise HTTPException(status_code=404, detail="Работа не найдена")
@@ -972,7 +995,7 @@ def submit_cabinet_tracker_task_blocks(
     Обычные задания принимают ответы частями. Диагностика принимает все
     оставшиеся вопросы одним запросом, чтобы результат был однозначным.
     """
-    task = _accessible_task_or_404(db, user["user_id"], task_id)
+    task = _writable_task_or_404(db, user["user_id"], task_id)
     task_done = _is_task_done(db, task_id, user["user_id"])
     all_blocks = get_task_blocks(db, task_id)
     questions = [

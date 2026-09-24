@@ -631,18 +631,56 @@ def cycle_bounds(topic: LearningTopic) -> tuple[date, date]:
     return start, max(start, end)
 
 
-def cycle_label(topic: LearningTopic) -> str:
+def cycle_label(db: Session, topic: LearningTopic) -> str:
     """Название цикла для показа — период дат, если `title` пуст.
 
     Название цикла стало необязательным 10.09.2026: форма его не требует, но
     показывать пустую строку в списке циклов или в переключателе ленты
     ученика было бы хуже, чем период — он у цикла есть всегда.
+
+    Этапы (владелец 24.09.2026): у цикла с этапом (`parent_id`) и пустым
+    `title` подпись — «Цикл N», не диапазон дат. Так преподаватель называет
+    циклы сам («Цикл 1», «Цикл 2»…), поэтому подпись по умолчанию повторяет
+    это, а не показывает даты. Легаси-цикл без этапа (`parent_id is None`) —
+    старое поведение, диапазон дат.
     """
     title = (topic.title or "").strip()
     if title:
         return title
+    if topic.parent_id is not None:
+        ordinal = stage_cycle_ordinal(db, topic)
+        if ordinal is not None:
+            return f"Цикл {ordinal}"
     first, last = cycle_bounds(topic)
     return f"{first.strftime('%d.%m')} — {last.strftime('%d.%m.%Y')}"
+
+
+def stage_cycle_ordinal(db: Session, topic: LearningTopic) -> int | None:
+    """Порядковый номер `topic` среди живых циклов его этапа, от 1.
+
+    `None` — у цикла нет этапа (`parent_id`), либо (теоретически) сам цикл
+    уже не среди живых. Порядок — по `opens_at`, потом по `id` (тот же
+    тай-брейк, что у `accessible_cycles`). Удалённые циклы (`deleted_at`) не
+    считаются: удаление сдвигает номера соседей — то же поведение, что уже
+    есть у диапазона дат, который тоже не хранится, а пересчитывается заново
+    при каждом показе.
+    """
+    if topic.parent_id is None:
+        return None
+    siblings = (
+        db.query(LearningTopic)
+        .filter(
+            LearningTopic.parent_id == topic.parent_id,
+            LearningTopic.kind == TOPIC_KIND_WEEK,
+            LearningTopic.deleted_at.is_(None),
+        )
+        .order_by(LearningTopic.opens_at.asc(), LearningTopic.id.asc())
+        .all()
+    )
+    for index, sibling in enumerate(siblings, start=1):
+        if sibling.id == topic.id:
+            return index
+    return None
 
 
 def next_sort_order_in_topic(db: Session, topic_id: int) -> int:

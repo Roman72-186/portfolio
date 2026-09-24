@@ -59,11 +59,13 @@ from app.services.homework_submission import (
     list_submissions_for_task,
     set_final_image,
 )
+from app.services.cycle_feed import cycle_is_archived_for_user
 from app.services.notify import notify
 from app.services.student_access import get_student_for_staff_access
 from app.services.submission_edit import homework_reason
 from app.services.tracker import accessible_task_ids, close_task_for_user
 from app.services.tracker import homework_images as list_homework_reference_images
+from app.services.tz import today_msk
 from app.services.upload_validation import read_image_uploads
 from app.services.utils import compress_image, validate_video_link
 from app.services.video_topics import accessible_topic_ids
@@ -98,6 +100,21 @@ def _guard_student_access(db: DBSession, task: TrackerTask, user_id: int) -> Non
     ) or (task.topic_id is None and task.id in accessible_task_ids(db, user_id))
     if not accessible:
         raise HTTPException(status_code=404, detail="Задание не найдено")
+
+
+def _guard_student_write_access(db: DBSession, task: TrackerTask, user_id: int) -> None:
+    """Как `_guard_student_access`, плюс отказ в архивном цикле (владелец
+    24.09.2026, Этапы) — досдать домашку в пройденном цикле нельзя, как и в
+    трекере (`cabinet_tracker.py::_writable_task_or_404`). Страницы задания и
+    ленты обратной связи (GET) эту проверку не зовут — архив открыт на чтение.
+    """
+    _guard_student_access(db, task, user_id)
+    if task.topic_id is not None and cycle_is_archived_for_user(
+        db, user_id, task.topic_id, today_msk()
+    ):
+        raise HTTPException(
+            status_code=403, detail="Цикл пройден — можно только посмотреть свои ответы"
+        )
 
 
 def _submission_intermediate_limit(homework: HomeworkAssignment) -> int:
@@ -256,7 +273,7 @@ async def upload_homework_final(
     photo: UploadFile = File(...),
 ):
     task, homework = _resolve_homework_task(db, task_id)
-    _guard_student_access(db, task, user["user_id"])
+    _guard_student_write_access(db, task, user["user_id"])
     submission = get_submission(db, tracker_task_id=task.id, user_id=user["user_id"])
     reason = homework_reason(db, task, submission)
     if reason:
@@ -294,7 +311,7 @@ async def upload_homework_intermediate(
     photos: list[UploadFile] = File(...),
 ):
     task, homework = _resolve_homework_task(db, task_id)
-    _guard_student_access(db, task, user["user_id"])
+    _guard_student_write_access(db, task, user["user_id"])
     submission = get_submission(db, tracker_task_id=task.id, user_id=user["user_id"])
     reason = homework_reason(db, task, submission)
     if reason:
@@ -336,7 +353,7 @@ def delete_homework_intermediate(
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
     task, _ = _resolve_homework_task(db, task_id)
-    _guard_student_access(db, task, user["user_id"])
+    _guard_student_write_access(db, task, user["user_id"])
     submission = get_submission(db, tracker_task_id=task.id, user_id=user["user_id"])
     if submission is None:
         raise HTTPException(status_code=404, detail="Работа не найдена")
@@ -462,7 +479,7 @@ async def student_send_homework_message(
     audio: UploadFile | None = File(default=None),
 ):
     task, _ = _resolve_homework_task(db, task_id)
-    _guard_student_access(db, task, user["user_id"])
+    _guard_student_write_access(db, task, user["user_id"])
     submission = get_submission(db, tracker_task_id=task.id, user_id=user["user_id"])
     if submission is None:
         raise HTTPException(status_code=404, detail="Сначала отправь работу")

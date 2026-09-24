@@ -3,6 +3,7 @@
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/tracker.css?v=61">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=1">
+<link rel="stylesheet" href="/static/css/cycle_carousel.css?v=1">
 {% endblock %}
 {% block content %}
 {#
@@ -48,13 +49,19 @@
     {# Пройденные циклы: вернуться и перечитать свои ответы (владелец
        03.09.2026). Показываем, только когда есть куда возвращаться. #}
     {% if feed.cycles|length > 1 %}
-    <div class="lrn-cycles" aria-label="Циклы обучения">
-        {% for cycle in feed.cycles %}
-        <a class="lrn-cycle-chip{{ ' is-current' if cycle.is_current }}"
-           href="/cabinet/learning{{ '' if cycle.is_current else '?cycle=' ~ cycle.id }}">
-            {{ cycle.title }}
-        </a>
-        {% endfor %}
+    <div class="lrn-carousel" data-role="cycle-carousel"
+         aria-label="Циклы {{ feed.stage.label }}{% if not feed.stage %}обучения{% endif %}">
+        <div class="lrn-carousel-track">
+            {% for cycle in feed.cycles %}
+            <a class="lrn-carousel-card{{ ' is-current' if cycle.is_current }}"
+               href="/cabinet/learning{{ '' if cycle.is_current else '?cycle=' ~ cycle.id }}"
+               data-cycle-id="{{ cycle.id }}">
+                <span class="lrn-carousel-card-title">{{ cycle.title }}</span>
+                <span class="lrn-carousel-card-dates">{{ cycle.start.strftime('%d.%m') }} — {{ cycle.end.strftime('%d.%m') }}</span>
+                {% if cycle.is_current %}<span class="lrn-carousel-card-badge">Текущий</span>{% endif %}
+            </a>
+            {% endfor %}
+        </div>
     </div>
     {% endif %}
 
@@ -230,4 +237,5 @@ document.addEventListener('DOMContentLoaded', function () {
 {% include "partials/student_onboarding_guide.html" %}
 <script src="/static/js/task-completion.js?v=1" data-csrf-token="{{ csrf_token(request) }}"></script>
 <script src="/static/js/hint.js?v=1"></script>
+<script src="/static/js/cycle-carousel.js?v=1"></script>
 {% endblock %}
