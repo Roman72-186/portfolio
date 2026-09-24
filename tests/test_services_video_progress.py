@@ -390,10 +390,45 @@ def test_trial_credits_double_speed():
 
 
 def test_trial_seek_into_tail_does_not_complete():
+    """Перемотка даёт не больше, чем ролик проиграл бы на 2,25× за это время
+    (10 × 2,25 + 5 = 27,5 с), — до порога далеко."""
     decision = _trial(_row(100.0, 100.0), 590.0)
     assert decision.position_reached is True
-    assert decision.watched_seconds == 100.0
+    assert decision.watched_seconds == 127.5
     assert decision.completed is False
+
+
+def test_trial_double_speed_survives_network_delay():
+    """Проверка владельца 24.09.2026: на 2× засчитывалось 65–85%. Heartbeat,
+    пришедший на 3 секунды раньше из-за задержки предыдущего, раньше
+    выбрасывал весь кусок в 20 секунд. Теперь засчитывается целиком."""
+    previous = _row(100.0, 100.0)
+    decision = evaluate_trial_watch(
+        previous, position_seconds=120.0, duration_seconds=600.0,
+        playback_active=True, ended=False, now=T0 + timedelta(seconds=7),
+    )
+    assert decision.watched_seconds == 120.0
+
+
+def test_trial_double_speed_full_pass_completes():
+    """Полный проход на 2× с неровными промежутками между heartbeat'ами."""
+    row = _row(0.0, 0.0)
+    now = T0
+    position = 0.0
+    for gap in [10, 7, 13, 10, 6, 14] * 5:
+        now = now + timedelta(seconds=gap)
+        position += gap * 2
+        if position > 580:
+            break
+        decision = evaluate_trial_watch(
+            row, position_seconds=position, duration_seconds=600.0,
+            playback_active=True, ended=False, now=now,
+        )
+        row = VideoProgress(
+            position_seconds=position, watched_seconds=decision.watched_seconds,
+            updated_at=now, completed_at=None, last_completion_watched_seconds=0.0,
+        )
+    assert decision.completed is True
 
 
 def test_trial_rewatch_needs_a_fresh_pass():

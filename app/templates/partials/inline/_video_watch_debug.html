@@ -64,13 +64,19 @@
         }
         node('wd-position').textContent = 'Где ты сейчас (по данным сервера): ' + clock(state.position_seconds);
         var credited = state.credited_this_pass || 0;
-        var line = 'Засчитано в этом проходе: ' + clock(credited);
-        if (threshold) {
-            var pct = Math.min(100, Math.floor(credited / threshold * 100));
-            line += ' из ' + clock(threshold) + ' (' + pct + '%)';
-        }
-        if (state.completed && Math.abs((state.watched_seconds || 0) - credited) > 1) {
-            line += '. Всего за все проходы: ' + clock(state.watched_seconds);
+        var line;
+        if (state.completed) {
+            // После зачёта сервер начинает считать новый проход с нуля — без
+            // пояснения «0% рядом с „засчитан“» выглядело поломкой
+            // (скриншот владельца 24.09.2026).
+            line = 'Засчитано всего: ' + clock(state.watched_seconds)
+                + '. Если смотреть заново, новый проход: ' + clock(credited);
+        } else {
+            line = 'Засчитано: ' + clock(credited);
+            if (threshold) {
+                var pct = Math.min(100, Math.floor(credited / threshold * 100));
+                line += ' из ' + clock(threshold) + ' (' + pct + '%)';
+            }
         }
         node('wd-credited').textContent = line;
         var verdict = node('wd-verdict');

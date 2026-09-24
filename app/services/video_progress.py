@@ -14,6 +14,16 @@ from app.constants import (
     VIDEO_WATCH_TRIAL_TAIL_SECONDS,
 )
 from app.models.video_progress import VideoProgress
+
+# Запас на задержку сети для пробного правила (владелец 24.09.2026, проверка
+# на 2×: засчиталось 65–85% вместо 100%). Heartbeat идёт раз в 10 секунд, на
+# 2× ролик за это время проходит 20 секунд, а предел был 10 × 2,25 + 2 = 24,5.
+# Стоило одному запросу задержаться в сети на пару секунд, следующий приходил
+# «слишком рано» и весь кусок в 20 секунд выбрасывался как перемотка. Теперь
+# кусок не выбрасывается, а урезается до того, что ролик физически мог
+# проиграть, плюс этот запас. Живет здесь, а не в `constants.py`, пока
+# правило пробное.
+TRIAL_NETWORK_SLACK_SECONDS = 5
 from app.models.video_view_log import VideoViewLog
 
 
@@ -98,14 +108,18 @@ def compute_watched_seconds(
     position_delta = position_seconds - previous.position_seconds
     if position_delta <= 0:
         return previous.watched_seconds
+    if credit_playback_speed:
+        # Пробное правило: засчитываем пройденные секунды ролика (ускорение в
+        # плюс), но не больше, чем ролик мог проиграть на максимальной
+        # скорости за этот промежуток. Перемотка даёт не больше честного
+        # просмотра на 2,25×, а задержанный сетью heartbeat почти ничего не
+        # теряет — см. `TRIAL_NETWORK_SLACK_SECONDS`.
+        allowed = gap * VIDEO_WATCH_MAX_PLAYBACK_RATE + TRIAL_NETWORK_SLACK_SECONDS
+        return previous.watched_seconds + min(position_delta, allowed)
     if position_delta > (
         gap * VIDEO_WATCH_MAX_PLAYBACK_RATE + VIDEO_WATCH_POSITION_JITTER_SECONDS
     ):
         return previous.watched_seconds
-    if credit_playback_speed:
-        # Пробное правило: засчитываем пройденные секунды ролика, ускорение
-        # в плюс (см. `VIDEO_WATCH_TRIAL_TAIL_SECONDS`).
-        return previous.watched_seconds + position_delta
     credited = min(gap, position_delta / VIDEO_WATCH_MIN_PLAYBACK_RATE)
     return previous.watched_seconds + credited
 
