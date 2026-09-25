@@ -22,6 +22,10 @@
  *                                   первый `input[name=csrf_token]`);
  *   data-media-url/-kind          — уже сохранённая запись (редактор блока).
  *
+ * Пока идёт запись или загрузка, на контейнере стоит `data-mrf-busy`: по нему
+ * конструктор не даёт сохранить задание (иначе блок ушёл бы без файла и
+ * пропал), а форма переписки — отправить сообщение без записи.
+ *
  * Формат выбирает браузер: Chrome/Firefox пишут webm, Safari — mp4. Имя
  * файла получает расширение под фактический формат: сервер узнаёт тип и по
  * расширению, а путь в S3 без расширения получил бы `.jpg`.
@@ -164,6 +168,13 @@
                 if (!input || input.type !== 'file') return;
                 if (input === self.inputFor(self.kind)) self.clear({keepInput: true});
             });
+            // Фаза захвата: срабатывает раньше обработчика отправки страницы.
+            form.addEventListener('submit', function (event) {
+                if (!self.root.hasAttribute('data-mrf-busy')) return;
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                self.setError('Запись ещё идёт. Нажмите «Готово», потом отправьте сообщение.');
+            }, true);
         }
     };
 
@@ -177,6 +188,11 @@
         var box = this.q('[data-mrf-error]');
         box.textContent = text || '';
         box.hidden = !text;
+    };
+
+    Recorder.prototype.setBusy = function (busy) {
+        if (busy) this.root.setAttribute('data-mrf-busy', '');
+        else this.root.removeAttribute('data-mrf-busy');
     };
 
     Recorder.prototype.setStatus = function (text) {
@@ -206,6 +222,7 @@
         this.stream = stream;
         this.chunks = [];
         this.cancelled = false;
+        this.setBusy(true);
         var mime = pickMime(kind);
         var options = {audioBitsPerSecond: 64000};
         if (mime) options.mimeType = mime;
@@ -257,18 +274,20 @@
             this.recorder.stop();
         } else {
             this.releaseStream();
+            this.setBusy(false);
             this.show('idle');
         }
     };
 
     Recorder.prototype.finish = function (requestedMime) {
         this.releaseStream();
-        if (this.cancelled) { this.show('idle'); return; }
+        if (this.cancelled) { this.setBusy(false); this.show('idle'); return; }
         var type = (this.recorder && this.recorder.mimeType) || requestedMime
             || (this.kind === 'voice' ? 'audio/webm' : 'video/webm');
         var blob = new Blob(this.chunks, {type: type});
         this.chunks = [];
         if (!blob.size) {
+            this.setBusy(false);
             this.show('idle');
             this.setError('Запись получилась пустой. Попробуйте ещё раз.');
             return;
@@ -283,6 +302,7 @@
             this.upload(file);
         } else {
             this.attachToForm(file);
+            this.setBusy(false);
             this.showPreview(this.objectUrl, this.kind, 'Уйдёт вместе с сообщением');
         }
     };
@@ -385,6 +405,7 @@
             self.root.setAttribute('data-media-url', body.url);
             self.root.setAttribute('data-media-path', body.path || '');
             self.root.setAttribute('data-media-kind', body.kind || self.kind);
+            self.setBusy(false);
             self.setStatus('Сохранится вместе с заданием');
         }).catch(function (err) {
             self.clear();
@@ -402,6 +423,7 @@
             if (note) note.value = '';
         }
         this.fallbackFile = null;
+        this.setBusy(false);
         this.root.removeAttribute('data-media-url');
         this.root.removeAttribute('data-media-path');
         this.root.removeAttribute('data-media-kind');

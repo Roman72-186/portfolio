@@ -43,6 +43,24 @@ var BLOCK_LABELS = {{ block_types|tojson }}.reduce(function (acc, pair) {
 // умеет распарсить обратно) не изменилась, изменился только способ ввода.
 var BODY_FORMAT_HINT = '';
 
+// Пока в форме пишется или грузится запись блока «Голосовое / кружок»
+// (контейнер с `data-mrf-busy`, см. media-recorder-field.js), кнопки
+// сохранения не срабатывают (владелец 25.09.2026): иначе блок ушёл бы без
+// файла, `_is_empty` отбросил бы его, и запись молча пропала бы. Одна
+// проверка в фазе захвата на весь документ, а не по строке в каждом из
+// пяти обработчиков сохранения двух страниц.
+var MEDIA_BUSY_SAVE_BUTTONS = '[data-mock-save], [data-video-save], [data-homework-save], '
+    + '[data-simple-save], [data-item-save]';
+document.addEventListener('click', function (event) {
+    var button = event.target.closest(MEDIA_BUSY_SAVE_BUTTONS);
+    if (!button) return;
+    var form = button.closest('form');
+    if (!form || !form.querySelector('[data-b-media][data-mrf-busy]')) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    window.alert('Запись ещё не сохранилась. Дождитесь надписи «Сохранится вместе с заданием» и нажмите кнопку снова.');
+}, true);
+
 function escapeHTML(value) {
     var div = document.createElement('div');
     div.textContent = value == null ? '' : String(value);
