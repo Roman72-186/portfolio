@@ -35,6 +35,15 @@
  * Формат выбирает браузер: Chrome/Firefox пишут webm, Safari — mp4. Имя
  * файла получает расширение под фактический формат: сервер узнаёт тип и по
  * расширению, а путь в S3 без расширения получил бы `.jpg`.
+ *
+ * «Прикрепить аудио/видео» рядом с каждой кнопкой «Записать…» (владелец
+ * 25.09.2026: «чтобы можно было загрузить голосовое в любом формате и
+ * видео») — путь для готового файла, а не только для того, что умеет
+ * записать сам браузер. Устройство при этом не занимается: файл сразу идёт
+ * в тот же useFile(), что и результат записи. Формат и размер проверяет
+ * только сервер (read_audio_upload/read_video_upload, app/services/feedback.py) —
+ * он шире, чем то, что пишет MediaRecorder: mp3/wav/m4a/aac/amr и
+ * mp4/mov/avi/mkv/wmv, а не только webm/mp4.
  */
 (function () {
     'use strict';
@@ -48,6 +57,15 @@
         note: ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4']
     };
     var START_LABELS = {voice: 'Записать голосовое', note: 'Записать кружок'};
+    // «Прикрепить файл» (владелец 25.09.2026: «чтобы можно было загрузить
+    // голосовое в любом формате и видео») — рядом с живой записью, не вместо
+    // неё. `accept` только подсказка для системного диалога выбора файла,
+    // настоящую проверку формата и размера всегда делает сервер
+    // (`read_audio_upload`/`read_video_upload`, app/services/feedback.py) —
+    // он уже понимает mp3/wav/m4a/aac/amr и mp4/mov/avi/mkv/wmv, а не только
+    // webm/mp4, которые пишет сам браузер через MediaRecorder.
+    var ATTACH_LABELS = {voice: 'Прикрепить аудио', note: 'Прикрепить видео'};
+    var ATTACH_ACCEPT = {voice: 'audio/*', note: 'video/*'};
 
     function isSupported() {
         return !!(window.MediaRecorder && navigator.mediaDevices
@@ -98,8 +116,13 @@
             return '<button type="button" class="btn-outline mrf-btn" data-mrf-start="' + kind + '">'
                 + START_LABELS[kind] + '</button>';
         }).join('');
+        var attach = modes.map(function (kind) {
+            return '<button type="button" class="btn-outline mrf-btn" data-mrf-attach="' + kind + '">'
+                + ATTACH_LABELS[kind] + '</button>'
+                + '<input type="file" class="mrf-file-input" data-mrf-file="' + kind + '" accept="' + ATTACH_ACCEPT[kind] + '" hidden>';
+        }).join('');
         return ''
-            + '<div class="mrf-row" data-mrf-idle>' + buttons + '</div>'
+            + '<div class="mrf-row" data-mrf-idle>' + buttons + attach + '</div>'
             // Между нажатием «Записать…» и самой записью — стадия «подготовка»
             // (владелец 25.09.2026: раньше запись стартовала сразу по
             // getUserMedia, без паузы посмотреть в кадр или проверить микрофон).
@@ -166,6 +189,8 @@
         this.root.addEventListener('click', function (event) {
             var start = event.target.closest('[data-mrf-start]');
             if (start) { self.start(start.getAttribute('data-mrf-start')); return; }
+            var attach = event.target.closest('[data-mrf-attach]');
+            if (attach) { self.q('[data-mrf-file="' + attach.getAttribute('data-mrf-attach') + '"]').click(); return; }
             if (event.target.closest('[data-mrf-begin]')) { self.beginRecording(); return; }
             if (event.target.closest('[data-mrf-stop]')) { self.stop(false); return; }
             if (event.target.closest('[data-mrf-cancel]')) { self.stop(true); return; }
@@ -176,6 +201,16 @@
                 return;
             }
             if (event.target.closest('[data-mrf-remove]')) self.clear();
+        });
+        // Свой `<input type=file>` на кнопку «Прикрепить…» (не тот, что у
+        // формы переписки: этот — часть разметки самого компонента).
+        this.root.addEventListener('change', function (event) {
+            var input = event.target.closest('[data-mrf-file]');
+            if (!input) return;
+            var kind = input.getAttribute('data-mrf-file');
+            var file = input.files && input.files[0];
+            input.value = '';
+            if (file) self.attachFile(kind, file);
         });
         // Преподаватель выбрал обычный файл в то же поле руками — запись
         // больше не про него: сбрасываем её и флаг кружка.
@@ -378,17 +413,34 @@
         }
         var name = (this.kind === 'voice' ? 'voice' : 'circle') + '-' + Date.now()
             + '.' + extensionFor(this.kind, type);
-        var file = new File([blob], name, {type: type});
+        this.useFile(this.kind, new File([blob], name, {type: type}));
+    };
+
+    // Готовый файл — записанный только что (finish) или выбранный через
+    // «Прикрепить…» (attachFile) — от этой точки идёт одним путём: либо сразу
+    // на сервер (конструктор), либо в скрытое поле формы (переписка).
+    Recorder.prototype.useFile = function (kind, file) {
+        this.kind = kind;
         if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
-        this.objectUrl = URL.createObjectURL(blob);
+        this.objectUrl = URL.createObjectURL(file);
         if (this.uploadUrl) {
-            this.showPreview(this.objectUrl, this.kind, 'Загружаю…');
+            this.showPreview(this.objectUrl, kind, 'Загружаю…');
             this.upload(file);
         } else {
             this.attachToForm(file);
             this.setBusy(false);
-            this.showPreview(this.objectUrl, this.kind, 'Уйдёт вместе с сообщением');
+            this.showPreview(this.objectUrl, kind, 'Уйдёт вместе с сообщением');
         }
+    };
+
+    // «Прикрепить аудио/видео» (владелец 25.09.2026) — файл уже готов, писать
+    // нечего: устройство не занимаем, стадию «подготовка»/«запись» не
+    // показываем, сразу в useFile. `data-mrf-busy` всё равно ставим — до
+    // ответа сервера (или до `attachToForm` в форме переписки) блок не готов.
+    Recorder.prototype.attachFile = function (kind, file) {
+        this.setError('');
+        this.setBusy(true);
+        this.useFile(kind, file);
     };
 
     Recorder.prototype.showPreview = function (url, kind, status) {

@@ -286,6 +286,34 @@ def test_upload_media_stores_voice_in_s3(client, user_factory, session_factory):
     assert upload.call_args.args[1:] == (b"voice-bytes", "audio/webm")
 
 
+def test_upload_media_accepts_attached_files_in_other_formats(client, user_factory, session_factory):
+    """«Прикрепить файл» (владелец 25.09.2026: «чтобы можно было загрузить
+    голосовое в любом формате и видео») — в отличие от живой записи, которая
+    в браузере всегда получается webm или mp4, файл с диска может быть любым
+    форматом, который умеет разобрать телефон или диктофон. Сервер это уже
+    умел (`read_audio_upload`/`read_video_upload`, `app/services/feedback.py`)
+    — здесь фиксируем это тестом на самом эндпоинте загрузки блока."""
+    _staff(client, user_factory, session_factory, vk_id=981_112)
+
+    with patch.object(s3_service, "upload_to_s3", return_value=VOICE_URL) as upload:
+        mp3 = client.post(
+            f"{PROGRAM}/upload-media",
+            data={"kind": MEDIA_VOICE},
+            files={"file": ("голосовое.mp3", b"mp3-bytes", "audio/mpeg")},
+        )
+    assert mp3.status_code == 200, mp3.text
+    assert upload.call_args.args[1:] == (b"mp3-bytes", "audio/mpeg")
+
+    with patch.object(s3_service, "upload_to_s3", return_value=NOTE_URL) as upload:
+        mov = client.post(
+            f"{PROGRAM}/upload-media",
+            data={"kind": MEDIA_NOTE},
+            files={"file": ("клип.mov", b"mov-bytes", "video/quicktime")},
+        )
+    assert mov.status_code == 200, mov.text
+    assert upload.call_args.args[1:] == (b"mov-bytes", "video/quicktime")
+
+
 def test_upload_media_rejects_wrong_format_and_kind(client, user_factory, session_factory):
     _staff(client, user_factory, session_factory, vk_id=981_111)
 
@@ -347,6 +375,25 @@ def test_upload_media_rejects_missing_csrf_with_json_body(client, user_factory, 
     assert response.status_code == 403
     body = response.json()
     assert body["detail"]
+
+
+def test_attach_file_button_is_wired_in_static_script(client):
+    """«Прикрепить аудио/видео» рисуется скриптом на клиенте, а не сервером —
+    в HTML страницы этой разметки нет, проверить можно только сам файл.
+    Не полная замена браузерной проверки (клики и file-picker здесь не
+    воспроизвести), но ловит снесённые определения при следующей правке —
+    как это уже случилось с `return` в program_blocks_editor_js.html."""
+    response = client.get("/static/js/media-recorder-field.js")
+    assert response.status_code == 200
+    source = response.text
+
+    assert "data-mrf-attach" in source
+    assert "data-mrf-file" in source
+    assert "Recorder.prototype.attachFile" in source
+    assert "Recorder.prototype.useFile" in source
+    # attachFile должен реально вызываться из обработчика change, иначе выбор
+    # файла молча ничего не делает.
+    assert "self.attachFile(kind, file)" in source
 
 
 def test_upload_media_is_closed_for_students(client, user_factory, session_factory):

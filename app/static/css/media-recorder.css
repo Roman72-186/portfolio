@@ -83,5 +83,6 @@
 .mrf-error { margin: 0; font-size: 0.875rem; color: var(--error); }
 
 @media (max-width: 480px) {
-    .mrf-row > .mrf-btn[data-mrf-start] { flex: 1 1 100%; }
+    .mrf-row > .mrf-btn[data-mrf-start],
+    .mrf-row > .mrf-btn[data-mrf-attach] { flex: 1 1 100%; }
 }
