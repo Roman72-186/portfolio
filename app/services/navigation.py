@@ -81,6 +81,10 @@ CURATOR_NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem(key="students_review", href="/cabinet/staff/students-review", label="Проверка", icon="🗂️"),
     NavItem(key="reports", href="/cabinet/curator/reports", label="Отчёты", icon="🎬"),
     NavItem(key="statistics", href="/cabinet/students?tab=statistics", label="Статистика", icon="📈"),
+    # 3D-лаборатория (владелец 25.09.2026: «всем кураторам открыть доступ»).
+    # Сервер куратора пускал и раньше (`can_open_3dlab`), но в его отдельном
+    # меню пункта не было — зайти можно было только по прямой ссылке.
+    NavItem(key="3dlab", href="/3dlab", label="3D Лаб", icon="🧊"),
     # Уведомления куратору (добавлено 12.09.2026) — сюда падают напоминания
     # о дне рождения ученика (exam_scheduler._run_birthday_check) и в
     # будущем любые другие Notification с user_id=куратор. У admin+
