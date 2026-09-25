@@ -151,6 +151,32 @@ def _public_base_url(request: Request) -> str:
     return str(request.base_url).rstrip("/")
 
 
+def _keeps_manual_name(user: User) -> bool:
+    """Ручное ФИО главнее имени из профиля ВК/Telegram.
+
+    До 25.09.2026 каждый вход переписывал `name`/`first_name`/`last_name`
+    данными соцсети, и правка ФИО в «Личной информации» (или в карточке
+    ученика у куратора) откатывалась при следующем входе — человек менял
+    по несколько раз, а имя возвращалось. Теперь имя из соцсети ставится
+    только там, где своего ещё нет:
+
+    - заполненная анкета (`profile_completed`) — ученик указал ФИО сам;
+    - роль выше ученика — ФИО сотруднику заводит суперадмин, из ВК оно
+      приходит в виде, под которым сотрудник сидит в соцсети;
+    - пустое ФИО — заполняем из соцсети, как раньше.
+
+    Восстановленный из soft-delete проходит анкету заново (`profile_completed`
+    сбрасывается выше по коду), поэтому имя ему снова берётся из соцсети.
+    Ник Telegram это правило не трогает: он ключ поиска работ и держит
+    проверку `tg_username_mismatch`, его синхронизация при входе намеренная.
+    """
+    if not (user.first_name or user.last_name):
+        return False
+    if user.profile_completed:
+        return True
+    return bool(user.role and user.role.rank >= 2)
+
+
 def _upsert_user(
     db: DBSession,
     *,
@@ -170,11 +196,12 @@ def _upsert_user(
             user.deleted_at = None
             user.is_active = True
             user.profile_completed = False
-        user.name = name
-        if first_name is not None:
-            user.first_name = first_name
-        if last_name is not None:
-            user.last_name = last_name
+        if not _keeps_manual_name(user):
+            user.name = name
+            if first_name is not None:
+                user.first_name = first_name
+            if last_name is not None:
+                user.last_name = last_name
         if photo_url is not None:
             user.photo_url = photo_url
         if tariff:
@@ -953,11 +980,15 @@ def _upsert_telegram_user(
             user.deleted_at = None
             user.is_active = True
             user.profile_completed = False
-        user.name = _tg_display_name(tg_from)
-        if tg_from and tg_from.first_name:
-            user.first_name = tg_from.first_name
-        if tg_from and tg_from.last_name:
-            user.last_name = tg_from.last_name
+        # Ник синхронизируем всегда, ФИО — только пока своего нет
+        # (`_keeps_manual_name`): иначе правка имени в «Личной информации»
+        # откатывалась бы при каждом входе через бота.
+        if not _keeps_manual_name(user):
+            user.name = _tg_display_name(tg_from)
+            if tg_from and tg_from.first_name:
+                user.first_name = tg_from.first_name
+            if tg_from and tg_from.last_name:
+                user.last_name = tg_from.last_name
         if tg_from and tg_from.username:
             user.tg_username = tg_from.username
             # Апдейт от бота — сам по себе живое подтверждение ника

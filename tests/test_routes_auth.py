@@ -661,3 +661,70 @@ def test_internal_issue_link_is_disabled_with_n8n(client, db):
 
     assert resp.status_code == 503
     assert db.query(auth_module.User).count() == before
+
+
+# ---------------------------------------------------------------------------
+# Ручное ФИО переживает вход (25.09.2026)
+#
+# До этой правки каждый вход переписывал имя данными из ВК/Telegram, и правка
+# ФИО в «Личной информации» откатывалась при следующем входе — владелец менял
+# по несколько раз, а имя возвращалось.
+# ---------------------------------------------------------------------------
+
+def test_vk_login_keeps_manually_edited_name(db, user_factory):
+    """Анкета заполнена — имя из профиля ВК поверх своего не ставится."""
+    user = user_factory(vk_id=555_101, name="Старое Имя")
+    user.first_name, user.last_name, user.name = "Анна", "Смирнова", "Анна Смирнова"
+    db.commit()
+
+    auth_module._upsert_user(
+        db, vk_id=555_101, name="Anya Smi", first_name="Anya", last_name="Smi",
+        photo_url="https://vk.com/photo.jpg",
+    )
+    db.commit()
+    db.refresh(user)
+
+    assert (user.first_name, user.last_name, user.name) == ("Анна", "Смирнова", "Анна Смирнова")
+    assert user.photo_url == "https://vk.com/photo.jpg"  # аватар по-прежнему обновляется
+
+
+def test_vk_login_fills_empty_name_from_profile(db, user_factory):
+    """Своего ФИО ещё нет — заполняем из ВК, как раньше."""
+    user = user_factory(vk_id=555_102, name="Ученик", profile_completed=False)
+    user.first_name = user.last_name = None
+    db.commit()
+
+    auth_module._upsert_user(db, vk_id=555_102, name="Anya Smi", first_name="Anya", last_name="Smi")
+    db.commit()
+    db.refresh(user)
+
+    assert (user.first_name, user.last_name, user.name) == ("Anya", "Smi", "Anya Smi")
+
+
+def test_vk_login_keeps_staff_name_without_questionnaire(db, user_factory):
+    """У сотрудника анкеты нет — ФИО ему заводит суперадмин, ВК его не правит."""
+    user = user_factory(vk_id=555_103, name="Куратор Лиза", role_name="куратор", profile_completed=False)
+    user.first_name, user.last_name = "Лиза", "Куратор"
+    db.commit()
+
+    auth_module._upsert_user(db, vk_id=555_103, name="Liza K", first_name="Liza", last_name="K")
+    db.commit()
+    db.refresh(user)
+
+    assert (user.first_name, user.last_name) == ("Лиза", "Куратор")
+
+
+def test_telegram_login_keeps_name_but_syncs_username(db, user_factory):
+    """ФИО остаётся своим, а ник Telegram синхронизируется намеренно."""
+    user = user_factory(vk_id=555_104, name="Анна Смирнова")
+    user.telegram_chat_id = 777_101
+    user.first_name, user.last_name, user.tg_username = "Анна", "Смирнова", "anna_s"
+    db.commit()
+
+    tg_from = auth_module._TgFrom(id=777_101, first_name="Anya", last_name="S", username="anya_tg")
+    auth_module._upsert_telegram_user(db, chat_id=777_101, tg_from=tg_from, is_group_member=True)
+    db.commit()
+    db.refresh(user)
+
+    assert (user.first_name, user.last_name, user.name) == ("Анна", "Смирнова", "Анна Смирнова")
+    assert user.tg_username == "anya_tg"
