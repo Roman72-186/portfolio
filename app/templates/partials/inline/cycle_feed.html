@@ -82,9 +82,18 @@
         // ленты (`data-block-id`), мастер прячет все, кроме текущей. Если
         // хотя бы одна карточка ещё не пришла на экран (заперта, к примеру),
         // откатываемся к обычному показу всех вопросов разом ниже.
+        //
+        // Мастер берёт только вопросы диагностики (`block.is_archi_profile`),
+        // а не весь `blocks` — с 24.09.2026 диагностика может быть встроена
+        // в «Задание» рядом с обычными блоками (видео, фото), и `data.blocks`
+        // несёт их все вперемешку. Взять весь список означало бы завести в
+        // мастер и чужие блоки — `runWizard` прячет всё, кроме текущего шага
+        // (`container.hidden`), и видео с фото-загрузкой пропадали бы из
+        // ленты вместе с недостигнутыми вопросами диагностики.
         if (data.is_archi_profile && !data.archi_profile && !data.answered) {
+            var diagnosticBlocks = blocks.filter(function (block) { return block.is_archi_profile; });
             var wizardSteps = [];
-            var complete = blocks.length > 0 && blocks.every(function (block) {
+            var complete = diagnosticBlocks.length > 0 && diagnosticBlocks.every(function (block) {
                 var step = stepFor(taskId, block.id);
                 var body = step && step.querySelector('[data-role="block-body"]');
                 if (!step || !body) return false;
@@ -99,7 +108,9 @@
                         }).catch(function () { handlers.onError(); });
                     }
                 });
-                return;
+                // Остальные блоки задания (не диагностика) идут обычным
+                // рендером ниже — мастер занял только свои карточки шагов.
+                blocks = blocks.filter(function (block) { return !block.is_archi_profile; });
             }
         }
 

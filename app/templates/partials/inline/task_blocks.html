@@ -116,11 +116,28 @@
             // «Диагностика», раздел 8): вопросы открываются по очереди, а не
             // разом. Отвеченная диагностика показывается обычным списком
             // блоков с результатом внизу, как остальные задания.
-            if (data.is_archi_profile && !data.archi_profile && !renderer.answered) {
-                var steps = blocks.map(function (block) {
+            //
+            // В мастер идут только вопросы диагностики (`block.is_archi_profile`),
+            // остальные блоки задания (видео, фото и т.п.) рендерятся обычным
+            // способом на своих местах — с 24.09.2026 диагностика может быть
+            // встроена в «Задание» рядом с ними, и `data.blocks` несёт их
+            // вперемешку. Взять в мастер весь список означало бы спрятать
+            // чужие блоки: `runWizard` прячет всё, кроме текущего шага.
+            var diagnosticBlocks = blocks.filter(function (block) { return block.is_archi_profile; });
+            if (data.is_archi_profile && !data.archi_profile && !renderer.answered && diagnosticBlocks.length) {
+                var steps = diagnosticBlocks.map(function (block) {
                     var body = el('div', 'lrn-blk-step');
-                    listEl.appendChild(body);
                     return { block: block, container: body, body: body };
+                });
+                var stepIndex = 0;
+                blocks.forEach(function (block, index) {
+                    if (block.is_archi_profile) {
+                        listEl.appendChild(steps[stepIndex].container);
+                        stepIndex++;
+                    } else {
+                        var node = renderer.render(block, index);
+                        if (node) listEl.appendChild(node);
+                    }
                 });
                 window.lrnBlockRender.runWizard(renderer, steps, {
                     onFinish: function (answers, handlers) {
