@@ -726,8 +726,13 @@ def get_video_watch_stats(db: DBSession, days: int = RECENT_DAYS) -> dict:
 
 def get_task_progress_stats(db: DBSession) -> dict:
     """Задания учебной программы: сколько учеников открыли каждое, сколько
-    закрыли, сколько бросили на середине и кто закрыл — сам ученик, система
-    по событию или преподаватель.
+    закрыли, у скольких оно открыто и срок ещё идёт, у скольких срок прошёл,
+    и кто закрыл — сам ученик, система по событию или преподаватель.
+
+    «Просрочено» — только по `TrackerTask.due_at`: у заданий цикла срока нет
+    (`due_at IS NULL`, окно задаёт период цикла), такие незакрытые остаются
+    «в работе». Иначе ученик, открывший задание час назад, считался бы
+    бросившим.
 
     «Кто закрыл» читается по `completed_by_id`, а не по строкам источника:
     `None` — система (`tracker.complete_task_by_event`), id ученика — его
@@ -741,6 +746,7 @@ def get_task_progress_stats(db: DBSession) -> dict:
             TrackerTaskState.completed_at,
             TrackerTaskState.completed_by_id,
             TrackerTask.title,
+            TrackerTask.due_at,
         )
         .join(TrackerTask, TrackerTaskState.task_id == TrackerTask.id)
         .filter(
@@ -749,11 +755,13 @@ def get_task_progress_stats(db: DBSession) -> dict:
         )
         .all()
     )
+    now = datetime.now(timezone.utc)
     closed_by = {"student": 0, "system": 0, "staff": 0}
     by_task: dict[int, dict] = {}
     for r in rows:
         agg = by_task.setdefault(r.task_id, {
-            "title": r.title, "opened": 0, "done": 0, "stuck": 0, "pairs": [],
+            "title": r.title, "opened": 0, "done": 0, "in_work": 0, "overdue": 0,
+            "pairs": [],
         })
         if r.started_at is not None:
             agg["opened"] += 1
@@ -768,19 +776,21 @@ def get_task_progress_stats(db: DBSession) -> dict:
             else:
                 closed_by["staff"] += 1
         elif r.started_at is not None:
-            agg["stuck"] += 1
+            due_at = _utc(r.due_at)
+            agg["overdue" if due_at is not None and due_at < now else "in_work"] += 1
 
     tasks = []
     for agg in by_task.values():
         agg["avg_text"] = fmt_duration(_avg_seconds(agg.pop("pairs")))
         tasks.append(agg)
-    # Наверху — где больше всего начали и не закончили: это то, что требует
-    # внимания преподавателя.
-    tasks.sort(key=lambda t: (t["stuck"], t["opened"]), reverse=True)
+    # Наверху — где больше всего просрочено: это то, что требует внимания
+    # преподавателя.
+    tasks.sort(key=lambda t: (t["overdue"], t["in_work"], t["opened"]), reverse=True)
     return {
         "opened": sum(t["opened"] for t in tasks),
         "done": sum(t["done"] for t in tasks),
-        "stuck": sum(t["stuck"] for t in tasks),
+        "in_work": sum(t["in_work"] for t in tasks),
+        "overdue": sum(t["overdue"] for t in tasks),
         "closed_by": closed_by,
         "tasks": tasks[:30],
         "tasks_total": len(tasks),

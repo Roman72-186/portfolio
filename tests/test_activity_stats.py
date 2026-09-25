@@ -397,7 +397,7 @@ def test_student_metrics_ignore_staff_activity(db, user_factory):
 
     tasks = get_task_progress_stats(db)
     assert tasks["opened"] == 1
-    assert tasks["stuck"] == 1
+    assert tasks["in_work"] == 1
 
 
 def test_task_progress_tells_who_closed_the_task(db, user_factory):
@@ -549,5 +549,30 @@ def test_superadmin_reviews_show_up_on_his_tab(superadmin_client, db, user_facto
     db.commit()
     text = client.get("/cabinet/superadmin/activity").text
     panel = text[text.index('id="actPanelSuperadmin"'):]
-    assert "Скорость проверки работ" in panel
-    assert "Super Admin" in panel.split("Обратная связь")[0]
+    # Имя ищем именно в карточке скорости проверки: выше по панели оно есть
+    # в таблице «Действия суперадминов» и без этой карточки.
+    speed_card = panel.split("Скорость проверки работ", 1)[1].split("Обратная связь", 1)[0]
+    assert "Super Admin" in speed_card
+
+
+def test_open_task_is_overdue_only_after_its_deadline(db, user_factory):
+    """Открыл задание и не закрыл — «в работе», пока срок не прошёл;
+    у задания цикла срока нет, и оно в «просрочено» не попадает никогда."""
+    from app.models.tracker import TrackerTask, TrackerTaskState
+    from app.services.activity_stats import get_task_progress_stats
+
+    student = user_factory(vk_id=971701, name="Ученик Срок", role_name="ученик")
+    now = datetime.now(timezone.utc)
+    past = TrackerTask(title="Срок прошёл", due_at=now - timedelta(days=1))
+    future = TrackerTask(title="Срок впереди", due_at=now + timedelta(days=3))
+    cycle = TrackerTask(title="Без срока")
+    db.add_all([past, future, cycle])
+    db.flush()
+    for task in (past, future, cycle):
+        db.add(TrackerTaskState(task_id=task.id, user_id=student.id, started_at=now - timedelta(hours=1)))
+    db.commit()
+
+    stats = get_task_progress_stats(db)
+    assert stats["overdue"] == 1
+    assert stats["in_work"] == 2
+    assert stats["tasks"][0]["title"] == "Срок прошёл"

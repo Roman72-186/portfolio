@@ -227,7 +227,7 @@
 
     <!-- Задания программы -->
     <details class="ss-acc">
-        <summary><h2 class="ss-acc-title">Задания учебной программы</h2><span class="ss-acc-badge">{{ task_progress.done }} закрыто · {{ task_progress.stuck }} брошено на середине</span></summary>
+        <summary><h2 class="ss-acc-title">Задания учебной программы</h2><span class="ss-acc-badge">{{ task_progress.done }} закрыто · {{ task_progress.in_work }} в работе · {{ task_progress.overdue }} просрочено</span></summary>
         <div class="ss-acc-body">
             {% if task_progress.tasks %}
             <div class="ss-stats-strip">
@@ -238,21 +238,22 @@
             </div>
             <div class="ss-table-wrap">
                 <table class="ss-table">
-                    <thead><tr><th>Задание</th><th class="ss-ta-r">Открыли</th><th class="ss-ta-r">Закрыли</th><th class="ss-ta-r">Брошено</th><th class="ss-ta-r">В среднем до закрытия</th></tr></thead>
+                    <thead><tr><th>Задание</th><th class="ss-ta-r">Открыли</th><th class="ss-ta-r">Закрыли</th><th class="ss-ta-r">В работе</th><th class="ss-ta-r">Срок прошёл</th><th class="ss-ta-r">В среднем до закрытия</th></tr></thead>
                     <tbody>
                     {% for t in task_progress.tasks %}
                     <tr>
                         <td data-label="Задание" class="ss-bold">{{ t.title }}</td>
                         <td data-label="Открыли" class="ss-ta-r">{{ t.opened }}</td>
                         <td data-label="Закрыли" class="ss-ta-r">{{ t.done }}</td>
-                        <td data-label="Брошено" class="ss-ta-r">{{ t.stuck }}</td>
+                        <td data-label="В работе" class="ss-ta-r">{{ t.in_work }}</td>
+                        <td data-label="Срок прошёл" class="ss-ta-r">{{ t.overdue }}</td>
                         <td data-label="До закрытия" class="ss-ta-r">{{ t.avg_text or "—" }}</td>
                     </tr>
                     {% endfor %}
                     </tbody>
                 </table>
             </div>
-            {% if task_progress.tasks_total > task_progress.tasks | length %}<div class="ss-empty">Показаны {{ task_progress.tasks | length }} из {{ task_progress.tasks_total }} заданий — где больше всего брошенных</div>{% endif %}
+            {% if task_progress.tasks_total > task_progress.tasks | length %}<div class="ss-empty">Показаны {{ task_progress.tasks | length }} из {{ task_progress.tasks_total }} заданий, сначала те, где больше просроченных</div>{% endif %}
             {% else %}<div class="ss-empty">Ученики ещё не открывали задания программы</div>{% endif %}
         </div>
     </details>
