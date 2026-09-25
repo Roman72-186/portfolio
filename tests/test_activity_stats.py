@@ -666,3 +666,18 @@ def test_users_page_keeps_only_the_people_list(superadmin_client, user_factory):
         assert "Активность учеников" not in page
         assert "data-activity-filter" not in page
         assert f'data-user-row="{student.id}"' in page
+
+
+def test_student_username_is_a_copy_button(superadmin_client, db, user_factory):
+    """Ник ученика в списках — кнопка копирования; без ника — прочерк."""
+    client, _ = superadmin_client
+    with_nick = user_factory(vk_id=971804, name="Ученик С Ником", role_name="ученик")
+    with_nick.tg_username = "nick_student"
+    user_factory(vk_id=971805, name="Ученик Без Ника", role_name="ученик")
+    db.commit()
+
+    page = client.get("/cabinet/superadmin/activity").text
+    assert 'class="ss-copy" data-copy="@nick_student"' in page
+    summary = page.split("Ученики поимённо", 1)[1].split("Лента действий", 1)[0]
+    assert 'data-copy="@nick_student"' in summary
+    assert "Не указан" not in summary.split("<tbody>", 1)[1]

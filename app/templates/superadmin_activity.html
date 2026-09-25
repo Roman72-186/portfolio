@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Статистика активности{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=7">
+<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=8">
 {% endblock %}
 
 {# Таблица действий сотрудников — одна на три вкладки ролей. #}
@@ -29,6 +29,9 @@
     </div>
     {% else %}<div class="ss-empty">{{ empty_text }}</div>{% endif %}
 {% endmacro %}
+
+{# Username ученика кнопкой: нажал — скопировал. Без ника — прочерк. #}
+{% macro tg_copy(username) %}{% if username and username.startswith('@') %}<button type="button" class="ss-copy" data-copy="{{ username }}" title="Скопировать {{ username }}">{{ username }}</button>{% else %}—{% endif %}{% endmacro %}
 
 {% macro review_speed_table(rows) %}
     {% if rows %}
@@ -187,7 +190,7 @@
                     {% for student in tariff_registration_stats.students %}
                     <tr>
                         <td data-label="Ученик" class="ss-bold">{{ student.name }}</td>
-                        <td data-label="Telegram" class="ss-dim-sm">{{ student.username }}</td>
+                        <td data-label="Telegram" class="ss-dim-sm">{{ tg_copy(student.username) }}</td>
                         <td data-label="Тариф">{{ student.tariff_label }}</td>
                         <td data-label="Регистрация" class="ss-dim">{{ student.created_at.strftime('%d.%m.%Y %H:%M') if student.created_at else "—" }}</td>
                     </tr>
@@ -234,7 +237,7 @@
                     <tbody>
                     {% for student in student_activity.students %}
                     <tr data-activity-student data-student-id="{{ student.id }}" data-portfolio-uploaded="{{ '1' if student.has_portfolio_before else '0' }}" data-student-name="{{ student.name }}" data-student-username="{{ student.username if student.username.startswith('@') else '' }}" data-student-tariff="{{ student.tariff }}">
-                        <td data-label="Ученик"><span class="ss-bold">{{ student.name }}</span><br><span class="ss-dim-sm">{{ student.username }} · {{ student.tariff }}</span></td>
+                        <td data-label="Ученик"><span class="ss-bold">{{ student.name }}</span><br><span class="ss-dim-sm">{{ tg_copy(student.username) }} · {{ student.tariff }}</span></td>
                         <td data-label="Регистрация" class="ss-dim">{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td>
                         <td data-label="Последний вход" class="ss-dim">{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td>
                         <td data-label="Входов" class="ss-ta-r">{{ student.login_count }}</td>
@@ -301,7 +304,7 @@
                     {% for event in student_activity.events %}
                     <tr>
                         <td data-label="Когда" class="ss-dim-nowrap">{{ event.created_at.strftime('%d.%m.%Y %H:%M') if event.created_at else '—' }}</td>
-                        <td data-label="Ученик"><span class="ss-bold">{{ event.student_name }}</span><br><span class="ss-dim-sm">{{ event.username }}</span></td>
+                        <td data-label="Ученик"><span class="ss-bold">{{ event.student_name }}</span><br><span class="ss-dim-sm">{{ tg_copy(event.username) }}</span></td>
                         <td data-label="Действие">{{ event.action }}</td>
                         <td data-label="Детали" class="ss-dim">{{ event.details or '—' }}</td>
                     </tr>
@@ -504,7 +507,7 @@
                     {% for s in logins.inactive %}
                     <tr>
                         <td data-label="Ученик"><a href="/cabinet/superadmin/users?q={{ s.student_name }}" class="ss-link">{{ s.student_name }}</a></td>
-                        <td data-label="Telegram" class="ss-dim-sm">{% if s.tg_username %}@{{ s.tg_username }}{% else %}—{% endif %}</td>
+                        <td data-label="Telegram" class="ss-dim-sm">{{ tg_copy('@' ~ s.tg_username.lstrip('@') if s.tg_username else '') }}</td>
                         <td data-label="Тариф">{{ s.tariff }}</td>
                         <td data-label="Последний вход" class="ss-dim">{{ s.last_login_at.strftime('%d.%m.%Y %H:%M') if s.last_login_at else "не заходил с 11.07" }}</td>
                     </tr>
@@ -683,6 +686,37 @@
 })();
 </script>
 <script>
+// Копирование в буфер: Clipboard API, а без HTTPS — через скрытую textarea.
+async function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand('copy');
+    textarea.remove();
+    if (!copied) throw new Error('copy failed');
+}
+
+// Username ученика: кнопка из макроса tg_copy, одна делегация на страницу.
+document.addEventListener('click', async function (event) {
+    const button = event.target.closest('[data-copy]');
+    if (!button) return;
+    try {
+        await copyText(button.dataset.copy);
+        button.classList.add('is-copied');
+        setTimeout(function () { button.classList.remove('is-copied'); }, 1500);
+    } catch (error) {
+        button.title = 'Не удалось скопировать';
+    }
+});
+
 // Поимённая сводка: фильтры по портфолио и заданию, копирование списка.
 (function () {
     const root = document.querySelector('[data-activity-portfolio]');
@@ -748,19 +782,6 @@
         status.textContent = '';
     }
 
-    function fallbackCopy(text) {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.setAttribute('readonly', '');
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        const copied = document.execCommand('copy');
-        textarea.remove();
-        return copied;
-    }
-
     copyButton.addEventListener('click', async function () {
         const text = visibleRows().map(function (row) {
             const username = row.dataset.studentUsername;
@@ -771,11 +792,7 @@
         }).join('\n');
         if (!text) return;
         try {
-            if (navigator.clipboard && window.isSecureContext) {
-                await navigator.clipboard.writeText(text);
-            } else if (!fallbackCopy(text)) {
-                throw new Error('copy failed');
-            }
+            await copyText(text);
             status.textContent = 'Скопировано';
         } catch (error) {
             status.textContent = 'Не удалось скопировать';
