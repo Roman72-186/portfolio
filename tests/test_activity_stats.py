@@ -339,11 +339,13 @@ def test_role_group_maps_ranks_to_tabs():
     assert role_group(5) == "superadmin"
 
 
-def test_diagnostic_is_the_first_row_of_the_page(superadmin_client):
+def test_diagnostic_goes_right_after_login_tiles(superadmin_client):
     client, _ = superadmin_client
     text = client.get("/cabinet/superadmin/activity").text
     diag = text.index("Диагностика АРХИ-ПРОФИЛЯ")
-    for later in ("Заходили за 7 дней", "Действия учеников", "Просмотр видео",
+    # Плитки входов — первая строка, диагностика — вторая (владелец 25.09.2026).
+    assert text.index("Заходили за 7 дней") < diag
+    for later in ("Действия учеников", "Просмотр видео",
                   "Поведение на пробнике", "Скорость проверки работ", "Журнал изменений"):
         assert diag < text.index(later), later
 

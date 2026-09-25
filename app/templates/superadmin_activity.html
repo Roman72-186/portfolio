@@ -103,7 +103,27 @@
     {# ═══════════════ Ученики ═══════════════ #}
     <div id="actPanelStudents">
 
-    {# Диагностика — первой строкой страницы (владелец 25.09.2026). #}
+    <!-- Плитки: входы + онбординг -->
+    <div class="ss-stats-strip">
+        <div class="ss-stat">
+            <div class="ss-stat-val">{{ logins.d7 }}<span class="ss-suffix-dim"> / {{ logins.total }}</span></div>
+            <div class="ss-stat-lbl">Заходили за 7 дней</div>
+        </div>
+        <div class="ss-stat">
+            <div class="ss-stat-val">{{ logins.d30 }}<span class="ss-suffix-dim"> / {{ logins.total }}</span></div>
+            <div class="ss-stat-lbl">Заходили за 30 дней</div>
+        </div>
+        <div class="ss-stat">
+            <div class="ss-stat-val">{{ onboarding.profile_done }}<span class="ss-suffix-dim"> / {{ onboarding.total }}</span></div>
+            <div class="ss-stat-lbl">Профиль заполнен{% if onboarding.avg_profile_text %} · в среднем за {{ onboarding.avg_profile_text }}{% endif %}</div>
+        </div>
+        <div class="ss-stat">
+            <div class="ss-stat-val">{{ onboarding.portfolio_done }}<span class="ss-suffix-dim"> / {{ onboarding.total }}</span></div>
+            <div class="ss-stat-lbl">Фото «до» загружены{% if onboarding.avg_portfolio_text %} · в среднем за {{ onboarding.avg_portfolio_text }}{% endif %}</div>
+        </div>
+    </div>
+
+    {# Диагностика — сразу под плитками входов (владелец 25.09.2026). #}
     <details class="ss-acc" open>
         <summary><h2 class="ss-acc-title">Диагностика АРХИ-ПРОФИЛЯ</h2><span class="ss-acc-badge">{{ diagnostics | length }} диагностик</span></summary>
         <div class="ss-acc-body">
@@ -134,26 +154,6 @@
             {% else %}<div class="ss-empty">Опубликованных диагностик пока нет</div>{% endif %}
         </div>
     </details>
-
-    <!-- Плитки: входы + онбординг -->
-    <div class="ss-stats-strip">
-        <div class="ss-stat">
-            <div class="ss-stat-val">{{ logins.d7 }}<span class="ss-suffix-dim"> / {{ logins.total }}</span></div>
-            <div class="ss-stat-lbl">Заходили за 7 дней</div>
-        </div>
-        <div class="ss-stat">
-            <div class="ss-stat-val">{{ logins.d30 }}<span class="ss-suffix-dim"> / {{ logins.total }}</span></div>
-            <div class="ss-stat-lbl">Заходили за 30 дней</div>
-        </div>
-        <div class="ss-stat">
-            <div class="ss-stat-val">{{ onboarding.profile_done }}<span class="ss-suffix-dim"> / {{ onboarding.total }}</span></div>
-            <div class="ss-stat-lbl">Профиль заполнен{% if onboarding.avg_profile_text %} · в среднем за {{ onboarding.avg_profile_text }}{% endif %}</div>
-        </div>
-        <div class="ss-stat">
-            <div class="ss-stat-val">{{ onboarding.portfolio_done }}<span class="ss-suffix-dim"> / {{ onboarding.total }}</span></div>
-            <div class="ss-stat-lbl">Фото «до» загружены{% if onboarding.avg_portfolio_text %} · в среднем за {{ onboarding.avg_portfolio_text }}{% endif %}</div>
-        </div>
-    </div>
 
     <!-- Журнал действий учеников -->
     <details class="ss-acc">
