@@ -142,6 +142,7 @@ function blockBodyHTML(type) {
         // получал пустую строку. Сервер отвечал 403 без JSON-тела, компонент
         // показывал общий текст «Не получилось сохранить запись» вместо
         // настоящей причины (владелец 25.09.2026, баг из первого дня записи).
+        return ''
             + '<div data-media-recorder data-b-media data-mrf-csrf="' + escapeHTML(csrfToken) + '" data-mrf-upload-url="/cabinet/staff/program/upload-media"></div>'
             + '<p class="prg-hint">Запишите голосовое до 10 минут или кружок до минуты. Ученик откроет запись в задании и отметит блок выполненным.</p>'
             + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок, необязательно" placeholder="Заголовок, необязательно"></label>';

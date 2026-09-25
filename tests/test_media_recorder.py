@@ -397,6 +397,32 @@ def test_constructor_offers_media_block(client, db, user_factory, session_factor
     assert "data-mrf-csrf=\"' + escapeHTML(csrfToken) + '\"" in page.text
 
 
+def test_media_block_branch_returns_before_its_markup(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Регрессия 25.09.2026: правка, добавившая `data-mrf-csrf` в разметку,
+    случайно снесла `return ''` перед ней. Без `return` JS проваливался мимо
+    всех `if (type === …)` до самой последней ветки функции — дефолтного
+    вопроса («Текст вопроса», «Тип ответа», «Добавить вариант») — и вместо
+    записи владелец в конструкторе видел редактор вопроса. Подстрочный поиск
+    `data-mrf-csrf` этого не ловит: строка остаётся в исходнике JS, даже если
+    ветка недостижима. Здесь проверяем именно наличие `return` внутри ветки
+    `type === 'media'`, до следующей ветки `if`."""
+    monkeypatch.setattr("app.api.cabinet_program.today_msk", date.today)
+    monkeypatch.setattr("app.services.program.today_msk", date.today)
+    _staff(client, user_factory, session_factory, vk_id=981_143)
+
+    page = client.get(f"{PROGRAM}/{_future_day_iso()}")
+    assert page.status_code == 200
+
+    branch_start = page.text.index("if (type === 'media')")
+    branch_end = page.text.index("if (type === 'upload')", branch_start)
+    branch = page.text[branch_start:branch_end]
+
+    assert "return" in branch, "ветка 'media' не возвращает разметку — провалится в дефолт-вопрос"
+    assert branch.index("return") < branch.index("data-media-recorder")
+
+
 def test_cycle_items_constructor_media_block_carries_csrf(
     client, db, user_factory, session_factory
 ):
