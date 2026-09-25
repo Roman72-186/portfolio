@@ -578,3 +578,91 @@ def test_open_task_is_overdue_only_after_its_deadline(db, user_factory):
     assert stats["overdue"] == 1
     assert stats["in_work"] == 2
     assert stats["tasks"][0]["title"] == "Срок прошёл"
+
+
+# ── Перенесено с «Пользователей» 25.09.2026 ─────────────────────────────────
+
+def test_named_student_summary_moved_from_users_page(
+    client, db, user_factory, session_factory
+):
+    chief_teacher = user_factory(
+        vk_id=900216, name="Chief Teacher Activity", role_name="админ"
+    )
+    session = session_factory(chief_teacher)
+    client.cookies.set("session_id", session.id)
+    missing = user_factory(
+        vk_id=900217, name="Missing Portfolio", role_name="ученик"
+    )
+    missing.tg_username = "missing_portfolio"
+    uploaded = user_factory(
+        vk_id=900218, name="Uploaded Portfolio", role_name="ученик"
+    )
+    from app.models.tracker import TrackerTask
+    from app.models.task_block import TaskBlock
+    task = TrackerTask(title="Практическое задание", kind="material", is_published=True, assign_to_all=True)
+    db.add(task)
+    db.flush()
+    block = TaskBlock(task_id=task.id, block_type="photo_upload", title="Эскизы")
+    db.add(block)
+    db.add(Work(
+        user_id=uploaded.id,
+        work_type="before",
+        month="Сентябрь",
+        year=2026,
+        filename="portfolio.jpg",
+        status="success",
+    ))
+    db.commit()
+
+    page = client.get("/cabinet/superadmin/activity").text
+
+    assert 'data-activity-filter' in page
+    assert '<option value="missing">Не загрузили</option>' in page
+    assert 'data-activity-copy' in page
+    assert 'data-assignment-filter' in page
+    assert 'data-submission-filter' in page
+    assert f'<option value="{block.id}">Практическое задание · Эскизы</option>' in page
+    assert "Скопировать имена, username и тариф" in page
+    missing_row = page.split('data-student-name="Missing Portfolio"', 1)[0].rsplit("<tr", 1)[1]
+    uploaded_row = page.split('data-student-name="Uploaded Portfolio"', 1)[0].rsplit("<tr", 1)[1]
+    assert 'data-portfolio-uploaded="0"' in missing_row
+    assert 'data-student-username="@missing_portfolio"' in page
+    assert 'data-student-tariff=' in page
+    assert 'data-portfolio-uploaded="1"' in uploaded_row
+    assert 'href="/cabinet/admin/registration-stats.csv?' in page
+
+
+def test_registration_card_follows_date_filter(superadmin_client, db, user_factory):
+    """Фильтр дат пересчитывает карточку регистраций и держит её раскрытой."""
+    client, _ = superadmin_client
+    inside = user_factory(vk_id=971801, name="Регистрация Внутри", role_name="ученик")
+    outside = user_factory(vk_id=971802, name="Регистрация Снаружи", role_name="ученик")
+    inside.created_at = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
+    outside.created_at = datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc)
+    db.commit()
+
+    page = client.get(
+        "/cabinet/superadmin/activity?registration_from=2026-09-20&registration_to=2026-09-21"
+    ).text
+    card = page.split("Регистрации по тарифам", 1)[1].split("Ученики поимённо", 1)[0]
+    assert "Регистрация Внутри" in card
+    assert "Регистрация Снаружи" not in card
+    opener = page.split("Регистрации по тарифам", 1)[0].rsplit("<details", 1)[1]
+    assert " open" in opener
+    assert "registration_from=2026-09-20&amp;registration_to=2026-09-21" in card
+
+    plain = client.get("/cabinet/superadmin/activity").text
+    assert " open" not in plain.split("Регистрации по тарифам", 1)[0].rsplit("<details", 1)[1]
+
+
+def test_users_page_keeps_only_the_people_list(superadmin_client, user_factory):
+    """Вкладки статистики ушли с «Пользователей», список людей остался —
+    в том числе по старым закладкам с ?view=."""
+    client, _ = superadmin_client
+    student = user_factory(vk_id=971803, name="Ученик Списка", role_name="ученик")
+    for url in ("/cabinet/superadmin/users", "/cabinet/superadmin/users?view=activity"):
+        page = client.get(url).text
+        assert "Регистрации по тарифам" not in page
+        assert "Активность учеников" not in page
+        assert "data-activity-filter" not in page
+        assert f'data-user-row="{student.id}"' in page

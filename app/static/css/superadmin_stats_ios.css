@@ -38,7 +38,8 @@
 .ios-ss .act-tabs { max-width: 100%; overflow-x: auto; margin: 0 0 16px; scrollbar-width: none; }
 .ios-ss .act-tabs .nav-pill-item { flex: 0 0 auto; white-space: nowrap; }
 
-/* ── Фильтры (только stats.html) ── */
+/* ── Фильтры: период пробников (stats.html), регистрации и поимённая
+   сводка учеников (activity.html) ── */
 .ios-ss .ss-filters {
     display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;
     background: var(--ios-card-bg); border: none; border-radius: 16px;
@@ -48,16 +49,22 @@
     display: flex; flex-direction: column; gap: 4px;
     font: 700 11px/1.3 var(--ios-font); color: var(--ios-label-2);
 }
-.ios-ss .ss-filters select {
+.ios-ss .ss-filters select,
+.ios-ss .ss-filters input {
     font-family: var(--ios-font); font-size: 14px; padding: 8px 12px;
     border: none; border-radius: 10px; background: var(--ios-grouped-bg); color: var(--ios-label);
     min-width: 220px; outline: none;
 }
-.ios-ss .ss-filters select:focus { outline: 2px solid var(--ios-blue); outline-offset: 1px; }
+.ios-ss .ss-filters select:focus,
+.ios-ss .ss-filters input:focus { outline: 2px solid var(--ios-blue); outline-offset: 1px; }
 .ios-ss .ss-filters .btn-blue.btn-save {
     background: var(--ios-blue); box-shadow: none; border-radius: 999px;
     font: 700 13px/1 var(--ios-font); padding: 9px 18px; min-height: 0;
 }
+/* Внутри карточки фильтр не отдельная карточка: без тени и внешних отступов. */
+.ios-ss .ss-acc-body .ss-filters { box-shadow: none; padding: 0; margin-bottom: 12px; }
+.ios-ss .ss-filters select:disabled { opacity: .5; }
+.ios-ss .ss-filters .ss-link { align-self: center; font: 700 13px/1 var(--ios-font); }
 .ios-ss .ss-export-btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     min-height: 40px; padding: 8px 16px;
@@ -123,6 +130,9 @@
 .ios-ss .ss-table thead th { background: var(--ios-grouped-bg); }
 .ios-ss .ss-table th + th,
 .ios-ss .ss-table td + td { border-left: 0.5px solid var(--ios-sep); }
+/* На телефоне строки таблицы становятся display:block и перебивают
+   атрибут hidden — строки, отсеянные фильтром, остались бы на экране. */
+.ios-ss .ss-table tr[hidden] { display: none; }
 .ios-ss .ss-empty { padding: 24px; text-align: center; color: var(--ios-label-2); font: 400 14px var(--ios-font); }
 
 .ios-ss .ss-table-title {
@@ -221,6 +231,8 @@
         padding: 8px 14px !important; border-bottom: 0.5px solid var(--ios-sep); border-left: none;
         box-sizing: border-box; text-align: left !important; max-width: none !important;
     }
+    /* Линии между столбцами — только для широкой таблицы, в карточке ячейки идут столбиком. */
+    .ios-ss .ss-table td + td { border-left: none; }
     .ios-ss .ss-table tr td:last-child { border-bottom: none; }
     .ios-ss .ss-table td::before {
         content: attr(data-label); display: block; margin-bottom: 4px;

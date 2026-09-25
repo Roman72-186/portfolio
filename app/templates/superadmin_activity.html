@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Статистика активности{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=6">
+<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=7">
 {% endblock %}
 
 {# Таблица действий сотрудников — одна на три вкладки ролей. #}
@@ -155,6 +155,101 @@
         </div>
     </details>
 
+    {# Регистрации и поимённая сводка переехали сюда с «Пользователей»
+       25.09.2026. Данные считает staff_dashboard.py — те же функции кормят
+       CSV-выгрузку. Карточка регистраций раскрыта, пока задан фильтр:
+       иначе после «Применить» она схлопнется и результата не видно. #}
+    <details class="ss-acc"{% if registration_filtered %} open{% endif %}>
+        <summary><h2 class="ss-acc-title">Регистрации по тарифам</h2><span class="ss-acc-badge">{{ tariff_registration_stats.total }} зарегистрировались</span></summary>
+        <div class="ss-acc-body">
+            <form class="ss-filters" method="get" action="/cabinet/superadmin/activity">
+                <label>С даты <input type="date" name="registration_from" value="{{ tariff_registration_stats.period_from }}"></label>
+                <label>По дату <input type="date" name="registration_to" value="{{ tariff_registration_stats.period_to }}"></label>
+                <label>Тариф <select name="registration_tariff">
+                    <option value="">Все тарифы</option>
+                    {% for item in tariff_registration_stats.by_tariff %}<option value="{{ item.tariff }}"{% if tariff_registration_stats.tariff_filter == item.tariff %} selected{% endif %}>{{ item.label }}</option>{% endfor %}
+                    <option value="__none__"{% if tariff_registration_stats.tariff_filter == '__none__' %} selected{% endif %}>Без тарифа</option>
+                </select></label>
+                <button type="submit" class="btn-blue btn-save">Применить</button>
+                {% if registration_filtered %}<a class="ss-link" href="/cabinet/superadmin/activity">Сбросить</a>{% endif %}
+                <a class="ss-export-btn" href="{% if user.role_rank >= 5 %}/cabinet/superadmin/registration-stats.csv{% else %}/cabinet/admin/registration-stats.csv{% endif %}?registration_from={{ tariff_registration_stats.period_from }}{% if tariff_registration_stats.period_to %}&amp;registration_to={{ tariff_registration_stats.period_to }}{% endif %}{% if tariff_registration_stats.tariff_filter %}&amp;registration_tariff={{ tariff_registration_stats.tariff_filter }}{% endif %}" download>⬇ CSV</a>
+            </form>
+            <div class="ss-stats-strip">
+                {% for item in tariff_registration_stats.by_tariff %}<div class="ss-stat"><div class="ss-stat-val">{{ item.count }}</div><div class="ss-stat-lbl">{{ item.label }}</div></div>{% endfor %}
+                <div class="ss-stat"><div class="ss-stat-val">{{ tariff_registration_stats.without_tariff }}</div><div class="ss-stat-lbl">Без тарифа</div></div>
+            </div>
+            <div class="ss-sub">
+                <h3 class="ss-sub-head">Список учеников <span class="ss-sub-count">{{ tariff_registration_stats.students | length }}</span></h3>
+                {% if tariff_registration_stats.students %}
+                <table class="ss-table">
+                    <thead><tr><th>Ученик</th><th>Telegram</th><th>Тариф</th><th>Регистрация</th></tr></thead>
+                    <tbody>
+                    {% for student in tariff_registration_stats.students %}
+                    <tr>
+                        <td data-label="Ученик" class="ss-bold">{{ student.name }}</td>
+                        <td data-label="Telegram" class="ss-dim-sm">{{ student.username }}</td>
+                        <td data-label="Тариф">{{ student.tariff_label }}</td>
+                        <td data-label="Регистрация" class="ss-dim">{{ student.created_at.strftime('%d.%m.%Y %H:%M') if student.created_at else "—" }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}<div class="ss-empty">За выбранный период регистраций нет</div>{% endif %}
+            </div>
+        </div>
+    </details>
+
+    <!-- Поимённая сводка: входы, портфолио, сдача конкретного задания -->
+    <details class="ss-acc" data-activity-portfolio>
+        <summary><h2 class="ss-acc-title">Ученики поимённо</h2><span class="ss-acc-badge"><span data-activity-count>{{ student_activity.students | length }}</span> уч.</span></summary>
+        <div class="ss-acc-body">
+            <div class="ss-filters">
+                <label for="activity-portfolio-filter">Портфолио
+                    <select id="activity-portfolio-filter" data-activity-filter>
+                        <option value="all">Все</option>
+                        <option value="missing">Не загрузили</option>
+                        <option value="uploaded">Загрузили</option>
+                    </select>
+                </label>
+                <label for="activity-assignment-filter">Задание
+                    <select id="activity-assignment-filter" data-assignment-filter>
+                        <option value="">Все ученики</option>
+                        {% for assignment in student_activity.assignments %}<option value="{{ assignment.id }}">{{ assignment.label }}</option>{% endfor %}
+                    </select>
+                </label>
+                <label for="activity-submission-filter">Сдача
+                    <select id="activity-submission-filter" data-submission-filter disabled>
+                        <option value="all">Все</option>
+                        <option value="submitted">Сдали</option>
+                        <option value="missing">Не сдали</option>
+                    </select>
+                </label>
+                <button type="button" class="btn-blue btn-save" data-activity-copy>Скопировать имена, username и тариф</button>
+                <span class="ss-dim-sm" data-activity-copy-status role="status" aria-live="polite"></span>
+            </div>
+            <p class="ss-dim-sm" data-assignment-stats role="status" aria-live="polite" hidden></p>
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>Ученик</th><th>Регистрация</th><th>Последний вход</th><th class="ss-ta-r">Входов</th><th class="ss-ta-r">Загрузок портфолио</th><th>Последняя загрузка</th><th>Задание</th></tr></thead>
+                    <tbody>
+                    {% for student in student_activity.students %}
+                    <tr data-activity-student data-student-id="{{ student.id }}" data-portfolio-uploaded="{{ '1' if student.has_portfolio_before else '0' }}" data-student-name="{{ student.name }}" data-student-username="{{ student.username if student.username.startswith('@') else '' }}" data-student-tariff="{{ student.tariff }}">
+                        <td data-label="Ученик"><span class="ss-bold">{{ student.name }}</span><br><span class="ss-dim-sm">{{ student.username }} · {{ student.tariff }}</span></td>
+                        <td data-label="Регистрация" class="ss-dim">{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td>
+                        <td data-label="Последний вход" class="ss-dim">{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td>
+                        <td data-label="Входов" class="ss-ta-r">{{ student.login_count }}</td>
+                        <td data-label="Загрузок портфолио" class="ss-ta-r ss-bold">{{ student.upload_count }}</td>
+                        <td data-label="Последняя загрузка" class="ss-dim">{{ student.last_upload.strftime('%d.%m.%Y %H:%M') if student.last_upload else 'Не загружал' }}</td>
+                        <td data-label="Задание" data-assignment-state>Выберите задание</td>
+                    </tr>
+                    {% endfor %}
+                    <tr data-activity-empty hidden><td colspan="7">По этому фильтру учеников нет.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </details>
+
     <!-- Журнал действий учеников -->
     <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Действия учеников за {{ student_events.days }} дней</h2><span class="ss-acc-badge">{{ student_events.active_students }} активных</span></summary>
@@ -191,6 +286,30 @@
                 </table>
             </div>
             {% else %}<div class="ss-empty">За {{ student_events.days }} дней действий учеников не записано</div>{% endif %}
+        </div>
+    </details>
+
+    <!-- Лента действий: последние 200 событий по времени (с «Пользователей» 25.09.2026) -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Лента действий учеников</h2><span class="ss-acc-badge">последние {{ student_activity.events | length }}</span></summary>
+        <div class="ss-acc-body">
+            {% if student_activity.events %}
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>Когда</th><th>Ученик</th><th>Действие</th><th>Детали</th></tr></thead>
+                    <tbody>
+                    {% for event in student_activity.events %}
+                    <tr>
+                        <td data-label="Когда" class="ss-dim-nowrap">{{ event.created_at.strftime('%d.%m.%Y %H:%M') if event.created_at else '—' }}</td>
+                        <td data-label="Ученик"><span class="ss-bold">{{ event.student_name }}</span><br><span class="ss-dim-sm">{{ event.username }}</span></td>
+                        <td data-label="Действие">{{ event.action }}</td>
+                        <td data-label="Детали" class="ss-dim">{{ event.details or '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}<div class="ss-empty">Журнал пуст</div>{% endif %}
         </div>
     </details>
 
@@ -561,6 +680,112 @@
         });
     });
     show(location.hash.slice(1) || 'students');
+})();
+</script>
+<script>
+// Поимённая сводка: фильтры по портфолио и заданию, копирование списка.
+(function () {
+    const root = document.querySelector('[data-activity-portfolio]');
+    if (!root) return;
+    const filter = root.querySelector('[data-activity-filter]');
+    const assignmentFilter = root.querySelector('[data-assignment-filter]');
+    const submissionFilter = root.querySelector('[data-submission-filter]');
+    const assignments = new Map({{ student_activity.assignments | tojson }}.map(function (item) { return [String(item.id), item]; }));
+    const rows = Array.from(root.querySelectorAll('[data-activity-student]'));
+    const count = root.querySelector('[data-activity-count]');
+    const empty = root.querySelector('[data-activity-empty]');
+    const copyButton = root.querySelector('[data-activity-copy]');
+    const status = root.querySelector('[data-activity-copy-status]');
+    const stats = root.querySelector('[data-assignment-stats]');
+
+    function visibleRows() {
+        return rows.filter(function (row) { return !row.hidden; });
+    }
+
+    function applyFilter() {
+        const value = filter.value;
+        const assignment = assignments.get(assignmentFilter.value);
+        submissionFilter.disabled = !assignment;
+        if (!assignment) submissionFilter.value = 'all';
+        const eligible = assignment ? new Set(assignment.eligible) : null;
+        const submitted = assignment ? new Set(assignment.submitted) : null;
+        if (assignment) {
+            const byTariff = new Map();
+            rows.forEach(function (row) {
+                const userId = Number(row.dataset.studentId);
+                if (!eligible.has(userId)) return;
+                const tariff = row.dataset.studentTariff;
+                const counts = byTariff.get(tariff) || { submitted: 0, missing: 0 };
+                counts[submitted.has(userId) ? 'submitted' : 'missing'] += 1;
+                byTariff.set(tariff, counts);
+            });
+            const submittedCount = Array.from(byTariff.values()).reduce(function (sum, item) { return sum + item.submitted; }, 0);
+            const missingCount = Array.from(byTariff.values()).reduce(function (sum, item) { return sum + item.missing; }, 0);
+            stats.textContent = 'Сдали: ' + submittedCount + ' · Не сдали: ' + missingCount + '. По тарифам (сдали / не сдали): '
+                + Array.from(byTariff, function (entry) {
+                    return entry[0] + ': ' + entry[1].submitted + ' / ' + entry[1].missing;
+                }).join('; ');
+            stats.hidden = false;
+        } else {
+            stats.hidden = true;
+            stats.textContent = '';
+        }
+        rows.forEach(function (row) {
+            const uploaded = row.dataset.portfolioUploaded === '1';
+            const userId = Number(row.dataset.studentId);
+            const hasSubmitted = submitted && submitted.has(userId);
+            row.querySelector('[data-assignment-state]').textContent = assignment
+                ? (hasSubmitted ? 'Сдал' : 'Не сдал') : 'Выберите задание';
+            row.hidden = (value === 'missing' && uploaded) || (value === 'uploaded' && !uploaded)
+                || (eligible && !eligible.has(userId))
+                || (assignment && submissionFilter.value === 'submitted' && !hasSubmitted)
+                || (assignment && submissionFilter.value === 'missing' && hasSubmitted);
+        });
+        const visible = visibleRows().length;
+        count.textContent = visible;
+        empty.hidden = visible !== 0;
+        copyButton.disabled = visible === 0;
+        status.textContent = '';
+    }
+
+    function fallbackCopy(text) {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copied = document.execCommand('copy');
+        textarea.remove();
+        return copied;
+    }
+
+    copyButton.addEventListener('click', async function () {
+        const text = visibleRows().map(function (row) {
+            const username = row.dataset.studentUsername;
+            const parts = [row.dataset.studentName];
+            if (username) parts.push(username);
+            parts.push(row.dataset.studentTariff);
+            return parts.join(' – ');
+        }).join('\n');
+        if (!text) return;
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+            } else if (!fallbackCopy(text)) {
+                throw new Error('copy failed');
+            }
+            status.textContent = 'Скопировано';
+        } catch (error) {
+            status.textContent = 'Не удалось скопировать';
+        }
+    });
+
+    filter.addEventListener('change', applyFilter);
+    assignmentFilter.addEventListener('change', applyFilter);
+    submissionFilter.addEventListener('change', applyFilter);
+    applyFilter();
 })();
 </script>
 {% endblock %}

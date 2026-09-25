@@ -1503,6 +1503,9 @@ def superadmin_activity(
     request: Request,
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
+    registration_from: str | None = Query(None),
+    registration_to: str | None = Query(None),
+    registration_tariff: str = Query(""),
 ):
     """Статистика активности, разложенная по вкладкам ролей: ученики
     (диагностика, входы, видео, задания, сдачи, пробник), кураторы, Главные
@@ -1552,6 +1555,12 @@ def superadmin_activity(
         "submissions": get_submission_stats(db),
         "staff_activity": get_staff_activity(db),
         "audit_feed": get_audit_feed(db),
+        # Регистрации и поимённая сводка переехали сюда с «Пользователей»
+        # 25.09.2026. Считает их staff_dashboard.py, а не activity_stats.py:
+        # те же функции кормят CSV-выгрузку и дашборд сотрудника.
+        "tariff_registration_stats": get_tariff_registration_stats(db, period_from=parse_registration_date(registration_from), period_to=parse_registration_date(registration_to), tariff_filter=registration_tariff),
+        "registration_filtered": bool(registration_from or registration_to or registration_tariff),
+        "student_activity": get_student_activity_overview(db, include_assignments=True),
     })
 
 
@@ -1872,10 +1881,6 @@ def _render_superadmin_users(
     exam_subjects: str = "",
     tag: str = "",
     page: int = 1,
-    view: str = "users",
-    registration_from: str | None = None,
-    registration_to: str | None = None,
-    registration_tariff: str = "",
     issued_creds: dict | None = None,
     issued_link_user_id: int | None = None,
     issued_link_name: str | None = None,
@@ -2094,9 +2099,6 @@ def _render_superadmin_users(
         "issued_telegram_link": issued_telegram_link,
         "issued_telegram_link_expires_at": issued_telegram_link_expires_at,
         "page_error": page_error,
-        "view": view if view in ("users", "registration", "activity") else "users",
-        "tariff_registration_stats": get_tariff_registration_stats(db, period_from=parse_registration_date(registration_from), period_to=parse_registration_date(registration_to), tariff_filter=registration_tariff),
-        "student_activity": get_student_activity_overview(db, include_assignments=view == "activity"),
     })
 
 
@@ -2137,10 +2139,6 @@ def superadmin_users(
     exam_subjects: str = "",
     tag: str = "",
     page: int = 1,
-    view: str = Query(default="users"),
-    registration_from: str | None = Query(None),
-    registration_to: str | None = Query(None),
-    registration_tariff: str = Query(""),
 ):
     return _render_superadmin_users(
         request,
@@ -2160,10 +2158,6 @@ def superadmin_users(
         exam_subjects=exam_subjects,
         tag=tag,
         page=page,
-        view=view,
-        registration_from=registration_from,
-        registration_to=registration_to,
-        registration_tariff=registration_tariff,
     )
 
 
