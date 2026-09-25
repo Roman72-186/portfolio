@@ -13,7 +13,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session as DBSession
@@ -44,8 +44,11 @@ from app.models.task_block import (
     BLOCK_TYPES_ADDABLE,
     MAX_BLOCK_IMAGES,
     MAX_BLOCKS,
+    MEDIA_KINDS,
+    MEDIA_VOICE,
     QUESTION_TEXT,
 )
+from app.services.feedback import read_audio_upload, read_video_upload
 from app.services.task_blocks import (
     get_blocks as get_task_blocks,
     get_images as get_task_block_images,
@@ -156,6 +159,10 @@ ALLOWED_IMAGE_EXTENSIONS = {
     ".tif", ".tiff",
 }
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
+# Кружок в блоке задания — до минуты (лимит записи в media-recorder-field.js),
+# при ~1 Мбит/с это 7–8 МБ. 50 МБ — запас на телефоны с высоким битрейтом;
+# общий лимит видео переписки (500 МБ) для минутного ролика не нужен.
+MAX_BLOCK_NOTE_BYTES = 50 * 1024 * 1024
 
 # Оставлено локально для `program_month` (строит `month_title`) — `day_title_ru`
 # в program.py закрывает формат заголовка дня, здесь другой формат ("Август 2026").
@@ -368,6 +375,11 @@ def _edit_payloads(
                     for i in block_images.get(b.id, [])
                 ],
                 "url": b.url,
+                # Запись блока «Голосовое / кружок»: без неё повторное
+                # сохранение сочло бы блок пустым и стёрло (см. `_is_empty`).
+                "media_kind": b.media_kind,
+                "media_url": b.media_s3_url,
+                "media_path": b.media_s3_path,
                 "question_type": b.question_type,
                 "hidden_until_done": b.hidden_until_done,
                 "is_required": b.is_required,
@@ -881,6 +893,12 @@ class BlockItem(BaseModel):
         default_factory=list, max_length=MAX_BLOCK_IMAGES
     )
     url: str | None = Field(default=None, max_length=500)
+    # Запись блока «Голосовое / кружок»: уже загруженный через `/upload-media`
+    # файл. Вид и адрес проверяются здесь, чистку у чужих типов делает
+    # `sync_blocks`.
+    media_kind: str | None = Field(default=None, max_length=10)
+    media_url: str | None = Field(default=None, max_length=500)
+    media_path: str | None = Field(default=None, max_length=500)
     question_type: str | None = Field(default=None, max_length=20)
     options: list[BlockOptionItem] = Field(default_factory=list, max_length=20)
     # Вопрос-рефлексия: показывается только после того, как ученик закрыл
@@ -977,6 +995,28 @@ class BlockItem(BaseModel):
     def strip_optional(cls, value: str | None) -> str | None:
         value = (value or "").strip()
         return value or None
+
+    @field_validator("media_kind")
+    @classmethod
+    def validate_media_kind(cls, value: str | None) -> str | None:
+        value = (value or "").strip()
+        if not value:
+            return None
+        if value not in MEDIA_KINDS:
+            raise ValueError(f"Неизвестный вид записи: {value}")
+        return value
+
+    @field_validator("media_url")
+    @classmethod
+    def validate_media_url(cls, value: str | None) -> str | None:
+        """Адрес уходит в `src` плеера ученика — только http и https, по той
+        же причине, что у ссылки ниже."""
+        value = (value or "").strip()
+        if not value:
+            return None
+        if not value.lower().startswith(("http://", "https://")):
+            raise ValueError("Адрес записи должен начинаться с http:// или https://")
+        return value
 
     @field_validator("url")
     @classmethod
@@ -1476,6 +1516,11 @@ def blocks_source_content(
             "body": b.body,
             "video_id": b.video_id,
             "url": b.url,
+            # Файл записи в S3 общий у оригинала и копии, как у фото блока:
+            # удаление блока файлы из хранилища не трогает (`_drop_block`).
+            "media_kind": b.media_kind,
+            "media_url": b.media_s3_url,
+            "media_path": b.media_s3_path,
             "question_type": b.question_type,
             "hidden_until_done": b.hidden_until_done,
             "is_required": b.is_required,
@@ -2199,6 +2244,41 @@ async def upload_cover(
             {"ok": False, "error": "Ошибка загрузки в хранилище"}, status_code=502
         )
     return JSONResponse({"ok": True, "url": url, "path": s3_path if url else None})
+
+
+@router.post("/upload-media")
+async def upload_media(
+    user: Annotated[dict, Depends(require_admin_role)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    file: UploadFile = File(...),
+    kind: str = Form(...),
+):
+    """Голосовое или кружок для блока «Голосовое / кружок» (владелец
+    25.09.2026). Грузится сразу после записи, до сохранения задания — тот же
+    контракт {url, path}, что у фото блока через `/upload-cover`. Файл кладётся
+    как есть: перекодирование кружку не нужно, в отличие от роликов Bunny."""
+    if kind not in MEDIA_KINDS:
+        return JSONResponse({"ok": False, "error": "Неизвестный вид записи"}, status_code=422)
+    try:
+        if kind == MEDIA_VOICE:
+            payload = await read_audio_upload(file)
+        else:
+            payload = await read_video_upload(file, max_size=MAX_BLOCK_NOTE_BYTES)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=422)
+    if payload is None:
+        return JSONResponse({"ok": False, "error": "Запись получилась пустой. Попробуйте ещё раз."}, status_code=422)
+    filename, data, content_type = payload
+
+    s3_path = s3_service.s3_path_task_block_media(kind, filename)
+    url = s3_service.upload_to_s3(s3_path, data, content_type)
+    if not url:
+        # В отличие от обложки пустой url здесь не годится даже без S3:
+        # блок без файла `_is_empty` выбросит при сохранении молча.
+        return JSONResponse(
+            {"ok": False, "error": "Не получилось сохранить запись. Попробуйте ещё раз."}, status_code=502
+        )
+    return JSONResponse({"ok": True, "url": url, "path": s3_path, "kind": kind})
 
 
 @router.post("/{iso}/video", response_class=JSONResponse)

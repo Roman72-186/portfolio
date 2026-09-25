@@ -34,7 +34,7 @@ from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
 from app.models.learning_video import LearningVideo
 from app.models.task_block import (
-    BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_RULES,
+    BLOCK_MEDIA, BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_RULES,
     BLOCK_SCALE, BLOCK_TIMED, BLOCK_UPLOAD, BLOCK_VIDEO, MAX_BLOCKS,
     MAX_SUBMISSION_IMAGES, QUESTION_TEXT,
     SCALE_MAX, SCALE_MIN, SUBMISSION_BLOCK_TYPES, TaskBlock, TaskBlockAnswer,
@@ -569,6 +569,15 @@ def cabinet_tracker_task_blocks(
             state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
             item["done"] = bool(state and state.status == STATUS_DONE)
             item["confirm_endpoint"] = f"/cabinet/tracker/blocks/{block.id}/done"
+        elif block.block_type == BLOCK_MEDIA:
+            # Голосовое / кружок преподавателя (владелец 25.09.2026). Закрывается
+            # тем же кружком «Выполнено», что фото: иначе обязательный блок
+            # навсегда запер бы ленту ниже.
+            item["media_kind"] = block.media_kind
+            item["media_url"] = block.media_s3_url
+            state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
+            item["done"] = bool(state and state.status == STATUS_DONE)
+            item["confirm_endpoint"] = f"/cabinet/tracker/blocks/{block.id}/done"
         elif block.block_type == "link":
             item["url"] = block.url
         elif block.block_type == BLOCK_SCALE:
@@ -835,10 +844,11 @@ def confirm_photo_block_done(
     доступно ученику сразу — отметка нужна только для трекинга прогресса.
     """
     block = db.get(TaskBlock, block_id)
-    if block is None or block.block_type != BLOCK_PHOTO:
+    if block is None or block.block_type not in (BLOCK_PHOTO, BLOCK_MEDIA):
         raise HTTPException(status_code=404, detail="Блок не найден")
     _writable_task_or_404(db, user["user_id"], block.task_id)
-    close_task_block_for_user(db, block=block, user_id=user["user_id"], source="photo_confirmed")
+    source = "media_confirmed" if block.block_type == BLOCK_MEDIA else "photo_confirmed"
+    close_task_block_for_user(db, block=block, user_id=user["user_id"], source=source)
     db.commit()
     return JSONResponse({"ok": True})
 

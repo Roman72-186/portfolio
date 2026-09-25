@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.constants import MOCK_SUBJECTS, TARIFFS
 from app.models.task_block import (
     BLOCK_LINK,
+    BLOCK_MEDIA,
     BLOCK_PHOTO,
     BLOCK_PHOTO_UPLOAD,
     BLOCK_PORTFOLIO,
@@ -25,6 +26,7 @@ from app.models.task_block import (
     BLOCK_VIDEO,
     IMAGE_BLOCK_TYPES,
     MAX_BLOCK_IMAGES,
+    MEDIA_KINDS,
     VIDEO_BLOCK_TYPES,
     QUESTION_TEXT,
     QUESTION_TYPES,
@@ -421,6 +423,13 @@ def _is_empty(block_type: str, item: dict) -> bool:
         ]
     if block_type == BLOCK_LINK:
         return not (item.get("url") or "").strip()
+    if block_type == BLOCK_MEDIA:
+        # Голосовое / кружок без записи — пустая заготовка: преподаватель
+        # нажал «плюс» и не записал ничего.
+        return (
+            not (item.get("media_url") or "").strip()
+            or item.get("media_kind") not in MEDIA_KINDS
+        )
     if block_type == BLOCK_TIMED:
         # Кнопка «Начать» самодостаточна, как и «Загрузить портфолио».
         return False
@@ -480,6 +489,10 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         # с видео на текст, и старый video_id тянул бы за собой плеер.
         row.video_id = item.get("video_id") if block_type in VIDEO_BLOCK_TYPES else None
         row.url = _clean(item.get("url"), 500) if block_type == BLOCK_LINK else None
+        is_media = block_type == BLOCK_MEDIA
+        row.media_kind = item.get("media_kind") if is_media else None
+        row.media_s3_url = _clean(item.get("media_url"), 500) if is_media else None
+        row.media_s3_path = _clean(item.get("media_path"), 500) if is_media else None
         row.hidden_until_done = bool(
             item.get("hidden_until_done") if block_type == BLOCK_QUESTION else False
         )

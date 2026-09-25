@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
@@ -19,13 +18,9 @@ from app.models.task_block import TaskBlock, TaskBlockSubmission
 from app.models.task_block_feedback import TaskBlockFeedback
 from app.models.tracker import TrackerTask
 from app.models.user import User
-from app.services.feedback import (  # переиспользование лимитов/типов, не завязано на Work
-    ALLOWED_FEEDBACK_AUDIO_EXTENSIONS,
-    ALLOWED_FEEDBACK_AUDIO_TYPES,
-    ALLOWED_FEEDBACK_VIDEO_EXTENSIONS,
-    ALLOWED_FEEDBACK_VIDEO_TYPES,
-    MAX_FEEDBACK_AUDIO_SIZE,
-    MAX_FEEDBACK_VIDEO_SIZE,
+from app.services.feedback import (  # общие проверки вложений, не завязаны на Work
+    read_audio_upload,
+    read_video_upload,
 )
 from app.services.notify import notify
 from app.services.student_access import get_student_for_staff_access
@@ -241,58 +236,23 @@ async def _photo_payload(photo: UploadFile | None) -> tuple[str, bytes] | None:
     return files[0]
 
 
-async def _video_payload(video: UploadFile | None) -> tuple[str, bytes, str] | None:
-    if video is None or not video.filename:
-        return None
-    ext = Path(video.filename).suffix.lower()
-    content_type = (video.content_type or "").lower()
-    if (
-        content_type not in ALLOWED_FEEDBACK_VIDEO_TYPES
-        and ext not in ALLOWED_FEEDBACK_VIDEO_EXTENSIONS
-    ):
-        raise ValueError("Видео должно быть в формате mp4, mov, webm, avi, mkv, wmv или 3gp")
-    data = await video.read(MAX_FEEDBACK_VIDEO_SIZE + 1)
-    if len(data) > MAX_FEEDBACK_VIDEO_SIZE:
-        raise ValueError("Видео больше 500 МБ")
-    if not data:
-        return None
-    return video.filename, data, content_type or "video/mp4"
-
-
-async def _audio_payload(audio: UploadFile | None) -> tuple[str, bytes, str] | None:
-    if audio is None or not audio.filename:
-        return None
-    ext = Path(audio.filename).suffix.lower()
-    content_type = (audio.content_type or "").lower()
-    if (
-        content_type not in ALLOWED_FEEDBACK_AUDIO_TYPES
-        and ext not in ALLOWED_FEEDBACK_AUDIO_EXTENSIONS
-    ):
-        raise ValueError("Голосовое должно быть в формате mp3, ogg, opus, webm, wav, m4a, aac, amr или 3gp")
-    data = await audio.read(MAX_FEEDBACK_AUDIO_SIZE + 1)
-    if len(data) > MAX_FEEDBACK_AUDIO_SIZE:
-        raise ValueError("Голосовое больше 25 МБ")
-    if not data:
-        return None
-    return audio.filename, data, content_type or "audio/mpeg"
-
-
 async def _post_message(
     *, submission: TaskBlockSubmission, feedback: TaskBlockFeedback,
     db: DBSession, user: dict, text: str, photo: UploadFile | None,
     video_link: str, background_tasks: BackgroundTasks,
     video: UploadFile | None = None, audio: UploadFile | None = None,
+    video_note: str = "",
 ) -> JSONResponse:
     try:
         photo_data = await _photo_payload(photo)
-        video_data = await _video_payload(video)
-        audio_data = await _audio_payload(audio)
+        video_data = await read_video_upload(video)
+        audio_data = await read_audio_upload(audio)
         video_link_clean = validate_video_link(video_link)
         await send_message(
             db, feedback=feedback, sender_id=user["user_id"],
             sender_role=role_from_rank(user.get("role_rank", 1)), text=text,
             photo=photo_data, video=video_data, audio=audio_data,
-            video_link=video_link_clean,
+            video_link=video_link_clean, video_is_note=video_note == "1",
         )
     except ValueError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=422)
@@ -322,6 +282,7 @@ async def staff_message(
     video_link: str = Form(default=""),
     video: UploadFile | None = File(default=None),
     audio: UploadFile | None = File(default=None),
+    video_note: str = Form(default=""),
 ):
     submission = _submission_or_404(db, submission_id)
     _staff_guard(db, user, submission)
@@ -331,7 +292,7 @@ async def staff_message(
     return await _post_message(
         submission=submission, feedback=feedback, db=db, user=user, text=text,
         photo=photo, video_link=video_link, background_tasks=background_tasks,
-        video=video, audio=audio,
+        video=video, audio=audio, video_note=video_note,
     )
 
 

@@ -166,6 +166,18 @@ def s3_path_point_a_level_audio(level: int, filename: str) -> str:
     return f"point-a-audio/{level}/{rnd}.{ext}"
 
 
+def s3_path_task_block_media(kind: str, filename: str) -> str:
+    """Голосовое или кружок в блоке задания: zadaniya-media/{kind}/{random}.ext.
+
+    Блок ещё может быть не сохранён (запись грузится до «Сохранить»), поэтому
+    в пути нет id блока или задания — только вид записи.
+    """
+    default_ext = "webm"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else default_ext
+    rnd = uuid.uuid4().hex[:12]
+    return f"zadaniya-media/{kind}/{rnd}.{ext}"
+
+
 def s3_path_curator_report(curator_id: int, filename: str) -> str:
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "mp4"
     rnd = uuid.uuid4().hex[:12]

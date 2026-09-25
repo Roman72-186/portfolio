@@ -386,6 +386,7 @@ async def _post_message(
     video_link: str = "",
     video: UploadFile | None = None,
     audio: UploadFile | None = None,
+    video_note: str = "",
 ) -> JSONResponse:
     photo_payload = None
     if photo is not None and photo.filename:
@@ -438,7 +439,7 @@ async def _post_message(
             db, feedback=feedback, sender_id=user["user_id"],
             sender_role=_viewer_role(user), text=text, photo=photo_payload,
             video=video_payload, audio=audio_payload,
-            video_link=video_link_clean,
+            video_link=video_link_clean, video_is_note=video_note == "1",
         )
     except ValueError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=422)
@@ -681,6 +682,7 @@ async def staff_send_homework_message(
     video_link: str = Form(default=""),
     video: UploadFile | None = File(default=None),
     audio: UploadFile | None = File(default=None),
+    video_note: str = Form(default=""),
 ):
     submission = db.get(HomeworkSubmission, submission_id)
     if submission is None:
@@ -694,5 +696,5 @@ async def staff_send_homework_message(
     return await _post_message(
         request, submission, fb, db, user, text, photo,
         background_tasks=background_tasks, video_link=video_link,
-        video=video, audio=audio,
+        video=video, audio=audio, video_note=video_note,
     )

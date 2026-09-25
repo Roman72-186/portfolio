@@ -1174,6 +1174,19 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-blk-upload-block { border-left-color: var(--blk-upload); }
 .lrn-blk-rules        { border-left-color: var(--blk-rules); }
 .lrn-blk-photo-upload { border-left-color: var(--blk-photo-upload); }
+.lrn-blk-media        { border-left-color: var(--blk-media); }
+/* Плееры блока «Голосовое / кружок»: кружок — видео в круге, как в Telegram. */
+.lrn-blk-audio { display: block; width: 100%; max-width: 360px; }
+.lrn-blk-note {
+    display: block;
+    width: 240px;
+    max-width: 100%;
+    aspect-ratio: 1;
+    height: auto;
+    object-fit: cover;
+    border-radius: 50%;
+    background: var(--ink);
+}
 /* Вопрос — единственный тип, который требует действия, а не только чтения:
    лёгкая подложка поверх границы того же цвета делает это заметным сразу,
    не дожидаясь, пока взгляд дойдёт до вариантов ответа (ревью 03.09.2026). */

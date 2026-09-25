@@ -112,6 +112,16 @@ function blockBodyHTML(type) {
             + '<option value="">Выберите ролик</option>' + videoOptionsHTML() + '</select></label>'
             + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок, необязательно" placeholder="Заголовок, необязательно"></label>';
     }
+    if (type === 'media') {
+        // Голосовое или кружок преподавателя (владелец 25.09.2026). Запись
+        // идёт прямо здесь (app/static/js/media-recorder-field.js) и сразу
+        // уходит на `/upload-media`; форма несёт только {url, path, kind} —
+        // тот же контракт, что у фото блока.
+        return ''
+            + '<div data-media-recorder data-b-media data-mrf-upload-url="/cabinet/staff/program/upload-media"></div>'
+            + '<p class="prg-hint">Запишите голосовое до 10 минут или кружок до минуты. Ученик откроет запись в задании и отметит блок выполненным.</p>'
+            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок, необязательно" placeholder="Заголовок, необязательно"></label>';
+    }
     if (type === 'upload') {
         // Приём работ прямо в задании (владелец 07.09.2026: «работы нужно
         // загружать в заданиях»). В отличие от кнопки «Загрузить
@@ -359,6 +369,16 @@ function fillBlockRow(row, block) {
     if (url) url.value = block.url || '';
     var video = row.querySelector('[data-b-video]');
     if (video) video.value = block.video_id || '';
+    var mediaBox = row.querySelector('[data-b-media]');
+    if (mediaBox && block.media_url) {
+        mediaBox.setAttribute('data-media-url', block.media_url);
+        mediaBox.setAttribute('data-media-kind', block.media_kind || '');
+        mediaBox.setAttribute('data-media-path', block.media_path || '');
+        // Обычно компонент ещё не подхватил контейнер (MutationObserver
+        // срабатывает позже) и сам прочитает атрибуты; если успел — покажем
+        // запись явно.
+        if (mediaBox._mrf) mediaBox._mrf.showPreview(block.media_url, block.media_kind, 'Сохранено в задании');
+    }
     if (row.querySelector('[data-b-images]')) {
         (block.images || []).forEach(function (image) {
             addImageThumb(row, image.url, image.path);
@@ -528,6 +548,14 @@ function collectFormBlocks(form) {
         if (type === 'link') {
             item.url = (row.querySelector('[data-b-url]').value || '').trim();
             if (!item.url) return;
+        }
+        if (type === 'media') {
+            var mediaHolder = row.querySelector('[data-b-media]');
+            item.media_url = mediaHolder.getAttribute('data-media-url') || '';
+            item.media_kind = mediaHolder.getAttribute('data-media-kind') || null;
+            item.media_path = mediaHolder.getAttribute('data-media-path') || null;
+            // Без записи блок пустой — сервер отбросил бы его и сам.
+            if (!item.media_url) return;
         }
         if (type === 'video') {
             var picked = row.querySelector('[data-b-video]').value;

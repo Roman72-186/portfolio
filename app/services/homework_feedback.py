@@ -124,6 +124,7 @@ async def send_message(
     video: tuple[str, bytes, str] | None = None,
     audio: tuple[str, bytes, str] | None = None,
     video_link: str | None = None,
+    video_is_note: bool = False,
 ) -> HomeworkFeedbackMessage:
     """Создать сообщение в диалоге. Хотя бы одно из (text, photo, video,
     audio, video_link) — по образцу `app/services/feedback.py::send_message`
@@ -175,6 +176,12 @@ async def send_message(
         audio_s3_path=audio_path,
         audio_s3_url=audio_url,
         video_url=video_link,
+        # Кружок записывает только преподаватель (владелец 25.09.2026), и
+        # флаг имеет смысл лишь при загруженном видео — проверка здесь, а не в
+        # трёх роутах, чтобы ученик не мог прислать круг в обход формы.
+        video_is_note=bool(
+            video_is_note and video_url is not None and sender_role != ROLE_STUDENT
+        ),
     )
     db.add(msg)
     db.flush()
@@ -236,6 +243,7 @@ def serialize_messages(
             "video_s3_url": m.video_s3_url,
             "video_url": m.video_url,
             "audio_s3_url": m.audio_s3_url,
+            "video_is_note": bool(m.video_is_note),
             "created_at": m.created_at.isoformat() if m.created_at else None,
         }
         for m in messages

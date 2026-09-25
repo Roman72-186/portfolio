@@ -173,6 +173,8 @@
 .ios-feedback .dlg-msg-bubble img { display: block; max-width: 320px; width: 100%; border-radius: 10px; margin-top: 4px; cursor: zoom-in; }
 .ios-feedback .dlg-msg.from-me .dlg-msg-bubble img { background: rgba(255,255,255,0.1); }
 .ios-feedback .dlg-msg-bubble video { display: block; max-width: 320px; width: 100%; border-radius: 10px; margin-top: 4px; background: #000; }
+/* Кружок преподавателя (владелец 25.09.2026) — видео в круге, как в Telegram. */
+.ios-feedback .dlg-msg-bubble video.msg-video-note { width: 220px; max-width: 100%; aspect-ratio: 1; height: auto; object-fit: cover; border-radius: 50%; }
 /* Ссылка на внешнее видео (владелец 10.09.2026) — та же отбивка сверху,
    что у file-вложений строкой выше, чтобы не прилипала к тексту. */
 .ios-feedback .dlg-msg-bubble .dlg-msg-video-link { display: inline-block; margin-top: 4px; }

@@ -231,6 +231,33 @@ scope)` и свойством `answered` (одна попытка: после о
                 return wrap;
             }
 
+            // Голосовое или кружок преподавателя (владелец 25.09.2026). Файл
+            // лежит в S3 и играет штатным плеером браузера; кружок — то же
+            // видео, обрезанное в круг (.lrn-blk-note в tracker.css). Отметка
+            // выполнения — тем же кружком, что у фото.
+            function renderMedia(block) {
+                var wrap = el('div', 'lrn-blk lrn-blk-media');
+                var head = withTitle(el('div', 'lrn-blk-head'), block);
+                var check = renderBlockCheck(block);
+                head.appendChild(check);
+                wrap.appendChild(head);
+
+                if (block.media_url) {
+                    var isNote = block.media_kind === 'note';
+                    var media = el(isNote ? 'video' : 'audio', isNote ? 'lrn-blk-note' : 'lrn-blk-audio');
+                    media.controls = true;
+                    media.preload = 'metadata';
+                    if (isNote) media.setAttribute('playsinline', '');
+                    media.src = block.media_url;
+                    media.setAttribute('aria-label', isNote ? 'Видеосообщение преподавателя' : 'Голосовое преподавателя');
+                    wrap.appendChild(media);
+                }
+                if (block.body_html) wrap.appendChild(elHtml('p', 'video-help', block.body_html));
+
+                wireBlockCheck(check, block.confirm_endpoint, block);
+                return wrap;
+            }
+
             function renderLink(block) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-link'), block);
                 // Ссылка кнопкой, а не текстом для копирования — решение 17.08
@@ -1038,7 +1065,8 @@ scope)` и свойством `answered` (одна попытка: после о
                 timed: renderTimed,
                 upload: renderUpload,
                 rules: renderRules,
-                photo_upload: renderPhotoUpload
+                photo_upload: renderPhotoUpload,
+                media: renderMedia
             };
 
             api.render = function (block, index) {

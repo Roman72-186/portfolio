@@ -287,6 +287,7 @@ async def post_dialog_message(
     video: UploadFile | None = File(default=None),
     audio: UploadFile | None = File(default=None),
     video_link: str = Form(default=""),
+    video_note: str = Form(default=""),
 ):
     work = db.query(Work).filter(Work.id == work_id).first()
     if not work:
@@ -452,6 +453,7 @@ async def post_dialog_message(
             photo=photo_payload,
             video=video_payload,
             audio=audio_payload,
+            video_is_note=video_note == "1",
             video_link=video_link_clean,
         )
     except ValueError as exc:
@@ -482,6 +484,7 @@ async def post_dialog_message(
                 "photo_s3_url": msg.photo_s3_url,
                 "video_s3_url": msg.video_s3_url,
                 "audio_s3_url": msg.audio_s3_url,
+                "video_is_note": bool(msg.video_is_note),
                 "created_at": msg.created_at.isoformat() if msg.created_at else None,
             },
         })

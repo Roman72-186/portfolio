@@ -1,0 +1,472 @@
+"""Голосовое и «кружок» преподавателя (владелец 25.09.2026: «чтобы можно было
+записать голосовое и даже кружок как в тг в любом из имеющихся заданиях»).
+
+Две стороны одной функции:
+
+1. Переписка по работе — три экрана (блок задания, домашка, пробник). Запись
+   из браузера приходит обычным файлом, кружок — видео с флагом `video_note=1`.
+   Флаг принимается только от преподавателя.
+2. Блок конструктора «Голосовое / кружок» (`BLOCK_MEDIA`): запись грузится на
+   `/upload-media`, сохраняется вместе с заданием, у ученика играет плеером и
+   закрывается отметкой «Выполнено».
+"""
+
+from datetime import date, datetime, timedelta, timezone
+from unittest.mock import patch
+
+import pytest
+
+from app.models.exam_cycle import ExamCycle
+from app.models.feedback import Feedback, FeedbackMessage
+from app.models.homework_feedback import HomeworkFeedback, HomeworkFeedbackMessage
+from app.models.homework_submission import HomeworkSubmission
+from app.models.task_block import (
+    BLOCK_MEDIA,
+    BLOCK_TYPE_LABELS,
+    BLOCK_UPLOAD,
+    MEDIA_NOTE,
+    MEDIA_VOICE,
+    TaskBlock,
+    TaskBlockState,
+    TaskBlockSubmission,
+)
+from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
+from app.models.tracker import ITEM_HOMEWORK, SOURCE_HOMEWORK, TrackerTask
+from app.models.work import WORK_TYPE_MOCK_EXAM, Work
+from app.services import s3 as s3_service
+from app.services.feedback import ROLE_CURATOR, ROLE_STUDENT
+from app.services.task_block_feedback import get_or_create_feedback, send_message
+from app.services.task_blocks import sync_blocks
+from app.services.tracker import copy_task_blocks, create_homework, create_task
+
+PROGRAM = "/cabinet/staff/program"
+EVERYONE = {"assign_to_all": True, "tag_ids": [], "assignee_usernames": ""}
+NOTE_URL = "https://s3.example.com/zadaniya-media/note/circle.webm"
+VOICE_URL = "https://s3.example.com/zadaniya-media/voice/voice.webm"
+
+
+def _login(client, session_factory, user):
+    client.cookies.set("session_id", session_factory(user).id)
+
+
+def _block_submission(db, student):
+    task = TrackerTask(
+        title="Домашняя работа", kind="material", is_published=True, assign_to_all=True,
+    )
+    db.add(task)
+    db.flush()
+    block = TaskBlock(task_id=task.id, block_type=BLOCK_UPLOAD, title="Сдать листы")
+    db.add(block)
+    db.flush()
+    submission = TaskBlockSubmission(
+        block_id=block.id, user_id=student.id, submitted_at=datetime.now(timezone.utc),
+    )
+    db.add(submission)
+    db.commit()
+    db.refresh(submission)
+    return submission
+
+
+def _curator_and_student(db, user_factory, *, base):
+    curator = user_factory(vk_id=base, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=base + 1, name="Ученик", role_name="ученик")
+    student.curator_id = curator.id
+    db.commit()
+    return curator, student
+
+
+# ── Переписка: блок задания ────────────────────────────────────────────────
+
+def test_teacher_sends_video_note_recorded_in_browser(db, user_factory, session_factory, client):
+    """Запись из браузера: MIME с параметром кодека и имя с расширением.
+    Кружок сохраняется флагом и рисуется кругом у ученика."""
+    curator, student = _curator_and_student(db, user_factory, base=981_001)
+    submission = _block_submission(db, student)
+    _login(client, session_factory, curator)
+
+    with (
+        patch("app.services.task_block_feedback.s3_service.upload_to_s3", return_value=NOTE_URL),
+        patch("app.api.task_block_feedback.notify"),
+    ):
+        response = client.post(
+            f"/cabinet/staff/task-block-submissions/{submission.id}/messages",
+            data={"video_note": "1"},
+            files={"video": ("circle-1.webm", b"note-bytes", "video/webm;codecs=vp8,opus")},
+        )
+
+    assert response.status_code == 200, response.text
+    feedback = db.query(TaskBlockFeedback).filter_by(submission_id=submission.id).one()
+    message = db.query(TaskBlockFeedbackMessage).filter_by(feedback_id=feedback.id).one()
+    assert message.video_s3_url == NOTE_URL
+    assert message.video_is_note is True
+
+    _login(client, session_factory, student)
+    page = client.get(f"/cabinet/task-block-submissions/{submission.id}/feedback")
+    assert page.status_code == 200
+    assert 'class="msg-video-note"' in page.text
+    # Кнопок записи у ученика нет: записывает только преподаватель.
+    assert "data-media-recorder" not in page.text
+
+
+def test_teacher_page_offers_recorder(db, user_factory, session_factory, client):
+    curator, student = _curator_and_student(db, user_factory, base=981_011)
+    submission = _block_submission(db, student)
+    _login(client, session_factory, curator)
+
+    page = client.get(f"/cabinet/staff/task-block-submissions/{submission.id}/feedback")
+
+    assert page.status_code == 200
+    assert "data-media-recorder" in page.text
+    assert "/static/js/media-recorder-field.js?v=" in page.text
+
+
+def test_voice_with_codec_mime_is_accepted(db, user_factory, session_factory, client):
+    curator, student = _curator_and_student(db, user_factory, base=981_021)
+    submission = _block_submission(db, student)
+    _login(client, session_factory, curator)
+
+    with (
+        patch("app.services.task_block_feedback.s3_service.upload_to_s3", return_value=VOICE_URL),
+        patch("app.api.task_block_feedback.notify"),
+    ):
+        response = client.post(
+            f"/cabinet/staff/task-block-submissions/{submission.id}/messages",
+            files={"audio": ("voice-1.webm", b"voice-bytes", "audio/webm;codecs=opus")},
+        )
+
+    assert response.status_code == 200, response.text
+    message = db.query(TaskBlockFeedbackMessage).one()
+    assert message.audio_s3_url == VOICE_URL
+    assert message.video_is_note is False
+
+
+def test_note_flag_without_video_is_ignored(db, user_factory, session_factory, client):
+    curator, student = _curator_and_student(db, user_factory, base=981_031)
+    submission = _block_submission(db, student)
+    _login(client, session_factory, curator)
+
+    with patch("app.api.task_block_feedback.notify"):
+        response = client.post(
+            f"/cabinet/staff/task-block-submissions/{submission.id}/messages",
+            data={"text": "Просто текст", "video_note": "1"},
+        )
+
+    assert response.status_code == 200, response.text
+    assert db.query(TaskBlockFeedbackMessage).one().video_is_note is False
+
+
+@pytest.mark.asyncio
+async def test_student_cannot_send_video_note(db, user_factory):
+    """Защита в общем слое, а не только в роуте: ученик кружок не шлёт,
+    даже если флаг дошёл до сервиса."""
+    curator, student = _curator_and_student(db, user_factory, base=981_041)
+    submission = _block_submission(db, student)
+    feedback, _ = get_or_create_feedback(db, submission_id=submission.id, initiator_id=curator.id)
+
+    with patch("app.services.task_block_feedback.s3_service.upload_to_s3", return_value=NOTE_URL):
+        student_msg = await send_message(
+            db, feedback=feedback, sender_id=student.id, sender_role=ROLE_STUDENT,
+            text=None, photo=None, video=("circle.webm", b"x", "video/webm"),
+            video_is_note=True,
+        )
+        curator_msg = await send_message(
+            db, feedback=feedback, sender_id=curator.id, sender_role=ROLE_CURATOR,
+            text=None, photo=None, video=("circle.webm", b"x", "video/webm"),
+            video_is_note=True,
+        )
+
+    assert student_msg.video_is_note is False
+    assert curator_msg.video_is_note is True
+
+
+# ── Переписка: домашка ─────────────────────────────────────────────────────
+
+def test_homework_teacher_video_note(auth_client, db, user_factory, session_factory):
+    client, student = auth_client
+    homework = create_homework(
+        db, title="Нарисуй куб", user_id=student.id, description="Карандашом.",
+        submission_required=True, max_files=1,
+    )
+    task = create_task(
+        db, title="Нарисуй куб", user_id=student.id, kind=ITEM_HOMEWORK,
+        source_kind=SOURCE_HOMEWORK, source_id=homework.id, assign_to_all=True,
+    )
+    task.is_published = True
+    db.commit()
+    client.get(f"/cabinet/homework/{task.id}")
+    submission = db.query(HomeworkSubmission).one()
+
+    curator = user_factory(vk_id=981_051, name="Куратор", role_name="куратор")
+    student.curator_id = curator.id
+    db.commit()
+    _login(client, session_factory, curator)
+
+    staff_page = client.get(f"/cabinet/staff/homework/submissions/{submission.id}/feedback")
+    assert "data-media-recorder" in staff_page.text
+
+    with patch.object(s3_service, "upload_to_s3", return_value=NOTE_URL):
+        response = client.post(
+            f"/cabinet/staff/homework/submissions/{submission.id}/message",
+            data={"video_note": "1"},
+            files={"video": ("circle-1.mp4", b"note-bytes", "video/mp4")},
+        )
+    assert response.status_code == 200, response.text
+
+    feedback = db.query(HomeworkFeedback).filter_by(submission_id=submission.id).one()
+    message = db.query(HomeworkFeedbackMessage).filter_by(feedback_id=feedback.id).one()
+    assert message.video_is_note is True
+
+    _login(client, session_factory, student)
+    page = client.get(f"/cabinet/homework/{task.id}/feedback")
+    assert 'class="msg-video-note"' in page.text
+    assert "data-media-recorder" not in page.text
+
+
+# ── Переписка: пробник ─────────────────────────────────────────────────────
+
+def test_mock_exam_dialog_video_note(client, db, user_factory, session_factory):
+    curator, student = _curator_and_student(db, user_factory, base=981_061)
+    cycle = ExamCycle(user_id=student.id, subject="Drawing", started_at=date(2026, 5, 10))
+    db.add(cycle)
+    db.commit()
+    work = Work(
+        user_id=student.id, work_type=WORK_TYPE_MOCK_EXAM, month="05", year=2026,
+        filename="final.jpg", subject="Drawing", status="success",
+        s3_url="https://example.test/final.jpg", is_final=True, cycle_id=cycle.id,
+        attempt_number=1,
+    )
+    db.add(work)
+    db.commit()
+    _login(client, session_factory, curator)
+
+    with patch("app.services.feedback.s3_service.upload_to_s3", return_value=NOTE_URL):
+        response = client.post(
+            f"/cabinet/feedback/{work.id}/message",
+            data={"video_note": "1"},
+            files={"video": ("circle-1.webm", b"note-bytes", "video/webm")},
+            headers={"Accept": "application/json"},
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["message"]["video_is_note"] is True
+    feedback = db.query(Feedback).filter_by(work_id=work.id).one()
+    message = db.query(FeedbackMessage).filter_by(feedback_id=feedback.id).one()
+    assert message.video_is_note is True
+
+
+# ── Конструктор: загрузка записи ───────────────────────────────────────────
+
+def _staff(client, user_factory, session_factory, *, vk_id=981_101):
+    user = user_factory(
+        vk_id=vk_id, name="Главный преподаватель", is_admin=True,
+        is_group_member=False, role_name="админ",
+    )
+    _login(client, session_factory, user)
+    return user
+
+
+def test_upload_media_stores_voice_in_s3(client, user_factory, session_factory):
+    _staff(client, user_factory, session_factory)
+
+    with patch.object(s3_service, "upload_to_s3", return_value=VOICE_URL) as upload:
+        response = client.post(
+            f"{PROGRAM}/upload-media",
+            data={"kind": MEDIA_VOICE},
+            files={"file": ("voice-1.webm", b"voice-bytes", "audio/webm;codecs=opus")},
+        )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body == {
+        "ok": True, "url": VOICE_URL, "path": body["path"], "kind": MEDIA_VOICE,
+    }
+    assert body["path"].startswith("zadaniya-media/voice/")
+    assert body["path"].endswith(".webm")
+    # Файл уходит как есть, без перекодирования, с MIME без параметров.
+    assert upload.call_args.args[1:] == (b"voice-bytes", "audio/webm")
+
+
+def test_upload_media_rejects_wrong_format_and_kind(client, user_factory, session_factory):
+    _staff(client, user_factory, session_factory, vk_id=981_111)
+
+    with patch.object(s3_service, "upload_to_s3", return_value=NOTE_URL) as upload:
+        bad_type = client.post(
+            f"{PROGRAM}/upload-media",
+            data={"kind": MEDIA_NOTE},
+            files={"file": ("notes.txt", b"text", "text/plain")},
+        )
+        bad_kind = client.post(
+            f"{PROGRAM}/upload-media",
+            data={"kind": "podcast"},
+            files={"file": ("voice.webm", b"x", "audio/webm")},
+        )
+
+    assert bad_type.status_code == 422
+    assert bad_kind.status_code == 422
+    upload.assert_not_called()
+
+
+def test_upload_media_fails_loudly_without_storage(client, user_factory, session_factory):
+    """Без S3 блок остался бы без файла и молча пропал бы при сохранении."""
+    _staff(client, user_factory, session_factory, vk_id=981_121)
+
+    with patch.object(s3_service, "upload_to_s3", return_value=None):
+        response = client.post(
+            f"{PROGRAM}/upload-media",
+            data={"kind": MEDIA_VOICE},
+            files={"file": ("voice.webm", b"x", "audio/webm")},
+        )
+
+    assert response.status_code == 502
+    assert response.json()["ok"] is False
+
+
+def test_upload_media_is_closed_for_students(client, user_factory, session_factory):
+    student = user_factory(vk_id=981_131, name="Ученик", role_name="ученик")
+    _login(client, session_factory, student)
+
+    with patch.object(s3_service, "upload_to_s3", return_value=VOICE_URL) as upload:
+        response = client.post(
+            f"{PROGRAM}/upload-media",
+            data={"kind": MEDIA_VOICE},
+            files={"file": ("voice.webm", b"x", "audio/webm")},
+        )
+
+    assert response.status_code in (302, 303, 401, 403)
+    upload.assert_not_called()
+
+
+# ── Конструктор: блок «Голосовое / кружок» ─────────────────────────────────
+
+def _future_day_iso(offset: int = 3) -> str:
+    return (date.today() + timedelta(days=offset)).isoformat()
+
+
+def _media_item(**extra):
+    item = {
+        "block_type": BLOCK_MEDIA, "media_kind": MEDIA_NOTE,
+        "media_url": NOTE_URL, "media_path": "zadaniya-media/note/circle.webm",
+        "title": "Пара слов перед заданием",
+    }
+    item.update(extra)
+    return item
+
+
+def test_constructor_offers_media_block(client, db, user_factory, session_factory, monkeypatch):
+    monkeypatch.setattr("app.api.cabinet_program.today_msk", date.today)
+    monkeypatch.setattr("app.services.program.today_msk", date.today)
+    _staff(client, user_factory, session_factory, vk_id=981_141)
+
+    page = client.get(f"{PROGRAM}/{_future_day_iso()}")
+
+    assert page.status_code == 200
+    assert 'data-add-block="media"' in page.text
+    assert BLOCK_TYPE_LABELS[BLOCK_MEDIA] in page.text
+    assert "/static/js/media-recorder-field.js?v=" in page.text
+
+
+def test_constructor_saves_media_block_and_keeps_it(client, db, user_factory, session_factory, monkeypatch):
+    """Сохранённый блок уходит обратно в форму правки с записью — иначе
+    повторное сохранение сочло бы его пустым и стёрло."""
+    monkeypatch.setattr("app.api.cabinet_program.today_msk", date.today)
+    monkeypatch.setattr("app.services.program.today_msk", date.today)
+    _staff(client, user_factory, session_factory, vk_id=981_151)
+
+    response = client.post(
+        f"{PROGRAM}/{_future_day_iso()}/material",
+        json={"title": "Материал", "audience": EVERYONE, "blocks": [_media_item()]},
+    )
+    assert response.status_code == 200, response.text
+
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "material").one()
+    [block] = db.query(TaskBlock).filter(TaskBlock.task_id == task.id).all()
+    assert block.block_type == BLOCK_MEDIA
+    assert block.media_kind == MEDIA_NOTE
+    assert block.media_s3_url == NOTE_URL
+    assert block.media_s3_path == "zadaniya-media/note/circle.webm"
+
+    source = client.get(f"{PROGRAM}/blocks-source/{task.id}").json()["blocks"]
+    assert source[0]["media_url"] == NOTE_URL
+    assert source[0]["media_kind"] == MEDIA_NOTE
+
+    page = client.get(f"{PROGRAM}/{_future_day_iso()}")
+    assert NOTE_URL in page.text
+
+
+def test_constructor_rejects_media_url_with_other_scheme(client, user_factory, session_factory, monkeypatch):
+    monkeypatch.setattr("app.api.cabinet_program.today_msk", date.today)
+    monkeypatch.setattr("app.services.program.today_msk", date.today)
+    _staff(client, user_factory, session_factory, vk_id=981_161)
+
+    response = client.post(
+        f"{PROGRAM}/{_future_day_iso()}/material",
+        json={
+            "title": "Материал", "audience": EVERYONE,
+            "blocks": [_media_item(media_url="javascript:alert(1)")],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_sync_blocks_drops_empty_media_and_clears_foreign_types(db, user_factory):
+    staff = user_factory(vk_id=981_171, name="Стафф", is_admin=True, role_name="админ")
+    task = create_task(db, title="Материал", user_id=staff.id, kind="material", assign_to_all=True)
+
+    rows = sync_blocks(db, task_id=task.id, items=[
+        {"block_type": BLOCK_MEDIA, "media_kind": MEDIA_VOICE},  # записи нет
+        _media_item(),
+        # Чужой тип с медиаполями: мусор не должен лечь в базу.
+        {"block_type": "text", "body": "Текст", "media_url": NOTE_URL, "media_kind": MEDIA_NOTE},
+    ])
+
+    assert [r.block_type for r in rows] == [BLOCK_MEDIA, "text"]
+    assert rows[1].media_s3_url is None
+    assert rows[1].media_kind is None
+
+
+def test_copy_task_blocks_carries_media(db, user_factory):
+    staff = user_factory(vk_id=981_181, name="Стафф", is_admin=True, role_name="админ")
+    source = create_task(db, title="Оригинал", user_id=staff.id, kind="material", assign_to_all=True)
+    target = create_task(db, title="Копия", user_id=staff.id, kind="material", assign_to_all=True)
+    sync_blocks(db, task_id=source.id, items=[_media_item()])
+
+    copy_task_blocks(db, from_task_id=source.id, to_task_id=target.id)
+
+    [clone] = db.query(TaskBlock).filter(TaskBlock.task_id == target.id).all()
+    assert clone.media_kind == MEDIA_NOTE
+    assert clone.media_s3_url == NOTE_URL
+    assert clone.media_s3_path == "zadaniya-media/note/circle.webm"
+
+
+# ── Ученик: плеер и отметка «Выполнено» ────────────────────────────────────
+
+def test_student_gets_media_and_closes_block(client, db, user_factory, session_factory):
+    staff = user_factory(vk_id=981_191, name="Стафф", is_admin=True, role_name="админ")
+    task = create_task(
+        db, title="Материал", user_id=staff.id, kind="material",
+        assign_to_all=True, is_required=True,
+    )
+    task.is_published = True
+    db.add(TaskBlock(
+        task_id=task.id, sort_order=0, block_type=BLOCK_MEDIA, is_required=True,
+        media_kind=MEDIA_VOICE, media_s3_url=VOICE_URL,
+    ))
+    db.commit()
+    [block] = db.query(TaskBlock).filter(TaskBlock.task_id == task.id).all()
+    student = user_factory(vk_id=981_192, name="Ученик", role_name="ученик")
+    _login(client, session_factory, student)
+
+    payload = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()["blocks"][0]
+    assert payload["media_kind"] == MEDIA_VOICE
+    assert payload["media_url"] == VOICE_URL
+    assert payload["done"] is False
+    assert payload["confirm_endpoint"] == f"/cabinet/tracker/blocks/{block.id}/done"
+
+    response = client.post(f"/cabinet/tracker/blocks/{block.id}/done")
+    assert response.status_code == 200, response.text
+
+    state = db.query(TaskBlockState).filter_by(block_id=block.id, user_id=student.id).one()
+    assert state.completion_source == "media_confirmed"
+    payload = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()["blocks"][0]
+    assert payload["done"] is True

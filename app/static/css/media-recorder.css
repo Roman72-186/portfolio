@@ -1,0 +1,67 @@
+/* Запись голосового и «кружка» в браузере — app/static/js/media-recorder-field.js
+   (владелец 25.09.2026). Свой файл, а не <style> в шаблоне: компонент
+   подключают три экрана переписки и конструктор задания. */
+
+.mrf {
+    display: grid;
+    gap: var(--s-2);
+    margin-top: var(--s-3);
+}
+.mrf-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-2);
+}
+/* `hidden` внутри компонента обязан прятать: классы ниже задают display,
+   и без этого правила живой кадр камеры висел чёрным кругом даже при
+   записи голосового. */
+.mrf [hidden] { display: none; }
+.mrf-stage {
+    display: grid;
+    gap: var(--s-2);
+    justify-items: start;
+}
+.mrf-btn { min-height: 44px; }
+
+/* Кружок: квадратный кадр, обрезанный в круг, как видеосообщение в Telegram.
+   Кадр с камеры не кадрируется при записи — круг делает только отрисовка. */
+.mrf-circle {
+    display: block;
+    width: 200px;
+    max-width: 100%;
+    aspect-ratio: 1;
+    height: auto;
+    object-fit: cover;
+    border-radius: 50%;
+    background: var(--ink);
+}
+/* Живой кадр — зеркально, как в фронтальной камере телефона. Готовая запись
+   не зеркалится: ученик увидит её такой, какой её видит камера. */
+.mrf-circle--live { transform: scaleX(-1); }
+/* Ширина числом, а не 100%: превью лежит в сетке с justify-items: start,
+   родитель сжимается по содержимому, и процентный плеер схлопывался в ноль. */
+.mrf-audio { display: block; width: 320px; max-width: 100%; }
+
+.mrf-rec-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--error);
+    animation: mrf-pulse 1.2s var(--ease-out) infinite;
+}
+@keyframes mrf-pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) {
+    .mrf-rec-dot { animation: none; }
+}
+.mrf-time {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+}
+.mrf-hint { font-size: 0.875rem; color: var(--dim); }
+.mrf-error { margin: 0; font-size: 0.875rem; color: var(--error); }
+
+@media (max-width: 480px) {
+    .mrf-row > .mrf-btn[data-mrf-start] { flex: 1 1 100%; }
+}

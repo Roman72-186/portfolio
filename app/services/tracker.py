@@ -1076,6 +1076,11 @@ def copy_task_blocks(db: Session, *, from_task_id: int, to_task_id: int) -> None
             body=block.body,
             video_id=block.video_id,
             url=block.url,
+            # Запись «Голосовое / кружок» — ссылка на тот же файл в S3, как у
+            # картинок ниже: копия недели и оригинал играют одну запись.
+            media_kind=block.media_kind,
+            media_s3_url=block.media_s3_url,
+            media_s3_path=block.media_s3_path,
             question_type=block.question_type,
             hidden_until_done=block.hidden_until_done,
         )

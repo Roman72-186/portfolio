@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
+from pathlib import Path
 
 from sqlalchemy.orm import Session as DBSession
 
@@ -74,6 +75,57 @@ ALLOWED_FEEDBACK_AUDIO_TYPES = {
 ALLOWED_FEEDBACK_AUDIO_EXTENSIONS = {
     ".mp3", ".ogg", ".oga", ".opus", ".webm", ".wav", ".m4a", ".aac", ".amr", ".3gp",
 }
+
+
+
+def _base_content_type(content_type: str | None) -> str:
+    """MIME без параметров: запись из браузера (`MediaRecorder`) приходит как
+    `audio/webm;codecs=opus`, и сравнение целой строки со списком её бы не
+    пропустило."""
+    return (content_type or "").split(";", 1)[0].strip().lower()
+
+
+async def read_audio_upload(upload, *, max_size: int | None = None):
+    """Проверить и прочитать голосовое из формы. Пустое поле → None, плохой
+    формат или размер → ValueError с текстом для человека. Возвращает
+    (filename, data, content_type) — формат аргумента `audio` у send_message."""
+    max_size = MAX_FEEDBACK_AUDIO_SIZE if max_size is None else max_size
+    if upload is None or not upload.filename:
+        return None
+    ext = Path(upload.filename).suffix.lower()
+    content_type = _base_content_type(upload.content_type)
+    if (
+        content_type not in ALLOWED_FEEDBACK_AUDIO_TYPES
+        and ext not in ALLOWED_FEEDBACK_AUDIO_EXTENSIONS
+    ):
+        raise ValueError("Голосовое должно быть в формате mp3, ogg, opus, webm, wav, m4a, aac, amr или 3gp")
+    data = await upload.read(max_size + 1)
+    if len(data) > max_size:
+        raise ValueError(f"Голосовое больше {max_size // (1024 * 1024)} МБ")
+    if not data:
+        return None
+    return upload.filename, data, content_type or "audio/mpeg"
+
+
+async def read_video_upload(upload, *, max_size: int | None = None):
+    """То же для видео и кружка. Возвращает (filename, data, content_type)."""
+    max_size = MAX_FEEDBACK_VIDEO_SIZE if max_size is None else max_size
+    if upload is None or not upload.filename:
+        return None
+    ext = Path(upload.filename).suffix.lower()
+    content_type = _base_content_type(upload.content_type)
+    if (
+        content_type not in ALLOWED_FEEDBACK_VIDEO_TYPES
+        and ext not in ALLOWED_FEEDBACK_VIDEO_EXTENSIONS
+    ):
+        raise ValueError("Видео должно быть в формате mp4, mov, webm, avi, mkv, wmv или 3gp")
+    data = await upload.read(max_size + 1)
+    if len(data) > max_size:
+        raise ValueError(f"Видео больше {max_size // (1024 * 1024)} МБ")
+    if not data:
+        return None
+    return upload.filename, data, content_type or "video/mp4"
+
 
 ROLE_STUDENT = "student"
 ROLE_CURATOR = "curator"
@@ -200,6 +252,7 @@ async def send_message(
     video: tuple[str, bytes, str] | None = None,
     audio: tuple[str, bytes, str] | None = None,
     video_link: str | None = None,
+    video_is_note: bool = False,
 ) -> FeedbackMessage:
     """Создать новое сообщение в диалоге. Хотя бы одно из (text, photo, video,
     audio, video_link).
@@ -251,6 +304,12 @@ async def send_message(
         audio_s3_path=audio_path,
         audio_s3_url=audio_url,
         video_url=video_link,
+        # Кружок записывает только преподаватель (владелец 25.09.2026), и
+        # флаг имеет смысл лишь при загруженном видео — проверка здесь, а не в
+        # трёх роутах, чтобы ученик не мог прислать круг в обход формы.
+        video_is_note=bool(
+            video_is_note and video_url is not None and sender_role != ROLE_STUDENT
+        ),
     )
     db.add(msg)
     db.flush()
@@ -297,6 +356,7 @@ def serialize_messages(
             "photo_s3_url": m.photo_s3_url,
             "video_s3_url": m.video_s3_url,
             "audio_s3_url": m.audio_s3_url,
+            "video_is_note": bool(m.video_is_note),
             "video_url": m.video_url,
             "created_at": m.created_at.isoformat() if m.created_at else None,
         }

@@ -12,8 +12,9 @@ tests/test_reuse_ratchet.py.
 #}
 {% block title %}Обратная связь — {{ homework.title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=38">
-<link rel="stylesheet" href="/static/css/homework_ios.css?v=6">
+<link rel="stylesheet" href="/static/css/program.css?v=39">
+<link rel="stylesheet" href="/static/css/homework_ios.css?v=7">
+<link rel="stylesheet" href="/static/css/media-recorder.css?v=3">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
@@ -38,7 +39,7 @@ tests/test_reuse_ratchet.py.
                     <img class="hw-msg-photo" src="{{ m.photo_s3_url }}" alt="">
                     {% endif %}
                     {% if m.video_s3_url %}
-                    <video class="hw-msg-video" controls preload="metadata" src="{{ m.video_s3_url }}"></video>
+                    <video class="{{ 'msg-video-note' if m.video_is_note else 'hw-msg-video' }}" controls playsinline preload="metadata" src="{{ m.video_s3_url }}"></video>
                     {% endif %}
                     {% if m.video_url %}
                     <a class="btn-outline hw-msg-video-link" href="{{ m.video_url }}" target="_blank" rel="noopener noreferrer">▶ Смотреть видео</a>
@@ -73,6 +74,7 @@ tests/test_reuse_ratchet.py.
         <form class="hw-async-form hw-form" method="post" action="/cabinet/staff/homework/submissions/{{ submission.id }}/message" enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
             <textarea data-rich-text class="field-input" name="text" rows="3" placeholder="Сообщение ученику"></textarea>
+            <div data-media-recorder></div>
             <label class="form-label hw-label-gap">Фото, необязательно</label>
             <input type="file" class="field-input" name="photo" accept="image/*">
             <label class="form-label hw-label-gap">Ссылка на видео, необязательно</label>
@@ -106,6 +108,7 @@ tests/test_reuse_ratchet.py.
 </div>
 
 <script src="/static/js/rich-text-field.js?v=3"></script>
+<script src="/static/js/media-recorder-field.js?v=2"></script>
 <script>
 (function () {
     document.querySelectorAll('.hw-async-form').forEach(function (form) {

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, Index, CheckConstraint
+from sqlalchemy import Boolean, Integer, String, Text, DateTime, ForeignKey, Index, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
@@ -87,6 +87,14 @@ class FeedbackMessage(Base):
     video_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     audio_s3_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     audio_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Видео записано кружком с камеры преподавателя (владелец 25.09.2026:
+    # «записать голосовое и даже кружок как в тг»). Файл тот же, что у
+    # обычного видео (`video_s3_url`), флаг меняет только отрисовку — круг
+    # вместо прямоугольного плеера. Ставится лишь от staff: роут игнорирует
+    # его у ученика.
+    video_is_note: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

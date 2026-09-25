@@ -116,6 +116,18 @@ BLOCK_RULES = "rules"
 # одного из двух: куратору нужно выбирать плиткой между «просто фото»,
 # «просто сдача» и «фото + сдача», а не переключателем внутри существующих.
 BLOCK_PHOTO_UPLOAD = "photo_upload"
+# Голосовое или «кружок» преподавателя (владелец 25.09.2026: «чтобы можно было
+# записать голосовое и даже кружок как в тг»). Записывается прямо в
+# конструкторе, файл лежит в S3 (`media_s3_url`), а не в Bunny Stream: кружок
+# короткий, перекодирование и контроль просмотра ему не нужны. Поэтому тип
+# **не входит** в VIDEO_BLOCK_TYPES — тот кортеж про ролики каталога.
+# Ученик закрывает блок отметкой «Выполнено», как фото.
+BLOCK_MEDIA = "media"
+
+# Что лежит в медиа-блоке: голосовое (аудио) или кружок (видео с камеры).
+MEDIA_VOICE = "voice"
+MEDIA_NOTE = "note"
+MEDIA_KINDS = (MEDIA_VOICE, MEDIA_NOTE)
 
 # Час на контрольную — число из созвона 03.09.2026 («давай сделаем один час»).
 TIMED_DEFAULT_MINUTES = 60
@@ -139,7 +151,7 @@ SCALE_MIN = 0
 BLOCK_TYPES = (
     BLOCK_TEXT, BLOCK_PHOTO, BLOCK_VIDEO, BLOCK_LINK, BLOCK_QUESTION,
     BLOCK_PORTFOLIO, BLOCK_SCALE, BLOCK_TIMED, BLOCK_UPLOAD, BLOCK_RULES,
-    BLOCK_PHOTO_UPLOAD,
+    BLOCK_PHOTO_UPLOAD, BLOCK_MEDIA,
 )
 
 # Блоки, которые ученик закрывает загрузкой работы. Список нужен и роуту
@@ -204,6 +216,7 @@ BLOCK_TYPE_LABELS = {
     # Совпадение названий у двух типов намеренное: BLOCK_UPLOAD остался
     # только для старых блоков.
     BLOCK_PHOTO_UPLOAD: "Домашнее задание",
+    BLOCK_MEDIA: "Голосовое / кружок",
 }
 
 # Тот же потолок, что у мини-опроса видео и прежнего task_quiz — общий язык
@@ -247,6 +260,12 @@ class TaskBlock(Base):
     # галереей до MAX_BLOCK_IMAGES снимков (владелец 31.08.2026). Раньше пара
     # колонок url+path лежала прямо здесь, по одной картинке на блок.
     url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Файл медиа-блока (BLOCK_MEDIA): голосовое или кружок в S3. Отдельные
+    # колонки, а не `url`: `sync_blocks` обнуляет `url` у всех типов, кроме
+    # ссылки, и смешивать внешнюю ссылку с файлом в хранилище нельзя.
+    media_kind: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    media_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    media_s3_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     question_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
 

@@ -61,7 +61,11 @@ services:
       - "traefik.http.middlewares.sec-headers.headers.browserXssFilter=true"
       - "traefik.http.middlewares.sec-headers.headers.frameDeny=true"
       - "traefik.http.middlewares.sec-headers.headers.referrerPolicy=strict-origin-when-cross-origin"
-      - "traefik.http.middlewares.sec-headers.headers.permissionsPolicy=geolocation=(), microphone=(), camera=()"
+      # Микрофон и камера — только своему сайту (владелец 25.09.2026): через них
+      # преподаватель записывает голосовое и кружок в переписке и конструкторе
+      # (app/static/js/media-recorder-field.js). С `microphone=()` браузер
+      # отказывал в доступе ещё до вопроса пользователю.
+      - "traefik.http.middlewares.sec-headers.headers.permissionsPolicy=geolocation=(), microphone=(self), camera=(self)"
       # video.assaru.space — своё зеркало Bunny для тех, у кого провайдер режет
       # домены видеохранилища. Стоит и в script-src, и в frame-src: без первого
       # браузер не берёт Player.js, без второго не открывает сам плеер, причём
