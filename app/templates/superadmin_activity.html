@@ -78,6 +78,8 @@
 {% set speed_head = review_speed | selectattr("role_group", "equalto", "head") | list %}
 {% set fb_curators = feedback_curators | selectattr("role_group", "equalto", "curators") | list %}
 {% set fb_head = feedback_curators | selectattr("role_group", "equalto", "head") | list %}
+{% set speed_super = review_speed | selectattr("role_group", "equalto", "superadmin") | list %}
+{% set fb_super = feedback_curators | selectattr("role_group", "equalto", "superadmin") | list %}
 <div class="ss-wrap ios-ss">
 
     <div class="ss-header">
@@ -479,6 +481,18 @@
     <details class="ss-acc" open>
         <summary><h2 class="ss-acc-title">Действия суперадминов</h2><span class="ss-acc-badge">{{ staff_super | length }} чел.</span></summary>
         <div class="ss-acc-body">{{ staff_table(staff_super, "Активных суперадминов нет") }}</div>
+    </details>
+
+    {# Суперадмин тоже оценивает и пишет ОС — без этих карточек его строки
+       считались бы, но не выводились ни в одной вкладке. #}
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Скорость проверки работ</h2><span class="ss-acc-badge">{{ speed_super | length }} проверяющих</span></summary>
+        <div class="ss-acc-body">{{ review_speed_table(speed_super) }}</div>
+    </details>
+
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Обратная связь</h2><span class="ss-acc-badge">{{ fb_super | length }} авторов ОС</span></summary>
+        <div class="ss-acc-body">{{ feedback_table(fb_super) }}</div>
     </details>
 
     <details class="ss-acc">

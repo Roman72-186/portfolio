@@ -502,3 +502,52 @@ def test_activity_page_puts_staff_rows_into_their_tabs(superadmin_client, db, us
     superadmin = text.index('id="actPanelSuperadmin"')
     assert curators < text.index("Куратор Вкладка") < head
     assert head < text.index("Модератор Вкладка") < superadmin
+
+
+def test_block_check_is_credited_to_both_reviewer_and_scorer(db, user_factory):
+    """Куратор открыл сдачу, ГП поставил балл — зачёт обоим; своя двойная
+    отметка (посмотрел и оценил сам) — один раз."""
+    from app.models.task_block import TaskBlock, TaskBlockSubmission
+    from app.models.tracker import TrackerTask
+    from app.services.activity_stats import get_staff_activity
+
+    curator = user_factory(vk_id=971501, name="Куратор Смотрел", role_name="куратор")
+    head = user_factory(vk_id=971502, name="Главный Оценил", role_name="админ")
+    s1 = user_factory(vk_id=971503, name="Ученик Один", role_name="ученик")
+    s2 = user_factory(vk_id=971504, name="Ученик Два", role_name="ученик")
+    now = datetime.now(timezone.utc)
+    task = TrackerTask(title="Сдача")
+    db.add(task)
+    db.flush()
+    block = TaskBlock(task_id=task.id, block_type="photo_upload")
+    db.add(block)
+    db.flush()
+    db.add(TaskBlockSubmission(
+        block_id=block.id, user_id=s1.id, submitted_at=now,
+        reviewed_by_id=curator.id, reviewed_at=now, scored_by_id=head.id, scored_at=now,
+    ))
+    db.add(TaskBlockSubmission(
+        block_id=block.id, user_id=s2.id, submitted_at=now,
+        reviewed_by_id=head.id, reviewed_at=now, scored_by_id=head.id, scored_at=now,
+    ))
+    db.commit()
+
+    rows = {r["name"].strip(): r for r in get_staff_activity(db)}
+    assert rows["Куратор Смотрел"]["blocks_checked"] == 1
+    assert rows["Главный Оценил"]["blocks_checked"] == 2
+
+
+def test_superadmin_reviews_show_up_on_his_tab(superadmin_client, db, user_factory):
+    client, sa = superadmin_client
+    student = user_factory(vk_id=971601, name="Ученик Оценён", role_name="ученик")
+    now = datetime.now(timezone.utc)
+    db.add(Work(
+        user_id=student.id, work_type=WORK_TYPE_MOCK_EXAM, month="июль", year=2026,
+        filename="w.jpg", status="success", score=90,
+        created_at=now - timedelta(hours=1), scored_at=now, scored_by_id=sa.id,
+    ))
+    db.commit()
+    text = client.get("/cabinet/superadmin/activity").text
+    panel = text[text.index('id="actPanelSuperadmin"'):]
+    assert "Скорость проверки работ" in panel
+    assert "Super Admin" in panel.split("Обратная связь")[0]

@@ -868,7 +868,14 @@ def get_staff_activity(db: DBSession, days: int = RECENT_DAYS) -> list[dict]:
         StudentActivityEvent.created_at >= since,
     )
     works = _count(Work.scored_by_id)
-    blocks = _count(func.coalesce(TaskBlockSubmission.scored_by_id, TaskBlockSubmission.reviewed_by_id))
+    # Сдачу могут посмотреть и оценить разные люди (куратор открыл, ГП
+    # поставил балл) — зачёт обоим, а своя двойная отметка считается один раз.
+    blocks_reviewed = _count(TaskBlockSubmission.reviewed_by_id)
+    blocks_scored = _count(TaskBlockSubmission.scored_by_id)
+    blocks_both = _count(
+        TaskBlockSubmission.reviewed_by_id,
+        TaskBlockSubmission.scored_by_id == TaskBlockSubmission.reviewed_by_id,
+    )
     answers = _count(TaskBlockAnswer.reviewed_by_id)
     messages: dict[int, int] = defaultdict(int)
     for model in (FeedbackMessage, HomeworkFeedbackMessage, TaskBlockFeedbackMessage):
@@ -886,7 +893,9 @@ def get_staff_activity(db: DBSession, days: int = RECENT_DAYS) -> list[dict]:
             "last_login_at": _msk(s.last_login_at),
             "logins": logins.get(s.id, 0),
             "works_scored": works.get(s.id, 0),
-            "blocks_checked": blocks.get(s.id, 0),
+            "blocks_checked": (
+                blocks_reviewed.get(s.id, 0) + blocks_scored.get(s.id, 0) - blocks_both.get(s.id, 0)
+            ),
             "answers_reviewed": answers.get(s.id, 0),
             "messages": messages.get(s.id, 0),
             "actions": actions.get(s.id, 0),
