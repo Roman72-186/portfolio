@@ -13,6 +13,12 @@
     align-items: center;
     gap: var(--s-2);
 }
+/* Пары кнопок «записать + прикрепить» друг под другом: у `.mrf` gap достаётся
+   только прямым детям, вложенным рядам нужен свой. */
+.mrf-idle {
+    display: grid;
+    gap: var(--s-2);
+}
 /* `hidden` внутри компонента обязан прятать: классы ниже задают display,
    и без этого правила живой кадр камеры висел чёрным кругом даже при
    записи голосового. */
@@ -82,7 +88,28 @@
 .mrf-hint { font-size: 0.875rem; color: var(--dim); }
 .mrf-error { margin: 0; font-size: 0.875rem; color: var(--error); }
 
+/* Узкий экран: пара держится ровно в две колонки, а не разъезжается по одной
+   кнопке на строку, как было до 25.09.2026. Дефолтные `.btn-outline` (14px,
+   padding 12px 22px) в пару на 360px не влезают — ~350px против ~336px
+   доступных, поэтому внутри пары кнопка компактнее. `white-space: normal` —
+   страховка на 320px: длинная надпись переносится внутри кнопки, но за край
+   не уходит; `min-height` держит тап-таргет. */
 @media (max-width: 480px) {
-    .mrf-row > .mrf-btn[data-mrf-start],
-    .mrf-row > .mrf-btn[data-mrf-attach] { flex: 1 1 100%; }
+    .mrf-pair {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        /* `.mrf-row` центрирует по вертикали, и на 320px кнопка с переносом
+           текста оказывалась выше соседней — пара выглядела ступенькой.
+           В паре кнопки тянутся на одну высоту. */
+        align-items: stretch;
+    }
+    .mrf-pair > .mrf-btn {
+        justify-content: center;
+        padding: 10px 12px;
+        font-size: 13px;
+        line-height: 1.25;
+        white-space: normal;
+        text-align: center;
+        min-height: 44px;
+    }
 }

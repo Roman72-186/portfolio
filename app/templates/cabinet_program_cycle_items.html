@@ -17,19 +17,19 @@
 {# Предпросмотр «Глазами ученика» рисует блоки общим рендерером ученика, а
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
    показывались бы голой разметкой (см. cabinet_program_day.html). #}
-<link rel="stylesheet" href="/static/css/tracker.css?v=64">
+<link rel="stylesheet" href="/static/css/tracker.css?v=65">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
-<link rel="stylesheet" href="/static/css/media-recorder.css?v=3">
+<link rel="stylesheet" href="/static/css/media-recorder.css?v=4">
 {% endblock %}
 {% block content %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
-<script src="/static/js/task-blocks-render.js?v=26"></script>
+<script src="/static/js/task-blocks-render.js?v=27"></script>
 <script src="/static/js/diagnostic-builder.js?v=9"></script>
 <script src="/static/js/diagnostic-trainer.js?v=2"></script>
 {# WYSIWYG для полей с разметкой — стоит до `program_blocks_editor_js.html`. #}
 <script src="/static/js/rich-text-field.js?v=3"></script>
-<script src="/static/js/media-recorder-field.js?v=5"></script>
+<script src="/static/js/media-recorder-field.js?v=6"></script>
 <div class="prg-page ios-prg-day" data-topic="{{ topic.id }}">
     {% include "partials/program_tabs.html" %}
 

@@ -2,7 +2,7 @@
 {% block title %}Диалог: {{ cycle.subject }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/feedback_ios.css?v=6">
-<link rel="stylesheet" href="/static/css/media-recorder.css?v=3">
+<link rel="stylesheet" href="/static/css/media-recorder.css?v=4">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
@@ -404,7 +404,7 @@
 {% include "partials/lightbox.html" %}
 
 <script src="/static/js/rich-text-field.js?v=3"></script>
-<script src="/static/js/media-recorder-field.js?v=5"></script>
+<script src="/static/js/media-recorder-field.js?v=6"></script>
 <script>
 // AJAX submit, name preview, и автоскролл к низу ленты.
 document.querySelectorAll('.dlg-messages').forEach(el => { el.scrollTop = el.scrollHeight; });

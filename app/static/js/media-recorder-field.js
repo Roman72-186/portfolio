@@ -112,17 +112,23 @@
     }
 
     function markup(modes) {
-        var buttons = modes.map(function (kind) {
-            return '<button type="button" class="btn-outline mrf-btn" data-mrf-start="' + kind + '">'
-                + START_LABELS[kind] + '</button>';
-        }).join('');
-        var attach = modes.map(function (kind) {
-            return '<button type="button" class="btn-outline mrf-btn" data-mrf-attach="' + kind + '">'
+        // Пара на каждый вид записи: «Записать голосовое» рядом с «Прикрепить
+        // аудио», «Записать кружок» рядом с «Прикрепить видео» (владелец
+        // 25.09.2026). Раньше шли обе записи, потом оба прикрепления, и на
+        // узком экране кнопки растягивались на всю ширину — пары рассыпались.
+        // Скрытый `input[type=file]` внутри пары колонку не занимает:
+        // `.mrf [hidden] { display: none }` в media-recorder.css.
+        var pairs = modes.map(function (kind) {
+            return '<div class="mrf-row mrf-pair">'
+                + '<button type="button" class="btn-outline mrf-btn" data-mrf-start="' + kind + '">'
+                + START_LABELS[kind] + '</button>'
+                + '<button type="button" class="btn-outline mrf-btn" data-mrf-attach="' + kind + '">'
                 + ATTACH_LABELS[kind] + '</button>'
-                + '<input type="file" class="mrf-file-input" data-mrf-file="' + kind + '" accept="' + ATTACH_ACCEPT[kind] + '" hidden>';
+                + '<input type="file" class="mrf-file-input" data-mrf-file="' + kind + '" accept="' + ATTACH_ACCEPT[kind] + '" hidden>'
+                + '</div>';
         }).join('');
         return ''
-            + '<div class="mrf-row" data-mrf-idle>' + buttons + attach + '</div>'
+            + '<div class="mrf-idle" data-mrf-idle>' + pairs + '</div>'
             // Между нажатием «Записать…» и самой записью — стадия «подготовка»
             // (владелец 25.09.2026: раньше запись стартовала сразу по
             // getUserMedia, без паузы посмотреть в кадр или проверить микрофон).

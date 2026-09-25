@@ -12,6 +12,7 @@
 """
 
 from datetime import date, datetime, timedelta, timezone
+import re
 from unittest.mock import patch
 
 import pytest
@@ -444,7 +445,29 @@ def test_constructor_offers_media_block(client, db, user_factory, session_factor
     assert "data-mrf-csrf=\"' + escapeHTML(csrfToken) + '\"" in page.text
 
 
-def test_media_block_branch_returns_before_its_markup(
+def _block_body_branches(page_text: str) -> dict[str, str]:
+    """Нарезать `blockBodyHTML` на ветки: {тип блока: исходник его ветки}.
+
+    Типы не перечислены списком намеренно — новый тип блока попадёт под
+    сторожей ниже сам, без правки тестов.
+    """
+    body_start = page_text.index("function blockBodyHTML(type)")
+    body_end = page_text.index("function blockSettingsHTML(type)", body_start)
+    source = page_text[body_start:body_end]
+
+    marks = [(m.start(), m.group(1)) for m in re.finditer(r"if \(type === '(\w+)'\)", source)]
+    assert len(marks) >= 12, f"ветвей блоков нашлось {len(marks)} — разметка конструктора изменилась"
+
+    branches = {}
+    for index, (start, kind) in enumerate(marks):
+        end = marks[index + 1][0] if index + 1 < len(marks) else len(source)
+        branches[kind] = source[start:end]
+    # Дефолтная ветка без `if` — вопрос; она начинается после последней ветки.
+    branches["question"] = source[marks[-1][0]:][source[marks[-1][0]:].index("// question"):]
+    return branches
+
+
+def test_every_block_branch_returns_before_its_markup(
     client, db, user_factory, session_factory, monkeypatch
 ):
     """Регрессия 25.09.2026: правка, добавившая `data-mrf-csrf` в разметку,
@@ -452,9 +475,9 @@ def test_media_block_branch_returns_before_its_markup(
     всех `if (type === …)` до самой последней ветки функции — дефолтного
     вопроса («Текст вопроса», «Тип ответа», «Добавить вариант») — и вместо
     записи владелец в конструкторе видел редактор вопроса. Подстрочный поиск
-    `data-mrf-csrf` этого не ловит: строка остаётся в исходнике JS, даже если
-    ветка недостижима. Здесь проверяем именно наличие `return` внутри ветки
-    `type === 'media'`, до следующей ветки `if`."""
+    разметки этого не ловит: строка остаётся в исходнике JS, даже если ветка
+    недостижима. Поэтому проверяем каждую ветку: `return` есть и стоит до
+    своей разметки."""
     monkeypatch.setattr("app.api.cabinet_program.today_msk", date.today)
     monkeypatch.setattr("app.services.program.today_msk", date.today)
     _staff(client, user_factory, session_factory, vk_id=981_143)
@@ -462,12 +485,49 @@ def test_media_block_branch_returns_before_its_markup(
     page = client.get(f"{PROGRAM}/{_future_day_iso()}")
     assert page.status_code == 200
 
-    branch_start = page.text.index("if (type === 'media')")
-    branch_end = page.text.index("if (type === 'upload')", branch_start)
-    branch = page.text[branch_start:branch_end]
+    for kind, branch in _block_body_branches(page.text).items():
+        assert "return" in branch, f"ветка '{kind}' не возвращает разметку — провалится в дефолт-вопрос"
+        # Первый же оператор ветки обязан быть `return`: если разметка
+        # начинается раньше, она склеивается в никуда, а функция идёт дальше.
+        body = branch.split("{", 1)[-1] if branch.startswith("if (") else branch
+        statements = [
+            line.strip() for line in body.splitlines()
+            if line.strip() and not line.strip().startswith("//")
+        ]
+        assert statements[0].startswith("return"), (
+            f"в ветке '{kind}' первым идёт не `return`, а «{statements[0]}» — ветка недостижима"
+        )
 
-    assert "return" in branch, "ветка 'media' не возвращает разметку — провалится в дефолт-вопрос"
-    assert branch.index("return") < branch.index("data-media-recorder")
+
+def test_every_block_branch_starts_with_title_then_description(
+    client, db, user_factory, session_factory, monkeypatch
+):
+    """Правило владельца 25.09.2026: у каждого типа блока есть поле названия и
+    поле описания, и они идут первыми — сначала название, потом описание.
+    Полная формулировка — инвариант в AGENTS.md. Здесь сторож на разметку:
+    новый тип блока без этих полей (или с ними в конце, как было у фото,
+    видео, голосового и ссылки) тест не пропустит."""
+    monkeypatch.setattr("app.api.cabinet_program.today_msk", date.today)
+    monkeypatch.setattr("app.services.program.today_msk", date.today)
+    _staff(client, user_factory, session_factory, vk_id=981_144)
+
+    page = client.get(f"{PROGRAM}/{_future_day_iso()}")
+    assert page.status_code == 200
+
+    for kind, branch in _block_body_branches(page.text).items():
+        # Поля приходят и литералом, и общей константой — сторожу важен
+        # порядок, а не способ вставки.
+        title_at = min(
+            (branch.index(mark) for mark in ("data-b-title", "TITLE_FIELD_OPTIONAL") if mark in branch),
+            default=-1,
+        )
+        body_at = min(
+            (branch.index(mark) for mark in ("data-b-body", "BODY_FIELD_OPTIONAL") if mark in branch),
+            default=-1,
+        )
+        assert title_at != -1, f"у блока '{kind}' нет поля названия"
+        assert body_at != -1, f"у блока '{kind}' нет поля описания"
+        assert title_at < body_at, f"у блока '{kind}' описание идёт раньше названия"
 
 
 def test_cycle_items_constructor_media_block_carries_csrf(

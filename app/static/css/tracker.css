@@ -1199,7 +1199,7 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 /* Заголовок блока — не field-label (та подпись форм ниже своего же текста,
    12px против 15px тела). Здесь заголовок обязан быть заметнее содержимого,
    иначе при беглом скролле не за что зацепиться взглядом. */
-.lrn-blk-title { margin: 0; color: var(--ink); font: 700 14px/1.3 var(--font-display); }
+.lrn-blk-title { margin: 0; color: var(--ink); font: 700 16px/1.3 var(--font-display); }
 .lrn-blk-body { margin: 0; color: var(--text); line-height: 1.55; white-space: pre-wrap; }
 
 /* Содержимое блоков пишет преподаватель, и в него попадают ссылки одним
@@ -1351,7 +1351,13 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 
 .lrn-step[hidden] { display: none; }
 .lrn-step-head { display: flex; flex-direction: column; gap: 6px; }
-.lrn-step-title { margin: 0; font-size: 15px; font-weight: 800; line-height: 1.3; }
+/* Название шага видно всегда — шапка лежит вне сворачиваемого
+   `.lrn-step-body`, поэтому у выполненного (свёрнутого) шага оно остаётся на
+   экране. Владелец 25.09.2026: «заголовок нужно показывать и ученикам,
+   свёрнуто задание или нет… выделять жирным и размер текста немного больше
+   основного». До этого стояло 15px — ровно размер тела, то есть жирный, но не
+   крупнее; 17px — тот же размер, что у `.card-title` в base.css. */
+.lrn-step-title { margin: 0; font-size: 17px; font-weight: 800; line-height: 1.3; }
 .lrn-step-body { margin-top: 12px; }
 .lrn-step-actions { margin-top: 12px; }
 

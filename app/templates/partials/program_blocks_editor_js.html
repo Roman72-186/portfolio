@@ -111,24 +111,44 @@ function requiredTariffChecksHTML() {
     }).join('');
 }
 
+// Название и описание — у каждого типа блока, и всегда первыми в этом порядке
+// (владелец 25.09.2026: «если мы создаем новый блок задания, то у него
+// обязательно заголовок/название, поле описание, но необязательно»).
+// Заполнять название не обязательно — сохранение не блокируется, иначе
+// сломались бы блоки, заведённые раньше. Подписи живут только как
+// `placeholder` + совпадающий `aria-label`: внешние текстовые лейблы запрещены
+// (`tests/test_program_day_script.py`). Полное правило — в AGENTS.md.
+var TITLE_FIELD_OPTIONAL = '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название, необязательно" placeholder="Название, необязательно"></label>';
+var BODY_FIELD_OPTIONAL = '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Описание, необязательно" placeholder="Описание, необязательно"></textarea>' + BODY_FORMAT_HINT + '</label>';
+
+// Там, где подпись поля своя (пример в названии, или `body` — не пояснение, а
+// само содержимое задания), поля пишутся литералом на месте, а не собираются
+// функцией из аргументов: подписи проверяют статические сторожа по исходнику
+// страницы (`tests/test_program_day_script.py` сверяет `aria-label` с
+// `placeholder`), а собранную в рантайме строку они не видят.
+
 function blockBodyHTML(type) {
     if (type === 'text') {
-        return '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Текст" placeholder="Текст"></textarea>' + BODY_FORMAT_HINT + '</label>';
+        return ''
+            + TITLE_FIELD_OPTIONAL
+            + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Текст" placeholder="Текст"></textarea>' + BODY_FORMAT_HINT + '</label>';
     }
     if (type === 'photo') {
         // multiple: владелец 31.08.2026 — выбрал десять файлов разом, а не
         // жал «+ Фото» десять раз. Потолок держат и сервер, и этот скрипт.
         return ''
+            + TITLE_FIELD_OPTIONAL
+            + BODY_FIELD_OPTIONAL
             + '<label class="prg-field"><input type="file" accept="image/*" multiple data-b-photo-file aria-label="Фото"></label>'
             + '<p class="prg-hint" data-b-photo-status></p>'
-            + '<div class="prg-blk-gallery" data-b-images></div>'
-            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Подпись, необязательно" placeholder="Подпись, необязательно"></label>';
+            + '<div class="prg-blk-gallery" data-b-images></div>';
     }
     if (type === 'video') {
         return ''
+            + TITLE_FIELD_OPTIONAL
+            + BODY_FIELD_OPTIONAL
             + '<label class="prg-field"><select data-b-video aria-label="Ролик">'
-            + '<option value="">Выберите ролик</option>' + videoOptionsHTML() + '</select></label>'
-            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок, необязательно" placeholder="Заголовок, необязательно"></label>';
+            + '<option value="">Выберите ролик</option>' + videoOptionsHTML() + '</select></label>';
     }
     if (type === 'media') {
         // Голосовое или кружок преподавателя (владелец 25.09.2026). Запись
@@ -142,10 +162,13 @@ function blockBodyHTML(type) {
         // получал пустую строку. Сервер отвечал 403 без JSON-тела, компонент
         // показывал общий текст «Не получилось сохранить запись» вместо
         // настоящей причины (владелец 25.09.2026, баг из первого дня записи).
+        // Название и описание — над кнопками записи (владелец 25.09.2026):
+        // сначала видно, что настраиваешь, потом чем наполняешь.
         return ''
+            + TITLE_FIELD_OPTIONAL
+            + BODY_FIELD_OPTIONAL
             + '<div data-media-recorder data-b-media data-mrf-csrf="' + escapeHTML(csrfToken) + '" data-mrf-upload-url="/cabinet/staff/program/upload-media"></div>'
-            + '<p class="prg-hint">Запишите голосовое до 10 минут или кружок до минуты — либо прикрепите готовый файл. Ученик откроет запись в задании и отметит блок выполненным.</p>'
-            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок, необязательно" placeholder="Заголовок, необязательно"></label>';
+            + '<p class="prg-hint">Запишите голосовое до 10 минут или кружок до минуты — либо прикрепите готовый файл. Ученик откроет запись в задании и отметит блок выполненным.</p>';
     }
     if (type === 'upload') {
         // Приём работ прямо в задании (владелец 07.09.2026: «работы нужно
@@ -153,7 +176,7 @@ function blockBodyHTML(type) {
         // портфолио» ученик никуда не уходит: грузит файлы здесь же, и
         // работа привязывается к этому блоку, а не к портфолио вообще.
         return ''
-            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок" placeholder="Заголовок, например «Пришлите работу»"></label>'
+            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название" placeholder="Название, например «Пришлите работу»"></label>'
             + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Что сдать" placeholder="Что именно сдать: формат, количество листов"></textarea>' + BODY_FORMAT_HINT + '</label>'
             + '<p class="prg-hint">Ученик загрузит до 10 фото с описанием прямо в задании. Работа уйдёт на проверку по ученику, шаг закроется в момент загрузки.</p>';
     }
@@ -165,11 +188,11 @@ function blockBodyHTML(type) {
         // «Фото», приём результата — то же пояснение, что у «Загрузить
         // работы»; своей механики у блока нет.
         return ''
-            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок" placeholder="Заголовок, например «Срисуйте натюрморт»"></label>'
+            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название" placeholder="Название, например «Срисуйте натюрморт»"></label>'
+            + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Что сдать" placeholder="Что именно сдать: формат, количество листов"></textarea>' + BODY_FORMAT_HINT + '</label>'
             + '<label class="prg-field"><input type="file" accept="image/*" multiple data-b-photo-file aria-label="Фото задания"></label>'
             + '<p class="prg-hint" data-b-photo-status></p>'
             + '<div class="prg-blk-gallery" data-b-images></div>'
-            + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Что сдать" placeholder="Что именно сдать: формат, количество листов"></textarea>' + BODY_FORMAT_HINT + '</label>'
             + '<p class="prg-hint">Ученик увидит фото-задание и сдаст свою работу до 10 фото прямо здесь.</p>';
     }
     if (type === 'timed') {
@@ -177,7 +200,7 @@ function blockBodyHTML(type) {
         // таймер… давай сделаем один час». Ученик стартует сам и сдаёт
         // работу здесь же; превышение видно в статистике.
         return ''
-            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок" placeholder="Заголовок, например «Контрольная работа»"></label>'
+            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название" placeholder="Название, например «Контрольная работа»"></label>'
             + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Условие" placeholder="Условие работы"></textarea>' + BODY_FORMAT_HINT + '</label>'
             + '<label class="prg-field">Лимит, минут'
             + '  <input type="number" min="5" max="600" step="5" value="60" data-b-time-limit aria-label="Лимит в минутах">'
@@ -188,8 +211,8 @@ function blockBodyHTML(type) {
         // навыков, ученик ставит каждому оценку от 1 до 10. Верного
         // ответа нет, поэтому отметки «верный вариант» здесь тоже нет.
         return ''
-            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок" placeholder="Заголовок, например «Оцени себя»"></label>'
-            + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Пояснение" placeholder="Пояснение, необязательно"></textarea>' + BODY_FORMAT_HINT + '</label>'
+            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название" placeholder="Название, например «Оцени себя»"></label>'
+            + BODY_FIELD_OPTIONAL
             + '<div class="prg-blk-options">'
             + '  <p class="prg-hint">Навыки, которые ученик оценит от 1 до 10.</p>'
             + '  <div data-b-options></div>'
@@ -202,7 +225,7 @@ function blockBodyHTML(type) {
         // варианты, что у шкалы; отметки «верный вариант» здесь нет:
         // согласие не бывает неправильным.
         return ''
-            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок" placeholder="Заголовок, например «Правила школы»"></label>'
+            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название" placeholder="Название, например «Правила школы»"></label>'
             + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Текст согласия" placeholder="Текст согласия, например «Отметьте каждый пункт, с которым ознакомились»"></textarea>' + BODY_FORMAT_HINT + '</label>'
             + '<div class="prg-blk-options">'
             + '  <p class="prg-hint">Пункты правил. Шаг закроется, только когда ученик отметит все.</p>'
@@ -217,19 +240,24 @@ function blockBodyHTML(type) {
         // видео, фото и скриншоты — те же виджеты, что у блоков «Видео» и
         // «Фото». Всё необязательно.
         return ''
-            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Заголовок, необязательно" placeholder="Заголовок, например «Загрузите портфолио»"></label>'
+            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название" placeholder="Название, например «Загрузите портфолио»"></label>'
+            + BODY_FIELD_OPTIONAL
             + '<label class="prg-field"><select data-b-video aria-label="Видеоинструкция, необязательно">'
             + '<option value="">Без видеоинструкции</option>' + videoOptionsHTML() + '</select></label>'
             + '<label class="prg-field"><input type="file" accept="image/*" multiple data-b-photo-file aria-label="Фото и скриншоты, необязательно"></label>'
             + '<p class="prg-hint" data-b-photo-status></p>'
             + '<div class="prg-blk-gallery" data-b-images></div>'
-            + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Пояснение, необязательно" placeholder="Пояснение: что именно загрузить"></textarea>' + BODY_FORMAT_HINT + '</label>'
             + '<p class="prg-hint">Ученик увидит видео, фото и пояснение, а под ними кнопку. Она ведёт на экран загрузки работ, шаг закроется сам, когда работа загружена.</p>';
     }
     if (type === 'link') {
+        // У ссылки название работает ещё и надписью на кнопке — но только
+        // там, где над блоком заголовка нет (см. `renderLink` в
+        // task-blocks-render.js). Владелец 25.09.2026: одно название на блок,
+        // второго поля под надпись не заводим.
         return ''
-            + '<label class="prg-field"><input type="url" data-b-url maxlength="500" aria-label="Адрес ссылки" placeholder="Адрес ссылки"></label>'
-            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Надпись на кнопке" placeholder="Надпись на кнопке"></label>';
+            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название, оно же надпись на кнопке" placeholder="Название, оно же надпись на кнопке"></label>'
+            + BODY_FIELD_OPTIONAL
+            + '<label class="prg-field"><input type="url" data-b-url maxlength="500" aria-label="Адрес ссылки" placeholder="Адрес ссылки"></label>';
     }
     if (type === 'diagnostic') {
         // Псевдо-тип, которого нет в БД (владелец 24.09.2026, второй раунд) —
@@ -245,7 +273,7 @@ function blockBodyHTML(type) {
         // те же фильтры, что и в других кнопках».
         return ''
             + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название" placeholder="Название, например «Диагностика АРХИ-ПРОФИЛЯ»"></label>'
-            + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Описание, необязательно" placeholder="Описание перед вопросами, необязательно"></textarea>' + BODY_FORMAT_HINT + '</label>'
+            + BODY_FIELD_OPTIONAL
             + '<div data-diagnostic-editor></div>'
             + '<div class="prg-actions">'
             + '  <button type="button" class="btn-outline" data-diagnostic-trainer hidden>Пройти как тренажёр</button>'
@@ -254,6 +282,7 @@ function blockBodyHTML(type) {
     }
     // question
     return ''
+        + TITLE_FIELD_OPTIONAL
         + '<label class="prg-field"><textarea data-rich-text data-b-body maxlength="5000" aria-label="Текст вопроса" placeholder="Текст вопроса"></textarea>' + BODY_FORMAT_HINT + '</label>'
         + '<label class="prg-field"><select data-b-question-type aria-label="Тип ответа">'
         + questionTypeOptionsHTML()

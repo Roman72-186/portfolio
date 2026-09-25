@@ -425,6 +425,13 @@ scope)` и свойством `answered` (одна попытка: после о
                 head.appendChild(check);
                 wrap.appendChild(head);
 
+                // Описание — до плеера: это условие задания, его читают перед
+                // просмотром, а под плеером уже стоит подсказка про отметку
+                // выполнения. До 25.09.2026 видео-блок описание не показывал
+                // вовсе — единственный тип, у которого оно пропадало
+                // (у фото, голосового и ссылки строка такая же).
+                if (block.body_html) wrap.appendChild(elHtml('p', 'video-help', block.body_html));
+
                 if (!block.video_embed_endpoint) {
                     wrap.appendChild(el('p', 'video-progress-status is-error', 'Ролик недоступен.'));
                     return wrap;
