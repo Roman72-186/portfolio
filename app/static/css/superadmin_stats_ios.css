@@ -32,6 +32,12 @@
 .ios-ss .ss-title { font: 700 24px/1.2 var(--ios-font); letter-spacing: -0.3px; color: var(--ios-label); flex: 1; }
 .ios-ss .ss-since { font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-2); }
 
+/* ── Вкладки ролей (только activity.html). Кнопки — общий .nav-pill из
+   base.css, цвет и форма оттуда; здесь только раскладка: четыре подписи
+   не помещаются в 375px, поэтому полоса прокручивается вбок. ── */
+.ios-ss .act-tabs { max-width: 100%; overflow-x: auto; margin: 0 0 16px; scrollbar-width: none; }
+.ios-ss .act-tabs .nav-pill-item { flex: 0 0 auto; white-space: nowrap; }
+
 /* ── Фильтры (только stats.html) ── */
 .ios-ss .ss-filters {
     display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;

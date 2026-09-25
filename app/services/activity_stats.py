@@ -13,24 +13,55 @@ curator_assign/tariff_change. Исторических данных до это�
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session as DBSession
 
+from app.models.activity_event import StudentActivityEvent
 from app.models.audit_log import AuditLog
 from app.models.curator_report import CuratorReport
 from app.models.exam_cycle import ExamCycle
 from app.models.feedback import Feedback, FeedbackMessage
+from app.models.homework_feedback import HomeworkFeedbackMessage
+from app.models.homework_submission import HomeworkSubmission, SUBMISSION_STATUSES
+from app.models.learning_video import LearningVideo
 from app.models.login_token import LoginToken
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.notification import Notification
 from app.models.role import Role
+from app.models.task_block import TaskBlockAnswer, TaskBlockSubmission
+from app.models.task_block_feedback import TaskBlockFeedbackMessage
+from app.models.tracker import TrackerTask, TrackerTaskState
 from app.models.user import User
+from app.models.video_progress import VideoProgress
+from app.models.video_view_log import VideoViewLog
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
 from app.services.feedback import ROLE_STUDENT
 from app.services.tz import MSK_TZ, msk_midnight
 
 # Дата деплоя миграций — раньше неё новых таймстемпов не существует
 ACTIVITY_STATS_START = datetime(2026, 7, 11, tzinfo=timezone.utc)
+
+# Окно для журналов, которые только растут (входы, открытия видео, действия
+# в аудите): считать их за всё время и медленно, и бессмысленно.
+RECENT_DAYS = 30
+
+# Вкладки страницы по ролям. Ранг → вкладка переводится только здесь: шаблон
+# делит строки по `role_group` и сам чисел рангов не знает. Модератор (ранг 3)
+# работает с правами Главного преподавателя, поэтому в одной вкладке с ним.
+ROLE_GROUP_CURATORS = "curators"
+ROLE_GROUP_HEAD = "head"
+ROLE_GROUP_SUPERADMIN = "superadmin"
+
+
+def role_group(rank: int | None) -> str | None:
+    """Вкладка сотрудника на странице статистики; у ученика — None."""
+    if rank == 2:
+        return ROLE_GROUP_CURATORS
+    if rank in (3, 4):
+        return ROLE_GROUP_HEAD
+    if rank is not None and rank >= 5:
+        return ROLE_GROUP_SUPERADMIN
+    return None
 
 
 def _utc(dt: datetime | None) -> datetime | None:
@@ -85,6 +116,16 @@ def _active_students_q(db: DBSession):
         .join(Role, User.role_id == Role.id)
         .filter(Role.rank == 1, User.is_active == True, User.deleted_at.is_(None))  # noqa: E712
     )
+
+
+def _student_ids(db: DBSession):
+    """Подзапрос id активных учеников для фильтра `col.in_(...)`.
+
+    Входы, просмотры видео, открытие заданий и уведомления пишутся и у
+    сотрудников — без этого фильтра ученические цифры молча смешались бы
+    с кураторскими.
+    """
+    return _active_students_q(db).with_entities(User.id).scalar_subquery()
 
 
 def get_login_stats(db: DBSession) -> dict:
@@ -152,6 +193,7 @@ def get_curator_review_speed(db: DBSession) -> list[dict]:
             "curator_id": cid,
             "curator_name": name,
             "role_rank": rank,
+            "role_group": role_group(rank),
             "scored_count": len(items),
             "avg_review_seconds": avg_sec,
             "avg_review_text": fmt_duration(avg_sec),
@@ -162,15 +204,20 @@ def get_curator_review_speed(db: DBSession) -> list[dict]:
 
 
 def get_notification_reaction(db: DBSession) -> dict:
-    """Время реакции на уведомления (read_at копится с 11.07.2026)."""
+    """Время реакции учеников на уведомления (read_at копится с 11.07.2026).
+
+    Только ученики: уведомления получают и сотрудники, их скорость чтения —
+    другой вопрос и в ученическую вкладку не подмешивается.
+    """
+    student_ids = _student_ids(db)
     read_pairs = (
         db.query(Notification.created_at, Notification.read_at)
-        .filter(Notification.read_at.isnot(None))
+        .filter(Notification.read_at.isnot(None), Notification.user_id.in_(student_ids))
         .all()
     )
     unread_total = (
         db.query(Notification)
-        .filter(Notification.is_read == False)  # noqa: E712
+        .filter(Notification.is_read == False, Notification.user_id.in_(student_ids))  # noqa: E712
         .count()
     )
     avg_sec = _avg_seconds([(c, r) for c, r in read_pairs])
@@ -345,20 +392,24 @@ def get_feedback_curator_stats(db: DBSession) -> list[dict]:
         if first_staff is not None:
             agg["first_pairs"].append((work_created, first_staff.created_at))
 
-    names: dict[int, str] = {}
-    for uid, fn, ln, nm in (
-        db.query(User.id, User.first_name, User.last_name, User.name)
+    names: dict[int, tuple[str, int]] = {}
+    for uid, fn, ln, nm, rank in (
+        db.query(User.id, User.first_name, User.last_name, User.name, Role.rank)
+        .outerjoin(Role, User.role_id == Role.id)
         .filter(User.id.in_(by_curator.keys()))
         .all()
     ):
-        names[uid] = _student_name(fn, ln, nm)
+        names[uid] = (_student_name(fn, ln, nm), rank or 0)
 
     result = []
     for cid, agg in by_curator.items():
         first_sec = _avg_seconds(agg["first_pairs"])
+        name, rank = names.get(cid, (f"id={cid}", 0))
         result.append({
             "curator_id": cid,
-            "curator_name": names.get(cid, f"id={cid}"),
+            "curator_name": name,
+            "role_rank": rank,
+            "role_group": role_group(rank),
             "dialogs": agg["dialogs"],
             "avg_messages": round(agg["messages"] / agg["dialogs"], 1) if agg["dialogs"] else None,
             "avg_first_response_seconds": first_sec,
@@ -496,6 +547,359 @@ def get_diagnostic_stats(db: DBSession) -> list[dict]:
         .all()
     )
     return [diagnostic_stats(db, task) for task in tasks]
+
+
+_EVENT_LABELS = {
+    "login": "Входы в кабинет",
+    "portfolio_upload": "Загрузки портфолио",
+    "work_upload": "Загрузки работ",
+}
+
+
+def _names_by_id(db: DBSession, ids) -> dict[int, str]:
+    ids = set(ids)
+    if not ids:
+        return {}
+    return {
+        uid: _student_name(fn, ln, nm)
+        for uid, fn, ln, nm in (
+            db.query(User.id, User.first_name, User.last_name, User.name)
+            .filter(User.id.in_(ids))
+            .all()
+        )
+    }
+
+
+def get_student_event_stats(db: DBSession, days: int = RECENT_DAYS) -> dict:
+    """Журнал `StudentActivityEvent` за последние `days` дней: сколько раз и
+    сколько разных учеников входили и загружали работы, плюс самые активные.
+
+    Журнал пишется давно (`auth.py`, `upload.py`), но до 25.09.2026 страница
+    его не читала — видно было только время последнего входа.
+    """
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    student_ids = _student_ids(db)
+    base = (
+        StudentActivityEvent.user_id.in_(student_ids),
+        StudentActivityEvent.created_at >= since,
+    )
+    by_type = [
+        {
+            "event_type": et,
+            "label": _EVENT_LABELS.get(et, et),
+            "events": events,
+            "students": students,
+        }
+        for et, events, students in (
+            db.query(
+                StudentActivityEvent.event_type,
+                func.count(StudentActivityEvent.id),
+                func.count(func.distinct(StudentActivityEvent.user_id)),
+            )
+            .filter(*base)
+            .group_by(StudentActivityEvent.event_type)
+            .all()
+        )
+    ]
+    by_type.sort(key=lambda r: r["events"], reverse=True)
+
+    per_user: dict[int, dict] = defaultdict(lambda: {"logins": 0, "uploads": 0, "last_at": None})
+    for uid, et, n, last_at in (
+        db.query(
+            StudentActivityEvent.user_id,
+            StudentActivityEvent.event_type,
+            func.count(StudentActivityEvent.id),
+            func.max(StudentActivityEvent.created_at),
+        )
+        .filter(*base)
+        .group_by(StudentActivityEvent.user_id, StudentActivityEvent.event_type)
+        .all()
+    ):
+        agg = per_user[uid]
+        agg["logins" if et == "login" else "uploads"] += n
+        last_at = _utc(last_at)
+        if agg["last_at"] is None or last_at > agg["last_at"]:
+            agg["last_at"] = last_at
+    top_ids = sorted(
+        per_user, key=lambda u: per_user[u]["logins"] + per_user[u]["uploads"], reverse=True,
+    )[:15]
+    names = _names_by_id(db, top_ids)
+    top = [
+        {
+            "student_name": names.get(uid, f"id={uid}"),
+            "logins": per_user[uid]["logins"],
+            "uploads": per_user[uid]["uploads"],
+            "last_at": _msk(per_user[uid]["last_at"]),
+        }
+        for uid in top_ids
+    ]
+    return {
+        "days": days,
+        "by_type": by_type,
+        "active_students": len(per_user),
+        "top": top,
+    }
+
+
+def get_video_watch_stats(db: DBSession, days: int = RECENT_DAYS) -> dict:
+    """Просмотр видео учениками: кто начал, кто досмотрел, какая доля ролика
+    реально просмотрена, сколько раз открывали плеер за `days` дней.
+
+    `VideoProgress` — одна строка на пару ученик×ролик (позиция и накопленное
+    время), `VideoViewLog` — каждое открытие плеера. Ролик адресуется
+    bunny-id, а не FK: у легаси-роликов строки в каталоге нет, для них
+    запасная подпись.
+    """
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    student_ids = _student_ids(db)
+    rows = (
+        db.query(
+            VideoProgress.user_id,
+            VideoProgress.video_id,
+            VideoProgress.watched_seconds,
+            VideoProgress.duration_seconds,
+            VideoProgress.completed_at,
+        )
+        .filter(VideoProgress.user_id.in_(student_ids))
+        .all()
+    )
+    opens = dict(
+        db.query(VideoViewLog.video_id, func.count(VideoViewLog.id))
+        .filter(VideoViewLog.user_id.in_(student_ids), VideoViewLog.opened_at >= since)
+        .group_by(VideoViewLog.video_id)
+        .all()
+    )
+
+    def _share(r) -> float | None:
+        # watched_seconds копит реальное время и при пересмотре перерастает
+        # длину ролика — доля не выше 100%.
+        if not r.duration_seconds:
+            return None
+        return min(float(r.watched_seconds or 0) / float(r.duration_seconds), 1.0)
+
+    by_video: dict[str, dict] = {}
+
+    def _video(vid: str) -> dict:
+        return by_video.setdefault(vid, {"viewers": 0, "completed": 0, "shares": []})
+
+    for r in rows:
+        agg = _video(r.video_id)
+        agg["viewers"] += 1
+        if r.completed_at is not None:
+            agg["completed"] += 1
+        share = _share(r)
+        if share is not None:
+            agg["shares"].append(share)
+    for vid in opens:
+        _video(vid)  # плеер открывали, но позиция ещё не сохранялась
+
+    titles = {}
+    if by_video:
+        titles = dict(
+            db.query(LearningVideo.bunny_video_id, LearningVideo.title)
+            .filter(LearningVideo.bunny_video_id.in_(list(by_video)))
+            .all()
+        )
+    videos = []
+    for vid, agg in by_video.items():
+        shares = agg["shares"]
+        videos.append({
+            "title": titles.get(vid) or "Ролик вне каталога",
+            "viewers": agg["viewers"],
+            "completed": agg["completed"],
+            "avg_share_pct": round(100 * sum(shares) / len(shares)) if shares else None,
+            "opens": opens.get(vid, 0),
+        })
+    videos.sort(key=lambda v: (v["viewers"], v["opens"]), reverse=True)
+
+    all_shares = [s for s in (_share(r) for r in rows) if s is not None]
+    return {
+        "days": days,
+        "students_watching": len({r.user_id for r in rows}),
+        "completed_count": sum(1 for r in rows if r.completed_at is not None),
+        "started_count": len(rows),
+        "avg_share_pct": round(100 * sum(all_shares) / len(all_shares)) if all_shares else None,
+        "opens_total": sum(opens.values()),
+        "videos": videos[:30],
+    }
+
+
+def get_task_progress_stats(db: DBSession) -> dict:
+    """Задания учебной программы: сколько учеников открыли каждое, сколько
+    закрыли, сколько бросили на середине и кто закрыл — сам ученик, система
+    по событию или преподаватель.
+
+    «Кто закрыл» читается по `completed_by_id`, а не по строкам источника:
+    `None` — система (`tracker.complete_task_by_event`), id ученика — его
+    галочка, любой другой id — преподаватель.
+    """
+    rows = (
+        db.query(
+            TrackerTaskState.task_id,
+            TrackerTaskState.user_id,
+            TrackerTaskState.started_at,
+            TrackerTaskState.completed_at,
+            TrackerTaskState.completed_by_id,
+            TrackerTask.title,
+        )
+        .join(TrackerTask, TrackerTaskState.task_id == TrackerTask.id)
+        .filter(
+            TrackerTask.deleted_at.is_(None),
+            TrackerTaskState.user_id.in_(_student_ids(db)),
+        )
+        .all()
+    )
+    closed_by = {"student": 0, "system": 0, "staff": 0}
+    by_task: dict[int, dict] = {}
+    for r in rows:
+        agg = by_task.setdefault(r.task_id, {
+            "title": r.title, "opened": 0, "done": 0, "stuck": 0, "pairs": [],
+        })
+        if r.started_at is not None:
+            agg["opened"] += 1
+        if r.completed_at is not None:
+            agg["done"] += 1
+            if r.started_at is not None:
+                agg["pairs"].append((r.started_at, r.completed_at))
+            if r.completed_by_id is None:
+                closed_by["system"] += 1
+            elif r.completed_by_id == r.user_id:
+                closed_by["student"] += 1
+            else:
+                closed_by["staff"] += 1
+        elif r.started_at is not None:
+            agg["stuck"] += 1
+
+    tasks = []
+    for agg in by_task.values():
+        agg["avg_text"] = fmt_duration(_avg_seconds(agg.pop("pairs")))
+        tasks.append(agg)
+    # Наверху — где больше всего начали и не закончили: это то, что требует
+    # внимания преподавателя.
+    tasks.sort(key=lambda t: (t["stuck"], t["opened"]), reverse=True)
+    return {
+        "opened": sum(t["opened"] for t in tasks),
+        "done": sum(t["done"] for t in tasks),
+        "stuck": sum(t["stuck"] for t in tasks),
+        "closed_by": closed_by,
+        "tasks": tasks[:30],
+        "tasks_total": len(tasks),
+    }
+
+
+def get_submission_stats(db: DBSession) -> dict:
+    """Сдачи внутри заданий: блоки «Домашнее задание»/«Работа на время»
+    (`TaskBlockSubmission`) и самостоятельная работа (`HomeworkSubmission`).
+    Для блоков — сколько ждут проверки и среднее время до первой реакции
+    преподавателя (просмотр или балл, что раньше)."""
+    student_ids = _student_ids(db)
+    rows = (
+        db.query(
+            TaskBlockSubmission.submitted_at,
+            TaskBlockSubmission.reviewed_at,
+            TaskBlockSubmission.scored_at,
+            TaskBlockSubmission.needs_revision,
+        )
+        .filter(
+            TaskBlockSubmission.user_id.in_(student_ids),
+            TaskBlockSubmission.submitted_at.isnot(None),
+        )
+        .all()
+    )
+    pairs = []
+    waiting = 0
+    for r in rows:
+        reacted = [t for t in (_utc(r.reviewed_at), _utc(r.scored_at)) if t is not None]
+        if reacted:
+            pairs.append((r.submitted_at, min(reacted)))
+        elif not r.needs_revision:
+            waiting += 1
+
+    hw_counts = dict(
+        db.query(HomeworkSubmission.status, func.count(HomeworkSubmission.id))
+        .filter(HomeworkSubmission.user_id.in_(student_ids))
+        .group_by(HomeworkSubmission.status)
+        .all()
+    )
+    return {
+        "blocks_total": len(rows),
+        "blocks_waiting": waiting,
+        "blocks_scored": sum(1 for r in rows if r.scored_at is not None),
+        "blocks_revision": sum(1 for r in rows if r.needs_revision),
+        "avg_reaction_text": fmt_duration(_avg_seconds(pairs)),
+        "homework": {status: hw_counts.get(status, 0) for status in SUBMISSION_STATUSES},
+        "homework_total": sum(hw_counts.values()),
+    }
+
+
+def get_staff_activity(db: DBSession, days: int = RECENT_DAYS) -> list[dict]:
+    """Действия сотрудников (ранг ≥ 2) по одной строке на человека.
+
+    Каждый источник — один сгруппированный запрос по id сотрудника, склейка
+    в Python. Проверки (`scored_by_id`, `reviewed_by_id`) хранят только
+    последнюю попытку: пересдача их обнуляет, поэтому это «по последней
+    попытке», а не полная история. Входы и записи аудита — за `days` дней.
+    """
+    staff = (
+        db.query(
+            User.id, User.first_name, User.last_name, User.name,
+            User.last_login_at, Role.rank, Role.display_name,
+        )
+        .join(Role, User.role_id == Role.id)
+        .filter(Role.rank >= 2, User.is_active == True, User.deleted_at.is_(None))  # noqa: E712
+        .all()
+    )
+    if not staff:
+        return []
+    ids = [s.id for s in staff]
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    def _count(col, *filters) -> dict[int, int]:
+        return dict(
+            db.query(col, func.count())
+            .filter(col.in_(ids), *filters)
+            .group_by(col)
+            .all()
+        )
+
+    logins = _count(
+        StudentActivityEvent.user_id,
+        StudentActivityEvent.event_type == "login",
+        StudentActivityEvent.created_at >= since,
+    )
+    works = _count(Work.scored_by_id)
+    blocks = _count(func.coalesce(TaskBlockSubmission.scored_by_id, TaskBlockSubmission.reviewed_by_id))
+    answers = _count(TaskBlockAnswer.reviewed_by_id)
+    messages: dict[int, int] = defaultdict(int)
+    for model in (FeedbackMessage, HomeworkFeedbackMessage, TaskBlockFeedbackMessage):
+        for uid, n in _count(model.sender_id, model.sender_role != ROLE_STUDENT).items():
+            messages[uid] += n
+    actions = _count(AuditLog.performed_by_id, AuditLog.created_at >= since)
+    reports = _count(CuratorReport.curator_id)
+
+    result = [
+        {
+            "user_id": s.id,
+            "name": _student_name(s.first_name, s.last_name, s.name),
+            "role_label": s.display_name,
+            "role_group": role_group(s.rank),
+            "last_login_at": _msk(s.last_login_at),
+            "logins": logins.get(s.id, 0),
+            "works_scored": works.get(s.id, 0),
+            "blocks_checked": blocks.get(s.id, 0),
+            "answers_reviewed": answers.get(s.id, 0),
+            "messages": messages.get(s.id, 0),
+            "actions": actions.get(s.id, 0),
+            "reports": reports.get(s.id, 0),
+        }
+        for s in staff
+    ]
+    # Сначала те, кто заходил недавно; не заходившие с 11.07 — в конце.
+    result.sort(
+        key=lambda r: r["last_login_at"] or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    return result
 
 
 def get_audit_feed(db: DBSession, limit: int = 50) -> list[dict]:

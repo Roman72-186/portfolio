@@ -1504,8 +1504,10 @@ def superadmin_activity(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
-    """Статистика активности: логины, скорость проверки, реакция на уведомления,
-    возвраты на правку, онбординг, просмотры видео-отчётов, журнал изменений."""
+    """Статистика активности, разложенная по вкладкам ролей: ученики
+    (диагностика, входы, видео, задания, сдачи, пробник), кураторы, Главные
+    преподаватели с модераторами, суперадмин (журнал изменений). Во вкладку
+    строку кладёт поле role_group из activity_stats.role_group()."""
     from app.services.activity_stats import (
         get_audit_feed,
         get_curator_review_speed,
@@ -1521,6 +1523,11 @@ def superadmin_activity(
         get_retake_stats,
         get_revision_stats,
         get_self_score_stats,
+        get_staff_activity,
+        get_student_event_stats,
+        get_submission_stats,
+        get_task_progress_stats,
+        get_video_watch_stats,
     )
 
     return templates.TemplateResponse(request, "superadmin_activity.html", {
@@ -1539,6 +1546,11 @@ def superadmin_activity(
         "login_links": get_login_link_stats(db),
         "self_scores": get_self_score_stats(db),
         "diagnostics": get_diagnostic_stats(db),
+        "student_events": get_student_event_stats(db),
+        "video_watch": get_video_watch_stats(db),
+        "task_progress": get_task_progress_stats(db),
+        "submissions": get_submission_stats(db),
+        "staff_activity": get_staff_activity(db),
         "audit_feed": get_audit_feed(db),
     })
 

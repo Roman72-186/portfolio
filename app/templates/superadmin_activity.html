@@ -1,9 +1,83 @@
 {% extends "base.html" %}
 {% block title %}Статистика активности{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=4">
+<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=5">
 {% endblock %}
+
+{# Таблица действий сотрудников — одна на три вкладки ролей. #}
+{% macro staff_table(rows, empty_text) %}
+    {% if rows %}
+    <div class="ss-table-wrap">
+        <table class="ss-table">
+            <thead><tr><th>Сотрудник</th><th>Последний вход</th><th class="ss-ta-r">Входов за 30 дн.</th><th class="ss-ta-r">Оценено работ</th><th class="ss-ta-r">Проверено сдач в заданиях</th><th class="ss-ta-r">Просмотрено ответов</th><th class="ss-ta-r">Сообщений ОС</th><th class="ss-ta-r">Отчётов</th><th class="ss-ta-r">Действий за 30 дн.</th></tr></thead>
+            <tbody>
+            {% for s in rows %}
+            <tr>
+                <td data-label="Сотрудник" class="ss-bold">{{ s.name }}{% if s.role_group == "head" %} <span class="act-badge ab-tariff">{{ s.role_label }}</span>{% endif %}</td>
+                <td data-label="Последний вход" class="ss-dim">{{ s.last_login_at.strftime('%d.%m.%Y %H:%M') if s.last_login_at else "не заходил с 11.07" }}</td>
+                <td data-label="Входов за 30 дн." class="ss-ta-r">{{ s.logins }}</td>
+                <td data-label="Оценено работ" class="ss-ta-r">{{ s.works_scored }}</td>
+                <td data-label="Проверено сдач" class="ss-ta-r">{{ s.blocks_checked }}</td>
+                <td data-label="Просмотрено ответов" class="ss-ta-r">{{ s.answers_reviewed }}</td>
+                <td data-label="Сообщений ОС" class="ss-ta-r">{{ s.messages }}</td>
+                <td data-label="Отчётов" class="ss-ta-r">{{ s.reports }}</td>
+                <td data-label="Действий за 30 дн." class="ss-ta-r">{{ s.actions }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}<div class="ss-empty">{{ empty_text }}</div>{% endif %}
+{% endmacro %}
+
+{% macro review_speed_table(rows) %}
+    {% if rows %}
+    <div class="ss-table-wrap">
+        <table class="ss-table">
+            <thead><tr><th>Проверяющий</th><th class="ss-ta-r">Оценено работ</th><th class="ss-ta-r">Среднее время проверки</th><th class="ss-ta-r">Средний балл</th></tr></thead>
+            <tbody>
+            {% for r in rows %}
+            <tr>
+                <td data-label="Проверяющий" class="ss-bold">{{ r.curator_name }}</td>
+                <td data-label="Оценено работ" class="ss-ta-r">{{ r.scored_count }}</td>
+                <td data-label="Среднее время" class="ss-ta-r">{{ r.avg_review_text or "—" }}</td>
+                <td data-label="Средний балл" class="ss-ta-r">{{ r.avg_score if r.avg_score is not none else "—" }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}<div class="ss-empty">Оценённых работ пока нет</div>{% endif %}
+{% endmacro %}
+
+{% macro feedback_table(rows) %}
+    {% if rows %}
+    <div class="ss-table-wrap">
+        <table class="ss-table">
+            <thead><tr><th>Автор ОС</th><th class="ss-ta-r">Диалогов ОС</th><th class="ss-ta-r">Сообщений на диалог</th><th class="ss-ta-r">Скорость первой ОС</th></tr></thead>
+            <tbody>
+            {% for r in rows %}
+            <tr>
+                <td data-label="Автор ОС" class="ss-bold">{{ r.curator_name }}</td>
+                <td data-label="Диалогов" class="ss-ta-r">{{ r.dialogs }}</td>
+                <td data-label="Сообщений на диалог" class="ss-ta-r">{{ r.avg_messages if r.avg_messages is not none else "—" }}</td>
+                <td data-label="Первая ОС" class="ss-ta-r">{{ r.avg_first_response_text or "—" }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}<div class="ss-empty">Диалогов обратной связи пока нет</div>{% endif %}
+{% endmacro %}
+
 {% block content %}
+{% set staff_curators = staff_activity | selectattr("role_group", "equalto", "curators") | list %}
+{% set staff_head = staff_activity | selectattr("role_group", "equalto", "head") | list %}
+{% set staff_super = staff_activity | selectattr("role_group", "equalto", "superadmin") | list %}
+{% set speed_curators = review_speed | selectattr("role_group", "equalto", "curators") | list %}
+{% set speed_head = review_speed | selectattr("role_group", "equalto", "head") | list %}
+{% set fb_curators = feedback_curators | selectattr("role_group", "equalto", "curators") | list %}
+{% set fb_head = feedback_curators | selectattr("role_group", "equalto", "head") | list %}
 <div class="ss-wrap ios-ss">
 
     <div class="ss-header">
@@ -12,170 +86,23 @@
         <span class="ss-since">Данные о входах, реакциях и правках собираются с 11.07.2026</span>
     </div>
 
-    <!-- Плитки: входы + онбординг -->
-    <div class="ss-stats-strip">
-        <div class="ss-stat">
-            <div class="ss-stat-val">{{ logins.d7 }}<span class="ss-suffix-dim"> / {{ logins.total }}</span></div>
-            <div class="ss-stat-lbl">Заходили за 7 дней</div>
-        </div>
-        <div class="ss-stat">
-            <div class="ss-stat-val">{{ logins.d30 }}<span class="ss-suffix-dim"> / {{ logins.total }}</span></div>
-            <div class="ss-stat-lbl">Заходили за 30 дней</div>
-        </div>
-        <div class="ss-stat">
-            <div class="ss-stat-val">{{ onboarding.profile_done }}<span class="ss-suffix-dim"> / {{ onboarding.total }}</span></div>
-            <div class="ss-stat-lbl">Профиль заполнен{% if onboarding.avg_profile_text %} · в среднем за {{ onboarding.avg_profile_text }}{% endif %}</div>
-        </div>
-        <div class="ss-stat">
-            <div class="ss-stat-val">{{ onboarding.portfolio_done }}<span class="ss-suffix-dim"> / {{ onboarding.total }}</span></div>
-            <div class="ss-stat-lbl">Фото «до» загружены{% if onboarding.avg_portfolio_text %} · в среднем за {{ onboarding.avg_portfolio_text }}{% endif %}</div>
-        </div>
+    {# Переключатель ролей — общий .nav-pill из base.css, та же разметка, что
+       «Задачи / Дайджест» в трекере ученика: кнопки с aria-pressed, а не
+       role="tab" (tablist обязан ходить по стрелкам с roving tabindex).
+       Своего стиля кнопок у страницы нет, .act-tabs в superadmin_stats_ios.css
+       отвечает только за прокрутку полосы на узком экране. #}
+    <div class="nav-pill act-tabs" role="group" aria-label="Чья активность">
+        <button type="button" class="nav-pill-item active" aria-controls="actPanelStudents" aria-pressed="true" data-act-tab="students">Ученики</button>
+        <button type="button" class="nav-pill-item" aria-controls="actPanelCurators" aria-pressed="false" data-act-tab="curators">Кураторы</button>
+        <button type="button" class="nav-pill-item" aria-controls="actPanelHead" aria-pressed="false" data-act-tab="head">Главные преподаватели</button>
+        <button type="button" class="nav-pill-item" aria-controls="actPanelSuperadmin" aria-pressed="false" data-act-tab="superadmin">Суперадмин</button>
     </div>
 
-    <!-- 1. Скорость проверки работ -->
+    {# ═══════════════ Ученики ═══════════════ #}
+    <div id="actPanelStudents">
+
+    {# Диагностика — первой строкой страницы (владелец 25.09.2026). #}
     <details class="ss-acc" open>
-        <summary><h2 class="ss-acc-title">Скорость проверки работ</h2><span class="ss-acc-badge">{{ review_speed | length }} проверяющих</span></summary>
-        <div class="ss-acc-body">
-            {% if review_speed %}
-            <div class="ss-table-wrap">
-                <table class="ss-table">
-                    <thead><tr><th>Проверяющий</th><th class="ss-ta-r">Оценено работ</th><th class="ss-ta-r">Среднее время проверки</th><th class="ss-ta-r">Средний балл</th></tr></thead>
-                    <tbody>
-                    {% for r in review_speed %}
-                    <tr>
-                        <td data-label="Проверяющий" class="ss-bold">{{ r.curator_name }}{% if r.role_rank >= 4 %} <span class="act-badge ab-tariff">главный преподаватель</span>{% endif %}</td>
-                        <td data-label="Оценено работ" class="ss-ta-r">{{ r.scored_count }}</td>
-                        <td data-label="Среднее время" class="ss-ta-r">{{ r.avg_review_text or "—" }}</td>
-                        <td data-label="Средний балл" class="ss-ta-r">{{ r.avg_score if r.avg_score is not none else "—" }}</td>
-                    </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}<div class="ss-empty">Оценённых работ пока нет</div>{% endif %}
-        </div>
-    </details>
-
-    <!-- 1а. ОС-метрики кураторов -->
-    <details class="ss-acc">
-        <summary><h2 class="ss-acc-title">Обратная связь кураторов</h2><span class="ss-acc-badge">{{ feedback_curators | length }} авторов ОС</span></summary>
-        <div class="ss-acc-body">
-            {% if feedback_curators %}
-            <div class="ss-table-wrap">
-                <table class="ss-table">
-                    <thead><tr><th>Куратор</th><th class="ss-ta-r">Диалогов ОС</th><th class="ss-ta-r">Сообщений на диалог</th><th class="ss-ta-r">Скорость первой ОС</th></tr></thead>
-                    <tbody>
-                    {% for r in feedback_curators %}
-                    <tr>
-                        <td data-label="Куратор" class="ss-bold">{{ r.curator_name }}</td>
-                        <td data-label="Диалогов" class="ss-ta-r">{{ r.dialogs }}</td>
-                        <td data-label="Сообщений на диалог" class="ss-ta-r">{{ r.avg_messages if r.avg_messages is not none else "—" }}</td>
-                        <td data-label="Первая ОС" class="ss-ta-r">{{ r.avg_first_response_text or "—" }}</td>
-                    </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}<div class="ss-empty">Диалогов обратной связи пока нет</div>{% endif %}
-        </div>
-    </details>
-
-    <!-- 2. Возвраты на правку ОС -->
-    <details class="ss-acc">
-        <summary><h2 class="ss-acc-title">Возвраты обратной связи на правку</h2><span class="ss-acc-badge">{{ revisions.pending | length }} на правке · {{ revisions.done_count }} завершено{% if revisions.avg_fix_text %} · среднее {{ revisions.avg_fix_text }}{% endif %}</span></summary>
-        <div class="ss-acc-body">
-            {% if revisions.pending %}
-            <div class="ss-table-wrap">
-                <table class="ss-table">
-                    <thead><tr><th>Цикл</th><th>Ученик</th><th>Предмет</th><th>Возвращён</th></tr></thead>
-                    <tbody>
-                    {% for p in revisions.pending %}
-                    <tr>
-                        <td data-label="Цикл"><a href="/cabinet/curator/feedback/{{ p.cycle_id }}" class="ss-link">#{{ p.cycle_id }}</a></td>
-                        <td data-label="Ученик">{{ p.student_name }}</td>
-                        <td data-label="Предмет">{{ p.subject }}</td>
-                        <td data-label="Возвращён" class="ss-dim">{{ p.requested_at.strftime('%d.%m.%Y %H:%M') if p.requested_at else "—" }}</td>
-                    </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}<div class="ss-empty">Нет циклов, ожидающих правки</div>{% endif %}
-        </div>
-    </details>
-
-    <!-- 2а. Поведение на пробнике -->
-    <details class="ss-acc">
-        <summary><h2 class="ss-acc-title">Поведение на пробнике</h2><span class="ss-acc-badge">{{ mock_attempts.completed_count }} / {{ mock_attempts.total }} сдано{% if mock_attempts.avg_text %} · среднее {{ mock_attempts.avg_text }}{% endif %}</span></summary>
-        <div class="ss-acc-body">
-            <div class="ss-stats-strip">
-                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.total }}</div><div class="ss-stat-lbl">Билетов получено</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.completed_count }}</div><div class="ss-stat-lbl">Сдано</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.expired_count }}</div><div class="ss-stat-lbl">Истёк срок сдачи (не сдано за 4 ч.)</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.avg_text or "—" }}</div><div class="ss-stat-lbl">Среднее время до сдачи</div></div>
-            </div>
-            {% if mock_attempts.by_subject %}
-            <div class="ss-table-wrap">
-                <table class="ss-table">
-                    <thead><tr><th>Предмет</th><th class="ss-ta-r">Получено</th><th class="ss-ta-r">Сдано</th><th class="ss-ta-r">Среднее время</th></tr></thead>
-                    <tbody>
-                    {% for subj, s in mock_attempts.by_subject.items() %}
-                    <tr>
-                        <td data-label="Предмет" class="ss-bold">{{ subj }}</td>
-                        <td data-label="Получено" class="ss-ta-r">{{ s.total }}</td>
-                        <td data-label="Сдано" class="ss-ta-r">{{ s.completed }}</td>
-                        <td data-label="Среднее время" class="ss-ta-r">{{ s.avg_text or "—" }}</td>
-                    </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% endif %}
-        </div>
-    </details>
-
-    <!-- 2б. Циклы пробника -->
-    <details class="ss-acc">
-        <summary><h2 class="ss-acc-title">Циклы Пробника</h2><span class="ss-acc-badge">{{ cycles.open_count }} открыто · {{ cycles.closed_count }} закрыто{% if cycles.avg_text %} · длится {{ cycles.avg_text }}{% endif %}</span></summary>
-        <div class="ss-acc-body">
-            <div class="ss-stats-strip ss-strip-3 ss-strip-flush">
-                <div class="ss-stat"><div class="ss-stat-val">{{ cycles.open_count }}</div><div class="ss-stat-lbl">Открыто сейчас</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ cycles.closed_count }}</div><div class="ss-stat-lbl">Закрыто (оценено)</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ cycles.avg_text or "—" }}</div><div class="ss-stat-lbl">Средняя длительность цикла</div></div>
-            </div>
-        </div>
-    </details>
-
-    <!-- 2в. Пересдачи и доработки -->
-    <details class="ss-acc">
-        <summary><h2 class="ss-acc-title">Пересдачи и доработки</h2><span class="ss-acc-badge">{{ retakes.sent_to_retake }} на отработке{% if retakes.sent_to_retake_pct is not none %} ({{ retakes.sent_to_retake_pct }}%){% endif %}</span></summary>
-        <div class="ss-acc-body">
-            <div class="ss-stats-strip ss-strip-flush">
-                <div class="ss-stat"><div class="ss-stat-val">{{ retakes.sent_to_retake }}{% if retakes.sent_to_retake_pct is not none %}<span class="ss-suffix-dim"> ({{ retakes.sent_to_retake_pct }}%)</span>{% endif %}</div><div class="ss-stat-lbl">Пробников отправлено на отработку</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ retakes.retake_total }}</div><div class="ss-stat-lbl">Отработок загружено</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ retakes.needs_revision }}</div><div class="ss-stat-lbl">Работ на доработке сейчас</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ retakes.avg_attempts if retakes.avg_attempts is not none else "—" }}{% if retakes.max_attempts %}<span class="ss-suffix-dim"> (макс {{ retakes.max_attempts }})</span>{% endif %}</div><div class="ss-stat-lbl">Среднее число попыток</div></div>
-            </div>
-        </div>
-    </details>
-
-    <!-- 2г. Самооценка vs оценка куратора -->
-    <details class="ss-acc">
-        <summary><h2 class="ss-acc-title">Самооценка vs оценка куратора</h2><span class="ss-acc-badge">{{ self_scores.count }} работ с обеими оценками</span></summary>
-        <div class="ss-acc-body">
-            {% if self_scores.count %}
-            <div class="ss-stats-strip ss-strip-flush">
-                <div class="ss-stat"><div class="ss-stat-val">{{ self_scores.avg_student }}</div><div class="ss-stat-lbl">Средняя самооценка ученика</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ self_scores.avg_curator }}</div><div class="ss-stat-lbl">Средняя оценка куратора</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{% if self_scores.avg_diff > 0 %}+{% endif %}{{ self_scores.avg_diff }}</div><div class="ss-stat-lbl">Средняя разница (ученик − куратор)</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ self_scores.student_higher_pct }}%</div><div class="ss-stat-lbl">Ученик оценил себя выше</div></div>
-            </div>
-            {% else %}<div class="ss-empty">Работ с самооценкой и оценкой куратора пока нет</div>{% endif %}
-        </div>
-    </details>
-
-    <!-- 2д. Диагностика АРХИ-ПРОФИЛЯ -->
-    <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Диагностика АРХИ-ПРОФИЛЯ</h2><span class="ss-acc-badge">{{ diagnostics | length }} диагностик</span></summary>
         <div class="ss-acc-body">
             {% if diagnostics %}
@@ -206,7 +133,219 @@
         </div>
     </details>
 
-    <!-- 3. Уведомления -->
+    <!-- Плитки: входы + онбординг -->
+    <div class="ss-stats-strip">
+        <div class="ss-stat">
+            <div class="ss-stat-val">{{ logins.d7 }}<span class="ss-suffix-dim"> / {{ logins.total }}</span></div>
+            <div class="ss-stat-lbl">Заходили за 7 дней</div>
+        </div>
+        <div class="ss-stat">
+            <div class="ss-stat-val">{{ logins.d30 }}<span class="ss-suffix-dim"> / {{ logins.total }}</span></div>
+            <div class="ss-stat-lbl">Заходили за 30 дней</div>
+        </div>
+        <div class="ss-stat">
+            <div class="ss-stat-val">{{ onboarding.profile_done }}<span class="ss-suffix-dim"> / {{ onboarding.total }}</span></div>
+            <div class="ss-stat-lbl">Профиль заполнен{% if onboarding.avg_profile_text %} · в среднем за {{ onboarding.avg_profile_text }}{% endif %}</div>
+        </div>
+        <div class="ss-stat">
+            <div class="ss-stat-val">{{ onboarding.portfolio_done }}<span class="ss-suffix-dim"> / {{ onboarding.total }}</span></div>
+            <div class="ss-stat-lbl">Фото «до» загружены{% if onboarding.avg_portfolio_text %} · в среднем за {{ onboarding.avg_portfolio_text }}{% endif %}</div>
+        </div>
+    </div>
+
+    <!-- Журнал действий учеников -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Действия учеников за {{ student_events.days }} дней</h2><span class="ss-acc-badge">{{ student_events.active_students }} активных</span></summary>
+        <div class="ss-acc-body">
+            {% if student_events.by_type %}
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>Действие</th><th class="ss-ta-r">Сколько раз</th><th class="ss-ta-r">Разных учеников</th></tr></thead>
+                    <tbody>
+                    {% for e in student_events.by_type %}
+                    <tr>
+                        <td data-label="Действие" class="ss-bold">{{ e.label }}</td>
+                        <td data-label="Сколько раз" class="ss-ta-r">{{ e.events }}</td>
+                        <td data-label="Учеников" class="ss-ta-r">{{ e.students }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="ss-sub">
+                <h3 class="ss-sub-head">Самые активные <span class="ss-sub-count">входы и загрузки</span></h3>
+                <table class="ss-table">
+                    <thead><tr><th>Ученик</th><th class="ss-ta-r">Входов</th><th class="ss-ta-r">Загрузок</th><th>Последнее действие</th></tr></thead>
+                    <tbody>
+                    {% for t in student_events.top %}
+                    <tr>
+                        <td data-label="Ученик" class="ss-bold">{{ t.student_name }}</td>
+                        <td data-label="Входов" class="ss-ta-r">{{ t.logins }}</td>
+                        <td data-label="Загрузок" class="ss-ta-r">{{ t.uploads }}</td>
+                        <td data-label="Последнее" class="ss-dim">{{ t.last_at.strftime('%d.%m.%Y %H:%M') if t.last_at else "—" }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}<div class="ss-empty">За {{ student_events.days }} дней действий учеников не записано</div>{% endif %}
+        </div>
+    </details>
+
+    <!-- Просмотр видео -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Просмотр видео</h2><span class="ss-acc-badge">{{ video_watch.students_watching }} уч. смотрят · {{ video_watch.completed_count }} досмотрено</span></summary>
+        <div class="ss-acc-body">
+            {% if video_watch.videos %}
+            <div class="ss-stats-strip">
+                <div class="ss-stat"><div class="ss-stat-val">{{ video_watch.started_count }}</div><div class="ss-stat-lbl">Начатых просмотров</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ video_watch.completed_count }}</div><div class="ss-stat-lbl">Досмотрено до конца</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ (video_watch.avg_share_pct ~ "%") if video_watch.avg_share_pct is not none else "—" }}</div><div class="ss-stat-lbl">Средняя доля просмотра</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ video_watch.opens_total }}</div><div class="ss-stat-lbl">Открытий плеера за {{ video_watch.days }} дней</div></div>
+            </div>
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>Ролик</th><th class="ss-ta-r">Смотрели</th><th class="ss-ta-r">Досмотрели</th><th class="ss-ta-r">Доля просмотра</th><th class="ss-ta-r">Открытий за {{ video_watch.days }} дн.</th></tr></thead>
+                    <tbody>
+                    {% for v in video_watch.videos %}
+                    <tr>
+                        <td data-label="Ролик" class="ss-bold">{{ v.title }}</td>
+                        <td data-label="Смотрели" class="ss-ta-r">{{ v.viewers }}</td>
+                        <td data-label="Досмотрели" class="ss-ta-r">{{ v.completed }}</td>
+                        <td data-label="Доля просмотра" class="ss-ta-r">{{ (v.avg_share_pct ~ "%") if v.avg_share_pct is not none else "—" }}</td>
+                        <td data-label="Открытий" class="ss-ta-r">{{ v.opens }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}<div class="ss-empty">Ученики ещё не открывали видео</div>{% endif %}
+        </div>
+    </details>
+
+    <!-- Задания программы -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Задания учебной программы</h2><span class="ss-acc-badge">{{ task_progress.done }} закрыто · {{ task_progress.stuck }} брошено на середине</span></summary>
+        <div class="ss-acc-body">
+            {% if task_progress.tasks %}
+            <div class="ss-stats-strip">
+                <div class="ss-stat"><div class="ss-stat-val">{{ task_progress.opened }}</div><div class="ss-stat-lbl">Открыто учениками</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ task_progress.closed_by.student }}</div><div class="ss-stat-lbl">Закрыл сам ученик</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ task_progress.closed_by.system }}</div><div class="ss-stat-lbl">Закрыла система по событию</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ task_progress.closed_by.staff }}</div><div class="ss-stat-lbl">Закрыл преподаватель</div></div>
+            </div>
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>Задание</th><th class="ss-ta-r">Открыли</th><th class="ss-ta-r">Закрыли</th><th class="ss-ta-r">Брошено</th><th class="ss-ta-r">В среднем до закрытия</th></tr></thead>
+                    <tbody>
+                    {% for t in task_progress.tasks %}
+                    <tr>
+                        <td data-label="Задание" class="ss-bold">{{ t.title }}</td>
+                        <td data-label="Открыли" class="ss-ta-r">{{ t.opened }}</td>
+                        <td data-label="Закрыли" class="ss-ta-r">{{ t.done }}</td>
+                        <td data-label="Брошено" class="ss-ta-r">{{ t.stuck }}</td>
+                        <td data-label="До закрытия" class="ss-ta-r">{{ t.avg_text or "—" }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if task_progress.tasks_total > task_progress.tasks | length %}<div class="ss-empty">Показаны {{ task_progress.tasks | length }} из {{ task_progress.tasks_total }} заданий — где больше всего брошенных</div>{% endif %}
+            {% else %}<div class="ss-empty">Ученики ещё не открывали задания программы</div>{% endif %}
+        </div>
+    </details>
+
+    <!-- Сдачи в заданиях -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Сдачи работ в заданиях</h2><span class="ss-acc-badge">{{ submissions.blocks_waiting }} ждут проверки</span></summary>
+        <div class="ss-acc-body">
+            <div class="ss-stats-strip ss-strip-flush">
+                <div class="ss-stat"><div class="ss-stat-val">{{ submissions.blocks_total }}</div><div class="ss-stat-lbl">Сдано в блоках «Домашнее задание»</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ submissions.blocks_waiting }}</div><div class="ss-stat-lbl">Ждут проверки</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ submissions.blocks_revision }}</div><div class="ss-stat-lbl">На доработке</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ submissions.avg_reaction_text or "—" }}</div><div class="ss-stat-lbl">В среднем до реакции преподавателя</div></div>
+            </div>
+            {% if submissions.homework_total %}
+            <div class="ss-stats-strip ss-strip-3 ss-strip-flush">
+                <div class="ss-stat"><div class="ss-stat-val">{{ submissions.homework.submitted }}</div><div class="ss-stat-lbl">Самостоятельных ждут проверки</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ submissions.homework.needs_revision }}</div><div class="ss-stat-lbl">Самостоятельных на доработке</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ submissions.homework.accepted }}</div><div class="ss-stat-lbl">Самостоятельных принято</div></div>
+            </div>
+            {% endif %}
+        </div>
+    </details>
+
+    <!-- Поведение на пробнике -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Поведение на пробнике</h2><span class="ss-acc-badge">{{ mock_attempts.completed_count }} / {{ mock_attempts.total }} сдано{% if mock_attempts.avg_text %} · среднее {{ mock_attempts.avg_text }}{% endif %}</span></summary>
+        <div class="ss-acc-body">
+            <div class="ss-stats-strip">
+                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.total }}</div><div class="ss-stat-lbl">Билетов получено</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.completed_count }}</div><div class="ss-stat-lbl">Сдано</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.expired_count }}</div><div class="ss-stat-lbl">Истёк срок сдачи (не сдано за 4 ч.)</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ mock_attempts.avg_text or "—" }}</div><div class="ss-stat-lbl">Среднее время до сдачи</div></div>
+            </div>
+            {% if mock_attempts.by_subject %}
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>Предмет</th><th class="ss-ta-r">Получено</th><th class="ss-ta-r">Сдано</th><th class="ss-ta-r">Среднее время</th></tr></thead>
+                    <tbody>
+                    {% for subj, s in mock_attempts.by_subject.items() %}
+                    <tr>
+                        <td data-label="Предмет" class="ss-bold">{{ subj }}</td>
+                        <td data-label="Получено" class="ss-ta-r">{{ s.total }}</td>
+                        <td data-label="Сдано" class="ss-ta-r">{{ s.completed }}</td>
+                        <td data-label="Среднее время" class="ss-ta-r">{{ s.avg_text or "—" }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </details>
+
+    <!-- Циклы пробника -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Циклы Пробника</h2><span class="ss-acc-badge">{{ cycles.open_count }} открыто · {{ cycles.closed_count }} закрыто{% if cycles.avg_text %} · длится {{ cycles.avg_text }}{% endif %}</span></summary>
+        <div class="ss-acc-body">
+            <div class="ss-stats-strip ss-strip-3 ss-strip-flush">
+                <div class="ss-stat"><div class="ss-stat-val">{{ cycles.open_count }}</div><div class="ss-stat-lbl">Открыто сейчас</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ cycles.closed_count }}</div><div class="ss-stat-lbl">Закрыто (оценено)</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ cycles.avg_text or "—" }}</div><div class="ss-stat-lbl">Средняя длительность цикла</div></div>
+            </div>
+        </div>
+    </details>
+
+    <!-- Пересдачи и доработки -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Пересдачи и доработки</h2><span class="ss-acc-badge">{{ retakes.sent_to_retake }} на отработке{% if retakes.sent_to_retake_pct is not none %} ({{ retakes.sent_to_retake_pct }}%){% endif %}</span></summary>
+        <div class="ss-acc-body">
+            <div class="ss-stats-strip ss-strip-flush">
+                <div class="ss-stat"><div class="ss-stat-val">{{ retakes.sent_to_retake }}{% if retakes.sent_to_retake_pct is not none %}<span class="ss-suffix-dim"> ({{ retakes.sent_to_retake_pct }}%)</span>{% endif %}</div><div class="ss-stat-lbl">Пробников отправлено на отработку</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ retakes.retake_total }}</div><div class="ss-stat-lbl">Отработок загружено</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ retakes.needs_revision }}</div><div class="ss-stat-lbl">Работ на доработке сейчас</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ retakes.avg_attempts if retakes.avg_attempts is not none else "—" }}{% if retakes.max_attempts %}<span class="ss-suffix-dim"> (макс {{ retakes.max_attempts }})</span>{% endif %}</div><div class="ss-stat-lbl">Среднее число попыток</div></div>
+            </div>
+        </div>
+    </details>
+
+    <!-- Самооценка vs оценка куратора -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Самооценка vs оценка куратора</h2><span class="ss-acc-badge">{{ self_scores.count }} работ с обеими оценками</span></summary>
+        <div class="ss-acc-body">
+            {% if self_scores.count %}
+            <div class="ss-stats-strip ss-strip-flush">
+                <div class="ss-stat"><div class="ss-stat-val">{{ self_scores.avg_student }}</div><div class="ss-stat-lbl">Средняя самооценка ученика</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ self_scores.avg_curator }}</div><div class="ss-stat-lbl">Средняя оценка куратора</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{% if self_scores.avg_diff > 0 %}+{% endif %}{{ self_scores.avg_diff }}</div><div class="ss-stat-lbl">Средняя разница (ученик − куратор)</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ self_scores.student_higher_pct }}%</div><div class="ss-stat-lbl">Ученик оценил себя выше</div></div>
+            </div>
+            {% else %}<div class="ss-empty">Работ с самооценкой и оценкой куратора пока нет</div>{% endif %}
+        </div>
+    </details>
+
+    <!-- Уведомления -->
     <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Реакция на уведомления</h2><span class="ss-acc-badge">{{ notifications.read_count }} прочитано · {{ notifications.unread_count }} непрочитано</span></summary>
         <div class="ss-acc-body">
@@ -218,7 +357,7 @@
         </div>
     </details>
 
-    <!-- 3а. Login-ссылки -->
+    <!-- Login-ссылки -->
     <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Одноразовые ссылки для входа</h2><span class="ss-acc-badge">{{ login_links.used_count }} / {{ login_links.total }} использовано{% if login_links.conversion_pct is not none %} ({{ login_links.conversion_pct }}%){% endif %}</span></summary>
         <div class="ss-acc-body">
@@ -231,19 +370,7 @@
         </div>
     </details>
 
-    <!-- 4. Видео-отчёты -->
-    <details class="ss-acc">
-        <summary><h2 class="ss-acc-title">Видео-отчёты кураторов</h2><span class="ss-acc-badge">{{ report_views.viewed_count }} / {{ report_views.total }} просмотрено</span></summary>
-        <div class="ss-acc-body">
-            <div class="ss-stats-strip ss-strip-3 ss-strip-flush">
-                <div class="ss-stat"><div class="ss-stat-val">{{ report_views.total }}</div><div class="ss-stat-lbl">Всего отчётов</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ report_views.viewed_count }}</div><div class="ss-stat-lbl">Просмотрено сотрудниками</div></div>
-                <div class="ss-stat"><div class="ss-stat-val">{{ report_views.avg_view_text or "—" }}</div><div class="ss-stat-lbl">Среднее время до просмотра</div></div>
-            </div>
-        </div>
-    </details>
-
-    <!-- 5. Давно не заходили -->
+    <!-- Давно не заходили -->
     <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Давно не заходили</h2><span class="ss-acc-badge">{{ logins.inactive | length }} уч.</span></summary>
         <div class="ss-acc-body">
@@ -267,7 +394,93 @@
         </div>
     </details>
 
-    <!-- 6. Журнал изменений -->
+    </div>
+
+    {# ═══════════════ Кураторы ═══════════════ #}
+    <div id="actPanelCurators" hidden>
+
+    <details class="ss-acc" open>
+        <summary><h2 class="ss-acc-title">Действия кураторов</h2><span class="ss-acc-badge">{{ staff_curators | length }} кураторов</span></summary>
+        <div class="ss-acc-body">
+            {{ staff_table(staff_curators, "Активных кураторов нет") }}
+            <div class="ss-empty">Проверки считаются по последней попытке: пересдача обнуляет прежнего проверяющего.</div>
+        </div>
+    </details>
+
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Скорость проверки работ</h2><span class="ss-acc-badge">{{ speed_curators | length }} проверяющих</span></summary>
+        <div class="ss-acc-body">{{ review_speed_table(speed_curators) }}</div>
+    </details>
+
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Обратная связь кураторов</h2><span class="ss-acc-badge">{{ fb_curators | length }} авторов ОС</span></summary>
+        <div class="ss-acc-body">{{ feedback_table(fb_curators) }}</div>
+    </details>
+
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Возвраты обратной связи на правку</h2><span class="ss-acc-badge">{{ revisions.pending | length }} на правке · {{ revisions.done_count }} завершено{% if revisions.avg_fix_text %} · среднее {{ revisions.avg_fix_text }}{% endif %}</span></summary>
+        <div class="ss-acc-body">
+            {% if revisions.pending %}
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead><tr><th>Цикл</th><th>Ученик</th><th>Предмет</th><th>Возвращён</th></tr></thead>
+                    <tbody>
+                    {% for p in revisions.pending %}
+                    <tr>
+                        <td data-label="Цикл"><a href="/cabinet/curator/feedback/{{ p.cycle_id }}" class="ss-link">#{{ p.cycle_id }}</a></td>
+                        <td data-label="Ученик">{{ p.student_name }}</td>
+                        <td data-label="Предмет">{{ p.subject }}</td>
+                        <td data-label="Возвращён" class="ss-dim">{{ p.requested_at.strftime('%d.%m.%Y %H:%M') if p.requested_at else "—" }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}<div class="ss-empty">Нет циклов, ожидающих правки</div>{% endif %}
+        </div>
+    </details>
+
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Видео-отчёты кураторов</h2><span class="ss-acc-badge">{{ report_views.viewed_count }} / {{ report_views.total }} просмотрено</span></summary>
+        <div class="ss-acc-body">
+            <div class="ss-stats-strip ss-strip-3 ss-strip-flush">
+                <div class="ss-stat"><div class="ss-stat-val">{{ report_views.total }}</div><div class="ss-stat-lbl">Всего отчётов</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ report_views.viewed_count }}</div><div class="ss-stat-lbl">Просмотрено сотрудниками</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ report_views.avg_view_text or "—" }}</div><div class="ss-stat-lbl">Среднее время до просмотра</div></div>
+            </div>
+        </div>
+    </details>
+
+    </div>
+
+    {# ═══════════════ Главные преподаватели и модераторы ═══════════════ #}
+    <div id="actPanelHead" hidden>
+
+    <details class="ss-acc" open>
+        <summary><h2 class="ss-acc-title">Действия Главных преподавателей и модераторов</h2><span class="ss-acc-badge">{{ staff_head | length }} чел.</span></summary>
+        <div class="ss-acc-body">{{ staff_table(staff_head, "Активных Главных преподавателей и модераторов нет") }}</div>
+    </details>
+
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Скорость проверки работ</h2><span class="ss-acc-badge">{{ speed_head | length }} проверяющих</span></summary>
+        <div class="ss-acc-body">{{ review_speed_table(speed_head) }}</div>
+    </details>
+
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Обратная связь</h2><span class="ss-acc-badge">{{ fb_head | length }} авторов ОС</span></summary>
+        <div class="ss-acc-body">{{ feedback_table(fb_head) }}</div>
+    </details>
+
+    </div>
+
+    {# ═══════════════ Суперадмин ═══════════════ #}
+    <div id="actPanelSuperadmin" hidden>
+
+    <details class="ss-acc" open>
+        <summary><h2 class="ss-acc-title">Действия суперадминов</h2><span class="ss-acc-badge">{{ staff_super | length }} чел.</span></summary>
+        <div class="ss-acc-body">{{ staff_table(staff_super, "Активных суперадминов нет") }}</div>
+    </details>
+
     <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Журнал изменений</h2><span class="ss-acc-badge">{{ audit_feed | length }} записей</span></summary>
         <div class="ss-acc-body">
@@ -297,5 +510,42 @@
         </div>
     </details>
 
+    </div>
+
 </div>
+
+<script>
+(function () {
+    // Вкладки ролей. Тот же приём, что в трекере ученика: панели прячем через
+    // `el.hidden`. Выбранная вкладка живёт в хэше адреса, чтобы обновление
+    // страницы не сбрасывало её на «Учеников».
+    var tabs = document.querySelectorAll('[data-act-tab]');
+    if (!tabs.length) return;
+    var panels = {
+        students: document.getElementById('actPanelStudents'),
+        curators: document.getElementById('actPanelCurators'),
+        head: document.getElementById('actPanelHead'),
+        superadmin: document.getElementById('actPanelSuperadmin')
+    };
+    function show(key) {
+        if (!panels[key]) return;
+        tabs.forEach(function (tab) {
+            var isActive = tab.getAttribute('data-act-tab') === key;
+            tab.classList.toggle('active', isActive);
+            tab.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+        Object.keys(panels).forEach(function (name) {
+            if (panels[name]) panels[name].hidden = name !== key;
+        });
+    }
+    tabs.forEach(function (tab) {
+        tab.addEventListener('click', function () {
+            var key = tab.getAttribute('data-act-tab');
+            show(key);
+            if (history.replaceState) history.replaceState(null, '', '#' + key);
+        });
+    });
+    show(location.hash.slice(1) || 'students');
+})();
+</script>
 {% endblock %}

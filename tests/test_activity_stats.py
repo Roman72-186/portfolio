@@ -324,3 +324,181 @@ def test_activity_page_renders_empty(superadmin_client):
     assert resp.status_code == 200
     assert "Оценённых работ пока нет" in resp.text
     assert "Нет циклов, ожидающих правки" in resp.text
+
+
+# ── Вкладки ролей и новые метрики (владелец 25.09.2026) ──────────────────────
+
+def test_role_group_maps_ranks_to_tabs():
+    from app.services.activity_stats import role_group
+
+    assert role_group(1) is None
+    assert role_group(2) == "curators"
+    # Модератор работает с правами Главного преподавателя — одна вкладка.
+    assert role_group(3) == "head"
+    assert role_group(4) == "head"
+    assert role_group(5) == "superadmin"
+
+
+def test_diagnostic_is_the_first_row_of_the_page(superadmin_client):
+    client, _ = superadmin_client
+    text = client.get("/cabinet/superadmin/activity").text
+    diag = text.index("Диагностика АРХИ-ПРОФИЛЯ")
+    for later in ("Заходили за 7 дней", "Действия учеников", "Просмотр видео",
+                  "Поведение на пробнике", "Скорость проверки работ", "Журнал изменений"):
+        assert diag < text.index(later), later
+
+
+def test_page_switches_roles_with_the_shared_nav_pill(superadmin_client):
+    client, _ = superadmin_client
+    text = client.get("/cabinet/superadmin/activity").text
+    # Общий компонент из base.css, не свой набор кнопок страницы.
+    assert 'class="nav-pill act-tabs"' in text
+    for key in ("students", "curators", "head", "superadmin"):
+        assert f'data-act-tab="{key}"' in text
+    assert 'id="actPanelStudents">' in text
+    for panel in ("actPanelCurators", "actPanelHead", "actPanelSuperadmin"):
+        assert f'id="{panel}" hidden' in text
+
+
+def test_student_metrics_ignore_staff_activity(db, user_factory):
+    """Вход, ролик и задание сотрудника не попадают в ученические цифры:
+    журнал входов, VideoProgress и TrackerTaskState пишутся у всех."""
+    from app.models.activity_event import StudentActivityEvent
+    from app.models.tracker import TrackerTask, TrackerTaskState
+    from app.models.video_progress import VideoProgress
+    from app.services.activity_stats import (
+        get_student_event_stats, get_task_progress_stats, get_video_watch_stats,
+    )
+
+    student = user_factory(vk_id=971001, name="Ученик Смотрит", role_name="ученик")
+    curator = user_factory(vk_id=971002, name="Куратор Смотрит", role_name="куратор")
+    now = datetime.now(timezone.utc)
+    task = TrackerTask(title="Композиция: этюд")
+    db.add(task)
+    db.flush()
+    for u in (student, curator):
+        db.add(StudentActivityEvent(user_id=u.id, event_type="login", created_at=now))
+        db.add(VideoProgress(
+            user_id=u.id, video_id="vid-1", position_seconds=50,
+            duration_seconds=100, watched_seconds=50,
+        ))
+        db.add(TrackerTaskState(task_id=task.id, user_id=u.id, started_at=now))
+    db.commit()
+
+    events = get_student_event_stats(db)
+    assert events["active_students"] == 1
+    assert events["by_type"][0]["events"] == 1
+    assert [t["student_name"] for t in events["top"]] == ["Ученик Смотрит"]
+
+    video = get_video_watch_stats(db)
+    assert video["students_watching"] == 1
+    assert video["avg_share_pct"] == 50
+    assert video["videos"][0]["title"] == "Ролик вне каталога"
+
+    tasks = get_task_progress_stats(db)
+    assert tasks["opened"] == 1
+    assert tasks["stuck"] == 1
+
+
+def test_task_progress_tells_who_closed_the_task(db, user_factory):
+    from app.models.tracker import TrackerTask, TrackerTaskState
+    from app.services.activity_stats import get_task_progress_stats
+
+    curator = user_factory(vk_id=971101, name="Куратор", role_name="куратор")
+    s1 = user_factory(vk_id=971102, name="Сам", role_name="ученик")
+    s2 = user_factory(vk_id=971103, name="Система", role_name="ученик")
+    s3 = user_factory(vk_id=971104, name="Преподаватель", role_name="ученик")
+    now = datetime.now(timezone.utc)
+    task = TrackerTask(title="Рисунок: куб")
+    db.add(task)
+    db.flush()
+    for student, closer in ((s1, s1.id), (s2, None), (s3, curator.id)):
+        db.add(TrackerTaskState(
+            task_id=task.id, user_id=student.id, status="done",
+            started_at=now - timedelta(hours=2), completed_at=now, completed_by_id=closer,
+        ))
+    db.commit()
+
+    stats = get_task_progress_stats(db)
+    assert stats["closed_by"] == {"student": 1, "system": 1, "staff": 1}
+    assert stats["tasks"][0]["done"] == 3
+    assert stats["tasks"][0]["avg_text"] == "2 ч. 0 м."
+
+
+def test_submission_stats_counts_waiting_blocks(db, user_factory):
+    from app.models.task_block import TaskBlock, TaskBlockSubmission
+    from app.models.tracker import TrackerTask
+    from app.services.activity_stats import get_submission_stats
+
+    s1 = user_factory(vk_id=971201, name="Ждёт", role_name="ученик")
+    s2 = user_factory(vk_id=971202, name="Проверен", role_name="ученик")
+    now = datetime.now(timezone.utc)
+    task = TrackerTask(title="Сдача")
+    db.add(task)
+    db.flush()
+    block = TaskBlock(task_id=task.id, block_type="photo_upload")
+    db.add(block)
+    db.flush()
+    db.add(TaskBlockSubmission(block_id=block.id, user_id=s1.id, submitted_at=now))
+    db.add(TaskBlockSubmission(
+        block_id=block.id, user_id=s2.id, submitted_at=now - timedelta(hours=3),
+        reviewed_at=now - timedelta(hours=1), scored_at=now,
+    ))
+    db.commit()
+
+    stats = get_submission_stats(db)
+    assert stats["blocks_total"] == 2
+    assert stats["blocks_waiting"] == 1
+    assert stats["blocks_scored"] == 1
+    # реакция — первое из просмотра и балла, то есть 2 часа
+    assert stats["avg_reaction_text"] == "2 ч. 0 м."
+
+
+def test_staff_activity_splits_roles_into_tabs(db, user_factory):
+    from app.models.activity_event import StudentActivityEvent
+    from app.models.feedback import Feedback, FeedbackMessage
+    from app.services.activity_stats import get_staff_activity
+
+    curator = user_factory(vk_id=971301, name="Куратор Работает", role_name="куратор")
+    moderator = user_factory(vk_id=971302, name="Модератор", role_name="модератор")
+    head = user_factory(vk_id=971303, name="Главный", role_name="админ")
+    sa = user_factory(vk_id=971304, name="Супер", role_name="суперадмин")
+    student = user_factory(vk_id=971305, name="Ученик", role_name="ученик")
+    now = datetime.now(timezone.utc)
+    work = Work(
+        user_id=student.id, work_type=WORK_TYPE_MOCK_EXAM, month="июль", year=2026,
+        filename="w.jpg", status="success", score=80, scored_at=now, scored_by_id=curator.id,
+    )
+    db.add(work)
+    db.flush()
+    fb = Feedback(work_id=work.id, curator_id=curator.id)
+    db.add(fb)
+    db.flush()
+    db.add(FeedbackMessage(feedback_id=fb.id, sender_id=curator.id, sender_role="curator", text="ОС"))
+    db.add(FeedbackMessage(feedback_id=fb.id, sender_id=student.id, sender_role="student", text="Спасибо"))
+    db.add(StudentActivityEvent(user_id=curator.id, event_type="login", created_at=now))
+    db.add(AuditLog(action="tariff_change", performed_by_id=head.id, target_user_id=student.id))
+    db.commit()
+
+    rows = {r["name"].strip(): r for r in get_staff_activity(db)}
+    assert "Ученик" not in rows
+    assert rows["Куратор Работает"]["role_group"] == "curators"
+    assert rows["Модератор"]["role_group"] == "head"
+    assert rows["Главный"]["role_group"] == "head"
+    assert rows["Супер"]["role_group"] == "superadmin"
+    assert rows["Куратор Работает"]["works_scored"] == 1
+    assert rows["Куратор Работает"]["messages"] == 1
+    assert rows["Куратор Работает"]["logins"] == 1
+    assert rows["Главный"]["actions"] == 1
+
+
+def test_activity_page_puts_staff_rows_into_their_tabs(superadmin_client, db, user_factory):
+    client, _ = superadmin_client
+    user_factory(vk_id=971401, name="Куратор Вкладка", role_name="куратор")
+    user_factory(vk_id=971402, name="Модератор Вкладка", role_name="модератор")
+    text = client.get("/cabinet/superadmin/activity").text
+    curators = text.index('id="actPanelCurators"')
+    head = text.index('id="actPanelHead"')
+    superadmin = text.index('id="actPanelSuperadmin"')
+    assert curators < text.index("Куратор Вкладка") < head
+    assert head < text.index("Модератор Вкладка") < superadmin
