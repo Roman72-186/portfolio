@@ -321,6 +321,34 @@ def test_upload_media_fails_loudly_without_storage(client, user_factory, session
     assert response.json()["ok"] is False
 
 
+def test_upload_media_rejects_missing_csrf_with_json_body(client, user_factory, session_factory):
+    """`tests/conftest.py` отключает CSRF глобально, и без этого теста баг
+    с 25.09.2026 не поймать: в конструкторе не было `input[name=csrf_token]`,
+    компонент слал пустой токен, `require_csrf` отвечал 403, а без заголовка
+    `Accept: application/json` сервер (`app/main.py`, обработчик 403) отдавал
+    HTML вместо JSON — компонент показывал общий текст вместо настоящей
+    причины. Здесь включаем настоящую проверку токена и просим JSON, как
+    теперь делает сам компонент (`media-recorder-field.js`, `upload()`)."""
+    from app.dependencies import require_csrf
+    from app.main import app
+
+    _staff(client, user_factory, session_factory, vk_id=981_102)
+    csrf_override = app.dependency_overrides.pop(require_csrf)
+    try:
+        response = client.post(
+            f"{PROGRAM}/upload-media",
+            data={"kind": MEDIA_VOICE, "csrf_token": ""},
+            files={"file": ("voice.webm", b"x", "audio/webm")},
+            headers={"Accept": "application/json"},
+        )
+    finally:
+        app.dependency_overrides[require_csrf] = csrf_override
+
+    assert response.status_code == 403
+    body = response.json()
+    assert body["detail"]
+
+
 def test_upload_media_is_closed_for_students(client, user_factory, session_factory):
     student = user_factory(vk_id=981_131, name="Ученик", role_name="ученик")
     _login(client, session_factory, student)
@@ -363,6 +391,39 @@ def test_constructor_offers_media_block(client, db, user_factory, session_factor
     assert 'data-add-block="media"' in page.text
     assert BLOCK_TYPE_LABELS[BLOCK_MEDIA] in page.text
     assert "/static/js/media-recorder-field.js?v=" in page.text
+    # Регрессия на баг с 25.09.2026: на этой странице нет
+    # `input[name=csrf_token]` (конструктор шлёт JSON), и блок «media» без
+    # явного `data-mrf-csrf` в своей разметке грузил запись с пустым токеном.
+    assert "data-mrf-csrf=\"' + escapeHTML(csrfToken) + '\"" in page.text
+
+
+def test_cycle_items_constructor_media_block_carries_csrf(
+    client, db, user_factory, session_factory
+):
+    """Тот же блок «media» подключается и на экране «Задания внутри цикла»
+    (`cabinet_program_cycle_items.html`) — токен в разметке нужен там тоже."""
+    from datetime import timedelta
+
+    from app.services.tz import today_msk
+
+    _staff(client, user_factory, session_factory, vk_id=981_142)
+    today = today_msk()
+    created = client.post(
+        f"{PROGRAM}/cycles",
+        json={
+            "title": "Цикл", "description": None,
+            "starts_on": today.isoformat(),
+            "ends_on": (today + timedelta(days=5)).isoformat(),
+            "is_published": True,
+        },
+    )
+    assert created.status_code == 200, created.text
+    cycle_id = created.json()["cycle_id"]
+
+    page = client.get(f"{PROGRAM}/cycles/{cycle_id}")
+
+    assert page.status_code == 200
+    assert "data-mrf-csrf=\"' + escapeHTML(csrfToken) + '\"" in page.text
 
 
 def test_constructor_saves_media_block_and_keeps_it(client, db, user_factory, session_factory, monkeypatch):

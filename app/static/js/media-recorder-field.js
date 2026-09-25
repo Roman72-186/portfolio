@@ -26,6 +26,12 @@
  * конструктор не даёт сохранить задание (иначе блок ушёл бы без файла и
  * пропал), а форма переписки — отправить сообщение без записи.
  *
+ * По нажатию «Записать…» камера/микрофон захватываются сразу, но сама запись
+ * стартует только по отдельной кнопке «Начать запись» — стадия «подготовка»
+ * (владелец 25.09.2026): у кружка виден живой кадр, у голосового — индикатор
+ * уровня микрофона. «Отмена» с этой стадии освобождает устройство, ничего не
+ * записав.
+ *
  * Формат выбирает браузер: Chrome/Firefox пишут webm, Safari — mp4. Имя
  * файла получает расширение под фактический формат: сервер узнаёт тип и по
  * расширению, а путь в S3 без расширения получил бы `.jpg`.
@@ -94,9 +100,21 @@
         }).join('');
         return ''
             + '<div class="mrf-row" data-mrf-idle>' + buttons + '</div>'
-            + '<div class="mrf-stage" data-mrf-live hidden>'
+            // Между нажатием «Записать…» и самой записью — стадия «подготовка»
+            // (владелец 25.09.2026: раньше запись стартовала сразу по
+            // getUserMedia, без паузы посмотреть в кадр или проверить микрофон).
+            // Камера/микрофон уже захвачены (видео и индикатор ниже — общие
+            // на подготовку и саму запись), а таймер и MediaRecorder стартуют
+            // только по «Начать запись».
+            + '<div class="mrf-stage" data-mrf-active hidden>'
             + '  <video class="mrf-circle mrf-circle--live" data-mrf-live-video muted playsinline hidden></video>'
-            + '  <div class="mrf-row">'
+            + '  <div class="mrf-mic-meter" data-mrf-mic-meter hidden><span class="mrf-mic-bar" data-mrf-mic-bar></span></div>'
+            + '  <div class="mrf-row" data-mrf-ready-controls hidden>'
+            + '    <span class="mrf-hint" data-mrf-ready-hint></span>'
+            + '    <button type="button" class="btn-blue mrf-btn" data-mrf-begin>Начать запись</button>'
+            + '    <button type="button" class="btn-outline mrf-btn" data-mrf-cancel>Отмена</button>'
+            + '  </div>'
+            + '  <div class="mrf-row" data-mrf-rec-controls hidden>'
             + '    <span class="mrf-rec-dot" aria-hidden="true"></span>'
             + '    <span class="mrf-time" data-mrf-time>0:00</span>'
             + '    <span class="mrf-hint" data-mrf-limit></span>'
@@ -148,6 +166,7 @@
         this.root.addEventListener('click', function (event) {
             var start = event.target.closest('[data-mrf-start]');
             if (start) { self.start(start.getAttribute('data-mrf-start')); return; }
+            if (event.target.closest('[data-mrf-begin]')) { self.beginRecording(); return; }
             if (event.target.closest('[data-mrf-stop]')) { self.stop(false); return; }
             if (event.target.closest('[data-mrf-cancel]')) { self.stop(true); return; }
             if (event.target.closest('[data-mrf-redo]')) {
@@ -180,7 +199,9 @@
 
     Recorder.prototype.show = function (state) {
         this.q('[data-mrf-idle]').hidden = state !== 'idle';
-        this.q('[data-mrf-live]').hidden = state !== 'live';
+        this.q('[data-mrf-active]').hidden = state !== 'ready' && state !== 'live';
+        this.q('[data-mrf-ready-controls]').hidden = state !== 'ready';
+        this.q('[data-mrf-rec-controls]').hidden = state !== 'live';
         this.q('[data-mrf-preview]').hidden = state !== 'preview';
     };
 
@@ -210,40 +231,55 @@
             ? {audio: true}
             : {audio: true, video: {facingMode: 'user', width: {ideal: 480}, height: {ideal: 480}}};
         navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
-            self.begin(kind, stream);
+            self.prepare(kind, stream);
         }).catch(function (err) {
             self.setError(errorText(err, kind));
         });
     };
 
-    Recorder.prototype.begin = function (kind, stream) {
-        var self = this;
+    // Камера/микрофон захвачены, но запись ещё не идёт — стадия «подготовка»
+    // (владелец 25.09.2026, ответ на вопрос «кнопка или отсчёт» — кнопка: сам
+    // решает, когда готов, без отсчёта на фоне). У кружка живой кадр с камеры,
+    // у голосового — индикатор уровня микрофона; в обоих случаях дальше идёт
+    // «Начать запись» (см. beginRecording) или «Отмена» (releaseStream через stop).
+    Recorder.prototype.prepare = function (kind, stream) {
         this.kind = kind;
         this.stream = stream;
-        this.chunks = [];
         this.cancelled = false;
         this.setBusy(true);
-        var mime = pickMime(kind);
-        var options = {audioBitsPerSecond: 64000};
-        if (mime) options.mimeType = mime;
-        if (kind === 'note') options.videoBitsPerSecond = 1000000;
-        try {
-            this.recorder = new MediaRecorder(stream, options);
-        } catch (e) {
-            this.recorder = new MediaRecorder(stream);
-        }
-        this.recorder.ondataavailable = function (event) {
-            if (event.data && event.data.size) self.chunks.push(event.data);
-        };
-        this.recorder.onstop = function () { self.finish(mime); };
-
         var live = this.q('[data-mrf-live-video]');
         live.hidden = kind !== 'note';
         if (kind === 'note') {
             live.srcObject = stream;
             var playing = live.play();
             if (playing && playing.catch) playing.catch(function () {});
+        } else {
+            this.startMicMeter(stream);
         }
+        this.q('[data-mrf-ready-hint]').textContent = kind === 'voice'
+            ? 'Проверьте микрофон и нажмите «Начать запись»'
+            : 'Проверьте кадр и нажмите «Начать запись»';
+        this.show('ready');
+    };
+
+    Recorder.prototype.beginRecording = function () {
+        var self = this;
+        var kind = this.kind;
+        this.chunks = [];
+        var mime = pickMime(kind);
+        var options = {audioBitsPerSecond: 64000};
+        if (mime) options.mimeType = mime;
+        if (kind === 'note') options.videoBitsPerSecond = 1000000;
+        try {
+            this.recorder = new MediaRecorder(this.stream, options);
+        } catch (e) {
+            this.recorder = new MediaRecorder(this.stream);
+        }
+        this.recorder.ondataavailable = function (event) {
+            if (event.data && event.data.size) self.chunks.push(event.data);
+        };
+        this.recorder.onstop = function () { self.finish(mime); };
+
         this.q('[data-mrf-limit]').textContent = 'из ' + formatTime(LIMIT_SECONDS[kind]);
         this.q('[data-mrf-time]').textContent = '0:00';
         this.show('live');
@@ -256,9 +292,57 @@
         }, 250);
     };
 
+    // Уровень микрофона на подготовке к голосовому — тот же живой сигнал, что
+    // у кадра камеры кружка: подтверждает, что запись возьмёт звук, до того
+    // как жать «Начать запись». AnalyserNode, не MediaRecorder — тут не пишем.
+    Recorder.prototype.startMicMeter = function (stream) {
+        var self = this;
+        var bar = this.q('[data-mrf-mic-bar]');
+        var meter = this.q('[data-mrf-mic-meter]');
+        try {
+            var Ctx = window.AudioContext || window.webkitAudioContext;
+            this.audioCtx = new Ctx();
+            var source = this.audioCtx.createMediaStreamSource(stream);
+            var analyser = this.audioCtx.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
+            this.micAnalyser = analyser;
+            meter.hidden = false;
+            var data = new Uint8Array(analyser.frequencyBinCount);
+            (function tick() {
+                if (!self.micAnalyser) return;
+                analyser.getByteFrequencyData(data);
+                var sum = 0;
+                for (var i = 0; i < data.length; i++) sum += data[i];
+                var level = Math.max(0.06, Math.min(1, (sum / data.length) / 80));
+                bar.style.transform = 'scaleX(' + level + ')';
+                self.micMeterFrame = window.requestAnimationFrame(tick);
+            })();
+        } catch (e) {
+            meter.hidden = true;
+        }
+    };
+
+    Recorder.prototype.stopMicMeter = function () {
+        if (this.micMeterFrame) {
+            window.cancelAnimationFrame(this.micMeterFrame);
+            this.micMeterFrame = null;
+        }
+        this.micAnalyser = null;
+        if (this.audioCtx) {
+            try { this.audioCtx.close(); } catch (e) {}
+            this.audioCtx = null;
+        }
+        var meter = this.q('[data-mrf-mic-meter]');
+        if (meter) meter.hidden = true;
+        var bar = this.q('[data-mrf-mic-bar]');
+        if (bar) bar.style.transform = '';
+    };
+
     Recorder.prototype.releaseStream = function () {
         window.clearInterval(this.timer);
         this.timer = null;
+        this.stopMicMeter();
         if (this.stream) {
             this.stream.getTracks().forEach(function (track) { track.stop(); });
         }
@@ -391,9 +475,13 @@
         data.append('kind', this.kind);
         data.append('csrf_token', csrf);
         var send = window.fetchWithTimeout || function (url, options) { return fetch(url, options); };
+        // 'Accept: application/json' — без него сервер на 403/401/500 отдаёт
+        // HTML-страницу (см. app/main.py, обработчики этих кодов смотрят на
+        // Accept и Content-Type), fetch не может её разобрать, и вместо
+        // настоящей причины пользователь видел общий текст ошибки.
         send(this.uploadUrl, {
             method: 'POST', credentials: 'same-origin',
-            headers: {'X-CSRF-Token': csrf}, body: data
+            headers: {'Accept': 'application/json', 'X-CSRF-Token': csrf}, body: data
         }, 300000).then(function (response) {
             return response.json().catch(function () { return {}; }).then(function (body) {
                 if (!response.ok || !body.ok || !body.url) {
