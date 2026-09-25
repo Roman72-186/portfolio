@@ -118,6 +118,11 @@
 .ios-ss .ss-table td { padding: 9px 14px; font: 400 13px/1.4 var(--ios-font); color: var(--ios-label); border-bottom: 0.5px solid var(--ios-sep); }
 .ios-ss .ss-table tr:last-child td { border-bottom: none; }
 .ios-ss .ss-table tr:hover td { background: rgba(60,60,67,0.04); }
+/* Границы столбцов видны: шапка на подложке, между столбцами тонкая линия —
+   иначе в широкой таблице не понять, какое название над каким столбцом (владелец 25.09.2026). */
+.ios-ss .ss-table thead th { background: var(--ios-grouped-bg); }
+.ios-ss .ss-table th + th,
+.ios-ss .ss-table td + td { border-left: 0.5px solid var(--ios-sep); }
 .ios-ss .ss-empty { padding: 24px; text-align: center; color: var(--ios-label-2); font: 400 14px var(--ios-font); }
 
 .ios-ss .ss-table-title {
@@ -129,8 +134,10 @@
 .ios-ss .ss-note-inline { font-weight: 500; text-transform: none; font-size: 12px; }
 
 /* ── Утилиты выравнивания/цвета для ячеек, заполненных Jinja ── */
-.ios-ss .ss-ta-r { text-align: right; }
-.ios-ss .ss-ta-c { text-align: center; }
+/* Вторые селекторы — для <th>: без них `.ss-table th { text-align: left }`
+   весомее, и заголовок числового столбца уезжает влево от своих чисел. */
+.ios-ss .ss-ta-r, .ios-ss .ss-table th.ss-ta-r { text-align: right; }
+.ios-ss .ss-ta-c, .ios-ss .ss-table th.ss-ta-c { text-align: center; }
 .ios-ss .ss-dim { color: var(--ios-label-2); }
 .ios-ss .ss-dim-sm { color: var(--ios-label-2); font-size: 12px; }
 .ios-ss .ss-dim-nowrap { color: var(--ios-label-2); white-space: nowrap; }
@@ -211,7 +218,7 @@
     }
     .ios-ss .ss-table tr:last-child { margin-bottom: 0; }
     .ios-ss .ss-table td {
-        padding: 8px 14px !important; border-bottom: 0.5px solid var(--ios-sep);
+        padding: 8px 14px !important; border-bottom: 0.5px solid var(--ios-sep); border-left: none;
         box-sizing: border-box; text-align: left !important; max-width: none !important;
     }
     .ios-ss .ss-table tr td:last-child { border-bottom: none; }
