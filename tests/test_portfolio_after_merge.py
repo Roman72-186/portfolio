@@ -12,10 +12,18 @@ from app.models.task_block import (
     TaskBlockSubmission,
     TaskBlockSubmissionImage,
 )
-from app.models.work import WORK_TYPE_AFTER, WORK_TYPE_BEFORE, Work
-from app.services.portfolio import SOURCE_SUBMISSION, SOURCE_WORK, after_gallery_groups
+from app.models.homework_submission import HomeworkSubmission, HomeworkSubmissionImage
+from app.models.tracker import ITEM_HOMEWORK, SOURCE_HOMEWORK
+from app.models.work import WORK_TYPE_AFTER, WORK_TYPE_BEFORE, WORK_TYPE_RETAKE, Work
+from app.services.portfolio import (
+    SOURCE_SUBMISSION,
+    SOURCE_WORK,
+    after_gallery_groups,
+    portfolio_item_count,
+    student_portfolio_after_groups,
+)
 from app.services.program import day_bounds
-from app.services.tracker import create_task
+from app.services.tracker import create_homework, create_task
 from app.services.tz import today_msk
 
 TODAY = today_msk()
@@ -162,3 +170,88 @@ def test_staff_json_returns_before_as_a_flat_list(client, db, user_factory, sess
     assert "before_by_month" not in payload
     assert len(payload["before_flat"]) == 2
     assert {w["source"] for w in payload["before_flat"]} == {SOURCE_WORK}
+
+
+# ── домашние задания и отработки (владелец 26.09.2026) ─────────────────────
+
+def _homework(db, user, *, submitted_at, final=True, intermediate=0):
+    homework = create_homework(db, title="Нарисуй куб", user_id=user.id)
+    task = create_task(
+        db, title="Нарисуй куб", user_id=user.id, kind=ITEM_HOMEWORK,
+        source_kind=SOURCE_HOMEWORK, source_id=homework.id, assign_to_all=True,
+    )
+    submission = HomeworkSubmission(
+        homework_id=homework.id, tracker_task_id=task.id, user_id=user.id,
+        submitted_at=_utc(submitted_at) if submitted_at else None,
+    )
+    db.add(submission)
+    db.flush()
+    if final:
+        db.add(HomeworkSubmissionImage(
+            submission_id=submission.id, is_final=True, sort_order=0,
+            image_s3_url=f"https://s3.example/hw-{submission.id}-final.jpg",
+        ))
+    for n in range(intermediate):
+        db.add(HomeworkSubmissionImage(
+            submission_id=submission.id, is_final=False, sort_order=n + 1,
+            image_s3_url=f"https://s3.example/hw-{submission.id}-step-{n}.jpg",
+        ))
+    db.commit()
+    return submission
+
+
+def _retake(db, user, *, is_final=True, parent=None, filename="retake.jpg"):
+    work = Work(
+        user_id=user.id, work_type=WORK_TYPE_RETAKE, month="январь", year=2026,
+        filename=filename, s3_url=f"https://s3.example/{filename}", status="success",
+        is_final=is_final, parent_work_id=parent.id if parent else None,
+    )
+    db.add(work)
+    db.commit()
+    return work
+
+
+def test_homework_final_photo_appears_in_after(db, regular_user):
+    """Прежние сдачи видны сразу: слияние на показ, переносить нечего."""
+    submission = _homework(db, regular_user, submitted_at=_january(), intermediate=2)
+
+    groups = after_gallery_groups(db, regular_user.id)
+
+    assert [(g["year"], g["month"]) for g in groups] == [(2026, "январь")]
+    items = groups[0]["works"]
+    # Промежуточные снимки — ход работы, в портфолио идёт только финал.
+    assert [w.s3_url for w in items] == [f"https://s3.example/hw-{submission.id}-final.jpg"]
+    assert items[0].source == SOURCE_SUBMISSION
+    assert groups[0]["work_total"] == 0
+    assert portfolio_item_count(db, regular_user.id) == 1
+
+
+def test_unsubmitted_homework_is_not_shown(db, regular_user):
+    _homework(db, regular_user, submitted_at=None)
+
+    assert after_gallery_groups(db, regular_user.id) == []
+
+
+def test_retake_final_shows_only_on_student_page(db, regular_user):
+    final = _retake(db, regular_user, filename="retake-final.jpg")
+    _retake(db, regular_user, is_final=False, parent=final, filename="retake-step.jpg")
+
+    student_items = [
+        w for g in student_portfolio_after_groups(db, regular_user.id) for w in g["works"]
+    ]
+    assert [w.filename for w in student_items] == ["retake-final.jpg"]
+    # Staff-карточка держит отработки в своём блоке: там их нельзя стирать
+    # массовым удалением месяца, которое ничего не знает про цикл.
+    assert after_gallery_groups(db, regular_user.id) == []
+
+
+def test_student_portfolio_page_shows_homework_and_retake(auth_client, db):
+    client, user = auth_client
+    submission = _homework(db, user, submitted_at=_january())
+    _retake(db, user, filename="retake-final.jpg")
+
+    resp = client.get("/cabinet/portfolio")
+
+    assert resp.status_code == 200
+    assert f"hw-{submission.id}-final.jpg" in resp.text
+    assert "retake-final.jpg" in resp.text
