@@ -72,6 +72,19 @@
         если не доходит, и как работает контроль просмотра.
     </p>
 
+    {# Два моста с одним конфигом: нидерландский и копия на Selectel. Выбор
+       живёт в адресе (`?bridge=`), ролик при переключении сохраняется. #}
+    <div class="vbt-card">
+        <h2>Какой мост проверяем</h2>
+        <div class="vbt-buttons">
+            {% for base, label in bridge_choices %}
+            <a class="vbt-btn{% if base == bridge_base %} vbt-btn-main{% endif %}" style="text-align:center; text-decoration:none;"
+               href="?bridge={{ base|urlencode }}{% if video %}&amp;video_id={{ video.id }}{% endif %}"
+               {% if base == bridge_base %}aria-current="true"{% endif %}>{{ label }}<br><small>{{ base|replace('https://', '') }}</small></a>
+            {% endfor %}
+        </div>
+    </div>
+
     {% if bridge_enabled_globally %}
     <div class="vbt-warn">
         Мост включён для всех: ученики смотрят видео через него. Правый плеер в шаге 2 по-прежнему ходит

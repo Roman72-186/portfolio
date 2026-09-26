@@ -104,6 +104,39 @@ def test_unknown_bridge_address_is_rejected(admin_client, db, monkeypatch):
     assert response.status_code == 400
 
 
+SELECTEL_BRIDGE = "https://video-ru.assaru.space"
+
+
+def test_selectel_bridge_copy_can_be_chosen(admin_client, db, monkeypatch):
+    """Копия моста на Selectel (26.09.2026) открывается тем же `?bridge=`."""
+    _configure_bunny(monkeypatch)
+    _published_video(db)
+    client, _ = admin_client
+
+    response = client.get(PAGE, params={"bridge": SELECTEL_BRIDGE})
+
+    assert response.status_code == 200
+    assert f"{SELECTEL_BRIDGE}/embed/720058/{VIDEO_ID}" in response.text
+    assert f"{SELECTEL_BRIDGE}/__a/playerjs/player-0.1.0.min.js" in response.text
+    # Прямой плеер для сравнения остаётся на месте.
+    assert f"https://iframe.mediadelivery.net/embed/720058/{VIDEO_ID}" in response.text
+    # Выбор глобальную переменную не трогает.
+    assert settings.bunny_player_proxy_base == ""
+
+
+def test_switch_offers_both_bridges_and_keeps_the_video(admin_client, db, monkeypatch):
+    _configure_bunny(monkeypatch)
+    video = _published_video(db)
+    client, _ = admin_client
+
+    response = client.get(PAGE, params={"video_id": video.id})
+
+    assert "Нидерланды" in response.text
+    assert "Selectel, Россия" in response.text
+    assert f"?bridge=https%3A//video-ru.assaru.space&amp;video_id={video.id}" in response.text
+    assert f"?bridge=https%3A//video.assaru.space&amp;video_id={video.id}" in response.text
+
+
 def test_page_opens_without_a_video_to_test_on(admin_client, monkeypatch):
     """Без ролика страница открывается и говорит, чего не хватает.
 

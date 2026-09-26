@@ -398,7 +398,16 @@ def save_catalog_video_progress(
 # в `src` скрипта и в `src` iframe, поэтому произвольную строку из `?bridge=`
 # сюда не пускаем даже на странице для администратора.
 BRIDGE_TEST_DEFAULT_BASE = "https://video.assaru.space"
-BRIDGE_TEST_ALLOWED_BASES = (BRIDGE_TEST_DEFAULT_BASE,)
+# Копия моста на Selectel (владелец, 26.09.2026): тот же конфиг nginx, но в
+# России, рядом с самим Apparchi. Заведена для сравнения с нидерландским мостом,
+# ученики через неё не ходят.
+BRIDGE_TEST_SELECTEL_BASE = "https://video-ru.assaru.space"
+BRIDGE_TEST_ALLOWED_BASES = (BRIDGE_TEST_DEFAULT_BASE, BRIDGE_TEST_SELECTEL_BASE)
+# Подписи переключателя на странице: какой мост где стоит.
+BRIDGE_TEST_CHOICES = (
+    (BRIDGE_TEST_DEFAULT_BASE, "Нидерланды"),
+    (BRIDGE_TEST_SELECTEL_BASE, "Selectel, Россия"),
+)
 
 
 @router.get("/admin/video-bridge-test", response_class=HTMLResponse)
@@ -460,6 +469,7 @@ def video_bridge_test(
             "video": video,
             "videos": videos,
             "bridge_base": bridge_base,
+            "bridge_choices": BRIDGE_TEST_CHOICES,
             "bridge_player_url": bridge_player_url,
             "direct_player_url": direct_player_url,
             "bridge_player_js_url": player_js_url(bridge_base),
