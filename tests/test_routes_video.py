@@ -634,7 +634,14 @@ def test_video_page_has_throttled_playerjs_progress_contract(auth_client, monkey
     assert "player.setCurrentTime(resumeSeconds)" in response.text
     assert "if (resumeSeconds >= 5) {" in response.text
     assert "Date.now() - lastAutomaticSaveAt >= 10000" in response.text
-    assert "'X-CSRF-Token': csrfToken" in response.text
+    # Ключ ставит общий хелпер (`static/js/csrf.js`), а не сам плеер: с
+    # 26.09.2026 прогресс шлётся свежим токеном. Прежний сторож ждал строку
+    # `'X-CSRF-Token': csrfToken` в разметке — она означала обратное, что
+    # плеер шлёт ключ, вшитый в страницу при отрисовке. За 20 часов до правки
+    # именно такой ключ протухал и давал 139 отказов 403 на прогрессе, после
+    # чего плеер выключал сохранение до перезагрузки страницы.
+    assert "window.csrfFetch" in response.text
+    assert "sendProgressRequest(data.progress_endpoint" in response.text
     assert "keepalive: Boolean(keepalive)" in response.text
     assert "if (saveInFlight)" in response.text
     assert "body: JSON.stringify({" in response.text

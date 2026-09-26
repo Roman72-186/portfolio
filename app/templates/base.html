@@ -7,6 +7,13 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Путь к сотке!">
     <meta name="theme-color" content="#ffffff">
+    {# Запасной CSRF-ключ для `static/js/csrf.js`: основной путь — свежий токен
+       с `GET /csrf` перед каждой мутацией, а этот работает, когда сервер за
+       ключом не ответил (нет сети). Гостевые экраны токена не имеют — тега
+       тогда нет вовсе, и хелпер это переживает. #}
+    {% if user is defined and user %}
+    <meta name="csrf-token" content="{{ csrf_token(request) }}">
+    {% endif %}
     <!-- Тёмная тема (владелец 03.09.2026) — общий объект вместо кнопки на
          каждой странице: элемент управления живёт там, где у роли уже есть
          "настройки" (шестерёнка ученика — partials/notif_gear.html; кнопка
@@ -234,6 +241,10 @@
         return fetch(url, opts).finally(function() { clearTimeout(timer); });
     };
     </script>
+    {# Свежий CSRF-ключ перед мутацией — общий слой на все экраны. Подключён в
+       base.html, а не на страницах загрузки: ключ старится у любой долго
+       открытой вкладки, а не только у формы с фото (разбор — в самом файле). #}
+    <script src="/static/js/csrf.js?v=1"></script>
     {% include "_includes/impersonation_banner.html" %}
     {% if user is defined and user %}
     <div class="floating-widget-tray" id="floatingWidgetTray" aria-label="Быстрые виджеты">

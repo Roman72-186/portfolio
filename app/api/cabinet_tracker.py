@@ -21,6 +21,7 @@ Hero-карточка (аватар/имя/тариф/баллы Р-К/год п
 `app/services/stats.py::avg_score_by_subject_all_time` (тот же, что у карточки
 ученика для персонала).
 """
+import logging
 from datetime import timedelta, timezone
 from typing import Annotated
 
@@ -103,6 +104,8 @@ from app.services.utils import compress_image
 from app.services.video_progress import get_video_progress
 from app.services.video_topics import accessible_topic_ids
 from app.tmpl import format_rich_text, templates
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cabinet")
 
@@ -881,13 +884,25 @@ async def upload_task_block_work(
         raise HTTPException(status_code=404, detail="Блок не найден")
     task = _writable_task_or_404(db, user["user_id"], block.task_id)
 
+    # Каждый отказ пишется в лог. До 26.09.2026 их не было видно вовсе: в
+    # журнале стоял только код ответа, а причина уезжала ученику в JSON — на
+    # жалобу «пишет, что не удалось загрузить» ответить было нечем, кроме
+    # гипотез. Теперь на одну жалобу хватает одной строки лога.
+    def _refused(kind: str, detail: str) -> None:
+        log.warning(
+            "Отказ на загрузке работы | block=%s | user=%s | причина=%s | %s | файлов=%s",
+            block_id, user["user_id"], kind, detail, len(photos or []),
+        )
+
     submission = get_task_block_submission(db, block_id=block.id, user_id=user["user_id"])
     reason = block_work_reason(db, task, block, submission)
     if reason:
+        _refused("правка закрыта", reason)
         return JSONResponse({"ok": False, "error": reason}, status_code=409)
     submission = submission or get_or_create_task_block_submission(db, block=block, user_id=user["user_id"])
     existing = count_task_block_submission_images(db, submission.id)
     if existing >= MAX_SUBMISSION_IMAGES:
+        _refused("лимит файлов", f"уже загружено {existing} из {MAX_SUBMISSION_IMAGES}")
         return JSONResponse(
             {
                 "ok": False,
@@ -901,6 +916,7 @@ async def upload_task_block_work(
         max_size=MAX_UPLOAD_FILE_SIZE,
     )
     if err:
+        _refused("валидация файлов", err)
         return JSONResponse({"ok": False, "error": err}, status_code=422)
 
     created = 0
@@ -910,6 +926,7 @@ async def upload_task_block_work(
         )
         url = s3_service.upload_to_s3(s3_path, compress_image(data), "image/jpeg")
         if s3_service.is_configured() and not url:
+            _refused("хранилище не ответило", f"{s3_path}, байт={len(data)}")
             return JSONResponse(
                 {"ok": False, "error": "Ошибка загрузки в хранилище"}, status_code=502
             )

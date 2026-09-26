@@ -168,6 +168,34 @@ scope)` и свойством `answered` (одна попытка: после о
                 uid: Math.random().toString(36).slice(2)
             };
 
+            // Любая мутация блока идёт отсюда, и ключ берётся свежим у сервера
+            // (`static/js/csrf.js`), а не тот, что попал в разметку при
+            // отрисовке страницы. Причина — в докстринге того файла: вкладка
+            // ученика живёт дольше ключа, и 26.09.2026 на этом падала отправка
+            // работы. `Accept: application/json` ставит хелпер сам, без него
+            // отказ приходит HTML-страницей и разбор ответа падает.
+            // Фолбэк на прямой fetch — для страниц без base.html (предпросмотр
+            // конструктора грузит этот файл отдельным тегом).
+            function post(url, options) {
+                options = options || {};
+                if (window.csrfFetch) return window.csrfFetch(url, options);
+                var headers = {'Accept': 'application/json', 'X-CSRF-Token': csrfToken};
+                Object.keys(options.headers || {}).forEach(function (key) {
+                    headers[key] = options.headers[key];
+                });
+                var opts = {};
+                Object.keys(options).forEach(function (key) { opts[key] = options[key]; });
+                opts.credentials = 'same-origin';
+                opts.headers = headers;
+                return fetch(url, opts);
+            }
+
+            // Текст ошибки сервера: `error` у роутов, `detail` у HTTPException.
+            function failure(body, fallback) {
+                if (window.csrfMessage) return window.csrfMessage(body, fallback);
+                return (body && (body.error || body.detail)) || fallback;
+            }
+
             function withTitle(wrap, block) {
                 // Не field-label: тот же класс держит подписи полей форм по
                 // всему приложению, а здесь заголовок блока должен быть
@@ -308,16 +336,12 @@ scope)` и свойством `answered` (одна попытка: после о
                 check.addEventListener('click', function () {
                     if (block.done || !endpoint) return;
                     check.disabled = true;
-                    fetch(endpoint, {
-                        method: 'POST',
-                        credentials: 'same-origin',
-                        headers: { 'Accept': 'application/json', 'X-CSRF-Token': csrfToken }
-                    }).then(function (resp) {
+                    post(endpoint, { method: 'POST' }).then(function (resp) {
                         return resp.json().then(function (body) {
                             return { ok: resp.ok && body.ok, body: body };
                         });
                     }).then(function (result) {
-                        if (!result.ok) throw new Error(result.body && result.body.error);
+                        if (!result.ok) throw new Error(failure(result.body, ''));
                         block.done = true;
                         check.classList.add('is-done');
                         check.textContent = '✓';
@@ -666,14 +690,9 @@ scope)` и свойством `answered` (одна попытка: после о
                             saveBtn.disabled = true;
                             note.textContent = '';
                             note.classList.remove('is-error');
-                            fetch(block.submit_endpoint, {
+                            post(block.submit_endpoint, {
                                 method: 'POST',
-                                credentials: 'same-origin',
-                                headers: {
-                                    'Accept': 'application/json',
-                                    'Content-Type': 'application/json',
-                                    'X-CSRF-Token': csrfToken
-                                },
+                                headers: {'Content-Type': 'application/json'},
                                 body: JSON.stringify({
                                     answers: [{
                                         block_id: block.id,
@@ -751,12 +770,11 @@ scope)` и свойством `answered` (одна попытка: после о
                     remove.type = 'button';
                     remove.addEventListener('click', function () {
                         remove.disabled = true;
-                        fetch(block.delete_endpoint + '/' + file.id + '/delete', {
-                            method: 'POST', credentials: 'same-origin',
-                            headers: {'X-CSRF-Token': csrfToken}
+                        post(block.delete_endpoint + '/' + file.id + '/delete', {
+                            method: 'POST'
                         }).then(function (resp) {
                             return resp.json().then(function (body) {
-                                if (!resp.ok) throw new Error(body.error || 'Не удалось удалить фото.');
+                                if (!resp.ok) throw new Error(failure(body, 'Не удалось удалить фото.'));
                                 window.location.reload();
                             });
                         }).catch(function (error) {
@@ -791,13 +809,13 @@ scope)` и свойством `answered` (одна попытка: после о
                     saveComment.type = 'button';
                     saveComment.addEventListener('click', function () {
                         saveComment.disabled = true;
-                        fetch(block.comment_endpoint, {
-                            method: 'POST', credentials: 'same-origin',
-                            headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+                        post(block.comment_endpoint, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
                             body: JSON.stringify({comment: comment.value})
                         }).then(function (resp) {
                             return resp.json().then(function (body) {
-                                if (!resp.ok) throw new Error(body.error || 'Не удалось сохранить описание.');
+                                if (!resp.ok) throw new Error(failure(body, 'Не удалось сохранить описание.'));
                                 window.location.reload();
                             });
                         }).catch(function (error) {
@@ -829,17 +847,34 @@ scope)` и свойством `answered` (одна попытка: после о
                     send.disabled = true;
                     note.classList.remove('is-error');
                     note.textContent = 'Загружаем…';
-                    fetch(block.upload_endpoint, {
+                    post(block.upload_endpoint, {
                         method: 'POST',
-                        credentials: 'same-origin',
-                        headers: {'X-CSRF-Token': csrfToken},
                         body: data
                     }).then(function (resp) {
-                        return resp.json().then(function (body) {
-                            return {ok: resp.ok && body.ok, body: body};
+                        // Ответ разбираем через text(): при отказе на уровне
+                        // прокси (обрыв, 502) JSON не приходит вовсе, и
+                        // resp.json() падал бы своей ошибкой поверх настоящей.
+                        return resp.text().then(function (raw) {
+                            var body = null;
+                            try { body = JSON.parse(raw); } catch (e) { body = null; }
+                            return {ok: resp.ok && body && body.ok, body: body, status: resp.status};
                         });
                     }).then(function (result) {
-                        if (!result.ok) throw new Error(result.body.error || '');
+                        if (!result.ok) {
+                            // 401 — вход кончился, и повтор тут бесполезен:
+                            // человеку надо войти заново, а не «попробовать
+                            // ещё раз» (жалоба ученицы 26.09.2026: «уже
+                            // несколько раз перезашла, всё равно пишет, что не
+                            // удалось» — перезаход в другой вкладке старую
+                            // страницу не оживляет).
+                            if (result.status === 401) {
+                                throw new Error('Вход закончился. Открой кабинет заново и повтори отправку.');
+                            }
+                            throw new Error(failure(
+                                result.body,
+                                'Не удалось загрузить (ошибка ' + result.status + '). Попробуй ещё раз.'
+                            ));
+                        }
                         // Состояние блока и хвост ленты пересчитывает сервер —
                         // перезагружаем, чтобы не расходиться с ним.
                         window.location.reload();
@@ -847,7 +882,7 @@ scope)` и свойством `answered` (одна попытка: после о
                         send.disabled = false;
                         note.textContent = (err && err.message)
                             ? err.message
-                            : 'Не удалось загрузить. Попробуй ещё раз.';
+                            : 'Не удалось загрузить. Проверь связь и попробуй ещё раз.';
                         note.classList.add('is-error');
                     });
                 });
@@ -922,14 +957,7 @@ scope)` и свойством `answered` (одна попытка: после о
                     note.setAttribute('aria-live', 'polite');
                     startBtn.addEventListener('click', function () {
                         startBtn.disabled = true;
-                        fetch(block.start_endpoint, {
-                            method: 'POST',
-                            credentials: 'same-origin',
-                            headers: {
-                                'Accept': 'application/json',
-                                'X-CSRF-Token': csrfToken
-                            }
-                        }).then(function (resp) {
+                        post(block.start_endpoint, { method: 'POST' }).then(function (resp) {
                             if (!resp.ok) throw new Error();
                             // Отсчёт ведёт сервер — перезагружаем, чтобы время
                             // старта пришло из одного источника.

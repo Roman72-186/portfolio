@@ -44,6 +44,11 @@ from app.models.session import Session as DbSession
 _FORCE_SESSION_REFRESH_PATHS = {
     "/upload/mock-exam",
     "/upload/mock-exam/csrf",
+    # Запрос свежего CSRF-токена с любой страницы (`auth.fresh_csrf`): фронт
+    # дёргает его перед отправкой работы, и это единственный момент, когда точно
+    # известно, что человек за вкладкой работает. Продлеваем сессию здесь же,
+    # иначе долгая вкладка теряет cookie ровно посреди загрузки фото.
+    "/csrf",
 }
 
 

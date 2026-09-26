@@ -3124,11 +3124,16 @@ function submitUpload(e) {
     btn.textContent = 'Загружаем 0%…';
 
     var fd = new FormData(form);
-    fd.append('csrf_token', CSRF_TOKEN);
+
+    // Свежий ключ перед отправкой (`static/js/csrf.js`): карточка ученика
+    // открыта у куратора весь рабочий день, а ключ из разметки старился вместе
+    // со страницей и отдавал «Ошибка 403» на готовой пачке фото.
+    function startUpload(token) {
+    fd.set('csrf_token', token);
 
     var xhr = new XMLHttpRequest();
     xhr.open('POST', '/cabinet/students/' + _currentStudentId + '/upload');
-    xhr.setRequestHeader('X-CSRF-Token', CSRF_TOKEN);
+    xhr.setRequestHeader('X-CSRF-Token', token);
     xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
     xhr.setRequestHeader('Accept', 'application/json');
 
@@ -3158,10 +3163,18 @@ function submitUpload(e) {
             showToast(msg);
             _uploadResetAll();
         } else {
-            alert((data && data.error) || ('Ошибка ' + xhr.status));
+            alert((data && (data.error || data.detail)) || ('Ошибка ' + xhr.status));
         }
     };
     xhr.send(fd);
+    }
+
+    var freshToken = window.csrfFresh ? window.csrfFresh() : Promise.resolve(CSRF_TOKEN);
+    freshToken.then(function (token) {
+        startUpload(token || CSRF_TOKEN);
+    }).catch(function () {
+        startUpload(CSRF_TOKEN);
+    });
     return false;
 }
 

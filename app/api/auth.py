@@ -19,6 +19,7 @@ from app.cache import (
 )
 from app.config import settings
 from app.constants import INTAKE_TRIAL_SLUG, SUPPORT_URL
+from app.csrf import generate_csrf_token
 from app.db.database import get_db
 from app.dependencies import (
     _as_utc, get_current_user, require_internal_api_token, require_lab3d_token,
@@ -898,6 +899,28 @@ def auth_handoff(
         issued_by="handoff",
     )
     return JSONResponse({"ok": True, "login_url": login_url})
+
+
+@router.get("/csrf")
+def fresh_csrf(user: Annotated[dict, Depends(get_current_user)]):
+    """Свежий CSRF-токен для текущей сессии — один эндпоинт на все экраны.
+
+    Токен, напечатанный в HTML при рендере, старится вместе со страницей, а
+    вкладка ученика на телефоне живёт сутками. Фронт берёт свежий перед каждой
+    мутацией (`app/static/js/csrf.js`), так что «Неверный CSRF-токен» на живой
+    сессии не случается вовсе — до 26.09.2026 на этом падала отправка работы в
+    задании, прогресс видео и отметки «выполнено».
+
+    Сам проход через `get_current_user` продлевает сессию (sliding TTL), а путь
+    стоит в `_FORCE_SESSION_REFRESH_PATHS` (`app/main.py`) — cookie `session_id`
+    переустанавливается, и браузер не выбрасывает её посреди работы.
+
+    Прежний `/upload/mock-exam/csrf` остался на своём месте: он делает то же
+    самое, покрыт тестами и висит в боевом потоке сдачи пробника, — менять там
+    URL ради единого имени значит трогать сдачу без нужды. Логика в обоих одна
+    строка `generate_csrf_token`, второй копии правил нет.
+    """
+    return JSONResponse({"csrf_token": generate_csrf_token(user["session_id"])})
 
 
 # ── Telegram bot login ───────────────────────────────────────────────────────

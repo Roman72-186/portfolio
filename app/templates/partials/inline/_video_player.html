@@ -614,14 +614,22 @@
                 if (savingDisabled) return;
                 if (saveInFlight) { pendingProgress = progress; return; }
                 saveInFlight = true;
-                fetch(data.progress_endpoint, {
+                // Ключ берём свежим (`static/js/csrf.js`): при 403 ниже плеер
+                // выключает сохранение до конца жизни страницы, а до 26.09.2026
+                // именно протухший ключ давал этот 403 — за 20 часов 139
+                // отказов на прогрессе, и место просмотра у ученика не
+                // сохранялось до перезагрузки.
+                var sendProgressRequest = window.csrfFetch || function (url, options) {
+                    options.headers['X-CSRF-Token'] = csrfToken;
+                    return fetch(url, options);
+                };
+                sendProgressRequest(data.progress_endpoint, {
                     method: 'POST',
                     credentials: 'same-origin',
                     keepalive: Boolean(keepalive),
                     headers: {
                         'Accept': 'application/json',
-                        'Content-Type': 'application/json',
-                        'X-CSRF-Token': csrfToken
+                        'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
                         position_seconds: progress.position_seconds,
