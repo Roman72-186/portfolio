@@ -301,17 +301,22 @@ async def post_dialog_message(
     if cycle is None:
         raise HTTPException(status_code=404, detail="Цикл не найден")
 
-    student = get_student_for_staff_access(
-        db,
-        user,
-        work.user_id,
-        exclude_deleted=True,
-        not_found_detail="Студент не найден",
-        forbidden_detail="Это не ваш студент",
-    )
-
     role_rank = user["role_rank"]
     sender_role = fb_service.role_from_rank(role_rank)
+
+    # Проверка «свой ли ученик» — только для staff. Ученику она отказывала бы
+    # всегда: он не куратор сам себе (прод-инцидент 17–27.09.2026, когда порог
+    # в student_access.py подняли с «== 2» до «< 4»). Своё право ученик
+    # доказывает владением работой — ниже, в ветке авторизации.
+    if sender_role != fb_service.ROLE_STUDENT:
+        student = get_student_for_staff_access(
+            db,
+            user,
+            work.user_id,
+            exclude_deleted=True,
+            not_found_detail="Студент не найден",
+            forbidden_detail="Это не ваш студент",
+        )
 
     # Закрытый цикл запрещает запись только ученику. Staff (куратор/админ/SA)
     # может дать обратную связь и после закрытия — балл, ОС и закрытие — три
@@ -321,7 +326,7 @@ async def post_dialog_message(
 
     # ── Авторизация
     if sender_role == fb_service.ROLE_STUDENT:
-        if user["user_id"] != student.id:
+        if user["user_id"] != work.user_id:
             raise HTTPException(status_code=403, detail="Это не ваш цикл")
         fb = db.query(Feedback).filter(Feedback.work_id == work_id).first()
         if fb is None:
@@ -339,10 +344,10 @@ async def post_dialog_message(
             raise HTTPException(status_code=403, detail="Жди первое сообщение, потом сможешь ответить")
         recipient_id = fb.curator_id
     else:
-        # feedback.write: куратор/админ/суперадмин. Модератор (rank 3) видит
-        # фидбек своих учеников, но писать в него не может — это отдельное
-        # право, не связанное с доступом на чтение.
-        if role_rank < 2 or role_rank == 3:
+        # feedback.write: куратор/модератор/админ/суперадмин. Модератор имеет
+        # права ГП (см. rbac.py::effective_role_rank), отдельного запрета на
+        # запись для него больше нет.
+        if role_rank < 2:
             raise HTTPException(status_code=403, detail="Нет прав на запись feedback")
         fb, _created = fb_service.get_or_create_feedback(
             db, work_id=work_id, initiator_id=user["user_id"]

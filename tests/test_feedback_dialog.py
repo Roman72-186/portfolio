@@ -300,6 +300,29 @@ def test_admin_can_send_first_message_and_student_can_reply(
     assert msgs[1].sender_role == "student"
 
 
+def test_other_student_cannot_reply_in_foreign_dialog(
+    client, admin_user, regular_user, user_factory, session_factory, db
+):
+    """Ученик отвечает только в своём диалоге. Проверка «свой ли ученик» у staff
+    к ученику не применяется, поэтому чужой диалог стережёт владение работой."""
+    cycle = _mk_cycle(db, regular_user.id)
+    work = _mk_final_work(db, regular_user.id, cycle.id)
+    client.cookies.set("session_id", session_factory(admin_user).id)
+    resp = client.post(f"/cabinet/feedback/{work.id}/message", data={"text": "Разбор"})
+    assert resp.status_code in (200, 303)
+
+    stranger = user_factory(vk_id=100_777, name="Other Student")
+    client.cookies.set("session_id", session_factory(stranger).id)
+    resp = client.post(
+        f"/cabinet/feedback/{work.id}/message",
+        data={"text": "Чужой ответ"},
+        headers={"Accept": "application/json"},
+    )
+    assert resp.status_code == 403
+    fb = db.query(Feedback).filter(Feedback.work_id == work.id).first()
+    assert db.query(FeedbackMessage).filter(FeedbackMessage.feedback_id == fb.id).count() == 1
+
+
 def test_staff_structured_first_feedback_composed_into_one_message(
     client, admin_user, regular_user, session_factory, db
 ):
@@ -757,7 +780,7 @@ def test_curator_cannot_post_feedback_for_foreign_student(
     "role_name,should_allow",
     [
         ("куратор", True),
-        ("модератор", False),
+        ("модератор", True),
         ("админ", True),
         ("суперадмин", True),
     ],
@@ -765,10 +788,8 @@ def test_curator_cannot_post_feedback_for_foreign_student(
 def test_feedback_write_gate_matches_permission_table_by_rank(
     client, db, user_factory, session_factory, role_name, should_allow
 ):
-    """Locks in current feedback.py:313 allow/deny per role before migrating the
-    permission check to a rank-equivalent (моderator must stay denied — it has
-    no `feedback.write` in ROLE_PERMISSIONS despite role_from_rank mapping it
-    to the same sender_role as curator)."""
+    """Модератор имеет права ГП (rbac.py::effective_role_rank, решение
+    владельца сентябрь 2026) — тоже проходит гейт feedback.write."""
     actor = user_factory(vk_id=940001, name="Actor", role_name=role_name)
     student = user_factory(vk_id=940002, name="Student", role_name="ученик")
     if role_name == "куратор":
@@ -1081,10 +1102,10 @@ def test_curator_cannot_score_foreign_student_work(client, db, user_factory, ses
     assert work.score is None
 
 
-def test_moderator_cannot_score_unassigned_student_work(client, db, user_factory, session_factory):
-    """Ранг 3 попадает под то же ограничение, что куратор (advisor-ревью
-    01.09.2026): require_curator пропускает и модератора, а владелец только
-    просил расширить право куратору — показать меньше безопаснее, чем чужое."""
+def test_moderator_can_score_unassigned_student_work(client, db, user_factory, session_factory):
+    """Решение владельца (сентябрь 2026): модератор имеет те же права, что
+    «Главный преподаватель» (rbac.py::effective_role_rank) — как и админ, он
+    не ограничен привязкой curator_id и может ставить баллы любому ученику."""
     moderator = user_factory(vk_id=930_027, name="Модератор", role_name="модератор")
     student = user_factory(vk_id=930_028, name="Ученик")  # curator_id остаётся None
     cycle = _mk_cycle(db, student.id)
@@ -1097,9 +1118,9 @@ def test_moderator_cannot_score_unassigned_student_work(client, db, user_factory
         follow_redirects=False,
     )
 
-    assert resp.status_code == 403
+    assert resp.status_code == 302
     db.refresh(work)
-    assert work.score is None
+    assert work.score == 80
 
 
 def test_curator_can_close_cycle_after_scoring_own_student(
