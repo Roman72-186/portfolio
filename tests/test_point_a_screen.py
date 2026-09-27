@@ -176,7 +176,7 @@ def test_list_does_not_load_photos(db, user_factory):
     assert any(p.images for p in detail_plates)
 
 
-@pytest.mark.parametrize("role_name", ["куратор", "модератор", "ученик"])
+@pytest.mark.parametrize("role_name", ["куратор", "ученик"])
 def test_everyone_below_head_teacher_is_refused(
     client, db, user_factory, session_factory, student, role_name
 ):
@@ -189,6 +189,18 @@ def test_everyone_below_head_teacher_is_refused(
     assert client.get(LIST_URL).status_code == 403
     assert client.get(DETAIL_URL.format(student.id)).status_code == 403
     assert client.post(AFTER_SCORE_URL.format(student.id), json={"score": 70}).status_code == 403
+
+
+def test_moderator_has_head_teacher_access(client, db, user_factory, session_factory, student):
+    """Модератор имеет права ГП (rbac.py::effective_role_rank, решение
+    владельца сентябрь 2026) — `require_admin_role` (rank>=4) пропускает
+    и его на экран Точки А."""
+    moderator = user_factory(vk_id=880_103, name="Модератор", role_name="модератор")
+    _as(client, session_factory, moderator)
+
+    assert client.get(LIST_URL).status_code == 200
+    assert client.get(DETAIL_URL.format(student.id)).status_code == 200
+    assert client.post(AFTER_SCORE_URL.format(student.id), json={"score": 70}).status_code == 200
 
 
 def test_unknown_student_is_404(client, session_factory, admin):

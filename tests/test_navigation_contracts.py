@@ -26,7 +26,7 @@ def _html_between(text: str, start: str, end: str) -> str:
     [
         ("ученик", 301001, "/cabinet/learning"),
         ("куратор", 301002, "/cabinet/curator"),
-        ("модератор", 301003, "/cabinet/student"),
+        ("модератор", 301003, "/cabinet/admin-panel"),
         ("админ", 301004, "/cabinet/admin-panel"),
         ("суперадмин", 301005, "/cabinet/superadmin"),
     ],
@@ -166,17 +166,19 @@ def test_admin_and_superadmin_keep_staff_nav_contract(
     assert 'href="/upload/mock-exam"' not in staff_nav
 
 
-def test_moderator_keeps_current_student_redirect_and_has_scoped_student_panel_access(
+def test_moderator_redirects_to_admin_panel_and_has_student_panel_access(
     client,
     user_factory,
     session_factory,
 ):
+    """Модератор имеет права ГП (rbac.py::effective_role_rank, решение
+    владельца сентябрь 2026): открывает тот же кабинет, что и админ."""
     user = user_factory(vk_id=302005, role_name="модератор")
     _login_as(client, session_factory, user)
 
     resp = client.get("/cabinet", follow_redirects=False)
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/cabinet/student"
+    assert resp.headers["location"] == "/cabinet/admin-panel"
 
     student_panel = client.get("/cabinet/students", follow_redirects=False)
     assert student_panel.status_code == 200

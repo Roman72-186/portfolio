@@ -14,6 +14,7 @@ from app.db.database import get_db
 from app.models.session import Session
 from app.models.user import User
 from app.services.portfolio_window import intake_portfolio_gate_required
+from app.services.rbac import effective_role_rank
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -168,8 +169,8 @@ def get_current_user(
         raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
 
     role = user.role
-    role_rank = role.rank if role else 0
     role_name = role.name if role else None
+    role_rank = effective_role_rank(role_name, role.rank) if role else 0
     is_admin = role_rank >= 4 if role else user.is_admin
 
     if role_rank == 0 and not user.is_admin and not user.is_group_member:

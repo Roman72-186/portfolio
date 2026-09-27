@@ -44,9 +44,11 @@ def _tag(db, name: str) -> Tag:
 
 # ── Доступ ────────────────────────────────────────────────────────────────
 
-def test_moderator_cannot_open_tracker_admin(client, user_factory, session_factory):
+def test_moderator_opens_tracker_admin(client, user_factory, session_factory):
+    """Модератор имеет права ГП (rbac.py::effective_role_rank, решение
+    владельца сентябрь 2026)."""
     _staff_client(client, user_factory, session_factory, role_name="модератор", vk_id=410_003)
-    assert client.get(PAGE).status_code == 403
+    assert client.get(PAGE).status_code == 200
 
 
 def test_admin_and_superadmin_open_tracker_admin(

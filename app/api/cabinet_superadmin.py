@@ -272,12 +272,14 @@ def _load_dashboard_data(db: DBSession, now: datetime, *, registration_from=None
         for r in curator_rows
     ]
 
-    # ── Admins (rank 4) ───────────────────────────────────────────────────────
-    # Limit: max 50 admins (защита от медленной выборки)
+    # ── Admins (rank 3 или 4) ────────────────────────────────────────────────
+    # Limit: max 50 admins (защита от медленной выборки). Модератор (rank 3)
+    # имеет права ГП (rbac.py::effective_role_rank) — тоже попадает в список,
+    # суперадмин — нет, у него своя роль выше.
     admin_rows = (
         db.query(User.id, User.first_name, User.last_name, User.name, User.photo_url)
         .join(Role, User.role_id == Role.id)
-        .filter(Role.rank == 4, User.is_active == True)
+        .filter(Role.rank.in_([3, 4]), User.is_active == True)
         .order_by(User.last_name, User.first_name)
         .limit(50)
         .all()

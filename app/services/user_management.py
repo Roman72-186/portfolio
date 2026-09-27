@@ -23,6 +23,7 @@ from app.models.login_token import LoginToken
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
 from app.models.role import Role
+from app.services.rbac import effective_role_rank
 from app.models.session import Session
 from app.models.tag import UserTag
 from app.models.telegram_link_token import TelegramLinkToken
@@ -36,7 +37,7 @@ SUPERADMIN_RANK = 5
 
 def _role_rank(user: User) -> int:
     if user.role:
-        return user.role.rank
+        return effective_role_rank(user.role.name, user.role.rank)
     return 4 if user.is_admin else 0
 
 

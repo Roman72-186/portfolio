@@ -34,9 +34,11 @@ def _student_with_tag(db, user_factory, tag: Tag, *, vk_id: int):
     return student
 
 
-def test_moderator_cannot_open_goal_admin(client, user_factory, session_factory):
+def test_moderator_opens_goal_admin(client, user_factory, session_factory):
+    """Модератор имеет права ГП (rbac.py::effective_role_rank, решение
+    владельца сентябрь 2026)."""
     _staff_client(client, user_factory, session_factory, role_name="модератор", vk_id=440_003)
-    assert client.get(PAGE).status_code == 403
+    assert client.get(PAGE).status_code == 200
 
 
 def test_admin_opens_goal_admin(client, user_factory, session_factory):
