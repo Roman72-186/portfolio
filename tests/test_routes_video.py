@@ -1,5 +1,7 @@
 """Route tests for the protected Bunny Stream pilot page."""
 
+from pathlib import Path
+
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import settings
@@ -152,7 +154,10 @@ def test_video_watermark_fades_in_and_out_at_random_spots(auth_client, monkeypat
     assert "player.on('play'" in response.text
     assert "hideCover();" in response.text
     assert "saveProgress(true, false, false);" in response.text
-    assert "video-frame.is-started .video-cover" in response.text
+    # Стили обложки с 27.09.2026 живут в video.css (храповик переиспользования).
+    assert "/static/css/video.css?v=" in response.text
+    video_css = (Path(__file__).resolve().parents[1] / "app/static/css/video.css").read_text(encoding="utf-8")
+    assert "video-frame.is-started .video-cover" in video_css
     # Слой «Загружаем видео» обязан пропускать касания: автозапуска нет, видео
     # стартует тапом внутри плеера, а этот слой лежит поверх него во весь размер.
     assert "font-size: 13px; pointer-events: none;" in response.text

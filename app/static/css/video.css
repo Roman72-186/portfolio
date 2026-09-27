@@ -1,3 +1,32 @@
 .video-page .video-watermark-copy {
     max-width: min(76%, 310px);
 }
+
+/* Обложка и кнопка «Смотреть» до старта плеера (17.09.2026). Жили инлайном
+   в cabinet_video.html и раздули его <style> сверх снимка храповика —
+   классы частные для этой страницы, поэтому здесь, а не в base.css. */
+.video-cover {
+    position: absolute; inset: 0; z-index: 2;
+    width: 100%; height: 100%; object-fit: cover;
+    opacity: 1; visibility: visible;
+    transition: opacity var(--duration-base) var(--ease-out), visibility 0s linear var(--duration-base);
+}
+.video-cover[hidden] { display: none; }
+.video-cover-play {
+    position: absolute; inset: 50% auto auto 50%; z-index: 4;
+    transform: translate(-50%, -50%);
+    display: inline-flex; align-items: center; gap: 10px;
+    min-height: 52px; padding: 13px 20px;
+    border: 1px solid rgba(255,255,255,.3); border-radius: 999px;
+    background: rgba(15,18,28,.86); color: #fff;
+    font: 700 15px/1 var(--font-body); cursor: pointer;
+    box-shadow: 0 8px 28px rgba(0,0,0,.28);
+}
+.video-cover-play:hover { background: rgba(15,18,28,.96); }
+.video-cover-play:active { transform: translate(-50%, -50%) scale(.96); }
+.video-cover-play:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.video-cover-play[hidden] { display: none; }
+.video-frame.is-started .video-cover { opacity: 0; visibility: hidden; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+    .video-cover { transition: none; }
+}

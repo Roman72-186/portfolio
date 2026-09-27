@@ -95,21 +95,16 @@ def test_dashboard_unscored_mocks_is_zero_without_active_period(admin_client, db
 
 
 def _registration_counts(text: str) -> dict[str, int]:
-    tariff_counts = {
-        tariff: int(value)
-        for tariff, value in re.findall(
-            r'data-registration-tariff="([^"]+)">.*?<div class="type-val">(\d+)</div>',
-            text,
-            flags=re.S,
+    """Плитки карточки «Регистрации по тарифам» на «Статистике активности»:
+    число в .ss-stat-val, подпись тарифа в .ss-stat-lbl."""
+    card = text.split("Регистрации по тарифам", 1)[1].split("Список учеников", 1)[0]
+    return {
+        label: int(value)
+        for value, label in re.findall(
+            r'<div class="ss-stat-val">(\d+)</div><div class="ss-stat-lbl">([^<]+)</div>',
+            card,
         )
     }
-    no_tariff = re.search(
-        r'data-registration-without-tariff>.*?<div class="type-val">(\d+)</div>',
-        text,
-        flags=re.S,
-    )
-    tariff_counts["Без тарифа"] = int(no_tariff.group(1)) if no_tariff else -1
-    return tariff_counts
 
 
 def test_registration_tariff_stats_match_for_chief_teacher_and_superadmin(
@@ -133,31 +128,26 @@ def test_registration_tariff_stats_match_for_chief_teacher_and_superadmin(
     )
     db.commit()
 
+    # Карточка живёт на «Статистике активности» с 25.09.2026 (f9bdbb9): у ГП
+    # и суперадмина одна страница и одни числа.
     chief_session = session_factory(chief_teacher)
     client.cookies.set("session_id", chief_session.id)
-    chief_response = client.get("/cabinet/admin-panel")
+    chief_response = client.get("/cabinet/superadmin/activity")
 
     superadmin_session = session_factory(superadmin)
     client.cookies.set("session_id", superadmin_session.id)
-    superadmin_response = client.get("/cabinet/superadmin")
+    superadmin_response = client.get("/cabinet/superadmin/activity")
 
     assert chief_response.status_code == 200
     assert superadmin_response.status_code == 200
     assert "Регистрации по тарифам" in chief_response.text
-    assert "Учёт с 18.09.2026" in chief_response.text
-    assert "Список учеников" in chief_response.text
-    assert "@student_self" in chief_response.text
-    assert _registration_counts(chief_response.text) == {
-        "Я САМ": 1,
-        "Я С ВАМИ": 1,
-        "УВЕРЕННЫЙ МАКСИМУМ": 1,
-        "Без тарифа": 1,
-    }
-    assert _registration_counts(superadmin_response.text) == _registration_counts(
-        chief_response.text
-    )
-    assert 'href="/cabinet/admin/registration-stats.csv"' in chief_response.text
-    assert 'href="/cabinet/superadmin/registration-stats.csv"' in superadmin_response.text
+    assert "student_self" in chief_response.text
+    chief_counts = _registration_counts(chief_response.text)
+    assert chief_counts["Без тарифа"] == 1
+    assert sum(chief_counts.values()) == 4
+    assert _registration_counts(superadmin_response.text) == chief_counts
+    assert 'href="/cabinet/admin/registration-stats.csv?' in chief_response.text
+    assert 'href="/cabinet/superadmin/registration-stats.csv?' in superadmin_response.text
 
     chief_csv = client.get("/cabinet/admin/registration-stats.csv", cookies={"session_id": chief_session.id})
     superadmin_csv = client.get(

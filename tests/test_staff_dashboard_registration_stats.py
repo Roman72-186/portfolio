@@ -66,7 +66,7 @@ def test_tariff_registration_stats_use_tracking_window_and_student_role(
 
     stats = get_tariff_registration_stats(db)
 
-    assert stats["since_label"] == "18.09.2026"
+    assert stats["since_label"] == "19.09.2026"  # начало учёта сдвинуто на 19.09 коммитом e2785d7
     assert {item["tariff"]: item["count"] for item in stats["by_tariff"]} == {
         TARIFF_SELF: 2,
         TARIFF_WITH_YOU: 2,
