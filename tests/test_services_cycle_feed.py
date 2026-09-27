@@ -342,7 +342,9 @@ def test_task_with_future_start_date_is_locked_by_calendar(db, regular_user):
 
     assert steps[0]["status"] == "locked"
     assert steps[0]["lock_reason"] == "date"
-    assert steps[0]["opens_on"] == TODAY + timedelta(days=2)
+    # Момент, а не дата: с 27.09.2026 открытие несёт время суток, и шаблон
+    # печатает его фильтром `msk_text` («23.09.2026 в 10:00»).
+    assert steps[0]["opens_on"] == _utc(msk_midnight(TODAY + timedelta(days=2)))
 
 
 def test_past_start_date_does_not_lock(db, regular_user):
@@ -466,7 +468,7 @@ def test_waiting_for_appears_when_everything_open_is_done(db, regular_user):
         db, user_id=regular_user.id, user_tariff=regular_user.tariff, today=TODAY
     )
 
-    assert feed["waiting_for"] == TODAY + timedelta(days=2)
+    assert feed["waiting_for"] == _utc(msk_midnight(TODAY + timedelta(days=2)))
 
 
 def test_no_waiting_hint_while_something_is_doable(db, regular_user):

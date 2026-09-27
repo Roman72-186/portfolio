@@ -46,16 +46,22 @@ from app.models.task_block import (
     MAX_BLOCKS,
     MEDIA_KINDS,
     MEDIA_VOICE,
+    DEADLINE_BLOCKS_COMPLETION,
     QUESTION_TEXT,
 )
 from app.services.feedback import read_audio_upload, read_video_upload
 from app.services.task_blocks import (
     get_blocks as get_task_blocks,
+    get_blocks_for_tasks as get_task_blocks_for_tasks,
     get_images as get_task_block_images,
     get_options as get_task_block_options,
     get_required_tariffs as get_task_block_required_tariffs,
+    get_submit_deadlines as get_task_block_submit_deadlines,
     get_tariffs as get_task_block_tariffs,
     sync_blocks as sync_task_blocks,
+    sync_submit_deadlines as sync_task_block_submit_deadlines,
+    get_task_submit_deadlines as get_task_level_submit_deadlines,
+    sync_task_submit_deadlines as sync_task_level_submit_deadlines,
 )
 from app.services.cycle_stats import cycle_stats
 from app.services.video_catalog import publish_video
@@ -133,7 +139,9 @@ from app.services.mock_exam_access import (
     ticket_duration_sec,
     ticket_opens_at,
 )
-from app.services.tz import MSK_TZ, msk_midnight, today_msk
+from app.services.tz import (
+    MSK_TZ, msk_input_value, msk_midnight, msk_text, parse_msk_local, today_msk,
+)
 from app.services.utils import compress_image
 from app.services.video_topics import (
     ambiguous_tag_names,
@@ -249,6 +257,93 @@ def _parse_day(raw: str) -> date:
     return day
 
 
+def _submit_deadline_fields(
+    block, overrides: dict[str, datetime | None] | None
+) -> dict:
+    """Сроки приёма работ блока в том виде, в каком их ждёт форма (владелец
+    27.09.2026): строки `datetime-local` в московском времени.
+
+    Пустая строка превращается в `None` — поле формы останется пустым, а
+    `sync_blocks` прочитает это как «срока нет». Строка тарифа с пустым
+    временем сохраняется: она означает «этому тарифу приём бессрочный» и
+    отличается от отсутствия строки.
+    """
+    return {
+        "submit_until": msk_input_value(block.submit_until) or None,
+        "submit_deadlines": [
+            {"tariff": tariff, "submit_until": msk_input_value(value) or None}
+            for tariff, value in sorted((overrides or {}).items())
+        ],
+    }
+
+
+def _tariff_row_labels(overrides: dict[str, datetime | None]) -> list[dict]:
+    """Подписи сроков по тарифам: «Я САМ: 28.09.2026 в 21:00» или «Я САМ: без
+    срока» — второе и есть строка с пустым временем (см. `TaskBlockTariffDeadline`)."""
+    return [
+        {"tariff": tariff, "text": msk_text(value) if value else "без срока"}
+        for tariff, value in sorted(overrides.items())
+    ]
+
+
+def _deadline_rows(db: DBSession, items: list[TrackerTask]) -> dict[int, list[dict]]:
+    """Сроки задания и его блоков — для плашки быстрой правки в списке заданий
+    (владелец 27.09.2026: срок должен сдвигаться, не открывая форму задания).
+
+    Один запрос на весь список, а не на карточку. В плашку идут:
+
+    - строка самого задания — всегда, она же и точка, куда ставят общий срок;
+    - строки блоков, у которых **свой** срок, — чтобы исключение было видно
+      без открытия формы;
+    - строки блоков сдачи и ответов без своего срока — у них срок запирает
+      действие, и преподавателю нужна возможность задать исключение отсюда.
+
+    Остальные блоки (текст, видео, фото, ссылка, голосовое) без своего срока в
+    список не попадают: живут по сроку задания, и восемь одинаковых строк в
+    карточке только мешали бы читать.
+    """
+    task_ids = [item.id for item in items]
+    blocks_by_task = get_task_blocks_for_tasks(db, task_ids)
+    all_blocks = [block for blocks in blocks_by_task.values() for block in blocks]
+    block_overrides_map = get_task_block_submit_deadlines(
+        db, [block.id for block in all_blocks]
+    )
+    task_overrides_map = get_task_level_submit_deadlines(db, task_ids)
+    rows: dict[int, list[dict]] = {}
+    for item in items:
+        task_overrides = task_overrides_map.get(item.id) or {}
+        rows[item.id] = [{
+            "kind": "task",
+            "task_id": item.id,
+            "endpoint": f"/cabinet/staff/program/items/{item.id}/deadline",
+            "label": "Всё задание",
+            "submit_until_text": msk_text(item.submit_until),
+            "tariff_rows": _tariff_row_labels(task_overrides),
+            **_submit_deadline_fields(item, task_overrides),
+        }]
+    for block in all_blocks:
+        block_overrides = block_overrides_map.get(block.id) or {}
+        has_own = block.submit_until is not None or bool(block_overrides)
+        if not has_own and block.block_type not in DEADLINE_BLOCKS_COMPLETION:
+            continue
+        rows.setdefault(block.task_id, []).append({
+            "kind": "block",
+            "block_id": block.id,
+            "endpoint": f"/cabinet/staff/program/blocks/{block.id}/deadline",
+            "label": block.title or BLOCK_TYPE_LABELS.get(
+                block.block_type, block.block_type
+            ),
+            # Пусто у блока — значит он живёт по сроку задания, и так и
+            # написано: «по сроку задания» вместо «без срока», иначе
+            # преподаватель прочитал бы это как «здесь принимаем всегда».
+            "submit_until_text": msk_text(block.submit_until),
+            "inherits": not has_own,
+            "tariff_rows": _tariff_row_labels(block_overrides),
+            **_submit_deadline_fields(block, block_overrides),
+        })
+    return rows
+
+
 def _edit_payloads(
     db: DBSession, items: list[TrackerTask], details: dict
 ) -> dict[int, dict]:
@@ -259,6 +354,11 @@ def _edit_payloads(
     принадлежат заданию, и правка одного дня не может задеть другой.
     """
     payloads: dict[int, dict] = {}
+    # Сроки заданий по тарифам — одним запросом на список, как и всё остальное
+    # в этой функции: карточек в дне бывает десяток.
+    task_submit_deadlines = get_task_level_submit_deadlines(
+        db, [item.id for item in items]
+    )
     for item in items:
         if item.kind not in (
             ITEM_VIDEO, ITEM_HOMEWORK, ITEM_MATERIAL, ITEM_QUIZ, ITEM_LESSON, ITEM_CHECKLIST,
@@ -273,7 +373,11 @@ def _edit_payloads(
             "subject": item.subject,
             "is_required": item.is_required,
             # Дата открытия задания — для предзаполнения формы правки.
-            "starts_on": msk_date(item.starts_at).isoformat() if item.starts_at else None,
+            "starts_on": msk_input_value(item.starts_at) or None,
+            # Срок сдачи задания и исключения по тарифам (владелец 27.09.2026).
+            **_submit_deadline_fields(
+                item, task_submit_deadlines.get(item.id)
+            ),
         }
         # Только у отдельного вида archi_profile (легаси-заготовка, владелец
         # 24.09.2026, второй раунд): его форма по-прежнему читает диагностику
@@ -327,6 +431,7 @@ def _edit_payloads(
         block_images = get_task_block_images(db, [b.id for b in blocks])
         block_tariffs = get_task_block_tariffs(db, [b.id for b in blocks])
         block_required_tariffs = get_task_block_required_tariffs(db, [b.id for b in blocks])
+        block_submit_deadlines = get_task_block_submit_deadlines(db, [b.id for b in blocks])
         item_blocks: list[dict] = []
         diagnostic_emitted = False
         for b in blocks:
@@ -355,7 +460,7 @@ def _edit_payloads(
                         "subject": b.subject,
                         "tariffs": sorted(block_tariffs.get(b.id, set())),
                         "required_tariffs": sorted(block_required_tariffs.get(b.id, set())),
-                        "opens_at": msk_date(b.opens_at).isoformat() if b.opens_at else None,
+                        "opens_at": msk_input_value(b.opens_at) or None,
                         "closes_at": (
                             b.closes_at.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M")
                             if b.closes_at else None
@@ -387,7 +492,7 @@ def _edit_payloads(
                 "subject": b.subject,
                 "tariffs": sorted(block_tariffs.get(b.id, set())),
                 "required_tariffs": sorted(block_required_tariffs.get(b.id, set())),
-                "opens_at": msk_date(b.opens_at).isoformat() if b.opens_at else None,
+                "opens_at": msk_input_value(b.opens_at) or None,
                 "closes_at": (
                     b.closes_at.astimezone(MSK_TZ).strftime("%Y-%m-%dT%H:%M")
                     if b.closes_at else None
@@ -396,6 +501,7 @@ def _edit_payloads(
                 "bypass_sequence": b.bypass_sequence,
                 "time_limit_minutes": b.time_limit_minutes,
                 "portfolio_window_hours": b.portfolio_window_hours,
+                **_submit_deadline_fields(b, block_submit_deadlines.get(b.id)),
                 # Варианты нужны форме правки у трёх типов: вопрос (текст +
                 # верный ответ), шкала навыков (текст + описание + подписи
                 # краёв) и правила (только текст). До 12.09.2026 сюда попадал
@@ -833,6 +939,20 @@ class BlockImageItem(BaseModel):
     path: str | None = Field(default=None, max_length=300)
 
 
+class BlockDeadlineItem(BaseModel):
+    """Свой срок приёма работ у одного тарифа (владелец 27.09.2026).
+
+    Время пустое — «этому тарифу приём бессрочный», поэтому поле не
+    обязательно. Значение тарифа проверяет сервисный слой
+    (`task_blocks.sync_submit_deadlines`), как и у `tariffs`: переименование
+    тарифа остаётся правкой одной строки в `constants.py`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    tariff: str = Field(min_length=1, max_length=50)
+    submit_until: str | None = Field(default=None, max_length=32)
+
+
 class BlockOptionItem(BaseModel):
     """Вариант ответа у блока-вопроса. `id` — существующий вариант (правится
     на месте, выбор учеников сохраняется), `None` — новый."""
@@ -923,16 +1043,28 @@ class BlockItem(BaseModel):
     # (владелец 10.09.2026). Валидацию значений делает сервисный слой
     # (`sync_blocks`/`_sync_required_tariffs`), как и у `tariffs`.
     required_tariffs: list[str] = Field(default_factory=list, max_length=10)
-    # Период доступа — открывается 00:00 МСК этой даты, независимо от
+    # Период доступа — блок открывается в указанный момент, независимо от
     # действий ученика; складывается с is_required, не заменяет (владелец
-    # 03.09.2026, найдено при повторном разборе 06.09.2026). Конвертацию в
-    # UTC делает сервисный слой (`sync_blocks`), не эта схема.
-    opens_at: date | None = None
+    # 03.09.2026, найдено при повторном разборе 06.09.2026).
+    # Строка `datetime-local`, а не `date`: с 27.09.2026 открытие несёт время
+    # суток, как и закрытие (владелец: «нужны не только даты, а время»).
+    # Конвертацию в UTC делает сервисный слой (`sync_blocks`), не эта схема.
+    opens_at: str | None = Field(default=None, max_length=32)
     # Закрытие по календарю — обратная сторона `opens_at` (владелец
     # 10.09.2026). Несёт время суток, а не только дату, поэтому строка
     # `datetime-local`, а не `date`: конвертацию в UTC делает сервисный слой
     # (`sync_blocks` → `app.services.tz.parse_msk_local`), не эта схема.
     closes_at: str | None = Field(default=None, max_length=32)
+    # Срок приёма работ — закрывает сдачу, но не сам блок (владелец
+    # 27.09.2026). Строка `datetime-local`, как `closes_at`: срок несёт время
+    # суток («до 9:30»), конвертацию делает `sync_blocks`.
+    submit_until: str | None = Field(default=None, max_length=32)
+    # Свой срок у отдельного тарифа. Пустое время в строке — «этому тарифу
+    # приём бессрочный»; нет строки — действует общий `submit_until`. Тариф
+    # проверяет сервисный слой по `app.constants.TARIFFS`, как у `tariffs`.
+    submit_deadlines: list["BlockDeadlineItem"] = Field(
+        default_factory=list, max_length=10
+    )
     # Текст вместо стандартной фразы ленты «Откроется …» / «Доступ закрыт»,
     # пока блок заперт по календарю (владелец 10.09.2026).
     locked_message: str | None = Field(default=None, max_length=300)
@@ -1059,10 +1191,18 @@ class CycleItemPayload(BaseModel):
     subject: str | None = Field(default=None, max_length=50)
     is_required: bool = True
     diagnostic: dict | None = None
-    # Дата, с которой задание открывается ученику по календарю — независимый
-    # гейт от последовательности внутри цикла (то же поле, что у
-    # SimpleItemPayload.starts_on).
-    starts_on: date | None = None
+    # Момент, с которого задание открывается ученику по календарю —
+    # независимый гейт от последовательности внутри цикла (то же поле, что у
+    # SimpleItemPayload.starts_on). Строка `datetime-local`: с 27.09.2026
+    # открытие несёт время суток, а не только дату.
+    starts_on: str | None = Field(default=None, max_length=32)
+    # Срок сдачи на всё задание (владелец 27.09.2026, второй заход: «и для
+    # всех заданий»). Действует на каждый блок, который не задал свой; у
+    # тарифа может быть исключение. Конвертация — в сервисном слое.
+    submit_until: str | None = Field(default=None, max_length=32)
+    submit_deadlines: list[BlockDeadlineItem] = Field(
+        default_factory=list, max_length=10
+    )
     blocks: list[BlockItem] = Field(default_factory=list, max_length=MAX_BLOCKS)
 
     @field_validator("title")
@@ -1136,6 +1276,8 @@ def program_cycle_items(
             "cycle_tiles": cycle_tiles,
             "items": items,
             "edit_payloads": _edit_payloads(db, items, {t.id: {} for t in items}),
+            # Сроки приёма работ для плашки быстрой правки (владелец 27.09.2026).
+            "deadline_rows": _deadline_rows(db, items),
             "kind_labels": ITEM_KIND_LABELS,
             "archi_questions": ARCHI_QUESTIONS,
             "archi_title": ARCHI_TITLE,
@@ -1156,6 +1298,11 @@ def program_cycle_items(
             "block_add_types": [(t, BLOCK_TYPE_LABELS[t]) for t in BLOCK_TYPES_ADDABLE],
             "max_block_images": MAX_BLOCK_IMAGES,
             "tariffs": TARIFFS_CURRENT,
+            # Типы, у которых срок запирает действие ученика — редактор по
+            # ним выбирает подсказку под полем срока (владелец 27.09.2026).
+            # Список серверный, чтобы в JS не завелась своя копия, способная
+            # разойтись с тем, как решает сервер.
+            "deadline_blocks_completion": list(DEADLINE_BLOCKS_COMPLETION),
         },
     )
 
@@ -1392,12 +1539,16 @@ def _create_cycle_item(topic_id: int, payload: CycleItemPayload, user: dict, db:
         sort_order=next_sort_order_in_topic(db, topic.id),
         user_id=user["user_id"],
     )
-    task.starts_at = (
-        msk_midnight(payload.starts_on).astimezone(timezone.utc)
-        if payload.starts_on else None
-    )
+    task.starts_at = parse_msk_local(payload.starts_on)
+    # Срок сдачи на всё задание (владелец 27.09.2026). Ставится до `db.flush()`
+    # вместе с остальными полями задачи; сроки по тарифам синхронизируются
+    # ниже, когда у задачи уже есть id.
+    task.submit_until = parse_msk_local(payload.submit_until)
     task.is_published = True
     db.flush()
+    sync_task_level_submit_deadlines(
+        db, task, [item.model_dump() for item in payload.submit_deadlines]
+    )
     if kind == ITEM_ARCHI_PROFILE:
         from app.services.archi_profile import blocks_from_config, preset_blocks, validate_diagnostic_config
         try:
@@ -1451,8 +1602,95 @@ def move_cycle_item(
     return JSONResponse({"ok": True})
 
 
+class BlockDeadlinePayload(BaseModel):
+    """Быстрая правка срока сдачи — только сроки, ничего больше.
+
+    Одна схема на оба этажа: у блока и у задания набор полей одинаковый, и
+    заводить две копии значило бы править их по очереди.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    submit_until: str | None = Field(default=None, max_length=32)
+    submit_deadlines: list[BlockDeadlineItem] = Field(
+        default_factory=list, max_length=10
+    )
+
+
 # Порядок важен: «/{iso}» ниже ловит любую строку, включая «blocks-source».
 # FastAPI берёт первый подходящий маршрут, поэтому конкретные пути — выше.
+@router.post("/blocks/{block_id}/deadline", response_class=JSONResponse)
+def update_block_deadline(
+    block_id: int,
+    payload: BlockDeadlinePayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Сдвинуть срок сдачи у блока, не открывая форму задания (владелец
+    27.09.2026: «чтобы Лиза могла спокойно заходить, редактировать в этом
+    задании дедлайн»).
+
+    Тип блока не проверяется: срок можно поставить любому (второй заход того
+    же дня — «добавить в доступность блока и для всех заданий»). Что он
+    делает, решает `DEADLINE_BLOCKS_COMPLETION`, а не этот роут.
+
+    **`_guard_editable` здесь намеренно не вызывается.** Тот запрещает править
+    элементы прошедших дней — правило про содержимое задания, и для него оно
+    верное. Но сдвигают как раз уже наступивший срок: занятие прошло, дедлайн
+    в прошлом, и его продлевают. Запрет сработал бы ровно в тот момент, ради
+    которого кнопку и сделали.
+
+    Правятся только сроки. Содержимое блока, его тип, тарифы видимости и
+    обязательность этот роут не трогает: быстрая правка не должна уметь
+    случайно снести блок мимо большой формы с предпросмотром.
+    """
+    block = db.get(TaskBlock, block_id)
+    if block is None:
+        raise HTTPException(status_code=404, detail="Блок не найден")
+    block.submit_until = parse_msk_local(payload.submit_until)
+    sync_task_block_submit_deadlines(
+        db, block, [item.model_dump() for item in payload.submit_deadlines]
+    )
+    db.commit()
+    overrides = get_task_block_submit_deadlines(db, [block.id]).get(block.id)
+    return JSONResponse({
+        "ok": True,
+        "block_id": block.id,
+        **_submit_deadline_fields(block, overrides),
+        "submit_until_text": msk_text(block.submit_until),
+    })
+
+
+@router.post("/items/{task_id}/deadline", response_class=JSONResponse)
+def update_task_deadline(
+    task_id: int,
+    payload: BlockDeadlinePayload,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Срок сдачи на всё задание сразу (владелец 27.09.2026: «и для всех
+    заданий»). Действует на каждый его блок, который не задал свой.
+
+    `_guard_editable` не зовётся по той же причине, что у блока: продлевают
+    уже наступивший срок, и запрет на прошедший день выключил бы кнопку ровно
+    тогда, когда она нужна.
+    """
+    task = get_task(db, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Задание не найдено")
+    task.submit_until = parse_msk_local(payload.submit_until)
+    sync_task_level_submit_deadlines(
+        db, task, [item.model_dump() for item in payload.submit_deadlines]
+    )
+    db.commit()
+    overrides = get_task_level_submit_deadlines(db, [task.id]).get(task.id)
+    return JSONResponse({
+        "ok": True,
+        "task_id": task.id,
+        **_submit_deadline_fields(task, overrides),
+        "submit_until_text": msk_text(task.submit_until),
+    })
+
+
 @router.get("/blocks-source", response_class=JSONResponse)
 def blocks_source_list(
     user: Annotated[dict, Depends(require_admin_role)],
@@ -1528,12 +1766,14 @@ def blocks_source_content(
             "subject": b.subject,
             "tariffs": sorted(tariffs.get(b.id, set())),
             "required_tariffs": sorted(required_tariffs.get(b.id, set())),
-            # opens_at и closes_at сюда намеренно не копируются: это
-            # абсолютные дата и время исходного дня, в новом дне они бы
+            # opens_at, closes_at и submit_until сюда намеренно не копируются:
+            # это абсолютные дата и время исходного дня, в новом дне они бы
             # означали не то (владелец 06.09.2026 про opens_at, то же
-            # применяется к closes_at 10.09.2026) — куратор проставляет
-            # заново, если нужно. Текст уведомления копируется как обычный
-            # текст — он от даты не зависит.
+            # применяется к closes_at 10.09.2026 и к сроку приёма работ
+            # 27.09.2026) — куратор проставляет заново, если нужно. Сроки по
+            # тарифам не копируются по той же причине, хотя сами тарифы
+            # копируются: тариф от даты не зависит, срок зависит. Текст
+            # уведомления копируется как обычный текст.
             "locked_message": b.locked_message,
             "bypass_sequence": b.bypass_sequence,
             # Относительная длительность переносится в новый день: в отличие
@@ -1593,6 +1833,8 @@ def program_day(
                 ITEM_MOCK_EXAM, ITEM_SURVEY, ITEM_ARCHI_PROFILE,
             ],
             "edit_payloads": _edit_payloads(db, items, details),
+            # Сроки приёма работ для плашки быстрой правки (владелец 27.09.2026).
+            "deadline_rows": _deadline_rows(db, items),
             "kind_labels": ITEM_KIND_LABELS,
             "archi_questions": ARCHI_QUESTIONS,
             "archi_title": ARCHI_TITLE,
@@ -1610,6 +1852,11 @@ def program_day(
             # забыли»). Валидация ниже осталась по всему списку: настройка,
             # сохранённая под прежним тарифом, не должна отваливаться с 400.
             "tariffs": TARIFFS_CURRENT,
+            # Типы, у которых срок запирает действие ученика — редактор по
+            # ним выбирает подсказку под полем срока (владелец 27.09.2026).
+            # Список серверный, чтобы в JS не завелась своя копия, способная
+            # разойтись с тем, как решает сервер.
+            "deadline_blocks_completion": list(DEADLINE_BLOCKS_COMPLETION),
             # Анкета — переиспользуемый шаблон (owner-решение 22–23.08): конструктор
             # предлагает готовые анкеты, чтобы не набирать один и тот же опрос
             # заново на каждой из восьми точек года.
@@ -2175,8 +2422,16 @@ class SimpleItemPayload(BaseModel):
     # успел сделать раньше (владелец 03.09.2026: «даже если ребёнок выполнил
     # опрос 22 сентября в 20:00, теория и задания откроются только с
     # 23 сентября 00:00»). Пусто — задание видно сразу после публикации, как
-    # было до 06.09.2026.
-    starts_on: date | None = None
+    # было до 06.09.2026. Строка `datetime-local`: с 27.09.2026 открытие
+    # несёт и время суток, а не только дату.
+    starts_on: str | None = Field(default=None, max_length=32)
+    # Срок сдачи на всё задание (владелец 27.09.2026, второй заход: «и для
+    # всех заданий»). Действует на каждый блок, который не задал свой; у
+    # тарифа может быть исключение. Конвертация — в сервисном слое.
+    submit_until: str | None = Field(default=None, max_length=32)
+    submit_deadlines: list[BlockDeadlineItem] = Field(
+        default_factory=list, max_length=10
+    )
     blocks: list[BlockItem] = Field(default_factory=list, max_length=MAX_BLOCKS)
     audience: AudiencePayload = Field(default_factory=AudiencePayload)
 
@@ -2518,14 +2773,20 @@ def _create_simple_item(
         is_required=True if kind == ITEM_ARCHI_PROFILE else payload.is_required,
         user_id=user["user_id"],
     )
-    # Полночь МСК выбранной даты, в UTC: колонка `DateTime(timezone=True)`, и
-    # наивное московское время прочиталось бы как UTC (см. `program.py::msk_date`).
-    task.starts_at = (
-        msk_midnight(payload.starts_on).astimezone(timezone.utc)
-        if payload.starts_on else None
-    )
+    # Момент открытия в UTC: колонка `DateTime(timezone=True)`, а наивное
+    # московское время прочиталось бы как UTC (см. `program.py::msk_date`).
+    # С 27.09.2026 несёт и время суток, поэтому `parse_msk_local`, а не
+    # `msk_midnight` — та всегда давала 00:00.
+    task.starts_at = parse_msk_local(payload.starts_on)
+    # Срок сдачи на всё задание (владелец 27.09.2026). Ставится до `db.flush()`
+    # вместе с остальными полями задачи; сроки по тарифам синхронизируются
+    # ниже, когда у задачи уже есть id.
+    task.submit_until = parse_msk_local(payload.submit_until)
     task.is_published = True
     db.flush()
+    sync_task_level_submit_deadlines(
+        db, task, [item.model_dump() for item in payload.submit_deadlines]
+    )
     if kind == ITEM_ARCHI_PROFILE:
         from app.services.archi_profile import blocks_from_config, preset_blocks, validate_diagnostic_config
         try:
@@ -2934,16 +3195,19 @@ def _update_simple_item(
         title=payload.title,
         description=payload.description,
         due_at=task.due_at,
-        # Полночь МСК в UTC — иначе наивное московское время прочиталось бы
-        # как UTC и задание открылось бы на три часа позже заявленного.
-        starts_at=(
-            msk_midnight(payload.starts_on).astimezone(timezone.utc)
-            if payload.starts_on else None
-        ),
+        # Момент открытия в UTC — иначе наивное московское время прочиталось
+        # бы как UTC и задание открылось бы на три часа позже заявленного.
+        starts_at=parse_msk_local(payload.starts_on),
         subject=payload.subject,
         assign_to_all=task.assign_to_all,
         kind=kind,
         is_required=True if kind == ITEM_ARCHI_PROFILE else payload.is_required,
+    )
+    # Срок сдачи задания — полный текущий набор, не дельта, как и остальные
+    # поля формы (владелец 27.09.2026).
+    task.submit_until = parse_msk_local(payload.submit_until)
+    sync_task_level_submit_deadlines(
+        db, task, [item.model_dump() for item in payload.submit_deadlines]
     )
     # Полный текущий список, не дельта (та же семантика, что у остальных
     # полей формы) — пустой список на правке чистит мини-опрос целиком.

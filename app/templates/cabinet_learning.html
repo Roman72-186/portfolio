@@ -88,7 +88,7 @@
     <div class="lrn-card lrn-waiting">
         <div class="lrn-card-title">На сегодня всё</div>
         <p class="lrn-card-note">
-            Следующее задание откроется {{ feed.waiting_for.strftime('%d.%m.%Y') }}.
+            Следующее задание откроется {{ feed.waiting_for | msk_text }}.
             Пока загляни в чат сообщества — там идёт обсуждение.
         </p>
     </div>
@@ -153,7 +153,7 @@
                 {%- if step.block and step.block.locked_message -%}
                 {{ step.block.locked_message }}
                 {%- elif step.lock_reason == 'date' and step.opens_on -%}
-                Откроется {{ step.opens_on.strftime('%d.%m.%Y') }}.
+                Откроется {{ step.opens_on | msk_text }}.
                 {%- elif step.lock_reason == 'closed' -%}
                 Доступ закрыт.
                 {%- else -%}

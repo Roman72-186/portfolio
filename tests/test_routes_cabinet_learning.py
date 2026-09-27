@@ -209,6 +209,28 @@ def test_learning_locks_the_step_after_an_unfinished_one(auth_client, db):
     assert "Откроется, когда будет сделано предыдущее" in resp.text
 
 
+def test_learning_tells_the_hour_a_step_opens(auth_client, db):
+    """«Откроется 23.09.2026 в 10:00» — с временем, а не только датой.
+
+    До 27.09.2026 открытие всегда приходилось на полночь, шаблон печатал
+    `strftime('%d.%m.%Y')`, и время суток терять было нечего. Теперь
+    преподаватель ставит час, и ученик должен видеть именно его.
+    """
+    client, user = auth_client
+    task = _task(db, user, title="Задание")
+    block = _block(db, task, title="Теория", order=1)
+    # 10:00 МСК = 07:00 UTC.
+    block.opens_at = (now_msk() + timedelta(days=2)).replace(
+        hour=10, minute=0, second=0, microsecond=0
+    ).astimezone(timezone.utc)
+    db.commit()
+
+    resp = client.get("/cabinet/learning")
+
+    expected = block.opens_at.astimezone(now_msk().tzinfo).strftime("%d.%m.%Y в %H:%M")
+    assert f"Откроется {expected}" in resp.text
+
+
 def test_learning_done_step_opens_the_next(auth_client, db):
     client, user = auth_client
     task = _task(db, user, title="Задание")

@@ -15,6 +15,7 @@ from datetime import timedelta, timezone
 from unittest.mock import patch
 
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
+from app.constants import TARIFF_CONFIDENT_MAX, TARIFF_SELF
 from app.models.task_block import (
     BLOCK_PHOTO_UPLOAD,
     BLOCK_TIMED,
@@ -24,6 +25,7 @@ from app.models.task_block import (
     TaskBlockImage,
     TaskBlockSubmission,
     TaskBlockSubmissionImage,
+    TaskBlockTariffDeadline,
 )
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.services import s3 as s3_service
@@ -172,6 +174,132 @@ def test_deadline_blocks_first_upload_and_edit(auth_client, db):
     assert _post(client, block.id).status_code == 409
     assert get_submission(db, block_id=block.id, user_id=user.id) is None
     assert client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()["blocks"][0]["edit_reason"]
+
+
+# ── срок приёма работ (владелец 27.09.2026) ─────────────────────────────────
+
+def _deadline(db, block, when, *, tariff=None):
+    """Срок приёма: общий у блока или свой у тарифа."""
+    if tariff is None:
+        block.submit_until = when
+    else:
+        db.add(TaskBlockTariffDeadline(
+            block_id=block.id, tariff=tariff, submit_until=when,
+        ))
+    db.commit()
+
+
+def test_submit_until_closes_upload_but_keeps_the_block_visible(auth_client, db):
+    """Главное требование 27.09.2026: приём закрыт, задание на месте.
+
+    До этого дня закрыть сдачу можно было только `closes_at`, а он запирает
+    блок целиком — ученик терял и задание, и свою работу, и переписку с
+    преподавателем. Здесь ученик всего этого не теряет: исчезают только
+    кнопки загрузки, замены и удаления.
+    """
+    client, user = auth_client
+    task = _task(db, user)
+    block = _upload_block(db, task)
+    _post(client, block.id, comment="Сдал вовремя")
+    _deadline(db, block, day_bounds(TODAY - timedelta(days=1))[0])
+
+    payload = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()["blocks"][0]
+
+    # Правка закрыта во всех трёх точках: загрузка, описание, удаление фото.
+    assert _post(client, block.id).status_code == 409
+    images = db.query(TaskBlockSubmissionImage).all()
+    assert client.post(
+        f"/cabinet/tracker/blocks/{block.id}/comment", json={"comment": "Переделал"}
+    ).status_code == 409
+    assert client.post(
+        f"/cabinet/tracker/blocks/{block.id}/images/{images[0].id}/delete"
+    ).status_code == 409
+    # А блок при этом отдаётся с работой и описанием — он не заперт.
+    assert payload["edit_reason"]
+    assert payload["submitted_files"]
+    assert payload["submitted_comment"] == "Сдал вовремя"
+
+
+def test_expired_submit_until_does_not_lock_the_rest_of_the_feed(db, regular_user):
+    """Обязательный блок с закрытым приёмом не запирает хвост ленты.
+
+    Иначе тупик без выхода: сдать уже нечем, а следующий шаг ждёт закрытия
+    этого — та же развязка, что 10.09.2026 сделали для `closes_at`.
+    """
+    _cycle(db, regular_user)
+    task = _task(db, regular_user)
+    first = _upload_block(db, task, order=1)
+    _block_after = TaskBlock(
+        task_id=task.id, block_type="text", body="Что дальше", sort_order=2,
+    )
+    db.add(_block_after)
+    db.commit()
+    _deadline(db, first, day_bounds(TODAY - timedelta(days=1))[0])
+
+    steps = build_cycle_feed(
+        db, user_id=regular_user.id, user_tariff=regular_user.tariff,
+        start=CYCLE_START, end=CYCLE_END,
+    )
+
+    assert [s["status"] for s in steps] == ["current", "current"]
+
+
+def test_tariff_deadline_overrides_the_common_one(auth_client, db):
+    """«Для одного тарифа один дедлайн, для другого тарифа другой»."""
+    client, user = auth_client
+    task = _task(db, user)
+    block = _upload_block(db, task)
+    # Общий срок прошёл, а у тарифа ученика он ещё впереди.
+    _deadline(db, block, day_bounds(TODAY - timedelta(days=1))[0])
+    _deadline(
+        db, block, day_bounds(TODAY + timedelta(days=1))[0], tariff=user.tariff,
+    )
+
+    assert _post(client, block.id).status_code == 200
+    assert client.get(
+        f"/cabinet/tracker/tasks/{task.id}/blocks"
+    ).json()["blocks"][0]["edit_reason"] is None
+
+
+def test_tariff_without_its_own_row_lives_by_the_common_deadline(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user)
+    block = _upload_block(db, task)
+    _deadline(db, block, day_bounds(TODAY - timedelta(days=1))[0])
+    # Строка заведена чужому тарифу — ученика она не касается.
+    _deadline(
+        db, block, day_bounds(TODAY + timedelta(days=1))[0],
+        tariff=TARIFF_CONFIDENT_MAX if user.tariff != TARIFF_CONFIDENT_MAX else TARIFF_SELF,
+    )
+
+    assert _post(client, block.id).status_code == 409
+
+
+def test_empty_tariff_row_means_no_deadline_at_all(auth_client, db):
+    """Строка тарифа с пустым сроком — «приём бессрочный», а не «как у всех».
+
+    Отличить одно от другого можно только по наличию строки: значение в ней
+    пустое в обоих случаях (см. `TaskBlockTariffDeadline`).
+    """
+    client, user = auth_client
+    task = _task(db, user)
+    block = _upload_block(db, task)
+    _deadline(db, block, day_bounds(TODAY - timedelta(days=1))[0])
+    _deadline(db, block, None, tariff=user.tariff)
+
+    assert _post(client, block.id).status_code == 200
+
+
+def test_student_sees_the_deadline_before_it_passes(auth_client, db):
+    client, user = auth_client
+    task = _task(db, user)
+    block = _upload_block(db, task)
+    _deadline(db, block, day_bounds(TODAY + timedelta(days=1))[0])
+
+    payload = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()["blocks"][0]
+
+    assert payload["submit_deadline"]
+    assert payload["edit_reason"] is None
 
 
 def test_limit_of_files_is_enforced(auth_client, db):

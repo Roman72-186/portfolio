@@ -1,0 +1,74 @@
+{#
+Плашка срока приёма работ в карточке задания (владелец 27.09.2026: «чтобы Лиза
+могла спокойно заходить, редактировать в этом задании дедлайн… мы можем его
+смещать»).
+
+Один партиал на два экрана — список заданий цикла и список заданий дня. Копия
+на каждом экране разошлась бы: правка одного без второго в этом конструкторе
+уже случалась (см. историю кнопок блоков в AGENTS.md).
+
+Ждёт в контексте `deadline_rows` — словарь `task_id → строки сроков`
+(`api/cabinet_program.py::_deadline_rows`) — и переменную цикла `item`. Первая
+строка всегда про задание целиком, дальше идут блоки со своим сроком и блоки,
+где срок запирает действие; у каждой строки свой `endpoint`, поэтому JS не
+знает, правит он задание или блок.
+
+На экране дня партиал стоит ВНЕ условия `{% if not is_past %}`: сдвигают как
+раз уже наступивший срок, и у прошедшего дня плашка нужна даже сильнее, чем у
+будущего. Сервер это разрешает — роут срока намеренно не зовёт `_guard_editable`.
+#}
+{% set rows = deadline_rows.get(item.id, []) %}
+{% if rows %}
+<div class="prg-deadlines">
+    {% for row in rows %}
+    <div class="prg-deadline{{ ' prg-deadline--task' if row.kind == 'task' }}"
+         data-deadline-endpoint="{{ row.endpoint }}">
+        <span class="prg-deadline-head">
+            <strong>{{ row.label }}</strong>
+            <span data-deadline-text>
+                {% if row.submit_until_text %}
+                Приём до {{ row.submit_until_text }}
+                {% elif row.inherits %}
+                По сроку задания
+                {% else %}
+                Приём без срока
+                {% endif %}
+            </span>
+            {% for tariff_row in row.tariff_rows %}
+            <span class="prg-deadline-tariff">{{ tariff_row.tariff }}: {{ tariff_row.text }}</span>
+            {% endfor %}
+            <button type="button" class="btn-outline" data-deadline-edit
+                    aria-label="Изменить срок приёма работ">Срок</button>
+        </span>
+        <div class="prg-deadline-form" data-deadline-form hidden>
+            <label class="prg-field">Приём работ до
+                <input type="datetime-local" data-deadline-at
+                       value="{{ row.submit_until or '' }}"
+                       aria-label="Дата и время окончания приёма работ">
+                <span class="prg-hint">Пусто – принимаем без ограничения срока.</span>
+            </label>
+            {% for tariff in tariffs %}
+            {% set own = (row.submit_deadlines | selectattr('tariff', 'equalto', tariff) | list | first) %}
+            <div class="prg-field prg-deadline-row" data-deadline-tariff="{{ tariff }}">
+                <span class="prg-deadline-name">{{ tariff }}</span>
+                <input type="datetime-local" data-deadline-tariff-at
+                       value="{{ own.submit_until if own and own.submit_until else '' }}"
+                       aria-label="Срок приёма работ для тарифа {{ tariff }}">
+                <label class="prg-field--row">
+                    <input type="checkbox" data-deadline-tariff-none
+                           {% if own and not own.submit_until %}checked{% endif %}
+                           aria-label="Без срока для тарифа {{ tariff }}">
+                    <span>без срока</span>
+                </label>
+            </div>
+            {% endfor %}
+            <div class="prg-actions">
+                <button type="button" class="btn-blue" data-deadline-save>Сохранить срок</button>
+                <button type="button" class="btn-outline" data-deadline-cancel>Отмена</button>
+            </div>
+            <p class="prg-message" data-deadline-message></p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}

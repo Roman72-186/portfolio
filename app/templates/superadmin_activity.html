@@ -380,6 +380,57 @@
         </div>
     </details>
 
+    <!-- Сроки: сдано до и после дедлайна (владелец 27.09.2026) -->
+    <details class="ss-acc">
+        <summary><h2 class="ss-acc-title">Сроки сдачи</h2><span class="ss-acc-badge">{{ deadlines.on_time }} вовремя · {{ deadlines.late }} с опозданием</span></summary>
+        <div class="ss-acc-body">
+            {% if deadlines.with_deadline %}
+            <div class="ss-stats-strip ss-strip-3 ss-strip-flush">
+                <div class="ss-stat"><div class="ss-stat-val">{{ deadlines.with_deadline }}</div><div class="ss-stat-lbl">Закрыто там, где есть срок</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ deadlines.on_time }}</div><div class="ss-stat-lbl">Успели до срока</div></div>
+                <div class="ss-stat"><div class="ss-stat-val">{{ deadlines.late }}</div><div class="ss-stat-lbl">Закрыли после срока</div></div>
+            </div>
+            {# Два разреза одной цифры — по ученикам и по заданиям, как у
+               диагностики: подраздел внутри карточки, а не вторая карточка. #}
+            <div class="ss-sub">
+                <div class="ss-sub-head">По ученикам</div>
+                <div class="ss-table-wrap">
+                    <table class="ss-table">
+                        <thead><tr><th>Ученик</th><th>Тариф</th><th class="ss-ta-r">Вовремя</th><th class="ss-ta-r">С опозданием</th></tr></thead>
+                        <tbody>
+                        {% for row in deadlines.students %}
+                        <tr>
+                            <td data-label="Ученик" class="ss-bold">{{ row.name }}</td>
+                            <td data-label="Тариф">{{ row.tariff or "—" }}</td>
+                            <td data-label="Вовремя" class="ss-ta-r">{{ row.on_time }}</td>
+                            <td data-label="С опозданием" class="ss-ta-r">{{ row.late }}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="ss-sub">
+                <div class="ss-sub-head">По заданиям</div>
+                <div class="ss-table-wrap">
+                    <table class="ss-table">
+                        <thead><tr><th>Задание</th><th class="ss-ta-r">Вовремя</th><th class="ss-ta-r">С опозданием</th></tr></thead>
+                        <tbody>
+                        {% for row in deadlines.tasks %}
+                        <tr>
+                            <td data-label="Задание" class="ss-bold">{{ row.title }}</td>
+                            <td data-label="Вовремя" class="ss-ta-r">{{ row.on_time }}</td>
+                            <td data-label="С опозданием" class="ss-ta-r">{{ row.late }}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% else %}<div class="ss-empty">Сроки пока нигде не проставлены — считать нечего</div>{% endif %}
+        </div>
+    </details>
+
     <!-- Сдачи в заданиях -->
     <details class="ss-acc">
         <summary><h2 class="ss-acc-title">Сдачи работ в заданиях</h2><span class="ss-acc-badge">{{ submissions.blocks_waiting }} ждут проверки</span></summary>

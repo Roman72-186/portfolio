@@ -31,11 +31,13 @@ from app.models.task_block import BLOCK_PORTFOLIO
 from app.models.tracker import ITEM_ARCHI_PROFILE, ITEM_MOCK_EXAM, STATUS_DONE
 from app.models.user import User
 from app.models.work import WORK_TYPE_BEFORE, Work
-from app.services.program import day_bounds, msk_date
+from app.services.program import day_bounds
 from app.services.task_blocks import (
     close_block_for_user,
     get_blocks_for_tasks,
     get_required_tariffs,
+    get_submit_deadlines,
+    get_task_submit_deadlines,
     get_states,
     get_tariffs,
     is_block_accessible,
@@ -289,6 +291,12 @@ def build_cycle_feed(
     states = get_states(db, block_ids=block_ids, user_id=user_id)
     tariffs_by_block = get_tariffs(db, block_ids)
     required_tariffs_by_block = get_required_tariffs(db, block_ids)
+    submit_deadlines_by_block = get_submit_deadlines(db, block_ids)
+    # Сроки на уровне задания — запасные для блоков, которые своего не задали
+    # (владелец 27.09.2026). Ключ — задание, потому что в ленте цикла блоки
+    # идут подряд из разных заданий.
+    tasks_by_id = {entry["task"].id: entry["task"] for entry in entries}
+    task_deadlines_by_task = get_task_submit_deadlines(db, list(tasks_by_id))
 
     # Блок «Загрузить портфолио» закрывается фактом загрузки работы, а не
     # галочкой ученика (владелец 03.09.2026). Закрываем по-настоящему, а не
@@ -343,7 +351,10 @@ def build_cycle_feed(
         # 23 сентября 00:00» — независимо от того, что ученик успел сделать
         # раньше (владелец 03.09.2026). Складывается с очередью, не заменяет.
         task_waits_date = _not_open_yet(task.starts_at, now)
-        opens_on = msk_date(task.starts_at) if task_waits_date else None
+        # Момент, а не дата: с 27.09.2026 открытие несёт время суток, и
+        # «Откроется 23.09.2026» у задания, открывающегося в 10:00, было бы
+        # полуправдой. Печатает фильтр `msk_text` (`app/tmpl.py`).
+        opens_on = task.starts_at if task_waits_date else None
 
         if not task_blocks:
             done = _task_done(entry)
@@ -396,6 +407,9 @@ def build_cycle_feed(
                     tariffs_by_block=tariffs_by_block,
                     user_tariff=user_tariff,
                     required_tariffs_by_block=required_tariffs_by_block,
+                    submit_deadlines_by_block=submit_deadlines_by_block,
+                    tasks_by_id=tasks_by_id,
+                    task_submit_deadlines_by_task=task_deadlines_by_task,
                     required_by_block=required_by_block,
                     now=now,
                 )
@@ -433,7 +447,7 @@ def build_cycle_feed(
                 # Дата блока важнее даты задания: она ближе к тому, что ученик
                 # видит перед собой.
                 "opens_on": (
-                    msk_date(block.opens_at) if block_waits_date else opens_on
+                    block.opens_at if block_waits_date else opens_on
                 ),
                 # Предмет блока важнее предмета задания: часть цикла идёт без
                 # деления на Рисунок и Композицию, часть — с делением

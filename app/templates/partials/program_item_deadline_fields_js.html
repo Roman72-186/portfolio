@@ -1,0 +1,55 @@
+{#
+Сбор и заполнение полей срока задания (владелец 27.09.2026). Пара к
+`program_item_deadline_fields.html`; подключается ВНУТРИ уже открытого
+`<script>` страницы, как и остальные партиалы конструктора.
+
+Две функции на оба экрана: `taskDeadlinePayload(form)` собирает то, что уходит
+на сервер, `fillTaskDeadline(form, data)` возвращает сохранённое в форму.
+Правила те же, что у блока: строка тарифа уходит, только когда у него есть
+своё правило — проставленное время или галочка «без срока». Пустая строка без
+галочки означает «как у всех», и её отсутствие это и есть.
+#}
+function taskDeadlinePayload(form) {
+    var at = form.querySelector('[data-x-submit-until]');
+    var rows = [];
+    form.querySelectorAll('[data-x-deadline-tariff]').forEach(function (row) {
+        var value = row.querySelector('[data-x-deadline-at]');
+        var none = row.querySelector('[data-x-deadline-none]');
+        if (none && none.checked) {
+            rows.push({tariff: row.getAttribute('data-x-deadline-tariff'), submit_until: null});
+        } else if (value && value.value) {
+            rows.push({
+                tariff: row.getAttribute('data-x-deadline-tariff'),
+                submit_until: value.value
+            });
+        }
+    });
+    return {
+        submit_until: (at && at.value) ? at.value : null,
+        submit_deadlines: rows
+    };
+}
+
+function fillTaskDeadline(form, data) {
+    var at = form.querySelector('[data-x-submit-until]');
+    if (at) at.value = (data && data.submit_until) || '';
+    form.querySelectorAll('[data-x-deadline-tariff]').forEach(function (row) {
+        var value = row.querySelector('[data-x-deadline-at]');
+        var none = row.querySelector('[data-x-deadline-none]');
+        if (value) value.value = '';
+        if (none) none.checked = false;
+    });
+    ((data && data.submit_deadlines) || []).forEach(function (deadline) {
+        var row = form.querySelector(
+            '[data-x-deadline-tariff="' + deadline.tariff + '"]'
+        );
+        if (!row) return;
+        if (deadline.submit_until) {
+            var value = row.querySelector('[data-x-deadline-at]');
+            if (value) value.value = deadline.submit_until;
+        } else {
+            var none = row.querySelector('[data-x-deadline-none]');
+            if (none) none.checked = true;
+        }
+    });
+}

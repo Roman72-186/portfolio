@@ -1530,6 +1530,7 @@ def superadmin_activity(
         get_self_score_stats,
         get_staff_activity,
         get_student_event_stats,
+        get_deadline_stats,
         get_submission_stats,
         get_task_progress_stats,
         get_video_watch_stats,
@@ -1555,6 +1556,8 @@ def superadmin_activity(
         "video_watch": get_video_watch_stats(db),
         "task_progress": get_task_progress_stats(db),
         "submissions": get_submission_stats(db),
+        # Сдано до и после срока (владелец 27.09.2026).
+        "deadlines": get_deadline_stats(db),
         "staff_activity": get_staff_activity(db),
         "audit_feed": get_audit_feed(db),
         # Регистрации и поимённая сводка переехали сюда с «Пользователей»

@@ -215,12 +215,52 @@ def test_constructor_accepts_opens_at_and_bypass_sequence(client, db, user_facto
     assert block.opens_at is not None
     assert block.opens_at.astimezone(timezone.utc).isoformat() == "2026-09-22T21:00:00+00:00"
 
-    # Форма правки отдаёт их обратно для предзаполнения.
+    # Форма правки отдаёт их обратно для предзаполнения — с 27.09.2026 в
+    # формате `datetime-local`: открытие несёт время суток, и поле формы
+    # стало `type="datetime-local"`. Дата без времени, как здесь, читается
+    # как полночь МСК — прежнее поведение `msk_midnight`.
     resp = client.get(f"{PROGRAM}/{_future_day_iso()}")
     edit_data_json = resp.text.split("programEditData = ")[1].split(";\n")[0]
     payload = _json.loads(edit_data_json)[str(task.id)]
-    assert payload["blocks"][0]["opens_at"] == "2026-09-23"
+    assert payload["blocks"][0]["opens_at"] == "2026-09-23T00:00"
     assert payload["blocks"][0]["bypass_sequence"] is True
+
+
+def test_constructor_keeps_the_hour_of_opening(client, db, user_factory, session_factory, monkeypatch):
+    """Открытие в 10:00 остаётся десятью часами, а не полуночью (владелец
+    27.09.2026: «нужны не только даты, а время»).
+
+    До этой даты поле формы было `type="date"`, сервер звал `msk_midnight`, и
+    время суток терялось молча: преподаватель ставил 10:00, блок открывался в
+    00:00, и узнавали об этом уже от учеников.
+    """
+    _freeze(monkeypatch, date.today())
+    _staff_client(client, user_factory, session_factory)
+
+    resp = client.post(
+        f"{PROGRAM}/{_future_day_iso()}/material",
+        json={
+            "title": "Материал",
+            "audience": EVERYONE,
+            "blocks": [
+                {
+                    "block_type": BLOCK_LINK, "url": "https://meet.example.org/lesson",
+                    "opens_at": "2026-09-23T10:00",
+                },
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+    task = db.query(TrackerTask).filter(TrackerTask.kind == "material").one()
+    [block] = _blocks_of(db, task.id)
+    # 10:00 МСК — это 07:00 UTC, колонка хранит UTC.
+    assert block.opens_at.astimezone(timezone.utc).isoformat() == "2026-09-23T07:00:00+00:00"
+
+    resp = client.get(f"{PROGRAM}/{_future_day_iso()}")
+    edit_data_json = resp.text.split("programEditData = ")[1].split(";\n")[0]
+    payload = _json.loads(edit_data_json)[str(task.id)]
+    assert payload["blocks"][0]["opens_at"] == "2026-09-23T10:00"
 
 
 def test_lesson_accepts_blocks_too(client, db, user_factory, session_factory, monkeypatch):

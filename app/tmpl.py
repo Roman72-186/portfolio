@@ -8,6 +8,7 @@ from app.config import settings
 from app.constants import TARIFF_DISPLAY, TARIFF_SLUGS, TIMEZONE_DISPLAY
 from app.csrf import generate_csrf_token
 from app.services.navigation import curator_nav_items, staff_nav_items, student_nav_items
+from app.services.tz import msk_text
 
 templates = Jinja2Templates(directory="app/templates")
 
@@ -178,3 +179,8 @@ format_ticket_description = format_rich_text
 
 templates.env.filters["rich_text"] = format_rich_text
 templates.env.filters["ticket_desc"] = format_rich_text
+# Момент по Москве словами: «23.09.2026 в 10:00». Нужен с 27.09.2026, когда
+# открытие задания и блока стало нести время суток: шаблоны печатали дату
+# через `strftime('%d.%m.%Y')` и время просто теряли. Фильтр, а не форматирование
+# в сервисе: `cycle_feed` отдаёт шаблону момент, а как его назвать — дело показа.
+templates.env.filters["msk_text"] = msk_text

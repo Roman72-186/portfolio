@@ -7,6 +7,7 @@
 
 from datetime import date, datetime, timezone
 
+from app.constants import TARIFF_CONFIDENT_MAX, TARIFF_SELF
 from app.models.learning_video import LearningVideo
 from app.models.task_block import (
     BLOCK_LINK,
@@ -14,6 +15,7 @@ from app.models.task_block import (
     BLOCK_PHOTO_UPLOAD,
     BLOCK_QUESTION,
     BLOCK_TEXT,
+    BLOCK_UPLOAD,
     BLOCK_VIDEO,
     QUESTION_MULTIPLE,
     QUESTION_SINGLE,
@@ -39,7 +41,12 @@ from app.services.task_blocks import (
     get_selected_options,
     get_state,
     get_states,
+    get_submit_deadlines,
     get_tariffs,
+    get_task_submit_deadlines,
+    effective_submit_until,
+    submit_deadline_for,
+    sync_task_submit_deadlines,
     is_block_accessible,
     question_blocks,
     save_response,
@@ -1160,6 +1167,171 @@ def test_sync_blocks_persists_opens_at_and_bypass_sequence(db):
     assert block.opens_at is not None
     # Полночь МСК 23 сентября — это 21:00 UTC 22 сентября.
     assert block.opens_at.astimezone(timezone.utc).isoformat() == "2026-09-22T21:00:00+00:00"
+
+
+def test_sync_blocks_keeps_the_hour_of_opening(db):
+    """Открытие несёт время суток с 27.09.2026 — «откроется в 10:00»."""
+    task = _task(db)
+    [block] = sync_blocks(
+        db, task_id=task.id, items=[_text("Текст", opens_at="2026-09-23T10:00")],
+    )
+    db.commit()
+
+    # 10:00 МСК — 07:00 UTC.
+    assert block.opens_at.astimezone(timezone.utc).isoformat() == "2026-09-23T07:00:00+00:00"
+
+
+# ── срок приёма работ (владелец 27.09.2026) ─────────────────────────────────
+
+def _upload(**extra):
+    return {"block_type": BLOCK_UPLOAD, "title": "Сдать работу", **extra}
+
+
+def test_sync_blocks_persists_submit_until_for_every_block_type(db):
+    """Срок можно задать блоку любого типа (владелец 27.09.2026, второй
+    заход: «добавить в доступность блока и для всех заданий»).
+
+    Первая версия дня хранила срок только у блоков сдачи и обнуляла его у
+    остальных — то правило снято. Что срок делает, зависит от типа
+    (`DEADLINE_BLOCKS_COMPLETION`), но храниться он должен у всех.
+    """
+    task = _task(db)
+    upload_block, text_block = sync_blocks(
+        db, task_id=task.id,
+        items=[
+            _upload(submit_until="2026-09-27T09:30"),
+            _text("Текст", submit_until="2026-09-27T09:30"),
+        ],
+    )
+    db.commit()
+
+    # 09:30 МСК — 06:30 UTC.
+    assert upload_block.submit_until.astimezone(timezone.utc).isoformat() == "2026-09-27T06:30:00+00:00"
+    assert text_block.submit_until == upload_block.submit_until
+
+
+def test_block_deadline_beats_the_task_one_including_no_deadline_at_all(db):
+    """Блок главнее задания целиком, а не по полю.
+
+    Сказал блок про себя хоть что-то — включая «бессрочно» строкой тарифа с
+    пустым временем, — срок задания к нему больше не применяется. Иначе
+    исключение «здесь без срока» молча перебивалось бы общим сроком.
+    """
+    task = _task(db)
+    task.submit_until = datetime(2026, 9, 27, 6, 30, tzinfo=timezone.utc)
+    own, inherited, endless = sync_blocks(
+        db, task_id=task.id,
+        items=[
+            _upload(title="Свой срок", submit_until="2026-09-29T21:00"),
+            _upload(title="По заданию"),
+            _upload(title="Бессрочный", submit_deadlines=[
+                {"tariff": TARIFF_SELF, "submit_until": None},
+            ]),
+        ],
+    )
+    db.commit()
+    block_overrides = get_submit_deadlines(db, [own.id, inherited.id, endless.id])
+    task_overrides = get_task_submit_deadlines(db, [task.id]).get(task.id)
+
+    def resolve(block):
+        return submit_deadline_for(
+            block, task, user_tariff=TARIFF_SELF,
+            block_overrides=block_overrides.get(block.id),
+            task_overrides=task_overrides,
+        )
+
+    assert resolve(own) == own.submit_until
+    assert resolve(inherited) == task.submit_until
+    assert resolve(endless) is None
+
+
+def test_task_tariff_deadline_beats_the_common_task_one(db):
+    """На уровне задания правило то же, что у блока: строка тарифа главнее."""
+    task = _task(db)
+    task.submit_until = datetime(2026, 9, 27, 6, 30, tzinfo=timezone.utc)
+    sync_task_submit_deadlines(db, task, [
+        {"tariff": TARIFF_SELF, "submit_until": "2026-09-29T21:00"},
+    ])
+    [block] = sync_blocks(db, task_id=task.id, items=[_upload()])
+    db.commit()
+    task_overrides = get_task_submit_deadlines(db, [task.id]).get(task.id)
+
+    own = submit_deadline_for(
+        block, task, user_tariff=TARIFF_SELF, task_overrides=task_overrides,
+    )
+    other = submit_deadline_for(
+        block, task, user_tariff=TARIFF_CONFIDENT_MAX, task_overrides=task_overrides,
+    )
+
+    assert own.astimezone(timezone.utc).isoformat() == "2026-09-29T18:00:00+00:00"
+    assert other == task.submit_until
+
+
+def test_sync_submit_deadlines_rebuilds_and_drops_unknown_tariff(db):
+    """Полная пересборка и молчаливое отбрасывание неизвестного тарифа — та же
+    конвенция, что у тарифов видимости."""
+    task = _task(db)
+    [block] = sync_blocks(
+        db, task_id=task.id,
+        items=[_upload(submit_deadlines=[
+            {"tariff": TARIFF_SELF, "submit_until": "2026-09-28T21:00"},
+            {"tariff": "ТАРИФ КОТОРОГО НЕТ", "submit_until": "2026-09-28T21:00"},
+        ])],
+    )
+    db.commit()
+    assert list(get_submit_deadlines(db, [block.id])[block.id]) == [TARIFF_SELF]
+
+    sync_blocks(
+        db, task_id=task.id,
+        items=[_upload(id=block.id, submit_deadlines=[
+            {"tariff": TARIFF_CONFIDENT_MAX, "submit_until": None},
+        ])],
+    )
+    db.commit()
+
+    overrides = get_submit_deadlines(db, [block.id])[block.id]
+    assert set(overrides) == {TARIFF_CONFIDENT_MAX}
+    assert overrides[TARIFF_CONFIDENT_MAX] is None
+
+
+def test_effective_submit_until_prefers_the_tariff_row():
+    """Строка тарифа главнее общего срока — в том числе пустая.
+
+    Пустая строка означает «этому тарифу приём бессрочный», и отличить её от
+    «у тарифа нет своего правила» можно только по наличию ключа.
+    """
+    block = TaskBlock(id=1, submit_until=datetime(2026, 9, 27, 6, 30, tzinfo=timezone.utc))
+    own = datetime(2026, 9, 29, 18, 0, tzinfo=timezone.utc)
+
+    assert effective_submit_until(block, None, TARIFF_SELF) == block.submit_until
+    assert effective_submit_until(block, {TARIFF_SELF: own}, TARIFF_SELF) == own
+    assert effective_submit_until(block, {TARIFF_SELF: None}, TARIFF_SELF) is None
+    # Чужая строка ученика не касается.
+    assert effective_submit_until(
+        block, {TARIFF_CONFIDENT_MAX: own}, TARIFF_SELF
+    ) == block.submit_until
+
+
+def test_expired_submit_until_stops_blocking_the_tail():
+    """Обязательный блок с закрытым приёмом не запирает хвост: сдать уже
+    нечем, и требование выполнить его было бы тупиком без выхода."""
+    now = datetime(2026, 9, 28, tzinfo=timezone.utc)
+    first = TaskBlock(
+        id=1, sort_order=0, block_type=BLOCK_UPLOAD, is_required=True,
+        submit_until=datetime(2026, 9, 27, 6, 30, tzinfo=timezone.utc),
+    )
+    second = TaskBlock(id=2, sort_order=1)
+    blocks = [first, second]
+
+    assert is_block_accessible(
+        block_index=1, blocks=blocks, states={}, tariffs_by_block={},
+        user_tariff=TARIFF_SELF, now=now,
+    ) is True
+    # Сам блок при этом остаётся доступным — закрыта только сдача.
+    assert is_block_accessible(
+        block_index=0, blocks=blocks, states={}, tariffs_by_block={},
+        user_tariff=TARIFF_SELF, now=now,
+    ) is True
 
 
 def test_sync_blocks_without_opens_at_leaves_it_none(db):

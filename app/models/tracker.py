@@ -108,6 +108,19 @@ class TrackerTask(Base):
     # Когда задача появляется у ученика. None — сразу после публикации.
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Срок сдачи на всё задание сразу (владелец 27.09.2026, второй заход:
+    # «нужно добавить и для всех заданий»). Действует на все его блоки, пока
+    # блок не задал свой — тот главнее (`task_blocks.submit_deadline_for`).
+    #
+    # Отдельная колонка, а не `due_at`: тот несёт день, к которому задание
+    # привязано, и на экране дня по нему же задание в этот день и попадает
+    # (`msk_date(task.due_at)`). Сделав его ещё и сроком сдачи, мы бы связали
+    # «в каком дне лежит задание» с «до какого часа его принимают» — сдвинуть
+    # второе стало бы нельзя, не переложив задание в другой день.
+    submit_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     subject: Mapped[str | None] = mapped_column(String(50), nullable=True)  # «Рисунок» | «Композиция» | None
 
     # Неделя программы, в которую поставлен элемент. None — разовая задача вне
@@ -182,6 +195,30 @@ class TrackerTaskTag(Base):
 
     __table_args__ = (
         Index("ix_tracker_task_tags_tag", "tag_id"),
+    )
+
+
+class TrackerTaskTariffDeadline(Base):
+    """Свой срок сдачи у тарифа — на всё задание (владелец 27.09.2026).
+
+    Зеркало `TaskBlockTariffDeadline` один в один, включая смысл пустого
+    значения: строки нет — действует общий `TrackerTask.submit_until`, строка
+    со значением — свой срок тарифа, строка с `NULL` — у этого тарифа сдача
+    бессрочная.
+
+    Чей срок в итоге действует у конкретного ученика, решает одна функция —
+    `task_blocks.submit_deadline_for`: блок главнее задания, внутри каждого
+    уровня тариф главнее общего.
+    """
+
+    __tablename__ = "tracker_task_tariff_deadlines"
+
+    task_id: Mapped[int] = mapped_column(
+        ForeignKey("tracker_tasks.id", ondelete="CASCADE"), primary_key=True
+    )
+    tariff: Mapped[str] = mapped_column(String(50), primary_key=True)
+    submit_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
 

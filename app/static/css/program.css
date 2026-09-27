@@ -547,3 +547,29 @@
 .prg-diagnostic-match select { width: 100%; min-height: 42px; padding: .5rem .75rem; border: 1px solid var(--border, #d9dee6); border-radius: 10px; background: var(--surface, #fff); color: var(--text, #202938); font: inherit; }
 .prg-diagnostic-match select:focus-visible { outline: 2px solid var(--purple, #9146ff); outline-offset: 2px; }
 @media (max-width: 640px) { .prg-diagnostic-option, .prg-diagnostic-match { grid-template-columns: 1fr; } }
+
+/* Срок приёма работ в карточке задания (владелец 27.09.2026: «мы можем его
+   смещать»). Плашка живёт в списке заданий, а не только в форме правки:
+   преподавателю нужно видеть срок и двигать его, не открывая задание целиком.
+
+   Своей поверхности не заводит — та же «утопленная» `--bg` на `--line`, что
+   у `.prg-blk-setting` в панели доступности: это один и тот же по смыслу
+   элемент, просто показанный снаружи формы. */
+.prg-deadlines { display: grid; gap: var(--s-2); margin-top: var(--s-2); }
+.prg-deadline {
+    padding: var(--s-2) var(--s-3);
+    background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm);
+    font-size: 13px;
+}
+.prg-deadline-head {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2);
+}
+.prg-deadline-tariff { color: var(--muted); font-size: 12px; }
+.prg-deadline-form { display: grid; gap: var(--s-2); margin-top: var(--s-2); }
+/* Тариф, поле времени и галочка «без срока» — одной строкой, пока хватает
+   ширины; на телефоне строка распадается сама (`flex-wrap`), отдельного
+   media-запроса под это не нужно. */
+.prg-deadline-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2);
+}
+.prg-deadline-name { font-weight: 700; }

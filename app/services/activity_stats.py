@@ -28,7 +28,7 @@ from app.models.login_token import LoginToken
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.notification import Notification
 from app.models.role import Role
-from app.models.task_block import TaskBlockAnswer, TaskBlockSubmission
+from app.models.task_block import TaskBlockAnswer, TaskBlockState, TaskBlockSubmission
 from app.models.task_block_feedback import TaskBlockFeedbackMessage
 from app.models.tracker import TrackerTask, TrackerTaskState
 from app.models.user import User
@@ -839,6 +839,92 @@ def get_submission_stats(db: DBSession) -> dict:
         "avg_reaction_text": fmt_duration(_avg_seconds(pairs)),
         "homework": {status: hw_counts.get(status, 0) for status in SUBMISSION_STATUSES},
         "homework_total": sum(hw_counts.values()),
+    }
+
+
+def get_deadline_stats(db: DBSession) -> dict:
+    """Сдано до срока и после срока (владелец 27.09.2026: «записывать всё
+    нужно в статистику, что сдано после дедлайна, до дедлайна»).
+
+    Считается по `TaskBlockState.completed_at` — моменту, когда блок закрылся
+    у ученика. Он есть у блока любого типа: и у сдачи работы, и у ответа на
+    вопрос, и у кружка «Выполнено» у видео. Поэтому разрез один на все виды
+    заданий, а не отдельная таблица под каждый.
+
+    **Срок берётся текущий, а не тот, что стоял в момент сдачи.** Продлили
+    дедлайн — прошлые опоздания перестают считаться опозданиями, и это
+    сознательно: «продлили, значит успел». Хранить снимок срока у каждой
+    сдачи значило бы держать вторую копию правила, которая молча разъедется
+    с настоящим сроком при первой же правке (та же причина, по которой не
+    хранится средний балл точки А).
+
+    Блоки без срока в подсчёт не входят вовсе: «вовремя» у них не определено.
+    """
+    from app.models.task_block import TaskBlock
+    from app.models.tracker import TrackerTask
+    from app.services.task_blocks import (
+        get_submit_deadlines, get_task_submit_deadlines, submit_deadline_for,
+    )
+
+    student_ids = _student_ids(db)
+    rows = (
+        db.query(
+            TaskBlockState.completed_at,
+            TaskBlockState.user_id,
+            TaskBlock,
+            TrackerTask,
+            User.name,
+            User.tariff,
+        )
+        .join(TaskBlock, TaskBlock.id == TaskBlockState.block_id)
+        .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
+        .join(User, User.id == TaskBlockState.user_id)
+        .filter(
+            TaskBlockState.user_id.in_(student_ids),
+            TaskBlockState.completed_at.isnot(None),
+            TrackerTask.deleted_at.is_(None),
+        )
+        .all()
+    )
+    block_deadlines = get_submit_deadlines(db, [r[2].id for r in rows])
+    task_deadlines = get_task_submit_deadlines(db, [r[3].id for r in rows])
+
+    by_student: dict[int, dict] = {}
+    by_task: dict[int, dict] = {}
+    on_time = late = 0
+    for completed_at, user_id, block, task, name, tariff in rows:
+        deadline = submit_deadline_for(
+            block, task, user_tariff=tariff,
+            block_overrides=block_deadlines.get(block.id),
+            task_overrides=task_deadlines.get(task.id),
+        )
+        if deadline is None:
+            continue
+        is_late = _utc(completed_at) > _utc(deadline)
+        on_time += 0 if is_late else 1
+        late += 1 if is_late else 0
+        student = by_student.setdefault(
+            user_id, {"name": name, "tariff": tariff, "on_time": 0, "late": 0}
+        )
+        student["late" if is_late else "on_time"] += 1
+        item = by_task.setdefault(
+            task.id, {"title": task.title, "on_time": 0, "late": 0}
+        )
+        item["late" if is_late else "on_time"] += 1
+
+    def _ranked(rows_map: dict[int, dict]) -> list[dict]:
+        # Сверху те, у кого опозданий больше: с них и начинают разбираться.
+        return sorted(
+            rows_map.values(),
+            key=lambda row: (-row["late"], -row["on_time"], row.get("name") or row.get("title") or ""),
+        )
+
+    return {
+        "on_time": on_time,
+        "late": late,
+        "with_deadline": on_time + late,
+        "students": _ranked(by_student),
+        "tasks": _ranked(by_task),
     }
 
 

@@ -68,6 +68,9 @@ from app.services.task_blocks import (
     answered_block_ids as task_block_answered_ids,
     close_block_for_user as close_task_block_for_user,
     count_submission_images as count_task_block_submission_images,
+    get_submit_deadlines as get_task_block_submit_deadlines,
+    get_task_submit_deadlines as get_task_level_submit_deadlines,
+    submit_deadline_for,
     get_answers_map as get_task_block_answers_map,
     get_or_create_submission as get_or_create_task_block_submission,
     get_submission as get_task_block_submission,
@@ -396,9 +399,20 @@ def _video_block_requires_completion(task: TrackerTask, block: TaskBlock) -> boo
     )
 
 
-def _submission_payload(db: DBSession, task: TrackerTask, block, user_id: int) -> dict:
+def _submission_payload(
+    db: DBSession, task: TrackerTask, block, user_id: int,
+    user_tariff: str | None = None,
+    tariff_deadlines: dict | None = None,
+    task_tariff_deadlines: dict | None = None,
+) -> dict:
     """Что ученик уже сдал в этом блоке — общая часть «загрузки работ» и
-    «работы на время»: у них одна механика приёма, разная только обёртка."""
+    «работы на время»: у них одна механика приёма, разная только обёртка.
+
+    `submit_deadline` — срок приёма работ словами, тот же формат, что у окна
+    портфолио (владелец 27.09.2026). Пока срок не вышел, ученик читает «до
+    27 сентября, 09:30»; после — `edit_reason` уже говорит, что срок истёк, и
+    рендерер сам убирает кнопки загрузки и удаления.
+    """
     submission = get_task_block_submission(db, block_id=block.id, user_id=user_id)
     images = (
         list_task_block_submission_images(db, submission.id) if submission else []
@@ -409,11 +423,21 @@ def _submission_payload(db: DBSession, task: TrackerTask, block, user_id: int) -
             TaskBlockFeedback.submission_id == submission.id
         ).first()
     )
+    submit_until = submit_deadline_for(
+        block, task, user_tariff=user_tariff,
+        block_overrides=tariff_deadlines,
+        task_overrides=task_tariff_deadlines,
+    )
     return {
         "upload_endpoint": f"/cabinet/tracker/blocks/{block.id}/upload",
         "max_files": MAX_SUBMISSION_IMAGES,
         "submitted_files": [{"id": i.id, "url": i.image_s3_url} for i in images],
-        "edit_reason": block_work_reason(db, task, block, submission),
+        "edit_reason": block_work_reason(
+            db, task, block, submission,
+            user_tariff=user_tariff, tariff_deadlines=tariff_deadlines,
+            task_tariff_deadlines=task_tariff_deadlines,
+        ),
+        "submit_deadline": format_deadline_msk(submit_until) or None,
         "delete_endpoint": f"/cabinet/tracker/blocks/{block.id}/images",
         "comment_endpoint": f"/cabinet/tracker/blocks/{block.id}/comment",
         "submitted_comment": submission.comment if submission else None,
@@ -482,6 +506,11 @@ def cabinet_tracker_task_blocks(
         if any(b.block_type == BLOCK_PORTFOLIO for b in blocks)
         else {}
     )
+    # Сроки приёма работ по тарифам — одним запросом на всё задание, а не по
+    # блоку: у задания их бывает несколько (владелец 27.09.2026).
+    submit_deadlines = get_task_block_submit_deadlines(db, [b.id for b in blocks])
+    # Срок задания — запасной для блоков, которые своего не задали.
+    task_submit_deadlines = get_task_level_submit_deadlines(db, [task_id]).get(task_id)
     # `question_blocks` отдаёт и вопросы, и шкалы навыков — у обоих есть
     # варианты и ответы ученика.
     questions = task_question_blocks(blocks)
@@ -524,6 +553,21 @@ def cabinet_tracker_task_blocks(
     # показываем один раз, перед первым вопросом диагностики, а не на каждом
     # (иначе «Вопрос 2» и дальше повторяли бы один и тот же заголовок).
     diagnostic_intro_shown = False
+
+    def _deadline_reason(block):
+        """Отказ по сроку для этого блока — с тарифом и сроком задания.
+
+        Локальный, чтобы три ветки (вопрос, шкала, правила) не повторяли одни
+        и те же пять аргументов: забыть один значит молча вернуться к общему
+        сроку вместо тарифного.
+        """
+        return deadline_reason(
+            task, block,
+            user_tariff=user.get("tariff"),
+            tariff_deadlines=submit_deadlines.get(block.id),
+            task_tariff_deadlines=task_submit_deadlines,
+        )
+
     payload = []
     for block in blocks:
         item = {
@@ -535,6 +579,15 @@ def cabinet_tracker_task_blocks(
             # Запирается отдельный вопрос, а не форма разом: на пропущенный
             # ученик должен иметь возможность вернуться.
             "answered": block.id in answered_ids,
+            # Срок сдачи — у блока любого типа (владелец 27.09.2026). Ученик
+            # видит его и там, где срок ничего не запрещает: у видео и фото он
+            # предупреждает, что отметка позже зачтётся опозданием.
+            "submit_deadline": format_deadline_msk(submit_deadline_for(
+                block, task,
+                user_tariff=user.get("tariff"),
+                block_overrides=submit_deadlines.get(block.id),
+                task_overrides=task_submit_deadlines,
+            )) or None,
         }
         if block.is_diagnostic and not diagnostic_intro_shown and task.diagnostic_config:
             diagnostic_intro_shown = True
@@ -584,7 +637,7 @@ def cabinet_tracker_task_blocks(
         elif block.block_type == "link":
             item["url"] = block.url
         elif block.block_type == BLOCK_SCALE:
-            item["edit_reason"] = deadline_reason(task, block) or (
+            item["edit_reason"] = _deadline_reason(block) or (
                 "Преподаватель уже проверил ответ."
                 if response and db.query(TaskBlockAnswer.id).filter(
                     TaskBlockAnswer.response_id == response.id,
@@ -626,14 +679,24 @@ def cabinet_tracker_task_blocks(
             item["done"] = bool(state and state.status == STATUS_DONE)
             item["overrun"] = task_block_timed_overrun(block, state)
             item["start_endpoint"] = f"/cabinet/tracker/blocks/{block.id}/start"
-            item.update(_submission_payload(db, task, block, user["user_id"]))
+            item.update(_submission_payload(
+                db, task, block, user["user_id"],
+                user_tariff=user.get("tariff"),
+                tariff_deadlines=submit_deadlines.get(block.id),
+                task_tariff_deadlines=task_submit_deadlines,
+            ))
         elif block.block_type == BLOCK_UPLOAD:
             # Работы грузятся здесь же, ученик никуда не уходит (владелец
             # 07.09.2026). `done` берём из состояния блока: его ставит сам
             # роут загрузки, а не пересчёт по портфолио.
             state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
             item["done"] = bool(state and state.status == STATUS_DONE)
-            item.update(_submission_payload(db, task, block, user["user_id"]))
+            item.update(_submission_payload(
+                db, task, block, user["user_id"],
+                user_tariff=user.get("tariff"),
+                tariff_deadlines=submit_deadlines.get(block.id),
+                task_tariff_deadlines=task_submit_deadlines,
+            ))
         elif block.block_type == BLOCK_PHOTO_UPLOAD:
             # Фото + сдача работы (владелец 12.09.2026): фото-задание — та же
             # галерея, что у BLOCK_PHOTO, приём результата — тот же приём, что
@@ -644,7 +707,12 @@ def cabinet_tracker_task_blocks(
             ]
             state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
             item["done"] = bool(state and state.status == STATUS_DONE)
-            item.update(_submission_payload(db, task, block, user["user_id"]))
+            item.update(_submission_payload(
+                db, task, block, user["user_id"],
+                user_tariff=user.get("tariff"),
+                tariff_deadlines=submit_deadlines.get(block.id),
+                task_tariff_deadlines=task_submit_deadlines,
+            ))
         elif block.block_type == BLOCK_PORTFOLIO:
             # Ведём на существующий экран загрузки работ, своего у блока нет.
             # Всегда в раздел «До» (владелец 09.09.2026: «по этой кнопке работы
@@ -701,7 +769,7 @@ def cabinet_tracker_task_blocks(
             }
             item["is_correct"] = correct_by_block.get(block.id)
             item["edit_reason"] = (
-                deadline_reason(task, block)
+                _deadline_reason(block)
                 or (("Ответ сохранён." if block.is_diagnostic else "Этот ответ уже проверен системой.") if block.question_type != QUESTION_TEXT and block.id in answered_ids else None)
                 or ("Преподаватель уже проверил ответ." if response and db.query(TaskBlockAnswer.id).filter(
                     TaskBlockAnswer.response_id == response.id,
@@ -710,7 +778,7 @@ def cabinet_tracker_task_blocks(
                 ).first() else None)
             )
         elif block.block_type == BLOCK_RULES:
-            item["edit_reason"] = deadline_reason(task, block) or (
+            item["edit_reason"] = _deadline_reason(block) or (
                 "Согласие с правилами уже сохранено." if block.id in answered_ids else None
             )
             # Правила школы: варианты — сами правила, `body` — текст согласия.
@@ -895,7 +963,11 @@ async def upload_task_block_work(
         )
 
     submission = get_task_block_submission(db, block_id=block.id, user_id=user["user_id"])
-    reason = block_work_reason(db, task, block, submission)
+    # Тариф обязателен: у блока может стоять свой срок приёма для этого
+    # тарифа, и без него сработал бы общий (владелец 27.09.2026).
+    reason = block_work_reason(
+        db, task, block, submission, user_tariff=user.get("tariff"),
+    )
     if reason:
         _refused("правка закрыта", reason)
         return JSONResponse({"ok": False, "error": reason}, status_code=409)
@@ -962,7 +1034,11 @@ def edit_task_block_comment(
     submission = get_task_block_submission(db, block_id=block.id, user_id=user["user_id"])
     if submission is None or submission.submitted_at is None:
         raise HTTPException(status_code=404, detail="Работа не найдена")
-    reason = block_work_reason(db, task, block, submission)
+    # Тариф обязателен: у блока может стоять свой срок приёма для этого
+    # тарифа, и без него сработал бы общий (владелец 27.09.2026).
+    reason = block_work_reason(
+        db, task, block, submission, user_tariff=user.get("tariff"),
+    )
     if reason:
         return JSONResponse({"ok": False, "error": reason}, status_code=409)
     comment = payload.get("comment")
@@ -987,7 +1063,11 @@ def delete_task_block_image(
     submission = get_task_block_submission(db, block_id=block.id, user_id=user["user_id"])
     if submission is None:
         raise HTTPException(status_code=404, detail="Работа не найдена")
-    reason = block_work_reason(db, task, block, submission)
+    # Тариф обязателен: у блока может стоять свой срок приёма для этого
+    # тарифа, и без него сработал бы общий (владелец 27.09.2026).
+    reason = block_work_reason(
+        db, task, block, submission, user_tariff=user.get("tariff"),
+    )
     if reason:
         return JSONResponse({"ok": False, "error": reason}, status_code=409)
     image = db.query(TaskBlockSubmissionImage).filter(

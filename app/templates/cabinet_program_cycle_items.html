@@ -12,7 +12,7 @@
 #}
 {% block title %}{{ cycle_label }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=39">
+<link rel="stylesheet" href="/static/css/program.css?v=40">
 <link rel="stylesheet" href="/static/css/program_ios.css?v=16">
 {# Предпросмотр «Глазами ученика» рисует блоки общим рендерером ученика, а
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
@@ -24,7 +24,7 @@
 {% block content %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
-<script src="/static/js/task-blocks-render.js?v=28"></script>
+<script src="/static/js/task-blocks-render.js?v=29"></script>
 <script src="/static/js/diagnostic-builder.js?v=9"></script>
 <script src="/static/js/diagnostic-trainer.js?v=2"></script>
 {# WYSIWYG для полей с разметкой — стоит до `program_blocks_editor_js.html`. #}
@@ -99,9 +99,12 @@
             <span>Обязательный элемент — пока не сделан, следующие шаги ленты закрыты</span>
         </label>
         <label class="prg-field">Откроется не раньше
-            <input type="date" data-item-starts aria-label="Дата открытия задания">
+            <input type="datetime-local" data-item-starts aria-label="Дата и время открытия задания">
             <span class="prg-hint">Пусто – задание видно сразу после публикации.</span>
         </label>
+        {# Срок сдачи на всё задание (владелец 27.09.2026) — общий партиал с
+           экраном дня. #}
+        {% include "partials/program_item_deadline_fields.html" %}
 
         <div data-diagnostic-note hidden>
             <div data-diagnostic-editor></div>
@@ -148,7 +151,7 @@
         <p class="prg-message" data-form-message></p>
     </form>
 
-    <section class="prg-items">
+    <section class="prg-items" data-deadline-scope>
         <h2>Уже в этом цикле</h2>
         {% if items %}
         {% for item in items %}
@@ -157,6 +160,7 @@
                 <h3>{{ item.title }}</h3>
                 {% if item.description %}<p>{{ item.description | rich_text | safe }}</p>{% endif %}
                 {% if item.subject %}<span class="prg-badge">{{ item.subject }}</span>{% endif %}
+                {% include "partials/program_item_deadlines.html" %}
             </div>
             <div class="prg-item-actions">
                 <span class="prg-blk-move">
@@ -182,6 +186,12 @@ var editPayloads = {{ edit_payloads|tojson }};
 // Рендер карточки блока любого типа и панель «Доступность блока» — общие
 // функции конструктора (см. partials/program_blocks_editor_js.html).
 {% include "partials/program_blocks_editor_js.html" %}
+
+// Срок задания: сбор и заполнение полей формы (владелец 27.09.2026).
+{% include "partials/program_item_deadline_fields_js.html" %}
+
+// Быстрая правка срока приёма работ в списке заданий (владелец 27.09.2026).
+{% include "partials/program_item_deadlines_js.html" %}
 
 // Загрузка фото блока — тот же контракт, что на экране дня
 // (`/cabinet/staff/program/upload-cover`, FormData с `file`, ответ
@@ -459,6 +469,7 @@ function uploadBlockPhotos(row, files) {
         window.RichTextField.refresh(fields.description);
         fields.required.checked = true;
         fields.starts.value = '';
+        fillTaskDeadline(form, null);
         renderFormBlocks(form, []);
         formTitle.textContent = 'Новое задание';
         message.textContent = '';
@@ -508,6 +519,7 @@ function uploadBlockPhotos(row, files) {
             window.RichTextField.refresh(fields.description);
             fields.required.checked = !!data.is_required;
             fields.starts.value = data.starts_on || '';
+            fillTaskDeadline(form, data);
             // У archi_profile (легаси) отдельные блоки-вопросы диагностики
             // сюда не попадают вовсе — их редактирует статичная панель выше
             // (`data.diagnostic`). У обычного «Задания» диагностика — одна
@@ -547,6 +559,8 @@ function uploadBlockPhotos(row, files) {
             starts_on: fields.starts.value || null,
             blocks: form.dataset.itemKind === 'archi_profile' ? [] : collectFormBlocks(form)
         };
+        // Срок задания — те же два поля, что у блока, собирает общий партиал.
+        Object.assign(payload, taskDeadlinePayload(form));
         // Отдельный вид archi_profile (легаси) — свой статичный редактор вне
         // `[data-blocks]`, диагностика идёт отдельным полем `payload.diagnostic`.
         if (!form.querySelector('[data-diagnostic-note]').hidden) {

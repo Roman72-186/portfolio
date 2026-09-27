@@ -681,3 +681,119 @@ def test_student_username_is_a_copy_button(superadmin_client, db, user_factory):
     summary = page.split("Ученики поимённо", 1)[1].split("Лента действий", 1)[0]
     assert 'data-copy="@nick_student"' in summary
     assert "Не указан" not in summary.split("<tbody>", 1)[1]
+
+
+# ── сроки сдачи: до и после (владелец 27.09.2026) ───────────────────────────
+
+def _closed_block(db, *, task, student, block_type, completed_at, submit_until=None):
+    """Блок, закрытый учеником в указанный момент."""
+    from app.models.task_block import TaskBlock, TaskBlockState
+
+    block = TaskBlock(
+        task_id=task.id, block_type=block_type, title="Шаг", sort_order=1,
+        submit_until=submit_until,
+    )
+    db.add(block)
+    db.flush()
+    db.add(TaskBlockState(
+        block_id=block.id, user_id=student.id, status="done",
+        completed_at=completed_at,
+    ))
+    db.commit()
+    return block
+
+
+def test_deadline_stats_split_on_time_and_late(db, user_factory):
+    """Сдано до срока и после — по одному разрезу на все типы блоков.
+
+    Считается по `TaskBlockState.completed_at`, поэтому в статистику попадает
+    и сдача работы, и кружок «Выполнено» у видео: у последнего срок ничего не
+    запрещает, но опоздание всё равно видно (владелец 27.09.2026).
+    """
+    from app.models.tracker import TrackerTask
+    from app.services.activity_stats import get_deadline_stats
+
+    student = user_factory(vk_id=971801, name="Ученик Срочный", role_name="ученик")
+    now = datetime.now(timezone.utc)
+    task = TrackerTask(title="Эскиз третьего цикла")
+    db.add(task)
+    db.flush()
+    deadline = now - timedelta(days=1)
+    _closed_block(
+        db, task=task, student=student, block_type="upload",
+        completed_at=deadline - timedelta(hours=2), submit_until=deadline,
+    )
+    _closed_block(
+        db, task=task, student=student, block_type="video",
+        completed_at=deadline + timedelta(hours=2), submit_until=deadline,
+    )
+
+    stats = get_deadline_stats(db)
+
+    assert (stats["on_time"], stats["late"]) == (1, 1)
+    assert stats["with_deadline"] == 2
+    assert stats["students"][0]["name"] == "Ученик Срочный"
+    assert (stats["students"][0]["on_time"], stats["students"][0]["late"]) == (1, 1)
+    assert stats["tasks"][0]["title"] == "Эскиз третьего цикла"
+
+
+def test_deadline_stats_ignore_blocks_without_a_deadline(db, user_factory):
+    """Без срока «вовремя» не определено — такие закрытия в подсчёт не идут."""
+    from app.models.tracker import TrackerTask
+    from app.services.activity_stats import get_deadline_stats
+
+    student = user_factory(vk_id=971802, name="Ученик Бессрочный", role_name="ученик")
+    task = TrackerTask(title="Без срока")
+    db.add(task)
+    db.flush()
+    _closed_block(
+        db, task=task, student=student, block_type="upload",
+        completed_at=datetime.now(timezone.utc),
+    )
+
+    stats = get_deadline_stats(db)
+
+    assert stats["with_deadline"] == 0
+    assert stats["students"] == []
+
+
+def test_deadline_stats_use_the_task_deadline_as_a_fallback(db, user_factory):
+    """Блок без своего срока считается по сроку задания."""
+    from app.models.tracker import TrackerTask
+    from app.services.activity_stats import get_deadline_stats
+
+    student = user_factory(vk_id=971803, name="Ученик Задание", role_name="ученик")
+    now = datetime.now(timezone.utc)
+    task = TrackerTask(title="Срок у задания", submit_until=now - timedelta(days=1))
+    db.add(task)
+    db.flush()
+    _closed_block(
+        db, task=task, student=student, block_type="photo", completed_at=now,
+    )
+
+    stats = get_deadline_stats(db)
+
+    assert (stats["on_time"], stats["late"]) == (0, 1)
+
+
+def test_deadline_card_is_on_the_activity_page(superadmin_client, db, user_factory):
+    """Карточка живёт на «Статистике активности», а не на своей странице —
+    инвариант «вся статистика на одной странице» (AGENTS.md)."""
+    client, _ = superadmin_client
+    student = user_factory(vk_id=971804, name="Ученик Карточка", role_name="ученик")
+    from app.models.tracker import TrackerTask
+
+    now = datetime.now(timezone.utc)
+    task = TrackerTask(title="Задание со сроком")
+    db.add(task)
+    db.flush()
+    _closed_block(
+        db, task=task, student=student, block_type="upload",
+        completed_at=now, submit_until=now - timedelta(hours=1),
+    )
+
+    page = client.get("/cabinet/superadmin/activity")
+
+    assert page.status_code == 200
+    assert "Сроки сдачи" in page.text
+    assert "Закрыли после срока" in page.text

@@ -9,25 +9,74 @@ from app.models.homework_submission import STATUS_ACCEPTED, STATUS_NEEDS_REVISIO
 from app.models.task_block import TaskBlock, TaskBlockSubmission
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.models.tracker import TrackerTask
+from app.services.tz import msk_text
 
 
 def _utc(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
-def deadline_reason(task: TrackerTask, block: TaskBlock | None = None, *, now: datetime | None = None) -> str | None:
+def deadline_reason(
+    task: TrackerTask, block: TaskBlock | None = None, *,
+    user_tariff: str | None = None,
+    tariff_deadlines: dict[str, datetime | None] | None = None,
+    task_tariff_deadlines: dict[str, datetime | None] | None = None,
+    now: datetime | None = None,
+) -> str | None:
+    """Почему правка закрыта по сроку — или `None`, если срок не вышел.
+
+    Источники срока, берётся самый ранний наступивший: день задания
+    (`TrackerTask.due_at`), закрытие блока по календарю (`closes_at`) и срок
+    сдачи (`submit_until`, владелец 27.09.2026). Последний живёт на двух
+    этажах — у блока и у задания, — и у каждого может быть свой вариант под
+    тариф ученика; какой из четырёх действует, решает
+    `task_blocks.submit_deadline_for`, и второй копии этого правила здесь не
+    появляется.
+
+    Текст называет момент по Москве: «срок истёк» без даты вызывал встречный
+    вопрос «а когда он был».
+    """
+    from app.services.task_blocks import submit_deadline_for
+
     moment = now or datetime.now(timezone.utc)
-    deadlines = [value for value in (task.due_at, block.closes_at if block else None) if value]
-    if deadlines and min(_utc(value) for value in deadlines) <= moment:
-        return "Срок сдачи истёк. Изменить работу нельзя."
+    deadlines = [task.due_at]
+    if block is not None:
+        deadlines.append(block.closes_at)
+        deadlines.append(submit_deadline_for(
+            block, task, user_tariff=user_tariff,
+            block_overrides=tariff_deadlines,
+            task_overrides=task_tariff_deadlines,
+        ))
+    passed = [_utc(value) for value in deadlines if value and _utc(value) <= moment]
+    if passed:
+        return f"Срок сдачи истёк {msk_text(min(passed))} по Москве. Изменить работу нельзя."
     return None
 
 
 def block_work_reason(
     db: Session, task: TrackerTask, block: TaskBlock,
-    submission: TaskBlockSubmission | None, *, now: datetime | None = None,
+    submission: TaskBlockSubmission | None, *,
+    user_tariff: str | None = None,
+    tariff_deadlines: dict[str, datetime | None] | None = None,
+    task_tariff_deadlines: dict[str, datetime | None] | None = None,
+    now: datetime | None = None,
 ) -> str | None:
-    reason = deadline_reason(task, block, now=now)
+    # Сроки по тарифам читаем сами, если их не передали: мутирующие роуты
+    # сдачи зовут эту функцию по одному блоку, и заставлять каждый помнить про
+    # предзагрузку обоих этажей — способ однажды забыть и молча пустить работу
+    # после срока. Лента передаёт готовые словари, чтобы не ходить в базу на
+    # каждый блок.
+    if tariff_deadlines is None:
+        from app.services.task_blocks import get_submit_deadlines
+        tariff_deadlines = get_submit_deadlines(db, [block.id]).get(block.id)
+    if task_tariff_deadlines is None:
+        from app.services.task_blocks import get_task_submit_deadlines
+        task_tariff_deadlines = get_task_submit_deadlines(db, [task.id]).get(task.id)
+    reason = deadline_reason(
+        task, block, user_tariff=user_tariff,
+        tariff_deadlines=tariff_deadlines,
+        task_tariff_deadlines=task_tariff_deadlines, now=now,
+    )
     if reason or submission is None:
         return reason
     # Куратор явно вернул работу на доработку — правка разрешена, даже если

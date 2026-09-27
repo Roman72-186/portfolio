@@ -41,6 +41,8 @@ from app.models.task_block import (
     TaskBlockSubmission,
     TaskBlockSubmissionImage,
     TaskBlockTariff,
+    TaskBlockTariffDeadline,
+    DEADLINE_BLOCKS_COMPLETION,
 )
 from app.models.tracker import STATUS_DONE, STATUS_OPEN
 from app.services.tz import msk_midnight, parse_msk_local
@@ -268,6 +270,204 @@ def _sync_required_tariffs(
             continue
         seen.add(tariff)
         db.add(TaskBlockRequiredTariff(block_id=block.id, tariff=tariff))
+
+
+def _moment(value) -> datetime | None:
+    """Момент из того, что прислали: строка `datetime-local`, `date` или
+    `datetime`.
+
+    Форма шлёт строку, но зовут `sync_blocks` и изнутри Python — например
+    диагностика, которая размножает настройки одной строки конструктора на
+    все свои блоки-вопросы (`_diagnostic_availability`). Раньше строку и
+    объект разбирали в разных ветках по типу; после 27.09.2026, когда
+    открытие стало нести время, ветка осталась одна, и терпимость к типу
+    переехала сюда.
+
+    `date` без времени — полночь по Москве: ровно то, что до 27.09.2026
+    делал `msk_midnight`, так что старые вызовы ведут себя как прежде.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, date_type):
+        return msk_midnight(value).astimezone(timezone.utc)
+    return parse_msk_local(value)
+
+
+def get_submit_deadlines(
+    db: DBSession, block_ids: list[int]
+) -> dict[int, dict[str, datetime | None]]:
+    """Сроки приёма работ по тарифам: блок → {тариф: момент или None}.
+
+    Один запрос на всю ленту, как `get_tariffs`: экран задания читает десятки
+    блоков, и поход в базу на каждый превратился бы в N запросов.
+
+    `None` у тарифа — не «срока нет вообще», а «у этого тарифа приём
+    бессрочный» (см. докстринг `TaskBlockTariffDeadline`). Отличать приходится
+    по наличию ключа, а не по значению, поэтому словарь, а не набор.
+    """
+    if not block_ids:
+        return {}
+    rows = (
+        db.query(TaskBlockTariffDeadline)
+        .filter(TaskBlockTariffDeadline.block_id.in_(block_ids))
+        .all()
+    )
+    grouped: dict[int, dict[str, datetime | None]] = {}
+    for row in rows:
+        grouped.setdefault(row.block_id, {})[row.tariff] = row.submit_until
+    return grouped
+
+
+def get_task_submit_deadlines(
+    db: DBSession, task_ids: list[int]
+) -> dict[int, dict[str, datetime | None]]:
+    """Сроки по тарифам на уровне задания: задание → {тариф: момент или None}.
+
+    Близнец `get_submit_deadlines`, только на этаж выше. Читаются они всегда
+    вместе — блок главнее, задание запасное, — поэтому и форма ответа одна.
+    """
+    if not task_ids:
+        return {}
+    from app.models.tracker import TrackerTaskTariffDeadline
+
+    rows = (
+        db.query(TrackerTaskTariffDeadline)
+        .filter(TrackerTaskTariffDeadline.task_id.in_(task_ids))
+        .all()
+    )
+    grouped: dict[int, dict[str, datetime | None]] = {}
+    for row in rows:
+        grouped.setdefault(row.task_id, {})[row.tariff] = row.submit_until
+    return grouped
+
+
+def sync_task_submit_deadlines(
+    db: DBSession, task, deadlines: list[dict] | None
+) -> None:
+    """Пересборка сроков по тарифам у задания — копия `sync_submit_deadlines`
+    этажом выше, с теми же правилами: снести и собрать заново, неизвестный
+    тариф молча отбросить, пустое время сохранить как «бессрочно»."""
+    from app.models.tracker import TrackerTaskTariffDeadline
+
+    db.query(TrackerTaskTariffDeadline).filter(
+        TrackerTaskTariffDeadline.task_id == task.id
+    ).delete(synchronize_session=False)
+    seen: set[str] = set()
+    for item in deadlines or []:
+        tariff = (item.get("tariff") or "").strip().upper()
+        if tariff not in TARIFFS or tariff in seen:
+            continue
+        seen.add(tariff)
+        db.add(TrackerTaskTariffDeadline(
+            task_id=task.id,
+            tariff=tariff,
+            submit_until=_moment(item.get("submit_until")),
+        ))
+
+
+def effective_submit_until(
+    block: TaskBlock,
+    overrides: dict[str, datetime | None] | None,
+    user_tariff: str | None,
+) -> datetime | None:
+    """Срок **самого блока** для этого ученика, без оглядки на задание.
+
+    У тарифа есть своя строка — она главнее общего срока блока, в том числе
+    когда в ней пусто («сдача бессрочная»). Нет строки — работает
+    `block.submit_until`.
+
+    Обычно звать нужно не её, а `submit_deadline_for`: та добавляет запасной
+    срок задания. Эта осталась отдельно, потому что «задал ли блок свой срок»
+    — самостоятельный вопрос, и ответ на него нужен, чтобы понять, падать ли
+    на уровень задания.
+    """
+    tariff = (user_tariff or "").strip().upper()
+    if overrides and tariff in overrides:
+        return overrides[tariff]
+    return block.submit_until
+
+
+def _has_own_deadline(
+    block: TaskBlock, overrides: dict[str, datetime | None] | None, user_tariff: str | None
+) -> bool:
+    """Блок задал свой срок этому ученику — включая «бессрочно».
+
+    Пустая строка тарифа это тоже ответ («у этого тарифа сдача бессрочная»),
+    и падать с неё на срок задания нельзя: преподаватель сказал «здесь без
+    срока», а задание сказало бы обратное.
+    """
+    tariff = (user_tariff or "").strip().upper()
+    if overrides and tariff in overrides:
+        return True
+    return block.submit_until is not None
+
+
+def submit_deadline_for(
+    block: TaskBlock,
+    task,
+    *,
+    user_tariff: str | None,
+    block_overrides: dict[str, datetime | None] | None = None,
+    task_overrides: dict[str, datetime | None] | None = None,
+) -> datetime | None:
+    """До какого момента **этот** ученик может закрыть **этот** блок.
+
+    Единственное место, где сходятся все четыре источника срока, и порядок
+    у них такой (владелец 27.09.2026):
+
+    1. строка тарифа у блока — самая частная настройка, главнее всего;
+    2. общий срок блока;
+    3. строка тарифа у задания;
+    4. общий срок задания.
+
+    Блок главнее задания целиком, а не по полю: если блок сказал про себя
+    хоть что-то — включая «бессрочно», — срок задания к нему не применяется.
+    Иначе «здесь без срока» у блока молча перебивалось бы общим сроком, и
+    преподаватель не смог бы сделать ни одного исключения.
+
+    Второй копии этого правила быть не должно: сроки читают и лента, и роуты
+    сдачи, и статистика — они обязаны отвечать одинаково, иначе ученик увидит
+    «до 9:30», а сервер примет работу в 11:00 (или наоборот).
+    """
+    if _has_own_deadline(block, block_overrides, user_tariff):
+        return effective_submit_until(block, block_overrides, user_tariff)
+    if task is None:
+        return None
+    tariff = (user_tariff or "").strip().upper()
+    if task_overrides and tariff in task_overrides:
+        return task_overrides[tariff]
+    return getattr(task, "submit_until", None)
+
+
+def sync_submit_deadlines(
+    db: DBSession, block: TaskBlock, deadlines: list[dict] | None
+) -> None:
+    """Полная пересборка сроков по тарифам — копия `_sync_tariffs`, та же
+    причина сноса-и-пересборки и молчаливого отбрасывания неизвестного тарифа.
+
+    Публичная, в отличие от соседок: её зовёт не только `sync_blocks`, но и
+    быстрая правка срока из списка заданий (`api/cabinet_program.py`).
+
+    Строка заводится по выбранному тарифу, даже когда время пустое: пустое и
+    есть «у этого тарифа приём бессрочный». Строка без тарифа отбрасывается —
+    общий срок блока живёт в своей колонке, не здесь.
+    """
+    db.query(TaskBlockTariffDeadline).filter(
+        TaskBlockTariffDeadline.block_id == block.id
+    ).delete(synchronize_session=False)
+    seen: set[str] = set()
+    for item in deadlines or []:
+        tariff = (item.get("tariff") or "").strip().upper()
+        if tariff not in TARIFFS or tariff in seen:
+            continue
+        seen.add(tariff)
+        db.add(TaskBlockTariffDeadline(
+            block_id=block.id,
+            tariff=tariff,
+            submit_until=_moment(item.get("submit_until")),
+        ))
 
 
 def get_images(db: DBSession, block_ids: list[int]) -> dict[int, list[TaskBlockImage]]:
@@ -521,12 +721,14 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
             int(window_hours)
             if block_type == BLOCK_PORTFOLIO and window_hours else None
         )
-        opens_at_date = item.get("opens_at")
-        row.opens_at = (
-            msk_midnight(opens_at_date).astimezone(timezone.utc)
-            if isinstance(opens_at_date, date_type) else None
-        )
-        row.closes_at = parse_msk_local(item.get("closes_at"))
+        # Открытие несёт время суток с 27.09.2026 (владелец: «нужны не только
+        # даты, а время»). До этого поле было `type="date"` и сервер считал
+        # `msk_midnight`, то есть открыть задание к 10:00 было нечем. Формат
+        # теперь тот же, что у `closes_at`, — строка `datetime-local`; у
+        # блоков, заведённых раньше, в базе лежит полночь, и она просто
+        # показывается как «00:00».
+        row.opens_at = _moment(item.get("opens_at"))
+        row.closes_at = _moment(item.get("closes_at"))
         # Закрытие раньше открытия — куратор перепутал поля; отбрасываем
         # молча, как и везде в этой функции с некорректным вводом, а не
         # роняем сохранение всего блока (см. неизвестный тариф/предмет выше).
@@ -536,6 +738,12 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
             and row.closes_at <= row.opens_at
         ):
             row.closes_at = None
+        # Срок — у любого типа блока (владелец 27.09.2026, второй заход:
+        # «добавить в доступность блока и для всех заданий»). Что он делает,
+        # зависит от типа: у сдачи и ответов запирает, у видео, фото, текста,
+        # ссылки и голосового только показывается ученику и попадает в
+        # статистику «до срока / после срока» (см. DEADLINE_BLOCKS_COMPLETION).
+        row.submit_until = _moment(item.get("submit_until"))
         row.locked_message = _clean(item.get("locked_message"), 300)
         if block_type == BLOCK_QUESTION:
             question_type = (item.get("question_type") or "").strip()
@@ -567,6 +775,7 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         )
         _sync_tariffs(db, row, item.get("tariffs"))
         _sync_required_tariffs(db, row, item.get("required_tariffs"))
+        sync_submit_deadlines(db, row, item.get("submit_deadlines"))
     for block_id, row in existing.items():
         if block_id in matched_ids:
             continue
@@ -894,6 +1103,9 @@ def is_block_accessible(
     user_tariff: str | None,
     required_tariffs_by_block: dict[int, set[str]] | None = None,
     required_by_block: dict[int, bool] | None = None,
+    submit_deadlines_by_block: dict[int, dict[str, datetime | None]] | None = None,
+    tasks_by_id: dict | None = None,
+    task_submit_deadlines_by_task: dict[int, dict[str, datetime | None]] | None = None,
     now=None,
 ) -> bool:
     """Доступен ли ученику блок `blocks[block_index]` прямо сейчас.
@@ -928,7 +1140,15 @@ def is_block_accessible(
        10.09.2026 — «на дешёвом тарифе ученик всё делает сам, на топовом
        сдача обязательна, но блок виден обоим») и тариф ученика в него не
        входит — блок для этого ученика необязателен, тоже не блокирует, хотя
-       остаётся видимым.
+       остаётся видимым. **Истёкший срок приёма работ** (`submit_until`,
+       владелец 27.09.2026) снимает блокировку по той же причине: приём
+       закрыт, сдать уже нечем, и требовать выполнения — тупик без выхода.
+
+    **Срок приёма работ доступность самого блока не меняет** — в этом и его
+    смысл: после 9:30 ученик по-прежнему видит задание, свою работу, оценку и
+    переписку, закрыта только сдача (владелец 27.09.2026). Закрытие сдачи
+    считает `services/submission_edit.py::deadline_reason`, здесь срок нужен
+    ровно для развязки тупика в пункте 4.
 
     `target.bypass_sequence` пропускает только пункт 4, не 1, 2 и 3
     (владелец 06.09.2026). Раньше это было жёстко зашито на `BLOCK_LINK`
@@ -1003,6 +1223,35 @@ def is_block_accessible(
                 else prior_closes_at.replace(tzinfo=timezone.utc)
             )
             if prior_closes <= moment:
+                continue
+        # Срок у обязательного блока прошёл, а ученик не закрыл его: если
+        # действие отобрал сам срок (сдача, ответ, правила), закрыть блок уже
+        # нечем, и без этой развязки лента встала бы навсегда — ровно тот же
+        # тупик, что выше снимают тариф и `closes_at` (владелец 27.09.2026).
+        #
+        # У видео, фото и голосового срок ничего не отбирает: отметить
+        # «Выполнено» можно и после него, это просто зачтётся опозданием в
+        # статистике. Такой блок очередь держит дальше — иначе срок,
+        # поставленный ради отчётности, молча снимал бы обязательность.
+        # Задание берётся по самому блоку, а не «то, ради которого позвали»:
+        # в ленте цикла блоки идут подряд из разных заданий, и чужой срок
+        # задания запер бы или отпустил не тот блок.
+        prior_task = (tasks_by_id or {}).get(prior.task_id)
+        prior_submit_until = (
+            submit_deadline_for(
+                prior, prior_task,
+                user_tariff=user_tariff,
+                block_overrides=(submit_deadlines_by_block or {}).get(prior.id),
+                task_overrides=(task_submit_deadlines_by_task or {}).get(prior.task_id),
+            )
+            if prior.block_type in DEADLINE_BLOCKS_COMPLETION else None
+        )
+        if prior_submit_until is not None:
+            prior_submit = (
+                prior_submit_until if prior_submit_until.tzinfo
+                else prior_submit_until.replace(tzinfo=timezone.utc)
+            )
+            if prior_submit <= moment:
                 continue
         if state is None or state.status != STATUS_DONE:
             return False
@@ -1102,6 +1351,8 @@ def feed_state(
     block_ids = [block.id for block in blocks]
     states = get_states(db, block_ids=block_ids, user_id=user_id)
     tariffs_by_block = get_tariffs(db, block_ids)
+    submit_deadlines_by_block = get_submit_deadlines(db, block_ids)
+    task_submit_deadlines = get_task_submit_deadlines(db, [task_id]).get(task_id)
     now = _now()  # один и тот же момент для всех блоков ленты, не по одному на блок
     result: list[dict] = []
     for index, block in enumerate(blocks):
@@ -1112,6 +1363,11 @@ def feed_state(
             tariffs_by_block=tariffs_by_block,
             user_tariff=user_tariff,
             required_by_block=required_by_block,
+            submit_deadlines_by_block=submit_deadlines_by_block,
+            tasks_by_id={task_id: task} if task is not None else None,
+            task_submit_deadlines_by_task=(
+                {task_id: task_submit_deadlines} if task_submit_deadlines else None
+            ),
             now=now,
         )
         state = states.get(block.id)

@@ -8,7 +8,7 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=39">
+<link rel="stylesheet" href="/static/css/program.css?v=40">
 <link rel="stylesheet" href="/static/css/program_ios.css?v=16">
 {# Предпросмотр «Глазами ученика» рисует блоки общим рендерером ученика, а
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
@@ -20,7 +20,7 @@ FORM: Operate.
 {% block content %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
-<script src="/static/js/task-blocks-render.js?v=28"></script>
+<script src="/static/js/task-blocks-render.js?v=29"></script>
 <script src="/static/js/diagnostic-builder.js?v=9"></script>
 <script src="/static/js/diagnostic-trainer.js?v=2"></script>
 {# WYSIWYG для полей с разметкой (**жирный**/*курсив*/список/ссылка) — стоит до
@@ -252,10 +252,15 @@ FORM: Operate.
         {# Дата открытия всего задания (владелец 03.09.2026: «даже если ребёнок
            выполнил опрос 22 сентября в 20:00, теория и задания откроются только
            с 23 сентября 00:00»). Пусто — видно сразу после публикации. #}
+        {# Дата и время с 27.09.2026 (владелец: «нужны не только даты, а
+           время»). До этого открытие всегда приходилось на полночь. #}
         <label class="prg-field">Откроется не раньше
-            <input type="date" data-x-starts aria-label="Дата открытия задания">
+            <input type="datetime-local" data-x-starts aria-label="Дата и время открытия задания">
             <span class="prg-hint">Пусто – задание видно сразу после публикации.</span>
         </label>
+        {# Срок сдачи на всё задание (владелец 27.09.2026) — общий партиал с
+           экраном заданий цикла. #}
+        {% include "partials/program_item_deadline_fields.html" %}
         {{ tariff_fields() }}
         {% if kind == 'archi_profile' %}
         <div data-diagnostic-editor></div>
@@ -438,7 +443,7 @@ FORM: Operate.
     {% endfor %}
     {% endif %}
 
-    <section class="prg-items">
+    <section class="prg-items" data-deadline-scope>
         <h2>Уже в этом дне</h2>
         {% if items %}
         {% for item in items %}
@@ -459,6 +464,11 @@ FORM: Operate.
                     {% endif %}
                     {% if detail.survey %}<span>Вопросов: {{ detail.survey_question_count }}</span>{% endif %}
                 </div>
+                {# Плашка срока — намеренно ВЫШЕ проверки `is_past`: продлевают
+                   как раз наступивший дедлайн, и у прошедшего дня она нужна
+                   больше всего (владелец 27.09.2026). Роут срока по той же
+                   причине не зовёт `_guard_editable`. #}
+                {% include "partials/program_item_deadlines.html" %}
             </div>
             {% if not is_past %}
             <div class="prg-item-actions">
@@ -936,6 +946,12 @@ FORM: Operate.
     // "Задания внутри цикла" использует их тоже).
     {% include "partials/program_blocks_editor_js.html" %}
 
+    // Срок задания: сбор и заполнение полей формы (владелец 27.09.2026).
+    {% include "partials/program_item_deadline_fields_js.html" %}
+
+    // Быстрая правка срока приёма работ в списке заданий (владелец 27.09.2026).
+    {% include "partials/program_item_deadlines_js.html" %}
+
 
     // ── Предпросмотр «глазами ученика» (владелец 31.08.2026) ──────────────
     // Рисуем из того, что сейчас в форме, ничего не сохраняя: иначе увидеть
@@ -1367,6 +1383,7 @@ FORM: Operate.
         form.querySelector('[data-x-subject]').value = '';
         form.querySelector('[data-x-required]').checked = true;
         form.querySelector('[data-x-starts]').value = '';
+        fillTaskDeadline(form, null);
         resetTariffFields(form);
         renderFormBlocks(form, []);
         resetSimpleMock(form);
@@ -1473,6 +1490,7 @@ FORM: Operate.
         form.querySelector('[data-x-subject]').value = data.subject || '';
         form.querySelector('[data-x-required]').checked = data.is_required !== false;
         form.querySelector('[data-x-starts]').value = data.starts_on || '';
+        fillTaskDeadline(form, data);
         populateTariffFields(form, data);
         // У диагностики свои вопросы уже есть блоками-«Вопрос» в базе (их
         // создаёт archi_profile.blocks_from_config — так их видит ученик),
@@ -1933,7 +1951,10 @@ FORM: Operate.
                     return;
                 }
             }
-            api(itemUrl(kind, simpleForm), {
+            // Срок задания добавляется через Object.assign, а не spread в
+            // литерале: страница написана в ES5-стиле (`var`, без стрелок), и
+            // перемешивать уровни синтаксиса в одном файле незачем.
+            api(itemUrl(kind, simpleForm), Object.assign({
                 title: titleSimple,
                 description: simpleForm.querySelector('[data-x-description]').value,
                 subject: simpleForm.querySelector('[data-x-subject]').value || null,
@@ -1949,7 +1970,7 @@ FORM: Operate.
                 blocks: kind === 'archi_profile' ? [] : collectFormBlocks(simpleForm),
                 diagnostic: diagnostic,
                 audience: audienceSimple
-            }).then(afterSave).catch(function (error) {
+            }, taskDeadlinePayload(simpleForm))).then(afterSave).catch(function (error) {
                 saveSimple.disabled = false;
                 setMessage(simpleForm, saveError(error, 'элемент'), true);
             });

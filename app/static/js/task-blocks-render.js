@@ -765,6 +765,15 @@ scope)` и свойством `answered` (одна попытка: после о
                     wrap.appendChild(el('p', 'video-help', block.edit_reason));
                     return wrap;
                 }
+                // Срок приёма работ (владелец 27.09.2026). Та же формулировка и
+                // тот же формат момента, что у окна портфолио выше — ученик
+                // читает одно и то же правило в двух местах одинаково.
+                if (block.submit_deadline) {
+                    wrap.appendChild(el(
+                        'p', 'video-help',
+                        'Загрузить или заменить работу можно до ' + block.submit_deadline + ' по Москве.'
+                    ));
+                }
                 (block.submitted_files || []).forEach(function (file, index) {
                     var remove = el('button', 'btn-outline', 'Удалить фото ' + (index + 1));
                     remove.type = 'button';

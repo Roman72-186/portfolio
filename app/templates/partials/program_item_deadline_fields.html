@@ -1,0 +1,33 @@
+{#
+Срок сдачи на всё задание — поля формы (владелец 27.09.2026, второй заход:
+«нужно добавить в доступность блока и для всех заданий»).
+
+Партиал, а не две копии: формы задания живут на двух экранах — день календаря
+(`cabinet_program_day.html`) и задания цикла (`cabinet_program_cycle_items.html`),
+и правка одной без второй в этом конструкторе уже случалась.
+
+Срок действует на каждый блок задания, который не задал свой. Блок главнее —
+включая случай «у этого блока без срока» (см. `task_blocks.submit_deadline_for`).
+
+Ждёт в контексте `tariffs` — действующую линейку тарифов.
+#}
+<label class="prg-field">Срок сдачи задания
+    <input type="datetime-local" data-x-submit-until
+           aria-label="Дата и время срока сдачи задания">
+    <span class="prg-hint">Пусто – без срока. Действует на все блоки задания, кроме тех, где задан свой срок.</span>
+</label>
+<div class="prg-blk-deadlines" data-x-deadlines>
+    <p class="prg-hint">Свой срок по тарифу: пусто – работает общий срок задания.</p>
+    {% for tariff in tariffs %}
+    <div class="prg-field prg-deadline-row" data-x-deadline-tariff="{{ tariff }}">
+        <span class="prg-deadline-name">{{ tariff }}</span>
+        <input type="datetime-local" data-x-deadline-at
+               aria-label="Срок сдачи задания для тарифа {{ tariff }}">
+        <label class="prg-field--row">
+            <input type="checkbox" data-x-deadline-none
+                   aria-label="Без срока для тарифа {{ tariff }}">
+            <span>без срока</span>
+        </label>
+    </div>
+    {% endfor %}
+</div>
