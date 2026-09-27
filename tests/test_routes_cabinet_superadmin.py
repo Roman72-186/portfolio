@@ -430,6 +430,45 @@ def test_superadmin_role_cannot_change_own_role(superadmin_client, db):
     assert admin.role_id == original_role_id
 
 
+def test_chief_teacher_cannot_grant_moderator_but_superadmin_can(
+    client, db, user_factory, session_factory
+):
+    """У модератора права ГП при rank=3 в БД. Сравнение по сырому рангу
+    пропускало «3 < 4», и ГП мог раздавать права ГП через роль модератора."""
+    from app.models.role import Role
+
+    moderator_role = db.query(Role).filter(Role.name == "модератор").first()
+    assert moderator_role.effective_rank == 4
+    chief = user_factory(vk_id=900_210, name="Chief Teacher", role_name="админ")
+    target = user_factory(vk_id=900_211, name="Future Moderator", role_name="куратор")
+    original_role_id = target.role_id
+
+    client.cookies.set("session_id", session_factory(chief).id)
+    resp = client.post(
+        f"/cabinet/superadmin/users/{target.id}/role",
+        data={"role_id": str(moderator_role.id), "csrf_token": "bypass"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    db.refresh(target)
+    assert target.role_id == original_role_id
+
+    page = client.get("/cabinet/superadmin/create-staff")
+    if page.status_code == 200:
+        assert f'value="{moderator_role.id}"' not in page.text
+
+    superadmin = user_factory(vk_id=900_212, name="Super", role_name="суперадмин")
+    client.cookies.set("session_id", session_factory(superadmin).id)
+    resp = client.post(
+        f"/cabinet/superadmin/users/{target.id}/role",
+        data={"role_id": str(moderator_role.id), "csrf_token": "bypass"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    db.refresh(target)
+    assert target.role_id == moderator_role.id
+
+
 def test_superadmin_issue_link_from_users_page(superadmin_client, db, user_factory):
     client, _ = superadmin_client
     target = user_factory(vk_id=900107, name="Link Student", role_name="ученик", is_active=True)

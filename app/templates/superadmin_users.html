@@ -177,7 +177,7 @@
             </thead>
             <tbody>
             {% for u in users %}
-            {% set u_rank = u.role.rank if u.role else 0 %}
+            {% set u_rank = u.role.effective_rank if u.role else 0 %}
             <tr class="{% if u.deleted_at %}u-deleted{% elif not u.is_active %}u-inactive{% endif %}"
                 data-user-row="{{ u.id }}"
                 data-user-name="{{ ((u.last_name or '') ~ ' ' ~ (u.first_name or u.name))|trim }}">
@@ -234,7 +234,7 @@
                             {% for r in roles %}
                             <option value="{{ r.id }}"
                                 {% if u.role_id == r.id %}selected{% endif %}
-                                {% if r.rank >= current_user_rank %}disabled{% endif %}
+                                {% if r.effective_rank >= current_user_rank %}disabled{% endif %}
                             >{{ r.display_name }}</option>
                             {% endfor %}
                         </select>

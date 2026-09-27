@@ -2264,7 +2264,7 @@ def superadmin_create_staff(
         return _render_superadmin_create_staff(request, user, db, page_error="Роль не найдена.")
     if new_role.rank < 2:
         return _render_superadmin_create_staff(request, user, db, page_error="Аккаунт сотрудника требует роль с рангом ≥ 2.")
-    if not can_assign_role_rank(user["role_rank"], new_role.rank):
+    if not can_assign_role_rank(user["role_rank"], new_role.effective_rank):
         return _render_superadmin_create_staff(request, user, db, page_error="Нельзя создать аккаунт с рангом не ниже вашего.")
 
     full_name = f"{first_name_clean} {last_name_clean}".strip()
@@ -2440,7 +2440,7 @@ def superadmin_user_set_role(
     new_role = db.query(Role).filter(Role.id == role_id_int).first()
     if not new_role:
         raise HTTPException(status_code=404, detail="Роль не найдена")
-    if not can_assign_role_rank(acting_rank, new_role.rank):
+    if not can_assign_role_rank(acting_rank, new_role.effective_rank):
         return RedirectResponse("/cabinet/superadmin/users", status_code=303)
 
     target.role_id = new_role.id

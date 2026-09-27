@@ -50,7 +50,7 @@
                 <select name="role_id" required>
                     <option value="" disabled selected>Выберите роль</option>
                     {% for r in roles %}
-                    {% if r.rank >= 2 and r.rank < current_user_rank %}
+                    {% if r.rank >= 2 and r.effective_rank < current_user_rank %}
                     <option value="{{ r.id }}">{{ r.display_name }}</option>
                     {% endif %}
                     {% endfor %}
