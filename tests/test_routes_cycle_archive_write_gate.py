@@ -232,3 +232,33 @@ def test_task_shown_in_a_running_chosen_cycle_is_writable(auth_client, db):
     resp = client.post(f"/cabinet/tracker/blocks/{block.id}/watched")
 
     assert resp.status_code == 200, resp.text
+
+
+def test_check_blocks_can_be_marked_in_archived_cycle(auth_client, db):
+    """Решение владельца 28.09.2026: этап закончился 27-го, а ученики досматривают
+    видео. Блоки без сдачи работы (видео, фото, голосовое) отмечаются и в
+    пройденном цикле — опоздание видно в статистике «до срока / после срока».
+    Сдачу работ, ответы и отметку задания целиком архив по-прежнему запирает."""
+    from app.models.task_block import BLOCK_MEDIA, BLOCK_PHOTO, BLOCK_VIDEO, TaskBlock
+
+    client, user = auth_client
+    old_cycle = _cycle(
+        db, user, title="Цикл 3",
+        starts_on=TODAY - timedelta(days=10), ends_on=TODAY - timedelta(days=2),
+    )
+    _cycle(
+        db, user, title="Следующий цикл",
+        starts_on=TODAY - timedelta(days=1), ends_on=TODAY + timedelta(days=5),
+    )
+    task = _task_in_topic(db, user, old_cycle, title="Задание прошлого цикла")
+    blocks = {
+        kind: TaskBlock(task_id=task.id, block_type=kind, title=kind, sort_order=order)
+        for order, kind in enumerate((BLOCK_VIDEO, BLOCK_PHOTO, BLOCK_MEDIA))
+    }
+    db.add_all(blocks.values())
+    db.commit()
+
+    assert client.post(f"/cabinet/tracker/blocks/{blocks[BLOCK_VIDEO].id}/watched").status_code == 200
+    assert client.post(f"/cabinet/tracker/blocks/{blocks[BLOCK_PHOTO].id}/done").status_code == 200
+    assert client.post(f"/cabinet/tracker/blocks/{blocks[BLOCK_MEDIA].id}/done").status_code == 200
+    assert client.post(f"/cabinet/tracker/tasks/{task.id}/toggle").status_code == 403

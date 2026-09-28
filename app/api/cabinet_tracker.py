@@ -929,7 +929,12 @@ def confirm_video_block_watched(
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type != BLOCK_VIDEO:
         raise HTTPException(status_code=404, detail="Блок не найден")
-    task = _writable_task_or_404(db, user["user_id"], block.task_id)
+    # Без гейта архива (владелец 28.09.2026: этап закончился 27-го, а ученики
+    # досматривают видео). Блок без сдачи работы отмечается и в пройденном
+    # цикле; опоздание видно в статистике «до срока / после срока»
+    # (`activity_stats`), запирает здесь только срок блока сдачи
+    # (`DEADLINE_BLOCKS_COMPLETION`), а видео в него не входит.
+    task = _accessible_task_or_404(db, user["user_id"], block.task_id)
     if _video_block_requires_completion(task, block) and not _video_block_watched(
         db, block, user["user_id"]
     ):
@@ -955,7 +960,8 @@ def confirm_photo_block_done(
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type not in (BLOCK_PHOTO, BLOCK_MEDIA):
         raise HTTPException(status_code=404, detail="Блок не найден")
-    _writable_task_or_404(db, user["user_id"], block.task_id)
+    # Без гейта архива — по той же причине, что у видео выше.
+    _accessible_task_or_404(db, user["user_id"], block.task_id)
     source = "media_confirmed" if block.block_type == BLOCK_MEDIA else "photo_confirmed"
     close_task_block_for_user(db, block=block, user_id=user["user_id"], source=source)
     db.commit()
