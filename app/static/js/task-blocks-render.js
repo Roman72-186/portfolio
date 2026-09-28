@@ -1098,6 +1098,194 @@ scope)` и свойством `answered` (одна попытка: после о
                 return wrap;
             }
 
+            // Сравнение работ (Лиза 27.09.2026). Ученик видит пару работ и
+            // нажимает на ту, что наберёт больше баллов: выбранная остаётся,
+            // к ней приходит следующая по порядку загрузки. Пары перебираются
+            // здесь, на сервер уходит только победившая работа — одной
+            // попыткой, до отправки можно начать заново.
+            //
+            // Выбор преподавателя (`pick_url`) сервер отдаёт только вместе с
+            // ответом ученика, поэтому подсказать его этот код не может.
+            //
+            // В карточке две кнопки: нажатие на работу — выбор, лупа в углу
+            // открывает её крупно в общем лайтбоксе (partials/lightbox.html).
+            function renderCompare(block) {
+                var wrap = withTitle(el('div', 'lrn-blk lrn-blk-compare'), block);
+                if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-body', block.body_html));
+                var works = (block.images || []).map(function (image) { return image.url; });
+                var stage = el('div', 'lrn-cmp');
+                wrap.appendChild(stage);
+
+                function workName(url) {
+                    var index = works.indexOf(url);
+                    return index < 0 ? 'Работа' : 'Работа №' + (index + 1);
+                }
+
+                function zoomButton(urls, start) {
+                    var btn = el('button', 'lrn-cmp-zoom', '🔍');
+                    btn.type = 'button';
+                    btn.setAttribute('aria-label', 'Увеличить: ' + workName(urls[start]).toLowerCase());
+                    btn.addEventListener('click', function () {
+                        if (!window.openLightboxGroup) return;
+                        window.openLightboxGroup(urls.map(function (url) {
+                            return { full: url, thumb: url, alt: workName(url) };
+                        }), start);
+                    });
+                    return btn;
+                }
+
+                function workImage(url) {
+                    var img = el('img', 'lrn-cmp-img');
+                    img.src = url;
+                    img.alt = workName(url);
+                    img.loading = 'lazy';
+                    return img;
+                }
+
+                // Работа с подписью, без выбора — для финала и итога.
+                function workFigure(url, caption) {
+                    var figure = el('figure', 'lrn-cmp-card');
+                    figure.appendChild(workImage(url));
+                    figure.appendChild(el('figcaption', 'lrn-cmp-name', caption));
+                    figure.appendChild(zoomButton([url], 0));
+                    return figure;
+                }
+
+                function showResult(chosenUrl, matched, pickUrl, fresh) {
+                    stage.innerHTML = '';
+                    stage.appendChild(el(
+                        'p', matched ? 'lrn-blk-verdict is-ok' : 'lrn-blk-verdict is-neutral',
+                        matched ? '✓ Совпало с выбором преподавателя' : 'Не совпало с выбором преподавателя'
+                    ));
+                    var pair = el('div', 'lrn-cmp-pair');
+                    pair.appendChild(workFigure(chosenUrl, 'Твой выбор – ' + workName(chosenUrl).toLowerCase()));
+                    if (!matched && pickUrl) {
+                        pair.appendChild(workFigure(pickUrl, 'Выбор преподавателя – ' + workName(pickUrl).toLowerCase()));
+                    }
+                    stage.appendChild(pair);
+                    if (fresh) {
+                        // Шаги ниже открывает сервер — обновляем ленту по
+                        // кнопке, а не сразу: сделанный шаг в ленте
+                        // сворачивается, и на телефоне результат пропал бы
+                        // раньше, чем его успели прочитать.
+                        var next = el('button', 'btn-blue', 'Продолжить');
+                        next.type = 'button';
+                        next.addEventListener('click', function () { window.location.reload(); });
+                        stage.appendChild(next);
+                    }
+                }
+
+                if (block.chosen_url) {
+                    showResult(block.chosen_url, !!block.matched, block.pick_url, false);
+                    return wrap;
+                }
+                if (block.edit_reason || !block.submit_endpoint) {
+                    if (works.length) wrap.appendChild(photoGallery(works, 'Работа для сравнения'));
+                    if (block.edit_reason) wrap.appendChild(el('p', 'video-help', block.edit_reason));
+                    return wrap;
+                }
+                if (works.length < 2) {
+                    stage.appendChild(el('p', 'video-help', 'Работы для сравнения ещё не загружены.'));
+                    return wrap;
+                }
+
+                var champion;
+                var nextIndex;
+
+                function pickCard(url, other) {
+                    var card = el('div', 'lrn-cmp-card');
+                    var choose = el('button', 'lrn-cmp-choose');
+                    choose.type = 'button';
+                    choose.setAttribute('aria-label', 'Выбрать: ' + workName(url).toLowerCase());
+                    choose.appendChild(workImage(url));
+                    choose.appendChild(el('span', 'lrn-cmp-name', workName(url)));
+                    choose.addEventListener('click', function () {
+                        champion = url;
+                        if (nextIndex >= works.length - 1) {
+                            showFinal();
+                            return;
+                        }
+                        nextIndex += 1;
+                        showPair();
+                    });
+                    card.appendChild(choose);
+                    card.appendChild(zoomButton([url, other], 0));
+                    return card;
+                }
+
+                function showPair() {
+                    stage.innerHTML = '';
+                    var challenger = works[nextIndex];
+                    stage.appendChild(el(
+                        'p', 'lrn-card-note',
+                        'Пара ' + nextIndex + ' из ' + (works.length - 1)
+                        + '. Нажми на работу, которая наберёт больше баллов – она останется, рядом появится следующая.'
+                    ));
+                    var pair = el('div', 'lrn-cmp-pair');
+                    pair.appendChild(pickCard(champion, challenger));
+                    pair.appendChild(pickCard(challenger, champion));
+                    stage.appendChild(pair);
+                }
+
+                function start() {
+                    champion = works[0];
+                    nextIndex = 1;
+                    showPair();
+                }
+
+                function showFinal() {
+                    stage.innerHTML = '';
+                    var pair = el('div', 'lrn-cmp-pair is-single');
+                    pair.appendChild(workFigure(champion, 'Твой выбор – ' + workName(champion).toLowerCase()));
+                    stage.appendChild(pair);
+                    stage.appendChild(el('p', 'lrn-card-note', 'Отправить выбор можно один раз.'));
+                    var actions = el('div', 'form-actions');
+                    var send = el('button', 'btn-blue', 'Отправить выбор');
+                    send.type = 'button';
+                    var again = el('button', 'btn-outline', 'Начать заново');
+                    again.type = 'button';
+                    var note = el('p', 'video-progress-status');
+                    note.setAttribute('aria-live', 'polite');
+                    again.addEventListener('click', start);
+                    send.addEventListener('click', function () {
+                        send.disabled = true;
+                        again.disabled = true;
+                        note.classList.remove('is-error');
+                        note.textContent = 'Отправляем…';
+                        post(block.submit_endpoint, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ image_url: champion })
+                        }).then(function (resp) {
+                            return resp.json().catch(function () { return null; }).then(function (body) {
+                                return { ok: resp.ok && body && body.ok, body: body };
+                            });
+                        }).then(function (result) {
+                            if (!result.ok) {
+                                throw new Error(failure(result.body, 'Не удалось отправить. Попробуй ещё раз.'));
+                            }
+                            block.done = true;
+                            showResult(champion, !!result.body.matched, result.body.pick_url, true);
+                        }).catch(function (err) {
+                            send.disabled = false;
+                            again.disabled = false;
+                            note.textContent = (err && err.message)
+                                ? err.message
+                                : 'Не удалось отправить. Проверь связь и попробуй ещё раз.';
+                            note.classList.add('is-error');
+                        });
+                    });
+                    actions.appendChild(send);
+                    actions.appendChild(again);
+                    stage.appendChild(actions);
+                    stage.appendChild(note);
+                    send.focus();
+                }
+
+                start();
+                return wrap;
+            }
+
             var RENDERERS = {
                 text: renderText,
                 photo: renderPhoto,
@@ -1110,7 +1298,8 @@ scope)` и свойством `answered` (одна попытка: после о
                 upload: renderUpload,
                 rules: renderRules,
                 photo_upload: renderPhotoUpload,
-                media: renderMedia
+                media: renderMedia,
+                compare: renderCompare
             };
 
             api.render = function (block, index) {

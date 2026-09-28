@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.constants import MOCK_SUBJECTS, TARIFFS
 from app.models.task_block import (
+    BLOCK_COMPARE,
     BLOCK_LINK,
     BLOCK_MEDIA,
     BLOCK_PHOTO,
@@ -493,10 +494,15 @@ def _sync_images(db: DBSession, block: TaskBlock, items: list[dict] | None) -> N
     сохранять между сохранениями формы — ни ответов учеников, ни ссылок извне.
     Файлы в S3 при этом не трогаем, как и везде в проекте: та же картинка может
     стоять в копии задания в другой неделе.
+
+    У блока сравнения ответы учеников на картинки всё-таки ссылаются — поэтому
+    там ответ хранится URL-ом, а не id (см. `BLOCK_COMPARE`), и пересборка
+    его не рвёт.
     """
     db.query(TaskBlockImage).filter(
         TaskBlockImage.block_id == block.id
     ).delete(synchronize_session=False)
+    is_compare = block.block_type == BLOCK_COMPARE
     for order, raw in enumerate((items or [])[:MAX_BLOCK_IMAGES]):
         url = (raw.get("url") or "").strip()
         if not url:
@@ -507,6 +513,10 @@ def _sync_images(db: DBSession, block: TaskBlock, items: list[dict] | None) -> N
                 image_s3_url=url[:500],
                 image_s3_path=(raw.get("path") or None),
                 sort_order=order,
+                # Отметка «мой выбор» — только у сравнения: у галереи фото
+                # она ничего не значит, и блок могли переключить с одного
+                # типа на другой.
+                is_pick=bool(raw.get("is_pick")) if is_compare else False,
             )
         )
 
@@ -616,7 +626,11 @@ def _is_empty(block_type: str, item: dict) -> bool:
     молча отбрасываем, как отбрасывались пустые вопросы мини-опроса."""
     if block_type == BLOCK_VIDEO:
         return item.get("video_id") is None
-    if block_type == BLOCK_PHOTO:
+    if block_type in (BLOCK_PHOTO, BLOCK_COMPARE):
+        # У сравнения описание необязательно, содержимое — сами работы.
+        # Без этой ветки блок с работами, но без описания, падал бы в
+        # проверку `body` внизу и молча пропадал. Меньше двух работ и отметку
+        # «мой выбор» проверяет схема конструктора, до сервиса такое не доходит.
         return not [
             image for image in (item.get("images") or [])
             if (image.get("url") or "").strip()
@@ -979,6 +993,87 @@ def _close_answered_block(
     """
     if filled:
         close_block_for_user(db, block=block, user_id=user_id, source="answer")
+
+
+# --- сравнение работ (Лиза 27.09.2026, см. BLOCK_COMPARE) --------------------
+
+
+class CompareChoiceError(ValueError):
+    """Выбор в блоке сравнения не принят. `already` — ответ уже есть
+    (одна попытка), иначе — работы с таким адресом в блоке нет."""
+
+    def __init__(self, message: str, *, already: bool = False):
+        super().__init__(message)
+        self.already = already
+
+
+def compare_pick_url(images: list[TaskBlockImage]) -> str | None:
+    """Работа, которую отметил преподаватель."""
+    return next((image.image_s3_url for image in images if image.is_pick), None)
+
+
+def compare_work_label(images: list[TaskBlockImage], url: str | None) -> str:
+    """«Работа №k» по месту в галерее — так их видит и ученик, и преподаватель.
+
+    Адреса в галерее может уже не быть: преподаватель убрал работу после
+    ответа ученика. Тогда подпись об этом и говорит, а не падает.
+    """
+    for position, image in enumerate(images, start=1):
+        if image.image_s3_url == url:
+            return f"Работа №{position}"
+    return "Работа убрана из задания"
+
+
+def get_compare_answer(
+    db: DBSession, *, block_id: int, user_id: int, task_id: int
+) -> TaskBlockAnswer | None:
+    response = get_response(db, task_id=task_id, user_id=user_id)
+    if response is None:
+        return None
+    return (
+        db.query(TaskBlockAnswer)
+        .filter(
+            TaskBlockAnswer.response_id == response.id,
+            TaskBlockAnswer.block_id == block_id,
+        )
+        .one_or_none()
+    )
+
+
+def save_compare_choice(
+    db: DBSession, *, block: TaskBlock, user_id: int, image_url: str
+) -> bool:
+    """Сохранить победившую работу ученика и закрыть блок. Возвращает, совпал
+    ли выбор с преподавательским.
+
+    Одна попытка, как у вопроса с вариантами: иначе, увидев «не совпало»,
+    можно было бы переотправлять до совпадения. Адрес принимается только из
+    галереи этого блока — чужой ссылкой ответ не подделать.
+
+    Ответ пишется в ту же строку заполнения `TaskBlockResponse`, что и ответы
+    на вопросы задания, поэтому экран проверки видит его без своей ветки.
+    """
+    url = (image_url or "").strip()
+    images = get_images(db, [block.id]).get(block.id, [])
+    if url not in {image.image_s3_url for image in images}:
+        raise CompareChoiceError("Такой работы в задании нет")
+    if get_compare_answer(
+        db, block_id=block.id, user_id=user_id, task_id=block.task_id
+    ) is not None:
+        raise CompareChoiceError("Выбор уже сохранён", already=True)
+    response = get_response(db, task_id=block.task_id, user_id=user_id)
+    if response is None:
+        response = TaskBlockResponse(task_id=block.task_id, user_id=user_id)
+        db.add(response)
+        db.flush()
+    else:
+        # Строка заполнения могла появиться раньше — ученик уже отвечал на
+        # вопросы этого задания. Новая строка ответа её не трогает, а экран
+        # проверки сортирует и режет по неделе именно по `updated_at`.
+        response.updated_at = datetime.now(timezone.utc)
+    db.add(TaskBlockAnswer(response_id=response.id, block_id=block.id, text=url))
+    close_block_for_user(db, block=block, user_id=user_id, source="compare")
+    return url == compare_pick_url(images)
 
 
 def answered_block_ids(db: DBSession, *, response_id: int) -> set[int]:
@@ -1446,6 +1541,11 @@ def review_queue(
         return []
 
     options = get_options(db, [block.id for _a, block, _r, _t, _u in rows])
+    # Сравнение работ: ответ — адрес картинки, преподавателю он ничего не
+    # скажет. Переводим в «Работа №k» по месту в галерее.
+    compare_images = get_images(db, [
+        block.id for _a, block, _r, _t, _u in rows if block.block_type == BLOCK_COMPARE
+    ])
     chosen = {}
     for answer, _b, response, _t, _u in rows:
         chosen.setdefault(response.id, None)
@@ -1454,6 +1554,25 @@ def review_queue(
 
     items: list[dict] = []
     for answer, block, response, task, student in rows:
+        if block.block_type == BLOCK_COMPARE:
+            images = compare_images.get(block.id, [])
+            pick_url = compare_pick_url(images)
+            items.append({
+                "answer_id": answer.id,
+                "student_id": student.id,
+                "student_name": student.name,
+                "task_id": task.id,
+                "task_title": task.title,
+                "subject": task.subject,
+                "question": block.title or block.body or "",
+                "question_type": None,
+                "text": "",
+                "chosen": [compare_work_label(images, answer.text)],
+                "correct": [compare_work_label(images, pick_url)] if pick_url else [],
+                "reviewed": answer.reviewed_at is not None,
+                "answered_at": response.updated_at,
+            })
+            continue
         picked = chosen.get(response.id, {}).get(block.id, set())
         items.append({
             "answer_id": answer.id,

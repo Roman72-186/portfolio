@@ -273,6 +273,32 @@
 .ios-prg-day .prg-blk[data-block-type="rules"]     { border-left-color: var(--blk-rules); }
 .ios-prg-day .prg-blk[data-block-type="photo_upload"] { border-left-color: var(--blk-photo-upload); }
 .ios-prg-day .prg-blk[data-block-type="media"]     { border-left-color: var(--blk-media); }
+.ios-prg-day .prg-blk[data-block-type="compare"]   { border-left-color: var(--blk-compare); }
+
+/* Сравнение работ (Лиза 27.09.2026): под миниатюрой — отметка «Мой выбор»,
+   над ней — номер работы. Номер считает CSS-счётчик, а не скрипт: убрали
+   работу из середины — остальные перенумеровались сами, и номер совпадает с
+   «Работа №k», которую преподаватель потом увидит на экране проверки. */
+.ios-prg-day .prg-blk[data-block-type="compare"] .prg-blk-gallery { counter-reset: compare-work; }
+.ios-prg-day .prg-blk-thumb--compare {
+    height: auto;
+    display: flex; flex-direction: column; gap: var(--s-1);
+    counter-increment: compare-work;
+}
+.ios-prg-day .prg-blk-thumb--compare::before {
+    content: "№" counter(compare-work);
+    font-size: 12px; font-weight: 600; color: var(--dim);
+}
+.ios-prg-day .prg-blk-thumb--compare img { height: 96px; }
+.ios-prg-day .prg-blk-thumb--compare .prg-blk-thumb-remove { top: 22px; }
+.ios-prg-day .prg-blk-pick {
+    display: flex; align-items: center; gap: var(--s-1);
+    min-height: 32px;
+    font-size: 13px; color: var(--text); cursor: pointer;
+}
+.ios-prg-day .prg-blk-thumb--compare:has([data-b-image-pick]:checked) img {
+    outline: 3px solid var(--blk-compare); outline-offset: 1px;
+}
 
 /* Разрыв между карточками блоков (владелец 08.09.2026). 10px достались от
    компактных билетов пробника, а карточка блока выше в несколько раз:

@@ -123,6 +123,16 @@ BLOCK_PHOTO_UPLOAD = "photo_upload"
 # **не входит** в VIDEO_BLOCK_TYPES — тот кортеж про ролики каталога.
 # Ученик закрывает блок отметкой «Выполнено», как фото.
 BLOCK_MEDIA = "media"
+# Сравнение работ (Лиза, голосовое 27.09.2026, тест механики для годового
+# курса): преподаватель кладёт до десяти работ и отмечает ту, что по его
+# мнению наберёт больше баллов. Ученик сравнивает их парами — выбранная
+# остаётся, к ней приходит следующая, — и в финале видит, совпал ли его выбор
+# с преподавательским. Своих таблиц нет: работы — та же галерея
+# `TaskBlockImage` (с флагом `is_pick`), ответ — `TaskBlockAnswer.text`.
+#
+# **Ответ хранится URL-ом картинки, а не её id**: `_sync_images` пересобирает
+# картинки при каждом сохранении блока, и id после правки задания другие.
+BLOCK_COMPARE = "compare"
 
 # Что лежит в медиа-блоке: голосовое (аудио) или кружок (видео с камеры).
 MEDIA_VOICE = "voice"
@@ -151,7 +161,7 @@ SCALE_MIN = 0
 BLOCK_TYPES = (
     BLOCK_TEXT, BLOCK_PHOTO, BLOCK_VIDEO, BLOCK_LINK, BLOCK_QUESTION,
     BLOCK_PORTFOLIO, BLOCK_SCALE, BLOCK_TIMED, BLOCK_UPLOAD, BLOCK_RULES,
-    BLOCK_PHOTO_UPLOAD, BLOCK_MEDIA,
+    BLOCK_PHOTO_UPLOAD, BLOCK_MEDIA, BLOCK_COMPARE,
 )
 
 # Блоки, которые ученик закрывает загрузкой работы. Список нужен и роуту
@@ -178,7 +188,7 @@ SUBMISSION_BLOCK_TYPES = (BLOCK_UPLOAD, BLOCK_TIMED, BLOCK_PHOTO_UPLOAD)
 # продолжает ждать — иначе срок, поставленный ради статистики, молча снимал
 # бы обязательность.
 DEADLINE_BLOCKS_COMPLETION = SUBMISSION_BLOCK_TYPES + (
-    BLOCK_QUESTION, BLOCK_SCALE, BLOCK_RULES,
+    BLOCK_QUESTION, BLOCK_SCALE, BLOCK_RULES, BLOCK_COMPARE,
 )
 
 # Блоки, которые несут ролик (`video_id`) и галерею (`TaskBlockImage`).
@@ -190,7 +200,7 @@ DEADLINE_BLOCKS_COMPLETION = SUBMISSION_BLOCK_TYPES + (
 # VIDEO_BLOCK_TYPES читает и `video_catalog`: ролик в любом из этих блоков
 # открывается ученику по доступу к блоку, а не по правилу «без темы — всем».
 VIDEO_BLOCK_TYPES = (BLOCK_VIDEO, BLOCK_PORTFOLIO)
-IMAGE_BLOCK_TYPES = (BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD, BLOCK_PORTFOLIO)
+IMAGE_BLOCK_TYPES = (BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD, BLOCK_PORTFOLIO, BLOCK_COMPARE)
 
 # Типы, которые преподаватель может добавить кнопкой в конструкторе. Уже, чем
 # BLOCK_TYPES: отдельный текст скрыт, потому что пояснение к заданию пишется
@@ -238,6 +248,7 @@ BLOCK_TYPE_LABELS = {
     # только для старых блоков.
     BLOCK_PHOTO_UPLOAD: "Домашнее задание",
     BLOCK_MEDIA: "Голосовое / кружок",
+    BLOCK_COMPARE: "Сравнение работ",
 }
 
 # Тот же потолок, что у мини-опроса видео и прежнего task_quiz — общий язык
@@ -444,6 +455,12 @@ class TaskBlockImage(Base):
     image_s3_url: Mapped[str] = mapped_column(String(500), nullable=False)
     image_s3_path: Mapped[str | None] = mapped_column(String(300), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Работа, которую выбрал преподаватель, — только у BLOCK_COMPARE, ровно
+    # одна на блок (проверяет конструктор). Ученику до его ответа не
+    # отдаётся, как `TaskBlockOption.is_correct` у вопроса.
+    is_pick: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     __table_args__ = (
         Index("ix_task_block_images_order", "block_id", "sort_order"),

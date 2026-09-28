@@ -35,7 +35,7 @@ from app.db.database import get_db
 from app.dependencies import require_csrf_header, require_student
 from app.models.learning_video import LearningVideo
 from app.models.task_block import (
-    BLOCK_MEDIA, BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_RULES,
+    BLOCK_COMPARE, BLOCK_MEDIA, BLOCK_PHOTO, BLOCK_PHOTO_UPLOAD, BLOCK_PORTFOLIO, BLOCK_QUESTION, BLOCK_RULES,
     BLOCK_SCALE, BLOCK_TIMED, BLOCK_UPLOAD, BLOCK_VIDEO, MAX_BLOCKS,
     MAX_SUBMISSION_IMAGES, QUESTION_TEXT,
     SCALE_MAX, SCALE_MIN, SUBMISSION_BLOCK_TYPES, TaskBlock, TaskBlockAnswer,
@@ -67,6 +67,9 @@ from app.services.task_blocks import (
     add_submission_image as add_task_block_submission_image,
     answered_block_ids as task_block_answered_ids,
     close_block_for_user as close_task_block_for_user,
+    CompareChoiceError,
+    compare_pick_url,
+    save_compare_choice,
     count_submission_images as count_task_block_submission_images,
     get_submit_deadlines as get_task_block_submit_deadlines,
     get_task_submit_deadlines as get_task_level_submit_deadlines,
@@ -636,6 +639,30 @@ def cabinet_tracker_task_blocks(
             item["confirm_endpoint"] = f"/cabinet/tracker/blocks/{block.id}/done"
         elif block.block_type == "link":
             item["url"] = block.url
+        elif block.block_type == BLOCK_COMPARE:
+            # Сравнение работ (Лиза 27.09.2026). Выбор преподавателя уходит
+            # только вместе с ответом ученика — до этого `is_pick` наружу не
+            # отдаём, как `is_correct` у вопроса.
+            compare_images = images.get(block.id, [])
+            item["images"] = [{"url": i.image_s3_url} for i in compare_images]
+            chosen_url = answers_map.get(block.id) or None
+            state = get_task_block_state(db, block_id=block.id, user_id=user["user_id"])
+            item["done"] = bool(state and state.status == STATUS_DONE)
+            item["chosen_url"] = chosen_url
+            if chosen_url:
+                # Совпадение считаем при чтении по текущей отметке: если
+                # преподаватель передумал, ученик видит актуальный вердикт.
+                pick_url = compare_pick_url(compare_images)
+                item["pick_url"] = pick_url
+                item["matched"] = chosen_url == pick_url
+                item["edit_reason"] = None
+                item["submit_endpoint"] = None
+            else:
+                item["edit_reason"] = _deadline_reason(block)
+                item["submit_endpoint"] = (
+                    None if item["edit_reason"]
+                    else f"/cabinet/tracker/blocks/{block.id}/compare"
+                )
         elif block.block_type == BLOCK_SCALE:
             item["edit_reason"] = _deadline_reason(block) or (
                 "Преподаватель уже проверил ответ."
@@ -922,6 +949,50 @@ def confirm_photo_block_done(
     close_task_block_for_user(db, block=block, user_id=user["user_id"], source=source)
     db.commit()
     return JSONResponse({"ok": True})
+
+
+class CompareChoicePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    image_url: str = Field(min_length=1, max_length=500)
+
+
+@router.post("/tracker/blocks/{block_id}/compare", response_class=JSONResponse)
+def submit_compare_choice(
+    block_id: int,
+    payload: CompareChoicePayload,
+    user: Annotated[dict, Depends(require_student)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Финальный выбор ученика в блоке «Сравнение работ» (Лиза 27.09.2026).
+
+    Пары ученик перебирает в браузере, сюда приходит только победившая
+    работа. Одна попытка: повтор — 409, как у вопроса с вариантами. После
+    срока — 409 с тем же текстом, что у остальных блоков.
+    """
+    block = db.get(TaskBlock, block_id)
+    if block is None or block.block_type != BLOCK_COMPARE:
+        raise HTTPException(status_code=404, detail="Блок не найден")
+    task = _writable_task_or_404(db, user["user_id"], block.task_id)
+    # Срок — с тарифом ученика и сроком задания, как в ленте: без них
+    # `deadline_reason` молча смотрел бы только на общий срок блока.
+    reason = deadline_reason(
+        task, block,
+        user_tariff=user.get("tariff"),
+        tariff_deadlines=get_task_block_submit_deadlines(db, [block.id]).get(block.id),
+        task_tariff_deadlines=get_task_level_submit_deadlines(db, [task.id]).get(task.id),
+    )
+    if reason:
+        raise HTTPException(status_code=409, detail=reason)
+    try:
+        matched = save_compare_choice(
+            db, block=block, user_id=user["user_id"], image_url=payload.image_url
+        )
+    except CompareChoiceError as error:
+        raise HTTPException(status_code=409 if error.already else 422, detail=str(error))
+    pick_url = compare_pick_url(get_task_block_images(db, [block.id]).get(block.id, []))
+    db.commit()
+    return JSONResponse({"ok": True, "matched": matched, "pick_url": pick_url})
 
 
 MAX_UPLOAD_FILE_SIZE = 10 * 1024 * 1024

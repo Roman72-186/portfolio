@@ -226,6 +226,20 @@ function blockBodyHTML(type) {
             + '<div class="prg-blk-gallery" data-b-images></div>'
             + '<p class="prg-hint">Ученик увидит фото-задание и сдаст свою работу до 10 фото прямо здесь.</p>';
     }
+    if (type === 'compare') {
+        // Сравнение работ (Лиза 27.09.2026): ученик видит работы парами и
+        // выбирает ту, что наберёт больше баллов. Та же загрузка, что у
+        // «Фото», плюс отметка «Мой выбор» у каждой работы (addImageThumb).
+        // Название заполнено сразу — это и есть вопрос ученику; у уже
+        // сохранённого блока его перепишет fillBlockRow.
+        return ''
+            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название" placeholder="Название, например «Выбери работу, которая наберёт больше баллов»" value="Выбери работу, которая наберёт больше баллов"></label>'
+            + BODY_FIELD_OPTIONAL
+            + '<label class="prg-field"><input type="file" accept="image/*" multiple data-b-photo-file aria-label="Работы для сравнения"></label>'
+            + '<p class="prg-hint" data-b-photo-status></p>'
+            + '<div class="prg-blk-gallery" data-b-images></div>'
+            + '<p class="prg-hint">Загрузите от двух до десяти работ и отметьте ту, что, по-вашему, наберёт больше баллов. Ученик увидит работы парами в порядке загрузки, выберет свою и после отправки узнает, совпал ли его выбор с вашим.</p>';
+    }
     if (type === 'timed') {
         // Контрольная на время (владелец 03.09.2026): «в контрольной у нас
         // таймер… давай сделаем один час». Ученик стартует сам и сдаёт
@@ -494,7 +508,7 @@ function fillBlockRow(row, block) {
     }
     if (row.querySelector('[data-b-images]')) {
         (block.images || []).forEach(function (image) {
-            addImageThumb(row, image.url, image.path);
+            addImageThumb(row, image.url, image.path, image.is_pick);
         });
     }
     var hiddenBox = row.querySelector('[data-b-hidden-until-done]');
@@ -755,6 +769,20 @@ function collectFormBlocks(form) {
                 });
             });
         }
+        if (type === 'compare') {
+            // Без `return` на нехватке работ или отметки: пусть сервер
+            // откажет со словами «минимум две работы» / «отметьте свой
+            // выбор» — иначе блок молча пропал бы при сохранении.
+            item.images = [];
+            row.querySelectorAll('[data-b-image]').forEach(function (thumb) {
+                var pick = thumb.querySelector('[data-b-image-pick]');
+                item.images.push({
+                    url: thumb.getAttribute('data-url'),
+                    path: thumb.getAttribute('data-path') || null,
+                    is_pick: !!(pick && pick.checked)
+                });
+            });
+        }
         if (type === 'rules') {
             item.options = [];
             row.querySelectorAll('[data-b-option]').forEach(function (optionRow) {
@@ -820,7 +848,12 @@ function collectFormBlocks(form) {
 // Фото уходит на сервер сразу при выборе — форма несёт только {url, path},
 // тот же контракт, что у обложек видео и картинок самостоятельной работы.
 // Переиспользует общий `uploadImage` и готовую ручку `/upload-cover`.
-function addImageThumb(row, url, path) {
+//
+// У сравнения работ под каждой миниатюрой — радиокнопка «Мой выбор».
+// Имя группы своё у каждой строки: у несохранённого блока нет id, а общее
+// имя на странице связало бы отметки разных блоков в одну.
+var comparePickGroup = 0;
+function addImageThumb(row, url, path, isPick) {
     var holder = row.querySelector('[data-b-images]');
     if (!holder) return;
     var cell = document.createElement('span');
@@ -840,5 +873,22 @@ function addImageThumb(row, url, path) {
     drop.textContent = '×';
     cell.appendChild(img);
     cell.appendChild(drop);
+    if (row.getAttribute('data-block-type') === 'compare') {
+        if (!row.getAttribute('data-pick-group')) {
+            comparePickGroup += 1;
+            row.setAttribute('data-pick-group', 'b-pick-' + comparePickGroup);
+        }
+        cell.classList.add('prg-blk-thumb--compare');
+        var pickLabel = document.createElement('label');
+        pickLabel.className = 'prg-blk-pick';
+        var pick = document.createElement('input');
+        pick.type = 'radio';
+        pick.name = row.getAttribute('data-pick-group');
+        pick.checked = !!isPick;
+        pick.setAttribute('data-b-image-pick', '');
+        pickLabel.appendChild(pick);
+        pickLabel.appendChild(document.createTextNode('Мой выбор'));
+        cell.appendChild(pickLabel);
+    }
     holder.appendChild(cell);
 }

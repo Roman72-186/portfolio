@@ -32,6 +32,7 @@ from app.models.learning_topic import (
 )
 from app.models.learning_video import LearningVideo
 from app.models.task_block import (
+    BLOCK_COMPARE,
     BLOCK_QUESTION,
     BLOCK_RULES,
     BLOCK_SCALE,
@@ -475,8 +476,11 @@ def _edit_payloads(
                 "title": b.title,
                 "body": b.body,
                 "video_id": b.video_id,
+                # `is_pick` — выбор преподавателя в сравнении работ: без него
+                # повторное сохранение открытого задания отбила бы проверка
+                # «отметьте свой выбор».
                 "images": [
-                    {"url": i.image_s3_url, "path": i.image_s3_path}
+                    {"url": i.image_s3_url, "path": i.image_s3_path, "is_pick": i.is_pick}
                     for i in block_images.get(b.id, [])
                 ],
                 "url": b.url,
@@ -937,6 +941,9 @@ class BlockImageItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
     url: str = Field(min_length=1, max_length=500)
     path: str | None = Field(default=None, max_length=300)
+    # Выбор преподавателя в блоке «Сравнение работ» (Лиза 27.09.2026). У
+    # остальных галерей `sync_blocks` его обнуляет.
+    is_pick: bool = False
 
 
 class BlockDeadlineItem(BaseModel):
@@ -1102,6 +1109,19 @@ class BlockItem(BaseModel):
             raise ValueError(
                 "У вопроса с вариантами отметьте хотя бы один верный ответ"
             )
+        return self
+
+    @model_validator(mode="after")
+    def compare_needs_works_and_one_pick(self) -> "BlockItem":
+        """Сравнение работ не сохраняется без пары работ и выбора
+        преподавателя — по той же причине, что вопрос без верного ответа:
+        ученику не с чем будет сверить свой выбор (Лиза 27.09.2026)."""
+        if self.block_type != BLOCK_COMPARE:
+            return self
+        if len(self.images) < 2:
+            raise ValueError("В сравнении нужно минимум две работы")
+        if sum(1 for image in self.images if image.is_pick) != 1:
+            raise ValueError("Отметьте одну работу как свой выбор")
         return self
 
     @field_validator("block_type")
@@ -1781,7 +1801,7 @@ def blocks_source_content(
             # каждого ученика, когда копия блока станет доступна.
             "portfolio_window_hours": b.portfolio_window_hours,
             "images": [
-                {"url": i.image_s3_url, "path": i.image_s3_path}
+                {"url": i.image_s3_url, "path": i.image_s3_path, "is_pick": i.is_pick}
                 for i in images.get(b.id, [])
             ],
             "options": [

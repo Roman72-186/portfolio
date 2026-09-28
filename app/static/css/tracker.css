@@ -1175,6 +1175,7 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-blk-rules        { border-left-color: var(--blk-rules); }
 .lrn-blk-photo-upload { border-left-color: var(--blk-photo-upload); }
 .lrn-blk-media        { border-left-color: var(--blk-media); }
+.lrn-blk-compare      { border-left-color: var(--blk-compare); }
 /* Плееры блока «Голосовое / кружок»: кружок — видео в круге, как в Telegram. */
 .lrn-blk-audio { display: block; width: 100%; max-width: 360px; }
 .lrn-blk-note {
@@ -1320,6 +1321,58 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 .lrn-blk-verdict.is-wrong { color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
 
 .lrn-blk-gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s-2); }
+
+/* Сравнение работ (Лиза 27.09.2026). Пара — две колонки, пока каждой
+   работе хватает 240px, на телефоне одна над другой: рядом на 375px работы
+   сжимались бы до 170px, а по ним ученик решает, какая сильнее.
+   Работа вписывается целиком (contain), без обрезки по центру, как у
+   галереи: обрезанный край листа — это уже другая композиция. */
+.lrn-cmp { display: flex; flex-direction: column; gap: var(--s-3); }
+.lrn-cmp-pair {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--s-3);
+    animation: lrn-cmp-in var(--duration-base) var(--ease-out);
+}
+.lrn-cmp-pair.is-single { grid-template-columns: minmax(0, 420px); }
+@keyframes lrn-cmp-in { from { opacity: 0; } to { opacity: 1; } }
+.lrn-cmp-card { position: relative; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--s-2); }
+.lrn-cmp-choose {
+    display: flex; flex-direction: column; gap: var(--s-2);
+    width: 100%; padding: var(--s-2);
+    border: 1px solid var(--line); border-radius: var(--r-md);
+    background: var(--surface); color: var(--ink);
+    font: inherit; text-align: left; cursor: pointer;
+    transition: border-color var(--duration-fast), transform var(--duration-fast) var(--ease-out);
+}
+.lrn-cmp-choose:hover { border-color: var(--blk-compare); }
+.lrn-cmp-choose:active { transform: scale(0.98); }
+.lrn-cmp-choose:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+/* Высота — не больше трети экрана: на телефоне работы стоят одна над другой,
+   и без потолка вторая уезжала за край, пару приходилось сравнивать
+   прокруткой девять раз подряд (проход на 375px, 28.09.2026). */
+.lrn-cmp-img {
+    display: block; width: 100%; aspect-ratio: 4 / 5; max-height: 34vh;
+    object-fit: contain; border-radius: var(--r-sm); background: var(--surface-2);
+}
+@media (min-width: 761px) { .lrn-cmp-img { max-height: 60vh; } }
+.lrn-cmp-name { font-weight: 600; font-size: 14px; color: var(--ink); }
+.lrn-cmp-zoom {
+    position: absolute; top: var(--s-3); right: var(--s-3);
+    width: 44px; height: 44px; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--line); border-radius: 50%;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    font-size: 18px; line-height: 1; cursor: pointer;
+}
+.lrn-cmp-zoom:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+/* «Не совпало» — не ошибка ученика: у сравнения нет неверного ответа,
+   поэтому нейтральная плашка вместо красной is-wrong. */
+.lrn-blk-verdict.is-neutral { color: var(--text); background: var(--surface-2); }
+@media (prefers-reduced-motion: reduce) {
+    .lrn-cmp-pair { animation: none; }
+    .lrn-cmp-choose { transition: none; }
+    .lrn-cmp-choose:active { transform: none; }
+}
 .lrn-blk-gallery.is-single { grid-template-columns: 1fr; }
 .lrn-blk-option input:disabled + span { color: var(--muted); }
 .lrn-blk-option--diagnostic input[type="radio"] { appearance: none; width: 18px; height: 18px; border: 2px solid var(--muted); border-radius: 4px; background: var(--surface); cursor: pointer; }

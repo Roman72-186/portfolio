@@ -1116,6 +1116,9 @@ def copy_task_blocks(db: Session, *, from_task_id: int, to_task_id: int) -> None
                     image_s3_url=image.image_s3_url,
                     image_s3_path=image.image_s3_path,
                     sort_order=image.sort_order,
+                    # Без отметки копия сравнения работ всем ученикам
+                    # показывала бы «Не совпало».
+                    is_pick=image.is_pick,
                 )
             )
     db.flush()
