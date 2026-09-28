@@ -205,3 +205,27 @@ def test_event_ends_before_starts_is_rejected(client, user_factory, session_fact
         },
     )
     assert response.status_code == 422
+
+
+def test_event_meeting_url_must_be_http_or_https(client, db, user_factory, session_factory):
+    """Код-ревью 28.09.2026, P2: ссылка на созвон уходит в `href` у каждого
+    ученика из адресатов дайджеста. Схема `javascript:` выполнила бы код у
+    того, кто нажмёт; CSP с `'unsafe-inline'` её не останавливает."""
+    _staff_client(client, user_factory, session_factory)
+    create_resp = client.post(
+        PAGE,
+        json={"title": "Октябрь", "year": 2026, "month": 10, "assign_to_all": True, "tag_ids": [], "assignee_usernames": ""},
+    )
+    digest_id = create_resp.json()["digest_id"]
+
+    response = client.post(
+        f"{PAGE}/{digest_id}/events",
+        json={
+            "kind": "deadline", "title": "Созвон",
+            "note": None, "starts_on": "2026-10-10", "ends_on": "2026-10-10",
+            "meeting_url": "javascript:alert(document.cookie)", "sort_order": 0,
+        },
+    )
+
+    assert response.status_code == 422
+    assert db.query(ScheduleEvent).filter_by(digest_id=digest_id).count() == 0

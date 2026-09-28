@@ -121,8 +121,16 @@ class EventPayload(BaseModel):
     @field_validator("meeting_url")
     @classmethod
     def strip_url(cls, value: str | None) -> str | None:
+        """Только http и https: ссылка уходит в `href` у каждого ученика из
+        адресатов дайджеста, и схема `javascript:` выполнила бы код у того,
+        кто нажмёт (код-ревью 28.09.2026, P2). Та же проверка, что у ссылки
+        в блоке конструктора (`cabinet_program.py::validate_url`)."""
         value = (value or "").strip()
-        return value or None
+        if not value:
+            return None
+        if not value.lower().startswith(("http://", "https://")):
+            raise ValueError("Ссылка на созвон должна начинаться с http:// или https://")
+        return value
 
     @field_validator("ends_on")
     @classmethod
