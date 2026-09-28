@@ -34,6 +34,7 @@ from app.models.task_block import (
     TaskBlock,
     TaskBlockAnswer,
     TaskBlockAnswerOption,
+    TaskBlockCompareStep,
     TaskBlockImage,
     TaskBlockOption,
     TaskBlockRequiredTariff,
@@ -1145,6 +1146,136 @@ def save_compare_choice(
     return url == compare_pick_url(images)
 
 
+def _compare_steps_query(db: DBSession, *, block_id: int, user_id: int):
+    return db.query(TaskBlockCompareStep).filter(
+        TaskBlockCompareStep.block_id == block_id,
+        TaskBlockCompareStep.user_id == user_id,
+    )
+
+
+def compare_progress(
+    db: DBSession, *, block_id: int, user_id: int, images: list[TaskBlockImage]
+) -> dict | None:
+    """Пара, на которой ученик остановился (владелец 28.09.2026: после
+    перезагрузки — туда же, а не с начала).
+
+    Работы идут в порядке галереи: пара k — победитель прошлых пар против
+    работы №k+1. Если преподаватель переставил или убрал работы посреди
+    турнира, сохранённые пары описывают уже другую галерею — тогда `stale`,
+    и турнир идёт с первой пары. Сами шаги здесь не стираются: лента — чтение,
+    стирает их следующий выбор (`save_compare_step`).
+    """
+    works = [image.image_s3_url for image in images]
+    if len(works) < 2:
+        return None
+    total = len(works) - 1
+    steps = _compare_steps_query(db, block_id=block_id, user_id=user_id).order_by(
+        TaskBlockCompareStep.step
+    ).all()
+    stale = bool(steps) and (
+        len(steps) >= total
+        or any(
+            s.step != position
+            or s.right_url != works[position]
+            or s.winner_url not in (s.left_url, s.right_url)
+            for position, s in enumerate(steps, start=1)
+        )
+        or steps[-1].winner_url not in works
+    )
+    if stale or not steps:
+        champion, step = works[0], 1
+    else:
+        champion, step = steps[-1].winner_url, len(steps) + 1
+    return {
+        "champion_url": champion,
+        "challenger_url": works[step],
+        "step": step,
+        "total": total,
+        "stale": stale,
+    }
+
+
+def save_compare_step(
+    db: DBSession, *, block: TaskBlock, user_id: int, image_url: str,
+    step: int | None = None,
+) -> dict:
+    """Выбор ученика в текущей паре. Окончательный: пара, которую сервер
+    считает текущей, — единственная, в которой можно выбирать, так что ни
+    переиграть прошлую, ни перескочить вперёд нельзя.
+
+    На последней паре сразу пишет итоговый ответ (`save_compare_choice`) и
+    возвращает вердикт — отдельной кнопки «Отправить» нет (владелец 28.09.2026).
+    """
+    url = (image_url or "").strip()
+    if get_compare_answer(
+        db, block_id=block.id, user_id=user_id, task_id=block.task_id
+    ) is not None:
+        raise CompareChoiceError("Выбор уже сохранён", already=True)
+    images = get_images(db, [block.id]).get(block.id, [])
+    progress = compare_progress(db, block_id=block.id, user_id=user_id, images=images)
+    if progress is None:
+        raise CompareChoiceError("Работы для сравнения ещё не загружены")
+    # Номер пары от браузера: второе нажатие той же пары (двойной клик, две
+    # вкладки) иначе засчиталось бы выбором в следующей.
+    if step is not None and step != progress["step"]:
+        raise CompareChoiceError("Этот выбор уже сохранён. Обнови страницу", already=True)
+    if url not in (progress["champion_url"], progress["challenger_url"]):
+        raise CompareChoiceError("Этой работы нет в текущей паре. Обнови страницу")
+    if progress["stale"]:
+        _compare_steps_query(db, block_id=block.id, user_id=user_id).delete(
+            synchronize_session=False
+        )
+    db.add(TaskBlockCompareStep(
+        block_id=block.id,
+        user_id=user_id,
+        step=progress["step"],
+        left_url=progress["champion_url"],
+        right_url=progress["challenger_url"],
+        winner_url=url,
+    ))
+    db.flush()
+    if progress["step"] < progress["total"]:
+        next_step = progress["step"] + 1
+        return {
+            "finished": False,
+            "champion_url": url,
+            "challenger_url": images[next_step].image_s3_url,
+            "step": next_step,
+            "total": progress["total"],
+        }
+    matched = save_compare_choice(db, block=block, user_id=user_id, image_url=url)
+    return {
+        "finished": True,
+        "chosen_url": url,
+        "matched": matched,
+        "pick_url": compare_pick_url(images),
+    }
+
+
+def get_compare_steps(
+    db: DBSession, pairs: list[tuple[int, int]]
+) -> dict[tuple[int, int], list[TaskBlockCompareStep]]:
+    """Ход выбора пачкой: (block_id, user_id) → пары по порядку."""
+    wanted = set(pairs)
+    if not wanted:
+        return {}
+    rows = (
+        db.query(TaskBlockCompareStep)
+        .filter(
+            TaskBlockCompareStep.block_id.in_({b for b, _u in wanted}),
+            TaskBlockCompareStep.user_id.in_({u for _b, u in wanted}),
+        )
+        .order_by(TaskBlockCompareStep.step)
+        .all()
+    )
+    grouped: dict[tuple[int, int], list[TaskBlockCompareStep]] = {}
+    for row in rows:
+        key = (row.block_id, row.user_id)
+        if key in wanted:
+            grouped.setdefault(key, []).append(row)
+    return grouped
+
+
 def answered_block_ids(db: DBSession, *, response_id: int) -> set[int]:
     """Блоки, на которые у ученика есть непустой ответ.
 
@@ -1621,6 +1752,11 @@ def review_queue(
     compare_images = get_images(db, [
         block.id for _a, block, _r, _t, _u in rows if block.block_type == BLOCK_COMPARE
     ])
+    # Ход выбора по парам — проверяющим, не ученику (владелец 28.09.2026).
+    compare_steps = get_compare_steps(db, [
+        (block.id, student.id)
+        for _a, block, _r, _t, student in rows if block.block_type == BLOCK_COMPARE
+    ])
     chosen = {}
     for answer, _b, response, _t, _u in rows:
         chosen.setdefault(response.id, None)
@@ -1644,6 +1780,18 @@ def review_queue(
                 "text": "",
                 "chosen": [compare_work_label(images, answer.text)],
                 "correct": [compare_work_label(images, pick_url)] if pick_url else [],
+                "compare_pick_url": pick_url,
+                "compare_steps": [
+                    {
+                        "step": s.step,
+                        "left_url": s.left_url,
+                        "right_url": s.right_url,
+                        "winner_url": s.winner_url,
+                        "left_label": compare_work_label(images, s.left_url),
+                        "right_label": compare_work_label(images, s.right_url),
+                    }
+                    for s in compare_steps.get((block.id, student.id), [])
+                ],
                 "reviewed": answer.reviewed_at is not None,
                 "answered_at": response.updated_at,
             })

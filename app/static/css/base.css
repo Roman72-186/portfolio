@@ -1066,6 +1066,18 @@ input[type="radio"]:focus-visible { outline: 2px solid var(--ios-blue); outline-
 .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
 .photo-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-sm); border: 1px solid var(--line); }
 
+/* Ход выбора в блоке «Сравнение работ» на экране проверки (владелец
+   28.09.2026): пара за парой, выбранная работа обведена. */
+.cmp-steps { margin-top: var(--s-2); }
+.cmp-steps > summary { cursor: pointer; font-weight: 600; }
+.cmp-steps-list { list-style: none; margin: var(--s-2) 0 0; padding: 0; display: grid; gap: 12px; }
+.cmp-step { display: grid; grid-template-columns: repeat(2, minmax(0, 160px)); gap: var(--s-2); }
+.cmp-step-num { grid-column: 1 / -1; font-size: 13px; color: var(--dim); }
+.cmp-step-work { margin: 0; min-width: 0; display: grid; gap: 4px; font-size: 13px; }
+.cmp-step-work img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--r-sm); border: 1px solid var(--line); }
+.cmp-step-work.is-winner img { border: 3px solid var(--success); }
+.cmp-step-work .chip { justify-self: start; }
+
 /* ═══════════════════════════════════════
    LIGHTBOX
    ═══════════════════════════════════════ */

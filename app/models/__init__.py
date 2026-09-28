@@ -29,6 +29,7 @@ from app.models.task_block import (
     TaskBlock,
     TaskBlockAnswer,
     TaskBlockAnswerOption,
+    TaskBlockCompareStep,
     TaskBlockImage,
     TaskBlockOption,
     TaskBlockResponse,

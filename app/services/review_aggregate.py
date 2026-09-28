@@ -81,6 +81,10 @@ class ReviewItem:
     # Файлы сданной работы — у `block_work`: проверяющий смотрит их прямо в
     # карточке, отдельного экрана у этого домена нет.
     images: list[str] | None = None
+    # Блок «Сравнение работ»: пары, которые ученик прошёл, и работа, отмеченная
+    # преподавателем, — чтобы проверяющий видел ход выбора с миниатюрами.
+    compare_steps: list[dict] | None = None
+    compare_pick_url: str | None = None
 
 
 def _task_block_items(
@@ -127,6 +131,8 @@ def _task_block_items(
             chosen=row["chosen"],
             correct=row["correct"],
             text=row["text"],
+            compare_steps=row.get("compare_steps"),
+            compare_pick_url=row.get("compare_pick_url"),
         )
         for row in raw
     ]

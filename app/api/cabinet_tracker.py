@@ -28,6 +28,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
 
 from app.api.cabinet_student import needs_profile_setup
@@ -69,7 +70,8 @@ from app.services.task_blocks import (
     close_block_for_user as close_task_block_for_user,
     CompareChoiceError,
     compare_pick_url,
-    save_compare_choice,
+    compare_progress,
+    save_compare_step,
     count_submission_images as count_task_block_submission_images,
     get_submit_deadlines as get_task_block_submit_deadlines,
     get_task_submit_deadlines as get_task_level_submit_deadlines,
@@ -674,6 +676,15 @@ def cabinet_tracker_task_blocks(
                     None if item["edit_reason"]
                     else f"/cabinet/tracker/blocks/{block.id}/compare"
                 )
+                # Пара, на которой ученик остановился: после перезагрузки —
+                # туда же (владелец 28.09.2026). Турнир ведёт сервер.
+                progress = compare_progress(
+                    db, block_id=block.id, user_id=user["user_id"], images=compare_images
+                )
+                item["progress"] = (
+                    {key: progress[key] for key in ("champion_url", "challenger_url", "step", "total")}
+                    if progress else None
+                )
         elif block.block_type == BLOCK_SCALE:
             item["edit_reason"] = _deadline_reason(block) or (
                 "Преподаватель уже проверил ответ."
@@ -971,6 +982,8 @@ def confirm_photo_block_done(
 class CompareChoicePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     image_url: str = Field(min_length=1, max_length=500)
+    # Номер пары, в которой ученик нажал: сервер отвергает устаревший.
+    step: int | None = Field(default=None, ge=1)
 
 
 @router.post("/tracker/blocks/{block_id}/compare", response_class=JSONResponse)
@@ -981,11 +994,12 @@ def submit_compare_choice(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
-    """Финальный выбор ученика в блоке «Сравнение работ» (Лиза 27.09.2026).
+    """Выбор ученика в текущей паре блока «Сравнение работ» (Лиза 27.09.2026).
 
-    Пары ученик перебирает в браузере, сюда приходит только победившая
-    работа. Одна попытка: повтор — 409, как у вопроса с вариантами. После
-    срока — 409 с тем же текстом, что у остальных блоков.
+    Владелец 28.09.2026: каждое нажатие — сюда, выбор окончательный, пару
+    ведёт сервер. Ответ — следующая пара или, после последней, вердикт.
+    Повтор после итога — 409, работа не из текущей пары — 422. После срока —
+    409 с тем же текстом, что у остальных блоков.
     """
     block = db.get(TaskBlock, block_id)
     if block is None or block.block_type != BLOCK_COMPARE:
@@ -1002,14 +1016,19 @@ def submit_compare_choice(
     if reason:
         raise HTTPException(status_code=409, detail=reason)
     try:
-        matched = save_compare_choice(
-            db, block=block, user_id=user["user_id"], image_url=payload.image_url
+        result = save_compare_step(
+            db, block=block, user_id=user["user_id"], image_url=payload.image_url,
+            step=payload.step,
         )
+        db.commit()
     except CompareChoiceError as error:
+        db.rollback()
         raise HTTPException(status_code=409 if error.already else 422, detail=str(error))
-    pick_url = compare_pick_url(get_task_block_images(db, [block.id]).get(block.id, []))
-    db.commit()
-    return JSONResponse({"ok": True, "matched": matched, "pick_url": pick_url})
+    except IntegrityError:
+        # Второй запрос на ту же пару (двойное нажатие, две вкладки).
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Этот выбор уже сохранён. Обнови страницу")
+    return JSONResponse({"ok": True, **result})
 
 
 MAX_UPLOAD_FILE_SIZE = 10 * 1024 * 1024

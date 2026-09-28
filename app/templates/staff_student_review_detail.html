@@ -82,6 +82,34 @@
                 {% endif %}
                 {% endif %}
                 {% if item.text %}<p>{{ item.text }}</p>{% endif %}
+                {# Сравнение работ: ход выбора по парам (владелец 28.09.2026).
+                   Ученику не показывается — только проверяющим. #}
+                {% if item.compare_steps %}
+                <details class="cmp-steps">
+                    <summary>Ход выбора: {{ item.compare_steps|length }} {{ 'пара' if item.compare_steps|length == 1 else ('пары' if item.compare_steps|length < 5 else 'пар') }}</summary>
+                    <ol class="cmp-steps-list" data-gallery="cmp-{{ item.item_id }}">
+                        {% for s in item.compare_steps %}
+                        <li class="cmp-step">
+                            <span class="cmp-step-num">Пара {{ s.step }}</span>
+                            {% for url, label in [(s.left_url, s.left_label), (s.right_url, s.right_label)] %}
+                            <figure class="cmp-step-work{{ ' is-winner' if url == s.winner_url }}">
+                                <button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть {{ label|lower }}">
+                                    <img src="{{ url }}" alt="{{ label }}" loading="lazy">
+                                </button>
+                                <figcaption>
+                                    {{ label }}
+                                    {% if url == s.winner_url %}<strong>выбрал</strong>{% endif %}
+                                    {% if url == item.compare_pick_url %}<span class="chip">выбор преподавателя</span>{% endif %}
+                                </figcaption>
+                            </figure>
+                            {% endfor %}
+                        </li>
+                        {% endfor %}
+                    </ol>
+                </details>
+                {% elif item.compare_pick_url %}
+                <p class="prg-hint">Ход выбора по этому ответу не сохранился: ученик ответил раньше, чем его начали записывать.</p>
+                {% endif %}
                 {% endif %}
                 {# Работа, сданная в блоке задания: фото и описание видны прямо
                    здесь — отдельного экрана у этого домена нет. #}

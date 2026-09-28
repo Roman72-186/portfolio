@@ -1220,105 +1220,90 @@ scope)` и свойством `answered` (одна попытка: после о
                     if (block.edit_reason) wrap.appendChild(el('p', 'video-help', block.edit_reason));
                     return wrap;
                 }
-                if (works.length < 2) {
+                if (!block.progress) {
                     stage.appendChild(el('p', 'video-help', 'Работы для сравнения ещё не загружены.'));
                     return wrap;
                 }
 
-                var champion;
-                var nextIndex;
+                // Турнир ведёт сервер (владелец 28.09.2026): каждое нажатие
+                // сохраняется сразу и окончательно, в ответ приходит следующая
+                // пара. Поэтому после перезагрузки ученик там же, где был.
+                var busy = false;
+                var note = el('p', 'video-progress-status');
+                note.setAttribute('aria-live', 'polite');
 
-                function pickCard(url, other) {
+                function preload(url) {
+                    if (url) (new Image()).src = url;
+                }
+
+                function pickCard(url, other, pair, step) {
                     var card = el('div', 'lrn-cmp-card');
                     var choose = el('button', 'lrn-cmp-choose');
                     choose.type = 'button';
                     choose.setAttribute('aria-label', 'Выбрать: ' + workName(url).toLowerCase());
                     choose.appendChild(workImage(url));
                     choose.appendChild(el('span', 'lrn-cmp-name', workName(url)));
-                    choose.addEventListener('click', function () {
-                        champion = url;
-                        if (nextIndex >= works.length - 1) {
-                            showFinal();
-                            return;
-                        }
-                        nextIndex += 1;
-                        showPair();
-                    });
+                    choose.addEventListener('click', function () { choosePair(url, pair, step); });
                     card.appendChild(choose);
                     card.appendChild(zoomButton([url, other], 0));
                     return card;
                 }
 
-                function showPair() {
+                function showPair(state) {
                     stage.innerHTML = '';
-                    var challenger = works[nextIndex];
                     stage.appendChild(el(
                         'p', 'lrn-card-note',
-                        'Пара ' + nextIndex + ' из ' + (works.length - 1)
-                        + '. Нажми на работу, которая наберёт больше баллов – она останется, рядом появится следующая.'
+                        'Пара ' + state.step + ' из ' + state.total
+                        + '. Нажми на работу, которая наберёт больше баллов. Выбор сразу сохраняется, '
+                        + 'переиграть его нельзя. Выбранная останется, рядом появится следующая.'
                     ));
                     var pair = el('div', 'lrn-cmp-pair');
-                    pair.appendChild(pickCard(champion, challenger));
-                    pair.appendChild(pickCard(challenger, champion));
+                    pair.appendChild(pickCard(state.champion_url, state.challenger_url, pair, state.step));
+                    pair.appendChild(pickCard(state.challenger_url, state.champion_url, pair, state.step));
                     stage.appendChild(pair);
-                }
-
-                function start() {
-                    champion = works[0];
-                    nextIndex = 1;
-                    showPair();
-                }
-
-                function showFinal() {
-                    stage.innerHTML = '';
-                    var pair = el('div', 'lrn-cmp-pair is-single');
-                    pair.appendChild(workFigure(champion, 'Твой выбор – ' + workName(champion).toLowerCase()));
-                    stage.appendChild(pair);
-                    stage.appendChild(el('p', 'lrn-card-note', 'Отправить выбор можно один раз.'));
-                    var actions = el('div', 'form-actions');
-                    var send = el('button', 'btn-blue', 'Отправить выбор');
-                    send.type = 'button';
-                    var again = el('button', 'btn-outline', 'Начать заново');
-                    again.type = 'button';
-                    var note = el('p', 'video-progress-status');
-                    note.setAttribute('aria-live', 'polite');
-                    again.addEventListener('click', start);
-                    send.addEventListener('click', function () {
-                        send.disabled = true;
-                        again.disabled = true;
-                        note.classList.remove('is-error');
-                        note.textContent = 'Отправляем…';
-                        post(block.submit_endpoint, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ image_url: champion })
-                        }).then(function (resp) {
-                            return resp.json().catch(function () { return null; }).then(function (body) {
-                                return { ok: resp.ok && body && body.ok, body: body };
-                            });
-                        }).then(function (result) {
-                            if (!result.ok) {
-                                throw new Error(failure(result.body, 'Не удалось отправить. Попробуй ещё раз.'));
-                            }
-                            block.done = true;
-                            showResult(champion, !!result.body.matched, result.body.pick_url, true);
-                        }).catch(function (err) {
-                            send.disabled = false;
-                            again.disabled = false;
-                            note.textContent = (err && err.message)
-                                ? err.message
-                                : 'Не удалось отправить. Проверь связь и попробуй ещё раз.';
-                            note.classList.add('is-error');
-                        });
-                    });
-                    actions.appendChild(send);
-                    actions.appendChild(again);
-                    stage.appendChild(actions);
+                    note.textContent = '';
+                    note.classList.remove('is-error');
                     stage.appendChild(note);
-                    send.focus();
+                    preload(works[state.step + 1]);
                 }
 
-                start();
+                function choosePair(url, pair, step) {
+                    if (busy) return;
+                    busy = true;
+                    pair.querySelectorAll('.lrn-cmp-choose').forEach(function (btn) { btn.disabled = true; });
+                    note.classList.remove('is-error');
+                    note.textContent = 'Сохраняем…';
+                    post(block.submit_endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ image_url: url, step: step })
+                    }).then(function (resp) {
+                        return resp.json().catch(function () { return null; }).then(function (body) {
+                            return { ok: resp.ok && body && body.ok, body: body };
+                        });
+                    }).then(function (result) {
+                        if (!result.ok) {
+                            throw new Error(failure(result.body, 'Не удалось сохранить выбор. Попробуй ещё раз.'));
+                        }
+                        busy = false;
+                        var body = result.body;
+                        if (body.finished) {
+                            block.done = true;
+                            showResult(body.chosen_url, !!body.matched, body.pick_url, true);
+                        } else {
+                            showPair(body);
+                        }
+                    }).catch(function (err) {
+                        busy = false;
+                        pair.querySelectorAll('.lrn-cmp-choose').forEach(function (btn) { btn.disabled = false; });
+                        note.textContent = (err && err.message)
+                            ? err.message
+                            : 'Не удалось сохранить выбор. Проверь связь и попробуй ещё раз.';
+                        note.classList.add('is-error');
+                    });
+                }
+
+                showPair(block.progress);
                 return wrap;
             }
 

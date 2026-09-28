@@ -2,16 +2,23 @@
 
 Ученик видит работы парами и выбирает ту, что «наберёт больше баллов»;
 выбранная остаётся, к ней приходит следующая. В финале — совпал ли выбор с
-выбором преподавателя. Перебор пар живёт в браузере, на сервер уходит только
-победившая работа.
+выбором преподавателя.
+
+Владелец 28.09.2026: выбор в паре окончательный, «начать заново» нет,
+прогресс переживает перезагрузку, после последней пары ответ уходит сам, а
+весь ход выбора видят проверяющие. Турнир поэтому ведёт сервер: каждое
+нажатие — отдельный запрос и строка `TaskBlockCompareStep`.
 
 Что здесь держится:
 - выбор преподавателя (`is_pick`) не уходит ученику до его ответа;
+- пара идёт по порядку галереи, выбрать можно только в текущей паре;
+- после перезагрузки лента отдаёт ту же пару, незаконченный турнир — не ответ;
+- последняя пара сама пишет ответ и закрывает блок;
 - ответ хранится URL-ом картинки и переживает пересохранение блока, хотя
   `_sync_images` пересоздаёт картинки с новыми id;
-- одна попытка, срок запирает отправку, чужой адрес не принимается;
-- ответ закрывает блок и открывает ленту ниже;
-- преподаватель видит «Выбрал: Работа №k / Верно: Работа №m» на экране проверки.
+- переставленная посреди турнира галерея начинает его с первой пары;
+- преподаватель видит «Выбрал: Работа №k / Верно: Работа №m» и ход выбора
+  по парам с миниатюрами на экране проверки.
 """
 from datetime import date, datetime, timedelta, timezone
 
@@ -22,6 +29,7 @@ from app.models.task_block import (
     BLOCK_TEXT,
     TaskBlock,
     TaskBlockAnswer,
+    TaskBlockCompareStep,
     TaskBlockImage,
 )
 from app.models.tracker import TrackerTask
@@ -31,6 +39,7 @@ from app.services.task_blocks import (
     get_images,
     get_state,
     review_queue,
+    save_compare_choice,
     sync_blocks,
 )
 from app.services.tracker import copy_task_blocks, create_task
@@ -109,15 +118,39 @@ def _statuses(db, user):
     return [step["status"] for step in steps]
 
 
-def _choose(client, block_id, url):
-    return client.post(
-        f"/cabinet/tracker/blocks/{block_id}/compare", json={"image_url": url}
-    )
+def _choose(client, block_id, url, step=None):
+    payload = {"image_url": url}
+    if step is not None:
+        payload["step"] = step
+    return client.post(f"/cabinet/tracker/blocks/{block_id}/compare", json=payload)
 
 
 def _feed_item(client, task_id, block_id):
     payload = client.get(f"/cabinet/tracker/tasks/{task_id}/blocks").json()
     return next(b for b in payload["blocks"] if b["id"] == block_id)
+
+
+def _play(client, task_id, block_id, want):
+    """Пройти все пары так, чтобы победила `want`: пока её не видно — держим
+    текущего победителя, как увидели — держим её. Возвращает последний ответ."""
+    state = _feed_item(client, task_id, block_id)["progress"]
+    while True:
+        pair = (state["champion_url"], state["challenger_url"])
+        resp = _choose(client, block_id, want if want in pair else pair[0], state["step"])
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        if body["finished"]:
+            return resp
+        state = body
+
+
+def _steps(db, block_id, user_id):
+    return (
+        db.query(TaskBlockCompareStep)
+        .filter(TaskBlockCompareStep.block_id == block_id, TaskBlockCompareStep.user_id == user_id)
+        .order_by(TaskBlockCompareStep.step)
+        .all()
+    )
 
 
 # ── конструктор ─────────────────────────────────────────────────────────────
@@ -256,22 +289,84 @@ def test_pick_does_not_reach_the_student_before_answer(auth_client, db):
     assert "matched" not in item
     assert [i["url"] for i in item["images"]] == WORKS
     assert item["submit_endpoint"] == f"/cabinet/tracker/blocks/{block.id}/compare"
+    assert item["progress"] == {
+        "champion_url": WORKS[0], "challenger_url": WORKS[1], "step": 1, "total": 4,
+    }
 
 
-def test_matching_choice(auth_client, db):
+def test_each_choice_returns_the_next_pair(auth_client, db):
     client, user = auth_client
     _cycle(db, user)
     task = _task(db, user)
     block = _compare_block(db, task)
 
-    resp = _choose(client, block.id, PICK)
+    resp = _choose(client, block.id, WORKS[1], step=1)
 
     assert resp.status_code == 200, resp.text
-    assert resp.json() == {"ok": True, "matched": True, "pick_url": PICK}
+    assert resp.json() == {
+        "ok": True, "finished": False,
+        "champion_url": WORKS[1], "challenger_url": WORKS[2], "step": 2, "total": 4,
+    }
+    # Выбор преподавателя не просачивается и в промежуточный ответ.
+    assert "pick_url" not in resp.text
+
+
+def test_progress_survives_reload(auth_client, db):
+    """Владелец 28.09.2026: после перезагрузки — на ту же пару, не с начала.
+    Незаконченный турнир — не ответ: блок открыт, в проверке пусто."""
+    client, user = auth_client
+    _cycle(db, user)
+    task = _task(db, user)
+    block = _compare_block(db, task)
+    _choose(client, block.id, WORKS[1], step=1)
+    _choose(client, block.id, WORKS[2], step=2)
+
+    item = _feed_item(client, task.id, block.id)
+
+    assert item["progress"] == {
+        "champion_url": WORKS[2], "challenger_url": WORKS[3], "step": 3, "total": 4,
+    }
+    assert item["chosen_url"] is None
+    assert item["done"] is False
+    assert get_state(db, block_id=block.id, user_id=user.id) is None
+    assert [r for r in review_queue(db, student_id=user.id) if r["task_id"] == task.id] == []
+
+
+def test_choice_is_final(auth_client, db):
+    """Переиграть прошлую пару нельзя: выбрать можно только в текущей."""
+    client, user = auth_client
+    _cycle(db, user)
+    task = _task(db, user)
+    block = _compare_block(db, task)
+    _choose(client, block.id, WORKS[1], step=1)
+
+    loser = _choose(client, block.id, WORKS[0])
+    stale_step = _choose(client, block.id, WORKS[1], step=1)
+    ahead = _choose(client, block.id, WORKS[4])
+
+    assert loser.status_code == 422
+    assert stale_step.status_code == 409
+    assert ahead.status_code == 422
+    assert [s.winner_url for s in _steps(db, block.id, user.id)] == [WORKS[1]]
+
+
+def test_last_pair_sends_the_answer_itself(auth_client, db):
+    client, user = auth_client
+    _cycle(db, user)
+    task = _task(db, user)
+    block = _compare_block(db, task)
+
+    resp = _play(client, task.id, block.id, PICK)
+
+    assert resp.json() == {
+        "ok": True, "finished": True, "chosen_url": PICK, "matched": True, "pick_url": PICK,
+    }
     item = _feed_item(client, task.id, block.id)
     assert item["chosen_url"] == PICK
     assert item["matched"] is True
     assert item["submit_endpoint"] is None
+    assert "progress" not in item
+    assert len(_steps(db, block.id, user.id)) == 4
 
 
 def test_other_choice_shows_the_teachers_work(auth_client, db):
@@ -280,7 +375,7 @@ def test_other_choice_shows_the_teachers_work(auth_client, db):
     task = _task(db, user)
     block = _compare_block(db, task)
 
-    resp = _choose(client, block.id, WORKS[0])
+    resp = _play(client, task.id, block.id, WORKS[0])
 
     assert resp.json()["matched"] is False
     assert resp.json()["pick_url"] == PICK
@@ -294,7 +389,7 @@ def test_one_attempt(auth_client, db):
     _cycle(db, user)
     task = _task(db, user)
     block = _compare_block(db, task)
-    _choose(client, block.id, WORKS[0])
+    _play(client, task.id, block.id, WORKS[0])
 
     resp = _choose(client, block.id, PICK)
 
@@ -312,7 +407,7 @@ def test_foreign_url_is_refused(auth_client, db):
     resp = _choose(client, block.id, "https://evil.example/fake.jpg")
 
     assert resp.status_code == 422
-    assert get_state(db, block_id=block.id, user_id=user.id) is None
+    assert _steps(db, block.id, user.id) == []
 
 
 def test_choice_after_deadline_is_refused(auth_client, db):
@@ -324,24 +419,55 @@ def test_choice_after_deadline_is_refused(auth_client, db):
     db.commit()
 
     item = _feed_item(client, task.id, block.id)
-    resp = _choose(client, block.id, PICK)
+    resp = _choose(client, block.id, WORKS[0])
 
     assert item["submit_endpoint"] is None
     assert item["edit_reason"]
     assert resp.status_code == 409
+    assert _steps(db, block.id, user.id) == []
 
 
 def test_choice_closes_the_block_and_opens_the_tail(auth_client, db):
     client, user = auth_client
     _cycle(db, user)
     task = _task(db, user)
-    _compare_block(db, task)
-    block = db.query(TaskBlock).filter(TaskBlock.block_type == BLOCK_COMPARE).one()
+    block = _compare_block(db, task)
 
     assert _statuses(db, user) == ["current", "locked"]
-    _choose(client, block.id, WORKS[1])
+    _choose(client, block.id, WORKS[1], step=1)
+    assert _statuses(db, user) == ["current", "locked"]
+    _play(client, task.id, block.id, WORKS[1])
 
     assert _statuses(db, user) == ["done", "current"]
+
+
+def test_reordered_gallery_restarts_the_tournament(auth_client, db):
+    """Преподаватель переставил работы посреди турнира: старые пары описывают
+    другую галерею, турнир идёт с первой пары, а старые шаги стираются
+    первым же новым выбором."""
+    client, user = auth_client
+    _cycle(db, user)
+    task = _task(db, user)
+    block = _compare_block(db, task)
+    _choose(client, block.id, WORKS[1], step=1)
+    _choose(client, block.id, WORKS[1], step=2)
+    reordered = list(reversed(WORKS))
+    sync_blocks(db, task_id=task.id, items=[
+        _compare_item(block_id=block.id, works=reordered),
+        {"block_type": BLOCK_TEXT, "body": "Разбор работ"},
+    ])
+    db.commit()
+
+    progress = _feed_item(client, task.id, block.id)["progress"]
+    assert progress == {
+        "champion_url": reordered[0], "challenger_url": reordered[1], "step": 1, "total": 4,
+    }
+    assert len(_steps(db, block.id, user.id)) == 2  # лента только читает
+
+    resp = _choose(client, block.id, reordered[1], step=1)
+
+    assert resp.status_code == 200, resp.text
+    assert [(s.step, s.winner_url) for s in _steps(db, block.id, user.id)] == [(1, reordered[1])]
 
 
 def test_generic_answer_route_does_not_accept_compare(auth_client, db):
@@ -369,7 +495,7 @@ def test_answer_survives_block_resave(auth_client, db):
     _cycle(db, user)
     task = _task(db, user)
     block = _compare_block(db, task)
-    _choose(client, block.id, PICK)
+    _play(client, task.id, block.id, PICK)
 
     sync_blocks(db, task_id=task.id, items=[
         _compare_item(block_id=block.id),
@@ -384,12 +510,12 @@ def test_answer_survives_block_resave(auth_client, db):
 
 # ── экран проверки ──────────────────────────────────────────────────────────
 
-def test_review_queue_shows_work_numbers(auth_client, db):
+def test_review_queue_shows_work_numbers_and_steps(auth_client, db):
     client, user = auth_client
     _cycle(db, user)
     task = _task(db, user)
     block = _compare_block(db, task)
-    _choose(client, block.id, WORKS[0])
+    _play(client, task.id, block.id, WORKS[0])
 
     rows = [row for row in review_queue(db, student_id=user.id) if row["task_id"] == task.id]
 
@@ -399,6 +525,44 @@ def test_review_queue_shows_work_numbers(auth_client, db):
     assert rows[0]["correct"] == ["Работа №3"]
     # Адрес картинки преподавателю ничего не скажет — в текст не попадает.
     assert rows[0]["text"] == ""
+    assert rows[0]["compare_pick_url"] == PICK
+    steps = rows[0]["compare_steps"]
+    assert [s["step"] for s in steps] == [1, 2, 3, 4]
+    assert [s["right_label"] for s in steps] == ["Работа №2", "Работа №3", "Работа №4", "Работа №5"]
+    assert all(s["left_label"] == "Работа №1" and s["winner_url"] == WORKS[0] for s in steps)
+
+
+def test_review_screen_shows_the_pairs(auth_client, db, user_factory, session_factory):
+    client, user = auth_client
+    _cycle(db, user)
+    task = _task(db, user)
+    block = _compare_block(db, task)
+    _play(client, task.id, block.id, PICK)
+    _staff(client, user_factory, session_factory)
+
+    html = client.get(f"/cabinet/staff/students-review/{user.id}").text
+
+    assert "Ход выбора: 4 пары" in html
+    assert html.count('class="cmp-step-work is-winner"') == 4
+    assert "выбор преподавателя" in html
+    assert WORKS[4] in html
+
+
+def test_old_answer_without_steps(auth_client, db, user_factory, session_factory):
+    """Ответы, данные до 28.09.2026, хода выбора не имеют — экран не падает."""
+    client, user = auth_client
+    _cycle(db, user)
+    task = _task(db, user)
+    block = _compare_block(db, task)
+    save_compare_choice(db, block=block, user_id=user.id, image_url=WORKS[0])
+    db.commit()
+    _staff(client, user_factory, session_factory)
+
+    row = next(r for r in review_queue(db, student_id=user.id) if r["task_id"] == task.id)
+    html = client.get(f"/cabinet/staff/students-review/{user.id}").text
+
+    assert row["compare_steps"] == []
+    assert "Ход выбора по этому ответу не сохранился" in html
 
 
 def test_review_queue_survives_removed_work(auth_client, db):
@@ -406,7 +570,7 @@ def test_review_queue_survives_removed_work(auth_client, db):
     _cycle(db, user)
     task = _task(db, user)
     block = _compare_block(db, task)
-    _choose(client, block.id, WORKS[0])
+    _play(client, task.id, block.id, WORKS[0])
 
     sync_blocks(db, task_id=task.id, items=[
         _compare_item(block_id=block.id, works=WORKS[1:]),
@@ -416,5 +580,7 @@ def test_review_queue_survives_removed_work(auth_client, db):
     row = next(r for r in review_queue(db, student_id=user.id) if r["task_id"] == task.id)
     assert row["chosen"] == ["Работа убрана из задания"]
     assert row["correct"] == ["Работа №2"]
+    assert row["compare_steps"][0]["left_label"] == "Работа убрана из задания"
     assert db.query(TaskBlockImage).filter(TaskBlockImage.block_id == block.id).count() == 4
     assert db.get(TrackerTask, task.id) is not None
+

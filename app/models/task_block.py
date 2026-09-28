@@ -576,6 +576,45 @@ class TaskBlockAnswer(Base):
     )
 
 
+class TaskBlockCompareStep(Base):
+    """Одна пара в блоке «Сравнение работ»: что ученику показали и что он выбрал.
+
+    Владелец 28.09.2026: выбор в паре окончательный, переигровки нет, после
+    перезагрузки ученик возвращается на свою пару, а весь ход выбора видят
+    проверяющие. Турнир поэтому ведёт сервер — каждая пара отдельной строкой.
+
+    Своя таблица, а не `TaskBlockAnswer`: строка ответа значит «ответил» для
+    ленты и очереди проверки, незаконченный турнир всплыл бы как ответ.
+    Финальный ответ пишется в `TaskBlockAnswer` последним шагом. Работы — URL-ами,
+    как и ответ (`_sync_images` пересоздаёт картинки вместе с их id).
+    """
+
+    __tablename__ = "task_block_compare_steps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    block_id: Mapped[int] = mapped_column(
+        ForeignKey("task_blocks.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # Номер пары с единицы: у N работ пар N-1.
+    step: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Слева — работа, победившая до этой пары, справа — новая.
+    left_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    right_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    winner_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        # Двойное нажатие не запишет одну пару дважды.
+        UniqueConstraint("block_id", "user_id", "step", name="uq_task_block_compare_step"),
+        Index("ix_task_block_compare_steps_block_user", "block_id", "user_id"),
+    )
+
+
 class TaskBlockAnswerOption(Base):
     """Выбранный вариант в ответе — одна строка на single, несколько на
     multiple. Копия `SurveyAnswerOption`."""
