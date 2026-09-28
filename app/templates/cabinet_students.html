@@ -2954,7 +2954,7 @@ function deleteWork(studentId, workId, el) {
             }
             showToast('Работа удалена');
         } else {
-            alert('Ошибка удаления');
+            alert(data.error || 'Ошибка удаления');
         }
     })
     .catch(function() { alert('Ошибка сети'); });

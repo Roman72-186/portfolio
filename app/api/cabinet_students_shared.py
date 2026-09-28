@@ -48,7 +48,7 @@ from app.services.stats import avg_score_by_subject_all_time
 from app.services.portfolio import after_gallery_groups, item_source, portfolio_item_count
 from app.services.student_access import get_student_for_staff_access
 from app.services.user_management import apply_tariff_change, tariff_change_clears_access
-from app.services.works import delete_works_with_dependents
+from app.services.works import WorkHasFeedbackError, delete_works_with_dependents
 from app.services.tz import MSK_TZ, msk_input_value, msk_midnight, parse_msk_local
 from app.services.utils import compress_image, study_duration_text, group_works, has_case_growth
 from app.tmpl import format_rich_text, templates
@@ -1497,6 +1497,14 @@ async def admin_upload_works(
     return JSONResponse({"ok": True, "success_count": success_count, "fail_count": fail_count})
 
 
+def _work_has_feedback_response(exc: WorkHasFeedbackError) -> JSONResponse:
+    """Отказ удаления работы с обратной связью. Текст в обоих ключах: экран
+    «Ученики» читает `error`, экраны проверки пробника и пересдачи — `detail`."""
+    return JSONResponse(
+        {"ok": False, "error": str(exc), "detail": str(exc)}, status_code=409
+    )
+
+
 # ── DELETE: удалить "папку" (все работы за месяц/тип) ────────────────────────
 
 @router.delete("/students/{student_id}/works/bulk")
@@ -1536,7 +1544,10 @@ async def bulk_delete_works(
     if not works:
         return JSONResponse({"ok": True, "deleted_count": 0})
 
-    deleted_count = _delete_work_rows_with_dependents(db, works)
+    try:
+        deleted_count = _delete_work_rows_with_dependents(db, works)
+    except WorkHasFeedbackError as exc:
+        return _work_has_feedback_response(exc)
 
     db.commit()
     return JSONResponse({"ok": True, "deleted_count": deleted_count})
@@ -1650,6 +1661,9 @@ def delete_work(
     if not work:
         raise HTTPException(status_code=404, detail="Работа не найдена")
 
-    _delete_work_rows_with_dependents(db, [work])
+    try:
+        _delete_work_rows_with_dependents(db, [work])
+    except WorkHasFeedbackError as exc:
+        return _work_has_feedback_response(exc)
     db.commit()
     return JSONResponse({"ok": True})
