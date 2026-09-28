@@ -14,8 +14,13 @@ in `scripts/`; reports and handoff notes are kept in `reports/` and
 ## Build, Test, and Development Commands
 
 - `python -m pip install -r requirements.txt` installs Python dependencies.
-- `python -m pytest` runs the full test suite configured by `pytest.ini`.
 - `python -m pytest tests/test_routes_login.py` runs a focused test file.
+- `python -m pytest` runs the full suite (2000+ tests, minutes) — only on the
+  owner's `/itog` command. Without `.env` set `SESSION_SECRET=<any string>`
+  first, otherwise importing `app.main` fails.
+- `python -m pytest tests/test_reuse_ratchet.py` — reuse ratchet (no new inline
+  CSS, hardcoded colors, or overrides of shared classes).
+- There is no linter or type checker in the project; do not look for one.
 - `docker compose up --build` starts the app, Redis, and Postgres locally.
 - `alembic upgrade head` applies database migrations.
 - `python -m uvicorn app.main:app --reload` runs the app directly; set
@@ -40,9 +45,11 @@ available.
 
 ## Commit & Pull Request Guidelines
 
-Recent commits use a mix of Conventional Commit prefixes (`feat:`, `fix:`,
-`chore:`) and descriptive phase-based messages. Keep commits focused and explain
-the user-visible change, for example `fix: unify denied page CTA styling`.
+Commit messages are written in Russian, without Conventional Commit prefixes,
+and name the user-visible change, for example `Список учеников снова виден:
+вернул закрывающий </script>`. Older history still has `feat:`/`fix:` prefixes;
+do not continue that style. Keep commits focused and stage files by path —
+`git add -A` and `git add .` are forbidden.
 Pull requests should include a short summary, changed screens/routes, test
 commands and results, screenshots for visual changes, and any migration or env
 var notes.

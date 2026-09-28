@@ -11,25 +11,27 @@ Apparchi — SaaS-портфолио для художественной шко�
 ## Architecture at a glance
 
 - **Слои**: `app/api/*.py` — тонкие FastAPI-роуты (парсинг запроса, RBAC-зависимости), `app/services/*.py` — бизнес-логика, `app/models/*.py` — SQLAlchemy-модели, `app/templates/*.html` — Jinja2, `app/static/` — CSS/JS. Логика не живёт в роуте — она уходит в сервис, роут её только вызывает.
-- **RBAC** — 5 рангов в `app/services/rbac.py::ROLES`: 1 ученик, 2 куратор, 3 модератор, 4 админ (в интерфейсе подписан как «Главный преподаватель», но внутренний ключ роли, `require_admin*`-зависимости и `/cabinet/admin-panel` остались на имени «админ»), 5 суперадмин. Права проверяются только по рангу через `require_*`-зависимости в `app/dependencies.py` — отдельной таблицы permissions нет.
+- **RBAC** — 5 рангов в `app/services/rbac.py::ROLES`: 1 ученик, 2 куратор, 3 модератор (наблюдатель: считается уровнем ГП, но пускается только по закрытому белому списку адресов на чтение — `rbac.py::is_moderator_request_allowed`, решение владельца 28.09.2026), 4 админ (в интерфейсе подписан как «Главный преподаватель», но внутренний ключ роли, `require_admin*`-зависимости и `/cabinet/admin-panel` остались на имени «админ»), 5 суперадмин. Права проверяются только по рангу через `require_*`-зависимости в `app/dependencies.py` — отдельной таблицы permissions нет.
 - **Ключевые домены** (у каждого свои модели/сервис/роуты, искать по общему имени): task blocks — универсальный конструктор заданий учебной программы (`app/services/task_blocks.py`, `app/models/task_block.py`); tracker — задачи и цели личного трекера ученика; exam_cycle/mock_exam — циклы пробников, включая гостевой режим для незарегистрированных участников (`guest_exam.py`); feedback — диалоги обратной связи по циклам и работам; homework/homework_feedback — домашние задания и переписка по ним; curator_report — видео-отчёты кураторов; point_a — входной и повторный замер уровня ученика.
 - **Форматированный текст**: разметка `**жирный**`/`*курсив*`/`- список`/`[текст](url)` рендерится фильтром `rich_text`/`ticket_desc` (`app/tmpl.py::format_rich_text`). На вводе поля с `data-rich-text` получают нативный WYSIWYG поверх скрытой textarea (`app/static/js/rich-text-field.js`) — при добавлении нового текстового поля, которое отдаётся читателю через `format_rich_text`, добавь `data-rich-text` и там.
 - **Фронтенд без сборщика**: чистый Jinja2 + vanilla JS, npm/бандлера нет. Каждый шаблон сам подключает нужные `<link>`/`<script src="...?v=N">` — версия в query поднимается при правке файла, общий JS-модуль подключается в каждый шаблон, где он нужен, а не глобально в `base.html`.
 - **Reuse-храповик**: `tests/test_reuse_ratchet.py` не даёт расти инлайновому CSS в шаблонах, цветам числом мимо токенов `base.css` и переопределениям общих классов — падает, если добавить `<style>` в шаблон или зашить цвет вместо `var(--...)`. `python scripts/reuse_check.py` показывает то же человеческим текстом, `--update` фиксирует уменьшение как новый потолок.
-- **Тесты изолированы от инфраструктуры**: `tests/conftest.py` подменяет БД на SQLite in-memory до импорта `app.main`, поэтому набору не нужны ни Postgres, ни `.env`.
+- **Тесты изолированы от базы**: `tests/conftest.py` подменяет БД на SQLite in-memory до импорта `app.main`, поэтому Postgres не нужен. Но `app/main.py` при импорте требует `SESSION_SECRET`: без `.env` (чистый клон, `git worktree`) набор падает с `RuntimeError` — запускать `SESSION_SECRET=<любая строка> pytest ...`.
+- **n8n выключен** с 13.07.2026 (`settings.n8n_enabled=False`, на проде `N8N_ENABLED` не задан): фото пишутся только в S3 (`s3_only`), Google Drive не читается, `/auth/internal/issue-link` отвечает 503. Ветки `if settings.n8n_enabled` в коде — не мёртвый код, а выключатель; включать только по решению владельца.
 
 ## Quick commands (run from this directory)
 
 ```bash
-pytest                                          # all tests (SQLite in-memory)
 pytest tests/test_routes_auth.py::test_name     # single test
+pytest tests/test_reuse_ratchet.py              # reuse-храповик
+pytest                                          # all tests (SQLite in-memory) — только по команде владельца /itog
 
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload   # local run
 
 alembic upgrade head                            # apply migrations
 alembic revision --autogenerate -m "msg"        # new migration
 
-set -a && source .env.deploy && set +a && python scripts/deploy.py   # deploy to prod (139.100.237.57)
+set -a && source .env.deploy && set +a && python scripts/deploy.py   # deploy to prod — хост задать явно, см. ⚠️ ниже
 python scripts/deploy.py app/api/video.py app/services/video_catalog.py  # только эти файлы
 python scripts/deploy.py --sync-env                 # + залить окружение из .env.prod
 python scripts/deploy.py --status                   # версия на проде + сверка всех файлов
@@ -39,7 +41,7 @@ python scripts/deploy.py --status                   # версия на прод
 
 ⚠️ **Прод не расходится с коммитом.** Полный деплой требует чистого дерева, поштучный — чтобы заливаемые файлы были закоммичены; иначе отказ. Обход — `--allow-dirty`, и тогда деплой помечается грязным. После каждой заливки на сервер пишется `.deployed-version` (коммит, ветка, время, режим, список файлов). `--status` показывает версию прода против локального HEAD и сверяет sha256 всех отслеживаемых файлов — это единственный способ узнать наверняка, что на сервере.
 
-⚠️ `.env.deploy` по умолчанию всё ещё указывает на `89.23.96.254` — прежний хост Apparchi, который сейчас держит **чужой боевой проект FitMatch**. Деплой без переопределения ударит по нему. Перед деплоем явно задавать `PORTFOLIO_SSH_HOST=139.100.237.57` и `PORTFOLIO_SSH_KNOWN_HOSTS=deploy_known_hosts`.
+⚠️ `.env.deploy` по умолчанию всё ещё указывает на `89.23.96.254` — прежний хост Apparchi, который сейчас держит **чужой боевой проект FitMatch**. Деплой без переопределения ударит по нему. Перед деплоем явно задавать `PORTFOLIO_SSH_HOST=139.100.237.57` и `PORTFOLIO_SSH_KNOWN_HOSTS=deploy_known_hosts`. Страховка — `ALLOWED_HOSTS` в `scripts/deploy.py` (сейчас только `139.100.237.57`): другой хост скрипт отвергает; обход `PORTFOLIO_ALLOW_ANY_HOST=1` — только по слову владельца.
 
 ⚠️ **Окружение сервера и локальный `.env` — разные вещи.** `.env` в этой папке — dev-конфигурация: на 2026-08-05 из 33 переменных 32 расходились с боевыми, включая `DATABASE_URL`, `POSTGRES_PASSWORD`, `SESSION_SECRET`, `REDIS_PASSWORD`, ключи S3 и VK. До 05.08 `deploy.py` заливал `.env` на сервер **при каждом запуске, включая поштучный режим** — это положило бы прод и разлогинило всех учеников. Теперь `.env` сервера не трогается без явного `--sync-env`, а источник правды для прода — отдельный `.env.prod` (создаёт владелец, в git не попадает: скрипт отказывается работать с отслеживаемым файлом). `--sync-env` делает бэкап `.env.bak-<UTC>` на сервере, печатает разницу **по именам переменных** и отказывается, если ключ пропадает (обход — `--allow-remove-env-keys`).
 
