@@ -352,7 +352,7 @@ function blockSettingsHTML(type) {
     var portfolioWindowSetting = type === 'portfolio'
         ? ''
             + '  <label class="prg-field prg-field--row prg-blk-setting">'
-            + '    <input type="checkbox" data-b-required-for-intake data-sum-off="портфолио на «Пробе» необязательно" checked>'
+            + '    <input type="checkbox" data-b-required-for-intake data-sum-off="на «Пробе» можно без портфолио" checked>'
             + '    <span>Для новичков по ссылке «Проба» загрузка портфолио обязательна</span>'
             + '  </label>'
             + '  <label class="prg-field prg-blk-setting">Окно загрузки для ученика, часов'
@@ -383,14 +383,14 @@ function blockSettingsHTML(type) {
         + '    <input type="datetime-local" data-b-submit-until data-sum="срок" aria-label="Дата и время срока сдачи">'
         + '    <span class="prg-hint">' + submitHint + '</span>'
         + '  </label>'
-        + '  <div class="prg-blk-deadlines prg-blk-setting" data-sum-rows="свои сроки у тарифов">'
+        + '  <div class="prg-blk-deadlines prg-blk-setting" data-sum-rows="свой срок у">'
         + '    <p class="prg-hint">Свой срок по тарифу: пусто – работает срок выше, а если и его нет – срок задания.</p>'
         + tariffDeadlinesHTML()
         + '  </div>';
     // Разметка панели — та же, что у макроса `settings_panel`
     // (partials/program_settings_panel.html); сводку в заголовке пересчитывает
     // `refreshSettingsPanel`, метки `data-sum*` — в шапке его партиала.
-    var emptySummary = 'По умолчанию: по очереди, без срока, всем';
+    var emptySummary = 'По умолчанию: по очереди, без срока, всем тарифам';
     return ''
         + '<details class="prg-settings" data-settings-panel data-settings-empty="' + emptySummary + '">'
         + '  <summary><span class="prg-settings-head">'
@@ -399,7 +399,7 @@ function blockSettingsHTML(type) {
         + '  </span></summary>'
         + '  <div class="prg-settings-body">'
         + '  <label class="prg-field prg-field--row prg-blk-setting">'
-        + '    <input type="checkbox" data-b-required data-sum-on="блокирует выдачу дальше">'
+        + '    <input type="checkbox" data-b-required data-sum-on="закрывает всё ниже">'
         + '    <span>Блокирует дальнейшую выдачу — пока не сделан, всё ниже закрыто</span>'
         + '  </label>'
         // Дата и время, а не только дата (владелец 27.09.2026): «теория
@@ -425,7 +425,7 @@ function blockSettingsHTML(type) {
         + subjectOptionsHTML()
         + '    </select>'
         + '  </label>'
-        + '  <div class="prg-blk-tariffs prg-blk-setting" data-sum-list="видно">'
+        + '  <div class="prg-blk-tariffs prg-blk-setting" data-sum-list="только">'
         + '    <p class="prg-hint">Тарифы: не отметили ни одного — блок виден всем.</p>'
         + tariffChecksHTML()
         + '  </div>'

@@ -240,10 +240,10 @@ def test_task_and_block_settings_are_folded_into_a_panel(admin_client, db):
     form = page.split('data-form="material"', 1)[1].split("</form>", 1)[0]
     panel = form.split("data-settings-panel", 1)[1].split("</details>", 1)[0]
     assert "Доступность и сроки" in panel
-    assert "По умолчанию: сразу, без срока, всем" in panel
+    assert "По умолчанию: сразу, без срока, всем тарифам" in panel
     for field in ('data-x-required data-sum-off=', 'data-x-starts data-sum=',
                   'data-x-submit-until data-sum=', "data-sum-rows=",
-                  "data-tariff-restricted", 'data-sum-list="тарифы"'):
+                  "data-tariff-restricted", 'data-sum-list="только"'):
         assert field in panel, field
 
     # Панель блока собирается строкой в JS — та же разметка и те же метки.

@@ -97,9 +97,9 @@
         </label>
         {# Обязательность, открытие и срок свёрнуты в одну панель (владелец
            28.09.2026) — та же, что в форме задания на экране дня. #}
-        {% call settings_panel('Доступность и сроки', 'По умолчанию: сразу, без срока, всем') %}
+        {% call settings_panel('Доступность и сроки', 'По умолчанию: сразу, без срока, всем тарифам') %}
         <label class="prg-field prg-field--row">
-            <input type="checkbox" data-item-required data-sum-off="необязательный" checked>
+            <input type="checkbox" data-item-required data-sum-off="не обязательно" checked>
             <span>Обязательный элемент — пока не сделан, следующие шаги ленты закрыты</span>
         </label>
         <label class="prg-field">Откроется не раньше

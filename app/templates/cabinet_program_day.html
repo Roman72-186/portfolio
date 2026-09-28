@@ -55,7 +55,7 @@ FORM: Operate.
     </label>
     <label class="prg-field">Минут на работу
         <input type="number" min="1" max="720" step="1" data-mock-duration
-               data-sum="" data-sum-unit=" мин"
+               data-sum="" data-sum-unit=" мин на работу"
                value="{{ mock_default_schedule.duration_minutes }}">
         <span class="prg-hint">Отсчёт идёт с того момента, как ученик нажал «Начать».</span>
     </label>
@@ -68,7 +68,7 @@ FORM: Operate.
     <input type="checkbox" data-tariff-restricted>
     <span>Ограничить по тарифу</span>
 </label>
-<div class="prg-tariffs" data-tariffs-wrap data-sum-list="тарифы" data-sum-empty="скрыто от всех" hidden>
+<div class="prg-tariffs" data-tariffs-wrap data-sum-list="только" data-sum-empty="никому не видно" hidden>
     <p class="prg-hint">Элемент виден только отмеченным тарифам. Не отметили ни одного — скрыт от всех.</p>
     {% for tariff in tariffs %}
     <label class="prg-field prg-field--row">
@@ -209,9 +209,9 @@ FORM: Operate.
         </div>
         {% endfor %}
         </section>
-        {% call settings_panel('Доступность', 'По умолчанию: обязательно, видно всем') %}
+        {% call settings_panel('Доступность', 'По умолчанию: обязательно, видно всем тарифам') %}
         <label class="prg-field prg-field--row">
-            <input type="checkbox" data-m-required data-sum-off="необязательно" checked>
+            <input type="checkbox" data-m-required data-sum-off="не обязательно" checked>
             <span>Обязательно для сдачи</span>
         </label>
         <p class="prg-hint">Билет автоматически доступен всем ученикам, окно сдачи система выставляет сама.</p>
@@ -255,9 +255,9 @@ FORM: Operate.
         </label>
         {# Обязательность, открытие, срок и тарифы свёрнуты в одну панель
            (владелец 28.09.2026) — одна и та же на экране цикла. #}
-        {% call settings_panel('Доступность и сроки', 'По умолчанию: сразу, без срока, всем') %}
+        {% call settings_panel('Доступность и сроки', 'По умолчанию: сразу, без срока, всем тарифам') %}
         {% if kind != 'archi_profile' %}<label class="prg-field prg-field--row">
-            <input type="checkbox" data-x-required data-sum-off="необязательный" checked>
+            <input type="checkbox" data-x-required data-sum-off="не обязательно" checked>
             <span>Обязательный элемент — пока не сделан, следующие шаги ленты закрыты</span>
         </label>{% else %}<input type="checkbox" data-x-required checked hidden>{% endif %}
         {# Дата открытия всего задания (владелец 03.09.2026: «даже если ребёнок
@@ -381,9 +381,9 @@ FORM: Operate.
                 </select>
             </label>
         </div>
-        {% call settings_panel('Доступность', 'По умолчанию: обязательный, виден всем') %}
+        {% call settings_panel('Доступность', 'По умолчанию: обязательно, видно всем тарифам') %}
         <label class="prg-field prg-field--row">
-            <input type="checkbox" data-v-required data-sum-off="необязательный" checked>
+            <input type="checkbox" data-v-required data-sum-off="не обязательно" checked>
             <span>Обязательный элемент — пока не сделан, следующие шаги ленты закрыты</span>
         </label>
         {{ tariff_fields() }}
@@ -432,9 +432,9 @@ FORM: Operate.
             <input type="file" data-h-images accept="image/*" multiple>
         </label>
         <div class="prg-thumbs" data-h-thumbs></div>
-        {% call settings_panel('Доступность', 'По умолчанию: обязательный, виден всем') %}
+        {% call settings_panel('Доступность', 'По умолчанию: обязательно, видно всем тарифам') %}
         <label class="prg-field prg-field--row">
-            <input type="checkbox" data-h-gate-required data-sum-off="необязательный" checked>
+            <input type="checkbox" data-h-gate-required data-sum-off="не обязательно" checked>
             <span>Обязательный элемент — пока не сделан, следующие шаги ленты закрыты</span>
         </label>
         {{ tariff_fields() }}

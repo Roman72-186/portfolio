@@ -15,12 +15,17 @@
 - `data-sum-on="текст"` — чекбокс, пустой по умолчанию: текст, когда отмечен;
 - `data-sum-off="текст"` — чекбокс, отмеченный по умолчанию: текст, когда
   галочку сняли. «Обязательный» в сводке стоял бы всегда, а нужна разница;
-- `data-sum-list="тарифы"` — контейнер чекбоксов: «тарифы: A, B». Пустой выбор
+- `data-sum-list="только"` — контейнер чекбоксов: «только A, B». Пустой выбор
   значит на разных панелях разное (у блока «виден всем», у задания с
-  «Ограничить по тарифу» — «скрыт от всех»), поэтому своя фраза на пустоту —
+  «Ограничить по тарифу» — «никому не видно»), поэтому своя фраза на пустоту —
   `data-sum-empty`, нет её — пустой список в сводку не идёт;
-- `data-sum-rows="свои сроки у тарифов"` — контейнер строк `[data-sum-row]`:
-  считаются строки, где стоит дата или галочка.
+- `data-sum-rows="свой срок у"` — контейнер строк сроков по тарифам
+  `[data-sum-row]`: считаются строки, где стоит дата или галочка, — «свой
+  срок у 1 тарифа», «у 2 тарифов».
+
+Формы без рода («не обязательно», «никому не видно»): в одной строке сводки
+стоят и «задание», и «элемент», и мужской род рядом со средним читался бы
+вразнобой.
 
 Поле, спрятанное `hidden` внутри панели («Откроется не раньше» у задания с
 пробником), в сводку не идёт. Скрытое снаружи панели не считается: неактивные
@@ -68,7 +73,7 @@ function settingsSummaryParts(panel) {
                 names.push(box.value);
             });
             if (names.length) {
-                parts.push(el.getAttribute('data-sum-list') + ': ' + names.join(', '));
+                parts.push(el.getAttribute('data-sum-list') + ' ' + names.join(', '));
             } else if (el.hasAttribute('data-sum-empty')) {
                 parts.push(el.getAttribute('data-sum-empty'));
             }
@@ -79,7 +84,10 @@ function settingsSummaryParts(panel) {
                 var none = row.querySelector('input[type="checkbox"]');
                 if ((at && at.value) || (none && none.checked)) count += 1;
             });
-            if (count) parts.push(el.getAttribute('data-sum-rows') + ': ' + count);
+            if (count) {
+                var noun = (count % 10 === 1 && count % 100 !== 11) ? 'тарифа' : 'тарифов';
+                parts.push(el.getAttribute('data-sum-rows') + ' ' + count + ' ' + noun);
+            }
         }
     });
     return parts;
