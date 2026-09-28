@@ -3080,6 +3080,10 @@ def _diagnostic_block_items_from_db(
     менялся). `availability` — свежие «Доступность блока» с только что
     сохранённой строки формы: их куратор мог поменять, даже если вопросы
     остались прежними, поэтому накладываем поверх устаревших значений из базы.
+
+    `id` нужен и вариантам ответа: без него `_sync_options` заводит их
+    заново, стирая выбор учеников, а `_prune_empty_answers` следом удаляет
+    опустевшие ответы (код-ревью 28.09.2026, P1).
     """
     blocks = [b for b in get_task_blocks(db, task_id) if b.is_diagnostic]
     options = get_task_block_options(db, [b.id for b in blocks])
@@ -3088,7 +3092,7 @@ def _diagnostic_block_items_from_db(
             "id": b.id, "block_type": b.block_type, "title": b.title, "body": b.body,
             "question_type": b.question_type, "is_diagnostic": True,
             "options": [
-                {"text": o.text, "is_correct": o.is_correct}
+                {"id": o.id, "text": o.text, "is_correct": o.is_correct}
                 for o in options.get(b.id, [])
             ],
             **availability,

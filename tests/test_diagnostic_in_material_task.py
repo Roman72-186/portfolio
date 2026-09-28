@@ -383,6 +383,63 @@ def test_editing_with_diagnostic_row_resent_keeps_it_and_updates_regular_blocks(
     assert [b.body for b in text_blocks] == ["Новый текст"]
 
 
+def test_resaving_task_keeps_student_answers_on_diagnostic(
+    client, db, user_factory, session_factory
+):
+    """Код-ревью 28.09.2026, P1: путь «вопросы не менялись» отдавал блоки
+    диагностики с реальными id, а их вариантам — без id. `_sync_options`
+    заводил варианты заново, стирая выбор ученика, и `_prune_empty_answers`
+    удалял опустевшие ответы. Любое сохранение формы задания стирало
+    собранную диагностику."""
+    from app.models.task_block import TaskBlockAnswer, TaskBlockAnswerOption, TaskBlockOption
+
+    admin = user_factory(vk_id=889_361, name="Преподаватель", is_admin=True, role_name="админ")
+    admin_session = session_factory(admin).id
+    client.cookies.set("session_id", admin_session)
+    cycle_id = _make_cycle(client, today_msk())
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={
+            "title": "Задание", "description": None, "subject": None,
+            "is_required": True, "starts_on": None,
+            "blocks": [{"block_type": "text", "body": "Старый текст"}, _diagnostic_block()],
+        },
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert created.status_code == 200, created.text
+    task_id = created.json()["task_id"]
+
+    student = user_factory(vk_id=889_362, name="Ученик", role_name="ученик")
+    client.cookies.set("session_id", session_factory(student).id)
+    endpoint = f"/cabinet/tracker/tasks/{task_id}/blocks"
+    blocks = [b for b in client.get(endpoint).json()["blocks"] if b.get("options")]
+    answers = [{"block_id": b["id"], "option_ids": [b["options"][0]["id"]]} for b in blocks]
+    saved = client.post(endpoint, json={"answers": answers}, headers={"X-CSRF-Token": "x"})
+    assert saved.status_code == 200, saved.text
+    option_ids_before = sorted(o.id for o in db.query(TaskBlockOption).all())
+    chosen_before = sorted(r.option_id for r in db.query(TaskBlockAnswerOption).all())
+    assert len(chosen_before) == 2
+
+    client.cookies.set("session_id", admin_session)
+    task = db.get(TrackerTask, task_id)
+    payload = _edit_payloads(db, [task], {})[task_id]
+    payload["blocks"][0]["body"] = "Новый текст"
+    updated = client.post(
+        f"/cabinet/staff/program/items/{task_id}/material",
+        json={
+            "title": payload["title"], "description": None, "subject": None,
+            "is_required": True, "starts_on": None, "blocks": payload["blocks"],
+        },
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert updated.status_code == 200, updated.text
+
+    db.expire_all()
+    assert sorted(o.id for o in db.query(TaskBlockOption).all()) == option_ids_before
+    assert sorted(r.option_id for r in db.query(TaskBlockAnswerOption).all()) == chosen_before
+    assert db.query(TaskBlockAnswer).count() == 2
+
+
 def test_diagnostic_result_shows_on_personal_page_for_embedded_diagnostic(
     client, db, user_factory, session_factory
 ):
