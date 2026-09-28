@@ -130,7 +130,7 @@ function requiredTariffChecksHTML() {
 // отдельной галочкой: пустым полем «бессрочно» не отличить от «как у всех».
 function tariffDeadlinesHTML() {
     return ({{ tariffs|tojson }}).map(function (tariff) {
-        return '<div class="prg-field prg-blk-deadline" data-b-deadline data-tariff="' + escapeHTML(tariff) + '">'
+        return '<div class="prg-field prg-blk-deadline" data-b-deadline data-sum-row data-tariff="' + escapeHTML(tariff) + '">'
             + '<span class="prg-blk-deadline-name">' + escapeHTML(tariff) + '</span>'
             + '<input type="datetime-local" data-b-deadline-at'
             + ' aria-label="Срок приёма работ для тарифа ' + escapeHTML(tariff) + '">'
@@ -352,7 +352,7 @@ function blockSettingsHTML(type) {
     var portfolioWindowSetting = type === 'portfolio'
         ? ''
             + '  <label class="prg-field prg-field--row prg-blk-setting">'
-            + '    <input type="checkbox" data-b-required-for-intake checked>'
+            + '    <input type="checkbox" data-b-required-for-intake data-sum-off="портфолио на «Пробе» необязательно" checked>'
             + '    <span>Для новичков по ссылке «Проба» загрузка портфолио обязательна</span>'
             + '  </label>'
             + '  <label class="prg-field prg-blk-setting">Окно загрузки для ученика, часов'
@@ -380,31 +380,39 @@ function blockSettingsHTML(type) {
         : 'Пусто – без срока. Отметить выполнение ученик сможет и после срока, но в статистике это зачтётся опозданием.';
     var submitSetting = ''
         + '  <label class="prg-field prg-blk-setting">Срок сдачи'
-        + '    <input type="datetime-local" data-b-submit-until aria-label="Дата и время срока сдачи">'
+        + '    <input type="datetime-local" data-b-submit-until data-sum="срок" aria-label="Дата и время срока сдачи">'
         + '    <span class="prg-hint">' + submitHint + '</span>'
         + '  </label>'
-        + '  <div class="prg-blk-deadlines prg-blk-setting">'
+        + '  <div class="prg-blk-deadlines prg-blk-setting" data-sum-rows="свои сроки у тарифов">'
         + '    <p class="prg-hint">Свой срок по тарифу: пусто – работает срок выше, а если и его нет – срок задания.</p>'
         + tariffDeadlinesHTML()
         + '  </div>';
+    // Разметка панели — та же, что у макроса `settings_panel`
+    // (partials/program_settings_panel.html); сводку в заголовке пересчитывает
+    // `refreshSettingsPanel`, метки `data-sum*` — в шапке его партиала.
+    var emptySummary = 'По умолчанию: по очереди, без срока, всем';
     return ''
-        + '<details class="prg-blk-settings">'
-        + '  <summary>Доступность блока</summary>'
+        + '<details class="prg-settings" data-settings-panel data-settings-empty="' + emptySummary + '">'
+        + '  <summary><span class="prg-settings-head">'
+        + '    <span class="prg-settings-title">Доступность блока</span>'
+        + '    <span class="prg-settings-summary" data-settings-summary>' + emptySummary + '</span>'
+        + '  </span></summary>'
+        + '  <div class="prg-settings-body">'
         + '  <label class="prg-field prg-field--row prg-blk-setting">'
-        + '    <input type="checkbox" data-b-required>'
+        + '    <input type="checkbox" data-b-required data-sum-on="блокирует выдачу дальше">'
         + '    <span>Блокирует дальнейшую выдачу — пока не сделан, всё ниже закрыто</span>'
         + '  </label>'
         // Дата и время, а не только дата (владелец 27.09.2026): «теория
         // откроется в 10:00» раньше было не выразить — поле принимало день, и
         // блок всегда открывался в полночь.
         + '  <label class="prg-field prg-blk-setting">Откроется не раньше'
-        + '    <input type="datetime-local" data-b-opens aria-label="Дата и время открытия блока">'
+        + '    <input type="datetime-local" data-b-opens data-sum="откроется" aria-label="Дата и время открытия блока">'
         + '    <span class="prg-hint">Пусто – блок ждёт только свою очередь.</span>'
         + '  </label>'
         + portfolioWindowSetting
         + submitSetting
         + '  <label class="prg-field prg-blk-setting">Закроется'
-        + '    <input type="datetime-local" data-b-closes aria-label="Дата и время закрытия блока">'
+        + '    <input type="datetime-local" data-b-closes data-sum="закроется" aria-label="Дата и время закрытия блока">'
         + '    <span class="prg-hint">' + closesHint + '</span>'
         + '  </label>'
         + '  <label class="prg-field prg-blk-setting">Текст, если заблокирован'
@@ -412,16 +420,16 @@ function blockSettingsHTML(type) {
         + '    <span class="prg-hint">Покажется вместо стандартной фразы «Откроется …» / «Доступ закрыт».</span>'
         + '  </label>'
         + '  <label class="prg-field prg-blk-setting">Предмет'
-        + '    <select data-b-subject aria-label="Предмет блока">'
+        + '    <select data-b-subject data-sum="" aria-label="Предмет блока">'
         + '      <option value="">Без предмета — виден в обоих направлениях</option>'
         + subjectOptionsHTML()
         + '    </select>'
         + '  </label>'
-        + '  <div class="prg-blk-tariffs prg-blk-setting">'
+        + '  <div class="prg-blk-tariffs prg-blk-setting" data-sum-list="видно">'
         + '    <p class="prg-hint">Тарифы: не отметили ни одного — блок виден всем.</p>'
         + tariffChecksHTML()
         + '  </div>'
-        + '  <div class="prg-blk-required-tariffs prg-blk-setting">'
+        + '  <div class="prg-blk-required-tariffs prg-blk-setting" data-sum-list="обязательно для">'
         + '    <p class="prg-hint">Кого обязать выполнить: не отметили ни одного — обязательно для всех, кому видно.</p>'
         + requiredTariffChecksHTML()
         + '  </div>'
@@ -430,6 +438,7 @@ function blockSettingsHTML(type) {
         // где флаг уже включён, он не слетал при следующем сохранении:
         // сервер пишет bypass_sequence из присланного значения.
         + '  <input type="checkbox" data-b-bypass hidden aria-hidden="true" tabindex="-1" style="display:none">'
+        + '  </div>'
         + '</details>';
 }
 
@@ -621,6 +630,10 @@ function fillBlockRow(row, block) {
         row._diagnosticBuilder = window.DiagnosticBuilder.create(editorMount);
         row._diagnosticBuilder.load(block.diagnostic || null);
     }
+    // Значения вписаны без событий — сводку свёрнутой «Доступности блока»
+    // пересчитываем здесь. Через fillBlockRow идут и renderFormBlocks, и
+    // «Взять содержимое из другого задания».
+    refreshSettingsPanels(row);
 }
 
 // Тот же приём, что renumberTickets у билетов Пробника — при 7+ блоках

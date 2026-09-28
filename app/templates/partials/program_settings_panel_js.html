@@ -1,0 +1,136 @@
+{#
+Сводка свёрнутой панели настроек `.prg-settings` (владелец 28.09.2026:
+«настройки доступности, дат и времени сворачивать и показывать, что их можно
+развернуть»). Подключается ВНУТРИ уже открытого `<script>` страницы, как и
+остальные партиалы конструктора, — на экране дня и на экране цикла.
+
+Панель свёрнута и на создании, и на правке, поэтому заголовок обязан сказать,
+что внутри выставлено: иначе срок, спрятанный под стрелкой, легко забыть.
+Сводка перечисляет только ОТКЛОНЕНИЯ от умолчания — ничего не задано, стоит
+текст из `data-settings-empty`.
+
+Поля помечаются атрибутами, скрипт про конкретную панель ничего не знает:
+- `data-sum="Откроется"` — поле даты или числа: «Откроется 23.09, 10:00»,
+  пустое пропускается; `data-sum-unit` дописывается к числу («240 мин»);
+- `data-sum-on="текст"` — чекбокс, пустой по умолчанию: текст, когда отмечен;
+- `data-sum-off="текст"` — чекбокс, отмеченный по умолчанию: текст, когда
+  галочку сняли. «Обязательный» в сводке стоял бы всегда, а нужна разница;
+- `data-sum-list="тарифы"` — контейнер чекбоксов: «тарифы: A, B». Пустой выбор
+  значит на разных панелях разное (у блока «виден всем», у задания с
+  «Ограничить по тарифу» — «скрыт от всех»), поэтому своя фраза на пустоту —
+  `data-sum-empty`, нет её — пустой список в сводку не идёт;
+- `data-sum-rows="свои сроки у тарифов"` — контейнер строк `[data-sum-row]`:
+  считаются строки, где стоит дата или галочка.
+
+Поле, спрятанное `hidden` внутри панели («Откроется не раньше» у задания с
+пробником), в сводку не идёт. Скрытое снаружи панели не считается: неактивные
+формы экрана дня висят с `hidden`, а заполняются до показа.
+#}
+function settingsDateText(value) {
+    // Строкой, без `new Date()`: «2026-09-23T10:00» — это уже московское время
+    // из поля, а разбор через Date в Safari и сдвиги поясов тут только мешают.
+    var match = /^(\d{4})-(\d{2})-(\d{2})(?:[T](\d{2}:\d{2}))?/.exec(value || '');
+    if (!match) return value;
+    var text = match[3] + '.' + match[2];
+    if (Number(match[1]) !== new Date().getFullYear()) text += '.' + match[1];
+    if (match[4]) text += ', ' + match[4];
+    return text;
+}
+
+function settingsHiddenInside(panel, node) {
+    for (var el = node; el && el !== panel; el = el.parentElement) {
+        if (el.hidden) return true;
+    }
+    return false;
+}
+
+function settingsSummaryParts(panel) {
+    var parts = [];
+    var marked = panel.querySelectorAll(
+        '[data-sum], [data-sum-on], [data-sum-off], [data-sum-list], [data-sum-rows]'
+    );
+    marked.forEach(function (el) {
+        if (settingsHiddenInside(panel, el)) return;
+        if (el.hasAttribute('data-sum')) {
+            if (!el.value) return;
+            var value = el.type === 'number'
+                ? el.value + (el.getAttribute('data-sum-unit') || '')
+                : settingsDateText(el.value);
+            var label = el.getAttribute('data-sum');
+            parts.push(label ? label + ' ' + value : value);
+        } else if (el.hasAttribute('data-sum-on')) {
+            if (el.checked) parts.push(el.getAttribute('data-sum-on'));
+        } else if (el.hasAttribute('data-sum-off')) {
+            if (!el.checked) parts.push(el.getAttribute('data-sum-off'));
+        } else if (el.hasAttribute('data-sum-list')) {
+            var names = [];
+            el.querySelectorAll('input[type="checkbox"]:checked').forEach(function (box) {
+                names.push(box.value);
+            });
+            if (names.length) {
+                parts.push(el.getAttribute('data-sum-list') + ': ' + names.join(', '));
+            } else if (el.hasAttribute('data-sum-empty')) {
+                parts.push(el.getAttribute('data-sum-empty'));
+            }
+        } else {
+            var count = 0;
+            el.querySelectorAll('[data-sum-row]').forEach(function (row) {
+                var at = row.querySelector('input[type="datetime-local"]');
+                var none = row.querySelector('input[type="checkbox"]');
+                if ((at && at.value) || (none && none.checked)) count += 1;
+            });
+            if (count) parts.push(el.getAttribute('data-sum-rows') + ': ' + count);
+        }
+    });
+    return parts;
+}
+
+function refreshSettingsPanel(panel) {
+    var holder = panel.querySelector('[data-settings-summary]');
+    if (!holder) return;
+    var parts = settingsSummaryParts(panel);
+    panel.classList.toggle('is-custom', parts.length > 0);
+    // Метки пишутся строчными, чтобы строка читалась одной фразой; заглавная —
+    // только у первой.
+    var text = parts.join(' · ');
+    holder.textContent = text
+        ? text.charAt(0).toUpperCase() + text.slice(1)
+        : (panel.getAttribute('data-settings-empty') || '');
+}
+
+function refreshSettingsPanels(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-settings-panel]').forEach(refreshSettingsPanel);
+}
+
+// Панель свёрнута и на создании, и на правке. Форма одна на все задания,
+// поэтому раскрытое руками у прошлого задания закрываем, когда форма
+// открывается для другого (`key` — id правки или 'new'). Повторное открытие
+// той же формы раскрытое не трогает: переключение вкладок ничего не стирает.
+function collapseSettingsPanelsOnSwitch(form, key) {
+    if (!form || form.dataset.settingsFor === key) return;
+    form.dataset.settingsFor = key;
+    form.querySelectorAll('[data-settings-panel]').forEach(function (panel) {
+        panel.open = false;
+    });
+}
+
+// Ошибка сохранения приходит текстом под формой, а поле, о котором она, может
+// лежать под свёрнутой стрелкой. Раскрываем панели, где что-то выставлено.
+function openCustomSettingsPanels(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-settings-panel]').forEach(function (panel) {
+        refreshSettingsPanel(panel);
+        if (panel.classList.contains('is-custom')) panel.open = true;
+    });
+}
+
+// Правка руками. Пересчёт отложен на такт: соседние обработчики того же
+// события (например, галочка ограничения по тарифу открывает их список) должны
+// успеть отработать, иначе сводка прочтёт состояние до них.
+['input', 'change'].forEach(function (type) {
+    document.addEventListener(type, function (event) {
+        var panel = event.target.closest && event.target.closest('[data-settings-panel]');
+        if (panel) setTimeout(function () { refreshSettingsPanel(panel); }, 0);
+    });
+});

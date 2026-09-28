@@ -341,15 +341,19 @@
    (движок Safari) не рисует ни подсказку формата, ни рамку — Chromium рисует
    «дд.мм.гггг», и на компьютере поле поэтому читалось. Что значит пустое
    поле, говорит подпись `.prg-hint` в самой разметке. */
-.ios-prg-day .prg-blk-settings > summary {
-    padding: var(--s-2) 0;
-    color: var(--ios-label-2); font: 700 11px/1.3 var(--ios-font);
-    text-transform: uppercase; letter-spacing: 0.03em;
-}
-.ios-prg-day .prg-blk-settings > summary::after {
-    color: var(--ios-label-3);
+/* Панель `.prg-settings` (28.09.2026): рамка `--ios-sep` вместо заливки —
+   панель лежит и на белой форме задания, и на серой карточке блока, и рамка
+   читается на обеих без второго варианта. */
+.ios-prg-day .prg-settings { border-color: var(--ios-sep); border-radius: 12px; }
+.ios-prg-day .prg-settings[open] > summary { border-bottom-color: var(--ios-sep); border-radius: 12px 12px 0 0; }
+.ios-prg-day .prg-settings > summary::before {
+    border-color: var(--ios-label-2);
     transition: transform 180ms var(--ios-ease);
 }
+.ios-prg-day .prg-settings-title { color: var(--ios-label); font: 600 15px/1.3 var(--ios-font); }
+.ios-prg-day .prg-settings-summary { color: var(--ios-label-2); font: 400 13px/1.4 var(--ios-font); }
+.ios-prg-day .prg-settings.is-custom .prg-settings-summary { color: var(--ios-label); }
+.ios-prg-day .prg-settings > summary:hover .prg-settings-title { color: var(--ios-blue); }
 .ios-prg-day .prg-blk-setting {
     padding: var(--s-3) var(--s-4);
     background: var(--ios-card-bg); border: none; border-radius: 12px;

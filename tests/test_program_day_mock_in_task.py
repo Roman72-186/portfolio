@@ -313,9 +313,14 @@ def test_form_prefills_the_schedule_fields(
     form = _task_form(client.get(f"{PROGRAM}/{FUTURE_DAY}").text)
 
     assert "data-mock-schedule" in form
-    assert f'data-mock-opens\n               value="{FUTURE_DAY}T11:45"' in form
-    assert f'data-mock-closes\n               value="{FUTURE_DAY}T18:30"' in form
-    assert f'data-mock-duration\n               value="{MOCK_EXAM_DEFAULT_DURATION_MINUTES}"' in form
+    # По атрибутам, а не по точной разметке: с 28.09.2026 у полей есть и
+    # метки сводки свёрнутой панели (`data-sum`), и порядок атрибутов не важен.
+    for attr, value in (
+        ("data-mock-opens", f"{FUTURE_DAY}T11:45"),
+        ("data-mock-closes", f"{FUTURE_DAY}T18:30"),
+        ("data-mock-duration", str(MOCK_EXAM_DEFAULT_DURATION_MINUTES)),
+    ):
+        assert re.search(rf'<input[^>]*\b{attr}\b[^>]*value="{value}"', form), attr
 
 
 def test_window_outside_the_day_is_refused(

@@ -12,14 +12,14 @@
 Ждёт в контексте `tariffs` — действующую линейку тарифов.
 #}
 <label class="prg-field">Срок сдачи задания
-    <input type="datetime-local" data-x-submit-until
+    <input type="datetime-local" data-x-submit-until data-sum="срок"
            aria-label="Дата и время срока сдачи задания">
     <span class="prg-hint">Пусто – без срока. Действует на все блоки задания, кроме тех, где задан свой срок.</span>
 </label>
-<div class="prg-blk-deadlines" data-x-deadlines>
+<div class="prg-blk-deadlines" data-x-deadlines data-sum-rows="свои сроки у тарифов">
     <p class="prg-hint">Свой срок по тарифу: пусто – работает общий срок задания.</p>
     {% for tariff in tariffs %}
-    <div class="prg-field prg-deadline-row" data-x-deadline-tariff="{{ tariff }}">
+    <div class="prg-field prg-deadline-row" data-x-deadline-tariff="{{ tariff }}" data-sum-row>
         <span class="prg-deadline-name">{{ tariff }}</span>
         <input type="datetime-local" data-x-deadline-at
                aria-label="Срок сдачи задания для тарифа {{ tariff }}">

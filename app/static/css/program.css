@@ -474,19 +474,57 @@
    Шеврон и сброс маркера — тот же приём, что у `.trk-row-expand` в
    tracker.css и `.ss-acc` в superadmin_stats_ios.css; своего JS на
    открытие/закрытие `<details>` не требует. */
-.prg-blk-settings { margin-top: var(--s-3); }
-.prg-blk-settings > summary {
-    display: flex; align-items: center; gap: var(--s-2);
-    padding: var(--s-2) 0;
-    list-style: none; cursor: pointer; user-select: none;
-    color: var(--muted); font: 700 12px/1.3 var(--font-display);
+/* 28.09.2026 секция стала общей панелью `.prg-settings`: в неё же свёрнуты
+   доступность и сроки всего задания и окно сдачи пробника (владелец:
+   «сворачивать и нативно показывать, что можно развернуть»). Разметка —
+   макрос `partials/program_settings_panel.html`, у блока та же строкой в
+   `blockSettingsHTML`.
+
+   Прежний заголовок — серая подпись капсом 11px с «▾» в конце — не читался
+   как то, что открывается. Теперь это строка в рамке во всю ширину высотой
+   от 44px: стрелка слева, как у раскрывающегося списка в системе, под
+   названием — сводка выставленного. Сводка переносится, а не режется: на
+   320px в ней как раз и лежит то, ради чего панель не открывают. */
+.prg-settings {
+    margin-top: var(--s-3);
+    border: 1px solid var(--line); border-radius: var(--r-sm);
 }
-.prg-blk-settings > summary::-webkit-details-marker { display: none; }
-.prg-blk-settings > summary::after {
-    content: '▾'; font-size: 11px;
+.prg-settings > summary {
+    display: flex; align-items: center; gap: var(--s-3);
+    min-height: 44px; padding: var(--s-2) var(--s-3);
+    list-style: none; cursor: pointer; user-select: none;
+    border-radius: inherit;
+}
+.prg-settings > summary::-webkit-details-marker { display: none; }
+.prg-settings > summary::before {
+    content: ''; flex-shrink: 0;
+    width: 7px; height: 7px; margin: 0 2px;
+    border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+    transform: rotate(-45deg);
     transition: transform var(--duration-fast) var(--ease-out);
 }
-.prg-blk-settings[open] > summary::after { transform: rotate(180deg); }
+.prg-settings[open] > summary::before { transform: rotate(45deg); }
+.prg-settings[open] > summary { border-bottom: 1px solid var(--line); border-radius: var(--r-sm) var(--r-sm) 0 0; }
+.prg-settings-head { display: grid; gap: 2px; min-width: 0; }
+.prg-settings-title { color: var(--text); font: 600 14px/1.3 var(--font-display); }
+.prg-settings-summary {
+    color: var(--muted); font: 400 13px/1.4 var(--font-body);
+    overflow-wrap: anywhere;
+}
+/* Выставленное — основным цветом, «по умолчанию» — приглушённым: разница
+   видна, не читая строку. */
+.prg-settings.is-custom .prg-settings-summary { color: var(--text); }
+.prg-settings > summary:hover .prg-settings-title { color: var(--blue); }
+/* `display` телу задаётся только у открытой панели: закрытую прячет сам
+   браузер, и своё `display` на ребёнке `<details>` в части движков это
+   скрытие перебивает (то же предупреждение — у `.vam-edit` в
+   videos_admin_ios.css). */
+.prg-settings[open] > .prg-settings-body {
+    display: grid; gap: var(--s-3); padding: var(--s-3);
+}
+@media (prefers-reduced-motion: reduce) {
+    .prg-settings > summary::before { transition: none; }
+}
 
 .prg-blk-setting {
     padding: var(--s-3);
@@ -501,7 +539,6 @@
        та же проверка на 375px. */
     overflow: hidden;
 }
-.prg-blk-setting + .prg-blk-setting { margin-top: var(--s-2); }
 
 /* Списки тарифов в «Доступности блока»: «Тарифы» (кому видно) и «Кого обязать
    выполнить». Замер 28.09.2026: строки высотой 24px шли с нулевым зазором —

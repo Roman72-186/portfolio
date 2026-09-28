@@ -8,8 +8,8 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=44">
-<link rel="stylesheet" href="/static/css/program_ios.css?v=18">
+<link rel="stylesheet" href="/static/css/program.css?v=45">
+<link rel="stylesheet" href="/static/css/program_ios.css?v=19">
 {# Предпросмотр «Глазами ученика» рисует блоки общим рендерером ученика, а
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
    показывались бы голой разметкой. #}
@@ -18,9 +18,10 @@ FORM: Operate.
 <link rel="stylesheet" href="/static/css/media-recorder.css?v=4">
 {% endblock %}
 {% block content %}
+{% from "partials/program_settings_panel.html" import settings_panel %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
-<script src="/static/js/task-blocks-render.js?v=32"></script>
+<script src="/static/js/task-blocks-render.js?v=33"></script>
 <script src="/static/js/diagnostic-builder.js?v=9"></script>
 <script src="/static/js/diagnostic-trainer.js?v=2"></script>
 {# WYSIWYG для полей с разметкой (**жирный**/*курсив*/список/ссылка) — стоит до
@@ -39,22 +40,27 @@ FORM: Operate.
    Поля заполнены значением, а не оставлены пустыми, сознательно: пустое
    `datetime-local` в Safari не рисует ни рамки, ни подсказки формата — разбор
    08.09.2026, тот же класс поломки, что был у «Откроется не раньше». #}
+{# Свёрнуто в панель (владелец 28.09.2026): окно заполнено расписанием по
+   умолчанию, и сводка в заголовке показывает его, не раскрывая. #}
 {% macro mock_schedule_fields() %}
+{% call settings_panel('Время сдачи', 'Не задано') %}
 <div class="prg-grid2 prg-mock-schedule" data-mock-schedule>
     <label class="prg-field">Открывается по Москве
-        <input type="datetime-local" data-mock-opens
+        <input type="datetime-local" data-mock-opens data-sum="с"
                value="{{ mock_default_schedule.opens_at }}">
     </label>
     <label class="prg-field">Закрывается по Москве
-        <input type="datetime-local" data-mock-closes
+        <input type="datetime-local" data-mock-closes data-sum="до"
                value="{{ mock_default_schedule.closes_at }}">
     </label>
     <label class="prg-field">Минут на работу
         <input type="number" min="1" max="720" step="1" data-mock-duration
+               data-sum="" data-sum-unit=" мин"
                value="{{ mock_default_schedule.duration_minutes }}">
         <span class="prg-hint">Отсчёт идёт с того момента, как ученик нажал «Начать».</span>
     </label>
 </div>
+{% endcall %}
 {% endmacro %}
 
 {% macro tariff_fields() %}
@@ -62,7 +68,7 @@ FORM: Operate.
     <input type="checkbox" data-tariff-restricted>
     <span>Ограничить по тарифу</span>
 </label>
-<div class="prg-tariffs" data-tariffs-wrap hidden>
+<div class="prg-tariffs" data-tariffs-wrap data-sum-list="тарифы" data-sum-empty="скрыто от всех" hidden>
     <p class="prg-hint">Элемент виден только отмеченным тарифам. Не отметили ни одного — скрыт от всех.</p>
     {% for tariff in tariffs %}
     <label class="prg-field prg-field--row">
@@ -203,12 +209,14 @@ FORM: Operate.
         </div>
         {% endfor %}
         </section>
+        {% call settings_panel('Доступность', 'По умолчанию: обязательно, видно всем') %}
         <label class="prg-field prg-field--row">
-            <input type="checkbox" data-m-required checked>
+            <input type="checkbox" data-m-required data-sum-off="необязательно" checked>
             <span>Обязательно для сдачи</span>
         </label>
         <p class="prg-hint">Билет автоматически доступен всем ученикам, окно сдачи система выставляет сама.</p>
         {{ tariff_fields() }}
+        {% endcall %}
         {{ blocks_editor(
             'Дополнительные задачи учебного дня',
             'Текст, фото, видео, ссылки и вопросы из этого раздела попадут в каждый выбранный предмет.'
@@ -245,8 +253,11 @@ FORM: Operate.
                       aria-label="Описание, необязательно"
                       placeholder="Описание, необязательно"></textarea>
         </label>
+        {# Обязательность, открытие, срок и тарифы свёрнуты в одну панель
+           (владелец 28.09.2026) — одна и та же на экране цикла. #}
+        {% call settings_panel('Доступность и сроки', 'По умолчанию: сразу, без срока, всем') %}
         {% if kind != 'archi_profile' %}<label class="prg-field prg-field--row">
-            <input type="checkbox" data-x-required checked>
+            <input type="checkbox" data-x-required data-sum-off="необязательный" checked>
             <span>Обязательный элемент — пока не сделан, следующие шаги ленты закрыты</span>
         </label>{% else %}<input type="checkbox" data-x-required checked hidden>{% endif %}
         {# Дата открытия всего задания (владелец 03.09.2026: «даже если ребёнок
@@ -255,13 +266,14 @@ FORM: Operate.
         {# Дата и время с 27.09.2026 (владелец: «нужны не только даты, а
            время»). До этого открытие всегда приходилось на полночь. #}
         <label class="prg-field">Откроется не раньше
-            <input type="datetime-local" data-x-starts aria-label="Дата и время открытия задания">
+            <input type="datetime-local" data-x-starts data-sum="откроется" aria-label="Дата и время открытия задания">
             <span class="prg-hint">Пусто – задание видно сразу после публикации.</span>
         </label>
         {# Срок сдачи на всё задание (владелец 27.09.2026) — общий партиал с
            экраном заданий цикла. #}
         {% include "partials/program_item_deadline_fields.html" %}
         {{ tariff_fields() }}
+        {% endcall %}
         {% if kind == 'archi_profile' %}
         <div data-diagnostic-editor></div>
         {# Тренажёр для ролей ≥ 4 (владелец 22.09.2026, вариант C развилки —
@@ -369,11 +381,13 @@ FORM: Operate.
                 </select>
             </label>
         </div>
+        {% call settings_panel('Доступность', 'По умолчанию: обязательный, виден всем') %}
         <label class="prg-field prg-field--row">
-            <input type="checkbox" data-v-required checked>
+            <input type="checkbox" data-v-required data-sum-off="необязательный" checked>
             <span>Обязательный элемент — пока не сделан, следующие шаги ленты закрыты</span>
         </label>
         {{ tariff_fields() }}
+        {% endcall %}
         {{ blocks_editor(
             'Дополнительные задачи учебного дня',
             'После основного видео можно добавить текст, фото, другой ролик, ссылку или вопрос.'
@@ -418,11 +432,13 @@ FORM: Operate.
             <input type="file" data-h-images accept="image/*" multiple>
         </label>
         <div class="prg-thumbs" data-h-thumbs></div>
+        {% call settings_panel('Доступность', 'По умолчанию: обязательный, виден всем') %}
         <label class="prg-field prg-field--row">
-            <input type="checkbox" data-h-gate-required checked>
+            <input type="checkbox" data-h-gate-required data-sum-off="необязательный" checked>
             <span>Обязательный элемент — пока не сделан, следующие шаги ленты закрыты</span>
         </label>
         {{ tariff_fields() }}
+        {% endcall %}
         {{ blocks_editor() }}
         <div class="prg-actions prg-form-actions">
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
@@ -576,6 +592,7 @@ FORM: Operate.
         form.querySelectorAll('[data-tariff]').forEach(function (box) { box.checked = false; });
         var wrap = form.querySelector('[data-tariffs-wrap]');
         if (wrap) wrap.hidden = true;
+        refreshSettingsPanels(form);
     }
 
     function populateTariffFields(form, data) {
@@ -588,6 +605,7 @@ FORM: Operate.
         });
         var wrap = form.querySelector('[data-tariffs-wrap]');
         if (wrap) wrap.hidden = !restricted;
+        refreshSettingsPanels(form);
     }
 
     // ── Пробник ─────────────────────────────────────────────────────────
@@ -631,6 +649,7 @@ FORM: Operate.
         var box = mockForm.querySelector('[data-form-message]');
         box.textContent = text || '';
         box.classList.toggle('is-error', !!isError);
+        if (isError) openCustomSettingsPanels(mockForm);
     }
 
     function updateSubjectSummary(block) {
@@ -882,6 +901,8 @@ FORM: Operate.
         var box = form.querySelector('[data-form-message]');
         box.textContent = text || '';
         box.classList.toggle('is-error', !!isError);
+        // Поле, о котором ошибка, может лежать под свёрнутой панелью.
+        if (isError) openCustomSettingsPanels(form);
     }
 
     function saveError(error, what) {
@@ -949,6 +970,9 @@ FORM: Operate.
 
     // Срок задания: сбор и заполнение полей формы (владелец 27.09.2026).
     {% include "partials/program_item_deadline_fields_js.html" %}
+
+    // Сводка свёрнутых панелей «Доступность и сроки» (владелец 28.09.2026).
+    {% include "partials/program_settings_panel_js.html" %}
 
 
     // ── Предпросмотр «глазами ученика» (владелец 31.08.2026) ──────────────
@@ -1243,6 +1267,10 @@ FORM: Operate.
             tile.setAttribute('aria-expanded', isActive ? 'true' : 'false');
         });
         var opened = forms.filter(function (form) { return form.dataset.form === kind; })[0];
+        // Через showForm идут и создание, и все виды правки — здесь сводка
+        // свёрнутых панелей догоняет значения, вписанные без событий.
+        refreshSettingsPanels(opened);
+        if (opened) collapseSettingsPanelsOnSwitch(opened, opened.dataset.editingTaskId || 'new');
         if (opened) opened.scrollIntoView({behavior: 'smooth', block: 'start'});
     }
 
@@ -1360,6 +1388,7 @@ FORM: Operate.
         // «Откроется не раньше» с билетами не отправляется: окно ставит сервер.
         var starts = form.querySelector('[data-x-starts]');
         if (starts) starts.closest('.prg-field').hidden = visible;
+        refreshSettingsPanels(form);
     }
 
     function resetSimpleMock(form) {

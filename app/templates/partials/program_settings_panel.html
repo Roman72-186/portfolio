@@ -1,0 +1,30 @@
+{#
+Свёрнутая панель настроек конструктора — доступность, даты, время (владелец
+28.09.2026). Одна разметка на экран дня и экран цикла, у блока та же разметка
+собирается строкой в `blockSettingsHTML` (program_blocks_editor_js.html).
+
+Нативный `<details>`: раскрытие без своего JS, с клавиатуры и диктором.
+Строка `summary` — название и под ним сводка выставленного; сводку пересчитывает
+`refreshSettingsPanel` (program_settings_panel_js.html), текст по умолчанию
+стоит сразу в разметке, чтобы панель не была пустой до первого пересчёта.
+Как пометить поле для сводки — там же, в шапке скрипта.
+
+Вызов:
+    {% from "partials/program_settings_panel.html" import settings_panel %}
+    {% call settings_panel('Доступность и сроки', 'сразу, без срока, всем') %}
+        …поля…
+    {% endcall %}
+#}
+{% macro settings_panel(title, empty) %}
+<details class="prg-settings" data-settings-panel data-settings-empty="{{ empty }}">
+    <summary>
+        <span class="prg-settings-head">
+            <span class="prg-settings-title">{{ title }}</span>
+            <span class="prg-settings-summary" data-settings-summary>{{ empty }}</span>
+        </span>
+    </summary>
+    <div class="prg-settings-body">
+        {{ caller() }}
+    </div>
+</details>
+{% endmacro %}

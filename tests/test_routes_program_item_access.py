@@ -223,3 +223,32 @@ def test_day_page_has_access_fields_for_task_and_block(admin_client, db):
     # скрытым: без него сервер обнулил бы флаг у блоков, где он уже включён.
     assert 'data-b-bypass hidden' in page.text
     assert "Не ждать очереди" not in page.text
+
+
+def test_task_and_block_settings_are_folded_into_a_panel(admin_client, db):
+    """Доступность и сроки свёрнуты в панель с живой сводкой (владелец
+    28.09.2026: «сворачивать и нативно показывать, что можно развернуть»).
+
+    Панель — нативный `<details>`; в заголовке сразу стоит текст по умолчанию,
+    чтобы до первого пересчёта сводка не была пустой. Поля, которые прячет
+    панель, помечены для сводки: иначе свёрнутый срок стал бы невидимым.
+    """
+    client, _ = admin_client
+
+    page = client.get(f"{PROGRAM}/{_day()}").text
+
+    form = page.split('data-form="material"', 1)[1].split("</form>", 1)[0]
+    panel = form.split("data-settings-panel", 1)[1].split("</details>", 1)[0]
+    assert "Доступность и сроки" in panel
+    assert "По умолчанию: сразу, без срока, всем" in panel
+    for field in ('data-x-required data-sum-off=', 'data-x-starts data-sum=',
+                  'data-x-submit-until data-sum=', "data-sum-rows=",
+                  "data-tariff-restricted", 'data-sum-list="тарифы"'):
+        assert field in panel, field
+
+    # Панель блока собирается строкой в JS — та же разметка и те же метки.
+    assert "'<details class=\"prg-settings\" data-settings-panel" in page
+    for field in ("data-b-opens data-sum=", "data-b-closes data-sum=",
+                  "data-b-submit-until data-sum=", "data-b-required data-sum-on="):
+        assert field in page, field
+    assert "function refreshSettingsPanel(" in page
