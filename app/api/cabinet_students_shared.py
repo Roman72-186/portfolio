@@ -47,7 +47,7 @@ from app.services.feature_periods import get_active_period
 from app.services.stats import avg_score_by_subject_all_time
 from app.services.portfolio import after_gallery_groups, item_source, portfolio_item_count
 from app.services.student_access import get_student_for_staff_access
-from app.services.user_management import log_tariff_change
+from app.services.user_management import apply_tariff_change, tariff_change_clears_access
 from app.services.works import delete_works_with_dependents
 from app.services.tz import MSK_TZ, msk_input_value, msk_midnight, parse_msk_local
 from app.services.utils import compress_image, study_duration_text, group_works, has_case_growth
@@ -1257,10 +1257,16 @@ def edit_student_profile(
         student.parent_phone = parent_phone
     if tg_username:
         student.tg_username = tg_username
+    # Каким поле «Доступ до» пришло к куратору — чтобы ниже отличить
+    # предзаполненную дату от вписанной руками.
+    access_until_prefilled = msk_input_value(student.access_until)
+    tariff_cleared_access = False
     if tariff or clear_tariff:
-        if student.tariff != tariff:
-            log_tariff_change(db, user["user_id"], student.id, student.tariff, tariff)
-        student.tariff = tariff
+        tariff_cleared_access = (
+            tariff_change_clears_access(student.tariff, tariff)
+            and student.access_until is not None
+        )
+        apply_tariff_change(db, user["user_id"], student, tariff)
     if parsed_enrollment_year is not None:
         student.enrollment_year = parsed_enrollment_year
     if parsed_university_year is not None:
@@ -1281,6 +1287,17 @@ def edit_student_profile(
         and not tariff
     ):
         student.tariff = ""
+    # Поле «Доступ до» в карточке предзаполнено текущей датой ученика, поэтому
+    # форма всегда присылает её обратно. Смену тарифа с «новенького» нельзя
+    # оставлять наедине с этим полем: прилетевшая дата вернула бы только что
+    # снятый срок, и владелец видел бы блокировку после смены тарифа (прод,
+    # 28.09.2026: ученице проставили «Я С ВАМИ», кабинет остался закрытым).
+    #
+    # Обнуляем только нетронутое поле — то, которое пришло ровно таким, каким
+    # его отрисовали. Дата, вписанная в этой же форме руками, главнее правила:
+    # она значит «оплатил, доступ до такого-то числа», и молча её терять нельзя.
+    if tariff_cleared_access and access_until_raw == access_until_prefilled:
+        parsed_access_until = None
     student.access_until = parsed_access_until
     db.commit()
 

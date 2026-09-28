@@ -119,6 +119,55 @@ def log_tariff_change(
          f"tariff: {old_tariff or '—'} → {new_tariff or '—'}")
 
 
+def tariff_change_clears_access(old_tariff: str | None, new_tariff: str | None) -> bool:
+    """Снимает ли эта смена тарифа срок доступа (`User.access_until`).
+
+    Новенький пробного набора живёт без тарифа (`users.tariff` — пустая строка)
+    и со сроком: и то и другое ставит вход по ссылке `/proba` (`api/auth.py`).
+    Проставили ему любой тариф — значит он оплатил и перестал быть пробником,
+    срок больше не его (владелец 28.09.2026: «если я меняю у новенького тариф с
+    новенького на любой другой, то блокировка должна сниматься»).
+
+    Обратное неверно: у ученика с тарифом срок означает «перестал платить», и
+    смена одного тарифа на другой его не отменяет — иначе правка тарифа задним
+    числом молча открыла бы доступ должнику.
+    """
+    return not (old_tariff or "").strip() and bool((new_tariff or "").strip())
+
+
+def apply_tariff_change(
+    db: DBSession,
+    performed_by_id: int,
+    student: User,
+    new_tariff: str | None,
+) -> bool:
+    """Меняет тариф ученику: журнал + снятие срока доступа у новенького.
+
+    Единственное место смены тарифа для всех экранов сотрудников (карточка
+    ученика, форма и список суперадмина, добавление по нику). Правило про срок
+    доступа живёт здесь, а не в каждом роуте: экранов четыре, и правило,
+    размазанное по ним, отстаёт в том, который забыли.
+
+    Возвращает True, если тариф действительно изменился. Не коммитит — запись
+    уходит вместе с транзакцией вызывающего кода.
+    """
+    new_value = (new_tariff or "").strip()
+    old_value = student.tariff or ""
+    if old_value == new_value:
+        return False
+    clears_access = (
+        tariff_change_clears_access(old_value, new_value)
+        and student.access_until is not None
+    )
+    _log(db, "tariff_change", performed_by_id, student.id,
+         f"tariff: {old_value or '—'} → {new_value or '—'}"
+         + (" (срок доступа снят)" if clears_access else ""))
+    student.tariff = new_value
+    if clears_access:
+        student.access_until = None
+    return True
+
+
 def _invalidate_user_sessions(db: DBSession, user_id: int) -> None:
     """Деактивирует все активные сессии пользователя и сбрасывает кэш."""
     sessions = (

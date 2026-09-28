@@ -1762,13 +1762,13 @@ def superadmin_stats_export(
 
 from app.services.contacts import find_student_by_tg_username
 from app.services.user_management import (
+    apply_tariff_change,
     archive_user,
     can_assign_role_rank,
     can_manage_user_by_rank,
     get_curator_for_assignment,
     hard_delete_user,
     log_curator_change,
-    log_tariff_change,
     soft_delete_user,
     toggle_user_active,
     unarchive_user,
@@ -2214,8 +2214,7 @@ def superadmin_create_student(
         if not student.name:
             student.name = f"{student.first_name or first_name_clean} {student.last_name or last_name_clean}".strip()
         if tariff_clean:
-            log_tariff_change(db, user["user_id"], student.id, student.tariff, tariff_clean)
-            student.tariff = tariff_clean
+            apply_tariff_change(db, user["user_id"], student, tariff_clean)
         if curator_id_v is not None:
             log_curator_change(db, user["user_id"], student.id, student.curator_id, curator_id_v)
             student.curator_id = curator_id_v
@@ -2657,9 +2656,6 @@ def superadmin_user_save_tags(
     cohort_tag_v = cohort_tag_v or None
 
     log_curator_change(db, user["user_id"], target.id, target.curator_id, curator_id_v)
-    if tariff_v or clear_tariff:
-        if target.tariff != tariff_v:
-            log_tariff_change(db, user["user_id"], target.id, target.tariff, tariff_v)
 
     target.exam_dates = exam_dates_v
     target.exam_subjects = exam_subjects_v
@@ -2668,7 +2664,7 @@ def superadmin_user_save_tags(
     target.curator_id = curator_id_v
     target.curator_tag = curator_tag_v
     if tariff_v or clear_tariff:
-        target.tariff = tariff_v
+        apply_tariff_change(db, user["user_id"], target, tariff_v)
     target.about = about_v
     target.cohort_tag = cohort_tag_v
     db.commit()
@@ -2743,9 +2739,7 @@ def superadmin_user_set_tariff(
     if tariff_v and tariff_v not in TARIFFS:
         raise HTTPException(status_code=400, detail="Неверный тариф")
 
-    if target.tariff != tariff_v:
-        log_tariff_change(db, user["user_id"], target.id, target.tariff, tariff_v)
-        target.tariff = tariff_v
+    if apply_tariff_change(db, user["user_id"], target, tariff_v):
         db.commit()
         _invalidate_user_sessions(db, target.id)
 

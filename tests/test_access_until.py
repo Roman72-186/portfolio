@@ -8,8 +8,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.models.audit_log import AuditLog
 from app.services.navigation import student_nav_items
 from app.services.tz import msk_input_value, msk_text, parse_msk_local
+from app.services.user_management import tariff_change_clears_access
 
 
 def _hours_ago(hours: int) -> datetime:
@@ -415,3 +417,119 @@ def test_staff_explicit_tariff_wins_over_clearing(db, staff_client, user_factory
     assert resp.status_code == 200, resp.text
     db.refresh(student)
     assert student.tariff == "УВЕРЕННЫЙ"
+
+
+# ── Смена тарифа снимает срок доступа ────────────────────────────────────────
+# Владелец 28.09.2026: «если я меняю у новенького тариф с новенького на любой
+# другой, то блокировка должна сниматься». До этого правила смена тарифа срок не
+# трогала, и на проде ученица с тарифом «Я С ВАМИ» осталась с закрытым кабинетом.
+
+def test_tariff_change_clears_access_helper():
+    """Предикат правила: срок снимает только выход из «без тарифа»."""
+    assert tariff_change_clears_access("", "Я С ВАМИ")
+    assert tariff_change_clears_access(None, "Я С ВАМИ")
+    assert not tariff_change_clears_access("УВЕРЕННЫЙ", "Я С ВАМИ")
+    assert not tariff_change_clears_access("", "")
+    assert not tariff_change_clears_access("Я С ВАМИ", "")
+
+
+def test_card_tariff_from_newcomer_clears_access(db, staff_client, user_factory):
+    """Главный случай: карточка присылает дату обратно предзаполненной, и она
+    не должна вернуть только что снятый срок."""
+    client, _staff = staff_client
+    student = user_factory(vk_id=100_790, tariff="")
+    student.access_until = _hours_ago(1)
+    db.commit()
+    prefilled = msk_input_value(student.access_until)
+
+    resp = client.post(
+        f"/cabinet/students/{student.id}/profile",
+        data=_profile_form(tariff="Я С ВАМИ", access_until=prefilled),
+    )
+
+    assert resp.status_code == 200, resp.text
+    db.refresh(student)
+    assert student.tariff == "Я С ВАМИ"
+    assert student.access_until is None
+
+
+def test_card_tariff_change_keeps_access_of_paying_student(db, staff_client, user_factory):
+    """У ученика с тарифом срок значит «перестал платить» — правка тарифа его
+    не отменяет, иначе смена тарифа задним числом открыла бы доступ должнику."""
+    client, _staff = staff_client
+    student = user_factory(vk_id=100_791, tariff="УВЕРЕННЫЙ")
+    student.access_until = _hours_ago(1)
+    db.commit()
+    prefilled = msk_input_value(student.access_until)
+
+    resp = client.post(
+        f"/cabinet/students/{student.id}/profile",
+        data=_profile_form(tariff="Я С ВАМИ", access_until=prefilled),
+    )
+
+    assert resp.status_code == 200, resp.text
+    db.refresh(student)
+    assert student.tariff == "Я С ВАМИ"
+    assert msk_input_value(student.access_until) == prefilled
+
+
+def test_card_hand_typed_deadline_wins_over_tariff_clearing(db, staff_client, user_factory):
+    """Дату вписали в той же форме руками — она главнее автоснятия: значит
+    «оплатил, доступ до такого-то числа»."""
+    client, _staff = staff_client
+    student = user_factory(vk_id=100_792, tariff="")
+    student.access_until = _hours_ago(1)
+    db.commit()
+
+    resp = client.post(
+        f"/cabinet/students/{student.id}/profile",
+        data=_profile_form(tariff="Я С ВАМИ", access_until="2026-10-31T23:30"),
+    )
+
+    assert resp.status_code == 200, resp.text
+    db.refresh(student)
+    assert student.tariff == "Я С ВАМИ"
+    assert msk_input_value(student.access_until) == "2026-10-31T23:30"
+
+
+def test_card_tariff_change_logged_with_access_note(db, staff_client, user_factory):
+    """След в журнале один — смена тарифа, и в нём видно, что снят срок."""
+    client, staff = staff_client
+    student = user_factory(vk_id=100_793, tariff="")
+    student.access_until = _hours_ago(1)
+    db.commit()
+
+    resp = client.post(
+        f"/cabinet/students/{student.id}/profile",
+        data=_profile_form(
+            tariff="Я С ВАМИ", access_until=msk_input_value(student.access_until)
+        ),
+    )
+
+    assert resp.status_code == 200, resp.text
+    rows = (
+        db.query(AuditLog)
+        .filter(AuditLog.target_user_id == student.id, AuditLog.action == "tariff_change")
+        .all()
+    )
+    assert len(rows) == 1
+    assert "срок доступа снят" in rows[0].details
+
+
+def test_superadmin_quick_tariff_clears_access(db, client, user_factory, session_factory):
+    """Быстрая смена тарифа из списка суперадмина — то же правило: экранов
+    четыре, и все ходят через один сервис."""
+    superadmin = user_factory(vk_id=100_794, name="Супер", role_name="суперадмин")
+    client.cookies.set("session_id", session_factory(superadmin).id)
+    student = user_factory(vk_id=100_795, tariff="")
+    student.access_until = _hours_ago(1)
+    db.commit()
+
+    resp = client.post(
+        f"/cabinet/superadmin/users/{student.id}/tariff", data={"tariff": "Я С ВАМИ"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    db.refresh(student)
+    assert student.tariff == "Я С ВАМИ"
+    assert student.access_until is None
