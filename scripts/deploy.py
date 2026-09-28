@@ -8,6 +8,7 @@ Usage:
   python scripts/deploy.py --sync-env --allow-remove-env-keys  # разрешить удаление ключей
   python scripts/deploy.py --status                 # что за версия на сервере, есть ли расхождения
   python scripts/deploy.py --allow-dirty            # деплой незакоммиченного (пометит версию грязной)
+  python scripts/deploy.py --no-db-dump             # без дампа базы перед деплоем (только аварийно)
 
 **Прод не должен расходиться с коммитом.** Скрипт отказывается деплоить
 незакоммиченное: полный деплой требует чистого дерева, поштучный — чтобы были
@@ -37,10 +38,16 @@ HEAD и дополнительно сверяет sha256 всех отслежи
 `--sync-env`. На сервер сам файл не уезжает — только его содержимое в `.env`. Перед заливкой
 скрипт делает бэкап на сервере, показывает разницу по именам переменных — значения
 не печатаются никогда — и отказывается работать, если ключ пропадает.
+
+**Перед деплоем снимается дамп базы** (`dump_database_before_deploy`):
+миграции применяет старт контейнера, и без свежей копии плохая миграция
+стоила бы данных с ночного дампа. Не вышел дамп — деплой отменяется до
+заливки файлов, прод не тронут. Аварийный обход — `--no-db-dump`.
 """
 import hashlib
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -72,6 +79,62 @@ SKIP = {
 ALLOWED_HOSTS = {
     "139.100.237.57",  # боевой Apparchi
 }
+
+
+# Дамп базы перед деплоем. Каталог и команда — те же, что у ночного
+# `/etc/cron.d/portfolio-pgbackup`; своё имя `pre-deploy-*`, чтобы ротация
+# ночных дампов (`portfolio-*`, 14 дней) их не трогала, а своя держала
+# последние PREDEPLOY_DUMPS_KEEP. Живой дамп на 29.09.2026 — 1,4 МБ; меньше
+# MIN_DUMP_BYTES значит, что `pg_dump` упал и gzip упаковал пустоту.
+BACKUP_DIR = "/var/backups/portfolio"
+PREDEPLOY_DUMPS_KEEP = 10
+MIN_DUMP_BYTES = 100 * 1024
+
+
+def predeploy_dump_command(commit: str | None, stamp: str) -> str:
+    name = f"pre-deploy-{stamp}-{(commit or 'nocommit')[:8]}.sql.gz"
+    script = (
+        "set -euo pipefail; "
+        f"cd {shlex.quote(REMOTE_DIR)}; "
+        f"mkdir -p {BACKUP_DIR}; "
+        f"f={BACKUP_DIR}/{name}; "
+        # Упал `pg_dump` или `gzip -t` — недописанный файл не остаётся лежать
+        # среди настоящих копий.
+        """trap 'rm -f "$f"' ERR; """
+        f"docker compose -f {shlex.quote(COMPOSE_FILE)} exec -T db "
+        "pg_dump -U portfolio -d portfolio --clean --if-exists | gzip > \"$f\"; "
+        'gzip -t "$f"; '
+        's=$(stat -c %s "$f"); '
+        f'if [ "$s" -lt {MIN_DUMP_BYTES} ]; then rm -f "$f"; '
+        'echo "дамп подозрительно мал: $s байт" >&2; exit 1; fi; '
+        f"ls -1t {BACKUP_DIR}/pre-deploy-*.sql.gz | tail -n +{PREDEPLOY_DUMPS_KEEP + 1} "
+        "| xargs -r rm -f; "
+        'echo "$f $s"'
+    )
+    return "bash -c " + shlex.quote(script)
+
+
+def dump_database_before_deploy(client, commit: str | None) -> str:
+    """Снять дамп базы до любых изменений на сервере; вернуть путь к нему.
+
+    Любой отказ — SystemExit: деплой без свежей копии базы не продолжается.
+    """
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    print("\nДамп базы перед деплоем...")
+    _, stdout, stderr = client.exec_command(
+        predeploy_dump_command(commit, stamp), timeout=600
+    )
+    out = stdout.read().decode("utf-8", errors="replace").strip()
+    err = stderr.read().decode("utf-8", errors="replace").strip()
+    if stdout.channel.recv_exit_status() != 0 or not out:
+        raise SystemExit(
+            "\nОТМЕНА: дамп базы перед деплоем не снялся, на сервере ничего не менялось.\n"
+            f"{err or out or '(нет вывода)'}\n"
+            "Разберитесь с базой; выкатить без дампа можно только осознанно: --no-db-dump."
+        )
+    path, _, size = out.rpartition("\n")[2].partition(" ")
+    print(f"  {path} ({size} байт)")
+    return path
 
 
 def assert_known_host(host: str) -> None:
@@ -736,11 +799,12 @@ def upload_files(sftp, local_paths: list[Path]):
 
 def main():
     args = sys.argv[1:]
-    known = {"--sync-env", "--allow-remove-env-keys", "--allow-dirty", "--status"}
+    known = {"--sync-env", "--allow-remove-env-keys", "--allow-dirty", "--status", "--no-db-dump"}
     sync_env = "--sync-env" in args
     allow_remove = "--allow-remove-env-keys" in args
     allow_dirty = "--allow-dirty" in args
     status_only = "--status" in args
+    skip_db_dump = "--no-db-dump" in args
     unknown = [a for a in args if a.startswith("-") and a not in known]
     if unknown:
         raise SystemExit(f"Unknown option(s): {' '.join(unknown)}")
@@ -778,6 +842,12 @@ def main():
         sftp.close()
         client.close()
         return
+
+    # Дамп — до первого изменения на сервере: не вышел, значит прод не тронут.
+    if skip_db_dump:
+        print("\n  Дамп базы перед деплоем пропущен (--no-db-dump).")
+    else:
+        dump_database_before_deploy(client, state.get("commit"))
 
     # Create remote dir
     try:

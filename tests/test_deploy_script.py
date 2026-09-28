@@ -348,3 +348,41 @@ def test_fingerprint_still_reads_multiline_values():
     """Хвостовые комментарии не должны сломать разбор приватных ключей."""
     text = 'KEY="-----BEGIN-----\nтело\n-----END-----"\nNEXT=1\n'
     assert sorted(deploy.env_fingerprint(text)) == ["KEY", "NEXT"]
+
+
+# ── Дамп базы перед деплоем ───────────────────────────────────────────────────
+
+
+def test_predeploy_dump_command_fails_loudly_on_broken_dump():
+    """Код-ревью 28.09.2026, P2 № 13: миграцию применяет старт контейнера, а
+    свежей копии перед ней не было. Команда дампа обязана падать, если упал
+    `pg_dump` (pipefail, иначе gzip «успешно» упакует пустоту), если архив
+    битый или подозрительно мал."""
+    command = deploy.predeploy_dump_command("abcdef1234567", "20260929T120000Z")
+
+    assert command.startswith("bash -c ")
+    assert "set -euo pipefail" in command
+    assert "exec -T db pg_dump -U portfolio -d portfolio --clean --if-exists" in command
+    assert "gzip -t" in command
+    assert """trap 'rm -f "$f"' ERR""" in deploy.shlex.split(command)[2]
+    assert f"-lt {deploy.MIN_DUMP_BYTES}" in command
+    assert "pre-deploy-20260929T120000Z-abcdef12.sql.gz" in command
+    # Своя ротация: ночная (`portfolio-*`, 14 дней) эти файлы не видит.
+    assert f"tail -n +{deploy.PREDEPLOY_DUMPS_KEEP + 1}" in command
+
+
+def test_predeploy_dump_returns_path_on_success():
+    client = _FakeClient([("/var/backups/portfolio/pre-deploy-x.sql.gz 1400000", 0)])
+
+    assert deploy.dump_database_before_deploy(client, "abc") == (
+        "/var/backups/portfolio/pre-deploy-x.sql.gz"
+    )
+
+
+@pytest.mark.parametrize("response", [("", 1), ("дамп подозрительно мал: 20 байт", 1), ("", 0)])
+def test_failed_predeploy_dump_stops_deploy(response):
+    client = _FakeClient([response])
+
+    with pytest.raises(SystemExit) as exc:
+        deploy.dump_database_before_deploy(client, "abc")
+    assert "ОТМЕНА" in str(exc.value)
