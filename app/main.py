@@ -31,6 +31,7 @@ from app.api import cabinet_point_a_audio
 from app.api import cabinet_staff_notifications
 from app.dependencies import ACCESS_EXPIRED_DETAIL, TG_MISMATCH_DETAIL, PORTFOLIO_GATE_DETAIL
 from app.limiter import limiter
+from app import log_masking
 from app.services.rbac import seed_roles_and_permissions
 from app.services import n8n as n8n_service
 from app.services import vk as vk_service
@@ -41,6 +42,10 @@ from app.services import exam_scheduler
 import app.models  # noqa: F401 — ensures all models are registered with Base.metadata
 from app.models.session import Session as DbSession
 
+
+# Ключ постоянной ссылки суперадмина и токены одноразовых ссылок входа —
+# в журнале запросов как `***` (код-ревью 28.09.2026).
+log_masking.install()
 
 _FORCE_SESSION_REFRESH_PATHS = {
     "/upload/mock-exam",
