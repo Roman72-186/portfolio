@@ -776,6 +776,71 @@ def test_deadline_stats_use_the_task_deadline_as_a_fallback(db, user_factory):
     assert (stats["on_time"], stats["late"]) == (0, 1)
 
 
+def _week_cycle(db, owner, *, ends_on):
+    from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
+    from app.services.tz import msk_midnight
+
+    def utc(value):
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+    topic = LearningTopic(
+        title="Цикл 3", kind=TOPIC_KIND_WEEK, assign_to_all=True, is_published=True,
+        opens_at=utc(msk_midnight(ends_on - timedelta(days=6))),
+        ends_at=utc(msk_midnight(ends_on) + timedelta(hours=23, minutes=59)),
+        created_by_id=owner.id,
+    )
+    db.add(topic)
+    db.flush()
+    return topic
+
+
+def test_deadline_stats_use_the_cycle_end_when_nothing_else_is_set(db, user_factory):
+    """Владелец 28.09.2026: у видео без своего срока и без срока задания
+    сроком считается конец цикла — «записывать всё для каждого ученика».
+    Отметка после конца цикла — опоздание, до — вовремя."""
+    from app.models.tracker import TrackerTask
+    from app.services.activity_stats import get_deadline_stats
+    from app.services.tz import today_msk
+
+    student = user_factory(vk_id=971804, name="Ученик Цикла", role_name="ученик")
+    cycle = _week_cycle(db, student, ends_on=today_msk() - timedelta(days=2))
+    task = TrackerTask(title="Видео цикла", topic_id=cycle.id)
+    db.add(task)
+    db.flush()
+    now = datetime.now(timezone.utc)
+    _closed_block(db, task=task, student=student, block_type="video", completed_at=now)
+    _closed_block(
+        db, task=task, student=student, block_type="video",
+        completed_at=now - timedelta(days=5),
+    )
+
+    stats = get_deadline_stats(db)
+
+    assert (stats["on_time"], stats["late"]) == (1, 1)
+
+
+def test_own_deadline_beats_the_cycle_end(db, user_factory):
+    """Конец цикла — только запасной срок: свой срок блока главнее."""
+    from app.models.tracker import TrackerTask
+    from app.services.activity_stats import get_deadline_stats
+    from app.services.tz import today_msk
+
+    student = user_factory(vk_id=971805, name="Ученик Продлённый", role_name="ученик")
+    cycle = _week_cycle(db, student, ends_on=today_msk() - timedelta(days=2))
+    task = TrackerTask(title="Продлили", topic_id=cycle.id)
+    db.add(task)
+    db.flush()
+    now = datetime.now(timezone.utc)
+    _closed_block(
+        db, task=task, student=student, block_type="video",
+        completed_at=now, submit_until=now + timedelta(days=1),
+    )
+
+    stats = get_deadline_stats(db)
+
+    assert (stats["on_time"], stats["late"]) == (1, 0)
+
+
 def test_deadline_card_is_on_the_activity_page(superadmin_client, db, user_factory):
     """Карточка живёт на «Статистике активности», а не на своей странице —
     инвариант «вся статистика на одной странице» (AGENTS.md)."""
@@ -797,3 +862,28 @@ def test_deadline_card_is_on_the_activity_page(superadmin_client, db, user_facto
     assert page.status_code == 200
     assert "Сроки сдачи" in page.text
     assert "Закрыли после срока" in page.text
+
+
+def test_explicit_no_deadline_for_tariff_is_not_replaced_by_cycle_end(db, user_factory):
+    """Строка тарифа с пустым временем — «у этого тарифа бессрочно»; конец
+    цикла её не перебивает, такое закрытие в подсчёт не идёт."""
+    from app.models.task_block import TaskBlockTariffDeadline
+    from app.models.tracker import TrackerTask
+    from app.services.activity_stats import get_deadline_stats
+    from app.services.tz import today_msk
+
+    student = user_factory(vk_id=971806, name="Ученик Бессрочный", role_name="ученик")
+    cycle = _week_cycle(db, student, ends_on=today_msk() - timedelta(days=2))
+    task = TrackerTask(title="Без срока тарифу", topic_id=cycle.id)
+    db.add(task)
+    db.flush()
+    block = _closed_block(
+        db, task=task, student=student, block_type="video",
+        completed_at=datetime.now(timezone.utc),
+    )
+    db.add(TaskBlockTariffDeadline(block_id=block.id, tariff=student.tariff, submit_until=None))
+    db.commit()
+
+    stats = get_deadline_stats(db)
+
+    assert stats["with_deadline"] == 0

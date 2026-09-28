@@ -483,6 +483,31 @@ def submit_deadline_for(
     return getattr(task, "submit_until", None)
 
 
+def submit_deadline_is_set(
+    block: TaskBlock,
+    task,
+    *,
+    user_tariff: str | None,
+    block_overrides: dict[str, datetime | None] | None = None,
+    task_overrides: dict[str, datetime | None] | None = None,
+) -> bool:
+    """Сказал ли кто-то из четырёх источников `submit_deadline_for` про срок
+    хоть что-то — включая явное «бессрочно» строкой тарифа.
+
+    Нужна там, где у пустого срока есть запасной вариант (статистика берёт
+    конец цикла, владелец 28.09.2026): `submit_deadline_for` отдаёт `None` и на
+    «ничего не настроено», и на «здесь без срока», а перебивать второе нельзя.
+    """
+    if _has_own_deadline(block, block_overrides, user_tariff):
+        return True
+    if task is None:
+        return False
+    tariff = (user_tariff or "").strip().upper()
+    if task_overrides and tariff in task_overrides:
+        return True
+    return getattr(task, "submit_until", None) is not None
+
+
 def sync_submit_deadlines(
     db: DBSession, block: TaskBlock, deadlines: list[dict] | None
 ) -> None:

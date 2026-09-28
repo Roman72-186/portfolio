@@ -858,13 +858,23 @@ def get_deadline_stats(db: DBSession) -> dict:
     с настоящим сроком при первой же правке (та же причина, по которой не
     хранится средний балл точки А).
 
-    Блоки без срока в подсчёт не входят вовсе: «вовремя» у них не определено.
+    Если срока нет ни у блока, ни у задания, сроком считается конец цикла,
+    к которому приписано задание (владелец 28.09.2026: видео отмечают и после
+    конца этапа, «записывать всё для каждого ученика»). Это срок только для
+    отчёта: отметку он не запирает, сдачу работ запирает срок блока
+    (`submission_edit.deadline_reason`). Явное «бессрочно» строкой тарифа
+    остаётся бессрочным. Задание без цикла и без срока в подсчёт не входит:
+    «вовремя» у него не определено.
     """
     from app.models.task_block import TaskBlock
     from app.models.tracker import TrackerTask
+    from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
+    from app.services.program import day_bounds
     from app.services.task_blocks import (
         get_submit_deadlines, get_task_submit_deadlines, submit_deadline_for,
+        submit_deadline_is_set,
     )
+    from app.services.tracker import cycle_bounds
 
     student_ids = _student_ids(db)
     rows = (
@@ -888,6 +898,16 @@ def get_deadline_stats(db: DBSession) -> dict:
     )
     block_deadlines = get_submit_deadlines(db, [r[2].id for r in rows])
     task_deadlines = get_task_submit_deadlines(db, [r[3].id for r in rows])
+    topic_ids = {r[3].topic_id for r in rows if r[3].topic_id is not None}
+    cycle_ends = {
+        topic.id: day_bounds(cycle_bounds(topic)[1])[1]
+        for topic in (
+            db.query(LearningTopic)
+            .filter(LearningTopic.id.in_(topic_ids), LearningTopic.kind == TOPIC_KIND_WEEK)
+            .all()
+            if topic_ids else []
+        )
+    }
 
     by_student: dict[int, dict] = {}
     by_task: dict[int, dict] = {}
@@ -898,6 +918,14 @@ def get_deadline_stats(db: DBSession) -> dict:
             block_overrides=block_deadlines.get(block.id),
             task_overrides=task_deadlines.get(task.id),
         )
+        if deadline is None and not submit_deadline_is_set(
+            block, task, user_tariff=tariff,
+            block_overrides=block_deadlines.get(block.id),
+            task_overrides=task_deadlines.get(task.id),
+        ):
+            # Ничего не настроено — сроком служит конец цикла. Явное
+            # «бессрочно» у тарифа остаётся бессрочным.
+            deadline = cycle_ends.get(task.topic_id)
         if deadline is None:
             continue
         is_late = _utc(completed_at) > _utc(deadline)
