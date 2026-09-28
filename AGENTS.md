@@ -38,8 +38,9 @@ new dependencies or rename public routes/API fields without a clear need.
 ## Testing Guidelines
 
 Pytest is the primary test framework. Add or update focused tests for route,
-template, service, and permission changes. Prefer targeted runs during feature
-work, then broader suites before handoff when risk is high. For UI/template
+template, service, and permission changes. Run the test files the change
+touches (`codegraph affected <files>` lists them); the full suite runs only on
+the owner's `/itog`. For UI/template
 changes, combine route tests with grep checks or a small Playwright smoke when
 available.
 
