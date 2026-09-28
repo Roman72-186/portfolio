@@ -573,7 +573,6 @@ def exam_assignment_edit_form(
         if assignment.created_at else today_msk()
     )
 
-    import json as _json
     return templates.TemplateResponse(request, "superadmin_exam_assignment_form.html", {
         "request": request,
         "user": user,
@@ -590,7 +589,10 @@ def exam_assignment_edit_form(
         "is_edit": True,
         "assignment": assignment,
         "assignment_date_str": assignment_date.strftime("%d.%m.%Y"),
-        "existing_tickets_json": _json.dumps(existing_tickets, ensure_ascii=False),
+        # Списком, а не строкой `json.dumps`: шаблон кладёт его в `<script>`
+        # через `tojson`, который экранирует `</script>` в тексте билета
+        # (код-ревью 28.09.2026, P1 — XSS у суперадмина).
+        "existing_tickets": existing_tickets,
     })
 
 

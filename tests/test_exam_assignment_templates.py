@@ -530,6 +530,31 @@ def test_exam_assignment_edit_form_renders(
     assert "auto-title-preview" in resp.text
 
 
+def test_exam_assignment_edit_form_escapes_ticket_text_in_script(
+    client, db, user_factory, session_factory,
+):
+    """Код-ревью 28.09.2026, P1: описание билета уходило в `<script>` через
+    `json.dumps`, который оставляет `</script>` как есть. Текст билета пишет
+    Главный преподаватель, а форму открывает и суперадмин — код выполнился бы
+    у него. `tojson` экранирует `<`, `>` и `&`."""
+    admin = user_factory(vk_id=303041, role_name="суперадмин")
+    _login_as(client, session_factory, admin)
+    a = _create_assignment(db, admin, status="published")
+    payload = "</script><script>alert(1)</script>"
+    db.add(ExamTicket(
+        assignment_id=a.id, ticket_number=1, title="Натюрморт", description=payload,
+        start_date=date.today(), end_date=date.today() + timedelta(days=5),
+        assign_to_all=True,
+    ))
+    db.commit()
+
+    resp = client.get(f"/cabinet/exam-assignments/{a.id}/edit")
+
+    assert resp.status_code == 200
+    assert payload not in resp.text
+    assert "\\u003c/script\\u003e\\u003cscript\\u003ealert(1)" in resp.text
+
+
 def test_exam_assignment_form_renders_recipient_filter(
     client, db, user_factory, session_factory,
 ):
