@@ -74,28 +74,6 @@ def test_dashboard_works_by_type_and_this_month_counts(admin_client, db):
     assert _stat_pair(text, 80, "Средний балл за пробники")
 
 
-def test_dashboard_unscored_mocks_is_zero_without_active_period(admin_client, db):
-    """unscored_mocks не считает работы, если нет активного FeaturePeriod для мок-экзамена.
-
-    Реальных неоценённых пробников в БД — два, но без активного периода
-    _load_dashboard_data обязан вернуть 0, а не «все неоценённые за всё время».
-    """
-    client, admin = admin_client
-    now = datetime.now(timezone.utc)
-    db.add_all([
-        Work(user_id=admin.id, work_type=WORK_TYPE_MOCK_EXAM, month="май", year=now.year,
-             filename="u1.jpg", status="success", created_at=now),
-        Work(user_id=admin.id, work_type=WORK_TYPE_MOCK_EXAM, month="май", year=now.year,
-             filename="u2.jpg", status="success", created_at=now),
-    ])
-    db.commit()
-
-    resp = client.get("/cabinet/admin-panel")
-    assert resp.status_code == 200
-    assert 'data-attention="mocks"' not in resp.text
-    assert 'data-attention="closed"' in resp.text
-
-
 def _registration_counts(text: str) -> dict[str, int]:
     """Плитки карточки «Регистрации по тарифам» на «Статистике активности»:
     число в .ss-stat-val, подпись тарифа в .ss-stat-lbl."""
@@ -167,19 +145,6 @@ def test_registration_tariff_stats_match_for_chief_teacher_and_superadmin(
 # Разбор дашборда 28.09.2026 (/critique)
 # ---------------------------------------------------------------------------
 
-def _open_mock_period(db, created_by_id: int) -> None:
-    from app.constants import FEATURE_MOCK_EXAM
-    from app.models.feature_period import FeaturePeriod
-    from app.services.tz import today_msk
-
-    today = today_msk()
-    db.add(FeaturePeriod(
-        feature=FEATURE_MOCK_EXAM, title="Пробник", start_date=today - timedelta(days=1),
-        end_date=today + timedelta(days=5), created_by_id=created_by_id,
-    ))
-    db.commit()
-
-
 def test_average_score_counts_only_mock_exams(admin_client, db):
     """«Средний балл за пробники» раньше брал баллы всех работ подряд."""
     client, admin = admin_client
@@ -197,27 +162,22 @@ def test_average_score_counts_only_mock_exams(admin_client, db):
     assert _stat_pair(text, 60, "Средний балл за пробники")
 
 
-def test_attention_block_counts_unscored_mocks_with_plural(admin_client, db):
+def test_dashboard_has_no_mock_exam_queue_or_links(admin_client, db):
+    """Владелец 29.09.2026: блок «Ждёт проверки», проверка, билеты и
+    статистика пробников с дашборда сняты. Экраны живы, ссылок сюда нет."""
     client, admin = admin_client
-    _open_mock_period(db, admin.id)
     now = datetime.now(timezone.utc)
     db.add(Work(user_id=admin.id, work_type=WORK_TYPE_MOCK_EXAM, month="май", year=now.year,
                 filename="u.jpg", status="success", created_at=now))
     db.commit()
 
-    text = client.get("/cabinet/admin-panel").text
+    text = client.get("/cabinet/superadmin").text
 
-    assert 'data-attention="mocks"' in text
-    assert "пробник без оценки" in text
-
-
-def test_attention_block_says_all_scored_inside_open_period(admin_client, db):
-    client, admin = admin_client
-    _open_mock_period(db, admin.id)
-
-    text = client.get("/cabinet/admin-panel").text
-
-    assert 'data-attention="none"' in text
+    assert "data-attention" not in text
+    assert "Ждёт проверки" not in text
+    assert 'href="/cabinet/admin/mock-check"' not in text
+    assert 'href="/cabinet/exam-assignments"' not in text
+    assert 'href="/cabinet/superadmin/stats"' not in text
 
 
 def test_dashboard_has_no_portfolio_period_toggle(admin_client):

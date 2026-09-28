@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{% if user.role_rank >= 5 %}Суперадмин{% else %}Главный преподаватель{% endif %} — дашборд{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=10">
+<link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=11">
 {% endblock %}
 {% block content %}
 {#- Один экран у ГП (/cabinet/admin-panel) и суперадмина (/cabinet/superadmin),
     данные собирает services/staff_dashboard.py::load_staff_dashboard.
     Разбор 28.09.2026 (/critique): вместо баннера с градиентом — обычный
-    заголовок, первым идёт то, что ждёт действия, разделы сгруппированы
-    по задаче, а пункты бокового меню здесь не повторяются. -#}
+    заголовок, пункты бокового меню здесь не повторяются. Очередь, проверка,
+    билеты и статистика пробников сняты с экрана (владелец 29.09.2026). -#}
 <div class="staff-wrap ios-staff-dashboard">
 
     <header class="page-header sfd-head">
@@ -76,24 +76,6 @@
     </script>
     {% endif %}
 
-    <section class="panel sfd-attention" aria-labelledby="attention-title">
-        <div class="panel-header"><h2 class="panel-title" id="attention-title">Ждёт проверки</h2></div>
-        {% if unscored_mocks %}
-        <a href="/cabinet/admin/mock-check" class="sfd-todo" data-attention="mocks">
-            <span class="sfd-todo-count">{{ unscored_mocks }}</span>
-            <span class="sfd-todo-body">
-                <span class="sfd-todo-title">{{ unscored_mocks | plural('пробник', 'пробника', 'пробников') }} без оценки</span>
-                <span class="sfd-todo-desc">Пока нет балла, куратор не может продолжить цикл</span>
-            </span>
-            <span class="sfd-todo-go" aria-hidden="true">›</span>
-        </a>
-        {% elif mock_period_open %}
-        <p class="sfd-empty-row" data-attention="none">Пробники текущего периода оценены все.</p>
-        {% else %}
-        <p class="sfd-empty-row" data-attention="closed">Период пробников сейчас закрыт, новых работ на оценку нет.</p>
-        {% endif %}
-    </section>
-
     <div class="stats-grid">
         <div class="stat-tile">
             <div class="stat-tile-head"><span class="ico">🎓</span> Учеников</div>
@@ -118,21 +100,6 @@
     </div>
 
     <div class="sfd-groups">
-        <section class="panel" aria-labelledby="tools-review-title">
-            <div class="panel-header"><h2 class="panel-title" id="tools-review-title">Пробники</h2></div>
-            <a href="/cabinet/admin/mock-check" class="sfd-tool">
-                <span class="sfd-tool-icon" aria-hidden="true">✅</span>
-                <span class="sfd-tool-body"><span class="sfd-tool-title">Проверка пробников</span><span class="sfd-tool-desc">Оценка и отправка на отработку</span></span>
-            </a>
-            <a href="/cabinet/exam-assignments" class="sfd-tool">
-                <span class="sfd-tool-icon" aria-hidden="true">📋</span>
-                <span class="sfd-tool-body"><span class="sfd-tool-title">Билеты для пробников</span><span class="sfd-tool-desc">Создание и управление билетами</span></span>
-            </a>
-            <a href="/cabinet/superadmin/stats" class="sfd-tool">
-                <span class="sfd-tool-icon" aria-hidden="true">📊</span>
-                <span class="sfd-tool-body"><span class="sfd-tool-title">Статистика пробников</span><span class="sfd-tool-desc">Баллы по периодам и тарифам</span></span>
-            </a>
-        </section>
         <section class="panel" aria-labelledby="tools-people-title">
             <div class="panel-header"><h2 class="panel-title" id="tools-people-title">Люди и активность</h2></div>
             <a href="/cabinet/superadmin/users" class="sfd-tool">

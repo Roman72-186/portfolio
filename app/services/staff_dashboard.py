@@ -381,14 +381,13 @@ def load_staff_dashboard(db: DBSession, user: dict, now: datetime) -> dict:
     учениках» сотрудники не нужны. Аккаунт владельца (`REPORT_EXCLUDED_USER_IDS`)
     исключён отовсюду.
 
-    Счётчика «ученики без точки А» здесь нет намеренно: `point_a.student_point_a`
-    ходит в базу по каждому ученику, и на 20 учениках дашборд делал 173 запроса
-    вместо 14 (`test_superadmin_dashboard_does_not_scale_with_data`). Вернуть
-    счётчик — после того как точка А научится считать список одним проходом.
+    Очереди пробников на дашборде нет (владелец 29.09.2026 снял блок «Ждёт
+    проверки» вместе со ссылками на проверку, билеты и статистику пробников).
+    Счётчика «ученики без точки А» тоже нет: `point_a.student_point_a` ходит в
+    базу по каждому ученику, на 20 учениках дашборд делал 173 запроса вместо 14
+    (`test_superadmin_dashboard_does_not_scale_with_data`).
     """
-    from app.constants import FEATURE_MOCK_EXAM
     from app.models.work import WORK_TYPE_MOCK_EXAM
-    from app.services.feature_periods import get_active_period
 
     month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
     not_owner = User.id.notin_(REPORT_EXCLUDED_USER_IDS)
@@ -427,20 +426,6 @@ def load_staff_dashboard(db: DBSession, user: dict, now: datetime) -> dict:
         .scalar()
     )
     avg_mock_score = round(float(avg_raw)) if avg_raw is not None else None
-
-    # Очередь пробников — только в окне текущего периода: без окна в счётчик
-    # попали бы неоценённые работы всех прошлых потоков.
-    unscored_mocks = 0
-    mock_period = get_active_period(db, FEATURE_MOCK_EXAM)
-    if mock_period:
-        unscored_mocks = (
-            works.filter(
-                Work.work_type == WORK_TYPE_MOCK_EXAM,
-                Work.score.is_(None),
-                Work.created_at >= msk_midnight(mock_period.start_date),
-                Work.created_at < msk_midnight(mock_period.end_date + timedelta(days=1)),
-            ).count()
-        )
 
     StudentAlias = aliased(User)
     curator_rows = (
@@ -500,8 +485,6 @@ def load_staff_dashboard(db: DBSession, user: dict, now: datetime) -> dict:
         "total_works": total_works,
         "works_this_month": works_this_month,
         "avg_mock_score": avg_mock_score,
-        "unscored_mocks": unscored_mocks,
-        "mock_period_open": mock_period is not None,
         "curators": curators,
         "admins": admins,
         "month_name": _MONTHS_PREP[now.month],

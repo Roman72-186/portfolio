@@ -5,8 +5,9 @@
    совпадают по имени с классами других экранов. Обёртку тем же классом
    носит superadmin_users.html — ему отсюда нужны только шрифт и фон.
    Разбор 28.09.2026 (/critique): снят баннер с градиентом, плитки
-   быстрых ссылок стали строками в группах, ушли мёртвые блоки
-   (регистрации, активность, лента, переключатель периода).
+   быстрых ссылок стали строками, ушли мёртвые блоки (регистрации,
+   активность, лента, переключатель периода); 29.09.2026 владелец снял
+   очередь и ссылки на пробники.
    ═══════════════════════════════════════════════════════════════════════ */
 
 .ios-staff-dashboard {
@@ -170,34 +171,21 @@
 }
 .ios-staff-dashboard .sfd-head .dashboard-name-row { margin-bottom: 0; }
 
-/* ── «Ждёт проверки»: строки со счётчиком, первым блоком экрана ── */
-.ios-staff-dashboard .sfd-attention { margin-bottom: 16px; }
-.ios-staff-dashboard .sfd-todo,
+/* ── Строки разделов ── */
 .ios-staff-dashboard .sfd-tool {
     display: flex; align-items: center; gap: 14px;
     min-height: 56px; padding: 10px 16px; position: relative;
     color: inherit; text-decoration: none;
     transition: background-color var(--duration-fast) var(--ios-ease);
 }
-.ios-staff-dashboard .sfd-todo:not(:last-child)::after,
 .ios-staff-dashboard .sfd-tool:not(:last-child)::after {
     content: ''; position: absolute; left: 16px; right: 0; bottom: 0; height: 0.5px; background: var(--ios-sep);
 }
-.ios-staff-dashboard .sfd-todo:hover,
 .ios-staff-dashboard .sfd-tool:hover { background: var(--ios-grouped-bg); opacity: 1; }
-.ios-staff-dashboard .sfd-todo:focus-visible,
 .ios-staff-dashboard .sfd-tool:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: -2px; }
-.ios-staff-dashboard .sfd-todo-count {
-    flex-shrink: 0; min-width: 44px; text-align: center;
-    font: 700 22px/1.2 var(--ios-font); color: var(--ios-blue);
-}
-.ios-staff-dashboard .sfd-todo-body,
 .ios-staff-dashboard .sfd-tool-body { flex: 1; min-width: 0; display: grid; gap: 2px; }
-.ios-staff-dashboard .sfd-todo-title,
 .ios-staff-dashboard .sfd-tool-title { font: 600 15px/1.3 var(--ios-font); color: var(--ios-label); }
-.ios-staff-dashboard .sfd-todo-desc,
 .ios-staff-dashboard .sfd-tool-desc { font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); }
-.ios-staff-dashboard .sfd-todo-go { flex-shrink: 0; font-size: 22px; color: var(--ios-label-2); }
 .ios-staff-dashboard .sfd-tool-icon { flex-shrink: 0; width: 24px; text-align: center; font-size: 18px; }
 
 /* ── Разделы: две группы строк вместо восьми плиток ── */
