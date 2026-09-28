@@ -37,10 +37,13 @@
         </label>
         <label>
             Тариф
+            {# Фильтр перечисляет тарифы, которые у кого-то реально стоят
+               (`tariffs_in_use`), а не весь справочник: отработавший тариф
+               исчезает из списка сам, когда на нём никого не осталось. #}
             <select name="tariff">
                 <option value="">Все тарифы</option>
-                {% for t in tariffs %}
-                <option value="{{ t }}" {% if tariff == t %}selected{% endif %}>{{ t }}</option>
+                {% for t in tariff_filter_options %}
+                <option value="{{ t }}" {% if tariff == t %}selected{% endif %}>{{ t|tariff_label }}</option>
                 {% endfor %}
             </select>
         </label>
@@ -201,9 +204,16 @@
                                 data-saved-value="{{ u.tariff or '__none__' }}"
                                 onchange="setUserTariff(this)">
                             <option value="__none__" {% if not u.tariff %}selected{% endif %}>Без тарифа</option>
+                            {# Назначаем только действующие тарифы, но свой
+                               отработавший у строки остаётся в списке — иначе
+                               браузер выберет первый пункт и сохранение молча
+                               переведёт человека на другой тариф. #}
                             {% for t in tariffs %}
                             <option value="{{ t }}" {% if u.tariff == t %}selected{% endif %}>{{ t|tariff_label }}</option>
                             {% endfor %}
+                            {% if u.tariff and u.tariff not in tariffs %}
+                            <option value="{{ u.tariff }}" selected>{{ u.tariff|tariff_label }}</option>
+                            {% endif %}
                         </select>
                         <span class="tariff-save-status" role="status" aria-live="polite"></span>
                     </form>

@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
-from app.constants import MOCK_SUBJECTS, TARIFFS
+from app.constants import MOCK_SUBJECTS
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf_header, require_curator
 from app.models.exam_cycle import ExamCycle
@@ -37,6 +37,7 @@ from app.services.review_aggregate import (
 )
 from app.services.task_blocks import set_reviewed, set_submission_reviewed
 from app.services.tz import today_msk
+from app.services.user_management import tariffs_in_use
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/staff/students-review")
@@ -127,7 +128,8 @@ def student_review_detail(
         "subject": subject or "",
         "tariff": tariff or "",
         "subjects": MOCK_SUBJECTS,
-        "tariffs": TARIFFS,
+        # Фильтр по тарифу — только те, что у кого-то стоят.
+        "tariffs": tariffs_in_use(db),
         "nav_active": "students_review",
     })
 

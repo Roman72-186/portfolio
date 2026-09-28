@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 
 from app.constants import (
     TARIFFS,
+    tariff_choices,
+    tariffs_for_data,
     TARIFFS_CURRENT,
     TARIFFS_LEGACY,
     TARIFFS_WITH_FEEDBACK,
@@ -25,6 +27,7 @@ from app.constants import (
     TARIFF_DISPLAY,
 )
 from app.services.s3 import tariff_display
+from app.services.user_management import tariffs_in_use
 
 import pytest
 
@@ -182,14 +185,29 @@ def test_day_constructor_offers_only_the_current_lineup(admin_client):
     assert '"МАКСИМУМ"' not in page.replace("УВЕРЕННЫЙ МАКСИМУМ", "")
 
 
-def test_user_filter_still_finds_the_archive(superadmin_client):
-    """Фильтр по людям не сужаем: архив должен оставаться находимым."""
+def test_user_filter_shows_legacy_tariff_only_while_someone_has_it(
+    superadmin_client, db, user_factory
+):
+    """Фильтр перечисляет тарифы по факту (владелец 28.09.2026: «те, которые
+    сейчас не задействованы, скрыть, чтобы их нигде не было видно»).
+
+    Прежнее правило 07.09 «фильтр не сужаем» отменено: оно держало в списке
+    оба отработавших тарифа всегда, даже когда на них никого не осталось. Но
+    архив обязан оставаться находимым, поэтому тариф исчезает из фильтра не по
+    коду, а вместе с последним человеком на нём.
+    """
     client, _ = superadmin_client
 
     page = client.get("/cabinet/superadmin/users").text
+    assert '<option value="МАКСИМУМ"' not in page
 
-    for legacy in TARIFFS_LEGACY:
-        assert f'<option value="{legacy}"' in page
+    archived = user_factory(vk_id=910055, name="Прошлый Поток", tariff="МАКСИМУМ")
+    archived.archived_at = datetime.now(timezone.utc)
+    archived.is_active = False
+    db.commit()
+
+    page = client.get("/cabinet/superadmin/users").text
+    assert '<option value="МАКСИМУМ"' in page
 
 
 def test_students_sidebar_uses_current_tariffs_and_marks_students_without_tariff_as_newcomers(
@@ -259,3 +277,81 @@ def test_unknown_tariff_never_leaves_the_pill_colourless():
     assert tariff_label(None) == ""
     assert tariff_label("УВЕРЕННЫЙ МАКСИМУМ") == "Уверенный максимум"
     assert tariff_label("ЧТО-ТО НОВОЕ") == "ЧТО-ТО НОВОЕ"
+
+
+# ── Отработавшие тарифы спрятаны, пока никому не назначены ───────────────────
+# Владелец 28.09.2026: «те, которые сейчас не задействованы тарифами, те нужно
+# скрыть, чтобы их нигде не было видно. Если переиспользовали какой-то тариф —
+# оставляем». Отсюда два правила: выбор даём из действующей линейки, а фильтры,
+# таблицы и выгрузки перечисляют тарифы по фактическим данным.
+
+def test_tariff_choices_offers_current_lineup():
+    assert tariff_choices() == TARIFFS_CURRENT
+    assert tariff_choices("") == TARIFFS_CURRENT
+    assert tariff_choices(None) == TARIFFS_CURRENT
+
+
+def test_tariff_choices_keeps_assigned_legacy_value():
+    """Свой отработавший тариф остаётся в списке — иначе сохранение карточки
+    молча переведёт человека на первый пункт."""
+    assert tariff_choices("МАКСИМУМ") == TARIFFS_CURRENT + ["МАКСИМУМ"]
+    assert tariff_choices("  УВЕРЕННЫЙ  ") == TARIFFS_CURRENT + ["УВЕРЕННЫЙ"]
+    assert tariff_choices("Я С ВАМИ") == TARIFFS_CURRENT
+    assert tariff_choices("МАКСИМУМ", "МАКСИМУМ") == TARIFFS_CURRENT + ["МАКСИМУМ"]
+
+
+def test_tariffs_for_data_adds_legacy_only_when_present():
+    assert tariffs_for_data([]) == TARIFFS_CURRENT
+    assert tariffs_for_data(["Я С ВАМИ", None, ""]) == TARIFFS_CURRENT
+    assert tariffs_for_data(["МАКСИМУМ"]) == TARIFFS_CURRENT + ["МАКСИМУМ"]
+    assert tariffs_for_data(["УВЕРЕННЫЙ", "МАКСИМУМ", "МАКСИМУМ"]) == (
+        TARIFFS_CURRENT + ["МАКСИМУМ", "УВЕРЕННЫЙ"]
+    )
+
+
+def test_tariffs_in_use_reads_living_rows(db, user_factory):
+    """Удалённых не считаем, архив считаем: по архиву как раз и фильтруют."""
+    user_factory(vk_id=910101, tariff="МАКСИМУМ").archived_at = datetime.now(timezone.utc)
+    deleted = user_factory(vk_id=910102, tariff="УВЕРЕННЫЙ")
+    deleted.deleted_at = datetime.now(timezone.utc)
+    db.commit()
+
+    in_use = tariffs_in_use(db)
+
+    assert "МАКСИМУМ" in in_use
+    assert "УВЕРЕННЫЙ" not in in_use
+    assert in_use[:3] == TARIFFS_CURRENT
+
+
+def test_student_card_offers_current_lineup_only(admin_client):
+    """Список тарифов в карточке ученика был вписан в JS руками: до 28.09.2026
+    там стояли МАКСИМУМ с УВЕРЕННЫМ, а новых двух тарифов не было вовсе."""
+    client, _ = admin_client
+
+    page = client.get("/cabinet/students").text
+
+    assert "const TARIFF_OPTIONS = " in page
+    for tariff in TARIFFS_CURRENT:
+        assert tariff in page
+    assert "'<option value=\"МАКСИМУМ\"'" not in page
+    assert "'<option value=\"УВЕРЕННЫЙ\"'" not in page
+
+
+def test_stats_export_has_no_sheets_for_unused_legacy_tariffs(superadmin_client):
+    """Выгрузка статистики рисовала лист на каждый тариф из справочника — в
+    каждом отчёте нового потока висели пустые «МАКСИМУМ» и «УВЕРЕННЫЙ»."""
+    import io
+
+    import openpyxl
+
+    client, _ = superadmin_client
+
+    resp = client.get("/cabinet/superadmin/stats/export")
+
+    assert resp.status_code == 200, resp.text
+    sheets = openpyxl.load_workbook(io.BytesIO(resp.content)).sheetnames
+    for tariff in TARIFFS_CURRENT:
+        assert tariff[:31] in sheets
+    for legacy in TARIFFS_LEGACY:
+        assert legacy not in sheets
+        assert f"Не сдали — {legacy}"[:31] not in sheets

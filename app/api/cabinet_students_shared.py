@@ -22,7 +22,7 @@ from sqlalchemy import func, or_, and_
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session, invalidate_unread
-from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, MONTHS, MONTH_TO_NUM, TARIFFS, TARIFFS_CURRENT, COHORT_TAGS, COHORT_TAG_LABELS, TIMEZONE_DISPLAY
+from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, MONTHS, MONTH_TO_NUM, TARIFFS, TARIFFS_CURRENT, TARIFF_DISPLAY, COHORT_TAGS, COHORT_TAG_LABELS, TIMEZONE_DISPLAY
 from app.db.database import get_db
 from app.dependencies import get_current_user, require_admin_role, require_csrf, require_curator
 from app.models.session import Session
@@ -495,6 +495,8 @@ def _render_students_panel(
         "mock_subjects": MOCK_SUBJECTS,
         "months": MONTHS,
         "tariffs": TARIFFS_CURRENT,
+        # Подписи для JS карточки: фильтра `tariff_label` в скрипте нет.
+        "tariff_labels": TARIFF_DISPLAY,
         "current_year": datetime.now(timezone.utc).year,
         "show_curator_filter": show_curator_filter,
         "curators": curators,

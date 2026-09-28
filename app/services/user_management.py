@@ -8,6 +8,7 @@ from sqlalchemy import delete, update
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session
+from app.constants import tariffs_for_data
 from app.models.audit_log import AuditLog
 from app.models.curator_report import CuratorReport
 from app.models.exam_assignment import ExamAssignment
@@ -117,6 +118,17 @@ def log_tariff_change(
         return
     _log(db, "tariff_change", performed_by_id, target_user_id,
          f"tariff: {old_tariff or '—'} → {new_tariff or '—'}")
+
+
+def tariffs_in_use(db: DBSession) -> list[str]:
+    """Тарифы для фильтров по людям: действующие плюс те старые, что ещё стоят.
+
+    Отработавший тариф пропадает из фильтра сам, как только последнего человека
+    с ним удалили или перевели, — вычищать его из кода отдельной правкой не
+    нужно. Архив и заблокированных считаем: по ним как раз и фильтруют.
+    """
+    rows = db.query(User.tariff).filter(User.deleted_at.is_(None)).distinct().all()
+    return tariffs_for_data(row[0] for row in rows)
 
 
 def tariff_change_clears_access(old_tariff: str | None, new_tariff: str | None) -> bool:

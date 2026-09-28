@@ -995,7 +995,13 @@
 {% endblock %}
 {% block content %}
 <script src="/static/js/rich-text-field.js?v=3"></script>
-<script>const CSRF_TOKEN = "{{ csrf_token(request) }}";</script>
+<script>const CSRF_TOKEN = "{{ csrf_token(request) }}";
+// Тарифы для выбора в карточке ученика: только действующая линейка
+// (`TARIFFS_CURRENT`). Раньше список был вписан в JS руками и жил своей
+// жизнью — там до 28.09.2026 стояли отработавшие «МАКСИМУМ» и «УВЕРЕННЫЙ»,
+// а новых «Я САМ» и «УВЕРЕННЫЙ МАКСИМУМ» не было вовсе.
+const TARIFF_OPTIONS = {{ tariffs|tojson }};
+const TARIFF_LABELS = {{ tariff_labels|tojson }};
 
 <div class="students-page-wrap">
 {% include "_curator_nav.html" %}
@@ -2835,12 +2841,23 @@ function startEditProfile() {
     html += editField('Телефон', 'phone', s.phone || '');
     html += editField('Телефон родителя', 'parent_phone', s.parent_phone || '');
     html += editField('Telegram', 'tg_username', s.tg_username || '');
+    // Профиль отдаёт «—» вместо пустого тарифа, поэтому прочерк здесь значит
+    // «без тарифа», а не значение для списка.
+    var tariffValue = (s.tariff && s.tariff !== '—') ? s.tariff : '';
+    var tariffOptions = TARIFF_OPTIONS.slice();
+    if (tariffValue && tariffOptions.indexOf(tariffValue) === -1) {
+        // Отработавший тариф ученика остаётся в его карточке: без своего пункта
+        // список открылся бы на чужом значении, и сохранение карточки молча
+        // перевело бы человека на другой тариф.
+        tariffOptions.push(tariffValue);
+    }
     html += '<div class="profile-field"><div class="profile-field-label">Тариф</div>'
         + '<select class="profile-edit-select" id="edit-tariff">'
-        + '<option value="__NONE__"' + (!s.tariff ? ' selected' : '') + '>Без тарифа</option>'
-        + '<option value="МАКСИМУМ"' + (s.tariff === 'МАКСИМУМ' ? ' selected' : '') + '>МАКСИМУМ</option>'
-        + '<option value="УВЕРЕННЫЙ"' + (s.tariff === 'УВЕРЕННЫЙ' ? ' selected' : '') + '>УВЕРЕННЫЙ</option>'
-        + '<option value="Я С ВАМИ"' + (s.tariff === 'Я С ВАМИ' ? ' selected' : '') + '>Я С ВАМИ</option>'
+        + '<option value="__NONE__"' + (!tariffValue ? ' selected' : '') + '>Без тарифа</option>'
+        + tariffOptions.map(function (t) {
+            return '<option value="' + esc(t) + '"' + (tariffValue === t ? ' selected' : '')
+                + '>' + esc(TARIFF_LABELS[t] || t) + '</option>';
+        }).join('')
         + '</select></div>';
     html += editField('Год поступления', 'enrollment_year', s.enrollment_year || '');
     html += editField('Курс университета', 'university_year', s.university_year || '');

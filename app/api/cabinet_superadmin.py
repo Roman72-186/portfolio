@@ -29,6 +29,8 @@ from app.constants import (
     INTAKE_TRIAL_SLUG,
     TARIFFS,
     TARIFFS_CURRENT,
+    tariff_choices,
+    tariffs_for_data,
     STUDY_MODES,
     STUDY_MODE_LABELS,
     EXAM_SUBJECT_HINTS,
@@ -1591,7 +1593,9 @@ def superadmin_stats(
         "feedback_table": feedback_table,
         "score_stats": score_stats,
         "selected_period_id": period_id,
-        "tariffs": TARIFFS,
+        "tariffs": tariffs_for_data(
+            list(status["by_tariff_mock_status"]) + list(status["not_submitted_by_tariff"])
+        ),
     })
 
 
@@ -1612,6 +1616,11 @@ def superadmin_stats_export(
     feedback_table = get_mock_feedback_rows(db, period_id=period_id, limit=None)
     by_tariff_mock: dict = status["by_tariff_mock_status"]
     not_submitted_by_tariff: dict = status["not_submitted_by_tariff"]
+    # Листы и строки сводки — только по тарифам, которые в этих данных есть.
+    # По всему справочнику выгрузка рисовала пустые листы отработавших тарифов.
+    export_tariffs = tariffs_for_data(
+        list(by_tariff_mock) + list(not_submitted_by_tariff)
+    )
 
     HEADER_FONT = Font(bold=True, color="FFFFFF")
     HEADER_FILL = PatternFill(fill_type="solid", fgColor="2563EB")
@@ -1654,7 +1663,7 @@ def superadmin_stats_export(
     ws_summary.append([])
 
     _style_header_row(ws_summary, ["Тариф", "Всего учеников", "Сдали оба предмета", "Не сдали хотя бы один"])
-    for tariff in TARIFFS:
+    for tariff in export_tariffs:
         all_students = by_tariff_mock.get(tariff, [])
         ns = not_submitted_by_tariff.get(tariff, [])
         submitted_both = len(all_students) - len(ns)
@@ -1672,7 +1681,7 @@ def superadmin_stats_export(
     _set_col_widths(ws_summary, [22, 18, 22, 26])
 
     # ── Листы 2-4: Все ученики по тарифам (статус пробников) ─────────────────
-    for tariff in TARIFFS:
+    for tariff in export_tariffs:
         students = by_tariff_mock.get(tariff, [])
         ws = wb.create_sheet(title=tariff[:31])
         _style_header_row(ws, ["Ученик", "VK ID", "Telegram", "Рисунок", "Композиция"])
@@ -1688,7 +1697,7 @@ def superadmin_stats_export(
         _set_col_widths(ws, [30, 14, 22, 12, 14])
 
     # ── Листы 5-7: Не сдали хотя бы один предмет ─────────────────────────────
-    for tariff in TARIFFS:
+    for tariff in export_tariffs:
         ns_students = not_submitted_by_tariff.get(tariff, [])
         sheet_name = f"Не сдали — {tariff}"[:31]
         ws_ns = wb.create_sheet(title=sheet_name)
@@ -1770,6 +1779,7 @@ from app.services.user_management import (
     hard_delete_user,
     log_curator_change,
     soft_delete_user,
+    tariffs_in_use,
     toggle_user_active,
     unarchive_user,
 )
@@ -2070,7 +2080,8 @@ def _render_superadmin_users(
         "users": users,
         "roles": roles,
         "curators": curators,
-        "tariffs": TARIFFS,
+        "tariffs": TARIFFS_CURRENT,
+        "tariff_filter_options": tariffs_in_use(db),
         "study_modes": STUDY_MODES,
         "study_mode_labels": STUDY_MODE_LABELS,
         "exam_subject_hints": EXAM_SUBJECT_HINTS,
@@ -2278,7 +2289,10 @@ def superadmin_create_staff(
         role_id=new_role.id,
         is_active=True,
         is_group_member=False,
-        tariff="УВЕРЕННЫЙ",
+        # Сотруднику тариф не значит ничего (тарифные гейты держат только
+        # учеников), а прежний дефолт «УВЕРЕННЫЙ» проставлял отработавший тариф
+        # каждому новому куратору — из-за него он и висит сейчас у семи человек.
+        tariff="",
     )
     db.add(staff)
     db.flush()
@@ -2546,22 +2560,6 @@ def _invalidate_user_sessions(db: DBSession, user_id: int) -> None:
         logger.warning("invalidate_user_sessions failed for user_id=%s: %s", user_id, exc)
 
 
-def _tariff_choices(current: str | None) -> list[str]:
-    """Выбор тарифа в карточке ученика: действующая линейка плюс его нынешний.
-
-    Владелец 07.09.2026 завёл новую линейку и сказал «старые записи не
-    трогаем». Поэтому назначать можно только действующие тарифы, но у 150
-    человек в базе стоят прежние — и если не подложить собственное значение
-    ученика, в списке не окажется выбранного варианта. Тогда браузер выберет
-    первый пункт, и простое сохранение карточки молча переведёт человека с
-    «МАКСИМУМА» на «Я САМ».
-    """
-    value = (current or "").strip()
-    if value and value not in TARIFFS_CURRENT:
-        return TARIFFS_CURRENT + [value]
-    return list(TARIFFS_CURRENT)
-
-
 @router.get("/superadmin/users/{target_id}", response_class=HTMLResponse)
 def superadmin_user_card(
     target_id: int,
@@ -2592,7 +2590,7 @@ def superadmin_user_card(
         "target_curator": curator,
         "curators": curators,
         "roles": roles,
-        "tariffs": _tariff_choices(target.tariff),
+        "tariffs": tariff_choices(target.tariff),
         "cohort_tags": sorted(COHORT_TAGS),
         "study_modes": STUDY_MODES,
         "study_mode_labels": STUDY_MODE_LABELS,
