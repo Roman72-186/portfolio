@@ -223,13 +223,21 @@ def test_curator_cannot_move_the_deadline(client, db, user_factory, session_fact
     assert resp.status_code == 403
 
 
-def test_deadline_badge_is_on_both_constructor_screens(
+def test_deadline_badge_is_gone_from_both_constructor_screens(
     client, db, user_factory, session_factory
 ):
-    """Плашка срока живёт на экране дня и на экране заданий цикла.
+    """Плашки срока нет ни на экране дня, ни на экране заданий цикла.
 
-    Парный сторож: конструктор правят через два экрана, и правка одного без
-    второго в этом проекте уже случалась (см. историю кнопок блоков).
+    Снята 28.09.2026 по решению владельца: она рисовалась под каждым заданием
+    строкой на сам элемент и на каждый его блок со сроком (у «Формообразования
+    узлов» вышло пять строк), и список заданий за ней не читался. Владелец:
+    «сроки не должны быть здесь, сначала все задания, а потом уже в блоке
+    настраиваем, когда, что и сроки». Сроки правятся внутри задания, в
+    «Доступности блока» (партиал `program_item_deadline_fields.html`).
+
+    Сторож парный и перевёрнутый: экранов конструктора два, и вернуть плашку на
+    один из них, забыв про второй, — ровно та ошибка, что уже случалась с
+    кнопками блоков.
     """
     staff = _staff(client, user_factory, session_factory)
     day = TODAY + timedelta(days=1)
@@ -243,8 +251,8 @@ def test_deadline_badge_is_on_both_constructor_screens(
     day_page = client.get(f"/cabinet/staff/program/{day.isoformat()}")
 
     assert day_page.status_code == 200
-    assert "data-deadline-endpoint" in day_page.text
-    assert "Приём до 28.09.2026 в 09:30" in day_page.text
+    assert "data-deadline-endpoint" not in day_page.text
+    assert "Приём до 28.09.2026 в 09:30" not in day_page.text
 
     # Тот же блок, но внутри цикла — второй экран конструктора.
     cycle = client.post(
@@ -272,32 +280,8 @@ def test_deadline_badge_is_on_both_constructor_screens(
     cycle_page = client.get(f"/cabinet/staff/program/cycles/{cycle_id}")
 
     assert cycle_page.status_code == 200
-    assert "data-deadline-endpoint" in cycle_page.text
-    assert "Приём до 28.09.2026 в 09:30" in cycle_page.text
-
-
-def test_badge_shows_per_tariff_deadlines(client, db, user_factory, session_factory):
-    """Сроки по тарифам видно прямо в списке — иначе, чтобы понять, у кого
-    какой дедлайн, пришлось бы открывать форму каждого задания."""
-    staff = _staff(client, user_factory, session_factory)
-    day = TODAY + timedelta(days=1)
-    _, block = _task_with_block(db, staff, day=day)
-    client.post(
-        DEADLINE_URL.format(block.id),
-        json={
-            "submit_until": "2026-09-28T09:30",
-            "submit_deadlines": [
-                {"tariff": TARIFF_SELF, "submit_until": "2026-09-29T21:00"},
-                {"tariff": TARIFF_CONFIDENT_MAX, "submit_until": None},
-            ],
-        },
-        headers={"X-CSRF-Token": "x"},
-    )
-
-    page = client.get(f"/cabinet/staff/program/{day.isoformat()}")
-
-    assert f"{TARIFF_SELF}: 29.09.2026 в 21:00" in page.text
-    assert f"{TARIFF_CONFIDENT_MAX}: без срока" in page.text
+    assert "data-deadline-endpoint" not in cycle_page.text
+    assert "Приём до 28.09.2026 в 09:30" not in cycle_page.text
 
 
 # ── путь целиком: конструктор → ученик ──────────────────────────────────────

@@ -160,7 +160,6 @@
                 <h3>{{ item.title }}</h3>
                 {% if item.description %}<p>{{ item.description | rich_text | safe }}</p>{% endif %}
                 {% if item.subject %}<span class="prg-badge">{{ item.subject }}</span>{% endif %}
-                {% include "partials/program_item_deadlines.html" %}
             </div>
             <div class="prg-item-actions">
                 <span class="prg-blk-move">
@@ -189,9 +188,6 @@ var editPayloads = {{ edit_payloads|tojson }};
 
 // Срок задания: сбор и заполнение полей формы (владелец 27.09.2026).
 {% include "partials/program_item_deadline_fields_js.html" %}
-
-// Быстрая правка срока приёма работ в списке заданий (владелец 27.09.2026).
-{% include "partials/program_item_deadlines_js.html" %}
 
 // Загрузка фото блока — тот же контракт, что на экране дня
 // (`/cabinet/staff/program/upload-cover`, FormData с `file`, ответ

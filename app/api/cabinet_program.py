@@ -278,73 +278,6 @@ def _submit_deadline_fields(
     }
 
 
-def _tariff_row_labels(overrides: dict[str, datetime | None]) -> list[dict]:
-    """Подписи сроков по тарифам: «Я САМ: 28.09.2026 в 21:00» или «Я САМ: без
-    срока» — второе и есть строка с пустым временем (см. `TaskBlockTariffDeadline`)."""
-    return [
-        {"tariff": tariff, "text": msk_text(value) if value else "без срока"}
-        for tariff, value in sorted(overrides.items())
-    ]
-
-
-def _deadline_rows(db: DBSession, items: list[TrackerTask]) -> dict[int, list[dict]]:
-    """Сроки задания и его блоков — для плашки быстрой правки в списке заданий
-    (владелец 27.09.2026: срок должен сдвигаться, не открывая форму задания).
-
-    Один запрос на весь список, а не на карточку. В плашку идут:
-
-    - строка самого задания — всегда, она же и точка, куда ставят общий срок;
-    - строки блоков, у которых **свой** срок, — чтобы исключение было видно
-      без открытия формы;
-    - строки блоков сдачи и ответов без своего срока — у них срок запирает
-      действие, и преподавателю нужна возможность задать исключение отсюда.
-
-    Остальные блоки (текст, видео, фото, ссылка, голосовое) без своего срока в
-    список не попадают: живут по сроку задания, и восемь одинаковых строк в
-    карточке только мешали бы читать.
-    """
-    task_ids = [item.id for item in items]
-    blocks_by_task = get_task_blocks_for_tasks(db, task_ids)
-    all_blocks = [block for blocks in blocks_by_task.values() for block in blocks]
-    block_overrides_map = get_task_block_submit_deadlines(
-        db, [block.id for block in all_blocks]
-    )
-    task_overrides_map = get_task_level_submit_deadlines(db, task_ids)
-    rows: dict[int, list[dict]] = {}
-    for item in items:
-        task_overrides = task_overrides_map.get(item.id) or {}
-        rows[item.id] = [{
-            "kind": "task",
-            "task_id": item.id,
-            "endpoint": f"/cabinet/staff/program/items/{item.id}/deadline",
-            "label": "Всё задание",
-            "submit_until_text": msk_text(item.submit_until),
-            "tariff_rows": _tariff_row_labels(task_overrides),
-            **_submit_deadline_fields(item, task_overrides),
-        }]
-    for block in all_blocks:
-        block_overrides = block_overrides_map.get(block.id) or {}
-        has_own = block.submit_until is not None or bool(block_overrides)
-        if not has_own and block.block_type not in DEADLINE_BLOCKS_COMPLETION:
-            continue
-        rows.setdefault(block.task_id, []).append({
-            "kind": "block",
-            "block_id": block.id,
-            "endpoint": f"/cabinet/staff/program/blocks/{block.id}/deadline",
-            "label": block.title or BLOCK_TYPE_LABELS.get(
-                block.block_type, block.block_type
-            ),
-            # Пусто у блока — значит он живёт по сроку задания, и так и
-            # написано: «по сроку задания» вместо «без срока», иначе
-            # преподаватель прочитал бы это как «здесь принимаем всегда».
-            "submit_until_text": msk_text(block.submit_until),
-            "inherits": not has_own,
-            "tariff_rows": _tariff_row_labels(block_overrides),
-            **_submit_deadline_fields(block, block_overrides),
-        })
-    return rows
-
-
 def _edit_payloads(
     db: DBSession, items: list[TrackerTask], details: dict
 ) -> dict[int, dict]:
@@ -1296,8 +1229,6 @@ def program_cycle_items(
             "cycle_tiles": cycle_tiles,
             "items": items,
             "edit_payloads": _edit_payloads(db, items, {t.id: {} for t in items}),
-            # Сроки приёма работ для плашки быстрой правки (владелец 27.09.2026).
-            "deadline_rows": _deadline_rows(db, items),
             "kind_labels": ITEM_KIND_LABELS,
             "archi_questions": ARCHI_QUESTIONS,
             "archi_title": ARCHI_TITLE,
@@ -1649,6 +1580,12 @@ def update_block_deadline(
     27.09.2026: «чтобы Лиза могла спокойно заходить, редактировать в этом
     задании дедлайн»).
 
+    **Кнопки, которая сюда ходила, в интерфейсе больше нет** (владелец
+    28.09.2026): плашка быстрой правки снята с обоих экранов конструктора,
+    потому что заслоняла список заданий. Роут оставлен рабочим и покрытым
+    тестами — механика цела, вернуть кнопку дешевле, чем писать заново, — но
+    сегодня сроки правятся формой задания, в «Доступности блока».
+
     Тип блока не проверяется: срок можно поставить любому (второй заход того
     же дня — «добавить в доступность блока и для всех заданий»). Что он
     делает, решает `DEADLINE_BLOCKS_COMPLETION`, а не этот роут.
@@ -1853,8 +1790,6 @@ def program_day(
                 ITEM_MOCK_EXAM, ITEM_SURVEY, ITEM_ARCHI_PROFILE,
             ],
             "edit_payloads": _edit_payloads(db, items, details),
-            # Сроки приёма работ для плашки быстрой правки (владелец 27.09.2026).
-            "deadline_rows": _deadline_rows(db, items),
             "kind_labels": ITEM_KIND_LABELS,
             "archi_questions": ARCHI_QUESTIONS,
             "archi_title": ARCHI_TITLE,
