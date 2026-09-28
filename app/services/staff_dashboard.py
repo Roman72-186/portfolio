@@ -13,7 +13,7 @@ from app.models.learning_topic import LearningTopic, LearningTopicAssignee, Lear
 from app.models.tag import UserTag
 from app.models.task_block import TaskBlock, TaskBlockSubmission, TaskBlockTariff, SUBMISSION_BLOCK_TYPES
 from app.models.tracker import TrackerTask, TrackerTaskAssignee, TrackerTaskTag
-from app.constants import TARIFFS_CURRENT, TARIFF_DISPLAY
+from app.constants import REPORT_EXCLUDED_USER_IDS, TARIFFS_CURRENT, TARIFF_DISPLAY
 from app.models.role import Role
 from app.models.session import Session as UserSession
 from app.models.user import User
@@ -22,9 +22,6 @@ from app.services.tz import msk_midnight
 
 
 REGISTRATION_STATS_SINCE = date(2026, 9, 19)
-# Владелец платформы зарегистрировался для проверки потока как ученик.
-# По его просьбе тестовый аккаунт не входит в продуктовую статистику.
-REGISTRATION_STATS_EXCLUDED_USER_IDS = frozenset({199})
 
 
 def parse_registration_date(raw: str | None, fallback: date | None = None) -> date | None:
@@ -87,7 +84,7 @@ def get_tariff_registration_stats(
         .filter(
             Role.rank == 1,
             User.created_at >= msk_midnight(period_from),
-            User.id.notin_(REGISTRATION_STATS_EXCLUDED_USER_IDS),
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
     )
     if period_to:
@@ -259,7 +256,7 @@ def get_student_activity_overview(db: DBSession, event_limit: int = 200, *, incl
         .join(Role, User.role_id == Role.id)
         .filter(
             Role.rank == 1,
-            User.id.notin_(REGISTRATION_STATS_EXCLUDED_USER_IDS),
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
             User.is_active.is_(True),
             User.deleted_at.is_(None),
             User.archived_at.is_(None),

@@ -13,7 +13,7 @@ from datetime import date
 from sqlalchemy import and_, case, or_
 from sqlalchemy.orm import Session
 
-from app.constants import TARIFFS
+from app.constants import REPORT_EXCLUDED_USER_IDS, TARIFFS
 from app.models.learning_topic import LearningTopic
 from app.models.role import Role
 from app.models.task_block import TaskBlock, TaskBlockState
@@ -36,6 +36,7 @@ def active_students(db: Session) -> list[User]:
             Role.rank == 1,
             User.deleted_at.is_(None),
             User.archived_at.is_(None),
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
         .all()
     )

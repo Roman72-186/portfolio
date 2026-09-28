@@ -5,7 +5,7 @@ from typing import Optional, TypedDict
 from sqlalchemy import func, extract
 from sqlalchemy.orm import Session as DBSession
 
-from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS
+from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, REPORT_EXCLUDED_USER_IDS
 from app.models.feature_period import FeaturePeriod
 from app.models.role import Role
 from app.models.user import User
@@ -39,7 +39,11 @@ def _student_total(db: DBSession, curator_id: Optional[int] = None) -> int:
     q = (
         db.query(func.count(User.id))
         .join(Role, User.role_id == Role.id)
-        .filter(Role.rank == 1, User.is_active == True)
+        .filter(
+            Role.rank == 1,
+            User.is_active == True,  # noqa: E712
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+        )
     )
     if curator_id is not None:
         q = q.filter(User.curator_id == curator_id)
@@ -80,6 +84,7 @@ def mock_period_subject_stats(
             Work.subject.in_(MOCK_SUBJECTS),
             Work.created_at >= start,
             Work.created_at < end,
+            Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
     )
     if curator_id is not None:
@@ -129,6 +134,7 @@ def score_curve_12m(db: DBSession) -> list[CurvePoint]:
             Work.score.isnot(None),
             Work.subject.in_(MOCK_SUBJECTS),
             Work.created_at >= window_start,
+            Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
         .group_by(year_col, month_col, Work.subject)
         .all()
@@ -273,6 +279,7 @@ def curator_avg_scores(
             Work.score.isnot(None),
             Work.subject.in_(MOCK_SUBJECTS),
             User.curator_id == curator_id,
+            Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
         .group_by(Work.subject)
         .all()

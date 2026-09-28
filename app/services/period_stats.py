@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
-from app.constants import MOCK_SUBJECTS
+from app.constants import MOCK_SUBJECTS, REPORT_EXCLUDED_USER_IDS
 from app.models.exam_assignment import ExamTicket
 from app.models.exam_cycle import ExamCycle
 from app.models.feature_period import FeaturePeriod
@@ -106,6 +106,7 @@ def get_ticket_receipt_stats(
     M = MockExamAttempt
 
     def _window(q):
+        q = q.filter(M.user_id.notin_(REPORT_EXCLUDED_USER_IDS))
         if start_dt is not None:
             q = q.filter(M.started_at >= start_dt)
         if end_dt is not None:
@@ -229,6 +230,7 @@ def get_mock_feedback_rows(
         Work.work_type == WORK_TYPE_MOCK_EXAM,
         Work.is_final == True,  # noqa: E712
         Work.status == "success",
+        Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS),
     ]
     if start_dt is not None:
         conds.append(Work.created_at >= start_dt)
@@ -390,6 +392,7 @@ def get_mock_subject_status(
         Work.status == "success",
         Work.work_type == WORK_TYPE_MOCK_EXAM,
         Work.subject.isnot(None),
+        Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS),
     )
     if start_dt is not None:
         mock_q = mock_q.filter(Work.created_at >= start_dt)
@@ -401,7 +404,12 @@ def get_mock_subject_status(
         db.query(User.id, User.first_name, User.last_name, User.name,
                  User.vk_id, User.tg_username, User.tariff)
         .join(Role, User.role_id == Role.id)
-        .filter(Role.rank == 1, User.is_active == True, User.deleted_at.is_(None))  # noqa: E712
+        .filter(
+            Role.rank == 1,
+            User.is_active == True,  # noqa: E712
+            User.deleted_at.is_(None),
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+        )
         .order_by(User.last_name, User.first_name)
         .all()
     )
@@ -467,6 +475,7 @@ def get_mock_score_stats(
         Work.work_type == WORK_TYPE_MOCK_EXAM,
         Work.is_final == True,  # noqa: E712
         Work.status == "success",
+        Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS),
     ]
     if start_dt is not None:
         conds.append(Work.created_at >= start_dt)

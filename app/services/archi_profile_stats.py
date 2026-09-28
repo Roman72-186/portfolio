@@ -8,7 +8,7 @@
 а не «все активные ученики» — иначе диагностика, назначенная одному тегу,
 показала бы «не начал» про учеников, которым она вообще не видна.
 """
-from app.constants import TARIFFS
+from app.constants import REPORT_EXCLUDED_USER_IDS, TARIFFS
 from app.models.task_block import TaskBlockResponse
 from app.models.tracker import TrackerTask, TrackerTaskState
 from app.models.user import User
@@ -48,7 +48,7 @@ def diagnostic_stats(db: Session, task: TrackerTask) -> dict:
     аудитории разом — не по ученику в цикле, чтобы не разъезжаться по числу
     запросов с размером группы.
     """
-    audience_ids = task_audience_user_ids(db, task.id)
+    audience_ids = task_audience_user_ids(db, task.id) - REPORT_EXCLUDED_USER_IDS
     students = (
         db.query(User).filter(User.id.in_(audience_ids)).all()
         if audience_ids else []

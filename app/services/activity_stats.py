@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session as DBSession
 
+from app.constants import REPORT_EXCLUDED_USER_IDS
 from app.models.activity_event import StudentActivityEvent
 from app.models.audit_log import AuditLog
 from app.models.curator_report import CuratorReport
@@ -114,7 +115,12 @@ def _active_students_q(db: DBSession):
     return (
         db.query(User)
         .join(Role, User.role_id == Role.id)
-        .filter(Role.rank == 1, User.is_active == True, User.deleted_at.is_(None))  # noqa: E712
+        .filter(
+            Role.rank == 1,
+            User.is_active == True,  # noqa: E712
+            User.deleted_at.is_(None),
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+        )
     )
 
 
@@ -171,7 +177,11 @@ def get_curator_review_speed(db: DBSession) -> list[dict]:
     """
     rows = (
         db.query(Work.scored_by_id, Work.created_at, Work.scored_at, Work.score)
-        .filter(Work.scored_at.isnot(None), Work.scored_by_id.isnot(None))
+        .filter(
+            Work.scored_at.isnot(None),
+            Work.scored_by_id.isnot(None),
+            Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS),
+        )
         .all()
     )
     by_curator: dict[int, list] = defaultdict(list)
@@ -241,6 +251,7 @@ def get_revision_stats(db: DBSession) -> dict:
         .filter(
             ExamCycle.revision_requested_at.isnot(None),
             ExamCycle.revision_done_at.is_(None),
+            ExamCycle.user_id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
         .order_by(ExamCycle.revision_requested_at.asc())
         .limit(100)
@@ -257,7 +268,10 @@ def get_revision_stats(db: DBSession) -> dict:
     ]
     done_pairs = (
         db.query(ExamCycle.revision_requested_at, ExamCycle.revision_done_at)
-        .filter(ExamCycle.revision_done_at.isnot(None))
+        .filter(
+            ExamCycle.revision_done_at.isnot(None),
+            ExamCycle.user_id.notin_(REPORT_EXCLUDED_USER_IDS),
+        )
         .all()
     )
     avg_sec = _avg_seconds([(req, done) for req, done in done_pairs])
@@ -319,7 +333,7 @@ def get_mock_attempt_stats(db: DBSession) -> dict:
         MockExamAttempt.completed_at,
         MockExamAttempt.expired_at,
         MockExamAttempt.subject,
-    ).all()
+    ).filter(MockExamAttempt.user_id.notin_(REPORT_EXCLUDED_USER_IDS)).all()
     total = len(rows)
     completed = [(r.started_at, r.completed_at) for r in rows if r.completed_at is not None]
     expired = sum(1 for r in rows if r.expired_at is not None and r.completed_at is None)
@@ -346,7 +360,11 @@ def get_mock_attempt_stats(db: DBSession) -> dict:
 
 def get_cycle_duration_stats(db: DBSession) -> dict:
     """Длительность цикла Пробника: от старта (дата, 00:00 MSK) до закрытия."""
-    rows = db.query(ExamCycle.started_at, ExamCycle.closed_at).all()
+    rows = (
+        db.query(ExamCycle.started_at, ExamCycle.closed_at)
+        .filter(ExamCycle.user_id.notin_(REPORT_EXCLUDED_USER_IDS))
+        .all()
+    )
     open_count = sum(1 for r in rows if r.closed_at is None)
     closed_pairs = [
         (msk_midnight(r.started_at), r.closed_at) for r in rows if r.closed_at is not None
@@ -370,6 +388,7 @@ def get_feedback_curator_stats(db: DBSession) -> list[dict]:
     fb_rows = (
         db.query(Feedback.id, Feedback.curator_id, Work.created_at)
         .join(Work, Feedback.work_id == Work.id)
+        .filter(Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS))
         .all()
     )
     if not fb_rows:
@@ -422,29 +441,30 @@ def get_feedback_curator_stats(db: DBSession) -> list[dict]:
 def get_retake_stats(db: DBSession) -> dict:
     """Пересдачи и доработки: доля отправленных на отработку/доработку,
     среднее число попыток в цикле."""
+    reportable = Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS)
     mock_total = (
         db.query(Work)
-        .filter(Work.work_type == WORK_TYPE_MOCK_EXAM, Work.status == "success")
+        .filter(Work.work_type == WORK_TYPE_MOCK_EXAM, Work.status == "success", reportable)
         .count()
     )
     retake_total = (
         db.query(Work)
-        .filter(Work.work_type == WORK_TYPE_RETAKE, Work.status == "success")
+        .filter(Work.work_type == WORK_TYPE_RETAKE, Work.status == "success", reportable)
         .count()
     )
     sent_to_retake = (
         db.query(Work)
-        .filter(Work.work_type == WORK_TYPE_MOCK_EXAM, Work.sent_to_retake == True)  # noqa: E712
+        .filter(Work.work_type == WORK_TYPE_MOCK_EXAM, Work.sent_to_retake == True, reportable)  # noqa: E712
         .count()
     )
     needs_revision = (
         db.query(Work)
-        .filter(Work.needs_revision == True)  # noqa: E712
+        .filter(Work.needs_revision == True, reportable)  # noqa: E712
         .count()
     )
     attempt_numbers = [
         n for (n,) in db.query(Work.attempt_number)
-        .filter(Work.is_final == True, Work.attempt_number.isnot(None))  # noqa: E712
+        .filter(Work.is_final == True, Work.attempt_number.isnot(None), reportable)  # noqa: E712
         .all()
     ]
     return {
@@ -463,7 +483,11 @@ def get_login_link_stats(db: DBSession) -> dict:
 
     Отозванных много by design: при выдаче новой ссылки прежние авто-отзываются.
     """
-    rows = db.query(LoginToken.created_at, LoginToken.used_at, LoginToken.revoked_at).all()
+    rows = (
+        db.query(LoginToken.created_at, LoginToken.used_at, LoginToken.revoked_at)
+        .filter(LoginToken.user_id.notin_(REPORT_EXCLUDED_USER_IDS))
+        .all()
+    )
     total = len(rows)
     used = [(c, u) for c, u, _ in rows if u is not None]
     revoked = sum(1 for _, u, r in rows if r is not None and u is None)
@@ -482,7 +506,11 @@ def get_self_score_stats(db: DBSession) -> dict:
     """Самооценка ученика (student_score) против оценки куратора (score)."""
     rows = (
         db.query(Work.student_score, Work.score)
-        .filter(Work.student_score.isnot(None), Work.score.isnot(None))
+        .filter(
+            Work.student_score.isnot(None),
+            Work.score.isnot(None),
+            Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS),
+        )
         .all()
     )
     if not rows:
