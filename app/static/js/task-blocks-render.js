@@ -255,7 +255,8 @@ scope)` и свойством `answered` (одна попытка: после о
                 wrap.appendChild(photoGallery(urls, block.title || 'Изображение к заданию'));
                 if (block.body_html) wrap.appendChild(elHtml('p', 'video-help', block.body_html));
 
-                wireBlockCheck(check, block.confirm_endpoint, block);
+                var hint = wrap.appendChild(checkHintLine());
+                wireBlockCheck(check, block.confirm_endpoint, block, hint);
                 return wrap;
             }
 
@@ -282,7 +283,8 @@ scope)` и свойством `answered` (одна попытка: после о
                 }
                 if (block.body_html) wrap.appendChild(elHtml('p', 'video-help', block.body_html));
 
-                wireBlockCheck(check, block.confirm_endpoint, block);
+                var hint = wrap.appendChild(checkHintLine());
+                wireBlockCheck(check, block.confirm_endpoint, block, hint);
                 return wrap;
             }
 
@@ -326,32 +328,64 @@ scope)` и свойством `answered` (одна попытка: после о
                 return check;
             }
 
+            // Строка под кружком: у видео в ней подсказка про просмотр, у фото
+            // и голосового она пустая и появляется только с отказом.
+            function checkHintLine(text) {
+                var hint = el('p', 'lrn-blk-video-check-hint', text || '');
+                hint.setAttribute('aria-live', 'polite');
+                hint.hidden = !text;
+                return hint;
+            }
+
+            // Отказ сервера показывается его же словами (`error`/`detail`):
+            // повтор отказ не лечит, а общая фраза «Попробуй ещё раз» 28.09.2026
+            // полдня прятала 403 «Цикл пройден». Общая фраза осталась только
+            // для случая, когда ответа нет вовсе: нет связи или вместо JSON
+            // пришла HTML-страница.
+            function checkErrorText(err) {
+                if (err && err.serverText) return err.serverText;
+                return err && err.answered
+                    ? 'Не удалось отметить. Обнови страницу и попробуй ещё раз.'
+                    : 'Не удалось отметить: нет связи с сервером. Попробуй ещё раз.';
+            }
+
             // Общий обработчик клика по кружку: шлёт подтверждение на сервер и
-            // рисует «Выполнено» только по его ответу — источник правды у
-            // видео (`VideoProgress`) и фото (нет проверки, кроме доступа к
-            // заданию) разный, поэтому конкретную ошибку показывает вызывающая
-            // функция через `onError`.
-            function wireBlockCheck(check, endpoint, block, callbacks) {
-                callbacks = callbacks || {};
+            // рисует «Выполнено» только по его ответу. Отказ пишет в `hint`;
+            // своя расшифровка кода (видео: `not_watched`) — через `errorText`.
+            function wireBlockCheck(check, endpoint, block, hint, errorText) {
                 check.addEventListener('click', function () {
                     if (block.done || !endpoint) return;
                     check.disabled = true;
                     post(endpoint, { method: 'POST' }).then(function (resp) {
                         return resp.json().then(function (body) {
                             return { ok: resp.ok && body.ok, body: body };
+                        }, function () {
+                            // Ответ есть, но не JSON (500, страница прокси):
+                            // связь в порядке, причины нет.
+                            return { ok: false, body: null };
                         });
                     }).then(function (result) {
-                        if (!result.ok) throw new Error(failure(result.body, ''));
+                        if (!result.ok) {
+                            // `detail` бывает списком (ошибки полей FastAPI) —
+                            // такой в строку не превращаем.
+                            var text = failure(result.body, '');
+                            var error = new Error('rejected');
+                            error.answered = true;
+                            error.serverText = typeof text === 'string' ? text : '';
+                            throw error;
+                        }
                         block.done = true;
                         check.classList.add('is-done');
                         check.textContent = '✓';
                         check.setAttribute('aria-pressed', 'true');
                         check.setAttribute('aria-label', 'Выполнено');
                         check.title = 'Выполнено';
-                        if (callbacks.onSuccess) callbacks.onSuccess();
+                        hint.hidden = true;
                     }).catch(function (err) {
                         check.disabled = false;
-                        if (callbacks.onError) callbacks.onError(err);
+                        hint.hidden = false;
+                        hint.classList.add('is-error');
+                        hint.textContent = (errorText && errorText(err)) || checkErrorText(err);
                     });
                 });
             }
@@ -485,15 +519,10 @@ scope)` и свойством `answered` (одна попытка: после о
                 }));
                 wrap.appendChild(checkHint);
 
-                wireBlockCheck(check, block.confirm_endpoint, block, {
-                    onSuccess: function () { checkHint.hidden = true; },
-                    onError: function (err) {
-                        checkHint.hidden = false;
-                        checkHint.classList.add('is-error');
-                        checkHint.textContent = err && err.message === 'not_watched'
-                            ? 'Досмотри ролик до конца, чтобы отметить выполнение.'
-                            : 'Не удалось отметить. Попробуй ещё раз.';
-                    }
+                wireBlockCheck(check, block.confirm_endpoint, block, checkHint, function (err) {
+                    return err && err.serverText === 'not_watched'
+                        ? 'Досмотри ролик до конца, чтобы отметить выполнение.'
+                        : '';
                 });
                 return wrap;
             }
