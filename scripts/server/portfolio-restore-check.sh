@@ -26,13 +26,14 @@ docker run -d --name "$NAME" --network none \
     "$IMAGE" >/dev/null
 trap 'docker rm -f "$NAME" >/dev/null 2>&1 || true' EXIT
 
-for _ in $(seq 1 30); do
-    docker exec "$NAME" pg_isready -U portfolio -d portfolio >/dev/null 2>&1 && break
+# Образ сначала поднимает временный сервер для init — он слушает только
+# unix-сокет. По 127.0.0.1 отвечает лишь основной сервер, его и ждём
+# (loopback есть и при --network none).
+for _ in $(seq 1 60); do
+    docker exec "$NAME" pg_isready -h 127.0.0.1 -U portfolio -d portfolio >/dev/null 2>&1 && break
     sleep 2
 done
-# Образ поднимает сервер дважды (init, затем основной) — ждём основной.
-sleep 3
-docker exec "$NAME" pg_isready -U portfolio -d portfolio >/dev/null
+docker exec "$NAME" pg_isready -h 127.0.0.1 -U portfolio -d portfolio >/dev/null
 
 gunzip -c "$DUMP" | docker exec -i "$NAME" psql -U portfolio -d portfolio -v ON_ERROR_STOP=1 -q >/dev/null
 echo "Восстановление прошло без ошибок."

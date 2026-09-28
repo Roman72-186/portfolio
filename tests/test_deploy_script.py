@@ -364,7 +364,11 @@ def test_predeploy_dump_command_fails_loudly_on_broken_dump():
     assert "set -euo pipefail" in command
     assert "exec -T db pg_dump -U portfolio -d portfolio --clean --if-exists" in command
     assert "gzip -t" in command
-    assert """trap 'rm -f "$f"' ERR""" in deploy.shlex.split(command)[2]
+    script = deploy.shlex.split(command)[2]
+    assert """trap 'rm -f "$f"' ERR""" in script
+    # После проверки размера ловушка снята: сбой ротации не удаляет годный дамп.
+    assert script.index("trap - ERR") > script.index(f"-lt {deploy.MIN_DUMP_BYTES}")
+    assert script.index("trap - ERR") < script.index("xargs -r rm -f")
     assert f"-lt {deploy.MIN_DUMP_BYTES}" in command
     assert "pre-deploy-20260929T120000Z-abcdef12.sql.gz" in command
     # Своя ротация: ночная (`portfolio-*`, 14 дней) эти файлы не видит.

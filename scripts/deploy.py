@@ -107,8 +107,11 @@ def predeploy_dump_command(commit: str | None, stamp: str) -> str:
         's=$(stat -c %s "$f"); '
         f'if [ "$s" -lt {MIN_DUMP_BYTES} ]; then rm -f "$f"; '
         'echo "дамп подозрительно мал: $s байт" >&2; exit 1; fi; '
+        # Дамп проверен — дальше ловушка не нужна: сбой уборки старых копий не
+        # должен удалить эту и не должен отменять деплой.
+        "trap - ERR; "
         f"ls -1t {BACKUP_DIR}/pre-deploy-*.sql.gz | tail -n +{PREDEPLOY_DUMPS_KEEP + 1} "
-        "| xargs -r rm -f; "
+        "| xargs -r rm -f || true; "
         'echo "$f $s"'
     )
     return "bash -c " + shlex.quote(script)

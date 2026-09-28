@@ -32,5 +32,7 @@ if [ "$s" -lt "$MIN_BYTES" ]; then
     logger -t portfolio-pgbackup "ОШИБКА: дамп подозрительно мал ($s байт), удалён"
     exit 1
 fi
-find "$DIR" -name 'portfolio-*.sql.gz' -mtime +"$KEEP_DAYS" -delete
+# Дамп проверен — сбой ротации ниже не должен удалить его.
+trap - ERR
+find "$DIR" -name 'portfolio-*.sql.gz' -mtime +"$KEEP_DAYS" -delete || logger -t portfolio-pgbackup "ротация старых дампов не удалась"
 logger -t portfolio-pgbackup "ok: $f ($s байт)"

@@ -143,6 +143,15 @@ def test_admin_impersonates_moderator(client, session_factory, user_factory):
     )
     assert r.status_code == 303, r.text
 
+    # Внутри — кабинет модератора, и выход обратно не упирается в его
+    # закрытый белый список адресов (`rbac._MODERATOR_WRITE_EXACT`).
+    client.cookies.set("session_id", r.cookies["session_id"])
+    client.cookies.set("impersonation_original", r.cookies["impersonation_original"])
+    assert client.get("/cabinet", follow_redirects=False).headers["location"] == "/cabinet/students"
+    back = client.post("/cabinet/superadmin/impersonate/stop", follow_redirects=False)
+    assert back.status_code == 303
+    assert back.cookies.get("session_id") == sess.id
+
 
 def test_moderator_card_shows_login_button_to_admin(client, session_factory, user_factory):
     admin = user_factory(vk_id=900_042, name="Admin Seven", role_name="админ")
