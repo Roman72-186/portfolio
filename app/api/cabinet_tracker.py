@@ -1233,9 +1233,20 @@ def submit_cabinet_tracker_task_blocks(
         for answer in payload.answers:
             if len(answer.option_ids) != 1 or answer.text:
                 raise HTTPException(status_code=422, detail="Выбери один вариант в каждом вопросе")
+    # Срок — с тарифом ученика и сроком задания, как в ленте: без них
+    # `deadline_reason` смотрел бы только на общий срок блока, и ученика с
+    # продлённым сроком не пустили бы, а с укороченным — пустили после срока.
+    # Сроки читаются одним запросом на все вопросы задания, не по блоку.
+    submit_deadlines = get_task_block_submit_deadlines(db, [b.id for b in visible])
+    task_submit_deadlines = get_task_level_submit_deadlines(db, [task.id]).get(task.id)
     for answer in payload.answers:
         block = next(b for b in visible if b.id == answer.block_id)
-        reason = deadline_reason(task, block)
+        reason = deadline_reason(
+            task, block,
+            user_tariff=user.get("tariff"),
+            tariff_deadlines=submit_deadlines.get(block.id),
+            task_tariff_deadlines=task_submit_deadlines,
+        )
         if reason:
             raise HTTPException(status_code=409, detail=reason)
         if block.id in already:

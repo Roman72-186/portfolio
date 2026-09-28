@@ -4,7 +4,8 @@ import mimetypes
 import os
 
 from fastapi import FastAPI, Request, Response
-from fastapi.exceptions import HTTPException
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
@@ -112,6 +113,27 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(
         status_code=429,
         content={"detail": "Слишком много запросов. Подожди минуту."},
+    )
+
+
+# Текст `ValueError` из наших проверок (`BlockItem` и прочие) уходит в браузер
+# полем `msg`, а Pydantic приклеивает к нему «Value error, » — преподаватель
+# видел «Value error, Отметьте одну работу как свой выбор» (28.09.2026).
+# Срезаем префикс здесь, одним местом на все проверки; форма ответа
+# (`detail` списком с `loc`/`type`/`msg`) остаётся штатной FastAPI.
+_VALUE_ERROR_PREFIX = "Value error, "
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    errors = [
+        {**error, "msg": error["msg"].removeprefix(_VALUE_ERROR_PREFIX)}
+        if error.get("type") == "value_error" and isinstance(error.get("msg"), str)
+        else error
+        for error in exc.errors()
+    ]
+    return await request_validation_exception_handler(
+        request, RequestValidationError(errors, body=exc.body)
     )
 
 

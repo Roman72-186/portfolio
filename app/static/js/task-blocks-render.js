@@ -505,7 +505,14 @@ scope)` и свойством `answered` (одна попытка: после о
             // Всё необязательно; шаг закрывает только загрузка работы.
             function renderPortfolio(block) {
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-portfolio'), block);
-                if (block.video_embed_endpoint) wrap.appendChild(videoPlayer(block));
+                if (block.video_embed_endpoint) {
+                    wrap.appendChild(videoPlayer(block));
+                } else if (block.video_note) {
+                    // Предпросмотр конструктора: блок ещё не сохранён, адреса
+                    // плеера нет, и на месте ролика стоит его название. Ученику
+                    // сервер `video_note` не отдаёт.
+                    wrap.appendChild(el('p', 'prg-hint', block.video_note));
+                }
                 var urls = (block.images || []).map(function (image) { return image.url; });
                 if (urls.length) {
                     wrap.appendChild(photoGallery(urls, block.title || 'Пример к инструкции'));

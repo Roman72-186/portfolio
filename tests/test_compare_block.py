@@ -192,6 +192,20 @@ def test_constructor_refuses_compare_without_pick(client, db, user_factory, sess
     assert db.query(TaskBlock).count() == 0
 
 
+def test_constructor_error_has_no_pydantic_prefix(client, db, user_factory, session_factory, monkeypatch):
+    """Конструктор показывает `msg` как есть — до 28.09.2026 преподаватель
+    читал «Value error, Отметьте одну работу как свой выбор»."""
+    _staff(client, user_factory, session_factory)
+
+    resp = _save_material(client, monkeypatch, [_compare_item(pick=None)])
+
+    [error] = resp.json()["detail"]
+    assert error["msg"] == "Отметьте одну работу как свой выбор"
+    # Форма ответа остаётся штатной: страницы и тесты читают `loc` и `type`.
+    assert error["type"] == "value_error"
+    assert error["loc"][0] == "body"
+
+
 def test_constructor_refuses_compare_with_two_picks(client, db, user_factory, session_factory, monkeypatch):
     _staff(client, user_factory, session_factory)
     item = _compare_item()

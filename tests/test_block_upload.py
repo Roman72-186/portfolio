@@ -18,9 +18,11 @@ from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.constants import TARIFF_CONFIDENT_MAX, TARIFF_SELF
 from app.models.task_block import (
     BLOCK_PHOTO_UPLOAD,
+    BLOCK_QUESTION,
     BLOCK_TIMED,
     BLOCK_UPLOAD,
     MAX_SUBMISSION_IMAGES,
+    QUESTION_TEXT,
     TaskBlock,
     TaskBlockImage,
     TaskBlockSubmission,
@@ -28,6 +30,7 @@ from app.models.task_block import (
     TaskBlockTariffDeadline,
 )
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
+from app.models.tracker import TrackerTaskTariffDeadline
 from app.services import s3 as s3_service
 from app.services.cycle_feed import build_cycle_feed
 from app.services.program import day_bounds
@@ -259,6 +262,68 @@ def test_tariff_deadline_overrides_the_common_one(auth_client, db):
     assert client.get(
         f"/cabinet/tracker/tasks/{task.id}/blocks"
     ).json()["blocks"][0]["edit_reason"] is None
+
+
+def _question_block(db, task):
+    block = TaskBlock(
+        task_id=task.id, block_type=BLOCK_QUESTION, question_type=QUESTION_TEXT,
+        body="Что получилось?", sort_order=1, is_required=True,
+    )
+    db.add(block)
+    db.commit()
+    db.refresh(block)
+    return block
+
+
+def _answer(client, task, block):
+    return client.post(
+        f"/cabinet/tracker/tasks/{task.id}/blocks",
+        json={"answers": [{"block_id": block.id, "text": "Штриховка"}]},
+    )
+
+
+def test_tariff_deadline_of_a_question_overrides_the_common_one(auth_client, db):
+    """Общий роут ответов (вопрос, шкала, правила) до 28.09.2026 сверялся
+    только с общим сроком: продлённый тарифу срок ученика не пускал."""
+    client, user = auth_client
+    task = _task(db, user)
+    block = _question_block(db, task)
+    _deadline(db, block, day_bounds(TODAY - timedelta(days=1))[0])
+    _deadline(
+        db, block, day_bounds(TODAY + timedelta(days=1))[0], tariff=user.tariff,
+    )
+
+    assert _answer(client, task, block).status_code == 200
+
+
+def test_shortened_tariff_deadline_closes_the_question(auth_client, db):
+    """Обратная сторона: общий срок впереди, а у тарифа ученика уже вышел."""
+    client, user = auth_client
+    task = _task(db, user)
+    block = _question_block(db, task)
+    _deadline(db, block, day_bounds(TODAY + timedelta(days=1))[0])
+    _deadline(
+        db, block, day_bounds(TODAY - timedelta(days=1))[0], tariff=user.tariff,
+    )
+
+    resp = _answer(client, task, block)
+
+    assert resp.status_code == 409
+    assert "Срок сдачи истёк" in resp.json()["detail"]
+
+
+def test_task_level_tariff_deadline_closes_the_question(auth_client, db):
+    """Срок тарифа на всё задание тоже доходит до ответа на вопрос."""
+    client, user = auth_client
+    task = _task(db, user)
+    block = _question_block(db, task)
+    db.add(TrackerTaskTariffDeadline(
+        task_id=task.id, tariff=user.tariff,
+        submit_until=day_bounds(TODAY - timedelta(days=1))[0],
+    ))
+    db.commit()
+
+    assert _answer(client, task, block).status_code == 409
 
 
 def test_tariff_without_its_own_row_lives_by_the_common_deadline(auth_client, db):
@@ -534,7 +599,15 @@ def test_curator_reply_locks_work_before_review_flag(auth_client, db, user_facto
     feedback = TaskBlockFeedback(submission_id=submission.id, curator_id=curator.id)
     db.add(feedback)
     db.flush()
-    db.add(TaskBlockFeedbackMessage(feedback_id=feedback.id, sender_id=curator.id, sender_role="curator", text="Исправь"))
+    # Сообщение — явно после сдачи и в той же зоне, что `submitted_at`. Правку
+    # запирают только ответы после текущей сдачи (8fda3fd, 21.09.2026), а
+    # SQLite теряет зону: сдача пишется по Москве (`now_msk`), сообщение по UTC,
+    # и без этого ответ куратора в тестовой базе оказывался на три часа раньше
+    # сдачи. На проде (Postgres, timestamptz) сравнение и так честное.
+    db.add(TaskBlockFeedbackMessage(
+        feedback_id=feedback.id, sender_id=curator.id, sender_role="curator", text="Исправь",
+        created_at=submission.submitted_at + timedelta(minutes=1),
+    ))
     db.commit()
 
     assert _post(client, block.id).status_code == 409
