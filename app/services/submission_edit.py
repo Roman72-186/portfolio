@@ -35,18 +35,32 @@ def deadline_reason(
 
     Текст называет момент по Москве: «срок истёк» без даты вызывал встречный
     вопрос «а когда он был».
+
+    **День задания — срок, только пока срока сдачи нет** (владелец 28.09.2026).
+    Задание с экрана дня несёт `due_at` = 23:59 своего дня, и раньше он
+    запирал вместе со сроком сдачи — по более раннему из двух: срок «до 30.09
+    21:00» у задания 25.09 закрывал приём в 25.09 23:59, продлить его за конец
+    дня было нельзя, а лента при этом показывала 30.09. Теперь если срок
+    сдачи настроен где угодно (`task_blocks.submit_deadline_is_set`, включая
+    «бессрочно» у тарифа), запирает он один; иначе — по-старому, день задания.
     """
-    from app.services.task_blocks import submit_deadline_for
+    from app.services.task_blocks import submit_deadline_for, submit_deadline_is_set
 
     moment = now or datetime.now(timezone.utc)
-    deadlines = [task.due_at]
-    if block is not None:
-        deadlines.append(block.closes_at)
-        deadlines.append(submit_deadline_for(
+    if block is None:
+        deadlines = [task.due_at]
+    else:
+        deadlines = [block.closes_at, submit_deadline_for(
             block, task, user_tariff=user_tariff,
             block_overrides=tariff_deadlines,
             task_overrides=task_tariff_deadlines,
-        ))
+        )]
+        if not submit_deadline_is_set(
+            block, task, user_tariff=user_tariff,
+            block_overrides=tariff_deadlines,
+            task_overrides=task_tariff_deadlines,
+        ):
+            deadlines.append(task.due_at)
     passed = [_utc(value) for value in deadlines if value and _utc(value) <= moment]
     if passed:
         return f"Срок сдачи истёк {msk_text(min(passed))} по Москве. Изменить работу нельзя."

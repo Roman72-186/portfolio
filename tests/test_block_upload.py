@@ -326,6 +326,46 @@ def test_task_level_tariff_deadline_closes_the_question(auth_client, db):
     assert _answer(client, task, block).status_code == 409
 
 
+def _day_task_in_the_past(db, owner):
+    """Задание с экрана дня: `due_at` — 23:59 его дня, и день уже прошёл."""
+    task = _task(db, owner)
+    task.due_at = day_bounds(TODAY - timedelta(days=2))[1] - timedelta(minutes=1)
+    db.commit()
+    return task
+
+
+def test_submit_deadline_extends_past_the_day_of_the_task(auth_client, db):
+    """Владелец 28.09.2026: у задания стоит срок сдачи до числа и времени —
+    он и запирает. До этого день задания (23:59) запирал раньше срока, и
+    продлить приём за конец дня было нельзя: «Срок сдачи истёк 25.09 в 23:59»
+    при сроке до 30.09."""
+    client, user = auth_client
+    task = _day_task_in_the_past(db, user)
+    task.submit_until = day_bounds(TODAY + timedelta(days=2))[0]
+    db.commit()
+    block = _upload_block(db, task)
+
+    assert _post(client, block.id).status_code == 200
+
+
+def test_block_deadline_also_replaces_the_day_of_the_task(auth_client, db):
+    client, user = auth_client
+    task = _day_task_in_the_past(db, user)
+    block = _upload_block(db, task)
+    _deadline(db, block, day_bounds(TODAY + timedelta(days=2))[0])
+
+    assert _post(client, block.id).status_code == 200
+
+
+def test_without_submit_deadline_the_day_of_the_task_still_closes(auth_client, db):
+    """Срока сдачи нет нигде — работает прежнее правило: день задания."""
+    client, user = auth_client
+    task = _day_task_in_the_past(db, user)
+    block = _upload_block(db, task)
+
+    assert _post(client, block.id).status_code == 409
+
+
 def test_tariff_without_its_own_row_lives_by_the_common_deadline(auth_client, db):
     client, user = auth_client
     task = _task(db, user)
