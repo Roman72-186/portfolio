@@ -47,20 +47,17 @@ def deadline_reason(
     from app.services.task_blocks import submit_deadline_for, submit_deadline_is_set
 
     moment = now or datetime.now(timezone.utc)
-    if block is None:
-        deadlines = [task.due_at]
-    else:
-        deadlines = [block.closes_at, submit_deadline_for(
-            block, task, user_tariff=user_tariff,
-            block_overrides=tariff_deadlines,
-            task_overrides=task_tariff_deadlines,
-        )]
-        if not submit_deadline_is_set(
-            block, task, user_tariff=user_tariff,
-            block_overrides=tariff_deadlines,
-            task_overrides=task_tariff_deadlines,
-        ):
-            deadlines.append(task.due_at)
+    sources = dict(
+        user_tariff=user_tariff,
+        block_overrides=tariff_deadlines,
+        task_overrides=task_tariff_deadlines,
+    )
+    # `block=None` — домашка: срок задания и его строки тарифа, те же правила.
+    deadlines = [submit_deadline_for(block, task, **sources)]
+    if block is not None:
+        deadlines.append(block.closes_at)
+    if not submit_deadline_is_set(block, task, **sources):
+        deadlines.append(task.due_at)
     passed = [_utc(value) for value in deadlines if value and _utc(value) <= moment]
     if passed:
         return f"Срок сдачи истёк {msk_text(min(passed))} по Москве. Изменить работу нельзя."
@@ -120,9 +117,20 @@ def block_work_reason(
 
 def homework_reason(
     db: Session, task: TrackerTask, submission: HomeworkSubmission | None,
-    *, now: datetime | None = None,
+    *, user_tariff: str | None = None,
+    task_tariff_deadlines: dict[str, datetime | None] | None = None,
+    now: datetime | None = None,
 ) -> str | None:
-    reason = deadline_reason(task, now=now)
+    # Срок — по тем же правилам, что у блоков сдачи (владелец 28.09.2026):
+    # срок задания и его строка тарифа, день задания — только если срока нет.
+    # До этого домашка сверялась с одним днём задания.
+    if task_tariff_deadlines is None:
+        from app.services.task_blocks import get_task_submit_deadlines
+        task_tariff_deadlines = get_task_submit_deadlines(db, [task.id]).get(task.id)
+    reason = deadline_reason(
+        task, user_tariff=user_tariff,
+        task_tariff_deadlines=task_tariff_deadlines, now=now,
+    )
     if reason or submission is None:
         return reason
     if submission.status == STATUS_ACCEPTED:

@@ -127,6 +127,78 @@ def test_deadline_blocks_homework_upload_but_page_stays_visible(auth_client, db)
     assert upload.status_code == 409
 
 
+def _upload_final(client, task):
+    with patch.object(s3_service, "upload_to_s3", return_value=FAKE_URL):
+        return client.post(
+            f"/cabinet/homework/{task.id}/final", files={"photo": ("a.jpg", b"1", "image/jpeg")},
+        )
+
+
+def test_homework_submit_deadline_beats_the_day_of_the_task(auth_client, db):
+    """Владелец 28.09.2026: «домашка также должна работать по всем правилам».
+    Срок сдачи задания главнее его дня — продлённый срок принимает работу."""
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    now = datetime.now(timezone.utc)
+    task.due_at = now - timedelta(days=1)
+    task.submit_until = now + timedelta(days=1)
+    db.commit()
+
+    assert _upload_final(client, task).status_code == 200
+
+
+def test_homework_submit_deadline_closes_before_the_day(auth_client, db):
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    now = datetime.now(timezone.utc)
+    task.due_at = now + timedelta(days=1)
+    task.submit_until = now - timedelta(minutes=1)
+    db.commit()
+
+    assert _upload_final(client, task).status_code == 409
+
+
+def test_homework_tariff_deadline_overrides_the_common_one(auth_client, db):
+    """Свой срок тарифа у задания перебивает общий — в обе стороны."""
+    from app.models.tracker import TrackerTaskTariffDeadline
+
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    now = datetime.now(timezone.utc)
+    task.due_at = now - timedelta(days=1)
+    task.submit_until = now - timedelta(minutes=1)
+    row = TrackerTaskTariffDeadline(
+        task_id=task.id, tariff=user.tariff, submit_until=now + timedelta(days=1),
+    )
+    db.add(row)
+    db.commit()
+
+    assert _upload_final(client, task).status_code == 200
+
+    # Обратная сторона: общий срок впереди, у тарифа уже вышел.
+    task.submit_until = now + timedelta(days=1)
+    row.submit_until = now - timedelta(minutes=1)
+    db.commit()
+
+    assert _upload_final(client, task).status_code == 409
+
+
+def test_homework_counts_in_deadline_stats(auth_client, db):
+    """Сдача домашки попадает в статистику «до / после срока», как блоки."""
+    from app.services.activity_stats import get_deadline_stats
+
+    client, user = auth_client
+    task, _ = _homework_task(db, user.id)
+    task.submit_until = datetime.now(timezone.utc) + timedelta(days=1)
+    db.commit()
+    assert _upload_final(client, task).status_code == 200
+
+    stats = get_deadline_stats(db)
+
+    assert (stats["on_time"], stats["late"]) == (1, 0)
+    assert stats["tasks"][0]["title"] == "Нарисуй куб"
+
+
 def test_first_curator_reply_locks_homework_edits(auth_client, db, user_factory):
     client, user = auth_client
     task, _ = _homework_task(db, user.id)

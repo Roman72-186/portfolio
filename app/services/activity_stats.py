@@ -896,7 +896,27 @@ def get_deadline_stats(db: DBSession) -> dict:
         )
         .all()
     )
-    block_deadlines = get_submit_deadlines(db, [r[2].id for r in rows])
+    # Домашка — те же правила, что у блоков сдачи (владелец 28.09.2026): блока
+    # у неё нет (`None`), срок берётся у задания, момент — `submitted_at`.
+    rows = list(rows) + [
+        (submitted_at, user_id, None, task, name, tariff)
+        for submitted_at, user_id, task, name, tariff in db.query(
+            HomeworkSubmission.submitted_at,
+            HomeworkSubmission.user_id,
+            TrackerTask,
+            User.name,
+            User.tariff,
+        )
+        .join(TrackerTask, TrackerTask.id == HomeworkSubmission.tracker_task_id)
+        .join(User, User.id == HomeworkSubmission.user_id)
+        .filter(
+            HomeworkSubmission.user_id.in_(student_ids),
+            HomeworkSubmission.submitted_at.isnot(None),
+            TrackerTask.deleted_at.is_(None),
+        )
+        .all()
+    ]
+    block_deadlines = get_submit_deadlines(db, [r[2].id for r in rows if r[2] is not None])
     task_deadlines = get_task_submit_deadlines(db, [r[3].id for r in rows])
     topic_ids = {r[3].topic_id for r in rows if r[3].topic_id is not None}
     cycle_ends = {
@@ -915,12 +935,12 @@ def get_deadline_stats(db: DBSession) -> dict:
     for completed_at, user_id, block, task, name, tariff in rows:
         deadline = submit_deadline_for(
             block, task, user_tariff=tariff,
-            block_overrides=block_deadlines.get(block.id),
+            block_overrides=block_deadlines.get(block.id) if block else None,
             task_overrides=task_deadlines.get(task.id),
         )
         if deadline is None and not submit_deadline_is_set(
             block, task, user_tariff=tariff,
-            block_overrides=block_deadlines.get(block.id),
+            block_overrides=block_deadlines.get(block.id) if block else None,
             task_overrides=task_deadlines.get(task.id),
         ):
             # Ничего не настроено — сроком служит конец цикла. Явное

@@ -134,7 +134,10 @@ async def _render_submission_page(
     images = list_images(db, submission.id)
     final_image = next((i for i in images if i.is_final), None)
     intermediate = [i for i in images if not i.is_final]
-    edit_reason = homework_reason(db, task, submission) if viewer_role == "student" else None
+    edit_reason = (
+        homework_reason(db, task, submission, user_tariff=user.get("tariff"))
+        if viewer_role == "student" else None
+    )
 
     fb = (
         db.query(HomeworkFeedback)
@@ -273,7 +276,7 @@ async def upload_homework_final(
     task, homework = _resolve_homework_task(db, task_id)
     _guard_student_write_access(db, task, user["user_id"])
     submission = get_submission(db, tracker_task_id=task.id, user_id=user["user_id"])
-    reason = homework_reason(db, task, submission)
+    reason = homework_reason(db, task, submission, user_tariff=user.get("tariff"))
     if reason:
         return JSONResponse({"ok": False, "error": reason}, status_code=409)
     submission, _ = get_or_create_submission(db, task=task, user_id=user["user_id"])
@@ -311,7 +314,7 @@ async def upload_homework_intermediate(
     task, homework = _resolve_homework_task(db, task_id)
     _guard_student_write_access(db, task, user["user_id"])
     submission = get_submission(db, tracker_task_id=task.id, user_id=user["user_id"])
-    reason = homework_reason(db, task, submission)
+    reason = homework_reason(db, task, submission, user_tariff=user.get("tariff"))
     if reason:
         return JSONResponse({"ok": False, "error": reason}, status_code=409)
     submission, _ = get_or_create_submission(db, task=task, user_id=user["user_id"])
@@ -355,7 +358,7 @@ def delete_homework_intermediate(
     submission = get_submission(db, tracker_task_id=task.id, user_id=user["user_id"])
     if submission is None:
         raise HTTPException(status_code=404, detail="Работа не найдена")
-    reason = homework_reason(db, task, submission)
+    reason = homework_reason(db, task, submission, user_tariff=user.get("tariff"))
     if reason:
         return JSONResponse({"ok": False, "error": reason}, status_code=409)
     image = db.query(HomeworkSubmissionImage).filter(

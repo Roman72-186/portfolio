@@ -447,7 +447,7 @@ def _has_own_deadline(
 
 
 def submit_deadline_for(
-    block: TaskBlock,
+    block: TaskBlock | None,
     task,
     *,
     user_tariff: str | None,
@@ -472,8 +472,11 @@ def submit_deadline_for(
     Второй копии этого правила быть не должно: сроки читают и лента, и роуты
     сдачи, и статистика — они обязаны отвечать одинаково, иначе ученик увидит
     «до 9:30», а сервер примет работу в 11:00 (или наоборот).
+
+    `block=None` — срок задания без блока: домашка (владелец 28.09.2026: «домашка
+    также должна работать по всем правилам»). Тогда остаются пункты 3 и 4.
     """
-    if _has_own_deadline(block, block_overrides, user_tariff):
+    if block is not None and _has_own_deadline(block, block_overrides, user_tariff):
         return effective_submit_until(block, block_overrides, user_tariff)
     if task is None:
         return None
@@ -484,7 +487,7 @@ def submit_deadline_for(
 
 
 def submit_deadline_is_set(
-    block: TaskBlock,
+    block: TaskBlock | None,
     task,
     *,
     user_tariff: str | None,
@@ -498,7 +501,7 @@ def submit_deadline_is_set(
     конец цикла, владелец 28.09.2026): `submit_deadline_for` отдаёт `None` и на
     «ничего не настроено», и на «здесь без срока», а перебивать второе нельзя.
     """
-    if _has_own_deadline(block, block_overrides, user_tariff):
+    if block is not None and _has_own_deadline(block, block_overrides, user_tariff):
         return True
     if task is None:
         return False
