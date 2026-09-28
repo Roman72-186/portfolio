@@ -1021,7 +1021,11 @@ def test_revision_rejected_for_closed_scored_cycle(
 
 
 def test_closed_cycle_final_appears_in_portfolio(auth_client, db):
-    """Финалка закрытого цикла видна в разделе «Пробные экзамены» портфолио."""
+    """Финалка закрытого цикла видна в портфолио, в «В процессе обучения».
+
+    Отдельной вкладки «Пробные экзамены» нет с 14.09.2026 (владелец: «все
+    сданные работы будут попадать в В процессе обучения», `20d1ac3`).
+    """
     from app.models.work import Work
     from app.models.exam_cycle import ExamCycle
     from app.services.exam_cycle import close_cycle
@@ -1040,13 +1044,9 @@ def test_closed_cycle_final_appears_in_portfolio(auth_client, db):
 
     resp = client.get("/cabinet/portfolio")
     assert resp.status_code == 200
-    # Секция «Пробные экзамены» — дневной календарь (партиал CYCCAL), данные
-    # передаются в CYCCAL.init: финалка закрытого цикла видна с баллом.
-    assert "portfolio-mock-root" in resp.text
-    assert '"mock-portfolio"' in resp.text
-    assert "final.jpg" in resp.text
-    # ticket_title пробрасывается из ExamCycle.ticket_id -> ExamTicket.title
-    assert '"ticket_title"' in resp.text
+    assert "portfolio-mock-root" not in resp.text
+    db.refresh(work)
+    assert work.s3_url and work.s3_url in resp.text
 
 
 # ---------------------------------------------------------------------------

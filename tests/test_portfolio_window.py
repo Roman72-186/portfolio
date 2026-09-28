@@ -334,7 +334,9 @@ def test_reviewed_work_is_not_deletable(auth_client, db):
     )
 
     assert resp.status_code == 422
-    assert "преподаватель" in resp.json()["error"]
+    # Ученик не видит, кто проверял (обезличивание 18.09.2026, `9293294`).
+    assert "проверена" in resp.json()["error"]
+    assert "преподавател" not in resp.json()["error"]
     assert db.query(Work).filter(Work.id == work.id).first() is not None
 
 
