@@ -31,7 +31,13 @@ from app.services.notify import notify
 from app.services.point_a import maybe_notify_point_a_level
 from app.services.review_aggregate import (
     FULL_ACCESS_RANK,
+    NEWCOMER_TARIFF,
+    NO_CURATOR,
+    REVIEW_STATUS_CHECKED,
+    REVIEW_STATUS_UNCHECKED,
     aggregate_student_review_counts,
+    filter_review_rows,
+    review_curator_options,
     student_review_items,
     week_bounds,
 )
@@ -76,12 +82,36 @@ def students_review_list(
     request: Request,
     user: Annotated[dict, Depends(require_curator)],
     db: Annotated[DBSession, Depends(get_db)],
+    q: str = "",
+    status: str = "",
+    tariff: str = "",
+    curator: str = "",
 ):
-    rows = aggregate_student_review_counts(db, user)
+    all_rows = aggregate_student_review_counts(db, user)
+    # Фильтр по куратору и поиск по контактам — только с ГП (rank по
+    # `effective_role_rank`, модератор сюда тоже попадает): у куратора в списке
+    # и так одни свои ученики, а контакты ему не показывают и на «Учениках».
+    full_access = user["role_rank"] >= FULL_ACCESS_RANK
+    if not full_access:
+        curator = ""
+    rows = filter_review_rows(
+        all_rows, q=q, status=status, tariff=tariff, curator=curator,
+        search_contacts=full_access,
+    )
     return templates.TemplateResponse(request, "staff_students_review.html", {
         "request": request,
         "user": user,
         "rows": rows,
+        "total": len(all_rows),
+        "filters": {"q": q, "status": status, "tariff": tariff, "curator": curator},
+        "is_filtered": bool(q.strip() or status or tariff or curator),
+        "tariffs": tariffs_in_use(db),
+        "full_access": full_access,
+        "curators": review_curator_options(db, all_rows) if full_access else [],
+        "status_unchecked": REVIEW_STATUS_UNCHECKED,
+        "status_checked": REVIEW_STATUS_CHECKED,
+        "newcomer_tariff": NEWCOMER_TARIFF,
+        "no_curator": NO_CURATOR,
         "nav_active": "students_review",
     })
 
