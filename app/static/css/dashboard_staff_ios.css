@@ -1,17 +1,12 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   iOS-ре-скин общего дашборда «Главного преподавателя» и «Суперадмина»
-   (cabinet_staff.html, /cabinet/admin-panel и /cabinet/superadmin — оба
-   маршрута рендерят один и тот же шаблон под require_admin_role).
-   Все правила висят на классе `.ios-staff-dashboard` (ставится только на
-   `.staff-wrap` в cabinet_staff.html), а не на голых `.staff-*`/`.panel`/
-   `.stat-tile`/`.card`: `.stat-tile`/`.card`/`.grid-3` — общие классы
-   base.css, используются десятками экранов; `.staff-hero`/`.next-card`/
-   `.info-banner`/`.panel`/`.role-row`/`.staff-row`/`.issue-link-btn`/
-   `.period-toggle-btn`/`.type-grid`/`.feed-wrap`/`.type-badge` совпадают
-   по имени только с cabinet_students.html, cabinet_student.html и
-   superadmin_stats.html — каждый носит свою копию инлайн-CSS, конфликта
-   нет (grep подтвердил). Десктопный `partials/staff_nav.html` (сайдбар,
-   role_rank>=4) не тронут — вне охвата инициативы.
+   Дашборд «Главного преподавателя» и «Суперадмина» (cabinet_staff.html,
+   /cabinet/admin-panel и /cabinet/superadmin — один шаблон). Все правила
+   висят на `.ios-staff-dashboard`: `.panel`/`.stat-tile`/`.issue-link-btn`
+   совпадают по имени с классами других экранов. Обёртку тем же классом
+   носит superadmin_users.html — ему отсюда нужны только шрифт и фон.
+   Разбор 28.09.2026 (/critique): снят баннер с градиентом, плитки
+   быстрых ссылок стали строками в группах, ушли мёртвые блоки
+   (регистрации, активность, лента, переключатель периода).
    ═══════════════════════════════════════════════════════════════════════ */
 
 .ios-staff-dashboard {
@@ -27,71 +22,6 @@
     background: var(--ios-grouped-bg);
     z-index: -1;
 }
-
-/* ── Hero ── тёмный градиент сохраняет визуальный смысл «повышенных прав»
-   (отличает от светло-синей .lrn-hero ученика), но исполнен в iOS-грамматике:
-   26px радиус, декоративные круги, крупный заголовок. */
-.ios-staff-dashboard .staff-hero {
-    background: linear-gradient(135deg, #1C1C1E 0%, #7B1FA2 62%, #BF5AF2 100%);
-    border-radius: 26px;
-    padding: 22px 24px 26px;
-    margin-bottom: 16px;
-    box-shadow: 0 1px 0 rgba(255,255,255,0.16) inset, 0 14px 32px rgba(123,31,162,0.26);
-    position: relative; overflow: hidden;
-    display: flex; align-items: center; justify-content: space-between; gap: 20px;
-}
-.ios-staff-dashboard .staff-hero::before {
-    content: ''; position: absolute; width: 300px; height: 300px; border-radius: 50%;
-    background: rgba(255,255,255,0.05); top: -110px; right: -70px; pointer-events: none;
-}
-.ios-staff-dashboard .staff-hero::after {
-    content: ''; position: absolute; width: 160px; height: 160px; border-radius: 50%;
-    background: rgba(255,255,255,0.04); bottom: -60px; right: 70px; pointer-events: none;
-}
-.ios-staff-dashboard .staff-hero-info { position: relative; z-index: 1; }
-.ios-staff-dashboard .staff-role-tag {
-    display: inline-flex; align-items: center; gap: 6px;
-    background: rgba(255,255,255,0.14); border: none;
-    border-radius: 999px; padding: 4px 12px;
-    font: 700 11px/1.3 var(--ios-font); letter-spacing: 0.02em;
-    color: rgba(255,255,255,0.92); margin-bottom: 10px;
-}
-.ios-staff-dashboard .staff-hero-name {
-    font: 700 26px/1.2 var(--ios-font); letter-spacing: -0.4px; color: #fff; margin-bottom: 0;
-}
-.ios-staff-dashboard .staff-hero-sub {
-    font: 400 13px/1.4 var(--ios-font); color: rgba(255,255,255,0.72);
-}
-
-/* ── Очередь на проверку — главный CTA ── */
-.ios-staff-dashboard .next-card {
-    border-radius: 20px;
-    padding: 20px 22px;
-    margin-bottom: 16px;
-    transition: transform 120ms var(--ios-ease);
-}
-.ios-staff-dashboard a.next-card:hover { transform: none; opacity: 1; }
-.ios-staff-dashboard a.next-card:active { transform: scale(0.985); }
-.ios-staff-dashboard a.next-card:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 3px; }
-.ios-staff-dashboard .next-card--blue {
-    background: linear-gradient(160deg, #BF5AF2 0%, #7B1FA2 100%);
-    box-shadow: 0 10px 26px rgba(123,31,162,0.28);
-    color: #fff;
-}
-.ios-staff-dashboard .next-card-title {
-    font: 700 17px/1.3 var(--ios-font); letter-spacing: -0.2px; margin-bottom: 8px;
-}
-.ios-staff-dashboard .next-card-note {
-    font: 400 13px/1.5 var(--ios-font); color: rgba(255,255,255,0.85); margin-bottom: 14px;
-}
-.ios-staff-dashboard .next-card-cta {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 9px 18px; border-radius: 999px;
-    font: 700 13px/1 var(--ios-font);
-    background: rgba(255,255,255,0.18); border: none; color: #fff;
-    transition: background 120ms var(--ios-ease);
-}
-.ios-staff-dashboard a.next-card:active .next-card-cta { background: rgba(255,255,255,0.28); }
 
 /* ── Banners (учётные данные / одноразовая ссылка) ── */
 .ios-staff-dashboard .info-banner {
@@ -126,7 +56,7 @@
 .ios-staff-dashboard .copy-btn.blue  { background: var(--ios-blue); color: #fff; }
 .ios-staff-dashboard .copy-btn:active { opacity: 0.75; }
 .ios-staff-dashboard .banner-meta {
-    font: 400 11px/1.4 var(--ios-font); margin-top: 8px; color: var(--ios-label-2); opacity: 1;
+    font: 400 12px/1.4 var(--ios-font); margin-top: 8px; color: var(--ios-label-2); opacity: 1;
 }
 .ios-staff-dashboard .sfd-link-inline { color: var(--ios-blue); }
 
@@ -135,8 +65,11 @@
 .ios-staff-dashboard .stat-tile {
     background: var(--ios-card-bg); border-radius: 16px; padding: 14px 16px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    display: flex; flex-direction: column;
 }
-.ios-staff-dashboard .stat-tile-head { font: 500 12px/1.3 var(--ios-font); color: var(--ios-label-2); gap: 6px; }
+/* Подпись занимает свободную высоту: цифры соседних плиток стоят на одной
+   линии, даже когда подпись одной переносится в две строки */
+.ios-staff-dashboard .stat-tile-head { flex: 1; align-items: flex-start; font: 500 12px/1.3 var(--ios-font); color: var(--ios-label-2); gap: 6px; }
 .ios-staff-dashboard .stat-tile-head .ico {
     width: 24px; height: 24px; border-radius: 7px;
     background: rgba(175,82,222,0.12); color: var(--ios-blue);
@@ -144,27 +77,10 @@
 .ios-staff-dashboard .stat-tile-value {
     font: 700 26px/1.15 var(--ios-font); letter-spacing: -0.3px; color: var(--ios-label); margin-top: 14px;
 }
-.ios-staff-dashboard .stat-tile-sub { font: 600 11px/1.3 var(--ios-font); color: var(--ios-blue); margin-top: 5px; }
-
-/* ── Quick tools ── */
-.ios-staff-dashboard .qt-grid { margin-bottom: 16px; }
-.ios-staff-dashboard a.card.qt-card {
-    background: var(--ios-card-bg); border: none; border-radius: 16px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    padding: 18px; transition: transform 120ms var(--ios-ease);
-    text-decoration: none; color: inherit; display: block;
-}
-.ios-staff-dashboard a.card.qt-card:hover { box-shadow: 0 1px 3px rgba(0,0,0,0.05); transform: none; border-color: transparent; }
-.ios-staff-dashboard a.card.qt-card:active { transform: scale(0.98); }
-.ios-staff-dashboard .qt-card .card-icon-wrap {
-    width: 36px; height: 36px; border-radius: 10px;
-    background: rgba(175,82,222,0.12); color: var(--ios-blue); margin-bottom: 12px;
-}
-.ios-staff-dashboard .qt-card .card-title { font: 600 15px/1.3 var(--ios-font); letter-spacing: -0.1px; color: var(--ios-label); margin-bottom: 4px; }
-.ios-staff-dashboard .qt-card .card-desc { font: 400 12px/1.45 var(--ios-font); color: var(--ios-label-2); }
+.ios-staff-dashboard .stat-tile-sub { font: 500 12px/1.3 var(--ios-font); color: var(--ios-label-2); margin-top: 5px; min-height: 1.3em; }
 
 /* ── Two-col grid ── */
-.ios-staff-dashboard .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.ios-staff-dashboard .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; align-items: start; }
 .ios-staff-dashboard .sfd-single-col { margin-bottom: 16px; }
 
 /* ── Panel (grouped list card) ── */
@@ -172,8 +88,6 @@
     background: var(--ios-card-bg); border: none; border-radius: 16px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow: hidden;
 }
-.ios-staff-dashboard .panel--periods,
-.ios-staff-dashboard .panel--registration-stats { margin-bottom: 16px; }
 .ios-staff-dashboard .panel-header {
     padding: 13px 16px; border-bottom: none; position: relative;
     display: flex; align-items: center; justify-content: space-between;
@@ -215,57 +129,24 @@
 }
 .ios-staff-dashboard .staff-info { flex: 1; min-width: 0; }
 .ios-staff-dashboard .staff-name { font: 600 13px/1.3 var(--ios-font); color: var(--ios-label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ios-staff-dashboard .staff-meta { font: 400 11px/1.3 var(--ios-font); color: var(--ios-label-2); margin-top: 1px; }
+.ios-staff-dashboard .staff-meta { font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-2); margin-top: 1px; }
 
 /* Список свёрнут по умолчанию, класс переключается JS-ом вместо inline style.display */
 .ios-staff-dashboard .sfd-list-body.is-collapsed { display: none; }
 
 .ios-staff-dashboard .sfd-row-actions { display: flex; align-items: center; gap: 10px; }
-.ios-staff-dashboard .sfd-meta-text { font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-2); }
-.ios-staff-dashboard .registration-stats-actions {
-    display: inline-flex; align-items: center; gap: 12px;
-}
-.ios-staff-dashboard .registration-stats-filters {
-    display: flex; flex-wrap: wrap; align-items: end; gap: 10px 12px;
-    padding: 12px 16px; border-top: 0.5px solid var(--ios-sep); border-bottom: 0.5px solid var(--ios-sep);
-}
-.ios-staff-dashboard .registration-stats-filters label {
-    display: grid; gap: 4px; font: 600 11px/1.2 var(--ios-font); color: var(--ios-label-2);
-}
-.ios-staff-dashboard .registration-stats-filters input,
-.ios-staff-dashboard .registration-stats-filters select {
-    min-height: 34px; padding: 0 9px; border: 1px solid var(--ios-sep); border-radius: 8px;
-    background: var(--ios-card); color: var(--ios-label); font: 500 12px/1 var(--ios-font);
-}
-.ios-staff-dashboard .registration-stats-filters button,
-.ios-staff-dashboard .registration-stats-filters a {
-    min-height: 34px; padding: 0 12px; border: 1px solid var(--ios-blue); border-radius: 8px;
-    background: var(--ios-blue); color: #fff; font: 700 12px/34px var(--ios-font); text-decoration: none; cursor: pointer;
-}
-.ios-staff-dashboard .registration-stats-filters a { background: transparent; color: var(--ios-blue); }
-.ios-staff-dashboard .registration-download-btn {
-    display: inline-flex; align-items: center; justify-content: center; min-height: 40px;
-    padding: 0 14px; border: 1px solid var(--ios-blue); border-radius: 10px;
-    color: var(--ios-blue); background: rgba(175,82,222,0.10);
-    font: 700 12px/1 var(--ios-font); text-decoration: none; white-space: nowrap;
-    transition: background-color 120ms var(--ios-ease), color 120ms var(--ios-ease), border-color 120ms var(--ios-ease);
-}
-.ios-staff-dashboard .registration-download-btn:hover,
-.ios-staff-dashboard .registration-download-btn:focus-visible {
-    color: #fff; background: var(--ios-blue); border-color: var(--ios-blue);
-}
-.ios-staff-dashboard .registration-download-btn:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 2px; }
+.ios-staff-dashboard .sfd-meta-text { font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-2); white-space: nowrap; }
 .ios-staff-dashboard .sfd-btn-group { display: flex; gap: 6px; flex-shrink: 0; }
 .ios-staff-dashboard .sfd-inline-form { margin: 0; }
 .ios-staff-dashboard .sfd-empty-row { padding: 20px 16px; font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); }
-.ios-staff-dashboard .sfd-empty-row--center { padding: 32px; text-align: center; }
+
 
 /* Мелкая outline-кнопка строчных действий («Пароль»/«Ссылка»/«Войти»/«Показать») */
 .ios-staff-dashboard .issue-link-btn {
     display: inline-flex; align-items: center; gap: 4px;
     flex-shrink: 0; background: transparent; border: 1.5px solid var(--ios-sep);
     border-radius: 999px; padding: 5px 11px;
-    font: 700 11px/1 var(--ios-font); color: var(--ios-label-2); cursor: pointer;
+    font: 700 12px/1 var(--ios-font); color: var(--ios-label-2); cursor: pointer;
     transition: border-color 120ms var(--ios-ease), color 120ms var(--ios-ease), transform 100ms var(--ios-ease);
     white-space: nowrap;
 }
@@ -273,261 +154,77 @@
 .ios-staff-dashboard .issue-link-btn:active { transform: scale(0.94); }
 .ios-staff-dashboard .issue-link-btn:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 2px; }
 
-/* Тумблер периода сдачи */
-.ios-staff-dashboard .period-toggle-btn {
-    font: 700 12px/1 var(--ios-font); padding: 6px 15px;
-    border-radius: 999px; border: none; cursor: pointer;
-    transition: background 120ms var(--ios-ease), transform 100ms var(--ios-ease);
-}
-.ios-staff-dashboard .period-toggle-btn:active { transform: scale(0.95); }
-.ios-staff-dashboard .period-toggle-btn--close { background: rgba(255,59,48,0.12); color: var(--ios-red); }
-.ios-staff-dashboard .period-toggle-btn--close:hover { background: rgba(255,59,48,0.2); }
-.ios-staff-dashboard .period-toggle-btn--open { background: rgba(52,199,89,0.14); color: #1E9147; }
-.ios-staff-dashboard .period-toggle-btn--open:hover { background: rgba(52,199,89,0.22); }
-.ios-staff-dashboard .period-toggle-btn:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 2px; }
-
-/* Строка периода сдачи (иконка/название/статус) — заменяет инлайновую
-   разметку шаблона, .is-open/.is-closed вместо инлайнового style=color */
-.ios-staff-dashboard .sfd-feature-row {
-    display: flex; align-items: center; gap: 14px; padding: 12px 16px; position: relative;
-}
-.ios-staff-dashboard .sfd-feature-row:not(:last-child)::after {
-    content: ''; position: absolute; left: 16px; right: 0; bottom: 0; height: 0.5px; background: var(--ios-sep);
-}
-.ios-staff-dashboard .sfd-feature-icon { font-size: 20px; flex-shrink: 0; }
-.ios-staff-dashboard .sfd-feature-body { flex: 1; min-width: 0; }
-.ios-staff-dashboard .sfd-feature-name { font: 600 14px/1.3 var(--ios-font); color: var(--ios-label); }
-.ios-staff-dashboard .sfd-feature-status { font: 400 12px/1.3 var(--ios-font); margin-top: 2px; }
-.ios-staff-dashboard .sfd-feature-status.is-open   { color: #1E9147; }
-.ios-staff-dashboard .sfd-feature-status.is-closed { color: var(--ios-label-2); }
-
 /* ── Works by type ── */
-.ios-staff-dashboard .type-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; }
+.ios-staff-dashboard .type-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; }
 .ios-staff-dashboard .type-cell {
     padding: 14px 16px; border-right: 0.5px solid var(--ios-sep); border-bottom: 0.5px solid var(--ios-sep);
 }
-.ios-staff-dashboard .type-cell:nth-child(2n) { border-right: none; }
-.ios-staff-dashboard .type-cell:nth-last-child(-n+2) { border-bottom: none; }
+.ios-staff-dashboard .type-cell:last-child { border-right: none; }
+.ios-staff-dashboard .type-cell { border-bottom: none; }
 .ios-staff-dashboard .type-label { font: 600 11px/1.3 var(--ios-font); color: var(--ios-label-2); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 4px; }
 .ios-staff-dashboard .type-val { font: 700 22px/1.2 var(--ios-font); color: var(--ios-label); }
-.ios-staff-dashboard .registration-tariff-label {
-    text-transform: none;
-    letter-spacing: -0.01em;
-    font-size: 12px;
+/* ── Заголовок: роль строкой над именем, без баннера ── */
+.ios-staff-dashboard .sfd-head { margin-bottom: 20px; }
+.ios-staff-dashboard .sfd-role {
+    font: 600 13px/1.3 var(--ios-font); color: var(--ios-label-2); margin: 0 0 4px;
 }
-.ios-staff-dashboard .registration-tariff-label--confident-max { color: var(--tariff-confident-max); }
-.ios-staff-dashboard .registration-tariff-label--with-you { color: var(--tariff-with-you); }
-.ios-staff-dashboard .registration-tariff-label--self { color: var(--tariff-self); }
-.ios-staff-dashboard .registration-tariff-label--legacy { color: var(--tariff-legacy); }
-.ios-staff-dashboard .registration-stats-total {
-    padding: 12px 16px;
-    border-top: 0.5px solid var(--ios-sep);
-    font: 400 12px/1.4 var(--ios-font);
-    color: var(--ios-label-2);
-}
-.ios-staff-dashboard .registration-stats-total strong {
-    color: var(--ios-label);
-    font-weight: 700;
-}
-.ios-staff-dashboard .registration-student-list {
-    border-top: 0.5px solid var(--ios-sep);
-}
-.ios-staff-dashboard .registration-student-list summary {
-    min-height: 44px;
-    padding: 0 16px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    cursor: pointer;
-    font: 600 13px/1.3 var(--ios-font);
-    color: var(--ios-label);
-}
-.ios-staff-dashboard .registration-student-list summary::marker { color: var(--ios-blue); }
-.ios-staff-dashboard .registration-student-list summary span {
-    color: var(--ios-label-2);
-    font-size: 12px;
-}
-.ios-staff-dashboard .registration-student-head,
-.ios-staff-dashboard .registration-student-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(160px, 1fr);
-    gap: 16px;
-    align-items: center;
-}
-.ios-staff-dashboard .registration-student-head {
-    padding: 9px 16px;
-    background: var(--ios-grouped-bg);
-    font: 600 11px/1.3 var(--ios-font);
-    color: var(--ios-label-2);
-}
-.ios-staff-dashboard .registration-student-rows {
-    max-height: 440px;
-    overflow-y: auto;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}
-.ios-staff-dashboard .registration-student-row {
-    min-height: 44px;
-    padding: 8px 16px;
-    position: relative;
-}
-.ios-staff-dashboard .registration-student-row:not(:last-child)::after {
-    content: '';
-    position: absolute;
-    left: 16px;
-    right: 0;
-    bottom: 0;
-    height: 0.5px;
-    background: var(--ios-sep);
-}
-.ios-staff-dashboard .registration-student-name {
-    min-width: 0;
-    font: 600 13px/1.35 var(--ios-font);
-    color: var(--ios-label);
-}
-.ios-staff-dashboard .registration-student-username {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font: 400 12px/1.35 var(--ios-font);
-    color: var(--ios-label-2);
-}
-.ios-staff-dashboard .registration-student-tariff {
-    font: 600 12px/1.35 var(--ios-font);
-}
+.ios-staff-dashboard .sfd-head .dashboard-name-row { margin-bottom: 0; }
 
-.ios-staff-dashboard .panel--student-activity { margin-bottom: 16px; }
-.ios-staff-dashboard .student-activity-tools {
-    display: flex; flex-wrap: wrap; align-items: end; gap: 10px 12px;
-    padding: 12px 16px; border-top: 0.5px solid var(--ios-sep);
+/* ── «Ждёт проверки»: строки со счётчиком, первым блоком экрана ── */
+.ios-staff-dashboard .sfd-attention { margin-bottom: 16px; }
+.ios-staff-dashboard .sfd-todo,
+.ios-staff-dashboard .sfd-tool {
+    display: flex; align-items: center; gap: 14px;
+    min-height: 56px; padding: 10px 16px; position: relative;
+    color: inherit; text-decoration: none;
+    transition: background-color var(--duration-fast) var(--ios-ease);
 }
-.ios-staff-dashboard .student-activity-tools label {
-    display: grid; gap: 4px; font: 600 11px/1.2 var(--ios-font); color: var(--ios-label-2);
-}
-.ios-staff-dashboard .student-activity-tools select {
-    min-height: 36px; padding: 0 32px 0 10px; border: 1px solid var(--ios-sep); border-radius: 8px;
-    background: var(--ios-card); color: var(--ios-label); font: 500 12px/1 var(--ios-font);
-}
-.ios-staff-dashboard .student-activity-tools [data-assignment-filter] { max-width: min(320px, 80vw); }
-.ios-staff-dashboard .student-activity-stats {
-    flex-basis: 100%; margin: 0; color: var(--ios-label-2);
-    font: 500 12px/1.5 var(--ios-font);
-}
-.ios-staff-dashboard .student-activity-copy {
-    min-height: 36px; padding: 0 12px; border: 1px solid var(--ios-blue); border-radius: 8px;
-    background: var(--ios-blue); color: #fff; font: 700 12px/1 var(--ios-font); cursor: pointer;
-    transition: background-color 120ms var(--ios-ease), border-color 120ms var(--ios-ease), opacity 120ms var(--ios-ease);
-}
-.ios-staff-dashboard .student-activity-copy:hover { opacity: 0.88; }
-.ios-staff-dashboard .student-activity-copy:focus-visible,
-.ios-staff-dashboard .student-activity-tools select:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 2px; }
-.ios-staff-dashboard .student-activity-copy:disabled { cursor: default; opacity: 0.45; }
-.ios-staff-dashboard .student-activity-copy-status {
-    min-height: 18px; align-self: center; color: var(--ios-label-2); font: 500 12px/1.3 var(--ios-font);
-}
-.ios-staff-dashboard .student-activity-block { border-top: 0.5px solid var(--ios-sep); }
-.ios-staff-dashboard .student-activity-block > summary {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    min-height: 44px; padding: 10px 16px; cursor: pointer;
-    font: 600 13px/1.3 var(--ios-font); color: var(--ios-label);
-    list-style: none;
-}
-.ios-staff-dashboard .student-activity-block > summary::-webkit-details-marker { display: none; }
-.ios-staff-dashboard .student-activity-block > summary::after { content: '›'; color: var(--ios-label-2); transform: rotate(90deg); }
-.ios-staff-dashboard .student-activity-block:not([open]) > summary::after { transform: rotate(0); }
-.ios-staff-dashboard .student-activity-block > summary span {
-    margin-left: auto; padding: 3px 9px; border-radius: 999px;
-    color: var(--ios-blue); background: rgba(175,82,222,0.12); font-size: 11px;
-}
-.ios-staff-dashboard .student-activity-table-wrap { overflow-x: auto; }
-.ios-staff-dashboard .student-activity-table { width: 100%; min-width: 850px; border-collapse: collapse; }
-.ios-staff-dashboard .student-activity-table th,
-.ios-staff-dashboard .student-activity-table td {
-    padding: 9px 12px; border-top: 0.5px solid var(--ios-sep); text-align: left;
-    font: 400 12px/1.35 var(--ios-font); color: var(--ios-label-2); white-space: nowrap;
-}
-.ios-staff-dashboard .student-activity-table th { color: var(--ios-label-2); font-weight: 600; }
-.ios-staff-dashboard .student-activity-table td:first-child { padding-left: 16px; color: var(--ios-label); }
-.ios-staff-dashboard .student-activity-table td:last-child { padding-right: 16px; }
-.ios-staff-dashboard .student-activity-table strong { display: block; color: var(--ios-label); font-weight: 600; }
-.ios-staff-dashboard .student-activity-table small { display: block; margin-top: 2px; color: var(--ios-label-2); font-size: 11px; }
-.ios-staff-dashboard .student-activity-table--journal { min-width: 620px; }
-
-/* ── Recent feed (role_rank < 4 — недостижимо через текущие маршруты
-   ГП/СА, но остаётся в шаблоне: стилизуем для полноты, без удаления) ── */
-.ios-staff-dashboard .feed-wrap {
-    background: var(--ios-card-bg); border: none; border-radius: 16px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 16px; overflow: hidden;
-}
-.ios-staff-dashboard .feed-header {
-    padding: 13px 16px; border-bottom: none; position: relative;
-    font: 600 13px/1.3 var(--ios-font); color: var(--ios-label-2);
-    text-transform: uppercase; letter-spacing: 0.03em;
-    display: flex; align-items: center; justify-content: space-between;
-}
-.ios-staff-dashboard .feed-header::after {
+.ios-staff-dashboard .sfd-todo:not(:last-child)::after,
+.ios-staff-dashboard .sfd-tool:not(:last-child)::after {
     content: ''; position: absolute; left: 16px; right: 0; bottom: 0; height: 0.5px; background: var(--ios-sep);
 }
-.ios-staff-dashboard .feed-item {
-    display: flex; align-items: center; gap: 14px; padding: 10px 16px; position: relative;
-    transition: background 100ms ease-out;
+.ios-staff-dashboard .sfd-todo:hover,
+.ios-staff-dashboard .sfd-tool:hover { background: var(--ios-grouped-bg); opacity: 1; }
+.ios-staff-dashboard .sfd-todo:focus-visible,
+.ios-staff-dashboard .sfd-tool:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: -2px; }
+.ios-staff-dashboard .sfd-todo-count {
+    flex-shrink: 0; min-width: 44px; text-align: center;
+    font: 700 22px/1.2 var(--ios-font); color: var(--ios-blue);
 }
-.ios-staff-dashboard .feed-item:not(:last-child)::after {
-    content: ''; position: absolute; left: 16px; right: 0; bottom: 0; height: 0.5px; background: var(--ios-sep);
-}
-.ios-staff-dashboard .feed-item:active { background: rgba(60,60,67,0.06); }
-.ios-staff-dashboard .feed-thumb { width: 40px; height: 40px; border-radius: 9px; border: none; }
-.ios-staff-dashboard .feed-thumb-ph { width: 40px; height: 40px; border-radius: 9px; background: var(--ios-grouped-bg); border: none; }
-.ios-staff-dashboard .feed-info { flex: 1; min-width: 0; }
-.ios-staff-dashboard .feed-student { font: 600 13px/1.3 var(--ios-font); color: var(--ios-label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ios-staff-dashboard .feed-meta { font: 400 11px/1.3 var(--ios-font); color: var(--ios-label-2); margin-top: 2px; }
-.ios-staff-dashboard .feed-right { flex-shrink: 0; text-align: right; }
-.ios-staff-dashboard .feed-date { font: 400 11px/1.3 var(--ios-font); color: var(--ios-label-2); }
-.ios-staff-dashboard .feed-score {
-    font: 700 12px/1 var(--ios-font); color: var(--ios-orange);
-    background: rgba(255,149,0,0.12); border-radius: 999px; padding: 2px 9px; margin-top: 3px;
-}
-.ios-staff-dashboard .feed-pending { font: 400 11px/1.3 var(--ios-font); color: var(--ios-label-2); margin-top: 3px; }
+.ios-staff-dashboard .sfd-todo-body,
+.ios-staff-dashboard .sfd-tool-body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.ios-staff-dashboard .sfd-todo-title,
+.ios-staff-dashboard .sfd-tool-title { font: 600 15px/1.3 var(--ios-font); color: var(--ios-label); }
+.ios-staff-dashboard .sfd-todo-desc,
+.ios-staff-dashboard .sfd-tool-desc { font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); }
+.ios-staff-dashboard .sfd-todo-go { flex-shrink: 0; font-size: 22px; color: var(--ios-label-2); }
+.ios-staff-dashboard .sfd-tool-icon { flex-shrink: 0; width: 24px; text-align: center; font-size: 18px; }
 
-.ios-staff-dashboard .type-badge { display: inline-flex; padding: 2px 8px; border-radius: 999px; font: 700 11px/1.3 var(--ios-font); }
-.ios-staff-dashboard .tb-before { background: rgba(255,59,48,0.1);  color: var(--ios-red); }
-.ios-staff-dashboard .tb-after  { background: rgba(52,199,89,0.12); color: #1E9147; }
-.ios-staff-dashboard .tb-mock   { background: rgba(255,149,0,0.12); color: var(--ios-orange); }
-.ios-staff-dashboard .tb-retake { background: rgba(175,82,222,0.12); color: var(--ios-purple); }
+/* ── Разделы: две группы строк вместо восьми плиток ── */
+.ios-staff-dashboard .sfd-groups {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 12px; margin-bottom: 16px; align-items: start;
+}
 
-.ios-staff-dashboard .sfd-link { font: 700 12px/1 var(--ios-font); color: var(--ios-blue); text-decoration: none; opacity: 1; }
-.ios-staff-dashboard .sfd-feed-student-link { color: var(--ios-label); text-decoration: none; opacity: 1; }
+/* Сброс пароля — единственное строчное действие, которое что-то ломает */
+.ios-staff-dashboard .issue-link-btn--danger:hover { border-color: var(--ios-red); color: var(--ios-red); }
+
+/* На касание — цель не меньше 44px (DESIGN.md), на мыши строки остаются плотными */
+@media (pointer: coarse) {
+    .ios-staff-dashboard .issue-link-btn,
+    .ios-staff-dashboard .copy-btn { min-height: 44px; padding-left: 14px; padding-right: 14px; }
+}
 
 @media (max-width: 768px) {
     .ios-staff-dashboard .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .ios-staff-dashboard .two-col { grid-template-columns: 1fr; }
-    .ios-staff-dashboard .staff-hero { flex-direction: column; align-items: flex-start; }
-    .ios-staff-dashboard .staff-hero-name { font-size: 22px; }
 }
 @media (max-width: 480px) {
-    .ios-staff-dashboard .staff-hero { padding: 18px; }
-    .ios-staff-dashboard .staff-hero-name { font-size: 20px; }
     .ios-staff-dashboard .banner-row { flex-direction: column; gap: 6px; align-items: stretch; }
     .ios-staff-dashboard .banner-row-label { width: auto; }
     .ios-staff-dashboard .staff-row { flex-wrap: wrap; }
     .ios-staff-dashboard .staff-info { min-width: 130px; }
     .ios-staff-dashboard .stats-grid { gap: 10px; }
     .ios-staff-dashboard .stat-tile { padding: 12px 14px; }
-    .ios-staff-dashboard .registration-stats-actions { flex-direction: column; align-items: flex-end; gap: 6px; }
-    .ios-staff-dashboard .registration-student-head { display: none; }
-    .ios-staff-dashboard .registration-student-row {
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 4px 12px;
-        padding-top: 10px;
-        padding-bottom: 10px;
-    }
-    .ios-staff-dashboard .registration-student-name { grid-column: 1 / -1; }
-    .ios-staff-dashboard .registration-student-tariff { text-align: right; }
-    .ios-staff-dashboard .student-activity-tools { align-items: stretch; }
-    .ios-staff-dashboard .student-activity-tools label,
-    .ios-staff-dashboard .student-activity-copy { width: 100%; }
-    .ios-staff-dashboard .registration-student-rows { padding-bottom: 72px; }
+    .ios-staff-dashboard .sfd-groups { grid-template-columns: 1fr; }
 }

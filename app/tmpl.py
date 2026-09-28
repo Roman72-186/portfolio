@@ -184,3 +184,20 @@ templates.env.filters["ticket_desc"] = format_rich_text
 # через `strftime('%d.%m.%Y')` и время просто теряли. Фильтр, а не форматирование
 # в сервисе: `cycle_feed` отдаёт шаблону момент, а как его назвать — дело показа.
 templates.env.filters["msk_text"] = msk_text
+
+
+def ru_plural(count: int, one: str, few: str, many: str) -> str:
+    """Форма слова под число: 1 работа, 2 работы, 5 работ, 21 работа, 11 работ.
+
+    До 28.09.2026 шаблоны собирали окончания руками и ошибались на 1 и 21
+    («1 пробных экзамен ожидают», «Всего 1 работ»).
+    """
+    n = abs(int(count or 0))
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return few
+    return many
+
+
+templates.env.filters["plural"] = ru_plural

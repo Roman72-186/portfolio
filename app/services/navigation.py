@@ -219,7 +219,7 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         pill_label="По ученику",
         aria_label="Проверка по ученику",
         tooltip="Открыть ученика и разобрать всё, что он сдал, за один заход",
-        icon="students",
+        icon="tracker",
         min_rank=2,
     ),
     StaffNavItem(
@@ -283,7 +283,7 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
         pill_label="Архив",
         aria_label="Архив учеников",
         tooltip="Архив прошлых потоков: работы и переписки, только просмотр",
-        icon="students",
+        icon="archive",
         min_rank=4,
     ),
     # «Гостевой режим» снят из меню (созвон 16.09.2026: «гостевой режим можно

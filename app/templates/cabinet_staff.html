@@ -1,418 +1,267 @@
 {% extends "base.html" %}
 {% block title %}{% if user.role_rank >= 5 %}Суперадмин{% else %}Главный преподаватель{% endif %} — дашборд{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=7">
+<link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=10">
 {% endblock %}
 {% block content %}
+{#- Один экран у ГП (/cabinet/admin-panel) и суперадмина (/cabinet/superadmin),
+    данные собирает services/staff_dashboard.py::load_staff_dashboard.
+    Разбор 28.09.2026 (/critique): вместо баннера с градиентом — обычный
+    заголовок, первым идёт то, что ждёт действия, разделы сгруппированы
+    по задаче, а пункты бокового меню здесь не повторяются. -#}
 <div class="staff-wrap ios-staff-dashboard">
 
-    <!-- Hero -->
-    <div class="staff-hero">
-        <div class="staff-hero-info">
-            {% if user.role_rank >= 5 %}
-            <div class="staff-role-tag">👑 Суперадминистратор</div>
+    <header class="page-header sfd-head">
+        <div>
+            <p class="sfd-role">{% if user.role_rank >= 5 %}Суперадмин{% else %}Главный преподаватель{% endif %}</p>
             <div class="dashboard-name-row">
-                <h1 class="staff-hero-name">{{ user.last_name or '' }} {{ user.first_name or user.name }}</h1>
+                <h1 class="page-title">{{ user.last_name or '' }} {{ user.first_name or user.name }}</h1>
                 {% include "partials/mobile_dashboard_logout.html" %}
                 {% include "partials/mobile_dashboard_theme_toggle.html" %}
             </div>
-            <div class="staff-hero-sub">Полный доступ · все системные функции</div>
-            {% else %}
-            <div class="staff-role-tag">⚙️ Главный преподаватель</div>
-            <div class="dashboard-name-row">
-                <h1 class="staff-hero-name">{{ user.last_name or '' }} {{ user.first_name or user.name }}</h1>
-                {% include "partials/mobile_dashboard_logout.html" %}
-                {% include "partials/mobile_dashboard_theme_toggle.html" %}
-            </div>
-            <div class="staff-hero-sub">Проверка работ · аналитика · портфолио учеников</div>
-            {% endif %}
         </div>
-    </div>
-
-    <!-- Staff-only: credentials / link banners -->
-    {% if user.role_rank >= 4 %}
+    </header>
 
     {% if issued_creds is defined and issued_creds %}
-    <div class="info-banner blue">
-        <h2 class="banner-title">🔑 Учётные данные созданы — {{ issued_creds.name }}</h2>
+    <section class="info-banner blue" aria-labelledby="issued-creds-title">
+        <h2 class="banner-title" id="issued-creds-title">🔑 Новый пароль: {{ issued_creds.name }}</h2>
         <div class="banner-row">
             <span class="banner-row-label">Логин</span>
             <span class="banner-row-text" id="cred-login">{{ issued_creds.login }}</span>
-            <button class="copy-btn blue" onclick="copyText('cred-login', this)">Копировать</button>
+            <button type="button" class="copy-btn blue" data-copy="cred-login">Копировать</button>
         </div>
         <div class="banner-row">
             <span class="banner-row-label">Пароль</span>
             <span class="banner-row-text" id="cred-pwd">{{ issued_creds.password }}</span>
-            <button class="copy-btn blue" onclick="copyText('cred-pwd', this)">Копировать</button>
+            <button type="button" class="copy-btn blue" data-copy="cred-pwd">Копировать</button>
         </div>
-        <div class="banner-meta">Страница входа: <a href="{{ issued_creds.url }}" target="_blank" class="sfd-link-inline">{{ issued_creds.url }}</a></div>
-    </div>
+        <p class="banner-meta">Старый пароль уже не работает. Новый видно только сейчас: после обновления страницы его не будет.</p>
+        <p class="banner-meta">Страница входа: <a href="{{ issued_creds.url }}" target="_blank" class="sfd-link-inline">{{ issued_creds.url }}</a></p>
+    </section>
     {% endif %}
 
     {% if issued_link is defined and issued_link %}
-    <div class="info-banner green">
-        <h2 class="banner-title">✓ Одноразовая ссылка — {{ issued_link_name }}</h2>
+    <section class="info-banner green" aria-labelledby="issued-link-title">
+        <h2 class="banner-title" id="issued-link-title">✓ Ссылка для входа: {{ issued_link_name }}</h2>
         <div class="banner-row">
             <span class="banner-row-text" id="issued-link-text">{{ issued_link }}</span>
-            <button class="copy-btn green" onclick="copyText('issued-link-text', this)">Копировать</button>
+            <button type="button" class="copy-btn green" data-copy="issued-link-text">Копировать</button>
         </div>
-        <div class="banner-meta">
-            Действует до {{ issued_link_expires_at.strftime('%d.%m.%Y %H:%M') if issued_link_expires_at else '—' }} UTC · одноразовая
-        </div>
-    </div>
+        <p class="banner-meta">Сработает один раз{% if issued_link_expires_at %}, действует до {{ issued_link_expires_at | msk_text }} по Москве{% endif %}.</p>
+    </section>
     {% endif %}
 
+    {% if (issued_creds is defined and issued_creds) or (issued_link is defined and issued_link) %}
     <script>
-    function copyText(elemId, btn) {
-        var text = document.getElementById(elemId).textContent.trim();
-        navigator.clipboard.writeText(text).then(function() {
-            var orig = btn.textContent;
-            btn.textContent = 'Скопировано!';
-            setTimeout(function() { btn.textContent = orig; }, 2000);
+    (function () {
+        // Страницу нарисовал ответ на форму: без замены адреса обновление
+        // отправило бы форму ещё раз и выдало бы второй пароль.
+        try { history.replaceState(null, '', '/cabinet'); } catch (e) { /* кнопкам копирования это не мешает */ }
+        document.querySelectorAll('[data-copy]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var text = document.getElementById(btn.getAttribute('data-copy')).textContent.trim();
+                var label = btn.textContent;
+                function show(msg) {
+                    btn.textContent = msg;
+                    setTimeout(function () { btn.textContent = label; }, 2500);
+                }
+                if (!navigator.clipboard) { show('Выделите и скопируйте вручную'); return; }
+                navigator.clipboard.writeText(text).then(
+                    function () { show('Скопировано'); },
+                    function () { show('Выделите и скопируйте вручную'); }
+                );
+            });
         });
-    }
+    })();
     </script>
-
     {% endif %}
 
-    <!-- Очередь на проверку — главный CTA дашборда -->
-    {% if unscored_mocks > 0 %}
-    <a href="/cabinet/admin/mock-check" class="next-card next-card--blue">
-        <h2 class="next-card-title">{{ unscored_mocks }} пробных экзамен{{ 'ов' if unscored_mocks > 4 else ('а' if unscored_mocks > 1 else '') }} ожидают проверки</h2>
-        <div class="next-card-note">Оцените работы учеников, чтобы куратор мог продолжить цикл.</div>
-        <span class="next-card-cta">Проверить →</span>
-    </a>
-    {% endif %}
+    <section class="panel sfd-attention" aria-labelledby="attention-title">
+        <div class="panel-header"><h2 class="panel-title" id="attention-title">Ждёт проверки</h2></div>
+        {% if unscored_mocks %}
+        <a href="/cabinet/admin/mock-check" class="sfd-todo" data-attention="mocks">
+            <span class="sfd-todo-count">{{ unscored_mocks }}</span>
+            <span class="sfd-todo-body">
+                <span class="sfd-todo-title">{{ unscored_mocks | plural('пробник', 'пробника', 'пробников') }} без оценки</span>
+                <span class="sfd-todo-desc">Пока нет балла, куратор не может продолжить цикл</span>
+            </span>
+            <span class="sfd-todo-go" aria-hidden="true">›</span>
+        </a>
+        {% elif mock_period_open %}
+        <p class="sfd-empty-row" data-attention="none">Пробники текущего периода оценены все.</p>
+        {% else %}
+        <p class="sfd-empty-row" data-attention="closed">Период пробников сейчас закрыт, новых работ на оценку нет.</p>
+        {% endif %}
+    </section>
 
-    <!-- Stats -->
     <div class="stats-grid">
         <div class="stat-tile">
-            <div class="stat-tile-head"><span class="ico">👥</span> Активных пользователей</div>
-            <div class="stat-tile-value">{{ total_active }}</div>
-            {% if inactive_count is defined and inactive_count > 0 %}
-            <div class="stat-tile-sub">+ {{ inactive_count }} заблокированных</div>
-            {% endif %}
+            <div class="stat-tile-head"><span class="ico">🎓</span> Учеников</div>
+            <div class="stat-tile-value">{{ students_active }}</div>
+            <div class="stat-tile-sub">{% if students_blocked %}ещё {{ students_blocked }} {{ students_blocked | plural('заблокирован', 'заблокированы', 'заблокированы') }}{% endif %}</div>
         </div>
         <div class="stat-tile">
             <div class="stat-tile-head"><span class="ico">📤</span> Загружено в {{ month_name }}</div>
             <div class="stat-tile-value">{{ works_this_month }}</div>
-            <div class="stat-tile-sub">Всего {{ total_works }} работ</div>
+            <div class="stat-tile-sub">Всего {{ total_works }} {{ total_works | plural('работа', 'работы', 'работ') }}</div>
         </div>
         <div class="stat-tile">
             <div class="stat-tile-head"><span class="ico">⭐</span> Средний балл за пробники</div>
-            <div class="stat-tile-value">{% if avg_score is not none %}{{ avg_score }}{% else %}—{% endif %}</div>
+            <div class="stat-tile-value">{% if avg_mock_score is not none %}{{ avg_mock_score }}{% else %}—{% endif %}</div>
+            <div class="stat-tile-sub">{% if avg_mock_score is none %}оценок пока нет{% endif %}</div>
         </div>
         <div class="stat-tile">
-            <div class="stat-tile-head"><span class="ico">🆕</span> Новых в {{ month_name }}</div>
-            <div class="stat-tile-value">{{ new_users_month }}</div>
+            <div class="stat-tile-head"><span class="ico">🆕</span> Новых учеников в {{ month_name }}</div>
+            <div class="stat-tile-value">{{ new_students_month }}</div>
+            <div class="stat-tile-sub"></div>
         </div>
     </div>
 
-    {% if show_registration_stats_on_dashboard %}
-    <section id="registration-stats" class="panel panel--registration-stats" aria-labelledby="registration-stats-title">
-        <div class="panel-header">
-            <h2 class="panel-title" id="registration-stats-title">Регистрации по тарифам</h2>
-            <div class="registration-stats-actions">
-                <span class="sfd-meta-text">Учёт с {{ tariff_registration_stats.since_label }}</span>
-                <a class="registration-download-btn" href="{% if user.role_rank >= 5 %}/cabinet/superadmin/registration-stats.csv{% else %}/cabinet/admin/registration-stats.csv{% endif %}" download aria-label="Скачать статистику регистраций в CSV">Скачать CSV</a>
-            </div>
-        </div>
-        <form class="registration-stats-filters" method="get" action="{{ request.url.path }}">
-            <label>С даты <input type="date" name="registration_from" value="{{ tariff_registration_stats.period_from }}"></label>
-            <label>По дату <input type="date" name="registration_to" value="{{ tariff_registration_stats.period_to }}"></label>
-            <label>Тариф
-                <select name="registration_tariff">
-                    <option value="">Все тарифы</option>
-                    {% for item in tariff_registration_stats.by_tariff %}
-                    <option value="{{ item.tariff }}"{% if tariff_registration_stats.tariff_filter == item.tariff %} selected{% endif %}>{{ item.label }}</option>
-                    {% endfor %}
-                    <option value="__none__"{% if tariff_registration_stats.tariff_filter == "__none__" %} selected{% endif %}>Без тарифа</option>
-                </select>
-            </label>
-            <button type="submit">Применить</button>
-            <a href="{{ request.url.path }}">Сбросить</a>
-        </form>
-        <script>
-        (function () {
-            var form = document.querySelector('.registration-stats-filters');
-            var download = document.querySelector('.registration-download-btn');
-            if (!form || !download) return;
-            function syncDownload() {
-                var query = new URLSearchParams(new FormData(form)).toString();
-                var base = download.href.split('?')[0];
-                download.href = base + (query ? '?' + query : '');
-            }
-            form.addEventListener('change', syncDownload);
-            syncDownload();
-        })();
-        </script>
-        <div class="type-grid">
-            {% for item in tariff_registration_stats.by_tariff %}
-            <div class="type-cell" data-registration-tariff="{{ item.tariff }}">
-                <div class="type-label registration-tariff-label registration-tariff-label--{{ item.tariff | tariff_slug }}">{{ item.label }}</div>
-                <div class="type-val">{{ item.count }}</div>
-            </div>
-            {% endfor %}
-            <div class="type-cell" data-registration-without-tariff>
-                <div class="type-label registration-tariff-label registration-tariff-label--legacy">Без тарифа</div>
-                <div class="type-val">{{ tariff_registration_stats.without_tariff }}</div>
-            </div>
-        </div>
-        <div class="registration-stats-total">Всего зарегистрировались: <strong>{{ tariff_registration_stats.total }}</strong></div>
-        <details class="registration-student-list">
-            <summary>Список учеников <span>{{ tariff_registration_stats.students | length }}</span></summary>
-            <div class="registration-student-head" aria-hidden="true">
-                <span>Имя</span><span>Username</span><span>Тариф</span>
-            </div>
-            <ul class="registration-student-rows" aria-label="Зарегистрированные ученики">
-                {% for student in tariff_registration_stats.students %}
-                <li class="registration-student-row" data-registration-student-id="{{ student.id }}">
-                    <span class="registration-student-name">{{ student.name }}</span>
-                    <span class="registration-student-username">{{ student.username }}</span>
-                    <span class="registration-student-tariff registration-tariff-label--{{ student.tariff | tariff_slug }}">{{ student.tariff_label }}</span>
-                </li>
-                {% endfor %}
-            </ul>
-        </details>
-    </section>
-    {% endif %}
-
-    {% if show_student_activity_on_dashboard %}
-    <section class="panel panel--student-activity" aria-labelledby="student-activity-title">
-        <div class="panel-header">
-            <h2 class="panel-title" id="student-activity-title">Активность учеников</h2>
-            <span class="sfd-meta-text">Входы и портфолио</span>
-        </div>
-        <details class="student-activity-block" open>
-            <summary>Сводка по ученикам <span>{{ student_activity.students | length }}</span></summary>
-            <div class="student-activity-table-wrap">
-                <table class="student-activity-table">
-                    <thead>
-                        <tr><th>Ученик</th><th>Зарегистрирован</th><th>Последний вход</th><th>Входов</th><th>Портфолио</th><th>Последняя загрузка</th></tr>
-                    </thead>
-                    <tbody>
-                    {% for student in student_activity.students %}
-                    <tr>
-                        <td><strong>{{ student.name }}</strong><small>{{ student.username }} · {{ student.tariff }}</small></td>
-                        <td>{{ student.registered_at.strftime('%d.%m.%Y %H:%M') if student.registered_at else '—' }}</td>
-                        <td>{{ student.last_login.strftime('%d.%m.%Y %H:%M') if student.last_login else 'Не заходил' }}</td>
-                        <td>{{ student.login_count }}</td>
-                        <td><strong>{{ student.upload_count }}</strong>{% if student.first_upload %}<small>с {{ student.first_upload.strftime('%d.%m.%Y') }}</small>{% endif %}</td>
-                        <td>{{ student.last_upload.strftime('%d.%m.%Y %H:%M') if student.last_upload else 'Не загружал' }}</td>
-                    </tr>
-                    {% else %}<tr><td colspan="6">Пока нет учеников для статистики.</td></tr>{% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </details>
-        <details class="student-activity-block">
-            <summary>Журнал действий <span>{{ student_activity.events | length }}</span></summary>
-            <div class="student-activity-table-wrap">
-                <table class="student-activity-table student-activity-table--journal">
-                    <thead><tr><th>Когда</th><th>Ученик</th><th>Действие</th><th>Детали</th></tr></thead>
-                    <tbody>
-                    {% for event in student_activity.events %}
-                    <tr><td>{{ event.created_at.strftime('%d.%m.%Y %H:%M') if event.created_at else '—' }}</td><td><strong>{{ event.student_name }}</strong><small>{{ event.username }}</small></td><td>{{ event.action }}</td><td>{{ event.details or '—' }}</td></tr>
-                    {% else %}<tr><td colspan="4">Журнал пока пуст.</td></tr>{% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </details>
-    </section>
-    {% endif %}
-
-    <!-- Quick Tools -->
-    <div class="grid-3 qt-grid">
-        <a href="/cabinet/students" class="card qt-card">
-            <div class="card-icon-wrap">🎓</div>
-            <h2 class="card-title">Ученики</h2>
-            <div class="card-desc">Портфолио и пробники</div>
-        </a>
-        <a href="/cabinet/admin/mock-check" class="card qt-card">
-            <div class="card-icon-wrap">✅</div>
-            <h2 class="card-title">Проверка пробников</h2>
-            <div class="card-desc">Оценка и отправка на отработку</div>
-        </a>
-        <a href="/cabinet/exam-assignments" class="card qt-card">
-            <div class="card-icon-wrap">📋</div>
-            <h2 class="card-title">Билеты для пробников</h2>
-            <div class="card-desc">Создание и управление билетами</div>
-        </a>
-        <a href="/cabinet/curator/reports" class="card qt-card">
-            <div class="card-icon-wrap">🎥</div>
-            <h2 class="card-title">Видео-отчеты</h2>
-            <div class="card-desc">Отчеты кураторов</div>
-        </a>
-        {% if user.role_rank >= 4 %}
-        <a href="/cabinet/superadmin/users" class="card qt-card">
-            <div class="card-icon-wrap">👥</div>
-            <h2 class="card-title">Пользователи</h2>
-            <div class="card-desc">Управление всеми аккаунтами</div>
-        </a>
-        <a href="/cabinet/superadmin/stats" class="card qt-card">
-            <div class="card-icon-wrap">📊</div>
-            <h2 class="card-title">Статистика пробников</h2>
-            <div class="card-desc">Сводка по периодам и оценкам</div>
-        </a>
-        <a href="/cabinet/superadmin/activity" class="card qt-card">
-            <div class="card-icon-wrap">📈</div>
-            <h2 class="card-title">Статистика активности</h2>
-            <div class="card-desc">Диагностика, видео, задания, работа кураторов</div>
-        </a>
-        {# Служебная проверка моста до видеохранилища. Стоит на главном экране
-           по просьбе владельца 20.09.2026: адрес из переписки открывается в
-           браузере без входа и уводит сюда же, на главный экран. Ученики
-           страницу не видят, маршрут требует тот же ранг роли >= 4, что и
-           карточки выше. #}
-        <a href="/cabinet/admin/video-bridge-test" class="card qt-card">
-            <div class="card-icon-wrap">🌉</div>
-            <h2 class="card-title">Проверка моста</h2>
-            <div class="card-desc">Видео через своё зеркало, тест для владельца</div>
-        </a>
-        {% endif %}
+    <div class="sfd-groups">
+        <section class="panel" aria-labelledby="tools-review-title">
+            <div class="panel-header"><h2 class="panel-title" id="tools-review-title">Пробники</h2></div>
+            <a href="/cabinet/admin/mock-check" class="sfd-tool">
+                <span class="sfd-tool-icon" aria-hidden="true">✅</span>
+                <span class="sfd-tool-body"><span class="sfd-tool-title">Проверка пробников</span><span class="sfd-tool-desc">Оценка и отправка на отработку</span></span>
+            </a>
+            <a href="/cabinet/exam-assignments" class="sfd-tool">
+                <span class="sfd-tool-icon" aria-hidden="true">📋</span>
+                <span class="sfd-tool-body"><span class="sfd-tool-title">Билеты для пробников</span><span class="sfd-tool-desc">Создание и управление билетами</span></span>
+            </a>
+            <a href="/cabinet/superadmin/stats" class="sfd-tool">
+                <span class="sfd-tool-icon" aria-hidden="true">📊</span>
+                <span class="sfd-tool-body"><span class="sfd-tool-title">Статистика пробников</span><span class="sfd-tool-desc">Баллы по периодам и тарифам</span></span>
+            </a>
+        </section>
+        <section class="panel" aria-labelledby="tools-people-title">
+            <div class="panel-header"><h2 class="panel-title" id="tools-people-title">Люди и активность</h2></div>
+            <a href="/cabinet/superadmin/users" class="sfd-tool">
+                <span class="sfd-tool-icon" aria-hidden="true">👥</span>
+                <span class="sfd-tool-body"><span class="sfd-tool-title">Пользователи</span><span class="sfd-tool-desc">Аккаунты, роли и тарифы</span></span>
+            </a>
+            <a href="/cabinet/superadmin/activity" class="sfd-tool">
+                <span class="sfd-tool-icon" aria-hidden="true">📈</span>
+                <span class="sfd-tool-body"><span class="sfd-tool-title">Статистика активности</span><span class="sfd-tool-desc">Диагностика, видео, задания, работа кураторов</span></span>
+            </a>
+            {% if user.role_rank >= 5 %}
+            {# Служебная проверка моста до видеохранилища — только суперадмину
+               (владелец 28.09.2026). На главном экране по просьбе 20.09.2026:
+               адрес из переписки открывается без входа и уводит сюда же. #}
+            <a href="/cabinet/admin/video-bridge-test" class="sfd-tool">
+                <span class="sfd-tool-icon" aria-hidden="true">🌉</span>
+                <span class="sfd-tool-body"><span class="sfd-tool-title">Проверка моста</span><span class="sfd-tool-desc">Видео через своё зеркало, служебный тест</span></span>
+            </a>
+            {% endif %}
+        </section>
     </div>
 
-    <!-- Feature periods toggle panel -->
-    {% if feature_statuses %}
-    <div class="panel panel--periods">
-        <div class="panel-header">
-            <h2 class="panel-title">Периоды сдачи</h2>
-            <a href="/cabinet/periods" class="sfd-link">Настроить →</a>
-        </div>
-        {% set feat_icons = {'portfolio_upload': '🖼', 'mock_exam': '📝', 'retake': '🔄'} %}
-        {% for feat_key, feat in feature_statuses.items() if feat_key == 'portfolio_upload' %}
-        <div class="sfd-feature-row">
-            <span class="sfd-feature-icon">{{ feat_icons.get(feat_key, '📌') }}</span>
-            <div class="sfd-feature-body">
-                <div class="sfd-feature-name">{{ feat.label }}</div>
-                <div class="sfd-feature-status {% if feat.open %}is-open{% else %}is-closed{% endif %}">
-                    {% if feat.open %}Открыто{% else %}Закрыто{% endif %}
-                </div>
-            </div>
-            <form method="post" action="/cabinet/periods/quick-toggle" class="sfd-inline-form">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                <input type="hidden" name="feature" value="{{ feat_key }}">
-                <input type="hidden" name="redirect_to" value="/cabinet">
-                <button type="submit" class="period-toggle-btn {% if feat.open %}period-toggle-btn--close{% else %}period-toggle-btn--open{% endif %}">
-                    {% if feat.open %}Закрыть{% else %}Открыть{% endif %}
-                </button>
-            </form>
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
-
-    <!-- Roles + Works by type -->
-    <div class="{% if user.role_rank >= 4 %}two-col{% else %}sfd-single-col{% endif %}">
-        {% if user.role_rank >= 4 %}
-        <div class="panel">
-            <div class="panel-header"><h2 class="panel-title">Пользователи по ролям</h2></div>
+    <div class="{% if user.role_rank >= 5 %}two-col{% else %}sfd-single-col{% endif %}">
+        {% if user.role_rank >= 5 %}
+        <section class="panel" aria-labelledby="roles-title">
+            <div class="panel-header"><h2 class="panel-title" id="roles-title">Пользователи по ролям</h2></div>
             {% set role_icons = {1: '🎓', 2: '👤', 3: '🛡', 4: '⚙️', 5: '👑'} %}
             {% for r in role_breakdown %}
             <div class="role-row">
-                <span class="role-name"><span>{{ role_icons.get(r.rank, '●') }}</span>{{ r.name }}</span>
+                <span class="role-name"><span aria-hidden="true">{{ role_icons.get(r.rank, '●') }}</span>{{ r.name }}</span>
                 <span class="role-count">{{ r.count }}</span>
             </div>
             {% endfor %}
-        </div>
+        </section>
         {% endif %}
-        <div class="panel">
+        <section class="panel" aria-labelledby="works-title">
             <div class="panel-header">
-                <h2 class="panel-title">Работы по типам</h2>
+                <h2 class="panel-title" id="works-title">Работы по типам</h2>
                 <span class="sfd-meta-text">всего {{ total_works }}</span>
             </div>
+            {% if total_works %}
             <div class="type-grid">
                 <div class="type-cell"><div class="type-label">До обучения</div><div class="type-val">{{ works_by_type.get('before', 0) }}</div></div>
-                <div class="type-cell"><div class="type-label">После (синхр.)</div><div class="type-val">{{ works_by_type.get('after', 0) }}</div></div>
-                <div class="type-cell"><div class="type-label">Пробные экзамены</div><div class="type-val">{{ works_by_type.get('mock_exam', 0) }}</div></div>
+                <div class="type-cell"><div class="type-label">После обучения</div><div class="type-val">{{ works_by_type.get('after', 0) }}</div></div>
+                <div class="type-cell"><div class="type-label">Пробники</div><div class="type-val">{{ works_by_type.get('mock_exam', 0) }}</div></div>
             </div>
-        </div>
+            {% else %}
+            <p class="sfd-empty-row">Работ пока нет. Ученики загружают их внутри заданий учебной программы.</p>
+            {% endif %}
+        </section>
     </div>
 
-    <!-- Curators + Admins (access buttons gated per-row by manageable rank) -->
-    {% if user.role_rank >= 4 %}
-    <div class="two-col">
-
-        <div class="panel">
+    <div class="{% if user.role_rank >= 5 %}two-col{% else %}sfd-single-col{% endif %}">
+        <section class="panel" aria-labelledby="curators-title">
             <div class="panel-header">
-                <h2 class="panel-title">Кураторы</h2>
+                <h2 class="panel-title" id="curators-title">Кураторы</h2>
                 <div class="sfd-row-actions">
                     <span class="sfd-meta-text">{{ curators | length }} чел.</span>
-                    <button type="button" id="staffToggleBtn-curators" class="issue-link-btn" onclick="toggleStaffList('curators')">Показать</button>
+                    <button type="button" id="staffToggleBtn-curators" class="issue-link-btn" aria-expanded="false" aria-controls="staffListBody-curators" onclick="toggleStaffList('curators')">Показать</button>
                 </div>
             </div>
             <div id="staffListBody-curators" class="sfd-list-body is-collapsed">
-            {% if curators %}
             {% for c in curators %}
             <div class="staff-row">
-                {% if c.photo_url %}<img src="{{ c.photo_url }}" class="staff-ava" alt="" width="32" height="32" loading="lazy">{% else %}<div class="staff-ava-ph">👤</div>{% endif %}
+                {% if c.photo_url %}<img src="{{ c.photo_url }}" class="staff-ava" alt="" width="32" height="32" loading="lazy">{% else %}<div class="staff-ava-ph" aria-hidden="true">👤</div>{% endif %}
                 <div class="staff-info">
                     <div class="staff-name">{{ c.name }}</div>
-                    <div class="staff-meta">{{ c.student_count }} учеников</div>
+                    <div class="staff-meta">{{ c.student_count }} {{ c.student_count | plural('ученик', 'ученика', 'учеников') }}</div>
                 </div>
                 <div class="sfd-btn-group">
-                    <form method="post" action="/cabinet/superadmin/set-credentials" class="sfd-inline-form">
+                    <form method="post" action="/cabinet/superadmin/set-credentials" class="sfd-inline-form" data-confirm="Выдать новый пароль: {{ c.name }}? Старый перестанет работать сразу.">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <input type="hidden" name="target_user_id" value="{{ c.id }}">
-                        <button type="submit" class="issue-link-btn">🔑 Пароль</button>
+                        <button type="submit" class="issue-link-btn issue-link-btn--danger">🔑 Пароль</button>
                     </form>
                     <form method="post" action="/cabinet/superadmin/issue-link" class="sfd-inline-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <input type="hidden" name="target_user_id" value="{{ c.id }}">
                         <button type="submit" class="issue-link-btn">🔗 Ссылка</button>
                     </form>
-                    <form method="post" action="/cabinet/superadmin/impersonate/{{ c.id }}" class="sfd-inline-form">
+                    <form method="post" action="/cabinet/superadmin/impersonate/{{ c.id }}" class="sfd-inline-form" data-confirm="Открыть кабинет: {{ c.name }}? Вернуться к себе можно кнопкой «Выйти обратно» вверху страницы.">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <button type="submit" class="issue-link-btn">🔓 Войти</button>
                     </form>
                 </div>
             </div>
-            {% endfor %}
             {% else %}
-            <div class="sfd-empty-row">Кураторы не назначены</div>
-            {% endif %}
+            <p class="sfd-empty-row">Кураторов пока нет. Роль выдаётся в «Пользователях».</p>
+            {% endfor %}
             </div>
-        </div>
+        </section>
 
-        <div class="panel">
+        {% if user.role_rank >= 5 %}
+        <section class="panel" aria-labelledby="admins-title">
             <div class="panel-header">
-                <h2 class="panel-title">Главные преподаватели</h2>
+                <h2 class="panel-title" id="admins-title">Главные преподаватели и модераторы</h2>
                 <div class="sfd-row-actions">
                     <span class="sfd-meta-text">{{ admins | length }} чел.</span>
-                    <button type="button" id="staffToggleBtn-admins" class="issue-link-btn" onclick="toggleStaffList('admins')">Показать</button>
+                    <button type="button" id="staffToggleBtn-admins" class="issue-link-btn" aria-expanded="false" aria-controls="staffListBody-admins" onclick="toggleStaffList('admins')">Показать</button>
                 </div>
             </div>
             <div id="staffListBody-admins" class="sfd-list-body is-collapsed">
-            {% if admins %}
             {% for a in admins %}
             <div class="staff-row">
-                {% if a.photo_url %}<img src="{{ a.photo_url }}" class="staff-ava" alt="" width="32" height="32" loading="lazy">{% else %}<div class="staff-ava-ph">⚙️</div>{% endif %}
+                {% if a.photo_url %}<img src="{{ a.photo_url }}" class="staff-ava" alt="" width="32" height="32" loading="lazy">{% else %}<div class="staff-ava-ph" aria-hidden="true">⚙️</div>{% endif %}
                 <div class="staff-info">
                     <div class="staff-name">{{ a.name }}</div>
-                    <div class="staff-meta">Главный преподаватель</div>
+                    <div class="staff-meta">{{ a.role_label }}</div>
                 </div>
-                {% if user.role_rank >= 5 %}
                 <div class="sfd-btn-group">
                     <form method="post" action="/cabinet/superadmin/issue-link" class="sfd-inline-form">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <input type="hidden" name="target_user_id" value="{{ a.id }}">
                         <button type="submit" class="issue-link-btn">🔗 Ссылка</button>
                     </form>
-                    <form method="post" action="/cabinet/superadmin/impersonate/{{ a.id }}" class="sfd-inline-form">
+                    <form method="post" action="/cabinet/superadmin/impersonate/{{ a.id }}" class="sfd-inline-form" data-confirm="Открыть кабинет: {{ a.name }}? Вернуться к себе можно кнопкой «Выйти обратно» вверху страницы.">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                         <button type="submit" class="issue-link-btn">🔓 Войти</button>
                     </form>
                 </div>
-                {% endif %}
             </div>
-            {% endfor %}
             {% else %}
-            <div class="sfd-empty-row">Главные преподаватели не найдены</div>
-            {% endif %}
+            <p class="sfd-empty-row">Главных преподавателей пока нет.</p>
+            {% endfor %}
             </div>
-        </div>
-
+        </section>
+        {% endif %}
     </div>
+
     <script>
     (function(){
         var KEY_PREFIX = 'staffDashboardListExpanded_';
@@ -421,8 +270,13 @@
                 var body = document.getElementById('staffListBody-' + kind);
                 var btn = document.getElementById('staffToggleBtn-' + kind);
                 if (body) body.classList.remove('is-collapsed');
-                if (btn) btn.textContent = 'Скрыть';
+                if (btn) { btn.textContent = 'Скрыть'; btn.setAttribute('aria-expanded', 'true'); }
             }
+        });
+        // Необратимое (новый пароль, вход в чужой кабинет) — только после «Да».
+        document.addEventListener('submit', function (e) {
+            var form = e.target.closest && e.target.closest('form[data-confirm]');
+            if (form && !window.confirm(form.getAttribute('data-confirm'))) e.preventDefault();
         });
     })();
     function toggleStaffList(kind) {
@@ -431,48 +285,10 @@
         var expand = body.classList.contains('is-collapsed');
         body.classList.toggle('is-collapsed', !expand);
         btn.textContent = expand ? 'Скрыть' : 'Показать';
+        btn.setAttribute('aria-expanded', expand ? 'true' : 'false');
         sessionStorage.setItem('staffDashboardListExpanded_' + kind, expand ? '1' : '');
     }
     </script>
-    {% endif %}
-
-    {% if user.role_rank < 4 %}
-    <!-- Recent uploads feed -->
-    <div class="feed-wrap">
-        <div class="feed-header">
-            <span>Последние загрузки</span>
-            <a href="/cabinet/students" class="sfd-link">Все ученики →</a>
-        </div>
-        {% if recent_works %}
-        {% set type_labels = {'before': 'До', 'after': 'После', 'mock_exam': 'Пробник', 'retake': 'Отработка'} %}
-        {% set type_classes = {'before': 'tb-before', 'after': 'tb-after', 'mock_exam': 'tb-mock', 'retake': 'tb-retake'} %}
-        {% for w in recent_works %}
-        <div class="feed-item">
-            {% if w.s3_url %}<img src="{{ w.s3_url }}" class="feed-thumb" alt="" loading="lazy" width="40" height="40">{% else %}<div class="feed-thumb-ph">🖼</div>{% endif %}
-            <div class="feed-info">
-                <div class="feed-student">
-                    <a href="/cabinet/students?student={{ w.student_id }}&tab=mock-exams" class="sfd-feed-student-link">{{ w.student_name }}</a>
-                </div>
-                <div class="feed-meta">
-                    <span class="type-badge {{ type_classes.get(w.work_type, '') }}">{{ type_labels.get(w.work_type, w.work_type) }}</span>
-                    &nbsp;{{ w.filename[:40] }}{% if w.filename | length > 40 %}…{% endif %}
-                </div>
-            </div>
-            <div class="feed-right">
-                <div class="feed-date">{{ w.created_at.strftime('%d.%m %H:%M') if w.created_at else '—' }}</div>
-                {% if w.score is not none %}
-                <div class="feed-score">{{ w.score | int }} / 100</div>
-                {% elif w.work_type == 'mock_exam' %}
-                <div class="feed-pending">не оценено</div>
-                {% endif %}
-            </div>
-        </div>
-        {% endfor %}
-        {% else %}
-        <div class="sfd-empty-row sfd-empty-row--center">Загрузок пока нет</div>
-        {% endif %}
-    </div>
-    {% endif %}
 
 </div>
 {% endblock %}

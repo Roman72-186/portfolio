@@ -4,22 +4,20 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Request, Depends, Form, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Response
-from sqlalchemy import func
-from sqlalchemy.orm import Session as DBSession, aliased
+from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
-from app.constants import FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM, FEATURE_LABELS
+from app.constants import FEATURE_MOCK_EXAM
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf
-from app.models.feature_period import FeaturePeriod
-from app.services.tz import today_msk, msk_midnight
+from app.services.tz import msk_midnight
 from app.services.feature_periods import get_active_period
 from app.services.notify import notify
 from app.services.point_a import maybe_notify_point_a_level
 from app.services.staff_dashboard import (
     build_tariff_registration_csv,
-    get_student_activity_overview,
     get_tariff_registration_stats,
+    load_staff_dashboard,
     parse_registration_date,
 )
 from app.models.notification import Notification
@@ -35,184 +33,6 @@ from app.tmpl import templates
 router = APIRouter(prefix="/cabinet")
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
-def _month_name_prep(month: int) -> str:
-    names = ["", "январе", "феврале", "марте", "апреле", "мае", "июне",
-             "июле", "августе", "сентябре", "октябре", "ноябре", "декабре"]
-    return names[month] if 1 <= month <= 12 else ""
-
-
-def _load_dashboard_data(db: DBSession, now: datetime, *, registration_from=None, registration_to=None, registration_tariff="") -> dict:
-    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
-
-    role_rows = (
-        db.query(Role.display_name, Role.rank, func.count(User.id).label("cnt"))
-        .outerjoin(User, (User.role_id == Role.id) & (User.is_active == True))
-        .group_by(Role.id, Role.display_name, Role.rank)
-        .order_by(Role.rank)
-        .all()
-    )
-    role_breakdown = [{"name": r.display_name, "rank": r.rank, "count": r.cnt} for r in role_rows]
-    total_active = sum(r["count"] for r in role_breakdown)
-    inactive_count = (
-        db.query(func.count(User.id))
-        .filter(User.is_active == False, User.archived_at.is_(None))  # noqa: E712
-        .scalar() or 0
-    )
-    new_users_month = (
-        db.query(func.count(User.id)).filter(User.created_at >= month_start).scalar() or 0
-    )
-
-    works_type_rows = (
-        db.query(Work.work_type, func.count(Work.id))
-        .filter(Work.status == "success")
-        .group_by(Work.work_type)
-        .all()
-    )
-    works_by_type = {wt: cnt for wt, cnt in works_type_rows}
-    total_works = sum(works_by_type.values())
-    works_this_month = (
-        db.query(func.count(Work.id))
-        .filter(Work.status == "success", Work.created_at >= month_start)
-        .scalar() or 0
-    )
-
-    avg_score_raw = (
-        db.query(func.avg(Work.score))
-        .filter(Work.score.isnot(None), Work.status == "success")
-        .scalar()
-    )
-    avg_score = round(float(avg_score_raw)) if avg_score_raw is not None else None
-    mock_period = get_active_period(db, FEATURE_MOCK_EXAM)
-    if mock_period:
-        _mock_start = msk_midnight(mock_period.start_date)
-        _mock_end = msk_midnight(mock_period.end_date + timedelta(days=1))
-        unscored_mocks = (
-            db.query(func.count(Work.id))
-            .filter(
-                Work.work_type == WORK_TYPE_MOCK_EXAM,
-                Work.score.is_(None),
-                Work.status == "success",
-                Work.created_at >= _mock_start,
-                Work.created_at < _mock_end,
-            )
-            .scalar() or 0
-        )
-    else:
-        unscored_mocks = 0
-
-    # Curators list (read-only)
-    StudentAlias = aliased(User)
-    curator_rows = (
-        db.query(
-            User.id, User.first_name, User.last_name, User.name, User.photo_url,
-            func.count(StudentAlias.id).label("student_count"),
-        )
-        .join(Role, User.role_id == Role.id)
-        .outerjoin(StudentAlias, (StudentAlias.curator_id == User.id) & (StudentAlias.is_active == True))
-        .filter(Role.rank == 2, User.is_active == True)
-        .group_by(User.id, User.first_name, User.last_name, User.name, User.photo_url)
-        .order_by(func.count(StudentAlias.id).desc())
-        .limit(100)
-        .all()
-    )
-    curators = [
-        {
-            "id": r.id,
-            "name": f"{r.last_name or ''} {r.first_name or r.name}".strip(),
-            "photo_url": r.photo_url,
-            "student_count": r.student_count,
-        }
-        for r in curator_rows
-    ]
-
-    # Admins list (rank 3 или 4: модератор + админ, без суперадмина — у него
-    # своя роль выше. Модератор имеет права ГП, см. rbac.py::effective_role_rank,
-    # хотя в БД у него rank=3)
-    admin_rows = (
-        db.query(User.id, User.first_name, User.last_name, User.name, User.photo_url)
-        .join(Role, User.role_id == Role.id)
-        .filter(Role.rank.in_([3, 4]), User.is_active == True)
-        .order_by(User.last_name, User.first_name)
-        .limit(50)
-        .all()
-    )
-    admins = [
-        {
-            "id": r.id,
-            "name": f"{r.last_name or ''} {r.first_name or r.name}".strip(),
-            "photo_url": r.photo_url,
-        }
-        for r in admin_rows
-    ]
-
-    # Recent uploads
-    recent_rows = (
-        db.query(Work, User)
-        .join(User, Work.user_id == User.id)
-        .filter(Work.status == "success")
-        .order_by(Work.created_at.desc())
-        .limit(10)
-        .all()
-    )
-    recent_works = [
-        {
-            "work_type": w.work_type,
-            "filename": w.filename,
-            "created_at": w.created_at,
-            "s3_url": w.s3_url,
-            "student_name": f"{u.last_name or ''} {u.first_name or u.name}".strip(),
-            "student_id": u.id,
-            "score": float(w.score) if w.score is not None else None,
-            "work_id": w.id,
-        }
-        for w, u in recent_rows
-    ]
-
-    today = today_msk()
-    # «Отработки» убрана отсюда (владелец 09.09.2026): доступ к ней даёт
-    # назначение куратором, а не окно FeaturePeriod — плитка на главной
-    # админа стала бы обманкой (см. app/api/upload.py::_retake_available_for_user).
-    _features = [FEATURE_PORTFOLIO_UPLOAD, FEATURE_MOCK_EXAM]
-    feature_statuses: dict = {}
-    for _feat in _features:
-        _period = (
-            db.query(FeaturePeriod)
-            .filter(
-                FeaturePeriod.feature == _feat,
-                FeaturePeriod.is_active.is_(True),
-                FeaturePeriod.start_date <= today,
-                FeaturePeriod.end_date >= today,
-            )
-            .first()
-        )
-        feature_statuses[_feat] = {
-            "open": _period is not None,
-            "label": FEATURE_LABELS.get(_feat, _feat),
-            "period_id": _period.id if _period else None,
-        }
-
-    return {
-        "total_active": total_active,
-        "inactive_count": inactive_count,
-        "new_users_month": new_users_month,
-        "role_breakdown": role_breakdown,
-        "total_works": total_works,
-        "works_this_month": works_this_month,
-        "works_by_type": works_by_type,
-        "avg_score": avg_score,
-        "unscored_mocks": unscored_mocks,
-        "curators": curators,
-        "admins": admins,
-        "recent_works": recent_works,
-        "month_name": _month_name_prep(now.month),
-        "feature_statuses": feature_statuses,
-        "tariff_registration_stats": get_tariff_registration_stats(db, period_from=parse_registration_date(registration_from), period_to=parse_registration_date(registration_to), tariff_filter=registration_tariff),
-        "student_activity": get_student_activity_overview(db),
-    }
-
-
 # ── Dashboard ────────────────────────────────────────────────────────────────
 
 @router.get("/admin-panel", response_class=HTMLResponse)
@@ -220,12 +40,8 @@ def cabinet_admin(
     request: Request,
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
-    registration_from: str | None = Query(None),
-    registration_to: str | None = Query(None),
-    registration_tariff: str = Query(""),
 ):
-    now = datetime.now(timezone.utc)
-    ctx = _load_dashboard_data(db, now, registration_from=registration_from, registration_to=registration_to, registration_tariff=registration_tariff)
+    ctx = load_staff_dashboard(db, user, datetime.now(timezone.utc))
     ctx.update({"request": request, "user": user})
     return templates.TemplateResponse(request, "cabinet_staff.html", ctx)
 

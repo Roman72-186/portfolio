@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import TypedDict
 
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.orm import Session as DBSession, aliased
 
 from app.models.activity_event import StudentActivityEvent
 from app.models.learning_topic import LearningTopic, LearningTopicAssignee, LearningTopicTag, LearningTopicTariff
@@ -356,3 +356,153 @@ def get_student_activity_overview(db: DBSession, event_limit: int = 200, *, incl
     ]
     return {"students": overview, "events": journal,
             "assignments": _assignment_activity(db, students) if include_assignments else []}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Главный экран Главного преподавателя и суперадмина
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_MONTHS_PREP = ["", "январе", "феврале", "марте", "апреле", "мае", "июне",
+                "июле", "августе", "сентябре", "октябре", "ноябре", "декабре"]
+
+
+def load_staff_dashboard(db: DBSession, user: dict, now: datetime) -> dict:
+    """Данные для `cabinet_staff.html` — один экран у ГП и суперадмина.
+
+    До 28.09.2026 жили двумя почти одинаковыми копиями в `cabinet_admin.py` и
+    `cabinet_superadmin.py` и расходились по мелочам. Здесь же сняты расчёты,
+    которые шаблон не показывал: регистрации и активность учеников (их
+    карточки живут на «Статистике активности»), лента последних загрузок
+    (ветка шаблона для ранга ниже 4, до которой ни один маршрут не доходит)
+    и окно загрузки портфолио — с 09.09.2026 оно ни на что не влияет
+    (`docs/invariants/portfolio.md`), а кнопка на дашборде им управляла.
+
+    Всё учебное считается по ученикам (ранг 1): в «Учениках» и «Новых
+    учениках» сотрудники не нужны. Аккаунт владельца (`REPORT_EXCLUDED_USER_IDS`)
+    исключён отовсюду.
+
+    Счётчика «ученики без точки А» здесь нет намеренно: `point_a.student_point_a`
+    ходит в базу по каждому ученику, и на 20 учениках дашборд делал 173 запроса
+    вместо 14 (`test_superadmin_dashboard_does_not_scale_with_data`). Вернуть
+    счётчик — после того как точка А научится считать список одним проходом.
+    """
+    from app.constants import FEATURE_MOCK_EXAM
+    from app.models.work import WORK_TYPE_MOCK_EXAM
+    from app.services.feature_periods import get_active_period
+
+    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+    not_owner = User.id.notin_(REPORT_EXCLUDED_USER_IDS)
+
+    role_rows = (
+        db.query(Role.display_name, Role.rank, func.count(User.id).label("cnt"))
+        .outerjoin(User, (User.role_id == Role.id) & (User.is_active == True) & not_owner)  # noqa: E712
+        .group_by(Role.id, Role.display_name, Role.rank)
+        .order_by(Role.rank)
+        .all()
+    )
+    role_breakdown = [{"name": r.display_name, "rank": r.rank, "count": r.cnt} for r in role_rows]
+    students_active = sum(r["count"] for r in role_breakdown if r["rank"] == 1)
+
+    student_filter = (
+        db.query(User.id)
+        .join(Role, User.role_id == Role.id)
+        .filter(Role.rank == 1, not_owner)
+    )
+    students_blocked = (
+        student_filter.filter(User.is_active == False, User.archived_at.is_(None))  # noqa: E712
+        .count()
+    )
+    new_students_month = student_filter.filter(User.created_at >= month_start).count()
+
+    works = db.query(Work).filter(Work.status == "success", Work.user_id.notin_(REPORT_EXCLUDED_USER_IDS))
+    works_by_type = dict(
+        works.with_entities(Work.work_type, func.count(Work.id)).group_by(Work.work_type).all()
+    )
+    total_works = sum(works_by_type.values())
+    works_this_month = works.filter(Work.created_at >= month_start).count()
+
+    avg_raw = (
+        works.filter(Work.work_type == WORK_TYPE_MOCK_EXAM, Work.score.isnot(None))
+        .with_entities(func.avg(Work.score))
+        .scalar()
+    )
+    avg_mock_score = round(float(avg_raw)) if avg_raw is not None else None
+
+    # Очередь пробников — только в окне текущего периода: без окна в счётчик
+    # попали бы неоценённые работы всех прошлых потоков.
+    unscored_mocks = 0
+    mock_period = get_active_period(db, FEATURE_MOCK_EXAM)
+    if mock_period:
+        unscored_mocks = (
+            works.filter(
+                Work.work_type == WORK_TYPE_MOCK_EXAM,
+                Work.score.is_(None),
+                Work.created_at >= msk_midnight(mock_period.start_date),
+                Work.created_at < msk_midnight(mock_period.end_date + timedelta(days=1)),
+            ).count()
+        )
+
+    StudentAlias = aliased(User)
+    curator_rows = (
+        db.query(
+            User.id, User.first_name, User.last_name, User.name, User.photo_url,
+            func.count(StudentAlias.id).label("student_count"),
+        )
+        .join(Role, User.role_id == Role.id)
+        .outerjoin(
+            StudentAlias,
+            (StudentAlias.curator_id == User.id)
+            & (StudentAlias.is_active == True)  # noqa: E712
+            & StudentAlias.id.notin_(REPORT_EXCLUDED_USER_IDS),
+        )
+        .filter(Role.rank == 2, User.is_active == True)  # noqa: E712
+        .group_by(User.id, User.first_name, User.last_name, User.name, User.photo_url)
+        .order_by(func.count(StudentAlias.id).desc())
+        .limit(100)
+        .all()
+    )
+    curators = [
+        {
+            "id": r.id,
+            "name": f"{r.last_name or ''} {r.first_name or r.name}".strip(),
+            "photo_url": r.photo_url,
+            "student_count": r.student_count,
+        }
+        for r in curator_rows
+    ]
+
+    # Модератор (ранг 3) в списке рядом с ГП: уровень у него тот же
+    # (rbac.py::effective_role_rank), подпись — своя роль.
+    admin_rows = (
+        db.query(User.id, User.first_name, User.last_name, User.name, User.photo_url, Role.display_name)
+        .join(Role, User.role_id == Role.id)
+        .filter(Role.rank.in_([3, 4]), User.is_active == True)  # noqa: E712
+        .order_by(User.last_name, User.first_name)
+        .limit(50)
+        .all()
+    )
+    admins = [
+        {
+            "id": r.id,
+            "name": f"{r.last_name or ''} {r.first_name or r.name}".strip(),
+            "photo_url": r.photo_url,
+            "role_label": r.display_name,
+        }
+        for r in admin_rows
+    ]
+
+    return {
+        "role_breakdown": role_breakdown,
+        "students_active": students_active,
+        "students_blocked": students_blocked,
+        "new_students_month": new_students_month,
+        "works_by_type": works_by_type,
+        "total_works": total_works,
+        "works_this_month": works_this_month,
+        "avg_mock_score": avg_mock_score,
+        "unscored_mocks": unscored_mocks,
+        "mock_period_open": mock_period is not None,
+        "curators": curators,
+        "admins": admins,
+        "month_name": _MONTHS_PREP[now.month],
+    }
