@@ -80,7 +80,15 @@ services:
     networks:
       - web
       - default
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 --timeout-keep-alive 75 --limit-concurrency 200 --limit-max-requests 5000"
+    # --forwarded-allow-ips: верить X-Forwarded-For только от Traefik (сеть
+    # `web`, 172.18.0.0/16 на 29.09.2026). По умолчанию uvicorn верит лишь
+    # 127.0.0.1, и приложение видело у всех один адрес Traefik — лимиты входа
+    # (slowapi) были общими на всю школу (код-ревью 28.09.2026, P1). Подсеть,
+    # а не адрес Traefik: адрес контейнера меняется при пересоздании. Внешнего
+    # прокси перед сайтом нет (DNS → 139.100.237.57), поэтому подсети из
+    # `trustedIPs` Traefik сюда не входят. uvicorn берёт крайний правый адрес
+    # цепочки, которому не доверяет, — подставить чужой заголовком нельзя.
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 --timeout-keep-alive 75 --limit-concurrency 200 --limit-max-requests 5000 --forwarded-allow-ips=172.18.0.0/16"
     deploy:
       resources:
         limits:
