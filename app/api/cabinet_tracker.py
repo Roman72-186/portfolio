@@ -88,6 +88,7 @@ from app.services.task_blocks import (
     get_selected_options as get_task_block_selected_options,
     get_state as get_task_block_state,
     question_blocks as task_question_blocks,
+    visible_blocks_for_student,
     start_timed_block as start_task_timed_block,
     timed_overrun as task_block_timed_overrun,
     save_response as save_task_block_response,
@@ -222,8 +223,15 @@ def cabinet_tracker_toggle(
     # Считаем только **видимые сейчас** вопросы: скрытые до сдачи в проверку
     # не входят, иначе выходил бы тупик — вопрос не виден, ответить нельзя,
     # задание не закрыть, и вся неделя встала бы за ним.
+    # Блок чужого тарифа в гейт не входит: ученик его не видит вовсе
+    # (`visible_blocks_for_student`), а вопрос, которого не видно, запер бы
+    # закрытие задания навсегда — тот же тупик, что и у скрытых до сдачи.
     pending = [
-        block for block in task_question_blocks(get_task_blocks(db, task_id))
+        block for block in task_question_blocks(
+            visible_blocks_for_student(
+                db, get_task_blocks(db, task_id), user_tariff=user.get("tariff")
+            )
+        )
         if not block.hidden_until_done
     ]
     response = get_task_block_response(db, task_id=task_id, user_id=user["user_id"])
@@ -484,8 +492,15 @@ def cabinet_tracker_task_blocks(
     task_done = _is_task_done(db, task_id, user["user_id"])
     # Скрытый вопрос появляется только после закрытия задания — и весь блок
     # целиком, а не одна форма ответа: до сдачи ученик о нём не знает.
+    # Блок чужого тарифа не уходит ученику вообще — ни разметкой, ни этим JSON
+    # (владелец 06.09.2026, доведено 28.09.2026): до этого лента рисовала его
+    # каркас, а здесь приезжали название и `video_id`. Сам ролик и тогда не
+    # отдавался (`video_catalog.is_video_accessible`), но ученик читал в ленте
+    # имя чужого урока и ждал, что оно откроется.
     blocks = [
-        b for b in get_task_blocks(db, task_id)
+        b for b in visible_blocks_for_student(
+            db, get_task_blocks(db, task_id), user_tariff=user.get("tariff")
+        )
         if not (b.block_type == BLOCK_QUESTION and b.hidden_until_done and not task_done)
     ]
 
@@ -1175,7 +1190,11 @@ def submit_cabinet_tracker_task_blocks(
     """
     task = _writable_task_or_404(db, user["user_id"], task_id)
     task_done = _is_task_done(db, task_id, user["user_id"])
-    all_blocks = get_task_blocks(db, task_id)
+    # Ответ на блок чужого тарифа не принимается: клиент его не получал, а
+    # присланный руками `block_id` уйдёт в «Ответ на чужой вопрос» ниже.
+    all_blocks = visible_blocks_for_student(
+        db, get_task_blocks(db, task_id), user_tariff=user.get("tariff")
+    )
     questions = [
         b for b in task_question_blocks(all_blocks)
         if task_done or not b.hidden_until_done

@@ -41,6 +41,7 @@ from app.services.task_blocks import (
     get_states,
     get_tariffs,
     is_block_accessible,
+    is_block_open_for_tariff,
     is_block_required_for_user,
     portfolio_window_expired,
     start_portfolio_window,
@@ -265,6 +266,27 @@ def build_cycle_feed(
             if not block.hidden_until_done
         ]
 
+    # Блок, закрытый чужим тарифом, из ленты убирается совсем — его для этого
+    # ученика не существует (владелец 06.09.2026: «не серым „недоступно на
+    # вашем тарифе“, а не показывать вообще»). Решение было записано в
+    # докстринге `is_block_accessible`, но до шаблона ленты его не довели, и до
+    # 28.09.2026 ученик чужого тарифа читал название чужого урока с подписью
+    # «Откроется, когда будет сделано предыдущее» — открыться оно не могло
+    # никогда. Правило одно на все слои — `visible_blocks_for_student`; здесь
+    # взят его предикат, потому что тарифы всё равно нужны ниже целым словарём
+    # и второй запрос за тем же был бы лишним.
+    tariffs_by_block = get_tariffs(
+        db,
+        [block.id for task_blocks in blocks_by_task.values() for block in task_blocks],
+    )
+    for entry in entries:
+        task_id = entry["task"].id
+        blocks_by_task[task_id] = [
+            block
+            for block in blocks_by_task.get(task_id, [])
+            if is_block_open_for_tariff(tariffs_by_block.get(block.id), user_tariff)
+        ]
+
     # Сквозной список блоков в порядке ленты — на нём и считается блокировка.
     ordered_blocks = []
     required_by_block: dict[int, bool] = {}
@@ -289,7 +311,6 @@ def build_cycle_feed(
             )
     block_ids = [block.id for block in ordered_blocks]
     states = get_states(db, block_ids=block_ids, user_id=user_id)
-    tariffs_by_block = get_tariffs(db, block_ids)
     required_tariffs_by_block = get_required_tariffs(db, block_ids)
     submit_deadlines_by_block = get_submit_deadlines(db, block_ids)
     # Сроки на уровне задания — запасные для блоков, которые своего не задали

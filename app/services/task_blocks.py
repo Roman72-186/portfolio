@@ -215,6 +215,47 @@ def get_tariffs(db: DBSession, block_ids: list[int]) -> dict[int, set[str]]:
     return grouped
 
 
+def is_block_open_for_tariff(
+    block_tariffs: set[str] | None, user_tariff: str | None
+) -> bool:
+    """Открыт ли блок этому тарифу. Пустой список тарифов — открыт всем.
+
+    **Единственное место, где записано это правило.** До 28.09.2026 та же
+    строчка условия жила в трёх местах (`is_block_accessible` дважды — про сам
+    блок и про предыдущий, — и нигде больше, из-за чего экраны блок показывали),
+    а ученик чужого тарифа видел в ленте название чужого урока.
+    """
+    if not block_tariffs:
+        return True
+    return user_tariff in block_tariffs
+
+
+def visible_blocks_for_student(
+    db: DBSession, blocks: list[TaskBlock], *, user_tariff: str | None
+) -> list[TaskBlock]:
+    """Блоки, которые ученик вообще вправе видеть.
+
+    Блок, закрытый чужим тарифом, убирается совсем — его для этого ученика не
+    существует (владелец 06.09.2026: «не серым „недоступно на вашем тарифе“, а
+    не показывать вообще»). Зовётся везде, где блоки уходят ученику: лента
+    цикла (`services/cycle_feed.py`), содержимое задания и приём ответов
+    (`api/cabinet_tracker.py`), статусы ленты (`feed_state` ниже).
+
+    Своей проверки тарифа ни один из этих слоёв не держит: разъехавшиеся копии
+    этого условия и дали прод-расхождение 28.09.2026 — лента показывала блок
+    чужого тарифа с подписью «Откроется, когда будет сделано предыдущее», а
+    открыться он не мог никогда.
+    """
+    if not blocks:
+        return []
+    tariffs_by_block = get_tariffs(db, [block.id for block in blocks])
+    return [
+        block
+        for block in blocks
+        if is_block_open_for_tariff(tariffs_by_block.get(block.id), user_tariff)
+    ]
+
+
 def _sync_tariffs(db: DBSession, block: TaskBlock, tariffs: list[str] | None) -> None:
     """Полная пересборка списка тарифов блока.
 
@@ -1255,9 +1296,15 @@ def is_block_accessible(
     `bypass_sequence=False` и тарифом `["МАКСИМУМ"]` (обычная очередь).
 
     Видимость: блок, недоступный по тарифу, в готовой ленте не показывается
-    вообще, а не серым «недоступно на вашем тарифе» (владелец 06.09.2026) —
-    решение для шаблона ленты, когда он появится; этой функции оно не
-    касается, она уже возвращает чистый True/False.
+    вообще, а не серым «недоступно на вашем тарифе» (владелец 06.09.2026).
+    **С 28.09.2026 это выполнено, и не здесь:** скрытие делает
+    `visible_blocks_for_student` выше — его зовут все слои, где блоки уходят
+    ученику, и до этой функции чужой блок уже не доходит. Сама она по-прежнему
+    возвращает чистый True/False и тариф проверяет ради `feed_state` и прямых
+    вызовов. Прецедент 28.09.2026: решение 06.09 до шаблона ленты так и не
+    довели, и ученик тарифа «Я С ВАМИ» видел в ленте карточку «Уверенный
+    максимум» с подписью «Откроется, когда будет сделано предыдущее» — открыться
+    она не могла никогда.
     """
     moment = now or _now()
     target = blocks[block_index]
@@ -1280,8 +1327,7 @@ def is_block_accessible(
                 closes_at = closes_at.replace(tzinfo=timezone.utc)
             if closes_at <= moment:
                 return False
-    target_tariffs = tariffs_by_block.get(target.id)
-    if target_tariffs and user_tariff not in target_tariffs:
+    if not is_block_open_for_tariff(tariffs_by_block.get(target.id), user_tariff):
         return False
     if target.bypass_sequence:
         return True
@@ -1292,8 +1338,7 @@ def is_block_accessible(
         )
         if not prior_is_required:
             continue
-        prior_tariffs = tariffs_by_block.get(prior.id)
-        if prior_tariffs and user_tariff not in prior_tariffs:
+        if not is_block_open_for_tariff(tariffs_by_block.get(prior.id), user_tariff):
             continue
         prior_required_tariffs = (
             required_tariffs_by_block.get(prior.id) if required_tariffs_by_block else None
@@ -1427,7 +1472,9 @@ def feed_state(
     from app.models.tracker import ITEM_MOCK_EXAM, TrackerTask
     from app.models.user import User
 
-    blocks = get_blocks(db, task_id)
+    blocks = visible_blocks_for_student(
+        db, get_blocks(db, task_id), user_tariff=user_tariff
+    )
     task = db.get(TrackerTask, task_id)
     student = db.get(User, user_id)
     is_intake_student = bool(student and student.access_until is not None)

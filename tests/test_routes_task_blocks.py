@@ -1250,3 +1250,41 @@ def test_blocks_source_404_for_task_without_blocks(client, db, user_factory, ses
     task = db.query(TrackerTask).filter(TrackerTask.kind == "checklist").one()
 
     assert client.get(f"{PROGRAM}/blocks-source/{task.id}").status_code == 404
+
+
+def test_blocks_endpoint_hides_a_block_of_another_tariff(
+    client, db, user_factory, session_factory
+):
+    """Блок чужого тарифа не уходит ученику даже полем в JSON.
+
+    Лента его каркас больше не рисует (`test_feed_hides_a_block_of_another_tariff`),
+    но содержимое подгружает этот эндпоинт — и до 28.09.2026 он отдавал всё
+    задание целиком, включая название чужого урока и `video_id` ролика. Сам
+    ролик и тогда не открывался (`video_catalog.is_video_accessible`), утекала
+    ровно надпись, из-за которой ученик ждал урок старшего тарифа.
+    """
+    from app.constants import TARIFF_CONFIDENT_MAX, TARIFF_WITH_YOU
+    from app.models.task_block import TaskBlockTariff
+
+    staff = user_factory(vk_id=550_320, name="Стафф", is_admin=True, role_name="админ")
+    task = _material_task_with_blocks(db, staff.id, is_required=False, blocks=[
+        {"block_type": BLOCK_TEXT, "body": "Общая часть"},
+        {"block_type": BLOCK_TEXT, "title": "Уверенный максимум", "body": "Вторая часть"},
+    ])
+    only_max = next(b for b in _blocks_of(db, task.id) if b.title == "Уверенный максимум")
+    db.add(TaskBlockTariff(block_id=only_max.id, tariff=TARIFF_CONFIDENT_MAX))
+    db.commit()
+
+    student = user_factory(
+        vk_id=550_321, name="Ученик", role_name="ученик", tariff=TARIFF_WITH_YOU
+    )
+    client.cookies.set("session_id", session_factory(student).id)
+    body = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert [b["body"] for b in body["blocks"]] == ["Общая часть"]
+
+    top = user_factory(
+        vk_id=550_322, name="Топ", role_name="ученик", tariff=TARIFF_CONFIDENT_MAX
+    )
+    client.cookies.set("session_id", session_factory(top).id)
+    body_top = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
+    assert [b["body"] for b in body_top["blocks"]] == ["Общая часть", "Вторая часть"]

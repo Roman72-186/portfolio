@@ -715,3 +715,36 @@ def test_opening_foreign_stage_by_id_is_ignored(db, regular_user):
     )
 
     assert feed["topic"].id == cycle_one.id
+
+
+# ── тариф: чужой блок в ленте не показывается вовсе ─────────────────────────
+
+def test_feed_hides_a_block_of_another_tariff(db, regular_user, user_factory):
+    """Блок, закрытый чужим тарифом, убран из ленты совсем.
+
+    Решение владельца 06.09.2026 («не серым „недоступно на вашем тарифе“, а не
+    показывать вообще») лежало записанным в докстринге `is_block_accessible`, но
+    до шаблона ленты его не довели. Прод 28.09.2026: ученик тарифа «Я С ВАМИ»
+    видел в ленте название урока «Уверенный максимум» с подписью «Откроется,
+    когда будет сделано предыдущее» — открыться оно не могло никогда, и
+    преподаватель прочитал это как «урок показывается не тому тарифу».
+    """
+    from app.constants import TARIFF_CONFIDENT_MAX, TARIFF_WITH_YOU
+    from app.models.task_block import TaskBlockTariff
+
+    _cycle(db, regular_user)
+    task = _task(db, regular_user, title="Запись занятия", is_required=False)
+    _block(db, task, title="Общая часть", order=0, is_required=False)
+    only_max = _block(db, task, title="Уверенный максимум", order=1, is_required=False)
+    db.add(TaskBlockTariff(block_id=only_max.id, tariff=TARIFF_CONFIDENT_MAX))
+    db.commit()
+
+    other = user_factory(vk_id=770_101, tariff=TARIFF_WITH_YOU)
+    assert [
+        step["block"].title for step in _feed(db, other) if step["block"] is not None
+    ] == ["Общая часть"]
+
+    top = user_factory(vk_id=770_102, tariff=TARIFF_CONFIDENT_MAX)
+    assert [
+        step["block"].title for step in _feed(db, top) if step["block"] is not None
+    ] == ["Общая часть", "Уверенный максимум"]
