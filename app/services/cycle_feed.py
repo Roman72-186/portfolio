@@ -536,19 +536,38 @@ def task_is_archived_for_user(
     """Задание для ученика — архив (только просмотр). Этим спрашивают пишущие
     роуты, а не `cycle_is_archived_for_user` по `task.topic_id` напрямую.
 
-    Лента берёт датные задания по датам из всех доступных циклов
-    (`accessible_task_entries`), поэтому задание, приписанное к закончившемуся
-    циклу, но стоящее датой в текущем, ученик видит в текущей ленте. Прецедент
-    28.09.2026: такое видео нельзя было отметить — гейт смотрел только на
-    `topic_id` и отвечал 403 «Цикл пройден», а экран показывал «Не удалось
-    отметить». Что есть в текущей ленте, то и можно делать; ленту считаем
-    только когда цикл задания и правда архив — это редкая ветка.
+    Правило — то же, что у экрана: что ученик видит в неархивном цикле, то он
+    и может делать. Лента любого цикла (текущего или открытого через
+    карусель, `feed_for_student(cycle_id=...)`) берёт датные задания по датам
+    из всех доступных циклов (`accessible_task_entries`), поэтому задание,
+    приписанное к закончившемуся циклу, но стоящее датой в идущем, ученик
+    видит там и может отмечать. Прецедент 28.09.2026: видео в цикле 3 не
+    отмечалось — гейт смотрел только на `topic_id` и отвечал 403 «Цикл
+    пройден», экран показывал «Не удалось отметить». Первая починка сверялась
+    только с лентой текущего цикла и промахнулась мимо ученика с долгом:
+    текущим у него был ранний цикл, а цикл 3 он открыл через карусель.
+
+    Этап («Портфолио») здесь не считается: его лента охватывает весь этап, и
+    через неё открылись бы на запись задания всех прошлых циклов.
     """
     if task.topic_id is None:
         return False
     if not cycle_is_archived_for_user(db, user_id, task.topic_id, today):
         return False
-    return task.id not in current_feed_task_ids(db, user_id=user_id, today=today)
+    if task.id in current_feed_task_ids(db, user_id=user_id, today=today):
+        return False
+    if task.due_at is None:
+        return True
+    due_at = task.due_at if task.due_at.tzinfo else task.due_at.replace(tzinfo=timezone.utc)
+    for cycle in started_cycles(db, user_id, today):
+        if cycle.kind != TOPIC_KIND_WEEK or cycle.id == task.topic_id:
+            continue
+        first, last = cycle_bounds(cycle)
+        if not day_bounds(first)[0] <= due_at < day_bounds(last)[1]:
+            continue
+        if not cycle_is_archived_for_user(db, user_id, cycle.id, today):
+            return False
+    return True
 
 
 def _cycle_is_over(topic: LearningTopic, today: date) -> bool:

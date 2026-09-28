@@ -192,3 +192,43 @@ def test_task_of_archived_cycle_outside_current_feed_stays_locked(auth_client, d
     db.commit()
 
     assert client.post(f"/cabinet/tracker/tasks/{task.id}/toggle").status_code == 403
+
+
+def test_task_shown_in_a_running_chosen_cycle_is_writable(auth_client, db):
+    """Прецедент 28.09.2026, второй заход: ученик с долгом стоит на раннем
+    цикле (`effective_cycle` — «долг важнее новизны»), а открыл идущий цикл 3
+    через карусель (`?cycle=`). Экран даёт там действовать — цикл не архив.
+    Задание приписано к закончившемуся циклу 2, но датой стоит в цикле 3 и
+    видно в его ленте. Первая починка сверялась только с лентой текущего
+    цикла и по-прежнему отвечала 403.
+    """
+    from app.models.task_block import BLOCK_VIDEO, TaskBlock
+    from app.services.cycle_feed import feed_for_student
+
+    client, user = auth_client
+    debt_cycle = _cycle(
+        db, user, title="Цикл 1",
+        starts_on=TODAY - timedelta(days=20), ends_on=TODAY - timedelta(days=12),
+    )
+    _dated_task_in_topic(db, user, debt_cycle, day=TODAY - timedelta(days=15), title="Долг")
+    old_cycle = _cycle(
+        db, user, title="Цикл 2",
+        starts_on=TODAY - timedelta(days=10), ends_on=TODAY - timedelta(days=2),
+    )
+    running = _cycle(
+        db, user, title="Цикл 3",
+        starts_on=TODAY - timedelta(days=1), ends_on=TODAY + timedelta(days=5),
+    )
+    task = _dated_task_in_topic(db, user, old_cycle, day=TODAY, title="Видео урока")
+    block = TaskBlock(task_id=task.id, block_type=BLOCK_VIDEO, title="Урок", sort_order=0)
+    db.add(block)
+    db.commit()
+    feed = feed_for_student(
+        db, user_id=user.id, user_tariff=user.tariff, today=TODAY, cycle_id=running.id,
+    )
+    assert not feed["is_archive"]
+    assert any(step["task"].id == task.id for step in feed["steps"])
+
+    resp = client.post(f"/cabinet/tracker/blocks/{block.id}/watched")
+
+    assert resp.status_code == 200, resp.text
