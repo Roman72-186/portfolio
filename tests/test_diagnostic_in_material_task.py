@@ -440,6 +440,54 @@ def test_resaving_task_keeps_student_answers_on_diagnostic(
     assert db.query(TaskBlockAnswer).count() == 2
 
 
+def test_removing_block_with_submitted_work_answers_409(
+    client, db, user_factory, session_factory
+):
+    """Код-ревью 28.09.2026, P1: отказ сервиса доходит до преподавателя
+    понятным текстом, а не ошибкой 500."""
+    from datetime import datetime, timezone
+
+    from app.models.task_block import TaskBlockSubmission
+
+    admin = user_factory(vk_id=889_371, name="Преподаватель", is_admin=True, role_name="админ")
+    client.cookies.set("session_id", session_factory(admin).id)
+    cycle_id = _make_cycle(client, today_msk())
+    created = client.post(
+        f"/cabinet/staff/program/cycles/{cycle_id}/items/material",
+        json={
+            "title": "Задание", "description": None, "subject": None,
+            "is_required": True, "starts_on": None,
+            "blocks": [{"block_type": "text", "body": "Инструкция"},
+                       {"block_type": "upload", "title": "Сдать листы"}],
+        },
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert created.status_code == 200, created.text
+    task_id = created.json()["task_id"]
+    upload = db.query(TaskBlock).filter_by(task_id=task_id, block_type="upload").one()
+    student = user_factory(vk_id=889_372, name="Ученик", role_name="ученик")
+    db.add(TaskBlockSubmission(
+        block_id=upload.id, user_id=student.id, submitted_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+
+    task = db.get(TrackerTask, task_id)
+    payload = _edit_payloads(db, [task], {})[task_id]
+    kept = [b for b in payload["blocks"] if b["block_type"] != "upload"]
+    updated = client.post(
+        f"/cabinet/staff/program/items/{task_id}/material",
+        json={
+            "title": payload["title"], "description": None, "subject": None,
+            "is_required": True, "starts_on": None, "blocks": kept,
+        },
+        headers={"X-CSRF-Token": "x"},
+    )
+    assert updated.status_code == 409, updated.text
+    assert "сдал" in updated.json()["detail"]
+    db.expire_all()
+    assert db.get(TaskBlock, upload.id) is not None
+
+
 def test_diagnostic_result_shows_on_personal_page_for_embedded_diagnostic(
     client, db, user_factory, session_factory
 ):

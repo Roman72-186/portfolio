@@ -260,6 +260,34 @@ def test_removing_block_deletes_its_answers(db, user_factory):
     assert get_answers_map(db, response_id=response.id) == {kept_id: "Раз"}
 
 
+def test_removing_block_with_submitted_work_is_refused(db, user_factory):
+    """Код-ревью 28.09.2026, P1: на проде сдачи блока и переписку по ним
+    уносил каскад Postgres, молча. Блок со сданной работой не удаляется."""
+    import pytest
+
+    from app.models.task_block import TaskBlockSubmission
+    from app.services.task_blocks import BlockHasSubmissionsError
+
+    task = _task(db)
+    student = user_factory(vk_id=700_113, name="Ученик")
+    text, upload = sync_blocks(
+        db, task_id=task.id,
+        items=[_text("Инструкция"), {"block_type": BLOCK_UPLOAD, "title": "Сдать листы"}],
+    )
+    db.add(TaskBlockSubmission(
+        block_id=upload.id, user_id=student.id, submitted_at=datetime.now(timezone.utc),
+    ))
+    db.commit()
+    text_id, upload_id = text.id, upload.id
+
+    with pytest.raises(BlockHasSubmissionsError):
+        sync_blocks(db, task_id=task.id, items=[_text("Инструкция", id=text_id)])
+    db.rollback()
+
+    assert db.get(TaskBlock, upload_id) is not None
+    assert db.query(TaskBlockSubmission).filter_by(block_id=upload_id).count() == 1
+
+
 # --- варианты ответа --------------------------------------------------------
 
 

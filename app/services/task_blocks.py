@@ -860,12 +860,50 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         _sync_tariffs(db, row, item.get("tariffs"))
         _sync_required_tariffs(db, row, item.get("required_tariffs"))
         sync_submit_deadlines(db, row, item.get("submit_deadlines"))
-    for block_id, row in existing.items():
-        if block_id in matched_ids:
-            continue
+    removed = [row for block_id, row in existing.items() if block_id not in matched_ids]
+    _refuse_dropping_submitted(db, removed)
+    for row in removed:
         _drop_block(db, row)
     db.flush()
     return [row for row, _ in paired]
+
+
+class BlockHasSubmissionsError(Exception):
+    """Из формы убран блок, в котором ученики уже сдали работы.
+
+    Не `ValueError`: роуты конструктора ловят `ValueError` как ошибку ввода
+    (422), а это отказ по состоянию данных — 409.
+    """
+
+
+def _refuse_dropping_submitted(db: DBSession, blocks: list[TaskBlock]) -> None:
+    """Не дать удалить блок со сдачами (код-ревью 28.09.2026, P1).
+
+    `_drop_block` сдачи сам не чистит, а на проде их вместе с файлами и
+    перепиской по проверке молча уносил каскад Postgres
+    (`task_block_submissions.block_id ON DELETE CASCADE`). Явная проверка, а
+    не расчёт на отказ внешнего ключа: SQLite в тестах ключи не исполняет —
+    образец тот же, что у снятия билета с пробника (`cabinet_program.py`).
+    """
+    if not blocks:
+        return
+    busy_ids = {
+        row.block_id
+        for row in db.query(TaskBlockSubmission.block_id)
+        .filter(TaskBlockSubmission.block_id.in_([b.id for b in blocks]))
+        .distinct()
+        .all()
+    }
+    if not busy_ids:
+        return
+    names = [
+        f"«{b.title}»" if b.title else BLOCK_TYPE_LABELS.get(b.block_type, b.block_type)
+        for b in blocks if b.id in busy_ids
+    ]
+    raise BlockHasSubmissionsError(
+        "Нельзя убрать блок " + ", ".join(names)
+        + ": ученики уже сдали в нём работы. Верните блок в задание и сохраните снова."
+    )
 
 
 def get_response(db: DBSession, *, task_id: int, user_id: int) -> TaskBlockResponse | None:

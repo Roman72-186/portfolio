@@ -59,7 +59,8 @@ from app.services.task_blocks import (
     get_required_tariffs as get_task_block_required_tariffs,
     get_submit_deadlines as get_task_block_submit_deadlines,
     get_tariffs as get_task_block_tariffs,
-    sync_blocks as sync_task_blocks,
+    BlockHasSubmissionsError,
+    sync_blocks as _sync_blocks,
     sync_submit_deadlines as sync_task_block_submit_deadlines,
     get_task_submit_deadlines as get_task_level_submit_deadlines,
     sync_task_submit_deadlines as sync_task_level_submit_deadlines,
@@ -235,6 +236,16 @@ PROGRAM_ITEM_FORM_KINDS = [
     {"kind": ITEM_CHECKLIST, "label": "Чек-лист и проверки", "hint": "Пункты и вопросы для самопроверки"},
 ]
 
+
+
+def sync_task_blocks(db: DBSession, *, task_id: int, items: list[dict]):
+    """`task_blocks.sync_blocks` для роутов конструктора: отказ удалить блок
+    со сданными работами — 409 с текстом для преподавателя, а не 500.
+    Все сохранения блоков в этом файле идут через эту обёртку."""
+    try:
+        return _sync_blocks(db, task_id=task_id, items=items)
+    except BlockHasSubmissionsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 def _parse_month(raw: str | None, today: date) -> tuple[int, int]:
