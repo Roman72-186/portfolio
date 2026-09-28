@@ -51,6 +51,25 @@ def can_manage_user_by_rank(actor_user_id: int, actor_rank: int, target: User) -
     return actor_rank > target_rank
 
 
+def can_impersonate_by_rank(actor_user_id: int, actor_rank: int, target: User) -> bool:
+    """Можно ли войти в кабинет пользователя «его глазами».
+
+    Отдельно от `can_manage_user_by_rank`: тот же guard решает удаление и
+    архив, а вход глазами — только просмотр от имени другого, с записью в
+    журнал. Решение владельца 29.09.2026: Главный преподаватель входит к
+    любому, кроме суперадмина. Ранг цели берётся хранимый (`Role.rank`), а
+    не `effective_rank`: модератор — наблюдатель с рангом 3 в базе, его
+    «уровень ГП» только про чтение и Главного преподавателя не отсекает.
+    К другому ГП вход закрыт, пока владелец не решил иначе (вопрос открыт
+    29.09.2026) — поменять это значит сравнивать `>=` вместо `>` при ранге
+    цели ниже 5.
+    """
+    if actor_user_id == target.id or actor_rank < 4:
+        return False
+    target_rank = target.role.rank if target.role else (4 if target.is_admin else 0)
+    return actor_rank > target_rank
+
+
 def can_manage_user(actor: User, target: User) -> bool:
     return can_manage_user_by_rank(actor.id, _role_rank(actor), target)
 

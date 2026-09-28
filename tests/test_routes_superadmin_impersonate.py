@@ -125,6 +125,38 @@ def test_admin_cannot_impersonate_another_admin(
     assert r.status_code == 403
 
 
+def test_admin_impersonates_moderator(client, session_factory, user_factory):
+    """Решение владельца 29.09.2026: Главный преподаватель входит «глазами» к
+    любому, кроме суперадмина. Модератор — наблюдатель: уровень ГП у него
+    только для чтения (`effective_rank` = 4), поэтому общий guard управления
+    (`can_manage_user_by_rank`) его не пускал. Вход к другому ГП остаётся
+    закрытым — вопрос владельцу открыт (тест выше)."""
+    admin = user_factory(vk_id=900_040, name="Admin Six", role_name="админ")
+    moderator = user_factory(vk_id=900_041, name="Moder One", role_name="модератор")
+    sess = session_factory(admin)
+    client.cookies.set("session_id", sess.id)
+    csrf = _csrf_for(client, sess.id)
+    r = client.post(
+        f"/cabinet/superadmin/impersonate/{moderator.id}",
+        data={"csrf_token": csrf},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303, r.text
+
+
+def test_moderator_card_shows_login_button_to_admin(client, session_factory, user_factory):
+    admin = user_factory(vk_id=900_042, name="Admin Seven", role_name="админ")
+    moderator = user_factory(vk_id=900_043, name="Moder Two", role_name="модератор")
+    other_admin = user_factory(vk_id=900_044, name="Admin Eight", role_name="админ")
+    client.cookies.set("session_id", session_factory(admin).id)
+
+    card = client.get(f"/cabinet/superadmin/users/{moderator.id}")
+    assert card.status_code == 200
+    assert 'form="impersonateForm"' in card.text
+    peer = client.get(f"/cabinet/superadmin/users/{other_admin.id}")
+    assert 'form="impersonateForm"' not in peer.text
+
+
 def test_superadmin_cannot_impersonate_inactive_user(
     client, session_factory, user_factory
 ):

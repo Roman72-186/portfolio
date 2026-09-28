@@ -330,6 +330,8 @@
                                 Telegram-привязка
                             </button>
                         </form>
+                        {% endif %}
+                        {% if u.id in impersonatable_ids and u.is_active %}
                         <form method="post" action="/cabinet/superadmin/impersonate/{{ u.id }}" class="su-inline-form">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
                             <button type="submit" class="action-btn">

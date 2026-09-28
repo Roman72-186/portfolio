@@ -45,18 +45,23 @@
                     {% endif %}
                     <br>Новый пароль будет показан один раз после генерации.
                 </div>
-                {% if user.role_rank >= 4 and target.id != user.user_id and (not target.role or target.role.effective_rank < user.role_rank) and target.is_active and not target.deleted_at %}
+                {% set can_manage = user.role_rank >= 4 and target.id != user.user_id and (not target.role or target.role.effective_rank < user.role_rank) and target.is_active and not target.deleted_at %}
+                {% if can_manage or can_impersonate %}
                 <div class="uc-btn-group">
+                    {% if can_manage %}
                     <button type="submit"
                             form="studentAccessForm"
                             class="btn-outline">
                         {{ 'Сбросить доступ' if target.staff_login else 'Выдать доступ' }}
                     </button>
+                    {% endif %}
+                    {% if can_impersonate %}
                     <button type="submit"
                             form="impersonateForm"
                             class="btn-blue">
                         🔓 Войти в кабинет
                     </button>
+                    {% endif %}
                 </div>
                 {% endif %}
             </div>

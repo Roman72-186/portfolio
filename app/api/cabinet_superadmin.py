@@ -1598,6 +1598,7 @@ from app.services.user_management import (
     apply_tariff_change,
     archive_user,
     can_assign_role_rank,
+    can_impersonate_by_rank,
     can_manage_user_by_rank,
     get_curator_for_assignment,
     hard_delete_user,
@@ -1910,6 +1911,12 @@ def _render_superadmin_users(
         "study_mode_labels": STUDY_MODE_LABELS,
         "exam_subject_hints": EXAM_SUBJECT_HINTS,
         "has_case_by_user": has_case_by_user,
+        # Кнопка «Войти в кабинет» — по своей проверке, не по праву управления
+        # (решение владельца 29.09.2026, см. `can_impersonate_by_rank`).
+        "impersonatable_ids": {
+            u.id for u in users
+            if can_impersonate_by_rank(user["user_id"], user["role_rank"], u)
+        },
         "q": q,
         "role_rank": role_rank,
         "tariff": tariff,
@@ -2412,6 +2419,10 @@ def superadmin_user_card(
         "user": user,
         "target": target,
         "target_curator": curator,
+        "can_impersonate": (
+            target.is_active and target.deleted_at is None
+            and can_impersonate_by_rank(user["user_id"], user["role_rank"], target)
+        ),
         "curators": curators,
         "roles": roles,
         "tariffs": tariff_choices(target.tariff),
@@ -2924,7 +2935,7 @@ def superadmin_impersonate_start(
     if not target:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
 
-    if not can_manage_user_by_rank(user["user_id"], user["role_rank"], target):
+    if not can_impersonate_by_rank(user["user_id"], user["role_rank"], target):
         raise HTTPException(status_code=403, detail="Нельзя имперсонировать роль равную или выше своей")
 
     original_session_id = user["session_id"]
