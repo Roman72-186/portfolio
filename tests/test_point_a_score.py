@@ -59,17 +59,16 @@ def test_curator_is_refused(client, db, user_factory, session_factory, student):
     assert db.query(User).filter(User.id == student.id).first().portfolio_before_score is None
 
 
-def test_moderator_can_score_too(client, db, user_factory, session_factory, student):
-    """Модератор имеет права ГП (rbac.py::effective_role_rank, решение
-    владельца сентябрь 2026) — `require_admin_role` (rank>=4) пропускает
-    и его, как и суперадмина в test_superadmin_can_score_too."""
+def test_moderator_cannot_score(client, db, user_factory, session_factory, student):
+    """Модератор — наблюдатель (решение владельца 28.09.2026): уровень у него как у ГП, но белый список
+    в get_current_user точку А не открывает."""
     staff = user_factory(vk_id=860_012, name="Модератор", role_name="модератор")
     _as(client, session_factory, staff)
 
     resp = client.post(URL.format(student.id), json={"score": 70})
 
-    assert resp.status_code == 200
-    assert db.query(User).filter(User.id == student.id).first().portfolio_before_score == 70
+    assert resp.status_code == 403
+    assert db.query(User).filter(User.id == student.id).first().portfolio_before_score is None
 
 
 def test_student_cannot_score_anybody(client, db, user_factory, session_factory, student):

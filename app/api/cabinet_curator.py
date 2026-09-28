@@ -240,10 +240,9 @@ async def curator_reports_submit(
     admins = (
         db.query(User)
         .join(Role, User.role_id == Role.id)
-        # rank >= 3 = модератор + админ + суперадмин: модератор имеет права
-        # ГП (rbac.py::effective_role_rank), но в БД у него rank=3, поэтому
-        # тут нельзя ограничиться >= 4.
-        .filter(Role.rank >= 3, User.is_active == True)
+        # ГП и суперадмин. Модератор (rank=3 в БД) — наблюдатель без доступа
+        # к видео-отчётам (28.09.2026), уведомление вело бы его в «Нет доступа».
+        .filter(Role.rank >= 4, User.is_active == True)
         .all()
     )
     report_notifications = []

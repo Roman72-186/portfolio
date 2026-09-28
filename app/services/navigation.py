@@ -310,5 +310,29 @@ def student_nav_items(access_expired: bool = False) -> tuple[StudentNavItem, ...
     return STUDENT_NAV_ITEMS
 
 
-def staff_nav_items(role_rank: int) -> tuple[StaffNavItem, ...]:
+# Меню модератора-наблюдателя (решение владельца 28.09.2026): только то, что
+# ему открывает белый список `rbac.py::is_moderator_request_allowed`. Ранг у
+# него как у ГП, поэтому по `min_rank` меню собралось бы целиком — из
+# ссылок, отвечающих «Нет доступа».
+MODERATOR_NAV_KEYS = ("students", "archive", "activity")
+
+# «Статистика активности» — пункт только модератора: у ГП и суперадмина она
+# открывается с дашборда, их меню эта правка не меняет.
+MODERATOR_ONLY_NAV_ITEMS: tuple[StaffNavItem, ...] = (
+    StaffNavItem(
+        key="activity",
+        href="/cabinet/superadmin/activity",
+        sidebar_label="Статистика активности",
+        pill_label="Статистика",
+        aria_label="Статистика активности",
+        tooltip="Активность учеников и сотрудников",
+        icon="cases",
+    ),
+)
+
+
+def staff_nav_items(role_rank: int, role_name: str | None = None) -> tuple[StaffNavItem, ...]:
+    if role_name == "модератор":
+        by_key = {item.key: item for item in STAFF_NAV_ITEMS + MODERATOR_ONLY_NAV_ITEMS}
+        return tuple(by_key[key] for key in MODERATOR_NAV_KEYS)
     return tuple(item for item in STAFF_NAV_ITEMS if item.is_visible_for(role_rank))

@@ -14,7 +14,11 @@ from app.db.database import get_db
 from app.models.session import Session
 from app.models.user import User
 from app.services.portfolio_window import intake_portfolio_gate_required
-from app.services.rbac import effective_role_rank
+from app.services.rbac import (
+    MODERATOR_ROLE_NAME,
+    effective_role_rank,
+    is_moderator_request_allowed,
+)
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -29,6 +33,10 @@ def _as_utc(value: datetime) -> datetime:
 # «Нет доступа» уводит ученика на «Личную информацию» — единственный экран,
 # который ему оставлен.
 ACCESS_EXPIRED_DETAIL = "Срок доступа истёк"
+
+# Отказ модератору вне его белого списка (rbac.py::is_moderator_request_allowed).
+# Обработчик 403 показывает этот текст как причину на заглушке.
+MODERATOR_FORBIDDEN_DETAIL = "Модератору открыты только «Ученики», архив и статистика"
 
 # Что остаётся открытым, когда срок доступа истёк. Список закрытый: всё, чего
 # в нём нет, закрывается само — новый роутер не нужно вспоминать и подшивать
@@ -172,6 +180,14 @@ def get_current_user(
     role_name = role.name if role else None
     role_rank = effective_role_rank(role_name, role.rank) if role else 0
     is_admin = role_rank >= 4 if role else user.is_admin
+
+    # Модератор — наблюдатель: уровень ГП, но открыт только белый список
+    # адресов из rbac.py. Проверка здесь, а не в роутах, по той же причине,
+    # что и срок доступа ниже: сюда приходит каждый запрос кабинета.
+    if role_name == MODERATOR_ROLE_NAME and not is_moderator_request_allowed(
+        request.method, request.url.path,
+    ):
+        raise HTTPException(status_code=403, detail=MODERATOR_FORBIDDEN_DETAIL)
 
     if role_rank == 0 and not user.is_admin and not user.is_group_member:
         raise HTTPException(status_code=403, detail="Доступ возможен только участникам группы")

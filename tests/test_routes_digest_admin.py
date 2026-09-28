@@ -36,11 +36,10 @@ def _student_with_tag(db, user_factory, tag: Tag, *, vk_id: int):
 
 # ── Доступ ────────────────────────────────────────────────────────────────
 
-def test_moderator_opens_digest_admin(client, user_factory, session_factory):
-    """Модератор имеет права ГП (rbac.py::effective_role_rank, решение
-    владельца сентябрь 2026)."""
+def test_moderator_cannot_open_digest_admin(client, user_factory, session_factory):
+    """Модератор — наблюдатель (решение владельца 28.09.2026): раздел программ ему закрыт."""
     _staff_client(client, user_factory, session_factory, role_name="модератор", vk_id=420_003)
-    assert client.get(PAGE).status_code == 200
+    assert client.get(PAGE).status_code == 403
 
 
 def test_admin_opens_digest_admin(client, user_factory, session_factory):

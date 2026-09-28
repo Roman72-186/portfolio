@@ -780,7 +780,6 @@ def test_curator_cannot_post_feedback_for_foreign_student(
     "role_name,should_allow",
     [
         ("куратор", True),
-        ("модератор", True),
         ("админ", True),
         ("суперадмин", True),
     ],
@@ -788,8 +787,8 @@ def test_curator_cannot_post_feedback_for_foreign_student(
 def test_feedback_write_gate_matches_permission_table_by_rank(
     client, db, user_factory, session_factory, role_name, should_allow
 ):
-    """Модератор имеет права ГП (rbac.py::effective_role_rank, решение
-    владельца сентябрь 2026) — тоже проходит гейт feedback.write."""
+    """Модератора здесь нет: он наблюдатель (28.09.2026), отказ ему даёт
+    белый список в get_current_user — tests/test_moderator_observer.py."""
     actor = user_factory(vk_id=940001, name="Actor", role_name=role_name)
     student = user_factory(vk_id=940002, name="Student", role_name="ученик")
     if role_name == "куратор":
@@ -1102,10 +1101,10 @@ def test_curator_cannot_score_foreign_student_work(client, db, user_factory, ses
     assert work.score is None
 
 
-def test_moderator_can_score_unassigned_student_work(client, db, user_factory, session_factory):
-    """Решение владельца (сентябрь 2026): модератор имеет те же права, что
-    «Главный преподаватель» (rbac.py::effective_role_rank) — как и админ, он
-    не ограничен привязкой curator_id и может ставить баллы любому ученику."""
+def test_moderator_cannot_score_student_work(client, db, user_factory, session_factory):
+    """Модератор — наблюдатель (решение владельца 28.09.2026): видит
+    учеников, но баллы не ставит. С 27.09 по 28.09.2026 он имел права ГП
+    и этот тест проверял обратное."""
     moderator = user_factory(vk_id=930_027, name="Модератор", role_name="модератор")
     student = user_factory(vk_id=930_028, name="Ученик")  # curator_id остаётся None
     cycle = _mk_cycle(db, student.id)
@@ -1118,9 +1117,9 @@ def test_moderator_can_score_unassigned_student_work(client, db, user_factory, s
         follow_redirects=False,
     )
 
-    assert resp.status_code == 302
+    assert resp.status_code == 403
     db.refresh(work)
-    assert work.score == 80
+    assert work.score is None
 
 
 def test_curator_can_close_cycle_after_scoring_own_student(

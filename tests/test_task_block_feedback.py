@@ -76,12 +76,11 @@ def test_score_rejects_values_outside_zero_to_hundred(
     ).status_code == 422
 
 
-def test_rank_three_can_open_any_submission(
+def test_moderator_cannot_open_or_score_submission(
     db, user_factory, session_factory, client,
 ):
-    """Модератор (rank 3) имеет права ГП (rbac.py::effective_role_rank,
-    решение владельца сентябрь 2026) — как rank 4, не ограничен привязкой
-    к куратору чужого ученика."""
+    """Модератор — наблюдатель (решение владельца 28.09.2026): проверка
+    заданий ему закрыта, ни открыть, ни оценить, ни написать."""
     owner = user_factory(vk_id=970_003, name="Владелец", role_name="куратор")
     teacher = user_factory(vk_id=970_004, name="Преподаватель", role_name="модератор")
     student = user_factory(vk_id=970_005, name="Ученик")
@@ -94,16 +93,16 @@ def test_rank_three_can_open_any_submission(
         f"/cabinet/staff/task-block-submissions/{submission.id}/feedback"
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 403
     with patch("app.api.task_block_feedback.notify"):
         assert client.post(
             f"/cabinet/staff/task-block-submissions/{submission.id}/score",
             json={"score": 70},
-        ).status_code == 200
+        ).status_code == 403
         assert client.post(
             f"/cabinet/staff/task-block-submissions/{submission.id}/messages",
             data={"text": "Чужая работа"},
-        ).status_code == 200
+        ).status_code == 403
 
 
 def test_rank_four_can_open_any_submission(
@@ -444,11 +443,10 @@ def test_mark_submitted_clears_revision_flag_and_old_comment(db, user_factory):
     assert submission.needs_revision_at is not None  # история сохраняется
 
 
-def test_rank_three_can_send_revision_any_submission(
+def test_moderator_cannot_send_revision(
     db, user_factory, session_factory, client,
 ):
-    """Модератор (rank 3) имеет права ГП (rbac.py::effective_role_rank,
-    решение владельца сентябрь 2026)."""
+    """Модератор — наблюдатель (решение владельца 28.09.2026)."""
     owner = user_factory(vk_id=970_027, name="Владелец", role_name="куратор")
     teacher = user_factory(vk_id=970_028, name="Преподаватель", role_name="модератор")
     student = user_factory(vk_id=970_029, name="Ученик")
@@ -463,4 +461,4 @@ def test_rank_three_can_send_revision_any_submission(
             json={"comment": "Чужая работа"},
         )
 
-    assert response.status_code == 200
+    assert response.status_code == 403

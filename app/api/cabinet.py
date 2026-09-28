@@ -10,7 +10,9 @@ router = APIRouter(prefix="/cabinet")
 ROLE_CABINET_MAP = {
     "суперадмин": "/cabinet/superadmin",
     "админ":      "/cabinet/admin-panel",
-    "модератор":  "/cabinet/admin-panel",
+    # Модератор — наблюдатель (28.09.2026): дашборд ГП ему закрыт,
+    # домашняя страница — «Ученики» (rbac.py::is_moderator_request_allowed).
+    "модератор":  "/cabinet/students",
     "куратор":    "/cabinet/curator",
     "ученик":     "/cabinet/learning",
 }

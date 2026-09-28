@@ -26,7 +26,7 @@ def _html_between(text: str, start: str, end: str) -> str:
     [
         ("ученик", 301001, "/cabinet/learning"),
         ("куратор", 301002, "/cabinet/curator"),
-        ("модератор", 301003, "/cabinet/admin-panel"),
+        ("модератор", 301003, "/cabinet/students"),
         ("админ", 301004, "/cabinet/admin-panel"),
         ("суперадмин", 301005, "/cabinet/superadmin"),
     ],
@@ -166,22 +166,29 @@ def test_admin_and_superadmin_keep_staff_nav_contract(
     assert 'href="/upload/mock-exam"' not in staff_nav
 
 
-def test_moderator_redirects_to_admin_panel_and_has_student_panel_access(
+def test_moderator_lands_on_students_and_sees_observer_menu(
     client,
     user_factory,
     session_factory,
 ):
-    """Модератор имеет права ГП (rbac.py::effective_role_rank, решение
-    владельца сентябрь 2026): открывает тот же кабинет, что и админ."""
+    """Модератор — наблюдатель (решение владельца 28.09.2026): дом —
+    «Ученики», в меню только «Ученики», архив и статистика."""
     user = user_factory(vk_id=302005, role_name="модератор")
     _login_as(client, session_factory, user)
 
     resp = client.get("/cabinet", follow_redirects=False)
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/cabinet/admin-panel"
+    assert resp.headers["location"] == "/cabinet/students"
 
     student_panel = client.get("/cabinet/students", follow_redirects=False)
     assert student_panel.status_code == 200
+    staff_nav = _html_between(student_panel.text, '<aside class="staff-aside">', "</aside>")
+    assert 'href="/cabinet/students"' in staff_nav
+    assert 'href="/cabinet/archive"' in staff_nav
+    assert 'href="/cabinet/superadmin/activity"' in staff_nav
+    assert 'href="/cabinet"' not in staff_nav
+    assert 'href="/cabinet/staff/students-review"' not in staff_nav
+    assert 'href="/cabinet/staff/program/cycles"' not in staff_nav
 
 
 # ── Фаза 3 (2026-07-05): cabinet_feedback_detail.html / cabinet_cycle_calendar.html
@@ -192,7 +199,6 @@ def test_moderator_redirects_to_admin_panel_and_has_student_panel_access(
     ("role_name", "vk_id", "expect_curator_nav"),
     [
         ("куратор", 303001, True),
-        ("модератор", 303002, False),
         ("админ", 303003, False),
         ("суперадмин", 303004, False),
     ],
@@ -206,7 +212,7 @@ def test_feedback_detail_exactly_one_nav_per_role(
 
     actor = user_factory(vk_id=vk_id, name="Nav Actor", role_name=role_name)
     student = user_factory(vk_id=vk_id + 1, name="Nav Student", role_name="ученик")
-    if role_name in ("куратор", "модератор"):
+    if role_name == "куратор":
         student.curator_id = actor.id
         db.add(student)
         db.commit()
@@ -240,7 +246,6 @@ def test_feedback_detail_exactly_one_nav_per_role(
     ("role_name", "vk_id", "expect_curator_nav"),
     [
         ("куратор", 303011, True),
-        ("модератор", 303012, False),
         ("админ", 303013, False),
         ("суперадмин", 303014, False),
     ],
@@ -250,7 +255,7 @@ def test_cycle_calendar_exactly_one_nav_per_role(
 ):
     actor = user_factory(vk_id=vk_id, name="Cal Nav Actor", role_name=role_name)
     student = user_factory(vk_id=vk_id + 1, name="Cal Nav Student", role_name="ученик")
-    if role_name in ("куратор", "модератор"):
+    if role_name == "куратор":
         student.curator_id = actor.id
         db.add(student)
         db.commit()
