@@ -20,7 +20,7 @@ class ReadableUpload(Protocol):
     filename: str | None
     content_type: str | None
 
-    async def read(self) -> bytes:
+    async def read(self, size: int = -1) -> bytes:
         ...
 
 
@@ -59,7 +59,9 @@ async def read_image_uploads(
         filename = photo.filename or "photo.jpg"
         if not is_allowed_image(photo.content_type, photo.filename):
             return [], unsupported_format_error.format(filename=photo.filename)
-        photo_bytes = await photo.read()
+        # Не больше лимита плюс байт: заведомо большой файл не должен
+        # целиком попадать в память воркера (код-ревью 28.09.2026, P1).
+        photo_bytes = await photo.read(max_size + 1)
         if len(photo_bytes) > max_size:
             return [], too_large_error.format(filename=photo.filename)
         files_data.append((filename, photo_bytes))

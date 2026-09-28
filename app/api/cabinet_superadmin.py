@@ -69,6 +69,7 @@ from app.services.staff_dashboard import (
     parse_registration_date,
 )
 from app.services.utils import compress_image, rotate_image_bytes
+from app.services.upload_validation import MAX_UPLOAD_FILE_SIZE
 from app.tmpl import templates
 
 _TRANSLIT = str.maketrans(
@@ -608,8 +609,8 @@ async def upload_ticket_image(
     if not ct.startswith("image/") and ext not in allowed_ext:
         return JSONResponse({"success": False, "error": "Файл не является изображением"}, status_code=422)
 
-    data = await file.read()
-    if len(data) > 10 * 1024 * 1024:
+    data = await file.read(MAX_UPLOAD_FILE_SIZE + 1)
+    if len(data) > MAX_UPLOAD_FILE_SIZE:
         return JSONResponse({"success": False, "error": "Файл слишком большой (макс. 10 МБ)"}, status_code=413)
     if not data:
         return JSONResponse({"success": False, "error": "Пустой файл"}, status_code=422)

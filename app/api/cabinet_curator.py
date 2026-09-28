@@ -212,7 +212,7 @@ async def curator_reports_submit(
     if content_type not in ALLOWED_CURATOR_REPORT_VIDEO_TYPES and ext not in ALLOWED_CURATOR_REPORT_VIDEO_EXTENSIONS:
         return _report_redirect_err("Загрузите видео-файл в формате mp4, mov, webm, avi, mkv, wmv или 3gp.")
 
-    video_bytes = await video.read()
+    video_bytes = await video.read(MAX_CURATOR_REPORT_VIDEO_SIZE + 1)
     if not video_bytes:
         return _report_redirect_err("Видео-файл пустой. Выберите или снимите видео заново.")
     if len(video_bytes) > MAX_CURATOR_REPORT_VIDEO_SIZE:

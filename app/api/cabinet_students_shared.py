@@ -1402,7 +1402,7 @@ async def admin_upload_works(
     for photo in photos:
         if not _is_allowed_image(photo.content_type, photo.filename):
             return JSONResponse({"ok": False, "error": f"Файл «{photo.filename}» — неподдерживаемый формат"}, status_code=400)
-        photo_bytes = await photo.read()
+        photo_bytes = await photo.read(MAX_SIZE + 1)
         if len(photo_bytes) > MAX_SIZE:
             return JSONResponse({"ok": False, "error": f"Файл «{photo.filename}» слишком большой (макс. 10 МБ)"}, status_code=400)
         files_data.append((photo.filename or "photo.jpg", photo_bytes))

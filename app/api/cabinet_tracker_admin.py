@@ -661,7 +661,7 @@ async def upload_homework_image(
             {"ok": False, "error": "Файл не является изображением"}, status_code=422
         )
 
-    data = await file.read()
+    data = await file.read(MAX_IMAGE_BYTES + 1)
     if not data:
         return JSONResponse({"ok": False, "error": "Пустой файл"}, status_code=422)
     if len(data) > MAX_IMAGE_BYTES:

@@ -40,6 +40,7 @@ from app.services.feedback import (  # переиспользование лим
     ALLOWED_FEEDBACK_VIDEO_EXTENSIONS,
     ALLOWED_FEEDBACK_VIDEO_TYPES,
     MAX_FEEDBACK_AUDIO_SIZE,
+    MAX_FEEDBACK_PHOTO_INPUT_SIZE,
     MAX_FEEDBACK_VIDEO_SIZE,
 )
 from app.services.homework_feedback import (
@@ -391,7 +392,11 @@ async def _post_message(
 ) -> JSONResponse:
     photo_payload = None
     if photo is not None and photo.filename:
-        data = await photo.read()
+        # Тот же лимит, что у фото в диалоге пробника (`api/feedback.py`):
+        # не больше лимита плюс байт в память воркера.
+        data = await photo.read(MAX_FEEDBACK_PHOTO_INPUT_SIZE + 1)
+        if len(data) > MAX_FEEDBACK_PHOTO_INPUT_SIZE:
+            return JSONResponse({"ok": False, "error": "Фото больше 25 МБ"}, status_code=413)
         if data:
             photo_payload = (photo.filename, data)
 
