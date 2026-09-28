@@ -205,7 +205,7 @@
 /* :not([type="file"]) — иначе то же правило душит инпут загрузки голосового
    на /cabinet/staff/point-a-audio (Фаза 1, 17.09.2026): «Choose File» резался
    до «Choose Fil», выбранное имя файла было не видно вовсе. */
-.prg-page--point-a .prg-field--row input:not([type="file"]) { width: 88px; }
+.prg-page--point-a .prg-field--row input:not([type="file"]):not([type="checkbox"]):not([type="radio"]) { width: 88px; }
 
 .prg-empty {
     padding: 24px 20px; text-align: center; color: var(--muted); background: var(--surface);
@@ -231,8 +231,17 @@
 .prg-grid3 { display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 10px; }
 
 .prg-field { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
-.prg-field input, .prg-field textarea, .prg-field select {
-    width: 100%; box-sizing: border-box; padding: 10px 12px; color: var(--text);
+/* Флажки и переключатели исключены намеренно: их размер задаёт общее правило
+   из `base.css`, а `width: 100%` и паддинг поля ввода раздували флажок в
+   прямоугольник. Замер 28.09.2026: 28×24 вместо 20×20 в панели «Доступность
+   блока», тогда как в строке варианта ответа (она не `.prg-field`) тот же
+   флажок оставался правильным квадратом. */
+/* `min-height: 44px` — и цель нажатия, и ровный ряд. Замер 28.09.2026 на экране
+   циклов: текстовые поля выходили 42px, а поля даты 44px (их высоту браузер
+   считает сам), и соседние поля одной формы стояли разной высоты. */
+.prg-field input:not([type="checkbox"]):not([type="radio"]),
+.prg-field textarea, .prg-field select {
+    width: 100%; box-sizing: border-box; min-height: 44px; padding: 10px 12px; color: var(--text);
     background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
     font: 500 14px/1.4 var(--font-body);
 }
@@ -240,8 +249,10 @@
 .prg-field input:focus, .prg-field textarea:focus, .prg-field select:focus {
     outline: 2px solid var(--blue); outline-offset: 1px;
 }
-.prg-field--row { display: flex; flex-direction: row; align-items: center; gap: 8px; }
-.prg-field--row input { width: auto; }
+/* `min-height: 44px` — строка с флажком такая же цель нажатия, как кнопка
+   рядом. На экранах циклов и этапов «Показывать ученикам» была 24px. */
+.prg-field--row { display: flex; flex-direction: row; align-items: center; gap: 8px; min-height: 44px; }
+.prg-field--row input:not([type="checkbox"]):not([type="radio"]) { width: auto; }
 /* Четвёртый случай того же перекрывающего [hidden] бага: у блоков «Шкала
    навыков» и «Правила с галочками» JS верно прячет отметку «Верный»
    (её у самооценки и согласия не бывает по устройству), но display из
@@ -295,17 +306,30 @@
 .prg-ticket-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .prg-ticket-head strong { font: 700 13px/1 var(--font-display); color: var(--text); }
 
+/* Все три элемента строки — одной высоты. Замер 28.09.2026 давал 36px у поля,
+   20px у галочки «Верный» и 44px у кнопки «Убрать»: ряд выглядел неровным, а
+   две из трёх целей не дотягивали до 44px. */
 .prg-option { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .prg-option input[type="text"] {
-    flex: 1; box-sizing: border-box; padding: 8px 10px; color: var(--text);
+    flex: 1; box-sizing: border-box; min-height: 44px; padding: 8px 10px; color: var(--text);
     background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
     font: 500 13px/1.4 var(--font-body);
 }
+/* `flex-shrink: 0` обязателен: подпись стоит `nowrap`, и при сжатии её просто
+   обрезало — на 375px от «Верный» оставалась половина слова. */
 .prg-option label {
     display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+    min-height: 44px; flex-shrink: 0;
     font-size: 12px; color: var(--muted); font-weight: 700;
 }
-.prg-option label input { width: auto; }
+/* На телефоне поле занимает всю первую строку, а отметка «Верный» и «Убрать»
+   встают во вторую. Иначе поле, подпись и кнопка делят 283px и не помещаются. */
+@media (max-width: 480px) {
+    .prg-option > input[type="text"] { flex: 1 1 100%; }
+}
+/* Флажок «Верный» исключён: общий размер ему даёт `base.css`, а `width: auto`
+   схлопывал его до 2px — у элемента с `appearance: none` содержимого нет. */
+.prg-option label input:not([type="checkbox"]):not([type="radio"]) { width: auto; }
 /* Описание навыка и подписи краёв шкалы (владелец 11.09.2026, анкета
    «Метакомпетенции») — свой блок на всю ширину, переносит .prg-option
    на вторую строку только когда присутствует (тип scale). */
@@ -323,6 +347,21 @@
 
 .prg-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .prg-actions button { min-height: 44px; }
+
+/* Ряд отправки формы конструктора живёт по той же конвенции, что `.form-actions`
+   из `base.css` (конвенция №2 редизайна, см. `DESIGN.md`): в разметке отмена
+   идёт первой, основное действие последним, группа прижата вправо, на узком
+   экране складывается колонкой основным сверху. До 28.09.2026 конструктор делал
+   ровно наоборот — «Сохранить» первым и группа влево, — и одна и та же пара
+   кнопок стояла в разном порядке в зависимости от экрана кабинета.
+
+   Общий `.form-actions` сюда не подставить: `.prg-actions` уже носит и ряды
+   кнопок типов блока, и «Глазами ученика», у них своё выравнивание. */
+.prg-form-actions { justify-content: flex-end; margin-top: var(--s-2); }
+@media (max-width: 480px) {
+    .prg-form-actions { flex-direction: column-reverse; align-items: stretch; }
+    .prg-form-actions > * { width: 100%; justify-content: center; }
+}
 
 .prg-message { min-height: 20px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .prg-message.is-error { color: var(--error); }
@@ -360,7 +399,7 @@
 .prg-videopick-item:hover { background: var(--surface-2); }
 .prg-videopick-item:has(input:checked) { background: rgba(175,82,222, 0.10); }
 .prg-videopick-item.is-taken { opacity: 0.55; cursor: not-allowed; }
-.prg-videopick-item input { width: auto; flex: 0 0 auto; }
+.prg-videopick-item input:not([type="checkbox"]):not([type="radio"]) { width: auto; flex: 0 0 auto; }
 .prg-videopick-cover {
     flex: 0 0 auto; width: 96px; height: 54px; object-fit: cover;
     border-radius: var(--r-sm); background: var(--surface-2);
@@ -464,6 +503,15 @@
 }
 .prg-blk-setting + .prg-blk-setting { margin-top: var(--s-2); }
 
+/* Списки тарифов в «Доступности блока»: «Тарифы» (кому видно) и «Кого обязать
+   выполнить». Замер 28.09.2026: строки высотой 24px шли с нулевым зазором —
+   три слипшиеся цели, промах на соседний тариф почти неизбежен. Сюда не
+   доставало общее `min-height: 44px` для кнопок: это подписи, а не кнопки. */
+.prg-blk-tariffs,
+.prg-blk-required-tariffs { display: grid; gap: var(--s-1); }
+.prg-blk-tariffs > label,
+.prg-blk-required-tariffs > label { min-height: 44px; }
+
 /* Подпись внутри поля (`<span>`, а не `<p>`: содержимое `<label>` — только
    строчные элементы). Живёт третьей строкой грида `.prg-field`, поэтому
    свои отступы ей не нужны, а вместе с полем её прячет `.prg-field[hidden]`
@@ -546,31 +594,63 @@
 .prg-diagnostic-combinations { display: grid; gap: .5rem; max-height: 28rem; overflow-y: auto; margin: 1rem 0; }
 .prg-diagnostic-match { display: grid; grid-template-columns: minmax(80px, 1fr) minmax(180px, 2fr); gap: .75rem; align-items: center; }
 .prg-diagnostic-match select { width: 100%; min-height: 42px; padding: .5rem .75rem; border: 1px solid var(--border, #d9dee6); border-radius: 10px; background: var(--surface, #fff); color: var(--text, #202938); font: inherit; }
-.prg-diagnostic-match select:focus-visible { outline: 2px solid var(--purple, #9146ff); outline-offset: 2px; }
+/* Токена `--purple` в проекте нет: акцент кабинета живёт в `--blue` (с 28.08.2026
+   он фиолетовый, #A855F7 — см. DESIGN.md). Пока здесь стоял несуществующий
+   токен, рамка фокуса всегда падала на запасной #9146ff и отличалась от фокуса
+   на всех остальных полях. */
+.prg-diagnostic-match select:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 @media (max-width: 640px) { .prg-diagnostic-option, .prg-diagnostic-match { grid-template-columns: 1fr; } }
 
-/* Срок приёма работ в карточке задания (владелец 27.09.2026: «мы можем его
-   смещать»). Плашка живёт в списке заданий, а не только в форме правки:
-   преподавателю нужно видеть срок и двигать его, не открывая задание целиком.
+/* ── Срок сдачи по тарифам ──────────────────────────────────────────────────
+   Одна настройка живёт в двух местах: у задания целиком
+   (`partials/program_item_deadline_fields.html`) и у отдельного блока внутри
+   «Доступности блока» (`tariffDeadlinesHTML` в `program_blocks_editor_js.html`).
+   До 28.09.2026 они были свёрстаны по-разному: у задания — гибкая строка с
+   зазором, у блока — вообще никак, потому что классов `.prg-blk-deadline*` не
+   было ни в одном CSS-файле, и строка жила на сетке `.prg-field`. Замер: обе
+   версии 94px в три полосы, между тарифами зазор 0-1px, внутри тарифа 5-6px —
+   то есть воздуха внутри группы было больше, чем между группами. Теперь правило
+   одно на оба места.
 
-   Своей поверхности не заводит — та же «утопленная» `--bg` на `--line`, что
-   у `.prg-blk-setting` в панели доступности: это один и тот же по смыслу
-   элемент, просто показанный снаружи формы. */
-.prg-deadlines { display: grid; gap: var(--s-2); margin-top: var(--s-2); }
-.prg-deadline {
-    padding: var(--s-2) var(--s-3);
+   Почему строка действительно собирается в одну линию. Прежний комментарий
+   обещал «одной строкой, пока хватает ширины», но этого не происходило никогда:
+   общее `.prg-field input { width: 100% }` распирало поле даты на всю ширину
+   контейнера и уносило галочку на третью полосу. Поле получает свою ширину явно.
+
+   Отсюда же снят мёртвый остаток: `.prg-deadline`, `.prg-deadline-head`,
+   `.prg-deadline-tariff`, `.prg-deadline-form` и `.prg-deadlines` описывали
+   плашку быстрой правки срока в списке заданий, а её сняли 28.09.2026 — ни
+   один шаблон и ни один скрипт к ним больше не обращались. */
+.prg-deadlines,
+.prg-blk-deadlines { display: grid; gap: var(--s-2); margin-top: var(--s-2); }
+.prg-deadline-row,
+.prg-blk-deadline {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2);
+    padding: var(--s-2);
     background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm);
-    font-size: 13px;
 }
-.prg-deadline-head {
-    display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2);
+/* Название тарифа — подпись строки, а не заголовок секции: до правки оно
+   набиралось тем же мелким серым капсом, что «ЗАКРОЕТСЯ» и «ПРЕДМЕТ», и «Я САМ»
+   читался разделом того же веса. */
+.prg-deadline-name,
+.prg-blk-deadline-name {
+    flex: 0 0 auto; min-width: 150px;
+    color: var(--text); font-size: 13px; font-weight: 700;
+    text-transform: none; letter-spacing: normal;
 }
-.prg-deadline-tariff { color: var(--muted); font-size: 12px; }
-.prg-deadline-form { display: grid; gap: var(--s-2); margin-top: var(--s-2); }
-/* Тариф, поле времени и галочка «без срока» — одной строкой, пока хватает
-   ширины; на телефоне строка распадается сама (`flex-wrap`), отдельного
-   media-запроса под это не нужно. */
-.prg-deadline-row {
-    display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2);
+.prg-deadline-row input[type="datetime-local"],
+.prg-blk-deadline input[type="datetime-local"] {
+    flex: 1 1 200px; width: auto; min-width: 0;
 }
-.prg-deadline-name { font-weight: 700; }
+.prg-deadline-row > .prg-field--row,
+.prg-blk-deadline > .prg-field--row { flex: 0 0 auto; min-height: 44px; }
+/* На телефоне строка складывается колонкой, а не переносится как придётся.
+   Свободный `flex-wrap` давал разный порядок у соседних тарифов: у двух поле
+   вставало рядом с названием, у третьего — под ним, и три одинаковых по смыслу
+   строки выглядели тремя разными. */
+@media (max-width: 480px) {
+    .prg-deadline-row,
+    .prg-blk-deadline { flex-direction: column; align-items: stretch; gap: var(--s-1); }
+    .prg-deadline-row input[type="datetime-local"],
+    .prg-blk-deadline input[type="datetime-local"] { flex: 1 1 auto; width: 100%; }
+}

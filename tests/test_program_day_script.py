@@ -48,6 +48,41 @@ def _strip_noise(js: str) -> str:
     return js
 
 
+#: Поля формы вместе с их атрибутами — и те, что стоят в разметке, и те, что
+#: конструктор собирает строками в своём `<script>`: в отданной странице и те и
+#: другие выглядят одинаково.
+_FIELD_TAG_RE = re.compile(r"<(?:input|textarea|select)\b[^>]*>", re.I)
+_PLACEHOLDER_RE = re.compile(r'placeholder="([^"]*)"')
+_ARIA_LABEL_RE = re.compile(r'aria-label="([^"]*)"')
+
+
+def _assert_every_placeholder_has_matching_aria_label(html: str) -> None:
+    """Поле с подписью-плейсхолдером обязано иметь доступное имя.
+
+    Внешних текстовых лейблов в конструкторе нет по решению владельца
+    (25.09.2026), поэтому `placeholder` без `aria-label` означает поле, у
+    которого имени нет вообще: экранный диктор прочитает «поле ввода», а после
+    первого символа подпись исчезнет и у зрячего.
+
+    Совпадения слово в слово не требуем намеренно. Часть полей держит в
+    `placeholder` пример («Название, например «Пришлите работу»»), а в
+    `aria-label` — короткое имя («Название»), и это правильно. Точные пары
+    проверяет список подписей в тесте выше; здесь — само правило, поэтому
+    проверка не протухает при добавлении нового поля.
+    """
+    broken = []
+    for tag in _FIELD_TAG_RE.findall(html):
+        placeholder = _PLACEHOLDER_RE.search(tag)
+        if not placeholder or not placeholder.group(1).strip():
+            continue
+        aria = _ARIA_LABEL_RE.search(tag)
+        if not aria or not aria.group(1).strip():
+            broken.append(tag.strip())
+    assert not broken, (
+        "поля, у которых подпись есть только в placeholder:\n" + "\n".join(broken)
+    )
+
+
 def test_day_page_script_calls_only_defined_functions(
     client, db, user_factory, session_factory
 ):
@@ -178,6 +213,13 @@ def test_day_page_uses_school_day_copy_and_inline_optional_hints(
         "Что нужно сделать",
     ):
         assert f'<label class="prg-field">{external_label}' not in page.text
+
+    # Список выше — выписанный руками, и он молчит про поле, которого в нём нет.
+    # Так 28.09.2026 и нашлись четыре поля строки варианта ответа («Вариант
+    # ответа», описание компетенции и обе подписи краёв шкалы): подпись у них
+    # была только в `placeholder`, доступного имени не было вовсе. Проверка
+    # ниже сверяет само правило, а не перечень, и поэтому не протухает.
+    _assert_every_placeholder_has_matching_aria_label(page.text)
 
     for embedded_control in ("Фото", "Ролик", "Тип ответа"):
         assert f'aria-label="{embedded_control}"' in page.text

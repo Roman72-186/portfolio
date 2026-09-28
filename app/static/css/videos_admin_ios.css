@@ -163,18 +163,8 @@
 
 .ios-videos-admin .vam-hint { margin: 0 0 12px; color: var(--ios-label-2); font: 400 13px/1.5 var(--ios-font); }
 
-.ios-videos-admin input[type="checkbox"] {
-    appearance: none; -webkit-appearance: none; margin: 0; flex-shrink: 0;
-    position: relative; width: 20px; height: 20px;
-    border: 1.5px solid var(--ios-label-3); border-radius: 6px; background: var(--ios-card-bg); cursor: pointer;
-}
-.ios-videos-admin input[type="checkbox"]:checked { background: var(--ios-blue); border-color: var(--ios-blue); }
-.ios-videos-admin input[type="checkbox"]:checked::after {
-    content: ''; position: absolute; top: 44%; left: 50%;
-    width: 10px; height: 5px; border-left: 2px solid #fff; border-bottom: 2px solid #fff;
-    transform: translate(-50%, -50%) rotate(-45deg);
-}
-.ios-videos-admin input[type="checkbox"]:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 2px; }
+/* Чекбокс описан один раз в `base.css` (блок «Флажок и переключатель»,
+   28.09.2026). Здесь была третья дословная копия. */
 
 /* ── Обложка урока ── */
 /* Превью выбранной картинки под полем и миниатюра в строке списка: обложка —

@@ -95,6 +95,8 @@
     font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-3);
 }
 
+/* Блок ошибок сервера: к общим `.alert .alert-error` из base.css добавляем
+   только отступ, скругление и шрифт анкеты. */
 .ios-profile .prf-alert {
     margin-bottom: 12px; border-radius: 14px; font-family: var(--ios-font);
 }
@@ -139,6 +141,9 @@
     padding: 0; border: none; background: transparent;
     font: 400 16px/1.4 var(--ios-font); color: var(--ios-label);
 }
+/* Список и текстовое поле в одной форме были разной высоты: 19px против
+   22px (замер 28.09.2026). Разница видна как неровный ряд строк. */
+.ios-profile select.prf-field-input { min-height: 22px; }
 .ios-profile .prf-field-input:focus { outline: none; }
 .ios-profile .prf-field-input:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 3px; border-radius: 4px; }
 .ios-profile .prf-field-input::placeholder { color: var(--ios-label-3); }
@@ -167,20 +172,28 @@
 
 /* Плашка «имя и фамилия как в паспорте» — ученики пишут ник/уменьшительное,
    и преподаватель не находит их в списке; мелкая приписка в заголовке шага
-   не читалась, поэтому отдельный красный блок над полями */
-.ios-profile .prf-alert {
+   не читалась, поэтому отдельный заметный блок над полями.
+
+   Свой класс, а не `.prf-alert` (28.09.2026). Раньше оба блока носили одно имя,
+   и `.prf-alert` был объявлен в этом файле дважды: первое объявление ничего не
+   красило, второе красило в красное и предупреждение, и ошибку сервера. При
+   неудачной отправке анкеты ученик видел две одинаковые красные плашки подряд,
+   причём предупреждение кричало громче ошибки — у него крупный значок и жирный
+   заголовок. Теперь предупреждение оранжевое: это внимание, а не ошибка, и
+   красный остался за настоящей ошибкой. */
+.ios-profile .prf-passport {
     display: flex; align-items: center; gap: 12px;
     margin: 0 0 10px; padding: 14px 16px;
-    background: color-mix(in srgb, var(--ios-red) 10%, var(--ios-card-bg));
-    border: 1.5px solid var(--ios-red);
+    background: color-mix(in srgb, var(--ios-orange) 12%, var(--ios-card-bg));
+    border: 1.5px solid var(--ios-orange);
     border-radius: 16px;
 }
-.ios-profile .prf-alert-icon { font-size: 28px; line-height: 1; flex-shrink: 0; }
-.ios-profile .prf-alert-title {
+.ios-profile .prf-passport-icon { font-size: 28px; line-height: 1; flex-shrink: 0; }
+.ios-profile .prf-passport-title {
     display: block;
-    font: 700 17px/1.25 var(--ios-font); color: var(--ios-red);
+    font: 700 17px/1.25 var(--ios-font); color: #92590A;
 }
-.ios-profile .prf-alert-text {
+.ios-profile .prf-passport-text {
     display: block; margin-top: 2px;
     font: 500 14px/1.3 var(--ios-font); color: var(--ios-label);
 }

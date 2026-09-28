@@ -49,7 +49,7 @@
 }
 .ios-sa-tags .btn-blue, .ios-sa-assign-curator .btn-blue, .ios-sa-create-staff .btn-blue {
     background: var(--ios-blue); box-shadow: none; border-radius: 999px;
-    font: 700 13px/1 var(--ios-font); padding: 10px 20px; border: none; color: #fff; cursor: pointer;
+    font: 700 13px/1 var(--ios-font); min-height: 44px; padding: 10px 20px; border: none; color: #fff; cursor: pointer;
 }
 .ios-sa-tags .sa-nowrap-btn, .ios-sa-assign-curator .sa-nowrap-btn, .ios-sa-create-staff .sa-nowrap-btn { white-space: nowrap; }
 .ios-sa-tags .su-link-inline, .ios-sa-assign-curator .su-link-inline, .ios-sa-create-staff .su-link-inline { color: var(--ios-blue); }
@@ -62,14 +62,22 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 .ios-sa-tags .su-filters label { display: flex; flex-direction: column; gap: 4px; font: 700 11px/1.3 var(--ios-font); color: var(--ios-label-2); }
-.ios-sa-tags .su-filters input {
-    font-family: var(--ios-font); font-size: 14px; padding: 9px 12px;
+/* Флажки исключены: правило поля с `min-height: 44px` растягивало их в
+   высокую серую пилюлю вместо квадрата 20×20. Тот же класс ошибки, что
+   был в конструкторе (`.prg-field input`), — общее правило поля не должно
+   доставать до флажка, его вид задаёт `base.css`. */
+.ios-sa-tags .su-filters input:not([type="checkbox"]):not([type="radio"]) {
+    font-family: var(--ios-font); font-size: 14px; min-height: 44px; padding: 9px 12px;
     border: none; border-radius: 10px; background: var(--ios-grouped-bg); color: var(--ios-label);
 }
-.ios-sa-tags .su-filters input:focus { outline: 2px solid var(--ios-blue); outline-offset: 1px; }
+.ios-sa-tags .su-filters input:not([type="checkbox"]):focus { outline: 2px solid var(--ios-blue); outline-offset: 1px; }
 .ios-sa-tags .su-input--search { min-width: 200px; }
-.ios-sa-tags .su-check-pill { flex-direction: row; align-items: center; gap: 6px; cursor: pointer; }
-.ios-sa-tags .su-check-pill input[type="checkbox"] { width: auto; padding: 0; accent-color: var(--ios-blue); }
+/* Селектор со `.su-filters`, иначе правило соседней строки
+   (`.su-filters label { flex-direction: column }`) весит больше и ставит
+   флажок НАД подписью: «КЕЙС», «PUBLISH» и остальные фильтры стояли
+   столбиком, а флажок был оторван от того, что включает. */
+.ios-sa-tags .su-filters .su-check-pill { display: flex; flex-direction: row; align-items: center; gap: 6px; cursor: pointer; min-height: 44px; }
+.ios-sa-tags .su-check-pill input[type="checkbox"] { width: 20px; padding: 0; }
 .ios-sa-tags .su-check-pill--warn { font: 700 12px/1 var(--ios-font); color: var(--ios-orange); }
 
 .ios-sa-tags .bulk-wrap {
@@ -93,7 +101,7 @@
 .ios-sa-tags .bulk-table th:not(:first-child), .ios-sa-tags .bulk-table td:not(:first-child) { text-align: center; }
 .ios-sa-tags .bulk-table tr:last-child td { border-bottom: none; }
 .ios-sa-tags .bulk-table tr:hover td { background: rgba(60,60,67,0.04); }
-.ios-sa-tags .bulk-table input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; accent-color: var(--ios-blue); }
+.ios-sa-tags .bulk-table input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; }
 .ios-sa-tags .bulk-not-found { margin-top: 10px; font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-2); }
 
 .ios-sa-tags .tags-table-wrap {
@@ -121,10 +129,14 @@
     border-radius: 999px; font: 700 11px/1.3 var(--ios-font); background: rgba(175,82,222,0.10); color: var(--ios-blue); white-space: nowrap;
 }
 .ios-sa-tags .tag-chip__remove {
+    position: relative;
     display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px;
     border-radius: 50%; border: none; background: rgba(175,82,222,0.16); color: inherit; cursor: pointer;
     font-size: 13px; line-height: 1; padding: 0; font-family: inherit; flex-shrink: 0;
 }
+/* Зона нажатия до 44x44 без изменения вида: сам крестик снимает тег с ученика,
+   и 22px на телефоне — самая маленькая и при этом необратимая цель экрана. */
+.ios-sa-tags .tag-chip__remove::before { content: ''; position: absolute; inset: -11px; }
 .ios-sa-tags .tag-chip__remove:hover { background: rgba(255,59,48,0.18); color: var(--ios-red); }
 
 .ios-sa-tags .tag-chip.tag-pill--pink   { background: rgba(255,45,146,0.12); color: #C2185B; }
@@ -137,10 +149,12 @@
 .ios-sa-tags .tag-chip.tag-pill--orange .tag-chip__remove { background: rgba(255,149,0,0.2); }
 
 .ios-sa-tags .tag-add-btn {
+    position: relative;
     width: 22px; height: 22px; border-radius: 50%; border: 1.5px dashed var(--ios-label-3);
     background: transparent; color: var(--ios-label-2); font: 700 13px/1 var(--ios-font); cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center;
 }
+.ios-sa-tags .tag-add-btn::before { content: ''; position: absolute; inset: -11px; }
 .ios-sa-tags .tag-add-btn:hover { border-color: var(--ios-blue); color: var(--ios-blue); }
 
 .ios-sa-tags .tag-add-popover {
@@ -254,8 +268,8 @@
 .ios-sa-create-staff .create-student-title { font: 700 15px/1.3 var(--ios-font); color: var(--ios-label); margin-bottom: 4px; }
 .ios-sa-create-staff .create-student-sub { font: 400 13px/1.45 var(--ios-font); color: var(--ios-label-2); margin-bottom: 14px; }
 .ios-sa-create-staff .create-student-panel label { display: flex; flex-direction: column; gap: 4px; font: 700 11px/1.3 var(--ios-font); color: var(--ios-label-2); }
-.ios-sa-create-staff .create-student-panel input, .ios-sa-create-staff .create-student-panel select {
-    font-family: var(--ios-font); font-size: 14px; padding: 9px 12px;
+.ios-sa-create-staff .create-student-panel input:not([type="checkbox"]):not([type="radio"]), .ios-sa-create-staff .create-student-panel select {
+    font-family: var(--ios-font); font-size: 14px; min-height: 44px; padding: 9px 12px;
     border: none; border-radius: 10px; background: var(--ios-grouped-bg); color: var(--ios-label);
 }
 .ios-sa-create-staff .create-student-panel input:focus, .ios-sa-create-staff .create-student-panel select:focus {
@@ -307,7 +321,7 @@
 .ios-sa-curators .sc-inline-form { margin: 0; }
 .ios-sa-curators .btn-blue.btn-save {
     background: var(--ios-blue); box-shadow: none; border-radius: 999px; border: none;
-    font: 700 13px/1 var(--ios-font); padding: 9px 16px; color: #fff; cursor: pointer;
+    font: 700 13px/1 var(--ios-font); min-height: 44px; padding: 9px 16px; color: #fff; cursor: pointer;
 }
 .ios-sa-curators .sc-btn-disabled:disabled { background: var(--ios-grouped-bg); color: var(--ios-label-2); cursor: not-allowed; box-shadow: none; opacity: 1; }
 .ios-sa-curators .sc-empty { padding: 40px; text-align: center; color: var(--ios-label-2); font: 400 14px var(--ios-font); }

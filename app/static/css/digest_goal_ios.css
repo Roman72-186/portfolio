@@ -112,23 +112,8 @@
 }
 .ios-digest .trk-grid--two > .trk-grid, .ios-goals .trk-grid--two > .trk-grid { gap: 10px; }
 
-/* Кастомный чекбокс в духе iOS (тот же приём, что program_ios.css). */
-.ios-digest input[type="checkbox"], .ios-digest-events input[type="checkbox"], .ios-goals input[type="checkbox"] {
-    appearance: none; -webkit-appearance: none; margin: 0; flex-shrink: 0;
-    position: relative; width: 20px; height: 20px;
-    border: 1.5px solid var(--ios-label-3); border-radius: 6px; background: var(--ios-card-bg); cursor: pointer;
-}
-.ios-digest input[type="checkbox"]:checked, .ios-digest-events input[type="checkbox"]:checked, .ios-goals input[type="checkbox"]:checked {
-    background: var(--ios-blue); border-color: var(--ios-blue);
-}
-.ios-digest input[type="checkbox"]:checked::after, .ios-digest-events input[type="checkbox"]:checked::after, .ios-goals input[type="checkbox"]:checked::after {
-    content: ''; position: absolute; top: 44%; left: 50%;
-    width: 10px; height: 5px; border-left: 2px solid #fff; border-bottom: 2px solid #fff;
-    transform: translate(-50%, -50%) rotate(-45deg);
-}
-.ios-digest input[type="checkbox"]:focus-visible, .ios-digest-events input[type="checkbox"]:focus-visible, .ios-goals input[type="checkbox"]:focus-visible {
-    outline: 2px solid var(--ios-blue); outline-offset: 2px;
-}
+/* Чекбокс описан один раз в `base.css` (блок «Флажок и переключатель»,
+   28.09.2026). Здесь была одна из трёх дословных копий. */
 
 /* ── Пикер тегов — чипы ── */
 .ios-digest .trk-tag-picker, .ios-goals .trk-tag-picker {

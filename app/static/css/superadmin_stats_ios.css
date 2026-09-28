@@ -59,7 +59,7 @@
 .ios-ss .ss-filters input:focus { outline: 2px solid var(--ios-blue); outline-offset: 1px; }
 .ios-ss .ss-filters .btn-blue.btn-save {
     background: var(--ios-blue); box-shadow: none; border-radius: 999px;
-    font: 700 13px/1 var(--ios-font); padding: 9px 18px; min-height: 0;
+    font: 700 13px/1 var(--ios-font); padding: 9px 18px; min-height: 44px;
 }
 /* Внутри карточки фильтр не отдельная карточка: без тени и внешних отступов. */
 .ios-ss .ss-acc-body .ss-filters { box-shadow: none; padding: 0; margin-bottom: 12px; }

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Профиль{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/profile_ios.css?v=4">
+<link rel="stylesheet" href="/static/css/profile_ios.css?v=6">
 {% endblock %}
 {% block content %}
 {% from "components/hint.html" import hint %}
@@ -36,11 +36,11 @@
         {% set steps_total = 4 if show_tariff_step else 3 %}
 
         <div class="prf-section-title">Шаг 1 из {{ steps_total }} · Основные данные</div>
-        <div class="prf-alert" role="note">
-            <span class="prf-alert-icon" aria-hidden="true">‼️</span>
+        <div class="prf-passport" role="note">
+            <span class="prf-passport-icon" aria-hidden="true">‼️</span>
             <div>
-                <strong class="prf-alert-title">Имя и фамилию – как в&nbsp;паспорте</strong>
-                <span class="prf-alert-text">По ним тебя будет искать преподаватель</span>
+                <strong class="prf-passport-title">Имя и фамилию – как в&nbsp;паспорте</strong>
+                <span class="prf-passport-text">По ним тебя будет искать преподаватель</span>
             </div>
         </div>
         <div class="prf-group">
@@ -49,13 +49,13 @@
                     <label class="prf-field-label" for="profile-first-name">Имя <span class="prf-required">*</span></label>
                     <input class="prf-field-input" type="text" id="profile-first-name" name="first_name" required
                            value="{{ form.first_name if form else (user.first_name or '') }}"
-                           placeholder="Имя" maxlength="50">
+                           maxlength="50">
                 </div>
                 <div class="prf-field">
                     <label class="prf-field-label" for="profile-last-name">Фамилия <span class="prf-required">*</span></label>
                     <input class="prf-field-input" type="text" id="profile-last-name" name="last_name" required
                            value="{{ form.last_name if form else (user.last_name or '') }}"
-                           placeholder="Фамилия" maxlength="50">
+                           maxlength="50">
                 </div>
             </div>
             <div class="prf-row prf-row--pair">
@@ -69,7 +69,7 @@
                     <label class="prf-field-label" for="profile-city">Город <span class="prf-required">*</span></label>
                     <input class="prf-field-input" type="text" id="profile-city" name="city" required
                            value="{{ form.city if form else (user.city or '') }}"
-                           placeholder="Город" maxlength="100">
+                           maxlength="100">
                 </div>
             </div>
             <div class="prf-row prf-row--single">

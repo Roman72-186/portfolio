@@ -457,23 +457,32 @@ function blockOptionHTML(type) {
     // flex-basis:100%, чтобы .prg-option остался общей строкой для
     // вопроса/правил и переносил себя на вторую строку только когда этот
     // блок присутствует.
+    // У каждого поля строки — `aria-label`, совпадающий с `placeholder`: это тот
+    // же инвариант, по которому живут поля блока (внешних текстовых лейблов в
+    // конструкторе нет). До 28.09.2026 эти четыре поля были единственными в
+    // форме без доступного имени вовсе — сторож их не поймал, потому что
+    // сверял выписанный руками список подписей, а не само правило.
     var scaleExtra = type === 'scale'
         ? ''
             + '<div class="prg-option-extra">'
-            + '  <textarea data-rich-text data-b-option-description maxlength="5000" placeholder="Описание компетенции, необязательно"></textarea>'
+            + '  <textarea data-rich-text data-b-option-description maxlength="5000" aria-label="Описание компетенции, необязательно" placeholder="Описание компетенции, необязательно"></textarea>'
             + BODY_FORMAT_HINT
             + '  <div class="prg-grid2">'
-            + '    <input type="text" data-b-option-min-label maxlength="200" placeholder="Что значит нижняя граница (0)">'
-            + '    <input type="text" data-b-option-max-label maxlength="200" placeholder="Что значит верхняя граница (10)">'
+            + '    <input type="text" data-b-option-min-label maxlength="200" aria-label="Что значит нижняя граница (0)" placeholder="Что значит нижняя граница (0)">'
+            + '    <input type="text" data-b-option-max-label maxlength="200" aria-label="Что значит верхняя граница (10)" placeholder="Что значит верхняя граница (10)">'
             + '  </div>'
             + '</div>'
         : '';
+    // `prg-blk-remove` — общий вид разрушительного действия конструктора
+    // (контурная красная кнопка, конвенция №3). Без него «Убрать» для одного
+    // варианта и «Добавить вариант» для всего блока выглядели одинаково и
+    // стояли в 8px друг над другом на узком экране.
     return ''
         + '<div class="prg-option" data-b-option>'
-        + '  <input type="text" data-b-option-text maxlength="300" placeholder="Вариант ответа">'
+        + '  <input type="text" data-b-option-text maxlength="300" aria-label="Вариант ответа" placeholder="Вариант ответа">'
         + scaleExtra
         + '  <label class="prg-field--row"><input type="checkbox" data-b-option-correct><span>Верный</span></label>'
-        + '  <button type="button" class="btn-outline" data-remove-b-option>Убрать</button>'
+        + '  <button type="button" class="btn-outline prg-blk-remove" data-remove-b-option>Убрать</button>'
         + '</div>';
 }
 

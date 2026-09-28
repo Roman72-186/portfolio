@@ -673,14 +673,18 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     flex-wrap: wrap; gap: 10px;
     margin-top: 18px;
 }
+/* `flex-wrap` и складывание колонкой — те же, что у `.form-actions` выше.
+   До 28.09.2026 их тут не было: пара кнопок в модалке на узком экране не
+   переносилась и сжималась по ширине. Правило одно на оба ряда, чтобы они не
+   разъезжались снова. */
 .modal-actions {
     display: flex; align-items: center; justify-content: flex-end;
-    gap: 10px;
+    flex-wrap: wrap; gap: 10px;
     margin-top: 20px;
 }
 @media (max-width: 480px) {
-    .form-actions { flex-direction: column-reverse; align-items: stretch; }
-    .form-actions > * { width: 100%; justify-content: center; }
+    .form-actions, .modal-actions { flex-direction: column-reverse; align-items: stretch; }
+    .form-actions > *, .modal-actions > * { width: 100%; justify-content: center; }
 }
 
 /* «← Назад» — единый класс (конвенция №4), визуальный язык существующих
@@ -958,6 +962,44 @@ audio { max-width: 100%; }
     border-color: var(--blue); color: var(--blue);
     background: var(--blue-soft);
 }
+
+/* ── Флажок и переключатель — единственное описание на весь кабинет ──────────
+   До 28.09.2026 чекбокса в дизайн-системе не было вовсе, и каждый скин описал
+   свой: три файла (`program_ios.css`, `digest_goal_ios.css`,
+   `videos_admin_ios.css`) несли это правило слово в слово, а superadmin-экраны
+   ставили 18×18, 15×15 и системный 13×13. Замер дал пять размеров одного
+   контрола на одном продукте.
+
+   Тот же приём, которым сюда съехала палитра `--ios-*` (см. комментарий
+   у `:root`): общее объявление живёт здесь, скоупы его наследуют.
+
+   `flex-shrink: 0` обязателен: флажок почти всегда стоит в flex-строке рядом
+   с подписью и без него сплющивается на узком экране. */
+input[type="checkbox"],
+input[type="radio"] {
+    appearance: none; -webkit-appearance: none; margin: 0; flex-shrink: 0;
+    position: relative; width: 20px; height: 20px;
+    border: 1.5px solid var(--ios-label-3); background: var(--ios-card-bg); cursor: pointer;
+}
+input[type="checkbox"] { border-radius: 6px; }
+input[type="radio"] { border-radius: 50%; }
+input[type="checkbox"]:checked,
+input[type="radio"]:checked { background: var(--ios-blue); border-color: var(--ios-blue); }
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled { opacity: .5; cursor: not-allowed; }
+input[type="checkbox"]:checked::after {
+    content: ''; position: absolute; top: 44%; left: 50%;
+    width: 10px; height: 5px;
+    border-left: 2px solid var(--on-color); border-bottom: 2px solid var(--on-color);
+    transform: translate(-50%, -50%) rotate(-45deg);
+}
+input[type="radio"]:checked::after {
+    content: ''; position: absolute; top: 50%; left: 50%;
+    width: 7px; height: 7px; border-radius: 50%; background: var(--on-color);
+    transform: translate(-50%, -50%);
+}
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 2px; }
 
 /* ── File input area ── */
 .file-input-wrap {

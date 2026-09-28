@@ -222,11 +222,17 @@
     display: block; margin-bottom: 2px;
     font: 400 13px/1.3 var(--ios-font); color: var(--ios-label-2);
 }
+/* Звёздочка обязательного поля — как `.prf-required` в анкете. Здесь `required`
+   стоит на каждом поле, а признака не было ни одного (28.09.2026). */
+.ios-personal .prs-required { color: var(--ios-red); }
 .ios-personal .prs-field-input {
     width: 100%; box-sizing: border-box;
     padding: 0; border: none; background: transparent;
     font: 400 16px/1.4 var(--ios-font); color: var(--ios-label);
 }
+/* Список и текстовое поле в одной форме были разной высоты: 19px против
+   22px (замер 28.09.2026). Разница видна как неровный ряд строк. */
+.ios-personal select.prs-field-input { min-height: 22px; }
 .ios-personal .prs-field-input:focus { outline: none; }
 .ios-personal .prs-field-input:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 3px; border-radius: 4px; }
 .ios-personal .prs-field-input::placeholder { color: var(--ios-label-3); }
@@ -247,7 +253,10 @@
     font: 600 16px/1.2 var(--ios-font); cursor: pointer;
 }
 .ios-personal .prs-save-btn:hover { background: #0069DB; }
+/* Цель нажатия 44px, как у `.back-link` в base.css. Ссылка стояла голым
+   текстом высотой 18px рядом с кнопкой «Сохранить» в 45px (замер 28.09.2026). */
 .ios-personal .prs-cancel-link {
+    display: inline-flex; align-items: center; min-height: 44px;
     color: var(--ios-blue); text-decoration: none;
     font: 400 15px/1.2 var(--ios-font);
 }
