@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.models.task_block import BLOCK_PORTFOLIO, TaskBlock
 from app.models.tracker import TrackerTask
 from app.models.work import WORK_TYPE_AFTER, WORK_TYPE_BEFORE
-from app.services.cycle_feed import cycle_is_archived_for_user
+from app.services.cycle_feed import task_is_archived_for_user
 from app.services.task_blocks import feed_state, portfolio_window_deadline
 from app.services.tracker import MONTH_GENITIVE, accessible_task_ids
 from app.services.tz import MSK_TZ, now_msk, today_msk
@@ -149,10 +149,8 @@ def portfolio_windows(
         # трогая саму `feed_state`/`is_block_accessible` (инвариант «не трогать
         # precourse-логику» — архивность проверяется здесь дополнительно).
         task = db.get(TrackerTask, task_id)
-        archived = (
-            task is not None
-            and task.topic_id is not None
-            and cycle_is_archived_for_user(db, user_id, task.topic_id, today_msk())
+        archived = task is not None and task_is_archived_for_user(
+            db, user_id, task, today_msk()
         )
         for entry in feed_state(
             db, task_id=task_id, user_id=user_id, user_tariff=user_tariff

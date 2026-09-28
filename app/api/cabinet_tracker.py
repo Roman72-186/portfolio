@@ -55,7 +55,7 @@ from app.services.program import (
     msk_date,
     week_start,
 )
-from app.services.cycle_feed import current_feed_task_ids, cycle_is_archived_for_user
+from app.services.cycle_feed import current_feed_task_ids, task_is_archived_for_user
 from app.services.portfolio_window import (
     format_deadline_msk,
     portfolio_windows,
@@ -212,9 +212,7 @@ def cabinet_tracker_toggle(
     )
     if not accessible:
         raise HTTPException(status_code=404, detail="Задача не найдена")
-    if task.topic_id is not None and cycle_is_archived_for_user(
-        db, user["user_id"], task.topic_id, today_msk()
-    ):
+    if task_is_archived_for_user(db, user["user_id"], task, today_msk()):
         raise HTTPException(
             status_code=403, detail="Цикл пройден — можно только посмотреть свои ответы"
         )
@@ -297,9 +295,7 @@ def _writable_task_or_404(db: DBSession, user_id: int, task_id: int) -> TrackerT
     менять их.
     """
     task = _accessible_task_or_404(db, user_id, task_id)
-    if task.topic_id is not None and cycle_is_archived_for_user(
-        db, user_id, task.topic_id, today_msk()
-    ):
+    if task_is_archived_for_user(db, user_id, task, today_msk()):
         raise HTTPException(
             status_code=403, detail="Цикл пройден — можно только посмотреть свои ответы"
         )

@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.models.learning_topic import TOPIC_KIND_STAGE, TOPIC_KIND_WEEK, LearningTopic
 from app.models.task_block import BLOCK_PORTFOLIO
-from app.models.tracker import ITEM_ARCHI_PROFILE, ITEM_MOCK_EXAM, STATUS_DONE
+from app.models.tracker import ITEM_ARCHI_PROFILE, ITEM_MOCK_EXAM, STATUS_DONE, TrackerTask
 from app.models.user import User
 from app.models.work import WORK_TYPE_BEFORE, Work
 from app.services.program import day_bounds
@@ -528,6 +528,27 @@ def cycle_is_archived_for_user(
         return False
     current = effective_cycle(db, user_id, today)
     return current is None or current.id != topic.id
+
+
+def task_is_archived_for_user(
+    db: Session, user_id: int, task: TrackerTask, today: date
+) -> bool:
+    """Задание для ученика — архив (только просмотр). Этим спрашивают пишущие
+    роуты, а не `cycle_is_archived_for_user` по `task.topic_id` напрямую.
+
+    Лента берёт датные задания по датам из всех доступных циклов
+    (`accessible_task_entries`), поэтому задание, приписанное к закончившемуся
+    циклу, но стоящее датой в текущем, ученик видит в текущей ленте. Прецедент
+    28.09.2026: такое видео нельзя было отметить — гейт смотрел только на
+    `topic_id` и отвечал 403 «Цикл пройден», а экран показывал «Не удалось
+    отметить». Что есть в текущей ленте, то и можно делать; ленту считаем
+    только когда цикл задания и правда архив — это редкая ветка.
+    """
+    if task.topic_id is None:
+        return False
+    if not cycle_is_archived_for_user(db, user_id, task.topic_id, today):
+        return False
+    return task.id not in current_feed_task_ids(db, user_id=user_id, today=today)
 
 
 def _cycle_is_over(topic: LearningTopic, today: date) -> bool:

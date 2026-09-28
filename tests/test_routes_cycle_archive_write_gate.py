@@ -124,3 +124,71 @@ def test_running_cycle_is_not_archive_even_if_another_is_current(auth_client, db
         task = _task_in_topic(db, user, topic, title=f"Задание {topic.title}")
         resp = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
         assert resp.status_code == 200, (topic.title, resp.text)
+
+
+def _dated_task_in_topic(db, owner, topic, *, day, title):
+    from app.services.program import day_bounds
+    task = create_task(
+        db, title=title, user_id=owner.id, kind="material",
+        topic_id=topic.id, due_at=day_bounds(day)[0] + timedelta(hours=6),
+        assign_to_all=True, is_required=True,
+    )
+    task.is_published = True
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def test_task_shown_in_current_feed_is_writable_whatever_its_topic(auth_client, db):
+    """Прецедент 28.09.2026: задание приписано к закончившемуся циклу, а датой
+    стоит в текущем. Лента собирает датные задания по датам и показывает его
+    в текущем цикле, а гейт архива смотрел на `topic_id` — ученик видел
+    видео, жал кружок и читал «Не удалось отметить» (сервер отвечал 403
+    «Цикл пройден»). Что ученик видит в текущей ленте, то он и может делать.
+    """
+    from app.models.task_block import BLOCK_VIDEO, TaskBlock
+    from app.services.cycle_feed import current_feed_task_ids
+
+    client, user = auth_client
+    old_cycle = _cycle(
+        db, user, title="Цикл 2",
+        starts_on=TODAY - timedelta(days=10), ends_on=TODAY - timedelta(days=2),
+    )
+    _cycle(
+        db, user, title="Цикл 3",
+        starts_on=TODAY - timedelta(days=1), ends_on=TODAY + timedelta(days=5),
+    )
+    task = _dated_task_in_topic(db, user, old_cycle, day=TODAY, title="Видео урока")
+    block = TaskBlock(task_id=task.id, block_type=BLOCK_VIDEO, title="Урок", sort_order=0)
+    db.add(block)
+    db.commit()
+    assert task.id in current_feed_task_ids(db, user_id=user.id, today=TODAY)
+
+    resp = client.post(f"/cabinet/tracker/blocks/{block.id}/watched")
+
+    assert resp.status_code == 200, resp.text
+    assert client.post(f"/cabinet/tracker/tasks/{task.id}/toggle").status_code == 200
+
+
+def test_task_of_archived_cycle_outside_current_feed_stays_locked(auth_client, db):
+    """Обратная сторона: задание старого цикла, которое датой в своём же
+    закончившемся цикле, по-прежнему только для чтения."""
+    client, user = auth_client
+    old_cycle = _cycle(
+        db, user, title="Цикл 2",
+        starts_on=TODAY - timedelta(days=10), ends_on=TODAY - timedelta(days=2),
+    )
+    _cycle(
+        db, user, title="Цикл 3",
+        starts_on=TODAY - timedelta(days=1), ends_on=TODAY + timedelta(days=5),
+    )
+    task = _dated_task_in_topic(
+        db, user, old_cycle, day=TODAY - timedelta(days=5), title="Старое задание",
+    )
+    # Обязательное старое задание держало бы цикл 2 текущим («долг важнее
+    # новизны»), здесь проверяется именно архив — закрываем его заранее.
+    from app.services.tracker import close_task_for_user
+    close_task_for_user(db, task, user.id, source="test")
+    db.commit()
+
+    assert client.post(f"/cabinet/tracker/tasks/{task.id}/toggle").status_code == 403
