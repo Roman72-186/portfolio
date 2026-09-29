@@ -2016,7 +2016,9 @@ def submission_review_queue(
 
     Скоуп куратора и набор фильтров — те же, что у `review_queue` по ответам:
     оба списка сводит один агрегатор (`services/review_aggregate.py`), и
-    расхождение в правилах доступа между ними было бы дырой.
+    расхождение в правилах доступа между ними было бы дырой. Так же, как там,
+    удалённые задания скрыты, а `week_end` — граница-исключение
+    (`week_bounds` отдаёт следующий понедельник 00:00).
     """
     from app.models.tracker import TrackerTask
     from app.models.user import User
@@ -2027,6 +2029,7 @@ def submission_review_queue(
         .join(TrackerTask, TrackerTask.id == TaskBlock.task_id)
         .join(User, User.id == TaskBlockSubmission.user_id)
         .filter(TaskBlockSubmission.submitted_at.isnot(None))
+        .filter(TrackerTask.deleted_at.is_(None))
     )
     if curator_id is not None:
         query = query.filter(User.curator_id == curator_id)
@@ -2039,7 +2042,7 @@ def submission_review_queue(
     if week_start is not None:
         query = query.filter(TaskBlockSubmission.submitted_at >= week_start)
     if week_end is not None:
-        query = query.filter(TaskBlockSubmission.submitted_at <= week_end)
+        query = query.filter(TaskBlockSubmission.submitted_at < week_end)
 
     rows = (
         query.order_by(TaskBlockSubmission.submitted_at.desc())
@@ -2057,6 +2060,22 @@ def submission_review_queue(
         ):
             image_map.setdefault(image.submission_id, []).append(image)
 
+    # Состояния блоков одним запросом: `get_state` на строку давал до 200
+    # походов в базу. Выборка по двум `IN` шире нужной пары, ключ — пара.
+    state_map: dict[tuple[int, int], TaskBlockState] = {}
+    if rows:
+        block_ids = {block.id for _, block, _, _ in rows}
+        user_ids = {student.id for _, _, _, student in rows}
+        for state in (
+            db.query(TaskBlockState)
+            .filter(
+                TaskBlockState.block_id.in_(block_ids),
+                TaskBlockState.user_id.in_(user_ids),
+            )
+            .all()
+        ):
+            state_map[(state.block_id, state.user_id)] = state
+
     items = []
     for submission, block, task, student in rows:
         items.append({
@@ -2070,9 +2089,7 @@ def submission_review_queue(
             "comment": submission.comment,
             "review_comment": submission.review_comment,
             "images": [i.image_s3_url for i in image_map.get(submission.id, [])],
-            "overrun": timed_overrun(
-                block, get_state(db, block_id=block.id, user_id=student.id)
-            ),
+            "overrun": timed_overrun(block, state_map.get((block.id, student.id))),
             "reviewed": submission.reviewed_at is not None,
             "needs_revision": submission.needs_revision,
             "submitted_at": submission.submitted_at,
