@@ -37,11 +37,14 @@ def staff_notifications(
         .limit(100)
         .all()
     )
-    unread_count = sum(1 for n in notifications if not n.is_read)
+    shown_unread_ids = [n.id for n in notifications if not n.is_read]
+    unread_count = len(shown_unread_ids)
     if unread_count:
+        # Только показанные: экран выводит 100 строк, а отметка всех разом
+        # глотала хвост, который сотрудник так и не увидел (код-ревью
+        # 28.09.2026, P3). Непрочитанные идут первыми — хвост доедет следом.
         db.query(Notification).filter(
-            Notification.user_id == user["user_id"],
-            Notification.is_read.is_(False),
+            Notification.id.in_(shown_unread_ids),
         ).update({"is_read": True, "read_at": datetime.now(timezone.utc)})
         db.commit()
         invalidate_unread(user["user_id"])
