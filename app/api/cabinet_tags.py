@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session as DBSession
 
 from app.db.database import get_db
+from app.constants import TARIFFS_LEGACY
 from app.dependencies import require_admin_role, require_csrf
 from app.models.role import Role
 from app.models.user import User
@@ -177,6 +178,12 @@ def superadmin_add_tag(
     if len(name_clean) > 50:
         raise HTTPException(status_code=400, detail="Тег слишком длинный (макс. 50 символов)")
 
+    if name_clean.upper() in TARIFFS_LEGACY:
+        # Отработавший тариф живёт только в архиве (владелец 29.09.2026), а
+        # ручная постановка вернула бы его тег в показ.
+        raise HTTPException(
+            status_code=400, detail="Тариф отработал — его тег остаётся только в архиве"
+        )
     tag = get_or_create_tag(db, name_clean)
     # Сотрудник сам ставит тег с именем скрытого — возвращаем его в показ:
     # второго тега с тем же именем не завести, а поставить невидимый — бессмыслица.

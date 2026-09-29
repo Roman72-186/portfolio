@@ -275,13 +275,16 @@ def test_suggested_tags_include_mock_subjects_and_curators(db, user_factory):
 # ---------------------------------------------------------------------------
 
 def test_profile_tags_auto_created_on_page_load(admin_rank4_client, db, student_user):
-    """student_user has tariff=УВЕРЕННЫЙ, course_periods="10-14 июня", lessons_count="8"."""
+    """course_periods="10-14 июня", lessons_count="8"; тариф — действующий
+    (тег отработавшего автотег не ставит, владелец 29.09.2026)."""
     client, _ = admin_rank4_client
+    student_user.tariff = "Я С ВАМИ"
+    db.commit()
     resp = client.get("/cabinet/superadmin/tags")
     assert resp.status_code == 200
 
     tag_names = {t.name for t in db.query(Tag).all()}
-    assert {"10-14", "8", "УВЕРЕННЫЙ"} <= tag_names
+    assert {"10-14", "8", "Я С ВАМИ"} <= tag_names
 
     linked_names = {
         tag.name for tag in db.query(Tag)
@@ -289,9 +292,9 @@ def test_profile_tags_auto_created_on_page_load(admin_rank4_client, db, student_
         .filter(UserTag.user_id == student_user.id)
         .all()
     }
-    assert {"10-14", "8", "УВЕРЕННЫЙ"} <= linked_names
+    assert {"10-14", "8", "Я С ВАМИ"} <= linked_names
 
-    for name in ("10-14", "8", "УВЕРЕННЫЙ"):
+    for name in ("10-14", "8", "Я С ВАМИ"):
         assert name in resp.text
 
 
@@ -309,9 +312,11 @@ def test_profile_tags_idempotent_no_duplicates(admin_rank4_client, db, student_u
 
 def test_profile_tag_removal_does_not_change_user_fields(admin_rank4_client, db, student_user):
     client, _ = admin_rank4_client
+    student_user.tariff = "Я С ВАМИ"
+    db.commit()
     client.get("/cabinet/superadmin/tags")
 
-    tariff_tag = db.query(Tag).filter(Tag.name == "УВЕРЕННЫЙ").first()
+    tariff_tag = db.query(Tag).filter(Tag.name == "Я С ВАМИ").first()
     del_resp = client.request(
         "DELETE", f"/cabinet/superadmin/tags/{student_user.id}/{tariff_tag.id}",
         headers={"X-CSRF-Token": "bypass"},
@@ -320,7 +325,7 @@ def test_profile_tag_removal_does_not_change_user_fields(admin_rank4_client, db,
     assert db.get(UserTag, (student_user.id, tariff_tag.id)) is None
 
     db.refresh(student_user)
-    assert student_user.tariff == "УВЕРЕННЫЙ"
+    assert student_user.tariff == "Я С ВАМИ"
 
 
 # ---------------------------------------------------------------------------
@@ -539,18 +544,61 @@ def test_hidden_tag_is_left_out_of_lists_and_chips(db, student_user):
 
 
 def test_auto_tagging_brings_back_current_tariff_tag(db, student_user):
-    """Тариф — действующий: у 46 живых учеников «Я С ВАМИ», а тег с этим именем
-    июньский. Пропусти его автотег — тарифные теги получили бы 38 учеников на
-    новых именах, а эти 46 ничего. Имя уникально, второго не завести."""
+    """Действующий тариф возвращает тег: у 46 живых учеников «Я С ВАМИ», а тег
+    с этим именем июньский. Пропусти его автотег — тарифные теги получили бы
+    38 учеников на новых именах, а эти 46 ничего. Имя уникально."""
+    from app.constants import TARIFF_WITH_YOU
     from app.services.tags import ensure_profile_tags
 
-    hidden = _hidden_tag(db, student_user.tariff)
+    student_user.tariff = TARIFF_WITH_YOU
+    db.commit()
+    hidden = _hidden_tag(db, TARIFF_WITH_YOU)
 
     ensure_profile_tags(db, [student_user])
 
     db.refresh(hidden)
     assert hidden.is_hidden is False
     assert db.get(UserTag, (student_user.id, hidden.id)) is not None
+
+
+@pytest.mark.parametrize("with_june_tag", [True, False])
+def test_legacy_tariff_tag_stays_in_archive(db, student_user, with_june_tag):
+    """Отработавший тариф (владелец 29.09.2026: «должны быть только у архивных
+    учеников и никак не должны фигурировать у нас»): его тег не возвращается,
+    не ставится и не заводится заново. Живой ученик со старым тарифом бывает —
+    «служба заботы» получила «УВЕРЕННЫЙ» ORM-дефолтом при первом входе."""
+    from app.services.tags import ensure_profile_tags
+
+    assert student_user.tariff == "УВЕРЕННЫЙ"
+    june = _hidden_tag(db, "УВЕРЕННЫЙ") if with_june_tag else None
+
+    ensure_profile_tags(db, [student_user])
+
+    names = [
+        t.name for t in db.query(Tag).join(UserTag, UserTag.tag_id == Tag.id)
+        .filter(UserTag.user_id == student_user.id)
+    ]
+    assert "УВЕРЕННЫЙ" not in names
+    if june is not None:
+        db.refresh(june)
+        assert june.is_hidden is True
+    else:
+        assert db.query(Tag).filter(Tag.name == "УВЕРЕННЫЙ").count() == 0
+
+
+def test_manual_legacy_tariff_tag_is_refused(admin_rank4_client, db, student_user):
+    client, _ = admin_rank4_client
+    june = _hidden_tag(db, "МАКСИМУМ")
+
+    resp = client.post(
+        f"/cabinet/superadmin/tags/{student_user.id}",
+        data={"name": "максимум", "csrf_token": "bypass"},
+    )
+
+    assert resp.status_code == 400, resp.text
+    db.refresh(june)
+    assert june.is_hidden is True
+    assert db.get(UserTag, (student_user.id, june.id)) is None
 
 
 def test_auto_tagging_keeps_june_period_tags_hidden(db, student_user):

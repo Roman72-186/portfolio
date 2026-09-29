@@ -18,7 +18,8 @@ class Tag(Base):
     # доступ по тегу не меняются. Июньские теги прошлого потока скрыты
     # миграцией f7c2a9d4b6e1 (владелец 29.09.2026). В показ тег возвращают
     # ручная постановка (`cabinet_tags.superadmin_add_tag`) и автотег по
-    # действующему тарифу (`tags.ensure_profile_tags`); период и уроки — нет.
+    # действующему тарифу (`tags.ensure_profile_tags`); период, уроки и теги
+    # отработавших тарифов — нет, последние и вручную не ставятся.
     is_hidden: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false(), nullable=False
     )

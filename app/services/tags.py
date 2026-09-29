@@ -5,7 +5,7 @@ from collections import defaultdict
 
 from sqlalchemy.orm import Session as DBSession
 
-from app.constants import MOCK_SUBJECTS
+from app.constants import MOCK_SUBJECTS, TARIFFS_CURRENT
 from app.models.role import Role
 from app.models.tag import Tag, UserTag
 from app.models.user import User
@@ -108,7 +108,12 @@ def ensure_profile_tags(db: DBSession, students: list[User]) -> None:
                     names.add(period.split(" ")[0])
         if student.lessons_count:
             names.add(student.lessons_count.strip())
-        tariff_name = student.tariff.strip() if student.tariff else ""
+        # Тег ставится только действующему тарифу (владелец 29.09.2026:
+        # старые тарифы и их теги — только у архива). Живой ученик со старым
+        # тарифом бывает: ORM-дефолт «УВЕРЕННЫЙ» при первом входе.
+        tariff_name = (student.tariff or "").strip()
+        if tariff_name not in TARIFFS_CURRENT:
+            tariff_name = ""
         if tariff_name:
             names.add(tariff_name)
         if student.id in case_ids:
@@ -117,7 +122,7 @@ def ensure_profile_tags(db: DBSession, students: list[User]) -> None:
         for name in names:
             tag = get_or_create_tag(db, name)
             # Скрытый тег — июньский, прошлого потока (`Tag.is_hidden`).
-            # Тариф — действующий: у 46 живых учеников «Я С ВАМИ», и тег с этим
+            # Действующий тариф: у 46 живых учеников «Я С ВАМИ», и тег с этим
             # именем возвращается в показ (имя уникально, второго не завести).
             # Период, уроки — поля июньской анкеты, «КЕЙС» — по пробникам,
             # которых нет с 11.07: скрытый тег по ним не ставится, иначе одна
