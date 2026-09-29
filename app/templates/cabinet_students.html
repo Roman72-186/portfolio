@@ -33,19 +33,19 @@
     font-size: 15px; font-weight: 700; color: var(--text);
     margin-bottom: 10px;
 }
-.sidebar-search {
+.sidebar-search, .sidebar-select {
     width: 100%; padding: 8px 12px;
     background: var(--bg); border: 1.5px solid var(--line);
     border-radius: var(--r-sm); font-size: 13px; color: var(--text);
     font-family: inherit; outline: none;
     transition: border-color 0.2s; box-sizing: border-box;
 }
-.sidebar-search:focus { border-color: var(--blue); }
+.sidebar-search:focus, .sidebar-select:focus { border-color: var(--blue); }
 
 .sidebar-list { flex: 1; overflow-y: auto; padding: 8px 0; }
 .sidebar-list::-webkit-scrollbar { width: 4px; }
-.sidebar-list::-webkit-scrollbar-track { background: transparent; }
-.sidebar-list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+.sidebar-list::-webkit-scrollbar-track, .split-main-scroll::-webkit-scrollbar-track { background: transparent; }
+.sidebar-list::-webkit-scrollbar-thumb, .split-main-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
 
 .student-row {
     display: flex; align-items: center; gap: 12px;
@@ -160,8 +160,6 @@
     padding: 20px 24px;
 }
 .split-main-scroll::-webkit-scrollbar { width: 6px; }
-.split-main-scroll::-webkit-scrollbar-track { background: transparent; }
-.split-main-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
 
 /* ── Student hero ── */
 .student-hero {
@@ -554,15 +552,7 @@
 .sidebar-filters {
     padding: 8px 16px 0; display: flex; flex-direction: column; gap: 6px;
 }
-.sidebar-select {
-    width: 100%; padding: 7px 10px;
-    background: var(--bg); border: 1.5px solid var(--line);
-    border-radius: var(--r-sm); font-size: 12px; color: var(--text);
-    font-family: inherit; outline: none;
-    transition: border-color 0.2s; box-sizing: border-box;
-    cursor: pointer; appearance: auto;
-}
-.sidebar-select:focus { border-color: var(--blue); }
+.sidebar-select { padding: 7px 10px; font-size: 12px; cursor: pointer; appearance: auto; } /* остальное — общее с поиском */
 
 /* ── Server-side (hard) filter pills ── */
 .sidebar-hard-filters {
@@ -787,7 +777,7 @@
 }
 .upload-select:focus { border-color: var(--blue); }
 .upload-dropzone {
-    position: relative;
+    position: relative; display: block; /* это <label>: строчная рамка вокруг блоков рвалась на куски */
     border: 2px dashed var(--line); border-radius: var(--r-md);
     background: var(--bg); padding: 22px 16px; text-align: center;
     cursor: pointer; transition: border-color 0.2s, background 0.2s;
@@ -868,10 +858,20 @@
     .split-main { display: none; overflow: visible; }
     .split-main-scroll { overflow: visible; padding: 16px; }
     .mock-calendar-layout { grid-template-columns: 1fr; }
-    .mock-day-card { min-height: 0; }
+    /* Работа и оценка — первыми, календарь под ними, месяцы в два ряда: иначе на 320 до работы 530px календаря */
+    .mock-day-card, #main-panel .cal-detail { min-height: 0; }
+    .mock-calendar-side, #main-panel .cal-side { order: 2; }
+    .mock-month-list, #main-panel .cal-month-list { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+    .mock-month-btn, #main-panel .cal-month-btn { padding: 7px 0; }
     .tab-bar { padding: 0 12px; }
     .profile-grid { grid-template-columns: 1fr; }
     .profile-actions { grid-template-columns: 1fr; }
+    /* Фильтры над списком: тарифы — одна строка с прокруткой вбок, куратор и год — рядом; касание те же 44px */
+    .sidebar-hard-filters-add { padding-top: 0; }
+    .tariff-pills { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 4px 16px 8px; }
+    .tariff-pill { flex-shrink: 0; white-space: nowrap; }
+    .sidebar-filters { flex-direction: row; }
+    .sidebar-select { flex: 1 1 0; min-width: 0; }
     /* Шапка ученика: аватар и имя — первая строка, баллы и «+ Загрузить» — вторая */
     .student-hero { flex-wrap: wrap; gap: 12px 14px; padding: 16px; }
     .student-hero-info { flex: 1 1 calc(100% - 74px); min-width: 0; }
@@ -1250,13 +1250,24 @@ function navCommit(push, up) {
     _navState = st;
 }
 
+// На телефоне список — часть страницы и прячется, пока открыт ученик. Место в нём
+// запоминаем при открытии ученика и возвращаем здесь: через navShowList идут и кнопка
+// «К списку учеников», и «назад» по истории. Сам браузер тут только мешает: запись
+// списка он запоминает, когда список уже спрятан, и после «назад» вернул бы наверх.
+var _listScrollY = null;
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+
 function navShowList() {
+    var row = _currentStudentId && document.getElementById('srow-' + _currentStudentId);
     _currentStudentId = null;
     _viewMode = 'profile';
     document.querySelector('.split-wrap').classList.remove('student-selected');
     document.querySelectorAll('.student-row.active').forEach(function(r) { r.classList.remove('active'); });
     document.getElementById('tab-bar').style.display = 'none';
     document.getElementById('main-panel').innerHTML = _emptyMainHtml;
+    if (_listScrollY !== null) window.scrollTo(0, _listScrollY);
+    else if (row) row.scrollIntoView({block: 'center'});  // ученик открыт по ссылке ?student=, места в списке не было
+    _listScrollY = null;
 }
 
 window.addEventListener('popstate', function(ev) {
@@ -1302,6 +1313,7 @@ function mobileBackToList() {
 function selectStudent(id, forceTab) {
     if (_currentStudentId && id !== _currentStudentId && !guardUnsavedScore()) return;
     var navPush = !_currentStudentId;  // из списка — новая запись истории, между учениками — замена
+    if (navPush) _listScrollY = window.scrollY;
     _currentStudentId = id;
     if (!_tabCache[id]) _tabCache[id] = {};
 
@@ -2199,6 +2211,24 @@ function selectMockDay(sid, subjectIndex, dateStr) {
     };
     rerenderMockTab();
 }
+
+// Телефон: работа стоит над календарём, а день выбирают под ней. После выбора дня
+// подводим экран к работе — в «Пробниках» и в календаре «Портфолио»
+// (partials/cycle_calendar_lib.html). Оба календаря перерисовываются целиком,
+// поэтому какой из них нажат, запоминаем до перерисовки — в фазе перехвата.
+document.getElementById('main-panel').addEventListener('click', function(ev) {
+    var day = ev.target.closest('.mock-day.has-works, .cal-day.has-works');
+    if (!day || !window.matchMedia('(max-width: 768px)').matches) return;
+    var sel = '.mock-calendar-layout, .cal-layout';
+    var idx = Array.prototype.indexOf.call(this.querySelectorAll(sel), day.closest(sel));
+    var panel = this;
+    setTimeout(function() {
+        var layout = panel.querySelectorAll(sel)[idx];
+        var card = layout && layout.querySelector('.mock-day-card, .cal-detail');
+        var top = card ? card.getBoundingClientRect().top : 0;
+        if (top < 0) window.scrollBy(0, top - 12);
+    }, 0);
+}, true);
 
 function buildMockCalendarSide(sid, subjectIndex, grouped, state) {
     var html = '<div class="mock-calendar-side">';
@@ -3262,6 +3292,7 @@ if (INITIAL_STUDENT_ID) {
     if (_params.get('saved') === '1') {
         setTimeout(function() { showToast('Оценка сохранена'); }, 600);
     }
+    _listScrollY = null;  // список ещё не листали — вернёмся к строке ученика
 }
 _navRestoring = false;
 navCommit(false);  // заодно убирает ?saved=1, чтобы перезагрузка не повторяла тост

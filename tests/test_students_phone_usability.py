@@ -122,3 +122,53 @@ def test_phone_inputs_are_16px_and_targets_44px():
         assert sel in targets, f"{sel} меньше 44px на касание"
     assert ".hard-filter-options a" in block and ".sidebar-hard-filters-add summary" in block
     assert re.search(r"\.mock-day, #main-panel \.cal-day \{[^}]*min-height: 44px", block)
+
+
+# ── Шаг 3 `/layout` ──────────────────────────────────────────────────────────
+
+
+def _mobile_block(source: str) -> str:
+    return source[source.index("@media (max-width: 768px) {"):source.index("</style>")]
+
+
+def test_filter_header_is_compact_on_phone():
+    # На 320×568 до списка было 371 px фильтров и два ученика целиком: пилюли
+    # тарифов шли в две-три строки, селекты — друг под другом.
+    mobile = _mobile_block(_source())
+    assert re.search(r"\.tariff-pills \{[^}]*flex-wrap: nowrap;[^}]*overflow-x: auto", mobile), (
+        "тарифы переносятся в несколько строк — шапка съедает экран"
+    )
+    assert re.search(r"\.tariff-pill \{[^}]*flex-shrink: 0", mobile)
+    assert re.search(r"\.sidebar-filters \{[^}]*flex-direction: row", mobile)
+    # Компактнее — не за счёт касания.
+    assert "min-height: 44px" in _css_rule(_source(), ".tariff-pill")
+
+
+def test_back_to_list_returns_to_same_place():
+    source = _source()
+    # Браузер запоминает запись списка, когда список уже спрятан, и возвращал наверх.
+    assert "history.scrollRestoration = 'manual'" in source
+    show_list = source[source.index("function navShowList()"):]
+    show_list = show_list[:show_list.index("\n}\n")]
+    assert "window.scrollTo(0, _listScrollY)" in show_list
+    assert "row.scrollIntoView({block: 'center'})" in show_list, "открыли по ?student= — места нет, нужна строка"
+    assert "if (navPush) _listScrollY = window.scrollY;" in source
+
+
+def test_phone_calendar_keeps_work_above_calendar():
+    # На 320 до работы и формы оценки было 530 px календаря.
+    mobile = _mobile_block(_source())
+    assert re.search(r"\.mock-calendar-side, #main-panel \.cal-side \{[^}]*order: 2", mobile)
+    assert re.search(r"\.mock-month-list, #main-panel \.cal-month-list \{[^}]*repeat\(6", mobile)
+    source = _source()
+    # День выбирают под работой — после выбора экран подводится к ней, в обоих календарях.
+    handler = source[source.index("document.getElementById('main-panel').addEventListener('click'"):]
+    handler = handler[:handler.index("}, true);")]
+    assert "'.mock-day.has-works, .cal-day.has-works'" in handler
+    assert "'.mock-day-card, .cal-detail'" in handler
+    assert "matchMedia('(max-width: 768px)')" in handler
+
+
+def test_upload_dropzone_is_block():
+    # Зона — <label>: строчная рамка вокруг блоков рвалась, слева торчал обрывок пунктира.
+    assert "display: block" in _css_rule(_source(), ".upload-dropzone")
