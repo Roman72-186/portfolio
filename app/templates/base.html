@@ -61,7 +61,7 @@
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" onload="this.onload=null;this.rel='stylesheet'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet"></noscript>
     <!-- Base styles: versioned for cache-busting -->
-    <link rel="stylesheet" href="/static/css/base.css?v=67">
+    <link rel="stylesheet" href="/static/css/base.css?v=68">
     {% block extra_styles %}{% endblock %}
 </head>
 <body{% if user is defined and user and user.impersonated_by_id %} class="is-impersonating"{% endif %}>
@@ -168,7 +168,7 @@
                 openBtn.textContent = 'Открыть в браузере';
                 openBtn.setAttribute('style',
                     'width:100%;padding:14px;font-size:15px;font-weight:700;color:#fff;border:none;' +
-                    'border-radius:12px;background:linear-gradient(135deg,var(--blue),var(--blue-mid));cursor:pointer');
+                    'border-radius:12px;background:var(--blue-fill);cursor:pointer');
                 openBtn.onclick = function(){ doEscape(targetUrl); };
                 var copyBtn = document.createElement('button');
                 copyBtn.type = 'button';

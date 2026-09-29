@@ -67,7 +67,7 @@
     min-width: 20px; height: 20px; padding: 0 5px; border-radius: var(--r-pill);
     font: 700 11px/1 var(--font-body);
 }
-.prg-dot--mock { color: #fff; background: var(--blue); }
+.prg-dot--mock { color: #fff; background: var(--blue-fill); }
 .prg-dot--video { color: var(--blue-on-soft); background: var(--blue-soft); }
 .prg-dot--homework { color: var(--warning); background: var(--warning-soft); }
 .prg-dot--other { color: var(--muted); background: var(--surface-2); }
@@ -123,7 +123,7 @@
     }
 }
 .prg-cycle-pill.is-active {
-    background: var(--blue); border-color: var(--blue); color: #fff;
+    background: var(--blue-fill); border-color: var(--blue-fill); color: #fff;
     transform: scale(1.2); z-index: 2;
 }
 /* На касание плашка выходила 27px (аудит 29.09.2026). Вид компактный по

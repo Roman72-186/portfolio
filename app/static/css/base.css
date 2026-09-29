@@ -32,6 +32,11 @@
        3.96, на --surface-2 3.56 — ниже 4.5 (аудит 10.4). Тот же тон глубже — смесь двух
        ступеней шкалы: 6.49 на белом, 4.77 на --blue-tint. Заливки кнопок остаются на --blue. */
     --blue-text:    color-mix(in srgb, var(--blue-deep) 60%, var(--blue-on-soft));
+    /* Заливка под белым текстом и значками: белое на --blue — 3.96 (аудит 11.2), на этой — 5.38.
+       Strong — наведение, выбор и тёмный край градиентных шапок (белое 8.0). От темы не зависят:
+       --blue-deep в тёмном блоке не переопределён, а --blue-on-soft там светлый. */
+    --blue-fill:        var(--blue-deep);
+    --blue-fill-strong: color-mix(in srgb, var(--blue-deep) 72%, black);
     --blue-soft:    #F3E8FF;
     --blue-tint:    #E9D5FF;
 
@@ -330,7 +335,7 @@ a:hover { color: var(--blue-deep); }
 /* ── Skip link (accessibility) ── */
 .skip-link {
     position: absolute; top: -100%; left: 8px;
-    background: var(--blue); color: #fff;
+    background: var(--blue-fill); color: #fff;
     padding: 8px 16px; border-radius: 0 0 8px 8px;
     font-size: 14px; font-weight: 700; z-index: 10000;
     transition: top var(--duration-fast);
@@ -572,7 +577,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 .card-dark:hover { box-shadow: 0 8px 32px rgba(20,30,80,.22); transform: translateY(-2px); }
 
 .card-blue {
-    background: linear-gradient(165deg, var(--blue-deep) 0%, var(--blue) 100%);
+    background: linear-gradient(165deg, var(--blue-fill-strong) 0%, var(--blue-fill) 100%);
     border: none;
     border-radius: var(--r-lg);
     box-shadow: var(--sh-blue);
@@ -610,7 +615,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 /* Blue brand button */
 .btn-blue {
     display: inline-flex; align-items: center; gap: 8px;
-    background: var(--blue); color: #fff;
+    background: var(--blue-fill); color: #fff;
     font-size: 14px; font-weight: 600;
     padding: 13px 22px; border-radius: var(--r-pill);
     border: none; cursor: pointer; font-family: inherit;
@@ -834,7 +839,7 @@ audio { max-width: 100%; }
 .nav-pill-item:hover { color: var(--ink); opacity: 1; }
 .nav-pill-item.active,
 .nav-pill-item--active {
-    background: var(--blue);
+    background: var(--blue-fill);
     color: #fff;
 }
 
@@ -920,7 +925,7 @@ audio { max-width: 100%; }
     transition: background var(--duration-fast), color var(--duration-fast);
 }
 .seg-btn.active {
-    background: var(--blue);
+    background: var(--blue-fill);
     color: #fff;
 }
 

@@ -194,7 +194,7 @@
 
 .lrn-page { max-width: 1080px; margin: 0 auto; padding: 22px 18px 110px; }
 .lrn-hero {
-    background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue-mid) 100%);
+    background: linear-gradient(135deg, var(--blue-fill-strong) 0%, var(--blue-fill) 100%);
     color: #fff; border-radius: var(--r-xl); padding: 18px 22px;
     margin-bottom: 16px; box-shadow: var(--sh-blue);
 }
@@ -1490,8 +1490,8 @@ body.has-video-pseudo-fullscreen .lrn-step { opacity: 1 !important; }
     }
 }
 .lrn-cycle-chip.is-current {
-    background: var(--blue);
-    border-color: var(--blue);
+    background: var(--blue-fill);
+    border-color: var(--blue-fill);
     color: #fff;
     transform: scale(1.2);
     z-index: 2;
@@ -1533,11 +1533,11 @@ body.has-video-pseudo-fullscreen .lrn-step { opacity: 1 !important; }
     font: 600 13px/1 var(--font-body);
 }
 .lrn-scale-cell--zero { flex: 0 0 auto; width: 30px; }
-.lrn-scale-cell.is-filled { background: var(--blue); }
+.lrn-scale-cell.is-filled { background: var(--blue-fill); }
 /* Выбранный ноль закрашивать нечем — ряд остаётся пустым, поэтому отмечаем
    саму нулевую кнопку, иначе ответ «навык не развит» неотличим от «ещё не
    отвечал». */
-.lrn-scale-cell--zero[aria-pressed="true"] { background: var(--blue); color: var(--surface); }
+.lrn-scale-cell--zero[aria-pressed="true"] { background: var(--blue-fill); color: var(--on-color); }
 .lrn-scale-cell:disabled { opacity: 0.5; cursor: default; }
 .lrn-scale-value { min-width: 24px; flex: 0 0 auto; text-align: center; font: 700 14px/1 var(--font-body); color: var(--ink); }
 /* Пояснения к краям шкалы («навык совсем не развит» / «уверенно применяет») —

@@ -516,14 +516,9 @@ def test_no_text_is_painted_with_bare_brand_purple():
 
 
 def _hero_stops(css: str, base: str) -> list[str]:
-    # Точки градиента шапки: `var(--x)` или `color-mix(in srgb, var(--x) N%, black)`.
-    tokens = _theme_tokens(base, ":root {")
+    # Точки градиента шапки — токены (`--blue-fill-strong` → `--blue-fill` с шага 11.2).
     gradient = re.search(r"linear-gradient\(135deg,(.*)\)\s*;", _css_rule(css, ".student-hero")).group(1)
-    stops = []
-    for token, pct in re.findall(r"var\(--([\w-]+)\)(?: (\d+)%, black)?", gradient):
-        share = int(pct) / 100 if pct else 1
-        stops.append("#" + "".join(f"{round(int(tokens[token][i:i + 2], 16) * share):02X}" for i in (1, 3, 5)))
-    return stops
+    return [_token_color(base, ":root {", token) for token in re.findall(r"var\(--([\w-]+)\)", gradient)]
 
 
 def test_student_hero_text_is_readable_everywhere():
@@ -547,3 +542,74 @@ def test_student_hero_text_is_readable_everywhere():
     button = _css_rule(css, ".student-hero .admin-upload-btn")
     assert "background: var(--on-color)" in button and "color: var(--blue-deep)" in button
     assert _contrast(_theme_tokens(base, ":root {")["blue-deep"], "#FFFFFF") >= 4.5
+
+
+def _token_color(css: str, opener: str, name: str) -> str:
+    # Как `_fill_color`, но второй цвет смеси может быть `black`, а токен — жить только в светлом блоке.
+    tokens = {**_theme_tokens(css, ":root {"), **_theme_tokens(css, opener)}
+    if name in tokens:
+        return tokens[name]
+    blocks = [css[css.index(o):] for o in dict.fromkeys((opener, ":root {"))]
+    for block in blocks:
+        found = re.search(r"--%s:\s*([^;]+);" % name, block[:block.index("\n}")])
+        if found:
+            value = found.group(1).strip()
+            break
+    plain = re.fullmatch(r"var\(--([\w-]+)\)", value)
+    if plain:
+        return _token_color(css, opener, plain.group(1))
+    a, pct, b = re.fullmatch(r"color-mix\(in srgb, var\(--([\w-]+)\) (\d+)%, (black|var\(--[\w-]+\))\)", value).groups()
+    first = _token_color(css, opener, a)
+    second = "#000000" if b == "black" else _token_color(css, opener, b[6:-1])
+    share = int(pct) / 100
+    return "#" + "".join(
+        f"{round(int(first[i:i + 2], 16) * share + int(second[i:i + 2], 16) * (1 - share)):02X}" for i in (1, 3, 5)
+    )
+
+
+@pytest.mark.parametrize("opener", [":root {", ':root[data-theme="dark"] {'])
+def test_brand_fill_under_white_text_is_readable(opener):
+    # 29.09.2026, 11.2: белое на заливке `--blue` — 3.96 («+ Загрузить», дни с работами,
+    # «Новый цикл», `.btn-blue`). Владелец: затемнить на ступень. Заливка — `--blue-fill`,
+    # наведение и выбор — `--blue-fill-strong`; оба от темы не зависят (`--blue-on-soft`
+    # в тёмной теме светлый — белое на нём не прочитать).
+    css = BASE_CSS.read_text(encoding="utf-8")
+    for name in ("blue-fill", "blue-fill-strong"):
+        assert _contrast("#FFFFFF", _token_color(css, opener, name)) >= 4.5, name
+    assert _token_color(css, opener, "blue-fill") != _token_color(css, opener, "blue-fill-strong"), "наведение не видно"
+
+
+# Карточка «следующий шаг» у ученика: белое на градиенте `#6F8BFF → --blue` (≈ 3.2) — другой вид,
+# чем у шапок, решение за владельцем (найдено на 11.2, 29.09.2026).
+WAITS_FOR_OWNER = {".next-card--blue"}
+
+
+def test_no_white_text_on_bare_brand_purple():
+    # Правило, у которого нет «потом»: белое (или цвет фона) на `--blue` — только через `--blue-fill`.
+    rule_re = re.compile(r"([^{}]+)\{([^{}]*)\}")
+    bare_fill = re.compile(r"(?<![-\w])background(?:-color)?\s*:\s*(?:var\(--blue\)|linear-gradient\([^;]*var\(--blue(?:-mid)?\))")
+    light_ink = re.compile(r"(?<![-\w])color\s*:\s*(?:#fff\b|#FFF\b|#ffffff|var\(--on-color\)|var\(--surface\))")
+    offenders = []
+    for path in [*APP.glob("static/**/*.css"), *APP.glob("templates/**/*.html"), *APP.glob("static/**/*.js")]:
+        text = path.read_text(encoding="utf-8")
+        for selector, body in rule_re.findall(text):
+            if bare_fill.search(body) and light_ink.search(body) and selector.strip() not in WAITS_FOR_OWNER:
+                offenders.append(f"{path.relative_to(APP)}: {selector.strip().splitlines()[-1]}")
+        for inline in re.findall(r"""style['"]?\s*,?\s*\n?\s*['"]([^'"]*color:#fff[^'"]*)""", text):
+            if "var(--blue" in inline and "var(--blue-fill" not in inline:
+                offenders.append(f"{path.relative_to(APP)}: встроенный стиль")
+    assert not offenders, "белое на --blue (3.96) — заливка var(--blue-fill):\n" + "\n".join(offenders)
+
+
+def test_brand_fill_hover_is_a_step_darker():
+    # Раньше наведение и выбор были `--blue-deep`; теперь это обычная заливка — иначе наведения не видно.
+    lib = CALENDAR_LIB.read_text(encoding="utf-8")
+    assert "background: var(--blue-fill-strong)" in _css_rule(lib, ".cal-day.has-works:hover, .cal-day.has-works.is-selected")
+    assert "background: var(--blue-fill-strong)" in _css_rule(_styles(), ".mock-day.has-works:hover, .mock-day.has-works.is-selected")
+    stale = re.compile(r"(:hover|is-selected)[^{]*\{[^}]*background:\s*var\(--blue-deep")
+    offenders = [
+        str(path.relative_to(APP))
+        for path in [*APP.glob("static/**/*.css"), *APP.glob("templates/**/*.html")]
+        if stale.search(path.read_text(encoding="utf-8"))
+    ]
+    assert not offenders, "наведение --blue-deep совпадает с заливкой --blue-fill:\n" + "\n".join(offenders)

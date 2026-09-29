@@ -55,13 +55,13 @@
 .profile-avatar-upload {
     position: absolute; right: -2px; bottom: -2px;
     width: 22px; height: 22px; border-radius: 50%;
-    background: var(--blue); color: #fff;
+    background: var(--blue-fill); color: #fff;
     border: 2px solid #1E2D6B;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer;
     transition: background var(--duration-fast);
 }
-.profile-avatar-upload:hover { background: var(--blue-deep); }
+.profile-avatar-upload:hover { background: var(--blue-fill-strong); }
 .profile-avatar-input {
     position: absolute; inset: 0;
     opacity: 0; cursor: pointer;
@@ -346,7 +346,7 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
 }
 .next-card--blue .next-card-cta:hover { background: rgba(255,255,255,0.26); opacity: 1; }
 .next-card--neutral .next-card-cta {
-    background: var(--blue); color: #fff; box-shadow: var(--sh-blue);
+    background: var(--blue-fill); color: #fff; box-shadow: var(--sh-blue);
 }
 .next-card--neutral .next-card-cta:hover { filter: brightness(1.05); opacity: 1; }
 
