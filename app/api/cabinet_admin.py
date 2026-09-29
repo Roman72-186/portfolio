@@ -14,6 +14,7 @@ from app.services.tz import msk_midnight
 from app.services.feature_periods import get_active_period
 from app.services.notify import notify
 from app.services.point_a import maybe_notify_point_a_level
+from app.services.student_access import get_student_for_staff_access
 from app.services.staff_dashboard import (
     build_tariff_registration_csv,
     get_tariff_registration_stats,
@@ -242,6 +243,15 @@ def admin_score_work(
     work = db.query(Work).filter(Work.id == work_id).first()
     if not work:
         raise HTTPException(status_code=404, detail="Работа не найдена")
+    # Архивный и удалённый ученик закрыты на запись (AGENTS.md, правило 8).
+    get_student_for_staff_access(
+        db,
+        user,
+        work.user_id,
+        active_only=True,
+        not_found_detail="Ученик не найден",
+        forbidden_detail="Нет доступа к этому ученику",
+    )
 
     if redirect_to and (not redirect_to.startswith("/") or redirect_to.startswith("//")):
         redirect_to = ""

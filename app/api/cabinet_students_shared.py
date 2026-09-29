@@ -925,6 +925,7 @@ def move_retake_to_subject(
         raise HTTPException(status_code=403, detail="Доступно только суперадмину")
     if subject not in MOCK_SUBJECTS:
         raise HTTPException(status_code=400, detail="Неверный предмет")
+    _check_access(student_id, user, db)
 
     work = db.query(Work).filter(
         Work.id == work_id,
@@ -957,16 +958,13 @@ def score_work(
 ):
     """Решение владельца 01.09.2026: куратор тоже ставит балл (не только rank ≥4).
 
-    Не через `get_student_for_staff_access` — её owner-проверка срабатывает
-    только при `role_rank == 2`, а `require_curator` пропускает и ранг 3
-    (модератор). Владелец про модератора не говорил — тот же приём, что уже
-    есть в `student_review.py::_check_student_access`: показать меньше
-    безопаснее, чем чужое.
+    `_check_access` пускает куратора только к своим ученикам (полный доступ —
+    с ранга 4) и закрывает архивного и удалённого ученика на запись. Модератор
+    сюда не доходит: его запись отсекает белый список `rbac.py`, а по рангу
+    (`effective_role_rank`) он равен ГП — расширят ему список на запись, и
+    он получит всех учеников.
     """
-    if user["role_rank"] < 4:  # тот же порог, что review_aggregate.py::FULL_ACCESS_RANK
-        student = db.query(User).filter(User.id == student_id).first()
-        if not student or student.curator_id != user["user_id"]:
-            raise HTTPException(status_code=403, detail="Это не ваш студент")
+    _check_access(student_id, user, db)
     work = db.query(Work).filter(Work.id == work_id, Work.user_id == student_id).first()
     if not work:
         raise HTTPException(status_code=404, detail="Работа не найдена")
@@ -1014,6 +1012,7 @@ def send_mock_exam_to_retake(
     score: float = Form(...),
     comment: str = Form(...),
 ):
+    _check_access(student_id, user, db)
     work = db.query(Work).filter(
         Work.id == work_id,
         Work.user_id == student_id,
@@ -1067,6 +1066,7 @@ def send_mock_exam_to_revision(
 ):
     if user["role_rank"] < 4:
         raise HTTPException(status_code=403, detail="Доступно только админу и суперадмину")
+    _check_access(student_id, user, db)
 
     work = db.query(Work).filter(
         Work.id == work_id,
@@ -1158,6 +1158,7 @@ def unlock_mock_exam(
 ):
     if subject not in MOCK_SUBJECTS:
         raise HTTPException(status_code=400, detail="Неверный предмет")
+    _check_access(student_id, user, db)
 
     lock = db.query(MockExamLock).filter(
         MockExamLock.user_id == student_id,
@@ -1657,6 +1658,7 @@ def delete_work(
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
+    _check_access(student_id, user, db)
     work = db.query(Work).filter(Work.id == work_id, Work.user_id == student_id).first()
     if not work:
         raise HTTPException(status_code=404, detail="Работа не найдена")

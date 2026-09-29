@@ -504,6 +504,7 @@ def unlock_mock_exam(
         db,
         user,
         student_id,
+        active_only=True,
         not_found_status_code=403,
         not_found_detail="Нет доступа к этому студенту",
         forbidden_detail="Нет доступа к этому студенту",
@@ -539,6 +540,15 @@ def curator_score_work(
     work = db.query(Work).filter(Work.id == work_id).first()
     if not work:
         raise HTTPException(status_code=404, detail="Работа не найдена")
+    # Архивный и удалённый ученик закрыты на запись (AGENTS.md, правило 8).
+    get_student_for_staff_access(
+        db,
+        user,
+        work.user_id,
+        active_only=True,
+        not_found_detail="Ученик не найден",
+        forbidden_detail="Нет доступа к этому ученику",
+    )
 
     if redirect_to and (not redirect_to.startswith("/") or redirect_to.startswith("//")):
         redirect_to = ""
