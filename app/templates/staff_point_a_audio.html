@@ -72,10 +72,12 @@
 (function () {
     // Ключ CSRF из разметки старится вместе со страницей, а голосовое пишут
     // минутами, иногда после перезахода в другой вкладке — перед отправкой
-    // берём свежий (`static/js/csrf.js`, правило в AGENTS.md). Компонент
-    // записи держит отправку, пока запись идёт: его обработчик стоит раньше.
+    // берём свежий (`static/js/csrf.js`, правило в AGENTS.md). Пока идёт
+    // запись, отправку держит компонент записи; проверка `data-mrf-busy` здесь
+    // своя, чтобы не зависеть от того, чей обработчик браузер вызовет первым.
     document.querySelectorAll('[data-point-a-audio-form]').forEach(function (form) {
         form.addEventListener('submit', function (event) {
+            if (form.querySelector('[data-mrf-busy]')) return;
             if (event.defaultPrevented || !window.csrfFresh) return;
             event.preventDefault();
             var button = form.querySelector('button[type="submit"]');
