@@ -15,8 +15,9 @@ Apparchi — SaaS-портфолио для художественной шко�
 - **Ключевые домены** (у каждого свои модели/сервис/роуты, искать по общему имени): task blocks — универсальный конструктор заданий учебной программы (`app/services/task_blocks.py`, `app/models/task_block.py`); tracker — задачи и цели личного трекера ученика; exam_cycle/mock_exam — циклы пробников, включая гостевой режим для незарегистрированных участников (`guest_exam.py`); feedback — диалоги обратной связи по циклам и работам; homework/homework_feedback — домашние задания и переписка по ним; curator_report — видео-отчёты кураторов; point_a — входной и повторный замер уровня ученика.
 - **Форматированный текст**: разметка `**жирный**`/`*курсив*`/`- список`/`[текст](url)` рендерится фильтром `rich_text`/`ticket_desc` (`app/tmpl.py::format_rich_text`). На вводе поля с `data-rich-text` получают нативный WYSIWYG поверх скрытой textarea (`app/static/js/rich-text-field.js`) — при добавлении нового текстового поля, которое отдаётся читателю через `format_rich_text`, добавь `data-rich-text` и там.
 - **Фронтенд без сборщика**: чистый Jinja2 + vanilla JS, npm/бандлера нет. Каждый шаблон сам подключает нужные `<link>`/`<script src="...?v=N">` — версия в query поднимается при правке файла, общий JS-модуль подключается в каждый шаблон, где он нужен, а не глобально в `base.html`.
+- **Общий JS страниц — Jinja-партиалы `*_js.html` без своего `<script>`**: `partials/program_blocks_editor_js.html`, `program_take_blocks_js.html`, `program_settings_panel_js.html`, `program_item_deadline_fields_js.html` подключаются `{% include %}` внутри уже открытого `<script>` страницы и делят с ней контекст Jinja (что странице передать — в шапке партиала). Отсюда два следствия: вложенный `<script>` в партиале закрыл бы внешний тег, а функцию, которая есть в двух экранах, выносят в такой партиал, а не копируют. Скрипт страницы стерегут тесты, которые рендерят её и требуют, чтобы каждая вызванная функция была объявлена, а код разбирался `node --check` (`tests/test_program_day_script.py`, `tests/test_routes_program_cycle_items.py`); зелёный сервер при этом не значит рабочие кнопки — правило 11 в `../AGENTS.md`.
 - **Reuse-храповик**: `tests/test_reuse_ratchet.py` не даёт расти инлайновому CSS в шаблонах, цветам числом мимо токенов `base.css` и переопределениям общих классов — падает, если добавить `<style>` в шаблон или зашить цвет вместо `var(--...)`. `python scripts/reuse_check.py` показывает то же человеческим текстом, `--update` фиксирует уменьшение как новый потолок.
-- **Тесты изолированы от базы**: `tests/conftest.py` подменяет БД на SQLite in-memory до импорта `app.main`, поэтому Postgres не нужен. Но `app/main.py` при импорте требует `SESSION_SECRET`: без `.env` (чистый клон, `git worktree`) набор падает с `RuntimeError` — запускать `SESSION_SECRET=<любая строка> pytest ...`.
+- **Тесты изолированы от базы**: `tests/conftest.py` подменяет БД на SQLite in-memory до импорта `app.main`, поэтому Postgres не нужен. Но `app/main.py` при импорте требует `SESSION_SECRET`: без `.env` (чистый клон, `git worktree`) набор падает с `RuntimeError` — запускать `SESSION_SECRET=<любая строка> pytest ...`. Тот же `git worktree` на `HEAD` плюс копия своих файлов — способ проверить свою правку, когда незакоммиченный код параллельной сессии в основной папке роняет импорт (прецедент 29.09.2026: `NameError` в `video_topics.py`). `tests/test_routes_cycle_upload.py::test_closed_cycle_final_appears_in_portfolio` красный и на чистом `0eba62a` — не принимать на свой счёт.
 - **n8n выключен** с 13.07.2026 (`settings.n8n_enabled=False`, на проде `N8N_ENABLED` не задан): фото пишутся только в S3 (`s3_only`), Google Drive не читается, `/auth/internal/issue-link` отвечает 503. Ветки `if settings.n8n_enabled` в коде — не мёртвый код, а выключатель; включать только по решению владельца.
 
 ## Quick commands (run from this directory)
@@ -26,7 +27,7 @@ pytest tests/test_routes_auth.py::test_name     # single test
 pytest tests/test_reuse_ratchet.py              # reuse-храповик
 pytest                                          # all tests (SQLite in-memory) — только по команде владельца /itog
 
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload   # local run
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload   # local run (нужны .env + Postgres)
 
 alembic upgrade head                            # apply migrations
 alembic revision --autogenerate -m "msg"        # new migration
@@ -36,6 +37,10 @@ python scripts/deploy.py app/api/video.py app/services/video_catalog.py  # то�
 python scripts/deploy.py --sync-env                 # + залить окружение из .env.prod
 python scripts/deploy.py --status                   # версия на проде + сверка всех файлов
 ```
+
+Поштучный деплой отказывает целиком, если в списке есть файл из `tests/`, — файлы коммита передавать без них: `python scripts/deploy.py $(git show --name-only --format= <коммит> | grep -v '^tests/')`.
+
+**Проверка глазами без Postgres** — стенд на файловой SQLite, в репозитории его нет (завести `scripts/phone_smoke.py` — решение владельца). Рецепт — `../NEXT-CHAT-PROMPT-АУДИТ-УЧЕНИКИ.md`, раздел «Проверка шага»: подменить `engine`/`SessionLocal`, повесить `_attach_utc` как в `tests/conftest.py`, заглушить клиентов Telegram, снять CSRF через `dependency_overrides`, засеять роли и сессию `sess-sa`, поднять `uvicorn` и ходить Playwright с этой кукой. Порт брать свой: 8765 бывает занят стендом соседней сессии.
 
 Линтера и проверки типов в проекте нет: ни `ruff`/`flake8`, ни `mypy` не настроены и не в зависимостях. Единственная автоматическая проверка кроме `pytest` — reuse-храповик выше. Не искать несуществующую команду линта.
 
