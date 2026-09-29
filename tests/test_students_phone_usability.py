@@ -579,9 +579,9 @@ def test_brand_fill_under_white_text_is_readable(opener):
     assert _token_color(css, opener, "blue-fill") != _token_color(css, opener, "blue-fill-strong"), "наведение не видно"
 
 
-# Карточка «следующий шаг» у ученика: белое на градиенте `#6F8BFF → --blue` (≈ 3.2) — другой вид,
-# чем у шапок, решение за владельцем (найдено на 11.2, 29.09.2026).
-WAITS_FOR_OWNER = {".next-card--blue"}
+# Исключения с причиной. Пусто: карточка «следующий шаг» (`#6F8BFF → --blue`, ≈ 3.2) ждала владельца
+# с 11.2 и переведена на градиент шапок в 11.2б (владелец 29.09.2026 одобрил по снимкам).
+WAITS_FOR_OWNER: set[str] = set()
 
 
 def test_no_white_text_on_bare_brand_purple():
@@ -619,3 +619,25 @@ def test_brand_fill_hover_is_a_step_darker():
         if stale.search(path.read_text(encoding="utf-8"))
     ]
     assert not offenders, "наведение --blue-deep совпадает с заливкой --blue-fill:\n" + "\n".join(offenders)
+
+
+def test_student_heroes_use_the_fill_gradient():
+    # 29.09.2026, 11.2б: шесть шапок ученика шли градиентом `#BF5AF2 → #7B1FA2` числом — подписи на светлом
+    # крае 2.7–3.8, заголовок «Обратная связь» из общего h1 был чёрным. Градиент шапок — только токенами.
+    gradient = "linear-gradient(160deg, var(--blue-fill) 0%, var(--blue-fill-strong) 100%)"
+    css = APP / "static" / "css"
+    for file, selector in (
+        ("cycle_ios.css", ".ios-cycle .cyc-hero"), ("personal_ios.css", ".ios-personal .prs-hero"),
+        ("profile_hero.css", ".profile-hero"), ("profile_ios.css", ".ios-profile .prf-top"),
+        ("tracker.css", ".ios-learning .lrn-hero"), ("feedback_ios.css", ".ios-feedback .dlg-close-zone"),
+    ):
+        assert gradient in _css_rule((css / file).read_text(encoding="utf-8"), selector), selector
+    assert gradient in _css_rule((APP / "templates" / "cabinet_student.html").read_text(encoding="utf-8"), ".next-card--blue")
+    assert "color: var(--on-color)" in _css_rule((css / "cycle_ios.css").read_text(encoding="utf-8"), ".ios-cycle .cyc-hero h1")
+    light_purple = re.compile(r"gradient\([^;]*#(?:BF5AF2|6F8BFF|C084FC)", re.IGNORECASE)
+    offenders = [
+        str(path.relative_to(APP))
+        for path in [*APP.glob("static/**/*.css"), *APP.glob("templates/**/*.html")]
+        if light_purple.search(path.read_text(encoding="utf-8"))
+    ]
+    assert not offenders, "светлый фиолетовый край градиента под белым текстом:\n" + "\n".join(offenders)

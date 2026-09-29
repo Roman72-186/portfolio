@@ -36,8 +36,10 @@
 .ios-profile.prf-page { max-width: 560px; margin: 0 auto; padding: 22px 18px 40px; }
 
 /* ── Шапка — тот же градиент, что у .prs-hero/.lrn-hero ── */
+/* Светлый край #BF5AF2 топил подписи: 2.7–3.8 (аудит 11.2б, замер по пикселям фона). Градиент — токены
+   заливки, белое ≥ 5.38; от темы не зависит. */
 .ios-profile .prf-top {
-    background: linear-gradient(160deg, #BF5AF2 0%, #7B1FA2 100%);
+    background: linear-gradient(160deg, var(--blue-fill) 0%, var(--blue-fill-strong) 100%);
     border-radius: 26px;
     padding: 20px 22px 44px;
     margin-bottom: 12px;
@@ -74,7 +76,7 @@
 }
 .ios-profile .prf-top p {
     position: relative; z-index: 1;
-    margin: 0; font: 400 14px/1.4 var(--ios-font); color: rgba(255,255,255,0.82);
+    margin: 0; font: 400 14px/1.4 var(--ios-font); color: rgba(255,255,255,0.92);
 }
 
 /* ── Аватар — наполовину поверх нижнего края шапки ── */

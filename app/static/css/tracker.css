@@ -552,8 +552,10 @@
    для визуальной переклички с «Личным трекером», хотя контент другой
    (название/описание недели, не профиль ученика — владелец 21.08.2026
    решил держать профиль-шапку только на трекере). ── */
+/* Светлый край #BF5AF2 топил подписи: 2.7–3.8 (аудит 11.2б, замер по пикселям фона). Градиент — токены
+   заливки, белое ≥ 5.38; от темы не зависит. */
 .ios-learning .lrn-hero {
-    background: linear-gradient(160deg, #BF5AF2 0%, #7B1FA2 100%);
+    background: linear-gradient(160deg, var(--blue-fill) 0%, var(--blue-fill-strong) 100%);
     border-radius: 26px;
     padding: 20px 22px 24px;
     margin-bottom: 16px;
@@ -583,7 +585,7 @@
 }
 .ios-learning .lrn-hero p {
     position: relative; z-index: 1;
-    font: 400 14px/1.4 var(--ios-font); color: rgba(255,255,255,0.82); opacity: 1;
+    font: 400 14px/1.4 var(--ios-font); color: rgba(255,255,255,0.92); opacity: 1;
 }
 
 .ios-learning .lrn-empty {

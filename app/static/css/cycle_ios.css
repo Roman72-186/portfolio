@@ -45,18 +45,21 @@
 .ios-cycle.cyc-page { max-width: 640px; margin: 0 auto; padding: 22px 18px 110px; }
 
 /* ── Шапка — тот же градиент, что у .lrn-hero/.dlg-close-zone. ── */
+/* Светлый край #BF5AF2 топил подписи: 2.7–3.8 (аудит 11.2б, замер по пикселям фона). Градиент — токены
+   заливки, белое ≥ 5.38; от темы не зависит. */
 .ios-cycle .cyc-hero {
-    background: linear-gradient(160deg, #BF5AF2 0%, #7B1FA2 100%);
+    background: linear-gradient(160deg, var(--blue-fill) 0%, var(--blue-fill-strong) 100%);
     color: #fff; border-radius: 20px; padding: 20px 22px;
     margin-bottom: 16px; box-shadow: 0 14px 32px rgba(123,31,162,0.24);
 }
 .ios-cycle .cyc-hero h1 {
+    color: var(--on-color);
     font: 800 22px/1.2 var(--ios-font); letter-spacing: -0.3px; margin: 0 0 4px;
 }
 .ios-cycle .cyc-hero p { margin: 0; opacity: 0.85; font: 400 13px/1.4 var(--ios-font); }
 .ios-cycle .cyc-hero .badge {
     display: inline-block; margin-top: 10px;
-    background: rgba(255,255,255,0.16); color: #fff;
+    background: color-mix(in srgb, black 14%, transparent); color: #fff;
     border-radius: 999px; padding: 3px 12px;
     font: 700 11px/1.4 var(--ios-font); letter-spacing: 0.02em;
 }

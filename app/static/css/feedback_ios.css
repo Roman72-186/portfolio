@@ -266,22 +266,22 @@
    что у .prs-hero/.lrn-hero. ── */
 .ios-feedback .dlg-close-zone {
     margin-top: 6px; border: none; border-radius: 20px;
-    background: linear-gradient(160deg, #BF5AF2 0%, #7B1FA2 100%);
+    background: linear-gradient(160deg, var(--blue-fill) 0%, var(--blue-fill-strong) 100%);
     box-shadow: 0 14px 32px rgba(123,31,162,0.24);
     overflow: hidden;
 }
 .ios-feedback .dlg-close-zone .dlg-score { border-top: none; background: transparent; }
-.ios-feedback .dlg-close-zone .dlg-score-label { color: rgba(255,255,255,0.78); }
-.ios-feedback .dlg-close-zone .dlg-score-hint { color: rgba(255,255,255,0.75); }
+.ios-feedback .dlg-close-zone .dlg-score-label { color: rgba(255,255,255,0.92); }
+.ios-feedback .dlg-close-zone .dlg-score-hint { color: rgba(255,255,255,0.92); }
 .ios-feedback .dlg-close-zone .dlg-score-current { color: #fff; }
-.ios-feedback .dlg-close-zone .dlg-score-btn { background: #fff; color: var(--ios-blue); }
+.ios-feedback .dlg-close-zone .dlg-score-btn { background: #fff; color: var(--blue-fill); }
 .ios-feedback .dlg-close-zone .dlg-score-btn:hover { background: #fff; opacity: 0.92; }
-.ios-feedback .dlg-close-zone .dlg-score-edit { background: rgba(255,255,255,0.16); color: #fff; }
-.ios-feedback .dlg-close-zone .dlg-score-edit:hover { background: rgba(255,255,255,0.26); color: #fff; }
+.ios-feedback .dlg-close-zone .dlg-score-edit { background: color-mix(in srgb, black 14%, transparent); color: #fff; }
+.ios-feedback .dlg-close-zone .dlg-score-edit:hover { background: color-mix(in srgb, black 24%, transparent); color: #fff; }
 .ios-feedback .dlg-close-zone .dlg-score input[type=number],
 .ios-feedback .dlg-close-zone .dlg-score textarea { background: rgba(255,255,255,0.92); color: var(--ios-label); }
 .ios-feedback .dlg-close-zone .dlg-score input[type=number]:focus,
 .ios-feedback .dlg-close-zone .dlg-score textarea:focus { outline: 2px solid #fff; }
-.ios-feedback .dlg-close-zone .dlg-score-current-comment { background: rgba(255,255,255,0.14); border: none; color: #fff; }
+.ios-feedback .dlg-close-zone .dlg-score-current-comment { background: color-mix(in srgb, black 14%, transparent); border: none; color: #fff; }
 .ios-feedback .dlg-close-zone .dlg-score-msg.ok { color: #fff; }
 .ios-feedback .dlg-close-zone .dlg-score-msg.err { color: #FFD9D9; }

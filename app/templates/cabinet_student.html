@@ -70,7 +70,7 @@
 .profile-hero-info { flex: 1 1 auto; min-width: 0; }
 .profile-role-tag {
     display: inline-flex; align-items: center; gap: 5px;
-    background: rgba(255,255,255,0.15);
+    background: color-mix(in srgb, black 14%, transparent);
     border: 1px solid rgba(255,255,255,0.2);
     border-radius: 20px;
     padding: 3px 12px;
@@ -299,7 +299,7 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
     a.next-card:hover { transform: none; }
 }
 .next-card--blue {
-    background: linear-gradient(165deg, #6F8BFF 0%, var(--blue) 100%);
+    background: linear-gradient(160deg, var(--blue-fill) 0%, var(--blue-fill-strong) 100%);
     box-shadow: var(--sh-blue);
     color: #fff;
 }
@@ -340,11 +340,11 @@ a.next-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px;
     transition: background var(--duration-fast) var(--ease-out), filter var(--duration-fast) var(--ease-out);
 }
 .next-card--blue .next-card-cta {
-    background: rgba(255,255,255,0.16);
+    background: color-mix(in srgb, black 14%, transparent);
     border: 1px solid rgba(255,255,255,0.28);
     color: #fff;
 }
-.next-card--blue .next-card-cta:hover { background: rgba(255,255,255,0.26); opacity: 1; }
+.next-card--blue .next-card-cta:hover { background: color-mix(in srgb, black 24%, transparent); opacity: 1; }
 .next-card--neutral .next-card-cta {
     background: var(--blue-fill); color: #fff; box-shadow: var(--sh-blue);
 }

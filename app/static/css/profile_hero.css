@@ -22,7 +22,7 @@
 
 .profile-hero {
     font-family: var(--ios-font);
-    background: linear-gradient(160deg, #BF5AF2 0%, #7B1FA2 100%);
+    background: linear-gradient(160deg, var(--blue-fill) 0%, var(--blue-fill-strong) 100%);
     border-radius: 26px;
     padding: 18px 18px 20px;
     margin-bottom: 16px;
@@ -130,7 +130,7 @@
 .profile-scores {
     flex: 0 0 auto;
     align-self: flex-start;
-    background: rgba(255,255,255,0.14);
+    background: color-mix(in srgb, black 14%, transparent);
     backdrop-filter: blur(12px) saturate(160%);
     -webkit-backdrop-filter: blur(12px) saturate(160%);
     border: 0.5px solid rgba(255,255,255,0.3);
@@ -147,7 +147,7 @@
     padding: 6px 8px 5px;
 }
 .profile-score-label {
-    font-size: 9px; font-weight: 600; color: rgba(255,255,255,0.72);
+    font-size: 9px; font-weight: 600; color: var(--on-color);
     letter-spacing: 0.02em;
 }
 .profile-score-value {
