@@ -54,6 +54,14 @@ from app.services.user_management import open_program_from_now
 
 logger = logging.getLogger(__name__)
 
+# Хеш, с которым сверяется пароль, когда логина нет или у аккаунта нет пароля
+# (код-ревью 28.09.2026, P2 № 16): без bcrypt такой отказ приходил на сотни
+# миллисекунд быстрее, и существующие логины сотрудников находились по
+# секундомеру. Та же `gensalt()` по умолчанию, что у настоящих паролей
+# (`cabinet_superadmin.py::_hash_password`), — значит, та же цена сверки.
+# Считается один раз при импорте, а не на каждый запрос.
+_DUMMY_PASSWORD_HASH = _bcrypt_lib.hashpw(b"no-such-staff-login", _bcrypt_lib.gensalt())
+
 router = APIRouter()
 
 # PKCE fallback cookie signer. Primary PKCE storage lives in Redis.
@@ -1359,15 +1367,14 @@ def staff_login_submit(
         func.lower(User.staff_login) == login_clean,
     ).first()
 
-    if not user or not user.password_hash:
-        return _render_staff_login(request, "Неверный логин или пароль")
-
+    has_password = bool(user and user.password_hash)
+    stored_hash = user.password_hash.encode() if has_password else _DUMMY_PASSWORD_HASH
     try:
-        pw_ok = _bcrypt_lib.checkpw(password.encode(), user.password_hash.encode())
+        pw_ok = _bcrypt_lib.checkpw(password.encode(), stored_hash)
     except ValueError:
         # password_hash is not a valid bcrypt hash — treat as wrong password
         pw_ok = False
-    if not pw_ok:
+    if not has_password or not pw_ok:
         return _render_staff_login(request, "Неверный логин или пароль")
 
     if not user.is_active:

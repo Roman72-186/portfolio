@@ -130,3 +130,35 @@ def test_login_post_very_long_input_no_crash(client):
                        data={"login": "x" * 1000, "password": "y" * 1000},
                        follow_redirects=False)
     assert resp.status_code in (200, 422)
+
+
+# ---------------------------------------------------------------------------
+# Код-ревью 28.09.2026, P2 № 16: время ответа не выдаёт, есть ли логин
+# ---------------------------------------------------------------------------
+# Меряется не время (флаки), а то, что bcrypt работает на каждой ветке отказа:
+# без этого несуществующий логин отвечал без checkpw — на сотни миллисекунд
+# быстрее, и логины сотрудников перебирались по секундомеру.
+
+from unittest.mock import patch
+
+
+def _count_checkpw():
+    return patch("bcrypt.checkpw", wraps=bcrypt.checkpw)
+
+
+def test_unknown_login_still_runs_bcrypt(client):
+    with _count_checkpw() as checkpw:
+        resp = client.post("/login", data={"login": "nobody-here", "password": "x"})
+    assert resp.status_code == 200
+    assert "Неверный логин или пароль" in resp.text
+    assert checkpw.call_count == 1
+
+
+def test_login_without_password_hash_still_runs_bcrypt(client, db, user_factory):
+    user = _make_staff_user(db, user_factory)
+    user.password_hash = None
+    db.commit()
+    with _count_checkpw() as checkpw:
+        resp = client.post("/login", data={"login": "testcurator", "password": "x"})
+    assert "Неверный логин или пароль" in resp.text
+    assert checkpw.call_count == 1
