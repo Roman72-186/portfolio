@@ -43,6 +43,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.cache import invalidate_unread
+from app.constants import REPORT_EXCLUDED_USER_IDS
 from app.models.homework_submission import HomeworkSubmission
 from app.models.learning_topic import LearningTopic
 from app.models.notification import Notification
@@ -150,6 +151,11 @@ def _students(db: Session, now: datetime) -> dict[int, User]:
             User.deleted_at.is_(None),
             User.archived_at.is_(None),
             or_(User.access_until.is_(None), User.access_until > now),
+            # Служебные аккаунты (владелец 29.09.2026) — к «службе заботы»
+            # привязан рабочий Telegram Лизы, и «Новое задание» от каждого
+            # цикла шло бы ей как ученице. Ответы преподавателя и оценки —
+            # не отсюда, они приходят им как раньше.
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
         .all()
     )
@@ -265,9 +271,15 @@ def _collect_new_content(
             told = told_at.get((uid, task_id))
             if task_id in new_tasks and told is None:
                 # Одно уведомление на задание: ролики внутри идут в заголовок.
+                # Только уже открытые — ролик с `opens_at` завтра придёт завтра
+                # своим «Новое видео», а «Новый видеоурок» сегодня звал бы
+                # смотреть то, что ещё закрыто.
                 items[uid].append(_Item(
                     kind=KIND_NEW_TASK, ref=str(task_id), title=task.title,
-                    has_video=task.kind == ITEM_VIDEO or any(_has_video(b) for b in visible),
+                    has_video=task.kind == ITEM_VIDEO or any(
+                        _has_video(b) and not (_utc(b.opens_at) and _utc(b.opens_at) > now)
+                        for b in visible
+                    ),
                 ))
                 continue
             visible_ids = {b.id for b in visible}

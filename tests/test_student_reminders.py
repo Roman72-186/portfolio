@@ -137,6 +137,45 @@ def test_video_announced_with_its_task_is_not_repeated(db, user_factory):
     assert [n.title for n in _notes(db, student)] == ["Новый видеоурок: «Светотень»"]
 
 
+def test_video_opening_tomorrow_comes_tomorrow(db, user_factory):
+    """Видео загружено, но открывается завтра: сегодня — «Новое задание»,
+    видео — отдельным сообщением в момент открытия, не раньше."""
+    owner = _owner(user_factory)
+    student = user_factory(vk_id=800_015, name="Оля")
+    topic = _topic(db, owner, opens_at=NOW - timedelta(days=1))
+    task = _task(db, owner, topic, title="Разбор")
+    opens = datetime.now(timezone.utc) + timedelta(days=1)
+    _block(db, task, "video", video_id=_video(db).id, opens_at=_naive(opens))
+
+    _run(db)
+    assert [n.title for n in _notes(db, student)] == ["Новое задание: «Разбор»"]
+
+    _run(db, now=opens - timedelta(minutes=10))
+    assert len(_notes(db, student)) == 1
+
+    _run(db, now=opens + timedelta(minutes=10))
+    assert [n.title for n in _notes(db, student)] == [
+        "Новое задание: «Разбор»",
+        "Новое видео в задании «Разбор»",
+    ]
+
+
+def test_task_opening_tomorrow_comes_tomorrow_as_video_lesson(db, user_factory):
+    """Всё задание с видео открывается завтра — одно сообщение завтра."""
+    owner = _owner(user_factory)
+    student = user_factory(vk_id=800_016, name="Паша")
+    topic = _topic(db, owner, opens_at=NOW - timedelta(days=1))
+    opens = datetime.now(timezone.utc) + timedelta(days=1)
+    task = _task(db, owner, topic, title="Лекция", starts_at=_naive(opens))
+    _block(db, task, "video", video_id=_video(db).id)
+
+    _run(db)
+    assert _notes(db, student) == []
+
+    _run(db, now=opens + timedelta(minutes=10))
+    assert [n.title for n in _notes(db, student)] == ["Новый видеоурок: «Лекция»"]
+
+
 def test_old_task_is_silent(db, user_factory):
     """Первый запуск не заваливает учеников тем, что открылось давно."""
     owner = _owner(user_factory)
@@ -265,6 +304,24 @@ def test_archived_student_is_silent(db, user_factory):
 
     assert _notes(db, student) == []
 
+
+
+def test_service_accounts_get_no_scheduled_reminders(db, user_factory, monkeypatch):
+    """Служебные аккаунты (владелец 29.09.2026): к «службе заботы» привязан
+    рабочий Telegram Лизы — ни новых заданий, ни конца доступа ей."""
+    import app.services.student_reminders as reminders_module
+
+    owner = _owner(user_factory)
+    care = user_factory(vk_id=800_017, name="служба заботы")
+    care.access_until = _naive(NOW + timedelta(days=2))
+    db.commit()
+    monkeypatch.setattr(reminders_module, "REPORT_EXCLUDED_USER_IDS", frozenset({care.id}))
+    topic = _topic(db, owner, opens_at=NOW - timedelta(days=1))
+    _task(db, owner, topic)
+
+    _run(db)
+
+    assert _notes(db, care) == []
 
 # ── Срок сдачи ──────────────────────────────────────────────────────────────
 

@@ -13,9 +13,10 @@ import os
 from datetime import datetime, timezone, timedelta, date
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from sqlalchemy import or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.constants import REPORT_EXCLUDED_USER_IDS
+from app.constants import BIRTHDAY_EXTRA_RECIPIENT_IDS, REPORT_EXCLUDED_USER_IDS
 from app.cache import invalidate_unread
 from app.config import settings
 from app.db.database import SessionLocal
@@ -507,8 +508,10 @@ def _run_birthday_check() -> None:
     Адресат — ГП, а не куратор ученика (владелец 29.09.2026: «не куратор,
     а ГП»). Ученик к конкретному ГП не привязан, поэтому уходит каждому
     активному ГП. Только ранг 4: суперадмин и модератор (наблюдатель) —
-    не те, кто готовит подарок. Куратор больше не нужен, так что ученик
-    без куратора не выпадает, как выпадал до 29.09.2026.
+    не те, кто готовит подарок. Плюс явный список
+    `BIRTHDAY_EXTRA_RECIPIENT_IDS` (`app/constants.py`) — там «служба
+    заботы». Куратор больше не нужен, так что ученик без куратора не
+    выпадает, как выпадал до 29.09.2026.
 
     Идемпотентность — как у _run_notification_check выше (не «ровно на 7-й
     день», а «уже в пределах недели и в этом году ещё не слали»):
@@ -526,14 +529,19 @@ def _run_birthday_check() -> None:
         if not student_role or not chief_role:
             return
 
-        chief_teacher_ids = [
+        # Все активные ГП плюс явный список `BIRTHDAY_EXTRA_RECIPIENT_IDS`
+        # («служба заботы» — к ней привязан Telegram Лизы, владелец 29.09.2026).
+        recipient_ids = [
             uid for (uid,) in db.query(User.id).filter(
-                User.role_id == chief_role.id,
+                or_(
+                    User.role_id == chief_role.id,
+                    User.id.in_(BIRTHDAY_EXTRA_RECIPIENT_IDS),
+                ),
                 User.is_active == True,  # noqa: E712
                 User.deleted_at.is_(None),
-            ).all()
+            ).order_by(User.id).all()
         ]
-        if not chief_teacher_ids:
+        if not recipient_ids:
             # Флаг не ставим: как только ГП появится, напоминание уйдёт ему,
             # а не потеряется молча.
             logger.info("Birthday check: нет ни одного активного ГП, слать некому")
@@ -576,9 +584,9 @@ def _run_birthday_check() -> None:
             else:
                 when_text = f"через {days_left} дн."
 
-            for chief_id in chief_teacher_ids:
+            for recipient_id in recipient_ids:
                 notif = Notification(
-                    user_id=chief_id,
+                    user_id=recipient_id,
                     title=f"День рождения — {student.name}",
                     text=f"{when_text}, {upcoming.strftime('%d.%m')}. Успейте подготовить подарок.",
                 )
@@ -589,11 +597,11 @@ def _run_birthday_check() -> None:
 
         db.commit()
         if sent:
-            for chief_id in chief_teacher_ids:
-                invalidate_unread(chief_id)
+            for recipient_id in recipient_ids:
+                invalidate_unread(recipient_id)
             logger.info(
-                "Birthday check: %d именинников, напоминания ушли %d ГП",
-                sent, len(chief_teacher_ids),
+                "Birthday check: %d именинников, напоминания ушли %d получателям",
+                sent, len(recipient_ids),
             )
             notify_many_sync([n.id for n in created_notifications])
     except Exception:

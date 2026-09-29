@@ -290,3 +290,25 @@ def test_bell_footer_links_student_to_student_screen(auth_client):
     assert resp.status_code == 200
     assert 'href="/cabinet/notifications"' in resp.text
     assert 'href="/cabinet/staff/notifications"' not in resp.text
+
+
+def test_extra_recipient_gets_birthday_too(db, user_factory, monkeypatch):
+    """«Служба заботы» (владелец 29.09.2026) — к ней привязан Telegram Лизы.
+    Получает вместе с ГП, неактивный дополнительный получатель — нет."""
+    import app.services.exam_scheduler as scheduler_module
+
+    chief = user_factory(vk_id=700_040, name="ГП", role_name="админ")
+    care = user_factory(vk_id=700_041, name="служба заботы")
+    gone = user_factory(vk_id=700_042, name="Бывший получатель", is_active=False)
+    monkeypatch.setattr(
+        scheduler_module, "BIRTHDAY_EXTRA_RECIPIENT_IDS", frozenset({care.id, gone.id}),
+    )
+    student = user_factory(vk_id=700_043, name="Юля Зайцева")
+    student.birth_date = _birth_date_in(4)
+    db.commit()
+
+    _run_birthday_check()
+
+    assert _count_for(db, chief.id) == 1
+    assert _count_for(db, care.id) == 1
+    assert _count_for(db, gone.id) == 0
