@@ -78,3 +78,47 @@ def test_student_screen_mutations_send_fresh_token():
     # Обычные формы (балл, разблокировка пересдачи) подменяют ключ перед отправкой.
     assert source.count('onsubmit="return submitWithFreshToken(this)"') == 2
     assert "this.form.submit()" not in source, "отправка в обход свежего ключа и проверки поля"
+
+
+# ── Шаг 2 плана (`/adapt`) ───────────────────────────────────────────────────
+
+
+def _phone_block(source: str) -> str:
+    start = source.index("@media (max-width: 834px) {")
+    end = source.index("@media (max-width: 768px) {", start)
+    return source[start:end]
+
+
+def test_hero_wraps_so_upload_button_fits_on_phone():
+    source = _source()
+    mobile = source[source.index("@media (max-width: 768px) {"):source.index("</style>")]
+    assert re.search(r"\.student-hero\s*\{[^}]*flex-wrap: wrap", mobile), (
+        "шапка в одну строку с overflow:hidden — «+ Загрузить» обрезана на 320–390"
+    )
+    assert "margin-left:auto\">'" in source and "openUploadModal()\">+ Загрузить" in source
+
+
+def test_back_gesture_walks_screen_history():
+    source = _source()
+    assert "window.addEventListener('popstate'" in source
+    assert "history[push ? 'pushState' : 'replaceState']" in source
+    # Выбор ученика и открытие вкладки пишут историю, «назад» проверяет несохранённый балл.
+    assert "navCommit(navPush, 'list')" in source and "navCommit(navPush, 'profile')" in source
+    popstate = source[source.index("window.addEventListener('popstate'"):]
+    assert "guardUnsavedScore()" in popstate[:1200]
+    # Замена адреса с null стёрла бы запись навигации экрана.
+    assert "history.replaceState(null" not in source
+
+
+def test_phone_inputs_are_16px_and_targets_44px():
+    block = _phone_block(_source())
+    fonts = block[:block.index("font-size: 16px")]
+    for sel in (".sidebar-search", ".sidebar-select", ".score-input", ".comment-input",
+                ".rt-editable", ".profile-edit-input", ".profile-edit-select", ".upload-select"):
+        assert sel in fonts, f"{sel} мельче 16px — айфон приближает страницу при касании"
+    targets = block[:block.index("min-height: 44px; }")]
+    for sel in (".tab-btn", ".back-to-profile", ".mobile-back-btn", ".admin-upload-btn", ".btn-edit-score",
+                ".profile-edit-btn", ".mock-month-btn", ".cal-month-btn", ".mock-status-copy-btn"):
+        assert sel in targets, f"{sel} меньше 44px на касание"
+    assert ".hard-filter-options a" in block and ".sidebar-hard-filters-add summary" in block
+    assert re.search(r"\.mock-day, #main-panel \.cal-day \{[^}]*min-height: 44px", block)

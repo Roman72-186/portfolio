@@ -29,12 +29,6 @@
     border-bottom: 1px solid var(--line);
     flex-shrink: 0;
 }
-.sidebar-back {
-    display: flex; align-items: center; gap: 6px;
-    font-size: 13px; color: var(--muted); font-weight: 500;
-    margin-bottom: 12px;
-}
-.sidebar-back:hover { color: var(--blue); opacity: 1; }
 .sidebar-title {
     font-size: 15px; font-weight: 700; color: var(--text);
     margin-bottom: 10px;
@@ -99,7 +93,6 @@
     font-size: 13px; font-weight: 700; color: var(--text);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.student-row-meta { font-size: 11px; color: var(--dim); margin-top: 1px; }
 
 /* ── Main panel ── */
 .split-main {
@@ -107,7 +100,6 @@
     overflow: hidden; background: var(--bg);
 }
 
-/* ── Tab bar ── */
 /* ── Tab bar (pill style) ── */
 .tab-bar {
     display: none; align-items: center; gap: 4px;
@@ -116,9 +108,8 @@
     overflow-x: auto; scrollbar-width: none;
 }
 .tab-bar::-webkit-scrollbar { display: none; }
-.tab-btn { flex-shrink: 0; }
 .tab-btn {
-    padding: 7px 18px; border-radius: var(--r-xl);
+    flex-shrink: 0; padding: 7px 18px; border-radius: var(--r-xl);
     font-size: 13px; font-weight: 700; cursor: pointer;
     border: 1.5px solid transparent;
     background: none; color: var(--dim);
@@ -228,17 +219,6 @@
     text-transform: uppercase; letter-spacing: 0.07em;
     margin-bottom: 12px;
 }
-.photo-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-    gap: 6px; margin-bottom: 20px;
-}
-.photo-grid img {
-    width: 100%; aspect-ratio: 1; object-fit: cover;
-    border-radius: 8px; border: 1px solid var(--line);
-    cursor: zoom-in; transition: opacity 0.15s;
-}
-.photo-grid img:hover { opacity: 0.85; }
 
 .month-block {
     background: var(--surface); border: 1.5px solid var(--line);
@@ -310,23 +290,6 @@
 .lock-badge.open   { background: rgba(5,150,105,0.08); color: var(--ok); }
 .subject-card-body { padding: 14px 16px; }
 
-.photo-strip {
-    display: grid; grid-template-columns: repeat(3, 1fr);
-    gap: 6px; margin-bottom: 12px;
-}
-.photo-strip img {
-    width: 100%; aspect-ratio: 1; object-fit: cover;
-    border-radius: 8px; border: 1px solid var(--line);
-    cursor: zoom-in; transition: opacity 0.15s;
-}
-.photo-strip img:hover { opacity: 0.85; }
-.photo-strip-more {
-    aspect-ratio: 1; background: var(--surface-2); border-radius: 8px;
-    border: 1px solid var(--line);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 700; color: var(--muted);
-}
-
 .mock-calendar-layout {
     display: grid;
     grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
@@ -396,27 +359,6 @@
 }
 .mock-day-title { font-size: 18px; font-weight: 900; color: var(--text); }
 .mock-day-count { font-size: 12px; color: var(--muted); font-weight: 800; }
-.mock-day-works {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 10px;
-}
-.mock-work-card {
-    border: 1px solid var(--line);
-    background: var(--surface-2);
-    border-radius: var(--r-sm);
-    padding: 10px;
-}
-.mock-work-card img {
-    width: 100%; aspect-ratio: 1; object-fit: cover;
-    border-radius: 8px; border: 1px solid var(--line);
-    cursor: zoom-in; margin-bottom: 8px;
-}
-.mock-work-name {
-    font-size: 12px; font-weight: 800; color: var(--text);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.mock-work-meta { margin-top: 6px; font-size: 12px; color: var(--muted); }
-.mock-work-score { color: var(--blue); font-weight: 900; }
 /* Score badge + hero layout для пробников */
 .work-score-badge {
     position: absolute; top: 6px; right: 6px;
@@ -466,26 +408,6 @@
 .subject-card.is-scored .subject-card-header {
     background: rgba(5,150,105,0.05);
 }
-
-/* ── Scored state bar ── */
-.scored-state {
-    display: flex; align-items: center; gap: 10px;
-    margin-bottom: 10px; flex-wrap: wrap;
-}
-.scored-state-score {
-    font-size: 22px; font-weight: 900; color: var(--ok); line-height: 1;
-}
-.scored-state-label {
-    font-size: 12px; color: var(--ok); font-weight: 700;
-    background: rgba(5,150,105,0.1); border-radius: var(--r-xl); padding: 3px 10px;
-}
-.scored-edit-toggle {
-    font-size: 12px; color: var(--muted); background: none;
-    border: 1px solid var(--line); border-radius: 8px;
-    padding: 4px 12px; cursor: pointer; font-family: inherit;
-    margin-left: auto;
-}
-.scored-edit-toggle:hover { border-color: var(--blue); color: var(--blue); }
 
 /* ── Sidebar mock-exam badges ── */
 .checked-badge {
@@ -592,13 +514,6 @@
     background: var(--surface); border: 1.5px solid var(--line);
     border-radius: var(--r-md); padding: 12px 16px; margin-bottom: 10px;
     box-shadow: var(--sh-sm);
-}
-.retake-work-top {
-    display: flex; align-items: flex-start; gap: 12px; margin-bottom: 8px;
-}
-.retake-thumb {
-    width: 52px; height: 52px; border-radius: 8px; object-fit: cover;
-    border: 1px solid var(--line); flex-shrink: 0; cursor: zoom-in;
 }
 .retake-thumb-ph {
     width: 52px; height: 52px; border-radius: 8px;
@@ -729,10 +644,6 @@
     cursor: pointer; font-family: inherit;
 }
 .mock-status-copy-btn:hover { background: var(--blue); color: #fff; }
-.mock-status-inactive {
-    margin: 8px 16px 0; padding: 8px 10px; font-size: 12px; color: var(--dim);
-    border: 1.5px solid var(--line); border-radius: var(--r-md); background: var(--surface);
-}
 
 /* ── Profile details ── */
 .profile-details {
@@ -875,13 +786,6 @@
     font-family: inherit; outline: none;
 }
 .upload-select:focus { border-color: var(--blue); }
-.upload-file-input {
-    width: 100%; padding: 12px; box-sizing: border-box;
-    background: var(--bg); border: 2px dashed var(--line);
-    border-radius: var(--r-md); font-size: 13px; color: var(--text);
-    font-family: inherit; cursor: pointer;
-}
-.upload-file-input:hover { border-color: var(--blue); }
 .upload-dropzone {
     position: relative;
     border: 2px dashed var(--line); border-radius: var(--r-md);
@@ -932,30 +836,28 @@
 
 .empty-state { padding: 64px 20px; }
 
-/* ── Lightbox ── */
-.lb {
-    position: fixed; inset: 0; background: rgba(10,10,30,0.88);
-    z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px;
-}
-.lb.open { display: flex; }
-.lb img { max-width: 100%; max-height: 88vh; border-radius: var(--r-md); box-shadow: 0 24px 80px rgba(0,0,0,0.5); }
-.lb-close {
-    position: absolute; top: 16px; right: 16px;
-    background: rgba(255,255,255,0.15); border: none; color: #fff;
-    width: 44px; height: 44px; border-radius: 50%; font-size: 22px; cursor: pointer;
-    transition: background 0.2s;
-}
-.lb-close:hover { background: rgba(255,255,255,0.28); }
-
 /* ── Tablet ── */
 @media (max-width: 1024px) {
     .sidebar { width: 250px; }
     .split-main-scroll { padding: 16px 18px; }
 }
 
-/* ── Mobile back button ── */
-.mobile-back-btn {
-    display: none;
+.mobile-back-btn { display: none; }
+
+/* ── Телефон и iPad: касание 44px, поля ввода 16px — иначе айфон приближает страницу ── */
+@media (max-width: 834px) {
+    .sidebar-search, .sidebar-select, .score-input, .comment-input, #main-panel .rt-editable,
+    .profile-edit-input, .profile-edit-select, .upload-select { font-size: 16px; }
+    .sidebar-search, .sidebar-select, .score-input, .tab-btn, .back-to-profile, .mobile-back-btn, .admin-upload-btn,
+    .btn-edit-score, .score-retake-btn, .score-revision-btn, .unlock-btn, .profile-edit-btn, .mock-month-btn,
+    .mock-status-copy-btn, .retake-move-btn, .portfolio-rename-btn, .folder-del-btn, .upload-count-clear,
+    #main-panel .cal-month-btn, #main-panel .rt-btn { min-height: 44px; }
+    #main-panel .rt-btn { min-width: 44px; }
+    .hard-filter-options a { display: flex; align-items: center; min-height: 44px; padding: 0; }
+    .sidebar-hard-filters-add summary { min-height: 44px; padding: 13px 0; box-sizing: border-box; } /* flex съел бы треугольник */
+    /* Дни календаря: на 320 в ширину 44 не влезает семь колонок — добираем высотой */
+    .mock-calendar-grid, #main-panel .cal-grid { gap: 2px; }
+    .mock-day, #main-panel .cal-day { aspect-ratio: auto; min-height: 44px; }
 }
 
 /* ── Mobile ── */
@@ -963,16 +865,18 @@
     .students-page-wrap { height: auto; overflow: visible; }
     .split-wrap { flex-direction: column; height: auto; overflow: visible; }
     .sidebar { width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--line); }
-    .sidebar-list { max-height: none; }
     .split-main { display: none; overflow: visible; }
     .split-main-scroll { overflow: visible; padding: 16px; }
-    .subjects-grid { grid-template-columns: 1fr; }
     .mock-calendar-layout { grid-template-columns: 1fr; }
-    .mock-month-list { grid-template-columns: repeat(3, 1fr); }
     .mock-day-card { min-height: 0; }
     .tab-bar { padding: 0 12px; }
     .profile-grid { grid-template-columns: 1fr; }
     .profile-actions { grid-template-columns: 1fr; }
+    /* Шапка ученика: аватар и имя — первая строка, баллы и «+ Загрузить» — вторая */
+    .student-hero { flex-wrap: wrap; gap: 12px 14px; padding: 16px; }
+    .student-hero-info { flex: 1 1 calc(100% - 74px); min-width: 0; }
+    .student-hero-name { font-size: 18px; overflow-wrap: anywhere; }
+    .student-hero-pill { white-space: nowrap; }
 
     /* When student is selected: hide sidebar, show main panel */
     .split-wrap.student-selected .sidebar { display: none; }
@@ -1315,14 +1219,89 @@ var _navDefaultTab = (function() {
     } catch (e) { return null; }
 })();
 
+// ── История браузера ─────────────────────────────────────────────────────────
+// Список → ученик → вкладка — отдельные записи истории, поэтому свайп «назад»
+// на айфоне и системная «назад» на андроиде возвращают на шаг, а не уводят
+// с экрана. Запись: s — ученик (null — список), v — 'profile' | 'tab', t — вкладка,
+// d — сколько записей экран положил поверх той, с которой открылся,
+// up — откуда пришли ('list' | 'profile'). Адрес — тот же ?student=&tab=,
+// что сервер отдаёт после сохранения балла, так что перезагрузка не теряет место.
+var _emptyMainHtml = document.getElementById('main-panel').innerHTML;
+var _navState = null;       // запись, которую экран сейчас показывает
+var _navRestoring = false;  // экран перерисовывается из истории — ничего в неё не пишем
+var _navToList = false;     // «К списку учеников» отматывает историю до списка
+
+function navUrl(st) {
+    var u = new URL(location.href);
+    ['student', 'tab', 'saved'].forEach(function(k) { u.searchParams.delete(k); });
+    if (st.s) {
+        u.searchParams.set('student', st.s);
+        if (st.v === 'tab') u.searchParams.set('tab', st.t);
+    } else if (_navDefaultTab) u.searchParams.set('tab', _navDefaultTab);
+    return u.pathname + u.search;
+}
+
+function navCommit(push, up) {
+    if (_navRestoring) return;
+    var prev = _navState || history.state || {};
+    var st = {s: _currentStudentId, v: _currentStudentId ? _viewMode : 'list', t: _currentTab,
+              d: (prev.d || 0) + (push ? 1 : 0), up: push ? up : prev.up};
+    history[push ? 'pushState' : 'replaceState'](st, '', navUrl(st));
+    _navState = st;
+}
+
+function navShowList() {
+    _currentStudentId = null;
+    _viewMode = 'profile';
+    document.querySelector('.split-wrap').classList.remove('student-selected');
+    document.querySelectorAll('.student-row.active').forEach(function(r) { r.classList.remove('active'); });
+    document.getElementById('tab-bar').style.display = 'none';
+    document.getElementById('main-panel').innerHTML = _emptyMainHtml;
+}
+
+window.addEventListener('popstate', function(ev) {
+    var st = ev.state;
+    if (!st || !('d' in st)) return;  // запись не наша — например, переход по якорю
+    if (_navToList) {
+        _navToList = false;
+        navShowList();
+        _navState = null;
+        navCommit(false);
+        return;
+    }
+    if (!guardUnsavedScore()) {
+        // Балл не сохранён — остаёмся: возвращаем в историю запись, с которой ушли
+        history.pushState(_navState, '', navUrl(_navState));
+        return;
+    }
+    _navState = st;
+    _navRestoring = true;
+    try {
+        if (!st.s) navShowList();
+        else if (st.v === 'tab') {
+            if (st.s !== _currentStudentId) selectStudent(st.s, st.t);
+            else if (_viewMode === 'tab') switchTab(st.t);
+            else openTab(st.t);
+        } else if (st.s !== _currentStudentId) selectStudent(st.s, 'profile');
+        else showProfile();
+    } finally { _navRestoring = false; }
+});
+
 // ── Student selection ────────────────────────────────────────────────────────
 
 function mobileBackToList() {
-    document.querySelector('.split-wrap').classList.remove('student-selected');
+    if (!guardUnsavedScore()) return;
+    var d = (_navState && _navState.d) || 0;
+    if (d > 0) { _navToList = true; history.go(-d); return; }
+    navShowList();
+    navCommit(false);
 }
 
+// forceTab: имя вкладки — открыть её сразу; 'profile' — профиль, даже если
+// навбар задал вкладку по умолчанию (перерисовка профиля, «назад» к профилю).
 function selectStudent(id, forceTab) {
     if (_currentStudentId && id !== _currentStudentId && !guardUnsavedScore()) return;
+    var navPush = !_currentStudentId;  // из списка — новая запись истории, между учениками — замена
     _currentStudentId = id;
     if (!_tabCache[id]) _tabCache[id] = {};
 
@@ -1332,12 +1311,14 @@ function selectStudent(id, forceTab) {
     if (row) { row.classList.add('active'); row.scrollIntoView({block: 'nearest'}); }
 
     // Навбар-раздел задал вкладку по умолчанию — открываем её сразу, минуя профиль
-    if (!forceTab && _navDefaultTab) forceTab = _navDefaultTab;
+    if (forceTab === 'profile') forceTab = null;
+    else if (!forceTab && _navDefaultTab) forceTab = _navDefaultTab;
 
     // If forceTab specified (e.g. after score redirect), go straight to tab
     if (forceTab) {
         _viewMode = 'tab';
         _currentTab = forceTab;
+        navCommit(navPush, 'list');
         document.getElementById('tab-bar').style.display = 'flex';
         document.getElementById('main-panel').innerHTML =
             '<div id="student-hero-container"></div>' +
@@ -1348,6 +1329,7 @@ function selectStudent(id, forceTab) {
 
     // Default: show profile
     _viewMode = 'profile';
+    navCommit(navPush, 'list');
     document.getElementById('tab-bar').style.display = 'none';
     document.getElementById('main-panel').innerHTML =
         '<div style="text-align:center;padding:48px 20px;color:var(--dim)">Загружаем…</div>';
@@ -1372,8 +1354,10 @@ function selectStudent(id, forceTab) {
 
 function openTab(tabName) {
     if (_viewMode === 'tab' && tabName !== _currentTab && !guardUnsavedScore()) return;
+    var navPush = _viewMode === 'profile';  // из профиля — новая запись, между вкладками — замена
     _viewMode = 'tab';
     _currentTab = tabName;
+    navCommit(navPush, 'profile');
     document.getElementById('tab-bar').style.display = 'flex';
     document.getElementById('main-panel').innerHTML =
         '<div id="student-hero-container"></div>' +
@@ -1381,16 +1365,23 @@ function openTab(tabName) {
     switchTab(tabName);
 }
 
-function backToProfile() {
-    if (!_currentStudentId) return;
-    if (!guardUnsavedScore()) return;
+function showProfile() {
     _viewMode = 'profile';
     document.getElementById('tab-bar').style.display = 'none';
     if (_tabCache[_currentStudentId] && _tabCache[_currentStudentId].profile) {
         renderProfile(_tabCache[_currentStudentId].profile);
     } else {
-        selectStudent(_currentStudentId);
+        selectStudent(_currentStudentId, 'profile');
     }
+}
+
+function backToProfile() {
+    if (!_currentStudentId) return;
+    if (!guardUnsavedScore()) return;
+    // Вкладку открыли из профиля — «← К профилю» и есть шаг назад по истории
+    if (_navState && _navState.v === 'tab' && _navState.up === 'profile') { history.back(); return; }
+    showProfile();
+    navCommit(false);
 }
 
 // ── Profile rendering ───────────────────────────────────────────────────────
@@ -1512,6 +1503,7 @@ function profileField(label, value, fullWidth) {
 function switchTab(tabName) {
     if (_currentTab && tabName !== _currentTab && !guardUnsavedScore()) return;
     _currentTab = tabName;
+    if (_viewMode === 'tab' && _currentStudentId) navCommit(false);
 
     ['portfolio', 'mock-exams', 'retakes', 'cycles', 'statistics'].forEach(function(t) {
         var btn = document.getElementById('tab-' + t);
@@ -1780,7 +1772,7 @@ function buildHero(s, bySubj) {
     }
     var uploadBtn = '';
     if (CAN_SCORE && _viewMode === 'tab') {
-        uploadBtn = '<div style="position:relative;z-index:1;flex-shrink:0;margin-left:8px">'
+        uploadBtn = '<div style="position:relative;z-index:1;flex-shrink:0;margin-left:auto">'
             + '<button class="admin-upload-btn" onclick="openUploadModal()">+ Загрузить</button>'
             + '</div>';
     }
@@ -2069,7 +2061,7 @@ function showAllMocks() {
     try {
         var u = new URL(location.href);
         u.searchParams.delete('period_only');
-        history.replaceState(null, '', u.toString());
+        history.replaceState(history.state, '', u.toString());  // состояние — запись навигации экрана
     } catch (e) {}
     switchTab('mock-exams');
 }
@@ -2943,7 +2935,7 @@ function saveProfile() {
             if (res.ok && res.data.ok) {
                 // Clear cache and reload
                 delete _tabCache[_currentStudentId].profile;
-                selectStudent(_currentStudentId);
+                selectStudent(_currentStudentId, 'profile');
                 showToast('Анкета сохранена');
             } else {
                 var msg = (res.data.errors || []).join(', ') || window.csrfMessage(res.data, 'Ошибка сохранения');
@@ -3203,7 +3195,7 @@ function submitUpload(e) {
                 delete _tabCache[_currentStudentId].retakes;
                 delete _tabCache[_currentStudentId].profile;
             }
-            if (_viewMode === 'tab') { switchTab(_currentTab); } else { selectStudent(_currentStudentId); }
+            if (_viewMode === 'tab') { switchTab(_currentTab); } else { selectStudent(_currentStudentId, 'profile'); }
             var msg = data.success_count + ' фото загружено';
             if (data.fail_count > 0) msg += ', ' + data.fail_count + ' не удалось';
             showToast(msg);
@@ -3256,6 +3248,7 @@ function deleteFolderWorks(studentId, workType, month, year, count) {
 
 // ── Auto-select on load (after score/redirect) ────────────────────────────────
 
+_navRestoring = true;  // открытие страницы — не шаг истории, запись ставится заменой ниже
 if (INITIAL_STUDENT_ID) {
     var _params = new URLSearchParams(location.search);
     var hasTab = _params.has('tab');
@@ -3268,8 +3261,9 @@ if (INITIAL_STUDENT_ID) {
     }
     if (_params.get('saved') === '1') {
         setTimeout(function() { showToast('Оценка сохранена'); }, 600);
-        history.replaceState(null, '', location.pathname + '?student=' + INITIAL_STUDENT_ID + '&tab=' + _currentTab);
     }
 }
+_navRestoring = false;
+navCommit(false);  // заодно убирает ?saved=1, чтобы перезагрузка не повторяла тост
 </script>
 {% endblock %}
