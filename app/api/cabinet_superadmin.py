@@ -1603,6 +1603,7 @@ from app.services.user_management import (
     get_curator_for_assignment,
     hard_delete_user,
     log_curator_change,
+    open_program_from_now,
     soft_delete_user,
     tariffs_in_use,
     toggle_user_active,
@@ -2077,6 +2078,7 @@ def superadmin_create_student(
             is_group_member=False,
             profile_completed=False,
         )
+        open_program_from_now(student)
         db.add(student)
         db.flush()
         if curator_id_v is not None:

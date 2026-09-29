@@ -598,11 +598,11 @@ def test_direct_link_opens_cycle_from_closed_stage(db, regular_user):
     assert feed["is_archive"] is True
 
 
-def test_stage_task_is_pinned_first_in_every_cycle_of_the_stage(db, regular_user):
-    """«Портфолио» — задание прямо на этапе, не в цикле. Владелец 24.09.2026:
-    оно должно быть видно первым в ленте любого цикла этого этапа, а не
-    только в одном из них — ученик не обязан помнить, в каком цикле стоял,
-    когда сдавал портфолио."""
+def test_stage_task_is_a_carousel_button_not_a_step_of_the_cycle(db, regular_user):
+    """«Портфолио» — задание прямо на этапе, не в цикле. В карусели оно
+    кнопкой, а в ленту цикла не входит: владелец 29.09.2026 — «оно во всех
+    циклах почему-то, а должно быть отдельно, как цикл» (до этого оно
+    приклеивалось первым к ленте каждого цикла этапа)."""
     stage = _stage(db, regular_user, starts_on=TODAY - timedelta(days=10), ends_on=TODAY + timedelta(days=20))
     portfolio = create_task(
         db, title="Портфолио", user_id=regular_user.id, kind="material",
@@ -623,12 +623,13 @@ def test_stage_task_is_pinned_first_in_every_cycle_of_the_stage(db, regular_user
 
     assert feed["topic"].id == cycle_one.id
     assert feed["pinned_tasks"] == [{"id": portfolio.id, "title": "Портфолио", "is_current": False}]
-    assert feed["steps"][0]["task"].id == portfolio.id
+    assert portfolio.id not in [step["task"].id for step in feed["steps"]]
 
 
-def test_stage_task_stays_pinned_when_viewing_an_older_cycle(db, regular_user):
-    """Тот же якорь виден и в архивном цикле того же этапа, не только в
-    текущем — «Портфолио» достижимо независимо от того, где стоит ученик."""
+def test_stage_button_stays_when_viewing_an_older_cycle(db, regular_user):
+    """Кнопка «Портфолио» видна и в архивном цикле того же этапа, не только в
+    текущем — этап достижим независимо от того, где стоит ученик. В ленту
+    старого цикла задание этапа тоже не входит."""
     stage = _stage(db, regular_user, starts_on=TODAY - timedelta(days=30), ends_on=TODAY + timedelta(days=30))
     portfolio = create_task(
         db, title="Портфолио", user_id=regular_user.id, kind="material",
@@ -658,7 +659,7 @@ def test_stage_task_stays_pinned_when_viewing_an_older_cycle(db, regular_user):
     assert feed["topic"].id == old_cycle.id
     assert feed["is_archive"] is True
     assert feed["pinned_tasks"] == [{"id": portfolio.id, "title": "Портфолио", "is_current": False}]
-    assert feed["steps"][0]["task"].id == portfolio.id
+    assert portfolio.id not in [step["task"].id for step in feed["steps"]]
 
 
 def test_opening_stage_by_id_shows_all_its_own_tasks(db, regular_user):

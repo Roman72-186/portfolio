@@ -68,6 +68,18 @@ def cabinet_learning(
     # трекере без кнопки перехода.
     focus_task_id = None
     focus_subject = None
+    if cycle is None and task is not None and any(
+        pinned["id"] == task for pinned in feed["pinned_tasks"]
+    ) and feed["stage"] is not None:
+        # Задание этапа («Портфолио») живёт не в ленте цикла, а в ленте
+        # самого этапа (владелец 29.09.2026) — туда трекер и ведёт.
+        feed = feed_for_student(
+            db,
+            user_id=user["user_id"],
+            user_tariff=user.get("tariff"),
+            today=today_msk(),
+            cycle_id=feed["stage"]["id"],
+        )
     if cycle is None and task is not None:
         target = next(
             (step for step in feed["steps"] if step["task"].id == task), None

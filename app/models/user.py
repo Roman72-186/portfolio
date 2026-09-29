@@ -149,6 +149,16 @@ class User(Base):
     access_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
     )
+    # С какого момента ученику открыта программа (владелец 29.09.2026: новые
+    # ученики годового курса «не должны видеть предобучение 1, 2, 3 цикл, так
+    # как они не платили за него», а то, что идёт сегодня и дальше, — видеть).
+    # Цикл или этап, закончившийся раньше этой отметки, ученику не показывается
+    # (`video_topics.accessible_topic_ids`). NULL — видно всё, так живут все,
+    # кто учился до 29.09.2026. Ставит `user_management.open_program_from_now`:
+    # новый аккаунт, возврат из архива, первый тариф после пробного доступа.
+    program_access_from: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

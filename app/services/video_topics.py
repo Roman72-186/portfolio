@@ -9,7 +9,7 @@ Source of truth по тому, какие темы открыты ученику
 
 from datetime import datetime, timezone
 
-from sqlalchemy import or_
+from sqlalchemy import or_, true
 from sqlalchemy.orm import Session
 
 from app.models.learning_topic import (
@@ -75,8 +75,8 @@ def accessible_topic_ids(db: Session, user_id: int) -> set[int]:
     """Темы, открытые ученику прямо сейчас.
 
     Тема открыта, если опубликована, наступил её `opens_at`, адресована
-    ученику (флагом «всем», пересечением тегов или поимённо) и не скрыта по
-    тарифу. Это ученический контракт функции: тарифный фильтр здесь
+    ученику (флагом «всем», пересечением тегов или поимённо), не скрыта по
+    тарифу и не закончилась до его прихода (`ended_before_arrival_filter`). Это ученический контракт функции: тарифный фильтр здесь
     сознательно не выключается никаким аргументом — куратор/staff читают
     элементы дня напрямую (`program.py::items_for_day`/`item_details`), в
     обход этой функции, и видят их независимо от тарифа (владелец 26.08.2026).
@@ -101,7 +101,12 @@ def accessible_topic_ids(db: Session, user_id: int) -> set[int]:
     # Тариф ученика — плоская строка, не EncryptedString, сравнивать в SQL
     # можно напрямую. Пустой/None тариф просто не совпадёт ни с одной строкой
     # LearningTopicTariff — тарифно-ограниченные темы остаются скрытыми.
-    tariff = db.query(User.tariff).filter(User.id == user_id).scalar()
+    row = (
+        db.query(User.tariff, User.program_access_from)
+        .filter(User.id == user_id)
+        .first()
+    )
+    tariff, program_access_from = row if row is not None else (None, None)
     tariff = (tariff or "").strip().upper()
     tariff_ok_topic_ids = (
         db.query(LearningTopicTariff.topic_id)
@@ -123,10 +128,48 @@ def accessible_topic_ids(db: Session, user_id: int) -> set[int]:
                 LearningTopic.tariff_restricted.is_(False),
                 LearningTopic.id.in_(tariff_ok_topic_ids),
             ),
+            ended_before_arrival_filter(program_access_from),
         )
         .all()
     )
     return {row[0] for row in rows}
+
+
+def saw_topic_period(program_access_from: datetime | None, topic: LearningTopic) -> bool:
+    """То же правило, что `ended_before_arrival_filter`, для одного ученика в
+    Python — там, где ученики уже прочитаны списком (статистика цикла)."""
+    if program_access_from is None or topic.ends_at is None:
+        return True
+    ends_at = topic.ends_at
+    # SQLite в тестах отдаёт наивное время — нормализация как в
+    # `topic_audience_user_ids` выше.
+    if ends_at.tzinfo is None:
+        ends_at = ends_at.replace(tzinfo=timezone.utc)
+    if program_access_from.tzinfo is None:
+        program_access_from = program_access_from.replace(tzinfo=timezone.utc)
+    return ends_at >= program_access_from
+
+
+def ended_before_arrival_filter(program_access_from: datetime | None):
+    """Условие SQL «тема не закончилась до прихода ученика».
+
+    Владелец 29.09.2026: новые ученики годового курса не видят циклы
+    предобучения, за которые не платили, — а текущий цикл, его этап
+    («Портфолио») и всё дальнейшее видят. Граница — `User.program_access_from`
+    (ставит `user_management.open_program_from_now`): тема, чей `ends_at`
+    раньше неё, ученику закрыта. NULL у ученика — видно всё (все, кто учился
+    до 29.09.2026); NULL у темы — у неё нет конца (каталог видео, служебные
+    темы календаря), и она не прячется никогда.
+
+    Правило одно на все слои: лента, карусель циклов, трекер, видео, гейты
+    «цикл пройден» и статистика цикла берут его отсюда, своей копии не держат.
+    """
+    if program_access_from is None:
+        return true()
+    return or_(
+        LearningTopic.ends_at.is_(None),
+        LearningTopic.ends_at >= program_access_from,
+    )
 
 
 def topic_audience_user_ids(db: Session, topic_id: int) -> set[int]:
@@ -161,6 +204,13 @@ def topic_audience_user_ids(db: Session, topic_id: int) -> set[int]:
             User.deleted_at.is_(None),
         )
     )
+    if topic.ends_at is not None:
+        # Зеркало `ended_before_arrival_filter`: пришедший после конца темы
+        # её не видит и в её аудиторию не входит.
+        students = students.filter(or_(
+            User.program_access_from.is_(None),
+            User.program_access_from <= topic.ends_at,
+        ))
     if topic.tariff_restricted:
         tariffs = [
             row[0] for row in

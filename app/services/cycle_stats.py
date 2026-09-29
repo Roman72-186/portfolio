@@ -21,6 +21,7 @@ from app.models.tracker import STATUS_DONE, TrackerTask, TrackerTaskState
 from app.models.user import User
 from app.services.program import day_bounds
 from app.services.tracker import cycle_bounds, cycle_label
+from app.services.video_topics import saw_topic_period
 
 
 def active_students(db: Session) -> list[User]:
@@ -76,7 +77,12 @@ def cycle_stats(db: Session, topic: LearningTopic) -> dict:
     """
     first, last = cycle_bounds(topic)
     tasks = _cycle_tasks(db, topic.id, first, last)
-    students = active_students(db)
+    # Пришедший после конца цикла его не видит (владелец 29.09.2026) — и в
+    # «не сдали» этого цикла его считать нельзя.
+    students = [
+        student for student in active_students(db)
+        if saw_topic_period(student.program_access_from, topic)
+    ]
     total = len(students)
     tariff_of = {student.id: (student.tariff or "").strip().upper() for student in students}
     student_ids = set(tariff_of)

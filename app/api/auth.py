@@ -50,6 +50,7 @@ from app.services.navigation import can_open_3dlab
 from app.services import guest_exam as guest_exam_service
 from app.services import intake_link as intake_link_service
 from app.services import telegram as telegram_service
+from app.services.user_management import open_program_from_now
 
 logger = logging.getLogger(__name__)
 
@@ -1036,6 +1037,7 @@ def _upsert_telegram_user(
         is_group_member=is_group_member,
         role_id=student_role.id if student_role else None,
     )
+    open_program_from_now(user)
     db.add(user)
     db.flush()
     return user, True

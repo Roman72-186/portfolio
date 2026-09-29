@@ -150,6 +150,21 @@ def tariffs_in_use(db: DBSession) -> list[str]:
     return tariffs_for_data(row[0] for row in rows)
 
 
+def open_program_from_now(user: User) -> None:
+    """Программа открыта ученику с этого момента: циклы и этапы, закончившиеся
+    раньше, он не видит (`video_topics.accessible_topic_ids`).
+
+    Владелец 29.09.2026: новые ученики годового курса «не должны видеть
+    предобучение 1, 2, 3 цикл, так как они не платили за него», а текущий цикл
+    и всё дальнейшее — видеть. Зовут три места, где человек получает доступ:
+    заведение ученика (вход через Telegram, добавление суперадмином по нику),
+    возврат из архива и первый тариф после пробного доступа. Правило
+    «закончившийся до прихода — не виден» живёт в одном месте, а отметку
+    ставит одна эта функция.
+    """
+    user.program_access_from = datetime.now(timezone.utc)
+
+
 def tariff_change_clears_access(old_tariff: str | None, new_tariff: str | None) -> bool:
     """Снимает ли эта смена тарифа срок доступа (`User.access_until`).
 
@@ -196,6 +211,9 @@ def apply_tariff_change(
     student.tariff = new_value
     if clears_access:
         student.access_until = None
+        # Пробный доступ кончился оплатой: программа открыта с сегодня, а
+        # не с того дня, когда он зашёл по пробной ссылке.
+        open_program_from_now(student)
     return True
 
 
@@ -477,6 +495,9 @@ def unarchive_user(db: DBSession, target_user_id: int, performed_by_id: int, *, 
 
     user.archived_at = None
     user.is_active = True
+    # Вернувшийся из прошлого потока приходит на текущую программу: циклы,
+    # закончившиеся без него, ему не показываются.
+    open_program_from_now(user)
 
     _log(db, "user_unarchive", performed_by_id, target_user_id,
          f"Из архива: {user.name} (id={user.id})")
