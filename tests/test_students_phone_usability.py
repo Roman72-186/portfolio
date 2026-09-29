@@ -389,3 +389,36 @@ def test_mock_day_is_not_a_frame_inside_the_subject_card():
     assert "border:" not in day and "background:" not in day
     assert "border:" in _css_rule(_styles(), ".subject-card"), "рамка предмета остаётся"
     assert "background: var(--surface-2)" in _css_rule(_styles(), ".score-form"), "форма оценки отделена подложкой"
+
+
+# ── Шаг 10: хвосты после шага 9 ──────────────────────────────────────────────
+
+
+def _fill_color(css: str, opener: str, name: str) -> str:
+    # Значение токена-заливки в теме: `var(--x)` или `color-mix(in srgb, var(--a) N%, var(--b))`.
+    # Токены, которых нет в тёмном блоке, берутся из светлого — как в браузере.
+    tokens = {**_theme_tokens(css, ":root {"), **_theme_tokens(css, opener)}
+    block = css[css.index(opener):]
+    value = re.search(r"--%s:\s*([^;]+);" % name, block[:block.index("\n}")]).group(1).strip()
+    plain = re.fullmatch(r"var\(--([\w-]+)\)", value)
+    if plain:
+        return tokens[plain.group(1)]
+    a, pct, b = re.fullmatch(r"color-mix\(in srgb, var\(--([\w-]+)\) (\d+)%, var\(--([\w-]+)\)\)", value).groups()
+    share = int(pct) / 100
+    mixed = [round(int(tokens[a][i:i + 2], 16) * share + int(tokens[b][i:i + 2], 16) * (1 - share)) for i in (1, 3, 5)]
+    return "#" + "".join(f"{c:02X}" for c in mixed)
+
+
+@pytest.mark.parametrize("opener", [":root {", ':root[data-theme="dark"] {'])
+def test_white_digit_on_grey_fill_is_readable(opener):
+    # 29.09.2026, аудит 10.1: белая цифра на заливке `--dim` в тёмной теме — 3.43
+    # (серый день старой попытки, «Не оценено», балл соседа). `--dim` — цвет подписей,
+    # его не темним; у заливки свой токен, и наведение — тоже токен, а не число.
+    css = BASE_CSS.read_text(encoding="utf-8")
+    for name in ("dim-fill", "dim-fill-strong"):
+        assert _contrast("#FFFFFF", _fill_color(css, opener, name)) >= 4.5, name
+    lib = CALENDAR_LIB.read_text(encoding="utf-8")
+    assert "background: var(--dim-fill)" in _css_rule(lib, ".cal-day.legacy")
+    assert "background: var(--dim-fill-strong)" in _css_rule(lib, ".cal-day.legacy.is-selected")
+    assert "background: var(--dim-fill)" in _css_rule(lib, ".cal-hero-score.no-score")
+    assert "background: var(--dim-fill)" in _css_rule(css, ".cal-peer-score")

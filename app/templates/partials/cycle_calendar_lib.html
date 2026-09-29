@@ -32,8 +32,8 @@
 .cal-day { aspect-ratio: 1; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--dim); font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; cursor: default; }
 .cal-day.has-works { background: var(--blue); color: #fff; cursor: pointer; border-color: rgba(168,85,247,0.75); box-shadow: 0 6px 14px rgba(168,85,247,0.18); }
 .cal-day.has-works:hover, .cal-day.has-works.is-selected { background: var(--blue-deep, #9333EA); }
-.cal-day.legacy { background: var(--dim); border-color: rgba(0,0,0,0.18); }
-.cal-day.legacy:hover, .cal-day.legacy.is-selected { background: #555; }
+.cal-day.legacy { background: var(--dim-fill); border-color: rgba(0,0,0,0.18); }
+.cal-day.legacy:hover, .cal-day.legacy.is-selected { background: var(--dim-fill-strong); }
 .cal-day.is-empty { visibility: hidden; }
 
 .cal-detail { border: 1px solid var(--line); background: var(--surface); border-radius: var(--r-md); padding: 16px; min-height: 320px; }
@@ -65,7 +65,7 @@
 .cal-img-wrap.is-error .cal-img-error-text,
 .cal-img-wrap.is-error .cal-img-retry { display: block; }
 .cal-hero-score { position: absolute; top: 8px; right: 8px; background: var(--blue); color: #fff; font-size: 13px; font-weight: 900; padding: 4px 10px; border-radius: var(--r-pill); box-shadow: 0 6px 14px rgba(0,0,0,0.18); }
-.cal-hero-score.no-score { background: var(--dim); }
+.cal-hero-score.no-score { background: var(--dim-fill); }
 .cal-hero-score.score-red { background: var(--error); }
 .cal-hero-score.score-orange { background: #F97316; }
 .cal-hero-score.score-lime { background: #84CC16; }

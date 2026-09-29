@@ -15,6 +15,11 @@
     --text:         #1A1F29;
     --muted:        #6B7280;
     --dim:          #666E80;
+    /* Серая заливка под белую цифру: старая попытка в календаре, «Не оценено»,
+       балл соседа. Отдельно от --dim, потому что --dim — цвет подписей и в
+       тёмной теме светлый (белое на нём 3.43). Strong — наведение и выбор. */
+    --dim-fill:        var(--dim);
+    --dim-fill-strong: color-mix(in srgb, var(--dim) 75%, var(--ink));
     --line:         #E6E8EE;
 
     /* ── Brand Blues (значения фиолетовые с 28.08.2026, см. DESIGN.md) ── */
@@ -221,6 +226,9 @@
     /* Прежнее значение на --surface-2 давало 4.15 при норме 4.5 (дни календарей
        пробников, аудит 29.09.2026); это — 4.56, всё ещё тусклее --muted. */
     --dim:          #828B9B;
+    /* Белое на заливке 4.83, от --surface-2 она отличается на 3.24 (аудит 10.1). */
+    --dim-fill:        color-mix(in srgb, var(--dim) 80%, var(--bg));
+    --dim-fill-strong: color-mix(in srgb, var(--dim) 65%, var(--bg));
     --line:         #2A3140;
 
     --success:      #34D399;
@@ -1548,7 +1556,7 @@ button.desk-nav-item {
 .cal-peer-card { flex: 0 0 92px; scroll-snap-align: center; position: relative; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
 .cal-peer-card img { width: 92px; height: 92px; object-fit: cover; display: block; cursor: zoom-in; }
 .cal-peer-card.is-own { border: 2px solid var(--blue); box-shadow: var(--shadow-blue); }
-.cal-peer-score { position: absolute; bottom: 4px; right: 4px; font-size: 11px; font-weight: 900; color: var(--on-color); padding: 2px 6px; border-radius: var(--r-pill); background: var(--dim); }
+.cal-peer-score { position: absolute; bottom: 4px; right: 4px; font-size: 11px; font-weight: 900; color: var(--on-color); padding: 2px 6px; border-radius: var(--r-pill); background: var(--dim-fill); }
 .cal-peer-score--red { background: var(--error); }
 .cal-peer-score--orange { background: var(--score-orange); }
 .cal-peer-score--lime { background: var(--score-lime); }
