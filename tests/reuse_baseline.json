@@ -24,17 +24,17 @@
     "style_lines": 5
   },
   "cabinet_admin_mock_check.html": {
-    "hex": 8,
+    "hex": 7,
     "shadow": [
       "active",
       "main",
       "open",
       "photo-zoom-button"
     ],
-    "style_lines": 442
+    "style_lines": 441
   },
   "cabinet_admin_retake_check.html": {
-    "hex": 6,
+    "hex": 5,
     "shadow": [
       "active",
       "main",

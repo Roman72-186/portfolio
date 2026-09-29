@@ -57,6 +57,15 @@
        theme-invariant, как и у существующего .cal-hero-score. */
     --score-orange: #F97316;
     --score-lime:   #84CC16;
+    /* Заливки под белой цифрой балла: сами тона выше дают белому 1.98–4.83, а
+       прозрачная плашка поверх фото — до 1.92 на светлой работе (аудит 11.3).
+       Тот же тон, затемнённый до белого ≥ 5; плашка сплошная, фото не просвечивает.
+       Красный и зелёный идут от --error/--success, которые в тёмной теме светлые, —
+       там они переопределены с другой долей. Без балла — --dim-fill. */
+    --score-red-fill:    color-mix(in srgb, var(--error) 90%, black);
+    --score-orange-fill: color-mix(in srgb, var(--score-orange) 70%, black);
+    --score-lime-fill:   color-mix(in srgb, var(--score-lime) 60%, black);
+    --score-green-fill:  color-mix(in srgb, var(--success) 90%, black);
     --on-color:     #fff;
 
     /* ── Тип блока конструктора (TaskBlock.block_type) ──
@@ -246,6 +255,9 @@
     /* Зелёные чернила плашек: светлый вариант на тёмном холсте давал контраст 2.8.
        Сильный зелёный не трогаем — это заливка под белым текстом. */
     --ok:           var(--success);
+    /* Белое на этих заливках 5.89 и 5.71 (светлые --error/--success — 2.77 и 1.92). */
+    --score-red-fill:   color-mix(in srgb, var(--error) 65%, black);
+    --score-green-fill: color-mix(in srgb, var(--success) 55%, black);
 
     /* Мягкий акцент (плашки, активный пункт меню) — на тёмном холсте
        бледно-лавандовый фон читается пятном, тёмные чернила поверх него

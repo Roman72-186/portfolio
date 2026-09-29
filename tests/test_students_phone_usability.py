@@ -641,3 +641,35 @@ def test_student_heroes_use_the_fill_gradient():
         if light_purple.search(path.read_text(encoding="utf-8"))
     ]
     assert not offenders, "светлый фиолетовый край градиента под белым текстом:\n" + "\n".join(offenders)
+
+
+# ── Шаг 11, фаза 2 ───────────────────────────────────────────────────────────
+
+SCORE_FILLS = ("score-red-fill", "score-orange-fill", "score-lime-fill", "score-green-fill", "dim-fill")
+
+
+@pytest.mark.parametrize("opener", [":root {", ':root[data-theme="dark"] {'])
+def test_score_on_photo_is_readable(opener):
+    # 29.09.2026, 11.3: балл поверх фото работы — белые 12px на прозрачной плашке `rgba(…, 0.85)`:
+    # на светлой работе 2.75, прочерк без балла (`rgba(0,0,0,.35)` + 70 % белого) — 1.92.
+    # Плашка сплошная, у каждого тона своя заливка с белым ≥ 4.5 в обеих темах.
+    css = BASE_CSS.read_text(encoding="utf-8")
+    for name in SCORE_FILLS:
+        assert _contrast("#FFFFFF", _token_color(css, opener, name)) >= 4.5, name
+
+
+def test_score_badges_on_photos_use_solid_fills():
+    # Тот же бейдж живёт на трёх экранах: «Ученики», «Проверка пробников», «Проверка отработок».
+    templates = APP / "templates"
+    for source in (
+        _styles(),
+        (templates / "cabinet_admin_mock_check.html").read_text(encoding="utf-8"),
+        (templates / "cabinet_admin_retake_check.html").read_text(encoding="utf-8"),
+    ):
+        badge = _css_rule(source, ".work-score-badge")
+        assert "backdrop-filter" not in badge and "rgba(" not in badge
+        rules = re.findall(r"(\.(?:work-score-badge\.)?score-(?:none|red|orange|lime|green))\s*\{([^}]*)\}", source)
+        assert rules
+        for selector, body in rules:
+            assert re.search(r"background:\s*var\(--(?:score-\w+-fill|dim-fill)\)", body), selector
+            assert "rgba(" not in body, selector
