@@ -43,7 +43,11 @@
                    не дана, не придумывать самостоятельно (10.09.2026). #}
             </p>
         </div>
+        {% if is_stage %}
+        <a class="btn-outline" href="/cabinet/staff/program/stages">К этапам</a>
+        {% else %}
         <a class="btn-outline" href="/cabinet/staff/program/cycles">К циклам</a>
+        {% endif %}
     </div>
 
     {# Переключатель соседних циклов того же этапа — плашками, по аналогии с
@@ -53,8 +57,14 @@
        Компактные стеклянные «пилюли», не карточки `.prg-tile` — названия
        короткие («Цикл 1», «Цикл 2»), крупная карточка под них не нужна
        (владелец 24.09.2026, второй заход после первой версии). #}
-    {% if cycle_tiles|length > 1 %}
-    <p class="prg-hint">Этап «{{ stage_label }}»</p>
+    {# С 29.09.2026 тот же экран показывает задания самого этапа («Портфолио»):
+       с цикла туда ведёт название этапа, с этапа плашки ведут в его циклы. #}
+    {% if cycle_tiles|length > 1 or (is_stage and cycle_tiles) %}
+    {% if is_stage %}
+    <p class="prg-hint">Циклы этапа</p>
+    {% else %}
+    <p class="prg-hint">Этап «<a href="/cabinet/staff/program/cycles/{{ stage_id }}">{{ stage_label }}</a>» – задания этапа</p>
+    {% endif %}
     <div class="prg-cycle-switch">
         {% for tile in cycle_tiles %}
         <a class="prg-cycle-pill{{ ' is-active' if tile.is_current }}"

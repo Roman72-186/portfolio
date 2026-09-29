@@ -701,6 +701,8 @@ def program_stages(
             "ends_on": msk_date(stage.ends_at).isoformat() if stage.ends_at else None,
             "is_published": stage.is_published,
             "cycles_count": _stage_cycle_count(db, stage.id),
+            # Задания прямо на этапе («Портфолио») — кнопка «Задания этапа».
+            "items_count": count_week_items(db, stage.id),
         }
         for stage in list_week_topics(db, kinds=(TOPIC_KIND_STAGE,))
     ]
@@ -1211,6 +1213,14 @@ class MoveDirectionPayload(BaseModel):
         return value
 
 
+# Кто держит задания без дня: цикл и этап (владелец 29.09.2026). С 24.09.2026
+# «Портфолио» живёт прямо на этапе «Предобучение», а экран заданий, создание и
+# перестановка пускали только цикл — у ГП и суперадмина задания этапа не было
+# видно нигде, хотя ученик его видел. Правка, статистика и удаление самой
+# рамки по-прежнему только у цикла: у этапа свой экран «Этапы».
+_ITEM_HOLDER_KINDS = (TOPIC_KIND_WEEK, TOPIC_KIND_STAGE)
+
+
 @router.get("/cycles/{topic_id}", response_class=HTMLResponse)
 def program_cycle_items(
     topic_id: int,
@@ -1225,19 +1235,24 @@ def program_cycle_items(
     уже умеет работать без даты (см. `_get_editable_task`, `_update_simple_item`
     в этом же файле).
     """
-    topic = get_topic(db, topic_id, kinds=(TOPIC_KIND_WEEK,))
+    topic = get_topic(db, topic_id, kinds=_ITEM_HOLDER_KINDS)
     if topic is None:
         raise HTTPException(status_code=404, detail="Цикл не найден")
     items = list_week_items(db, topic_id)
+    is_stage = topic.kind == TOPIC_KIND_STAGE
     # Переключатель соседних циклов плашками (владелец 24.09.2026) — только
-    # когда у цикла есть живой этап-родитель.
-    stage = (
-        get_topic(db, topic.parent_id, kinds=(TOPIC_KIND_STAGE,))
-        if topic.parent_id is not None else None
-    )
+    # когда у цикла есть живой этап-родитель. На экране самого этапа плашки
+    # ведут в его циклы.
+    if is_stage:
+        stage = topic
+    else:
+        stage = (
+            get_topic(db, topic.parent_id, kinds=(TOPIC_KIND_STAGE,))
+            if topic.parent_id is not None else None
+        )
     cycle_tiles = [
         {"id": c.id, "label": cycle_label(db, c), "is_current": c.id == topic.id}
-        for c in stage_sibling_cycles(db, topic.parent_id)
+        for c in stage_sibling_cycles(db, stage.id)
     ] if stage is not None else []
     stage_label = cycle_label(db, stage) if stage is not None else None
     return templates.TemplateResponse(request, "cabinet_program_cycle_items.html",
@@ -1247,6 +1262,8 @@ def program_cycle_items(
             "topic": topic,
             "cycle_label": cycle_label(db, topic),
             "stage_label": stage_label,
+            "stage_id": stage.id if stage is not None else None,
+            "is_stage": is_stage,
             "cycle_tiles": cycle_tiles,
             "items": items,
             "edit_payloads": _edit_payloads(db, items, {t.id: {} for t in items}),
@@ -1496,7 +1513,7 @@ def _create_cycle_item(topic_id: int, payload: CycleItemPayload, user: dict, db:
     адресация внутри цикла — по блокам, а не по рамке, отдельной темы на
     задание тут не заводим).
     """
-    topic = get_topic(db, topic_id, kinds=(TOPIC_KIND_WEEK,))
+    topic = get_topic(db, topic_id, kinds=_ITEM_HOLDER_KINDS)
     if topic is None:
         raise HTTPException(status_code=404, detail="Цикл не найден")
     task = create_task(
@@ -1561,7 +1578,7 @@ def move_cycle_item(
     пересборкой всей формы, как у блоков внутри задания: задания цикла
     сохраняются по одному, а не одной формой на весь цикл разом.
     """
-    topic = get_topic(db, topic_id, kinds=(TOPIC_KIND_WEEK,))
+    topic = get_topic(db, topic_id, kinds=_ITEM_HOLDER_KINDS)
     if topic is None:
         raise HTTPException(status_code=404, detail="Цикл не найден")
     try:

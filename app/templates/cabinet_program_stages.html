@@ -84,6 +84,9 @@
                 {# Со списком, суженным до этого этапа (аудит 29.09.2026: ссылка вела на
                    все циклы подряд). #}
                 <a class="btn-blue" href="/cabinet/staff/program/cycles?stage={{ stage.id }}">Циклы этапа</a>
+                {# Задания прямо на этапе («Портфолио») — с 29.09.2026, до этого
+                   у персонала на них не было входа. #}
+                <a class="btn-outline" href="/cabinet/staff/program/cycles/{{ stage.id }}">Задания этапа ({{ stage.items_count }})</a>
                 <button type="button" class="btn-outline" data-stage-edit
                         data-payload='{{ stage|tojson }}'>Название и даты</button>
             </div>
