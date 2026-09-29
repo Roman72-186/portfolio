@@ -379,3 +379,13 @@ def test_ink_on_pale_fill_is_darker_than_the_fill():
             if fill and fill.group(1) != "text" and int(fill.group(2)) < 50 and re.search(r"(?<![-\w])color:\s*var\(--%s\)" % fill.group(1), body):
                 bare.append(selector.strip().splitlines()[-1])
     assert not bare, "текст чистым токеном на подложке того же токена:\n" + "\n".join(bare)
+
+
+def test_mock_day_is_not_a_frame_inside_the_subject_card():
+    # 29.09.2026, повторный аудит: в «Пробниках» рамка в рамке — предмет → день → фото.
+    # Рамку и фон снимаем у дня: его и так отделяют заголовок с датой, календарь
+    # (своя подложка) и форма оценки (своя плашка).
+    day = _css_rule(_styles(), ".mock-day-card")
+    assert "border:" not in day and "background:" not in day
+    assert "border:" in _css_rule(_styles(), ".subject-card"), "рамка предмета остаётся"
+    assert "background: var(--surface-2)" in _css_rule(_styles(), ".score-form"), "форма оценки отделена подложкой"

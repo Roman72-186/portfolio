@@ -343,11 +343,8 @@
     background: var(--blue-deep);
 }
 .mock-day.is-empty { visibility: hidden; }
-.mock-day-card {
-    border: 1px solid var(--line);
-    background: var(--surface);
-    border-radius: 12px;
-    padding: 14px;
+.mock-day-card { /* без рамки: внутри карточки предмета третья рамка подряд (аудит 29.09.2026) */
+    padding-top: 12px; /* дата — вровень с годом в календаре слева */
     min-height: 280px;
 }
 .mock-day-head {
@@ -809,6 +806,7 @@
     .mock-calendar-layout { grid-template-columns: 1fr; }
     /* Работа и оценка — первыми, календарь под ними, месяцы в два ряда: иначе на 320 до работы 530px календаря */
     .mock-day-card, #main-panel .cal-detail { min-height: 0; }
+    .mock-day-card { padding-top: 0; } /* календарь теперь под днём, выравнивать не с чем */
     .mock-calendar-side, #main-panel .cal-side { order: 2; }
     .mock-month-list, #main-panel .cal-month-list { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
     .mock-month-btn, #main-panel .cal-month-btn { padding: 7px 0; }
