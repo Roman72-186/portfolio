@@ -238,7 +238,15 @@ function blockBodyHTML(type) {
             + '<label class="prg-field"><input type="file" accept="image/*" multiple data-b-photo-file aria-label="Работы для сравнения"></label>'
             + '<p class="prg-hint" data-b-photo-status></p>'
             + '<div class="prg-blk-gallery" data-b-images></div>'
-            + '<p class="prg-hint">Загрузите от двух до десяти работ и отметьте ту, что, по-вашему, наберёт больше баллов. Ученик увидит работы парами в порядке загрузки, выберет свою и после отправки узнает, совпал ли его выбор с вашим.</p>';
+            + '<p class="prg-hint">Загрузите от двух до десяти работ и отметьте ту, что, по-вашему, наберёт больше баллов. Ученик увидит работы парами в порядке загрузки, выберет свою и после отправки узнает, совпал ли его выбор с вашим.</p>'
+            // Тренажёр (владелец 29.09.2026, по образцу диагностики): пройти
+            // пары самому и увидеть итог. Кнопка видна сразу, а не после
+            // сохранения, как у диагностики: id из базы тренажёру не нужны
+            // (см. `runCompareTrainer`).
+            + '<div class="prg-actions">'
+            + '  <button type="button" class="btn-outline" data-compare-trainer>Пройти как тренажёр</button>'
+            + '</div>'
+            + '<div class="prg-preview" data-compare-trainer-box hidden></div>';
     }
     if (type === 'timed') {
         // Контрольная на время (владелец 03.09.2026): «в контрольной у нас
@@ -857,15 +865,7 @@ function collectFormBlocks(form) {
             // Без `return` на нехватке работ или отметки: пусть сервер
             // откажет со словами «минимум две работы» / «отметьте свой
             // выбор» — иначе блок молча пропал бы при сохранении.
-            item.images = [];
-            row.querySelectorAll('[data-b-image]').forEach(function (thumb) {
-                var pick = thumb.querySelector('[data-b-image-pick]');
-                item.images.push({
-                    url: thumb.getAttribute('data-url'),
-                    path: thumb.getAttribute('data-path') || null,
-                    is_pick: !!(pick && pick.checked)
-                });
-            });
+            item.images = compareImagesFromRow(row);
         }
         if (type === 'rules') {
             item.options = [];
@@ -928,6 +928,66 @@ function collectFormBlocks(form) {
     });
     return items;
 }
+
+// Работы блока «Сравнение работ» в порядке галереи, с отметкой «Мой выбор».
+// Один сбор на сохранение и тренажёр: тренажёр должен гонять ровно то, что
+// уйдёт на сервер.
+function compareImagesFromRow(row) {
+    var images = [];
+    row.querySelectorAll('[data-b-image]').forEach(function (thumb) {
+        var pick = thumb.querySelector('[data-b-image-pick]');
+        images.push({
+            url: thumb.getAttribute('data-url'),
+            path: thumb.getAttribute('data-path') || null,
+            is_pick: !!(pick && pick.checked)
+        });
+    });
+    return images;
+}
+
+// «Пройти как тренажёр» у сравнения работ (владелец 29.09.2026, по образцу
+// тренажёра диагностики). В отличие от диагностики, сервер не нужен: итог —
+// совпала ли победившая работа с отметкой «Мой выбор», а работы и отметка
+// уже лежат в строке. Поэтому тренажёр работает и у несохранённого блока, а
+// рисует его общий рендерер ученика в режиме `trainer` — экран тот же, что у
+// ученика, турнир идёт в браузере, в базу не пишется ничего.
+function runCompareTrainer(row) {
+    var box = row.querySelector('[data-compare-trainer-box]');
+    if (!box) return;
+    box.innerHTML = '';
+    box.hidden = false;
+    var images = compareImagesFromRow(row);
+    var pick = images.filter(function (image) { return image.is_pick; })[0];
+    if (images.length < 2 || !pick) {
+        var hint = document.createElement('p');
+        hint.className = 'prg-hint';
+        hint.textContent = 'Загрузите хотя бы две работы и отметьте «Мой выбор» — тогда тренажёр запустится.';
+        box.appendChild(hint);
+        return;
+    }
+    var title = row.querySelector('[data-b-title]');
+    var body = row.querySelector('[data-b-body]');
+    var renderer = window.lrnBlockRender.create({ csrfToken: '' });
+    box.appendChild(renderer.render({
+        id: -1,
+        block_type: 'compare',
+        title: title ? title.value.trim() : '',
+        body_html: body && body.value.trim()
+            ? window.RichTextField.markdownToHtml(body.value.trim()) : null,
+        images: images,
+        pick_url: pick.url,
+        trainer: true
+    }, 0));
+}
+
+// Кнопка есть в обоих конструкторах (день и задания цикла) — обработчик один,
+// здесь, чтобы экраны не разошлись (прецедент 09.09.2026).
+document.addEventListener('click', function (event) {
+    var button = event.target.closest('[data-compare-trainer]');
+    if (!button) return;
+    var row = button.closest('[data-block]');
+    if (row) runCompareTrainer(row);
+});
 
 // Фото уходит на сервер сразу при выборе — форма несёт только {url, path},
 // тот же контракт, что у обложек видео и картинок самостоятельной работы.

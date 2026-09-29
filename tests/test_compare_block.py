@@ -21,6 +21,7 @@
   по парам с миниатюрами на экране проверки.
 """
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
 from app.models.task_block import (
@@ -584,3 +585,54 @@ def test_review_queue_survives_removed_work(auth_client, db):
     assert db.query(TaskBlockImage).filter(TaskBlockImage.block_id == block.id).count() == 4
     assert db.get(TrackerTask, task.id) is not None
 
+
+
+# --- тренажёр преподавателя (владелец 29.09.2026) ---------------------------
+#
+# «Пройти как тренажёр» у сравнения работ живёт целиком в браузере: итог —
+# совпала ли победившая работа с отметкой «Мой выбор», серверу считать нечего.
+# Стражи ниже держат три вещи, которые ломаются молча: кнопка есть в строке
+# блока обоих конструкторов, тренажёр не шлёт запросов от имени
+# преподавателя, и гоняет он ровно те работы, что уйдут на сохранение.
+
+_APP = Path(__file__).resolve().parent.parent / "app"
+_RENDER_JS = (_APP / "static" / "js" / "task-blocks-render.js").read_text(encoding="utf-8")
+_EDITOR_JS = (_APP / "templates" / "partials" / "program_blocks_editor_js.html").read_text(encoding="utf-8")
+
+
+def _js_function(source: str, name: str) -> str:
+    """Тело функции `name` по балансу фигурных скобок."""
+    start = source.index(f"function {name}(")
+    depth = 0
+    for position in range(source.index("{", start), len(source)):
+        if source[position] == "{":
+            depth += 1
+        elif source[position] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:position + 1]
+    raise AssertionError(f"функция {name} не закрыта")
+
+
+def test_trainer_button_is_in_the_compare_row():
+    compare_branch = _EDITOR_JS[_EDITOR_JS.index("if (type === 'compare')"):]
+    compare_branch = compare_branch[:compare_branch.index("if (type === 'timed')")]
+    assert "data-compare-trainer" in compare_branch
+    assert "data-compare-trainer-box" in compare_branch
+
+
+def test_trainer_does_not_talk_to_the_server():
+    for body in (_js_function(_RENDER_JS, "trainerStep"), _js_function(_EDITOR_JS, "runCompareTrainer")):
+        assert "post(" not in body
+        assert "fetch(" not in body
+        assert "csrfFetch" not in body
+    # Ветка тренажёра в choosePair уходит раньше, чем дело доходит до запроса.
+    choose = _js_function(_RENDER_JS, "choosePair")
+    assert choose.index("block.trainer") < choose.index("post(")
+
+
+def test_trainer_plays_the_same_works_that_are_saved():
+    collect = _js_function(_EDITOR_JS, "collectFormBlocks")
+    trainer = _js_function(_EDITOR_JS, "runCompareTrainer")
+    assert "compareImagesFromRow(row)" in collect
+    assert "compareImagesFromRow(row)" in trainer

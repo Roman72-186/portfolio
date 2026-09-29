@@ -28,7 +28,7 @@
 {% from "partials/program_settings_panel.html" import settings_panel %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
-<script src="/static/js/task-blocks-render.js?v=35"></script>
+<script src="/static/js/task-blocks-render.js?v=36"></script>
 <script src="/static/js/diagnostic-builder.js?v=9"></script>
 <script src="/static/js/diagnostic-trainer.js?v=3"></script>
 {# WYSIWYG для полей с разметкой — стоит до `program_blocks_editor_js.html`. #}
@@ -870,4 +870,8 @@ function uploadBlockPhotos(row, files) {
     });
 })();
 </script>
+{# Лайтбокс — для лупы в тренажёре и предпросмотре «Сравнения работ»: без
+   него кнопка 🔍 общего рендера ученика молча ничего не делала
+   (владелец 29.09.2026). #}
+{% include "partials/lightbox.html" %}
 {% endblock %}

@@ -1149,6 +1149,12 @@ scope)` и свойством `answered` (одна попытка: после о
                 var wrap = withTitle(el('div', 'lrn-blk lrn-blk-compare'), block);
                 if (block.body_html) wrap.appendChild(elHtml('p', 'lrn-blk-body', block.body_html));
                 var works = (block.images || []).map(function (image) { return image.url; });
+                if (block.trainer) {
+                    wrap.appendChild(el(
+                        'p', 'lrn-card-note',
+                        'Тренажёр: выбор никуда не сохраняется, ученики его не видят.'
+                    ));
+                }
                 var stage = el('div', 'lrn-cmp');
                 wrap.appendChild(stage);
 
@@ -1199,7 +1205,15 @@ scope)` и свойством `answered` (одна попытка: после о
                         pair.appendChild(workFigure(pickUrl, 'Выбор преподавателя – ' + workName(pickUrl).toLowerCase()));
                     }
                     stage.appendChild(pair);
-                    if (fresh) {
+                    if (block.trainer) {
+                        // «Продолжить» перезагружает страницу — в конструкторе
+                        // это потеря несохранённых правок. Тренажёр начинается
+                        // заново здесь же.
+                        var again = el('button', 'btn-outline', 'Пройти ещё раз');
+                        again.type = 'button';
+                        again.addEventListener('click', function () { showPair(start); });
+                        stage.appendChild(again);
+                    } else if (fresh) {
                         // Шаги ниже открывает сервер — обновляем ленту по
                         // кнопке, а не сразу: сделанный шаг в ленте
                         // сворачивается, и на телефоне результат пропал бы
@@ -1279,7 +1293,29 @@ scope)` и свойством `answered` (одна попытка: после о
                     preload(works[state.step + 1]);
                 }
 
+                // Тренажёр преподавателя (владелец 29.09.2026, по образцу
+                // тренажёра диагностики): тот же экран ученика, но турнир идёт
+                // здесь, на сервер не уходит ничего. Шаги — зеркало
+                // `save_compare_step`: выбранная работа против следующей по
+                // порядку, на последней паре — сверка с отметкой «Мой выбор».
+                function trainerStep(url, step, total) {
+                    if (step < total) {
+                        showPair({
+                            champion_url: url,
+                            challenger_url: works[step + 1],
+                            step: step + 1,
+                            total: total
+                        });
+                    } else {
+                        showResult(url, url === block.pick_url, block.pick_url, false);
+                    }
+                }
+
                 function choosePair(url, pair, step) {
+                    if (block.trainer) {
+                        trainerStep(url, step, start.total);
+                        return;
+                    }
                     if (busy || !block.submit_endpoint) return;
                     busy = true;
                     pair.querySelectorAll('.lrn-cmp-choose').forEach(function (btn) { btn.disabled = true; });
