@@ -70,6 +70,23 @@ def test_voice_from_browser_webm_becomes_m4a_with_duration(tmp_path):
 
 
 @needs_ffmpeg
+def test_telegram_voice_is_ogg_opus(tmp_path):
+    """Голосовое сообщение Telegram — OGG с Opus. Без явного кодека ffmpeg
+    пишет в `.ogg` Vorbis, и Telegram прислал бы ученику документ."""
+    m4a = _lavfi(tmp_path, "src.m4a", [
+        "-f", "lavfi", "-i", "sine=frequency=440:duration=3", "-c:a", "aac",
+    ])
+
+    name, data, mime = media_transcode.telegram_voice("x.m4a", m4a, "audio/mp4")
+
+    assert (name, mime) == ("x.ogg", "audio/ogg")
+    info = _probe(tmp_path, "out.ogg", data)
+    assert info["format"]["format_name"] == "ogg"
+    assert [s["codec_name"] for s in info["streams"]] == ["opus"]
+    assert float(info["format"]["duration"]) == pytest.approx(3, abs=0.2)
+
+
+@needs_ffmpeg
 def test_note_from_browser_webm_becomes_h264_mp4_with_even_sides(tmp_path):
     # Нечётные стороны — libx264 их не принимает, фильтр обязан выровнять.
     webm = _lavfi(tmp_path, "src.webm", [

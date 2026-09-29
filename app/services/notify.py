@@ -23,7 +23,7 @@ from app.db.database import SessionLocal
 from app.models.notification import Notification
 from app.models.push_subscription import PushSubscription
 from app.models.user import User
-from app.services import telegram as telegram_service
+from app.services import media_transcode, s3 as s3_service, telegram as telegram_service
 
 logger = logging.getLogger(__name__)
 
@@ -87,9 +87,35 @@ async def _send_telegram(chat_id: int, notification: Notification) -> None:
     if notification.text:
         text = f"{text}\n\n{notification.text}"
     if notification.audio_url:
-        await telegram_service.send_voice(chat_id, notification.audio_url, caption=text)
-        return
+        voice = await _telegram_voice(notification.audio_url)
+        if voice is not None:
+            name, data, mime = voice
+            if await telegram_service.send_voice(
+                chat_id, data, filename=name, content_type=mime, caption=text,
+            ):
+                return
+        # Голосовое не собралось или Telegram его не принял — ученик всё
+        # равно получает уровень текстом, запись ждёт его в уведомлениях сайта.
     await telegram_service.send_message(chat_id, text)
+
+
+async def _telegram_voice(audio_url: str) -> tuple[str, bytes, str] | None:
+    """Голосовое из S3 → OGG/Opus для `sendVoice` загрузкой файла.
+
+    Ссылкой отдавать нельзя: m4a по URL Telegram присылает файлом, а не
+    голосовым (см. `telegram.send_voice`). Скачивание (boto) и ffmpeg
+    синхронные — оба в поток, чтобы не держать event loop: сюда приходят и из
+    BackgroundTasks, и из планировщика через `notify_many_sync`.
+    """
+    path = s3_service.s3_path_from_public_url(audio_url)
+    if not path:
+        logger.warning("notify: голосовое не из нашего S3, в Telegram не ушло: %s", audio_url)
+        return None
+    data = await asyncio.to_thread(s3_service.download_from_s3, path)
+    if not data:
+        return None
+    name = path.rsplit("/", 1)[-1]
+    return await asyncio.to_thread(media_transcode.telegram_voice, name, data, "audio/mp4")
 
 
 async def _send_push(db, sub: PushSubscription, notification: Notification) -> None:

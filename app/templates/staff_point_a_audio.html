@@ -4,12 +4,18 @@
 Две карточки, level 1 и level 2 — по одной записи `PointALevelAudio` на
 уровень, перезалив обновляет ту же строку (`point_a_level_audio.py`).
 
-Без своего <style> — только prg-* (program.css), как у остальных экранов
-точки А: новый блок стилей запрещает tests/test_reuse_ratchet.py.
+Голосовое записывается прямо здесь или прикрепляется файлом — общий компонент
+`media-recorder-field.js` в режиме формы кладёт запись в скрытое поле `audio`
+(владелец 29.09.2026). Сервер перегоняет её в m4a, в Telegram она уходит
+голосовым сообщением (`notify._send_telegram`).
+
+Без своего <style> — только prg-* (program.css) и mrf-* (media-recorder.css),
+как у остальных экранов: новый блок стилей запрещает tests/test_reuse_ratchet.py.
 #}
 {% block title %}Голосовые точки А{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=48">
+<link rel="stylesheet" href="/static/css/media-recorder.css?v=4">
 {% endblock %}
 {% block content %}
 <div class="prg-page prg-page--point-a">
@@ -17,8 +23,8 @@
         <div class="prg-head-copy">
             <h1>Голосовые точки А</h1>
             <p>Ученик получает это голосовое вместе с уведомлением, когда точка А
-                полностью оценена. Пока файла нет — уведомление всё равно уходит,
-                только текстом.</p>
+                полностью оценена: на сайте и голосовым сообщением в Telegram. Пока
+                записи нет, уведомление всё равно уходит, только текстом.</p>
         </div>
     </div>
 
@@ -44,11 +50,13 @@
                 {% if request.query_params.get('error') and request.query_params.get('level') == level|string %}
                 <p class="prg-badge prg-badge--error">{{ request.query_params.get('error') }}</p>
                 {% endif %}
-                <form method="post" action="/cabinet/staff/point-a-audio/{{ level }}" enctype="multipart/form-data">
+                <form method="post" action="/cabinet/staff/point-a-audio/{{ level }}" enctype="multipart/form-data" data-point-a-audio-form>
                     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-                    <label class="prg-field prg-field--row">{{ 'Заменить файл' if audio else 'Загрузить файл' }}
-                        <input type="file" name="audio" accept="audio/*" required>
-                    </label>
+                    {% if audio %}<p class="prg-meta">Новая запись заменит текущую.</p>{% endif %}
+                    <div data-media-recorder data-mrf-modes="voice" data-mrf-form-status="Сохранится по кнопке «Сохранить»"></div>
+                    {# Без `required`: скрытое обязательное поле браузер не даёт
+                       отправить молча, без подсказки. Пустую форму отбивает сервер. #}
+                    <input type="file" name="audio" accept="audio/*" hidden>
                     <button type="submit" class="btn-blue">Сохранить</button>
                 </form>
             </div>
@@ -58,4 +66,30 @@
 
     <p><a class="btn-outline" href="/cabinet/staff/point-a">← К оценке точки А</a></p>
 </div>
+
+<script src="/static/js/media-recorder-field.js?v=8"></script>
+<script>
+(function () {
+    // Ключ CSRF из разметки старится вместе со страницей, а голосовое пишут
+    // минутами, иногда после перезахода в другой вкладке — перед отправкой
+    // берём свежий (`static/js/csrf.js`, правило в AGENTS.md). Компонент
+    // записи держит отправку, пока запись идёт: его обработчик стоит раньше.
+    document.querySelectorAll('[data-point-a-audio-form]').forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+            if (event.defaultPrevented || !window.csrfFresh) return;
+            event.preventDefault();
+            var button = form.querySelector('button[type="submit"]');
+            if (button) {
+                button.disabled = true;
+                button.textContent = 'Сохраняю…';
+            }
+            window.csrfFresh().then(function (token) {
+                var field = form.querySelector('input[name="csrf_token"]');
+                if (token && field) field.value = token;
+                form.submit();
+            });
+        });
+    });
+})();
+</script>
 {% endblock %}

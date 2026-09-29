@@ -35,6 +35,13 @@ _VOICE_ARGS = [
     "-vn", "-c:a", "aac", "-b:a", "96k", "-ac", "1",
     "-movflags", "+faststart",
 ]
+# Голосовое сообщение Telegram — OGG с кодеком Opus, родной формат его
+# голосовых. Кодек задаётся явно: для `.ogg` ffmpeg по умолчанию берёт Vorbis,
+# а такой файл Telegram показывает документом, а не голосовым.
+_TELEGRAM_VOICE_ARGS = [
+    "-vn", "-c:a", "libopus", "-b:a", "48k", "-ac", "1", "-ar", "48000",
+    "-application", "voip",
+]
 # Кружок у ученика — круг до 360 px (`.lrn-blk-note`), 640 по ширине с запасом.
 # Чётные стороны и yuv420p обязательны для libx264, иначе он падает, и молча
 # уехал бы исходный webm. Два потока — чтобы сервер на 4 ядрах не встал колом
@@ -64,6 +71,19 @@ def playable_voice(filename: str, data: bytes, content_type: str) -> tuple[str, 
     return _transcode(
         filename, data, content_type,
         out_ext="m4a", out_type="audio/mp4", args=_VOICE_ARGS, timeout=VOICE_TIMEOUT_SEC,
+    )
+
+
+def telegram_voice(filename: str, data: bytes, content_type: str) -> tuple[str, bytes, str]:
+    """Голосовое → `.ogg` (Opus) для `sendVoice` в Telegram.
+
+    В S3 голосовое лежит m4a (его играет `<audio>` на сайте), а Telegram
+    рисует голосовое сообщение с волной из OGG/Opus. Не справился ffmpeg —
+    вернётся исходный m4a: его `sendVoice` тоже принимает загрузкой файла.
+    """
+    return _transcode(
+        filename, data, content_type,
+        out_ext="ogg", out_type="audio/ogg", args=_TELEGRAM_VOICE_ARGS, timeout=VOICE_TIMEOUT_SEC,
     )
 
 

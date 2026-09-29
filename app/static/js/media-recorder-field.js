@@ -22,7 +22,11 @@
  *                                   первый `input[name=csrf_token]`); основной
  *                                   путь — свежий ключ из `window.csrfFresh`
  *                                   (`static/js/csrf.js`), см. `upload`;
- *   data-media-url/-kind          — уже сохранённая запись (редактор блока).
+ *   data-media-url/-kind          — уже сохранённая запись (редактор блока);
+ *   data-mrf-form-status="…"      — подпись под записью в режиме формы (по
+ *                                   умолчанию «Уйдёт вместе с сообщением»:
+ *                                   на экране голосовых точки А сообщения нет,
+ *                                   там запись сохраняется кнопкой «Сохранить»).
  *
  * Пока идёт запись или загрузка, на контейнере стоит `data-mrf-busy`: по нему
  * конструктор не даёт сохранить задание (иначе блок ушёл бы без файла и
@@ -235,7 +239,7 @@
                 if (!self.root.hasAttribute('data-mrf-busy')) return;
                 event.preventDefault();
                 event.stopImmediatePropagation();
-                self.setError('Запись ещё идёт. Нажмите «Готово», потом отправьте сообщение.');
+                self.setError('Запись ещё идёт. Сначала нажмите «Готово».');
             }, true);
         }
     };
@@ -419,6 +423,9 @@
             this.setError('Запись получилась пустой. Попробуйте ещё раз.');
             return;
         }
+        // Подсказка «Запись ещё идёт» от попытки отправить форму во время
+        // записи после «Готово» уже неправда.
+        this.setError('');
         var name = (this.kind === 'voice' ? 'voice' : 'circle') + '-' + Date.now()
             + '.' + extensionFor(this.kind, type);
         this.useFile(this.kind, new File([blob], name, {type: type}));
@@ -437,7 +444,8 @@
         } else {
             this.attachToForm(file);
             this.setBusy(false);
-            this.showPreview(this.objectUrl, kind, 'Уйдёт вместе с сообщением');
+            this.showPreview(this.objectUrl, kind,
+                this.root.getAttribute('data-mrf-form-status') || 'Уйдёт вместе с сообщением');
         }
     };
 

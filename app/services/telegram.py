@@ -88,10 +88,16 @@ async def send_message(chat_id: int, text: str, *, reply_markup: dict | None = N
     return True
 
 
-async def send_voice(chat_id: int, audio_url: str, *, caption: str = "") -> bool:
-    """Отправить голосовое по публичному HTTPS URL (Bot API `sendVoice` берёт
-    файл по URL сам — заливать заново не нужно, TimeWeb/Selectel S3-ссылки
-    публичные). `caption` — до 1024 символов, Telegram обрежет длиннее сам.
+async def send_voice(
+    chat_id: int, voice: bytes, *, filename: str, content_type: str, caption: str = "",
+) -> bool:
+    """Отправить голосовое загрузкой файла (multipart), а не ссылкой.
+
+    Bot API, раздел «Sending by URL» (сверено 29.09.2026): по ссылке `sendVoice`
+    рисует голосовое только для `audio/ogg` до 1 МБ, 1–20 МБ приходят файлом.
+    Загрузкой голосовым идут OGG/Opus, MP3 и M4A до 50 МБ — поэтому байты
+    передаёт вызывающий (`notify._send_telegram`). `caption` — до 1024
+    символов, Telegram обрежет длиннее сам.
 
     Как и `send_message`, ошибок не поднимает — логирует и возвращает False,
     включая блокировку бота (403).
@@ -101,13 +107,17 @@ async def send_voice(chat_id: int, audio_url: str, *, caption: str = "") -> bool
         return False
 
     client = await _get_client()
-    payload: dict = {"chat_id": chat_id, "voice": audio_url}
+    payload: dict = {"chat_id": str(chat_id)}
     if caption:
         payload["caption"] = caption
 
     try:
         resp = await request_with_retry(
-            lambda: client.post(_api_url("sendVoice"), json=payload),
+            lambda: client.post(
+                _api_url("sendVoice"), data=payload,
+                files={"voice": (filename, voice, content_type)},
+                timeout=60.0,
+            ),
             label="Telegram sendVoice",
         )
     except Exception as exc:
