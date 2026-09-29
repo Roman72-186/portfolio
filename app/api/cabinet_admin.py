@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Resp
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
-from app.constants import FEATURE_MOCK_EXAM
+from app.constants import FEATURE_MOCK_EXAM, REPORT_EXCLUDED_USER_IDS
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf
 from app.services.tz import msk_midnight
@@ -112,7 +112,8 @@ def admin_mock_check(
                 db.query(User)
                 .filter(
                     User.id.in_(counts_by_user.keys()),
-                    User.is_active == True,
+                    User.is_active == True,  # noqa: E712
+                    User.id.notin_(REPORT_EXCLUDED_USER_IDS),
                 )
                 .order_by(User.last_name, User.first_name)
                 .all()
@@ -179,7 +180,8 @@ def admin_retake_check(
                 db.query(User)
                 .filter(
                     User.id.in_(counts_by_user.keys()),
-                    User.is_active == True,
+                    User.is_active == True,  # noqa: E712
+                    User.id.notin_(REPORT_EXCLUDED_USER_IDS),
                 )
                 .order_by(User.last_name, User.first_name)
                 .all()

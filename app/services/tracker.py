@@ -16,7 +16,7 @@ from typing import Literal
 from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
 
-from app.constants import MOCK_SUBJECTS
+from app.constants import MOCK_SUBJECTS, REPORT_EXCLUDED_USER_IDS
 from app.models.exam_cycle import ExamCycle
 from app.models.homework import HomeworkAssignment, HomeworkImage
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
@@ -306,6 +306,9 @@ def count_task_audience(
             Role.rank == STUDENT_ROLE_RANK,
             User.is_active.is_(True),
             User.deleted_at.is_(None),
+            # Счётчик «получат N учеников» — учёт: служебных не считаем.
+            # Доступ им даёт не он, а `task_audience_user_ids` и соседи.
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
     )
     if assign_to_all:
@@ -1348,6 +1351,9 @@ def count_digest_audience(
             Role.rank == STUDENT_ROLE_RANK,
             User.is_active.is_(True),
             User.deleted_at.is_(None),
+            # Счётчик «получат N учеников» — учёт: служебных не считаем.
+            # Доступ им даёт не он, а `task_audience_user_ids` и соседи.
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
     )
     if assign_to_all:
@@ -1662,6 +1668,9 @@ def count_goal_audience(
             Role.rank == STUDENT_ROLE_RANK,
             User.is_active.is_(True),
             User.deleted_at.is_(None),
+            # Счётчик «получат N учеников» — учёт: служебных не считаем.
+            # Доступ им даёт не он, а `task_audience_user_ids` и соседи.
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
     )
     if assign_to_all:

@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session as DBSession
 
 from app.db.database import get_db
-from app.constants import TARIFFS_LEGACY
+from app.constants import REPORT_EXCLUDED_USER_IDS, TARIFFS_LEGACY
 from app.dependencies import require_admin_role, require_csrf
 from app.models.role import Role
 from app.models.user import User
@@ -41,7 +41,12 @@ def _tag_target(db: DBSession, user_id: int) -> User:
     target = (
         db.query(User)
         .join(Role, Role.id == User.role_id)
-        .filter(User.id == user_id, User.deleted_at.is_(None), Role.rank == 1)
+        .filter(
+            User.id == user_id,
+            User.deleted_at.is_(None),
+            Role.rank == 1,
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+        )
         .first()
     )
     if not target:
@@ -68,6 +73,7 @@ def superadmin_tags_page(
             User.role_id == student_role.id,
             User.is_active == True,  # noqa: E712
             User.deleted_at.is_(None),
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
 
         show_hidden_b = user["role_rank"] >= 5 and _parse_bool(show_hidden)
@@ -128,6 +134,7 @@ def superadmin_bulk_lookup(
             User.role_id == student_role.id,
             User.is_active == True,  # noqa: E712
             User.deleted_at.is_(None),
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
         if user["role_rank"] < 5:
             query = query.filter(User.profile_completed == True)  # noqa: E712

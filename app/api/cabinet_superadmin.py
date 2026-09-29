@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session as DBSession, aliased
 from app.config import settings
 from app.constants import (
     MOCK_SUBJECTS,
+    REPORT_EXCLUDED_USER_IDS,
     ASSIGNMENT_KINDS,
     ASSIGNMENT_KIND_LABELS,
     FEATURE_LABELS,
@@ -403,7 +404,11 @@ def _load_student_list(db: DBSession) -> list[dict]:
             User.id, User.first_name, User.last_name, User.name, User.tg_username,
             User.curator_id, User.tariff, User.cohort_tag, User.study_mode,
         )
-        .filter(User.role_id == student_role.id, User.is_active == True)
+        .filter(
+            User.role_id == student_role.id,
+            User.is_active == True,  # noqa: E712
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+        )
         .order_by(User.last_name, User.first_name)
         .all()
     )
@@ -1933,6 +1938,7 @@ def _render_superadmin_users(
         "study_mode_labels": STUDY_MODE_LABELS,
         "exam_subject_hints": EXAM_SUBJECT_HINTS,
         "has_case_by_user": has_case_by_user,
+        "service_user_ids": REPORT_EXCLUDED_USER_IDS,
         # Кнопка «Войти в кабинет» — по своей проверке, не по праву управления
         # (решение владельца 29.09.2026, см. `can_impersonate_by_rank`).
         "impersonatable_ids": {
@@ -2363,7 +2369,12 @@ def superadmin_assign_curator_bulk(
     students = (
         db.query(User)
         .join(Role, User.role_id == Role.id)
-        .filter(Role.rank == 1, User.is_active == True, User.deleted_at.is_(None))  # noqa: E712
+        .filter(
+            Role.rank == 1,
+            User.is_active == True,  # noqa: E712
+            User.deleted_at.is_(None),
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+        )
         .all()
     )
     by_username = {

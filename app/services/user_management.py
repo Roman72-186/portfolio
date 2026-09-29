@@ -8,7 +8,7 @@ from sqlalchemy import delete, update
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session
-from app.constants import tariffs_for_data
+from app.constants import REPORT_EXCLUDED_USER_IDS, tariffs_for_data
 from app.models.audit_log import AuditLog
 from app.models.curator_report import CuratorReport
 from app.models.exam_assignment import ExamAssignment
@@ -146,7 +146,14 @@ def tariffs_in_use(db: DBSession) -> list[str]:
     с ним удалили или перевели, — вычищать его из кода отдельной правкой не
     нужно. Архив и заблокированных считаем: по ним как раз и фильтруют.
     """
-    rows = db.query(User.tariff).filter(User.deleted_at.is_(None)).distinct().all()
+    rows = (
+        db.query(User.tariff)
+        # Служебный аккаунт тарифом в фильтрах не светит: у «службы заботы»
+        # отработавший «УВЕРЕННЫЙ», и он держал бы его в списке.
+        .filter(User.deleted_at.is_(None), User.id.notin_(REPORT_EXCLUDED_USER_IDS))
+        .distinct()
+        .all()
+    )
     return tariffs_for_data(row[0] for row in rows)
 
 

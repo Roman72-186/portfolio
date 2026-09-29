@@ -14,6 +14,7 @@ from datetime import datetime, timezone, timedelta, date
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from app.constants import REPORT_EXCLUDED_USER_IDS
 from app.cache import invalidate_unread
 from app.config import settings
 from app.db.database import SessionLocal
@@ -524,6 +525,7 @@ def _run_birthday_check() -> None:
             User.deleted_at.is_(None),
             User.archived_at.is_(None),
             User.birth_date.isnot(None),
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
         )
         students = (
             db.query(User)

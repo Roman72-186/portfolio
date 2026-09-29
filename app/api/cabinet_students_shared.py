@@ -22,6 +22,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session, invalidate_unread
+from app.constants import REPORT_EXCLUDED_USER_IDS
 from app.constants import MOCK_SUBJECTS, MONTHS, MONTH_TO_NUM, TARIFFS, TARIFFS_CURRENT, TARIFF_DISPLAY, COHORT_TAGS, COHORT_TAG_LABELS, TIMEZONE_DISPLAY
 from app.db.database import get_db
 from app.dependencies import (
@@ -127,6 +128,7 @@ def _get_accessible_students(
                 User.role_id == student_role.id,
                 User.archived_at.isnot(None),
                 User.deleted_at.is_(None),
+                User.id.notin_(REPORT_EXCLUDED_USER_IDS),
             )
             .order_by(User.last_name, User.first_name)
             .all()
@@ -140,7 +142,11 @@ def _get_accessible_students(
         # помечаются бейджем needs_setup в сайдбаре.
         return (
             db.query(User)
-            .filter(User.curator_id == user["user_id"], User.is_active == True)
+            .filter(
+                User.curator_id == user["user_id"],
+                User.is_active == True,  # noqa: E712
+                User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+            )
             .order_by(User.last_name, User.first_name)
             .all()
         )
@@ -150,7 +156,11 @@ def _get_accessible_students(
     if not student_role:
         return []
 
-    q = db.query(User).filter(User.role_id == student_role.id, User.is_active == True)  # noqa: E712
+    q = db.query(User).filter(
+        User.role_id == student_role.id,
+        User.is_active == True,  # noqa: E712
+        User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+    )
     if hide_pre_cohort:
         q = q.filter(User.profile_completed == True)  # noqa: E712
     if has_access_deadline:

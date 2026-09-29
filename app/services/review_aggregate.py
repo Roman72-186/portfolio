@@ -392,13 +392,18 @@ def _accessible_students(db: DBSession, user: dict) -> list:
     """Канонический список — `_get_accessible_students` (решение владельца,
     вопрос 2): куратор (и модератор, `FULL_ACCESS_RANK`) видит `curator_id` +
     `is_active`, admin+ — всех активных."""
+    from app.constants import REPORT_EXCLUDED_USER_IDS
     from app.models.role import Role
     from app.models.user import User
 
     if user["role_rank"] < FULL_ACCESS_RANK:
         return (
             db.query(User)
-            .filter(User.curator_id == user["user_id"], User.is_active == True)  # noqa: E712
+            .filter(
+                User.curator_id == user["user_id"],
+                User.is_active == True,  # noqa: E712
+                User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+            )
             .order_by(User.last_name, User.first_name)
             .all()
         )
@@ -407,7 +412,11 @@ def _accessible_students(db: DBSession, user: dict) -> list:
         return []
     return (
         db.query(User)
-        .filter(User.role_id == student_role.id, User.is_active == True)  # noqa: E712
+        .filter(
+            User.role_id == student_role.id,
+            User.is_active == True,  # noqa: E712
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+        )
         .order_by(User.last_name, User.first_name)
         .all()
     )

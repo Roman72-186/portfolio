@@ -187,6 +187,7 @@
                 <td data-label="Пользователь">
                     <div class="u-name-row">
                         <a href="/cabinet/superadmin/users/{{ u.id }}" class="u-name">{{ u.last_name or '' }} {{ u.first_name or u.name }}</a>
+                        {% if u.id in service_user_ids %}<span class="tag-pill tag-pill--orange">служебный</span>{% endif %}
                         {% if u_rank == 1 %}
                         <span class="profile-tariff u-newcomer"{% if u.tariff %} hidden{% endif %}>
                             <span class="profile-tariff-dot"></span>

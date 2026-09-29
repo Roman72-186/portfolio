@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from sqlalchemy import or_, true
 from sqlalchemy.orm import Session
 
+from app.constants import REPORT_EXCLUDED_USER_IDS
 from app.models.learning_topic import (
     TOPIC_KIND_WEEK,
     LearningTopic,
@@ -411,6 +412,7 @@ def count_topic_audience(
             User.is_active.is_(True),
             User.deleted_at.is_(None),
             User.is_group_member.is_(True),
+            User.id.notin_(REPORT_EXCLUDED_USER_IDS),  # счётчик — учёт, служебных не считаем
         )
     )
     if tariff_restricted:
