@@ -1705,27 +1705,48 @@ def blocks_source_list(
     Заменяет прежнюю шаблонность анкеты: набор вопросов больше не живёт
     отдельной сущностью, зато любой набор блоков переносится из соседнего
     задания одной кнопкой. Отдаём только те, где блоки вообще есть.
+
+    Задания цикла и этапа (с 10.09.2026) идут без `due_at`. До 29.09.2026
+    список сортировался по `due_at … nullslast` и резался на 50 — бездатные
+    стояли в хвосте и отрезались первыми, хотя кнопку поставили ровно ради
+    них: «Портфолио» нового этапа собирают из «Портфолио» прошлого. Теперь
+    они наверху, свежезаведённые выше, а задания дня — за ними по дню, как
+    раньше. Не общий порядок «свежее выше»: день задания бывает в будущем, и
+    задание, заведённое на месяц вперёд, снова вытеснило бы бездатные.
+    Подпись у бездатного — название рамки (`frame`), дня у него нет.
     """
+    has_blocks = db.query(TaskBlock.id).filter(TaskBlock.task_id == TrackerTask.id).exists()
     rows = (
-        db.query(TrackerTask.id, TrackerTask.title, TrackerTask.kind, TrackerTask.due_at)
-        .join(TaskBlock, TaskBlock.task_id == TrackerTask.id)
-        .filter(TrackerTask.deleted_at.is_(None))
+        db.query(
+            TrackerTask.id, TrackerTask.title, TrackerTask.kind,
+            TrackerTask.due_at, TrackerTask.topic_id,
+        )
+        .filter(TrackerTask.deleted_at.is_(None), has_blocks)
     )
     needle = (q or "").strip()
     if needle:
         rows = rows.filter(TrackerTask.title.ilike(f"%{needle}%"))
     rows = (
-        rows.group_by(TrackerTask.id, TrackerTask.title, TrackerTask.kind, TrackerTask.due_at)
-        .order_by(TrackerTask.due_at.desc().nullslast())
+        rows.order_by(
+            TrackerTask.due_at.desc().nullsfirst(),
+            TrackerTask.created_at.desc(),
+            TrackerTask.id.desc(),
+        )
         .limit(50)
         .all()
     )
+    frame_ids = {r.topic_id for r in rows if r.due_at is None and r.topic_id}
+    frames = {
+        topic.id: cycle_label(db, topic)
+        for topic in db.query(LearningTopic).filter(LearningTopic.id.in_(frame_ids))
+    } if frame_ids else {}
     return JSONResponse({"items": [
         {
             "id": r.id,
             "title": r.title,
             "kind_label": ITEM_KIND_LABELS.get(r.kind, r.kind),
             "day": msk_date(r.due_at).isoformat() if r.due_at else None,
+            "frame": frames.get(r.topic_id) if r.due_at is None else None,
         }
         for r in rows
     ]})

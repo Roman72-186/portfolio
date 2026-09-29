@@ -8,7 +8,7 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=46">
+<link rel="stylesheet" href="/static/css/program.css?v=47">
 <link rel="stylesheet" href="/static/css/program_ios.css?v=20">
 {# Предпросмотр «Глазами ученика» рисует блоки общим рендерером ученика, а
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
@@ -122,7 +122,7 @@ FORM: Operate.
            под ним. Рисуем прямо из формы, ничего не сохраняя. #}
         <button type="button" class="btn-outline" data-preview-blocks>Глазами ученика</button>
         <button type="button" class="btn-outline" data-take-blocks>Взять содержимое из другого задания</button>
-        <select data-take-source hidden></select>
+        {% include "partials/program_take_blocks_picker.html" %}
         <p class="prg-hint" data-take-status></p>
     </div>
     <div class="prg-preview" data-preview hidden></div>
@@ -546,6 +546,9 @@ FORM: Operate.
     // survey) — запросы всегда идут через конкретный элемент формы, как и у
     // существующих `data-blocks-wrap`/`data-form-message`, поэтому
     // префикс здесь не нужен.
+    document.addEventListener('input', function (event) {
+        if (event.target.hasAttribute('data-take-search')) searchTakeSources(event.target);
+    });
     document.addEventListener('change', function (event) {
         if (event.target.hasAttribute('data-tariff-restricted')) {
             var form = event.target.closest('form');
@@ -1105,82 +1108,7 @@ FORM: Operate.
         box.hidden = false;
     }
 
-    // ── «Взять содержимое из другого задания» (владелец 31.08.2026) ────────
-    // Копия, а не связь: правка не должна задевать задание-источник.
-
-    function fillTakeSources(select, status) {
-        status.textContent = 'Ищем задания с содержимым…';
-        status.classList.remove('is-error');
-        fetch('/cabinet/staff/program/blocks-source', {
-            credentials: 'same-origin', headers: {'Accept': 'application/json'}
-        }).then(function (r) { return r.ok ? r.json() : null; }).then(function (data) {
-            var items = (data && data.items) || [];
-            if (!items.length) {
-                status.textContent = 'Пока не из чего брать: содержимое есть только здесь.';
-                return;
-            }
-            select.innerHTML = '<option value="">— выберите задание —</option>' + items.map(function (i) {
-                var day = i.day ? ' · ' + i.day : '';
-                return '<option value="' + i.id + '">' + escapeHTML(i.kind_label + ': ' + i.title + day) + '</option>';
-            }).join('');
-            select.hidden = false;
-            status.textContent = 'Выберите — содержимое добавится к тому, что уже есть.';
-        }).catch(function () {
-            status.textContent = 'Не удалось получить список. Попробуйте ещё раз.';
-            status.classList.add('is-error');
-        });
-    }
-
-    function takeBlocksFrom(form, taskId, status) {
-        status.classList.remove('is-error');
-        status.textContent = 'Переносим…';
-        fetch('/cabinet/staff/program/blocks-source/' + taskId, {
-            credentials: 'same-origin', headers: {'Accept': 'application/json'}
-        }).then(function (r) {
-            if (!r.ok) throw new Error();
-            return r.json();
-        }).then(function (data) {
-            var holder = form.querySelector('[data-blocks]');
-            var incoming = data.blocks || [];
-            if (!incoming.length) {
-                status.textContent = 'В этом задании пока нет блоков.';
-                return;
-            }
-            // Граница между тем, что уже было в форме, и тем, что приехало
-            // пачкой: без неё вставленные блоки тут же становятся
-            // неотличимы от остальных (ревью 03.09.2026).
-            var hadBlocksBefore = !!holder.querySelector('[data-block]');
-            if (hadBlocksBefore) {
-                holder.insertAdjacentHTML(
-                    'beforeend',
-                    '<div class="prg-blk-divider" data-take-divider>Добавлено из другого задания</div>'
-                );
-            }
-            var firstNew = null;
-            incoming.forEach(function (block) {
-                holder.insertAdjacentHTML('beforeend', blockRowHTML(block.block_type));
-                var row = holder.lastElementChild;
-                fillBlockRow(row, block);
-                window.RichTextField.enhanceAll(row);
-                row.classList.add('prg-blk--new');
-                if (!firstNew) firstNew = row;
-            });
-            renumberBlocks(holder);
-            if (firstNew) firstNew.scrollIntoView({behavior: 'smooth', block: 'center'});
-            // Подсветка временная: снимаем через паузу, а не оставляем
-            // навсегда — иначе через десять минут редактирования старый
-            // «свежий» блок выглядит так же, как только что взятый.
-            setTimeout(function () {
-                holder.querySelectorAll('.prg-blk--new').forEach(function (row) {
-                    row.classList.remove('prg-blk--new');
-                });
-            }, 6000);
-            status.textContent = 'Добавлено блоков: ' + incoming.length + '.';
-        }).catch(function () {
-            status.textContent = 'Не удалось перенести содержимое.';
-            status.classList.add('is-error');
-        });
-    }
+    {% include "partials/program_take_blocks_js.html" %}
 
     // renderFormBlocks/collectFormBlocks/addImageThumb переехали в
     // partials/program_blocks_editor_js.html (10.09.2026).
