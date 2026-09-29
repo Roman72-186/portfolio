@@ -32,6 +32,7 @@ from app.api import cabinet_staff_notifications
 from app.dependencies import ACCESS_EXPIRED_DETAIL, TG_MISMATCH_DETAIL, PORTFOLIO_GATE_DETAIL
 from app.limiter import limiter
 from app import log_masking
+from app.body_limit import BodySizeLimitMiddleware
 from app.services.rbac import seed_roles_and_permissions
 from app.services import n8n as n8n_service
 from app.services import vk as vk_service
@@ -342,6 +343,11 @@ async def force_mock_exam_session_refresh(request: Request, call_next):
     finally:
         db.close()
     return response
+
+
+# Предел тела запроса — добавлен последним, значит снаружи всех слоёв выше:
+# ни один из них не успеет читать тело больше 600 МБ (`app/body_limit.py`).
+app.add_middleware(BodySizeLimitMiddleware)
 
 
 # Routers
