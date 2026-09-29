@@ -56,7 +56,7 @@ def get_tags_for_users(db: DBSession, user_ids: list[int]) -> dict[int, list[Tag
     rows = (
         db.query(UserTag.user_id, Tag)
         .join(Tag, Tag.id == UserTag.tag_id)
-        .filter(UserTag.user_id.in_(user_ids))
+        .filter(UserTag.user_id.in_(user_ids), Tag.is_hidden == False)  # noqa: E712
         .order_by(Tag.name)
         .all()
     )
@@ -115,6 +115,12 @@ def ensure_profile_tags(db: DBSession, students: list[User]) -> None:
 
         for name in names:
             tag = get_or_create_tag(db, name)
+            # Скрытый тег — июньский, прошлого потока: автоматически его не
+            # раздаём, иначе первое открытие экрана вернуло бы старые теги
+            # всему новому потоку. Имя уникально, так что эти автотеги
+            # (тариф, период, уроки, КЕЙС) не ставятся, пока тег не вернут.
+            if tag.is_hidden:
+                continue
             add_tag_to_user(db, student.id, tag.id)
 
     db.commit()
@@ -153,15 +159,16 @@ def get_curator_names(db: DBSession) -> list[str]:
 
 
 def get_all_tags(db: DBSession) -> list[Tag]:
-    """All tags that exist, sorted by name — used to populate filter dropdowns."""
-    return db.query(Tag).order_by(Tag.name).all()
+    """Видимые теги по имени — для выпадающих списков фильтров и адресации.
+    Скрытые (`Tag.is_hidden`) сюда не попадают."""
+    return db.query(Tag).filter(Tag.is_hidden == False).order_by(Tag.name).all()  # noqa: E712
 
 
 def get_suggested_tags(db: DBSession) -> list[str]:
     names: set[str] = set(MOCK_SUBJECTS)
     names.update(get_curator_names(db))
 
-    for (tag_name,) in db.query(Tag.name).all():
+    for (tag_name,) in db.query(Tag.name).filter(Tag.is_hidden == False):  # noqa: E712
         names.add(tag_name)
 
     return sorted(names)

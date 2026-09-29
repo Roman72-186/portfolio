@@ -178,6 +178,9 @@ def superadmin_add_tag(
         raise HTTPException(status_code=400, detail="Тег слишком длинный (макс. 50 символов)")
 
     tag = get_or_create_tag(db, name_clean)
+    # Сотрудник сам ставит тег с именем скрытого — возвращаем его в показ:
+    # второго тега с тем же именем не завести, а поставить невидимый — бессмыслица.
+    tag.is_hidden = False
     add_tag_to_user(db, user_id, tag.id)
     db.commit()
 

@@ -499,3 +499,70 @@ def test_blocked_student_still_tagged(admin_rank4_client, db, student_user):
         data={"name": "Композиция", "csrf_token": "bypass"},
     )
     assert resp.status_code == 200, resp.text
+
+
+# ---------------------------------------------------------------------------
+# Скрытые теги (владелец 29.09.2026: июньские теги скрыть)
+# ---------------------------------------------------------------------------
+# Все 18 тегов прода заведены 11–15.06.2026 под прошлый поток: 530 привязок
+# из 548 — у архива. Скрытие — только показ: выпадающие списки, подсказки,
+# чипы учеников. Доступ по тегам (`mock_exam_access`, адресация заданий) не
+# меняется, привязки в базе остаются.
+
+def _hidden_tag(db, name):
+    tag = Tag(name=name, is_hidden=True)
+    db.add(tag)
+    db.commit()
+    return tag
+
+
+def test_hidden_tag_is_left_out_of_lists_and_chips(db, student_user):
+    from app.services.tags import get_all_tags, get_tags_for_users
+
+    hidden = _hidden_tag(db, "15-20")
+    visible = Tag(name="Сентябрь")
+    db.add(visible)
+    db.commit()
+    db.add_all([
+        UserTag(user_id=student_user.id, tag_id=hidden.id),
+        UserTag(user_id=student_user.id, tag_id=visible.id),
+    ])
+    db.commit()
+
+    assert [t.name for t in get_all_tags(db)] == ["Сентябрь"]
+    assert "15-20" not in get_suggested_tags(db)
+    assert [t.name for t in get_tags_for_users(db, [student_user.id])[student_user.id]] == [
+        "Сентябрь"
+    ]
+    # Привязка в базе цела — скрыт только показ.
+    assert db.get(UserTag, (student_user.id, hidden.id)) is not None
+
+
+def test_auto_tagging_skips_hidden_tag(db, student_user):
+    """Автотег по тарифу не вешает скрытый июньский «УВЕРЕННЫЙ» новому ученику:
+    иначе первое открытие экрана тегов раздало бы старые теги всему потоку."""
+    from app.services.tags import ensure_profile_tags
+
+    hidden = _hidden_tag(db, student_user.tariff)
+
+    ensure_profile_tags(db, [student_user])
+
+    assert db.get(UserTag, (student_user.id, hidden.id)) is None
+
+
+def test_manual_tag_brings_hidden_tag_back(admin_rank4_client, db, student_user):
+    """Сотрудник сам ставит тег с именем скрытого — это решение вернуть его в
+    показ: имя уникально, второго «Композиция» не завести. Так же вернутся
+    «Р»/«К»/«Р+К» при первой массовой постановке на экране тегов."""
+    client, _ = admin_rank4_client
+    hidden = _hidden_tag(db, "Композиция")
+
+    resp = client.post(
+        f"/cabinet/superadmin/tags/{student_user.id}",
+        data={"name": "композиция", "csrf_token": "bypass"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    db.refresh(hidden)
+    assert hidden.is_hidden is False
+    assert db.get(UserTag, (student_user.id, hidden.id)) is not None
