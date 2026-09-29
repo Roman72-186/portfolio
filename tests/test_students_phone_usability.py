@@ -464,3 +464,17 @@ def test_screen_script_lives_in_cached_file():
     tag = re.search(r'<script src="/static/js/cabinet_students\.js\?v=\d+"></script>', source)
     assert tag, "без ?v= браузер не узнает о правке: у статики Cache-Control: immutable"
     assert source.index("const COHORT_TAG_LABELS") < tag.start()
+
+
+def test_floating_menu_does_not_cover_end_of_list_and_profile():
+    # 29.09.2026, аудит 10.5: плавающее меню персонала (до 1023px) накрывало последнего
+    # ученика в списке и «Редактировать анкету» — на 320–768 касание уходило в меню.
+    # Запас под меню у .main снимает первое правило файла, поэтому он — у самих блоков.
+    styles = _styles()
+    assert re.search(r"^\.main \{[^}]*padding: 0 !important", styles, re.M), "если правило снято — запас мог вернуться к .main"
+    block = styles[styles.index("@media (max-width: 1023px) {"):]
+    block = block[:block.index("\n}")]
+    assert re.search(r"\.sidebar-list, \.split-main-scroll \{ padding-bottom: calc\(88px", block)
+    assert styles.rindex("@media (max-width: 1023px) {") > styles.rindex("@media (max-width: 768px) {"), (
+        "правило должно стоять после раскладки телефона — там padding блоков задаётся заново"
+    )

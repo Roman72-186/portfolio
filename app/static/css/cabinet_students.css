@@ -841,3 +841,11 @@
     .mobile-back-btn:hover { background: var(--blue-soft); }
     .mobile-back-btn .svg-icon { width: 16px; height: 16px; }
 }
+
+/* Плавающее меню персонала видно до 1023px и накрывало конец списка и профиля: последнего
+   ученика и «Редактировать анкету» было не нажать (аудит 10.5). Общий запас под меню
+   (партиал staff_nav, у main) здесь снят первым правилом файла, поэтому запас — у самих
+   прокручиваемых блоков: на телефоне они в потоке страницы, на планшете крутятся сами. */
+@media (max-width: 1023px) {
+    .sidebar-list, .split-main-scroll { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+}
