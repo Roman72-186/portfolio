@@ -57,7 +57,8 @@
     background: rgba(60,60,67,0.08); color: var(--ios-label-2);
     border-radius: 20px; padding: 1px 6px;
 }
-.ios-gallery .filter-tab.active .tab-count { background: rgba(255,255,255,0.22); color: #fff; }
+/* Затемнение, а не осветление: белое на осветлённом фиолетовом — 3.73 (аудит 11.4б). */
+.ios-gallery .filter-tab.active .tab-count { background: color-mix(in srgb, black 14%, transparent); color: #fff; }
 .ios-gallery .filter-tab:not(.active) .tab-count { background: rgba(60,60,67,0.08); color: var(--ios-label-2); opacity: 1; }
 
 /* ── Пустое состояние (нет фото вообще) ── */

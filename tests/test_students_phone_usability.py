@@ -673,3 +673,26 @@ def test_score_badges_on_photos_use_solid_fills():
         for selector, body in rules:
             assert re.search(r"background:\s*var\(--(?:score-\w+-fill|dim-fill)\)", body), selector
             assert "rgba(" not in body, selector
+
+
+@pytest.mark.parametrize("opener", [":root {", ':root[data-theme="dark"] {'])
+def test_counters_on_fills_are_readable(opener):
+    # 29.09.2026, 11.4б: счётчик непроверенного в «Проверке пробников» — белое на `--warning`,
+    # в тёмной теме он светлый: 1.67. У заливки свой токен; тот же дефект — «Проверка отработок»
+    # и «Продолжить» в кабинете ученика.
+    css = BASE_CSS.read_text(encoding="utf-8")
+    assert _contrast("#FFFFFF", _token_color(css, opener, "warning-fill")) >= 4.5
+    offenders = [
+        str(path.relative_to(APP))
+        for path in [*APP.glob("static/**/*.css"), *APP.glob("templates/**/*.html")]
+        if re.search(r"background:\s*var\(--warning\);\s*color:\s*(?:#fff\b|var\(--on-color\))", path.read_text(encoding="utf-8"))
+    ]
+    assert not offenders, "белое на --warning — заливка var(--warning-fill):\n" + "\n".join(offenders)
+
+
+def test_gallery_active_tab_count_darkens_the_fill():
+    # 11.4б: счётчик на активном фильтре галереи — осветление `rgba(255,255,255,.22)` поверх
+    # `--blue-fill`, белое 3.73. Подложка под белым текстом — затемнение.
+    gallery = (APP / "static" / "css" / "gallery_ios.css").read_text(encoding="utf-8")
+    rule = _css_rule(gallery, ".ios-gallery .filter-tab.active .tab-count")
+    assert "color-mix(in srgb, black" in rule and "rgba(255" not in rule

@@ -4,7 +4,7 @@
     <span>⚠️ Вы вошли как <strong>{{ user.last_name or '' }} {{ user.first_name or user.name }}</strong>{% if user.role_name %} ({{ user.role_name }}){% endif %}</span>
     <form method="post" action="/cabinet/superadmin/impersonate/stop" style="margin:0">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-        <button type="submit" style="padding:6px 14px;border-radius:7px;background:var(--warning);color:#fff;border:none;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">Выйти обратно</button>
+        <button type="submit" style="padding:6px 14px;border-radius:7px;background:var(--warning-fill);color:#fff;border:none;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">Выйти обратно</button>
     </form>
 </div>
 {% endif %}
