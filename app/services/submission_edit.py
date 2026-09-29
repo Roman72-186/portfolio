@@ -44,9 +44,31 @@ def deadline_reason(
     сдачи настроен где угодно (`task_blocks.submit_deadline_is_set`, включая
     «бессрочно» у тарифа), запирает он один; иначе — по-старому, день задания.
     """
+    moment = now or datetime.now(timezone.utc)
+    deadline = upload_deadline(
+        task, block, user_tariff=user_tariff,
+        tariff_deadlines=tariff_deadlines,
+        task_tariff_deadlines=task_tariff_deadlines,
+    )
+    if deadline is not None and deadline <= moment:
+        return f"Срок сдачи истёк {msk_text(deadline)} по Москве. Изменить работу нельзя."
+    return None
+
+
+def upload_deadline(
+    task: TrackerTask, block: TaskBlock | None = None, *,
+    user_tariff: str | None = None,
+    tariff_deadlines: dict[str, datetime | None] | None = None,
+    task_tariff_deadlines: dict[str, datetime | None] | None = None,
+) -> datetime | None:
+    """Момент, когда у **этого** ученика закроется сдача, — самый ранний из
+    источников `deadline_reason` (правила — в его докстринге); `None` —
+    бессрочно. Вынесено 29.09.2026 ради напоминаний о сроке
+    (`services/student_reminders.py`): им нужен тот же момент заранее, а не
+    отказ после, и второй копии правила там быть не должно.
+    """
     from app.services.task_blocks import submit_deadline_for, submit_deadline_is_set
 
-    moment = now or datetime.now(timezone.utc)
     sources = dict(
         user_tariff=user_tariff,
         block_overrides=tariff_deadlines,
@@ -58,10 +80,8 @@ def deadline_reason(
         deadlines.append(block.closes_at)
     if not submit_deadline_is_set(block, task, **sources):
         deadlines.append(task.due_at)
-    passed = [_utc(value) for value in deadlines if value and _utc(value) <= moment]
-    if passed:
-        return f"Срок сдачи истёк {msk_text(min(passed))} по Москве. Изменить работу нельзя."
-    return None
+    present = [_utc(value) for value in deadlines if value]
+    return min(present) if present else None
 
 
 def block_work_reason(

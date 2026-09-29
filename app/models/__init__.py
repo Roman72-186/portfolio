@@ -7,6 +7,7 @@ from app.models.work import Work
 from app.models.role import Role
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
+from app.models.student_reminder import StudentReminder
 from app.models.exam_assignment import (
     ExamAssignment,
     ExamTicket,

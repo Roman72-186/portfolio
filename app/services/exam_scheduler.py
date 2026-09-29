@@ -9,6 +9,7 @@
 """
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone, timedelta, date
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -602,8 +603,61 @@ def _run_birthday_check() -> None:
         db.close()
 
 
+def _run_student_reminders() -> None:
+    """Новое задание, новое видео, срок сдачи, конец доступа — ученику
+    (владелец 29.09.2026). Логика — `services/student_reminders.py`; здесь
+    только сессия и рассылка после коммита, как у остальных job."""
+    from app.services.student_reminders import run_student_reminders
+
+    db = SessionLocal()
+    try:
+        notification_ids = run_student_reminders(db)
+    except Exception:
+        logger.exception("Ошибка в напоминаниях ученикам")
+        db.rollback()
+        return
+    finally:
+        db.close()
+    if notification_ids:
+        notify_many_sync(notification_ids)
+
+# Прод поднимает uvicorn с `--workers 4` (`docker-compose.prod-ru.yml`), и
+# каждый воркер проходит lifespan и звал `start_scheduler` — все job шли
+# вчетверо почти одновременно. Идемпотентность через флаг в базе такой гонки
+# не держит: четыре процесса разом читают «ещё не слали» и шлют каждый
+# (найдено 29.09.2026 вместе с напоминаниями ученикам). Планировщик держит тот
+# воркер, что первым взял файловую блокировку; она живёт, пока жив процесс, и
+# освобождается при его выходе — воркер, пришедший на смену (uvicorn
+# перезапускает их по `--limit-max-requests`), возьмёт её на своём старте.
+SCHEDULER_LOCK_PATH = os.environ.get(
+    "PORTFOLIO_SCHEDULER_LOCK", "/tmp/portfolio-scheduler.lock"
+)
+_scheduler_lock_file = None
+
+
+def _acquire_scheduler_lock() -> bool:
+    """Взять блокировку планировщика без ожидания. Без `fcntl` (Windows,
+    локальная разработка) — всегда да: там один процесс."""
+    global _scheduler_lock_file
+    try:
+        import fcntl
+    except ImportError:
+        return True
+    lock_file = open(SCHEDULER_LOCK_PATH, "w")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lock_file.close()
+        return False
+    _scheduler_lock_file = lock_file
+    return True
+
+
 def start_scheduler() -> None:
     global _scheduler
+    if not _acquire_scheduler_lock():
+        logger.info("Scheduler уже запущен в другом воркере, здесь не стартуем")
+        return
     _scheduler = BackgroundScheduler(timezone="UTC")
     _scheduler.add_job(
         _run_notification_check,
@@ -667,11 +721,21 @@ def start_scheduler() -> None:
         max_instances=1,
         misfire_grace_time=3600,
     )
+    _scheduler.add_job(
+        _run_student_reminders,
+        trigger="interval",
+        minutes=30,
+        next_run_time=datetime.now(timezone.utc) + timedelta(minutes=2),
+        id="student_reminders",
+        replace_existing=True,
+        max_instances=1,
+    )
     _scheduler.start()
     logger.info(
         "Exam scheduler started (exam_notifications=1h, "
         "mock_exam_expiry=5min, cleanup=6h, video_status_sync=2min, "
-        "tg_username_check=daily@04:00 UTC, birthday_check=daily@05:00 UTC)"
+        "tg_username_check=daily@04:00 UTC, birthday_check=daily@05:00 UTC, "
+        "student_reminders=30min)"
     )
 
 
