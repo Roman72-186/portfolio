@@ -34,7 +34,7 @@ from app.models.task_block import (
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.models.tracker import ITEM_HOMEWORK, SOURCE_HOMEWORK, TrackerTask
 from app.models.work import WORK_TYPE_MOCK_EXAM, Work
-from app.services import s3 as s3_service
+from app.services import media_transcode, s3 as s3_service
 from app.services.feedback import ROLE_CURATOR, ROLE_STUDENT
 from app.services.task_block_feedback import get_or_create_feedback, send_message
 from app.services.task_blocks import sync_blocks
@@ -269,7 +269,12 @@ def _staff(client, user_factory, session_factory, *, vk_id=981_101):
 def test_upload_media_stores_voice_in_s3(client, user_factory, session_factory):
     _staff(client, user_factory, session_factory)
 
-    with patch.object(s3_service, "upload_to_s3", return_value=VOICE_URL) as upload:
+    # Перекодирование подменено тождеством: здесь проверяется контракт
+    # эндпоинта, сам перегон в m4a — в tests/test_media_transcode.py.
+    with (
+        patch.object(media_transcode, "playable_voice", side_effect=lambda *a: a) as transcode,
+        patch.object(s3_service, "upload_to_s3", return_value=VOICE_URL) as upload,
+    ):
         response = client.post(
             f"{PROGRAM}/upload-media",
             data={"kind": MEDIA_VOICE},
@@ -282,8 +287,8 @@ def test_upload_media_stores_voice_in_s3(client, user_factory, session_factory):
         "ok": True, "url": VOICE_URL, "path": body["path"], "kind": MEDIA_VOICE,
     }
     assert body["path"].startswith("zadaniya-media/voice/")
-    assert body["path"].endswith(".webm")
-    # Файл уходит как есть, без перекодирования, с MIME без параметров.
+    # В перекодирование и дальше в S3 уходит MIME без параметров кодека.
+    assert transcode.call_args.args == ("voice-1.webm", b"voice-bytes", "audio/webm")
     assert upload.call_args.args[1:] == (b"voice-bytes", "audio/webm")
 
 

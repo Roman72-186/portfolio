@@ -20,7 +20,7 @@ from app.models.exam_cycle import ExamCycle
 from app.models.feedback import Feedback, FeedbackMessage
 from app.models.notification import Notification
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
-from app.services import s3 as s3_service
+from app.services import media_transcode, s3 as s3_service
 from app.services.utils import compress_image
 
 logger = logging.getLogger(__name__)
@@ -198,18 +198,22 @@ async def _upload_photo(work_id: int, filename: str, data: bytes) -> tuple[str, 
 
 
 async def _upload_video(
-    work_id: int, filename: str, data: bytes, content_type: str
+    work_id: int, filename: str, data: bytes, content_type: str, *, note: bool = False,
 ) -> tuple[str, str] | None:
-    """Положить видео в S3 как есть (без сжатия). Returns (s3_path, s3_url) или None."""
+    """Положить видео в S3. Обычное — как есть, кружок (`note`) — перегнать в
+    mp4, который играет любой телефон (`media_transcode`). Returns (s3_path, s3_url) или None."""
     loop = asyncio.get_running_loop()
-    s3_path = s3_service.s3_path_feedback(work_id, filename)
     ct = content_type or "video/mp4"
 
-    def _do() -> str | None:
-        return s3_service.upload_to_s3(s3_path, data, ct)
+    def _do() -> tuple[str, str | None]:
+        name, payload, mime = (
+            media_transcode.playable_note(filename, data, ct) if note else (filename, data, ct)
+        )
+        path = s3_service.s3_path_feedback(work_id, name)
+        return path, s3_service.upload_to_s3(path, payload, mime)
 
     try:
-        s3_url = await loop.run_in_executor(None, _do)
+        s3_path, s3_url = await loop.run_in_executor(None, _do)
     except Exception as exc:
         logger.warning("feedback video upload exception for work_id=%s: %s", work_id, exc)
         return None
@@ -222,16 +226,18 @@ async def _upload_video(
 async def _upload_audio(
     work_id: int, filename: str, data: bytes, content_type: str
 ) -> tuple[str, str] | None:
-    """Положить голосовое в S3 как есть (без перекодирования). Returns (s3_path, s3_url) или None."""
+    """Перегнать голосовое в m4a, который играет любой телефон (`media_transcode`),
+    и положить в S3. Returns (s3_path, s3_url) или None."""
     loop = asyncio.get_running_loop()
-    s3_path = s3_service.s3_path_feedback(work_id, filename)
     ct = content_type or "audio/mpeg"
 
-    def _do() -> str | None:
-        return s3_service.upload_to_s3(s3_path, data, ct)
+    def _do() -> tuple[str, str | None]:
+        name, payload, mime = media_transcode.playable_voice(filename, data, ct)
+        path = s3_service.s3_path_feedback(work_id, name)
+        return path, s3_service.upload_to_s3(path, payload, mime)
 
     try:
-        s3_url = await loop.run_in_executor(None, _do)
+        s3_path, s3_url = await loop.run_in_executor(None, _do)
     except Exception as exc:
         logger.warning("feedback audio upload exception for work_id=%s: %s", work_id, exc)
         return None
@@ -276,7 +282,10 @@ async def send_message(
     video_url: str | None = None
     if video is not None:
         vfilename, vdata, vcontent_type = video
-        uploaded = await _upload_video(feedback.work_id, vfilename, vdata, vcontent_type)
+        uploaded = await _upload_video(
+            feedback.work_id, vfilename, vdata, vcontent_type,
+            note=video_is_note and sender_role != ROLE_STUDENT,
+        )
         if uploaded is not None:
             video_path, video_url = uploaded
     audio_path: str | None = None

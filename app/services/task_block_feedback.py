@@ -12,7 +12,7 @@ from app.cache import invalidate_unread
 from app.models.notification import Notification
 from app.models.task_block import TaskBlockSubmission
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
-from app.services import s3 as s3_service
+from app.services import media_transcode, s3 as s3_service
 from app.services.feedback import ROLE_STUDENT, role_from_rank, role_label_ru
 from app.services.utils import compress_image
 
@@ -73,18 +73,22 @@ async def _upload_photo(
 
 
 async def _upload_video(
-    submission_id: int, filename: str, data: bytes, content_type: str,
+    submission_id: int, filename: str, data: bytes, content_type: str, *, note: bool = False,
 ) -> tuple[str, str] | None:
-    """Положить видео в S3 как есть (без сжатия). Returns (s3_path, s3_url) или None."""
+    """Положить видео в S3. Обычное — как есть, кружок (`note`) — перегнать в
+    mp4, который играет любой телефон (`media_transcode`). Returns (s3_path, s3_url) или None."""
     loop = asyncio.get_running_loop()
-    path = s3_service.s3_path_task_block_feedback(submission_id, filename)
     ct = content_type or "video/mp4"
 
-    def _do() -> str | None:
-        return s3_service.upload_to_s3(path, data, ct)
+    def _do() -> tuple[str, str | None]:
+        name, payload, mime = (
+            media_transcode.playable_note(filename, data, ct) if note else (filename, data, ct)
+        )
+        path = s3_service.s3_path_task_block_feedback(submission_id, name)
+        return path, s3_service.upload_to_s3(path, payload, mime)
 
     try:
-        url = await loop.run_in_executor(None, _do)
+        path, url = await loop.run_in_executor(None, _do)
     except Exception as exc:
         logger.warning(
             "task block feedback video upload failed for submission_id=%s: %s",
@@ -99,16 +103,18 @@ async def _upload_video(
 async def _upload_audio(
     submission_id: int, filename: str, data: bytes, content_type: str,
 ) -> tuple[str, str] | None:
-    """Положить голосовое в S3 как есть. Returns (s3_path, s3_url) или None."""
+    """Перегнать голосовое в m4a, который играет любой телефон (`media_transcode`),
+    и положить в S3. Returns (s3_path, s3_url) или None."""
     loop = asyncio.get_running_loop()
-    path = s3_service.s3_path_task_block_feedback(submission_id, filename)
     ct = content_type or "audio/mpeg"
 
-    def _do() -> str | None:
-        return s3_service.upload_to_s3(path, data, ct)
+    def _do() -> tuple[str, str | None]:
+        name, payload, mime = media_transcode.playable_voice(filename, data, ct)
+        path = s3_service.s3_path_task_block_feedback(submission_id, name)
+        return path, s3_service.upload_to_s3(path, payload, mime)
 
     try:
-        url = await loop.run_in_executor(None, _do)
+        path, url = await loop.run_in_executor(None, _do)
     except Exception as exc:
         logger.warning(
             "task block feedback audio upload failed for submission_id=%s: %s",
@@ -141,7 +147,10 @@ async def send_message(
     video_path = None
     video_url = None
     if video is not None:
-        uploaded = await _upload_video(feedback.submission_id, video[0], video[1], video[2])
+        uploaded = await _upload_video(
+            feedback.submission_id, video[0], video[1], video[2],
+            note=video_is_note and sender_role != ROLE_STUDENT,
+        )
         if uploaded is not None:
             video_path, video_url = uploaded
     audio_path = None

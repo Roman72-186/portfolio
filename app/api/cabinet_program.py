@@ -8,6 +8,7 @@
 `cabinet_tracker_admin.py` уже большой и отвечает за разовые задачи.
 """
 
+import asyncio
 import json
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -89,7 +90,7 @@ from app.services.archi_profile import (
     TITLE as ARCHI_TITLE,
     trainer_profile_for_answers,
 )
-from app.services import s3 as s3_service
+from app.services import media_transcode, s3 as s3_service
 from app.services.exam_tickets import (
     compose_assignment_title,
     create_ticket,
@@ -2532,8 +2533,12 @@ async def upload_media(
 ):
     """Голосовое или кружок для блока «Голосовое / кружок» (владелец
     25.09.2026). Грузится сразу после записи, до сохранения задания — тот же
-    контракт {url, path}, что у фото блока через `/upload-cover`. Файл кладётся
-    как есть: перекодирование кружку не нужно, в отличие от роликов Bunny."""
+    контракт {url, path}, что у фото блока через `/upload-cover`.
+
+    До S3 запись перегоняется в m4a/mp4 (`media_transcode`): браузерный webm
+    iPhone играет не весь или не играет вовсе (прод-инцидент 29.09.2026).
+    ffmpeg — в отдельном потоке, иначе кружок на минуту заморозил бы весь
+    event loop."""
     if kind not in MEDIA_KINDS:
         return JSONResponse({"ok": False, "error": "Неизвестный вид записи"}, status_code=422)
     try:
@@ -2546,6 +2551,10 @@ async def upload_media(
     if payload is None:
         return JSONResponse({"ok": False, "error": "Запись получилась пустой. Попробуйте ещё раз."}, status_code=422)
     filename, data, content_type = payload
+    transcode = (
+        media_transcode.playable_voice if kind == MEDIA_VOICE else media_transcode.playable_note
+    )
+    filename, data, content_type = await asyncio.to_thread(transcode, filename, data, content_type)
 
     s3_path = s3_service.s3_path_task_block_media(kind, filename)
     url = s3_service.upload_to_s3(s3_path, data, content_type)

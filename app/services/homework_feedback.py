@@ -17,7 +17,7 @@ from app.cache import invalidate_unread
 from app.models.homework_feedback import HomeworkFeedback, HomeworkFeedbackMessage
 from app.models.homework_submission import HomeworkSubmission
 from app.models.notification import Notification
-from app.services import s3 as s3_service
+from app.services import media_transcode, s3 as s3_service
 from app.services.feedback import (  # переиспользование, не завязано на Work
     ROLE_STUDENT,
     role_from_rank,
@@ -70,18 +70,22 @@ async def _upload_photo(submission_id: int, filename: str, data: bytes) -> tuple
 
 
 async def _upload_video(
-    submission_id: int, filename: str, data: bytes, content_type: str
+    submission_id: int, filename: str, data: bytes, content_type: str, *, note: bool = False,
 ) -> tuple[str, str] | None:
-    """Положить видео в S3 как есть (без сжатия). Returns (s3_path, s3_url) или None."""
+    """Положить видео в S3. Обычное — как есть, кружок (`note`) — перегнать в
+    mp4, который играет любой телефон (`media_transcode`). Returns (s3_path, s3_url) или None."""
     loop = asyncio.get_running_loop()
-    s3_path = s3_service.s3_path_homework_feedback(submission_id, filename)
     ct = content_type or "video/mp4"
 
-    def _do() -> str | None:
-        return s3_service.upload_to_s3(s3_path, data, ct)
+    def _do() -> tuple[str, str | None]:
+        name, payload, mime = (
+            media_transcode.playable_note(filename, data, ct) if note else (filename, data, ct)
+        )
+        path = s3_service.s3_path_homework_feedback(submission_id, name)
+        return path, s3_service.upload_to_s3(path, payload, mime)
 
     try:
-        s3_url = await loop.run_in_executor(None, _do)
+        s3_path, s3_url = await loop.run_in_executor(None, _do)
     except Exception as exc:
         logger.warning("homework feedback video upload exception for submission_id=%s: %s", submission_id, exc)
         return None
@@ -94,16 +98,18 @@ async def _upload_video(
 async def _upload_audio(
     submission_id: int, filename: str, data: bytes, content_type: str
 ) -> tuple[str, str] | None:
-    """Положить голосовое в S3 как есть. Returns (s3_path, s3_url) или None."""
+    """Перегнать голосовое в m4a, который играет любой телефон (`media_transcode`),
+    и положить в S3. Returns (s3_path, s3_url) или None."""
     loop = asyncio.get_running_loop()
-    s3_path = s3_service.s3_path_homework_feedback(submission_id, filename)
     ct = content_type or "audio/mpeg"
 
-    def _do() -> str | None:
-        return s3_service.upload_to_s3(s3_path, data, ct)
+    def _do() -> tuple[str, str | None]:
+        name, payload, mime = media_transcode.playable_voice(filename, data, ct)
+        path = s3_service.s3_path_homework_feedback(submission_id, name)
+        return path, s3_service.upload_to_s3(path, payload, mime)
 
     try:
-        s3_url = await loop.run_in_executor(None, _do)
+        s3_path, s3_url = await loop.run_in_executor(None, _do)
     except Exception as exc:
         logger.warning("homework feedback audio upload exception for submission_id=%s: %s", submission_id, exc)
         return None
@@ -148,7 +154,10 @@ async def send_message(
     video_url: str | None = None
     if video is not None:
         vfilename, vdata, vcontent_type = video
-        uploaded = await _upload_video(feedback.submission_id, vfilename, vdata, vcontent_type)
+        uploaded = await _upload_video(
+            feedback.submission_id, vfilename, vdata, vcontent_type,
+            note=video_is_note and sender_role != ROLE_STUDENT,
+        )
         if uploaded is not None:
             video_path, video_url = uploaded
     audio_path: str | None = None

@@ -11,6 +11,12 @@ RUN groupadd -g 10001 app && useradd -u 10001 -g app -s /bin/false -M app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# ffmpeg перегоняет голосовое и кружок преподавателя в m4a/mp4, которые играет
+# любой телефон (app/services/media_transcode.py). Отдельным слоем после pip,
+# чтобы его добавление не пересобирало зависимости Python.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY app/ ./app/
 COPY scripts/ ./scripts/
 COPY alembic/ ./alembic/
