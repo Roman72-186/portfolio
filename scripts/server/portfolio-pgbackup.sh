@@ -36,3 +36,26 @@ fi
 trap - ERR
 find "$DIR" -name 'portfolio-*.sql.gz' -mtime +"$KEEP_DAYS" -delete || logger -t portfolio-pgbackup "ротация старых дампов не удалась"
 logger -t portfolio-pgbackup "ok: $f ($s байт)"
+
+# Копия вне сервера (решение владельца 29.09.2026: отдельный бакет Selectel).
+# Без неё потеря или взлом VPS уносят и базу, и все копии разом.
+# Включается файлом /etc/portfolio-pgbackup.env со строкой
+#   OFFSITE_REMOTE=apparchi-backup:<бакет>/daily
+# где `apparchi-backup` — отдельный remote rclone со своим ключом, который
+# умеет только класть файлы: ключ приложения и этот ключ не должны совпадать,
+# иначе взломанный сервер сотрёт и копии. Срок хранения в бакете задаёт
+# правило жизненного цикла в панели Selectel, а не этот скрипт — удалять ключ
+# бэкапа не умеет намеренно. Секретов в env-файле нет: ключ живёт в
+# /root/.config/rclone/rclone.conf.
+if [ -r /etc/portfolio-pgbackup.env ]; then
+    # shellcheck disable=SC1091
+    . /etc/portfolio-pgbackup.env
+fi
+if [ -n "${OFFSITE_REMOTE:-}" ]; then
+    if rclone copyto --s3-no-check-bucket "$f" "$OFFSITE_REMOTE/$(basename "$f")"; then
+        logger -t portfolio-pgbackup "ok: копия вне сервера — $OFFSITE_REMOTE/$(basename "$f")"
+    else
+        logger -t portfolio-pgbackup "ОШИБКА: копия вне сервера не ушла ($OFFSITE_REMOTE), локальная цела"
+        exit 2
+    fi
+fi
