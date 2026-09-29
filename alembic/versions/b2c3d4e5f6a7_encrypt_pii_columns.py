@@ -98,10 +98,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Decrypt values back to plaintext
-    from app.crypto import _get_fernet
-    from cryptography.fernet import InvalidToken
-    f = _get_fernet()
+    # Расшифровка обоими ключами, как при чтении из базы (`app.crypto.try_decrypt`).
+    # Открытый текст (строку сохранили до шифрования) остаётся как есть. Похожее
+    # на токен Fernet, но не открывшееся ни одним ключом — остановка: иначе на
+    # месте телефона или ника остался бы шифротекст, а короткий ник в шифре
+    # (100 символов) ещё и влезает в VARCHAR(100) — откат прошёл бы «успешно»
+    # (код-ревью 28.09.2026, P3; раньше здесь было `except Exception: pass`).
+    from app import crypto
 
     conn = op.get_bind()
     rows = conn.execute(sa.text("SELECT id, phone, parent_phone, tg_username FROM users")).fetchall()
@@ -109,11 +112,17 @@ def downgrade() -> None:
         updates = {}
         for col in ("phone", "parent_phone", "tg_username"):
             val = getattr(row, col)
-            if val:
-                try:
-                    updates[col] = f.decrypt(val.encode()).decode()
-                except (InvalidToken, Exception):
-                    pass
+            if not val:
+                continue
+            plain = crypto.try_decrypt(val)
+            if plain is not None:
+                updates[col] = plain
+            elif val.startswith("gAAAAA"):
+                raise RuntimeError(
+                    f"users.{col} у id={row.id} не расшифровывается ни текущим, "
+                    "ни прежним ключом — проверь PII_ENCRYPTION_SECRET и "
+                    "SESSION_SECRET окружения, откат остановлен"
+                )
         if updates:
             set_clause = ", ".join(f"{k} = :v_{k}" for k in updates)
             params = {f"v_{k}": v for k, v in updates.items()}

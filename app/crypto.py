@@ -53,6 +53,23 @@ def _get_legacy_fernet() -> Fernet | None:
     return _legacy_fernet
 
 
+def try_decrypt(value: str) -> str | None:
+    """Расшифровать текущим ключом, затем прежним; `None`, если не вышло ни одним.
+
+    Прежний ключ — от `session_secret`: им шифровали до появления
+    `pii_encryption_secret`, и такие строки в базе живут, пока их не пересохранят.
+    """
+    token = value.encode("utf-8")
+    for f in (_get_fernet(), _get_legacy_fernet()):
+        if f is None:
+            continue
+        try:
+            return f.decrypt(token).decode("utf-8")
+        except InvalidToken:
+            continue
+    return None
+
+
 class EncryptedString(TypeDecorator):
     """SQLAlchemy type that transparently encrypts/decrypts string values.
 
@@ -83,13 +100,8 @@ class EncryptedString(TypeDecorator):
         """Decrypt after SELECT."""
         if value is None:
             return None
-        token = value.encode("ascii")
-        for f in (_get_fernet(), _get_legacy_fernet()):
-            if f is None:
-                continue
-            try:
-                return f.decrypt(token).decode("utf-8")
-            except InvalidToken:
-                continue
+        plain = try_decrypt(value)
+        if plain is not None:
+            return plain
         logger.debug("Could not decrypt value, returning as plaintext (legacy row)")
         return value
