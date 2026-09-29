@@ -679,7 +679,9 @@ async def telegram_login_callback(
     if not code_verifier or not stored_state:
         return fail("Ошибка сессии. Попробуй снова или очисти cookies.")
 
-    if stored_state != state:
+    # Сравнение за постоянное время и по байтам: строкой не-ASCII (state из
+    # адреса) compare_digest бросил бы TypeError (код-ревью 28.09.2026, P3).
+    if not secrets.compare_digest(stored_state.encode(), state.encode()):
         logger.warning("Telegram login callback: state mismatch stored=%r url=%r", stored_state[:20], state[:20])
         return fail("Ошибка безопасности. Попробуй снова.")
 

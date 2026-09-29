@@ -209,3 +209,26 @@ def test_telegram_login_callback_inconclusive_membership_shows_retry(client, mon
 
     assert resp.status_code == 200
     assert "минуту" in resp.text
+
+
+def test_telegram_callback_compares_state_in_constant_time(client, monkeypatch):
+    """Код-ревью 28.09.2026, P3: state из cookie сверялся через `!=`.
+
+    Сравнение идёт через `secrets.compare_digest` по байтам: строкой не-ASCII
+    (state приходит из адреса) `compare_digest` бросил бы TypeError — и
+    вместо «Ошибка безопасности» ученик увидел бы 500. VK-ветку не трогали:
+    под VK правок не делаем (владелец 29.09.2026)."""
+    from unittest.mock import patch
+
+    monkeypatch.setattr(auth_module, "pop_telegram_oidc_pkce", lambda _state: None)
+    client.cookies.set("tg_pkce_cv", auth_module._signer.dumps({"cv": "verifier", "st": "stored-state"}))
+
+    with patch.object(auth_module.secrets, "compare_digest", wraps=auth_module.secrets.compare_digest) as spy:
+        resp = client.get(
+            "/auth/telegram-login/callback?code=good-code&state=чужое-состояние",
+            follow_redirects=False,
+        )
+
+    assert resp.status_code == 200
+    assert "Ошибка безопасности" in resp.text
+    assert spy.call_count == 1
