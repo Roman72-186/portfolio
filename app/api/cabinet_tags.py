@@ -28,6 +28,30 @@ def _parse_bool(s: str) -> bool:
     return s.lower() in ("1", "true", "yes", "on")
 
 
+def _tag_target(db: DBSession, user_id: int) -> User:
+    """Ученик, которому ставят или снимают свободный тег.
+
+    Экран тегов показывает только учеников, а маршруты принимали любой
+    `user_id`: тег вешался на сотрудника, на архивного и удалённого ученика,
+    снятие цель не проверяло вовсе (код-ревью 28.09.2026, P3). Архив открыт
+    только на чтение — `AGENTS.md`, правило 8, отказ 409 как в карточке
+    пользователя. Заблокированный без архива проходит: теги на доступ не влияют.
+    """
+    target = (
+        db.query(User)
+        .join(Role, Role.id == User.role_id)
+        .filter(User.id == user_id, User.deleted_at.is_(None), Role.rank == 1)
+        .first()
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="Ученик не найден")
+    if target.archived_at is not None:
+        raise HTTPException(
+            status_code=409, detail="Ученик в архиве — теги открыты только на чтение"
+        )
+    return target
+
+
 @router.get("/tags", response_class=HTMLResponse)
 def superadmin_tags_page(
     request: Request,
@@ -145,9 +169,7 @@ def superadmin_add_tag(
     _csrf: Annotated[None, Depends(require_csrf)],
     name: str = Form(""),
 ):
-    target = db.query(User).filter(User.id == user_id, User.deleted_at.is_(None)).first()
-    if not target:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    _tag_target(db, user_id)
 
     name_clean = name.strip()
     if not name_clean:
@@ -170,6 +192,7 @@ def superadmin_remove_tag(
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
+    _tag_target(db, user_id)
     remove_tag_from_user(db, user_id, tag_id)
     db.commit()
     return JSONResponse({"ok": True})

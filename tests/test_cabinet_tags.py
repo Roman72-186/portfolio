@@ -407,3 +407,95 @@ def test_profile_tags_include_kejs_on_score_growth(admin_rank4_client, db, stude
 
     assert db.query(Tag).filter(Tag.name == "КЕЙС").first() is not None
     assert "КЕЙС" in resp.text
+
+
+# ---------------------------------------------------------------------------
+# Кому можно ставить свободный тег (код-ревью 28.09.2026, P3)
+# ---------------------------------------------------------------------------
+# Экран тегов показывает только учеников, а маршруты принимали любой user_id:
+# тег вешался на куратора, на архивного и удалённого ученика, а снятие цель не
+# проверяло вовсе. Архив по правилу 8 `AGENTS.md` открыт только на чтение.
+
+def _archive(db, user):
+    from datetime import datetime, timezone
+
+    user.archived_at = datetime.now(timezone.utc)
+    user.is_active = False
+    db.commit()
+
+
+def _soft_delete(db, user):
+    from datetime import datetime, timezone
+
+    user.deleted_at = datetime.now(timezone.utc)
+    db.commit()
+
+
+def _link(db, user, name="Композиция"):
+    tag = Tag(name=name)
+    db.add(tag)
+    db.commit()
+    db.add(UserTag(user_id=user.id, tag_id=tag.id))
+    db.commit()
+    return tag
+
+
+def test_archived_student_tags_are_read_only(admin_rank4_client, db, student_user):
+    client, _ = admin_rank4_client
+    tag = _link(db, student_user)
+    _archive(db, student_user)
+
+    add = client.post(
+        f"/cabinet/superadmin/tags/{student_user.id}",
+        data={"name": "Новый", "csrf_token": "bypass"},
+    )
+    remove = client.request(
+        "DELETE", f"/cabinet/superadmin/tags/{student_user.id}/{tag.id}",
+        headers={"X-CSRF-Token": "bypass"},
+    )
+
+    assert add.status_code == 409, add.text
+    assert remove.status_code == 409, remove.text
+    assert db.get(UserTag, (student_user.id, tag.id)) is not None
+    assert db.query(UserTag).filter(UserTag.user_id == student_user.id).count() == 1
+
+
+@pytest.mark.parametrize("target", ["curator", "deleted"])
+def test_tags_only_for_live_students(
+    admin_rank4_client, db, user_factory, student_user, target
+):
+    client, _ = admin_rank4_client
+    if target == "curator":
+        victim = user_factory(vk_id=910020, name="Curator", role_name="куратор")
+    else:
+        victim = student_user
+    tag = _link(db, victim)
+    if target == "deleted":
+        _soft_delete(db, victim)
+
+    add = client.post(
+        f"/cabinet/superadmin/tags/{victim.id}",
+        data={"name": "Новый", "csrf_token": "bypass"},
+    )
+    remove = client.request(
+        "DELETE", f"/cabinet/superadmin/tags/{victim.id}/{tag.id}",
+        headers={"X-CSRF-Token": "bypass"},
+    )
+
+    assert add.status_code == 404, add.text
+    assert remove.status_code == 404, remove.text
+    assert db.get(UserTag, (victim.id, tag.id)) is not None
+
+
+def test_blocked_student_still_tagged(admin_rank4_client, db, student_user):
+    """Блокировка без архива — не «только чтение»: карточка её так же
+    пропускает, а на доступ теги не влияют."""
+    client, _ = admin_rank4_client
+    student_user.is_active = False
+    db.commit()
+
+    resp = client.post(
+        f"/cabinet/superadmin/tags/{student_user.id}",
+        data={"name": "Композиция", "csrf_token": "bypass"},
+    )
+    assert resp.status_code == 200, resp.text
