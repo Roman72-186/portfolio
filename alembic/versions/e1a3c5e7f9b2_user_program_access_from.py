@@ -5,7 +5,7 @@
 с» — у ученика. Колонка без значения по умолчанию: у всех, кто уже учится,
 остаётся NULL, и они видят всё, как раньше.
 
-Revision ID: c4e6a8b0d2f1
+Revision ID: e1a3c5e7f9b2
 Revises: b3d5f7a9c1e2
 Create Date: 2026-09-29
 """
@@ -16,7 +16,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "c4e6a8b0d2f1"
+revision: str = "e1a3c5e7f9b2"
 down_revision: Union[str, None] = "b3d5f7a9c1e2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
