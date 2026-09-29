@@ -344,3 +344,38 @@ def test_calendar_days_readable_on_side_panel(opener):
     ):
         for selector in selectors:
             assert "color: var(--dim)" in _css_rule(source, selector), f"{selector} ушёл с --dim — пересчитать контраст"
+
+
+def test_pale_fills_follow_the_theme():
+    # 29.09.2026, повторный аудит: ~25 бледных заливок и рамок плашек были вбиты
+    # числом (`rgba(220,38,38,.06)` под `var(--error)` и т. п.) и не менялись с темой.
+    # Теперь `color-mix(in srgb, var(--тот же токен, что у текста) N%, transparent)`.
+    # Остаются числом: тени, затемнение под окном, белое на фиолетовой шапке
+    # и почти сплошные заливки балла под белым текстом — от темы они не зависят.
+    styles = _styles()
+    pale = []
+    for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", styles):
+        if selector.strip() == ".score-none":  # тёмная подложка балла поверх фото
+            continue
+        for prop, value in re.findall(r"([\w-]+)\s*:\s*([^;]*rgba\([^;]*)", body):
+            if prop == "box-shadow" or not (prop.startswith("background") or prop.startswith("border")):
+                continue
+            for r, g, b, a in re.findall(r"rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)", value):
+                if (r, g, b) != ("255", "255", "255") and float(a) < 0.5:
+                    pale.append(f"{selector.strip()} {prop}: {value.strip()}")
+    assert not pale, "бледная заливка числом — брать color-mix от токена:\n" + "\n".join(pale)
+    assert "color-mix(in srgb, var(--text) 5%, transparent)" in _css_rule(styles, ".student-info-pill")
+
+
+def test_ink_on_pale_fill_is_darker_than_the_fill():
+    # Чистый токен текстом на бледной подложке того же токена в светлой теме —
+    # 3.1–4.4 при норме 4.5 («Закрыто», «Ждёт проверки», счётчики пробников, фильтры).
+    # Рецепт `.profile-badge.no`: токен с 18 % --text; фиолетовый — --blue-on-soft.
+    sources = (_styles(), CALENDAR_LIB.read_text(encoding="utf-8"))
+    bare = []
+    for source in sources:
+        for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", source):
+            fill = re.search(r"background:\s*color-mix\(in srgb, var\(--([\w-]+)\) (\d+)%, transparent\)", body)
+            if fill and fill.group(1) != "text" and int(fill.group(2)) < 50 and re.search(r"(?<![-\w])color:\s*var\(--%s\)" % fill.group(1), body):
+                bare.append(selector.strip().splitlines()[-1])
+    assert not bare, "текст чистым токеном на подложке того же токена:\n" + "\n".join(bare)
