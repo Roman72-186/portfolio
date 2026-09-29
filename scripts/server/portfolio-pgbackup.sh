@@ -46,13 +46,14 @@ logger -t portfolio-pgbackup "ok: $f ($s байт)"
 # иначе взломанный сервер сотрёт и копии. Срок хранения в бакете задаёт
 # правило жизненного цикла в панели Selectel, а не этот скрипт — удалять ключ
 # бэкапа не умеет намеренно. Секретов в env-файле нет: ключ живёт в
-# /root/.config/rclone/rclone.conf.
+# /root/.config/rclone/rclone.conf. --s3-no-check-bucket и --no-check-dest: ключу
+# разрешена только загрузка, проверять бакет и наличие файла ему нельзя.
 if [ -r /etc/portfolio-pgbackup.env ]; then
     # shellcheck disable=SC1091
     . /etc/portfolio-pgbackup.env
 fi
 if [ -n "${OFFSITE_REMOTE:-}" ]; then
-    if rclone copyto --s3-no-check-bucket "$f" "$OFFSITE_REMOTE/$(basename "$f")"; then
+    if rclone copyto --s3-no-check-bucket --no-check-dest "$f" "$OFFSITE_REMOTE/$(basename "$f")"; then
         logger -t portfolio-pgbackup "ok: копия вне сервера — $OFFSITE_REMOTE/$(basename "$f")"
     else
         logger -t portfolio-pgbackup "ОШИБКА: копия вне сервера не ушла ($OFFSITE_REMOTE), локальная цела"
