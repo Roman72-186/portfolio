@@ -46,14 +46,22 @@ logger -t portfolio-pgbackup "ok: $f ($s байт)"
 # иначе взломанный сервер сотрёт и копии. Срок хранения в бакете задаёт
 # правило жизненного цикла в панели Selectel, а не этот скрипт — удалять ключ
 # бэкапа не умеет намеренно. Секретов в env-файле нет: ключ живёт в
-# /root/.config/rclone/rclone.conf. --s3-no-check-bucket и --no-check-dest: ключу
-# разрешена только загрузка, проверять бакет и наличие файла ему нельзя.
+# /root/.config/rclone/rclone.conf. --s3-no-check-bucket, --no-check-dest и
+# --s3-no-head: ключу разрешена только загрузка (s3:PutObject), проверять бакет,
+# наличие файла и читать его после загрузки ему нельзя. Проверено 29.09.2026:
+# чтение, удаление и список этим ключом дают 403.
+#
+# rclone — отдельный свежий бинарник /opt/portfolio-backup/rclone (1.75.1 на
+# 29.09.2026, с downloads.rclone.org, sha256 сверен). Системный 1.53 из Ubuntu
+# не знает --s3-no-head и после загрузки читает объект — под ключом «только
+# запись» это 403, и загрузка считалась неудачной. Системный не трогаем.
+RCLONE=${RCLONE:-/opt/portfolio-backup/rclone}
 if [ -r /etc/portfolio-pgbackup.env ]; then
     # shellcheck disable=SC1091
     . /etc/portfolio-pgbackup.env
 fi
 if [ -n "${OFFSITE_REMOTE:-}" ]; then
-    if rclone copyto --s3-no-check-bucket --no-check-dest "$f" "$OFFSITE_REMOTE/$(basename "$f")"; then
+    if "$RCLONE" copyto --s3-no-check-bucket --no-check-dest --s3-no-head "$f" "$OFFSITE_REMOTE/$(basename "$f")"; then
         logger -t portfolio-pgbackup "ok: копия вне сервера — $OFFSITE_REMOTE/$(basename "$f")"
     else
         logger -t portfolio-pgbackup "ОШИБКА: копия вне сервера не ушла ($OFFSITE_REMOTE), локальная цела"
