@@ -30,7 +30,6 @@
    ═══════════════════════════════════════════════════════════════════════ */
 
 .ios-cycle {
-    --ios-lime: #8BC34A;
     position: relative;
     isolation: isolate;
     font-family: var(--ios-font);
@@ -133,10 +132,11 @@
     font: 800 11px/1.4 var(--ios-font); padding: 3px 10px;
     border-radius: 999px;
 }
-.ios-cycle .fb-list .fb-score-badge.score-red { background: var(--ios-red); }
-.ios-cycle .fb-list .fb-score-badge.score-orange { background: var(--ios-orange); }
-.ios-cycle .fb-list .fb-score-badge.score-lime { background: var(--ios-lime); }
-.ios-cycle .fb-list .fb-score-badge.score-green { background: var(--ios-green); }
+/* Те же затемнённые тона, что у балла в календаре: белое на --ios-* было 2.2–3.55 (аудит 11.4). */
+.ios-cycle .fb-list .fb-score-badge.score-red { background: var(--score-red-fill); }
+.ios-cycle .fb-list .fb-score-badge.score-orange { background: var(--score-orange-fill); }
+.ios-cycle .fb-list .fb-score-badge.score-lime { background: var(--score-lime-fill); }
+.ios-cycle .fb-list .fb-score-badge.score-green { background: var(--score-green-fill); }
 
 .ios-cycle .fb-empty {
     padding: 48px 20px; text-align: center; color: var(--ios-label-2);

@@ -1591,10 +1591,10 @@ button.desk-nav-item {
 .cal-peer-card img { width: 92px; height: 92px; object-fit: cover; display: block; cursor: zoom-in; }
 .cal-peer-card.is-own { border: 2px solid var(--blue); box-shadow: var(--shadow-blue); }
 .cal-peer-score { position: absolute; bottom: 4px; right: 4px; font-size: 11px; font-weight: 900; color: var(--on-color); padding: 2px 6px; border-radius: var(--r-pill); background: var(--dim-fill); }
-.cal-peer-score--red { background: var(--error); }
-.cal-peer-score--orange { background: var(--score-orange); }
-.cal-peer-score--lime { background: var(--score-lime); }
-.cal-peer-score--green { background: var(--success); }
+.cal-peer-score--red { background: var(--score-red-fill); }
+.cal-peer-score--orange { background: var(--score-orange-fill); }
+.cal-peer-score--lime { background: var(--score-lime-fill); }
+.cal-peer-score--green { background: var(--score-green-fill); }
 
 /* Мелкая подсказка под полем формы. Общая: до неё каждый экран заводил свой
    класс на те же три свойства. */

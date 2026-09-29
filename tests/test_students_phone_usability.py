@@ -708,3 +708,18 @@ def test_logo_icon_is_not_the_512px_original():
     assert "/static/img/logo-192.png" in (templates / "login.html").read_text(encoding="utf-8")
     offenders = [str(p.relative_to(APP)) for p in templates.glob("**/*.html") if "/static/img/logo.webp" in p.read_text(encoding="utf-8")]
     assert not offenders, "значок из оригинала 512px:\n" + "\n".join(offenders)
+
+
+def test_calendar_and_cycle_scores_use_the_score_fills():
+    # 29.09.2026, 11.4: балл в календаре пробника — белое на `#84CC16` 1.98, на `#F97316` 2.8, в тёмной
+    # теме на светлых `--error`/`--success` 2.77 и 1.92; балл соседа — те же тона; список пробников
+    # ученика — на `--ios-*`, 2.2–3.55. Владелец по примеру: «те же цвета, но темнее» — заливки из 11.3.
+    tiers = ("red", "orange", "lime", "green")
+    lib = CALENDAR_LIB.read_text(encoding="utf-8")
+    base = BASE_CSS.read_text(encoding="utf-8")
+    cycle = (APP / "static" / "css" / "cycle_ios.css").read_text(encoding="utf-8")
+    for tier in tiers:
+        fill = f"background: var(--score-{tier}-fill)"
+        assert fill in _css_rule(lib, f".cal-hero-score.score-{tier}"), tier
+        assert fill in _css_rule(base, f".cal-peer-score--{tier}"), tier
+        assert fill in _css_rule(cycle, f".ios-cycle .fb-list .fb-score-badge.score-{tier}"), tier
