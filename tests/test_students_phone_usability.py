@@ -308,3 +308,39 @@ def test_screen_styles_live_in_cached_file():
         "без ?v= браузер не узнает о правке: у статики Cache-Control: immutable"
     )
     assert "@media (max-width: 834px) {" in _styles() and "@media (max-width: 768px) {" in _styles()
+
+
+# ── Шаг 9: мелкие правки остатка аудита ──────────────────────────────────────
+
+CALENDAR_LIB = TEMPLATE.parent / "partials" / "cycle_calendar_lib.html"
+
+
+def _theme_tokens(css: str, opener: str) -> dict[str, str]:
+    block = css[css.index(opener):]
+    block = block[:block.index("\n}")]
+    return dict(re.findall(r"--([\w-]+):\s*(#[0-9A-Fa-f]{6})\s*;", block))
+
+
+def _contrast(fg: str, bg: str) -> float:
+    def lum(hex_color: str) -> float:
+        channels = [int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        r, g, b = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    hi, lo = sorted((lum(fg), lum(bg)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+@pytest.mark.parametrize("opener", [":root {", ':root[data-theme="dark"] {'])
+def test_calendar_days_readable_on_side_panel(opener):
+    # 29.09.2026, повторный аудит: в тёмной теме дни недели и номера дней обоих
+    # календарей пробников (`--dim` на `--surface-2`) — 4.15 при норме 4.5.
+    # Чинится сам токен темы: тот же цвет на той же подложке — ещё сотня мест.
+    tokens = _theme_tokens(BASE_CSS.read_text(encoding="utf-8"), opener)
+    assert _contrast(tokens["dim"], tokens["surface-2"]) >= 4.5
+    for source, selectors in (
+        (_styles(), (".mock-weekday", ".mock-day")),
+        (CALENDAR_LIB.read_text(encoding="utf-8"), (".cal-weekday", ".cal-day")),
+    ):
+        for selector in selectors:
+            assert "color: var(--dim)" in _css_rule(source, selector), f"{selector} ушёл с --dim — пересчитать контраст"
