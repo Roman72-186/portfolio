@@ -538,16 +538,35 @@ def test_hidden_tag_is_left_out_of_lists_and_chips(db, student_user):
     assert db.get(UserTag, (student_user.id, hidden.id)) is not None
 
 
-def test_auto_tagging_skips_hidden_tag(db, student_user):
-    """Автотег по тарифу не вешает скрытый июньский «УВЕРЕННЫЙ» новому ученику:
-    иначе первое открытие экрана тегов раздало бы старые теги всему потоку."""
+def test_auto_tagging_brings_back_current_tariff_tag(db, student_user):
+    """Тариф — действующий: у 46 живых учеников «Я С ВАМИ», а тег с этим именем
+    июньский. Пропусти его автотег — тарифные теги получили бы 38 учеников на
+    новых именах, а эти 46 ничего. Имя уникально, второго не завести."""
     from app.services.tags import ensure_profile_tags
 
     hidden = _hidden_tag(db, student_user.tariff)
 
     ensure_profile_tags(db, [student_user])
 
-    assert db.get(UserTag, (student_user.id, hidden.id)) is None
+    db.refresh(hidden)
+    assert hidden.is_hidden is False
+    assert db.get(UserTag, (student_user.id, hidden.id)) is not None
+
+
+def test_auto_tagging_keeps_june_period_tags_hidden(db, student_user):
+    """Период и число уроков — поля июньской анкеты: одна запись с ними вернула
+    бы в показ «10-14» и «10» всему экрану. Скрытый тег по ним не ставится."""
+    from app.services.tags import ensure_profile_tags
+
+    period = _hidden_tag(db, "10-14")
+    lessons = _hidden_tag(db, student_user.lessons_count)
+
+    ensure_profile_tags(db, [student_user])
+
+    for tag in (period, lessons):
+        db.refresh(tag)
+        assert tag.is_hidden is True
+        assert db.get(UserTag, (student_user.id, tag.id)) is None
 
 
 def test_manual_tag_brings_hidden_tag_back(admin_rank4_client, db, student_user):

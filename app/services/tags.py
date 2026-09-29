@@ -108,19 +108,24 @@ def ensure_profile_tags(db: DBSession, students: list[User]) -> None:
                     names.add(period.split(" ")[0])
         if student.lessons_count:
             names.add(student.lessons_count.strip())
-        if student.tariff:
-            names.add(student.tariff.strip())
+        tariff_name = student.tariff.strip() if student.tariff else ""
+        if tariff_name:
+            names.add(tariff_name)
         if student.id in case_ids:
             names.add("КЕЙС")
 
         for name in names:
             tag = get_or_create_tag(db, name)
-            # Скрытый тег — июньский, прошлого потока: автоматически его не
-            # раздаём, иначе первое открытие экрана вернуло бы старые теги
-            # всему новому потоку. Имя уникально, так что эти автотеги
-            # (тариф, период, уроки, КЕЙС) не ставятся, пока тег не вернут.
+            # Скрытый тег — июньский, прошлого потока (`Tag.is_hidden`).
+            # Тариф — действующий: у 46 живых учеников «Я С ВАМИ», и тег с этим
+            # именем возвращается в показ (имя уникально, второго не завести).
+            # Период, уроки — поля июньской анкеты, «КЕЙС» — по пробникам,
+            # которых нет с 11.07: скрытый тег по ним не ставится, иначе одна
+            # старая анкета вернула бы «10-14» всему экрану.
             if tag.is_hidden:
-                continue
+                if name != tariff_name:
+                    continue
+                tag.is_hidden = False
             add_tag_to_user(db, student.id, tag.id)
 
     db.commit()
