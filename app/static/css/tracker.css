@@ -462,7 +462,7 @@
 
 .ios-tracker .trk-row-actions { align-items: center; gap: 10px; }
 .ios-tracker .trk-row-actions .btn-blue {
-    background: var(--ios-blue); box-shadow: none;
+    background: var(--blue-fill); box-shadow: none;
     font: 600 13px/1 var(--ios-font); padding: 8px 14px; border-radius: 999px;
     transition: transform 100ms ease-out, filter 100ms ease-out;
 }
@@ -660,7 +660,7 @@
     filter: brightness(0.88);
 }
 .ios-learning .lrn-tabs .nav-pill-item.active {
-    background: var(--ios-blue); color: #fff; box-shadow: 0 2px 8px rgba(175,82,222,0.30);
+    background: var(--blue-fill); color: #fff; box-shadow: 0 2px 8px rgba(175,82,222,0.30);
 }
 
 /* Кнопка вкладки, запертой последовательностью (`tab.is_locked`) — раньше
@@ -770,7 +770,7 @@
 .ios-learning .trk-row-actions { align-items: center; gap: 10px; }
 .ios-learning .trk-row-actions .btn-blue,
 .ios-learning .lrn-card .btn-blue {
-    background: var(--ios-blue); box-shadow: none;
+    background: var(--blue-fill); box-shadow: none;
     font: 600 13px/1 var(--ios-font); padding: 8px 14px; border-radius: 999px;
     transition: transform 100ms ease-out, filter 100ms ease-out;
 }
@@ -1096,7 +1096,7 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
 }
 .lrn-inline-mock .upload-drop:hover .upload-circle { background: var(--ios-orange); color: #fff; }
 .lrn-inline-mock .upload-circle.upload-circle--stage { background: color-mix(in srgb, var(--ios-blue) 12%, transparent); color: var(--ios-blue); }
-.lrn-inline-mock .upload-drop:hover .upload-circle.upload-circle--stage { background: var(--ios-blue); color: #fff; }
+.lrn-inline-mock .upload-drop:hover .upload-circle.upload-circle--stage { background: var(--blue-fill); color: #fff; }
 .lrn-inline-mock .upload-drop-title { font: 600 14px/1.3 var(--ios-font); }
 .lrn-inline-mock .upload-drop-hint { font: 400 12px/1.5 var(--ios-font); color: var(--muted); }
 

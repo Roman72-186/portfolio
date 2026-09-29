@@ -48,7 +48,7 @@
     font: 700 24px/1.2 var(--ios-font); letter-spacing: -0.3px; color: var(--ios-label); flex: 1;
 }
 .ios-sa-tags .btn-blue, .ios-sa-assign-curator .btn-blue, .ios-sa-create-staff .btn-blue {
-    background: var(--ios-blue); box-shadow: none; border-radius: 999px;
+    background: var(--blue-fill); box-shadow: none; border-radius: 999px;
     font: 700 13px/1 var(--ios-font); min-height: 44px; padding: 10px 20px; border: none; color: #fff; cursor: pointer;
 }
 .ios-sa-tags .sa-nowrap-btn, .ios-sa-assign-curator .sa-nowrap-btn, .ios-sa-create-staff .sa-nowrap-btn { white-space: nowrap; }
@@ -181,7 +181,7 @@
 }
 .ios-sa-tags .tag-custom-row input:focus { outline: 2px solid var(--ios-blue); outline-offset: 1px; }
 .ios-sa-tags .tag-custom-row button {
-    padding: 7px 12px; background: var(--ios-blue); color: #fff; border: none;
+    padding: 7px 12px; background: var(--blue-fill); color: #fff; border: none;
     border-radius: 10px; font: 700 12px/1 var(--ios-font); cursor: pointer; white-space: nowrap;
 }
 .ios-sa-tags .tag-custom-row button:hover { filter: brightness(1.08); }
@@ -320,7 +320,7 @@
 .ios-sa-curators .sc-count { font: 700 13px/1 var(--ios-font); color: var(--ios-blue); }
 .ios-sa-curators .sc-inline-form { margin: 0; }
 .ios-sa-curators .btn-blue.btn-save {
-    background: var(--ios-blue); box-shadow: none; border-radius: 999px; border: none;
+    background: var(--blue-fill); box-shadow: none; border-radius: 999px; border: none;
     font: 700 13px/1 var(--ios-font); min-height: 44px; padding: 9px 16px; color: #fff; cursor: pointer;
 }
 .ios-sa-curators .sc-btn-disabled:disabled { background: var(--ios-grouped-bg); color: var(--ios-label-2); cursor: not-allowed; box-shadow: none; opacity: 1; }

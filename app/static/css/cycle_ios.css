@@ -126,7 +126,7 @@
     flex-wrap: wrap; justify-content: flex-end;
 }
 .ios-cycle .fb-list .fb-score-badge {
-    flex-shrink: 0; background: var(--ios-blue); color: #fff;
+    flex-shrink: 0; background: var(--blue-fill); color: #fff;
     font: 800 11px/1.4 var(--ios-font); padding: 3px 10px;
     border-radius: 999px;
 }

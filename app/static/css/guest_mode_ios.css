@@ -146,7 +146,7 @@
 
 /* ── Кнопки ── */
 .ios-gexam .btn-blue {
-    background: var(--ios-blue); box-shadow: none; border-radius: 999px; border: none;
+    background: var(--blue-fill); box-shadow: none; border-radius: 999px; border: none;
     font: 600 14px/1 var(--ios-font); padding: 11px 20px; color: #fff; cursor: pointer;
 }
 .ios-gexam .btn-danger {
@@ -169,7 +169,7 @@
     font: 700 13px/1 var(--ios-font); cursor: pointer; font-family: inherit;
 }
 .ios-gexam .gwork-subject-btn.scored { background: rgba(175,82,222,0.12); color: var(--ios-blue); }
-.ios-gexam .gwork-subject-btn.active { background: var(--ios-blue); color: #fff; }
+.ios-gexam .gwork-subject-btn.active { background: var(--blue-fill); color: #fff; }
 .ios-gexam .gwork-subject-btn:disabled { opacity: .4; cursor: not-allowed; }
 .ios-gexam .gwork-detail { display: none; margin-top: 4px; }
 .ios-gexam .gwork-detail.is-open { display: block; }

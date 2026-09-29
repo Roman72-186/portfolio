@@ -96,7 +96,7 @@
 .ios-ea-list .ea-wrap { max-width: 860px; margin: 0 auto; }
 .ios-ea-list .page-header .back-link { margin-bottom: 0; }
 .ios-ea-list .btn-blue {
-    background: var(--ios-blue); box-shadow: none; border-radius: 999px;
+    background: var(--blue-fill); box-shadow: none; border-radius: 999px;
     font: 600 13px/1 var(--ios-font); padding: 10px 18px;
 }
 
@@ -172,7 +172,7 @@
 .ios-ea-detail .ea-inline-form { display: inline; margin: 0; }
 .ios-ea-detail .header-actions .btn-danger { margin-left: 8px; }
 .ios-ea-detail .btn-blue {
-    background: var(--ios-blue); box-shadow: none; border-radius: 999px;
+    background: var(--blue-fill); box-shadow: none; border-radius: 999px;
     font: 600 13px/1 var(--ios-font); padding: 10px 18px;
 }
 .ios-ea-detail .btn-outline {
@@ -368,7 +368,7 @@
 .ios-ea-form .add-ticket-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .ios-ea-form .btn-blue {
-    background: var(--ios-blue); box-shadow: none; border-radius: 999px; border: none;
+    background: var(--blue-fill); box-shadow: none; border-radius: 999px; border: none;
     font: 700 14px/1 var(--ios-font); padding: 11px 22px; color: #fff; cursor: pointer;
 }
 .ios-ea-form .btn-outline {
@@ -439,7 +439,7 @@
     transition: background-color 120ms var(--ios-ease);
 }
 .ios-ea-form .rf-btn:hover { color: var(--ios-blue); }
-.ios-ea-form .rf-btn-primary { background: var(--ios-blue); color: #fff; }
+.ios-ea-form .rf-btn-primary { background: var(--blue-fill); color: #fff; }
 .ios-ea-form .rf-btn-primary:hover { color: #fff; filter: brightness(1.08); }
 
 @media (max-width: 768px) {

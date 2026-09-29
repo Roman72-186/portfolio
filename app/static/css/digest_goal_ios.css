@@ -67,7 +67,7 @@
 
 /* ── Кнопки ── */
 .ios-digest .btn-blue, .ios-digest-events .btn-blue, .ios-goals .btn-blue {
-    background: var(--ios-blue); box-shadow: none; border-radius: 999px;
+    background: var(--blue-fill); box-shadow: none; border-radius: 999px;
     font: 600 13px/1 var(--ios-font); padding: 10px 18px;
     transition: transform 100ms var(--ios-ease), filter 100ms var(--ios-ease);
 }

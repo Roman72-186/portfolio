@@ -54,7 +54,7 @@
     font: 700 12px/1 var(--ios-font); cursor: pointer; transition: opacity 120ms var(--ios-ease);
 }
 .ios-staff-dashboard .copy-btn.green { background: var(--ios-green); color: #fff; }
-.ios-staff-dashboard .copy-btn.blue  { background: var(--ios-blue); color: #fff; }
+.ios-staff-dashboard .copy-btn.blue  { background: var(--blue-fill); color: #fff; }
 .ios-staff-dashboard .copy-btn:active { opacity: 0.75; }
 .ios-staff-dashboard .banner-meta {
     font: 400 12px/1.4 var(--ios-font); margin-top: 8px; color: var(--ios-label-2); opacity: 1;

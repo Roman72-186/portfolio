@@ -80,7 +80,7 @@
     background: var(--blue-soft); color: var(--blue-on-soft);
 }
 .ios-prg-cal [data-preview-blocks]:hover, .ios-prg-day [data-preview-blocks]:hover {
-    background: var(--ios-blue); color: #fff;
+    background: var(--blue-fill); color: #fff;
 }
 .ios-prg-cal [data-take-blocks], .ios-prg-day [data-take-blocks] {
     background: transparent; color: var(--blue-on-soft);
@@ -135,7 +135,7 @@
 .ios-prg-cal .prg-day.is-today { outline: 2px solid var(--ios-blue); outline-offset: -2px; }
 
 .ios-prg-cal .prg-dot { font: 700 10px/1 var(--ios-font); min-width: 18px; height: 18px; }
-.ios-prg-cal .prg-dot--mock { color: #fff; background: var(--ios-blue); }
+.ios-prg-cal .prg-dot--mock { color: #fff; background: var(--blue-fill); }
 .ios-prg-cal .prg-dot--video { color: var(--ios-blue); background: rgba(175,82,222,0.16); }
 .ios-prg-cal .prg-dot--homework { color: #b8620a; background: rgba(255,149,0,0.18); }
 .ios-prg-cal .prg-dot--other { color: var(--ios-label-2); background: rgba(60,60,67,0.10); }
@@ -165,7 +165,7 @@
 .ios-prg-day .prg-tile.is-active {
     border-color: var(--ios-blue); background: rgba(175,82,222,0.07); box-shadow: none; transform: none;
 }
-.ios-prg-day .prg-tile.is-active .prg-tile-icon { background: var(--ios-blue); color: #fff; }
+.ios-prg-day .prg-tile.is-active .prg-tile-icon { background: var(--blue-fill); color: #fff; }
 .ios-prg-day .prg-tile-icon {
     width: 42px; height: 42px; border-radius: 12px;
     color: var(--ios-blue); background: rgba(175,82,222,0.12); font-size: 17px;
@@ -456,7 +456,7 @@
 
 /* ── Кнопки ── */
 .ios-prg-day .btn-blue {
-    background: var(--ios-blue); box-shadow: none;
+    background: var(--blue-fill); box-shadow: none;
     font: 700 14px/1 var(--ios-font); border-radius: 999px;
     transition: transform 100ms var(--ios-ease), filter 100ms var(--ios-ease);
 }

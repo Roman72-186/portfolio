@@ -63,7 +63,7 @@
 .ios-reports .report-submit {
     margin-top: 20px;
     display: inline-flex; align-items: center; gap: 8px;
-    background: var(--ios-blue); color: #fff; border: none;
+    background: var(--blue-fill); color: #fff; border: none;
     border-radius: 999px; padding: 11px 22px;
     font: 700 14px/1 var(--ios-font); cursor: pointer; font-family: inherit;
     transition: filter 120ms var(--ios-ease), transform 100ms var(--ios-ease);

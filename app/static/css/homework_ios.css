@@ -93,7 +93,7 @@
 .ios-homework .hw-submit { margin-top: 10px; }
 
 .ios-homework .btn-blue {
-    background: var(--ios-blue); box-shadow: none;
+    background: var(--blue-fill); box-shadow: none;
     font: 700 14px/1 var(--ios-font); border-radius: 999px;
     transition: transform 100ms ease-out, filter 100ms ease-out;
 }

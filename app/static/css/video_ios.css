@@ -179,7 +179,7 @@ body.has-video-pseudo-fullscreen .ios-video { isolation: auto; }
 .ios-video .form-input:focus { background: #fff; border-color: transparent; box-shadow: 0 0 0 2px var(--ios-blue); }
 .ios-video .btn-blue {
     width: 100%; justify-content: center;
-    background: var(--ios-blue); box-shadow: none;
+    background: var(--blue-fill); box-shadow: none;
     font: 600 16px/1 var(--ios-font); padding: 15px 20px; border-radius: 14px;
     transition: transform 100ms ease-out, filter 100ms ease-out;
 }

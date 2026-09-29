@@ -179,7 +179,7 @@
 .ios-upload .upload-drop:hover .upload-circle,
 .ios-upload-mock .upload-drop:hover .upload-circle,
 .ios-upload-retake .upload-drop:hover .upload-circle {
-    background: var(--ios-accent); color: #fff; transform: scale(1.06);
+    background: var(--blue-fill); color: #fff; transform: scale(1.06);
 }
 .ios-upload .upload-drop-title,
 .ios-upload-mock .upload-drop-title,
@@ -249,7 +249,7 @@
 
 /* ── Основная кнопка отправки ── */
 .ios-upload .btn-blue {
-    background: var(--ios-blue); box-shadow: none;
+    background: var(--blue-fill); box-shadow: none;
     font: 600 16px/1 var(--ios-font); padding: 15px 20px; border-radius: 14px;
     transition: transform 100ms ease-out, filter 100ms ease-out;
 }
@@ -259,7 +259,7 @@
 .ios-upload-mock .btn-mock-primary,
 .ios-upload-retake .btn-retake-primary {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    background: var(--ios-accent); color: #fff; box-shadow: none;
+    background: var(--blue-fill); color: #fff; box-shadow: none;
     font: 600 16px/1 var(--ios-font); padding: 15px 20px; border-radius: 14px;
     border: none; cursor: pointer; font-family: var(--ios-font);
     transition: transform 100ms ease-out, filter 100ms ease-out;
@@ -309,7 +309,7 @@
 /* Круг «Промежуточные фото» — синий, визуально отличается от янтарного
    круга «Финальное фото» (обязательное), тот же приём, что был в Spark. */
 .ios-upload-mock .upload-circle.upload-circle--stage { background: rgba(175,82,222,0.12); color: var(--ios-blue); }
-.ios-upload-mock .upload-drop:hover .upload-circle.upload-circle--stage { background: var(--ios-blue); color: #fff; }
+.ios-upload-mock .upload-drop:hover .upload-circle.upload-circle--stage { background: var(--blue-fill); color: #fff; }
 
 .ios-upload-mock .ios-prep-card {
     background: rgba(255,149,0,0.06); border: none; border-radius: 16px; padding: 18px 20px;

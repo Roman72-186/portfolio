@@ -118,7 +118,7 @@
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
 .ios-feedback .dlg-attempt-title { font: 700 16px/1.3 var(--ios-font); color: var(--ios-label); margin: 0; }
-.ios-feedback .dlg-attempt-score { background: var(--ios-blue); color: #fff; font: 700 13px/1 var(--ios-font); padding: 3px 10px; border-radius: 999px; }
+.ios-feedback .dlg-attempt-score { background: var(--blue-fill); color: #fff; font: 700 13px/1 var(--ios-font); padding: 3px 10px; border-radius: 999px; }
 .ios-feedback .dlg-attempt-score.no-score { background: var(--ios-label-3); }
 .ios-feedback .dlg-attempt-score.red { background: var(--ios-red); }
 .ios-feedback .dlg-attempt-score.orange { background: var(--ios-orange); }
@@ -155,7 +155,7 @@
     font: 700 12px/1 var(--ios-font); letter-spacing: 0.02em; user-select: none;
     background: var(--ios-grouped-bg); border: none; color: var(--ios-label-2);
 }
-.ios-feedback .dlg-msg.from-me .dlg-msg-avatar { background: var(--ios-blue); border: none; color: #fff; }
+.ios-feedback .dlg-msg.from-me .dlg-msg-avatar { background: var(--blue-fill); border: none; color: #fff; }
 .ios-feedback .dlg-msg-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .ios-feedback .dlg-msg.from-me .dlg-msg-body { align-items: flex-end; }
 .ios-feedback .dlg-msg-bubble {
@@ -165,7 +165,7 @@
     font: 400 15px/1.4 var(--ios-font); color: var(--ios-label);
 }
 .ios-feedback .dlg-msg.from-them .dlg-msg-bubble { border-bottom-left-radius: 5px; }
-.ios-feedback .dlg-msg.from-me .dlg-msg-bubble { background: var(--ios-blue); border: none; color: #fff; border-bottom-right-radius: 5px; }
+.ios-feedback .dlg-msg.from-me .dlg-msg-bubble { background: var(--blue-fill); border: none; color: #fff; border-bottom-right-radius: 5px; }
 @media (max-width: 640px) {
     .ios-feedback .dlg-msg { max-width: 94%; }
     .ios-feedback .dlg-msg-avatar { width: 28px; height: 28px; font-size: 11px; }
@@ -224,7 +224,7 @@
 /* Кнопка отправки (общая .btn-blue из base.css — переопределена только
    в этом скоупе) */
 .ios-feedback .btn-blue {
-    background: var(--ios-blue); box-shadow: none;
+    background: var(--blue-fill); box-shadow: none;
     font: 700 14px/1 var(--ios-font); border-radius: 999px;
     transition: transform 100ms ease-out, filter 100ms ease-out;
 }

@@ -587,13 +587,19 @@ WAITS_FOR_OWNER = {".next-card--blue"}
 def test_no_white_text_on_bare_brand_purple():
     # Правило, у которого нет «потом»: белое (или цвет фона) на `--blue` — только через `--blue-fill`.
     rule_re = re.compile(r"([^{}]+)\{([^{}]*)\}")
-    bare_fill = re.compile(r"(?<![-\w])background(?:-color)?\s*:\s*(?:var\(--blue\)|linear-gradient\([^;]*var\(--blue(?:-mid)?\))")
+    # 11.2б: у iOS-экранов свой фиолетовый `--ios-blue`/`--ios-purple` (#AF52DE, в тёмной теме #BF5AF2) —
+    # белое на нём 4.13 / 3.52; `.btn-blue` белый текст наследует из base.css, поэтому текстовая без `color`.
+    bare_fill = re.compile(
+        r"(?<![-\w])background(?:-color)?\s*:\s*(?:var\(--(?:blue|ios-blue|ios-purple)\)"
+        r"|linear-gradient\([^;]*var\(--blue(?:-mid)?\)|color-mix\([^;]*var\(--ios-purple\))"
+    )
     light_ink = re.compile(r"(?<![-\w])color\s*:\s*(?:#fff\b|#FFF\b|#ffffff|var\(--on-color\)|var\(--surface\))")
     offenders = []
     for path in [*APP.glob("static/**/*.css"), *APP.glob("templates/**/*.html"), *APP.glob("static/**/*.js")]:
         text = path.read_text(encoding="utf-8")
         for selector, body in rule_re.findall(text):
-            if bare_fill.search(body) and light_ink.search(body) and selector.strip() not in WAITS_FOR_OWNER:
+            texty = light_ink.search(body) or ".btn-blue" in selector
+            if bare_fill.search(body) and texty and selector.strip() not in WAITS_FOR_OWNER:
                 offenders.append(f"{path.relative_to(APP)}: {selector.strip().splitlines()[-1]}")
         for inline in re.findall(r"""style['"]?\s*,?\s*\n?\s*['"]([^'"]*color:#fff[^'"]*)""", text):
             if "var(--blue" in inline and "var(--blue-fill" not in inline:

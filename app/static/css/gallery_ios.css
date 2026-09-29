@@ -51,7 +51,7 @@
     transition: background-color 100ms ease-out, color 100ms ease-out;
 }
 .ios-gallery .filter-tab:hover { border-color: transparent; color: var(--ios-label-2); background: var(--ios-card-bg); }
-.ios-gallery .filter-tab.active { background: var(--ios-blue); color: #fff; border-color: transparent; box-shadow: none; }
+.ios-gallery .filter-tab.active { background: var(--blue-fill); color: #fff; border-color: transparent; box-shadow: none; }
 .ios-gallery .filter-tab .tab-count {
     font: 700 11px/1 var(--ios-font); opacity: 1;
     background: rgba(60,60,67,0.08); color: var(--ios-label-2);
@@ -68,7 +68,7 @@
 .ios-gallery .card svg.svg-icon { color: var(--ios-label-3); }
 .ios-gallery .gal-empty-text { color: var(--ios-label-2); }
 .ios-gallery .btn-blue.gallery-empty-cta {
-    background: var(--ios-blue); box-shadow: none;
+    background: var(--blue-fill); box-shadow: none;
     font: 600 15px/1 var(--ios-font); padding: 14px 22px; border-radius: 14px;
     transition: transform 100ms ease-out, filter 100ms ease-out;
 }

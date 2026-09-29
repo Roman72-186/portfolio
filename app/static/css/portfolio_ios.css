@@ -118,7 +118,7 @@
 .ios-portfolio .portfolio-upload-btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     width: min(100%, 360px); padding: 14px 20px; border-radius: 14px;
-    background: var(--ios-blue); color: #fff; box-shadow: none;
+    background: var(--blue-fill); color: #fff; box-shadow: none;
     font: 600 15px/1 var(--ios-font); text-decoration: none;
     transition: transform 100ms ease-out, filter 100ms ease-out;
 }

@@ -202,7 +202,7 @@
    переопределена только в этом скоупе, как в program_ios.css/homework_ios.css) ── */
 .ios-profile .prf-cta { margin-top: 20px; }
 .ios-profile .btn-blue {
-    background: var(--ios-blue); box-shadow: none;
+    background: var(--blue-fill); box-shadow: none;
     font: 700 16px/1.2 var(--ios-font); border-radius: 14px; padding: 14px 18px;
     transition: transform 100ms ease-out, filter 100ms ease-out;
 }
