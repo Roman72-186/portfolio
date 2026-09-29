@@ -1601,6 +1601,7 @@ def update_block_deadline(
     block_id: int,
     payload: BlockDeadlinePayload,
     user: Annotated[dict, Depends(require_admin_role)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
     """Сдвинуть срок сдачи у блока, не открывая форму задания (владелец
@@ -1649,6 +1650,7 @@ def update_task_deadline(
     task_id: int,
     payload: BlockDeadlinePayload,
     user: Annotated[dict, Depends(require_admin_role)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
     """Срок сдачи на всё задание сразу (владелец 27.09.2026: «и для всех

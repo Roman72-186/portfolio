@@ -24,7 +24,13 @@ from sqlalchemy.orm import Session as DBSession
 from app.cache import invalidate_session, invalidate_unread
 from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, MONTHS, MONTH_TO_NUM, TARIFFS, TARIFFS_CURRENT, TARIFF_DISPLAY, COHORT_TAGS, COHORT_TAG_LABELS, TIMEZONE_DISPLAY
 from app.db.database import get_db
-from app.dependencies import get_current_user, require_admin_role, require_csrf, require_curator
+from app.dependencies import (
+    get_current_user,
+    require_admin_role,
+    require_csrf,
+    require_csrf_header,
+    require_curator,
+)
 from app.models.session import Session
 from app.models.exam_assignment import ExamTicket
 from app.models.exam_cycle import ExamCycle
@@ -1513,6 +1519,7 @@ async def bulk_delete_works(
     student_id: int,
     request: Request,
     user: Annotated[dict, Depends(require_admin_role)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
     import json
@@ -1561,6 +1568,7 @@ async def rename_portfolio_month(
     student_id: int,
     request: Request,
     user: Annotated[dict, Depends(require_admin_role)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
     if user["role_rank"] < 5:
@@ -1615,6 +1623,7 @@ async def move_portfolio_work(
     work_id: int,
     request: Request,
     user: Annotated[dict, Depends(require_admin_role)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
     if user["role_rank"] < 5:
@@ -1656,6 +1665,7 @@ def delete_work(
     student_id: int,
     work_id: int,
     user: Annotated[dict, Depends(require_admin_role)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
     db: Annotated[DBSession, Depends(get_db)],
 ):
     _check_access(student_id, user, db)

@@ -1044,7 +1044,7 @@ function submitRevision(sid, workId, formId) {
 
 function deleteWork(sid, workId, btnEl) {
     if (!confirm('Удалить эту работу? Фото будет удалено из хранилища.')) return;
-    fetch('/cabinet/students/' + sid + '/works/' + workId, {
+    window.csrfFetch('/cabinet/students/' + sid + '/works/' + workId, {
         method: 'DELETE', headers: { 'Accept': 'application/json' },
     }).then(function(r) { return r.json().then(function(j) { return { ok: r.ok, j: j }; }); })
       .then(function(resp) {
