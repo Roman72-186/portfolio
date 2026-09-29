@@ -197,6 +197,20 @@ def clear_feature_period_cache():
 
 
 @pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Обнулить счётчики SlowAPI перед каждым тестом.
+
+    Лимиты (`app/limiter.py`, «20/minute» на входе через Telegram) считаются
+    в памяти процесса по IP, а у TestClient он один на весь набор. Без сброса
+    тесты входа из разных файлов съедали общий лимит, и следующие получали 429
+    вместо 302 — результат зависел от порядка файлов (найдено 29.09.2026:
+    `test_intake_link.py` падал в полном наборе, в одиночку проходил).
+    """
+    from app.limiter import limiter
+    limiter.reset()
+
+
+@pytest.fixture(autouse=True)
 def mock_exam_access_default_time(monkeypatch):
     """Заморозить «сейчас» mock-exam доступа на сегодня 13:00 МСК.
 

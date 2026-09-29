@@ -43,8 +43,11 @@ def test_3dlab_opacity_slider_has_an_accessible_name(
     user_factory,
     session_factory,
 ):
-    student = user_factory(vk_id=401003, role_name="ученик")
-    _login_as(client, session_factory, student)
+    # Куратор, а не ученик: с 17.09.2026 (`cf105fd`) лаборатория закрыта для
+    # учеников (`LAB3D_OPEN_FOR_STUDENTS`), и ученика `/3dlab` уводит в ленту —
+    # тест проверял бы уже не ползунок, а страницу обучения.
+    curator = user_factory(vk_id=401003, role_name="куратор")
+    _login_as(client, session_factory, curator)
 
     response = client.get("/3dlab")
 

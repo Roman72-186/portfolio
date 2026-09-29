@@ -42,9 +42,13 @@ def _cycle(db, owner):
 
 
 def _task(db, owner, *, title="День"):
+    # Срок — 23:59 сегодняшнего дня, как у задания с экрана дня. Было 06:00:
+    # с 21.09 день задания — срок сдачи ответа (`deadline_reason`), и после
+    # шести утра по Москве ответ получал 409 «срок истёк» — набор проходил
+    # только ночью (найдено 29.09.2026).
     task = create_task(
         db, title=title, user_id=owner.id, kind="material",
-        due_at=day_bounds(TODAY)[0] + timedelta(hours=6),
+        due_at=day_bounds(TODAY)[1] - timedelta(minutes=1),
         assign_to_all=True, is_required=True,
     )
     task.is_published = True
@@ -166,24 +170,34 @@ def test_skipped_question_can_be_answered_later(auth_client, db):
     assert _statuses(db, user) == ["done", "done", "current"]
 
 
-def test_answered_question_cannot_be_rewritten(auth_client, db):
-    """Правило «одна попытка» остаётся: ответ переотправить нельзя."""
+def test_corrected_text_answer_keeps_the_block_closed(auth_client, db):
+    """Текстовый ответ можно уточнить до срока и проверки — и лента не откатывается.
+
+    До 21.09.2026 здесь стояло «одна попытка»: коммит `51f0795` разрешил
+    править свободный текст (`test_routes_task_blocks.py::
+    test_text_answer_can_be_edited_before_review`), а этот тест не обновили.
+    Одна попытка осталась у автоматически оцениваемых вопросов —
+    `test_auto_graded_answer_keeps_one_attempt`. Здесь сторожим своё, про
+    ленту: правка ответа не должна снова запирать хвост.
+    """
     client, user = auth_client
     _cycle(db, user)
     task = _task(db, user)
     first, _ = _two_required_questions(db, task)
 
     _answer(client, task.id, [{"block_id": first.id, "text": "Ответ"}])
+    before = _statuses(db, user)
     again = _answer(client, task.id, [{"block_id": first.id, "text": "Передумал"}])
 
-    assert again.status_code == 409
+    assert again.status_code == 200
+    assert _statuses(db, user) == before
     panel = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
     answered_first = [b for b in panel["blocks"] if b["id"] == first.id][0]
     assert answered_first["answered"] is True
-    assert answered_first["answer_text"] == "Ответ"
+    assert answered_first["answer_text"] == "Передумал"
 
 
-def test_form_closes_when_every_question_is_answered(auth_client, db):
+def test_every_answer_marks_the_task_answered(auth_client, db):
     client, user = auth_client
     _cycle(db, user)
     task = _task(db, user)
@@ -196,7 +210,10 @@ def test_form_closes_when_every_question_is_answered(auth_client, db):
 
     panel = client.get(f"/cabinet/tracker/tasks/{task.id}/blocks").json()
     assert panel["answered"] is True
-    assert panel["submit_endpoint"] is None
+    assert panel["questions_left_count"] == 0
+    # Форма остаётся ради правки текста до проверки (правило 21.09.2026,
+    # `51f0795`); новых вопросов она уже не предлагает.
+    assert panel["submit_endpoint"] is not None
 
 
 def test_foreign_option_id_does_not_close_the_block(auth_client, db):
