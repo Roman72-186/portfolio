@@ -46,6 +46,18 @@ _NOTE_ARGS = [
     "-movflags", "+faststart", "-threads", "2",
 ]
 
+# Файл присылает пользователь, а ffmpeg умеет форматы-ссылки: плейлист HLS,
+# манифест DASH, concat-скрипт открывают другие файлы и URL (проверено
+# 29.09.2026: `.m3u8` со строкой-путём читал файл с диска сервера). Поэтому
+# вход — только контейнеры из списков `ALLOWED_FEEDBACK_*` в
+# `services/feedback.py` (имена — из `ffmpeg -demuxers` образа), а вложенные
+# открытия — только локальные файлы. Новый допустимый формат загрузки —
+# дописать его демультиплексор сюда, иначе он молча уйдёт «как есть».
+_INPUT_GUARD = [
+    "-format_whitelist", "matroska,mov,mp3,ogg,wav,aac,amr,amrnb,amrwb,avi,asf",
+    "-protocol_whitelist", "file",
+]
+
 
 def playable_voice(filename: str, data: bytes, content_type: str) -> tuple[str, bytes, str]:
     """Голосовое → `.m4a` (AAC). Возвращает (filename, data, content_type)."""
@@ -75,16 +87,17 @@ def _transcode(
 
     # Вход и выход — файлы, не pipe: у m4a/mov с телефона оглавление бывает в
     # конце, из потока такой файл не разобрать, а `+faststart` нужен
-    # перематываемый выход.
-    src_ext = Path(filename).suffix.lower() or ".bin"
+    # перематываемый выход. Имя входа нейтральное, без расширения из
+    # загрузки: по расширению ffmpeg выбирает формат (`.m3u8` → HLS), формат
+    # определяется по содержимому в пределах `_INPUT_GUARD`.
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="media-") as tmp:
-        src = Path(tmp) / f"in{src_ext}"
+        src = Path(tmp) / "input"
         dst = Path(tmp) / f"out.{out_ext}"
         src.write_bytes(data)
         cmd = [
             ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-            "-i", str(src), "-map_metadata", "-1", *args, str(dst),
+            *_INPUT_GUARD, "-i", str(src), "-map_metadata", "-1", *args, str(dst),
         ]
         try:
             result = subprocess.run(cmd, capture_output=True, timeout=timeout)

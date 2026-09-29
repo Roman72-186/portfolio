@@ -90,6 +90,80 @@ def test_note_from_browser_webm_becomes_h264_mp4_with_even_sides(tmp_path):
     assert audio["codec_name"] == "aac"
 
 
+SINE = ["-f", "lavfi", "-i", "sine=frequency=440:duration=1"]
+PICTURE = ["-f", "lavfi", "-i", "testsrc=size=160x120:rate=10:duration=1"]
+VOICE_FORMATS = [
+    ("webm", ["-c:a", "libopus"]),
+    ("ogg", ["-c:a", "libvorbis"]),
+    ("opus", ["-c:a", "libopus"]),
+    ("mp3", ["-c:a", "libmp3lame"]),
+    ("wav", ["-c:a", "pcm_s16le"]),
+    ("m4a", ["-c:a", "aac"]),
+    ("aac", ["-c:a", "aac", "-f", "adts"]),
+    ("amr", ["-ar", "8000", "-ac", "1", "-c:a", "libopencore_amrnb"]),
+    ("3gp", ["-ar", "8000", "-ac", "1", "-c:a", "libopencore_amrnb"]),
+]
+NOTE_FORMATS = [
+    ("webm", ["-c:v", "libvpx", "-c:a", "libopus"]),
+    ("mp4", ["-c:v", "libx264", "-c:a", "aac"]),
+    ("mov", ["-c:v", "libx264", "-c:a", "aac"]),
+    ("mkv", ["-c:v", "libx264", "-c:a", "aac"]),
+    ("avi", ["-c:v", "mpeg4", "-c:a", "libmp3lame"]),
+    ("wmv", ["-c:v", "wmv2", "-c:a", "wmav2"]),
+]
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("ext,codec", VOICE_FORMATS, ids=[f[0] for f in VOICE_FORMATS])
+def test_every_allowed_voice_format_passes_input_guard(tmp_path, ext, codec):
+    """Белый список демультиплексоров не должен отсечь ни один формат из
+    `ALLOWED_FEEDBACK_AUDIO_EXTENSIONS` — иначе он молча уйдёт «как есть»."""
+    try:
+        src = _lavfi(tmp_path, f"src.{ext}", [*SINE, *codec])
+    except subprocess.CalledProcessError:
+        pytest.skip(f"локальный ffmpeg не пишет {ext}")
+
+    name, _, mime = media_transcode.playable_voice(f"voice.{ext}", src, "")
+
+    assert (name, mime) == ("voice.m4a", "audio/mp4")
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("ext,codec", NOTE_FORMATS, ids=[f[0] for f in NOTE_FORMATS])
+def test_every_allowed_note_format_passes_input_guard(tmp_path, ext, codec):
+    try:
+        src = _lavfi(tmp_path, f"src.{ext}", [*PICTURE, *SINE, *codec, "-shortest"])
+    except subprocess.CalledProcessError:
+        pytest.skip(f"локальный ffmpeg не пишет {ext}")
+
+    name, _, mime = media_transcode.playable_note(f"circle.{ext}", src, "")
+
+    assert (name, mime) == ("circle.mp4", "video/mp4")
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("filename", ["x.m3u8", "x.webm", "x.ffconcat"])
+@pytest.mark.parametrize("kind", ["playlist", "concat"])
+def test_file_referencing_other_files_is_not_opened(tmp_path, filename, kind):
+    """Файл-ссылка из загрузки не должен открыть файл сервера (29.09.2026:
+    `.m3u8` со строкой-путём читал файл с диска). Загрузка пропускает любое
+    расширение при допустимом MIME, поэтому защита — в самом перекодировании."""
+    secret = _lavfi(tmp_path, "secret.ts", [*PICTURE, "-c:v", "libx264"])
+    target = (tmp_path / "secret.ts").resolve().as_posix()
+    assert secret
+    if kind == "playlist":
+        payload = (
+            "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\n"
+            f"{target}\n#EXT-X-ENDLIST\n"
+        ).encode()
+    else:
+        payload = f"ffconcat version 1.0\nfile '{target}'\n".encode()
+
+    result = media_transcode.playable_note(filename, payload, "video/webm")
+
+    assert result == (filename, payload, "video/webm")
+
+
 @needs_ffmpeg
 def test_broken_file_is_kept_as_is(caplog):
     """Битый файл не теряется: запись преподавателя важнее формата."""
