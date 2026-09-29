@@ -38,13 +38,21 @@ except Exception:
     _client = None
 
 
+def _warn(operation: str, exc: Exception) -> None:
+    """Ошибка Redis не роняет запрос, но и не молчит (код-ревью 28.09.2026,
+    P2 № 14): без строки в журнале отказ Redis выглядел как «сессия не
+    сбросилась» или «вход через Telegram не прошёл» без единой зацепки.
+    Ключ не пишем — в нём id сессии или state входа."""
+    log.warning("Redis %s: %s: %s", operation, type(exc).__name__, exc)
+
+
 def invalidate_session(session_id: str) -> None:
     if not _client:
         return
     try:
         _client.delete(f"session:{session_id}")
-    except Exception:
-        pass
+    except Exception as exc:
+        _warn("invalidate_session", exc)
 
 
 def set_vk_pkce(state: str, code_verifier: str, ttl: int = VK_PKCE_TTL) -> bool:
@@ -58,7 +66,8 @@ def set_vk_pkce(state: str, code_verifier: str, ttl: int = VK_PKCE_TTL) -> bool:
     try:
         _client.setex(f"vk_pkce:{state}", ttl, payload)
         return True
-    except Exception:
+    except Exception as exc:
+        _warn("set_vk_pkce", exc)
         return False
 
 
@@ -77,7 +86,8 @@ def pop_vk_pkce(state: str) -> dict[str, Any] | None:
         if not isinstance(data, dict):
             return None
         return data
-    except Exception:
+    except Exception as exc:
+        _warn("pop_vk_pkce", exc)
         return None
 
 
@@ -104,7 +114,8 @@ def set_telegram_oidc_pkce(
     try:
         _client.setex(f"tg_oidc_pkce:{state}", ttl, payload)
         return True
-    except Exception:
+    except Exception as exc:
+        _warn("set_telegram_oidc_pkce", exc)
         return False
 
 
@@ -123,7 +134,8 @@ def pop_telegram_oidc_pkce(state: str) -> dict[str, Any] | None:
         if not isinstance(data, dict):
             return None
         return data
-    except Exception:
+    except Exception as exc:
+        _warn("pop_telegram_oidc_pkce", exc)
         return None
 
 
@@ -138,7 +150,8 @@ def get_cached_unread(user_id: int) -> int | None:
     try:
         raw = _client.get(f"unread:{user_id}")
         return int(raw) if raw is not None else None
-    except Exception:
+    except Exception as exc:
+        _warn("get_cached_unread", exc)
         return None
 
 
@@ -147,8 +160,8 @@ def set_cached_unread(user_id: int, count: int) -> None:
         return
     try:
         _client.setex(f"unread:{user_id}", UNREAD_TTL, count)
-    except Exception:
-        pass
+    except Exception as exc:
+        _warn("set_cached_unread", exc)
 
 
 def invalidate_unread(user_id: int) -> None:
@@ -157,5 +170,5 @@ def invalidate_unread(user_id: int) -> None:
         return
     try:
         _client.delete(f"unread:{user_id}")
-    except Exception:
-        pass
+    except Exception as exc:
+        _warn("invalidate_unread", exc)
