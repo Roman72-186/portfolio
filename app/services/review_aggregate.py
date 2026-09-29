@@ -528,7 +528,9 @@ def filter_review_rows(
         if tokens:
             parts = [student.last_name, student.first_name, student.name]
             if search_contacts:
-                parts += [(student.tg_username or "").lstrip("@"), student.vk_id]
+                # vk_id — внутренний номер, людям не показывается (VK удалён
+                # 29.09.2026), искать по нему некому.
+                parts.append((student.tg_username or "").lstrip("@"))
             haystack = normalize_student_search(" ".join(str(p) for p in parts if p))
             if not all(token in haystack for token in tokens):
                 continue

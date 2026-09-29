@@ -27,7 +27,7 @@
     {% macro search_field() %}
     <label class="prg-field">Поиск
         <input type="search" name="q" value="{{ filters.q }}"
-               placeholder="{{ 'Имя, @username или VK ID' if full_access else 'Имя ученика' }}"
+               placeholder="{{ 'Имя или @username' if full_access else 'Имя ученика' }}"
                autocomplete="off">
     </label>
     {% endmacro %}

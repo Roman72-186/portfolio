@@ -44,15 +44,13 @@ def _broken_client():
 
 @pytest.mark.parametrize("call", [
     lambda: cache.invalidate_session("sess-secret-123"),
-    lambda: cache.set_vk_pkce("state-secret-123", "verifier"),
-    lambda: cache.pop_vk_pkce("state-secret-123"),
     lambda: cache.set_telegram_oidc_pkce("state-secret-123", "verifier"),
     lambda: cache.pop_telegram_oidc_pkce("state-secret-123"),
     lambda: cache.get_cached_unread(7),
     lambda: cache.set_cached_unread(7, 1),
     lambda: cache.invalidate_unread(7),
 ], ids=[
-    "invalidate_session", "set_vk_pkce", "pop_vk_pkce", "set_telegram_oidc_pkce",
+    "invalidate_session", "set_telegram_oidc_pkce",
     "pop_telegram_oidc_pkce", "get_cached_unread", "set_cached_unread", "invalidate_unread",
 ])
 def test_redis_error_is_logged_without_the_key_and_does_not_raise(call, caplog):

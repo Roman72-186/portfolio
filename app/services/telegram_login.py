@@ -13,7 +13,9 @@ Scope `telegram:bot_access` даёт боту право писать польз
 тем же входом, без дополнительного шага.
 """
 import base64
+import hashlib
 import logging
+import os
 from urllib.parse import urlencode
 
 import httpx
@@ -21,7 +23,18 @@ import jwt
 from jwt import PyJWKClient
 
 from app.config import settings
-from app.services.vk import generate_code_verifier, generate_code_challenge  # noqa: F401 — переиспользуем PKCE-хелперы
+
+
+def generate_code_verifier() -> str:
+    """PKCE code verifier (URL-safe, 43 символа). Жил в `vk.py` до удаления VK
+    29.09.2026 — Telegram-вход им пользовался и пользуется."""
+    return base64.urlsafe_b64encode(os.urandom(32)).rstrip(b"=").decode()
+
+
+def generate_code_challenge(verifier: str) -> str:
+    """PKCE code challenge (S256) из verifier."""
+    digest = hashlib.sha256(verifier.encode()).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
 logger = logging.getLogger(__name__)
 

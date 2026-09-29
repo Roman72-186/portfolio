@@ -234,28 +234,12 @@ def cabinet_student(
 
 
 EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-# Домен — без учёта регистра (VK.com/vk.COM тоже валидны), ник после /
-# регистрозависим у самого ВК, поэтому (?i:) стоит только на домене. Хвост
-# ?utm_... и завершающий "/" — частые довески при шаринге ссылки из
-# мобильного приложения, оба принимаются и отбрасываются при нормализации.
-# vk.ru — новый российский домен ВК: мобильное приложение копирует ссылку
-# именно в виде m.vk.ru/<ник>, и до 13.09.2026 такая ссылка не проходила.
-VK_RE = re.compile(r'^(?:https?://)?(?i:www\.|m\.)?(?i:vk\.(?:com|ru))/([A-Za-z0-9_.]{2,60})/?(?:\?\S*)?$')
 # Нижняя граница года рождения — только защита от опечатки в годе (1905
 # вместо 1995), а не возрастной ценз. До 13.09.2026 здесь стоял 1995, и
 # ученик постарше не мог сохранить анкету вовсе: поле даты в браузере
 # ограничений не имело, а сервер отвечал «Проверь дату рождения», не
 # называя причину. Владелец 13.09.2026 опустил порог до 1960.
 _MIN_BIRTH_YEAR = 1960
-
-
-def normalize_vk_profile_url(raw: str) -> str:
-    """Приводит ссылку к виду https://vk.com/<id>, вход и с https, и без."""
-    raw = (raw or "").strip()
-    m = VK_RE.match(raw)
-    if not m:
-        return raw
-    return f"https://vk.com/{m.group(1)}"
 
 
 # Год поступления в вуз — владелец 13.09.2026 оставил в анкете три варианта.
@@ -342,7 +326,6 @@ def profile_post(
     city: Annotated[str, Form()] = "",
     profile_timezone: Annotated[str, Form(alias="timezone")] = "",
     parent_name: Annotated[str, Form()] = "",
-    vk_profile_url: Annotated[str, Form()] = "",
     sdek_address: Annotated[str, Form()] = "",
     email: Annotated[str, Form()] = "",
     tg_username: Annotated[str, Form()] = "",
@@ -365,7 +348,6 @@ def profile_post(
     parent_name = parent_name.strip()
     sdek_address = sdek_address.strip()
     email = email.strip().lower()
-    vk_profile_url = normalize_vk_profile_url(vk_profile_url)
     profile_timezone = profile_timezone.strip()
     phone = normalize_phone(phone)
     parent_phone = normalize_phone(parent_phone)
@@ -403,11 +385,6 @@ def profile_post(
         errors.append("Введи имя и отчество родителя")
     elif len(parent_name) > 150:
         errors.append("Имя родителя слишком длинное")
-
-    if not vk_profile_url:
-        errors.append("Укажи ссылку на ВКонтакте")
-    elif not VK_RE.match(vk_profile_url):
-        errors.append("Ссылка на ВКонтакте должна выглядеть как vk.com/имя или vk.ru/имя")
 
     if not sdek_address:
         errors.append("Укажи ближайший адрес СДЭК")
@@ -464,7 +441,6 @@ def profile_post(
             "phone": phone,
             "parent_phone": parent_phone,
             "parent_name": parent_name,
-            "vk_profile_url": vk_profile_url,
             "sdek_address": sdek_address,
             "email": email,
             "tariff": TARIFF_DISPLAY.get(tariff, tariff),
@@ -508,7 +484,6 @@ def profile_post(
     db_user.phone = phone
     db_user.parent_phone = parent_phone
     db_user.parent_name = parent_name
-    db_user.vk_profile_url = vk_profile_url
     db_user.sdek_address = sdek_address
     db_user.email = email
     # Пустой строкой тариф не затираем: у новичка его просто нет, а куратор мог

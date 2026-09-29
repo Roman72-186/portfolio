@@ -10,7 +10,6 @@ from app.config import settings
 
 log = logging.getLogger(__name__)
 
-VK_PKCE_TTL = 300  # 5 minutes
 
 
 def _get_client() -> _redis_lib.Redis | None:
@@ -55,49 +54,13 @@ def invalidate_session(session_id: str) -> None:
         _warn("invalidate_session", exc)
 
 
-def set_vk_pkce(state: str, code_verifier: str, ttl: int = VK_PKCE_TTL) -> bool:
-    """Store VK PKCE verifier server-side so mobile app handoff survives."""
-    if not _client:
-        return False
-    payload = json.dumps({
-        "code_verifier": code_verifier,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    })
-    try:
-        _client.setex(f"vk_pkce:{state}", ttl, payload)
-        return True
-    except Exception as exc:
-        _warn("set_vk_pkce", exc)
-        return False
-
-
-def pop_vk_pkce(state: str) -> dict[str, Any] | None:
-    """Atomically read and delete VK PKCE verifier for one-time callback use."""
-    if not _client:
-        return None
-    try:
-        pipe = _client.pipeline()
-        pipe.get(f"vk_pkce:{state}")
-        pipe.delete(f"vk_pkce:{state}")
-        raw, _ = pipe.execute()
-        if not raw:
-            return None
-        data = json.loads(raw)
-        if not isinstance(data, dict):
-            return None
-        return data
-    except Exception as exc:
-        _warn("pop_vk_pkce", exc)
-        return None
-
-
 def set_telegram_oidc_pkce(
     state: str,
     code_verifier: str,
     ttl: int = 600,
     extra: dict[str, Any] | None = None,
 ) -> bool:
-    """Store Telegram Login (OIDC) PKCE verifier server-side, mirrors set_vk_pkce.
+    """Store Telegram Login (OIDC) PKCE verifier server-side.
 
     `extra` кладётся в тот же payload — так через state переносится назначение
     входа (`purpose`: обычный вход или гостевой пробник) и токен гостевой
@@ -120,7 +83,7 @@ def set_telegram_oidc_pkce(
 
 
 def pop_telegram_oidc_pkce(state: str) -> dict[str, Any] | None:
-    """Atomically read and delete Telegram OIDC PKCE verifier, mirrors pop_vk_pkce."""
+    """Atomically read and delete Telegram OIDC PKCE verifier."""
     if not _client:
         return None
     try:

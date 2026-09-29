@@ -30,13 +30,6 @@ class Settings(BaseSettings):
     n8n_webhook_download_file: str = ""  # portfolio-download-file webhook URL (for Drive→S3 migration)
     n8n_webhook_secret: str = ""  # sent as X-Webhook-Secret when configured
 
-    # VK OAuth (переходный период — заменяется Telegram-ботом, см. ниже; отключается
-    # очисткой vk_app_id/vk_app_secret/vk_group_id, читает _vk_login_enabled() в auth.py)
-    vk_app_id: str = ""
-    vk_app_secret: str = ""
-    vk_redirect_uri: str = "https://apparchi.ru/auth/vk/callback"
-    vk_group_id: int = 0
-    vk_community_token: str = ""  # service token for re-checking group membership
 
     # Telegram bot — прямая интеграция (без n8n): вход через /start в боте с
     # проверкой членства в закрытом канале, плюс канал уведомлений.

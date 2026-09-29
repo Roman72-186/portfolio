@@ -14,8 +14,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import (
-    invalidate_session, pop_vk_pkce, set_vk_pkce,
-    pop_telegram_oidc_pkce, set_telegram_oidc_pkce,
+    invalidate_session, pop_telegram_oidc_pkce, set_telegram_oidc_pkce,
 )
 from app.config import settings
 from app.constants import INTAKE_TRIAL_SLUG, SUPPORT_URL
@@ -36,11 +35,8 @@ from app.services.auth_links import (
     issue_one_time_login_link, issue_sso_token, issue_telegram_link_token,
     next_manual_vk_id,
 )
-from app.services.vk import (
-    get_authorize_url, exchange_code, get_user_info, check_group_membership,
-    generate_code_verifier, generate_code_challenge,
-)
 from app.services.telegram_login import (
+    generate_code_challenge, generate_code_verifier,
     get_authorize_url as tg_get_authorize_url,
     exchange_code as tg_exchange_code,
     verify_id_token as tg_verify_id_token,
@@ -77,10 +73,6 @@ class InternalIssueLinkRequest(BaseModel):
     is_group_member: bool = True
 
 
-def _vk_login_enabled() -> bool:
-    return bool(settings.vk_app_id and settings.vk_app_secret and settings.vk_group_id)
-
-
 def _telegram_login_enabled() -> bool:
     return bool(settings.telegram_login_client_id and settings.telegram_login_client_secret)
 
@@ -105,33 +97,11 @@ def _now() -> datetime:
 def _render_login(request: Request, error: str | None = None):
     context = {
         "request": request,
-        "vk_login_enabled": _vk_login_enabled(),
         "telegram_login_enabled": _telegram_login_enabled(),
     }
     if error:
         context["error"] = error
     return templates.TemplateResponse(request, "login.html", context)
-
-
-def _load_pkce_cookie(request: Request) -> tuple[dict | None, str | None]:
-    """Load signed PKCE cookie for temporary backward-compat fallback."""
-    pkce_cookie = request.cookies.get("pkce_cv")
-    if not pkce_cookie:
-        logger.warning("VK callback: pkce_cv cookie missing (cookies=%s)", list(request.cookies.keys()))
-        return None, "Ошибка сессии. Попробуй снова или очисти cookies."
-    try:
-        pkce_data = _signer.loads(pkce_cookie, max_age=300)
-        if not isinstance(pkce_data, dict):
-            raise KeyError("pkce cookie payload is not a dict")
-        _ = pkce_data["cv"]
-        _ = pkce_data["st"]
-    except SignatureExpired:
-        logger.warning("VK callback: pkce_cv cookie expired (>5 min since login click)")
-        return None, "Ссылка истекла: время на вход закончилось. Попробуй снова."
-    except (BadSignature, KeyError) as exc:
-        logger.warning("VK callback: pkce_cv bad signature or key: %s", exc)
-        return None, "Ссылка истекла. Попробуй снова."
-    return pkce_data, None
 
 
 def _load_telegram_pkce_cookie(request: Request) -> tuple[dict | None, str | None]:
@@ -292,159 +262,6 @@ async def entry_point(
     if error == "session_expired":
         error = "Сессия истекла, войди снова"
     return _render_login(request, error)
-
-
-@router.get("/auth/vk/login")
-@limiter.limit("20/minute")
-async def vk_login(request: Request):
-    if not _vk_login_enabled():
-        return RedirectResponse("/?error=VK-вход пока не настроен", status_code=302)
-
-    # state — plain random token, no dots (VK mangles itsdangerous signed strings)
-    state = secrets.token_urlsafe(32)
-    code_verifier = generate_code_verifier()
-    code_challenge = generate_code_challenge(code_verifier)
-
-    # Primary PKCE storage is server-side so mobile "open in VK app" survives.
-    stored_in_redis = set_vk_pkce(state, code_verifier, ttl=300)
-    if not stored_in_redis:
-        logger.warning("VK login: failed to store PKCE in Redis for state=%s", state[:12])
-
-    # Keep a versioned signed cookie only as rollout fallback for pre-deploy flows.
-    pkce_signed = _signer.dumps({"cv": code_verifier, "st": state, "v": 2})
-    url = get_authorize_url(state, code_challenge)
-    response = RedirectResponse(url, status_code=302)
-    response.set_cookie(
-        "pkce_cv", pkce_signed,
-        httponly=True, secure=True, samesite="lax",
-        max_age=300, path="/",
-    )
-    return response
-
-
-@router.get("/auth/vk/callback", response_class=HTMLResponse)
-@limiter.limit("20/minute")
-async def vk_callback(
-    request: Request,
-    background: BackgroundTasks,
-    db: Annotated[DBSession, Depends(get_db)],
-    code: str | None = None,
-    state: str | None = None,
-    error: str | None = None,
-    device_id: str | None = None,
-):
-    if error or not code:
-        logger.warning("VK callback error: %s", error)
-        return _render_login(request, "Авторизация через ВК отменена")
-
-    if not state:
-        logger.warning("VK callback: state missing from VK redirect")
-        return _render_login(request, "Ошибка безопасности. Попробуй снова.")
-
-    code_verifier: str | None = None
-    stored_state: str | None = None
-
-    redis_pkce = pop_vk_pkce(state)
-    if redis_pkce:
-        code_verifier = redis_pkce.get("code_verifier")
-        stored_state = state
-        logger.info("VK callback: loaded PKCE from Redis for state=%s", state[:12])
-    else:
-        logger.warning("VK callback: PKCE missing in Redis for state=%s", state[:12])
-        cookie_pkce, cookie_error = _load_pkce_cookie(request)
-        if not cookie_pkce:
-            return _render_login(request, cookie_error)
-        if cookie_pkce.get("v") is not None:
-            logger.warning("VK callback: cookie fallback skipped for current cookie version, state=%s", state[:12])
-            return _render_login(request, "Ошибка сессии. Попробуй снова или очисти cookies.")
-        logger.info("VK callback: using cookie PKCE fallback for legacy flow state=%s", state[:12])
-        code_verifier = cookie_pkce["cv"]
-        stored_state = cookie_pkce["st"]
-
-    if not code_verifier or not stored_state:
-        logger.warning("VK callback: PKCE payload incomplete for state=%s", state[:12])
-        return _render_login(request, "Ошибка сессии. Попробуй снова или очисти cookies.")
-
-    if stored_state != state:
-        logger.warning("VK callback: state mismatch stored=%r url=%r", stored_state[:20], state[:20])
-        return _render_login(request, "Ошибка безопасности. Попробуй снова.")
-
-    if not device_id:
-        return _render_login(request, "Ошибка авторизации ВК: нет device_id.")
-
-    try:
-        token_data = await exchange_code(code, code_verifier, device_id)
-    except Exception as exc:
-        logger.error("VK token exchange failed: %s", exc)
-        return _render_login(request, "Ошибка авторизации ВК. Попробуй позже.")
-
-    access_token = token_data.get("access_token")
-    vk_user_id = token_data.get("user_id")
-    if not access_token or not vk_user_id:
-        return _render_login(request, "ВК не вернул данные авторизации.")
-
-    is_member = await check_group_membership(access_token, vk_user_id, settings.vk_group_id)
-
-    # VK ID tokens may lack groups scope for closed communities — fall back to community token.
-    if is_member is not True and settings.vk_community_token:
-        fallback = await check_group_membership(
-            settings.vk_community_token, vk_user_id, settings.vk_group_id
-        )
-        if fallback is True:
-            is_member = True
-            logger.info("vk_callback: user %s confirmed via community token fallback", vk_user_id)
-        elif is_member is None and fallback is False:
-            is_member = False
-
-    if is_member is None:
-        # VK API didn't give a definite answer (timeout/error) — don't treat this
-        # as a confirmed non-membership, ask the user to retry instead.
-        logger.warning("vk_callback: membership check inconclusive for user %s", vk_user_id)
-        return templates.TemplateResponse(request, "denied.html", {
-            "request": request,
-            "reason": "Не удалось проверить участие в сообществе ВК. Попробуй войти ещё раз через минуту.",
-            "vk_group_id": settings.vk_group_id,
-        })
-
-    if not is_member:
-        existing_user = db.query(User).filter(User.vk_id == vk_user_id).first()
-        if existing_user:
-            existing_user.is_group_member = False
-            existing_user.last_vk_check_at = _now()
-            db.commit()
-        return templates.TemplateResponse(request, "denied.html", {
-            "request": request,
-            "reason": "Доступ запрещён. Ты не состоишь в сообществе.",
-            "vk_group_id": settings.vk_group_id,
-        })
-
-    try:
-        vk_info = await get_user_info(access_token, vk_user_id)
-    except Exception as exc:
-        logger.error("VK get_user_info failed: %s", exc)
-        return _render_login(request, "Не удалось получить данные профиля ВК.")
-
-    user = _upsert_user(
-        db,
-        vk_id=vk_user_id,
-        name=vk_info["name"],
-        first_name=vk_info.get("first_name"),
-        last_name=vk_info.get("last_name"),
-        photo_url=vk_info.get("photo_url"),
-        is_group_member=True,
-        mark_vk_checked=True,
-    )
-
-    if not user.is_active:
-        db.commit()
-        return templates.TemplateResponse(request, "blocked.html", {"request": request})
-
-    if settings.n8n_enabled:
-        background.add_task(
-            drive_service.sync_drive_works,
-            user.id, user.vk_id, user.tariff or "", user.tg_username or "",
-        )
-    return _create_session_response(db, user)
 
 
 def telegram_oauth_redirect(
@@ -795,12 +612,14 @@ async def one_time_link_login(
             "request": request,
             "reason": "Твой доступ временно отключен. Напиши администратору.",
         })
-    # Allow: VK group members, legacy admins, and staff (role rank >= 2)
+    # Пускаем: учеников с открытым доступом (`is_group_member` — исторически
+    # «член группы ВК», с 29.09.2026 просто «доступ открыт»), старых админов
+    # и сотрудников (ранг ≥ 2).
     role_rank = user.role.rank if user.role else 0
     if not user.is_admin and not user.is_group_member and role_rank < 2:
         return templates.TemplateResponse(request, "denied.html", {
             "request": request,
-            "reason": "Доступ к кабинету доступен только участникам закрытой группы ВК.",
+            "reason": "Доступ к кабинету ещё не открыт. Напиши администратору.",
         })
 
     if settings.n8n_enabled:
@@ -1242,11 +1061,10 @@ def enter_3dlab(
 
 @router.get("/denied", response_class=HTMLResponse)
 def denied_page(request: Request):
-    """Show the VK group access denial page used by redirects."""
+    """Страница отказа, куда ведут редиректы (3D-лаборатория)."""
     return templates.TemplateResponse(request, "denied.html", {
         "request": request,
-        "reason": "Доступ к 3D лаборатории открыт только участникам закрытого сообщества.",
-        "vk_group_id": settings.vk_group_id,
+        "reason": "Доступ к 3D лаборатории ещё не открыт. Напиши администратору.",
     }, status_code=403)
 
 
@@ -1284,64 +1102,6 @@ def sso_verify(
         "tariff": user.tariff,
         "expires_at": login_token.expires_at.isoformat(),
     }
-
-
-@router.get("/auth/vk/recheck", response_class=HTMLResponse)
-async def vk_recheck(
-    request: Request,
-    db: Annotated[DBSession, Depends(get_db)],
-):
-    """Re-check VK group membership without a full OAuth round-trip.
-
-    Requires an active session. Used from the denied.html page.
-    """
-    session_id = request.cookies.get("session_id")
-    if not session_id:
-        return RedirectResponse("/auth/vk/login", status_code=302)
-
-    row = (
-        db.query(Session, User)
-        .join(User, Session.user_id == User.id)
-        .filter(Session.id == session_id, Session.is_active == True)
-        .first()
-    )
-    if not row:
-        return RedirectResponse("/auth/vk/login", status_code=302)
-
-    _, user = row
-    # We don't have the access_token anymore — use community token if available,
-    # otherwise fall back to the VK API with service token approach.
-    # For now: call groups.isMember with user's vk_id using community token if set.
-    from app.services.vk import _vk_api_get
-    community_token = settings.vk_community_token
-    if community_token:
-        try:
-            data = await _vk_api_get("groups.isMember", {
-                "group_id": settings.vk_group_id,
-                "user_id": user.vk_id,
-                "access_token": community_token,
-                "v": "5.199",
-            })
-            is_member = data.get("response") == 1
-        except Exception as exc:
-            logger.warning("recheck groups.isMember failed: %s", exc)
-            is_member = False
-    else:
-        # No token available — redirect to full OAuth
-        return RedirectResponse("/auth/vk/login", status_code=302)
-
-    user.is_group_member = is_member
-    user.last_vk_check_at = _now()
-    db.commit()
-
-    if is_member:
-        return RedirectResponse("/cabinet", status_code=302)
-
-    return templates.TemplateResponse(request, "denied.html", {
-        "request": request,
-        "reason": "Ты всё ещё не состоишь в сообществе. Вступи и попробуй снова.",
-        "vk_group_id": settings.vk_group_id,
-    })
 
 
 def _render_staff_login(request: Request, error: str | None = None):

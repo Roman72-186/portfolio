@@ -32,8 +32,9 @@ def test_personal_shows_own_contacts(auth_client, db):
 
 def test_personal_shows_anketa_data(auth_client, db):
     """Личная информация показывает поля анкеты первого входа (12-13.09.2026:
-    дата рождения, город, часовой пояс, email, ВКонтакте, родитель, СДЭК),
-    а не только контакты и тариф."""
+    дата рождения, город, часовой пояс, email, родитель, СДЭК),
+    а не только контакты и тариф. Ссылку на ВКонтакте не показывает — VK
+    удалён 29.09.2026, старое значение в базе остаётся без показа."""
     from datetime import date
 
     client, user = auth_client
@@ -53,7 +54,7 @@ def test_personal_shows_anketa_data(auth_client, db):
     assert "Казань" in resp.text
     assert "МСК+3" in resp.text
     assert "anna@example.com" in resp.text
-    assert "https://vk.com/anna_smirnova" in resp.text
+    assert "vk.com" not in resp.text
     assert "Смирнова Мария Петровна" in resp.text
     assert "Казань, ул. Ленина, 1" in resp.text
 
@@ -108,7 +109,7 @@ def test_contacts_form_shows_personal_fields_and_locks_access_fields(auth_client
     assert 'name="city"' in resp.text
     assert 'name="timezone"' in resp.text
     assert 'name="email"' in resp.text
-    assert 'name="vk_profile_url"' in resp.text
+    assert 'name="vk_profile_url"' not in resp.text  # VK удалён 29.09.2026
     assert 'name="sdek_address"' in resp.text
     assert 'name="university_year"' in resp.text
     # Поля, управляющие доступом и учебным прогрессом, доступны только staff.
@@ -137,7 +138,6 @@ _VALID_CONTACTS_EXTRA = {
     "city": "Казань",
     "timezone": "3",
     "email": "anna@example.com",
-    "vk_profile_url": "vk.com/anna_smirnova",
     "sdek_address": "Казань, ул. Ленина, 1",
 }
 
@@ -163,7 +163,6 @@ def test_contacts_post_saves_phone_and_username(auth_client, db):
     assert saved.city == "Казань"
     assert saved.timezone == "3"
     assert saved.email == "anna@example.com"
-    assert saved.vk_profile_url == "https://vk.com/anna_smirnova"
     assert saved.sdek_address == "Казань, ул. Ленина, 1"
 
 

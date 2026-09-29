@@ -33,7 +33,7 @@
         Порядок полей и разбивка на секции повторяют анкету (`profile.html`),
         вплоть до последовательности внутри «Контактов». Ученик заполняет анкету
         один раз, а правит эти же данные здесь — до 28.09.2026 он находил поля
-        переставленными: ВКонтакте и почта шли в обратном порядке, имя родителя
+        переставленными: контакты шли в другом порядке, имя родителя
         жило в отдельной секции, а год поступления стоял в «О тебе», тогда как
         в анкете он в «Учёбе». Меняешь порядок в одном файле — меняй и во втором.
         #}
@@ -95,11 +95,6 @@
                        value="{{ form.tg_username }}" placeholder="@username"
                        maxlength="32" pattern="@?[A-Za-z0-9_]{4,31}">
                 <p class="prs-field-note">По этому нику твои работы находятся в облаке. Меняешь ник – напиши в поддержку, иначе загруженное раньше потеряется.</p>
-            </div>
-            <div class="prs-field">
-                <label class="prs-field-label" for="contacts-vk">Ссылка на ВКонтакте <span class="prs-required">*</span></label>
-                <input class="prs-field-input" type="text" id="contacts-vk" name="vk_profile_url" required
-                       value="{{ form.vk_profile_url }}" placeholder="vk.com/имя" maxlength="200">
             </div>
             <div class="prs-field">
                 <label class="prs-field-label" for="contacts-email">Электронная почта <span class="prs-required">*</span></label>

@@ -48,13 +48,12 @@ from app.db.database import Base, get_db             # noqa: E402
 # платятся заново на каждом `with TestClient(app)`, то есть в 1015 тестах из
 # 1553. Замерено 10.09.2026: 12,2 минуты из 19,2 минут прогона.
 #
-# Отключать безопасно: `_get_client()` в каждом из трёх сервисов создаёт клиент
+# Отключать безопасно: `_get_client()` в каждом из двух сервисов создаёт клиент
 # сам при первом обращении, а тесты наружу не ходят. Прод не затронут — правка
 # живёт только в тестовой обвязке.
 #
 # `tests/test_main_lifespan.py` ставит поверх свои AsyncMock через monkeypatch,
 # его проверки продолжают работать.
-import app.services.vk as _vk_service                 # noqa: E402
 import app.services.telegram as _tg_service           # noqa: E402
 import app.services.telegram_login as _tg_login_service  # noqa: E402
 
@@ -64,7 +63,7 @@ async def _skip_client_warmup() -> None:
     return None
 
 
-for _service in (_vk_service, _tg_service, _tg_login_service):
+for _service in (_tg_service, _tg_login_service):
     _service.init_client = _skip_client_warmup
     _service.close_client = _skip_client_warmup
 

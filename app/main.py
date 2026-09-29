@@ -35,7 +35,6 @@ from app import log_masking
 from app.body_limit import BodySizeLimitMiddleware
 from app.services.rbac import seed_roles_and_permissions
 from app.services import n8n as n8n_service
-from app.services import vk as vk_service
 from app.services import telegram as telegram_service
 from app.services import telegram_login as telegram_login_service
 from app.services import drive as drive_service
@@ -78,7 +77,6 @@ async def lifespan(app: FastAPI):
     if settings.n8n_enabled:
         await n8n_service.init_client()
         await drive_service.init_client()
-    await vk_service.init_client()
     await telegram_service.init_client()
     await telegram_login_service.init_client()
     should_start_scheduler = (
@@ -91,7 +89,6 @@ async def lifespan(app: FastAPI):
     if settings.n8n_enabled:
         await n8n_service.close_client()
         await drive_service.close_client()
-    await vk_service.close_client()
     await telegram_service.close_client()
     await telegram_login_service.close_client()
     if should_start_scheduler:

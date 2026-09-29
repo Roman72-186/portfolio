@@ -38,7 +38,9 @@ def test_search_matches_every_word_ignoring_case_and_yo(db, user_factory, sessio
     assert "Найдено 1 из 2" in resp.text
 
 
-def test_head_teacher_finds_student_by_username_and_vk_id(db, user_factory, session_factory, client):
+def test_head_teacher_finds_student_by_username_not_vk_id(db, user_factory, session_factory, client):
+    """Поиск по нику Telegram. По `vk_id` — нет: VK удалён 29.09.2026, номер
+    внутренний и людям не показывается, искать по нему некому."""
     head = user_factory(vk_id=870_011, name="ГП", role_name="админ")
     found = user_factory(vk_id=870_012, name="Искомый")
     found.tg_username = "@Iskomy_Nick"
@@ -49,9 +51,9 @@ def test_head_teacher_finds_student_by_username_and_vk_id(db, user_factory, sess
     by_nick = client.get(URL, params={"q": "@iskomy_nick"}).text
     by_vk = client.get(URL, params={"q": "870012"}).text
 
-    for html in (by_nick, by_vk):
-        assert "Искомый" in html
-        assert "Посторонний" not in html
+    assert "Искомый" in by_nick
+    assert "Посторонний" not in by_nick
+    assert "Искомый" not in by_vk
 
 
 def test_curator_search_ignores_contacts(db, user_factory, session_factory, client):

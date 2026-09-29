@@ -130,9 +130,8 @@ async def check_channel_membership(user_id: int) -> bool | None:
     """Проверить членство user_id в settings.telegram_channel_id.
 
     Возвращает True/False при определённом ответе Telegram, либо None, если
-    проверку выполнить не удалось (сеть, HTTP-ошибка, ошибка API). Как и
-    check_group_membership в vk.py, вызывающий код не должен трактовать None
-    как подтверждённое отсутствие членства.
+    проверку выполнить не удалось (сеть, HTTP-ошибка, ошибка API). Вызывающий
+    код не должен трактовать None как подтверждённое отсутствие членства.
     """
     if not settings.telegram_bot_token or not settings.telegram_channel_id:
         logger.warning("check_channel_membership: bot token или channel id не настроены")

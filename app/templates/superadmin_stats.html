@@ -55,7 +55,6 @@
                     <thead>
                         <tr>
                             <th>Ученик</th>
-                            <th>VK ID</th>
                             <th>Telegram</th>
                             <th class="ss-ta-c">Рисунок</th>
                             <th class="ss-ta-c">Композиция</th>
@@ -65,7 +64,6 @@
                     {% for s in students %}
                     <tr data-search="{{ (s.student_name ~ ' ' ~ (s.tg_username | default('') | replace('@', ''))) | lower }}">
                         <td data-label="Ученик"><a href="/cabinet/superadmin/users?q={{ s.student_name }}" class="ss-link">{{ s.student_name }}</a></td>
-                        <td data-label="VK ID" class="ss-mono-dim">{{ s.vk_id }}</td>
                         <td data-label="Telegram" class="ss-dim-sm">{% if s.tg_username %}{% if not s.tg_username.startswith('@') %}@{% endif %}{{ s.tg_username }}{% else %}—{% endif %}</td>
                         <td data-label="Рисунок" class="ss-ta-c">{% if s.risunok %}<span class="ss-check-ok">✓</span>{% else %}<span class="ss-check-err">✗</span>{% endif %}</td>
                         <td data-label="Композиция" class="ss-ta-c">{% if s.kompoziciya %}<span class="ss-check-ok">✓</span>{% else %}<span class="ss-check-err">✗</span>{% endif %}</td>
@@ -97,7 +95,6 @@
                     <thead>
                         <tr>
                             <th>Ученик</th>
-                            <th>VK ID</th>
                             <th>Telegram</th>
                             <th class="ss-ta-c">Рисунок</th>
                             <th class="ss-ta-c">Композиция</th>
@@ -107,7 +104,6 @@
                     {% for s in ns_students %}
                     <tr data-search="{{ (s.student_name ~ ' ' ~ (s.tg_username | default('') | replace('@', ''))) | lower }}">
                         <td data-label="Ученик"><a href="/cabinet/superadmin/users?q={{ s.student_name }}" class="ss-link">{{ s.student_name }}</a></td>
-                        <td data-label="VK ID" class="ss-mono-dim">{{ s.vk_id }}</td>
                         <td data-label="Telegram" class="ss-dim-sm">{% if s.tg_username %}{% if not s.tg_username.startswith('@') %}@{% endif %}{{ s.tg_username }}{% else %}—{% endif %}</td>
                         <td data-label="Рисунок" class="ss-ta-c">{% if s.risunok %}<span class="ss-check-ok">✓</span>{% else %}<span class="ss-check-err">✗</span>{% endif %}</td>
                         <td data-label="Композиция" class="ss-ta-c">{% if s.kompoziciya %}<span class="ss-check-ok">✓</span>{% else %}<span class="ss-check-err">✗</span>{% endif %}</td>

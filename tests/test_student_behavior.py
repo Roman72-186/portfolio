@@ -48,17 +48,17 @@ def test_profile_form_returns_200_when_incomplete(client, user_factory, session_
 
 
 def test_profile_form_shows_hint_component(client, user_factory, session_factory):
-    """Анкета подключает пилотные подсказки у часового пояса и ссылки ВК.
+    """Анкета подключает пилотную подсказку у часового пояса.
 
-    Пилот компонента `components/hint.html` (см. `docs/component-map.md`) —
-    ровно две подсказки на этом экране: у СДЭК уже есть инлайн-примечание,
-    дублировать его всплывашкой не стали.
+    Пилот компонента `components/hint.html` (см. `docs/component-map.md`).
+    Вторая подсказка стояла у ссылки на ВКонтакте — поле снято вместе с VK
+    29.09.2026. У СДЭК уже есть инлайн-примечание, всплывашкой не дублируем.
     """
     client, _ = _auth(client, user_factory, session_factory,
                       vk_id=100_105, profile_completed=False)
     resp = client.get("/cabinet/profile")
     assert resp.status_code == 200
-    assert resp.text.count('class="hint-wrap"') == 2
+    assert resp.text.count('class="hint-wrap"') == 1
     assert '<script src="/static/js/hint.js?v=' in resp.text
 
 
@@ -122,7 +122,6 @@ def test_profile_post_valid_data_sets_profile_completed(client, db, user_factory
         "phone":      "+79001112233",
         "parent_phone": "+79002223344",
         "parent_name": "Ольга Викторовна",
-        "vk_profile_url": "vk.com/anna_smirnova",
         "sdek_address": "Москва, ул. Ленина 10, ПВЗ Строгино",
         "email": "anna@example.com",
         "tariff":     "Уверенный",
@@ -145,7 +144,7 @@ def test_profile_post_valid_data_sets_profile_completed(client, db, user_factory
     assert db_user.city == "Москва"
     assert db_user.timezone == "0"
     assert db_user.parent_name == "Ольга Викторовна"
-    assert db_user.vk_profile_url == "https://vk.com/anna_smirnova"
+    assert db_user.vk_profile_url is None  # VK удалён 29.09.2026
     assert db_user.sdek_address == "Москва, ул. Ленина 10, ПВЗ Строгино"
     assert db_user.email == "anna@example.com"
     # Месяц и год присоединения ставит сервер моментом заполнения анкеты,
@@ -173,7 +172,6 @@ def test_profile_post_enrollment_date_shown_on_contacts(client, user_factory, se
         "birth_date": "2009-03-14", "city": "Казань", "timezone": "0",
         "phone": "+79001112233", "parent_phone": "+79002223344",
         "parent_name": "Мария Петровна",
-        "vk_profile_url": "vk.com/petr_ivanov",
         "sdek_address": "Казань, ул. Баумана 1, ПВЗ Центр",
         "email": "petr@example.com", "tariff": "Уверенный",
         "tg_username": "petr_art", "university_year": "2025",
@@ -202,7 +200,6 @@ def test_profile_post_accepts_adult_birth_year(client, db, user_factory, session
         "birth_date": "1988-04-02", "city": "Пермь", "timezone": "2",
         "phone": "+79001112233", "parent_phone": "+79002223344",
         "parent_name": "Нина Сергеевна",
-        "vk_profile_url": "vk.com/igor_petrov",
         "sdek_address": "Пермь, Ленина 5, ПВЗ",
         "email": "igor@example.com", "tariff": "Я сам",
         "tg_username": "igor_art", "university_year": "2027",
@@ -221,7 +218,6 @@ def test_profile_post_rejects_birth_year_below_floor(client, user_factory, sessi
         "birth_date": "1905-04-02", "city": "Пермь", "timezone": "2",
         "phone": "+79001112233", "parent_phone": "+79002223344",
         "parent_name": "Нина Сергеевна",
-        "vk_profile_url": "vk.com/igor_petrov",
         "sdek_address": "Пермь, Ленина 5, ПВЗ",
         "email": "igor@example.com", "tariff": "Я сам",
         "tg_username": "igor_art", "university_year": "2027",
@@ -243,26 +239,6 @@ def test_profile_form_limits_birth_date_field(client, user_factory, session_fact
     assert f'max="{today_msk().isoformat()}"' in resp.text
 
 
-def test_vk_profile_url_accepts_both_domains():
-    """Ссылка с vk.ru и m.vk.ru принимается и приводится к каноническому vk.com."""
-    from app.api.cabinet_student import VK_RE, normalize_vk_profile_url
-    accepted = [
-        "https://vk.com/al_vetv",
-        "vk.com/al_vetv",
-        "https://vk.ru/al_vetv",          # новый российский домен ВК
-        "https://m.vk.ru/al_vetv",        # так копирует мобильное приложение
-        "m.vk.ru/al_vetv/",
-        "VK.RU/al_vetv",
-        "https://vk.ru/al_vetv?from=groups",
-    ]
-    for raw in accepted:
-        assert VK_RE.match(raw), raw
-        assert normalize_vk_profile_url(raw) == "https://vk.com/al_vetv", raw
-
-    for raw in ["https://ok.ru/al_vetv", "https://vk.xx/al_vetv", "vk.ru/"]:
-        assert not VK_RE.match(raw), raw
-
-
 def test_profile_post_empty_form_shows_all_required_errors(client, user_factory, session_factory):
     """Whitespace-only fields (stripped to empty) return all required-field errors."""
     client, _ = _auth(client, user_factory, session_factory,
@@ -273,7 +249,7 @@ def test_profile_post_empty_form_shows_all_required_errors(client, user_factory,
         "first_name": " ", "last_name": " ", "phone": " ", "parent_phone": " ",
         "tariff": "Уверенный", "tg_username": " ",
         "birth_date": " ", "city": " ", "timezone": " ",
-        "parent_name": " ", "vk_profile_url": " ", "sdek_address": " ", "email": " ",
+        "parent_name": " ", "sdek_address": " ", "email": " ",
         "about": " ",
     })
     assert resp.status_code == 200
@@ -281,7 +257,7 @@ def test_profile_post_empty_form_shows_all_required_errors(client, user_factory,
                      "Укажи ник в Telegram", "Укажи год поступления",
                      "Укажи дату рождения",
                      "Укажи город", "Укажи часовой пояс",
-                     "Введи имя и отчество родителя", "Укажи ссылку на ВКонтакте",
+                     "Введи имя и отчество родителя",
                      "Укажи ближайший адрес СДЭК", "Укажи электронную почту"):
         assert fragment in resp.text, f"Expected error: {fragment!r}"
 

@@ -18,7 +18,7 @@
 - `/cabinet/personal/legal/{slug}` — HTML-фрагмент документа для поп-апа,
   без `base.html` (голая разметка, не страница);
 - `/cabinet/personal/contacts` — правка личных данных: ФИО, дата рождения,
-  контакты, данные родителя, город, часовой пояс, email, ссылка ВКонтакте,
+  контакты, данные родителя, город, часовой пояс, email,
   адрес СДЭК и год поступления в вуз. Тариф и начало обучения остаются
   системными данными: они определяют доступ и учебный прогресс, поэтому
   ученик видит их в форме, но не меняет.
@@ -37,11 +37,9 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.api.cabinet_student import (
     EMAIL_RE,
-    VK_RE,
     _MIN_BIRTH_YEAR,
     _university_year_options,
     needs_profile_setup,
-    normalize_vk_profile_url,
 )
 from app.cache import invalidate_session
 from app.constants import TARIFF_DISPLAY, MONTHS, PAYMENT_URL, SUPPORT_URL, TIMEZONES
@@ -167,7 +165,6 @@ def _contacts_ctx(request, user, errors=None, form=None):
             "city": user.get("city") or "",
             "timezone": user.get("timezone") or "",
             "email": user.get("email") or "",
-            "vk_profile_url": user.get("vk_profile_url") or "",
             "sdek_address": user.get("sdek_address") or "",
             "university_year": user.get("university_year") or "",
         },
@@ -207,7 +204,6 @@ def cabinet_personal_contacts_save(
     city: Annotated[str, Form()] = "",
     contacts_timezone: Annotated[str, Form(alias="timezone")] = "",
     email: Annotated[str, Form()] = "",
-    vk_profile_url: Annotated[str, Form()] = "",
     sdek_address: Annotated[str, Form()] = "",
     university_year: Annotated[str, Form()] = "",
 ):
@@ -224,7 +220,6 @@ def cabinet_personal_contacts_save(
     city = city.strip()
     contacts_timezone = contacts_timezone.strip()
     email = email.strip().lower()
-    vk_profile_url = normalize_vk_profile_url(vk_profile_url)
     sdek_address = sdek_address.strip()
     university_year = university_year.strip()
 
@@ -284,11 +279,6 @@ def cabinet_personal_contacts_save(
         errors.append("Укажи электронную почту")
     elif not EMAIL_RE.match(email):
         errors.append("Введи корректную электронную почту")
-
-    if not vk_profile_url:
-        errors.append("Укажи ссылку на ВКонтакте")
-    elif not VK_RE.match(vk_profile_url):
-        errors.append("Ссылка на ВКонтакте должна выглядеть как vk.com/имя или vk.ru/имя")
 
     if not sdek_address:
         errors.append("Укажи ближайший адрес СДЭК")
@@ -353,7 +343,7 @@ def cabinet_personal_contacts_save(
             "phone": phone, "parent_phone": parent_phone, "tg_username": tg_username,
             "parent_name": parent_name,
             "city": city, "timezone": contacts_timezone, "email": email,
-            "vk_profile_url": vk_profile_url, "sdek_address": sdek_address,
+            "sdek_address": sdek_address,
             "university_year": university_year,
         }
         return templates.TemplateResponse(request, "cabinet_personal_contacts.html",
@@ -371,7 +361,6 @@ def cabinet_personal_contacts_save(
     db_user.city = city
     db_user.timezone = contacts_timezone
     db_user.email = email
-    db_user.vk_profile_url = vk_profile_url
     db_user.sdek_address = sdek_address
     db_user.university_year = parsed_university_year
     if tg_mismatch_after_save is not None:

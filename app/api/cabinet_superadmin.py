@@ -1534,33 +1534,33 @@ def superadmin_stats_export(
     for tariff in export_tariffs:
         students = by_tariff_mock.get(tariff, [])
         ws = wb.create_sheet(title=tariff[:31])
-        _style_header_row(ws, ["Ученик", "VK ID", "Telegram", "Рисунок", "Композиция"])
+        _style_header_row(ws, ["Ученик", "Telegram", "Рисунок", "Композиция"])
         for s in students:
-            row = [s["student_name"], s["vk_id"], _fmt_tg(s["tg_username"]),
+            row = [s["student_name"], _fmt_tg(s["tg_username"]),
                    "сдал" if s["risunok"] else "не сдал",
                    "сдал" if s["kompoziciya"] else "не сдал"]
             ws.append(row)
             r_idx = ws.max_row
             # Цветовая заливка ячеек Рисунок / Композиция
-            ws.cell(r_idx, 4).fill = FILL_YES if s["risunok"] else FILL_NO
-            ws.cell(r_idx, 5).fill = FILL_YES if s["kompoziciya"] else FILL_NO
-        _set_col_widths(ws, [30, 14, 22, 12, 14])
+            ws.cell(r_idx, 3).fill = FILL_YES if s["risunok"] else FILL_NO
+            ws.cell(r_idx, 4).fill = FILL_YES if s["kompoziciya"] else FILL_NO
+        _set_col_widths(ws, [30, 22, 12, 14])
 
     # ── Листы 5-7: Не сдали хотя бы один предмет ─────────────────────────────
     for tariff in export_tariffs:
         ns_students = not_submitted_by_tariff.get(tariff, [])
         sheet_name = f"Не сдали — {tariff}"[:31]
         ws_ns = wb.create_sheet(title=sheet_name)
-        _style_header_row(ws_ns, ["Ученик", "VK ID", "Telegram", "Рисунок", "Композиция"])
+        _style_header_row(ws_ns, ["Ученик", "Telegram", "Рисунок", "Композиция"])
         for s in ns_students:
-            row = [s["student_name"], s["vk_id"], _fmt_tg(s["tg_username"]),
+            row = [s["student_name"], _fmt_tg(s["tg_username"]),
                    "сдал" if s["risunok"] else "не сдал",
                    "сдал" if s["kompoziciya"] else "не сдал"]
             ws_ns.append(row)
             r_idx = ws_ns.max_row
-            ws_ns.cell(r_idx, 4).fill = FILL_YES if s["risunok"] else FILL_NO
-            ws_ns.cell(r_idx, 5).fill = FILL_YES if s["kompoziciya"] else FILL_NO
-        _set_col_widths(ws_ns, [30, 14, 22, 12, 14])
+            ws_ns.cell(r_idx, 3).fill = FILL_YES if s["risunok"] else FILL_NO
+            ws_ns.cell(r_idx, 4).fill = FILL_YES if s["kompoziciya"] else FILL_NO
+        _set_col_widths(ws_ns, [30, 22, 12, 14])
 
     # ── Листы: Полученные билеты (только для mock_exam / всех работ) ──────────
     if ticket_stats.get("applicable") and ticket_stats.get("total_receipts"):

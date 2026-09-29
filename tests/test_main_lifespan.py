@@ -19,14 +19,10 @@ def test_lifespan_does_not_open_n8n_clients_when_disabled(monkeypatch):
     n8n_close = AsyncMock()
     drive_init = AsyncMock()
     drive_close = AsyncMock()
-    vk_init = AsyncMock()
-    vk_close = AsyncMock()
     monkeypatch.setattr(main_module.n8n_service, "init_client", n8n_init)
     monkeypatch.setattr(main_module.n8n_service, "close_client", n8n_close)
     monkeypatch.setattr(main_module.drive_service, "init_client", drive_init)
     monkeypatch.setattr(main_module.drive_service, "close_client", drive_close)
-    monkeypatch.setattr(main_module.vk_service, "init_client", vk_init)
-    monkeypatch.setattr(main_module.vk_service, "close_client", vk_close)
 
     async def run_lifespan():
         async with main_module.lifespan(main_module.app):
@@ -38,6 +34,4 @@ def test_lifespan_does_not_open_n8n_clients_when_disabled(monkeypatch):
     n8n_close.assert_not_awaited()
     drive_init.assert_not_awaited()
     drive_close.assert_not_awaited()
-    vk_init.assert_awaited_once()
-    vk_close.assert_awaited_once()
     db.close.assert_called_once()
