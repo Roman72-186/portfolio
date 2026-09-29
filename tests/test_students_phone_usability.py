@@ -20,10 +20,16 @@ from pathlib import Path
 import pytest
 
 TEMPLATE = Path(__file__).resolve().parent.parent / "app" / "templates" / "cabinet_students.html"
+# Стили экрана с 29.09.2026 живут в файле, а не в <style> шаблона (шаг 8 плана).
+STYLES = TEMPLATE.parent.parent / "static" / "css" / "cabinet_students.css"
 
 
 def _source() -> str:
     return TEMPLATE.read_text(encoding="utf-8")
+
+
+def _styles() -> str:
+    return STYLES.read_text(encoding="utf-8")
 
 
 def _css_rule(source: str, selector: str) -> str:
@@ -33,7 +39,7 @@ def _css_rule(source: str, selector: str) -> str:
 
 
 def test_upload_modal_scrolls_when_taller_than_screen():
-    source = _source()
+    source = _styles()
     overlay = _css_rule(source, ".upload-modal-overlay")
     assert "overflow-y: auto" in overlay, "окно выше экрана нельзя прокрутить до «Загрузить»"
     # Центрирование через align-items:center прячет верх окна за экран, когда
@@ -43,7 +49,7 @@ def test_upload_modal_scrolls_when_taller_than_screen():
 
 
 def test_delete_cross_is_visible_without_hover():
-    source = _source()
+    source = _styles()
     rule = _css_rule(source, ".photo-del")
     assert "opacity: 0" not in rule, "крестик спрятан по умолчанию — на телефоне его не видно"
     assert "width: 44px" in rule and "height: 44px" in rule
@@ -91,7 +97,7 @@ def _phone_block(source: str) -> str:
 
 def test_hero_wraps_so_upload_button_fits_on_phone():
     source = _source()
-    mobile = source[source.index("@media (max-width: 768px) {"):source.index("</style>")]
+    mobile = _mobile_block(_styles())
     assert re.search(r"\.student-hero\s*\{[^}]*flex-wrap: wrap", mobile), (
         "шапка в одну строку с overflow:hidden — «+ Загрузить» обрезана на 320–390"
     )
@@ -111,7 +117,7 @@ def test_back_gesture_walks_screen_history():
 
 
 def test_phone_inputs_are_16px_and_targets_44px():
-    block = _phone_block(_source())
+    block = _phone_block(_styles())
     fonts = block[:block.index("font-size: 16px")]
     for sel in (".sidebar-search", ".sidebar-select", ".score-input", ".comment-input",
                 ".rt-editable", ".profile-edit-input", ".profile-edit-select", ".upload-select"):
@@ -128,20 +134,20 @@ def test_phone_inputs_are_16px_and_targets_44px():
 
 
 def _mobile_block(source: str) -> str:
-    return source[source.index("@media (max-width: 768px) {"):source.index("</style>")]
+    return source[source.index("@media (max-width: 768px) {"):]
 
 
 def test_filter_header_is_compact_on_phone():
     # На 320×568 до списка было 371 px фильтров и два ученика целиком: пилюли
     # тарифов шли в две-три строки, селекты — друг под другом.
-    mobile = _mobile_block(_source())
+    mobile = _mobile_block(_styles())
     assert re.search(r"\.tariff-pills \{[^}]*flex-wrap: nowrap;[^}]*overflow-x: auto", mobile), (
         "тарифы переносятся в несколько строк — шапка съедает экран"
     )
     assert re.search(r"\.tariff-pill \{[^}]*flex-shrink: 0", mobile)
     assert re.search(r"\.sidebar-filters \{[^}]*flex-direction: row", mobile)
     # Компактнее — не за счёт касания.
-    assert "min-height: 44px" in _css_rule(_source(), ".tariff-pill")
+    assert "min-height: 44px" in _css_rule(_styles(), ".tariff-pill")
 
 
 def test_back_to_list_returns_to_same_place():
@@ -157,7 +163,7 @@ def test_back_to_list_returns_to_same_place():
 
 def test_phone_calendar_keeps_work_above_calendar():
     # На 320 до работы и формы оценки было 530 px календаря.
-    mobile = _mobile_block(_source())
+    mobile = _mobile_block(_styles())
     assert re.search(r"\.mock-calendar-side, #main-panel \.cal-side \{[^}]*order: 2", mobile)
     assert re.search(r"\.mock-month-list, #main-panel \.cal-month-list \{[^}]*repeat\(6", mobile)
     source = _source()
@@ -171,7 +177,7 @@ def test_phone_calendar_keeps_work_above_calendar():
 
 def test_upload_dropzone_is_block():
     # Зона — <label>: строчная рамка вокруг блоков рвалась, слева торчал обрывок пунктира.
-    assert "display: block" in _css_rule(_source(), ".upload-dropzone")
+    assert "display: block" in _css_rule(_styles(), ".upload-dropzone")
 
 
 def test_labels_say_what_the_field_holds():
@@ -248,17 +254,17 @@ def test_green_ink_is_readable_in_dark_theme():
     assert re.search(r"--ok:\s*var\(--success\)", dark)
     assert not re.search(r"--ok-strong\s*:", dark), "--ok-strong — заливка под белым текстом, светлеть ей нельзя"
     # Единственная заливка `--ok` под белым текстом на экране — тост «Сохранено».
-    assert "background: var(--ok-strong); color: #fff;" in _source()
-    assert "background: var(--ok); color: #fff" not in _source()
+    assert "background: var(--ok-strong); color: #fff;" in _styles()
+    assert "background: var(--ok); color: #fff" not in _styles()
 
 
 def test_red_badge_passes_contrast_on_light():
     # Чистый --error (#DC2626) на розовой плашке — 4.4 при норме 4.5.
-    assert "color-mix(in srgb, var(--error)" in _css_rule(_source(), ".profile-badge.no")
+    assert "color-mix(in srgb, var(--error)" in _css_rule(_styles(), ".profile-badge.no")
 
 
 def test_portfolio_month_header_fits_phone():
-    source = _source()
+    source = _styles()
     # Кнопка раскрытия месяца была 32px на телефоне и 17px на iPad.
     targets = _phone_block(source)
     assert ".portfolio-toggle" in targets[:targets.index("min-height: 44px; }")]
@@ -270,9 +276,9 @@ def test_portfolio_month_header_fits_phone():
 
 def test_profile_sections_are_two_by_two_on_phone():
     # Столбиком четыре раздела занимали 540 px в самом низу профиля.
-    assert re.search(r"\.profile-actions \{ grid-template-columns: repeat\(2, 1fr\); \}", _mobile_block(_source()))
+    assert re.search(r"\.profile-actions \{ grid-template-columns: repeat\(2, 1fr\); \}", _mobile_block(_styles()))
     # Плашки «Учёбы сейчас» не тянутся по высоте кнопки «Проверить».
-    assert "align-items: center" in _css_rule(_source(), ".profile-status-badges")
+    assert "align-items: center" in _css_rule(_styles(), ".profile-status-badges")
 
 
 # ── Шаг 7: разделы над анкетой ───────────────────────────────────────────────
@@ -287,4 +293,18 @@ def test_profile_sections_come_before_the_form():
     assert render.index("buildProfileActions(s)") < render.index('<div class="profile-details">')
     assert "'<div class=\"profile-actions\">'" not in render, "кнопки разделов собираются в двух местах"
     # На компьютере — одним рядом, а не 3 + 1.
-    assert "repeat(auto-fit, minmax(150px, 1fr))" in _css_rule(source, ".profile-actions")
+    assert "repeat(auto-fit, minmax(150px, 1fr))" in _css_rule(_styles(), ".profile-actions")
+
+
+# ── Шаг 8: стили экрана — в файле ────────────────────────────────────────────
+
+
+def test_screen_styles_live_in_cached_file():
+    # Владелец 29.09.2026: вынести 842 строки встроенного CSS в файл — его кэширует
+    # браузер, а не качает заново с каждой страницей экрана.
+    source = _source()
+    assert "<style" not in source, "стили экрана снова пишут в шаблон — место им в cabinet_students.css"
+    assert re.search(r'<link rel="stylesheet" href="/static/css/cabinet_students\.css\?v=\d+">', source), (
+        "без ?v= браузер не узнает о правке: у статики Cache-Control: immutable"
+    )
+    assert "@media (max-width: 834px) {" in _styles() and "@media (max-width: 768px) {" in _styles()

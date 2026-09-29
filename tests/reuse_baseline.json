@@ -67,19 +67,6 @@
     ],
     "style_lines": 365
   },
-  "cabinet_students.html": {
-    "hex": 13,
-    "shadow": [
-      "active",
-      "css",
-      "empty-state",
-      "form-actions",
-      "main",
-      "open",
-      "svg-icon"
-    ],
-    "style_lines": 843
-  },
   "cabinet_video.html": {
     "hex": 7,
     "shadow": [
