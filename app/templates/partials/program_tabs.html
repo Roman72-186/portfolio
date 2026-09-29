@@ -7,6 +7,13 @@
 не переписывать роутеры и тесты: `/cabinet/staff/program` не может отдать
 `/program/digest` — там ниже стоит catch-all по дню (`/{day_iso}`).
 #}
+{# Стили шапки — в своём файле (переехали из инлайнового <style> 29.09.2026).
+   `<link>` стоит в партиале, а не в `extra_styles` каждой страницы: партиал
+   подключают восемь страниц, и восемь копий ссылки разъехались бы версиями.
+   Ссылка стоит до `<nav>`: так вкладки не мигают неоформленными, а скрипт
+   ниже меряет полосу уже со стилями — встроенный скрипт ждёт загрузки
+   стилей, подключённых выше него. #}
+<link rel="stylesheet" href="/static/css/program_tabs.css?v=1">
 {% set _prg_p = request.url.path %}
 <nav class="prg-tabs" aria-label="Актуальное образовательное пространство">
     {# Вкладка «Календарь» скрыта из навигации 10.09.2026 (владелец: «давай
@@ -34,45 +41,24 @@
        href="/cabinet/admin/videos"
        {% if _prg_p.startswith('/cabinet/admin/videos') %}aria-current="page"{% endif %}>Загрузка видео</a>
 </nav>
-<style>
-.prg-tabs {
-    display: flex;
-    align-items: stretch;
-    gap: 4px;
-    margin: 0 0 18px;
-    border-bottom: 1px solid var(--line);
-    overflow-x: auto;
-    scrollbar-width: none;
-}
-.prg-tabs::-webkit-scrollbar { display: none; }
-.prg-tab {
-    padding: 12px 16px;
-    font-size: 14px;
-    font-weight: 800;
-    color: var(--muted);
-    text-decoration: none;
-    white-space: nowrap;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-    transition: color .12s, border-color .12s;
-}
-.prg-tab:hover { color: var(--blue); }
-.prg-tab.is-active { color: var(--blue); border-bottom-color: var(--blue); }
-.prg-tab:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: var(--r-sm); }
-/* Черта отделяет календарь программы от справочников, из которых он собирается. */
-.prg-tabs-sep {
-    width: 1px;
-    flex: 0 0 1px;
-    margin: 8px 8px;
-    background: var(--line);
-}
-/* На телефоне колокольчик висит в правом верхнем углу
-   (`.floating-widget-tray`, base.css) — отпускаем полосу вкладок ниже,
-   иначе он накрывает «Цели» и «Видео». */
-@media (max-width: 767px) {
-    .prg-tabs { margin-top: 40px; }
-    /* Четыре вкладки в 360 px не влезают («Загрузка видео» длиннее прежнего «Видео») — полоса прокручивается, поля ужаты. */
-    .prg-tab { padding: 12px 10px; font-size: 13px; }
-    .prg-tabs-sep { margin: 8px 4px; }
-}
-</style>
+<script>
+/* На телефоне вкладки не помещаются в ширину (аудит 29.09.2026): докручиваем
+   полосу к активной вкладке — иначе, открыв «Загрузку видео», человек не видит,
+   где он, — и гасим край, за которым ещё есть вкладки. */
+(function () {
+    var strip = document.currentScript.previousElementSibling;
+    if (!strip || !strip.classList.contains('prg-tabs')) return;
+    function markClipped() {
+        var max = strip.scrollWidth - strip.clientWidth;
+        strip.classList.toggle('is-clipped-start', strip.scrollLeft > 1);
+        strip.classList.toggle('is-clipped-end', strip.scrollLeft < max - 1);
+    }
+    var active = strip.querySelector('.prg-tab.is-active');
+    if (active && strip.scrollWidth > strip.clientWidth) {
+        strip.scrollLeft = active.offsetLeft - (strip.clientWidth - active.offsetWidth) / 2;
+    }
+    markClipped();
+    strip.addEventListener('scroll', markClipped, {passive: true});
+    window.addEventListener('resize', markClipped);
+})();
+</script>

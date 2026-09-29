@@ -647,6 +647,68 @@ function renumberBlocks(holder) {
     });
 }
 
+// Перестановка блока ↑/↓ — одна на оба экрана конструктора (день и задания
+// цикла). До 29.09.2026 у каждого экрана была своя копия, и у цикла не было
+// ни вспышки, ни докрутки: блок на телефоне молча уезжал за край экрана.
+// Соседом считается только настоящий блок — строка «Блок убран · Вернуть»
+// между ними не должна съедать нажатие.
+function moveBlockRow(moved, step) {
+    var moveHolder = moved.closest('[data-blocks]');
+    var neighbour = moved;
+    do {
+        neighbour = step < 0 ? neighbour.previousElementSibling : neighbour.nextElementSibling;
+    } while (neighbour && !neighbour.hasAttribute('data-block'));
+    if (!neighbour) return;
+    // Порядок в DOM и есть порядок блоков: `collectFormBlocks` читает строки
+    // сверху вниз, отдельного поля сортировки нет.
+    if (step < 0) neighbour.before(moved); else neighbour.after(moved);
+    renumberBlocks(moveHolder);
+    // Мгновенная перестановка DOM-узла ничем не сигналит, что сработала — на
+    // длинном списке блок молча уезжает за пределы экрана (ревью 03.09.2026).
+    moved.classList.remove('prg-blk--moved');
+    void moved.offsetWidth; // перезапуск CSS-анимации
+    moved.classList.add('prg-blk--moved');
+    moved.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+}
+
+// «Убрать» блока (аудит 29.09.2026). Раньше кнопка удаляла строку сразу и
+// насовсем, а стояла в 14px от стрелки ↑: промах пальцем на телефоне стирал
+// блок вместе с вариантами ответов и загруженными фото. Теперь строка
+// уходит из формы, а на её месте остаётся «Блок убран · Вернуть».
+//
+// Сама строка не пересоздаётся, а держится снятым DOM-узлом: вместе с ней
+// живы введённые значения, редактор разметки и `_diagnosticBuilder` —
+// пересобрать всё это из данных было бы второй копией `fillBlockRow`.
+// Заглушка не носит `data-block`, поэтому `collectFormBlocks` её не видит:
+// если сохранить форму, не нажав «Вернуть», блок удаляется, как раньше.
+function removeBlockRow(row) {
+    var holder = row.closest('[data-blocks]');
+    var type = row.getAttribute('data-block-type') || '';
+    var undo = document.createElement('div');
+    undo.className = 'prg-blk-undo';
+    undo.setAttribute('data-block-undo', '');
+    undo.setAttribute('data-block-type', type);
+    undo.setAttribute('role', 'status');
+    var note = document.createElement('span');
+    note.textContent = 'Блок «' + (BLOCK_LABELS[type] || type) + '» убран.';
+    var restore = document.createElement('button');
+    restore.type = 'button';
+    restore.className = 'btn-outline';
+    restore.textContent = 'Вернуть';
+    restore.addEventListener('click', function () {
+        undo.replaceWith(row);
+        renumberBlocks(holder);
+        var first = row.querySelector('input:not([type="hidden"]), textarea, select, button');
+        if (first) first.focus({preventScroll: true});
+        row.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    });
+    undo.appendChild(note);
+    undo.appendChild(restore);
+    row.replaceWith(undo);
+    renumberBlocks(holder);
+    restore.focus({preventScroll: true});
+}
+
 function renderFormBlocks(form, rows) {
     var holder = form.querySelector('[data-blocks]');
     if (!holder) return;

@@ -1,0 +1,71 @@
+/* ───────────────────────────────────────────────
+   Шапка вкладок раздела «Актуальное образовательное пространство»
+   (partials/program_tabs.html). Жила инлайновым <style> внутри партиала и
+   переехала в свой файл 29.09.2026: партиал подключают восемь страниц с
+   разным набором CSS, общего для них файла кроме base.css нет, а base.css
+   красит весь кабинет. Меняешь этот файл — подними ?v= в program_tabs.html.
+   ─────────────────────────────────────────────── */
+
+.prg-tabs {
+    position: relative; /* offsetParent вкладок — для докрутки к активной */
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    margin: 0 0 18px;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.prg-tabs::-webkit-scrollbar { display: none; }
+.prg-tab {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: 12px 16px;
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--muted);
+    text-decoration: none;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color .12s, border-color .12s;
+}
+.prg-tab:hover { color: var(--blue); }
+.prg-tab.is-active { color: var(--blue); border-bottom-color: var(--blue); }
+.prg-tab:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: var(--r-sm); }
+/* Черта отделяет календарь программы от справочников, из которых он собирается. */
+.prg-tabs-sep {
+    width: 1px;
+    flex: 0 0 1px;
+    margin: 8px 8px;
+    background: var(--line);
+}
+
+/* Край, за которым спрятаны вкладки, гаснет (аудит 29.09.2026). Полоса
+   прокрутки скрыта, и на 360px «Загрузка видео» просто обрывалась у края —
+   ничто не говорило, что вкладок больше. Классы ставит скрипт партиала по
+   положению прокрутки, поэтому затенение пропадает, когда край дочитан. */
+.prg-tabs.is-clipped-end {
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 40px), transparent);
+    mask-image: linear-gradient(to right, black calc(100% - 40px), transparent);
+}
+.prg-tabs.is-clipped-start {
+    -webkit-mask-image: linear-gradient(to left, black calc(100% - 40px), transparent);
+    mask-image: linear-gradient(to left, black calc(100% - 40px), transparent);
+}
+.prg-tabs.is-clipped-start.is-clipped-end {
+    -webkit-mask-image: linear-gradient(to right, transparent, black 40px, black calc(100% - 40px), transparent);
+    mask-image: linear-gradient(to right, transparent, black 40px, black calc(100% - 40px), transparent);
+}
+
+/* На телефоне колокольчик висит в правом верхнем углу
+   (`.floating-widget-tray`, base.css) — отпускаем полосу вкладок ниже,
+   иначе он накрывает «Цели» и «Видео». */
+@media (max-width: 767px) {
+    .prg-tabs { margin-top: 40px; }
+    /* Пять вкладок в 360 px не влезают — полоса прокручивается, поля ужаты. */
+    .prg-tab { padding: 12px 10px; font-size: 13px; }
+    .prg-tabs-sep { margin: 8px 4px; }
+}

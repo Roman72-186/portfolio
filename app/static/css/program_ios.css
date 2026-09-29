@@ -423,6 +423,11 @@
 /* Прямые ряды формы — это «Сохранить»/«Отмена». Пара главных действий стоит
    свободнее тулбара: 8px между ними читались как одна кнопка с разделителем. */
 .ios-prg-day .prg-form > .prg-actions { column-gap: var(--s-3); }
+/* Подложка липкого ряда «Отмена / Сохранить» — цвета самой формы этого
+   скина, а не `--surface` из program.css: в тёмной теме они разные. */
+@media (max-width: 1023px) {
+    .ios-prg-day .prg-form-actions.cta-sticky { background: var(--ios-card-bg); }
+}
 .ios-prg-day .prg-actions .btn-outline { min-height: 40px; padding: 9px 16px; font-size: 12px; }
 
 .ios-prg-day .prg-message { color: var(--ios-label-2); font: 400 13px/1.45 var(--ios-font); }
@@ -521,6 +526,16 @@
     .ios-prg-day .prg-head .btn-outline,
     .ios-prg-day .prg-actions .btn-outline,
     .ios-prg-day .prg-item-actions button { min-height: 44px; }
+    /* ↑ ↓ «Убрать» в шапке блока лежат в `.prg-blk-actions`, а не в
+       `.prg-actions`, и правило выше их не доставало: 35px, стрелки узкие
+       (аудит 29.09.2026). Стрелкам — квадрат 44×44, «Убрать» отодвинута
+       дальше, чем соседние стрелки друг от друга. */
+    .ios-prg-day .prg-blk-actions button { min-height: 44px; }
+    .ios-prg-day .prg-blk-move button { min-width: 44px; justify-content: center; padding-inline: 0; }
+    .ios-prg-day .prg-blk-actions { gap: var(--s-4); }
+    /* Крестик фото — 24px в углу миниатюры 96px. Больше его не сделать, не
+       закрыв саму работу, поэтому растёт на треть. */
+    .ios-prg-day .prg-blk-thumb-remove { width: 32px; height: 32px; }
     .ios-prg-day .prg-field input:not([type="checkbox"]):not([type="radio"]),
     .ios-prg-day .prg-field select { min-height: 44px; }
 }

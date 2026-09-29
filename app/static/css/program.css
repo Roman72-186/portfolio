@@ -126,6 +126,16 @@
     background: var(--blue); border-color: var(--blue); color: #fff;
     transform: scale(1.2); z-index: 2;
 }
+/* На касание плашка выходила 27px (аудит 29.09.2026). Вид компактный по
+   решению владельца (24.09.2026), поэтому видимо она подрастает чуть-чуть, а
+   до 44px добирает невидимая зона нажатия `::before` (`::after` занят
+   стеклом активной плашки). Зазор между рядами растёт вместе с зоной —
+   иначе зоны соседних рядов наезжали бы друг на друга. */
+@media (max-width: 834px) {
+    .prg-cycle-switch { gap: 14px 10px; }
+    .prg-cycle-pill { padding: 8px 12px; }
+    .prg-cycle-pill::before { content: ''; position: absolute; inset: -7px -5px; }
+}
 .prg-cycle-pill.is-active::after {
     content: '';
     position: absolute; inset: -8px;
@@ -159,6 +169,16 @@
 .prg-item-actions button,
 .prg-item-actions .btn-outline,
 .prg-item-actions .btn-blue { min-height: 36px; padding: 7px 12px; font-size: 12px; }
+/* На касание — 44px (DESIGN.md, «Адаптивность»). Компактные 36px остаются
+   мыши: на телефоне по ним промахивались, а «Задания» — самая частая кнопка
+   раздела (аудит 29.09.2026). Порог 834 — тот же, что у тап-целей экрана
+   дня в program_ios.css: он накрывает и планшет в портрете. */
+@media (max-width: 834px) {
+    .prg-item-actions button,
+    .prg-item-actions .btn-outline,
+    .prg-item-actions .btn-blue,
+    .prg-item-actions .btn-danger { min-height: 44px; }
+}
 
 .prg-badge {
     display: inline-flex; align-items: center; min-height: 24px; padding: 3px 9px;
@@ -363,6 +383,27 @@
     .prg-form-actions > * { width: 100%; justify-content: center; }
 }
 
+/* Форма задания на телефоне длиной в несколько экранов, и «Сохранить» стояла
+   только в самом конце, после всего конструктора блоков (аудит 29.09.2026).
+   Ряд прилипает над нижним меню по общей конвенции №5 (`.cta-sticky`,
+   base.css). Липкому ряду нужна своя подложка — иначе под кнопками
+   просвечивают поля формы, — и строка вместо колонки: две кнопки столбиком
+   закрыли бы вместе с меню почти четверть экрана. На десктопе `.cta-sticky`
+   обычный блок, и подложка там не нужна. */
+@media (max-width: 1023px) {
+    .prg-form-actions.cta-sticky {
+        padding: var(--s-2);
+        margin-inline: calc(-1 * var(--s-2));
+        background: var(--surface);
+        border-radius: var(--r-md);
+        box-shadow: var(--sh-sm);
+    }
+}
+@media (max-width: 480px) {
+    .prg-form-actions.cta-sticky { flex-direction: row; }
+    .prg-form-actions.cta-sticky > * { flex: 1 1 0; width: auto; }
+}
+
 .prg-message { min-height: 20px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .prg-message.is-error { color: var(--error); }
 
@@ -451,6 +492,18 @@
 }
 
 .prg-blk-move { display: inline-flex; gap: 6px; }
+
+/* Строка на месте убранного блока: «Блок „Вопрос“ убран · Вернуть»
+   (аудит 29.09.2026, см. `removeBlockRow`). Пунктир — та же «пустая ячейка»,
+   что у `.prg-preview`: блока здесь больше нет, но место под него помнится. */
+.prg-blk-undo {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: var(--s-2) var(--s-3);
+    margin-top: var(--s-4); padding: var(--s-2) var(--s-3);
+    border: 1px dashed var(--line); border-radius: var(--r-md);
+    color: var(--muted); font-size: 13px; line-height: 1.4;
+}
+.prg-blk-undo .btn-outline { min-height: 44px; }
 
 .prg-blk-preview {
     max-width: 220px; width: 100%; height: auto; display: block;

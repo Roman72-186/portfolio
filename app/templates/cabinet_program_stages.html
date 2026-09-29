@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Этапы программы{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=44">
+<link rel="stylesheet" href="/static/css/program.css?v=46">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
@@ -26,9 +26,13 @@
                 и привязывает их к этапу выпадающим списком.
             </p>
         </div>
+        <button type="button" class="btn-blue" data-stage-new>Новый этап</button>
     </div>
 
-    <form class="prg-form" data-stage-form>
+    {# Форма свёрнута до кнопки «Новый этап» или «Название и даты» — тот же
+       приём и та же причина, что на экране «Циклы» (аудит 29.09.2026): список
+       не должен прятаться под раскрытой формой. Пока этапов нет, форма открыта. #}
+    <form class="prg-form" data-stage-form{% if stages %} hidden{% endif %}>
         <h2 data-stage-form-title>Новый этап</h2>
         <input type="hidden" data-s-id value="">
         <label class="prg-field">
@@ -54,9 +58,9 @@
             <input type="checkbox" data-s-published checked>
             <span>Показывать ученикам</span>
         </label>
-        <div class="prg-actions">
+        <div class="prg-actions prg-form-actions">
+            <button type="button" class="btn-outline" data-stage-reset{% if not stages %} hidden{% endif %}>Отмена</button>
             <button type="button" class="btn-blue" data-stage-save>Сохранить</button>
-            <button type="button" class="btn-outline" data-stage-reset hidden>Отменить правку</button>
         </div>
         <p class="prg-message" data-stage-message></p>
     </form>
@@ -73,11 +77,13 @@
                 <div class="prg-meta">
                     <span>с {{ stage.starts_on }}</span>
                     {% if stage.ends_on %}<span>по {{ stage.ends_on }}</span>{% endif %}
-                    <span>{{ stage.cycles_count }} {{ 'цикл' if stage.cycles_count == 1 else 'циклов' }} внутри</span>
+                    <span>{{ stage.cycles_count }} {{ stage.cycles_count|plural('цикл', 'цикла', 'циклов') }} внутри</span>
                 </div>
             </div>
             <div class="prg-item-actions">
-                <a class="btn-blue" href="/cabinet/staff/program/cycles">Циклы этапа</a>
+                {# Со списком, суженным до этого этапа (аудит 29.09.2026: ссылка вела на
+                   все циклы подряд). #}
+                <a class="btn-blue" href="/cabinet/staff/program/cycles?stage={{ stage.id }}">Циклы этапа</a>
                 <button type="button" class="btn-outline" data-stage-edit
                         data-payload='{{ stage|tojson }}'>Название и даты</button>
             </div>
@@ -107,6 +113,8 @@
     var message = form.querySelector('[data-stage-message]');
     var formTitle = form.querySelector('[data-stage-form-title]');
     var resetBtn = form.querySelector('[data-stage-reset]');
+    // Карточка, из которой открыли правку, — к ней возвращает «Отмена».
+    var returnTo = null;
 
     function reset() {
         fields.id.value = '';
@@ -117,9 +125,21 @@
         fields.end.value = '';
         fields.published.checked = true;
         formTitle.textContent = 'Новый этап';
-        resetBtn.hidden = true;
         message.textContent = '';
     }
+
+    function openForm() {
+        form.hidden = false;
+        resetBtn.hidden = false;
+        form.scrollIntoView({ block: 'start' });
+    }
+
+    document.querySelector('[data-stage-new]').addEventListener('click', function () {
+        reset();
+        returnTo = null;
+        openForm();
+        fields.title.focus({ preventScroll: true });
+    });
 
     document.querySelectorAll('[data-stage-edit]').forEach(function (button) {
         button.addEventListener('click', function () {
@@ -132,12 +152,20 @@
             fields.end.value = data.ends_on || '';
             fields.published.checked = !!data.is_published;
             formTitle.textContent = 'Название и даты';
-            resetBtn.hidden = false;
-            form.scrollIntoView({ block: 'start' });
+            returnTo = button;
+            openForm();
         });
     });
 
-    resetBtn.addEventListener('click', reset);
+    resetBtn.addEventListener('click', function () {
+        reset();
+        form.hidden = true;
+        if (returnTo) {
+            returnTo.closest('[data-stage-id]').scrollIntoView({ block: 'center' });
+            returnTo.focus({ preventScroll: true });
+            returnTo = null;
+        }
+    });
 
     form.querySelector('[data-stage-save]').addEventListener('click', function () {
         var id = fields.id.value;

@@ -45,8 +45,11 @@
 /* ── Вкладки раздела (partials/program_tabs.html — не подключает
    digest-events, это подэкран) ── */
 .ios-digest .prg-tabs, .ios-goals .prg-tabs { border-bottom: 0.5px solid var(--ios-sep); margin-bottom: 20px; gap: 2px; }
+/* Поля вкладки не задаём: они общие, из program_tabs.css. До 29.09.2026 тут
+   стояли свои 10px 16px, и на телефоне полоса на «Дайджесте» и «Целях»
+   выходила шире и ниже, чем на «Циклах», — вкладки прыгали при переходе. */
 .ios-digest .prg-tab, .ios-goals .prg-tab {
-    font: 600 14px/1 var(--ios-font); color: var(--ios-label-2); padding: 10px 16px; border-bottom-width: 2px;
+    font-family: var(--ios-font); font-weight: 600; line-height: 1; color: var(--ios-label-2); border-bottom-width: 2px;
 }
 .ios-digest .prg-tab:hover, .ios-goals .prg-tab:hover { color: var(--ios-blue); }
 .ios-digest .prg-tab.is-active, .ios-goals .prg-tab.is-active { color: var(--ios-blue); border-bottom-color: var(--ios-blue); }
@@ -176,6 +179,16 @@
 .ios-digest .dg-year-month { grid-column: span 1; }
 .ios-digest .dg-assignees-field, .ios-goals .gl-assignees-field { margin-top: 10px; }
 .ios-digest-events .de-kind-row { margin-bottom: 6px; }
+
+/* Кнопки строки на касание — 44px, как во всём разделе программы (аудит
+   29.09.2026): общий `.trk-row-actions button` из tracker.css даёт 36px, а
+   ссылке «События» и того меньше. Правило здесь, а не в tracker.css: тот
+   файл красит и ленту ученика. */
+@media (max-width: 834px) {
+    .ios-digest .trk-row-actions button, .ios-digest .trk-row-actions a,
+    .ios-digest-events .trk-row-actions button, .ios-digest-events .trk-row-actions a,
+    .ios-goals .trk-row-actions button, .ios-goals .trk-row-actions a { min-height: 44px; }
+}
 
 @media (max-width: 760px) {
     .ios-digest .trk-head, .ios-digest-events .trk-head, .ios-goals .trk-head { display: grid; grid-template-columns: 1fr; gap: 10px; }

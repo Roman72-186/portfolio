@@ -645,9 +645,17 @@ def program_cycles(
     request: Request,
     user: Annotated[dict, Depends(require_admin_role)],
     db: Annotated[DBSession, Depends(get_db)],
+    stage: int | None = None,
 ):
     stage_topics = list_week_topics(db, kinds=(TOPIC_KIND_STAGE,))
-    stage_titles = {stage.id: cycle_label(db, stage) for stage in stage_topics}
+    stage_titles = {stage_topic.id: cycle_label(db, stage_topic) for stage_topic in stage_topics}
+    # `?stage=<id>` — сюда ведёт «Циклы этапа» со вкладки «Этапы» (аудит
+    # 29.09.2026: кнопка открывала все циклы подряд, и название её обманывало).
+    # Чужой или удалённый этап фильтром не считается — по старой ссылке
+    # человек увидит весь список, а не пустую страницу.
+    stage_filter = (
+        {"id": stage, "label": stage_titles[stage]} if stage in stage_titles else None
+    )
     cycles = [
         {
             "id": topic.id,
@@ -665,13 +673,15 @@ def program_cycles(
             "stage_label": stage_titles.get(topic.parent_id) if topic.parent_id else None,
         }
         for topic in list_week_topics(db)
+        if stage_filter is None or topic.parent_id == stage_filter["id"]
     ]
     stages = [
-        {"id": stage.id, "label": cycle_label(db, stage)}
-        for stage in stage_topics
+        {"id": stage_topic.id, "label": stage_titles[stage_topic.id]}
+        for stage_topic in stage_topics
     ]
     return templates.TemplateResponse(request, "cabinet_program_cycles.html",
-        {"request": request, "user": user, "cycles": cycles, "stages": stages},
+        {"request": request, "user": user, "cycles": cycles, "stages": stages,
+         "stage_filter": stage_filter},
     )
 
 
@@ -1561,7 +1571,13 @@ def move_cycle_item(
     except ValueError:
         raise HTTPException(status_code=404, detail="Элемент не найден")
     db.commit()
-    return JSONResponse({"ok": True})
+    # Порядок после перестановки — экран выстраивает карточки по нему, не
+    # перезагружаясь (аудит 29.09.2026: на телефоне каждая стрелка стоила
+    # полной загрузки страницы). Отдаём именно порядок из базы, а не «поменяй
+    # с соседом»: `list_week_items` сортирует сперва по дате, и у заданий с
+    # датой обмен `sort_order` может ничего не сдвинуть.
+    order = [task.id for task in list_week_items(db, topic_id)]
+    return JSONResponse({"ok": True, "order": order})
 
 
 class BlockDeadlinePayload(BaseModel):

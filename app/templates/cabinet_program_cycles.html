@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Циклы программы{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=44">
+<link rel="stylesheet" href="/static/css/program.css?v=46">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
 {% endblock %}
 {% block content %}
@@ -26,9 +26,24 @@
                 В предобучении это два-три дня, в основном обучении — неделя или месяц.
             </p>
         </div>
+        <button type="button" class="btn-blue" data-cycle-new>Новый цикл</button>
     </div>
 
-    <form class="prg-form" data-cycle-form>
+    {% if stage_filter %}
+    {# Пришли кнопкой «Циклы этапа» со вкладки «Этапы» — список сужен до этапа. #}
+    <p class="prg-hint">
+        Циклы этапа «{{ stage_filter.label }}».
+        <a href="/cabinet/staff/program/cycles">Показать все циклы</a>
+    </p>
+    {% endif %}
+
+    {# Форма свёрнута, пока её не открыли кнопкой «Новый цикл» или «Название и
+       даты» (аудит 29.09.2026): чаще всего сюда заходят открыть уже заведённый
+       цикл, а раскрытая форма из шести полей стояла над списком, и на телефоне
+       до «Заданий» нужно было листать её каждый раз. Тот же приём, что у
+       «Нового дайджеста». Пока циклов нет, форма открыта — первый цикл за
+       лишним нажатием не прячем. #}
+    <form class="prg-form" data-cycle-form{% if cycles %} hidden{% endif %}>
         <h2 data-cycle-form-title>Новый цикл</h2>
         <input type="hidden" data-c-id value="">
         <label class="prg-field">
@@ -52,10 +67,12 @@
         </div>
         <label class="prg-field">
             <span>Этап (необязательно)</span>
-            <select data-c-stage aria-label="Этап">
+            {# Внутри этапа новый цикл по умолчанию заводится в него же. #}
+            <select data-c-stage aria-label="Этап"
+                    data-c-stage-default="{{ stage_filter.id if stage_filter else '' }}">
                 <option value="">Без этапа</option>
                 {% for stage in stages %}
-                <option value="{{ stage.id }}">{{ stage.label }}</option>
+                <option value="{{ stage.id }}"{% if stage_filter and stage.id == stage_filter.id %} selected{% endif %}>{{ stage.label }}</option>
                 {% endfor %}
             </select>
         </label>
@@ -63,9 +80,11 @@
             <input type="checkbox" data-c-published checked>
             <span>Показывать ученикам</span>
         </label>
-        <div class="prg-actions">
+        {# Порядок и выравнивание — конвенция `.prg-form-actions`: отмена первой,
+           основное действие последним. #}
+        <div class="prg-actions prg-form-actions">
+            <button type="button" class="btn-outline" data-cycle-reset{% if not cycles %} hidden{% endif %}>Отмена</button>
             <button type="button" class="btn-blue" data-cycle-save>Сохранить</button>
-            <button type="button" class="btn-outline" data-cycle-reset hidden>Отменить правку</button>
         </div>
         <p class="prg-message" data-cycle-message></p>
     </form>
@@ -113,6 +132,8 @@
             </div>
         </article>
         {% endfor %}
+        {% elif stage_filter %}
+        <p class="prg-hint">В этом этапе пока нет циклов.</p>
         {% else %}
         <p class="prg-hint">Пока ни одного цикла. Пока цикла нет, ученик видит задания текущей календарной недели.</p>
         {% endif %}
@@ -138,6 +159,9 @@
     var message = form.querySelector('[data-cycle-message]');
     var formTitle = form.querySelector('[data-cycle-form-title]');
     var resetBtn = form.querySelector('[data-cycle-reset]');
+    // Карточка, из которой открыли правку: «Отмена» возвращает к ней, а не
+    // оставляет человека наверху страницы искать, где он был.
+    var returnTo = null;
 
     function reset() {
         fields.id.value = '';
@@ -146,12 +170,24 @@
         window.RichTextField.refresh(fields.description);
         fields.start.value = '';
         fields.end.value = '';
-        fields.stage.value = '';
+        fields.stage.value = fields.stage.getAttribute('data-c-stage-default') || '';
         fields.published.checked = true;
         formTitle.textContent = 'Новый цикл';
-        resetBtn.hidden = true;
         message.textContent = '';
     }
+
+    function openForm() {
+        form.hidden = false;
+        resetBtn.hidden = false;
+        form.scrollIntoView({ block: 'start' });
+    }
+
+    document.querySelector('[data-cycle-new]').addEventListener('click', function () {
+        reset();
+        returnTo = null;
+        openForm();
+        fields.title.focus({ preventScroll: true });
+    });
 
     document.querySelectorAll('[data-cycle-edit]').forEach(function (button) {
         button.addEventListener('click', function () {
@@ -168,12 +204,20 @@
             // даты» и должен увидеть его же там, куда его перебросило (отзыв с
             // теста 15.09.2026 — «я не поняла, куда мне жать»).
             formTitle.textContent = 'Название и даты';
-            resetBtn.hidden = false;
-            form.scrollIntoView({ block: 'start' });
+            returnTo = button;
+            openForm();
         });
     });
 
-    resetBtn.addEventListener('click', reset);
+    resetBtn.addEventListener('click', function () {
+        reset();
+        form.hidden = true;
+        if (returnTo) {
+            returnTo.closest('[data-cycle-id]').scrollIntoView({ block: 'center' });
+            returnTo.focus({ preventScroll: true });
+            returnTo = null;
+        }
+    });
 
     // Сколько уносит с собой цикл — в предупреждении словами, а не «7
     // задание»: число без падежа читается как опечатка.

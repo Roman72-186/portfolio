@@ -8,8 +8,8 @@ FORM: Operate.
 #}
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=45">
-<link rel="stylesheet" href="/static/css/program_ios.css?v=19">
+<link rel="stylesheet" href="/static/css/program.css?v=46">
+<link rel="stylesheet" href="/static/css/program_ios.css?v=20">
 {# Предпросмотр «Глазами ученика» рисует блоки общим рендерером ученика, а
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
    показывались бы голой разметкой. #}
@@ -221,7 +221,7 @@ FORM: Operate.
             'Дополнительные задачи учебного дня',
             'Текст, фото, видео, ссылки и вопросы из этого раздела попадут в каждый выбранный предмет.'
         ) }}
-        <div class="prg-actions prg-form-actions">
+        <div class="prg-actions prg-form-actions cta-sticky">
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
             <button type="button" class="btn-blue" data-mock-save>Сохранить</button>
         </div>
@@ -329,7 +329,7 @@ FORM: Operate.
             </div>
         </section>
         {% endif %}
-        <div class="prg-actions prg-form-actions">
+        <div class="prg-actions prg-form-actions cta-sticky">
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
             <button type="button" class="btn-blue" data-simple-save>Сохранить</button>
         </div>
@@ -392,7 +392,7 @@ FORM: Operate.
             'Дополнительные задачи учебного дня',
             'После основного видео можно добавить текст, фото, другой ролик, ссылку или вопрос.'
         ) }}
-        <div class="prg-actions prg-form-actions">
+        <div class="prg-actions prg-form-actions cta-sticky">
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
             <button type="button" class="btn-blue" data-video-save>Поставить в день</button>
         </div>
@@ -440,7 +440,7 @@ FORM: Operate.
         {{ tariff_fields() }}
         {% endcall %}
         {{ blocks_editor() }}
-        <div class="prg-actions prg-form-actions">
+        <div class="prg-actions prg-form-actions cta-sticky">
             <button type="button" class="btn-outline" data-form-cancel>Отмена</button>
             <button type="button" class="btn-blue" data-homework-save>Сохранить</button>
         </div>
@@ -1819,33 +1819,18 @@ FORM: Operate.
             return;
         }
 
+        // Убрать и переставить — общие функции конструктора
+        // (partials/program_blocks_editor_js.html): «Убрать» оставляет
+        // «Вернуть» на месте блока, перестановка подсвечивает блок.
         var removeBlock = event.target.closest('[data-remove-block]');
         if (removeBlock) {
-            var removeHolder = removeBlock.closest('[data-blocks]');
-            removeBlock.closest('[data-block]').remove();
-            renumberBlocks(removeHolder);
+            removeBlockRow(removeBlock.closest('[data-block]'));
             return;
         }
 
         var moveBlock = event.target.closest('[data-move-block]');
         if (moveBlock) {
-            var moved = moveBlock.closest('[data-block]');
-            var moveHolder = moved.closest('[data-blocks]');
-            var step = Number(moveBlock.getAttribute('data-move-block'));
-            var neighbour = step < 0 ? moved.previousElementSibling : moved.nextElementSibling;
-            if (neighbour) {
-                // Порядок в DOM и есть порядок блоков: `collectFormBlocks`
-                // читает строки сверху вниз, отдельного поля сортировки нет.
-                if (step < 0) neighbour.before(moved); else neighbour.after(moved);
-                renumberBlocks(moveHolder);
-                // Мгновенная перестановка DOM-узла ничем не сигналит, что
-                // сработала — на длинном списке блок молча уезжает за
-                // пределы экрана (ревью 03.09.2026).
-                moved.classList.remove('prg-blk--moved');
-                void moved.offsetWidth; // перезапуск CSS-анимации
-                moved.classList.add('prg-blk--moved');
-                moved.scrollIntoView({behavior: 'smooth', block: 'nearest'});
-            }
+            moveBlockRow(moveBlock.closest('[data-block]'), Number(moveBlock.getAttribute('data-move-block')));
             return;
         }
 

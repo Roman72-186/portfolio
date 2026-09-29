@@ -38,8 +38,10 @@
 
 /* ── Вкладки раздела (partials/program_tabs.html) ── */
 .ios-videos-admin .prg-tabs { border-bottom: 0.5px solid var(--ios-sep); margin-bottom: 20px; gap: 2px; }
+/* Поля вкладки общие, из program_tabs.css (29.09.2026) — своя пара 10px 16px
+   делала полосу здесь шире и ниже, чем на «Циклах». */
 .ios-videos-admin .prg-tab {
-    font: 600 14px/1 var(--ios-font); color: var(--ios-label-2); padding: 10px 16px; border-bottom-width: 2px;
+    font-family: var(--ios-font); font-weight: 600; line-height: 1; color: var(--ios-label-2); border-bottom-width: 2px;
 }
 .ios-videos-admin .prg-tab:hover { color: var(--ios-blue); }
 .ios-videos-admin .prg-tab.is-active { color: var(--ios-blue); border-bottom-color: var(--ios-blue); }
@@ -179,6 +181,15 @@
 .ios-videos-admin .vam-row-cover {
     flex: 0 0 auto; width: 104px; height: 59px; object-fit: cover; border-radius: 8px;
     background: var(--ios-grouped-bg);
+}
+
+/* Кнопки строки ролика на касание — 44px, как во всём разделе программы
+   (аудит 29.09.2026); компактные 34px остаются мыши. */
+@media (max-width: 834px) {
+    .ios-videos-admin .vam-row-actions button, .ios-videos-admin .vam-row-actions a { min-height: 44px; }
+    /* «Изменить название, описание и тему» — строка 12px без полей, по ней
+       тоже бьют пальцем. `display` не трогаем, иначе пропадёт треугольник. */
+    .ios-videos-admin .vam-edit summary { padding-block: 16px; }
 }
 
 @media (max-width: 760px) {
