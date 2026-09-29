@@ -36,7 +36,7 @@
             <button type="button" class="copy-btn blue" data-copy="cred-pwd">Копировать</button>
         </div>
         <p class="banner-meta">Старый пароль уже не работает. Новый видно только сейчас: после обновления страницы его не будет.</p>
-        <p class="banner-meta">Страница входа: <a href="{{ issued_creds.url }}" target="_blank" class="sfd-link-inline">{{ issued_creds.url }}</a></p>
+        <p class="banner-meta">Страница входа: <a href="{{ issued_creds.url }}" target="_blank" rel="noopener noreferrer" class="sfd-link-inline">{{ issued_creds.url }}</a></p>
     </section>
     {% endif %}
 

@@ -127,7 +127,7 @@
             <span class="creds-value" id="cred-password">{{ issued_creds.password }}</span>
             <button type="button" class="creds-copy" onclick="copyText('cred-password', this)">Копировать</button>
         </div>
-        <div class="creds-note">Страница входа: <a href="{{ issued_creds.url }}" target="_blank" class="su-link-inline">{{ issued_creds.url }}</a>. Пароль показывается только сейчас.</div>
+        <div class="creds-note">Страница входа: <a href="{{ issued_creds.url }}" target="_blank" rel="noopener noreferrer" class="su-link-inline">{{ issued_creds.url }}</a>. Пароль показывается только сейчас.</div>
     </div>
     {% endif %}
 
