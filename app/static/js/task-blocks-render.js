@@ -1215,12 +1215,24 @@ scope)` и свойством `answered` (одна попытка: после о
                     showResult(block.chosen_url, !!block.matched, block.pick_url, false);
                     return wrap;
                 }
-                if (block.edit_reason || !block.submit_endpoint) {
+                if (block.edit_reason) {
                     if (works.length) wrap.appendChild(photoGallery(works, 'Работа для сравнения'));
-                    if (block.edit_reason) wrap.appendChild(el('p', 'video-help', block.edit_reason));
+                    wrap.appendChild(el('p', 'video-help', block.edit_reason));
                     return wrap;
                 }
-                if (!block.progress) {
+                // Предпросмотр «глазами ученика» отдаёт несохранённый блок: ни
+                // адреса отправки, ни пары от сервера. Раньше это уводило в
+                // галерею всех работ разом — преподаватель видел не тот экран,
+                // что ученик (владелец 29.09.2026). Первая пара у ученика без
+                // начатого турнира всегда №1 против №2 (`compare_progress`),
+                // её и показываем.
+                var start = block.progress || (works.length >= 2 ? {
+                    champion_url: works[0],
+                    challenger_url: works[1],
+                    step: 1,
+                    total: works.length - 1
+                } : null);
+                if (!start) {
                     stage.appendChild(el('p', 'video-help', 'Работы для сравнения ещё не загружены.'));
                     return wrap;
                 }
@@ -1268,7 +1280,7 @@ scope)` и свойством `answered` (одна попытка: после о
                 }
 
                 function choosePair(url, pair, step) {
-                    if (busy) return;
+                    if (busy || !block.submit_endpoint) return;
                     busy = true;
                     pair.querySelectorAll('.lrn-cmp-choose').forEach(function (btn) { btn.disabled = true; });
                     note.classList.remove('is-error');
@@ -1303,7 +1315,7 @@ scope)` и свойством `answered` (одна попытка: после о
                     });
                 }
 
-                showPair(block.progress);
+                showPair(start);
                 return wrap;
             }
 
