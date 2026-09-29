@@ -55,7 +55,7 @@
 .student-row:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 .student-row:hover { background: var(--bg); }
 .student-row.active { background: var(--blue-soft); }
-.student-row.active .student-row-name { color: var(--blue); font-weight: 700; }
+.student-row.active .student-row-name { color: var(--blue-text); font-weight: 700; }
 
 .student-avatar {
     width: 38px; height: 38px; border-radius: 50%;
@@ -148,7 +148,7 @@
     font-family: inherit;
     transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-.tariff-pill:hover { border-color: var(--blue); color: var(--blue); }
+.tariff-pill:hover { border-color: var(--blue); color: var(--blue-text); }
 .tariff-pill.active {
     background: var(--blue-soft); color: var(--blue-on-soft);
     border-color: var(--blue);
@@ -243,7 +243,7 @@
 .portfolio-rename-btn {
     display: inline-flex; align-items: center; gap: 5px;
     border: 1px solid var(--line); background: var(--surface);
-    color: var(--blue); border-radius: 8px;
+    color: var(--blue-text); border-radius: 8px;
     padding: 5px 10px; font-size: 12px; font-weight: 800;
     cursor: pointer; font-family: inherit;
 }
@@ -481,7 +481,7 @@
     font-weight: 600; cursor: pointer; font-family: inherit;
     transition: border-color 0.15s, color 0.15s;
 }
-.btn-edit-score:hover { border-color: var(--blue); color: var(--blue); }
+.btn-edit-score:hover { border-color: var(--blue); color: var(--blue-text); }
 
 /* ── Unlock form ── */
 .unlock-wrap { margin-bottom: 12px; }
@@ -513,7 +513,7 @@
     line-height: 1.3;
 }
 .filter-pill-remove {
-    background: none; border: none; color: var(--blue);
+    background: none; border: none; color: var(--blue-text);
     font-size: 16px; line-height: 1; cursor: pointer;
     width: 44px; height: 44px; border-radius: 50%;
     display: inline-flex; align-items: center; justify-content: center;
@@ -527,7 +527,7 @@
     cursor: pointer; color: var(--muted); user-select: none;
     padding: 4px 0;
 }
-.sidebar-hard-filters-add summary:hover { color: var(--blue); }
+.sidebar-hard-filters-add summary:hover { color: var(--blue-text); }
 .hard-filter-options {
     display: flex; flex-direction: column; gap: 4px;
     padding: 4px 0 0 12px;
@@ -536,7 +536,7 @@
     color: var(--text); text-decoration: none; font-size: 12px;
     padding: 4px 0;
 }
-.hard-filter-options a:hover { color: var(--blue); text-decoration: underline; }
+.hard-filter-options a:hover { color: var(--blue-text); text-decoration: underline; }
 
 /* ── Mock exam submission status panel ── */
 .mock-status-panel {
@@ -575,7 +575,7 @@
 }
 .mock-status-empty { color: var(--dim); font-style: italic; }
 .mock-status-copy-btn {
-    border: 1px solid var(--blue); background: var(--blue-soft); color: var(--blue);
+    border: 1px solid var(--blue); background: var(--blue-soft); color: var(--blue-text);
     border-radius: var(--r-md); padding: 2px 8px; font-size: 11px; font-weight: 700;
     cursor: pointer; font-family: inherit;
 }
@@ -637,7 +637,7 @@
     cursor: pointer; margin-bottom: 16px; background: none; border: none;
     font-family: inherit; padding: 0;
 }
-.back-to-profile:hover { color: var(--blue); }
+.back-to-profile:hover { color: var(--blue-text); }
 
 /* ── Photo delete button ── */
 .photo-wrap {
@@ -659,7 +659,7 @@
     display: inline-flex; align-items: center; gap: 6px;
     padding: 8px 18px; background: none;
     border: 1.5px solid var(--line); border-radius: var(--r-sm);
-    color: var(--blue); font-size: 13px; font-weight: 700;
+    color: var(--blue-text); font-size: 13px; font-weight: 700;
     cursor: pointer; font-family: inherit;
     transition: border-color 0.2s, background 0.2s;
     margin-bottom: 16px;
@@ -688,7 +688,7 @@
     font-size: 14px; font-weight: 700; cursor: pointer;
     font-family: inherit;
 }
-.profile-cancel-btn:hover { border-color: var(--blue); color: var(--blue); }
+.profile-cancel-btn:hover { border-color: var(--blue); color: var(--blue-text); }
 
 /* ── Upload modal ── */
 .upload-modal-overlay {
@@ -730,7 +730,7 @@
 }
 .upload-dropzone:hover, .upload-dropzone.dragover { border-color: var(--blue); background: var(--blue-soft); }
 .upload-dropzone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
-.upload-dz-icon { font-size: 28px; color: var(--blue); margin-bottom: 6px; }
+.upload-dz-icon { font-size: 28px; color: var(--blue-text); margin-bottom: 6px; }
 .upload-dz-title { font-size: 13px; font-weight: 700; color: var(--text); }
 .upload-dz-hint { font-size: 11px; color: var(--dim); margin-top: 3px; }
 .upload-preview-grid {
@@ -833,7 +833,7 @@
     .mobile-back-btn {
         display: flex; align-items: center; gap: 8px;
         padding: 12px 16px; font-size: 13px; font-weight: 600;
-        color: var(--blue); background: var(--surface);
+        color: var(--blue-text); background: var(--surface);
         border: none; border-bottom: 1px solid var(--line);
         cursor: pointer; width: 100%; font-family: inherit;
         flex-shrink: 0;

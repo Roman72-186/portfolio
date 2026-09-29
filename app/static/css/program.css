@@ -99,7 +99,7 @@
 .prg-tile-icon {
     display: inline-flex; align-items: center; justify-content: center;
     width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px;
-    color: var(--blue); background: var(--blue-soft); font-size: 18px;
+    color: var(--blue-text); background: var(--blue-soft); font-size: 18px;
 }
 
 /* Переключатель соседних циклов этапа (владелец 24.09.2026) — тот же
@@ -119,7 +119,7 @@
 @media (hover: hover) and (pointer: fine) {
     .prg-cycle-pill:hover:not(.is-active) {
         background: color-mix(in srgb, var(--blue) 12%, var(--surface));
-        color: var(--blue);
+        color: var(--blue-text);
     }
 }
 .prg-cycle-pill.is-active {
@@ -572,7 +572,7 @@
 /* Выставленное — основным цветом, «по умолчанию» — приглушённым: разница
    видна, не читая строку. */
 .prg-settings.is-custom .prg-settings-summary { color: var(--text); }
-.prg-settings > summary:hover .prg-settings-title { color: var(--blue); }
+.prg-settings > summary:hover .prg-settings-title { color: var(--blue-text); }
 /* `display` телу задаётся только у открытой панели: закрытую прячет сам
    браузер, и своё `display` на ребёнке `<details>` в части движков это
    скрытие перебивает (то же предупреждение — у `.vam-edit` в

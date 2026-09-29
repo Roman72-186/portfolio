@@ -29,7 +29,7 @@
     font-size: 13px; color: var(--muted); font-weight: 500;
     margin-bottom: 12px; opacity: 1;
 }
-.sidebar-back:hover { color: var(--blue); }
+.sidebar-back:hover { color: var(--blue-text); }
 .sidebar-title {
     font-size: 15px; font-weight: 700; color: var(--text);
     margin-bottom: 4px;
@@ -59,7 +59,7 @@
     transition: border-color 0.15s, color 0.15s, background 0.15s;
     font-family: inherit;
 }
-.tariff-chip:hover { border-color: var(--blue); color: var(--blue); }
+.tariff-chip:hover { border-color: var(--blue); color: var(--blue-text); }
 .tariff-chip.active {
     background: var(--blue); color: #fff; border-color: var(--blue);
 }
@@ -85,7 +85,7 @@
 .student-row:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 .student-row:hover { background: var(--bg); }
 .student-row.active { background: var(--blue-soft); }
-.student-row.active .student-row-name { color: var(--blue); font-weight: 700; }
+.student-row.active .student-row-name { color: var(--blue-text); font-weight: 700; }
 .student-avatar {
     width: 38px; height: 38px; border-radius: 50%;
     object-fit: cover; border: 1px solid var(--line);
@@ -252,7 +252,7 @@
     font-size: 12px; font-weight: 800; cursor: pointer;
 }
 .mock-month-btn.active {
-    background: rgba(168,85,247,0.09); color: var(--blue); border-color: rgba(168,85,247,0.35);
+    background: rgba(168,85,247,0.09); color: var(--blue-text); border-color: rgba(168,85,247,0.35);
 }
 .mock-calendar-grid {
     display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -307,7 +307,7 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .mock-work-meta { margin-top: 6px; font-size: 12px; color: var(--muted); }
-.mock-work-score { color: var(--blue); font-weight: 900; }
+.mock-work-score { color: var(--blue-text); font-weight: 900; }
 .mock-calendar-empty {
     color: var(--dim); text-align: center; padding: 42px 12px;
     font-size: 13px;
@@ -360,7 +360,7 @@
     font-weight: 600; cursor: pointer; font-family: inherit;
     transition: border-color 0.15s, color 0.15s;
 }
-.btn-edit-score:hover { border-color: var(--blue); color: var(--blue); }
+.btn-edit-score:hover { border-color: var(--blue); color: var(--blue-text); }
 .btn-revision {
     padding: 8px 14px; background: rgba(217,119,6,0.08); color: var(--warning);
     border: 1.5px solid rgba(217,119,6,0.35); border-radius: var(--r-sm);
@@ -438,13 +438,13 @@
     .mobile-back-btn {
         display: inline-flex; align-items: center; gap: 6px;
         background: none; border: none;
-        font-size: 14px; font-weight: 700; color: var(--blue);
+        font-size: 14px; font-weight: 700; color: var(--blue-text);
         padding: 6px 0; margin-bottom: 10px; cursor: pointer;
         font-family: inherit;
     }
 }
 </style>
-<link rel="stylesheet" href="/static/css/rich-text-field.css?v=1">
+<link rel="stylesheet" href="/static/css/rich-text-field.css?v=2">
 {% endblock %}
 {% block content %}
 <script src="/static/js/rich-text-field.js?v=3"></script>

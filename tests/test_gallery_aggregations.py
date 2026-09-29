@@ -89,6 +89,6 @@ def test_history_totals_count_success_and_failed_separately(auth_client, db):
     resp = client.get("/cabinet/history")
     assert resp.status_code == 200
     text = resp.text
-    assert 'Всего фото: <span style="color:var(--blue)">5</span>' in text
+    assert 'Всего фото: <span style="color:var(--blue-text)">5</span>' in text
     assert 'Успешно: <span style="color:var(--success)">2</span>' in text
     assert 'Ошибок: <span style="color:var(--error)">1</span>' in text

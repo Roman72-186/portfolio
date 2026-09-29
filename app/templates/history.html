@@ -8,7 +8,7 @@
             <h1 style="font-size:28px;font-weight:700;margin-bottom:6px" class="text-accent">История загрузок</h1>
             <p style="color:var(--muted);font-size:15px">
                 {% if total_photos %}
-                    Всего фото: <span style="color:var(--blue)">{{ total_photos }}</span>
+                    Всего фото: <span style="color:var(--blue-text)">{{ total_photos }}</span>
                     &nbsp;·&nbsp;
                 {% endif %}
                 Успешно: <span style="color:var(--success)">{{ total_success }}</span>
@@ -18,7 +18,7 @@
             </p>
         </div>
         <div style="display:flex;gap:12px;align-items:center">
-            <a href="/upload" style="color:var(--blue);font-size:14px;font-weight:500">+ Загрузить</a>
+            <a href="/upload" style="color:var(--blue-text);font-size:14px;font-weight:500">+ Загрузить</a>
             <a href="/cabinet" class="back-link" style="margin-bottom:0">← Кабинет</a>
         </div>
     </div>

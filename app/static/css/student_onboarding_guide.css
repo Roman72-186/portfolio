@@ -28,7 +28,7 @@
 .obg-note { margin-top: 10px !important; color: var(--muted); font-size: 14px; }
 .obg-steps { display: grid; gap: 14px; margin: 0; padding-left: 24px; }
 .obg-steps li { padding-left: 5px; line-height: 1.5; }
-.obg-steps li::marker { color: var(--blue); font-weight: 700; }
+.obg-steps li::marker { color: var(--blue-text); font-weight: 700; }
 .obg-help { padding: 18px !important; border: 0 !important; border-radius: var(--r-lg); background: var(--surface-2); }
 .obg-support-link { display: inline-flex; align-items: center; min-height: 44px; margin-top: 8px; color: var(--blue-ink); font-weight: 700; }
 .obg-foot { padding: 16px 24px max(16px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--surface); }

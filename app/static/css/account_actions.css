@@ -19,7 +19,7 @@
     padding: 12px 22px; border-radius: var(--r-pill);
     border: 1.5px solid var(--line);
 }
-.notif-gear-btn--labeled:hover { background: transparent; border-color: var(--blue); color: var(--blue); }
+.notif-gear-btn--labeled:hover { background: transparent; border-color: var(--blue); color: var(--blue-text); }
 .notif-gear-btn-label { font-family: var(--font-body); }
 
 .prs-logout-form { width: 100%; }

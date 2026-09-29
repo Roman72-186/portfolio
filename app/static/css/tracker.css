@@ -147,7 +147,7 @@
 
 .trk-toggle-btn {
     min-height: 40px; padding: 8px 16px; font-size: 13px; font-weight: 700;
-    color: var(--blue); background: var(--blue-soft); border: none;
+    color: var(--blue-text); background: var(--blue-soft); border: none;
     border-radius: var(--r-pill); cursor: pointer;
 }
 .trk-toggle-btn.is-done { color: var(--success); background: rgba(21,128,61,0.10); }
@@ -297,7 +297,7 @@
 .lrn-card[hidden] { display: none; }
 .lrn-card-title { font-size: 15px; font-weight: 800; margin: 0 0 4px; }
 .lrn-card-note { font-size: 13px; color: var(--dim); margin: 0; line-height: 1.4; }
-.lrn-card-cta { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--blue); }
+.lrn-card-cta { display: inline-block; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--blue-text); }
 .lrn-card.is-disabled .lrn-card-cta { color: var(--dim); }
 
 .lrn-empty {
@@ -1389,7 +1389,7 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
     margin: 8px 0 0;
     font-size: 13px;
     font-weight: 700;
-    color: var(--blue);
+    color: var(--blue-text);
 }
 
 .lrn-feed { display: flex; flex-direction: column; gap: 12px; }
@@ -1486,7 +1486,7 @@ body.has-video-pseudo-fullscreen .lrn-step { opacity: 1 !important; }
 @media (hover: hover) and (pointer: fine) {
     .lrn-cycle-chip:hover:not(.is-current) {
         background: color-mix(in srgb, var(--blue) 12%, var(--surface));
-        color: var(--blue);
+        color: var(--blue-text);
     }
 }
 .lrn-cycle-chip.is-current {

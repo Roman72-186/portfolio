@@ -28,6 +28,10 @@
     --blue-mid:     #C084FC;
     --blue-ink:     #581C87;
     --blue-on-soft: #6B21A8;
+    /* Фиолетовый текстом (ссылки, активные пункты, акцентные подписи): сам --blue на белом
+       3.96, на --surface-2 3.56 — ниже 4.5 (аудит 10.4). Тот же тон глубже — смесь двух
+       ступеней шкалы: 6.49 на белом, 4.77 на --blue-tint. Заливки кнопок остаются на --blue. */
+    --blue-text:    color-mix(in srgb, var(--blue-deep) 60%, var(--blue-on-soft));
     --blue-soft:    #F3E8FF;
     --blue-tint:    #E9D5FF;
 
@@ -246,6 +250,8 @@
     --blue-tint:    rgba(168,85,247,0.28);
     --blue-ink:     #E9D5FF;
     --blue-on-soft: #D8B4FE;
+    /* На тёмных фонах --blue 3.96–4.84; этот — от 4.64 (на --blue-tint) до 7.25. */
+    --blue-text:    var(--blue-mid);
 
     /* iOS re-skin — Apple HIG dynamic colors (dark), тот же источник
        принципа, что и у светлых значений выше. */
@@ -318,7 +324,7 @@ h1, h2, h3, h4, .display {
     letter-spacing: -0.025em;
 }
 
-a { color: var(--blue); text-decoration: none; transition: color var(--duration-fast); }
+a { color: var(--blue-text); text-decoration: none; transition: color var(--duration-fast); }
 a:hover { color: var(--blue-deep); }
 
 /* ── Skip link (accessibility) ── */
@@ -416,7 +422,7 @@ body.has-video-pseudo-fullscreen .notif-pop { display: none; }
     font-size: 22px;
     text-decoration: none;
     transition: box-shadow var(--duration-base), transform var(--duration-fast);
-    color: var(--blue);
+    color: var(--blue-text);
     pointer-events: auto;
 }
 .notif-bell:hover { box-shadow: 0 8px 28px rgba(20,30,80,.14); transform: translateY(-2px); opacity: 1; }
@@ -468,7 +474,7 @@ body.has-video-pseudo-fullscreen .notif-pop { display: none; }
     padding: 10px 16px; border-top: 1px solid var(--line);
 }
 .notif-pop-footer a {
-    font-size: 13px; font-weight: 600; color: var(--blue); text-decoration: none;
+    font-size: 13px; font-weight: 600; color: var(--blue-text); text-decoration: none;
 }
 .notif-pop-footer a:hover { text-decoration: underline; }
 .notif-pop-empty {
@@ -590,7 +596,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     width: 40px; height: 40px;
     border-radius: var(--r-md);
     background: var(--blue-soft);
-    color: var(--blue);
+    color: var(--blue-text);
     display: inline-flex; align-items: center; justify-content: center;
     margin-bottom: 14px;
 }
@@ -627,7 +633,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     text-decoration: none;
     transition: border-color var(--duration-fast), color var(--duration-fast);
 }
-.btn-outline:hover { border-color: var(--blue); color: var(--blue); opacity: 1; }
+.btn-outline:hover { border-color: var(--blue); color: var(--blue-text); opacity: 1; }
 
 /* Full-width primary modifier */
 .btn-full { width: 100%; justify-content: center; }
@@ -709,7 +715,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
     color: var(--muted); text-decoration: none;
     margin-bottom: 10px;
 }
-.back-link:hover { color: var(--blue); opacity: 1; }
+.back-link:hover { color: var(--blue-text); opacity: 1; }
 
 /* Возврат в АОП на мобилке (шаблон partials/back_to_learning, владелец
    15.09.2026) — фиксированная кнопка в верхнем левом углу каждого экрана
@@ -753,7 +759,7 @@ a.notif-pop-item:hover { border-color: var(--blue); opacity: 1; }
 .learning-back:hover { background: var(--surface-2); }
 .learning-back:active { transform: scale(.97); }
 .learning-back:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
-.learning-back svg { display: block; flex-shrink: 0; color: var(--blue); }
+.learning-back svg { display: block; flex-shrink: 0; color: var(--blue-text); }
 
 /* Граница 1023px, а не 768px: бургер ученика живёт до той же ширины
    (bottom_nav_burger.css), с 1024px включается десктопный сайдбар, где пункт
@@ -883,7 +889,7 @@ audio { max-width: 100%; }
 .stat-tile-head .ico {
     width: 28px; height: 28px;
     background: var(--blue-soft);
-    color: var(--blue);
+    color: var(--blue-text);
     border-radius: 8px;
     display: inline-flex; align-items: center; justify-content: center;
 }
@@ -969,10 +975,10 @@ audio { max-width: 100%; }
     text-align: center; cursor: pointer; transition: border-color var(--duration-base), color var(--duration-base), background var(--duration-base);
     font-size: 14px; font-weight: 500; color: var(--muted);
 }
-.radio-btn:hover { border-color: rgba(168,85,247,.30); color: var(--blue); }
+.radio-btn:hover { border-color: rgba(168,85,247,.30); color: var(--blue-text); }
 .radio-btn input { display: none; }
 .radio-btn.active, .radio-btn:has(input:checked) {
-    border-color: var(--blue); color: var(--blue);
+    border-color: var(--blue); color: var(--blue-text);
     background: var(--blue-soft);
 }
 
@@ -1057,7 +1063,7 @@ input[type="radio"]:focus-visible { outline: 2px solid var(--ios-blue); outline-
 /* ═══════════════════════════════════════
    TEXT UTILITIES
    ═══════════════════════════════════════ */
-.text-accent { font-weight: 800; color: var(--blue); }
+.text-accent { font-weight: 800; color: var(--blue-text); }
 .text-muted { color: var(--muted); }
 .footer { text-align: center; padding: 20px; font-size: 12px; color: var(--dim); }
 
@@ -1283,7 +1289,7 @@ input[type="radio"]:focus-visible { outline: 2px solid var(--ios-blue); outline-
 }
 .desk-nav-item:hover { background: var(--surface-2); color: var(--ink); opacity: 1; }
 .desk-nav-item:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: var(--r-sm); }
-.desk-nav-item.desk-nav-active { background: var(--blue-soft); color: var(--blue); }
+.desk-nav-item.desk-nav-active { background: var(--blue-soft); color: var(--blue-text); }
 .desk-nav-icon { font-size: 18px; width: 24px; text-align: center; flex-shrink: 0; }
 .desk-nav-divider { height: 1px; background: var(--line); margin: 8px 10px; }
 .desk-nav-footer {
@@ -1347,7 +1353,7 @@ button.desk-nav-item {
     transition: background var(--duration-fast), color var(--duration-fast), border-color var(--duration-fast);
 }
 .notif-gear-btn:hover { background: var(--surface-2); color: var(--ink); opacity: 1; }
-.notif-gear-btn[aria-expanded="true"] { background: var(--blue-soft); color: var(--blue); border-color: var(--blue-tint); }
+.notif-gear-btn[aria-expanded="true"] { background: var(--blue-soft); color: var(--blue-text); border-color: var(--blue-tint); }
 .profile-hero .notif-gear-wrap { display: none; }
 .profile-hero .notif-gear-btn {
     background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.35); color: #fff;
@@ -1403,8 +1409,8 @@ button.desk-nav-item {
     transition: background var(--duration-fast), color var(--duration-fast), border-color var(--duration-fast);
 }
 .hint-trigger::before { content: ''; position: absolute; inset: -12px; }
-.hint-trigger:hover { background: var(--blue-soft); color: var(--blue); }
-.hint-trigger[aria-expanded="true"] { background: var(--blue-soft); color: var(--blue); border-color: var(--blue-tint); }
+.hint-trigger:hover { background: var(--blue-soft); color: var(--blue-text); }
+.hint-trigger[aria-expanded="true"] { background: var(--blue-soft); color: var(--blue-text); border-color: var(--blue-tint); }
 .hint-trigger:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .hint-pop {
     position: fixed; z-index: 260;
@@ -1532,11 +1538,11 @@ button.desk-nav-item {
     border-radius: 50%; background: currentColor;
 }
 .tag-pill--pink         { background: rgba(236,72,153,0.12);       color: #be185d; }
-.tag-pill--blue         { background: rgba(168,85,247,0.12);        color: var(--blue); }
+.tag-pill--blue         { background: rgba(168,85,247,0.12);        color: var(--blue-text); }
 .tag-pill--purple       { background: rgba(168,85,247,0.12);       color: #6b21a8; }
 
 .student-info-pill--pink   { background: rgba(236,72,153,0.12); border-color: transparent; color: #be185d; }
-.student-info-pill--blue   { background: rgba(168,85,247,0.12);  border-color: transparent; color: var(--blue); }
+.student-info-pill--blue   { background: rgba(168,85,247,0.12);  border-color: transparent; color: var(--blue-text); }
 .student-info-pill--purple { background: rgba(168,85,247,0.12); border-color: transparent; color: #6b21a8; }
 
 .student-hero-pill--pink   { background: rgba(236,72,153,0.35); border-color: rgba(236,72,153,0.5); color: #fff; }

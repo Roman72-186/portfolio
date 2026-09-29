@@ -478,3 +478,35 @@ def test_floating_menu_does_not_cover_end_of_list_and_profile():
     assert styles.rindex("@media (max-width: 1023px) {") > styles.rindex("@media (max-width: 768px) {"), (
         "правило должно стоять после раскладки телефона — там padding блоков задаётся заново"
     )
+
+
+APP = TEMPLATE.parent.parent
+
+
+@pytest.mark.parametrize(
+    ("opener", "backgrounds"),
+    [
+        (":root {", ("surface", "bg", "surface-2", "blue-soft", "blue-tint")),
+        (':root[data-theme="dark"] {', ("bg", "surface", "surface-2")),
+    ],
+)
+def test_purple_text_is_readable_in_both_themes(opener, backgrounds):
+    # 29.09.2026, аудит 10.4: фиолетовый `--blue` текстом — 3.96 на белом, 3.56 на
+    # --surface-2, в тёмной теме 3.96–4.84; живой замер — 54 из 76 подписей ниже 4.5.
+    # Текст берёт `--blue-text`, заливки кнопок остаются на `--blue` (цвет бренда).
+    css = BASE_CSS.read_text(encoding="utf-8")
+    tokens = {**_theme_tokens(css, ":root {"), **_theme_tokens(css, opener)}
+    text = _fill_color(css, opener, "blue-text")
+    for bg in backgrounds:
+        assert _contrast(text, tokens[bg]) >= 4.5, f"--blue-text на --{bg}"
+
+
+def test_no_text_is_painted_with_bare_brand_purple():
+    # Новый фиолетовый текст — только `var(--blue-text)`; `--blue` — заливки, рамки, иконки.
+    bare = re.compile(r"(?<![-\w])color\s*:\s*var\(--blue\)")
+    offenders = [
+        str(path.relative_to(APP))
+        for path in [*APP.glob("static/**/*.css"), *APP.glob("static/**/*.js"), *APP.glob("templates/**/*.html")]
+        if bare.search(path.read_text(encoding="utf-8"))
+    ]
+    assert not offenders, "текст цветом --blue (3.96 на белом) — брать --blue-text:\n" + "\n".join(offenders)

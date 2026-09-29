@@ -32,8 +32,8 @@
     margin-bottom: -1px;
     transition: color .12s, border-color .12s;
 }
-.prg-tab:hover { color: var(--blue); }
-.prg-tab.is-active { color: var(--blue); border-bottom-color: var(--blue); }
+.prg-tab:hover { color: var(--blue-text); }
+.prg-tab.is-active { color: var(--blue-text); border-bottom-color: var(--blue); }
 .prg-tab:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: var(--r-sm); }
 /* Черта отделяет календарь программы от справочников, из которых он собирается. */
 .prg-tabs-sep {

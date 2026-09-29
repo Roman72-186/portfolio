@@ -61,7 +61,7 @@
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" onload="this.onload=null;this.rel='stylesheet'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet"></noscript>
     <!-- Base styles: versioned for cache-busting -->
-    <link rel="stylesheet" href="/static/css/base.css?v=65">
+    <link rel="stylesheet" href="/static/css/base.css?v=66">
     {% block extra_styles %}{% endblock %}
 </head>
 <body{% if user is defined and user and user.impersonated_by_id %} class="is-impersonating"{% endif %}>
@@ -174,7 +174,7 @@
                 copyBtn.type = 'button';
                 copyBtn.textContent = 'Скопировать ссылку';
                 copyBtn.setAttribute('style',
-                    'width:100%;padding:12px;margin-top:10px;font-size:13px;font-weight:600;color:var(--blue);' +
+                    'width:100%;padding:12px;margin-top:10px;font-size:13px;font-weight:600;color:var(--blue-text);' +
                     'background:none;border:1px solid #DCE0EA;border-radius:12px;cursor:pointer');
                 copyBtn.onclick = function(){
                     function done(){ copyBtn.textContent = 'Ссылка скопирована ✓'; }
