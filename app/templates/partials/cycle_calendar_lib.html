@@ -36,7 +36,7 @@
 .cal-day.legacy:hover, .cal-day.legacy.is-selected { background: var(--dim-fill-strong); }
 .cal-day.is-empty { visibility: hidden; }
 
-.cal-detail { border: 1px solid var(--line); background: var(--surface); border-radius: var(--r-md); padding: 16px; min-height: 320px; }
+.cal-detail { padding-top: 12px; min-height: 320px; } /* без рамки — была рамка в рамке (аудит 10.2); отступ ставит дату вровень с годом */
 .cal-detail-empty { color: var(--dim); text-align: center; padding: 42px 12px; font-size: 13px; }
 .cal-attempt { border-top: 1px dashed var(--line); padding-top: 14px; margin-top: 14px; }
 .cal-attempt:first-child { border-top: none; padding-top: 0; margin-top: 0; }

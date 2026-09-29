@@ -422,3 +422,14 @@ def test_white_digit_on_grey_fill_is_readable(opener):
     assert "background: var(--dim-fill-strong)" in _css_rule(lib, ".cal-day.legacy.is-selected")
     assert "background: var(--dim-fill)" in _css_rule(lib, ".cal-hero-score.no-score")
     assert "background: var(--dim-fill)" in _css_rule(css, ".cal-peer-score")
+
+
+def test_calendar_day_is_not_a_frame_inside_the_subject_card():
+    # 29.09.2026, аудит 10.2: календарь «Портфолио» и календарь цикла ученика —
+    # предмет → день → обратная связь → фото, как было в «Пробниках» до 9.3.
+    # Рамку и фон снимаем у дня; обратная связь остаётся своей плашкой.
+    lib = CALENDAR_LIB.read_text(encoding="utf-8")
+    day = _css_rule(lib, ".cal-detail")
+    assert "border:" not in day and "background:" not in day
+    assert "border:" in _css_rule(lib, ".subj-card"), "рамка предмета остаётся"
+    assert "background: var(--surface-2)" in _css_rule(lib, ".cal-fb"), "обратная связь отделена подложкой"
