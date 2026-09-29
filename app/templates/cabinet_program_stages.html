@@ -98,7 +98,9 @@
 <script src="/static/js/rich-text-field.js?v=3"></script>
 <script>
 (function () {
-    var csrfToken = {{ csrf_token(request)|tojson }};
+    // Мутации — через `window.csrfFetch` (`static/js/csrf.js`): ключ свежий на
+    // каждый запрос, а не напечатанный в разметке — вкладка висит открытой
+    // часами, и после перезахода ключ страницы мёртв (инцидент 26.09.2026).
     var form = document.querySelector('[data-stage-form]');
     if (!form) return;
 
@@ -173,14 +175,9 @@
             message.textContent = 'Заполните обе даты периода.';
             return;
         }
-        fetch('/cabinet/staff/program/stages' + (id ? '/' + id : ''), {
+        window.csrfFetch('/cabinet/staff/program/stages' + (id ? '/' + id : ''), {
             method: 'POST',
-            credentials: 'same-origin',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': csrfToken
-            },
+            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
                 title: fields.title.value.trim(),
                 description: fields.description.value.trim() || null,

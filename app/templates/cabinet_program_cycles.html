@@ -143,7 +143,9 @@
 <script src="/static/js/rich-text-field.js?v=3"></script>
 <script>
 (function () {
-    var csrfToken = {{ csrf_token(request)|tojson }};
+    // Мутации — через `window.csrfFetch` (`static/js/csrf.js`): ключ свежий на
+    // каждый запрос, а не напечатанный в разметке — вкладка висит открытой
+    // часами, и после перезахода ключ страницы мёртв (инцидент 26.09.2026).
     var form = document.querySelector('[data-cycle-form]');
     if (!form) return;
 
@@ -247,10 +249,8 @@
                 : ' Ученики его больше не увидят.';
             if (!window.confirm(question)) return;
             button.disabled = true;
-            fetch('/cabinet/staff/program/cycles/' + card.getAttribute('data-cycle-id') + '/delete', {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: { 'Accept': 'application/json', 'X-CSRF-Token': csrfToken }
+            window.csrfFetch('/cabinet/staff/program/cycles/' + card.getAttribute('data-cycle-id') + '/delete', {
+                method: 'POST'
             }).then(function (resp) {
                 if (!resp.ok) throw new Error('');
                 window.location.reload();
@@ -270,14 +270,9 @@
             message.textContent = 'Заполните обе даты периода.';
             return;
         }
-        fetch('/cabinet/staff/program/cycles' + (id ? '/' + id : ''), {
+        window.csrfFetch('/cabinet/staff/program/cycles' + (id ? '/' + id : ''), {
             method: 'POST',
-            credentials: 'same-origin',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'X-CSRF-Token': csrfToken
-            },
+            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
                 title: fields.title.value.trim(),
                 description: fields.description.value.trim() || null,

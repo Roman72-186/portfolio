@@ -18,8 +18,10 @@
  *                                   ближайшей формы, у кружка ещё и
  *                                   `video_note=1`, так что форма и роут
  *                                   отправки остаются прежними;
- *   data-mrf-csrf                 — токен для режима загрузки (иначе берётся
- *                                   первый `input[name=csrf_token]`);
+ *   data-mrf-csrf                 — запасной токен для режима загрузки (иначе
+ *                                   первый `input[name=csrf_token]`); основной
+ *                                   путь — свежий ключ из `window.csrfFresh`
+ *                                   (`static/js/csrf.js`), см. `upload`;
  *   data-media-url/-kind          — уже сохранённая запись (редактор блока).
  *
  * Пока идёт запись или загрузка, на контейнере стоит `data-mrf-busy`: по нему
@@ -523,24 +525,32 @@
 
     Recorder.prototype.upload = function (file) {
         var self = this;
-        var csrf = this.root.getAttribute('data-mrf-csrf');
-        if (!csrf) {
+        var pageCsrf = this.root.getAttribute('data-mrf-csrf');
+        if (!pageCsrf) {
             var field = document.querySelector('input[name="csrf_token"]');
-            csrf = field ? field.value : '';
+            pageCsrf = field ? field.value : '';
         }
         var data = new FormData();
         data.append('file', file, file.name);
         data.append('kind', this.kind);
-        data.append('csrf_token', csrf);
         var send = window.fetchWithTimeout || function (url, options) { return fetch(url, options); };
+        // Ключ из разметки старится вместе со страницей, а конструктор и
+        // переписка висят открытыми часами: после перезахода в другой вкладке
+        // запись ушла бы с мёртвым ключом и получила 403 (инцидент 26.09.2026,
+        // `static/js/csrf.js`). Поэтому ключ берём свежий, а разметочный —
+        // только запасной путь для страниц без base.html. Не через
+        // `csrfFetch`: у записи свой таймаут на 5 минут (`fetchWithTimeout`).
+        var token = window.csrfFresh ? window.csrfFresh() : Promise.resolve(pageCsrf);
         // 'Accept: application/json' — без него сервер на 403/401/500 отдаёт
         // HTML-страницу (см. app/main.py, обработчики этих кодов смотрят на
         // Accept и Content-Type), fetch не может её разобрать, и вместо
         // настоящей причины пользователь видел общий текст ошибки.
-        send(this.uploadUrl, {
-            method: 'POST', credentials: 'same-origin',
-            headers: {'Accept': 'application/json', 'X-CSRF-Token': csrf}, body: data
-        }, 300000).then(function (response) {
+        token.then(function (csrf) {
+            return send(self.uploadUrl, {
+                method: 'POST', credentials: 'same-origin',
+                headers: {'Accept': 'application/json', 'X-CSRF-Token': csrf || pageCsrf}, body: data
+            }, 300000);
+        }).then(function (response) {
             return response.json().catch(function () { return {}; }).then(function (body) {
                 if (!response.ok || !body.ok || !body.url) {
                     throw new Error(body.error || body.detail || 'Не получилось сохранить запись. Попробуйте ещё раз.');

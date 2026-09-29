@@ -155,3 +155,49 @@ def test_portfolio_and_curator_uploads_refresh_the_token():
     for name in ("upload.html", "cabinet_students.html"):
         source = (TEMPLATES / name).read_text(encoding="utf-8")
         assert "window.csrfFresh" in source, f"{name} отправляет фото со старым ключом"
+
+
+PROGRAM_SCREENS = (
+    "cabinet_program_cycle_items.html",
+    "cabinet_program_cycles.html",
+    "cabinet_program_day.html",
+    "cabinet_program_stages.html",
+)
+
+
+def test_program_screens_send_fresh_token():
+    """Конструктор программы сохраняет со свежим ключом, а не с ключом из разметки.
+
+    Экраны программы ГП и суперадмин держат открытыми часами, а после
+    29.09.2026 «Задания цикла» перестали перечитывать страницу даже на
+    стрелках. Перезаход в другой вкладке обесценивает ключ страницы, и
+    «Сохранить» получало 403 — тот же класс, что инцидент 26.09.2026 у
+    учеников. Ключ руками не вшивается ни в заголовок, ни в поле формы.
+    """
+    for name in PROGRAM_SCREENS:
+        source = (TEMPLATES / name).read_text(encoding="utf-8")
+        assert "window.csrfFetch" in source, f"{name}: мутации не через csrfFetch"
+        assert not re.search(r"'X-CSRF-Token'\s*:\s*csrfToken", source), (
+            f"{name}: ключ из разметки вшит в заголовок запроса"
+        )
+        assert "append('csrf_token', csrfToken)" not in source, (
+            f"{name}: ключ из разметки вшит в поле формы"
+        )
+
+
+def test_shared_program_modules_send_fresh_token():
+    """Общие модули конструктора тоже берут свежий ключ.
+
+    Запись голоса (`media-recorder-field.js`) живёт ещё и в переписке куратора,
+    тренажёр диагностики — на обоих конструкторах. Ключ из разметки у обоих
+    остаётся только запасным путём для страниц без base.html.
+    """
+    recorder = (STATIC / "media-recorder-field.js").read_text(encoding="utf-8")
+    assert "window.csrfFresh" in recorder, "запись голоса отправляется со старым ключом"
+    assert "append('csrf_token', csrf)" not in recorder
+
+    trainer = (STATIC / "diagnostic-trainer.js").read_text(encoding="utf-8")
+    assert "window.csrfFetch" in trainer, "тренажёр отправляет ответы со старым ключом"
+    assert "result.body.error || result.body.detail" in trainer, (
+        "отказ CSRF кладёт причину в detail — без него человек не видит «обнови страницу»"
+    )

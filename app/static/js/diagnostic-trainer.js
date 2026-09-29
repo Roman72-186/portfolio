@@ -70,18 +70,27 @@ trainer-blocks`), у несохранённого черновика их нет
 
                 window.lrnBlockRender.runWizard(renderer, steps, {
                     onFinish: function (answers, handlers) {
-                        fetch('/cabinet/staff/program/tasks/' + taskId + '/trainer-score', {
+                        // Свежий ключ, а не `csrfToken` страницы: конструктор
+                        // висит открытым часами, ключ из разметки к этому
+                        // времени мог умереть (инцидент 26.09.2026,
+                        // `static/js/csrf.js`). Разметочный — запасной путь.
+                        var post = window.csrfFetch || function (url, opts) {
+                            opts.headers['X-CSRF-Token'] = csrfToken;
+                            return fetch(url, opts);
+                        };
+                        post('/cabinet/staff/program/tasks/' + taskId + '/trainer-score', {
                             method: 'POST',
                             credentials: 'same-origin',
                             headers: {
                                 'Accept': 'application/json',
-                                'Content-Type': 'application/json',
-                                'X-CSRF-Token': csrfToken
+                                'Content-Type': 'application/json'
                             },
                             body: JSON.stringify({ answers: answers })
                         }).then(readJson).then(function (result) {
                             if (!result.ok || !result.body.ok) {
-                                throw new Error(result.body && result.body.error);
+                                // `detail` — у отказа CSRF (HTTPException):
+                                // без него «обнови страницу» не дошло бы.
+                                throw new Error(result.body && (result.body.error || result.body.detail));
                             }
                             list.hidden = true;
                             box.appendChild(window.lrnBlockRender.profileResult(result.body.archi_profile));

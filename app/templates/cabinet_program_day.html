@@ -23,11 +23,11 @@ FORM: Operate.
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
 <script src="/static/js/task-blocks-render.js?v=34"></script>
 <script src="/static/js/diagnostic-builder.js?v=9"></script>
-<script src="/static/js/diagnostic-trainer.js?v=2"></script>
+<script src="/static/js/diagnostic-trainer.js?v=3"></script>
 {# WYSIWYG для полей с разметкой (**жирный**/*курсив*/список/ссылка) — стоит до
    `program_blocks_editor_js.html`, тот вызывает window.RichTextField напрямую. #}
 <script src="/static/js/rich-text-field.js?v=3"></script>
-<script src="/static/js/media-recorder-field.js?v=6"></script>
+<script src="/static/js/media-recorder-field.js?v=7"></script>
 {# Время сдачи пробника (владелец 09.09.2026: «выставляем время сдачи»).
    30.08.2026 эти поля из конструктора убрали, окно ставил сервер; теперь они
    вернулись, но заполнены расписанием по умолчанию — 11:45–18:30 этого дня и
@@ -505,12 +505,16 @@ FORM: Operate.
 
 <script>
 (function () {
+    // Ключ из разметки — только запасной для рендерера, тренажёра и записи
+    // голоса. Мутации экрана идут через `window.csrfFetch` (`static/js/csrf.js`):
+    // ключ свежий на каждый запрос, иначе после перезахода в другой вкладке
+    // открытый конструктор получал 403 (инцидент 26.09.2026, `AGENTS.md`).
     var csrfToken = {{ csrf_token(request)|tojson }};
 
     function api(path, body) {
-        return fetch(path, {
-            method: 'POST', credentials: 'same-origin',
-            headers: {'Accept':'application/json', 'Content-Type':'application/json', 'X-CSRF-Token':csrfToken},
+        return window.csrfFetch(path, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(body || {})
         }).then(function (response) {
             return response.json().catch(function () { return {}; }).then(function (data) {
@@ -779,16 +783,12 @@ FORM: Operate.
         if (!file) return;
         var data = new FormData();
         data.append('file', file);
-        data.append('csrf_token', csrfToken);
         var holder = row.querySelector('[data-t-thumb]');
         var block = row.closest('[data-subject-block]');
         var status = block.querySelector('[data-subject-status]');
         row.dataset.uploading = 'true';
         holder.textContent = 'Загружаем…';
-        fetch('/cabinet/upload-ticket-image', {
-            method: 'POST', credentials: 'same-origin',
-            headers: {'X-CSRF-Token': csrfToken}, body: data
-        }).then(function (r) { return r.json(); }).then(function (result) {
+        window.csrfFetch('/cabinet/upload-ticket-image', {method: 'POST', body: data}).then(function (r) { return r.json(); }).then(function (result) {
             if (!result || !result.success) throw new Error('upload_failed');
             holder.innerHTML = '';
             var img = document.createElement('img');
@@ -927,11 +927,8 @@ FORM: Operate.
     function uploadImage(file, url) {
         var data = new FormData();
         data.append('file', file);
-        data.append('csrf_token', csrfToken);
-        return fetch(url, {
-            method: 'POST', credentials: 'same-origin',
-            headers: {'X-CSRF-Token': csrfToken}, body: data
-        }).then(function (r) { return r.json(); });
+        return window.csrfFetch(url, {method: 'POST', body: data})
+            .then(function (r) { return r.json(); });
     }
 
     function renderHomeworkThumbs() {
