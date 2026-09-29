@@ -507,7 +507,7 @@ def test_mock_status_panel_splits_submitted_and_not_submitted(curator_client, db
     # Telegram-ник — личные данные, куратору (ранг 2) не показывается.
     assert "anna_ivanova" not in text
     assert "petrov_p" not in text
-    assert "Скопировать username" not in text
+    assert "Скопировать ники" not in text
     # Анна — в списке "не сдали" с пометкой предмета, по которому есть билет
     assert 'mock-status-pending">Рисунок<' in text
 
@@ -598,7 +598,7 @@ def test_mock_status_panel_excludes_student_without_assigned_ticket(curator_clie
 
 def test_curator_sees_student_with_incomplete_onboarding(curator_client, db, user_factory):
     """Куратор видит своего активного ученика, даже если тот не завершил профиль
-    (пустые course_periods/lessons_count), с бейджем «Не заполнил профиль».
+    (пустые course_periods/lessons_count), с бейджем «Нет анкеты».
 
     Регресс: раньше такой ученик скрывался → куратор не мог его найти.
     """
@@ -616,7 +616,7 @@ def test_curator_sees_student_with_incomplete_onboarding(curator_client, db, use
     assert resp.status_code == 200
     text = resp.text
     assert "Безпрофиля Настя" in text
-    assert "Не заполнил профиль" in text
+    assert "Нет анкеты" in text
 
 
 def test_curator_does_not_see_other_curator_incomplete_student(curator_client, db, user_factory):

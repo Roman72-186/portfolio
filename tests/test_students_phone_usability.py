@@ -172,3 +172,35 @@ def test_phone_calendar_keeps_work_above_calendar():
 def test_upload_dropzone_is_block():
     # Зона — <label>: строчная рамка вокруг блоков рвалась, слева торчал обрывок пунктира.
     assert "display: block" in _css_rule(_source(), ".upload-dropzone")
+
+
+def test_labels_say_what_the_field_holds():
+    # Шаг 4 плана (/clarify). Поле university_year — год поступления в вуз (так оно
+    # названо в анкете ученика), а экран подписывал его «Курс университета» и
+    # выводил «2027 курс». Флаг is_group_member при входе через Telegram значит
+    # участие в канале школы, а бейдж писал «В группе VK» — владелец 29.09.2026
+    # велел снять его совсем: без канала на платформу не войти.
+    source = _source()
+    assert "Курс университета" not in source
+    assert "' курс'" not in source
+    assert "группе VK" not in source
+    assert "VK ID…" not in source
+    assert "' циклов" not in source, "«1 циклов» — счётчик циклов идёт через pluralLabel"
+
+
+def test_phone_sees_text_hidden_in_tooltips():
+    # На телефоне title не показывается: чья оценка и почему плашка — в самом тексте.
+    source = _source()
+    assert "Ученик: ' + Math.round(w.student_score)" in source
+    assert "⭐ Куратор: ' +" in source
+    assert "Не заполнил профиль" not in source
+
+
+def test_errors_tell_what_to_do_and_empty_search_says_so():
+    source = _source()
+    assert "'Ошибка сети'" not in source
+    assert source.count("alert(NET_ERROR)") == 6
+    assert "Ошибка загрузки" not in source
+    # Поиск или тариф, не нашедшие никого, раньше оставляли список пустым без слов.
+    assert 'id="student-list-empty" hidden' in source
+    assert "emptyNote.hidden = anyShown" in source

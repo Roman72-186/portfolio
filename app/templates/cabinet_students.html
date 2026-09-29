@@ -916,7 +916,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
     <div class="sidebar">
         <div class="sidebar-header">
             <h1 class="sidebar-title">{{ sidebar_title }}</h1>
-            <input type="text" class="sidebar-search" placeholder="{{ 'Имя, @username или VK ID…' if is_admin_panel else 'Имя ученика…' }}"
+            <input type="text" class="sidebar-search" placeholder="{{ 'Имя или ник в Telegram…' if is_admin_panel else 'Имя ученика…' }}"
                    aria-label="Поиск ученика"
                    oninput="filterSidebar()" id="student-search">
         </div>
@@ -955,7 +955,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
                         <div class="mock-status-col-title">
                             <span>Не сдали ({{ not_submitted_students|length }})</span>
                             {% if not_submitted_students and is_admin_panel %}
-                            <button type="button" class="mock-status-copy-btn" onclick="copyNotSubmittedUsernames(this)">Скопировать username</button>
+                            <button type="button" class="mock-status-copy-btn" onclick="copyNotSubmittedUsernames(this)">Скопировать ники</button>
                             {% endif %}
                         </div>
                         <ul class="mock-status-list" id="not-submitted-list">
@@ -988,7 +988,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
                 <div class="hard-filter-options">
                     <a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}has_unchecked_mocks=1">Непроверенные пробники</a>
                     <a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}mock_period_submitted=1">Сдавал в текущий период</a>
-                    {% if is_superadmin %}<a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}show_hidden=1">Все ученики, включая без периода</a>{% endif %}
+                    {% if is_superadmin %}<a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}show_hidden=1">И те, кто не заполнил анкету</a>{% endif %}
                     <a href="?{% if request.query_params.get('tab') %}tab={{ request.query_params.get('tab') }}&{% endif %}has_access_deadline=1">Со сроком доступа</a>
                 </div>
             </details>
@@ -1038,7 +1038,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
                 <div class="student-row-info">
                     <div class="student-row-name">{{ s.name }}</div>
                     <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px">
-                        {% if s.needs_setup %}<span class="student-info-pill" style="background:#fde68a;color:#92400e;font-weight:600" title="Ученик не завершил онбординг: не выбран период обучения и кол-во занятий. Попросите его дозаполнить профиль.">Не заполнил профиль</span>{% endif %}
+                        {% if s.needs_setup %}<span class="student-info-pill" style="background:#fde68a;color:#92400e;font-weight:600">Нет анкеты</span>{% endif %}
                         {% if s.tariff and s.tariff != '—' %}<span class="student-info-pill">{{ s.tariff|tariff_label }}</span>{% else %}<span class="student-info-pill student-info-pill--purple">Новенький</span>{% endif %}
                         {% if s.course_periods %}{% for p in s.course_periods.split(',') %}{% set _pfx = p.split(' ')[0]|trim %}{% set _pcls = 'pink' if _pfx == '10-14' else ('blue' if _pfx == '15-20' else 'purple') %}<span class="student-info-pill student-info-pill--{{ _pcls }}">{{ _pfx }}</span>{% endfor %}{% endif %}
                         {% if s.lessons_count %}{% set _lcls = 'pink' if s.lessons_count|string == '6' else ('blue' if s.lessons_count|string == '8' else 'purple') %}<span class="student-info-pill student-info-pill--{{ _lcls }}">{{ s.lessons_count }}</span>{% endif %}
@@ -1051,22 +1051,23 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
                     {% if ss | length >= 2 %}
                     <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверено</span>
                     {% elif 'Рисунок' in ss %}
-                    <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверен рисунок</span>
+                    <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Рисунок</span>
                     {% elif 'Композиция' in ss %}
-                    <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Проверена композиция</span>
+                    <span class="checked-badge"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Композиция</span>
                     {% elif s.unchecked %}
                     <span class="pending-badge">{{ s.unchecked }}</span>
                     {% endif %}
                 {% endif %}
             </button>
             {% endfor %}
+            {% if sidebar_students %}<div class="no-works" id="student-list-empty" hidden style="padding:24px 16px;text-align:center">Никого не нашли. Измените поиск или тариф.</div>{% endif %}
             {% if not sidebar_students %}
             <div style="padding:24px 16px;font-size:13px;color:var(--dim);text-align:center">
                 {% if active_hard_filters %}
                 По выбранным фильтрам учеников нет.<br>
                 <a href="/cabinet/students" style="color:var(--blue);text-decoration:underline;display:inline-block;margin-top:8px">Сбросить фильтры</a>
                 {% else %}
-                Ученики не найдены
+                Учеников пока нет
                 {% endif %}
             </div>
             {% endif %}
@@ -1107,7 +1108,7 @@ const TARIFF_LABELS = {{ tariff_labels|tojson }};
 {% include "partials/cycle_calendar_lib.html" %}
 
 <!-- Toast -->
-<div class="save-toast" id="save-toast">Оценка сохранена</div>
+<div class="save-toast" id="save-toast">Балл сохранён</div>
 
 <!-- Upload modal -->
 <div class="upload-modal-overlay" id="upload-modal" onclick="if(event.target===this)closeUploadModal()">
@@ -1196,6 +1197,7 @@ const IS_SUPERADMIN  = {{ is_superadmin | tojson }};
 const IS_ARCHIVE_VIEW = {{ is_archive_view | tojson }};
 const USER_ROLE_RANK = {{ user.role_rank | tojson }};
 const COHORT_TAG_LABELS = {{ cohort_tag_labels | tojson }};
+const NET_ERROR = 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.';
 
 var _currentStudentId = null;
 var _currentTab = 'portfolio';
@@ -1360,7 +1362,7 @@ function selectStudent(id, forceTab) {
         })
         .catch(function() {
             document.getElementById('main-panel').innerHTML =
-                '<div class="empty-state"><div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-text">Ошибка загрузки</div></div>';
+                '<div class="empty-state"><div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-text">Не удалось открыть ученика. Проверьте интернет и выберите его ещё раз.</div></div>';
         });
 }
 
@@ -1423,8 +1425,8 @@ function renderProfile(data) {
     }
     html += profileField('Тариф', s.tariff);
     html += profileField('Куратор', s.curator_name);
-    html += profileField('Год поступления', s.enrollment_year);
-    html += profileField('Курс университета', s.university_year ? s.university_year + ' курс' : null);
+    html += profileField('Начало обучения', s.enrollment_year);
+    html += profileField('Год поступления в вуз', s.university_year);
     if (s.past_tariffs) {
         html += profileField('Прошлые тарифы', s.past_tariffs, true);
     }
@@ -1444,9 +1446,7 @@ function renderProfile(data) {
         + '<div class="profile-field-label">Статус</div>'
         + '<div class="profile-status-badges">'
         + '<span class="profile-badge ' + (s.profile_completed ? 'ok' : 'no') + '">'
-        + (s.profile_completed ? '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Профиль заполнен' : '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Профиль не заполнен') + '</span>'
-        + '<span class="profile-badge ' + (s.is_group_member ? 'ok' : 'no') + '">'
-        + (s.is_group_member ? '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> В группе VK' : '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Не в группе VK') + '</span>'
+        + (s.profile_completed ? '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg> Анкета заполнена' : '<svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Анкета не заполнена') + '</span>'
         + '</div></div>';
 
     html += '</div></div>';
@@ -1471,7 +1471,7 @@ function renderProfile(data) {
         + '<button class="profile-action-btn" onclick="openTab(\'cycles\')">'
         +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9"/><polyline points="21 3 21 9 15 9"/></svg></div>'
         +   '<div class="profile-action-label">Цикл пробника</div>'
-        +   '<div class="profile-action-count">' + (s.cycle_count || 0) + ' циклов</div>'
+        +   '<div class="profile-action-count">' + pluralLabel(s.cycle_count || 0, 'цикл', 'цикла', 'циклов') + '</div>'
         + '</button>'
         + '<button class="profile-action-btn" onclick="openTab(\'statistics\')">'
         +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><polyline points="19 9 13 15 9 11 5 15"/></svg></div>'
@@ -1546,7 +1546,7 @@ function switchTab(tabName) {
         })
         .catch(function() {
             var tc = document.getElementById('tab-content');
-            if (tc) tc.innerHTML = '<div class="empty-state"><div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-text">Ошибка загрузки данных</div></div>';
+            if (tc) tc.innerHTML = '<div class="empty-state"><div class="empty-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div><div class="empty-text">Не удалось открыть вкладку. Проверьте интернет и нажмите на неё ещё раз.</div></div>';
         });
 }
 
@@ -1572,7 +1572,7 @@ function renderTab(tabName, data) {
                 worksBySubject: data.mock_works_by_subject || {},
                 months: MONTHS_LIST,
                 currentYear: new Date().getFullYear(),
-                emptyText: 'Пробных экзаменов пока нет.',
+                emptyText: 'Пробников пока нет',
                 showFeedback: false,
                 showStages: false
             });
@@ -1591,7 +1591,7 @@ function buildStatistics(data) {
 
     var hasData = pts.some(function(p) { return p.drawing != null || p.composition != null; });
     if (!pts.length || !hasData) {
-        return title + '<div class="no-works">Пока нет оценённых пробников для построения графика.</div>';
+        return title + '<div class="no-works">График появится после первого пробника с баллом.</div>';
     }
 
     // Геометрия
@@ -1718,7 +1718,7 @@ function buildStatistics(data) {
     return title +
         '<div class="stat-chart-card">' + legend +
         '<div class="stat-chart-wrap">' + svg + '</div>' +
-        '<div class="stat-note">Средний балл за месяц по оценённым пробникам, с начала сдачи пробников.</div>' +
+        '<div class="stat-note">Средний балл за месяц по пробникам с баллом.</div>' +
         '</div>';
 }
 
@@ -1940,7 +1940,7 @@ function renamePortfolioMonth(sid, workType, fromMonth, fromYear) {
     if (yearInput == null) return;
     var toYear = parseInt(yearInput, 10);
     if (!toYear || toYear < 2000 || toYear > 2100) {
-        alert('Укажите корректный год');
+        alert('Год – четыре цифры, например ' + CURRENT_YEAR);
         return;
     }
 
@@ -1958,12 +1958,12 @@ function renamePortfolioMonth(sid, workType, fromMonth, fromYear) {
     .then(function(r) { return r.json().then(function(data) { return {ok: r.ok, data: data}; }); })
     .then(function(result) {
         if (!result.ok || !result.data.ok) {
-            alert(window.csrfMessage(result.data, 'Ошибка переименования месяца'));
+            alert(window.csrfMessage(result.data, 'Не удалось переименовать месяц'));
             return;
         }
         reloadPortfolioAfterManage('Месяц обновлён');
     })
-    .catch(function() { alert('Ошибка сети'); });
+    .catch(function() { alert(NET_ERROR); });
 }
 
 function portfolioDragStart(ev, workId) {
@@ -2012,12 +2012,12 @@ function portfolioDrop(ev, el, sid, toMonth, toYear) {
     .then(function(r) { return r.json().then(function(data) { return {ok: r.ok, data: data}; }); })
     .then(function(result) {
         if (!result.ok || !result.data.ok) {
-            alert(window.csrfMessage(result.data, 'Ошибка переноса работы'));
+            alert(window.csrfMessage(result.data, 'Не удалось перенести работу'));
             return;
         }
         reloadPortfolioAfterManage('Работа перенесена');
     })
-    .catch(function() { alert('Ошибка сети'); })
+    .catch(function() { alert(NET_ERROR); })
     .finally(function() { portfolioDragEnd(); });
 }
 
@@ -2027,8 +2027,8 @@ function buildMockExams(data) {
     var html = '';
     if (data.period_only) {
         var banner = data.period_active
-            ? 'Показаны только пробники, сданные в текущий период'
-            : 'Сейчас нет активного периода сдачи — работ не найдено';
+            ? 'Только пробники, сданные в этот период'
+            : 'Сдача пробников сейчас закрыта, показывать нечего';
         html += '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;margin-bottom:12px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);font-size:13px;color:var(--muted)">'
             + '<span>⏱ ' + banner + '</span>'
             + '<button type="button" class="back-to-profile" style="margin:0" onclick="showAllMocks()">Показать все</button>'
@@ -2482,7 +2482,7 @@ function getDirtyScoreForm() {
 function guardUnsavedScore() {
     var dirty = getDirtyScoreForm();
     if (!dirty) return true;
-    alert('Сначала сохраните введённый балл. После этого можно перейти к другой работе или предмету.');
+    alert('Сначала сохраните балл, потом переходите к другой работе.');
     var input = dirty.querySelector('input[name="score"]');
     if (input) input.focus();
     return false;
@@ -2498,10 +2498,10 @@ function buildRetakeChipsAndComment(w) {
     var isMock = !!w.is_mock;
     var html = '';
     if (!isMock && w.student_score != null) {
-        html += '<span class="score-blue-chip" title="Оценка ученика"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg> ' + Math.round(w.student_score) + ' / 100</span>';
+        html += '<span class="score-blue-chip" title="Оценка ученика"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2"/></svg> Ученик: ' + Math.round(w.student_score) + ' / 100</span>';
     }
     if (w.curator_score != null) {
-        html += '<span class="scored-chip" title="Оценка куратора">⭐ ' + Math.round(w.curator_score) + ' / 100</span>';
+        html += '<span class="scored-chip" title="Оценка куратора">⭐ Куратор: ' + Math.round(w.curator_score) + ' / 100</span>';
     }
     var chips = html ? '<div class="retake-chips-row" style="padding:0 0 8px">' + html + '</div>' : '';
     var comment = w.comment_html
@@ -2616,7 +2616,7 @@ function buildScoreForm(sid, workId, tab, currentScore, currentComment) {
     var formId = 'score-form-' + tab + '-' + workId;
     var isScoringTab = (tab === 'mock-exams' || tab === 'retakes');
     var saveLabel = isScoringTab ? 'Сохранить балл' : 'Сохранить';
-    var formLabel = isScoringTab ? 'Оценка и комментарий' : (currentScore != null ? 'Изменить оценку' : 'Поставить оценку');
+    var formLabel = isScoringTab ? 'Балл и комментарий' : (currentScore != null ? 'Изменить балл' : 'Поставить балл');
     var initialScore = currentScore != null ? String(Math.round(currentScore)) : '';
     var initialComment = currentComment ? esc(currentComment) : '';
     return '<div class="score-form" data-initial-score="' + esc(initialScore) + '" data-initial-comment="' + initialComment + '">'
@@ -2731,7 +2731,7 @@ function submitMockRetake(sid, workId, formId) {
         switchTab('mock-exams');
     }).catch(function(err) {
         form.closest('.score-form').dataset.saving = '0';
-        alert(err.serverMessage || 'Ошибка при отправке на отработку');
+        alert(err.serverMessage || 'Не удалось отправить на отработку');
     });
 }
 
@@ -2747,7 +2747,7 @@ function readJsonOrThrow(r) {
 }
 
 function submitMockRevision(sid, workId, formId) {
-    if (!confirm('Вернуть пробник на доработку? Ученик сможет заново загрузить фото пробника без выставления оценки.')) return;
+    if (!confirm('Вернуть пробник на доработку? Ученик загрузит фото заново, балл не ставится.')) return;
     var fd = new FormData();
     var form = document.getElementById(formId);
     if (form) form.closest('.score-form').dataset.saving = '1';
@@ -2764,7 +2764,7 @@ function submitMockRevision(sid, workId, formId) {
         switchTab('mock-exams');
     }).catch(function(err) {
         if (form) form.closest('.score-form').dataset.saving = '0';
-        alert(err.serverMessage || 'Ошибка при отправке на доработку');
+        alert(err.serverMessage || 'Не удалось вернуть на доработку');
     });
 }
 
@@ -2773,7 +2773,7 @@ function toggleEditForm(id, btn) {
     if (!el) return;
     var visible = el.style.display !== 'none';
     el.style.display = visible ? 'none' : 'block';
-    btn.textContent = visible ? 'Изменить оценку' : 'Скрыть';
+    btn.textContent = visible ? 'Изменить балл' : 'Скрыть';
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -2836,6 +2836,7 @@ function filterSidebar() {
         return token.replace(/^@/, '');
     }).filter(Boolean);
 
+    var anyShown = false;
     document.querySelectorAll('.student-row').forEach(function(row) {
         var searchable = normalizeStudentSearch([
             row.querySelector('.student-row-name').textContent,
@@ -2848,8 +2849,12 @@ function filterSidebar() {
         var matchT = !_activeTariff || row.dataset.tariff === _activeTariff;
         var matchC = !curator || row.dataset.curator === curator;
         var matchY = !year    || row.dataset.year === year;
-        row.style.display = (matchQ && matchT && matchC && matchY) ? '' : 'none';
+        var shown = matchQ && matchT && matchC && matchY;
+        row.style.display = shown ? '' : 'none';
+        if (shown) anyShown = true;
     });
+    var emptyNote = document.getElementById('student-list-empty');
+    if (emptyNote) emptyNote.hidden = anyShown;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -2862,15 +2867,16 @@ function cap(s) {
     if (!s) return '';
     return String(s).charAt(0).toUpperCase() + String(s).slice(1);
 }
-function workCountLabel(n) {
+function pluralLabel(n, one, few, many) {
     n = Number(n) || 0;
     var mod10 = Math.abs(n) % 10;
     var mod100 = Math.abs(n) % 100;
     var word = (mod10 === 1 && mod100 !== 11)
-        ? 'работа'
-        : (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? 'работы' : 'работ');
+        ? one
+        : (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? few : many);
     return n + ' ' + word;
 }
+function workCountLabel(n) { return pluralLabel(n, 'работа', 'работы', 'работ'); }
 
 // ── Profile inline editing ──────────────────────────────────────────────────
 
@@ -2899,14 +2905,14 @@ function startEditProfile() {
     }
     html += '<div class="profile-field"><div class="profile-field-label">Тариф</div>'
         + '<select class="profile-edit-select" id="edit-tariff">'
-        + '<option value="__NONE__"' + (!tariffValue ? ' selected' : '') + '>Без тарифа</option>'
+        + '<option value="__NONE__"' + (!tariffValue ? ' selected' : '') + '>Новенький (без тарифа)</option>'
         + tariffOptions.map(function (t) {
             return '<option value="' + esc(t) + '"' + (tariffValue === t ? ' selected' : '')
                 + '>' + esc(TARIFF_LABELS[t] || t) + '</option>';
         }).join('')
         + '</select></div>';
-    html += editField('Год поступления', 'enrollment_year', s.enrollment_year || '');
-    html += editField('Курс университета', 'university_year', s.university_year || '');
+    html += editField('Начало обучения', 'enrollment_year', s.enrollment_year || '');
+    html += editField('Год поступления в вуз', 'university_year', s.university_year || '');
     html += '<div class="profile-field"><div class="profile-field-label">Метка набора</div>'
         + '<select class="profile-edit-select" id="edit-cohort_tag">'
         + '<option value="">— нет —</option>'
@@ -2968,11 +2974,11 @@ function saveProfile() {
                 selectStudent(_currentStudentId, 'profile');
                 showToast('Анкета сохранена');
             } else {
-                var msg = (res.data.errors || []).join(', ') || window.csrfMessage(res.data, 'Ошибка сохранения');
+                var msg = (res.data.errors || []).join(', ') || window.csrfMessage(res.data, 'Не удалось сохранить анкету');
                 alert(msg);
             }
         })
-        .catch(function() { alert('Ошибка сети'); });
+        .catch(function() { alert(NET_ERROR); });
 }
 
 // ── Delete work (photo) ─────────────────────────────────────────────────────
@@ -3004,10 +3010,10 @@ function deleteWork(studentId, workId, el) {
             }
             showToast('Работа удалена');
         } else {
-            alert(window.csrfMessage(data, 'Ошибка удаления'));
+            alert(window.csrfMessage(data, 'Не удалось удалить'));
         }
     })
-    .catch(function() { alert('Ошибка сети'); });
+    .catch(function() { alert(NET_ERROR); });
 }
 
 function wrapPhoto(imgHtml, studentId, workId) {
@@ -3211,7 +3217,7 @@ function submitUpload(e) {
     };
     xhr.onerror = function() {
         btn.disabled = false; btn.textContent = btnOriginal;
-        alert('Ошибка сети');
+        alert(NET_ERROR);
     };
     xhr.onload = function() {
         btn.disabled = false; btn.textContent = btnOriginal;
@@ -3231,7 +3237,7 @@ function submitUpload(e) {
             showToast(msg);
             _uploadResetAll();
         } else {
-            alert((data && (data.error || data.detail)) || ('Ошибка ' + xhr.status));
+            alert((data && (data.error || data.detail)) || ('Не удалось загрузить фото, код ' + xhr.status));
         }
     };
     xhr.send(fd);
@@ -3270,10 +3276,10 @@ function deleteFolderWorks(studentId, workType, month, year, count) {
             switchTab(_currentTab);
             showToast('Удалено ' + workCountLabel(data.deleted_count));
         } else {
-            alert(window.csrfMessage(data, 'Ошибка удаления'));
+            alert(window.csrfMessage(data, 'Не удалось удалить'));
         }
     })
-    .catch(function() { alert('Ошибка сети'); });
+    .catch(function() { alert(NET_ERROR); });
 }
 
 // ── Auto-select on load (after score/redirect) ────────────────────────────────
@@ -3290,7 +3296,7 @@ if (INITIAL_STUDENT_ID) {
         selectStudent(INITIAL_STUDENT_ID);
     }
     if (_params.get('saved') === '1') {
-        setTimeout(function() { showToast('Оценка сохранена'); }, 600);
+        setTimeout(function() { showToast('Балл сохранён'); }, 600);
     }
     _listScrollY = null;  // список ещё не листали — вернёмся к строке ученика
 }
