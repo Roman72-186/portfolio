@@ -1,8 +1,9 @@
-"""Напоминание куратору о дне рождения ученика (12.09.2026).
+"""Напоминание о дне рождения ученика (12.09.2026, адресат — ГП с 29.09.2026).
 
 exam_scheduler._run_birthday_check — за 7 дней и ближе, один раз в год
-(birthday_reminder_sent_year), только ученикам с назначенным куратором.
-Плюс сам экран /cabinet/staff/notifications, куда падает уведомление.
+(birthday_reminder_sent_year), каждому активному Главному преподавателю.
+Куратору, суперадмину и модератору не уходит (владелец 29.09.2026:
+«не куратор, а ГП»). Плюс сам экран /cabinet/staff/notifications.
 """
 from datetime import date, timedelta
 
@@ -18,16 +19,19 @@ def _birth_date_in(days: int):
     return target.replace(year=2010)
 
 
+def _count_for(db, user_id: int) -> int:
+    return db.query(Notification).filter(Notification.user_id == user_id).count()
+
+
 def test_flags_birthday_within_week(db, user_factory):
-    curator = user_factory(vk_id=700_001, name="Куратор", role_name="куратор")
+    chief = user_factory(vk_id=700_001, name="ГП", role_name="админ")
     student = user_factory(vk_id=700_002, name="Аня Иванова")
-    student.curator_id = curator.id
     student.birth_date = _birth_date_in(5)
     db.commit()
 
     _run_birthday_check()
 
-    notif = db.query(Notification).filter(Notification.user_id == curator.id).first()
+    notif = db.query(Notification).filter(Notification.user_id == chief.id).first()
     assert notif is not None
     assert "Аня Иванова" in notif.title
 
@@ -38,64 +42,139 @@ def test_flags_birthday_within_week(db, user_factory):
     assert student.birthday_reminder_sent_year == (today_msk() + timedelta(days=5)).year
 
 
-def test_ignores_birthday_far_away(db, user_factory):
-    curator = user_factory(vk_id=700_003, name="Куратор", role_name="куратор")
-    student = user_factory(vk_id=700_004, name="Пётр Сидоров")
+def test_goes_to_chief_teacher_not_curator(db, user_factory):
+    """Главный сценарий правки 29.09.2026: куратор ученика напоминание
+    больше не получает, его получает ГП."""
+    chief = user_factory(vk_id=700_020, name="ГП", role_name="админ")
+    curator = user_factory(vk_id=700_021, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=700_022, name="Лена Орлова")
     student.curator_id = curator.id
+    student.birth_date = _birth_date_in(3)
+    db.commit()
+
+    _run_birthday_check()
+
+    assert _count_for(db, chief.id) == 1
+    assert _count_for(db, curator.id) == 0
+
+
+def test_every_chief_teacher_gets_one(db, user_factory):
+    chief_a = user_factory(vk_id=700_023, name="ГП А", role_name="админ")
+    chief_b = user_factory(vk_id=700_024, name="ГП Б", role_name="админ")
+    student = user_factory(vk_id=700_025, name="Максим Лебедев")
+    student.birth_date = _birth_date_in(4)
+    db.commit()
+
+    _run_birthday_check()
+    _run_birthday_check()  # повторный прогон в тот же день дублей не даёт
+
+    assert _count_for(db, chief_a.id) == 1
+    assert _count_for(db, chief_b.id) == 1
+
+
+def test_superadmin_and_moderator_not_notified(db, user_factory):
+    user_factory(vk_id=700_026, name="ГП", role_name="админ")
+    superadmin = user_factory(vk_id=700_027, name="Суперадмин", role_name="суперадмин")
+    moderator = user_factory(vk_id=700_028, name="Модератор", role_name="модератор")
+    student = user_factory(vk_id=700_029, name="Вера Морозова")
+    student.birth_date = _birth_date_in(1)
+    db.commit()
+
+    _run_birthday_check()
+
+    assert _count_for(db, superadmin.id) == 0
+    assert _count_for(db, moderator.id) == 0
+
+
+def test_inactive_chief_teacher_not_notified(db, user_factory):
+    active = user_factory(vk_id=700_030, name="ГП", role_name="админ")
+    inactive = user_factory(vk_id=700_031, name="Бывший ГП", role_name="админ", is_active=False)
+    student = user_factory(vk_id=700_032, name="Дима Волков")
+    student.birth_date = _birth_date_in(2)
+    db.commit()
+
+    _run_birthday_check()
+
+    assert _count_for(db, active.id) == 1
+    assert _count_for(db, inactive.id) == 0
+
+
+def test_no_chief_teacher_keeps_flag_unset(db, user_factory):
+    """Без ГП слать некому — флаг не ставится, чтобы напоминание ушло
+    первому назначенному ГП, а не потерялось."""
+    student = user_factory(vk_id=700_033, name="Ждёт ГП")
+    student.birth_date = _birth_date_in(2)
+    db.commit()
+
+    _run_birthday_check()
+
+    assert db.query(Notification).count() == 0
+    db.refresh(student)
+    assert student.birthday_reminder_sent_year is None
+
+    chief = user_factory(vk_id=700_034, name="ГП", role_name="админ")
+    _run_birthday_check()
+
+    assert _count_for(db, chief.id) == 1
+
+
+def test_student_without_curator_is_not_skipped(db, user_factory):
+    """До 29.09.2026 ученик без куратора выпадал — адресата не было.
+    Теперь адресат — ГП, и куратор не нужен."""
+    chief = user_factory(vk_id=700_009, name="ГП", role_name="админ")
+    student = user_factory(vk_id=700_035, name="Без куратора")
+    student.birth_date = _birth_date_in(2)
+    db.commit()
+
+    _run_birthday_check()
+
+    assert _count_for(db, chief.id) == 1
+
+
+def test_ignores_birthday_far_away(db, user_factory):
+    chief = user_factory(vk_id=700_003, name="ГП", role_name="админ")
+    student = user_factory(vk_id=700_004, name="Пётр Сидоров")
     student.birth_date = _birth_date_in(20)
     db.commit()
 
     _run_birthday_check()
 
-    assert db.query(Notification).filter(Notification.user_id == curator.id).count() == 0
+    assert _count_for(db, chief.id) == 0
 
 
 def test_notifies_same_day(db, user_factory):
-    curator = user_factory(vk_id=700_005, name="Куратор", role_name="куратор")
+    chief = user_factory(vk_id=700_005, name="ГП", role_name="админ")
     student = user_factory(vk_id=700_006, name="Оля Кузнецова")
-    student.curator_id = curator.id
     student.birth_date = _birth_date_in(0)
     db.commit()
 
     _run_birthday_check()
 
-    notif = db.query(Notification).filter(Notification.user_id == curator.id).first()
+    notif = db.query(Notification).filter(Notification.user_id == chief.id).first()
     assert notif is not None
     assert "сегодня" in notif.text
 
 
 def test_does_not_repeat_within_same_year(db, user_factory):
-    curator = user_factory(vk_id=700_007, name="Куратор", role_name="куратор")
+    chief = user_factory(vk_id=700_007, name="ГП", role_name="админ")
     student = user_factory(vk_id=700_008, name="Игорь Смирнов")
-    student.curator_id = curator.id
     student.birth_date = _birth_date_in(3)
     student.birthday_reminder_sent_year = today_msk().year
     db.commit()
 
     _run_birthday_check()
 
-    assert db.query(Notification).filter(Notification.user_id == curator.id).count() == 0
-
-
-def test_skips_student_without_curator(db, user_factory):
-    student = user_factory(vk_id=700_009, name="Без куратора")
-    student.birth_date = _birth_date_in(2)
-    db.commit()
-
-    _run_birthday_check()  # не должно упасть и некому слать
-
-    assert db.query(Notification).count() == 0
+    assert _count_for(db, chief.id) == 0
 
 
 def test_skips_student_without_birth_date(db, user_factory):
-    curator = user_factory(vk_id=700_010, name="Куратор", role_name="куратор")
-    student = user_factory(vk_id=700_011, name="Без даты")
-    student.curator_id = curator.id
+    chief = user_factory(vk_id=700_010, name="ГП", role_name="админ")
+    user_factory(vk_id=700_011, name="Без даты")
     db.commit()
 
     _run_birthday_check()
 
-    assert db.query(Notification).filter(Notification.user_id == curator.id).count() == 0
+    assert _count_for(db, chief.id) == 0
 
 
 # ── _upcoming_birthday: граница года ────────────────────────────────────────
@@ -128,9 +207,8 @@ def test_does_not_double_notify_across_year_boundary(db, user_factory, monkeypat
     today.year=2027 уже сменился) — раньше это слало напоминание дважды."""
     import app.services.exam_scheduler as scheduler_module
 
-    curator = user_factory(vk_id=700_015, name="Куратор", role_name="куратор")
+    chief = user_factory(vk_id=700_015, name="ГП", role_name="админ")
     student = user_factory(vk_id=700_016, name="Январский Именинник")
-    student.curator_id = curator.id
     student.birth_date = date(2010, 1, 3)
     db.commit()
 
@@ -140,7 +218,7 @@ def test_does_not_double_notify_across_year_boundary(db, user_factory, monkeypat
     monkeypatch.setattr(scheduler_module, "today_msk", lambda: date(2027, 1, 1))
     _run_birthday_check()
 
-    assert db.query(Notification).filter(Notification.user_id == curator.id).count() == 1
+    assert _count_for(db, chief.id) == 1
 
 
 # ── Экран уведомлений персонала ──────────────────────────────────────────────
@@ -159,6 +237,22 @@ def test_curator_sees_own_notification(db, client, session_factory, user_factory
 
     db.refresh(n)
     assert n.is_read is True
+
+
+def test_chief_teacher_sees_birthday_on_staff_screen(db, client, session_factory, user_factory):
+    """ГП открывает напоминание колокольчиком → «Все уведомления →»; пункта
+    меню у него нет, экран тот же, что у куратора."""
+    chief = user_factory(vk_id=700_036, name="ГП", role_name="админ")
+    student = user_factory(vk_id=700_037, name="Соня Белова")
+    student.birth_date = _birth_date_in(6)
+    db.commit()
+    _run_birthday_check()
+    client.cookies.set("session_id", session_factory(chief).id)
+
+    resp = client.get("/cabinet/staff/notifications")
+
+    assert resp.status_code == 200
+    assert "День рождения — Соня Белова" in resp.text
 
 
 def test_student_notification_not_visible_to_other_curator(db, client, session_factory, user_factory):

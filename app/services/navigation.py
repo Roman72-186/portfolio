@@ -85,10 +85,11 @@ CURATOR_NAV_ITEMS: tuple[NavItem, ...] = (
     # Сервер куратора пускал и раньше (`can_open_3dlab`), но в его отдельном
     # меню пункта не было — зайти можно было только по прямой ссылке.
     NavItem(key="3dlab", href="/3dlab", label="3D Лаб", icon="🧊"),
-    # Уведомления куратору (добавлено 12.09.2026) — сюда падают напоминания
-    # о дне рождения ученика (exam_scheduler._run_birthday_check) и в
-    # будущем любые другие Notification с user_id=куратор. У admin+
-    # (STAFF_NAV_ITEMS) такого пункта пока нет — им сегодня ничего не адресуют.
+    # Уведомления куратору (добавлено 12.09.2026) — любые Notification с
+    # user_id=куратор. Напоминания о дне рождения ученика с 29.09.2026 уходят
+    # не куратору, а ГП (exam_scheduler._run_birthday_check). У admin+
+    # (STAFF_NAV_ITEMS) пункта нет: их уведомления открываются колокольчиком
+    # из base.html, его «Все уведомления →» ведёт на тот же экран.
     NavItem(key="notifications", href="/cabinet/staff/notifications", label="Уведомления", icon="🔔"),
 )
 

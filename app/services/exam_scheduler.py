@@ -476,7 +476,7 @@ def _run_tg_username_check() -> None:
         db.close()
 
 
-BIRTHDAY_NOTIFY_DAYS_BEFORE = 7  # за сколько дней до дня рождения уведомляем куратора
+BIRTHDAY_NOTIFY_DAYS_BEFORE = 7  # за сколько дней до дня рождения уведомляем ГП
 
 
 def _upcoming_birthday(birth_date: date, today: date) -> date:
@@ -499,51 +499,57 @@ def _upcoming_birthday(birth_date: date, today: date) -> date:
 
 def _run_birthday_check() -> None:
     """Раз в сутки: у кого из активных учеников день рождения через неделю
-    или ближе — куратору падает уведомление, чтобы успеть подготовить подарок
-    (владелец 12.09.2026, анкета первого входа собирает дату рождения именно
-    для этого).
+    или ближе — всем Главным преподавателям падает уведомление, чтобы успеть
+    подготовить подарок (владелец 12.09.2026, анкета первого входа собирает
+    дату рождения именно для этого).
+
+    Адресат — ГП, а не куратор ученика (владелец 29.09.2026: «не куратор,
+    а ГП»). Ученик к конкретному ГП не привязан, поэтому уходит каждому
+    активному ГП. Только ранг 4: суперадмин и модератор (наблюдатель) —
+    не те, кто готовит подарок. Куратор больше не нужен, так что ученик
+    без куратора не выпадает, как выпадал до 29.09.2026.
 
     Идемпотентность — как у _run_notification_check выше (не «ровно на 7-й
     день», а «уже в пределах недели и в этом году ещё не слали»):
     birthday_reminder_sent_year != текущий год. Точное совпадение с днём
     было бы хрупким — пропущенный по любой причине прогон job (деплой,
     перезапуск) уводил бы уведомление совсем, а не сдвигал на день.
-
-    Ученик без curator_id пропускается — слать некому, гадать адресата
-    не тот случай, где можно ошибиться молча.
+    Флаг один на ученика, а не на пару «ученик — ГП»: все ГП получают
+    напоминание в одном прогоне, ГП, назначенный позже, прошлых не получит.
     """
     db = SessionLocal()
     try:
         today = today_msk()
         student_role = db.query(Role).filter(Role.rank == 1).first()
-        if not student_role:
+        chief_role = db.query(Role).filter(Role.rank == 4).first()
+        if not student_role or not chief_role:
             return
 
-        base_filter = (
-            User.role_id == student_role.id,
-            User.is_active == True,  # noqa: E712
-            User.deleted_at.is_(None),
-            User.archived_at.is_(None),
-            User.birth_date.isnot(None),
-            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
-        )
+        chief_teacher_ids = [
+            uid for (uid,) in db.query(User.id).filter(
+                User.role_id == chief_role.id,
+                User.is_active == True,  # noqa: E712
+                User.deleted_at.is_(None),
+            ).all()
+        ]
+        if not chief_teacher_ids:
+            # Флаг не ставим: как только ГП появится, напоминание уйдёт ему,
+            # а не потеряется молча.
+            logger.info("Birthday check: нет ни одного активного ГП, слать некому")
+            return
+
         students = (
             db.query(User)
-            .filter(*base_filter, User.curator_id.isnot(None))
+            .filter(
+                User.role_id == student_role.id,
+                User.is_active == True,  # noqa: E712
+                User.deleted_at.is_(None),
+                User.archived_at.is_(None),
+                User.birth_date.isnot(None),
+                User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+            )
             .all()
         )
-        # Без даты рождения не с кем сравнивать «повезло/не повезло на этой
-        # неделе» — отдельный счётчик, чтобы «никого не уведомили» в логе не
-        # значило одинаково и «дней рождения рядом нет», и «некому слать,
-        # потому что у половины учеников нет куратора».
-        without_curator = (
-            db.query(User).filter(*base_filter, User.curator_id.is_(None)).count()
-        )
-        if without_curator:
-            logger.info(
-                "Birthday check: пропущено %d учеников с датой рождения без куратора",
-                without_curator,
-            )
         if not students:
             return
 
@@ -569,20 +575,25 @@ def _run_birthday_check() -> None:
             else:
                 when_text = f"через {days_left} дн."
 
-            notif = Notification(
-                user_id=student.curator_id,
-                title=f"День рождения — {student.name}",
-                text=f"{when_text}, {upcoming.strftime('%d.%m')}. Успейте подготовить подарок.",
-            )
-            db.add(notif)
-            created_notifications.append(notif)
-            invalidate_unread(student.curator_id)
+            for chief_id in chief_teacher_ids:
+                notif = Notification(
+                    user_id=chief_id,
+                    title=f"День рождения — {student.name}",
+                    text=f"{when_text}, {upcoming.strftime('%d.%m')}. Успейте подготовить подарок.",
+                )
+                db.add(notif)
+                created_notifications.append(notif)
             student.birthday_reminder_sent_year = upcoming.year
             sent += 1
 
         db.commit()
         if sent:
-            logger.info("Birthday check: отправлено %d напоминаний кураторам", sent)
+            for chief_id in chief_teacher_ids:
+                invalidate_unread(chief_id)
+            logger.info(
+                "Birthday check: %d именинников, напоминания ушли %d ГП",
+                sent, len(chief_teacher_ids),
+            )
             notify_many_sync([n.id for n in created_notifications])
     except Exception:
         logger.exception("Ошибка в проверке дней рождения")
