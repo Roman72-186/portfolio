@@ -2393,6 +2393,27 @@ def _invalidate_user_sessions(db: DBSession, user_id: int) -> None:
         logger.warning("invalidate_user_sessions failed for user_id=%s: %s", user_id, exc)
 
 
+def _require_profile_editable(user: dict, target: User) -> None:
+    """Правка профиля из карточки пользователя (`/tags`, `/curator`, `/cohort-tag`).
+
+    Чужой профиль — только ниже своего ранга (`can_manage_user_by_rank`, как у
+    выдачи доступа, удаления и архива): иначе Главный преподаватель менял
+    суперадмину куратора и «о себе» (код-ревью 28.09.2026, P2 № 8). Свой
+    профиль править можно — сам себе ты не «управляемый». Архивный и удалённый
+    открыты только на чтение (`AGENTS.md`, правило 8); заблокированный — нет:
+    блокировку ведут из этой же карточки.
+    """
+    if target.id != user["user_id"] and not can_manage_user_by_rank(
+        user["user_id"], user["role_rank"], target
+    ):
+        raise HTTPException(status_code=403, detail="Нельзя менять профиль роли равной или выше своей")
+    if target.archived_at is not None or target.deleted_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Пользователь в архиве или удалён — профиль открыт только на чтение",
+        )
+
+
 @router.get("/superadmin/users/{target_id}", response_class=HTMLResponse)
 def superadmin_user_card(
     target_id: int,
@@ -2454,6 +2475,7 @@ def superadmin_user_save_tags(
     target = db.query(User).filter(User.id == target_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
+    _require_profile_editable(user, target)
 
     exam_dates_v = exam_dates.strip()[:30] or None
     exam_subjects_v = exam_subjects.strip()[:20] or None
@@ -2524,6 +2546,7 @@ def superadmin_user_set_curator(
     target = db.query(User).filter(User.id == target_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
+    _require_profile_editable(user, target)
 
     curator_id_clean = curator_id.strip()
     new_curator_id: int | None
@@ -2597,6 +2620,7 @@ def superadmin_user_set_cohort_tag(
     target = db.query(User).filter(User.id == target_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
+    _require_profile_editable(user, target)
 
     cohort_tag_v = cohort_tag.strip().lower()
     if cohort_tag_v and cohort_tag_v not in COHORT_TAGS:
