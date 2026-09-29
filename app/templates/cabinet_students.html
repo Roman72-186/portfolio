@@ -796,16 +796,16 @@
 .photo-wrap {
     position: relative; display: inline-block;
 }
-.photo-wrap .photo-del {
-    position: absolute; top: 4px; right: 4px;
+.photo-del { /* касание 44px, видимый кружок 28px — не закрывает фото */
+    position: absolute; top: 0; right: 0; padding: 0;
     width: 44px; height: 44px; border-radius: 50%;
-    background: rgba(220,38,38,0.85); color: #fff; border: none;
-    font-size: 14px; line-height: 44px; text-align: center;
-    cursor: pointer; opacity: 0; transition: opacity 0.15s;
+    background: radial-gradient(circle, rgba(220,38,38,0.85) 0 14px, transparent 15px); color: #fff; border: none;
+    font-size: 16px; line-height: 44px; text-align: center;
+    cursor: pointer; transition: opacity 0.15s;
     z-index: 2;
 }
-.photo-wrap:hover .photo-del { opacity: 1; }
-.photo-del:hover { background: var(--error); }
+@media (hover: hover) { .photo-wrap:not(:hover):not(:focus-within) .photo-del { opacity: 0; } } /* на телефоне наведения нет — крестик виден всегда */
+.photo-del:hover { background: radial-gradient(circle, var(--error) 0 14px, transparent 15px); }
 
 /* ── Profile edit ── */
 .profile-edit-btn {
@@ -846,13 +846,13 @@
 /* ── Upload modal ── */
 .upload-modal-overlay {
     position: fixed; inset: 0; background: rgba(10,10,30,0.6);
-    z-index: 250; display: none; align-items: center; justify-content: center; padding: 20px;
+    z-index: 250; display: none; align-items: flex-start; justify-content: center; padding: 20px; overflow-y: auto; overscroll-behavior: contain;
 }
 .upload-modal-overlay.open { display: flex; }
 .upload-modal {
     background: var(--surface); border-radius: var(--r-lg); padding: 28px 32px;
     max-width: 480px; width: 100%; box-shadow: 0 24px 80px rgba(0,0,0,0.3);
-    position: relative;
+    position: relative; margin: auto 0; /* по центру, пока влезает; выше экрана — прокрутка от верха */
 }
 .upload-modal-title { font-size: 18px; font-weight: 900; color: var(--text); margin-bottom: 20px; }
 .upload-modal-close {
@@ -1940,7 +1940,7 @@ function renamePortfolioMonth(sid, workType, fromMonth, fromYear) {
         return;
     }
 
-    fetch('/cabinet/students/' + sid + '/portfolio/month', {
+    window.csrfFetch('/cabinet/students/' + sid + '/portfolio/month', {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -1954,7 +1954,7 @@ function renamePortfolioMonth(sid, workType, fromMonth, fromYear) {
     .then(function(r) { return r.json().then(function(data) { return {ok: r.ok, data: data}; }); })
     .then(function(result) {
         if (!result.ok || !result.data.ok) {
-            alert(result.data.error || 'Ошибка переименования месяца');
+            alert(window.csrfMessage(result.data, 'Ошибка переименования месяца'));
             return;
         }
         reloadPortfolioAfterManage('Месяц обновлён');
@@ -2000,7 +2000,7 @@ function portfolioDrop(ev, el, sid, toMonth, toYear) {
     var workId = parseInt(ev.dataTransfer.getData('text/plain') || _portfolioDragWorkId, 10);
     if (!workId) return;
 
-    fetch('/cabinet/students/' + sid + '/portfolio/works/' + workId + '/move', {
+    window.csrfFetch('/cabinet/students/' + sid + '/portfolio/works/' + workId + '/move', {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({to_month: toMonth, to_year: toYear}),
@@ -2008,7 +2008,7 @@ function portfolioDrop(ev, el, sid, toMonth, toYear) {
     .then(function(r) { return r.json().then(function(data) { return {ok: r.ok, data: data}; }); })
     .then(function(result) {
         if (!result.ok || !result.data.ok) {
-            alert(result.data.error || 'Ошибка переноса работы');
+            alert(window.csrfMessage(result.data, 'Ошибка переноса работы'));
             return;
         }
         reloadPortfolioAfterManage('Работа перенесена');
@@ -2098,7 +2098,7 @@ function buildSubjectCard(subject, data, subjectIndex) {
     // Unlock button (allow retry) — only for admin/superadmin, only when locked
     if (CAN_SCORE && isLocked) {
         html += '<div class="unlock-wrap">'
-            + '<form method="post" action="/cabinet/students/' + sid + '/mock-exams/unlock" style="margin:0">'
+            + '<form method="post" action="/cabinet/students/' + sid + '/mock-exams/unlock" style="margin:0" onsubmit="return submitWithFreshToken(this)">'
             + '<input type="hidden" name="csrf_token" value="' + CSRF_TOKEN + '">'
             + '<input type="hidden" name="subject" value="' + esc(subject) + '">'
             + '<button type="submit" class="unlock-btn" title="Ученик сможет заново загрузить пробник по этому предмету"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Разрешить пересдачу</button>'
@@ -2281,10 +2281,11 @@ function buildMockDayPanel(sid, subject, grouped, state) {
             : 'style="width:88px;height:88px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:zoom-in;display:block"';
         var img = '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото"><img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" ' + imgStyle + '></button>';
         var badge = '<span class="work-score-badge ' + bc + '">' + bt + '</span>';
+        // Справа сверху стоит бейдж балла, поэтому крестик — в левом углу.
         var delBtn = CAN_SCORE
-            ? '<button class="photo-del" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)" title="Удалить">&times;</button>'
+            ? '<button type="button" class="photo-del" style="right:auto;left:0" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)" title="Удалить" aria-label="Удалить работу">&times;</button>'
             : '';
-        return '<div style="position:relative;display:block">' + img + badge + delBtn + '</div>';
+        return '<div class="photo-wrap" style="display:block">' + img + badge + delBtn + '</div>';
     }
 
     if (rest.length === 0) {
@@ -2501,7 +2502,7 @@ function buildRetakeWorkCard(sid, w, subject, allSubjects, gallery) {
     html += '<div style="display:flex;align-items:center;gap:8px;margin:4px 0 10px">';
     html += '<div class="retake-filename" style="flex:1;min-width:0">' + esc(w.filename || '') + '</div>';
     if (CAN_SCORE) {
-        html += '<button class="photo-del" style="opacity:1;position:static;flex-shrink:0" onclick="deleteWork(' + sid + ',' + w.id + ',this)" title="Удалить">&times;</button>';
+        html += '<button type="button" class="photo-del" style="position:static;flex-shrink:0" onclick="deleteWork(' + sid + ',' + w.id + ',this)" title="Удалить" aria-label="Удалить работу">&times;</button>';
     }
     html += '</div>';
 
@@ -2573,12 +2574,10 @@ function moveRetakesToSubject(sid, ids, subject) {
     if (!list.length || !subject) return;
     Promise.all(list.map(function(workId) {
         var fd = new FormData();
-        fd.append('csrf_token', CSRF_TOKEN);
         fd.append('subject', subject);
-        return fetch('/cabinet/students/' + sid + '/retakes/' + workId + '/subject', {
+        return window.csrfFetch('/cabinet/students/' + sid + '/retakes/' + workId + '/subject', {
             method: 'POST',
             body: fd,
-            headers: { 'Accept': 'application/json' },
         }).then(function(r) {
             if (!r.ok) throw new Error('move failed');
             return r.json();
@@ -2600,7 +2599,7 @@ function buildScoreForm(sid, workId, tab, currentScore, currentComment) {
     var initialComment = currentComment ? esc(currentComment) : '';
     return '<div class="score-form" data-initial-score="' + esc(initialScore) + '" data-initial-comment="' + initialComment + '">'
         + '<div class="score-form-label">' + formLabel + '</div>'
-        + '<form id="' + formId + '" method="post" action="/cabinet/students/' + sid + '/works/' + workId + '/score">'
+        + '<form id="' + formId + '" method="post" action="/cabinet/students/' + sid + '/works/' + workId + '/score" onsubmit="return submitWithFreshToken(this)">'
         + '<input type="hidden" name="csrf_token" value="' + CSRF_TOKEN + '">'
         + '<input type="hidden" name="tab" value="' + esc(tab) + '">'
         + '<div class="score-form-row">'
@@ -2613,7 +2612,7 @@ function buildScoreForm(sid, workId, tab, currentScore, currentComment) {
         + (currentComment ? esc(currentComment) : '')
         + '</textarea>'
         + '<div class="score-form-actions">'
-        + '<button type="submit" class="btn-blue btn-save" onclick="this.form.closest(\'.score-form\').dataset.saving=\'1\';this.disabled=true;this.textContent=\'Сохраняем…\';this.form.submit()"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> ' + saveLabel + '</button>'
+        + '<button type="submit" class="btn-blue btn-save"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> ' + saveLabel + '</button>'
         + (tab === 'mock-exams'
             ? '<button type="button" class="score-retake-btn" onclick="submitMockRetake(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Отправить на отработку</button>'
                 + (IS_SUPERADMIN && currentScore == null ? '<button type="button" class="score-revision-btn" onclick="submitMockRevision(' + sid + ',' + workId + ',\'' + formId + '\')"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Вернуть на доработку</button>' : '')
@@ -2621,6 +2620,27 @@ function buildScoreForm(sid, workId, tab, currentScore, currentComment) {
         + '</div>'
         + '</form>'
         + '</div>';
+}
+
+// Балл и разблокировка пересдачи уходят обычной формой с перезагрузкой
+// страницы. Ключ в скрытом поле печатается при рендере и старится вместе с
+// вкладкой, которую куратор держит открытой весь день, — перед отправкой
+// подменяем его свежим (`static/js/csrf.js`). `form.submit()` событие submit
+// не вызывает, поэтому повторного входа сюда нет; кнопка гаснет от двойного нажатия.
+function submitWithFreshToken(form) {
+    var btn = form.querySelector('[type="submit"]');
+    var scoreForm = form.closest('.score-form');
+    if (scoreForm) scoreForm.dataset.saving = '1';
+    if (btn) {
+        btn.disabled = true;
+        if (scoreForm) btn.textContent = 'Сохраняем…';
+    }
+    var fresh = window.csrfFresh ? window.csrfFresh() : Promise.resolve('');
+    fresh.catch(function() { return ''; }).then(function(token) {
+        if (token) form.querySelector('[name="csrf_token"]').value = token;
+        form.submit();
+    });
+    return false;
 }
 
 function buildScoreFormOrEditButton(sid, workId, tab, score, comment) {
@@ -2673,53 +2693,56 @@ function submitMockRetake(sid, workId, formId) {
     if (!confirm('Отправить работу на отработку? Ученик увидит её во вкладке Отработки.')) return;
 
     var fd = new FormData();
-    fd.append('csrf_token', CSRF_TOKEN);
     fd.append('score', score);
     fd.append('comment', comment);
     form.closest('.score-form').dataset.saving = '1';
 
-    fetch('/cabinet/students/' + sid + '/mock-exams/' + workId + '/retake', {
+    window.csrfFetch('/cabinet/students/' + sid + '/mock-exams/' + workId + '/retake', {
         method: 'POST',
         body: fd,
-    }).then(function(r) {
-        if (!r.ok) throw new Error('bad status');
-        return r.json();
-    }).then(function() {
+    }).then(readJsonOrThrow).then(function() {
         showToast('Пробник отправлен на отработку');
         if (_tabCache[sid]) {
             delete _tabCache[sid]['mock-exams'];
             delete _tabCache[sid].retakes;
         }
         switchTab('mock-exams');
-    }).catch(function() {
+    }).catch(function(err) {
         form.closest('.score-form').dataset.saving = '0';
-        alert('Ошибка при отправке на отработку');
+        alert(err.serverMessage || 'Ошибка при отправке на отработку');
+    });
+}
+
+// Ответ мутации: JSON при успехе, иначе ошибка с причиной от сервера
+// (`error` у роутов, `detail` у HTTPException — например «обнови страницу»).
+function readJsonOrThrow(r) {
+    return r.json().catch(function() { return {}; }).then(function(body) {
+        if (r.ok) return body;
+        var err = new Error('bad status');
+        err.serverMessage = window.csrfMessage(body, '');
+        throw err;
     });
 }
 
 function submitMockRevision(sid, workId, formId) {
     if (!confirm('Вернуть пробник на доработку? Ученик сможет заново загрузить фото пробника без выставления оценки.')) return;
     var fd = new FormData();
-    fd.append('csrf_token', CSRF_TOKEN);
     var form = document.getElementById(formId);
     if (form) form.closest('.score-form').dataset.saving = '1';
 
-    fetch('/cabinet/students/' + sid + '/mock-exams/' + workId + '/revision', {
+    window.csrfFetch('/cabinet/students/' + sid + '/mock-exams/' + workId + '/revision', {
         method: 'POST',
         body: fd,
-    }).then(function(r) {
-        if (!r.ok) throw new Error('bad status');
-        return r.json();
-    }).then(function() {
+    }).then(readJsonOrThrow).then(function() {
         showToast('Пробник отправлен на доработку');
         if (_tabCache[sid]) {
             delete _tabCache[sid]['mock-exams'];
             delete _tabCache[sid].retakes;
         }
         switchTab('mock-exams');
-    }).catch(function() {
+    }).catch(function(err) {
         if (form) form.closest('.score-form').dataset.saving = '0';
-        alert('Ошибка при отправке на доработку');
+        alert(err.serverMessage || 'Ошибка при отправке на доработку');
     });
 }
 
@@ -2903,7 +2926,6 @@ function cancelEditProfile() {
 function saveProfile() {
     if (!_currentStudentId) return;
     var body = new FormData();
-    body.append('csrf_token', CSRF_TOKEN);
     body.append('first_name', document.getElementById('edit-first_name').value);
     body.append('last_name', document.getElementById('edit-last_name').value);
     body.append('phone', document.getElementById('edit-phone').value);
@@ -2915,8 +2937,8 @@ function saveProfile() {
     body.append('cohort_tag', document.getElementById('edit-cohort_tag').value);
     body.append('access_until', document.getElementById('edit-access_until').value);
 
-    fetch('/cabinet/students/' + _currentStudentId + '/profile', { method: 'POST', body: body })
-        .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+    window.csrfFetch('/cabinet/students/' + _currentStudentId + '/profile', { method: 'POST', body: body })
+        .then(function(r) { return r.json().catch(function() { return {}; }).then(function(d) { return {ok: r.ok, data: d}; }); })
         .then(function(res) {
             if (res.ok && res.data.ok) {
                 // Clear cache and reload
@@ -2924,7 +2946,7 @@ function saveProfile() {
                 selectStudent(_currentStudentId);
                 showToast('Анкета сохранена');
             } else {
-                var msg = (res.data.errors || []).join(', ') || 'Ошибка сохранения';
+                var msg = (res.data.errors || []).join(', ') || window.csrfMessage(res.data, 'Ошибка сохранения');
                 alert(msg);
             }
         })
@@ -2935,16 +2957,13 @@ function saveProfile() {
 
 function deleteWork(studentId, workId, el) {
     if (!confirm('Удалить эту работу?')) return;
-    fetch('/cabinet/students/' + studentId + '/works/' + workId, {
+    window.csrfFetch('/cabinet/students/' + studentId + '/works/' + workId, {
         method: 'DELETE',
         headers: {'Content-Type': 'application/json'},
     })
-    .then(function(r) { return r.json(); })
+    .then(function(r) { return r.json().catch(function() { return {}; }); })
     .then(function(data) {
         if (data.ok) {
-            // Remove element from DOM
-            var wrap = el.closest('.photo-wrap') || el.closest('.retake-work');
-            if (wrap) wrap.remove();
             // Clear tab caches for this student
             if (_tabCache[studentId]) {
                 delete _tabCache[studentId].portfolio;
@@ -2952,9 +2971,18 @@ function deleteWork(studentId, workId, el) {
                 delete _tabCache[studentId].retakes;
                 delete _tabCache[studentId].profile;
             }
+            // В пробниках от удалённого фото зависят главная работа дня и форма
+            // оценки — убрать одну картинку мало, вкладку перечитываем. В
+            // портфолио убираем только фото, чтобы не схлопнуть открытые месяцы.
+            if (_currentTab === 'mock-exams' && el.closest('.mock-day-card')) {
+                switchTab('mock-exams');
+            } else {
+                var wrap = el.closest('.photo-wrap') || el.closest('.retake-work');
+                if (wrap) wrap.remove();
+            }
             showToast('Работа удалена');
         } else {
-            alert(data.error || 'Ошибка удаления');
+            alert(window.csrfMessage(data, 'Ошибка удаления'));
         }
     })
     .catch(function() { alert('Ошибка сети'); });
@@ -2964,7 +2992,7 @@ function wrapPhoto(imgHtml, studentId, workId) {
     if (!CAN_SCORE) return imgHtml;
     return '<div class="photo-wrap">'
         + imgHtml
-        + '<button class="photo-del" onclick="event.stopPropagation();deleteWork(' + studentId + ',' + workId + ',this)" title="Удалить">&times;</button>'
+        + '<button type="button" class="photo-del" onclick="event.stopPropagation();deleteWork(' + studentId + ',' + workId + ',this)" title="Удалить" aria-label="Удалить работу">&times;</button>'
         + '</div>';
 }
 
@@ -2982,7 +3010,7 @@ function wrapPortfolioPhoto(imgHtml, studentId, workId, workType, source) {
     }
     return '<div class="photo-wrap portfolio-draggable" draggable="true" ondragstart="portfolioDragStart(event,' + workId + ')" ondragend="portfolioDragEnd()">'
         + imgHtml
-        + '<button class="photo-del" onclick="event.stopPropagation();deleteWork(' + studentId + ',' + workId + ',this)" title="Удалить">&times;</button>'
+        + '<button type="button" class="photo-del" onclick="event.stopPropagation();deleteWork(' + studentId + ',' + workId + ',this)" title="Удалить" aria-label="Удалить работу">&times;</button>'
         + '</div>';
 }
 
@@ -3202,12 +3230,12 @@ function deleteFolderWorks(studentId, workType, month, year, count) {
     var label = cap(month) + ' ' + year;
     if (!confirm('Удалить все ' + workCountLabel(count) + ' за ' + label + '?')) return;
 
-    fetch('/cabinet/students/' + studentId + '/works/bulk', {
+    window.csrfFetch('/cabinet/students/' + studentId + '/works/bulk', {
         method: 'DELETE',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({work_type: workType, month: month, year: year}),
     })
-    .then(function(r) { return r.json(); })
+    .then(function(r) { return r.json().catch(function() { return {}; }); })
     .then(function(data) {
         if (data.ok) {
             // Clear caches and reload tab
@@ -3220,7 +3248,7 @@ function deleteFolderWorks(studentId, workType, month, year, count) {
             switchTab(_currentTab);
             showToast('Удалено ' + workCountLabel(data.deleted_count));
         } else {
-            alert(data.error || 'Ошибка удаления');
+            alert(window.csrfMessage(data, 'Ошибка удаления'));
         }
     })
     .catch(function() { alert('Ошибка сети'); });
