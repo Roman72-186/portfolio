@@ -7,7 +7,11 @@ def test_student_search_normalizes_mobile_input(admin_client):
     response = client.get("/cabinet/students")
 
     assert response.status_code == 200
-    html = response.text
+    # JS экрана с 29.09.2026 — отдельным файлом (шаг 10.3): страница его подключает, сервер отдаёт.
+    assert '<script src="/static/js/cabinet_students.js?v=' in response.text
+    script = client.get("/static/js/cabinet_students.js")
+    assert script.status_code == 200
+    html = script.text
     assert "function normalizeStudentSearch(value)" in html
     assert ".normalize('NFKC')" in html
     assert ".trim().replace(/\\s+/g, ' ')" in html

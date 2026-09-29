@@ -32,6 +32,19 @@ def _styles() -> str:
     return STYLES.read_text(encoding="utf-8")
 
 
+# JS экрана с 29.09.2026 тоже в файле (шаг 10.3); в шаблоне — только данные от сервера.
+SCRIPT = TEMPLATE.parent.parent / "static" / "js" / "cabinet_students.js"
+
+
+def _script() -> str:
+    return SCRIPT.read_text(encoding="utf-8")
+
+
+def _page() -> str:
+    """Разметка шаблона и JS экрана вместе — для проверок, где нужно и то и другое."""
+    return _source() + "\n" + _script()
+
+
 def _css_rule(source: str, selector: str) -> str:
     match = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", source)
     assert match, f"нет правила {selector}"
@@ -61,7 +74,7 @@ def test_delete_cross_is_visible_without_hover():
 
 
 def test_mock_photo_delete_uses_shared_wrapper_and_rerenders():
-    source = _source()
+    source = _script()
     assert "'<div style=\"position:relative;display:block\">' + img + badge + delBtn" not in source
     assert "'<div class=\"photo-wrap\" style=\"display:block\">' + img + badge + delBtn" in source
     assert "_currentTab === 'mock-exams' && el.closest('.mock-day-card')" in source, (
@@ -70,7 +83,7 @@ def test_mock_photo_delete_uses_shared_wrapper_and_rerenders():
 
 
 def test_student_screen_mutations_send_fresh_token():
-    source = _source()
+    source = _page()
     assert "append('csrf_token', CSRF_TOKEN)" not in source, "ключ из разметки вшит в поле запроса"
     for url_part in (
         "'/profile', { method: 'POST'",
@@ -96,7 +109,7 @@ def _phone_block(source: str) -> str:
 
 
 def test_hero_wraps_so_upload_button_fits_on_phone():
-    source = _source()
+    source = _script()
     mobile = _mobile_block(_styles())
     assert re.search(r"\.student-hero\s*\{[^}]*flex-wrap: wrap", mobile), (
         "шапка в одну строку с overflow:hidden — «+ Загрузить» обрезана на 320–390"
@@ -105,7 +118,7 @@ def test_hero_wraps_so_upload_button_fits_on_phone():
 
 
 def test_back_gesture_walks_screen_history():
-    source = _source()
+    source = _script()
     assert "window.addEventListener('popstate'" in source
     assert "history[push ? 'pushState' : 'replaceState']" in source
     # Выбор ученика и открытие вкладки пишут историю, «назад» проверяет несохранённый балл.
@@ -151,7 +164,7 @@ def test_filter_header_is_compact_on_phone():
 
 
 def test_back_to_list_returns_to_same_place():
-    source = _source()
+    source = _script()
     # Браузер запоминает запись списка, когда список уже спрятан, и возвращал наверх.
     assert "history.scrollRestoration = 'manual'" in source
     show_list = source[source.index("function navShowList()"):]
@@ -166,7 +179,7 @@ def test_phone_calendar_keeps_work_above_calendar():
     mobile = _mobile_block(_styles())
     assert re.search(r"\.mock-calendar-side, #main-panel \.cal-side \{[^}]*order: 2", mobile)
     assert re.search(r"\.mock-month-list, #main-panel \.cal-month-list \{[^}]*repeat\(6", mobile)
-    source = _source()
+    source = _script()
     # День выбирают под работой — после выбора экран подводится к ней, в обоих календарях.
     handler = source[source.index("document.getElementById('main-panel').addEventListener('click'"):]
     handler = handler[:handler.index("}, true);")]
@@ -202,7 +215,7 @@ def test_phone_sees_text_hidden_in_tooltips():
 
 
 def test_errors_tell_what_to_do_and_empty_search_says_so():
-    source = _source()
+    source = _page()
     assert "'Ошибка сети'" not in source
     assert source.count("alert(NET_ERROR)") == 6
     assert "Ошибка загрузки" not in source
@@ -287,7 +300,7 @@ def test_profile_sections_are_two_by_two_on_phone():
 def test_profile_sections_come_before_the_form():
     # Владелец 29.09.2026: «Портфолио», «Задания», «Пробники», «Статистика» — сразу под
     # шапкой, везде. Под 13 полями анкеты на телефоне до них было ~1100 px прокрутки.
-    source = _source()
+    source = _script()
     render = source[source.index("function renderProfile(data) {"):source.index("function buildProfileActions(s) {")]
     assert "buildHero(s, s.avg_score_by_subject || null) + buildProfileActions(s)" in render
     assert render.index("buildProfileActions(s)") < render.index('<div class="profile-details">')
@@ -433,3 +446,21 @@ def test_calendar_day_is_not_a_frame_inside_the_subject_card():
     assert "border:" not in day and "background:" not in day
     assert "border:" in _css_rule(lib, ".subj-card"), "рамка предмета остаётся"
     assert "background: var(--surface-2)" in _css_rule(lib, ".cal-fb"), "обратная связь отделена подложкой"
+
+
+def test_screen_script_lives_in_cached_file():
+    # 29.09.2026, аудит 10.3: 1894 строки встроенного JS качались заново с каждой
+    # страницей экрана. В шаблоне остаются только строки с данными от сервера.
+    source = _source()
+    inline = re.findall(r"<script>(.*?)</script>", source, re.DOTALL)
+    for block in inline:
+        for line in block.strip().splitlines():
+            if line.startswith("//"):
+                continue
+            assert "{{" in line, f"код в шаблоне — место ему в cabinet_students.js: {line!r}"
+    assert "{{" not in _script() and "{%" not in _script(), "в файле нет Jinja — данные объявляет шаблон"
+    # Обычный <script>, не модуль и не defer: onclick="…" зовут функции файла как глобальные,
+    # а данные шаблона должны быть объявлены раньше.
+    tag = re.search(r'<script src="/static/js/cabinet_students\.js\?v=\d+"></script>', source)
+    assert tag, "без ?v= браузер не узнает о правке: у статики Cache-Control: immutable"
+    assert source.index("const COHORT_TAG_LABELS") < tag.start()

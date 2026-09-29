@@ -198,7 +198,8 @@ def test_portfolio_and_mock_tabs_give_thumb_url(client, db, user_factory, sessio
 
 
 def test_tiles_load_thumb_and_lightbox_opens_full_photo():
-    source = TEMPLATE.read_text(encoding="utf-8")
+    # JS экрана с 29.09.2026 — в cabinet_students.js (шаг 10.3).
+    source = (TEMPLATE.parent.parent / "static" / "js" / "cabinet_students.js").read_text(encoding="utf-8")
     assert "esc(w.thumb_url || w.s3_url)" in source
     assert 'data-full="\' + esc(w.s3_url)' in source
     # Все три сетки — «До», «После», пробники дня — идут через одну функцию.

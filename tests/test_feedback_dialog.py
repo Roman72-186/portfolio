@@ -1439,8 +1439,11 @@ def test_staff_students_page_wires_mock_calendar(
     assert resp.status_code == 200
     # Библиотека календаря подключена (window.CYCCAL) и инициализируется для staff.
     assert "window.CYCCAL" in resp.text
-    assert "portfolio-mock-cal" in resp.text
-    assert "staff-portfolio-mock" in resp.text
+    # Обвязка — в JS экрана, с 29.09.2026 это отдельный файл (план «Ученики с телефона», шаг 10.3).
+    assert '<script src="/static/js/cabinet_students.js?v=' in resp.text
+    script = client.get("/static/js/cabinet_students.js").text
+    assert "portfolio-mock-cal" in script
+    assert "staff-portfolio-mock" in script
 
 
 def test_cycle_page_shows_close_score_badge_for_closed_cycle(auth_client, db):

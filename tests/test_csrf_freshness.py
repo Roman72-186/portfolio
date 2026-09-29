@@ -152,8 +152,11 @@ def test_portfolio_and_curator_uploads_refresh_the_token():
     XHR оставлен вместо fetch ради процента загрузки, поэтому `csrfFetch` им не
     подходит — но ключ они обязаны брать тем же способом.
     """
-    for name in ("upload.html", "cabinet_students.html"):
-        source = (TEMPLATES / name).read_text(encoding="utf-8")
+    # JS «Учеников» с 29.09.2026 живёт в cabinet_students.js (шаг 10.3).
+    for source, name in (
+        ((TEMPLATES / "upload.html").read_text(encoding="utf-8"), "upload.html"),
+        ((STATIC / "cabinet_students.js").read_text(encoding="utf-8"), "cabinet_students.js"),
+    ):
         assert "window.csrfFresh" in source, f"{name} отправляет фото со старым ключом"
 
 
