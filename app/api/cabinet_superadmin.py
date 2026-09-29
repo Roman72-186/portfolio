@@ -2274,6 +2274,7 @@ def superadmin_user_set_role(
     acting_rank = user.get("role_rank", 0)
     if not can_manage_user_by_rank(user["user_id"], acting_rank, target):
         return RedirectResponse("/cabinet/superadmin/users", status_code=303)
+    _refuse_archived(target)
 
     if role_id == "":
         target.role_id = None
@@ -2393,25 +2394,29 @@ def _invalidate_user_sessions(db: DBSession, user_id: int) -> None:
         logger.warning("invalidate_user_sessions failed for user_id=%s: %s", user_id, exc)
 
 
+def _refuse_archived(target: User) -> None:
+    """Архивный и удалённый пользователь открыт только на чтение (`AGENTS.md`,
+    правило 8); заблокированный — нет: блокировку ведут из карточки."""
+    if target.archived_at is not None or target.deleted_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Пользователь в архиве или удалён — профиль открыт только на чтение",
+        )
+
+
 def _require_profile_editable(user: dict, target: User) -> None:
     """Правка профиля из карточки пользователя (`/tags`, `/curator`, `/cohort-tag`).
 
     Чужой профиль — только ниже своего ранга (`can_manage_user_by_rank`, как у
     выдачи доступа, удаления и архива): иначе Главный преподаватель менял
     суперадмину куратора и «о себе» (код-ревью 28.09.2026, P2 № 8). Свой
-    профиль править можно — сам себе ты не «управляемый». Архивный и удалённый
-    открыты только на чтение (`AGENTS.md`, правило 8); заблокированный — нет:
-    блокировку ведут из этой же карточки.
+    профиль править можно — сам себе ты не «управляемый». Архив — `_refuse_archived`.
     """
     if target.id != user["user_id"] and not can_manage_user_by_rank(
         user["user_id"], user["role_rank"], target
     ):
         raise HTTPException(status_code=403, detail="Нельзя менять профиль роли равной или выше своей")
-    if target.archived_at is not None or target.deleted_at is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="Пользователь в архиве или удалён — профиль открыт только на чтение",
-        )
+    _refuse_archived(target)
 
 
 @router.get("/superadmin/users/{target_id}", response_class=HTMLResponse)
@@ -2590,6 +2595,7 @@ def superadmin_user_set_tariff(
         raise HTTPException(status_code=404, detail="Пользователь не найден")
     if not target.role or target.role.rank != 1:
         raise HTTPException(status_code=400, detail="Тариф можно менять только ученику")
+    _refuse_archived(target)
 
     tariff_v = tariff.strip()
     if tariff_v.upper() == "__NONE__":

@@ -15,6 +15,12 @@ ROUTES = [
     ("curator", {"curator_id": "{cid}"}),
     ("cohort-tag", {"cohort_tag": "{tag}"}),
 ]
+# Тариф и роль — не «профиль», ранг у них проверяется своим путём, но архив
+# они тоже не переписывают.
+ARCHIVE_ROUTES = ROUTES + [
+    ("tariff", {"tariff": "МАКСИМУМ"}),
+    ("role", {"role_id": "{rid}"}),
+]
 
 
 @pytest.fixture()
@@ -32,11 +38,11 @@ def _form(data, curator):
     from app.constants import COHORT_TAGS
 
     tag = sorted(COHORT_TAGS)[0]
-    return {k: v.format(cid=curator.id, tag=tag) for k, v in data.items()}
+    return {k: v.format(cid=curator.id, tag=tag, rid=curator.role_id) for k, v in data.items()}
 
 
 def _snapshot(u):
-    return (u.about, u.curator_id, u.cohort_tag)
+    return (u.about, u.curator_id, u.cohort_tag, u.tariff, u.role_id)
 
 
 @pytest.mark.parametrize("route,data", ROUTES, ids=[r for r, _ in ROUTES])
@@ -59,7 +65,7 @@ def test_chief_teacher_cannot_edit_superadmin_profile(
 
 
 @pytest.mark.parametrize("make_unwritable", [archive_user, soft_delete_user], ids=["archived", "deleted"])
-@pytest.mark.parametrize("route,data", ROUTES, ids=[r for r, _ in ROUTES])
+@pytest.mark.parametrize("route,data", ARCHIVE_ROUTES, ids=[r for r, _ in ARCHIVE_ROUTES])
 def test_archived_or_deleted_profile_is_read_only(
     client, db, session_factory, people, route, data, make_unwritable
 ):
