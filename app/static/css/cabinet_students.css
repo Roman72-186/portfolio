@@ -161,8 +161,12 @@
 .split-main-scroll::-webkit-scrollbar { width: 6px; }
 
 /* ── Student hero ── */
+/* Светлый конец градиента (`--blue-mid`) топил текст: жёлтый балл 1.85–2.8, имя 3.0,
+   плашки и «Р/К» 2.0–2.5 (аудит 11.1, замер по пикселям фона). Теперь градиент идёт от
+   `--blue-deep` на ступень темнее к самому `--blue-deep`: белое ≥ 5.38, балл ≥ 3.73.
+   Шапка от темы не зависит — поэтому `black`, а не токен тёмной темы. */
 .student-hero {
-    background: linear-gradient(135deg, var(--blue-deep) 0%, var(--blue-mid) 100%);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--blue-deep) 72%, black) 0%, var(--blue-deep) 100%);
     border-radius: var(--r-lg); padding: 20px 24px;
     display: flex; align-items: center; gap: 18px;
     margin-bottom: 20px;
@@ -185,14 +189,15 @@
     background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.2);
     display: flex; align-items: center; justify-content: center;
     font-size: 22px; flex-shrink: 0; position: relative; z-index: 1;
+    color: var(--on-color);
 }
 .student-hero-info { flex: 1; position: relative; z-index: 1; }
 .student-hero-name { font-size: 20px; font-weight: 900; color: #fff; margin-bottom: 6px; }
 .student-hero-pills { display: flex; gap: 8px; flex-wrap: wrap; }
 .student-hero-pill {
-    background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18);
+    background: color-mix(in srgb, black 14%, transparent); border: 1px solid rgba(255,255,255,0.18);
     border-radius: var(--r-md); padding: 3px 12px;
-    font-size: 12px; color: rgba(255,255,255,0.85); font-weight: 700;
+    font-size: 12px; color: var(--on-color); font-weight: 700;
 }
 .student-info-pill {
     display: inline-flex; align-items: center;
@@ -206,7 +211,7 @@
 }
 .score-big { font-size: 34px; font-weight: 900; color: var(--gold); line-height: 1; }
 .score-label {
-    font-size: 11px; color: rgba(255,255,255,0.6); font-weight: 700;
+    font-size: 11px; color: rgba(255,255,255,0.9); font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.06em;
 }
 
@@ -757,6 +762,8 @@
     font-family: inherit; transition: opacity 0.15s;
 }
 .admin-upload-btn:hover { opacity: 0.85; }
+/* На шапке ученика заливка фиолетовым сливалась бы с её фоном. */
+.student-hero .admin-upload-btn { background: var(--on-color); color: var(--blue-deep); }
 
 /* ── Folder delete button ── */
 .folder-del-btn {

@@ -510,3 +510,40 @@ def test_no_text_is_painted_with_bare_brand_purple():
         if bare.search(path.read_text(encoding="utf-8"))
     ]
     assert not offenders, "текст цветом --blue (3.96 на белом) — брать --blue-text:\n" + "\n".join(offenders)
+
+
+# ── Шаг 11: остаток аудита после шага 10 ─────────────────────────────────────
+
+
+def _hero_stops(css: str, base: str) -> list[str]:
+    # Точки градиента шапки: `var(--x)` или `color-mix(in srgb, var(--x) N%, black)`.
+    tokens = _theme_tokens(base, ":root {")
+    gradient = re.search(r"linear-gradient\(135deg,(.*)\)\s*;", _css_rule(css, ".student-hero")).group(1)
+    stops = []
+    for token, pct in re.findall(r"var\(--([\w-]+)\)(?: (\d+)%, black)?", gradient):
+        share = int(pct) / 100 if pct else 1
+        stops.append("#" + "".join(f"{round(int(tokens[token][i:i + 2], 16) * share):02X}" for i in (1, 3, 5)))
+    return stops
+
+
+def test_student_hero_text_is_readable_everywhere():
+    # 29.09.2026, аудит после шага 10 (11.1): светлый конец градиента `--blue-mid` —
+    # по пикселям фона жёлтый балл 1.85–2.8, имя 3.0, подписи «Р/К» и плашки 2.0–2.5.
+    # Шапка от темы не зависит, поэтому меряется по светлым токенам.
+    css, base = _styles(), BASE_CSS.read_text(encoding="utf-8")
+    stops = _hero_stops(css, base)
+    assert len(stops) == 2, stops
+    gold = _theme_tokens(base, ":root {")["gold"]
+    for stop in stops:
+        assert _contrast("#FFFFFF", stop) >= 4.5, f"белое на {stop}"
+        assert _contrast(gold, stop) >= 3, f"балл (крупный) на {stop}"
+    # Мелкий текст шапки — не полупрозрачным белым: 60–85 % на фиолетовом ниже 4.5.
+    assert "color: var(--on-color)" in _css_rule(css, ".student-hero-pill")
+    assert "rgba(255,255,255,0.9)" in _css_rule(css, ".score-label").replace(" ", "")
+    # Светлая подложка плашки поднимала фон под белым текстом — теперь затемнение.
+    assert "rgba(255,255,255" not in _css_rule(css, ".student-hero-pill").split("border")[0]
+    assert "color: var(--on-color)" in _css_rule(css, ".student-hero-avatar-ph"), "тёмный значок на тёмной шапке"
+    # «+ Загрузить» на шапке: заливка --blue-deep (11.2) слилась бы с фоном.
+    button = _css_rule(css, ".student-hero .admin-upload-btn")
+    assert "background: var(--on-color)" in button and "color: var(--blue-deep)" in button
+    assert _contrast(_theme_tokens(base, ":root {")["blue-deep"], "#FFFFFF") >= 4.5
