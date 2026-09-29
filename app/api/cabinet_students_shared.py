@@ -1118,18 +1118,18 @@ def edit_student_profile(
         try:
             parsed_enrollment_year = int(enrollment_year.strip())
             if not (2000 <= parsed_enrollment_year <= 2100):
-                errors.append("Нереальный год поступления")
+                errors.append("Начало обучения – год от 2000 до 2100")
         except ValueError:
-            errors.append("Год поступления должен быть числом")
+            errors.append("Начало обучения – год цифрами, например 2025")
 
     parsed_university_year = None
     if university_year.strip():
         try:
             parsed_university_year = int(university_year.strip())
             if not (2000 <= parsed_university_year <= 2100):
-                errors.append("Нереальный год ВУЗ")
+                errors.append("Год поступления в вуз – от 2000 до 2100")
         except ValueError:
-            errors.append("Год ВУЗ должен быть числом")
+            errors.append("Год поступления в вуз – цифрами, например 2026")
 
     if errors:
         return JSONResponse({"ok": False, "errors": errors}, status_code=400)

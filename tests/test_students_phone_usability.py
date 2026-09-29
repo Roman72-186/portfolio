@@ -17,6 +17,8 @@
 import re
 from pathlib import Path
 
+import pytest
+
 TEMPLATE = Path(__file__).resolve().parent.parent / "app" / "templates" / "cabinet_students.html"
 
 
@@ -201,3 +203,31 @@ def test_errors_tell_what_to_do_and_empty_search_says_so():
     # Поиск или тариф, не нашедшие никого, раньше оставляли список пустым без слов.
     assert 'id="student-list-empty" hidden' in source
     assert "emptyNote.hidden = anyShown" in source
+
+
+# Шаг 4.2: ошибки годов говорили «Нереальный год ВУЗ» и «Год ВУЗ должен быть
+# числом» — про поле, которое на экране подписано иначе, и без подсказки, что
+# ввести. Теперь ошибка названа подписью поля и говорит, как её исправить.
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        ("enrollment_year", "1990", "Начало обучения – год от 2000 до 2100"),
+        ("enrollment_year", "двадцать", "Начало обучения – год цифрами, например 2025"),
+        ("university_year", "3000", "Год поступления в вуз – от 2000 до 2100"),
+        ("university_year", "2026г", "Год поступления в вуз – цифрами, например 2026"),
+    ],
+)
+def test_year_errors_name_the_field_and_the_fix(
+    client, session_factory, user_factory, field, value, error
+):
+    staff = user_factory(vk_id=777_042, name="Админ", role_name="админ", is_admin=True)
+    student = user_factory(vk_id=100_842)
+    client.cookies.set("session_id", session_factory(staff).id)
+
+    resp = client.post(
+        f"/cabinet/students/{student.id}/profile",
+        data={"first_name": "Иван", "last_name": "Петров", "phone": "+79990000000", field: value},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["errors"] == [error]
