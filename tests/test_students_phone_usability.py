@@ -696,3 +696,15 @@ def test_gallery_active_tab_count_darkens_the_fill():
     gallery = (APP / "static" / "css" / "gallery_ios.css").read_text(encoding="utf-8")
     rule = _css_rule(gallery, ".ios-gallery .filter-tab.active .tab-count")
     assert "color-mix(in srgb, black" in rule and "rgba(255" not in rule
+
+
+def test_logo_icon_is_not_the_512px_original():
+    # 29.09.2026, 11.6: значок 36px в меню (и 84px на входе) грузил `logo.webp` 512×512, 106 КБ, —
+    # тяжелее всего кода экрана «Ученики». Меню — `logo-sm.webp` (128px, 12 КБ, хватает на плотность 3),
+    # вход — `logo-192.png` (31 КБ, плотность 2 от 84px).
+    templates = APP / "templates"
+    for name in ("partials/bottom_nav.html", "partials/staff_nav.html", "_curator_nav.html"):
+        assert "/static/img/logo-sm.webp" in (templates / name).read_text(encoding="utf-8"), name
+    assert "/static/img/logo-192.png" in (templates / "login.html").read_text(encoding="utf-8")
+    offenders = [str(p.relative_to(APP)) for p in templates.glob("**/*.html") if "/static/img/logo.webp" in p.read_text(encoding="utf-8")]
+    assert not offenders, "значок из оригинала 512px:\n" + "\n".join(offenders)
