@@ -64,6 +64,7 @@ from app.services.upload_validation import (
     read_image_uploads,
 )
 from app.services.utils import compress_image
+from app.services.works import upload_work_thumb
 
 logger = logging.getLogger(__name__)
 
@@ -85,15 +86,16 @@ async def _upload_cycle_file_to_s3(
     filename: str,
     data: bytes,
     s3_path_builder: Callable[[str], str],
-) -> tuple[str, str | None]:
-    """Compress and upload one cycle file; Work/UploadLog contracts stay in callers."""
+) -> tuple[str, str | None, str | None]:
+    """Compress and upload one cycle file with its thumb; Work/UploadLog contracts stay in callers."""
     loop = asyncio.get_running_loop()
     path = s3_path_builder(filename)
 
-    def _do() -> tuple[str, str | None]:
+    def _do() -> tuple[str, str | None, str | None]:
         compressed = compress_image(data)
         url = s3_service.upload_to_s3(path, compressed, "image/jpeg")
-        return path, url
+        thumb_url = upload_work_thumb(path, compressed) if url else None
+        return path, url, thumb_url
 
     return await loop.run_in_executor(None, _do)
 
@@ -130,7 +132,7 @@ async def _upload_and_save(
             fail += 1
             last_error = str(res)
             continue
-        s3_path, s3_url = res
+        s3_path, s3_url, thumb_url = res
         if s3_service.is_configured() and not s3_url:
             fail += 1
             last_error = "Ошибка S3"
@@ -143,6 +145,7 @@ async def _upload_and_save(
             filename=fn,
             s3_url=s3_url,
             s3_path=s3_path,
+            thumb_s3_url=thumb_url,
             subject=subject,
             tariff=user.get("tariff"),
             student_score=student_score,
@@ -221,7 +224,7 @@ async def _overwrite_final(
     fn, data = file
 
     try:
-        s3_path, s3_url = await _upload_cycle_file_to_s3(fn, data, s3_path_builder)
+        s3_path, s3_url, thumb_url = await _upload_cycle_file_to_s3(fn, data, s3_path_builder)
     except Exception as exc:  # noqa: BLE001
         return 0, 1, str(exc), []
     if s3_service.is_configured() and not s3_url:
@@ -230,6 +233,7 @@ async def _overwrite_final(
     final.filename = fn
     final.s3_url = s3_url
     final.s3_path = s3_path
+    final.thumb_s3_url = thumb_url
     final.month = month
     final.year = year
     if subject is not None:

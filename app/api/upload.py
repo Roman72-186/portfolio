@@ -53,7 +53,7 @@ from app.services.portfolio_window import (
     format_deadline_msk,
     snapshot,
 )
-from app.services.works import delete_works_with_dependents
+from app.services.works import delete_works_with_dependents, upload_work_thumb
 from app.services import s3 as s3_service
 from app.services.upload_validation import (
     MAX_UPLOAD_FILE_SIZE,
@@ -628,9 +628,10 @@ async def _process_uploads(
         def _compress_and_upload():
             compressed = compress_image(photo_bytes)
             url = s3_service.upload_to_s3(s3_path, compressed, "image/jpeg")
-            return compressed, url
+            thumb_url = upload_work_thumb(s3_path, compressed) if url else None
+            return compressed, url, thumb_url
 
-        compressed_bytes, s3_url = await loop.run_in_executor(None, _compress_and_upload)
+        compressed_bytes, s3_url, thumb_url = await loop.run_in_executor(None, _compress_and_upload)
         s3_configured = s3_service.is_configured()
         if not s3_configured and not settings.n8n_enabled:
             return {"success": False, "error": "Хранилище S3 не настроено. Загрузка временно недоступна."}
@@ -638,7 +639,7 @@ async def _process_uploads(
             return {"success": False, "error": "Ошибка загрузки в хранилище. Попробуй ещё раз."}
         # Use compressed bytes for n8n as well — smaller base64 payload
         return {"success": True, "filename": filename, "photo_bytes": compressed_bytes,
-                "s3_url": s3_url, "s3_path": s3_path}
+                "s3_url": s3_url, "s3_path": s3_path, "thumb_s3_url": thumb_url}
 
     # Upload ALL photos to S3 in parallel
     s3_results = await asyncio.gather(
@@ -667,6 +668,7 @@ async def _process_uploads(
             filename=res["filename"],
             s3_url=res.get("s3_url"),
             s3_path=res.get("s3_path"),
+            thumb_s3_url=res.get("thumb_s3_url"),
             subject=subject,
             tariff=user["tariff"],
             student_score=student_score,

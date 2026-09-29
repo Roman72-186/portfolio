@@ -57,7 +57,7 @@ from app.services.stats import avg_score_by_subject_all_time
 from app.services.portfolio import after_gallery_groups, item_source, portfolio_item_count
 from app.services.student_access import get_student_for_staff_access
 from app.services.user_management import apply_tariff_change, tariff_change_clears_access
-from app.services.works import WorkHasFeedbackError, delete_works_with_dependents
+from app.services.works import WorkHasFeedbackError, delete_works_with_dependents, upload_work_thumb
 from app.services.tz import MSK_TZ, msk_input_value, msk_midnight, parse_msk_local
 from app.services.utils import compress_image, study_duration_text, has_case_growth
 from app.tmpl import format_rich_text, templates
@@ -719,8 +719,12 @@ def get_portfolio(
         # «До» — плоский список без месяцев (владелец 09.09.2026). Стартовый
         # набор ученик грузит один раз в предобучении: месяцы там ничего не
         # разделяют, а папка месяца тянула за собой массовое удаление.
+        # `thumb_url` — превью для квадратика (шаг 5 плана 2026-09-29-apparchi-
+        # students-phone): есть только у работ с 29.09.2026, у сдач в заданиях
+        # его нет вовсе, поэтому `getattr`. Пусто — экран берёт `s3_url`.
         "before_flat": [
-            {"s3_url": w.s3_url, "filename": w.filename, "id": w.id, "source": "work"}
+            {"s3_url": w.s3_url, "thumb_url": w.thumb_s3_url, "filename": w.filename,
+             "id": w.id, "source": "work"}
             for w in before_works
         ],
         # «После» — работы портфолио вместе со сдачами внутри заданий
@@ -733,8 +737,8 @@ def get_portfolio(
                 "work_total": g["work_total"],
                 "works": [
                     {
-                        "s3_url": w.s3_url, "filename": w.filename, "id": w.id,
-                        "source": item_source(w),
+                        "s3_url": w.s3_url, "thumb_url": getattr(w, "thumb_s3_url", None),
+                        "filename": w.filename, "id": w.id, "source": item_source(w),
                     }
                     for w in g["works"]
                 ],
@@ -790,6 +794,7 @@ def get_mock_exams(
         return {
             "id": w.id,
             "s3_url": w.s3_url,
+            "thumb_url": w.thumb_s3_url,
             "filename": w.filename,
             "score": float(w.score) if w.score is not None else None,
             "comment": w.comment,
@@ -1304,7 +1309,8 @@ async def admin_upload_works(
     def _compress_and_upload_s3(raw: bytes, path: str):
         compressed = compress_image(raw)
         url = s3_service.upload_to_s3(path, compressed, "image/jpeg")
-        return compressed, url
+        thumb_url = upload_work_thumb(path, compressed) if url else None
+        return url, thumb_url
 
     # Цикл Пробника: получить/создать для пробника
     cycle_id: int | None = None
@@ -1322,7 +1328,7 @@ async def admin_upload_works(
     for fname, raw_bytes in files_data:
         s3_path = _build_s3_path(fname)
         try:
-            compressed, s3_url = await loop.run_in_executor(
+            s3_url, thumb_url = await loop.run_in_executor(
                 None, _compress_and_upload_s3, raw_bytes, s3_path
             )
 
@@ -1334,6 +1340,7 @@ async def admin_upload_works(
                 filename=fname,
                 s3_url=s3_url,
                 s3_path=s3_path,
+                thumb_s3_url=thumb_url,
                 subject=subject if work_type == WORK_TYPE_MOCK_EXAM else None,
                 tariff=tariff,
                 score=work_score,

@@ -27,6 +27,7 @@ from app.models.mock_exam_lock import MockExamLock
 from app.models.tracker import ITEM_MOCK_EXAM, SOURCE_EXAM_ASSIGNMENT, TrackerTask
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
+from app.services import s3 as s3_service
 from app.services.mock_exam_access import (
     get_matching_target_tag_ids_for_student,
     is_mock_exam_ticket_submission_open,
@@ -421,10 +422,12 @@ def delete_open_cycle(db: DBSession, cycle: ExamCycle) -> list[str]:
     s3_paths: list[str] = []
     feedback_ids: list[int] = []
     if work_ids:
-        s3_paths += [
+        work_paths = [
             p for (p,) in db.query(Work.s3_path)
             .filter(Work.cycle_id == cycle.id, Work.s3_path.isnot(None)).all()
         ]
+        s3_paths += work_paths
+        s3_paths += [s3_service.s3_path_thumb(p) for p in work_paths]
         feedback_ids = [
             row[0] for row in db.query(Feedback.id).filter(Feedback.work_id.in_(work_ids)).all()
         ]

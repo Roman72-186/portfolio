@@ -1821,7 +1821,7 @@ function buildPortfolio(data) {
         html += '<div class="month-grid" data-gallery="before-' + sid + '">';
         data.before_flat.forEach(function(w) {
             if (!w.s3_url) return;
-            var img = '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото"><img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy"></button>';
+            var img = zoomPhoto(w);
             html += wrapPortfolioPhoto(img, sid, w.id, 'before', w.source);
         });
         html += '</div>';
@@ -1878,7 +1878,7 @@ function buildPortfolioMonthBlock(sid, workType, g, blockId) {
     html += '<div class="month-grid" style="display:none" data-gallery="' + workType + '-' + sid + '-' + esc(g.year) + '-' + esc(g.month) + '">';
     g.works.forEach(function(w) {
         if (w.s3_url) {
-            var img = '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото"><img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy"></button>';
+            var img = zoomPhoto(w);
             html += wrapPortfolioPhoto(img, sid, w.id, workType, w.source);
         }
     });
@@ -2263,7 +2263,8 @@ function buildMockDayPanel(sid, subject, grouped, state) {
         var imgStyle = hero
             ? 'style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--line);cursor:zoom-in;display:block"'
             : 'style="width:88px;height:88px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:zoom-in;display:block"';
-        var img = '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото"><img src="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy" ' + imgStyle + '></button>';
+        // Большой снимок дня — на всю ширину, ему нужно само фото.
+        var img = zoomPhoto(hero ? {s3_url: w.s3_url, filename: w.filename} : w, imgStyle);
         var badge = '<span class="work-score-badge ' + bc + '">' + bt + '</span>';
         // Справа сверху стоит бейдж балла, поэтому крестик — в левом углу.
         var delBtn = CAN_SCORE
@@ -2725,6 +2726,15 @@ function wrapPhoto(imgHtml, studentId, workId) {
 }
 
 // ── Upload modal ────────────────────────────────────────────────────────────
+
+// Квадратик грузит превью 320px (`thumb_url`), лайтбокс открывает само фото
+// из `data-full`. Превью есть только у работ с 29.09.2026 — у старых в
+// квадратике остаётся `s3_url` (шаг 5 плана students-phone).
+function zoomPhoto(w, imgAttrs) {
+    return '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото">'
+        + '<img src="' + esc(w.thumb_url || w.s3_url) + '" data-full="' + esc(w.s3_url) + '" alt="' + esc(w.filename) + '" loading="lazy"'
+        + (imgAttrs ? ' ' + imgAttrs : '') + '></button>';
+}
 
 // `source` различает настоящую работу портфолио (`work`) и снимок, сданный
 // внутри задания (`submission`, живёт в task_block_submissions). У второго

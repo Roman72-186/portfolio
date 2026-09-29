@@ -109,17 +109,22 @@
             if (tools) tools.classList.remove('is-busy');
             if (!d || !d.success) { alert((d && d.error) || 'Не удалось повернуть фото'); return; }
             var newUrl = d.src;
+            // Превью работы сервер пересобрал; нет превью — квадратик берёт само фото.
+            var newThumb = d.thumb_src || newUrl;
             // Обновляем все <img> на странице, указывающие на старый объект.
             document.querySelectorAll('img').forEach(function(im){
                 if ((im.getAttribute('src') || '').split('?')[0] === base) im.src = newUrl;
-                if ((im.getAttribute('data-full') || '').split('?')[0] === base) im.setAttribute('data-full', newUrl);
+                if ((im.getAttribute('data-full') || '').split('?')[0] === base) {
+                    im.setAttribute('data-full', newUrl);
+                    im.src = newThumb;
+                }
                 if ((im.getAttribute('data-thumb') || '').split('?')[0] === base) im.setAttribute('data-thumb', newUrl);
             });
             // Обновляем слайд и его миниатюру, перерисовываем.
             s.full = newUrl;
-            s.thumb = newUrl;
+            s.thumb = newThumb;
             var thumbImg = thumbs.querySelectorAll('.lightbox-thumb img')[idx];
-            if (thumbImg) thumbImg.src = newUrl;
+            if (thumbImg) thumbImg.src = newThumb;
             render();
         }).catch(function(){
             if (tools) tools.classList.remove('is-busy');

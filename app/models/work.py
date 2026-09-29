@@ -23,6 +23,10 @@ class Work(Base):
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     s3_path: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Превью 320px для квадратиков карточки ученика (план 2026-09-29, шаг 5):
+    # в квадрат 84px грузилось фото 1600px. Пусто у работ до 29.09.2026 и
+    # когда превью не загрузилось — тогда экран показывает `s3_url`.
+    thumb_s3_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     drive_file_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     subject: Mapped[str | None] = mapped_column(String(50), nullable=True)      # "Рисунок" | "Композиция"
     tariff: Mapped[str | None] = mapped_column(String(50), nullable=True)       # "МАКСИМУМ" | "УВЕРЕННЫЙ" | "Я С ВАМИ"

@@ -51,6 +51,7 @@ from app.models.role import Role
 from app.models.tag import Tag, UserTag
 from app.models.user import User
 from app.models.work import Work, WORK_TYPE_MOCK_EXAM
+from app.services.works import upload_work_thumb
 from app.services import s3 as s3_service
 from app.services.auth_links import issue_one_time_login_link, issue_telegram_link_token, next_manual_vk_id
 from app.services.tags import get_all_tags
@@ -139,9 +140,13 @@ router = APIRouter(prefix="/cabinet")
 # Авторизация на конкретный файл — через s3_path_from_public_url: он вернёт None
 # для любой ссылки вне нашего бакета. Видео (отчёты кураторов) отсекаются тем, что
 # PIL не сможет открыть их как изображение.
+# Превью работы (с 29.09.2026) крутится вместе с фото: его пересобирают из
+# повёрнутого снимка, и в `thumb_s3_url` уходит `?v=`, иначе браузер показал
+# бы старую ориентацию из кэша.
 @router.post("/rotate-photo")
 async def rotate_photo(
     user: Annotated[dict, Depends(require_superadmin)],
+    db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     src: Annotated[str, Form()],
     direction: Annotated[str, Form()],
@@ -160,26 +165,42 @@ async def rotate_photo(
     # кириллицу: тариф, папки «До»/«После»). Ключ в S3 — сырой, поэтому декодируем.
     s3_path = urllib.parse.unquote(s3_path)
 
-    def _do() -> tuple[str | None, str | None]:
+    work_with_thumb = (
+        db.query(Work)
+        .filter(Work.s3_path == s3_path, Work.thumb_s3_url.isnot(None))
+        .first()
+    )
+
+    def _do() -> tuple[str | None, str | None, str | None]:
         data = s3_service.download_from_s3(s3_path)
         if data is None:
-            return None, "Не удалось загрузить файл из хранилища"
+            return None, None, "Не удалось загрузить файл из хранилища"
         try:
             rotated = rotate_image_bytes(data, clockwise=(direction == "right"))
         except Exception:  # noqa: BLE001 — PIL не открыл (видео/битый файл)
-            return None, "Это не изображение — поворот недоступен"
+            return None, None, "Это не изображение — поворот недоступен"
         new_url = s3_service.upload_to_s3(s3_path, rotated, "image/jpeg")
         if not new_url:
-            return None, "Не удалось сохранить повёрнутое фото"
-        return new_url, None
+            return None, None, "Не удалось сохранить повёрнутое фото"
+        thumb_url = upload_work_thumb(s3_path, rotated) if work_with_thumb else None
+        return new_url, thumb_url, None
 
     loop = asyncio.get_running_loop()
-    new_url, err = await loop.run_in_executor(None, _do)
+    new_url, thumb_url, err = await loop.run_in_executor(None, _do)
     if err:
         return JSONResponse({"success": False, "error": err}, status_code=422)
 
+    version = int(time.time())
+    thumb_src = None
+    if work_with_thumb:
+        # Превью не пересобралось — пусть квадратик берёт само фото, а не
+        # показывает старую ориентацию.
+        thumb_src = f"{thumb_url}?v={version}" if thumb_url else None
+        work_with_thumb.thumb_s3_url = thumb_src
+        db.commit()
+
     logger.info("rotate-photo by %s: %s (%s)", user.get("user_id"), s3_path, direction)
-    return JSONResponse({"success": True, "src": f"{new_url}?v={int(time.time())}"})
+    return JSONResponse({"success": True, "src": f"{new_url}?v={version}", "thumb_src": thumb_src})
 
 
 @router.get("/superadmin", response_class=HTMLResponse)

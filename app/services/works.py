@@ -13,6 +13,12 @@ from sqlalchemy.orm import Session as DBSession
 from app.models.feedback import Feedback
 from app.models.work import Work
 from app.services import s3 as s3_service
+from app.services.utils import compress_image
+
+# Превью для квадратиков карточки ученика: 84–88px на экране, на айфоне это
+# ~260 физических пикселей. Больше не нужно, меньше — видно мыло.
+THUMB_MAX_PX = 320
+THUMB_QUALITY = 78
 
 
 class WorkHasFeedbackError(Exception):
@@ -23,6 +29,17 @@ WORK_HAS_FEEDBACK = (
     "Нельзя удалить: по работе уже есть обратная связь куратора. "
     "Удаление стёрло бы файл, на который ссылается диалог."
 )
+
+
+def upload_work_thumb(s3_path: str, image_bytes: bytes) -> str | None:
+    """Кладёт в S3 превью работы и возвращает его ссылку.
+
+    Синхронная — зовётся в executor рядом с загрузкой самого фото. Получает уже
+    сжатые 1600px, чтобы не декодировать исходник второй раз. Сбой превью не
+    роняет загрузку: `None` в `Work.thumb_s3_url`, и экран покажет само фото.
+    """
+    thumb = compress_image(image_bytes, max_px=THUMB_MAX_PX, quality=THUMB_QUALITY)
+    return s3_service.upload_to_s3(s3_service.s3_path_thumb(s3_path), thumb, "image/jpeg")
 
 
 def delete_works_with_dependents(db: DBSession, works: list[Work]) -> int:
@@ -56,5 +73,6 @@ def delete_works_with_dependents(db: DBSession, works: list[Work]) -> int:
     for work in ordered:
         if work.s3_path:
             s3_service.delete_from_s3(work.s3_path)
+            s3_service.delete_from_s3(s3_service.s3_path_thumb(work.s3_path))
         db.delete(work)
     return len(ordered)

@@ -185,6 +185,17 @@ def s3_path_curator_report(curator_id: int, filename: str) -> str:
     return f"curator-reports/{curator_id}/{ym}/{rnd}.{ext}"
 
 
+def s3_path_thumb(s3_path: str) -> str:
+    """Превью работы лежит под тем же ключом с префиксом `thumbs/`.
+
+    Путь выводится из пути фото, а не хранится отдельно: удаление снимает
+    превью по `work.s3_path`, даже если ссылки на него в базе нет (у работ,
+    загруженных до 29.09.2026, превью нет вовсе — удаление ключа, которого
+    нет, в S3 проходит без ошибки).
+    """
+    return f"thumbs/{s3_path}"
+
+
 def s3_public_url(s3_path: str) -> str:
     """Construct the public URL for an S3 object.
 

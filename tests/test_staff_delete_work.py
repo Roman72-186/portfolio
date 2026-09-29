@@ -86,6 +86,7 @@ def test_staff_deletes_work_without_feedback(
         resp = client.delete(f"/cabinet/students/{regular_user.id}/works/{work.id}")
 
     assert resp.status_code == 200, resp.text
-    s3_delete.assert_called_once_with(work.s3_path)
+    # Вместе с фото уходит его превью (шаг 5 плана students-phone, 29.09.2026).
+    assert [c.args[0] for c in s3_delete.call_args_list] == [work.s3_path, f"thumbs/{work.s3_path}"]
     db.expire_all()
     assert db.get(Work, work.id) is None
