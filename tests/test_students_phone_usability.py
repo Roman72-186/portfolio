@@ -273,3 +273,18 @@ def test_profile_sections_are_two_by_two_on_phone():
     assert re.search(r"\.profile-actions \{ grid-template-columns: repeat\(2, 1fr\); \}", _mobile_block(_source()))
     # Плашки «Учёбы сейчас» не тянутся по высоте кнопки «Проверить».
     assert "align-items: center" in _css_rule(_source(), ".profile-status-badges")
+
+
+# ── Шаг 7: разделы над анкетой ───────────────────────────────────────────────
+
+
+def test_profile_sections_come_before_the_form():
+    # Владелец 29.09.2026: «Портфолио», «Задания», «Пробники», «Статистика» — сразу под
+    # шапкой, везде. Под 13 полями анкеты на телефоне до них было ~1100 px прокрутки.
+    source = _source()
+    render = source[source.index("function renderProfile(data) {"):source.index("function buildProfileActions(s) {")]
+    assert "buildHero(s, s.avg_score_by_subject || null) + buildProfileActions(s)" in render
+    assert render.index("buildProfileActions(s)") < render.index('<div class="profile-details">')
+    assert "'<div class=\"profile-actions\">'" not in render, "кнопки разделов собираются в двух местах"
+    # На компьютере — одним рядом, а не 3 + 1.
+    assert "repeat(auto-fit, minmax(150px, 1fr))" in _css_rule(source, ".profile-actions")

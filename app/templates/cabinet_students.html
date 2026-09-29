@@ -617,8 +617,8 @@
 
 /* ── Profile action buttons ── */
 .profile-actions {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
-    margin-top: 4px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;
+    margin-bottom: 20px;
 }
 .profile-action-btn {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -1344,7 +1344,8 @@ function backToProfile() {
 
 function renderProfile(data) {
     var s = data.student;
-    var html = buildHero(s, s.avg_score_by_subject || null);
+    // Разделы — сразу под шапкой (владелец 29.09.2026): на телефоне под анкетой до них было ~1100px
+    var html = buildHero(s, s.avg_score_by_subject || null) + buildProfileActions(s);
 
     html += '<div class="profile-details"><div class="profile-grid">';
     html += buildStudyNow(s);
@@ -1397,8 +1398,13 @@ function renderProfile(data) {
         html += '<button class="profile-edit-btn" onclick="startEditProfile()"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg> Редактировать анкету</button>';
     }
 
-    // Action buttons
-    html += '<div class="profile-actions">'
+    var mainPanel = document.getElementById('main-panel');
+    mainPanel.innerHTML = html;
+    window.RichTextField.enhanceAll(mainPanel);
+}
+
+function buildProfileActions(s) {
+    return '<div class="profile-actions">'
         + '<button class="profile-action-btn" onclick="openTab(\'portfolio\')">'
         +   '<div class="profile-action-icon"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>'
         +   '<div class="profile-action-label">Портфолио</div>'
@@ -1436,10 +1442,6 @@ function renderProfile(data) {
             + '</a>'
           ) : ''))
         + '</div>';
-
-    var mainPanel = document.getElementById('main-panel');
-    mainPanel.innerHTML = html;
-    window.RichTextField.enhanceAll(mainPanel);
 }
 
 // «Учёба сейчас» (владелец 29.09.2026): что ждёт преподавателя по ленте ученика.
