@@ -231,3 +231,45 @@ def test_year_errors_name_the_field_and_the_fix(
 
     assert resp.status_code == 400
     assert resp.json()["errors"] == [error]
+
+
+# ── Шаг 6 `/polish` ──────────────────────────────────────────────────────────
+
+BASE_CSS = TEMPLATE.parent.parent / "static" / "css" / "base.css"
+
+
+def test_green_ink_is_readable_in_dark_theme():
+    # 29.09.2026: зелёные плашки («✓ Рисунок», «Анкета заполнена», «Повторная сдача
+    # открыта») в тёмной теме — контраст 2.8: `--ok` не был переопределён, как
+    # `--success` и `--error`, и тёмный #047857 оставался на тёмном холсте.
+    css = BASE_CSS.read_text(encoding="utf-8")
+    dark = css[css.index(':root[data-theme="dark"] {'):]
+    dark = dark[:dark.index("\n}")]
+    assert re.search(r"--ok:\s*var\(--success\)", dark)
+    assert not re.search(r"--ok-strong\s*:", dark), "--ok-strong — заливка под белым текстом, светлеть ей нельзя"
+    # Единственная заливка `--ok` под белым текстом на экране — тост «Сохранено».
+    assert "background: var(--ok-strong); color: #fff;" in _source()
+    assert "background: var(--ok); color: #fff" not in _source()
+
+
+def test_red_badge_passes_contrast_on_light():
+    # Чистый --error (#DC2626) на розовой плашке — 4.4 при норме 4.5.
+    assert "color-mix(in srgb, var(--error)" in _css_rule(_source(), ".profile-badge.no")
+
+
+def test_portfolio_month_header_fits_phone():
+    source = _source()
+    # Кнопка раскрытия месяца была 32px на телефоне и 17px на iPad.
+    targets = _phone_block(source)
+    assert ".portfolio-toggle" in targets[:targets.index("min-height: 44px; }")]
+    # На 390 «Сентябрь 2026» и «1 фото» рвались на две строки, сжатые кнопками справа.
+    assert "flex-wrap: wrap" in _css_rule(source, ".month-header")
+    assert "white-space: nowrap" in _css_rule(source, ".month-label")
+    assert "white-space: nowrap" in _css_rule(source, ".month-count")
+
+
+def test_profile_sections_are_two_by_two_on_phone():
+    # Столбиком четыре раздела занимали 540 px в самом низу профиля.
+    assert re.search(r"\.profile-actions \{ grid-template-columns: repeat\(2, 1fr\); \}", _mobile_block(_source()))
+    # Плашки «Учёбы сейчас» не тянутся по высоте кнопки «Проверить».
+    assert "align-items: center" in _css_rule(_source(), ".profile-status-badges")
