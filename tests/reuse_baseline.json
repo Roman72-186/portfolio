@@ -68,7 +68,7 @@
     "style_lines": 365
   },
   "cabinet_students.html": {
-    "hex": 14,
+    "hex": 13,
     "shadow": [
       "active",
       "css",
@@ -78,7 +78,7 @@
       "open",
       "svg-icon"
     ],
-    "style_lines": 893
+    "style_lines": 843
   },
   "cabinet_video.html": {
     "hex": 7,

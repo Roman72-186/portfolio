@@ -13,16 +13,16 @@
 import asyncio
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Request, Depends, Form, HTTPException, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
-from sqlalchemy import func, or_, and_
+from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_session, invalidate_unread
-from app.constants import FEATURE_MOCK_EXAM, MOCK_SUBJECTS, MONTHS, MONTH_TO_NUM, TARIFFS, TARIFFS_CURRENT, TARIFF_DISPLAY, COHORT_TAGS, COHORT_TAG_LABELS, TIMEZONE_DISPLAY
+from app.constants import MOCK_SUBJECTS, MONTHS, MONTH_TO_NUM, TARIFFS, TARIFFS_CURRENT, TARIFF_DISPLAY, COHORT_TAGS, COHORT_TAG_LABELS, TIMEZONE_DISPLAY
 from app.db.database import get_db
 from app.dependencies import (
     get_current_user,
@@ -39,24 +39,27 @@ from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
 from app.services.notify import notify
-from app.services.point_a import maybe_notify_point_a_level
+from app.services.point_a import maybe_notify_point_a_level, student_point_a
+from app.services.review_aggregate import (
+    DOMAIN_BLOCK_WORK, DOMAIN_HOMEWORK, DOMAIN_TASK_BLOCK, FULL_ACCESS_RANK,
+    student_review_items,
+)
 from app.models.role import Role
 from app.models.upload_log import UploadLog
 from app.models.user import User
 from app.models.work import (
     Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER,
-    WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE,
+    WORK_TYPE_MOCK_EXAM,
 )
 from app.services import s3 as s3_service
 from app.services.exam_cycle import get_active_ticket, has_submitted_for_ticket
-from app.services.feature_periods import get_active_period
 from app.services.stats import avg_score_by_subject_all_time
 from app.services.portfolio import after_gallery_groups, item_source, portfolio_item_count
 from app.services.student_access import get_student_for_staff_access
 from app.services.user_management import apply_tariff_change, tariff_change_clears_access
 from app.services.works import WorkHasFeedbackError, delete_works_with_dependents
 from app.services.tz import MSK_TZ, msk_input_value, msk_midnight, parse_msk_local
-from app.services.utils import compress_image, study_duration_text, group_works, has_case_growth
+from app.services.utils import compress_image, study_duration_text, has_case_growth
 from app.tmpl import format_rich_text, templates
 
 logger = logging.getLogger(__name__)
@@ -87,17 +90,16 @@ def _get_accessible_students(
     user: dict,
     db: DBSession,
     *,
-    has_unchecked_mocks: bool = False,
-    mock_period_submitted: bool = False,
     show_hidden: bool = False,
     archived: bool = False,
     has_access_deadline: bool = False,
 ) -> list:
     """Возвращает список студентов доступных текущему пользователю.
 
-    Жёсткие фильтры (`has_unchecked_mocks`, `mock_period_submitted`)
-    применяются только для admin/superadmin (rank>=4). Для куратора
-    игнорируются.
+    Фильтров «Непроверенные пробники» и «Сдавал в текущий период» больше нет
+    (владелец 29.09.2026): оба требовали активного окна `FeaturePeriod`, без
+    него отдавали пустой список, а непроверенное по всем заданиям живёт на
+    экране «Проверка по ученику».
 
     По умолчанию скрыты студенты, не заполнившие анкету (profile_completed=False).
     Суперадмин может раскрыть их через show_hidden=True.
@@ -154,24 +156,6 @@ def _get_accessible_students(
     if has_access_deadline:
         q = q.filter(User.access_until.isnot(None))
 
-    if has_unchecked_mocks or mock_period_submitted:
-        active_period = get_active_period(db, FEATURE_MOCK_EXAM)
-        if not active_period:
-            # Фильтры требуют активного периода — его нет → пустая выборка.
-            return []
-        _mp_start = msk_midnight(active_period.start_date)
-        _mp_end = msk_midnight(active_period.end_date + timedelta(days=1))
-
-        sub = db.query(Work.user_id).filter(
-            Work.work_type == WORK_TYPE_MOCK_EXAM,
-            Work.status == "success",
-            Work.created_at >= _mp_start,
-            Work.created_at < _mp_end,
-        )
-        if has_unchecked_mocks:
-            sub = sub.filter(Work.score.is_(None))
-        q = q.filter(User.id.in_(sub.distinct()))
-
     return q.order_by(User.last_name, User.first_name).all()
 
 
@@ -220,7 +204,6 @@ def _enrich(s: User, counts_by_user: dict, avg_by_user: dict,
         "curator_id": s.curator_id or 0,
         "enrollment_year": s.enrollment_year or 0,
         "tg_username": (s.tg_username or "").lstrip("@").lower() if can_see_contacts else "",
-        "vk_id": (s.vk_id or "") if can_see_contacts else "",
         "mock_count": mock_counts_by_user.get(s.id, 0) if mock_counts_by_user else 0,
         "unchecked": unchecked_by_user.get(s.id, 0) if unchecked_by_user else 0,
         "scored_subjects": scored_subjects_by_user.get(s.id, []) if scored_subjects_by_user else [],
@@ -259,8 +242,6 @@ def students_panel(
     db: Annotated[DBSession, Depends(get_db)],
     student: int = Query(0),
     tab: str = Query("portfolio"),
-    has_unchecked_mocks: str = Query(""),
-    mock_period_submitted: str = Query(""),
     show_hidden: str = Query(""),
     has_access_deadline: str = Query(""),
 ):
@@ -268,8 +249,6 @@ def students_panel(
         request, user, db,
         student=student,
         tab=tab,
-        has_unchecked_mocks=has_unchecked_mocks,
-        mock_period_submitted=mock_period_submitted,
         show_hidden=show_hidden,
         has_access_deadline=has_access_deadline,
     )
@@ -282,15 +261,11 @@ def _render_students_panel(
     *,
     student: int = 0,
     tab: str = "portfolio",
-    has_unchecked_mocks: str = "",
-    mock_period_submitted: str = "",
     show_hidden: str = "",
     archived: str = "",
     has_access_deadline: str = "",
 ):
     is_admin_panel = user["role_rank"] >= 4
-    has_unchecked = is_admin_panel and _parse_bool(has_unchecked_mocks)
-    mock_submitted = is_admin_panel and _parse_bool(mock_period_submitted)
     show_hidden_b = user["role_rank"] >= 5 and _parse_bool(show_hidden)
     has_access_deadline_b = is_admin_panel and _parse_bool(has_access_deadline)
     # Архив прошлых потоков — ГП и суперадмину (rank>=4), только на чтение.
@@ -298,20 +273,14 @@ def _render_students_panel(
 
     students = _get_accessible_students(
         user, db,
-        has_unchecked_mocks=has_unchecked,
-        mock_period_submitted=mock_submitted,
         show_hidden=show_hidden_b,
         archived=archived_b,
         has_access_deadline=has_access_deadline_b,
     )
 
     active_hard_filters: list[dict] = []
-    if has_unchecked:
-        active_hard_filters.append({"key": "has_unchecked_mocks", "label": "Непроверенные пробники"})
-    if mock_submitted:
-        active_hard_filters.append({"key": "mock_period_submitted", "label": "Сдавал в текущий период"})
     if show_hidden_b:
-        active_hard_filters.append({"key": "show_hidden", "label": "Показаны без периодов"})
+        active_hard_filters.append({"key": "show_hidden", "label": "Включая не заполнивших анкету"})
     if has_access_deadline_b:
         active_hard_filters.append({"key": "has_access_deadline", "label": "Со сроком доступа"})
 
@@ -463,7 +432,11 @@ def _render_students_panel(
     sidebar_title = "Мои ученики" if user["role_rank"] == 2 else "Все ученики"
     if archived_b:
         sidebar_title = "Архив учеников"
-    valid_tabs = ("portfolio", "mock-exams", "cycles", "statistics")
+    valid_tabs = ("portfolio", "tasks", "mock-exams", "statistics")
+    # «Цикл пробника» слит с «Пробниками» 29.09.2026: старые закладки и
+    # уведомления с `tab=cycles` открывают то же самое, а не «Портфолио».
+    if tab == "cycles":
+        tab = "mock-exams"
     show_curator_filter = user["role_rank"] >= 4
 
     # Curator list for admin filter
@@ -545,23 +518,37 @@ def get_student_profile(
     )
     portfolio_count = portfolio_item_count(db, student_id)
     mock_works = [w for w in works if w.work_type == WORK_TYPE_MOCK_EXAM]
-    retake_count = sum(1 for w in works if w.work_type == WORK_TYPE_RETAKE)
     scored = [w for w in mock_works if w.score is not None]
     avg_score = round(sum(float(w.score) for w in scored) / len(scored)) if scored else None
-    cycle_count = (
-        db.query(func.count(ExamCycle.id))
-        .filter(ExamCycle.user_id == student_id)
-        .scalar()
-    ) or 0
     legacy_photo_count = (
         db.query(func.count(LegacyPortfolioPhoto.id))
         .filter(LegacyPortfolioPhoto.user_id == student_id)
         .scalar()
     ) or 0
 
-    # Контакты ученика (телефон/телефон родителя/Telegram/VK) видны только рангам >= 4
+    # Контакты ученика (телефон/телефон родителя/Telegram) видны только рангам >= 4
     # (админ/суперадмин) — куратор (rank=2) их больше не получает в ответе.
     can_see_contacts = user["role_rank"] >= 4
+
+    # «Учёба сейчас» (владелец 29.09.2026): карточка показывает то, с чем ученик
+    # работает в ленте, а проверка остаётся на одном экране (правило 12).
+    # Счётчик — по всем доменам экрана проверки и за всё время, поэтому ссылка
+    # ведёт на неделю самой старой непроверенной сдачи: экран показывает одну
+    # неделю, и без неё «Не проверено: 3» открыл бы пустую текущую.
+    pending = [i for i in _review_items_all_time(db, user, student_id) if not i.is_reviewed]
+    oldest = min((i.submitted_at for i in pending if i.submitted_at), default=None)
+    study_now = {
+        "unreviewed": len(pending),
+        "review_week": msk_input_value(oldest)[:10] if oldest else "",
+    }
+    # Точка А — только ГП и суперадмину: её экран закрыт `require_admin_role`.
+    if user["role_rank"] >= 4:
+        point_a = student_point_a(db, student, with_images=False)
+        study_now["point_a"] = {
+            "has_plates": bool(point_a.plates),
+            "average": point_a.average,
+            "is_done": point_a.is_done,
+        }
 
     return JSONResponse({
         "student": {
@@ -575,8 +562,6 @@ def get_student_profile(
             "parent_phone": student.parent_phone if can_see_contacts else None,
             "parent_name": student.parent_name if can_see_contacts else None,
             "tg_username": student.tg_username if can_see_contacts else None,
-            "vk_id": student.vk_id if can_see_contacts else None,
-            "vk_profile_url": student.vk_profile_url if can_see_contacts else None,
             "email": student.email if can_see_contacts else None,
             "birth_date": (
                 student.birth_date.strftime("%d.%m.%Y")
@@ -604,17 +589,85 @@ def get_student_profile(
             # виде, в каком его вводят обратно (`parse_msk_local`).
             "access_until": msk_input_value(student.access_until),
             "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
-            "is_group_member": student.is_group_member,
             "profile_completed": student.profile_completed,
             "curator_name": curator_name,
             "avg_score": avg_score,
             "avg_score_by_subject": avg_score_by_subject_all_time(db, student_id),
             "portfolio_count": portfolio_count,
             "mock_exam_count": len(mock_works),
-            "retake_count": retake_count,
-            "cycle_count": cycle_count,
             "legacy_photo_count": legacy_photo_count,
+            "study_now": study_now,
         },
+    })
+
+
+# ── AJAX: задания из ленты ────────────────────────────────────────────────────
+
+# Что ученик делает в ленте `/cabinet/learning`: ответы на блоки, работы, сданные
+# внутри задания, и домашка старого образца. Пробник (`work`, `exam_cycle`) сюда
+# не входит — у него своя вкладка «Пробники», второй его копии здесь не нужно.
+_TASK_DOMAINS = (DOMAIN_TASK_BLOCK, DOMAIN_BLOCK_WORK, DOMAIN_HOMEWORK)
+
+
+def _review_items_all_time(db: DBSession, user: dict, student_id: int) -> list:
+    """Сдачи ученика по всем доменам экрана проверки, без недельного окна.
+
+    Та же функция, что кормит `/cabinet/staff/students-review/{id}` (правило 12),
+    с той же областью видимости куратора — своей выборки карточка не держит."""
+    return student_review_items(
+        db,
+        student_id=student_id,
+        curator_id=None if user["role_rank"] >= FULL_ACCESS_RANK else user["user_id"],
+        role_rank=user["role_rank"],
+    )
+
+
+def _task_item_json(item) -> dict:
+    submitted = item.submitted_at
+    return {
+        "domain": item.domain,
+        "id": item.item_id,
+        "title": item.title,
+        "subject": item.subject,
+        "date_label": msk_input_value(submitted)[:10] if submitted else "",
+        "is_reviewed": item.is_reviewed,
+        "needs_revision": item.needs_revision,
+        "question": item.question,
+        "chosen": item.chosen or [],
+        "text": item.text,
+        "images": item.images or [],
+        "review_comment": item.review_comment,
+        # У ответа на блок своего экрана нет — его проверяют на экране
+        # «Проверка по ученику», на неделе сдачи.
+        "review_url": item.review_url if item.domain != DOMAIN_TASK_BLOCK else "",
+    }
+
+
+@router.get("/students/{student_id}/tasks")
+def get_student_tasks(
+    student_id: int,
+    user: Annotated[dict, Depends(_require_student_panel)],
+    db: Annotated[DBSession, Depends(get_db)],
+):
+    """Вкладка «Задания»: только чтение, ссылки ведут на существующие экраны
+    проверки. Своей очереди и своих кнопок «проверено» у вкладки нет."""
+    student = _check_access(student_id, user, db, read_archive=True)
+    enrolled_at = student.enrolled_at or student.created_at
+    items = [
+        i for i in _review_items_all_time(db, user, student_id)
+        if i.domain in _TASK_DOMAINS
+    ]
+    return JSONResponse({
+        "student": {
+            "id": student.id,
+            "name": f"{student.last_name or ''} {student.first_name or student.name}".strip(),
+            "tariff": student.tariff or "—",
+            "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
+            "avg_score_by_subject": avg_score_by_subject_all_time(db, student_id),
+            "photo_url": student.photo_url,
+            "cohort_tag": student.cohort_tag,
+        },
+        "items": [_task_item_json(i) for i in items],
     })
 
 
@@ -700,26 +753,20 @@ def get_mock_exams(
     student_id: int,
     user: Annotated[dict, Depends(_require_student_panel)],
     db: Annotated[DBSession, Depends(get_db)],
-    period_only: str = Query(""),
 ):
     student = _check_access(student_id, user, db, read_archive=True)
     enrolled_at = student.enrolled_at or student.created_at
 
-    period_only_bool = period_only.lower() in ("1", "true", "yes", "on")
-    active_period = get_active_period(db, FEATURE_MOCK_EXAM) if period_only_bool else None
-
-    q = (
+    # Фильтра «только за текущий период» нет с 29.09.2026 (владелец): окно
+    # `FeaturePeriod` закрывает сдачу пробника у ученика, но к тому, что
+    # преподаватель видит в карточке, отношения не имеет.
+    mock_works = (
         db.query(Work)
         .filter(Work.user_id == student_id, Work.work_type == WORK_TYPE_MOCK_EXAM, Work.status == "success")
+        .order_by(Work.created_at.desc())
+        .limit(100)
+        .all()
     )
-    if active_period:
-        _mp_start = msk_midnight(active_period.start_date)
-        _mp_end = msk_midnight(active_period.end_date + timedelta(days=1))
-        q = q.filter(Work.created_at >= _mp_start, Work.created_at < _mp_end)
-    elif period_only_bool:
-        # Period requested, but none active → show nothing
-        q = q.filter(Work.id < 0)
-    mock_works = q.order_by(Work.created_at.desc()).limit(100).all()
     scored = [w for w in mock_works if w.score is not None]
     avg_score = round(sum(float(w.score) for w in scored) / len(scored)) if scored else None
 
@@ -793,8 +840,6 @@ def get_mock_exams(
             "tariff": student.tariff or "—",
             "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
             "avg_score": avg_score,
-            # Всегда за всю историю, не завязано на period_only — иначе бейджи шапки
-            # дёргались бы при переключении фильтра «только за текущий период».
             "avg_score_by_subject": avg_score_by_subject_all_time(db, student_id),
             "photo_url": student.photo_url,
             "cohort_tag": student.cohort_tag,
@@ -804,8 +849,6 @@ def get_mock_exams(
             for subject, works_list in works_by_subject.items()
         },
         "mock_locks": locks,
-        "period_only": period_only_bool,
-        "period_active": bool(active_period),
         "legacy_by_month": legacy_by_month,
     })
 
@@ -836,119 +879,7 @@ def get_statistics(
     })
 
 
-# ── AJAX: retakes ─────────────────────────────────────────────────────────────
-
-@router.get("/students/{student_id}/retakes")
-def get_retakes(
-    student_id: int,
-    user: Annotated[dict, Depends(_require_student_panel)],
-    db: Annotated[DBSession, Depends(get_db)],
-):
-    student = _check_access(student_id, user, db, read_archive=True)
-    enrolled_at = student.enrolled_at or student.created_at
-
-    retake_works = (
-        db.query(Work)
-        .filter(
-            Work.user_id == student_id,
-            Work.status == "success",
-            or_(
-                Work.work_type == WORK_TYPE_RETAKE,
-                and_(Work.work_type == WORK_TYPE_MOCK_EXAM, Work.sent_to_retake == True),
-            ),
-        )
-        .order_by(Work.created_at.desc()).limit(100).all()
-    )
-
-    from app.models.feedback import Feedback as _FB
-    r_ids = [w.id for w in retake_works]
-    r_fb_ids: set[int] = set()
-    if r_ids:
-        r_fb_ids = {row[0] for row in db.query(_FB.work_id).filter(_FB.work_id.in_(r_ids)).all()}
-
-    def _work_dict(w):
-        return {
-            "id": w.id, "s3_url": w.s3_url, "filename": w.filename,
-            "month": w.month, "year": w.year,
-            "student_score": float(w.student_score) if w.student_score is not None else None,
-            "curator_score": float(w.score) if w.score is not None else None,
-            "comment": w.comment,
-            "comment_html": format_rich_text(w.comment) if w.comment else None,
-            "is_mock": w.work_type == WORK_TYPE_MOCK_EXAM,
-            "subject": w.subject or "",
-            "created_at": w.created_at.isoformat() if w.created_at else None,
-            "cycle_id": w.cycle_id,
-            "has_feedback": w.id in r_fb_ids,
-        }
-
-    retakes_by_subject: dict[str, list] = {}
-    for s in MOCK_SUBJECTS:
-        retakes_by_subject[s] = []
-    retakes_unassigned: list = []
-    for w in retake_works:
-        d = _work_dict(w)
-        if d["subject"] in retakes_by_subject:
-            retakes_by_subject[d["subject"]].append(d)
-        else:
-            retakes_unassigned.append(d)
-
-    return JSONResponse({
-        "student": {
-            "id": student.id,
-            "name": f"{student.last_name or ''} {student.first_name or student.name}".strip(),
-            "tariff": student.tariff or "—",
-            "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
-            "avg_score_by_subject": avg_score_by_subject_all_time(db, student_id),
-            "photo_url": student.photo_url,
-            "cohort_tag": student.cohort_tag,
-        },
-        "can_move_retakes": user.get("role_rank", 0) >= 5,
-        "subjects": list(MOCK_SUBJECTS),
-        "retakes_by_subject": retakes_by_subject,
-        "retakes_unassigned": retakes_unassigned,
-        "retakes_by_month": [
-            {
-                "month": g["month"], "year": g["year"], "total": g["total"],
-                "works": [_work_dict(w) for w in g["works"]],
-            }
-            for g in group_works(retake_works)
-        ],
-    })
-
-
 # ── POST: оценить работу ──────────────────────────────────────────────────────
-
-@router.post("/students/{student_id}/retakes/{work_id}/subject")
-def move_retake_to_subject(
-    student_id: int,
-    work_id: int,
-    user: Annotated[dict, Depends(require_admin_role)],
-    db: Annotated[DBSession, Depends(get_db)],
-    _csrf: Annotated[None, Depends(require_csrf)],
-    subject: str = Form(...),
-):
-    if user["role_rank"] < 5:
-        raise HTTPException(status_code=403, detail="Доступно только суперадмину")
-    if subject not in MOCK_SUBJECTS:
-        raise HTTPException(status_code=400, detail="Неверный предмет")
-    _check_access(student_id, user, db)
-
-    work = db.query(Work).filter(
-        Work.id == work_id,
-        Work.user_id == student_id,
-        Work.status == "success",
-        or_(
-            Work.work_type == WORK_TYPE_RETAKE,
-            and_(Work.work_type == WORK_TYPE_MOCK_EXAM, Work.sent_to_retake == True),
-        ),
-    ).first()
-    if not work:
-        raise HTTPException(status_code=404, detail="Работа не найдена")
-
-    work.subject = subject
-    db.commit()
-    return JSONResponse({"ok": True, "work_id": work.id, "subject": subject})
-
 
 @router.post("/students/{student_id}/works/{work_id}/score")
 def score_work(
@@ -974,7 +905,7 @@ def score_work(
     work = db.query(Work).filter(Work.id == work_id, Work.user_id == student_id).first()
     if not work:
         raise HTTPException(status_code=404, detail="Работа не найдена")
-    if tab not in ("portfolio", "mock-exams", "retakes"):
+    if tab not in ("portfolio", "mock-exams"):
         tab = "mock-exams"
 
     if not (0 <= score <= 100):
@@ -1003,60 +934,6 @@ def score_work(
     return RedirectResponse(
         f"/cabinet/students?student={student_id}&tab={tab}&saved=1", status_code=302
     )
-
-
-# ── POST: отправить пробник на отработку (оценка + комментарий) ───────────────
-
-@router.post("/students/{student_id}/mock-exams/{work_id}/retake")
-def send_mock_exam_to_retake(
-    student_id: int,
-    work_id: int,
-    user: Annotated[dict, Depends(require_admin_role)],
-    db: Annotated[DBSession, Depends(get_db)],
-    _csrf: Annotated[None, Depends(require_csrf)],
-    background_tasks: BackgroundTasks,
-    score: float = Form(...),
-    comment: str = Form(...),
-):
-    _check_access(student_id, user, db)
-    work = db.query(Work).filter(
-        Work.id == work_id,
-        Work.user_id == student_id,
-        Work.work_type == WORK_TYPE_MOCK_EXAM,
-    ).first()
-    if not work:
-        raise HTTPException(status_code=404, detail="Работа не найдена")
-    if not (0 <= score <= 100):
-        raise HTTPException(status_code=422, detail="Балл должен быть от 0 до 100")
-    comment_clean = comment.strip()
-    if not comment_clean:
-        raise HTTPException(status_code=422, detail="Комментарий обязателен при отправке на отработку")
-    if len(comment_clean) > 500:
-        comment_clean = comment_clean[:500]
-
-    work.score = int(round(score))
-    work.comment = comment_clean
-    work.scored_at = datetime.now(timezone.utc)
-    work.scored_by_id = user["user_id"]
-    work.sent_to_retake = True
-    work.sent_to_retake_at = datetime.now(timezone.utc)
-
-    notification = Notification(
-        user_id=work.user_id,
-        title=f"Пробник отправлен на отработку — {int(work.score)} / 100",
-        text=f"{comment_clean}\n\nМожно загрузить отработку в разделе «Отработка».",
-        work_id=work.id,
-    )
-    db.add(notification)
-    student = db.get(User, work.user_id)
-    point_a_notification = maybe_notify_point_a_level(db, student) if student else None
-    db.commit()
-    invalidate_unread(work.user_id)
-    background_tasks.add_task(notify, notification.id)
-    if point_a_notification is not None:
-        background_tasks.add_task(notify, point_a_notification.id)
-
-    return JSONResponse({"ok": True, "score": int(round(score)), "comment": comment_clean})
 
 
 # ── POST: вернуть пробник на доработку (только разблокировка, без оценки) ────
@@ -1329,7 +1206,7 @@ MAX_FILES = 20
 
 WORK_TYPE_LABELS = {
     "before": "До", "after": "После",
-    "mock_exam": "Пробник", "retake": "Отработка",
+    "mock_exam": "Пробник",
 }
 
 
@@ -1359,13 +1236,16 @@ async def admin_upload_works(
 ):
     student = _check_access(student_id, user, db)
 
-    valid_types = {WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE}
+    # Отработки нет с 29.09.2026 (владелец): у ученика к ней нет входа, и
+    # загрузка за него создавала бы работы, которых он не увидит как задачу.
+    # Проверки «У ученика нет VK ID» тоже нет: колонка обязательная, у
+    # Telegram-учеников в ней служебный номер, путь в S3 по-прежнему строится
+    # от него.
+    valid_types = {WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM}
     if work_type not in valid_types:
         return JSONResponse({"ok": False, "error": "Неверный тип работы"}, status_code=400)
     if not student.tariff:
         return JSONResponse({"ok": False, "error": "У ученика не указан тариф"}, status_code=400)
-    if not student.vk_id:
-        return JSONResponse({"ok": False, "error": "У ученика нет VK ID"}, status_code=400)
 
     if not photos or (len(photos) == 1 and not photos[0].filename):
         return JSONResponse({"ok": False, "error": "Выберите хотя бы одно фото"}, status_code=400)
@@ -1391,13 +1271,6 @@ async def admin_upload_works(
         year = parsed_date.year
         work_score = int(round(score_value))
         work_created_at = msk_midnight(parsed_date)
-    elif work_type == WORK_TYPE_RETAKE:
-        if subject not in MOCK_SUBJECTS:
-            return JSONResponse({"ok": False, "error": "Укажите предмет для отработки: Рисунок или Композиция"}, status_code=400)
-        if month not in MONTHS:
-            return JSONResponse({"ok": False, "error": "Неверный месяц"}, status_code=400)
-        if year is None:
-            return JSONResponse({"ok": False, "error": "Укажите год"}, status_code=400)
     else:
         if month not in MONTHS:
             return JSONResponse({"ok": False, "error": "Неверный месяц"}, status_code=400)
@@ -1422,8 +1295,6 @@ async def admin_upload_works(
             return s3_service.s3_path_before(vk_id, tariff, filename)
         if work_type == WORK_TYPE_MOCK_EXAM:
             return s3_service.s3_path_mock_exam(vk_id, tariff, filename)
-        if work_type == WORK_TYPE_RETAKE:
-            return s3_service.s3_path_retake(vk_id, tariff, filename)
         return s3_service.s3_path_after(vk_id, tariff, filename)
 
     success_count = 0
@@ -1435,21 +1306,14 @@ async def admin_upload_works(
         url = s3_service.upload_to_s3(path, compressed, "image/jpeg")
         return compressed, url
 
-    # Цикл Пробника: получить/создать для mock_exam/retake
+    # Цикл Пробника: получить/создать для пробника
     cycle_id: int | None = None
     attempt_no: int | None = None
-    if work_type in (WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE) and subject:
+    if work_type == WORK_TYPE_MOCK_EXAM and subject:
         from app.services import exam_cycle as cycle_service
-        if work_type == WORK_TYPE_MOCK_EXAM:
-            cycle, _created = cycle_service.get_or_create_cycle_for_probnik(
-                db, user_id=student_id, subject=subject, ticket_id=None,
-            )
-        else:
-            cycle = cycle_service.find_latest_cycle(db, student_id, subject)
-            if cycle is None:
-                cycle, _created = cycle_service.get_or_create_cycle_for_probnik(
-                    db, user_id=student_id, subject=subject, ticket_id=None,
-                )
+        cycle, _created = cycle_service.get_or_create_cycle_for_probnik(
+            db, user_id=student_id, subject=subject, ticket_id=None,
+        )
         cycle_id = cycle.id
         attempt_no = cycle_service.next_attempt_number(
             db, cycle_id=cycle_id, work_type=work_type,
@@ -1470,7 +1334,7 @@ async def admin_upload_works(
                 filename=fname,
                 s3_url=s3_url,
                 s3_path=s3_path,
-                subject=subject if work_type in (WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE) else None,
+                subject=subject if work_type == WORK_TYPE_MOCK_EXAM else None,
                 tariff=tariff,
                 score=work_score,
                 scored_at=datetime.now(timezone.utc) if work_score is not None else None,

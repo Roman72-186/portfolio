@@ -48,8 +48,6 @@ DOMAIN_BLOCK_WORK = "block_work"
 # безопаснее, чем чужое (тот же приём, что student_review.py::_check_student_access).
 FULL_ACCESS_RANK = 4
 
-_WORK_TYPE_TITLES = {"mock_exam": "Пробник", "retake": "Отработка"}
-_WORK_TYPE_TABS = {"mock_exam": "mock-exams", "retake": "retakes"}
 
 
 @dataclass(frozen=True)
@@ -149,21 +147,27 @@ def _work_items(
     week_end: datetime | None = None,
     role_rank: int = 0,
 ) -> list[ReviewItem]:
-    """Пробник и отработка — не портфолио: `before`/`after` в интерфейсе никогда
+    """Пробник — не портфолио: `before`/`after` в интерфейсе никогда
     не получают `score` (нет такой формы, только галерея месяцев), включать их
     сюда значило бы навесить каждому ученику вечный «непроверено» без способа
     снять (advisor-ревью 01.09.2026). Непроверено — `score IS NULL`;
     «просмотрено» без оценки (миграция `744b7e5e4961`) тоже снимает строку с
-    «непроверенных»."""
+    «непроверенных».
+
+    Отработки здесь нет с 29.09.2026 (владелец): у ученика к ней нет входа,
+    последняя сдана 13.05.2026, а ссылка «Открыть» вела на вкладку карточки,
+    которой давно нет, — сервер молча открывал «Портфолио». Восемь старых
+    непроверенных отработок на проде принадлежат архивным ученикам, в очередь
+    они и так не попадали."""
     from app.models.user import User
-    from app.models.work import WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE, Work
+    from app.models.work import WORK_TYPE_MOCK_EXAM, Work
 
     q = (
         db.query(Work, User)
         .join(User, User.id == Work.user_id)
         .filter(
             Work.status == "success", Work.is_final == True,  # noqa: E712
-            Work.work_type.in_((WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE)),
+            Work.work_type == WORK_TYPE_MOCK_EXAM,
         )
     )
     if curator_id is not None:
@@ -181,16 +185,15 @@ def _work_items(
 
     items = []
     for work, student in q.order_by(Work.created_at.desc()).all():
-        tab = _WORK_TYPE_TABS.get(work.work_type, "mock-exams")
         items.append(ReviewItem(
             domain=DOMAIN_WORK,
             item_id=work.id,
             student_id=student.id,
-            title=_WORK_TYPE_TITLES.get(work.work_type, work.work_type),
+            title="Пробник",
             subject=work.subject,
             submitted_at=work.created_at,
             is_reviewed=work.score is not None or work.viewed_at is not None,
-            review_url=f"/cabinet/students?student={student.id}&tab={tab}",
+            review_url=f"/cabinet/students?student={student.id}&tab=mock-exams",
         ))
     return items
 

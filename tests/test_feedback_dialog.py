@@ -1147,7 +1147,7 @@ def test_curator_can_close_cycle_after_scoring_own_student(
     assert cycle.closed_at is not None
 
 
-def test_curator_cannot_load_foreign_student_cycles_json(
+def test_curator_cannot_load_foreign_student_mock_exams_tab(
     client, db, user_factory, session_factory
 ):
     owner = user_factory(vk_id=930007, name="Owner", role_name="куратор")
@@ -1159,13 +1159,14 @@ def test_curator_cannot_load_foreign_student_cycles_json(
 
     sess = session_factory(other)
     client.cookies.set("session_id", sess.id)
+    # Циклы ученика с 29.09.2026 показывает вкладка «Пробники»: отдельного
+    # JSON `/cycles` у карточки больше нет.
     resp = client.get(
-        f"/cabinet/students/{student.id}/cycles",
+        f"/cabinet/students/{student.id}/mock-exams",
         follow_redirects=False,
     )
 
     assert resp.status_code == 403
-    assert "Не ваш студент" in resp.text
 
 
 def test_curator_cannot_open_foreign_student_feedback_detail(

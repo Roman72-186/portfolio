@@ -18,7 +18,7 @@ from app.models.notification import Notification
 from app.services.notify import notify
 from app.models.role import Role
 from app.models.user import User
-from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM, WORK_TYPE_RETAKE
+from app.models.work import Work, WORK_TYPE_BEFORE, WORK_TYPE_AFTER, WORK_TYPE_MOCK_EXAM
 from app.services import feedback as fb_service
 from app.services import s3 as s3_service
 from app.services.student_access import get_student_for_staff_access
@@ -428,62 +428,6 @@ def get_mock_exams_data(
 def student_card(student_id: int, _user: Annotated[dict, Depends(require_curator)]):
     """Перенаправляет на единый кабинет учеников."""
     return RedirectResponse(f"/cabinet/students?student={student_id}", status_code=302)
-
-
-# ── Retakes split-panel ─────────────────────────────────────────────────────
-
-@router.get("/curator/retakes", response_class=HTMLResponse)
-def curator_retakes(_user: Annotated[dict, Depends(require_curator)]):
-    return RedirectResponse("/cabinet/students?tab=retakes", status_code=302)
-
-
-@router.get("/curator/retakes/student/{student_id}")
-def get_retakes_data(
-    student_id: int,
-    user: Annotated[dict, Depends(require_curator)],
-    db: Annotated[DBSession, Depends(get_db)],
-):
-    student = _check_student_access(student_id, user, db)
-    enrolled_at = student.enrolled_at or student.created_at
-
-    retake_works = (
-        db.query(Work)
-        .filter(Work.user_id == student_id, Work.work_type == WORK_TYPE_RETAKE, Work.status == "success")
-        .order_by(Work.created_at.desc())
-        .limit(100)
-        .all()
-    )
-    retakes_by_month = group_works(retake_works)
-
-    return JSONResponse({
-        "student": {
-            "id": student.id,
-            "name": f"{student.last_name or ''} {student.first_name or student.name}".strip(),
-            "tariff": student.tariff or "—",
-            "study_duration": study_duration_text(enrolled_at) if enrolled_at else None,
-            "photo_url": student.photo_url,
-        },
-        "retakes_by_month": [
-            {
-                "month": g["month"],
-                "year": g["year"],
-                "total": g["total"],
-                "works": [
-                    {
-                        "id": w.id,
-                        "s3_url": w.s3_url,
-                        "filename": w.filename,
-                        "student_score": float(w.student_score) if w.student_score is not None else None,
-                        "curator_score": float(w.score) if w.score is not None else None,
-                        "comment": w.comment,
-            "comment_html": format_rich_text(w.comment) if w.comment else None,
-                    }
-                    for w in g["works"]
-                ],
-            }
-            for g in retakes_by_month
-        ],
-    })
 
 
 # ── POST: unlock mock exam ───────────────────────────────────────────────────

@@ -66,9 +66,7 @@ def test_student_screen_mutations_send_fresh_token():
     assert "append('csrf_token', CSRF_TOKEN)" not in source, "ключ из разметки вшит в поле запроса"
     for url_part in (
         "'/profile', { method: 'POST'",
-        "'/retake', {",
         "'/revision', {",
-        "'/subject', {",
         "'/works/bulk', {",
         "'/portfolio/month', {",
         "'/move', {",
@@ -189,10 +187,9 @@ def test_labels_say_what_the_field_holds():
 
 
 def test_phone_sees_text_hidden_in_tooltips():
-    # На телефоне title не показывается: чья оценка и почему плашка — в самом тексте.
+    # На телефоне title не показывается: почему плашка — в самом тексте.
+    # Чипы «Ученик: / Куратор:» жили только в отработках, снятых 29.09.2026.
     source = _source()
-    assert "Ученик: ' + Math.round(w.student_score)" in source
-    assert "⭐ Куратор: ' +" in source
     assert "Не заполнил профиль" not in source
 
 

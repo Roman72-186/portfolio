@@ -195,7 +195,7 @@ def test_moderator_browsing_writes_nothing(moderator_client, db, user_factory):
             "/cabinet/notifications/feed",
         ]:
             assert moderator_client.get(path).status_code == 200, path
-        for tab in ("profile", "portfolio", "mock-exams", "statistics", "retakes", "cycles"):
+        for tab in ("profile", "portfolio", "tasks", "mock-exams", "statistics"):
             path = f"/cabinet/students/{student.id}/{tab}"
             assert moderator_client.get(path, headers=json_headers).status_code == 200, path
         moderator_client.get(f"/cabinet/students/{student.id}/legacy-portfolio")

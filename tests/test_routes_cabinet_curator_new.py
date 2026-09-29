@@ -161,8 +161,9 @@ def test_curator_cannot_see_student_contact_fields(curator_client, db, student):
     assert data["parent_phone"] is None
     assert data["parent_name"] is None
     assert data["tg_username"] is None
-    assert data["vk_id"] is None
-    assert data["vk_profile_url"] is None
+    # VK из анкеты снят совсем (владелец 29.09.2026) — поля нет ни у кого.
+    assert "vk_id" not in data
+    assert "vk_profile_url" not in data
     assert data["email"] is None
     assert data["birth_date"] is None
     assert data["city"] is None
@@ -190,7 +191,7 @@ def test_admin_can_see_student_contact_fields(admin_client, db, user_factory):
     assert data["can_see_contacts"] is True
     assert data["phone"] == "+79991234567"
     assert data["parent_name"] == "Иванова Мария Петровна"
-    assert data["vk_profile_url"] == "https://vk.com/anna_ivanova"
+    assert "vk_profile_url" not in data
     assert data["email"] == "anna@example.com"
     assert data["birth_date"] == "20.05.2008"
     assert data["city"] == "Казань"

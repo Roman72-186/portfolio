@@ -260,8 +260,8 @@ def test_archived_student_dialogs_stay_readable(superadmin_client, db, student):
     cycle, _ = _mk_cycle_with_final(db, student.id)
     archive_user(db, target_user_id=student.id, performed_by_id=actor.id)
 
-    # Список циклов ученика (вкладка «Пробники» в архиве)
-    resp = client.get(f"/cabinet/students/{student.id}/cycles")
+    # Вкладка «Пробники» в архиве — в ней и кнопки диалогов по циклам
+    resp = client.get(f"/cabinet/students/{student.id}/mock-exams")
     assert resp.status_code == 200
 
     # Сам диалог обратной связи

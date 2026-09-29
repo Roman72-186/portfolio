@@ -24,9 +24,7 @@ SUBJECT = "Рисунок"
 
 # (метод, адрес, данные формы, код отказа)
 ROUTES = [
-    ("post", "/cabinet/students/{sid}/retakes/{wid}/subject", {"subject": "Композиция"}, 404),
     ("post", "/cabinet/students/{sid}/works/{wid}/score", {"score": "80", "comment": "x"}, 404),
-    ("post", "/cabinet/students/{sid}/mock-exams/{wid}/retake", {"score": "40", "comment": "x"}, 404),
     ("post", "/cabinet/students/{sid}/mock-exams/{wid}/revision", {}, 404),
     ("post", "/cabinet/students/{sid}/mock-exams/unlock", {"subject": SUBJECT}, 404),
     ("delete", "/cabinet/students/{sid}/works/{wid}", None, 404),

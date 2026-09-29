@@ -18,8 +18,6 @@ Staff (куратор / админ / суперадмин):
   POST /cabinet/feedback/{cycle_id}/close       — закрыть цикл вручную после ОС
                                                    (куратор/админ/SA, требует выставленного балла)
 
-JSON:
-  GET  /cabinet/students/{student_id}/cycles    — список циклов ученика для staff
 """
 from __future__ import annotations
 
@@ -501,68 +499,6 @@ async def post_dialog_message(
     if role_rank >= 4:
         return RedirectResponse(f"/cabinet/admin/feedback/{cycle.id}#m-{msg.id}", status_code=302)
     return RedirectResponse(f"/cabinet/curator/feedback/{cycle.id}#m-{msg.id}", status_code=302)
-
-
-# ── JSON: циклы конкретного ученика (для вкладки в карточке staff) ───────────
-
-@router.get("/cabinet/students/{student_id}/cycles")
-def student_cycles_json(
-    student_id: int,
-    user: Annotated[dict, Depends(require_curator)],
-    db: Annotated[DBSession, Depends(get_db)],
-):
-    student = get_student_for_staff_access(
-        db,
-        user,
-        student_id,
-        exclude_deleted=True,
-        not_found_detail="Студент не найден",
-        forbidden_detail="Не ваш студент",
-    )
-    cycles = (
-        db.query(ExamCycle)
-        .filter(ExamCycle.user_id == student_id)
-        .order_by(ExamCycle.started_at.desc(), ExamCycle.id.desc())
-        .all()
-    )
-    cycle_ids = [c.id for c in cycles]
-    finals_by_cycle: dict[int, list[Work]] = {}
-    if cycle_ids:
-        for w in (
-            db.query(Work)
-            .filter(Work.cycle_id.in_(cycle_ids), Work.is_final == True)  # noqa: E712
-            .all()
-        ):
-            finals_by_cycle.setdefault(w.cycle_id, []).append(w)
-    fb_work_ids: set[int] = set()
-    if cycle_ids:
-        fb_work_ids = {
-            row[0] for row in db.query(Feedback.work_id).join(Work, Feedback.work_id == Work.id)
-            .filter(Work.cycle_id.in_(cycle_ids)).all()
-        }
-    if user["role_rank"] >= 5:
-        detail_prefix = "/cabinet/superadmin/feedback/"
-    elif user["role_rank"] >= 4:
-        detail_prefix = "/cabinet/admin/feedback/"
-    else:
-        detail_prefix = "/cabinet/curator/feedback/"
-    items = []
-    for c in cycles:
-        finals = finals_by_cycle.get(c.id, [])
-        items.append({
-            "id": c.id,
-            "subject": c.subject,
-            "started_at": c.started_at.isoformat(),
-            "closed_at": c.closed_at.isoformat() if c.closed_at else None,
-            "attempts": len(finals),
-            "feedbacks_count": sum(1 for w in finals if w.id in fb_work_ids),
-            "url": f"{detail_prefix}{c.id}",
-        })
-    return JSONResponse({
-        "student_id": student_id,
-        "student_name": student.name,
-        "cycles": items,
-    })
 
 
 # ── Staff: диалог цикла (read+write) ─────────────────────────────────────────

@@ -77,22 +77,6 @@ def test_curator_score_work_calls_point_a_hook(client, db, admin, student, sessi
     assert spy.call_args.args[1].id == student.id
 
 
-def test_send_to_retake_calls_point_a_hook(client, db, admin, student, session_factory):
-    work = _mk_work(db, student.id)
-    _as(client, session_factory, admin)
-    spy = _spy()
-
-    with patch("app.api.cabinet_students_shared.maybe_notify_point_a_level", spy):
-        resp = client.post(
-            f"/cabinet/students/{student.id}/mock-exams/{work.id}/retake",
-            data={"score": "50", "comment": "переделать"},
-        )
-
-    assert resp.status_code == 200
-    assert spy.call_count == 1
-    assert spy.call_args.args[1].id == student.id
-
-
 def test_portfolio_before_calls_point_a_hook(client, db, admin, student, session_factory):
     _as(client, session_factory, admin)
     spy = _spy()
