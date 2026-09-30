@@ -1250,7 +1250,7 @@ function buildScoreForm(sid, workId, tab, currentScore, currentComment) {
         + '<div class="score-form-row">'
         + '<input type="number" name="score" class="score-input" min="0" max="100" step="1"'
         + (currentScore != null ? ' value="' + Math.round(currentScore) + '"' : '')
-        + ' placeholder="0–100" required>'
+        + ' placeholder="0–100" aria-label="Балл из 100" required>'
         + '<span class="score-of">/ 100</span>'
         + '</div>'
         + '<textarea data-rich-text name="comment" class="comment-input" placeholder="Комментарий (необязательно)" maxlength="500">'

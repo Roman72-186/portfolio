@@ -834,6 +834,7 @@ CALENDAR_LIB = TEMPLATE.parent / "partials" / "cycle_calendar_lib.html"
     ("styles", ".checked-badge"), ("styles", ".profile-field-label"), ("styles", ".tariff-pill"),
     ("styles", ".folder-del-btn"), ("styles", ".upload-dz-hint"), ("styles", ".lock-badge"),
     ("styles", ".profile-badge"), ("styles", ".student-info-pill"),
+    ("styles", ".score-form-label"),  # «Балл и комментарий» — пропущено в 11.9, итоговый аудит 30.09.2026
 ])
 def test_screen_text_is_at_least_12px(source, selector):
     # 11.9: живой замер экрана на 320–1280 — дни недели, «Проверено» и «Архив» 10px, подписи анкеты,
@@ -980,3 +981,21 @@ def test_ios_text_tokens_are_readable(opener, names):
         text = _token_color(css, opener, name)
         for bg in ("bg", "surface", "ios-grouped-bg", "ios-card-bg"):
             assert _contrast(text, _token_color(css, opener, bg)) >= 4.5, f"--{name} на --{bg} ({opener})"
+
+
+# ── Итоговый аудит 30.09.2026 ────────────────────────────────────────────────
+
+
+def test_score_input_has_accessible_name():
+    # Форма оценки пробника: «Балл и комментарий» — div, не <label>; дерево доступности давало `spinbutton`
+    # без имени (WCAG 1.3.1, 4.1.2). Подсказка «0–100» у числового поля именем не считается.
+    field = re.search(r"<input type=\"number\" name=\"score\"[^>]*>", _script().replace("' + ", "").replace("'", ""))
+    assert field and 'aria-label="Балл из 100"' in field.group(0), field and field.group(0)
+
+
+def test_filter_selects_show_keyboard_focus_ring():
+    # У списков `outline: none`, при фокусе менялся только цвет рамки — слабее обводки 2px у кнопок.
+    # Текстовым полям обводку не ставим: :focus-visible у них срабатывает и от касания.
+    body = _rule_with(_styles(), ".sidebar-select:focus-visible")
+    assert "outline: 2px solid var(--blue)" in body, body
+    assert ".sidebar-search:focus-visible" not in _styles()
