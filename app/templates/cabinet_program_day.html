@@ -9,7 +9,7 @@ FORM: Operate.
 {% block title %}{{ day_title }}{% endblock %}
 {% block extra_styles %}
 <link rel="stylesheet" href="/static/css/program.css?v=51">
-<link rel="stylesheet" href="/static/css/program_ios.css?v=24">
+<link rel="stylesheet" href="/static/css/program_ios.css?v=25">
 {# Предпросмотр «Глазами ученика» рисует блоки общим рендерером ученика, а
    его классы (`lrn-blk*`) живут в `tracker.css` — без этого файла блоки
    показывались бы голой разметкой. #}
@@ -284,7 +284,7 @@ FORM: Operate.
            их нет. Кнопку показывает/прячет JS (`openSimpleEdit`/
            `resetSimpleFormForCreate`). #}
         <div class="prg-actions">
-            <button type="button" class="btn-outline" data-diagnostic-trainer hidden>Пройти как тренажёр</button>
+            <button type="button" class="btn-outline prg-trainer-btn" data-diagnostic-trainer hidden>ТРЕНАЖЁР</button>
         </div>
         <div class="prg-preview" data-diagnostic-trainer-box hidden></div>
         {% else %}

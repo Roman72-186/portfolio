@@ -251,7 +251,7 @@ function blockBodyHTML(type) {
             // сохранения, как у диагностики: id из базы тренажёру не нужны
             // (см. `runCompareTrainer`).
             + '<div class="prg-actions">'
-            + '  <button type="button" class="btn-outline" data-compare-trainer>Пройти как тренажёр</button>'
+            + '  <button type="button" class="btn-outline prg-trainer-btn" data-compare-trainer>ТРЕНАЖЁР</button>'
             + '</div>'
             + '<div class="prg-preview" data-compare-trainer-box hidden></div>';
     }
@@ -336,7 +336,7 @@ function blockBodyHTML(type) {
             + BODY_FIELD_OPTIONAL
             + '<div data-diagnostic-editor></div>'
             + '<div class="prg-actions">'
-            + '  <button type="button" class="btn-outline" data-diagnostic-trainer hidden>Пройти как тренажёр</button>'
+            + '  <button type="button" class="btn-outline prg-trainer-btn" data-diagnostic-trainer hidden>ТРЕНАЖЁР</button>'
             + '</div>'
             + '<div class="prg-preview" data-diagnostic-trainer-box hidden></div>';
     }
@@ -353,7 +353,7 @@ function blockBodyHTML(type) {
             + '  <button type="button" class="btn-outline" data-poll-add-question>+ Вопрос</button>'
             // Тренажёр — как у сравнения работ: из полей формы, без
             // сервера, поэтому работает и до сохранения (`runPollTrainer`).
-            + '  <button type="button" class="btn-outline" data-poll-trainer>Пройти как тренажёр</button>'
+            + '  <button type="button" class="btn-outline prg-trainer-btn" data-poll-trainer>ТРЕНАЖЁР</button>'
             + '</div>'
             + '<div class="prg-preview" data-poll-trainer-box hidden></div>'
             + '<label class="prg-field prg-field--row">'
