@@ -69,5 +69,101 @@
         <p class="prg-hint">В цикле пока нет ни одного задания.</p>
         {% endif %}
     </section>
+
+    {#
+    Должники цикла (владелец 30.09.2026): поимённо, по тому же правилу, что
+    лента ученика (`cycle_stats.cycle_debtors` → `tracker.missing_required_tasks`),
+    и кнопка «Напомнить всем» — ГП и СА. Ученик с истёкшим доступом сюда не
+    попадает: писать заблокированному «закрой цикл» незачем.
+    #}
+    {% if stats.steps %}
+    <section class="prg-items" id="cycle-debtors">
+        <h2>Не закрыли цикл: {{ debtors|length }}</h2>
+        {% if debtors %}
+        {% if can_remind %}
+        <div class="prg-actions">
+            <button type="button" class="btn-blue" data-role="remind-open"
+                    {{ 'disabled' if not to_remind }}>Напомнить всем ({{ to_remind }})</button>
+        </div>
+        {% if not to_remind %}
+        <p class="prg-hint">Сегодня уже напоминали всем. Следующее напоминание – завтра.</p>
+        {% endif %}
+        <div class="card" data-role="remind-confirm" hidden>
+            <p class="prg-hint">Уйдёт {{ to_remind }} ученикам в кабинет и Telegram. Пример:</p>
+            <p><strong>{{ preview[0] }}</strong><br>{{ preview[1] }}</p>
+            <p class="prg-hint">Названия заданий у каждого свои. Кому сегодня уже напоминали, повторно не придёт.</p>
+            <div class="modal-actions">
+                <button type="button" class="btn-outline" data-role="remind-cancel">Отмена</button>
+                <button type="button" class="btn-blue" data-role="remind-send">Отправить</button>
+            </div>
+        </div>
+        <p class="prg-hint" data-role="remind-result" aria-live="polite" hidden></p>
+        {% endif %}
+        <div class="table-scroll">
+            <table class="prg-table">
+                <thead>
+                    <tr><th>Ученик</th><th>Тариф</th><th>Не закрыто</th><th>Напомнили</th></tr>
+                </thead>
+                <tbody>
+                    {% for debtor in debtors %}
+                    {% set s = debtor.user %}
+                    <tr>
+                        <td><a href="/cabinet/students/{{ s.id }}">{{ ([s.last_name, s.first_name]|select|join(' ')) or s.name }}</a></td>
+                        <td>{{ s.tariff or '—' }}</td>
+                        <td>{% for task in debtor.tasks %}«{{ task.title }}»{{ ', ' if not loop.last }}{% endfor %}</td>
+                        <td>{{ 'сегодня' if debtor.reminded_today else '' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="prg-hint">Все, кто видел цикл, его закрыли.</p>
+        {% endif %}
+    </section>
+    {% endif %}
 </div>
+
+{% if debtors and can_remind and to_remind %}
+<script>
+(function () {
+    var root = document.getElementById('cycle-debtors');
+    var open = root.querySelector('[data-role="remind-open"]');
+    var panel = root.querySelector('[data-role="remind-confirm"]');
+    var send = root.querySelector('[data-role="remind-send"]');
+    var result = root.querySelector('[data-role="remind-result"]');
+
+    open.addEventListener('click', function () {
+        panel.hidden = false;
+        open.hidden = true;
+    });
+    root.querySelector('[data-role="remind-cancel"]').addEventListener('click', function () {
+        panel.hidden = true;
+        open.hidden = false;
+    });
+    send.addEventListener('click', function () {
+        send.disabled = true;
+        send.textContent = 'Отправляем…';
+        window.csrfFetch('/cabinet/staff/program/cycles/{{ stats.topic.id }}/remind', {method: 'POST'})
+            .then(function (resp) {
+                if (!resp.ok) return resp.json().then(function (body) { throw new Error(body.detail || ''); });
+                return resp.json();
+            })
+            .then(function (data) {
+                panel.hidden = true;
+                result.hidden = false;
+                result.textContent = 'Отправлено: ' + data.sent
+                    + (data.skipped ? '. Пропущено ' + data.skipped + ' – им сегодня уже напоминали.' : '.');
+                window.setTimeout(function () { window.location.reload(); }, 2500);
+            })
+            .catch(function (err) {
+                send.disabled = false;
+                send.textContent = 'Отправить';
+                result.hidden = false;
+                result.textContent = err.message || 'Не получилось отправить. Попробуйте ещё раз.';
+            });
+    });
+})();
+</script>
+{% endif %}
 {% endblock %}

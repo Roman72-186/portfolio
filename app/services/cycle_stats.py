@@ -8,19 +8,22 @@
 (`TaskBlockState`) или задание без блоков (`TrackerTaskState`). Разрез по
 тарифам берётся из профиля ученика.
 """
-from datetime import date
+from datetime import date, datetime, timezone
 
 from sqlalchemy import and_, case, or_
 from sqlalchemy.orm import Session
 
+from app.cache import invalidate_unread
 from app.constants import REPORT_EXCLUDED_USER_IDS, TARIFFS
 from app.models.learning_topic import LearningTopic
+from app.models.notification import Notification
 from app.models.role import Role
+from app.models.student_reminder import KIND_CYCLE_DEBT, StudentReminder
 from app.models.task_block import TaskBlock, TaskBlockState
 from app.models.tracker import STATUS_DONE, TrackerTask, TrackerTaskState
 from app.models.user import User
-from app.services.program import day_bounds
-from app.services.tracker import cycle_bounds, cycle_label
+from app.services.program import day_bounds, msk_date
+from app.services.tracker import cycle_bounds, cycle_label, missing_required_tasks
 from app.services.video_topics import saw_topic_period
 
 
@@ -77,12 +80,7 @@ def cycle_stats(db: Session, topic: LearningTopic) -> dict:
     """
     first, last = cycle_bounds(topic)
     tasks = _cycle_tasks(db, topic.id, first, last)
-    # Пришедший после конца цикла его не видит (владелец 29.09.2026) — и в
-    # «не сдали» этого цикла его считать нельзя.
-    students = [
-        student for student in active_students(db)
-        if saw_topic_period(student.program_access_from, topic)
-    ]
+    students = _audience(db, topic)
     total = len(students)
     tariff_of = {student.id: (student.tariff or "").strip().upper() for student in students}
     student_ids = set(tariff_of)
@@ -156,21 +154,15 @@ def cycle_stats(db: Session, topic: LearningTopic) -> dict:
                 "by_tariff": by_tariff(done_ids),
             })
 
-    # «Дошли до конца» — закрыли все шаги цикла. Пустой цикл никого не считает
-    # прошедшим: считать 100% там, где нечего делать, значит врать в отчёте.
+    # «Прошли цикл целиком» — по правилу ленты ученика (`is_cycle_complete`),
+    # а не «закрыл все блоки». До 30.09.2026 считалось по блокам, и ученик
+    # «Я С ВАМИ» не мог пройти цикл с роликом тарифа «Уверенный максимум»,
+    # которого он даже не видит, — цифра врала вниз. Пустой цикл никого не
+    # считает прошедшим: 100% там, где нечего делать, — тоже неправда.
     finished = 0
     if steps:
-        for student in students:
-            if all(
-                (
-                    student.id in done_by_block.get(block.id, set())
-                    for blocks in blocks_by_task.values() for block in blocks
-                )
-            ) and all(
-                student.id in done_by_task.get(task.id, set())
-                for task in tasks if not blocks_by_task.get(task.id)
-            ):
-                finished += 1
+        missing = _missing_by_student(db, topic, students)
+        finished = sum(1 for student in students if not missing[student.id])
 
     return {
         "topic": topic,
@@ -190,3 +182,130 @@ def cycle_stats(db: Session, topic: LearningTopic) -> dict:
             for tariff in TARIFFS
         },
     }
+
+
+def _audience(db: Session, topic: LearningTopic) -> list[User]:
+    """Ученики, которым цикл был виден. Пришедший после его конца цикла не
+    видит (владелец 29.09.2026) — и в «не сдали» его считать нельзя."""
+    return [
+        student for student in active_students(db)
+        if saw_topic_period(student.program_access_from, topic)
+    ]
+
+
+def _missing_by_student(
+    db: Session, topic: LearningTopic, students: list[User]
+) -> dict[int, list[TrackerTask]]:
+    """Незакрытые обязательные задачи цикла у каждого ученика — по тому же
+    правилу, что гейт ленты (`tracker.missing_required_tasks`)."""
+    return {
+        student.id: missing_required_tasks(db, student.id, topic)
+        for student in students
+    }
+
+
+def _utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _reminder_ref(topic: LearningTopic, now: datetime) -> str:
+    return f"{topic.id}:{msk_date(now).isoformat()}"
+
+
+def cycle_debtors(
+    db: Session, topic: LearningTopic, now: datetime | None = None
+) -> list[dict]:
+    """Кто цикл не закрыл (владелец 30.09.2026): ученик, задачи, которых не
+    хватает, и напоминали ли ему сегодня.
+
+    Отбор — те же ученики, что в статистике, минус истёкший доступ: новенький
+    после пробного периода заблокирован, писать ему «закрой цикл» бессмысленно.
+    Пустой цикл должников не имеет — как и прошедших (см. `cycle_stats`).
+    """
+    now = _utc(now) or datetime.now(timezone.utc)
+    first, last = cycle_bounds(topic)
+    if not _cycle_tasks(db, topic.id, first, last):
+        return []
+    students = [
+        student for student in _audience(db, topic)
+        if not (student.access_until is not None and _utc(student.access_until) <= now)
+    ]
+    missing = _missing_by_student(db, topic, students)
+    debtors = [student for student in students if missing[student.id]]
+    reminded: set[int] = set()
+    if debtors:
+        reminded = {
+            row[0] for row in db.query(StudentReminder.user_id).filter(
+                StudentReminder.kind == KIND_CYCLE_DEBT,
+                StudentReminder.ref == _reminder_ref(topic, now),
+                StudentReminder.user_id.in_([s.id for s in debtors]),
+            )
+        }
+    debtors.sort(key=lambda s: (
+        (s.tariff or "").strip().upper(),
+        (s.last_name or s.name or "").lower(),
+        (s.first_name or "").lower(),
+    ))
+    return [
+        {
+            "user": student,
+            "tasks": missing[student.id],
+            "reminded_today": student.id in reminded,
+        }
+        for student in debtors
+    ]
+
+
+def reminder_message(label: str, tasks: list[TrackerTask]) -> tuple[str, str]:
+    """Заголовок и текст напоминания должнику. Кнопка «Завершить задание» в
+    тексте не случайна: задание с блоками само не закрывается, и 30.09.2026
+    треть группы застряла, отметив кружками все ролики, но не нажав её."""
+    title = (
+        f"{label} не закрыт" if label.lower().startswith("цикл")
+        else f"Цикл «{label}» не закрыт"
+    )
+    names = ", ".join(f"«{task.title}»" for task in tasks)
+    if len(tasks) == 1:
+        text = (
+            f"Осталось задание {names}. Открой его в «Обучении», пройди до конца "
+            "и внизу нажми «Завершить задание»."
+        )
+    else:
+        text = (
+            f"Осталось заданий: {len(tasks)} – {names}. Открой их в «Обучении», "
+            "пройди до конца и внизу каждого нажми «Завершить задание»."
+        )
+    return title, text
+
+
+def remind_cycle_debtors(
+    db: Session, topic: LearningTopic, now: datetime | None = None
+) -> tuple[list[int], int]:
+    """Создать напоминания должникам цикла. Коммитит сам.
+
+    Возвращает id уведомлений и сколько должников пропущено, потому что им
+    сегодня уже напоминали. Рассылку в Telegram и push делает вызывающий после
+    коммита — **по одному** (`notify`), не пачкой `notify_many`: 30
+    параллельных отправок 30.09.2026 выбрали пул соединений базы.
+    """
+    now = _utc(now) or datetime.now(timezone.utc)
+    label = cycle_label(db, topic)
+    ref = _reminder_ref(topic, now)
+    created: list[Notification] = []
+    skipped = 0
+    for debtor in cycle_debtors(db, topic, now):
+        if debtor["reminded_today"]:
+            skipped += 1
+            continue
+        student = debtor["user"]
+        title, text = reminder_message(label, debtor["tasks"])
+        notification = Notification(user_id=student.id, title=title[:200], text=text)
+        db.add(notification)
+        db.add(StudentReminder(user_id=student.id, kind=KIND_CYCLE_DEBT, ref=ref))
+        created.append(notification)
+    db.commit()
+    for notification in created:
+        invalidate_unread(notification.user_id)
+    return [notification.id for notification in created], skipped

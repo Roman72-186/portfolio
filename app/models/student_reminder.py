@@ -24,6 +24,9 @@ KIND_DEADLINE_24H = "deadline_24h"
 KIND_DEADLINE_3H = "deadline_3h"
 KIND_ACCESS_3D = "access_3d"
 KIND_ACCESS_1D = "access_1d"
+# Напоминание должникам цикла по кнопке с экрана статистики (30.09.2026).
+# Ключ — «<id цикла>:<дата МСК>»: одному ученику не чаще раза в сутки.
+KIND_CYCLE_DEBT = "cycle_debt"
 
 
 class StudentReminder(Base):

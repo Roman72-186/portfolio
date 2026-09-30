@@ -14,7 +14,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.orm import Session as DBSession
@@ -66,7 +66,9 @@ from app.services.task_blocks import (
     get_task_submit_deadlines as get_task_level_submit_deadlines,
     sync_task_submit_deadlines as sync_task_level_submit_deadlines,
 )
-from app.services.cycle_stats import cycle_stats
+from app.services.cycle_stats import cycle_debtors, cycle_stats, reminder_message, remind_cycle_debtors
+from app.services.notify import notify
+from app.services.rbac import MODERATOR_ROLE_NAME
 from app.services.video_catalog import publish_video
 from app.models.tracker import (
     ITEM_ARCHI_PROFILE,
@@ -808,9 +810,54 @@ def program_cycle_stats(
     topic = get_topic(db, topic_id, kinds=(TOPIC_KIND_WEEK,))
     if topic is None:
         raise HTTPException(status_code=404, detail="Цикл не найден")
-    return templates.TemplateResponse(request, "cabinet_program_cycle_stats.html",
-        {"request": request, "user": user, "stats": cycle_stats(db, topic)},
+    stats = cycle_stats(db, topic)
+    debtors = cycle_debtors(db, topic)
+    # Пример сообщения для панели подтверждения — у первого должника, тем же
+    # построителем, что и отправка: ГП видит ровно то, что уйдёт ученикам.
+    preview = reminder_message(stats["label"], debtors[0]["tasks"]) if debtors else None
+    return templates.TemplateResponse(request, "cabinet_program_cycle_stats.html", {
+        "request": request, "user": user, "stats": stats,
+        "debtors": debtors,
+        "to_remind": sum(1 for debtor in debtors if not debtor["reminded_today"]),
+        "preview": preview,
+        # Модератор страницу видит, а отправить не может: POST ему закрывает
+        # белый список `rbac.is_moderator_request_allowed`.
+        "can_remind": user.get("role_name") != MODERATOR_ROLE_NAME,
+    })
+
+
+@router.post("/cycles/{topic_id}/remind", response_class=JSONResponse)
+def program_cycle_remind(
+    topic_id: int,
+    background_tasks: BackgroundTasks,
+    user: Annotated[dict, Depends(require_admin_role)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf_header)],
+):
+    """Напомнить всем должникам цикла закрыть его (владелец 30.09.2026).
+
+    Кому уже напоминали сегодня — пропускаются. Telegram и push уходят по
+    одному (`notify`), а не пачкой: 30 параллельных отправок 30.09.2026
+    выбрали пул соединений базы, и треть сообщений не ушла.
+    """
+    topic = get_topic(db, topic_id, kinds=(TOPIC_KIND_WEEK,))
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Цикл не найден")
+    ids, skipped = remind_cycle_debtors(db, topic)
+    db.add(
+        AuditLog(
+            action="program_cycle_remind",
+            performed_by_id=user["user_id"],
+            details=json.dumps(
+                {"topic_id": topic.id, "sent": len(ids), "skipped": skipped},
+                ensure_ascii=False,
+            ),
+        )
     )
+    db.commit()
+    for notification_id in ids:
+        background_tasks.add_task(notify, notification_id)
+    return JSONResponse({"ok": True, "sent": len(ids), "skipped": skipped})
 
 
 @router.post("/cycles/{topic_id}", response_class=JSONResponse)

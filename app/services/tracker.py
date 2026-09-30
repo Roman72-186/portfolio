@@ -767,6 +767,18 @@ def cycle_for_day(db: Session, user_id: int, day: date) -> LearningTopic | None:
 def is_cycle_complete(db: Session, user_id: int, topic: LearningTopic) -> bool:
     """Цикл пройден: закрыты все обязательные задачи внутри его периода.
 
+    Правило целиком — в `missing_required_tasks`: должники цикла на экране
+    статистики и напоминание им (30.09.2026) зовут её же, иначе список
+    должников и лента ученика разошлись бы.
+    """
+    return not missing_required_tasks(db, user_id, topic)
+
+
+def missing_required_tasks(
+    db: Session, user_id: int, topic: LearningTopic
+) -> list[TrackerTask]:
+    """Обязательные задачи цикла, которые ученик ещё не закрыл.
+
     То же правило, что у `is_week_complete`, только окно берётся из периода
     цикла, а не из понедельника. Билет Пробника (`ITEM_MOCK_EXAM`) исключён по
     той же причине: он блокирует месяц, а не цикл (решение владельца 23.08,
@@ -784,11 +796,12 @@ def is_cycle_complete(db: Session, user_id: int, topic: LearningTopic) -> bool:
     entries = accessible_task_entries(
         db, user_id, start=start, end=end, topic_id=topic.id, include_undated=True,
     )
-    return all(
-        entry["status"] == "done"
+    return [
+        entry["task"]
         for entry in entries
         if entry["task"].is_required and entry["task"].kind != ITEM_MOCK_EXAM
-    )
+        and entry["status"] != "done"
+    ]
 
 
 def effective_cycle(db: Session, user_id: int, today: date) -> LearningTopic | None:
