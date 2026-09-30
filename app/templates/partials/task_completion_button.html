@@ -1,9 +1,20 @@
 {# Единое ручное завершение задания в основной ленте обучения. Трекер эту
-   кнопку намеренно не подключает: он только показывает превью и переход. #}
+   кнопку намеренно не подключает: он только показывает превью и переход.
+
+   `completion_blockers` (словарь id задания → причина, `api/cabinet_learning.py`)
+   — почему нажать пока нельзя, по тому же правилу, по которому откажет сервер
+   (`task_blocks.completion_blocker`). Кнопка тогда выключена, причина — подписью
+   рядом: до 30.09.2026 кнопка была активной и на отказ писала «Не получилось». #}
+{% set done = entry.status == 'done' %}
+{% set blocker = none if done else (completion_blockers or {}).get(task.id) %}
+{% if blocker %}
+<p class="lrn-card-note" id="task-completion-note-{{ task.id }}">{{ blocker }}</p>
+{% endif %}
 <button
     type="button"
-    class="trk-toggle-btn{{ ' is-done' if entry.status == 'done' }}"
+    class="trk-toggle-btn{{ ' is-done' if done }}"
     data-toggle-task="{{ task.id }}"
-    aria-pressed="{{ 'true' if entry.status == 'done' else 'false' }}"
-    {{ 'disabled' if entry.status == 'done' }}
->{{ 'Задание выполнено' if entry.status == 'done' else 'Завершить задание' }}</button>
+    aria-pressed="{{ 'true' if done else 'false' }}"
+    {% if blocker %}aria-describedby="task-completion-note-{{ task.id }}"{% endif %}
+    {{ 'disabled' if done or blocker }}
+>{{ 'Задание выполнено' if done else 'Завершить задание' }}</button>

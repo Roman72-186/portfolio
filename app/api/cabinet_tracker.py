@@ -70,6 +70,7 @@ from app.services.task_blocks import (
     add_submission_image as add_task_block_submission_image,
     answered_block_ids as task_block_answered_ids,
     close_block_for_user as close_task_block_for_user,
+    completion_blocker as task_completion_blocker,
     CompareChoiceError,
     compare_pick_url,
     compare_progress,
@@ -220,34 +221,13 @@ def cabinet_tracker_toggle(
             status_code=403, detail="Цикл пройден — можно только посмотреть свои ответы"
         )
 
-    # Гейт «нельзя закрыть, пока не отвечены вопросы» (владелец 31.08.2026).
-    # Считаем только **видимые сейчас** вопросы: скрытые до сдачи в проверку
-    # не входят, иначе выходил бы тупик — вопрос не виден, ответить нельзя,
-    # задание не закрыть, и вся неделя встала бы за ним.
-    # Блок чужого тарифа в гейт не входит: ученик его не видит вовсе
-    # (`visible_blocks_for_student`), а вопрос, которого не видно, запер бы
-    # закрытие задания навсегда — тот же тупик, что и у скрытых до сдачи.
-    pending = [
-        block for block in task_question_blocks(
-            visible_blocks_for_student(
-                db, get_task_blocks(db, task_id), user_tariff=user.get("tariff")
-            )
-        )
-        if not block.hidden_until_done
-    ]
-    response = get_task_block_response(db, task_id=task_id, user_id=user["user_id"])
-    # Диагностика проверяется отдельно от остальных вопросов задания
-    # (владелец 24.09.2026: она может лежать в одном задании с обычными
-    # блоками) — по признаку блока, а не по `task.kind` целиком.
-    if any(block.is_diagnostic for block in pending):
-        from app.services.archi_profile import result_for_answers
-        if result_for_answers(db, task_id, user["user_id"]) is None:
-            raise HTTPException(status_code=409, detail="Сначала ответь на вопросы диагностики")
-    non_diagnostic_pending = [block for block in pending if not block.is_diagnostic]
-    if non_diagnostic_pending and response is None:
-        raise HTTPException(
-            status_code=409, detail="Сначала ответь на вопросы задания"
-        )
+    # Гейт «нельзя закрыть, пока не отвечены вопросы» — общей функцией: по ней
+    # же лента рисует кнопку выключенной, своей копии условия здесь нет.
+    blocker = task_completion_blocker(
+        db, task_id=task_id, user_id=user["user_id"], user_tariff=user.get("tariff")
+    )
+    if blocker:
+        raise HTTPException(status_code=409, detail=blocker)
 
     state = (
         db.query(TrackerTaskState)

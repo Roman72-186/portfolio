@@ -1195,6 +1195,8 @@ def test_task_cannot_be_closed_until_visible_questions_answered(client, db, user
 
     blocked = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
     assert blocked.status_code == 409
+    # Причина словами — её показывает кнопка вместо «Не получилось» (аудит АОП 30.09.2026).
+    assert blocked.json()["detail"] == "Сначала ответь на вопросы задания"
 
     client.post(
         f"/cabinet/tracker/tasks/{task.id}/blocks",

@@ -408,7 +408,63 @@ def test_regular_task_completion_is_only_in_learning(auth_client, db):
 
     assert resp.text.count(f'data-toggle-task="{task.id}"') == 1
     assert "Завершить задание" in resp.text
-    assert "task-completion.js?v=1" in resp.text
+    assert "task-completion.js?v=" in resp.text
+
+
+def test_completion_button_is_off_with_reason_until_questions_answered(auth_client, db):
+    """Аудит АОП 30.09.2026, находка 2: до ответа на вопросы «Завершить задание»
+    была активной, сервер отвечал 409, а ученик читал «Не получилось» и жал снова.
+    Теперь кнопка выключена, причина подписана — по тому же правилу, что у сервера."""
+    from app.models.task_block import BLOCK_QUESTION, BLOCK_UPLOAD, QUESTION_TEXT
+
+    client, user = auth_client
+    task = _task(db, user, title="Опрос", kind="material", day=today_msk())
+    # Срок — конец сегодняшнего дня: с дефолтным «10:00» ответ после десяти
+    # утра отклоняется как просроченный, и тест зависел бы от часа запуска.
+    task.due_at = day_bounds(today_msk())[1] - timedelta(minutes=1)
+    question = TaskBlock(
+        task_id=task.id, block_type=BLOCK_QUESTION, question_type=QUESTION_TEXT,
+        body="Как прошло?", sort_order=0, is_required=False,
+    )
+    # Второй невыполненный шаг — иначе ответ на единственный вопрос закрыл бы
+    # задание сам («закрывается само», 30.09.2026) и кнопка стала бы «выполнено».
+    db.add_all([question, TaskBlock(
+        task_id=task.id, block_type=BLOCK_UPLOAD, body="Сдай работу",
+        sort_order=1, is_required=False,
+    )])
+    db.commit()
+
+    html = client.get("/cabinet/learning").text
+    button = re.search(rf'<button[^>]*data-toggle-task="{task.id}"[^>]*>', html).group(0)
+    assert "disabled" in button
+    assert f'aria-describedby="task-completion-note-{task.id}"' in button
+    assert (
+        f'<p class="lrn-card-note" id="task-completion-note-{task.id}">'
+        "Сначала ответь на вопросы задания</p>"
+    ) in html
+    # Тот же текст отдаёт и сама кнопка — одно правило на оба места.
+    blocked = client.post(f"/cabinet/tracker/tasks/{task.id}/toggle")
+    assert blocked.json()["detail"] == "Сначала ответь на вопросы задания"
+
+    answered = client.post(
+        f"/cabinet/tracker/tasks/{task.id}/blocks",
+        json={"answers": [{"block_id": question.id, "text": "Хорошо"}]},
+    )
+    assert answered.status_code == 200, answered.text
+    html = client.get("/cabinet/learning").text
+    button = re.search(rf'<button[^>]*data-toggle-task="{task.id}"[^>]*>', html).group(0)
+    assert "disabled" not in button
+    assert f"task-completion-note-{task.id}" not in html
+
+
+def test_completion_script_shows_the_server_reason():
+    """Запасной путь: если сервер всё же откажет, ученик видит его причину, а не
+    «Не получилось. Попробовать ещё раз»."""
+    script = (
+        pathlib.Path(__file__).parent.parent / "app" / "static" / "js" / "task-completion.js"
+    ).read_text(encoding="utf-8")
+    assert "data.detail" in script
+    assert "Не получилось. Попробовать ещё раз" not in script
 
 
 def test_learning_hides_the_switch_without_subjects(auth_client, db):

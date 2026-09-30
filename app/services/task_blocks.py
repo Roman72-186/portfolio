@@ -259,6 +259,45 @@ def visible_blocks_for_student(
     ]
 
 
+def completion_blocker(
+    db: DBSession, *, task_id: int, user_id: int, user_tariff: str | None
+) -> str | None:
+    """Почему ученик ещё не может закрыть задание кнопкой; `None` — может.
+
+    Гейт «нельзя закрыть, пока не отвечены вопросы» (владелец 31.08.2026).
+    **Одно правило на два места:** кнопка `toggle` (`api/cabinet_tracker.py`)
+    отказывает с этим текстом, а лента (`api/cabinet_learning.py`) рисует по нему
+    кнопку выключенной с той же подписью. До 30.09.2026 условие жило только в
+    роуте, кнопка была активной, а отказ 409 ученик читал как «Не получилось.
+    Попробовать ещё раз» (аудит АОП ученика, находка 2).
+
+    Считаются только **видимые сейчас** вопросы. Скрытые до сдачи в проверку не
+    входят — иначе тупик: вопрос не виден, ответить нельзя, задание не закрыть,
+    и вся неделя встаёт за ним. Блок чужого тарифа тоже не входит: ученик его
+    не видит вовсе (`visible_blocks_for_student`), тот же тупик.
+    """
+    pending = [
+        block for block in question_blocks(
+            visible_blocks_for_student(db, get_blocks(db, task_id), user_tariff=user_tariff)
+        )
+        if not block.hidden_until_done
+    ]
+    if not pending:
+        return None
+    # Диагностика проверяется отдельно от остальных вопросов задания
+    # (владелец 24.09.2026: она может лежать в одном задании с обычными
+    # блоками) — по признаку блока, а не по `task.kind` целиком.
+    if any(block.is_diagnostic for block in pending):
+        from app.services.archi_profile import result_for_answers
+        if result_for_answers(db, task_id, user_id) is None:
+            return "Сначала ответь на вопросы диагностики"
+    if any(not block.is_diagnostic for block in pending) and (
+        get_response(db, task_id=task_id, user_id=user_id) is None
+    ):
+        return "Сначала ответь на вопросы задания"
+    return None
+
+
 def _sync_tariffs(db: DBSession, block: TaskBlock, tariffs: list[str] | None) -> None:
     """Полная пересборка списка тарифов блока.
 
