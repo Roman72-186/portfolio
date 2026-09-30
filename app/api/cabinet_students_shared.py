@@ -91,8 +91,9 @@ def _require_student_panel(
 def _can_read_archive(user: dict) -> bool:
     """Архив прошлых потоков: ГП и суперадмин, плюс куратор, которому
     суперадмин открыл архив лично (владелец 30.09.2026, `section_access.py`).
-    Куратор и в архиве видит только своих бывших учеников — это держат
-    выборка ниже и `student_access.get_student_for_staff_access`."""
+    Такой куратор видит весь архив школы, только на чтение: среди действующих
+    учеников правило «только свои» остаётся (`student_access` снимает его лишь
+    для архивного ученика в режиме чтения архива)."""
     return user["role_rank"] >= 4 or has_grant(user, "archive")
 
 
@@ -122,7 +123,7 @@ def _get_accessible_students(
 
     archived=True — режим архива (`_can_read_archive`): вместо действующих
     учеников отдаются архивные (прошлые потоки), их данные открыты только на чтение.
-    Куратору с личным доступом к архиву — только его бывшие ученики.
+    Куратору с личным доступом — весь архив школы, как ГП (владелец 30.09.2026).
     """
     hide_pre_cohort = not (show_hidden and user["role_rank"] >= 5) and not has_access_deadline
 
@@ -132,15 +133,17 @@ def _get_accessible_students(
         student_role = db.query(Role).filter(Role.rank == 1).first()
         if not student_role:
             return []
-        q = db.query(User).filter(
-            User.role_id == student_role.id,
-            User.archived_at.isnot(None),
-            User.deleted_at.is_(None),
-            User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+        return (
+            db.query(User)
+            .filter(
+                User.role_id == student_role.id,
+                User.archived_at.isnot(None),
+                User.deleted_at.is_(None),
+                User.id.notin_(REPORT_EXCLUDED_USER_IDS),
+            )
+            .order_by(User.last_name, User.first_name)
+            .all()
         )
-        if user["role_rank"] < 4:
-            q = q.filter(User.curator_id == user["user_id"])
-        return q.order_by(User.last_name, User.first_name).all()
 
     if user["role_rank"] < 4:
         # Куратор и преподаватель видят всех своих активных учеников, включая

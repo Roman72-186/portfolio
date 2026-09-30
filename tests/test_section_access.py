@@ -351,9 +351,11 @@ def test_curator_without_grant_has_no_archive(client, session_factory, curator):
     assert "archive" not in [i.key for i in curator_nav_items()]
 
 
-def test_granted_curator_sees_only_own_archived_students(
+def test_granted_curator_sees_whole_school_archive(
     client, db, session_factory, user_factory, curator,
 ):
+    """Владелец 30.09.2026: «Куратор 1» без своих учеников видел пустой архив —
+    куратору с личным доступом открыт весь архив школы, как ГП."""
     other = user_factory(vk_id=990_530, name="Чужой куратор", role_name="куратор")
     mine = _archived_student(db, user_factory, 990_531, curator)
     foreign = _archived_student(db, user_factory, 990_532, other)
@@ -363,10 +365,34 @@ def test_granted_curator_sees_only_own_archived_students(
     page = client.get("/cabinet/archive", follow_redirects=False)
     assert page.status_code == 200
     assert mine.name in page.text
-    assert foreign.name not in page.text
+    assert foreign.name in page.text
 
     assert client.get(f"/cabinet/students/{mine.id}/profile").status_code == 200
-    assert client.get(f"/cabinet/students/{foreign.id}/profile").status_code == 403
+    assert client.get(f"/cabinet/students/{foreign.id}/profile").status_code == 200
+
+
+def test_granted_archive_does_not_open_foreign_active_students(
+    client, db, session_factory, user_factory, curator,
+):
+    """Весь архив — да, чужие действующие ученики — нет."""
+    other = user_factory(vk_id=990_535, name="Чужой куратор 2", role_name="куратор")
+    active = user_factory(vk_id=990_536, name="Действующий чужой")
+    active.curator_id = other.id
+    db.commit()
+    _personal(db, curator, "archive", True)
+    _login(client, session_factory, curator)
+
+    assert client.get(f"/cabinet/students/{active.id}/profile").status_code == 403
+    assert active.name not in client.get("/cabinet/students").text
+
+
+def test_curator_without_grant_cannot_read_foreign_archived_card(
+    client, db, session_factory, user_factory, curator,
+):
+    other = user_factory(vk_id=990_537, name="Чужой куратор 3", role_name="куратор")
+    foreign = _archived_student(db, user_factory, 990_538, other)
+    _login(client, session_factory, curator)
+    assert client.get(f"/cabinet/students/{foreign.id}/profile").status_code == 404
 
 
 def test_granted_archive_stays_read_only(client, db, session_factory, user_factory, curator):

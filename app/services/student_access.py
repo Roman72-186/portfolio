@@ -19,8 +19,10 @@ def get_student_for_staff_access(
     forbidden_detail: str,
 ) -> User:
     """allow_archived=True пропускает архивного ученика мимо active_only — это
-    режим чтения архива для ГП/суперадмина. Заблокированный (is_active=False без
-    archived_at) остаётся недоступным: у блокировки другой смысл."""
+    режим чтения архива: ГП и суперадмин, плюс куратор, которому архив открыт
+    лично (решает вызывающий, `cabinet_students_shared._can_read_archive`).
+    Заблокированный (is_active=False без archived_at) остаётся недоступным: у
+    блокировки другой смысл."""
     query = db.query(User).filter(User.id == student_id)
     if active_only and not allow_archived:
         query = query.filter(User.is_active == True)  # noqa: E712
@@ -35,8 +37,11 @@ def get_student_for_staff_access(
         raise HTTPException(status_code=not_found_status_code, detail=not_found_detail)
 
     # Куратор и преподаватель работают только со своими учениками. Полный
-    # доступ начинается с Главного преподавателя (rank 4).
-    if user["role_rank"] < 4 and student.curator_id != user["user_id"]:
+    # доступ начинается с Главного преподавателя (rank 4). Исключение —
+    # чтение архива: куратору с личным доступом открыт весь архив школы
+    # (владелец 30.09.2026), а не только его бывшие ученики.
+    reading_archive = allow_archived and student.archived_at is not None
+    if user["role_rank"] < 4 and student.curator_id != user["user_id"] and not reading_archive:
         raise HTTPException(status_code=403, detail=forbidden_detail)
 
     return student
