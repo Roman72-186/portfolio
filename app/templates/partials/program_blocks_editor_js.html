@@ -36,6 +36,10 @@ var BLOCK_LABELS = {{ block_types|tojson }}.reduce(function (acc, pair) {
     acc[pair[0]] = pair[1];
     return acc;
 }, {});
+// Опрос (владелец 30.09.2026) — строка конструктора, а не тип блока в базе:
+// сервер разворачивает её в вопросы (`cabinet_program.py::_expand_polls`).
+// Кнопка добавления осталась на типе `question` («+ Опрос»), подпись та же.
+BLOCK_LABELS.poll = BLOCK_LABELS.question;
 
 // Типы, у которых истёкший срок запирает действие ученика: сдача работы,
 // ответ на вопрос, галочки правил. У остальных срок только показывается и
@@ -93,8 +97,11 @@ function subjectOptionsHTML() {
     }).join('');
 }
 
+// «Шкала» — только в опросе (владелец 30.09.2026: «шкалу навыков оттуда
+// скопировать, добавить в типы ответа»). В базе такой вопрос — блок `scale`
+// опроса, поэтому в серверном списке `question_types` её нет.
 function questionTypeOptionsHTML() {
-    return questionTypes.map(function (qt) {
+    return questionTypes.concat([{value: 'scale', label: 'Шкала от 0 до 10'}]).map(function (qt) {
         return '<option value="' + escapeHTML(qt.value) + '">Тип ответа: '
             + escapeHTML(qt.label) + '</option>';
     }).join('');
@@ -333,6 +340,27 @@ function blockBodyHTML(type) {
             + '</div>'
             + '<div class="prg-preview" data-diagnostic-trainer-box hidden></div>';
     }
+    if (type === 'poll') {
+        // Опрос (владелец 30.09.2026, созвон: «заголовок, описание, и пошли
+        // вопросы… и всё это в одном блоке»). Вопросы — свои карточки внутри
+        // строки (`pollQuestionHTML`), ученик проходит их по одному с
+        // «Далее». Первый вопрос заведён сразу: пустой опрос никому не нужен.
+        return ''
+            + '<label class="prg-field"><input type="text" data-b-title maxlength="200" aria-label="Название" placeholder="Название, например «Как прошла контрольная»"></label>'
+            + BODY_FIELD_OPTIONAL
+            + '<div data-poll-questions>' + pollQuestionHTML() + '</div>'
+            + '<div class="prg-actions">'
+            + '  <button type="button" class="btn-outline" data-poll-add-question>+ Вопрос</button>'
+            // Тренажёр — как у сравнения работ: из полей формы, без
+            // сервера, поэтому работает и до сохранения (`runPollTrainer`).
+            + '  <button type="button" class="btn-outline" data-poll-trainer>Пройти как тренажёр</button>'
+            + '</div>'
+            + '<div class="prg-preview" data-poll-trainer-box hidden></div>'
+            + '<label class="prg-field prg-field--row">'
+            + '  <input type="checkbox" data-b-hidden-until-done>'
+            + '  <span>Показать только после того, как ученик закроет задание</span>'
+            + '</label>';
+    }
     // question
     return ''
         + TITLE_FIELD_OPTIONAL
@@ -341,7 +369,7 @@ function blockBodyHTML(type) {
         + questionTypeOptionsHTML()
         + '</select></label>'
         + '<div class="prg-blk-options" data-b-options-wrap hidden>'
-        + '  <p class="prg-hint">Отметьте верный вариант — без него вопрос не сохранится.</p>'
+        + '  <p class="prg-hint">Отметьте верный вариант, если это проверка знаний. Без отметки ученик просто голосует.</p>'
         + '  <div data-b-options></div>'
         + '  <div class="prg-actions"><button type="button" class="btn-outline" data-add-b-option>Добавить вариант</button></div>'
         + '</div>'
@@ -451,6 +479,10 @@ function blockSettingsHTML(type) {
 }
 
 function blockRowHTML(type) {
+    // Кнопка «+ Опрос» и заготовки видов «Анкета»/«Тест по теории» на экране
+    // дня присылают `question` — новая строка заводится опросом (владелец
+    // 30.09.2026). Отдельный вопрос строкой формы больше не заводится.
+    if (type === 'question') type = 'poll';
     return ''
         + '<div class="prg-ticket prg-blk" data-block data-block-type="' + type + '">'
         + '  <div class="prg-ticket-head">'
@@ -505,12 +537,338 @@ function blockOptionHTML(type) {
 
 // Варианты ответа нужны только выбору из вариантов — у свободного текста
 // блок вариантов прячем, сервер их всё равно вычистит.
+//
+// У опроса вопросов несколько, у каждого своё меню типа — синхронизируем
+// каждый (`syncPollQuestion`). Обработчик смены типа на обоих экранах зовёт
+// эту функцию со всей строкой, поэтому опрос обслуживается здесь же.
 function syncBlockOptions(row) {
+    var questions = row.querySelectorAll('[data-poll-question]');
+    if (questions.length) {
+        questions.forEach(syncPollQuestion);
+        renumberPollQuestions(row);
+        return;
+    }
     var select = row.querySelector('[data-b-question-type]');
     var wrap = row.querySelector('[data-b-options-wrap]');
     if (!select || !wrap) return;
     wrap.hidden = select.value === 'text';
 }
+
+// Карточка одного вопроса опроса. Варианты видны сразу: до 30.09.2026 у
+// новой карточки вопроса список вариантов был скрыт, пока не сменишь тип, и
+// на созвоне их просто не нашли («дальше некуда нажимать»). Поэтому здесь
+// два пустых варианта уже стоят, а видимость по типу ставит
+// `syncPollQuestion` при каждой отрисовке, а не обработчик экрана.
+function pollQuestionHTML() {
+    return ''
+        + '<div class="prg-ticket" data-poll-question>'
+        + '  <div class="prg-ticket-head">'
+        + '    <strong data-poll-question-number>Вопрос</strong>'
+        + '    <span class="prg-blk-actions">'
+        + '      <span class="prg-blk-move">'
+        + '        <button type="button" class="btn-outline" data-poll-move-question="-1" aria-label="Вопрос выше">↑</button>'
+        + '        <button type="button" class="btn-outline" data-poll-move-question="1" aria-label="Вопрос ниже">↓</button>'
+        + '      </span>'
+        + '      <button type="button" class="btn-outline prg-blk-remove" data-poll-remove-question>Убрать вопрос</button>'
+        + '    </span>'
+        + '  </div>'
+        + '  <label class="prg-field"><textarea data-rich-text data-poll-question-text maxlength="5000" aria-label="Текст вопроса" placeholder="Текст вопроса"></textarea>' + BODY_FORMAT_HINT + '</label>'
+        + '  <label class="prg-field"><select data-b-question-type aria-label="Тип ответа">'
+        + questionTypeOptionsHTML()
+        + '  </select></label>'
+        + '  <div class="prg-blk-options" data-b-options-wrap>'
+        + '    <p class="prg-hint" data-poll-options-hint></p>'
+        + '    <div data-b-options>' + blockOptionHTML('question') + blockOptionHTML('question') + '</div>'
+        + '    <div class="prg-actions"><button type="button" class="btn-outline" data-add-b-option>Добавить вариант</button></div>'
+        + '  </div>'
+        + '</div>';
+}
+
+// Строки вариантов под текущий тип ответа: у шкалы — пункт с описанием и
+// подписями краёв (та же строка, что у «Шкалы навыков»), у выбора — вариант
+// с отметкой «Верный». При смене типа строка пересобирается, текст и id
+// варианта сохраняются: преподаватель не должен набирать варианты заново.
+function syncPollQuestion(question) {
+    var select = question.querySelector('[data-b-question-type]');
+    var wrap = question.querySelector('[data-b-options-wrap]');
+    var holder = question.querySelector('[data-b-options]');
+    if (!select || !wrap || !holder) return;
+    var type = select.value;
+    wrap.hidden = type === 'text';
+    var isScale = type === 'scale';
+    holder.querySelectorAll('[data-b-option]').forEach(function (optionRow) {
+        var hasScaleFields = !!optionRow.querySelector('[data-b-option-description]');
+        if (hasScaleFields === isScale) return;
+        var text = optionRow.querySelector('[data-b-option-text]').value;
+        var optionId = optionRow.getAttribute('data-b-option-id');
+        optionRow.insertAdjacentHTML('afterend', blockOptionHTML(isScale ? 'scale' : 'question'));
+        var fresh = optionRow.nextElementSibling;
+        fresh.querySelector('[data-b-option-text]').value = text;
+        if (optionId) fresh.setAttribute('data-b-option-id', optionId);
+        optionRow.remove();
+        if (window.RichTextField) window.RichTextField.enhanceAll(fresh);
+    });
+    holder.querySelectorAll('[data-b-option-correct]').forEach(function (box) {
+        box.closest('label').hidden = isScale;
+        if (isScale) box.checked = false;
+    });
+    holder.querySelectorAll('[data-b-option-text]').forEach(function (field) {
+        field.placeholder = isScale ? 'Что оценить, например «Сложность контрольной»' : 'Вариант ответа';
+        field.setAttribute('aria-label', field.placeholder);
+    });
+    var hint = question.querySelector('[data-poll-options-hint]');
+    if (hint) {
+        hint.textContent = isScale
+            ? 'Пункты, которые ученик оценит от 0 до 10. Оценки видны при проверке ответов и в историю навыков ученика не попадают.'
+            : 'Отметьте верный вариант, если это проверка знаний. Без отметки ученик просто голосует.';
+    }
+    var addButton = question.querySelector('[data-add-b-option]');
+    if (addButton) addButton.textContent = isScale ? 'Добавить пункт шкалы' : 'Добавить вариант';
+}
+
+function renumberPollQuestions(row) {
+    row.querySelectorAll('[data-poll-question]').forEach(function (question, index) {
+        var number = question.querySelector('[data-poll-question-number]');
+        if (number) number.textContent = 'Вопрос ' + (index + 1);
+    });
+}
+
+// Вопрос из сохранённого опроса (или новый пустой, если `question` не
+// передан) — в конец списка вопросов строки.
+function addPollQuestion(row, question) {
+    var holder = row.querySelector('[data-poll-questions]');
+    holder.insertAdjacentHTML('beforeend', pollQuestionHTML());
+    var card = holder.lastElementChild;
+    if (question) {
+        if (question.id) card.setAttribute('data-poll-question-id', question.id);
+        card.querySelector('[data-poll-question-text]').value = question.text || '';
+        card.querySelector('[data-b-question-type]').value = question.question_type || 'single';
+        var optionsHolder = card.querySelector('[data-b-options]');
+        optionsHolder.innerHTML = '';
+        var isScale = question.question_type === 'scale';
+        (question.options || []).forEach(function (option) {
+            optionsHolder.insertAdjacentHTML('beforeend', blockOptionHTML(isScale ? 'scale' : 'question'));
+            var optionRow = optionsHolder.lastElementChild;
+            if (option.id) optionRow.setAttribute('data-b-option-id', option.id);
+            optionRow.querySelector('[data-b-option-text]').value = option.text || '';
+            optionRow.querySelector('[data-b-option-correct]').checked = !!option.is_correct;
+            if (isScale) {
+                optionRow.querySelector('[data-b-option-description]').value = option.description || '';
+                optionRow.querySelector('[data-b-option-min-label]').value = option.scale_min_label || '';
+                optionRow.querySelector('[data-b-option-max-label]').value = option.scale_max_label || '';
+            }
+        });
+    }
+    syncPollQuestion(card);
+    renumberPollQuestions(row);
+    return card;
+}
+
+// Вопросы опроса в том виде, в каком их ждёт сервер
+// (`cabinet_program.py::PollQuestionItem`). Пустая карточка — нажали
+// «+ Вопрос» и ничего не вписали — молча пропускается, как пустой блок.
+// Вопрос без текста, но с вариантами уходит как есть: сервер ответит
+// «впишите текст», и введённое не пропадёт молча.
+function collectPollQuestions(row) {
+    var questions = [];
+    row.querySelectorAll('[data-poll-question]').forEach(function (card) {
+        var text = card.querySelector('[data-poll-question-text]').value.trim();
+        var type = card.querySelector('[data-b-question-type]').value;
+        var options = [];
+        if (type !== 'text') {
+            card.querySelectorAll('[data-b-option]').forEach(function (optionRow) {
+                var optionText = optionRow.querySelector('[data-b-option-text]').value.trim();
+                if (!optionText) return;
+                var optionId = optionRow.getAttribute('data-b-option-id');
+                var option = {
+                    id: optionId ? Number(optionId) : null,
+                    text: optionText,
+                    is_correct: type !== 'scale' && optionRow.querySelector('[data-b-option-correct]').checked
+                };
+                if (type === 'scale') {
+                    option.description = optionRow.querySelector('[data-b-option-description]').value.trim();
+                    option.scale_min_label = optionRow.querySelector('[data-b-option-min-label]').value.trim();
+                    option.scale_max_label = optionRow.querySelector('[data-b-option-max-label]').value.trim();
+                }
+                options.push(option);
+            });
+        }
+        if (!text && !options.length) return;
+        var questionId = card.getAttribute('data-poll-question-id');
+        questions.push({
+            id: questionId ? Number(questionId) : null,
+            text: text,
+            question_type: type,
+            options: options
+        });
+    });
+    return questions;
+}
+
+// «Добавить вариант» — одна функция на оба экрана и все типы с вариантами
+// (вопрос, шкала, правила, вопрос опроса). До 30.09.2026 у каждого экрана
+// была своя копия, и обе брали первый список вариантов в строке — в опросе
+// с несколькими вопросами вариант уехал бы в первый вопрос.
+function addBlockOption(button) {
+    var question = button.closest('[data-poll-question]');
+    var owner = question || button.closest('[data-block]');
+    var holder = owner.querySelector('[data-b-options]');
+    var type = question
+        ? (question.querySelector('[data-b-question-type]').value === 'scale' ? 'scale' : 'question')
+        : owner.getAttribute('data-block-type');
+    holder.insertAdjacentHTML('beforeend', blockOptionHTML(type));
+    var fresh = holder.lastElementChild;
+    window.RichTextField.enhanceAll(fresh);
+    // У шкалы и правил верного варианта нет по устройству: там пункт — это
+    // навык или правило. Прячем отметку сразу при добавлении, как она уже
+    // прячется при открытии сохранённого блока.
+    if (type === 'scale' || type === 'rules') {
+        var freshCorrect = fresh.querySelector('[data-b-option-correct]');
+        if (freshCorrect) freshCorrect.closest('label').hidden = true;
+        if (type === 'rules') fresh.querySelector('[data-b-option-text]').placeholder = 'Текст правила';
+    }
+    if (question) syncPollQuestion(question);
+}
+
+// Вопросы опроса как блоки рендерера ученика — одна сборка на тренажёр и
+// предпросмотр «Глазами ученика». id отрицательные: у несохранённого вопроса
+// своего нет, а рендерер различает поля ответов по id.
+function pollRenderBlocks(item, key) {
+    var toHtml = window.RichTextField.markdownToHtml;
+    return (item.questions || []).map(function (question, index) {
+        var blockId = -(index + 1);
+        var isScale = question.question_type === 'scale';
+        return {
+            id: blockId,
+            block_type: isScale ? 'scale' : 'question',
+            question_type: isScale ? null : question.question_type,
+            title: index === 0 ? item.title : null,
+            poll_key: key,
+            poll_intro_html: index === 0 && item.body ? toHtml(item.body) : null,
+            body_html: toHtml(question.text || ''),
+            answered: false,
+            trainer: true,
+            options: (question.options || []).map(function (option, position) {
+                return {
+                    id: blockId * 100 - position - 1,
+                    text: option.text,
+                    text_html: toHtml(option.text || ''),
+                    is_correct: !!option.is_correct,
+                    description_html: option.description ? toHtml(option.description) : null,
+                    scale_min_label: option.scale_min_label || null,
+                    scale_max_label: option.scale_max_label || null
+                };
+            })
+        };
+    });
+}
+
+// Предпросмотр «Глазами ученика» рисует блоки по одному и опрос не листает —
+// его разворачиваем в название с описанием и вопросы подряд. Пройти опрос
+// так, как его пройдёт ученик, — это тренажёр.
+function expandPollsForPreview(items) {
+    var expanded = [];
+    (items || []).forEach(function (item) {
+        if (item.block_type !== 'poll') { expanded.push(item); return; }
+        if (item.title || item.body) {
+            expanded.push({block_type: 'text', title: item.title, body: item.body,
+                           hidden_until_done: item.hidden_until_done});
+        }
+        (item.questions || []).forEach(function (question) {
+            var isScale = question.question_type === 'scale';
+            expanded.push({
+                block_type: isScale ? 'scale' : 'question',
+                question_type: isScale ? null : question.question_type,
+                body: question.text,
+                options: question.options,
+                hidden_until_done: item.hidden_until_done
+            });
+        });
+    });
+    return expanded;
+}
+
+// «Пройти как тренажёр» у опроса (владелец 30.09.2026: «чтобы я могла
+// посмотреть, как у ребёнка работает»). Тот же мастер, что у ученика
+// (`lrnBlockRender.runPoll`), но блоки собраны из полей формы и на сервер не
+// уходит ничего — как у тренажёра сравнения работ. В конце — счёт по
+// вопросам, где отмечен верный вариант.
+function runPollTrainer(row) {
+    var box = row.querySelector('[data-poll-trainer-box]');
+    if (!box) return;
+    box.innerHTML = '';
+    box.hidden = false;
+    var item = {
+        title: (row.querySelector('[data-b-title]').value || '').trim(),
+        body: (row.querySelector('[data-b-body]').value || '').trim(),
+        questions: collectPollQuestions(row)
+    };
+    var el = window.lrnBlockRender.el;
+    if (!item.questions.length) {
+        box.appendChild(el('p', 'prg-hint', 'Добавьте хотя бы один вопрос — тогда тренажёр запустится.'));
+        return;
+    }
+    var blocks = pollRenderBlocks(item, 'trainer');
+    var renderer = window.lrnBlockRender.create({ csrfToken: '' });
+    window.lrnBlockRender.runPoll(renderer, blocks, box, {
+        showTitle: true,
+        onSubmit: function (answers) {
+            var gradable = 0;
+            var correct = 0;
+            blocks.forEach(function (block) {
+                var right = (block.options || []).filter(function (option) { return option.is_correct; })
+                    .map(function (option) { return option.id; }).sort();
+                if (block.block_type !== 'question' || !right.length) return;
+                gradable++;
+                var answer = answers.filter(function (a) { return a.block_id === block.id; })[0];
+                var chosen = (answer ? answer.option_ids : []).slice().sort();
+                if (chosen.join(',') === right.join(',')) correct++;
+            });
+            box.innerHTML = '';
+            box.appendChild(el('p', 'lrn-blk-verdict is-ok', 'Опрос пройден. В тренажёре ответы не сохраняются.'));
+            if (gradable) box.appendChild(el('p', 'lrn-blk-score', 'Верных ответов: ' + correct + ' из ' + gradable));
+            var again = el('button', 'btn-outline', 'Пройти ещё раз');
+            again.type = 'button';
+            again.setAttribute('data-poll-trainer', '');
+            box.appendChild(again);
+        }
+    });
+}
+
+// Кнопки внутри опроса есть в обоих конструкторах (день и задания цикла) —
+// обработчик один, здесь, как у тренажёра сравнения работ.
+document.addEventListener('click', function (event) {
+    var trainer = event.target.closest('[data-poll-trainer]');
+    if (trainer) {
+        var trainerRow = trainer.closest('[data-block]');
+        if (trainerRow) runPollTrainer(trainerRow);
+        return;
+    }
+    var add = event.target.closest('[data-poll-add-question]');
+    if (add) {
+        var addRow = add.closest('[data-block]');
+        var card = addPollQuestion(addRow);
+        window.RichTextField.enhanceAll(card);
+        card.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+        return;
+    }
+    var move = event.target.closest('[data-poll-move-question]');
+    if (move) {
+        var moved = move.closest('[data-poll-question]');
+        var sibling = Number(move.getAttribute('data-poll-move-question')) < 0
+            ? moved.previousElementSibling : moved.nextElementSibling;
+        if (!sibling) return;
+        if (sibling === moved.previousElementSibling) sibling.before(moved); else sibling.after(moved);
+        renumberPollQuestions(moved.closest('[data-block]'));
+        return;
+    }
+    var remove = event.target.closest('[data-poll-remove-question]');
+    if (remove) {
+        var removeRow = remove.closest('[data-block]');
+        remove.closest('[data-poll-question]').remove();
+        renumberPollQuestions(removeRow);
+    }
+});
 
 function fillBlockRow(row, block) {
     if (block.id) row.setAttribute('data-block-id', block.id);
@@ -616,7 +974,14 @@ function fillBlockRow(row, block) {
             if (correctBox) correctBox.closest('label').hidden = true;
         });
     }
-    var qType = row.querySelector('[data-b-question-type]');
+    if (row.getAttribute('data-block-type') === 'poll') {
+        row.setAttribute('data-poll-key', block.poll_key || '');
+        row.querySelector('[data-poll-questions]').innerHTML = '';
+        (block.questions || []).forEach(function (question) { addPollQuestion(row, question); });
+        if (!(block.questions || []).length) addPollQuestion(row);
+    }
+    var qType = row.getAttribute('data-block-type') === 'question'
+        ? row.querySelector('[data-b-question-type]') : null;
     if (qType) {
         qType.value = block.question_type || 'text';
         var holder = row.querySelector('[data-b-options]');
@@ -920,6 +1285,15 @@ function collectFormBlocks(form) {
                     });
                 });
             }
+        }
+        if (type === 'poll') {
+            item.poll_key = row.getAttribute('data-poll-key') || null;
+            item.hidden_until_done = !!row.querySelector('[data-b-hidden-until-done]:checked');
+            item.questions = collectPollQuestions(row);
+            // Совсем пустой опрос (добавили и ничего не вписали) — пустая
+            // заготовка, как пустой блок. Опрос с названием, но без вопросов
+            // уходит: сервер ответит «нужен хотя бы один вопрос».
+            if (!item.questions.length && !item.title && !item.body) return;
         }
         if (type === 'text' && !item.body) return;
         // portfolio: пустой заголовок и пояснение допустимы — кнопка

@@ -48,6 +48,17 @@ scope)` и свойством `answered` (одна попытка: после о
         return node;
     }
 
+    // Ответ на шаг мастера дан, можно жать «Далее»: у шкалы оценены все
+    // навыки, у свободного текста что-то написано, у выбора отмечен хоть
+    // один вариант. До 30.09.2026 мастер знал только выбор (диагностика), и
+    // вопрос с текстом держал бы «Далее» выключенной навсегда.
+    function isAnswerFilled(block, answer) {
+        if (!answer) return false;
+        if (block.block_type === 'scale') return answer.option_ids.length === (block.options || []).length;
+        if (block.question_type === 'text') return !!(answer.text || '').trim();
+        return answer.option_ids.length > 0;
+    }
+
     window.lrnBlockRender = {
         el: el,
         profileResult: function (profile) {
@@ -87,8 +98,15 @@ scope)` и свойством `answered` (одна попытка: после о
         // куда рендерится сам вопрос. `callbacks.onFinish(answers, handlers)`
         // получает собранные ответы всех шагов и `handlers.onError()` на
         // случай неудачной отправки.
+        //
+        // С 30.09.2026 мастером проходится и опрос (`runPoll` ниже), поэтому
+        // два параметра: `callbacks.finishLabel` — подпись последней кнопки
+        // (у диагностики по умолчанию «Получить результат»), и
+        // `callbacks.progress` — строка «Вопрос N из M» над вопросом вместо
+        // приписки к заголовку: у вопросов опроса своего заголовка нет.
         runWizard: function (renderer, steps, callbacks) {
             var total = steps.length;
+            var finishLabel = callbacks.finishLabel || 'Получить результат';
 
             function show(index) {
                 steps.forEach(function (step, i) {
@@ -107,9 +125,13 @@ scope)` и свойством `answered` (одна попытка: после о
                 // числом: заголовок либо серверный `.lrn-step-title` (лента
                 // цикла), либо `.lrn-blk-title` внутри самого рендера блока
                 // (панель «Материалы задания», `titlesOutside` не передан).
-                var titleEl = (step.container && step.container.querySelector('.lrn-step-title'))
-                    || body.querySelector('.lrn-blk-title');
-                if (titleEl && total > 1) titleEl.textContent = titleEl.textContent + ' из ' + total;
+                if (callbacks.progress) {
+                    if (total > 1) body.insertBefore(el('p', 'lrn-card-note', 'Вопрос ' + (index + 1) + ' из ' + total), body.firstChild);
+                } else {
+                    var titleEl = (step.container && step.container.querySelector('.lrn-step-title'))
+                        || body.querySelector('.lrn-blk-title');
+                    if (titleEl && total > 1) titleEl.textContent = titleEl.textContent + ' из ' + total;
+                }
 
                 var isLast = index === total - 1;
                 var nav = el('div', 'form-actions');
@@ -118,7 +140,7 @@ scope)` и свойством `answered` (одна попытка: после о
                 back.hidden = index === 0;
                 back.addEventListener('click', function () { show(index - 1); });
 
-                var next = el('button', 'btn-blue', isLast ? 'Получить результат' : 'Далее');
+                var next = el('button', 'btn-blue', isLast ? finishLabel : 'Далее');
                 next.type = 'button';
                 next.disabled = true;
 
@@ -127,9 +149,14 @@ scope)` и свойством `answered` (одна попытка: после о
 
                 function checkFilled() {
                     var answered = renderer.collectAnswers([step.block], body);
-                    next.disabled = !(answered.length && answered[0].option_ids.length);
+                    next.disabled = !isAnswerFilled(step.block, answered[0]);
                 }
+                // `input` — для свободного текста (`change` у поля приходит
+                // только при уходе фокуса), `click` — для шкалы: её клетки
+                // меняют скрытое поле скриптом, и `change` не возникает.
                 body.addEventListener('change', checkFilled);
+                body.addEventListener('input', checkFilled);
+                body.addEventListener('click', checkFilled);
                 checkFilled();
 
                 next.addEventListener('click', function () {
@@ -158,6 +185,66 @@ scope)` и свойством `answered` (одна попытка: после о
 
             show(0);
         },
+        // Опрос (владелец 30.09.2026): несколько вопросов одним блоком —
+        // название, описание, потом вопросы по одному с «Далее», ответы
+        // уходят одним запросом в конце. `blocks` — блоки одного опроса по
+        // порядку (общий `poll_key`), `host` — куда рисовать. Своей разметки
+        // вопроса у опроса нет: шаги рисует тот же `renderer.render`,
+        // листает тот же `runWizard`, что у диагностики.
+        //
+        // options: `showTitle` — печатать название опроса (в ленте его уже
+        // напечатал сервер заголовком карточки), `onSubmit(answers,
+        // handlers)` — отправка, `finishLabel` — подпись последней кнопки.
+        // Возвращает true, если запущен мастер (в опросе есть неотвеченные
+        // вопросы) — тогда эти блоки не должны попасть в общую форму ответов.
+        runPoll: function (renderer, blocks, host, options) {
+            var first = blocks[0] || {};
+            if (options.showTitle && first.title) host.appendChild(el('p', 'lrn-blk-title', first.title));
+            if (first.poll_intro_html) host.appendChild(elHtml('p', 'lrn-blk-body', first.poll_intro_html));
+            // Название опроса лежит на первом вопросе (`title` первого
+            // блока) — рендер вопроса напечатал бы его второй раз.
+            var questions = blocks.map(function (block) {
+                var copy = {};
+                Object.keys(block).forEach(function (key) { copy[key] = block[key]; });
+                copy.title = null;
+                return copy;
+            });
+            var pending = questions.filter(function (block) { return !block.answered; });
+            questions.forEach(function (block, index) {
+                if (pending.indexOf(block) !== -1) return;
+                var node = renderer.render(block, index);
+                if (node) host.appendChild(node);
+            });
+            if (!pending.length) return false;
+            var steps = pending.map(function (block) {
+                var body = el('div', 'lrn-blk-step');
+                host.appendChild(body);
+                return { block: block, container: body, body: body };
+            });
+            window.lrnBlockRender.runWizard(renderer, steps, {
+                finishLabel: options.finishLabel || 'Отправить',
+                progress: true,
+                onFinish: options.onSubmit
+            });
+            return true;
+        },
+        // Блоки опросов задания, сгруппированные по ключу в порядке ленты:
+        // `[{ key, blocks }]`. Блоки без ключа (одиночные вопросы, заведённые
+        // до опросов) сюда не попадают — они рисуются по-старому.
+        pollGroups: function (blocks) {
+            var groups = [];
+            var byKey = {};
+            (blocks || []).forEach(function (block) {
+                if (!block.poll_key) return;
+                if (!byKey[block.poll_key]) {
+                    byKey[block.poll_key] = { key: block.poll_key, blocks: [] };
+                    groups.push(byKey[block.poll_key]);
+                }
+                byKey[block.poll_key].blocks.push(block);
+            });
+            return groups;
+        },
+        isAnswerFilled: isAnswerFilled,
         create: function (options) {
             var csrfToken = (options || {}).csrfToken;
             // Локальной переменной, не полем `api`: снаружи флаг никто не
@@ -701,7 +788,10 @@ scope)` и свойством `answered` (одна попытка: после о
                 // частичную отправку (`submit_cabinet_tracker_task_blocks`:
                 // «ответы принимаются частями»), другие блоки задания это
                 // не затрагивает.
-                if (block.submit_endpoint && !block.edit_reason) {
+                // У неотвеченной шкалы опроса своей кнопки нет: её место
+                // занимает «Далее» мастера, ответы опроса уходят одним
+                // запросом (`runPoll`).
+                if (block.submit_endpoint && !block.edit_reason && !(block.poll_key && !block.answered)) {
                     var note = el('p', 'video-progress-status');
                     note.setAttribute('aria-live', 'polite');
                     if (block.answered) {
@@ -744,9 +834,13 @@ scope)` и свойством `answered` (одна попытка: после о
                                 inputs.forEach(function (input) { input.disabled = true; });
                                 saveBtn.remove();
                                 note.remove();
+                                // Шкала опроса в историю навыков не идёт
+                                // (`skills_history`, владелец 30.09.2026).
                                 wrap.appendChild(el(
                                     'p', 'lrn-blk-verdict is-ok',
-                                    'Сохранено — результат в «Личной информации».'
+                                    block.poll_key
+                                        ? 'Сохранено.'
+                                        : 'Сохранено — результат в «Личной информации».'
                                 ));
                             }).catch(function () {
                                 saveBtn.disabled = false;

@@ -28,7 +28,7 @@
 {% from "partials/program_settings_panel.html" import settings_panel %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
-<script src="/static/js/task-blocks-render.js?v=36"></script>
+<script src="/static/js/task-blocks-render.js?v=37"></script>
 <script src="/static/js/diagnostic-builder.js?v=9"></script>
 <script src="/static/js/diagnostic-trainer.js?v=3"></script>
 {# WYSIWYG для полей с разметкой — стоит до `program_blocks_editor_js.html`. #}
@@ -425,7 +425,7 @@ function uploadBlockPhotos(row, files) {
         // блоков; на месте этой строки разворачиваем её в N вопросов, чтобы
         // предпросмотр показывал их так же, как их увидит ученик, и там же,
         // где куратор поставил диагностику среди остальных блоков.
-        collectFormBlocks(form).forEach(function (block) {
+        expandPollsForPreview(collectFormBlocks(form)).forEach(function (block) {
             if (block.block_type !== 'diagnostic') { blocks.push(block); return; }
             blocks = blocks.concat(diagnosticPreviewBlocks(
                 block.diagnostic && block.diagnostic.questions,
@@ -799,6 +799,10 @@ function uploadBlockPhotos(row, files) {
             var holder = form.querySelector('[data-blocks]');
             holder.insertAdjacentHTML('beforeend', blockRowHTML(addBlock.getAttribute('data-add-block')));
             window.RichTextField.enhanceAll(holder.lastElementChild);
+            // Варианты ответа видны сразу, без смены типа (владелец
+            // 30.09.2026: на созвоне их не нашли — этот вызов был только на
+            // экране дня).
+            syncBlockOptions(holder.lastElementChild);
             renumberBlocks(holder);
             holder.lastElementChild.scrollIntoView({behavior: 'smooth', block: 'nearest'});
             return;
@@ -815,25 +819,11 @@ function uploadBlockPhotos(row, files) {
             removeBlockRow(removeBlock.closest('[data-block]'));
             return;
         }
+        // Общая функция конструктора (partials/program_blocks_editor_js.html),
+        // та же, что на экране дня: понимает и вопросы опроса.
         var addOption = event.target.closest('[data-add-b-option]');
         if (addOption) {
-            var optionsOwner = addOption.closest('[data-block]');
-            var optionsHolder = optionsOwner.querySelector('[data-b-options]');
-            var ownerType = optionsOwner.getAttribute('data-block-type');
-            optionsHolder.insertAdjacentHTML('beforeend', blockOptionHTML(ownerType));
-            window.RichTextField.enhanceAll(optionsHolder.lastElementChild);
-            // Та же логика, что на экране дня: у шкалы и правил нет верного
-            // варианта, прячем отметку сразу при добавлении.
-            if (ownerType === 'scale' || ownerType === 'rules') {
-                var freshOption = optionsHolder.lastElementChild;
-                var freshCorrect = freshOption.querySelector('[data-b-option-correct]');
-                if (freshCorrect) freshCorrect.closest('label').hidden = true;
-                if (ownerType === 'rules') {
-                    freshOption
-                        .querySelector('[data-b-option-text]')
-                        .placeholder = 'Текст правила';
-                }
-            }
+            addBlockOption(addOption);
             return;
         }
         var removeOption = event.target.closest('[data-remove-b-option]');

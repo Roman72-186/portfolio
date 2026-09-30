@@ -256,8 +256,17 @@ def test_editing_diagnostic_must_not_resend_its_own_question_blocks(
         json={"title": "Профиль", "description": None, "diagnostic": config, "blocks": stale_blocks},
         headers={"X-CSRF-Token": "x"},
     )
-    assert broken.status_code == 422
-    assert "верный ответ" in broken.text
+    # До 30.09.2026 такой запрос отбивало правило «у вопроса с вариантами
+    # отметьте верный ответ» — побочно. Правило снято (владелец 30.09.2026:
+    # вопрос без верного варианта — голосование), и защита держится на
+    # главном: у вида archi_profile блоки собираются из настроек диагностики,
+    # присланные клиентом в дело не идут — вопрос не задвоится.
+    assert broken.status_code == 200, broken.text
+    db.expire_all()
+    after_broken = get_task_blocks(db, task_id)
+    assert len(after_broken) == 1
+    assert after_broken[0].id == stale_blocks[0]["id"]
+    assert after_broken[0].is_diagnostic
 
     # Починенный клиент — для archi_profile blocks всегда пустой список.
     fixed = client.post(

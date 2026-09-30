@@ -29,6 +29,7 @@ from app.models.task_block import (
     IMAGE_BLOCK_TYPES,
     MAX_BLOCK_IMAGES,
     MEDIA_KINDS,
+    POLL_BLOCK_TYPES,
     VIDEO_BLOCK_TYPES,
     QUESTION_TEXT,
     QUESTION_TYPES,
@@ -607,6 +608,43 @@ def visible_question_blocks(blocks: list[TaskBlock], *, task_done: bool) -> list
     ]
 
 
+def poll_submission_error(
+    blocks: list[TaskBlock], *, answered_ids: set[int], answers: dict[int, dict]
+) -> str | None:
+    """Отказ, если первая отправка опроса неполная; `None` — можно сохранять.
+
+    Опрос (владелец 30.09.2026) проходится мастером и уходит одним запросом.
+    Раз в запросе есть вопрос опроса, у которого остались неотвеченные, в нём
+    должны быть все неотвеченные вопросы этого опроса и ответ на каждый.
+    Иначе половина опроса закрылась бы, половина висела, и в ленте опрос
+    выглядел бы пройденным наполовину. После первой отправки действуют
+    обычные правила вопроса и шкалы: выбор — одна попытка, текст и оценки
+    можно менять до проверки. Тот же приём, что у диагностики
+    (`submit_cabinet_tracker_task_blocks`).
+
+    `answers` — `{block_id: {"text", "option_ids", "option_texts"}}`.
+    """
+    groups: dict[str, list[TaskBlock]] = {}
+    for block in blocks:
+        if block.poll_key and block.block_type in POLL_BLOCK_TYPES:
+            groups.setdefault(block.poll_key, []).append(block)
+    for group in groups.values():
+        pending = [block for block in group if block.id not in answered_ids]
+        if not pending or not any(block.id in answers for block in group):
+            continue
+        for block in pending:
+            answer = answers.get(block.id)
+            if answer is None:
+                return "Ответь на все вопросы опроса"
+            if block.block_type == BLOCK_QUESTION and block.question_type == QUESTION_TEXT:
+                filled = bool((answer.get("text") or "").strip())
+            else:
+                filled = bool(answer.get("option_ids"))
+            if not filled:
+                return "Ответь на все вопросы опроса"
+    return None
+
+
 def grade_response(
     db: DBSession, *, blocks: list[TaskBlock], response_id: int | None
 ) -> dict:
@@ -778,8 +816,14 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         row.media_kind = item.get("media_kind") if is_media else None
         row.media_s3_url = _clean(item.get("media_url"), 500) if is_media else None
         row.media_s3_path = _clean(item.get("media_path"), 500) if is_media else None
+        # У шкалы — только внутри опроса: галочка «показать после закрытия
+        # задания» одна на весь опрос, и шкала без неё вылезла бы раньше
+        # остальных его вопросов.
         row.hidden_until_done = bool(
-            item.get("hidden_until_done") if block_type == BLOCK_QUESTION else False
+            item.get("hidden_until_done")
+            if block_type == BLOCK_QUESTION
+            or (block_type == BLOCK_SCALE and item.get("poll_key"))
+            else False
         )
         # Блок-вопрос диагностики АРХИ-ПРОФИЛЯ (владелец 24.09.2026) —
         # проставляется `archi_profile.blocks_from_config`/`preset_blocks`,
@@ -788,6 +832,15 @@ def sync_blocks(db: DBSession, *, task_id: int, items: list[dict]) -> list[TaskB
         row.is_diagnostic = bool(
             item.get("is_diagnostic") if block_type == BLOCK_QUESTION else False
         )
+        # Опрос (владелец 30.09.2026): ключ и описание разворачивает из одной
+        # строки конструктора `api/cabinet_program.py::_expand_poll_entry`.
+        # Бывают только у вопроса и шкалы — блок могли переключить на другой
+        # тип, и чужой ключ склеил бы его с опросом.
+        in_poll = block_type in POLL_BLOCK_TYPES
+        row.poll_key = _clean(item.get("poll_key"), 32) if in_poll else None
+        row.poll_intro = (
+            (item.get("poll_intro") or "").strip() or None
+        ) if in_poll and row.poll_key else None
         row.is_required = bool(item.get("is_required"))
         row.is_required_for_intake = bool(
             item.get("is_required_for_intake", True)
@@ -1732,6 +1785,25 @@ def is_block_required_for_user(
     return block.is_required
 
 
+def poll_inner_block_ids(blocks: list[TaskBlock]) -> set[int]:
+    """Блоки опроса, кроме последнего в своём опросе.
+
+    Для очереди ленты обязателен только последний вопрос опроса (владелец
+    30.09.2026). Опрос проходится одним мастером и уходит одним запросом:
+    считай обязательным каждый вопрос — второй оказался бы заперт до ответа
+    на первый, и мастер не собрался бы. Хвост ленты опрос держит так же —
+    последний вопрос закрывается вместе с остальными. Тот же приём, что у
+    диагностики вида `archi_profile` (`cycle_feed.build_cycle_feed`).
+    """
+    last_by_key: dict[str, int] = {}
+    poll_ids: list[tuple[str, int]] = []
+    for block in blocks:
+        if block.poll_key and block.block_type in POLL_BLOCK_TYPES:
+            last_by_key[block.poll_key] = block.id
+            poll_ids.append((block.poll_key, block.id))
+    return {block_id for key, block_id in poll_ids if last_by_key[key] != block_id}
+
+
 def feed_state(
     db: DBSession, *, task_id: int, user_id: int, user_tariff: str | None
 ) -> list[dict]:
@@ -1753,9 +1825,11 @@ def feed_state(
     task_blocks_progress = bool(
         task and task.is_required and task.kind != ITEM_MOCK_EXAM
     )
+    poll_inner = poll_inner_block_ids(blocks)
     required_by_block = {
         block.id: bool(
             task_blocks_progress
+            and block.id not in poll_inner
             and is_block_required_for_user(
                 block, is_intake_student=is_intake_student
             )
@@ -1875,6 +1949,16 @@ def review_queue(
         chosen.setdefault(response.id, None)
     for response_id in list(chosen):
         chosen[response_id] = get_selected_options(db, response_id=response_id)
+    # Оценки шкалы — текстом выбранного пункта (владелец 30.09.2026: шкала
+    # стала типом ответа в опросе, и без чисел проверяющий видел одни
+    # названия пунктов, не узнав, что ответил ученик).
+    scale_scores = {
+        response_id: get_selected_option_texts(db, response_id=response_id)
+        for response_id in {
+            response.id for _a, block, response, _t, _u in rows
+            if block.block_type == BLOCK_SCALE
+        }
+    }
 
     items: list[dict] = []
     for answer, block, response, task, student in rows:
@@ -1910,6 +1994,7 @@ def review_queue(
             })
             continue
         picked = chosen.get(response.id, {}).get(block.id, set())
+        scores = scale_scores.get(response.id, {})
         items.append({
             "answer_id": answer.id,
             "student_id": student.id,
@@ -1920,7 +2005,11 @@ def review_queue(
             "question": block.body or "",
             "question_type": block.question_type,
             "text": answer.text or "",
-            "chosen": [o.text for o in options.get(block.id, []) if o.id in picked],
+            "chosen": [
+                f"{o.text} — {scores[o.id]}"
+                if block.block_type == BLOCK_SCALE and scores.get(o.id) else o.text
+                for o in options.get(block.id, []) if o.id in picked
+            ],
             "correct": [o.text for o in options.get(block.id, []) if o.is_correct],
             "reviewed": answer.reviewed_at is not None,
             "answered_at": response.updated_at,

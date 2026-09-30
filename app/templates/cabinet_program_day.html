@@ -21,7 +21,7 @@ FORM: Operate.
 {% from "partials/program_settings_panel.html" import settings_panel %}
 {# Рендерер блоков ученика: им рисует предпросмотр «Глазами ученика». Стоит до
    скрипта страницы — тот читает `window.lrnBlockRender.el` на старте. #}
-<script src="/static/js/task-blocks-render.js?v=36"></script>
+<script src="/static/js/task-blocks-render.js?v=37"></script>
 <script src="/static/js/diagnostic-builder.js?v=9"></script>
 <script src="/static/js/diagnostic-trainer.js?v=3"></script>
 {# WYSIWYG для полей с разметкой (**жирный**/*курсив*/список/ссылка) — стоит до
@@ -1076,7 +1076,7 @@ FORM: Operate.
                     options: (question.options || []).map(function (option) { return {text: option.text}; })
                 };
             })
-            : collectFormBlocks(form);
+            : expandPollsForPreview(collectFormBlocks(form));
         box.innerHTML = '';
         if (!blocks.length) {
             box.innerHTML = '<p class="prg-hint">Пока нечего показывать — добавьте блоки.</p>';
@@ -1759,26 +1759,11 @@ FORM: Operate.
             return;
         }
 
-        var addBlockOption = event.target.closest('[data-add-b-option]');
-        if (addBlockOption) {
-            var optionsOwner = addBlockOption.closest('[data-block]');
-            var optionsHolder = optionsOwner.querySelector('[data-b-options]');
-            var ownerType = optionsOwner.getAttribute('data-block-type');
-            optionsHolder.insertAdjacentHTML('beforeend', blockOptionHTML(ownerType));
-            window.RichTextField.enhanceAll(optionsHolder.lastElementChild);
-            // У шкалы и правил верного варианта нет по устройству: там пункт —
-            // это навык или правило. Прячем отметку сразу при добавлении, как
-            // она уже прячется при открытии сохранённого блока.
-            if (ownerType === 'scale' || ownerType === 'rules') {
-                var freshOption = optionsHolder.lastElementChild;
-                var freshCorrect = freshOption.querySelector('[data-b-option-correct]');
-                if (freshCorrect) freshCorrect.closest('label').hidden = true;
-                if (ownerType === 'rules') {
-                    freshOption
-                        .querySelector('[data-b-option-text]')
-                        .placeholder = 'Текст правила';
-                }
-            }
+        // Общая функция конструктора (partials/program_blocks_editor_js.html),
+        // та же, что на экране цикла: понимает и вопросы опроса.
+        var addOptionButton = event.target.closest('[data-add-b-option]');
+        if (addOptionButton) {
+            addBlockOption(addOptionButton);
             return;
         }
 

@@ -15,7 +15,7 @@
 задания.
 #}
 {% include "partials/inline/_video_player.html" %}
-<script src="/static/js/task-blocks-render.js?v=36"></script>
+<script src="/static/js/task-blocks-render.js?v=37"></script>
 <script>
 (function () {
     var csrfToken = {{ csrf_token(request)|tojson }};
@@ -116,6 +116,44 @@
 
         var lastQuestionBody = null;
 
+        // Опрос (владелец 30.09.2026) — одна карточка ленты: сервер рисует
+        // по карточке на вопрос, здесь все вопросы опроса уходят в первую,
+        // остальные прячутся, а мастер листает вопросы внутри неё. Если
+        // какой-то карточки нет на экране (заперта), опрос рисуется
+        // по-старому, по карточке на вопрос. Блоки опроса с запущенным
+        // мастером в общую форму ответов не идут: они уходят своим запросом.
+        var wizardIds = {};
+        window.lrnBlockRender.pollGroups(blocks).forEach(function (poll) {
+            var cards = poll.blocks.map(function (block) { return stepFor(taskId, block.id); });
+            var ready = cards.every(function (card) {
+                return card && card.querySelector('[data-role="block-body"]');
+            });
+            if (!ready) return;
+            var host = cards[0].querySelector('[data-role="block-body"]');
+            host.innerHTML = '';
+            cards.slice(1).forEach(function (card) {
+                // Кнопка закрытия задания стоит под последним блоком
+                // задания — если это вопрос опроса, переносим её в карточку
+                // опроса, иначе она спряталась бы вместе с карточкой.
+                var completion = card.querySelector('.lrn-task-completion');
+                if (completion) cards[0].appendChild(completion);
+                card.hidden = true;
+            });
+            var running = window.lrnBlockRender.runPoll(renderer, poll.blocks, host, {
+                showTitle: false,
+                onSubmit: function (answers, handlers) {
+                    postAnswers(data.submit_endpoint, answers).then(function () {
+                        window.location.reload();
+                    }).catch(function () { handlers.onError(); });
+                }
+            });
+            poll.blocks.forEach(function (block) {
+                if (running) wizardIds[block.id] = true;
+            });
+            lastQuestionBody = host;
+            blocks = blocks.filter(function (block) { return poll.blocks.indexOf(block) === -1; });
+        });
+
         blocks.forEach(function (block, index) {
             var step = stepFor(taskId, block.id);
             // Блока может не быть на экране: запертый шаг содержимого не
@@ -139,14 +177,19 @@
         if (data.archi_profile && lastQuestionBody) {
             lastQuestionBody.appendChild(window.lrnBlockRender.profileResult(data.archi_profile));
         }
-        if (data.has_questions && data.submit_endpoint && lastQuestionBody) {
-            appendSubmit(taskId, data, renderer, lastQuestionBody);
+        var formBlocks = (data.blocks || []).filter(function (block) { return !wizardIds[block.id]; });
+        var formOpen = formBlocks.some(function (block) {
+            return ['question', 'scale', 'rules'].indexOf(block.block_type) !== -1
+                && !block.edit_reason && !(block.answered && block.block_type === 'rules');
+        });
+        if (data.has_questions && data.submit_endpoint && lastQuestionBody && formOpen) {
+            appendSubmit(taskId, data, renderer, lastQuestionBody, formBlocks);
         } else if (data.answered && data.has_questions && lastQuestionBody) {
             lastQuestionBody.appendChild(el('p', 'video-help', 'Ответ сохранён, изменить его нельзя.'));
         }
     }
 
-    function appendSubmit(taskId, data, renderer, host) {
+    function appendSubmit(taskId, data, renderer, host, formBlocks) {
         var form = el('form', 'lrn-blk-submit');
         form.appendChild(el('p', 'lrn-blk-title', data.is_archi_profile
             ? 'Выбери по одному варианту в каждом вопросе. Здесь нет правильных ответов.'
@@ -161,7 +204,7 @@
         form.appendChild(note);
         form.addEventListener('submit', function (event) {
             event.preventDefault();
-            var answers = renderer.collectAnswers(data.blocks, feed);
+            var answers = renderer.collectAnswers(formBlocks, feed);
             if (data.is_archi_profile && (answers.length !== data.questions_left_count || answers.some(function (answer) { return answer.option_ids.length !== 1; }))) {
                 note.textContent = 'Выбери по одному варианту в каждом вопросе.';
                 note.classList.add('is-error');

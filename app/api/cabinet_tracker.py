@@ -89,6 +89,7 @@ from app.services.task_blocks import (
     get_selected_option_texts as get_task_block_selected_option_texts,
     get_selected_options as get_task_block_selected_options,
     get_state as get_task_block_state,
+    poll_submission_error,
     question_blocks as task_question_blocks,
     visible_blocks_for_student,
     start_timed_block as start_task_timed_block,
@@ -502,7 +503,9 @@ def cabinet_tracker_task_blocks(
         b for b in visible_blocks_for_student(
             db, get_task_blocks(db, task_id), user_tariff=user.get("tariff")
         )
-        if not (b.block_type == BLOCK_QUESTION and b.hidden_until_done and not task_done)
+        # Флаг бывает у вопроса и у шкалы опроса (`sync_blocks`), у остальных
+        # типов он всегда False — проверять тип не нужно.
+        if not (b.hidden_until_done and not task_done)
     ]
 
     # Статистика прохождения диагностики (владелец 24.09.2026): единственная
@@ -608,6 +611,13 @@ def cabinet_tracker_task_blocks(
                 task_overrides=task_submit_deadlines,
             )) or None,
         }
+        # Опрос (владелец 30.09.2026): экран ученика собирает блоки с общим
+        # ключом в один блок с мастером «Далее» (`lrnBlockRender.runPoll`).
+        # Описание опроса лежит на первом его блоке (`sync_blocks`).
+        if block.poll_key:
+            item["poll_key"] = block.poll_key
+            if block.poll_intro:
+                item["poll_intro_html"] = format_rich_text(block.poll_intro)
         if block.is_diagnostic and not diagnostic_intro_shown and task.diagnostic_config:
             diagnostic_intro_shown = True
             intro_title = task.diagnostic_config.get("title")
@@ -822,7 +832,16 @@ def cabinet_tracker_task_blocks(
             item["is_correct"] = correct_by_block.get(block.id)
             item["edit_reason"] = (
                 _deadline_reason(block)
-                or (("Ответ сохранён." if block.is_diagnostic else "Этот ответ уже проверен системой.") if block.question_type != QUESTION_TEXT and block.id in answered_ids else None)
+                or (
+                    (
+                        "Этот ответ уже проверен системой."
+                        if not block.is_diagnostic
+                        and any(o.is_correct for o in options.get(block.id, []))
+                        else "Ответ сохранён."
+                    )
+                    if block.question_type != QUESTION_TEXT and block.id in answered_ids
+                    else None
+                )
                 or ("Преподаватель уже проверил ответ." if response and db.query(TaskBlockAnswer.id).filter(
                     TaskBlockAnswer.response_id == response.id,
                     TaskBlockAnswer.block_id == block.id,
@@ -1257,6 +1276,16 @@ def submit_cabinet_tracker_task_blocks(
         for answer in payload.answers:
             if len(answer.option_ids) != 1 or answer.text:
                 raise HTTPException(status_code=422, detail="Выбери один вариант в каждом вопросе")
+    poll_error = poll_submission_error(
+        visible,
+        answered_ids=already,
+        answers={
+            a.block_id: {"text": a.text, "option_ids": a.option_ids, "option_texts": a.option_texts}
+            for a in payload.answers
+        },
+    )
+    if poll_error:
+        raise HTTPException(status_code=422, detail=poll_error)
     # Срок — с тарифом ученика и сроком задания, как в ленте: без них
     # `deadline_reason` смотрел бы только на общий срок блока, и ученика с
     # продлённым сроком не пустили бы, а с укороченным — пустили после срока.

@@ -413,9 +413,13 @@ def test_edit_payload_includes_blocks_for_prefill(client, db, user_factory, sess
     assert resp.status_code == 200
     edit_data_json = resp.text.split("programEditData = ")[1].split(";\n")[0]
     payload = _json.loads(edit_data_json)[str(task.id)]
-    assert payload["blocks"][0]["body"] == "Вопрос?"
-    assert payload["blocks"][0]["block_type"] == BLOCK_QUESTION
-    assert isinstance(payload["blocks"][0]["id"], int)
+    # С 30.09.2026 вопрос в форме — строка опроса (`_fold_polls`): одиночный
+    # вопрос без ключа открывается опросом из одного вопроса, `id` вопроса
+    # сохраняется — по нему остаются ответы учеников.
+    assert payload["blocks"][0]["block_type"] == "poll"
+    question = payload["blocks"][0]["questions"][0]
+    assert question["text"] == "Вопрос?"
+    assert isinstance(question["id"], int)
 
 
 # ── Ученик ───────────────────────────────────────────────────────────────────
@@ -967,9 +971,10 @@ def test_link_block_accepts_http_and_https(client, db, user_factory, session_fac
 # ── Вторая очередь: галерея, скрытые вопросы, обязательный верный ответ ─────
 
 
-def test_choice_question_without_right_answer_is_rejected(client, db, user_factory, session_factory, monkeypatch):
-    """Владелец 31.08.2026: лучше не пустить кривой тест в базу, чем потом
-    объяснять, почему вопрос не засчитался."""
+def test_choice_question_without_right_answer_is_a_vote(client, db, user_factory, session_factory, monkeypatch):
+    """Владелец 30.09.2026 (созвон): «если я здесь ставлю верный, то это
+    тестирование на знание, если ничего не ставлю — ребёнок просто
+    голосует». До этого (31.08.2026) такой вопрос отбивался 422."""
     _freeze(monkeypatch, date.today())
     _staff_client(client, user_factory, session_factory)
 
@@ -981,6 +986,28 @@ def test_choice_question_without_right_answer_is_rejected(client, db, user_facto
             "blocks": [
                 _question("Выбери", question_type=QUESTION_SINGLE,
                           options=[{"text": "А"}, {"text": "Б"}])
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert db.query(TaskBlock).count() == 1
+
+
+def test_single_choice_with_two_right_answers_is_rejected(client, db, user_factory, session_factory, monkeypatch):
+    """Радиокнопкой два варианта не отметить — такой вопрос не засчитался бы
+    никому."""
+    _freeze(monkeypatch, date.today())
+    _staff_client(client, user_factory, session_factory)
+
+    resp = client.post(
+        f"{PROGRAM}/{_future_day_iso()}/material",
+        json={
+            "title": "Материал",
+            "audience": EVERYONE,
+            "blocks": [
+                _question("Выбери", question_type=QUESTION_SINGLE,
+                          options=[{"text": "А", "is_correct": True},
+                                   {"text": "Б", "is_correct": True}])
             ],
         },
     )
@@ -1226,11 +1253,15 @@ def test_blocks_source_returns_content_without_ids(client, db, user_factory, ses
 
     body = client.get(f"{PROGRAM}/blocks-source/{task.id}").json()
 
-    assert [b["block_type"] for b in body["blocks"]] == [BLOCK_TEXT, BLOCK_QUESTION]
+    # Вопрос приходит строкой опроса (30.09.2026) — без ключа и без id
+    # вопросов: копия получит свой ключ при сохранении.
+    assert [b["block_type"] for b in body["blocks"]] == [BLOCK_TEXT, "poll"]
     assert all("id" not in b for b in body["blocks"])
+    assert body["blocks"][1]["poll_key"] is None
+    assert body["blocks"][1]["questions"][0]["id"] is None
     # description/scale_min_label/scale_max_label — только у BLOCK_SCALE
     # (добавлены 12.09.2026), у вопроса всегда None.
-    assert body["blocks"][1]["options"] == [
+    assert body["blocks"][1]["questions"][0]["options"] == [
         {
             "text": "А", "is_correct": True, "requires_text": False,
             "description": None, "scale_min_label": None, "scale_max_label": None,

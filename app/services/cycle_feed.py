@@ -43,6 +43,7 @@ from app.services.task_blocks import (
     is_block_accessible,
     is_block_open_for_tariff,
     is_block_required_for_user,
+    poll_inner_block_ids,
     portfolio_window_expired,
     start_portfolio_window,
 )
@@ -314,12 +315,16 @@ def build_cycle_feed(
         # запирать хвост ленты или следующий цикл. Пробник сохраняет прежнее
         # исключение: он блокирует месяц, а не учебную ленту.
         task_blocks_progress = task.is_required and task.kind != ITEM_MOCK_EXAM
+        # Внутри опроса обязателен только последний вопрос — см.
+        # `task_blocks.poll_inner_block_ids`.
+        poll_inner = poll_inner_block_ids(task_blocks)
         for block in task_blocks:
             if task.kind == ITEM_ARCHI_PROFILE:
                 required_by_block[block.id] = bool(task_blocks_progress and block is task_blocks[-1])
                 continue
             required_by_block[block.id] = bool(
                 task_blocks_progress
+                and block.id not in poll_inner
                 and is_block_required_for_user(
                     block, is_intake_student=is_intake_student
                 )
@@ -729,6 +734,11 @@ def feed_for_student(
         ]
         if upcoming:
             waiting_for = min(upcoming)
+    poll_inner = poll_inner_block_ids([step["block"] for step in steps if step["block"] is not None])
+    counted_steps = [
+        step for step in steps
+        if step["block"] is None or step["block"].id not in poll_inner
+    ]
     return {
         "topic": topic,
         "start": start,
@@ -763,8 +773,11 @@ def feed_for_student(
             and (current_topic is None or chosen.id != current_topic.id)
             and _cycle_is_over(chosen, today)
         ),
-        "done_count": sum(1 for step in steps if step["status"] == STATUS_DONE),
-        "total_count": len(steps),
+        # Опрос ученик видит одной карточкой (владелец 30.09.2026) — и
+        # считается он одним шагом, по последнему вопросу: иначе опрос из
+        # трёх вопросов давал бы «Сделано 3 из 4» при двух карточках.
+        "done_count": sum(1 for step in counted_steps if step["status"] == STATUS_DONE),
+        "total_count": len(counted_steps),
         # Переключатель «Рисунок / Композиция» показывается, только когда в
         # цикле реально есть деление по предметам (владелец 03.09.2026: «в
         # предыдущих циклах эти кнопки не нужны, мы просто не будем ставить

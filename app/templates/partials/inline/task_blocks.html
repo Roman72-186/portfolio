@@ -28,7 +28,7 @@
 {# Рендер блоков вынесен в общий файл 06.09.2026: те же блоки рисует лента
    цикла (`partials/inline/cycle_feed.html`), и второй копии рендереров в
    проекте быть не должно — за этим следит `tests/test_reuse_ratchet.py`. #}
-<script src="/static/js/task-blocks-render.js?v=36"></script>
+<script src="/static/js/task-blocks-render.js?v=37"></script>
 <script>
 (function () {
     window.lrnPanelInit = window.lrnPanelInit || {};
@@ -59,7 +59,7 @@
             });
         }
 
-        function appendSubmit(data) {
+        function appendSubmit(data, formBlocks) {
             var form = el('form', 'lrn-blk-submit');
             // Форма рисовалась как ещё один пункт списка блоков — заголовок
             // + рамка сверху (в CSS) отделяют её как конец задания, а не
@@ -77,7 +77,7 @@
             form.appendChild(note);
             form.addEventListener('submit', function (event) {
                 event.preventDefault();
-                var answers = renderer.collectAnswers(data.blocks, listEl);
+                var answers = renderer.collectAnswers(formBlocks, listEl);
                 if (data.is_archi_profile && (answers.length !== data.questions_left_count || answers.some(function (answer) { return answer.option_ids.length !== 1; }))) {
                     note.textContent = 'Выбери по одному варианту в каждом вопросе.';
                     note.classList.add('is-error');
@@ -150,12 +150,39 @@
                 listEl.hidden = false;
                 return;
             }
+            // Опрос (владелец 30.09.2026) — один блок на своём месте: на
+            // первом его вопросе рисуем весь опрос, остальные пропускаем.
+            // Вопросы с запущенным мастером уходят своим запросом и в общую
+            // форму ответов не попадают.
+            var polls = window.lrnBlockRender.pollGroups(blocks);
+            var wizardIds = {};
             blocks.forEach(function (block, index) {
+                var poll = polls.filter(function (group) { return group.key === block.poll_key; })[0];
+                if (poll) {
+                    if (poll.blocks[0] !== block) return;
+                    var host = el('div', 'lrn-blk lrn-blk-question');
+                    listEl.appendChild(host);
+                    var running = window.lrnBlockRender.runPoll(renderer, poll.blocks, host, {
+                        showTitle: true,
+                        onSubmit: function (answers, handlers) {
+                            postAnswers(data.submit_endpoint, answers).then(function () {
+                                window.location.reload();
+                            }).catch(function () { handlers.onError(); });
+                        }
+                    });
+                    if (running) poll.blocks.forEach(function (item) { wizardIds[item.id] = true; });
+                    return;
+                }
                 var node = renderer.render(block, index);
                 if (node) listEl.appendChild(node);
             });
             if (data.archi_profile) listEl.appendChild(window.lrnBlockRender.profileResult(data.archi_profile));
-            if (data.has_questions && data.submit_endpoint) appendSubmit(data);
+            var formBlocks = blocks.filter(function (block) { return !wizardIds[block.id]; });
+            var formOpen = formBlocks.some(function (block) {
+                return ['question', 'scale', 'rules'].indexOf(block.block_type) !== -1
+                    && !block.edit_reason && !(block.answered && block.block_type === 'rules');
+            });
+            if (data.has_questions && data.submit_endpoint && formOpen) appendSubmit(data, formBlocks);
             else if (renderer.answered && data.has_questions) {
                 listEl.appendChild(el('p', 'video-help', 'Ответ сохранён, изменить его нельзя.'));
             }

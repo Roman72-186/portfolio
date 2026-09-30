@@ -244,11 +244,102 @@ PROGRAM_ITEM_FORM_KINDS = [
 def sync_task_blocks(db: DBSession, *, task_id: int, items: list[dict]):
     """`task_blocks.sync_blocks` для роутов конструктора: отказ удалить блок
     со сданными работами — 409 с текстом для преподавателя, а не 500.
-    Все сохранения блоков в этом файле идут через эту обёртку."""
+    Все сохранения блоков в этом файле идут через эту обёртку — поэтому и
+    опрос разворачивается здесь, а не в каждом роуте."""
     try:
-        return _sync_blocks(db, task_id=task_id, items=items)
+        return _sync_blocks(db, task_id=task_id, items=_expand_polls(items))
     except BlockHasSubmissionsError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+def _expand_polls(items: list[dict]) -> list[dict]:
+    """Строки `block_type == "poll"` → блоки вопросов на их месте.
+
+    Каждый вопрос — свой блок `question` (или `scale` для типа ответа
+    «Шкала») с `id` из формы, поэтому уже данные ответы остаются при своём
+    вопросе. Название и описание опроса — на первом блоке, «Доступность
+    блока» — на каждом. Ключ опроса берётся из формы или заводится новый; тот
+    же ключ у второй строки (опрос скопировали в форме) заменяется новым,
+    иначе два опроса склеились бы в один.
+    """
+    expanded: list[dict] = []
+    used_keys: set[str] = set()
+    for item in items or []:
+        if item.get("block_type") != POLL_PSEUDO_BLOCK_TYPE:
+            expanded.append(item)
+            continue
+        key = item.get("poll_key")
+        if not key or key in used_keys:
+            key = uuid.uuid4().hex[:12]
+        used_keys.add(key)
+        shared = {field: item.get(field) for field in _POLL_SHARED_FIELDS}
+        for index, question in enumerate(item.get("questions") or []):
+            is_scale = question.get("question_type") == POLL_ANSWER_SCALE
+            expanded.append({
+                **shared,
+                "id": question.get("id"),
+                "block_type": BLOCK_SCALE if is_scale else BLOCK_QUESTION,
+                "question_type": None if is_scale else question.get("question_type"),
+                "title": item.get("title") if index == 0 else None,
+                "body": question.get("text"),
+                "poll_key": key,
+                "poll_intro": item.get("body") if index == 0 else None,
+                "options": question.get("options") or [],
+            })
+    return expanded
+
+
+def _fold_polls(item_blocks: list[dict]) -> list[dict]:
+    """Обратная сторона `_expand_polls` для формы правки: подряд идущие блоки
+    одного опроса → одна строка `poll`.
+
+    Вопрос без ключа (заведён до 30.09.2026, когда каждый вопрос был
+    отдельным блоком) показывается опросом из одного вопроса; ключ он получит
+    при следующем сохранении, ответы останутся при нём — `id` тот же.
+    Отдельная «Шкала навыков» без ключа остаётся собой. Диагностика сюда
+    приходит уже свёрнутой в свою строку и не трогается.
+    """
+    folded: list[dict] = []
+    current_key: str | None = None
+    for block in item_blocks:
+        block_type = block.get("block_type")
+        key = block.get("poll_key")
+        in_poll = block_type == BLOCK_QUESTION or (block_type == BLOCK_SCALE and key)
+        if not in_poll:
+            # Служебные поля опроса обычному блоку форма не присылает, а
+            # схема `BlockItem` лишних не принимает — повторное сохранение
+            # открытого задания иначе отбилось бы 422.
+            block.pop("poll_key", None)
+            block.pop("poll_intro", None)
+            folded.append(block)
+            current_key = None
+            continue
+        question = {
+            "id": block.get("id"),
+            "text": block.get("body") or "",
+            "question_type": (
+                POLL_ANSWER_SCALE if block_type == BLOCK_SCALE
+                else block.get("question_type") or QUESTION_TEXT
+            ),
+            "options": block.get("options") or [],
+        }
+        if key and key == current_key:
+            folded[-1]["questions"].append(question)
+            continue
+        row = {
+            field: block.get(field) for field in _POLL_SHARED_FIELDS
+        }
+        row.update({
+            "id": None,
+            "block_type": POLL_PSEUDO_BLOCK_TYPE,
+            "poll_key": key,
+            "title": block.get("title"),
+            "body": block.get("poll_intro"),
+            "questions": [question],
+        })
+        folded.append(row)
+        current_key = key
+    return folded
 
 
 def _parse_month(raw: str | None, today: date) -> tuple[int, int]:
@@ -438,6 +529,10 @@ def _edit_payloads(
                 "media_path": b.media_s3_path,
                 "question_type": b.question_type,
                 "hidden_until_done": b.hidden_until_done,
+                # Опрос — `_fold_polls` ниже сворачивает его блоки в одну
+                # строку формы по этому ключу.
+                "poll_key": b.poll_key,
+                "poll_intro": b.poll_intro,
                 "is_required": b.is_required,
                 "is_required_for_intake": b.is_required_for_intake,
                 "subject": b.subject,
@@ -474,7 +569,7 @@ def _edit_payloads(
                 if b.block_type in (BLOCK_QUESTION, BLOCK_SCALE, BLOCK_RULES)
                 else [],
             })
-        payload["blocks"] = item_blocks
+        payload["blocks"] = _fold_polls(item_blocks)
         payloads[item.id] = payload
     return payloads
 
@@ -1000,6 +1095,79 @@ class BlockOptionItem(BaseModel):
 # её месте — поэтому тип не входит в `BLOCK_TYPES`/`sync_blocks` вовсе.
 DIAGNOSTIC_PSEUDO_BLOCK_TYPE = "diagnostic"
 
+# Опрос (владелец 30.09.2026, созвон: «заголовок, описание, и пошли вопросы…
+# и всё это в одном блоке, чтобы друг друга сменялось»). Как и диагностика,
+# в конструкторе это одна строка, а в базе — подряд идущие блоки `question`
+# и `scale` с общим `poll_key`. Разворачивает `_expand_polls` внутри
+# `sync_task_blocks`, то есть в любом роуте сохранения; сворачивает обратно
+# `_fold_polls`. В `BLOCK_TYPES` тип не входит по той же причине, что и
+# диагностика: строкой `task_blocks` он не хранится.
+POLL_PSEUDO_BLOCK_TYPE = "poll"
+# Тип ответа «Шкала» внутри опроса (владелец 30.09.2026: «шкалу навыков
+# оттуда скопировать, добавить в типы ответа»). Хранится блоком
+# `BLOCK_SCALE` того же опроса, а не новым `question_type`: рендер, хранение
+# оценок и правило «менять можно до проверки» у шкалы уже есть.
+POLL_ANSWER_SCALE = "scale"
+POLL_ANSWER_TYPES = QUESTION_TYPES + (POLL_ANSWER_SCALE,)
+# Поля «Доступности блока», общие для всего опроса: панель одна на строку
+# конструктора, сервер копирует её на каждый вопрос, как у диагностики.
+_POLL_SHARED_FIELDS = (
+    "hidden_until_done", "is_required", "subject", "tariffs", "required_tariffs",
+    "opens_at", "closes_at", "submit_until", "submit_deadlines",
+    "locked_message", "bypass_sequence",
+)
+
+
+class PollQuestionItem(BaseModel):
+    """Один вопрос опроса. `id` — уже сохранённый блок (ответы учеников
+    остаются при нём), `None` — новый."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: int | None = Field(default=None, ge=1)
+    text: str = Field(max_length=5000)
+    question_type: str = Field(max_length=20)
+    options: list[BlockOptionItem] = Field(default_factory=list, max_length=20)
+
+    @field_validator("text")
+    @classmethod
+    def text_required(cls, value: str) -> str:
+        value = (value or "").strip()
+        if not value:
+            raise ValueError("Впишите текст каждого вопроса опроса")
+        return value
+
+    @field_validator("question_type")
+    @classmethod
+    def known_type(cls, value: str) -> str:
+        value = (value or "").strip()
+        if value not in POLL_ANSWER_TYPES:
+            raise ValueError(f"Неизвестный тип ответа: {value}")
+        return value
+
+    @model_validator(mode="after")
+    def options_fit_type(self) -> "PollQuestionItem":
+        """Варианты под тип ответа. «Верный» не обязателен (владелец
+        30.09.2026: «если я ничего не ставлю, то ребёнок просто голосует»),
+        но у одиночного выбора верным может быть только один — радиокнопкой
+        два не отметить, и вопрос не засчитался бы никому."""
+        short = self.text if len(self.text) <= 60 else self.text[:57] + "…"
+        if self.question_type == QUESTION_TEXT:
+            return self
+        if self.question_type == POLL_ANSWER_SCALE:
+            if not self.options:
+                raise ValueError(f"В шкале «{short}» нужен хотя бы один навык")
+            return self
+        if len(self.options) < 2:
+            raise ValueError(f"В вопросе «{short}» нужно минимум два варианта ответа")
+        if (
+            self.question_type == QUESTION_SINGLE
+            and sum(1 for option in self.options if option.is_correct) > 1
+        ):
+            raise ValueError(
+                f"В вопросе «{short}» один вариант ответа — верным может быть только один"
+            )
+        return self
+
 
 class BlockItem(BaseModel):
     """Один блок содержимого элемента (владелец 31.08.2026, универсальный
@@ -1096,22 +1264,34 @@ class BlockItem(BaseModel):
     # специализированные поля этого класса (`body`, `url`, `options`…) у
     # диагностики не используются — она не хранится этой строкой напрямую.
     diagnostic: dict | None = None
+    # Только у `block_type == "poll"`: ключ уже сохранённого опроса (пусто —
+    # новый опрос) и его вопросы. Название и описание опроса едут в
+    # generic-полях `title`/`body`, как у диагностики.
+    poll_key: str | None = Field(default=None, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
+    questions: list[PollQuestionItem] = Field(default_factory=list, max_length=MAX_BLOCKS)
 
     @model_validator(mode="after")
-    def choice_question_needs_a_right_answer(self) -> "BlockItem":
-        """Вопрос с вариантами нельзя сохранить, не отметив верный.
+    def poll_needs_questions(self) -> "BlockItem":
+        if self.block_type == POLL_PSEUDO_BLOCK_TYPE and not self.questions:
+            raise ValueError("В опросе нужен хотя бы один вопрос")
+        return self
 
-        Решение владельца 31.08.2026: лучше не пустить кривой тест в базу, чем
-        потом объяснять, почему у ученика вопрос не засчитался. Система без
-        отметки просто не знает, с чем сравнивать ответ.
+    @model_validator(mode="after")
+    def single_choice_has_one_right_answer(self) -> "BlockItem":
+        """У одиночного выбора верным может быть только один вариант.
+
+        До 30.09.2026 здесь стояло обратное правило — «отметьте хотя бы один
+        верный» (владелец 31.08.2026). Снято на созвоне 30.09.2026: «если я
+        здесь ставлю верный, то это тестирование на знание, если ничего не
+        ставлю — просто голосование». Вопрос без верного варианта не
+        оценивается (`task_blocks.grade_response` берёт только вопросы с
+        отмеченным верным).
         """
-        if self.block_type != BLOCK_QUESTION:
+        if self.block_type != BLOCK_QUESTION or self.question_type != QUESTION_SINGLE:
             return self
-        if self.question_type in (None, QUESTION_TEXT):
-            return self
-        if not any(option.is_correct for option in self.options):
+        if sum(1 for option in self.options if option.is_correct) > 1:
             raise ValueError(
-                "У вопроса с вариантами отметьте хотя бы один верный ответ"
+                "У вопроса с одним вариантом ответа верным может быть только один"
             )
         return self
 
@@ -1132,7 +1312,9 @@ class BlockItem(BaseModel):
     @classmethod
     def validate_block_type(cls, value: str) -> str:
         value = (value or "").strip()
-        if value not in BLOCK_TYPES and value != DIAGNOSTIC_PSEUDO_BLOCK_TYPE:
+        if value not in BLOCK_TYPES and value not in (
+            DIAGNOSTIC_PSEUDO_BLOCK_TYPE, POLL_PSEUDO_BLOCK_TYPE,
+        ):
             raise ValueError(f"Неизвестный тип блока: {value}")
         return value
 
@@ -1819,11 +2001,16 @@ def blocks_source_content(
     images = get_task_block_images(db, [b.id for b in blocks])
     tariffs = get_task_block_tariffs(db, [b.id for b in blocks])
     required_tariffs = get_task_block_required_tariffs(db, [b.id for b in blocks])
-    return JSONResponse({"blocks": [
+    copied = [
         {
             "block_type": b.block_type,
             "title": b.title,
             "body": b.body,
+            # Опрос сворачивается в одну строку, как в форме правки, но ключ
+            # у копии свой: ниже он сбрасывается, и `_expand_polls` заведёт
+            # новый при сохранении — копия не должна склеиться с оригиналом.
+            "poll_key": b.poll_key,
+            "poll_intro": b.poll_intro,
             "video_id": b.video_id,
             "url": b.url,
             # Файл записи в S3 общий у оригинала и копии, как у фото блока:
@@ -1867,7 +2054,13 @@ def blocks_source_content(
             ],
         }
         for b in blocks
-    ]})
+    ]
+    folded = _fold_polls(copied)
+    for row in folded:
+        if row.get("block_type") == POLL_PSEUDO_BLOCK_TYPE:
+            row["poll_key"] = None
+        row.pop("id", None)
+    return JSONResponse({"blocks": folded})
 
 
 @router.get("/{iso}", response_class=HTMLResponse)

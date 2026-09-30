@@ -73,7 +73,11 @@ BLOCK_TEXT = "text"          # абзац текста
 BLOCK_PHOTO = "photo"        # одна картинка в S3
 BLOCK_VIDEO = "video"        # ролик из уже загруженных (LearningVideo)
 BLOCK_LINK = "link"          # ссылка, рисуется кнопкой
-BLOCK_QUESTION = "question"  # вопрос с вариантами ответа или свободным текстом
+# Вопрос с вариантами ответа или свободным текстом. С 30.09.2026 в
+# конструкторе это кнопка «Опрос»: одна строка формы несёт несколько вопросов,
+# сервер разворачивает её в подряд идущие блоки с общим `poll_key`, ученик
+# проходит их мастером «Далее» (`api/cabinet_program.py::_expand_poll_entry`).
+BLOCK_QUESTION = "question"
 # Кнопка «Загрузить портфолио» (владелец 03.09.2026: «добавить кнопку загрузить
 # портфолио — эта кнопка перенесёт сразу на готовый наш функционал… только
 # здесь нужно сделать так, что он обязан загрузить это портфолио»). Своего
@@ -164,6 +168,11 @@ BLOCK_TYPES = (
     BLOCK_PHOTO_UPLOAD, BLOCK_MEDIA, BLOCK_COMPARE,
 )
 
+# Из чего собирается опрос (владелец 30.09.2026): вопрос и шкала. Шкала —
+# тип ответа «Шкала» внутри опроса; рендер, хранение оценок и правило
+# «менять можно до проверки» у неё те же, что у отдельной «Шкалы навыков».
+POLL_BLOCK_TYPES = (BLOCK_QUESTION, BLOCK_SCALE)
+
 # Блоки, которые ученик закрывает загрузкой работы. Список нужен и роуту
 # приёма файлов, и ленте: у «работы на время» к загрузке добавляется таймер,
 # в остальном механика одна. BLOCK_PHOTO_UPLOAD закрывается тем же приёмом,
@@ -240,7 +249,9 @@ BLOCK_TYPE_LABELS = {
     BLOCK_PHOTO: "Фото",
     BLOCK_VIDEO: "Видео",
     BLOCK_LINK: "Ссылка",
-    BLOCK_QUESTION: "Вопрос",
+    # «Опрос» вместо «Вопрос» (владелец 30.09.2026): кнопка заводит не один
+    # вопрос, а опрос из нескольких (см. BLOCK_QUESTION).
+    BLOCK_QUESTION: "Опрос",
     BLOCK_PORTFOLIO: "Загрузить портфолио",
     BLOCK_SCALE: "Шкала навыков",
     BLOCK_TIMED: "Работа на время",
@@ -381,8 +392,9 @@ class TaskBlock(Base):
     # `services/portfolio_window.py`). Начни `closes_at` означать ещё и «приём
     # работ закрыт, но блок открыт» — поехали бы оба.
     #
-    # Заполняется только у типов из `SUBMISSION_BLOCK_TYPES`; у остальных
-    # `sync_blocks` обнуляет. Несёт время суток, поэтому конвертация —
+    # С 27.09.2026 срок можно задать блоку любого типа: у типов из
+    # `DEADLINE_BLOCKS_COMPLETION` он запирает действие, у остальных только
+    # показывается. Несёт время суток, поэтому конвертация —
     # `services/tz.py::parse_msk_local`, не `msk_midnight`.
     submit_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -429,6 +441,16 @@ class TaskBlock(Base):
     # (`app/services/archi_profile.py`) фильтруют по нему, а не по виду
     # задачи целиком.
     is_diagnostic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Опрос (владелец 30.09.2026): подряд идущие блоки `question`/`scale`
+    # одного задания с общим ключом — один блок для преподавателя и ученика.
+    # Ключ уникален только внутри задания. Название опроса — `title` первого
+    # блока, описание — `poll_intro` там же. У остальных типов оба поля NULL.
+    #
+    # Отдельная колонка, а не соседство блоков: два опроса подряд иначе
+    # склеились бы в один, а старые одиночные вопросы — в чужой опрос.
+    poll_key: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    poll_intro: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)

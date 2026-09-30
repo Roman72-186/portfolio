@@ -58,6 +58,10 @@ def skills_history(db: Session, user_id: int) -> list[dict]:
         .filter(
             TaskBlockResponse.user_id == user_id,
             TaskBlock.block_type == BLOCK_SCALE,
+            # Шкала внутри опроса — не самооценка навыка, а ответ анкеты
+            # («насколько сложной была контрольная»). Владелец 30.09.2026:
+            # такие оценки держать отдельно от истории навыков.
+            TaskBlock.poll_key.is_(None),
         )
         .order_by(TaskBlockResponse.updated_at)
         .all()
