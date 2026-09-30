@@ -803,7 +803,7 @@
     .sidebar-search, .sidebar-select, .score-input, .tab-btn, .back-to-profile, .mobile-back-btn, .admin-upload-btn,
     .btn-edit-score, .score-revision-btn, .unlock-btn, .profile-edit-btn, .mock-month-btn,
     .mock-status-copy-btn, .portfolio-rename-btn, .folder-del-btn, .upload-count-clear, .portfolio-toggle,
-    #main-panel .cal-month-btn, #main-panel .rt-btn { min-height: 44px; }
+    #main-panel .cal-month-btn, #main-panel .rt-btn, .work-fb-link, .upload-select { min-height: 44px; }
     #main-panel .rt-btn { min-width: 44px; }
     .hard-filter-options a { display: flex; align-items: center; min-height: 44px; padding: 0; }
     .sidebar-hard-filters-add summary { min-height: 44px; padding: 13px 0; box-sizing: border-box; } /* flex съел бы треугольник */
@@ -856,6 +856,12 @@
     }
     .mobile-back-btn:hover { background: var(--blue-soft); }
     .mobile-back-btn .svg-icon { width: 16px; height: 16px; }
+}
+
+/* Месяцы шестью в ряд набирают 44px в ширину только с ~377px экрана (на 320 — 35):
+   на узких телефонах — по четыре, три ряда. */
+@media (max-width: 380px) {
+    .mock-month-list, #main-panel .cal-month-list { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 /* Плавающее меню персонала видно до 1023px и накрывало конец списка и профиля: последнего

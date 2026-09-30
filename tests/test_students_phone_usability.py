@@ -797,3 +797,27 @@ def test_feedback_link_reads_on_its_plate():
     styles = _styles()
     assert "color: var(--blue-text)" in _css_rule(styles, ".work-fb-link")
     assert "color: color-mix(in srgb, var(--success) 82%, var(--text))" in _css_rule(styles, ".work-fb-link--done")
+
+
+def _rule_with(block: str, selector: str) -> str:
+    """Тела всех правил блока, в списке селекторов которых есть `selector`, — подряд."""
+    bodies = [match.group(2) for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", block)  # тело без «{» — иначе захватит @media
+              if selector in [s.strip() for s in match.group(1).split(",")]]
+    assert bodies, f"нет правила с {selector}"
+    return " ".join(bodies)
+
+
+def test_small_phone_targets_reach_44px():
+    # 11.8: живой замер 320–414. Ссылка «Открыть обратную связь» — 180×35.5, поля окна загрузки — 39
+    # в высоту; месяцы календарей шестью в ряд — 44 только с ~377 px экрана (320 — 35, 360 — 41,
+    # 375 — 43.8). Уже 380 — по четыре в ряд, три ряда.
+    block = _phone_block(_styles())
+    for sel in (".work-fb-link", ".upload-select"):
+        assert "min-height: 44px" in _rule_with(block, sel), f"{sel} ниже 44px на касание"
+    styles = _styles()
+    narrow = styles[styles.index("@media (max-width: 380px) {"):]
+    narrow = narrow[:narrow.index("\n}\n")]
+    assert "repeat(4, minmax(0, 1fr))" in _rule_with(narrow, ".mock-month-list")
+    assert "repeat(4, minmax(0, 1fr))" in _rule_with(narrow, "#main-panel .cal-month-list")
+    # Узкий блок должен идти после общего телефонного, иначе шесть колонок его перебьют.
+    assert styles.index("@media (max-width: 380px) {") > styles.index("@media (max-width: 768px) {")
