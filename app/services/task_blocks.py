@@ -13,6 +13,7 @@ from app.constants import MOCK_SUBJECTS, TARIFFS
 from app.models.task_block import (
     BLOCK_COMPARE,
     BLOCK_LINK,
+    COMPLETABLE_BLOCK_TYPES,
     BLOCK_MEDIA,
     BLOCK_PHOTO,
     BLOCK_PHOTO_UPLOAD,
@@ -1424,7 +1425,81 @@ def close_block_for_user(
         state.completed_by_id = None
         state.completion_source = source
     db.flush()
+    maybe_close_task_by_blocks(db, block.task_id, user_id)
     return state
+
+
+# Задания, которые закрываются своими путями, — у них и кнопки
+# «Завершить задание» нет (`partials/task_action.html`, `autocloses`).
+_SELF_CLOSING_TASK_KINDS = ("homework", "mock_exam")
+
+
+def maybe_close_task_by_blocks(db: DBSession, task_id: int, user_id: int) -> bool:
+    """Закрыть задание, когда ученик сделал все свои шаги (владелец 30.09.2026).
+
+    До этого задание из блоков закрывалось только кнопкой «Завершить задание».
+    Её не нажимали, а у должника прошлого цикла её не было вовсе (в архиве
+    кнопка скрыта, а кружки работают) — 30.09 цикл 3 «не сдали» 27 человек,
+    из них 17 без кнопки. Теперь последний отмеченный шаг закрывает и задание.
+
+    Шаги — блоки, видимые ученику по тарифу, кроме скрытых до сдачи
+    (`hidden_until_done`) и тех, что отметить нечем (текст, ссылка —
+    `COMPLETABLE_BLOCK_TYPES`). Необязательные блоки входят: закрыть задание
+    раньше, пропустив их, можно кнопкой, а сама система не закрывает его,
+    пока что-то не сделано. Задание без выполнимых шагов само не закрывается.
+
+    Зовётся из `close_block_for_user` — через неё идут все источники отметки,
+    своих копий в роутах нет. Возвращает, закрыли ли задание сейчас.
+    """
+    from app.models.tracker import TrackerTask, TrackerTaskState
+    from app.models.user import User
+    from app.services.tracker import close_task_for_user
+
+    task = db.get(TrackerTask, task_id)
+    if task is None or task.kind in _SELF_CLOSING_TASK_KINDS:
+        return False
+    current = (
+        db.query(TrackerTaskState.status)
+        .filter(TrackerTaskState.task_id == task_id, TrackerTaskState.user_id == user_id)
+        .scalar()
+    )
+    if current == STATUS_DONE:
+        return False
+    user = db.get(User, user_id)
+    blocks = visible_blocks_for_student(
+        db, get_blocks(db, task_id), user_tariff=user.tariff if user else None
+    )
+    steps = [
+        block for block in blocks
+        if block.block_type in COMPLETABLE_BLOCK_TYPES and not block.hidden_until_done
+    ]
+    if not steps:
+        return False
+    states = get_states(db, block_ids=[block.id for block in steps], user_id=user_id)
+    if not all(
+        states.get(block.id) is not None and states[block.id].status == STATUS_DONE
+        for block in steps
+    ):
+        return False
+    close_task_for_user(db, task, user_id, source="blocks_done")
+    return True
+
+
+def close_tasks_with_all_blocks_done(db: DBSession) -> int:
+    """Бэкфилл `maybe_close_task_by_blocks` по уже отмеченным шагам: задания,
+    где ученик сделал всё до появления автозакрытия (30.09.2026). Идемпотентно,
+    не коммитит. Возвращает, сколько заданий закрыто."""
+    pairs = (
+        db.query(TaskBlockState.user_id, TaskBlock.task_id)
+        .join(TaskBlock, TaskBlock.id == TaskBlockState.block_id)
+        .filter(TaskBlockState.status == STATUS_DONE)
+        .distinct()
+        .all()
+    )
+    return sum(
+        1 for user_id, task_id in pairs
+        if maybe_close_task_by_blocks(db, task_id, user_id)
+    )
 
 
 def is_block_accessible(
