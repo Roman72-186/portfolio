@@ -131,7 +131,13 @@
     display: inline-flex; align-items: center; gap: 7px;
     font-size: 12px; font-weight: 700; color: var(--text);
 }
-.stat-dot { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
+.stat-dot { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; background: var(--stat-color); }
+/* Цвет ряда — классом, не атрибутом SVG: так график перекрашивается при смене темы. */
+.stat-series--draw { --stat-color: var(--blue); }
+.stat-series--comp { --stat-color: var(--warning); }
+.stat-line { fill: none; stroke: var(--stat-color); }
+.stat-point { fill: var(--stat-color); }
+.stat-grad stop { stop-color: var(--stat-color); }
 .stat-chart-wrap { width: 100%; overflow-x: auto; }
 .stat-note { font-size: 12px; color: var(--dim); margin-top: 8px; line-height: 1.45; }
 

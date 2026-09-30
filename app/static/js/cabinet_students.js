@@ -557,53 +557,52 @@ function buildStatistics(data) {
         return out;
     }
 
-    function renderLine(segs, color) {
+    function renderLine(segs) {
         var out = '';
         segs.forEach(function(seg) {
             if (seg.length < 2) return;
-            out += '<path d="' + smoothPath(seg) + '" fill="none" stroke="' + color + '" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
+            out += '<path class="stat-line" d="' + smoothPath(seg) + '" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
         });
         return out;
     }
 
-    function renderDots(segs, color) {
+    function renderDots(segs) {
         var out = '';
         segs.forEach(function(seg) {
             seg.forEach(function(p) {
-                out += '<circle cx="' + p.x.toFixed(2) + '" cy="' + p.y.toFixed(2) + '" r="3.5" fill="' + color + '"/>';
+                out += '<circle class="stat-point" cx="' + p.x.toFixed(2) + '" cy="' + p.y.toFixed(2) + '" r="3.5"/>';
                 out += '<title>' + esc(p.label) + ': ' + p.value + '</title>';
             });
         });
         return out;
     }
 
-    var COLOR_DRAW = '#3B5BFF';   // Рисунок
-    var COLOR_COMP = '#F59E0B';   // Композиция
+    // Цвет ряда задают классы stat-series--draw / --comp в cabinet_students.css (токены темы).
+    function gradient(id, series) {
+        return '<linearGradient id="' + id + '" class="stat-grad stat-series--' + series + '" x1="0" y1="0" x2="0" y2="1">' +
+            '<stop offset="0%" stop-opacity="0.22"/>' +
+            '<stop offset="100%" stop-opacity="0"/>' +
+            '</linearGradient>';
+    }
+
+    function series(name, segs) {
+        return '<g class="stat-series--' + name + '">' + renderLine(segs) + renderDots(segs) + '</g>';
+    }
 
     var drawSegs = buildSegments('drawing');
     var compSegs = buildSegments('composition');
 
-    var defs = '<defs>' +
-        '<linearGradient id="statGradDraw" x1="0" y1="0" x2="0" y2="1">' +
-            '<stop offset="0%" stop-color="' + COLOR_DRAW + '" stop-opacity="0.22"/>' +
-            '<stop offset="100%" stop-color="' + COLOR_DRAW + '" stop-opacity="0"/>' +
-        '</linearGradient>' +
-        '<linearGradient id="statGradComp" x1="0" y1="0" x2="0" y2="1">' +
-            '<stop offset="0%" stop-color="' + COLOR_COMP + '" stop-opacity="0.22"/>' +
-            '<stop offset="100%" stop-color="' + COLOR_COMP + '" stop-opacity="0"/>' +
-        '</linearGradient>' +
-        '</defs>';
+    var defs = '<defs>' + gradient('statGradDraw', 'draw') + gradient('statGradComp', 'comp') + '</defs>';
 
     var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Динамика баллов по пробникам">' +
         defs + grid + xLabels +
         renderArea(drawSegs, 'statGradDraw') + renderArea(compSegs, 'statGradComp') +
-        renderLine(drawSegs, COLOR_DRAW) + renderLine(compSegs, COLOR_COMP) +
-        renderDots(drawSegs, COLOR_DRAW) + renderDots(compSegs, COLOR_COMP) +
+        series('draw', drawSegs) + series('comp', compSegs) +
         '</svg>';
 
     var legend = '<div class="stat-legend">' +
-        '<span class="stat-legend-item"><span class="stat-dot" style="background:' + COLOR_DRAW + '"></span>Рисунок</span>' +
-        '<span class="stat-legend-item"><span class="stat-dot" style="background:' + COLOR_COMP + '"></span>Композиция</span>' +
+        '<span class="stat-legend-item"><span class="stat-dot stat-series--draw"></span>Рисунок</span>' +
+        '<span class="stat-legend-item"><span class="stat-dot stat-series--comp"></span>Композиция</span>' +
         '</div>';
 
     return title +

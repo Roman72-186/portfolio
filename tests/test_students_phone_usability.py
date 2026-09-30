@@ -850,8 +850,6 @@ RGBA = re.compile(r"rgba?\([^)]*\)")
 # и нейтральные тени и затемнения — от темы они не зависят и текстом не бывают.
 SCREEN_HEX_OK = {"#EC4899", "#64748B", "#D97706", "#CA8A04"}
 SCREEN_RGBA_OK = {"rgba(15,23,42,0.22)", "rgba(10,10,30,0.6)", "rgba(0,0,0,0.3)", "rgba(0,0,0,0.6)"}
-# Цвета графика «Рисунок / Композиция» ждут решения владельца (11.10): токены или как есть.
-SCRIPT_HEX_OK = {"#3B5BFF", "#F59E0B"}
 
 
 def test_screen_colors_come_from_tokens():
@@ -865,7 +863,24 @@ def test_screen_colors_come_from_tokens():
     assert 'student-info-pill student-info-pill--warning">Нет анкеты' in template
     assert "var(--warning-tint)" in _css_rule(_styles(), ".student-info-pill--warning")
     script = _script()
-    assert set(HEX.findall(script)) <= SCRIPT_HEX_OK and not RGBA.findall(script)
-    # Встроенный стиль в JS — только точка легенды графика (цвет из переменной) и свёрнутый месяц.
+    assert not HEX.findall(script) and not RGBA.findall(script), "цвет числом в JS"
+    # Встроенный стиль в JS — только свёрнутый месяц.
     inline = re.findall(r'style="([^"]*)', script)
-    assert sorted(inline) == ["background:' + COLOR_COMP + '", "background:' + COLOR_DRAW + '", "display:none"], inline
+    assert inline == ["display:none"], inline
+
+
+def test_stat_chart_series_take_brand_tokens():
+    # 11.10б (владелец 30.09.2026: «переводим на фиолетовые бренда»): был синий старого бренда #3B5BFF
+    # и #F59E0B — у «Композиции» 2.15 к белой карточке, ниже 3 для графики. Стало: «Рисунок» — --blue
+    # (3.96 / 4.4 к --surface светлой / тёмной), «Композиция» — --warning (5.02 / 10.42).
+    # Цвет — классом: var() в атрибуте SVG не переключит тему, а getComputedStyle один раз — тоже.
+    styles = _styles()
+    assert "--stat-color: var(--blue)" in _css_rule(styles, ".stat-series--draw")
+    assert "--stat-color: var(--warning)" in _css_rule(styles, ".stat-series--comp")
+    for sel, prop in ((".stat-line", "stroke"), (".stat-point", "fill"), (".stat-grad stop", "stop-color"),
+                      (".stat-dot", "background")):
+        assert f"{prop}: var(--stat-color)" in _css_rule(styles, sel), sel
+    script = _script()
+    chart = script[script.index("function renderLine"):script.index("// ── Hero")]
+    assert not re.search(r'(stroke|fill|stop-color)="(?!url\(|none")', chart), "цвет ряда атрибутом SVG"
+    assert "stat-dot stat-series--draw" in chart and "stat-dot stat-series--comp" in chart
