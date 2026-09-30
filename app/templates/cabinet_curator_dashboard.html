@@ -188,7 +188,7 @@
 
     <!-- ── БЛОКИ НАВИГАЦИИ ── -->
     <div class="curator-nav-grid">
-        {% for item in curator_nav_items() if item.key != "dashboard" %}
+        {% for item in curator_nav_items(user.closed_sections) if item.key != "dashboard" %}
         <a href="{{ item.href }}" class="curator-nav-block">
             <span class="curator-nav-block-icon" aria-hidden="true">{{ nav_block_icon(item.key) }}</span>
             <div class="curator-nav-block-body">

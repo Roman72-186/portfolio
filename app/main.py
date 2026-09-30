@@ -29,7 +29,9 @@ from app.api import task_block_feedback
 from app.api import cabinet_point_a
 from app.api import cabinet_point_a_audio
 from app.api import cabinet_staff_notifications
+from app.api import cabinet_access_admin
 from app.dependencies import ACCESS_EXPIRED_DETAIL, TG_MISMATCH_DETAIL, PORTFOLIO_GATE_DETAIL
+from app.services.section_access import SECTION_CLOSED_DETAIL
 from app.limiter import limiter
 from app import log_masking
 from app.body_limit import BodySizeLimitMiddleware
@@ -181,7 +183,12 @@ async def forbidden_handler(request: Request, exc):
         reason = "Аккаунт был удалён."
     else:
         reason = detail or "Доступ запрещён"
-    return templates.TemplateResponse(request, "blocked.html", {"request": request, "reason": reason}, status_code=403)
+    ctx = {"request": request, "reason": reason}
+    # Закрытый суперадмином раздел — не блокировка аккаунта: без своего
+    # заголовка заглушка сказала бы сотруднику «Аккаунт заблокирован».
+    if detail == SECTION_CLOSED_DETAIL:
+        ctx["heading"] = "Раздел закрыт"
+    return templates.TemplateResponse(request, "blocked.html", ctx, status_code=403)
 
 
 @app.exception_handler(401)
@@ -380,6 +387,7 @@ app.include_router(task_block_feedback.router)
 app.include_router(cabinet_point_a.router)
 app.include_router(cabinet_point_a_audio.router)
 app.include_router(cabinet_staff_notifications.router)
+app.include_router(cabinet_access_admin.router)
 
 
 @app.get("/health")

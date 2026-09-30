@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Доступы к разделам{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/superadmin_stats_ios.css?v=10">
+{% endblock %}
+{% block content %}
+{# Переключатели разделов для сотрудников (владелец 30.09.2026). Логика —
+   services/section_access.py, роуты — api/cabinet_access_admin.py. Вёрстка
+   целиком на .ss-* из superadmin_stats_ios.css: та же таблица, что на
+   «Статистике активности», на телефоне строка складывается в карточку. #}
+<div class="ss-wrap ios-ss">
+
+    <div class="ss-header">
+        <a href="/cabinet" class="back-link">← Дашборд</a>
+        <h1 class="ss-title">Доступы</h1>
+        <span class="ss-since">Снятая галочка закрывает раздел всей роли: пропадает пункт меню, страница не открывается. Открыть больше, чем даёт роль, нельзя.</span>
+    </div>
+
+    {% if saved is not none %}
+    <div class="alert alert-success">{% if saved == "0" %}Изменений нет.{% else %}Сохранено.{% endif %}</div>
+    {% endif %}
+
+    <form method="post" action="/cabinet/superadmin/access">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <div class="ss-sub">
+            <h2 class="ss-sub-head">Разделы по ролям</h2>
+            <div class="ss-table-wrap">
+                <table class="ss-table">
+                    <thead>
+                        <tr>
+                            <th>Раздел</th>
+                            {% for col in columns %}<th class="ss-ta-c">{{ col.label }}</th>{% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for section in sections %}
+                    <tr>
+                        <td data-label="Раздел">
+                            <div class="ss-bold">{{ section.label }}</div>
+                            <div class="ss-dim-sm">{{ section.hint }}</div>
+                        </td>
+                        {% for col in columns %}
+                        <td data-label="{{ col.label }}" class="ss-ta-c">
+                            {% if section.key in matrix[col.name] %}
+                            {% set _field = "cell__" ~ col.slug ~ "__" ~ section.key %}
+                            <input type="hidden" name="{{ _field }}" value="0">
+                            <label>
+                                <input type="checkbox" name="{{ _field }}" value="1"
+                                       {% if matrix[col.name][section.key] %}checked{% endif %}
+                                       aria-label="{{ section.label }} – {{ col.label }}">
+                                открыт
+                            </label>
+                            {% else %}
+                            <span class="ss-dim" title="У роли нет этого раздела">–</span>
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn-blue">Сохранить</button>
+        </div>
+    </form>
+
+    <div class="ss-sub">
+        <h2 class="ss-sub-head">Личные исключения <span class="ss-sub-count">{{ personal | length }}</span></h2>
+        {% if personal %}
+        <div class="ss-table-wrap">
+            <table class="ss-table">
+                <thead><tr><th>Сотрудник</th><th>Открыто лично</th><th>Закрыто лично</th></tr></thead>
+                <tbody>
+                {% for p in personal %}
+                <tr>
+                    <td data-label="Сотрудник" class="ss-bold">
+                        <a href="/cabinet/superadmin/users/{{ p.user.id }}#section-access">{{ p.user.last_name or '' }} {{ p.user.first_name or p.user.name }}</a>
+                        {% if p.user.role %}<div class="ss-dim-sm">{{ p.user.role.display_name }}</div>{% endif %}
+                    </td>
+                    <td data-label="Открыто лично">{{ p.opened | join(", ") or "–" }}</td>
+                    <td data-label="Закрыто лично">{{ p.closed | join(", ") or "–" }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="ss-empty">Личных исключений нет. Их задают в карточке сотрудника, блок «Доступ к разделам».</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

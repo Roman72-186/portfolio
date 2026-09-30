@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.services.section_access import closed_nav_keys
+
 # Единое название раздела программ у всех ролей (владелец 16.09.2026, созвон:
 # «раздел с программами назвать одинаково у всех ролей — «Актуальное
 # образовательное пространство»»). До этой правки текст расходился
@@ -291,11 +293,26 @@ STAFF_NAV_ITEMS: tuple[StaffNavItem, ...] = (
     # скрыть, он уже не нужен»). Скрыт только пункт: экран
     # `/cabinet/staff/guest-exam` и гостевые ссылки работают, а данные гостей
     # сносить нельзя — AGENTS.md, инвариант 9 (перенос в точку А не решён).
+    # Переключатели разделов для сотрудников (владелец 30.09.2026,
+    # services/section_access.py) — только суперадмину.
+    StaffNavItem(
+        key="access",
+        href="/cabinet/superadmin/access",
+        sidebar_label="Доступы",
+        pill_label="Доступы",
+        aria_label="Доступ сотрудников к разделам",
+        tooltip="Какие разделы открыты кураторам, модераторам и Главным преподавателям",
+        icon="access",
+        min_rank=5,
+    ),
 )
 
 
-def curator_nav_items() -> tuple[NavItem, ...]:
-    return CURATOR_NAV_ITEMS
+def curator_nav_items(closed_sections: frozenset[str] | None = None) -> tuple[NavItem, ...]:
+    hidden = closed_nav_keys(closed_sections)
+    if not hidden:
+        return CURATOR_NAV_ITEMS
+    return tuple(item for item in CURATOR_NAV_ITEMS if item.key not in hidden)
 
 
 def student_nav_items(access_expired: bool = False) -> tuple[StudentNavItem, ...]:
@@ -332,8 +349,16 @@ MODERATOR_ONLY_NAV_ITEMS: tuple[StaffNavItem, ...] = (
 )
 
 
-def staff_nav_items(role_rank: int, role_name: str | None = None) -> tuple[StaffNavItem, ...]:
+def staff_nav_items(
+    role_rank: int,
+    role_name: str | None = None,
+    closed_sections: frozenset[str] | None = None,
+) -> tuple[StaffNavItem, ...]:
+    hidden = closed_nav_keys(closed_sections)
     if role_name == "модератор":
         by_key = {item.key: item for item in STAFF_NAV_ITEMS + MODERATOR_ONLY_NAV_ITEMS}
-        return tuple(by_key[key] for key in MODERATOR_NAV_KEYS)
-    return tuple(item for item in STAFF_NAV_ITEMS if item.is_visible_for(role_rank))
+        return tuple(by_key[key] for key in MODERATOR_NAV_KEYS if key not in hidden)
+    return tuple(
+        item for item in STAFF_NAV_ITEMS
+        if item.is_visible_for(role_rank) and item.key not in hidden
+    )

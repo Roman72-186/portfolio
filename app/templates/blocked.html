@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Аккаунт заблокирован{% endblock %}
+{% block title %}{{ heading | default("Аккаунт заблокирован") }}{% endblock %}
 {% block extra_styles %}
 <style>
 .status-action {
@@ -14,7 +14,7 @@
         <div style="width:64px;height:64px;border-radius:50%;background:rgba(220,38,38,0.08);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:28px">
             <svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
         </div>
-        <h1 style="font-size:22px;font-weight:700;margin-bottom:10px" class="text-accent">Аккаунт заблокирован</h1>
+        <h1 style="font-size:22px;font-weight:700;margin-bottom:10px" class="text-accent">{{ heading | default("Аккаунт заблокирован") }}</h1>
         <p style="color:var(--muted);font-size:15px;line-height:1.6;margin-bottom:28px">
             {{ reason | default("Администратор заблокировал аккаунт. Если считаете, что это ошибка, напишите в поддержку.") }}
         </p>

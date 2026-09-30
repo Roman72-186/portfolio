@@ -102,14 +102,26 @@
     <div class="sfd-groups">
         <section class="panel" aria-labelledby="tools-people-title">
             <div class="panel-header"><h2 class="panel-title" id="tools-people-title">Люди и активность</h2></div>
+            {# Плитки закрытых суперадмином разделов не показываем (services/section_access.py). #}
+            {% set _closed = user.closed_sections or [] %}
+            {% if 'people' not in _closed %}
             <a href="/cabinet/superadmin/users" class="sfd-tool">
                 <span class="sfd-tool-icon" aria-hidden="true">👥</span>
                 <span class="sfd-tool-body"><span class="sfd-tool-title">Пользователи</span><span class="sfd-tool-desc">Аккаунты, роли и тарифы</span></span>
             </a>
+            {% endif %}
+            {% if 'statistics' not in _closed %}
             <a href="/cabinet/superadmin/activity" class="sfd-tool">
                 <span class="sfd-tool-icon" aria-hidden="true">📈</span>
                 <span class="sfd-tool-body"><span class="sfd-tool-title">Статистика активности</span><span class="sfd-tool-desc">Диагностика, видео, задания, работа кураторов</span></span>
             </a>
+            {% endif %}
+            {% if user.role_rank >= 5 %}
+            <a href="/cabinet/superadmin/access" class="sfd-tool">
+                <span class="sfd-tool-icon" aria-hidden="true">🔒</span>
+                <span class="sfd-tool-body"><span class="sfd-tool-title">Доступы к разделам</span><span class="sfd-tool-desc">Что открыто кураторам, модераторам и Главным преподавателям</span></span>
+            </a>
+            {% endif %}
             {% if user.role_rank >= 5 %}
             {# Служебная проверка моста до видеохранилища — только суперадмину
                (владелец 28.09.2026). На главном экране по просьбе 20.09.2026:

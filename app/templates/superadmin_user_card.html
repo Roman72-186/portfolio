@@ -19,7 +19,7 @@
         </div>
     </div>
 
-    {% if request.query_params.get('saved') %}
+    {% if request.query_params.get('saved') and request.query_params.get('saved') != 'access' %}
     <div class="alert alert-success uc-gap-16">Изменения сохранены.</div>
     {% endif %}
 
@@ -148,6 +148,36 @@
             </div>
         </div>
     </form>
+
+    {# Личные исключения из правил роли (services/section_access.py). Список
+       пуст у ученика и суперадмина и у всех, кто смотрит не суперадмином. #}
+    {% if section_rules %}
+    <form method="post" action="/cabinet/superadmin/users/{{ target.id }}/access" id="section-access">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <div class="uc-section">
+            <h3>Доступ к разделам</h3>
+            {% if request.query_params.get('saved') == 'access' %}
+            <div class="alert alert-success uc-gap-16">Доступ к разделам сохранён.</div>
+            {% endif %}
+            <div class="uc-grid">
+                {% for rule in section_rules %}
+                <label>
+                    {{ rule.label }}
+                    <select name="section__{{ rule.key }}" class="form-select">
+                        <option value="role" {% if rule.state == 'role' %}selected{% endif %}>Как у роли ({{ 'открыт' if rule.role_open else 'закрыт' }})</option>
+                        <option value="open" {% if rule.state == 'open' %}selected{% endif %}>Открыт</option>
+                        <option value="closed" {% if rule.state == 'closed' %}selected{% endif %}>Закрыт</option>
+                    </select>
+                </label>
+                {% endfor %}
+            </div>
+            <div class="form-actions">
+                <a href="/cabinet/superadmin/access" class="btn-outline">Правила ролей</a>
+                <button type="submit" class="btn-blue">Сохранить доступ</button>
+            </div>
+        </div>
+    </form>
+    {% endif %}
 
     <form id="studentAccessForm" method="post" action="/cabinet/superadmin/users/{{ target.id }}/set-credentials">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">

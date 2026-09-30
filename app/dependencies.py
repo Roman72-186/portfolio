@@ -19,6 +19,12 @@ from app.services.rbac import (
     effective_role_rank,
     is_moderator_request_allowed,
 )
+from app.services.section_access import (
+    SECTION_CLOSED_DETAIL,
+    blocked_section,
+    closed_sections,
+    is_configurable_role,
+)
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -189,6 +195,19 @@ def get_current_user(
     ):
         raise HTTPException(status_code=403, detail=MODERATOR_FORBIDDEN_DETAIL)
 
+    # Разделы, закрытые суперадмином (services/section_access.py, владелец
+    # 30.09.2026) — сужение поверх ранга и белого списка модератора. Только
+    # сотрудники: ученика держат срок доступа и гейты ниже, суперадмина не
+    # закрывает ничто. В режиме «глазами» сессия принадлежит сотруднику —
+    # суперадмин видит ровно его ограничения.
+    closed = frozenset()
+    if is_configurable_role(role_name):
+        closed = closed_sections(db, user_id=user.id, role_id=user.role_id)
+        if blocked_section(
+            request.method, request.url.path, request.query_params, closed,
+        ):
+            raise HTTPException(status_code=403, detail=SECTION_CLOSED_DETAIL)
+
     if role_rank == 0 and not user.is_admin and not user.is_group_member:
         raise HTTPException(status_code=403, detail="Доступ возможен только участникам группы")
 
@@ -284,6 +303,7 @@ def get_current_user(
         "created_at": user.created_at,
         "role_name": role_name,
         "role_rank": role_rank,
+        "closed_sections": closed,
     }
 
     return result

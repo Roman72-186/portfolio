@@ -56,6 +56,7 @@ from app.services.works import upload_work_thumb
 from app.services import s3 as s3_service
 from app.services.auth_links import issue_one_time_login_link, issue_telegram_link_token, next_manual_vk_id
 from app.services.tags import get_all_tags
+from app.services import section_access
 from app.services.mock_exam_access import (
     MOCK_EXAM_DEFAULT_DURATION_MINUTES,
     ticket_closes_at,
@@ -2490,6 +2491,11 @@ def superadmin_user_card(
         "study_modes": STUDY_MODES,
         "study_mode_labels": STUDY_MODE_LABELS,
         "exam_subject_hints": EXAM_SUBJECT_HINTS,
+        # Блок «Доступ к разделам» — только суперадмину и только у сотрудника
+        # (services/section_access.py). ГП карточку видит, блок — нет.
+        "section_rules": (
+            section_access.user_rules(db, target) if user["role_rank"] >= 5 else []
+        ),
     })
 
 
