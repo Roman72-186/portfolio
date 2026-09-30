@@ -258,7 +258,8 @@
 .ios-prg-day .prg-blk[data-block-type="photo"]    { border-left-color: var(--blk-photo); }
 .ios-prg-day .prg-blk[data-block-type="video"]    { border-left-color: var(--blk-video); }
 .ios-prg-day .prg-blk[data-block-type="link"]     { border-left-color: var(--blk-link); }
-.ios-prg-day .prg-blk[data-block-type="question"] { border-left-color: var(--blk-question); }
+.ios-prg-day .prg-blk[data-block-type="question"],
+.ios-prg-day .prg-blk[data-block-type="poll"]     { border-left-color: var(--blk-question); }
 .ios-prg-day .prg-blk[data-block-type="portfolio"] { border-left-color: var(--blk-portfolio); }
 .ios-prg-day .prg-blk[data-block-type="scale"]     { border-left-color: var(--blk-scale); }
 .ios-prg-day .prg-blk[data-block-type="timed"]     { border-left-color: var(--blk-timed); }
@@ -515,6 +516,13 @@
 @media (max-width: 360px) {
     .ios-prg-day .prg-blk > .prg-ticket-head { flex-wrap: wrap; }
 }
+/* Шапка вопроса внутри опроса (30.09.2026) — та же причина, но карточка
+   вложена в строку блока и уже её на 34px, поэтому ряд ↑ ↓ «Убрать» не
+   помещался уже на 320–390px: номер ломался в «Вопрос / 1», а на 320px
+   страница раздувалась до 362px. Перенос без порога — на широком экране он
+   не срабатывает. */
+.ios-prg-day [data-poll-question] > .prg-ticket-head { flex-wrap: wrap; row-gap: var(--s-2); }
+.ios-prg-day [data-poll-question-number] { white-space: nowrap; }
 
 /* Тап-цели отделены от раскладки и держатся до 834px (владелец 08.09.2026:
    «на любых экранах мобильной версии, ну и планшет»). Порог 760 не покрывал

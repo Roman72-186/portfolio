@@ -569,7 +569,9 @@ function pollQuestionHTML() {
         + '        <button type="button" class="btn-outline" data-poll-move-question="-1" aria-label="Вопрос выше">↑</button>'
         + '        <button type="button" class="btn-outline" data-poll-move-question="1" aria-label="Вопрос ниже">↓</button>'
         + '      </span>'
-        + '      <button type="button" class="btn-outline prg-blk-remove" data-poll-remove-question>Убрать вопрос</button>'
+        // «Убрать», как в шапке блока и у варианта: «Убрать вопрос» на
+        // телефоне ломалось в две строки. Полное имя — для экранного диктора.
+        + '      <button type="button" class="btn-outline prg-blk-remove" data-poll-remove-question aria-label="Убрать вопрос">Убрать</button>'
         + '    </span>'
         + '  </div>'
         + '  <label class="prg-field"><textarea data-rich-text data-poll-question-text maxlength="5000" aria-label="Текст вопроса" placeholder="Текст вопроса"></textarea>' + BODY_FORMAT_HINT + '</label>'
