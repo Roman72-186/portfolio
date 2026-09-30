@@ -446,20 +446,21 @@
 .ios-prg-day .prg-actions .btn-outline { min-height: 40px; padding: 9px 16px; font-size: 12px; }
 /* «ТРЕНАЖЁР» у сравнения работ, опроса и диагностики (владелец 30.09.2026:
    «переименовать в ТРЕНАЖЕР, сделать заметной»). Серая обводка терялась
-   рядом с «Убрать» и «+ Вопрос». Золото — не новый цвет, а токен `--gold`:
-   фиолетовый уже занят предпросмотром, красный — удалением, зелёный читается
-   как «верно». Надпись `--warning-ink` на `--gold` — 6.8; оба токена от темы
-   не зависят, в тёмной теме кнопка та же. Вес 0,3,0 — перебить правило выше. */
+   рядом с «Убрать» и «+ Вопрос». Сначала была золотой, в тот же день
+   владелец: «сделать кнопку фиолетовой». Сплошная заливка бренда, как у
+   `.btn-blue`, — от бледного «Предпросмотра» (`--blue-soft`) отличается
+   плотностью. Белое на `--blue-fill` — 5.38, на `--blue-fill-strong` — 8.0;
+   оба от темы не зависят. Вес 0,3,0 — перебить правило выше. */
 .ios-prg-day .prg-actions .prg-trainer-btn {
-    background: var(--gold); color: var(--warning-ink);
-    border-color: var(--warning-deep);
+    background: var(--blue-fill); color: var(--on-color);
+    border-color: var(--blue-fill);
     font-weight: 700; letter-spacing: .06em;
 }
 .ios-prg-day .prg-actions .prg-trainer-btn:hover {
-    background: var(--warning-fill); color: var(--on-color);
+    background: var(--blue-fill-strong); border-color: var(--blue-fill-strong); color: var(--on-color);
 }
 .ios-prg-day .prg-actions .prg-trainer-btn:focus-visible {
-    outline: 2px solid var(--warning-deep); outline-offset: 2px;
+    outline: 2px solid var(--blue); outline-offset: 2px;
 }
 
 .ios-prg-day .prg-message { color: var(--ios-label-2); font: 400 13px/1.45 var(--ios-font); }
