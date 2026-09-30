@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Циклы программы{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/program.css?v=50">
+<link rel="stylesheet" href="/static/css/program.css?v=51">
 <link rel="stylesheet" href="/static/css/rich-text-field.css?v=2">
 {% endblock %}
 {% block content %}
@@ -116,7 +116,7 @@
                там статистика — отсюда «Статистика». Заход в задания
                главный (туда же уводит сохранение нового цикла), поэтому он
                синий, а не третья одинаковая рамка. #}
-            <div class="prg-item-actions">
+            <div class="prg-item-actions prg-item-actions--compact">
                 <a class="btn-blue" href="/cabinet/staff/program/cycles/{{ cycle.id }}">Задания</a>
                 <a class="btn-outline" href="/cabinet/staff/program/cycles/{{ cycle.id }}/stats">Статистика</a>
                 <button type="button" class="btn-outline" data-cycle-edit
@@ -124,11 +124,14 @@
                 {# Удаление мягкое: цикл пропадает у учеников и из этого списка,
                    задания внутри остаются в базе (см. `delete_program_cycle`).
                    Кнопка отделена цветом от трёх остальных — это единственное
-                   действие на карточке, которое не отменяется тем же кликом. #}
-                <button type="button" class="btn-danger" data-cycle-delete
+                   действие на карточке, которое не отменяется тем же кликом.
+                   Корзиной, а не словом — с 30.09.2026: четыре кнопки словами на
+                   телефоне не влезали в строку, и «Удалить» уезжала вниз. #}
+                <button type="button" class="btn-danger prg-icon-btn" data-cycle-delete
+                        aria-label="Удалить цикл" title="Удалить цикл"
                         data-label="{{ cycle.label }}"
                         data-items="{{ cycle.items_count }}"
-                        data-videos="{{ cycle.videos_count }}">Удалить</button>
+                        data-videos="{{ cycle.videos_count }}"><span aria-hidden="true">🗑</span></button>
             </div>
         </article>
         {% endfor %}

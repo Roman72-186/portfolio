@@ -179,6 +179,15 @@
     .prg-item-actions .btn-blue,
     .prg-item-actions .btn-danger { min-height: 44px; }
 }
+/* Карточка цикла (30.09.2026, владелец): четыре кнопки по 44px на телефоне
+   занимали ≈374px при 264–334 свободных, «Удалить» уезжала второй строкой.
+   Отступы тоньше, удаление — квадратная корзина: на 390 и 430 одна строка. */
+.prg-item-actions--compact { gap: 6px; }
+.prg-item-actions.prg-item-actions--compact > * { padding-left: 9px; padding-right: 9px; }
+.prg-item-actions .prg-icon-btn { width: 44px; min-height: 36px; padding: 0; font-size: 18px; line-height: 1; }
+@media (max-width: 834px) {
+    .prg-item-actions .prg-icon-btn { min-height: 44px; }
+}
 
 .prg-badge {
     display: inline-flex; align-items: center; min-height: 24px; padding: 3px 9px;

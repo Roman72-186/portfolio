@@ -925,3 +925,23 @@ def test_page_background_is_flat_like_the_student_cabinet():
     assert "background-color: var(--bg)" in body and "background-image" not in body, body
     base_html = (TEMPLATE.parent / "base.html").read_text(encoding="utf-8")
     assert "bg-desktop" not in base_html and "bg-mobile" not in base_html, "картинку фона больше не предзагружать"
+
+
+def test_cycle_card_buttons_fit_one_row_on_phone():
+    # 30.09.2026, владелец со скриншота: на карточке цикла четыре кнопки по 44px не влезали в строку
+    # (≈374px при 264–334 свободных), «Удалить» уезжала второй строкой. Вариант B с доски: отступы
+    # тоньше, «Удалить» — квадратная корзина 44×44 с подписью для программ чтения с экрана.
+    # На 390 и 430 — одна строка, карточка ниже на 52px; на 320–360 вторая строка — одна корзина.
+    cycles = (TEMPLATE.parent / "cabinet_program_cycles.html").read_text(encoding="utf-8")
+    assert '<div class="prg-item-actions prg-item-actions--compact">' in cycles
+    delete = cycles[cycles.index("data-cycle-delete") - 60:]
+    delete = delete[:delete.index("</button>") + 9]
+    assert 'class="btn-danger prg-icon-btn"' in delete, delete
+    assert 'aria-label="Удалить цикл"' in delete and 'title="Удалить цикл"' in delete, delete
+    assert ">Удалить</button>" not in delete
+    css = (TEMPLATE.parent.parent / "static" / "css" / "program.css").read_text(encoding="utf-8")
+    compact = _css_rule(css, ".prg-item-actions--compact")
+    assert "gap: 6px" in compact
+    assert "padding-left: 9px" in _css_rule(css, ".prg-item-actions--compact > *")
+    icon = _css_rule(css, ".prg-item-actions .prg-icon-btn")
+    assert "width: 44px" in icon and "padding: 0" in icon, icon
