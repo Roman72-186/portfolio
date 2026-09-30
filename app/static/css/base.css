@@ -328,6 +328,11 @@
 
 /* ── Reset ── */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+/* Атрибут hidden прячет всегда. Браузерное `[hidden] { display: none }` слабее любого
+   авторского `display`: до 30.09.2026 `.btn-outline { display: inline-flex }` оживлял
+   скрытую «Назад» на первом вопросе опроса, нажатие стирало опрос до перезагрузки
+   (аудит АОП, находка 1). Частных заплаток `.x[hidden]` к тому дню было больше двадцати. */
+[hidden] { display: none !important; }
 
 /* ── Base ── */
 /* Фон ровный, как в кабинете ученика. До 30.09.2026 в светлой теме здесь была фотография
@@ -460,7 +465,6 @@ body.has-video-pseudo-fullscreen .notif-pop { display: none; }
     padding: 0 4px; line-height: 1;
     border: 2px solid var(--surface);
 }
-.notif-bell-badge[hidden] { display: none; }
 
 /* ── Notifications popup ── */
 .notif-pop {
@@ -477,7 +481,6 @@ body.has-video-pseudo-fullscreen .notif-pop { display: none; }
     display: flex; flex-direction: column;
     overflow: hidden;
 }
-.notif-pop[hidden] { display: none; }
 .notif-pop-head {
     display: flex; align-items: center; justify-content: space-between;
     padding: 14px 16px; border-bottom: 1px solid var(--line);
