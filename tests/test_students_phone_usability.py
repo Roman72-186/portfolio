@@ -945,3 +945,38 @@ def test_cycle_card_buttons_fit_one_row_on_phone():
     assert "padding-left: 9px" in _css_rule(css, ".prg-item-actions--compact > *")
     icon = _css_rule(css, ".prg-item-actions .prg-icon-btn")
     assert "width: 44px" in icon and "padding: 0" in icon, icon
+
+
+# ── После фазы 3: цвета iOS текстом ──────────────────────────────────────────
+
+
+def test_ios_system_colors_are_not_used_as_text():
+    # 30.09.2026: живой замер 34 страниц × 390/1280 × обе темы — 922 надписи ниже 4.5 на iOS-цветах.
+    # На белом: --ios-orange/--ios-green 2.2, --ios-red 3.55, --ios-blue/--ios-purple 4.13, --ios-label-3 1.7.
+    # Текстом — --ios-orange-text, --ios-green-text, --error, --blue-text, --ios-label-2; сами iOS-цвета
+    # остаются заливкам, рамкам, стрелкам и точкам.
+    bare = re.compile(r"(?<![-\w])color\s*:\s*var\(--ios-(label-3|blue|purple|red|orange|green)\)")
+    offenders = [
+        f"{path.relative_to(APP)}: {m.group(0)}"
+        for path in [*APP.glob("static/**/*.css"), *APP.glob("static/**/*.js"), *APP.glob("templates/**/*.html")]
+        for m in bare.finditer(path.read_text(encoding="utf-8"))
+    ]
+    assert not offenders, "iOS-цвет текстом:\n" + "\n".join(offenders)
+
+
+@pytest.mark.parametrize(
+    ("opener", "names"),
+    [
+        (":root {", ("ios-label-2", "ios-orange-text", "ios-green-text", "blue-text", "error")),
+        # Тёмный --ios-label-2 полупрозрачный (5.3+ по замеру) — здесь не считается.
+        (':root[data-theme="dark"] {', ("ios-orange-text", "ios-green-text", "blue-text", "error")),
+    ],
+)
+def test_ios_text_tokens_are_readable(opener, names):
+    # --warning-text/--success-text в тёмной теме не переопределены — тёмный текст на тёмном фоне;
+    # поэтому у оранжевого и зелёного свой токен текста с тёмным значением.
+    css = BASE_CSS.read_text(encoding="utf-8")
+    for name in names:
+        text = _token_color(css, opener, name)
+        for bg in ("bg", "surface", "ios-grouped-bg", "ios-card-bg"):
+            assert _contrast(text, _token_color(css, opener, bg)) >= 4.5, f"--{name} на --{bg} ({opener})"

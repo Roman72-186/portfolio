@@ -25,10 +25,10 @@
 .ios-ss .ss-wrap { max-width: 960px; margin: 0 auto; }
 .ios-ss .ss-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .ios-ss .ss-header .back-link {
-    color: var(--ios-blue); font: 400 17px/1 var(--ios-font);
+    color: var(--blue-text); font: 400 17px/1 var(--ios-font);
     min-height: 34px; margin-bottom: 0;
 }
-.ios-ss .ss-header .back-link:hover { color: var(--ios-blue); opacity: .6; }
+.ios-ss .ss-header .back-link:hover { color: var(--blue-text); opacity: .6; }
 .ios-ss .ss-title { font: 700 24px/1.2 var(--ios-font); letter-spacing: -0.3px; color: var(--ios-label); flex: 1; }
 .ios-ss .ss-since { font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-2); }
 
@@ -154,11 +154,11 @@
 .ios-ss .ss-mono-dim { color: var(--ios-label-2); font-size: 12px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 .ios-ss .ss-bold { font-weight: 700; }
 .ios-ss .ss-suffix-dim { font-size: 14px; color: var(--ios-label-2); }
-.ios-ss .ss-link { color: var(--ios-blue); text-decoration: none; font-weight: 700; }
-.ios-ss .ss-check-ok { color: var(--ios-green); font-weight: 700; font-size: 15px; }
-.ios-ss .ss-check-err { color: var(--ios-red); font-weight: 700; font-size: 15px; }
-.ios-ss .ss-num-strong { text-align: center; font-weight: 700; color: var(--ios-blue); }
-.ios-ss .ss-score-warn { font-weight: 700; color: var(--ios-orange); }
+.ios-ss .ss-link { color: var(--blue-text); text-decoration: none; font-weight: 700; }
+.ios-ss .ss-check-ok { color: var(--ios-green-text); font-weight: 700; font-size: 15px; }
+.ios-ss .ss-check-err { color: var(--error); font-weight: 700; font-size: 15px; }
+.ios-ss .ss-num-strong { text-align: center; font-weight: 700; color: var(--blue-text); }
+.ios-ss .ss-score-warn { font-weight: 700; color: var(--ios-orange-text); }
 .ios-ss .ss-deleted-note { color: var(--ios-label-2); font-weight: 500; font-size: 11px; }
 .ios-ss .ss-feedback-cell { max-width: 280px; }
 .ios-ss .ss-feedback-text { display: block; max-height: 3.2em; overflow: hidden; color: var(--ios-label); font-size: 12px; white-space: pre-line; }
@@ -166,20 +166,20 @@
 /* ── Username ученика с копированием по нажатию (макрос tg_copy) ── */
 .ios-ss .ss-copy {
     display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 0;
-    border: none; background: none; font: inherit; color: var(--ios-blue); cursor: pointer;
+    border: none; background: none; font: inherit; color: var(--blue-text); cursor: pointer;
 }
 .ios-ss .ss-copy::after { content: '⧉'; font-size: .95em; opacity: .6; }
-.ios-ss .ss-copy.is-copied::after { content: '✓ скопировано'; color: var(--ios-green); opacity: 1; }
+.ios-ss .ss-copy.is-copied::after { content: '✓ скопировано'; color: var(--ios-green-text); opacity: 1; }
 .ios-ss .ss-copy:hover { opacity: .75; }
 .ios-ss .ss-copy:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 2px; border-radius: 4px; }
 
 /* ── Бейджи ── */
 .ios-ss .type-badge { display: inline-flex; padding: 2px 8px; border-radius: 999px; font: 700 11px/1.3 var(--ios-font); }
-.ios-ss .tb-mock { background: rgba(255,149,0,0.14); color: var(--ios-orange); }
+.ios-ss .tb-mock { background: rgba(255,149,0,0.14); color: var(--ios-orange-text); }
 .ios-ss .act-badge { display: inline-flex; padding: 2px 8px; border-radius: 999px; font: 700 11px/1.3 var(--ios-font); }
-.ios-ss .ab-curator { background: rgba(175,82,222,0.12); color: var(--ios-blue); }
-.ios-ss .ab-tariff  { background: rgba(255,149,0,0.14); color: var(--ios-orange); }
-.ios-ss .ab-danger  { background: rgba(255,59,48,0.12); color: var(--ios-red); }
+.ios-ss .ab-curator { background: rgba(175,82,222,0.12); color: var(--blue-text); }
+.ios-ss .ab-tariff  { background: rgba(255,149,0,0.14); color: var(--ios-orange-text); }
+.ios-ss .ab-danger  { background: rgba(255,59,48,0.12); color: var(--error); }
 .ios-ss .ab-ok      { background: rgba(52,199,89,0.14); color: #1E9147; }
 
 /* ── Сворачиваемые секции (<details>) — своя iOS-грамматика,
@@ -204,7 +204,7 @@
     transition: transform 180ms var(--ios-ease);
 }
 .ios-ss .ss-acc[open] > summary::before { transform: rotate(45deg); }
-.ios-ss .ss-acc > summary:hover { color: var(--ios-blue); }
+.ios-ss .ss-acc > summary:hover { color: var(--blue-text); }
 .ios-ss .ss-acc-title { font: inherit; color: inherit; letter-spacing: inherit; }
 .ios-ss .ss-acc-badge { margin-left: auto; font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-2); }
 .ios-ss .ss-acc-body { border-top: 0.5px solid var(--ios-sep); padding: 12px; }
@@ -246,6 +246,6 @@
     .ios-ss .ss-table tr td:last-child { border-bottom: none; }
     .ios-ss .ss-table td::before {
         content: attr(data-label); display: block; margin-bottom: 4px;
-        color: var(--ios-label-3); font: 700 11px/1.3 var(--ios-font); text-transform: uppercase;
+        color: var(--ios-label-2); font: 700 11px/1.3 var(--ios-font); text-transform: uppercase;
     }
 }

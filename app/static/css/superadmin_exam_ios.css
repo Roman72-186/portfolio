@@ -46,11 +46,11 @@
 
 /* ── Общие переопределения base.css (back-link/page-header/page-title) ── */
 .ios-ea-hub .back-link, .ios-ea-list .back-link, .ios-ea-detail .back-link, .ios-ea-form .back-link {
-    color: var(--ios-blue); font: 400 17px/1 var(--ios-font);
+    color: var(--blue-text); font: 400 17px/1 var(--ios-font);
     min-height: 34px; margin-bottom: 4px; display: inline-block;
 }
 .ios-ea-hub .back-link:hover, .ios-ea-list .back-link:hover, .ios-ea-detail .back-link:hover, .ios-ea-form .back-link:hover {
-    color: var(--ios-blue); opacity: .6;
+    color: var(--blue-text); opacity: .6;
 }
 .ios-ea-form .page-title--standalone { margin-top: 4px; }
 .ios-ea-hub .page-header, .ios-ea-list .page-header, .ios-ea-detail .page-header { margin-bottom: 18px; }
@@ -79,17 +79,17 @@
     display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .ios-ea-hub .hub-icon .svg-icon { width: 23px; height: 23px; }
-.ios-ea-hub .hub-icon.create  { background: rgba(175,82,222,0.12); color: var(--ios-blue); }
+.ios-ea-hub .hub-icon.create  { background: rgba(175,82,222,0.12); color: var(--blue-text); }
 .ios-ea-hub .hub-icon.active  { background: rgba(52,199,89,0.14); color: #1E9147; }
 .ios-ea-hub .hub-icon.archive { background: rgba(60,60,67,0.08);  color: var(--ios-label-2); }
 .ios-ea-hub .hub-info { flex: 1; min-width: 0; }
 .ios-ea-hub .hub-name { font: 600 15px/1.3 var(--ios-font); color: var(--ios-label); }
 .ios-ea-hub .hub-desc { font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-2); margin-top: 3px; }
 .ios-ea-hub .hub-count {
-    flex-shrink: 0; font: 700 12px/1 var(--ios-font); color: var(--ios-blue);
+    flex-shrink: 0; font: 700 12px/1 var(--ios-font); color: var(--blue-text);
     background: rgba(175,82,222,0.12); border: none; border-radius: 999px; padding: 4px 11px;
 }
-.ios-ea-hub .hub-arrow { flex-shrink: 0; color: var(--ios-label-3); }
+.ios-ea-hub .hub-arrow { flex-shrink: 0; color: var(--ios-label-2); }
 
 /* ═══════════════════════════ superadmin_exam_assignments.html ═══════════════════════════ */
 
@@ -109,7 +109,7 @@
 .ios-ea-list .ac-icon {
     width: 40px; height: 40px; border-radius: 11px;
     background: rgba(175,82,222,0.12); display: flex; align-items: center; justify-content: center;
-    font-size: 18px; flex-shrink: 0; color: var(--ios-blue);
+    font-size: 18px; flex-shrink: 0; color: var(--blue-text);
 }
 .ios-ea-list .ac-icon .svg-icon { width: 19px; height: 19px; }
 .ios-ea-list .ac-info { flex: 1; min-width: 0; }
@@ -119,7 +119,7 @@
 
 .ios-ea-list .status-badge { display: inline-flex; padding: 3px 10px; border-radius: 999px; font: 700 11px/1.3 var(--ios-font); }
 .ios-ea-list .status-on       { background: rgba(52,199,89,0.14); color: #1E9147; }
-.ios-ea-list .status-off      { background: rgba(255,149,0,0.14); color: var(--ios-orange); }
+.ios-ea-list .status-off      { background: rgba(255,149,0,0.14); color: var(--ios-orange-text); }
 .ios-ea-list .status-archived { background: rgba(60,60,67,0.08);  color: var(--ios-label-2); }
 
 .ios-ea-list .ac-actions {
@@ -140,15 +140,15 @@
 .ios-ea-list .btn-sm .svg-icon { width: 14px; height: 14px; }
 .ios-ea-list .btn-on   { background: rgba(52,199,89,0.14); color: #1E9147; }
 .ios-ea-list .btn-on:hover   { background: rgba(52,199,89,0.22); color: #1E9147; }
-.ios-ea-list .btn-off  { background: rgba(255,149,0,0.14); color: var(--ios-orange); }
-.ios-ea-list .btn-off:hover  { background: rgba(255,149,0,0.22); color: var(--ios-orange); }
-.ios-ea-list .btn-edit { background: rgba(175,82,222,0.12); color: var(--ios-blue); }
-.ios-ea-list .btn-edit:hover { background: rgba(175,82,222,0.2); color: var(--ios-blue); }
+.ios-ea-list .btn-off  { background: rgba(255,149,0,0.14); color: var(--ios-orange-text); }
+.ios-ea-list .btn-off:hover  { background: rgba(255,149,0,0.22); color: var(--ios-orange-text); }
+.ios-ea-list .btn-edit { background: rgba(175,82,222,0.12); color: var(--blue-text); }
+.ios-ea-list .btn-edit:hover { background: rgba(175,82,222,0.2); color: var(--blue-text); }
 .ios-ea-list .btn-arch { background: var(--ios-grouped-bg); color: var(--ios-label-2); }
 .ios-ea-list .btn-arch:hover { background: rgba(60,60,67,0.12); color: var(--ios-label-2); }
 
 .ios-ea-list .empty-state { padding: 56px 20px; text-align: center; }
-.ios-ea-list .empty-icon { font-size: 40px; margin-bottom: 12px; color: var(--ios-label-3); }
+.ios-ea-list .empty-icon { font-size: 40px; margin-bottom: 12px; color: var(--ios-label-2); }
 .ios-ea-list .empty-text { font: 400 15px/1.4 var(--ios-font); color: var(--ios-label-2); margin-bottom: 20px; }
 
 /* ═══════════════════════════ superadmin_exam_assignment_detail.html ═══════════════════════════ */
@@ -166,7 +166,7 @@
 .ios-ea-detail .status-badge { display: inline-flex; padding: 3px 10px; border-radius: 999px; font: 700 11px/1.3 var(--ios-font); }
 .ios-ea-detail .status-published { background: rgba(52,199,89,0.14); color: #1E9147; }
 .ios-ea-detail .status-draft     { background: rgba(60,60,67,0.08); color: var(--ios-label-2); }
-.ios-ea-detail .status-archived  { background: rgba(60,60,67,0.06); color: var(--ios-label-3); }
+.ios-ea-detail .status-archived  { background: rgba(60,60,67,0.06); color: var(--ios-label-2); }
 
 .ios-ea-detail .header-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
 .ios-ea-detail .ea-inline-form { display: inline; margin: 0; }
@@ -179,9 +179,9 @@
     background: var(--ios-grouped-bg); color: var(--ios-label); border: none;
     border-radius: 999px; font: 600 13px/1 var(--ios-font); padding: 10px 18px;
 }
-.ios-ea-detail .btn-outline:hover { background: rgba(175,82,222,0.12); color: var(--ios-blue); }
+.ios-ea-detail .btn-outline:hover { background: rgba(175,82,222,0.12); color: var(--blue-text); }
 .ios-ea-detail .btn-danger {
-    border-radius: 999px; border: 1.5px solid var(--ios-red); color: var(--ios-red);
+    border-radius: 999px; border: 1.5px solid var(--ios-red); color: var(--error);
     font: 600 13px/1 var(--ios-font); background: transparent;
 }
 .ios-ea-detail .btn-danger:hover { background: var(--error-fill); color: #fff; }
@@ -197,7 +197,7 @@
 }
 .ios-ea-detail .ticket-num {
     width: 32px; height: 32px; border-radius: 10px;
-    background: rgba(175,82,222,0.12); color: var(--ios-blue);
+    background: rgba(175,82,222,0.12); color: var(--blue-text);
     font: 700 14px/1 var(--ios-font); display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .ios-ea-detail .ticket-htitle { font: 600 15px/1.3 var(--ios-font); color: var(--ios-label); flex: 1; min-width: 0; }
@@ -215,7 +215,7 @@
     text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 8px;
 }
 .ios-ea-detail .ticket-desc-text { font: 400 14px/1.6 var(--ios-font); color: var(--ios-label); white-space: pre-wrap; word-break: break-word; }
-.ios-ea-detail .ticket-desc-none { font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-3); font-style: italic; }
+.ios-ea-detail .ticket-desc-none { font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); font-style: italic; }
 
 .ios-ea-detail .ticket-img-col {
     border-left: 0.5px solid var(--ios-sep); display: flex; align-items: center; justify-content: center;
@@ -223,7 +223,7 @@
 }
 .ios-ea-detail .ticket-img-col > .photo-zoom-button { width: 100%; }
 .ios-ea-detail .ticket-img { width: 100%; max-height: 270px; object-fit: contain; display: block; }
-.ios-ea-detail .ticket-no-img { font-size: 30px; color: var(--ios-label-3); text-align: center; }
+.ios-ea-detail .ticket-no-img { font-size: 30px; color: var(--ios-label-2); text-align: center; }
 
 .ios-ea-detail .ticket-assignees { padding: 14px 18px; border-top: 0.5px solid var(--ios-sep); }
 .ios-ea-detail .assignees-label {
@@ -233,7 +233,7 @@
 }
 .ios-ea-detail .assign-all-chip {
     display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px;
-    background: rgba(175,82,222,0.12); color: var(--ios-blue); border-radius: 999px;
+    background: rgba(175,82,222,0.12); color: var(--blue-text); border-radius: 999px;
     font: 700 11px/1.3 var(--ios-font);
 }
 .ios-ea-detail .assignees-grid { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -245,7 +245,7 @@
 .ios-ea-detail .assignee-chip.notified { background: rgba(52,199,89,0.14); color: #1E9147; }
 .ios-ea-detail .notif-dot { width: 6px; height: 6px; border-radius: 50%; background: #1E9147; flex-shrink: 0; }
 .ios-ea-detail .notif-dot-pending { background: var(--ios-label-3); }
-.ios-ea-detail .assignees-empty { font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-3); font-style: italic; }
+.ios-ea-detail .assignees-empty { font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); font-style: italic; }
 .ios-ea-detail .assignees-count { font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-2); margin-top: 8px; }
 .ios-ea-detail .assignees-count-inline { font: 500 11px/1 var(--ios-font); color: var(--ios-label-2); text-transform: none; letter-spacing: 0; }
 
@@ -291,7 +291,7 @@
 .ios-ea-form .field label { display: block; font: 700 13px/1.3 var(--ios-font); color: var(--ios-label); margin-bottom: 6px; }
 .ios-ea-form .field-checkbox-label { display: flex; align-items: center; gap: 8px; font-weight: 400; cursor: pointer; }
 .ios-ea-form .field-checkbox-label input[type=checkbox] { width: 20px; }
-.ios-ea-form .ea-required { color: var(--ios-red); }
+.ios-ea-form .ea-required { color: var(--error); }
 .ios-ea-form .ea-optional { color: var(--ios-label-2); font-weight: 400; }
 .ios-ea-form .field input[type=text], .ios-ea-form .field input[type=date], .ios-ea-form .field input[type=datetime-local],
 .ios-ea-form .field input[type=number], .ios-ea-form .field select, .ios-ea-form .field textarea {
@@ -304,7 +304,7 @@
 }
 .ios-ea-form .field textarea { resize: vertical; min-height: 90px; }
 .ios-ea-form .field-error { box-shadow: 0 0 0 2px var(--ios-red) !important; }
-.ios-ea-form .field-error-msg { font: 700 11px/1.3 var(--ios-font); color: var(--ios-red); margin-top: 4px; display: none; }
+.ios-ea-form .field-error-msg { font: 700 11px/1.3 var(--ios-font); color: var(--error); margin-top: 4px; display: none; }
 .ios-ea-form .field-error-msg.visible { display: block; }
 .ios-ea-form .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .ios-ea-form .field-hint { font: 400 11px/1.4 var(--ios-font); color: var(--ios-label-2); margin-top: 4px; }
@@ -317,7 +317,7 @@
 .ios-ea-form .ticket-num { font: 700 14px/1.3 var(--ios-font); color: var(--ios-label); }
 .ios-ea-form .ticket-remove-btn {
     background: none; border: none; border-radius: 999px; padding: 5px 12px;
-    color: var(--ios-red); font: 700 12px/1.3 var(--ios-font); cursor: pointer; font-family: inherit;
+    color: var(--error); font: 700 12px/1.3 var(--ios-font); cursor: pointer; font-family: inherit;
     background: rgba(255,59,48,0.1); transition: background 120ms var(--ios-ease);
 }
 .ios-ea-form .ticket-remove-btn:hover { background: rgba(255,59,48,0.18); }
@@ -330,9 +330,9 @@
 }
 .ios-ea-form .img-upload-area:hover, .ios-ea-form .img-upload-area.dragover { border-color: var(--ios-blue); background: rgba(175,82,222,0.06); }
 .ios-ea-form .img-upload-area input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
-.ios-ea-form .img-upload-icon { font-size: 24px; margin-bottom: 8px; color: var(--ios-label-3); }
+.ios-ea-form .img-upload-icon { font-size: 24px; margin-bottom: 8px; color: var(--ios-label-2); }
 .ios-ea-form .img-upload-text { font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); }
-.ios-ea-form .img-upload-progress { font: 400 12px/1.3 var(--ios-font); color: var(--ios-blue); margin-top: 6px; display: none; }
+.ios-ea-form .img-upload-progress { font: 400 12px/1.3 var(--ios-font); color: var(--blue-text); margin-top: 6px; display: none; }
 .ios-ea-form .img-preview { display: none; margin-top: 10px; }
 .ios-ea-form .img-preview img { max-height: 160px; border-radius: 12px; }
 .ios-ea-form .img-change-btn {
@@ -354,7 +354,7 @@
 .ios-ea-form .student-option-name { font: 400 13px/1.3 var(--ios-font); color: var(--ios-label); }
 .ios-ea-form .student-option-uname { font: 600 11px/1.3 var(--ios-font); color: var(--ios-label-2); }
 .ios-ea-form .students-selected-count {
-    font: 700 11px/1.3 var(--ios-font); color: var(--ios-blue); padding: 6px 12px;
+    font: 700 11px/1.3 var(--ios-font); color: var(--blue-text); padding: 6px 12px;
     border-top: 0.5px solid var(--ios-sep); background: var(--ios-grouped-bg);
 }
 
@@ -364,7 +364,7 @@
     cursor: pointer; font-family: inherit; transition: border-color 120ms var(--ios-ease), color 120ms var(--ios-ease);
     margin-bottom: 18px;
 }
-.ios-ea-form .add-ticket-btn:hover { border-color: var(--ios-blue); color: var(--ios-blue); }
+.ios-ea-form .add-ticket-btn:hover { border-color: var(--ios-blue); color: var(--blue-text); }
 .ios-ea-form .add-ticket-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .ios-ea-form .btn-blue {
@@ -375,7 +375,7 @@
     background: var(--ios-grouped-bg); color: var(--ios-label); border: none;
     border-radius: 999px; font: 700 14px/1 var(--ios-font); padding: 11px 22px; text-decoration: none; display: inline-flex; align-items: center;
 }
-.ios-ea-form .btn-outline:hover { background: rgba(175,82,222,0.12); color: var(--ios-blue); }
+.ios-ea-form .btn-outline:hover { background: rgba(175,82,222,0.12); color: var(--blue-text); }
 
 /* ── Live-превью билета ── */
 .ios-ea-form .ea-preview-wrap { margin-top: 16px; padding-top: 16px; border-top: 0.5px dashed var(--ios-sep); }
@@ -397,9 +397,9 @@
     text-align: center; transition: background-color 120ms var(--ios-ease), color 120ms var(--ios-ease);
     user-select: none; display: flex; align-items: center; justify-content: center; gap: 6px;
 }
-.ios-ea-form .activate-opt:hover { color: var(--ios-blue); }
+.ios-ea-form .activate-opt:hover { color: var(--blue-text); }
 .ios-ea-form .activate-opt input[type=radio] { display: none; }
-.ios-ea-form .activate-opt.active { background: rgba(175,82,222,0.14); color: var(--ios-blue); }
+.ios-ea-form .activate-opt.active { background: rgba(175,82,222,0.14); color: var(--blue-text); }
 
 /* Обёртки режима «По тегу»/«Конкретным» — JS переключает el.style.display
    по id (см. комментарий в шапке файла), default здесь только начальное
@@ -427,18 +427,18 @@
     font: 600 12px/1.3 var(--ios-font); color: var(--ios-label-2); background: var(--ios-grouped-bg);
     transition: background-color 120ms var(--ios-ease), color 120ms var(--ios-ease);
 }
-.ios-ea-form .rf-chip:hover { color: var(--ios-blue); }
+.ios-ea-form .rf-chip:hover { color: var(--blue-text); }
 .ios-ea-form .rf-chip input { display: none; }
-.ios-ea-form .rf-chip.on { background: rgba(175,82,222,0.14); color: var(--ios-blue); }
-.ios-ea-form .rf-empty { font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-3); font-style: italic; }
+.ios-ea-form .rf-chip.on { background: rgba(175,82,222,0.14); color: var(--blue-text); }
+.ios-ea-form .rf-empty { font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-2); font-style: italic; }
 .ios-ea-form .rf-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 0.5px dashed var(--ios-sep); }
-.ios-ea-form .rf-count { font: 700 13px/1.3 var(--ios-font); color: var(--ios-blue); margin-right: auto; }
+.ios-ea-form .rf-count { font: 700 13px/1.3 var(--ios-font); color: var(--blue-text); margin-right: auto; }
 .ios-ea-form .rf-btn {
     font: 700 12px/1.3 var(--ios-font); padding: 6px 13px; border-radius: 999px; border: none;
     background: var(--ios-grouped-bg); color: var(--ios-label); cursor: pointer; font-family: inherit;
     transition: background-color 120ms var(--ios-ease);
 }
-.ios-ea-form .rf-btn:hover { color: var(--ios-blue); }
+.ios-ea-form .rf-btn:hover { color: var(--blue-text); }
 .ios-ea-form .rf-btn-primary { background: var(--blue-fill); color: #fff; }
 .ios-ea-form .rf-btn-primary:hover { color: #fff; filter: brightness(1.08); }
 

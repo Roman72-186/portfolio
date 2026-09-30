@@ -43,8 +43,8 @@
 .ios-videos-admin .prg-tab {
     font-family: var(--ios-font); font-weight: 600; line-height: 1; color: var(--ios-label-2); border-bottom-width: 2px;
 }
-.ios-videos-admin .prg-tab:hover { color: var(--ios-blue); }
-.ios-videos-admin .prg-tab.is-active { color: var(--ios-blue); border-bottom-color: var(--ios-blue); }
+.ios-videos-admin .prg-tab:hover { color: var(--blue-text); }
+.ios-videos-admin .prg-tab.is-active { color: var(--blue-text); border-bottom-color: var(--ios-blue); }
 .ios-videos-admin .prg-tabs-sep { background: var(--ios-sep); }
 
 .ios-videos-admin .vam-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
@@ -80,7 +80,7 @@
 /* .vam-field — сам label, поэтому uppercase/letter-spacing иначе унаследует
    и подсказка синтаксиса разметки под textarea (owner 15.09.2026). */
 .ios-videos-admin .vam-field .field-hint { text-transform: none; letter-spacing: normal; }
-.ios-videos-admin .vam-file-note { margin: 6px 0 0; color: var(--ios-label-3); font: 400 12px/1.45 var(--ios-font); }
+.ios-videos-admin .vam-file-note { margin: 6px 0 0; color: var(--ios-label-2); font: 400 12px/1.45 var(--ios-font); }
 .ios-videos-admin .vam-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
 .ios-videos-admin .vam-actions button { min-height: 44px; }
 /* base.css держит `.btn-outline{display:inline-flex}` без компаньона
@@ -98,7 +98,7 @@
 .ios-videos-admin .vam-progress > span { display: block; width: 0; height: 100%; background: var(--ios-blue); transition: width 160ms var(--ios-ease); }
 .ios-videos-admin .vam-progress-value { font: 700 13px/1 var(--ios-font); color: var(--ios-label); }
 .ios-videos-admin .vam-message { min-height: 20px; margin: 10px 0 0; color: var(--ios-label-2); font: 400 13px/1.4 var(--ios-font); }
-.ios-videos-admin .vam-message.is-error { color: var(--ios-red); }
+.ios-videos-admin .vam-message.is-error { color: var(--error); }
 
 /* ── Очередь параллельных загрузок (несколько файлов сразу) ── */
 .ios-videos-admin .vam-upload-queue { display: grid; gap: 10px; margin: 10px 0; }
@@ -112,7 +112,7 @@
 .ios-videos-admin .vam-upload-item-actions { display: flex; gap: 8px; }
 .ios-videos-admin .vam-upload-item-actions button { min-height: 32px; padding: 6px 12px; font-size: 12px; }
 .ios-videos-admin .vam-config-warning {
-    padding: 14px 16px; margin-bottom: 18px; color: var(--ios-orange);
+    padding: 14px 16px; margin-bottom: 18px; color: var(--ios-orange-text);
     background: rgba(255,149,0,0.12); border-radius: 14px; font: 400 13px/1.5 var(--ios-font);
 }
 
@@ -129,9 +129,9 @@
     border-radius: 999px; font: 700 11px/1.3 var(--ios-font);
 }
 .ios-videos-admin .vam-badge--ready { background: rgba(52,199,89,0.14); color: #1E9147; }
-.ios-videos-admin .vam-badge--active { background: rgba(175,82,222,0.14); color: var(--ios-blue); }
-.ios-videos-admin .vam-badge--working { background: rgba(255,149,0,0.14); color: var(--ios-orange); }
-.ios-videos-admin .vam-badge--failed { background: rgba(255,59,48,0.14); color: var(--ios-red); }
+.ios-videos-admin .vam-badge--active { background: rgba(175,82,222,0.14); color: var(--blue-text); }
+.ios-videos-admin .vam-badge--working { background: rgba(255,149,0,0.14); color: var(--ios-orange-text); }
+.ios-videos-admin .vam-badge--failed { background: rgba(255,59,48,0.14); color: var(--error); }
 .ios-videos-admin .vam-row-actions {
     display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 13px;
     padding-top: 12px; border-top: 0.5px solid var(--ios-sep);
@@ -140,7 +140,7 @@
     min-height: 34px; padding: 7px 13px; font-size: 12px; text-decoration: none;
 }
 .ios-videos-admin .vam-edit { margin-top: 12px; border-top: 0.5px solid var(--ios-sep); padding-top: 12px; }
-.ios-videos-admin .vam-edit summary { cursor: pointer; color: var(--ios-blue); font: 600 12px/1 var(--ios-font); }
+.ios-videos-admin .vam-edit summary { cursor: pointer; color: var(--blue-text); font: 600 12px/1 var(--ios-font); }
 .ios-videos-admin .vam-edit-fields { display: grid; grid-template-columns: 1fr 1.4fr auto; gap: 10px; align-items: end; margin-top: 10px; }
 /* Описание с подсказкой синтаксиса стало выше однострочных полей ряда —
    растягиваем на всю ширину, тот же приём, что у vam-quiz-field ниже. */

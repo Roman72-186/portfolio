@@ -92,7 +92,7 @@
 
 /* ── Список циклов ── */
 .ios-cycle .fb-group-title {
-    font: 700 11px/1.4 var(--ios-font); color: var(--ios-label-3);
+    font: 700 11px/1.4 var(--ios-font); color: var(--ios-label-2);
     text-transform: uppercase; letter-spacing: 0.06em;
     margin: 18px 0 8px;
 }

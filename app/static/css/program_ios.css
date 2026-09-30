@@ -66,7 +66,7 @@
     transition: background 120ms var(--ios-ease), color 120ms var(--ios-ease), border-color 120ms var(--ios-ease);
 }
 .ios-prg-cal .btn-outline:hover, .ios-prg-day .btn-outline:hover {
-    background: rgba(175,82,222,0.12); color: var(--ios-blue);
+    background: rgba(175,82,222,0.12); color: var(--blue-text);
 }
 
 /* Предпросмотр и перенос содержимого в конструкторе блоков — не разовое
@@ -97,8 +97,8 @@
     font: 600 14px/1 var(--ios-font); color: var(--ios-label-2);
     padding: 10px 16px; border-bottom-width: 2px;
 }
-.ios-prg-cal .prg-tab:hover { color: var(--ios-blue); }
-.ios-prg-cal .prg-tab.is-active { color: var(--ios-blue); border-bottom-color: var(--ios-blue); }
+.ios-prg-cal .prg-tab:hover { color: var(--blue-text); }
+.ios-prg-cal .prg-tab.is-active { color: var(--blue-text); border-bottom-color: var(--ios-blue); }
 .ios-prg-cal .prg-tabs-sep { background: var(--ios-sep); }
 
 /* ═══════════════════════════ cabinet_program.html — календарь ═════════ */
@@ -110,13 +110,13 @@
 .ios-prg-cal .prg-nav {
     display: inline-flex; align-items: center; justify-content: center;
     min-width: 36px; min-height: 36px; padding: 0; border-radius: 50%;
-    background: var(--ios-grouped-bg); color: var(--ios-blue); font-weight: 700;
+    background: var(--ios-grouped-bg); color: var(--blue-text); font-weight: 700;
 }
 .ios-prg-cal .prg-nav:hover { background: rgba(175,82,222,0.14); }
 
 .ios-prg-cal .prg-grid { gap: 5px; }
 .ios-prg-cal .prg-dowhead {
-    color: var(--ios-label-3); font: 700 11px/1 var(--ios-font); text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--ios-label-2); font: 700 11px/1 var(--ios-font); text-transform: uppercase; letter-spacing: 0.05em;
 }
 .ios-prg-cal .prg-day {
     min-height: 76px; padding: 8px 9px; gap: 5px;
@@ -136,8 +136,8 @@
 
 .ios-prg-cal .prg-dot { font: 700 10px/1 var(--ios-font); min-width: 18px; height: 18px; }
 .ios-prg-cal .prg-dot--mock { color: #fff; background: var(--blue-fill); }
-.ios-prg-cal .prg-dot--video { color: var(--ios-blue); background: rgba(175,82,222,0.16); }
-.ios-prg-cal .prg-dot--homework { color: #b8620a; background: rgba(255,149,0,0.18); }
+.ios-prg-cal .prg-dot--video { color: var(--blue-text); background: rgba(175,82,222,0.16); }
+.ios-prg-cal .prg-dot--homework { color: var(--ios-orange-text); background: rgba(255,149,0,0.18); }
 .ios-prg-cal .prg-dot--other { color: var(--ios-label-2); background: rgba(60,60,67,0.10); }
 
 .ios-prg-cal .prg-legend { color: var(--ios-label-2); font: 400 12px/1.4 var(--ios-font); }
@@ -168,7 +168,7 @@
 .ios-prg-day .prg-tile.is-active .prg-tile-icon { background: var(--blue-fill); color: #fff; }
 .ios-prg-day .prg-tile-icon {
     width: 42px; height: 42px; border-radius: 12px;
-    color: var(--ios-blue); background: rgba(175,82,222,0.12); font-size: 17px;
+    color: var(--blue-text); background: rgba(175,82,222,0.12); font-size: 17px;
 }
 .ios-prg-day .prg-tile strong { font: 600 14px/1.3 var(--ios-font); color: var(--ios-label); }
 .ios-prg-day .prg-tile small { color: var(--ios-label-2); font: 400 12px/1.4 var(--ios-font); margin-top: 2px; }
@@ -206,7 +206,7 @@
     padding: 11px 13px; color: var(--ios-label);
     font: 400 14px/1.4 var(--ios-font); text-transform: none; letter-spacing: normal;
 }
-.ios-prg-day .prg-field input::placeholder, .ios-prg-day .prg-field textarea::placeholder { color: var(--ios-label-3); }
+.ios-prg-day .prg-field input::placeholder, .ios-prg-day .prg-field textarea::placeholder { color: var(--ios-label-2); }
 .ios-prg-day .prg-field textarea { min-height: 76px; }
 .ios-prg-day .prg-field input:not([type="checkbox"]):not([type="radio"]):focus,
 .ios-prg-day .prg-field textarea:focus,
@@ -305,11 +305,11 @@
    перемещение — их разделяли 6px, тап на телефоне легко промахивался. */
 .ios-prg-day .prg-blk-number {
     display: inline-block; margin-right: 6px;
-    color: var(--ios-label-3); font: 700 13px/1 var(--ios-font);
+    color: var(--ios-label-2); font: 700 13px/1 var(--ios-font);
 }
 .ios-prg-day .prg-blk-actions { display: inline-flex; align-items: center; gap: 14px; }
 .ios-prg-day .prg-blk-remove {
-    margin-left: 2px; color: var(--ios-red); border-color: var(--ios-red);
+    margin-left: 2px; color: var(--error); border-color: var(--ios-red);
 }
 
 /* Вспышка при перестановке ↑/↓ — иначе мгновенное перемещение DOM-узла
@@ -353,7 +353,7 @@
 .ios-prg-day .prg-settings-title { color: var(--ios-label); font: 600 15px/1.3 var(--ios-font); }
 .ios-prg-day .prg-settings-summary { color: var(--ios-label-2); font: 400 13px/1.4 var(--ios-font); }
 .ios-prg-day .prg-settings.is-custom .prg-settings-summary { color: var(--ios-label); }
-.ios-prg-day .prg-settings > summary:hover .prg-settings-title { color: var(--ios-blue); }
+.ios-prg-day .prg-settings > summary:hover .prg-settings-title { color: var(--blue-text); }
 .ios-prg-day .prg-blk-setting {
     padding: var(--s-3) var(--s-4);
     background: var(--ios-card-bg); border: none; border-radius: 12px;
@@ -431,7 +431,7 @@
 .ios-prg-day .prg-actions .btn-outline { min-height: 40px; padding: 9px 16px; font-size: 12px; }
 
 .ios-prg-day .prg-message { color: var(--ios-label-2); font: 400 13px/1.45 var(--ios-font); }
-.ios-prg-day .prg-message.is-error { color: var(--ios-red); }
+.ios-prg-day .prg-message.is-error { color: var(--error); }
 
 /* ── Превью изображений ── */
 .ios-prg-day .prg-thumbs img { border: none; border-radius: 10px; }
@@ -448,7 +448,7 @@
 .ios-prg-day .prg-videopick-cover { border-radius: 10px; }
 .ios-prg-day .prg-videopick-copy strong { font: 600 14px/1.35 var(--ios-font); color: var(--ios-label); }
 .ios-prg-day .prg-videopick-copy small { color: var(--ios-label-2); font: 400 12px/1.35 var(--ios-font); }
-.ios-prg-day .prg-videopick-note { color: var(--ios-orange); }
+.ios-prg-day .prg-videopick-note { color: var(--ios-orange-text); }
 
 /* ── Прогресс загрузки видео ── */
 .ios-prg-day .prg-progress { background: var(--ios-grouped-bg); }
@@ -464,7 +464,7 @@
 .ios-prg-day .btn-blue:active { transform: scale(.97); filter: brightness(.92); }
 .ios-prg-day .btn-blue:disabled { opacity: .45; filter: none; transform: none; }
 .ios-prg-day .btn-danger {
-    border-radius: 999px; border: none; color: var(--ios-red);
+    border-radius: 999px; border: none; color: var(--error);
     background: rgba(255,59,48,0.12); font: 600 12px/1 var(--ios-font);
 }
 .ios-prg-day .btn-danger:hover { background: var(--error-fill); color: #fff; }
@@ -483,7 +483,7 @@
 .ios-prg-day .prg-item-actions button { min-height: 32px; padding: 7px 12px; font-size: 12px; }
 
 .ios-prg-day .prg-badge {
-    color: var(--ios-blue); background: rgba(175,82,222,0.12);
+    color: var(--blue-text); background: rgba(175,82,222,0.12);
     font: 700 11px/1 var(--ios-font);
 }
 

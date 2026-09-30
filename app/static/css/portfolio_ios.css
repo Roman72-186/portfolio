@@ -87,7 +87,7 @@
     cursor: pointer; color: inherit;
 }
 .ios-portfolio .pf-mtoggle:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 3px; border-radius: 6px; }
-.ios-portfolio .pf-mchevron { font-size: 11px; color: var(--ios-label-3); transition: transform 0.18s; }
+.ios-portfolio .pf-mchevron { font-size: 11px; color: var(--ios-label-2); transition: transform 0.18s; }
 .ios-portfolio .pf-mblock.open .pf-mchevron { transform: rotate(180deg); }
 .ios-portfolio .pf-mlabel { font: 600 15px/1.3 var(--ios-font); color: var(--ios-label); text-transform: capitalize; }
 .ios-portfolio .pf-mcount { font: 400 13px/1 var(--ios-font); color: var(--ios-label-2); white-space: nowrap; }

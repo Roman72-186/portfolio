@@ -48,8 +48,8 @@
     text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
     transition: color 120ms var(--ios-ease);
 }
-.ios-gexam .gexam-tab:hover { color: var(--ios-blue); }
-.ios-gexam .gexam-tab.active { color: var(--ios-blue); border-bottom-color: var(--ios-blue); }
+.ios-gexam .gexam-tab:hover { color: var(--blue-text); }
+.ios-gexam .gexam-tab.active { color: var(--blue-text); border-bottom-color: var(--ios-blue); }
 
 /* ── Карточки-строки (билеты / ссылки / работы / участники) ── */
 .ios-gexam .gexam-row {
@@ -76,9 +76,9 @@
     border: none; background: none; color: var(--ios-label-2); cursor: pointer;
     font: 600 12px/1 var(--ios-font); padding: 4px 0;
 }
-.ios-gexam .gexam-link-btn:hover { color: var(--ios-red); }
-.ios-gexam .gexam-link-btn--blue { color: var(--ios-blue); font-size: 13px; }
-.ios-gexam .gexam-link-btn--blue:hover { opacity: .6; color: var(--ios-blue); }
+.ios-gexam .gexam-link-btn:hover { color: var(--error); }
+.ios-gexam .gexam-link-btn--blue { color: var(--blue-text); font-size: 13px; }
+.ios-gexam .gexam-link-btn--blue:hover { opacity: .6; color: var(--blue-text); }
 .ios-gexam .gexam-toggle-form { margin-top: 8px; }
 
 /* ── Бейджи ── */
@@ -122,7 +122,7 @@
     text-align: center; font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); cursor: pointer;
     transition: border-color 120ms var(--ios-ease), color 120ms var(--ios-ease);
 }
-.ios-gexam .gexam-upload-area.dragover { border-color: var(--ios-blue); color: var(--ios-blue); }
+.ios-gexam .gexam-upload-area.dragover { border-color: var(--ios-blue); color: var(--blue-text); }
 .ios-gexam .gexam-upload-progress { font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-2); margin-top: 8px; display: none; }
 .ios-gexam .gexam-upload-preview { display: none; margin-top: 8px; }
 .ios-gexam .gexam-upload-preview img { max-width: 160px; border-radius: 12px; }
@@ -150,7 +150,7 @@
     font: 600 14px/1 var(--ios-font); padding: 11px 20px; color: #fff; cursor: pointer;
 }
 .ios-gexam .btn-danger {
-    border-radius: 999px; border: 1.5px solid var(--ios-red); color: var(--ios-red);
+    border-radius: 999px; border: 1.5px solid var(--ios-red); color: var(--error);
     font: 600 13px/1 var(--ios-font); background: transparent; padding: 10px 16px; cursor: pointer;
 }
 .ios-gexam .btn-danger:hover { background: var(--error-fill); color: #fff; }
@@ -168,7 +168,7 @@
     border-radius: 999px; background: var(--ios-grouped-bg); color: var(--ios-label-2);
     font: 700 13px/1 var(--ios-font); cursor: pointer; font-family: inherit;
 }
-.ios-gexam .gwork-subject-btn.scored { background: rgba(175,82,222,0.12); color: var(--ios-blue); }
+.ios-gexam .gwork-subject-btn.scored { background: rgba(175,82,222,0.12); color: var(--blue-text); }
 .ios-gexam .gwork-subject-btn.active { background: var(--blue-fill); color: #fff; }
 .ios-gexam .gwork-subject-btn:disabled { opacity: .4; cursor: not-allowed; }
 .ios-gexam .gwork-detail { display: none; margin-top: 4px; }
@@ -218,13 +218,13 @@
     font: 400 13px/1.2 var(--ios-font); color: var(--ios-label-2);
     text-decoration: none; padding-bottom: 10px;
 }
-.ios-gexam .gstat-period-reset:hover { color: var(--ios-blue); }
+.ios-gexam .gstat-period-reset:hover { color: var(--blue-text); }
 
 .ios-gexam .gstat-period-label {
     font: 400 13px/1.3 var(--ios-font); color: var(--ios-label-2);
     padding: 0 4px; margin-bottom: 10px;
 }
-.ios-gexam .gstat-period-days { color: var(--ios-label-3); margin-left: 6px; }
+.ios-gexam .gstat-period-days { color: var(--ios-label-2); margin-left: 6px; }
 
 .ios-gexam .gstat-block { margin-bottom: 26px; }
 .ios-gexam .gstat-block .gexam-row-head { padding: 0 4px; margin-bottom: 10px; }
@@ -266,7 +266,7 @@
     border-top: 0.5px solid var(--ios-sep);
     font: 400 13px/1.35 var(--ios-font); color: var(--ios-label-2);
 }
-.ios-gexam .gstat-note b { color: var(--ios-orange); font-weight: 700; }
+.ios-gexam .gstat-note b { color: var(--ios-orange-text); font-weight: 700; }
 
 /* Таблицы. Обёртка со своим скроллом: узкий телефон не должен растягивать
    страницу по горизонтали. */
@@ -296,7 +296,7 @@
 }
 .ios-gexam .gstat-table .gstat-num b { font-weight: 700; }
 .ios-gexam .gstat-row-empty th,
-.ios-gexam .gstat-row-empty td { color: var(--ios-label-3); }
+.ios-gexam .gstat-row-empty td { color: var(--ios-label-2); }
 
 /* Колонка с полоской: тянется, числа рядом не двигаются. */
 .ios-gexam .gstat-day-bar-head { width: 40%; }

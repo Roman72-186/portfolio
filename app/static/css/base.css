@@ -121,6 +121,13 @@
     --ios-orange: #FF9500;
     --ios-purple: #AF52DE;
 
+    /* Текст этими цветами — только через токены текста (аудит «цвета iOS», 30.09.2026): сами iOS-цвета
+       на белом 2.2 (оранжевый, зелёный), 3.55 (красный), 4.13 (фиолетовый). Фиолетовый текстом — --blue-text,
+       красный — --error. У оранжевого и зелёного своего текстового токена с тёмной темой нет:
+       --warning-text/--success-text в тёмной не переопределены, а --warning/--success на своих плашках 4.4. */
+    --ios-orange-text: var(--warning-text);
+    --ios-green-text:  var(--success-text);
+
     /* ── iOS re-skin: шрифт, кривая анимации и нейтральная палитра
        (label/separator/подложка) — 03.09.2026, первый шаг перед тёмной
        темой. Тот же самый блок (`--ios-font` … `--ios-card-bg`) был
@@ -134,7 +141,9 @@
     --ios-font:       -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
     --ios-ease:       cubic-bezier(0.16, 1, 0.3, 1);
     --ios-label:      #1C1C1E;
-    --ios-label-2:    rgba(60,60,67,0.60);
+    /* Было rgba(60,60,67,.60) — 3.3 на --bg, ≈ 240 надписей (аудит «цвета iOS»); это — 5.2–6.0 на любом светлом фоне.
+       --ios-label-3 (30 %) текстом не ставится: 1.7 в обеих темах, он для стрелок, пунктира и точек. */
+    --ios-label-2:    #636368;
     --ios-label-3:    rgba(60,60,67,0.30);
     --ios-sep:        rgba(60,60,67,0.29);
     --ios-grouped-bg: #F2F2F7;
@@ -295,6 +304,8 @@
     --ios-red:        #FF453A;
     --ios-orange:     #FF9F0A;
     --ios-purple:     #BF5AF2;
+    --ios-orange-text: var(--ios-orange);
+    --ios-green-text:  var(--ios-green);
 }
 /* Плашки `.tag-pill--*`/`.student-info-pill--*`: бледный полупрозрачный
    фон + тёмные чернила, откалиброванные на белый холст (сами цвета —

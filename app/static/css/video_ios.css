@@ -49,11 +49,11 @@ body.has-video-pseudo-fullscreen .ios-video { isolation: auto; }
 
 .ios-videos .back-link,
 .ios-video .back-link {
-    color: var(--ios-blue); font: 400 17px/1 var(--ios-font);
+    color: var(--blue-text); font: 400 17px/1 var(--ios-font);
     min-height: 34px; margin-bottom: 4px;
 }
 .ios-videos .back-link:hover,
-.ios-video .back-link:hover { color: var(--ios-blue); opacity: .6; }
+.ios-video .back-link:hover { color: var(--blue-text); opacity: .6; }
 
 .ios-videos .page-header,
 .ios-video .page-header { margin-bottom: 18px; }
@@ -101,9 +101,9 @@ body.has-video-pseudo-fullscreen .ios-video { isolation: auto; }
     padding: 0; min-height: 0; background: none; border-radius: 0;
     font: 600 13px/1 var(--ios-font);
 }
-.ios-videos .video-row-state--new { color: var(--ios-blue); }
-.ios-videos .video-row-state--started { color: var(--ios-orange); }
-.ios-videos .video-row-state--completed { color: var(--ios-label-3); font-weight: 500; }
+.ios-videos .video-row-state--new { color: var(--blue-text); }
+.ios-videos .video-row-state--started { color: var(--ios-orange-text); }
+.ios-videos .video-row-state--completed { color: var(--ios-label-2); font-weight: 500; }
 
 .ios-videos .videos-empty {
     background: var(--ios-card-bg); border: none; border-radius: 16px;
@@ -162,7 +162,7 @@ body.has-video-pseudo-fullscreen .ios-video { isolation: auto; }
 .ios-video .video-help,
 .ios-video .video-ios-install-hint,
 .ios-video .video-progress-status { font: 400 13px/1.5 var(--ios-font); color: var(--ios-label-2); }
-.ios-video .video-progress-status.is-error { color: var(--ios-red); }
+.ios-video .video-progress-status.is-error { color: var(--error); }
 
 .ios-video .card {
     background: var(--ios-card-bg); border: none; border-radius: 16px;

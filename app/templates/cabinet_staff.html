@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{% if user.role_rank >= 5 %}Суперадмин{% else %}Главный преподаватель{% endif %} — дашборд{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=12">
+<link rel="stylesheet" href="/static/css/dashboard_staff_ios.css?v=13">
 {% endblock %}
 {% block content %}
 {#- Один экран у ГП (/cabinet/admin-panel) и суперадмина (/cabinet/superadmin),

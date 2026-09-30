@@ -39,10 +39,10 @@
 
 .ios-feedback .back-link {
     display: inline-block; margin-bottom: 10px;
-    color: var(--ios-blue); font: 400 17px/1 var(--ios-font);
+    color: var(--blue-text); font: 400 17px/1 var(--ios-font);
     min-height: 34px;
 }
-.ios-feedback .back-link:hover { color: var(--ios-blue); opacity: .6; }
+.ios-feedback .back-link:hover { color: var(--blue-text); opacity: .6; }
 
 /* ── Шапка цикла ── */
 .ios-feedback .dlg-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 14px; }
@@ -58,10 +58,10 @@
     min-height: 36px; padding: 6px 14px; border: none; border-radius: 999px;
     font: 700 12px/1 var(--ios-font); cursor: pointer; transition: background .12s, filter .12s;
 }
-.ios-feedback .dlg-delete-btn { background: rgba(255,59,48,0.12); color: var(--ios-red); }
+.ios-feedback .dlg-delete-btn { background: rgba(255,59,48,0.12); color: var(--error); }
 .ios-feedback .dlg-delete-btn:hover { background: rgba(255,59,48,0.20); }
 .ios-feedback .dlg-delete-btn:disabled { opacity: 0.5; cursor: default; }
-.ios-feedback .dlg-reopen-btn { background: rgba(175,82,222,0.12); color: var(--ios-blue); }
+.ios-feedback .dlg-reopen-btn { background: rgba(175,82,222,0.12); color: var(--blue-text); }
 .ios-feedback .dlg-reopen-btn:hover { background: rgba(175,82,222,0.20); }
 .ios-feedback .dlg-reopen-btn:disabled { opacity: 0.5; cursor: default; }
 .ios-feedback .dlg-revision-btn { background: rgba(255,149,0,0.14); color: #b25f00; }
@@ -95,9 +95,9 @@
 .ios-feedback .dlg-revision-banner .dlg-revision-done:disabled { opacity: 0.5; cursor: default; }
 
 /* Inline-правка своего сообщения ОС */
-.ios-feedback .dlg-msg-edit { align-self: flex-end; background: none; border: none; cursor: pointer; color: var(--ios-blue); font: 700 11px/1 var(--ios-font); padding: 2px 4px; }
+.ios-feedback .dlg-msg-edit { align-self: flex-end; background: none; border: none; cursor: pointer; color: var(--blue-text); font: 700 11px/1 var(--ios-font); padding: 2px 4px; }
 .ios-feedback .dlg-msg-edit:hover { text-decoration: underline; }
-.ios-feedback .dlg-msg.from-me .dlg-msg-edit { color: var(--ios-blue); }
+.ios-feedback .dlg-msg.from-me .dlg-msg-edit { color: var(--blue-text); }
 .ios-feedback .dlg-msg-edit-form { width: 100%; margin-top: 4px; }
 .ios-feedback .dlg-msg-edit-form textarea {
     width: 100%; min-height: 72px; max-height: 240px; padding: 10px 12px; box-sizing: border-box;
@@ -135,7 +135,7 @@
     border-radius: 14px; background: var(--ios-card-bg); box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 .ios-feedback .dlg-ticket-meta { flex: 1 1 180px; font: 400 13px/1.4 var(--ios-font); color: var(--ios-label-2); }
-.ios-feedback .dlg-ticket-label { display: block; margin-bottom: 4px; font: 700 11px/1.3 var(--ios-font); color: var(--ios-label-3); text-transform: uppercase; letter-spacing: 0.05em; }
+.ios-feedback .dlg-ticket-label { display: block; margin-bottom: 4px; font: 700 11px/1.3 var(--ios-font); color: var(--ios-label-2); text-transform: uppercase; letter-spacing: 0.05em; }
 .ios-feedback .dlg-ticket-title { color: var(--ios-label); font-weight: 700; }
 .ios-feedback .dlg-ticket-image { flex: 0 0 180px; max-width: 100%; }
 .ios-feedback .dlg-ticket-image img { display: block; width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 10px; border: none; cursor: zoom-in; }
@@ -179,7 +179,7 @@
 /* Ссылка на внешнее видео (владелец 10.09.2026) — та же отбивка сверху,
    что у file-вложений строкой выше, чтобы не прилипала к тексту. */
 .ios-feedback .dlg-msg-bubble .dlg-msg-video-link { display: inline-block; margin-top: 4px; }
-.ios-feedback .dlg-msg-meta { font: 400 11px/1.3 var(--ios-font); color: var(--ios-label-3); padding: 0 4px; }
+.ios-feedback .dlg-msg-meta { font: 400 11px/1.3 var(--ios-font); color: var(--ios-label-2); padding: 0 4px; }
 .ios-feedback .dlg-msg-author { font-weight: 700; color: var(--ios-label-2); }
 .ios-feedback .dlg-msg-role { text-transform: uppercase; letter-spacing: 0.04em; }
 
@@ -194,11 +194,11 @@
 .ios-feedback .dlg-form textarea:focus { outline: 2px solid var(--ios-blue); outline-offset: -1px; border-color: transparent; }
 .ios-feedback .dlg-form-actions { display: flex; flex-direction: column; gap: 8px; }
 .ios-feedback .dlg-attach { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: none; border-radius: 999px; background: var(--ios-card-bg); cursor: pointer; font: 700 13px/1 var(--ios-font); color: var(--ios-label-2); box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
-.ios-feedback .dlg-attach:hover { color: var(--ios-blue); }
+.ios-feedback .dlg-attach:hover { color: var(--blue-text); }
 .ios-feedback .dlg-attach input { display: none; }
-.ios-feedback .dlg-attach-name { font: 700 12px/1 var(--ios-font); color: var(--ios-blue); }
+.ios-feedback .dlg-attach-name { font: 700 12px/1 var(--ios-font); color: var(--blue-text); }
 .ios-feedback .dlg-send { padding: 10px 18px; border-radius: 999px; font-weight: 700; font-size: 14px; }
-.ios-feedback .dlg-form-hint { font: 400 11px/1.4 var(--ios-font); color: var(--ios-label-3); margin-top: 6px; }
+.ios-feedback .dlg-form-hint { font: 400 11px/1.4 var(--ios-font); color: var(--ios-label-2); margin-top: 6px; }
 .ios-feedback .dlg-waiting { padding: 16px; background: var(--ios-card-bg); border-radius: 14px; color: var(--ios-label-2); font: 400 13px/1.4 var(--ios-font); text-align: center; }
 
 /* Структурная форма «Первая обратная связь» (4 пункта) */
@@ -209,11 +209,11 @@
 .ios-feedback .dlg-sf-score-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ios-feedback .dlg-sf-score input { width: 88px; padding: 8px 10px; border: none; border-radius: 10px; font: 700 15px/1 var(--ios-font); color: var(--ios-label); background: var(--ios-card-bg); }
 .ios-feedback .dlg-sf-score input:focus { outline: 2px solid var(--ios-blue); outline-offset: -1px; }
-.ios-feedback .dlg-sf-score-hint { font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-3); }
+.ios-feedback .dlg-sf-score-hint { font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-2); }
 .ios-feedback .dlg-intermediate-score { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 12px 16px; border: none; border-radius: 16px; background: rgba(175,82,222,0.08); }
 .ios-feedback .dlg-intermediate-score-label { font: 700 12px/1.3 var(--ios-font); color: var(--ios-label-2); text-transform: uppercase; letter-spacing: .04em; }
-.ios-feedback .dlg-intermediate-score-hint { margin-top: 3px; font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-3); }
-.ios-feedback .dlg-intermediate-score-value { flex: 0 0 auto; font: 700 20px/1 var(--ios-font); color: var(--ios-blue); white-space: nowrap; }
+.ios-feedback .dlg-intermediate-score-hint { margin-top: 3px; font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-2); }
+.ios-feedback .dlg-intermediate-score-value { flex: 0 0 auto; font: 700 20px/1 var(--ios-font); color: var(--blue-text); white-space: nowrap; }
 .ios-feedback .dlg-form-structured textarea {
     width: 100%; min-height: 48px; max-height: 200px; padding: 9px 12px;
     border: none; border-radius: 12px; font-family: var(--ios-font);
@@ -241,7 +241,7 @@
     font: 700 14px/1 var(--ios-font); color: var(--ios-label); background: var(--ios-grouped-bg); outline: none;
 }
 .ios-feedback .dlg-score input[type=number]:focus { outline: 2px solid var(--ios-blue); }
-.ios-feedback .dlg-score-hint { font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-3); }
+.ios-feedback .dlg-score-hint { font: 400 12px/1.4 var(--ios-font); color: var(--ios-label-2); }
 .ios-feedback .dlg-score textarea {
     width: 100%; min-height: 60px; max-height: 180px; padding: 8px 10px; resize: vertical;
     border: none; border-radius: 10px; font: 400 13px/1.4 var(--ios-font); color: var(--ios-label);
@@ -251,12 +251,12 @@
 .ios-feedback .dlg-score-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .ios-feedback .dlg-score-btn { padding: 8px 16px; border-radius: 999px; font: 700 13px/1 var(--ios-font); }
 .ios-feedback .dlg-score-msg { font: 400 12px/1.3 var(--ios-font); margin-top: 6px; }
-.ios-feedback .dlg-score-msg.err { color: var(--ios-red); }
-.ios-feedback .dlg-score-msg.ok { color: var(--ios-green); }
+.ios-feedback .dlg-score-msg.err { color: var(--error); }
+.ios-feedback .dlg-score-msg.ok { color: var(--ios-green-text); }
 .ios-feedback .dlg-score-edit {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 6px 12px; border-radius: 999px; border: none;
-    background: rgba(175,82,222,0.12); color: var(--ios-blue); font: 700 12px/1 var(--ios-font);
+    background: rgba(175,82,222,0.12); color: var(--blue-text); font: 700 12px/1 var(--ios-font);
     cursor: pointer;
 }
 .ios-feedback .dlg-score-edit:hover { background: rgba(175,82,222,0.20); }

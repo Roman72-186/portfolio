@@ -94,7 +94,7 @@
 }
 .ios-profile .prf-avatar-note {
     margin: 6px 0 0;
-    font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-3);
+    font: 400 12px/1.3 var(--ios-font); color: var(--ios-label-2);
 }
 
 /* Блок ошибок сервера: к общим `.alert .alert-error` из base.css добавляем
@@ -135,7 +135,7 @@
     display: block; margin-bottom: 2px;
     font: 400 13px/1.3 var(--ios-font); color: var(--ios-label-2);
 }
-.ios-profile .prf-required { color: var(--ios-red); }
+.ios-profile .prf-required { color: var(--error); }
 
 .ios-profile .prf-field-input,
 .ios-profile select.prf-field-input {
@@ -148,7 +148,7 @@
 .ios-profile select.prf-field-input { min-height: 22px; }
 .ios-profile .prf-field-input:focus { outline: none; }
 .ios-profile .prf-field-input:focus-visible { outline: 2px solid var(--ios-blue); outline-offset: 3px; border-radius: 4px; }
-.ios-profile .prf-field-input::placeholder { color: var(--ios-label-3); }
+.ios-profile .prf-field-input::placeholder { color: var(--ios-label-2); }
 
 /* select — та же безрамочная строка, но с шевроном вместо системной стрелки */
 .ios-profile select.prf-field-input {
@@ -170,7 +170,7 @@
     padding-right: 0; padding-left: 12px; border-left: 0.5px solid var(--ios-sep);
 }
 
-.ios-profile .prf-field-note-inline { color: var(--ios-label-3); font-weight: 400; text-transform: none; }
+.ios-profile .prf-field-note-inline { color: var(--ios-label-2); font-weight: 400; text-transform: none; }
 
 /* Плашка «имя и фамилия как в паспорте» — ученики пишут ник/уменьшительное,
    и преподаватель не находит их в списке; мелкая приписка в заголовке шага
