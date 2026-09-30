@@ -437,7 +437,7 @@
 .ios-prg-day .prg-thumbs img { border: none; border-radius: 10px; }
 .ios-prg-day .prg-thumb button {
     top: -7px; right: -7px; width: 20px; height: 20px;
-    background: var(--ios-red); box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    background: var(--error-fill); box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
 /* ── Выбор ролика из каталога ── */
@@ -467,7 +467,7 @@
     border-radius: 999px; border: none; color: var(--ios-red);
     background: rgba(255,59,48,0.12); font: 600 12px/1 var(--ios-font);
 }
-.ios-prg-day .btn-danger:hover { background: var(--ios-red); color: #fff; }
+.ios-prg-day .btn-danger:hover { background: var(--error-fill); color: #fff; }
 
 /* ── «Уже в этом дне» ── */
 .ios-prg-day .prg-items h2 { font: 700 17px/1.3 var(--ios-font); letter-spacing: -0.2px; color: var(--ios-label); }

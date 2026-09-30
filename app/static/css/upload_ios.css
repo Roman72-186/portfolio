@@ -245,7 +245,7 @@
 }
 .ios-upload .preview-remove:hover,
 .ios-upload-mock .preview-remove:hover,
-.ios-upload-retake .preview-remove:hover { background: var(--ios-red); }
+.ios-upload-retake .preview-remove:hover { background: var(--error-fill); }
 
 /* ── Основная кнопка отправки ── */
 .ios-upload .btn-blue {

@@ -44,7 +44,7 @@
 }
 .ios-notifications .page-title svg.svg-icon { width: 26px; height: 26px; color: var(--ios-blue); }
 .ios-notifications .page-title-badge {
-    background: var(--ios-red); color: #fff;
+    background: var(--error-fill); color: #fff;
     font: 700 12px/1 var(--ios-font);
     padding: 3px 10px; border-radius: 999px;
 }

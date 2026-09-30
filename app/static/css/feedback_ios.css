@@ -23,7 +23,6 @@
    ═══════════════════════════════════════════════════════════════════════ */
 
 .ios-feedback {
-    --ios-yellow: #FFCC00;
     --ios-bubble-them: #E9E9EB;
     position: relative;
     isolation: isolate;
@@ -119,11 +118,13 @@
 }
 .ios-feedback .dlg-attempt-title { font: 700 16px/1.3 var(--ios-font); color: var(--ios-label); margin: 0; }
 .ios-feedback .dlg-attempt-score { background: var(--blue-fill); color: #fff; font: 700 13px/1 var(--ios-font); padding: 3px 10px; border-radius: 999px; }
-.ios-feedback .dlg-attempt-score.no-score { background: var(--ios-label-3); }
-.ios-feedback .dlg-attempt-score.red { background: var(--ios-red); }
-.ios-feedback .dlg-attempt-score.orange { background: var(--ios-orange); }
-.ios-feedback .dlg-attempt-score.lime { background: var(--ios-yellow); color: #4a3b00; }
-.ios-feedback .dlg-attempt-score.green { background: var(--ios-green); }
+/* Белая цифра на системных --ios-* — 2.2–3.55, «без балла» на 30 % подложке — ниже 2 (аудит 11.7б).
+   Заливки балла — те же, что в календаре и списке пробников (11.4). */
+.ios-feedback .dlg-attempt-score.no-score { background: var(--dim-fill); }
+.ios-feedback .dlg-attempt-score.red { background: var(--score-red-fill); }
+.ios-feedback .dlg-attempt-score.orange { background: var(--score-orange-fill); }
+.ios-feedback .dlg-attempt-score.lime { background: var(--score-lime-fill); }
+.ios-feedback .dlg-attempt-score.green { background: var(--score-green-fill); }
 
 .ios-feedback .dlg-context { padding: 14px 18px; border-bottom: 0.5px solid var(--ios-sep); background: var(--ios-grouped-bg); }
 .ios-feedback .dlg-context-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }

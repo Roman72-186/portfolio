@@ -153,7 +153,7 @@
     border-radius: 999px; border: 1.5px solid var(--ios-red); color: var(--ios-red);
     font: 600 13px/1 var(--ios-font); background: transparent; padding: 10px 16px; cursor: pointer;
 }
-.ios-gexam .btn-danger:hover { background: var(--ios-red); color: #fff; }
+.ios-gexam .btn-danger:hover { background: var(--error-fill); color: #fff; }
 
 /* ── Работы: аккордеон участник → предмет ── */
 .ios-gexam .gwork-row-btn {

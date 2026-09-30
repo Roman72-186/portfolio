@@ -49,7 +49,7 @@
     font: 700 12px/1 var(--ios-font); background: transparent;
     transition: background 120ms var(--ios-ease), color 120ms var(--ios-ease), transform 100ms var(--ios-ease);
 }
-.ios-su-users .btn-danger:hover { background: var(--ios-red); color: #fff; }
+.ios-su-users .btn-danger:hover { background: var(--error-fill); color: #fff; }
 .ios-su-users .btn-danger:active { transform: scale(0.95); }
 
 /* ═══════════════════════════ superadmin_users.html ═══════════════════════════ */
@@ -248,7 +248,7 @@
     transition: transform 100ms var(--ios-ease);
 }
 .ios-su-users .modal-cancel { background: var(--ios-grouped-bg); color: var(--ios-label); }
-.ios-su-users .modal-confirm { background: var(--ios-red); color: #fff; }
+.ios-su-users .modal-confirm { background: var(--error-fill); color: #fff; }
 .ios-su-users .modal-confirm.green { background: var(--ios-green); }
 .ios-su-users .modal-cancel:active, .ios-su-users .modal-confirm:active { transform: scale(0.96); }
 

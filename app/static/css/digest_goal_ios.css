@@ -82,7 +82,7 @@
     border-radius: 999px; border: none; color: var(--ios-red);
     background: rgba(255,59,48,0.12); font: 600 12px/1 var(--ios-font); padding: 7px 13px;
 }
-.ios-digest .btn-danger:hover, .ios-digest-events .btn-danger:hover, .ios-goals .btn-danger:hover { background: var(--ios-red); color: #fff; }
+.ios-digest .btn-danger:hover, .ios-digest-events .btn-danger:hover, .ios-goals .btn-danger:hover { background: var(--error-fill); color: #fff; }
 
 /* ── Форма-конструктор ── */
 .ios-digest .trk-form, .ios-digest-events .trk-form, .ios-goals .trk-form {

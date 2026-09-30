@@ -184,7 +184,7 @@
     border-radius: 999px; border: 1.5px solid var(--ios-red); color: var(--ios-red);
     font: 600 13px/1 var(--ios-font); background: transparent;
 }
-.ios-ea-detail .btn-danger:hover { background: var(--ios-red); color: #fff; }
+.ios-ea-detail .btn-danger:hover { background: var(--error-fill); color: #fff; }
 
 .ios-ea-detail .tickets-section { display: flex; flex-direction: column; gap: 16px; }
 .ios-ea-detail .ticket-card {

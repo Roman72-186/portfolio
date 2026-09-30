@@ -1123,7 +1123,7 @@ body.has-video-pseudo-fullscreen .trk-item { opacity: 1 !important; }
     background: rgba(28,28,30,0.6); color: #fff; border: none; cursor: pointer; font-size: 12px;
     display: flex; align-items: center; justify-content: center; z-index: 2; line-height: 1;
 }
-.lrn-inline-mock .preview-remove:hover { background: var(--ios-red); }
+.lrn-inline-mock .preview-remove:hover { background: var(--error-fill); }
 
 @media (prefers-reduced-motion: reduce) {
     .lrn-inline-mock .upload-circle, .lrn-inline-mock .btn-mock-primary { transition: none; }

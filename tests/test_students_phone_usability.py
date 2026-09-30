@@ -746,8 +746,12 @@ def test_grey_and_red_text_is_readable_on_page_backgrounds(opener, backgrounds):
             assert _contrast(tokens[name], tokens[bg]) >= 4.5, f"--{name} на --{bg}"
 
 
-# Точки без текста: запись голоса, урок в трекере.
-RED_DOTS = {".mrf-rec-dot", ".trk-dot--lesson"}
+# Точки без текста: запись голоса, урок в трекере, метка на вкладке недели, просрочка и урок в iOS-трекере.
+RED_DOTS = {
+    ".mrf-rec-dot", ".trk-dot--lesson", ".lrn-tab-dot",
+    ".ios-tracker .trk-item.trk-item--overdue .trk-kind-dot",
+    '.ios-tracker .trk-item[data-kind="lesson"] .trk-kind-dot',
+}
 
 
 @pytest.mark.parametrize("opener", [":root {", ':root[data-theme="dark"] {'])
@@ -755,9 +759,11 @@ def test_white_on_red_uses_the_error_fill(opener):
     # 11.7: белое на `--error` в тёмной теме — 2.77 (там `--error` светлый, `#F87171`): нажатая
     # `.btn-danger`, круглые крестики в программе и трекере, крестики удаления фото. Заливка —
     # `--error-fill`, как `--warning-fill` в 11.4б; `--error` текстом остаётся.
+    # 11.7б: у iOS-экранов свой красный `--ios-red` (#FF3B30, в тёмной теме #FF453A) — белое на нём
+    # 3.55 / 3.41: наведённая `.btn-danger`, подтверждение удаления, значок непрочитанных уведомлений.
     css = BASE_CSS.read_text(encoding="utf-8")
     assert _contrast("#FFFFFF", _token_color(css, opener, "error-fill")) >= 4.5
-    bare = re.compile(r"(?<![-\w])background(?:-color|-image)?\s*:[^;]*var\(--error\)(?!\s*\d+%)")
+    bare = re.compile(r"(?<![-\w])background(?:-color|-image)?\s*:[^;]*var\(--(?:error|ios-red)\)(?!\s*\d+%)")
     offenders = []
     for path in [*APP.glob("static/**/*.css"), *APP.glob("templates/**/*.html")]:
         for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", path.read_text(encoding="utf-8")):
@@ -766,6 +772,16 @@ def test_white_on_red_uses_the_error_fill(opener):
             if "rgba(220,38,38" in body.replace(" ", "") and "photo-del" in selector:
                 offenders.append(f"{path.relative_to(APP)}: {selector.strip().splitlines()[-1]} (красный числом)")
     assert not offenders, "белое на --error — заливка var(--error-fill):\n" + "\n".join(offenders)
+
+
+def test_attempt_score_in_feedback_dialog_uses_the_score_fills():
+    # 11.7б: балл попытки в диалоге обратной связи — белая цифра на `--ios-red/-orange/-green` (2.2–3.55),
+    # «без балла» — на 30 % подложке. Те же заливки, что у балла в календаре и списке пробников (11.4).
+    feedback = (APP / "static" / "css" / "feedback_ios.css").read_text(encoding="utf-8")
+    for tier in ("red", "orange", "lime", "green"):
+        rule = _css_rule(feedback, f".ios-feedback .dlg-attempt-score.{tier}")
+        assert f"background: var(--score-{tier}-fill)" in rule and "color:" not in rule, tier
+    assert "background: var(--dim-fill)" in _css_rule(feedback, ".ios-feedback .dlg-attempt-score.no-score")
 
 
 def test_feedback_link_reads_on_its_plate():
