@@ -149,7 +149,7 @@ function selectStudent(id, forceTab) {
         document.getElementById('tab-bar').style.display = 'flex';
         document.getElementById('main-panel').innerHTML =
             '<div id="student-hero-container"></div>' +
-            '<div id="tab-content"><div style="text-align:center;padding:48px 20px;color:var(--dim)">Загружаем…</div></div>';
+            '<div id="tab-content"><div class="tab-loading">Загружаем…</div></div>';
         switchTab(_currentTab);
         return;
     }
@@ -159,7 +159,7 @@ function selectStudent(id, forceTab) {
     navCommit(navPush, 'list');
     document.getElementById('tab-bar').style.display = 'none';
     document.getElementById('main-panel').innerHTML =
-        '<div style="text-align:center;padding:48px 20px;color:var(--dim)">Загружаем…</div>';
+        '<div class="tab-loading">Загружаем…</div>';
 
     // Load profile (from cache or fetch)
     if (_tabCache[id].profile) {
@@ -188,7 +188,7 @@ function openTab(tabName) {
     document.getElementById('tab-bar').style.display = 'flex';
     document.getElementById('main-panel').innerHTML =
         '<div id="student-hero-container"></div>' +
-        '<div id="tab-content"><div style="text-align:center;padding:48px 20px;color:var(--dim)">Загружаем…</div></div>';
+        '<div id="tab-content"><div class="tab-loading">Загружаем…</div></div>';
     switchTab(tabName);
 }
 
@@ -428,7 +428,7 @@ function switchTab(tabName) {
 
     // Show loading indicator in tab-content only
     var tc = document.getElementById('tab-content');
-    if (tc) tc.innerHTML = '<div style="text-align:center;padding:48px 20px;color:var(--dim)">Загружаем…</div>';
+    if (tc) tc.innerHTML = '<div class="tab-loading">Загружаем…</div>';
 
     fetch('/cabinet/students/' + _currentStudentId + '/' + tabName)
         .then(function(r) { return r.json(); })
@@ -643,7 +643,7 @@ function buildHero(s, bySubj) {
     }
     var uploadBtn = '';
     if (CAN_SCORE && _viewMode === 'tab') {
-        uploadBtn = '<div style="position:relative;z-index:1;flex-shrink:0;margin-left:auto">'
+        uploadBtn = '<div class="hero-upload-wrap">'
             + '<button class="admin-upload-btn" onclick="openUploadModal()">+ Загрузить</button>'
             + '</div>';
     }
@@ -743,7 +743,7 @@ function buildPortfolioMonthBlock(sid, workType, g, blockId) {
         + '<span class="portfolio-chevron">▼</span>'
         + '<span class="month-label">' + esc(label) + '</span>'
         + '</button>'
-        + '<div style="display:flex;align-items:center;gap:10px;margin-left:auto">'
+        + '<div class="month-actions">'
         + '<span class="month-count">' + g.total + ' фото</span>'
         + renameBtn
         + delBtn
@@ -895,19 +895,19 @@ function buildMockExams(data) {
 
 function buildLegacyArchive(groups) {
     if (!groups.length) return '';
-    var html = '<div style="margin-top:20px">'
+    var html = '<div class="legacy-archive">'
         + '<div class="section-label">'
         + 'Архив (импорт из старого чат-бота)</div>';
     groups.forEach(function(g, i) {
-        html += '<div style="margin-bottom:12px">'
-            + '<div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px;text-transform:capitalize">'
-            + esc(g.year + ' — ' + g.month) + ' <span style="font-weight:400;color:var(--dim);font-size:12px">' + g.total + ' фото</span></div>'
-            + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px">';
+        html += '<div class="legacy-month">'
+            + '<div class="legacy-month-title">'
+            + esc(g.year + ' — ' + g.month) + ' <span class="legacy-month-count">' + g.total + ' фото</span></div>'
+            + '<div class="legacy-grid">';
         g.photos.forEach(function(p) {
             if (!p.s3_url) return;
             html += '<button type="button" class="photo-zoom-button" onclick="openGallery(this.firstElementChild)" aria-label="Открыть фото">'
                 + '<img src="' + esc(p.s3_url) + '" alt="' + esc(p.filename) + '" loading="lazy" '
-                + 'style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:zoom-in;display:block"></button>';
+                + 'class="legacy-photo"></button>';
         });
         html += '</div></div>';
     });
@@ -939,7 +939,7 @@ function buildSubjectCard(subject, data, subjectIndex) {
     // Unlock button (allow retry) — only for admin/superadmin, only when locked
     if (CAN_SCORE && isLocked) {
         html += '<div class="unlock-wrap">'
-            + '<form method="post" action="/cabinet/students/' + sid + '/mock-exams/unlock" style="margin:0" onsubmit="return submitWithFreshToken(this)">'
+            + '<form method="post" action="/cabinet/students/' + sid + '/mock-exams/unlock" class="unlock-form" onsubmit="return submitWithFreshToken(this)">'
             + '<input type="hidden" name="csrf_token" value="' + CSRF_TOKEN + '">'
             + '<input type="hidden" name="subject" value="' + esc(subject) + '">'
             + '<button type="submit" class="unlock-btn" title="Ученик сможет заново загрузить пробник по этому предмету"><svg class="svg-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Разрешить пересдачу</button>'
@@ -1134,21 +1134,21 @@ function buildMockDayPanel(sid, subject, grouped, state) {
         var bc = scoreBadgeClass(w.score);
         var bt = w.score != null ? Math.round(w.score) + '/100' : '—';
         var imgStyle = hero
-            ? 'style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--r-sm);border:1px solid var(--line);cursor:zoom-in;display:block"'
-            : 'style="width:88px;height:88px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:zoom-in;display:block"';
+            ? 'class="mock-photo-hero"'
+            : 'class="mock-photo-thumb"';
         // Большой снимок дня — на всю ширину, ему нужно само фото.
         var img = zoomPhoto(hero ? {s3_url: w.s3_url, filename: w.filename} : w, imgStyle);
         var badge = '<span class="work-score-badge ' + bc + '">' + bt + '</span>';
         // Справа сверху стоит бейдж балла, поэтому крестик — в левом углу.
         var delBtn = CAN_SCORE
-            ? '<button type="button" class="photo-del" style="right:auto;left:0" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)" title="Удалить" aria-label="Удалить работу">&times;</button>'
+            ? '<button type="button" class="photo-del photo-del--left" onclick="event.stopPropagation();deleteWork(' + sid + ',' + w.id + ',this)" title="Удалить" aria-label="Удалить работу">&times;</button>'
             : '';
-        return '<div class="photo-wrap" style="display:block">' + img + badge + delBtn + '</div>';
+        return '<div class="photo-wrap photo-wrap--block">' + img + badge + delBtn + '</div>';
     }
 
     if (rest.length === 0) {
         // Одна работа
-        html += '<div data-gallery="' + gallery + '" style="margin-bottom:10px">';
+        html += '<div data-gallery="' + gallery + '" class="mock-single">';
         html += photoWrap(primary, true);
         html += '</div>';
     } else {
@@ -1165,7 +1165,7 @@ function buildMockDayPanel(sid, subject, grouped, state) {
 
     // Комментарий куратора — только по primary
     if (primary.comment_html) {
-        html += '<div style="font-size:12px;color:var(--muted);margin-top:8px">' + primary.comment_html + '</div>';
+        html += '<div class="mock-comment">' + primary.comment_html + '</div>';
     }
     if (CAN_SCORE) {
         html += buildScoreFormOrEditButton(sid, primary.id, 'mock-exams', primary.score, primary.comment);
@@ -1244,7 +1244,7 @@ function buildScoreForm(sid, workId, tab, currentScore, currentComment) {
         + '<input type="number" name="score" class="score-input" min="0" max="100" step="1"'
         + (currentScore != null ? ' value="' + Math.round(currentScore) + '"' : '')
         + ' placeholder="0–100" required>'
-        + '<span style="font-size:13px;color:var(--dim)">/ 100</span>'
+        + '<span class="score-of">/ 100</span>'
         + '</div>'
         + '<textarea data-rich-text name="comment" class="comment-input" placeholder="Комментарий (необязательно)" maxlength="500">'
         + (currentComment ? esc(currentComment) : '')

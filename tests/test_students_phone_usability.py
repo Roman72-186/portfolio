@@ -76,7 +76,7 @@ def test_delete_cross_is_visible_without_hover():
 def test_mock_photo_delete_uses_shared_wrapper_and_rerenders():
     source = _script()
     assert "'<div style=\"position:relative;display:block\">' + img + badge + delBtn" not in source
-    assert "'<div class=\"photo-wrap\" style=\"display:block\">' + img + badge + delBtn" in source
+    assert "'<div class=\"photo-wrap photo-wrap--block\">' + img + badge + delBtn" in source
     assert "_currentTab === 'mock-exams' && el.closest('.mock-day-card')" in source, (
         "удалённое фото пробника остаётся на экране вместе с формой оценки"
     )
@@ -114,7 +114,8 @@ def test_hero_wraps_so_upload_button_fits_on_phone():
     assert re.search(r"\.student-hero\s*\{[^}]*flex-wrap: wrap", mobile), (
         "шапка в одну строку с overflow:hidden — «+ Загрузить» обрезана на 320–390"
     )
-    assert "margin-left:auto\">'" in source and "openUploadModal()\">+ Загрузить" in source
+    assert "margin-left: auto" in _css_rule(_styles(), ".hero-upload-wrap")
+    assert "<div class=\"hero-upload-wrap\">'" in source and "openUploadModal()\">+ Загрузить" in source
 
 
 def test_back_gesture_walks_screen_history():
@@ -267,8 +268,8 @@ def test_green_ink_is_readable_in_dark_theme():
     assert re.search(r"--ok:\s*var\(--success\)", dark)
     assert not re.search(r"--ok-strong\s*:", dark), "--ok-strong — заливка под белым текстом, светлеть ей нельзя"
     # Единственная заливка `--ok` под белым текстом на экране — тост «Сохранено».
-    assert "background: var(--ok-strong); color: #fff;" in _styles()
-    assert "background: var(--ok); color: #fff" not in _styles()
+    assert "background: var(--ok-strong); color: var(--on-color);" in _styles()
+    assert "background: var(--ok); color:" not in _styles()
 
 
 def test_red_badge_passes_contrast_on_light():
@@ -389,7 +390,8 @@ def test_ink_on_pale_fill_is_darker_than_the_fill():
     for source in sources:
         for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", source):
             fill = re.search(r"background:\s*color-mix\(in srgb, var\(--([\w-]+)\) (\d+)%, transparent\)", body)
-            if fill and fill.group(1) != "text" and int(fill.group(2)) < 50 and re.search(r"(?<![-\w])color:\s*var\(--%s\)" % fill.group(1), body):
+            # Белое на своей подложке лежит на тёмной шапке ученика, её контраст — в test_student_hero_*.
+            if fill and fill.group(1) not in ("text", "on-color") and int(fill.group(2)) < 50 and re.search(r"(?<![-\w])color:\s*var\(--%s\)" % fill.group(1), body):
                 bare.append(selector.strip().splitlines()[-1])
     assert not bare, "текст чистым токеном на подложке того же токена:\n" + "\n".join(bare)
 
@@ -534,7 +536,7 @@ def test_student_hero_text_is_readable_everywhere():
         assert _contrast(gold, stop) >= 3, f"балл (крупный) на {stop}"
     # Мелкий текст шапки — не полупрозрачным белым: 60–85 % на фиолетовом ниже 4.5.
     assert "color: var(--on-color)" in _css_rule(css, ".student-hero-pill")
-    assert "rgba(255,255,255,0.9)" in _css_rule(css, ".score-label").replace(" ", "")
+    assert "var(--on-color)90%" in _css_rule(css, ".score-label").replace(" ", "")
     # Светлая подложка плашки поднимала фон под белым текстом — теперь затемнение.
     assert "rgba(255,255,255" not in _css_rule(css, ".student-hero-pill").split("border")[0]
     assert "color: var(--on-color)" in _css_rule(css, ".student-hero-avatar-ph"), "тёмный значок на тёмной шапке"
@@ -840,3 +842,30 @@ def test_screen_text_is_at_least_12px(source, selector):
     text = _styles() if source == "styles" else CALENDAR_LIB.read_text(encoding="utf-8")
     sizes = [float(x) for x in re.findall(r"font-size:\s*([\d.]+)px", _rule_with(text, selector))]
     assert sizes and min(sizes) >= 12, f"{selector}: {sizes}px — мельче 12"
+
+
+HEX = re.compile(r"#[0-9a-fA-F]{3,8}\b")
+RGBA = re.compile(r"rgba?\([^)]*\)")
+# Остаются числом осознанно: цвета меток набора (набора нет — владелец 29.09.2026, 11.5 снят)
+# и нейтральные тени и затемнения — от темы они не зависят и текстом не бывают.
+SCREEN_HEX_OK = {"#EC4899", "#64748B", "#D97706", "#CA8A04"}
+SCREEN_RGBA_OK = {"rgba(15,23,42,0.22)", "rgba(10,10,30,0.6)", "rgba(0,0,0,0.3)", "rgba(0,0,0,0.6)"}
+# Цвета графика «Рисунок / Композиция» ждут решения владельца (11.10): токены или как есть.
+SCRIPT_HEX_OK = {"#3B5BFF", "#F59E0B"}
+
+
+def test_screen_colors_come_from_tokens():
+    # 11.10: было 13 кодов и 24 rgba в стилях, плашка «Нет анкеты» числом в шаблоне, 24 встроенных
+    # style= в JS. Храповик `reuse_check.py` этого не видит — он считает только <style> шаблонов.
+    styles = re.sub(r"/\*.*?\*/", "", _styles(), flags=re.S)
+    assert set(HEX.findall(styles)) <= SCREEN_HEX_OK, set(HEX.findall(styles)) - SCREEN_HEX_OK
+    assert set(RGBA.findall(styles)) <= SCREEN_RGBA_OK, set(RGBA.findall(styles)) - SCREEN_RGBA_OK
+    template = _source()
+    assert not HEX.findall(template) and not RGBA.findall(template), "цвет числом в шаблоне"
+    assert 'student-info-pill student-info-pill--warning">Нет анкеты' in template
+    assert "var(--warning-tint)" in _css_rule(_styles(), ".student-info-pill--warning")
+    script = _script()
+    assert set(HEX.findall(script)) <= SCRIPT_HEX_OK and not RGBA.findall(script)
+    # Встроенный стиль в JS — только точка легенды графика (цвет из переменной) и свёрнутый месяц.
+    inline = re.findall(r'style="([^"]*)', script)
+    assert sorted(inline) == ["background:' + COLOR_COMP + '", "background:' + COLOR_DRAW + '", "display:none"], inline
