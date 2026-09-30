@@ -9,7 +9,7 @@
 from datetime import timedelta
 
 from app.models.learning_topic import TOPIC_KIND_WEEK, LearningTopic
-from app.services.tracker import create_task
+from app.services.tracker import close_task_for_user, create_task
 from app.services.tz import msk_midnight, today_msk
 
 TODAY = today_msk()
@@ -201,6 +201,10 @@ def test_task_shown_in_a_running_chosen_cycle_is_writable(auth_client, db):
     Задание приписано к закончившемуся циклу 2, но датой стоит в цикле 3 и
     видно в его ленте. Первая починка сверялась только с лентой текущего
     цикла и по-прежнему отвечала 403.
+
+    С 30.09.2026 «вперёд нельзя»: пока долг открыт, идущий цикл заперт и
+    `?cycle=` ведёт на долг. Правило про задание, стоящее датой в идущем
+    цикле, проверяется после закрытия долга.
     """
     from app.models.task_block import BLOCK_VIDEO, TaskBlock
     from app.services.cycle_feed import feed_for_student
@@ -210,7 +214,9 @@ def test_task_shown_in_a_running_chosen_cycle_is_writable(auth_client, db):
         db, user, title="Цикл 1",
         starts_on=TODAY - timedelta(days=20), ends_on=TODAY - timedelta(days=12),
     )
-    _dated_task_in_topic(db, user, debt_cycle, day=TODAY - timedelta(days=15), title="Долг")
+    debt = _dated_task_in_topic(
+        db, user, debt_cycle, day=TODAY - timedelta(days=15), title="Долг",
+    )
     old_cycle = _cycle(
         db, user, title="Цикл 2",
         starts_on=TODAY - timedelta(days=10), ends_on=TODAY - timedelta(days=2),
@@ -222,6 +228,14 @@ def test_task_shown_in_a_running_chosen_cycle_is_writable(auth_client, db):
     task = _dated_task_in_topic(db, user, old_cycle, day=TODAY, title="Видео урока")
     block = TaskBlock(task_id=task.id, block_type=BLOCK_VIDEO, title="Урок", sort_order=0)
     db.add(block)
+    db.commit()
+    locked = feed_for_student(
+        db, user_id=user.id, user_tariff=user.tariff, today=TODAY, cycle_id=running.id,
+    )
+    assert locked["topic"].id == debt_cycle.id  # вперёд нельзя
+    assert client.post(f"/cabinet/tracker/blocks/{block.id}/watched").status_code == 403
+
+    close_task_for_user(db, debt, user.id, source="manual")
     db.commit()
     feed = feed_for_student(
         db, user_id=user.id, user_tariff=user.tariff, today=TODAY, cycle_id=running.id,

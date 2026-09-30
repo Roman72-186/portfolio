@@ -1508,6 +1508,14 @@ body.has-video-pseudo-fullscreen .lrn-step { opacity: 1 !important; }
     box-shadow: 0 4px 14px rgba(0,0,0,0.14);
     z-index: -1;
 }
+/* Цикл заперт долгом (владелец 30.09.2026: «не пускать вперёд»). Не ссылка,
+   а подпись: видно, что он есть и что откроется, но нажать нечего. */
+.lrn-cycle-chip.is-locked {
+    border-style: dashed;
+    color: var(--muted);
+    background: transparent;
+    cursor: default;
+}
 .lrn-archive-note { margin: 0 0 12px; }
 
 /* Шкала навыков: название сверху, ряд делений под ним — на узком экране

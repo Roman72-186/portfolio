@@ -56,7 +56,7 @@ from app.services.program import (
     msk_date,
     week_start,
 )
-from app.services.cycle_feed import current_feed_task_ids, task_is_archived_for_user
+from app.services.cycle_feed import current_feed_task_ids, task_is_archived_for_user, task_is_locked_for_user
 from app.services.portfolio_window import (
     format_deadline_msk,
     portfolio_windows,
@@ -207,13 +207,9 @@ def cabinet_tracker_toggle(
     if task.kind in (ITEM_HOMEWORK, ITEM_MOCK_EXAM):
         raise HTTPException(status_code=403, detail="Эта задача закрывается автоматически")
 
-    topic_ids = accessible_topic_ids(db, user["user_id"])
-    task_ids = accessible_task_ids(db, user["user_id"])
-    accessible = (task.topic_id is not None and task.topic_id in topic_ids) or (
-        task.topic_id is None and task.id in task_ids
-    )
-    if not accessible:
-        raise HTTPException(status_code=404, detail="Задача не найдена")
+    # Доступ и запрет «вперёд нельзя» — общей функцией, без своей копии
+    # условия (до 30.09.2026 здесь была копия, и запрет её не накрыл бы).
+    _accessible_task_or_404(db, user["user_id"], task_id)
     if task_is_archived_for_user(db, user["user_id"], task, today_msk()):
         raise HTTPException(
             status_code=403, detail="Цикл пройден — можно только посмотреть свои ответы"
@@ -286,6 +282,13 @@ def _accessible_task_or_404(db: DBSession, user_id: int, task_id: int) -> Tracke
     )
     if not accessible:
         raise HTTPException(status_code=404, detail="Задача не найдена")
+    # Вперёд нельзя (владелец 30.09.2026): задание цикла после долга не
+    # открывается и не отмечается, пока долг не закрыт. Здесь, а не в каждом
+    # роуте, — через эту функцию идут и чтение блоков, и кружки, и кнопка.
+    if task_is_locked_for_user(db, user_id, task, today_msk()):
+        raise HTTPException(
+            status_code=403, detail="Сначала закрой предыдущий цикл – этот пока заперт"
+        )
     return task
 
 

@@ -50,9 +50,11 @@ from app.services.tracker import (
     accessible_cycles,
     accessible_task_entries,
     cycle_bounds,
+    cycle_debt,
     cycle_label,
     effective_cycle,
     effective_week_start,
+    locked_cycle_ids,
 )
 
 STATUS_LOCKED = "locked"
@@ -583,6 +585,38 @@ def task_is_archived_for_user(
     return True
 
 
+def _debt_view(db: Session, debt: dict, viewed: LearningTopic | None) -> dict:
+    """Плашка долга над лентой: какой цикл закрыть, что в нём осталось и что
+    откроется следом. Запертый цикл другого этапа подписан этапом — иначе
+    «Цикл 1» следующего этапа не отличить от «Цикла 1» текущего."""
+    cycle = debt["cycle"]
+    following = debt["locked"][0]
+    following_label = cycle_label(db, following)
+    if following.parent_id is not None and following.parent_id != cycle.parent_id:
+        stage = db.get(LearningTopic, following.parent_id)
+        if stage is not None and stage.title:
+            following_label = f"{stage.title}: {following_label}"
+    return {
+        "cycle_id": cycle.id,
+        "label": cycle_label(db, cycle),
+        "tasks": [task.title for task in debt["tasks"]],
+        "next": following_label,
+        "is_viewed": viewed is not None and viewed.id == cycle.id,
+    }
+
+
+def task_is_locked_for_user(
+    db: Session, user_id: int, task: TrackerTask, today: date
+) -> bool:
+    """Задание запертого долгом цикла (владелец 30.09.2026: «не пускать
+    вперёд»). Этим спрашивают роуты рядом с `task_is_archived_for_user`:
+    пока не закрыт долг, в следующем цикле нельзя ни открыть задание, ни
+    отметить шаг, ни сдать работу."""
+    if task.topic_id is None:
+        return False
+    return task.topic_id in locked_cycle_ids(db, user_id, today)
+
+
 def _cycle_is_over(topic: LearningTopic, today: date) -> bool:
     """Цикл закончился — дата окончания уже прошла.
 
@@ -616,8 +650,12 @@ def feed_for_student(
     бы чужой этап.
     """
     current_topic, current_start, current_end = feed_window(db, user_id, today)
+    # Вперёд нельзя (владелец 30.09.2026): цикл после долга не открывается даже
+    # по прямой ссылке — показываем текущий, а долг и что он запирает — плашкой.
+    debt = cycle_debt(db, user_id, today)
+    locked_ids = {item.id for item in debt["locked"]} if debt else set()
     chosen = None
-    if cycle_id is not None:
+    if cycle_id is not None and cycle_id not in locked_ids:
         chosen = next(
             (t for t in started_cycles(db, user_id, today) if t.id == cycle_id), None
         )
@@ -704,9 +742,11 @@ def feed_for_student(
                 "start": cycle_bounds(item)[0],
                 "end": cycle_bounds(item)[1],
                 "is_current": topic is not None and item.id == topic.id,
+                "is_locked": item.id in locked_ids,
             }
             for item in cycles
         ],
+        "debt": _debt_view(db, debt, topic) if debt else None,
         "stage": stage,
         # Кнопки перед циклами в карусели («Портфолио») — задания, заведённые
         # прямо на этапе. Якорь на них уже есть у любого шага ленты

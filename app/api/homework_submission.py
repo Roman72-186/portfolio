@@ -60,7 +60,7 @@ from app.services.homework_submission import (
     list_submissions_for_task,
     set_final_image,
 )
-from app.services.cycle_feed import task_is_archived_for_user
+from app.services.cycle_feed import task_is_archived_for_user, task_is_locked_for_user
 from app.services.notify import notify
 from app.services.student_access import get_student_for_staff_access
 from app.services.submission_edit import homework_reason
@@ -113,6 +113,10 @@ def _guard_student_write_access(db: DBSession, task: TrackerTask, user_id: int) 
     if task_is_archived_for_user(db, user_id, task, today_msk()):
         raise HTTPException(
             status_code=403, detail="Цикл пройден — можно только посмотреть свои ответы"
+        )
+    if task_is_locked_for_user(db, user_id, task, today_msk()):
+        raise HTTPException(
+            status_code=403, detail="Сначала закрой предыдущий цикл – этот пока заперт"
         )
 
 

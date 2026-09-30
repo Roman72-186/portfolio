@@ -830,6 +830,52 @@ def effective_cycle(db: Session, user_id: int, today: date) -> LearningTopic | N
     return cycle_for_day(db, user_id, today)
 
 
+def cycle_debt(db: Session, user_id: int, today: date) -> dict | None:
+    """Вперёд нельзя (владелец 30.09.2026: «не пускать вперёд обязательно и
+    показывать долги»).
+
+    Долг — первый начавшийся цикл с незакрытыми обязательными задачами (тот же,
+    что `effective_cycle`). Все начавшиеся циклы после него заперты, пока он
+    не закрыт, — **и циклы других этапов тоже** (владелец 30.09.2026: долг
+    «Предобучения» не пускает в следующий этап). До 30.09 карусель пускала в
+    любой начавшийся цикл: должник цикла 2 пропускал цикл 3 навсегда (он
+    становился архивом) и работал в цикле 4.
+
+    `None` — долга, который что-то запирает, нет: ученик на последнем
+    начавшемся цикле просто делает текущую работу. Иначе — цикл-должник, его
+    незакрытые задачи и запертые циклы по порядку.
+
+    Только для ученика: сотрудник, открывший ленту посмотреть (превью), не
+    сдаёт заданий, и «долги» заперли бы ему всю программу.
+    """
+    rank = (
+        db.query(Role.rank)
+        .join(User, User.role_id == Role.id)
+        .filter(User.id == user_id)
+        .scalar()
+    )
+    if rank != STUDENT_ROLE_RANK:
+        return None
+    started = [
+        topic for topic in accessible_cycles(db, user_id)
+        if cycle_bounds(topic)[0] <= today
+    ]
+    for position, topic in enumerate(started):
+        missing = missing_required_tasks(db, user_id, topic)
+        if missing:
+            locked = started[position + 1:]
+            if not locked:
+                return None
+            return {"cycle": topic, "tasks": missing, "locked": locked}
+    return None
+
+
+def locked_cycle_ids(db: Session, user_id: int, today: date) -> set[int]:
+    """Циклы, запертые долгом (`cycle_debt`). Пусто — долгов нет."""
+    debt = cycle_debt(db, user_id, today)
+    return {topic.id for topic in debt["locked"]} if debt else set()
+
+
 def is_month_complete(db: Session, user_id: int, year: int, month: int) -> bool:
     """Месяц пройден: все недели месяца закрыты (то же правило недели,
     применённое к каждой) плюс отдельно закрыт Пробник по обоим предметам —

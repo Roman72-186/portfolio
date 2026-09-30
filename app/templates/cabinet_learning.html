@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Актуальное образовательное пространство{% endblock %}
 {% block extra_styles %}
-<link rel="stylesheet" href="/static/css/tracker.css?v=73">
+<link rel="stylesheet" href="/static/css/tracker.css?v=74">
 <link rel="stylesheet" href="/static/css/student_onboarding_guide.css?v=2">
 {% endblock %}
 {% block content %}
@@ -58,10 +58,29 @@
            data-pinned-task-id="{{ pinned.id }}">{{ pinned.title }}</a>
         {% endfor %}
         {% for cycle in feed.cycles %}
+        {% if cycle.is_locked %}
+        {# Заперт долгом: видно, что цикл есть, но открыть нельзя. #}
+        <span class="lrn-cycle-chip is-locked" data-cycle-id="{{ cycle.id }}"
+              title="Откроется, когда закроешь «{{ feed.debt.label }}»">{{ cycle.title }}</span>
+        {% else %}
         <a class="lrn-cycle-chip{{ ' is-current' if cycle.is_current }}"
            href="/cabinet/learning{{ '' if cycle.is_current else '?cycle=' ~ cycle.id }}"
            data-cycle-id="{{ cycle.id }}">{{ cycle.title }}</a>
+        {% endif %}
         {% endfor %}
+    </div>
+    {% endif %}
+
+    {# Долг запирает следующие циклы (владелец 30.09.2026: «не пускать вперёд
+       обязательно и показывать долги»). Считает `tracker.cycle_debt`. #}
+    {% if feed.debt %}
+    <div class="lrn-card lrn-waiting" data-role="cycle-debt">
+        <div class="lrn-card-title">Сначала закрой «{{ feed.debt.label }}»</div>
+        <p class="lrn-card-note">
+            Осталось: {% for title in feed.debt.tasks %}«{{ title }}»{{ ', ' if not loop.last }}{% endfor %}.
+            Потом откроется «{{ feed.debt.next }}».
+            {% if not feed.debt.is_viewed %}<a href="/cabinet/learning">Открыть «{{ feed.debt.label }}»</a>{% endif %}
+        </p>
     </div>
     {% endif %}
 
