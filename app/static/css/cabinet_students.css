@@ -142,7 +142,7 @@
 }
 .tariff-pill {
     min-height: 44px; padding: 8px 12px; border-radius: var(--r-xl);
-    font-size: 11px; font-weight: 700; cursor: pointer;
+    font-size: 12px; font-weight: 700; cursor: pointer;
     border: 1.5px solid var(--line);
     background: none; color: var(--dim);
     font-family: inherit;
@@ -201,7 +201,7 @@
 .student-info-pill {
     display: inline-flex; align-items: center;
     padding: 3px 10px; border-radius: var(--r-md);
-    font-size: 11px; font-weight: 700; line-height: 1.4; white-space: nowrap;
+    font-size: 12px; font-weight: 700; line-height: 1.4; white-space: nowrap;
     background: color-mix(in srgb, var(--text) 5%, transparent); border: 1px solid color-mix(in srgb, var(--text) 9%, transparent);
     color: var(--text);
 }
@@ -285,7 +285,7 @@
 .subject-title { font-size: 15px; font-weight: 700; color: var(--text); }
 .lock-badge {
     display: inline-flex; align-items: center; gap: 4px;
-    padding: 3px 10px; border-radius: var(--r-md); font-size: 11px; font-weight: 700;
+    padding: 3px 10px; border-radius: var(--r-md); font-size: 12px; font-weight: 700;
 }
 .lock-badge.locked { background: color-mix(in srgb, var(--error) 8%, transparent); color: color-mix(in srgb, var(--error) 82%, var(--text)); }
 .lock-badge.open   { background: color-mix(in srgb, var(--ok) 8%, transparent); color: color-mix(in srgb, var(--ok) 82%, var(--text)); }
@@ -330,7 +330,7 @@
     gap: 5px;
 }
 .mock-weekday {
-    text-align: center; font-size: 10px; color: var(--dim);
+    text-align: center; font-size: 12px; color: var(--dim);
     font-weight: 800; text-transform: uppercase;
 }
 .mock-day {
@@ -411,7 +411,7 @@
 /* ── Sidebar mock-exam badges ── */
 .checked-badge {
     display: inline-flex; align-items: center; gap: 3px;
-    font-size: 10px; font-weight: 700; padding: 2px 7px;
+    font-size: 12px; font-weight: 700; padding: 2px 7px;
     border-radius: var(--r-sm);
     background: color-mix(in srgb, var(--ok) 12%, transparent); color: color-mix(in srgb, var(--ok) 82%, var(--text));
     margin-left: auto; flex-shrink: 0;
@@ -597,7 +597,7 @@
 }
 .profile-field { display: flex; flex-direction: column; gap: 3px; }
 .profile-field-label {
-    font-size: 11px; font-weight: 700; color: var(--dim);
+    font-size: 12px; font-weight: 700; color: var(--dim);
     text-transform: uppercase; letter-spacing: 0.06em;
 }
 .profile-field-value { font-size: 14px; font-weight: 600; color: var(--text); }
@@ -611,7 +611,7 @@
 .profile-status-badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 .profile-badge {
     display: inline-flex; align-items: center; gap: 4px;
-    padding: 3px 10px; border-radius: var(--r-md); font-size: 11px; font-weight: 700;
+    padding: 3px 10px; border-radius: var(--r-md); font-size: 12px; font-weight: 700;
 }
 .profile-badge.ok { background: color-mix(in srgb, var(--ok) 8%, transparent); color: color-mix(in srgb, var(--ok) 82%, var(--text)); }
 .profile-badge.no { background: color-mix(in srgb, var(--error) 6%, transparent); color: color-mix(in srgb, var(--error) 82%, var(--text)); } /* чистый --error на розовом — 4.4 */
@@ -737,7 +737,7 @@
 .upload-dropzone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
 .upload-dz-icon { font-size: 28px; color: var(--blue-text); margin-bottom: 6px; }
 .upload-dz-title { font-size: 13px; font-weight: 700; color: var(--text); }
-.upload-dz-hint { font-size: 11px; color: var(--dim); margin-top: 3px; }
+.upload-dz-hint { font-size: 12px; color: var(--dim); margin-top: 3px; }
 .upload-preview-grid {
     display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px;
 }
@@ -778,7 +778,7 @@
 .folder-del-btn {
     background: none; border: 1px solid color-mix(in srgb, var(--error) 20%, transparent);
     color: var(--error); border-radius: 8px; padding: 3px 10px;
-    font-size: 11px; font-weight: 700; cursor: pointer;
+    font-size: 12px; font-weight: 700; cursor: pointer;
     font-family: inherit; transition: border-color 0.15s;
 }
 .folder-del-btn:hover { border-color: var(--error); background: color-mix(in srgb, var(--error) 5%, transparent); }

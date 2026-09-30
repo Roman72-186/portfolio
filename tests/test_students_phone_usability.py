@@ -801,6 +801,7 @@ def test_feedback_link_reads_on_its_plate():
 
 def _rule_with(block: str, selector: str) -> str:
     """Тела всех правил блока, в списке селекторов которых есть `selector`, — подряд."""
+    block = re.sub(r"/\*.*?\*/", "", block, flags=re.S)  # комментарий над правилом склеился бы с селектором
     bodies = [match.group(2) for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", block)  # тело без «{» — иначе захватит @media
               if selector in [s.strip() for s in match.group(1).split(",")]]
     assert bodies, f"нет правила с {selector}"
@@ -821,3 +822,21 @@ def test_small_phone_targets_reach_44px():
     assert "repeat(4, minmax(0, 1fr))" in _rule_with(narrow, "#main-panel .cal-month-list")
     # Узкий блок должен идти после общего телефонного, иначе шесть колонок его перебьют.
     assert styles.index("@media (max-width: 380px) {") > styles.index("@media (max-width: 768px) {")
+
+
+CALENDAR_LIB = TEMPLATE.parent / "partials" / "cycle_calendar_lib.html"
+
+
+@pytest.mark.parametrize("source, selector", [
+    ("styles", ".mock-weekday"), ("calendar", ".cal-weekday"), ("calendar", ".cal-attempt-legacy-pill"),
+    ("styles", ".checked-badge"), ("styles", ".profile-field-label"), ("styles", ".tariff-pill"),
+    ("styles", ".folder-del-btn"), ("styles", ".upload-dz-hint"), ("styles", ".lock-badge"),
+    ("styles", ".profile-badge"), ("styles", ".student-info-pill"),
+])
+def test_screen_text_is_at_least_12px(source, selector):
+    # 11.9: живой замер экрана на 320–1280 — дни недели, «Проверено» и «Архив» 10px, подписи анкеты,
+    # фильтры тарифов, плашки профиля и списка, «Удалить» у месяца, подсказка окна загрузки — 11px.
+    # Не тронуты: буквы «Р/К» и значок набора (решения владельца).
+    text = _styles() if source == "styles" else CALENDAR_LIB.read_text(encoding="utf-8")
+    sizes = [float(x) for x in re.findall(r"font-size:\s*([\d.]+)px", _rule_with(text, selector))]
+    assert sizes and min(sizes) >= 12, f"{selector}: {sizes}px — мельче 12"
