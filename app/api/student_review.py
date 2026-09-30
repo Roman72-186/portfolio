@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
-from app.constants import MOCK_SUBJECTS
+from app.constants import MOCK_SUBJECTS, tariffs_for_data
 from app.db.database import get_db
 from app.dependencies import require_admin_role, require_csrf_header, require_curator
 from app.models.exam_cycle import ExamCycle
@@ -28,6 +28,7 @@ from app.models.task_block import TaskBlockAnswer, TaskBlockResponse, TaskBlockS
 from app.models.user import User
 from app.models.work import Work
 from app.services.notify import notify
+from app.services.rbac import can_score
 from app.services.point_a import maybe_notify_point_a_level
 from app.services.review_aggregate import (
     FULL_ACCESS_RANK,
@@ -43,7 +44,6 @@ from app.services.review_aggregate import (
 )
 from app.services.task_blocks import set_reviewed, set_submission_reviewed
 from app.services.tz import today_msk
-from app.services.user_management import tariffs_in_use
 from app.tmpl import templates
 
 router = APIRouter(prefix="/cabinet/staff/students-review")
@@ -105,7 +105,12 @@ def students_review_list(
         "total": len(all_rows),
         "filters": {"q": q, "status": status, "tariff": tariff, "curator": curator},
         "is_filtered": bool(q.strip() or status or tariff or curator),
-        "tariffs": tariffs_in_use(db),
+        # Фильтр по тарифу — по ученикам этого списка (`tariffs_for_data`,
+        # инвариант students.md): действующие всегда, старый — только если
+        # стоит у кого-то из них. `tariffs_in_use` считал по всей базе с
+        # архивом и сотрудниками, и куратор видел «МАКСИМУМ»/«УВЕРЕННЫЙ»
+        # (владелец 30.09.2026).
+        "tariffs": tariffs_for_data(row["student"].tariff for row in all_rows),
         "full_access": full_access,
         "curators": review_curator_options(db, all_rows) if full_access else [],
         "status_unchecked": REVIEW_STATUS_UNCHECKED,
@@ -158,8 +163,12 @@ def student_review_detail(
         "subject": subject or "",
         "tariff": tariff or "",
         "subjects": MOCK_SUBJECTS,
-        # Фильтр по тарифу — только те, что у кого-то стоят.
-        "tariffs": tariffs_in_use(db),
+        # Фильтр по тарифу — действующие плюс старый, только если он стоит у
+        # этого ученика (`tariffs_for_data`, инвариант students.md). Раньше шёл
+        # `tariffs_in_use` по всей базе с архивом — куратор видел отработавшие
+        # «МАКСИМУМ»/«УВЕРЕННЫЙ» (владелец 30.09.2026).
+        "tariffs": tariffs_for_data([student.tariff]),
+        "can_score": can_score(user["role_rank"]),
         "nav_active": "students_review",
     })
 

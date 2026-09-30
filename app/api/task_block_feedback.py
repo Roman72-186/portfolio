@@ -12,7 +12,13 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.cache import invalidate_unread
 from app.db.database import get_db
-from app.dependencies import require_csrf, require_csrf_header, require_curator, require_student
+from app.dependencies import (
+    require_csrf,
+    require_csrf_header,
+    require_curator,
+    require_scorer,
+    require_student,
+)
 from app.models.notification import Notification
 from app.models.task_block import TaskBlock, TaskBlockSubmission
 from app.models.task_block_feedback import TaskBlockFeedback
@@ -23,6 +29,7 @@ from app.services.feedback import (  # общие проверки вложен�
     read_video_upload,
 )
 from app.services.notify import notify
+from app.services.rbac import can_score
 from app.services.student_access import get_student_for_staff_access
 from app.services.task_block_feedback import (
     get_or_create_feedback,
@@ -106,6 +113,8 @@ def _render(
         "request": request,
         "user": user,
         "viewer_role": viewer_role,
+        # Балл ставит только ГП и выше; куратор видит его только для чтения.
+        "can_score": viewer_role != "student" and can_score(user.get("role_rank", 1)),
         "student": student,
         "submission": submission,
         "submission_images": list_submission_images(db, submission.id),
@@ -160,10 +169,13 @@ def score_submission(
     submission_id: int,
     payload: ScorePayload,
     background_tasks: BackgroundTasks,
-    user: Annotated[dict, Depends(require_curator)],
+    user: Annotated[dict, Depends(require_scorer)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf_header)],
 ):
+    """Балл за любую сдачу в задании (домашка, контрольная на время, загрузка,
+    «фото + сдача») — только ГП и выше (`rbac.SCORE_MIN_RANK`, 30.09.2026).
+    Куратор проверяет работу отметкой «проверено», доработкой и диалогом."""
     submission = _submission_or_404(db, submission_id)
     _staff_guard(db, user, submission)
     previous_score = int(submission.score) if submission.score is not None else None

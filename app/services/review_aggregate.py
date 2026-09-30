@@ -83,6 +83,9 @@ class ReviewItem:
     # преподавателем, — чтобы проверяющий видел ход выбора с миниатюрами.
     compare_steps: list[dict] | None = None
     compare_pick_url: str | None = None
+    # Балл 0–100 у пробника (`work`) и сдачи в задании (`block_work`). Ставит
+    # только ГП (`rbac.can_score`), куратор видит его здесь, не открывая работу.
+    score: int | None = None
 
 
 def _task_block_items(
@@ -194,6 +197,7 @@ def _work_items(
             submitted_at=work.created_at,
             is_reviewed=work.score is not None or work.viewed_at is not None,
             review_url=f"/cabinet/students?student={student.id}&tab=mock-exams",
+            score=int(work.score) if work.score is not None else None,
         ))
     return items
 
@@ -312,6 +316,7 @@ def _block_work_items(
             review_comment=row["review_comment"],
             images=row["images"],
             needs_revision=row["needs_revision"],
+            score=row["score"],
         ))
     return items
 

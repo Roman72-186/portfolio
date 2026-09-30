@@ -178,6 +178,7 @@
 
         <div class="profile-hero-info">
             <div class="profile-role-tag">◉ Куратор</div>
+            <a class="profile-role-tag" href="/cabinet/curator/profile">✎ Изменить имя</a>
             <div class="dashboard-name-row">
                 <h1 class="profile-name">
                     {{ user.last_name or '' }} {{ user.first_name or user.name }}
@@ -186,6 +187,7 @@
                 {% include "partials/mobile_dashboard_theme_toggle.html" %}
             </div>
             <div class="profile-hero-sub">Выберите раздел для ежедневной работы</div>
+            {% if renamed %}<div class="profile-hero-sub" role="status">Имя сохранено</div>{% endif %}
         </div>
     </div>
 

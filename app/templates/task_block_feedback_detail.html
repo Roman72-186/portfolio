@@ -39,6 +39,9 @@
     <section class="card">
         <h2 class="section-label">Оценка</h2>
         {% if viewer_role != 'student' %}
+        {# Балл ставит только ГП и выше (`rbac.can_score`, 30.09.2026). Куратор
+           видит его только для чтения и проверяет работу кнопками ниже. #}
+        {% if can_score %}
         <form class="prg-form" data-score-form data-submission-id="{{ submission.id }}">
             <label class="prg-field" for="submission-score">Оценка от 0 до 100
                 <input id="submission-score" class="field-input" name="score" type="number" min="0" max="100" step="1" required value="{{ submission.score|int if submission.score is not none else '' }}">
@@ -48,6 +51,12 @@
                 <p class="prg-message" aria-live="polite"></p>
             </div>
         </form>
+        {% elif submission.score is not none %}
+        <p class="card-desc">Оценка Главного преподавателя</p>
+        <p><strong>{{ submission.score|int }} / 100</strong></p>
+        {% else %}
+        <p class="card-desc">Главный преподаватель ещё не поставил оценку.</p>
+        {% endif %}
         <div class="prg-actions">
             <button type="button" class="btn-outline" data-review-toggle
                     data-reviewed="{{ 'true' if submission.reviewed_at else 'false' }}">

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Как вас зовут{% endblock %}
+{% block extra_styles %}
+<link rel="stylesheet" href="/static/css/program.css?v=51">
+{% endblock %}
+{% block content %}
+{% include "_curator_nav.html" %}
+
+{# Сотрудник сам меняет своё имя (владелец 30.09.2026). Запись —
+   `user_management.rename_staff_self`: он же обновляет копию имени у учеников
+   (`curator_tag`) и тег с тем же именем. #}
+<div class="prg-page">
+    <a class="back-link" href="/cabinet/curator">← Назад</a>
+    <div class="prg-head">
+        <div class="prg-head-copy">
+            <h1>Как вас зовут</h1>
+            <p>Это имя видят ученики и Главный преподаватель: в переписке, карточках учеников и отчётах.</p>
+        </div>
+    </div>
+
+    {% if errors %}
+    <div class="alert alert-error" role="alert">
+        {% for e in errors %}<p>{{ e }}</p>{% endfor %}
+    </div>
+    {% endif %}
+    <form class="prg-form" method="post" action="/cabinet/curator/profile">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <label class="prg-field" for="staff-first-name">Имя
+            <input id="staff-first-name" class="field-input" type="text" name="first_name"
+                   maxlength="50" required autocomplete="given-name"
+                   value="{{ first_name }}">
+        </label>
+        <label class="prg-field" for="staff-last-name">Фамилия, можно оставить пустой
+            <input id="staff-last-name" class="field-input" type="text" name="last_name"
+                   maxlength="50" autocomplete="family-name"
+                   value="{{ last_name }}">
+        </label>
+        <div class="prg-actions">
+            <button type="submit" class="btn-blue">Сохранить</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

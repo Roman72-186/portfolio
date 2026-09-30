@@ -532,6 +532,7 @@ def get_self_score_stats(db: DBSession) -> dict:
 _AUDIT_LABELS = {
     "curator_assign": "Смена куратора",
     "tariff_change": "Смена тарифа",
+    "user_rename": "Смена имени",
     "user_delete": "Удаление",
     "user_block": "Блокировка",
     "user_unblock": "Разблокировка",

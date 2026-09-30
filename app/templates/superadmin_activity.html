@@ -683,6 +683,7 @@
                         <td data-label="Действие">
                             {% if a.action == 'curator_assign' %}<span class="act-badge ab-curator">{{ a.action_label }}</span>
                             {% elif a.action == 'tariff_change' %}<span class="act-badge ab-tariff">{{ a.action_label }}</span>
+                            {% elif a.action == 'user_rename' %}<span class="act-badge ab-curator">{{ a.action_label }}</span>
                             {% elif a.action == 'user_unblock' %}<span class="act-badge ab-ok">{{ a.action_label }}</span>
                             {% else %}<span class="act-badge ab-danger">{{ a.action_label }}</span>{% endif %}
                         </td>

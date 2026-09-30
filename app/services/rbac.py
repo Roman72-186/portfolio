@@ -45,6 +45,22 @@ def effective_role_rank(role_name: str | None, stored_rank: int) -> int:
     return stored_rank
 
 
+# Балл за любую работу ученика — пробник, отработка, промежуточный балл цикла,
+# любая сдача в задании (домашка, контрольная, загрузка, «фото + сдача») — и
+# закрытие цикла ставит только Главный преподаватель и выше (владелец
+# 30.09.2026: «куратор не может оценивать работу ученика… только дать обратную
+# связь… но он должен видеть оценку»). Отменяет решение 01.09.2026, когда балл
+# открыли куратору. Одна точка правды: эндпоинты берут `require_scorer`
+# (`app/dependencies.py`), шаблоны — флаг `can_score` отсюда. Сторож —
+# `tests/test_score_rank_guard.py`.
+SCORE_MIN_RANK = 4
+
+
+def can_score(role_rank: int) -> bool:
+    """Может ли сотрудник с этим уровнем (`effective_role_rank`) ставить балл."""
+    return role_rank >= SCORE_MIN_RANK
+
+
 # Разделы целиком: сама страница и всё под ней (`/cabinet/students/5/profile`,
 # `/cabinet/students/5/legacy-portfolio`). Граница — по сегменту, чтобы
 # `/cabinet/students-x` не проходил за `/cabinet/students`.

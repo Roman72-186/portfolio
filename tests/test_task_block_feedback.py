@@ -3,19 +3,27 @@
 from datetime import datetime, timezone
 from unittest.mock import patch
 
+import pytest
+
 from app.models.notification import Notification
-from app.models.task_block import BLOCK_UPLOAD, TaskBlock, TaskBlockSubmission
+from app.models.task_block import (
+    BLOCK_PHOTO_UPLOAD,
+    BLOCK_TIMED,
+    BLOCK_UPLOAD,
+    TaskBlock,
+    TaskBlockSubmission,
+)
 from app.models.task_block_feedback import TaskBlockFeedback, TaskBlockFeedbackMessage
 from app.models.tracker import TrackerTask
 
 
-def _submission(db, student, *, legacy_comment=None):
+def _submission(db, student, *, legacy_comment=None, block_type=BLOCK_UPLOAD):
     task = TrackerTask(
         title="Домашняя работа", kind="material", is_published=True, assign_to_all=True,
     )
     db.add(task)
     db.flush()
-    block = TaskBlock(task_id=task.id, block_type=BLOCK_UPLOAD, title="Сдать листы")
+    block = TaskBlock(task_id=task.id, block_type=block_type, title="Сдать листы")
     db.add(block)
     db.flush()
     submission = TaskBlockSubmission(
@@ -34,15 +42,17 @@ def _login(client, session_factory, user):
     client.cookies.set("session_id", session_factory(user).id)
 
 
-def test_staff_can_score_submission_without_marking_it_reviewed(
+def test_chief_teacher_can_score_submission_without_marking_it_reviewed(
     db, user_factory, session_factory, client,
 ):
+    """Балл за сдачу в задании ставит ГП (владелец 30.09.2026)."""
     curator = user_factory(vk_id=970_001, name="Куратор", role_name="куратор")
+    chief = user_factory(vk_id=970_010, name="Главный", role_name="админ")
     student = user_factory(vk_id=970_002, name="Ученик")
     student.curator_id = curator.id
     db.commit()
     submission = _submission(db, student)
-    _login(client, session_factory, curator)
+    _login(client, session_factory, chief)
 
     with patch("app.api.task_block_feedback.notify"):
         response = client.post(
@@ -53,13 +63,69 @@ def test_staff_can_score_submission_without_marking_it_reviewed(
     assert response.status_code == 200
     db.refresh(submission)
     assert float(submission.score) == 87
-    assert submission.scored_by_id == curator.id
+    assert submission.scored_by_id == chief.id
     assert submission.scored_at is not None
     assert submission.reviewed_at is None
     notification = db.query(Notification).filter_by(
         user_id=student.id, task_block_submission_id=submission.id
     ).one()
     assert "87 / 100" in notification.text
+
+
+@pytest.mark.parametrize("block_type", [BLOCK_UPLOAD, BLOCK_TIMED, BLOCK_PHOTO_UPLOAD])
+def test_curator_cannot_score_any_submission_type(
+    db, user_factory, session_factory, client, block_type,
+):
+    """Домашка, контрольная на время, «фото + сдача» — у всех одна сдача
+    `TaskBlockSubmission`, и балл куратору закрыт везде (владелец 30.09.2026).
+    Проверка работы куратором — «проверено», доработка и диалог."""
+    curator = user_factory(vk_id=970_011, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=970_012, name="Ученик")
+    student.curator_id = curator.id
+    db.commit()
+    submission = _submission(db, student, block_type=block_type)
+    _login(client, session_factory, curator)
+
+    with patch("app.api.task_block_feedback.notify"):
+        response = client.post(
+            f"/cabinet/staff/task-block-submissions/{submission.id}/score",
+            json={"score": 87},
+        )
+        revision = client.post(
+            f"/cabinet/staff/task-block-submissions/{submission.id}/revision",
+            json={"comment": "Дотяни тон"},
+        )
+
+    assert response.status_code == 403
+    assert revision.status_code == 200
+    db.refresh(submission)
+    assert submission.score is None
+    assert submission.needs_revision
+
+
+def test_curator_sees_chief_teacher_score_read_only(
+    db, user_factory, session_factory, client,
+):
+    curator = user_factory(vk_id=970_013, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=970_014, name="Ученик")
+    student.curator_id = curator.id
+    db.commit()
+    submission = _submission(db, student, block_type=BLOCK_TIMED)
+    _login(client, session_factory, curator)
+
+    page = client.get(f"/cabinet/staff/task-block-submissions/{submission.id}/feedback")
+    assert page.status_code == 200
+    assert 'id="submission-score"' not in page.text
+    assert "Главный преподаватель ещё не поставил оценку" in page.text
+    assert "Пометить проверенной" in page.text
+    assert "Вернуть на доработку" in page.text
+
+    submission.score = 64
+    db.commit()
+    page = client.get(f"/cabinet/staff/task-block-submissions/{submission.id}/feedback")
+    assert "Оценка Главного преподавателя" in page.text
+    assert "64 / 100" in page.text
+    assert 'id="submission-score"' not in page.text
 
 
 def test_score_rejects_values_outside_zero_to_hundred(

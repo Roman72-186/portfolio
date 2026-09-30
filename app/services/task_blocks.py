@@ -2256,6 +2256,7 @@ def submission_review_queue(
             "overrun": timed_overrun(block, state_map.get((block.id, student.id))),
             "reviewed": submission.reviewed_at is not None,
             "needs_revision": submission.needs_revision,
+            "score": int(submission.score) if submission.score is not None else None,
             "submitted_at": submission.submitted_at,
         })
     return items

@@ -411,7 +411,12 @@ def test_granted_archive_stays_read_only(client, db, session_factory, user_facto
         f"/cabinet/students/{student.id}/works/{work.id}/score",
         data={"score": "80"}, follow_redirects=False,
     )
-    assert resp.status_code == 404
+    # С 30.09.2026 балл куратору закрыт рангом (`require_scorer`) раньше, чем
+    # до ученика доходит проверка архива, — отсюда 403, а не прежний 404.
+    # Запись в архив под ГП стерегут тесты `test_archived_student_writes.py`.
+    assert resp.status_code == 403
+    db.refresh(work)
+    assert work.score is None
 
 
 def test_granted_archive_appears_in_curator_menu():

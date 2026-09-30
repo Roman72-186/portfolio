@@ -16,6 +16,7 @@ from app.models.user import User
 from app.services.portfolio_window import intake_portfolio_gate_required
 from app.services.rbac import (
     MODERATOR_ROLE_NAME,
+    SCORE_MIN_RANK,
     effective_role_rank,
     is_moderator_request_allowed,
 )
@@ -330,6 +331,8 @@ require_curator    = require_role(2)
 require_moderator  = require_role(3)
 require_admin_role = require_role(4)
 require_superadmin = require_role(5)
+# Балл за работу ученика и закрытие цикла — правило в `rbac.SCORE_MIN_RANK`.
+require_scorer     = require_role(SCORE_MIN_RANK)
 
 
 def require_learning_content_access(

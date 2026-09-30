@@ -25,7 +25,7 @@ from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
 from app.models.role import Role
 from app.models.session import Session
-from app.models.tag import UserTag
+from app.models.tag import Tag, UserTag
 from app.models.telegram_link_token import TelegramLinkToken
 from app.models.upload_log import UploadLog
 from app.models.user import User
@@ -137,6 +137,71 @@ def log_tariff_change(
         return
     _log(db, "tariff_change", performed_by_id, target_user_id,
          f"tariff: {old_tariff or '—'} → {new_tariff or '—'}")
+
+
+NAME_MAX_LEN = 50  # как у анкеты ученика (`cabinet_personal.py`) и `Tag.name`
+
+
+def staff_display_name(user: User) -> str:
+    """«Фамилия Имя» сотрудника — в этом виде имя куратора копируется в
+    `User.curator_tag` учеников (`cabinet_superadmin.py`, назначение куратора)
+    и предлагается тегом (`tags.get_curator_names`)."""
+    return f"{user.last_name or ''} {user.first_name or user.name}".strip()
+
+
+def validate_staff_name(first_name: str, last_name: str) -> list[str]:
+    errors = []
+    if not first_name:
+        errors.append("Напишите имя")
+    elif len(first_name) > NAME_MAX_LEN:
+        errors.append(f"Имя длиннее {NAME_MAX_LEN} символов")
+    if len(last_name) > NAME_MAX_LEN:
+        errors.append(f"Фамилия длиннее {NAME_MAX_LEN} символов")
+    return errors
+
+
+def rename_staff_self(db: DBSession, user: User, first_name: str, last_name: str) -> None:
+    """Сотрудник сам меняет своё имя (владелец 30.09.2026: кураторы заведены
+    как «Куратор 1…7» и должны переименоваться, «чтобы в системе они были уже
+    переименованы везде»).
+
+    Почти все экраны читают имя из `users` на каждом запросе, им хватает
+    `first_name`/`last_name`/`name`. Руками обновляются две копии «Фамилия
+    Имя»: `curator_tag` у своих учеников и тег с тем же именем, если его
+    когда-то завели. Тег переименовывается на месте — привязки учеников и
+    доступ по тегу держатся за `tag_id`. Если тег с новым именем уже есть,
+    старый не трогаем: слияние тегов — решение суперадмина, не побочный
+    эффект. Заголовки уже отправленных уведомлений остаются со старым
+    именем — это история.
+
+    Непустое `first_name` заодно защищает имя от перезаписи из ВК/Telegram
+    при входе (`auth.py::_keeps_manual_name`). Валидация — `validate_staff_name`
+    до вызова. Не коммитит.
+    """
+    first_name = first_name.strip()
+    last_name = last_name.strip()
+    old_display = staff_display_name(user)
+    old_full = user.name
+
+    user.first_name = first_name
+    user.last_name = last_name or None
+    user.name = f"{first_name} {last_name}".strip()
+    new_display = staff_display_name(user)
+    if new_display == old_display and user.name == old_full:
+        return
+
+    if new_display != old_display:
+        db.execute(
+            update(User)
+            .where(User.curator_id == user.id, User.curator_tag == old_display)
+            .values(curator_tag=new_display[:100])  # String(100), а «Фамилия Имя» до 101
+        )
+        old_tag = db.query(Tag).filter(Tag.name == old_display).first()
+        name_taken = db.query(Tag.id).filter(Tag.name == new_display).first() is not None
+        if old_tag is not None and not name_taken and len(new_display) <= NAME_MAX_LEN:
+            old_tag.name = new_display
+
+    _log(db, "user_rename", user.id, user.id, f"name: {old_full} → {user.name}")
 
 
 def tariffs_in_use(db: DBSession) -> list[str]:

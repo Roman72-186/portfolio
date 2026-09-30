@@ -67,6 +67,7 @@
                 <div class="prg-meta">
                     {% if item.subject %}<span>{{ item.subject }}</span>{% endif %}
                     {% if item.submitted_at %}<span>{{ item.submitted_at.strftime('%d.%m %H:%M') }}</span>{% endif %}
+                    {% if item.score is not none %}<span class="chip">{{ item.score }} / 100</span>{% endif %}
                     {% if item.needs_revision %}
                     <span class="chip">На доработке</span>
                     {% else %}
@@ -135,7 +136,7 @@
             <div class="prg-item-actions">
                 {% if item.domain in ('task_block', 'block_work') %}
                 {% if item.domain == 'block_work' %}
-                <a class="btn-blue" href="{{ item.review_url }}">Оценить и ответить</a>
+                <a class="btn-blue" href="{{ item.review_url }}">{{ 'Оценить и ответить' if can_score else 'Ответить' }}</a>
                 {% endif %}
                 <button type="button" class="btn-outline" data-review-toggle
                         data-reviewed="{{ 'true' if item.is_reviewed else 'false' }}">

@@ -23,6 +23,7 @@ from app.services import feedback as fb_service
 from app.services import s3 as s3_service
 from app.services.student_access import get_student_for_staff_access
 from app.services.tz import MSK_TZ
+from app.services.user_management import rename_staff_self, validate_staff_name
 from app.services.utils import study_duration_text, group_works
 from app.tmpl import format_rich_text, templates
 
@@ -127,7 +128,60 @@ def cabinet_curator_dashboard(
         "request": request,
         "user": user,
         "nav_active": "dashboard",
+        "renamed": request.query_params.get("renamed") == "1",
     })
+
+
+# ── Своё имя ─────────────────────────────────────────────────────────────────
+#
+# Кураторы заведены как «Куратор 1…7» (владелец 30.09.2026) — переименоваться
+# могут сами. Адрес общий, ни в один закрываемый раздел не входит
+# (`section_access._RULES`): закрыть сотруднику смену своего имени незачем.
+
+def _profile_page(request: Request, user: dict, first_name: str, last_name: str,
+                  errors: list[str] | None = None, status_code: int = 200) -> HTMLResponse:
+    return templates.TemplateResponse(request, "cabinet_curator_profile.html", {
+        "request": request,
+        "user": user,
+        "first_name": first_name,
+        "last_name": last_name,
+        "errors": errors or [],
+        "nav_active": "dashboard",
+    }, status_code=status_code)
+
+
+@router.get("/curator/profile", response_class=HTMLResponse)
+def curator_profile_page(
+    request: Request,
+    user: Annotated[dict, Depends(require_curator)],
+):
+    return _profile_page(
+        request, user,
+        first_name=user.get("first_name") or user.get("name") or "",
+        last_name=user.get("last_name") or "",
+    )
+
+
+@router.post("/curator/profile", response_class=HTMLResponse)
+def curator_profile_save(
+    request: Request,
+    user: Annotated[dict, Depends(require_curator)],
+    db: Annotated[DBSession, Depends(get_db)],
+    _csrf: Annotated[None, Depends(require_csrf)],
+    first_name: str = Form(""),
+    last_name: str = Form(""),
+):
+    first_name = first_name.strip()
+    last_name = last_name.strip()
+    errors = validate_staff_name(first_name, last_name)
+    if errors:
+        return _profile_page(request, user, first_name, last_name, errors, status_code=422)
+    me = db.get(User, user["user_id"])
+    if me is None:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    rename_staff_self(db, me, first_name, last_name)
+    db.commit()
+    return RedirectResponse("/cabinet/curator?renamed=1", status_code=302)
 
 
 # ── Reports (видео-отчёты куратора) ───────────────────────────────────────────

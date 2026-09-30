@@ -968,8 +968,9 @@ def test_close_cycle_closes_and_releases_lock(client, admin_user, regular_user, 
     assert lock.is_locked is False
 
 
-def test_close_cycle_curator_can_close_own_student(client, db, user_factory, session_factory):
-    """Куратор (не только админ/SA) может закрыть цикл своего ученика."""
+def test_close_cycle_curator_cannot_close_own_student(client, db, user_factory, session_factory):
+    """Цикл закрывает только ГП и выше (владелец 30.09.2026) — даже свой
+    ученик и выставленный балл куратору закрытия не дают."""
     curator = user_factory(vk_id=941001, name="Curator", role_name="куратор")
     student = user_factory(vk_id=941002, name="Student", role_name="ученик")
     student.curator_id = curator.id
@@ -981,9 +982,9 @@ def test_close_cycle_curator_can_close_own_student(client, db, user_factory, ses
     sess = session_factory(curator)
     client.cookies.set("session_id", sess.id)
     resp = client.post(f"/cabinet/feedback/{cycle.id}/close", headers={"Accept": "application/json"})
-    assert resp.status_code == 200
+    assert resp.status_code == 403
     db.refresh(cycle)
-    assert cycle.closed_at is not None
+    assert cycle.closed_at is None
 
 
 def test_close_cycle_curator_cannot_close_foreign_student(client, db, user_factory, session_factory):
@@ -1057,8 +1058,9 @@ def test_scoring_work_does_not_close_cycle(client, admin_user, regular_user, ses
     assert lock.is_locked is True
 
 
-def test_curator_can_score_own_student_work(client, db, user_factory, session_factory):
-    """Решение владельца 01.09.2026: куратор тоже ставит балл, не только rank ≥4."""
+def test_curator_cannot_score_own_student_work(client, db, user_factory, session_factory):
+    """Владелец 30.09.2026: балл ставит только ГП, куратор даёт обратную связь.
+    С 01.09 по 30.09.2026 куратор ставил балл своим ученикам."""
     curator = user_factory(vk_id=930_020, name="Куратор Своя", role_name="куратор")
     student = user_factory(vk_id=930_021, name="Ученик")
     student.curator_id = curator.id
@@ -1074,9 +1076,9 @@ def test_curator_can_score_own_student_work(client, db, user_factory, session_fa
         follow_redirects=False,
     )
 
-    assert resp.status_code == 302
+    assert resp.status_code == 403
     db.refresh(work)
-    assert work.score == 80
+    assert work.score is None
 
 
 def test_curator_cannot_score_foreign_student_work(client, db, user_factory, session_factory):
@@ -1122,11 +1124,13 @@ def test_moderator_cannot_score_student_work(client, db, user_factory, session_f
     assert work.score is None
 
 
-def test_curator_can_close_cycle_after_scoring_own_student(
+def test_chief_teacher_scores_and_closes_cycle_of_curator_student(
     client, db, user_factory, session_factory
 ):
-    """Полная цепочка решения 1: куратор ставит балл финалу и сам закрывает цикл."""
+    """Полная цепочка после 30.09.2026: ГП ставит балл финалу ученика куратора
+    и закрывает цикл."""
     curator = user_factory(vk_id=930_025, name="Куратор Своя", role_name="куратор")
+    chief = user_factory(vk_id=930_031, name="Главный", role_name="админ")
     student = user_factory(vk_id=930_026, name="Ученик")
     student.curator_id = curator.id
     db.add(student)
@@ -1134,16 +1138,19 @@ def test_curator_can_close_cycle_after_scoring_own_student(
     cycle = _mk_cycle(db, student.id)
     work = _mk_final_work(db, student.id, cycle.id, score=None)
 
-    client.cookies.set("session_id", session_factory(curator).id)
-    client.post(
+    client.cookies.set("session_id", session_factory(chief).id)
+    resp = client.post(
         f"/cabinet/students/{student.id}/works/{work.id}/score",
         data={"score": "80", "comment": "", "tab": "mock-exams"},
         follow_redirects=False,
     )
+    assert resp.status_code == 302
     resp = client.post(f"/cabinet/feedback/{cycle.id}/close", headers={"Accept": "application/json"})
 
     assert resp.status_code == 200
+    db.refresh(work)
     db.refresh(cycle)
+    assert work.score == 80
     assert cycle.closed_at is not None
 
 
@@ -1192,12 +1199,12 @@ def test_curator_cannot_open_foreign_student_feedback_detail(
     assert "Это не ваш студент" in resp.text
 
 
-def test_curator_sees_score_form_in_own_student_feedback_dialog(
+def test_curator_sees_no_score_form_in_feedback_dialog(
     client, db, user_factory, session_factory
 ):
-    """Advisor-ревью 01.09.2026: одного ослабленного эндпоинта мало — форма
-    оценки в диалоге была спрятана за `viewer_role in ('admin', 'superadmin')`
-    и куратор физически не мог до неё дотянуться, хотя POST уже пропускал."""
+    """Владелец 30.09.2026: куратору в диалоге нет ни формы балла, ни поля
+    промежуточного балла, ни кнопки «Закрыть цикл» — только обратная связь
+    и пометка, что балл ещё не поставлен."""
     curator = user_factory(vk_id=930_029, name="Куратор", role_name="куратор")
     student = user_factory(vk_id=930_030, name="Ученик")
     student.curator_id = curator.id
@@ -1210,8 +1217,85 @@ def test_curator_sees_score_form_in_own_student_feedback_dialog(
     resp = client.get(f"/cabinet/curator/feedback/{cycle.id}")
 
     assert resp.status_code == 200
+    assert "Оценить финальную работу" not in resp.text
+    assert 'id="score-form-' not in resp.text
+    assert 'name="intermediate_score"' not in resp.text
+    assert 'id="dlg-close-btn"' not in resp.text
+    assert "Первая обратная связь" in resp.text
+    assert "Главный преподаватель ещё не поставил оценку" in resp.text
+
+
+def test_curator_sees_chief_teacher_score_in_feedback_dialog(
+    client, db, user_factory, session_factory
+):
+    """Балл ГП куратор видит только для чтения, с комментарием."""
+    curator = user_factory(vk_id=930_032, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=930_033, name="Ученик")
+    student.curator_id = curator.id
+    db.add(student)
+    db.commit()
+    cycle = _mk_cycle(db, student.id)
+    work = _mk_final_work(db, student.id, cycle.id, score=72)
+    work.comment = "Композиция держится"
+    db.commit()
+
+    client.cookies.set("session_id", session_factory(curator).id)
+    resp = client.get(f"/cabinet/curator/feedback/{cycle.id}")
+
+    assert resp.status_code == 200
+    assert "Оценка Главного преподавателя" in resp.text
+    assert "72 / 100" in resp.text
+    assert "Композиция держится" in resp.text
+    assert "Изменить балл" not in resp.text
+    assert 'id="dlg-close-btn"' not in resp.text
+
+
+def test_chief_teacher_sees_score_form_and_intermediate_field(
+    client, db, user_factory, session_factory
+):
+    chief = user_factory(vk_id=930_034, name="Главный", role_name="админ")
+    student = user_factory(vk_id=930_035, name="Ученик")
+    cycle = _mk_cycle(db, student.id)
+    _mk_final_work(db, student.id, cycle.id, score=None)
+
+    client.cookies.set("session_id", session_factory(chief).id)
+    resp = client.get(f"/cabinet/admin/feedback/{cycle.id}")
+
+    assert resp.status_code == 200
     assert "Оценить финальную работу" in resp.text
-    assert 'name="score"' in resp.text
+    assert 'name="intermediate_score"' in resp.text
+
+
+def test_curator_intermediate_score_rejected_but_feedback_goes(
+    client, db, user_factory, session_factory
+):
+    """Промежуточный балл от куратора — 403 целиком (не молчаливый пропуск);
+    та же обратная связь без балла уходит как раньше."""
+    curator = user_factory(vk_id=930_036, name="Куратор", role_name="куратор")
+    student = user_factory(vk_id=930_037, name="Ученик")
+    student.curator_id = curator.id
+    db.add(student)
+    db.commit()
+    cycle = _mk_cycle(db, student.id)
+    work = _mk_final_work(db, student.id, cycle.id, score=None)
+
+    client.cookies.set("session_id", session_factory(curator).id)
+    resp = client.post(
+        f"/cabinet/feedback/{work.id}/message",
+        data={"impression": "Хорошо", "intermediate_score": "60"},
+        headers={"Accept": "application/json"},
+    )
+    assert resp.status_code == 403
+    db.refresh(cycle)
+    assert cycle.intermediate_score is None
+
+    resp = client.post(
+        f"/cabinet/feedback/{work.id}/message",
+        data={"impression": "Хорошо"},
+        headers={"Accept": "application/json"},
+    )
+    assert resp.status_code == 200
+    assert db.query(FeedbackMessage).count() == 1
 
 
 def test_staff_portfolio_json_returns_cycle_works_by_subject(

@@ -31,6 +31,7 @@ from app.dependencies import (
     require_csrf,
     require_csrf_header,
     require_curator,
+    require_scorer,
 )
 from app.models.session import Session
 from app.models.exam_assignment import ExamTicket
@@ -39,6 +40,7 @@ from app.models.legacy_portfolio_photo import LegacyPortfolioPhoto
 from app.models.mock_exam_attempt import MockExamAttempt
 from app.models.mock_exam_lock import MockExamLock
 from app.models.notification import Notification
+from app.services.rbac import can_score as role_can_score
 from app.services.section_access import has_grant
 from app.services.notify import notify
 from app.services.point_a import maybe_notify_point_a_level, student_point_a
@@ -357,7 +359,7 @@ def _render_students_panel(
         for uid, ws in works_by_uid.items():
             has_case_by_user[uid] = has_case_growth(ws)
 
-    can_score = user["role_rank"] >= 4 and not archived_b
+    can_score = role_can_score(user["role_rank"]) and not archived_b
     if students and can_score:
         _ids = [s.id for s in students]
         mock_count_rows = (
@@ -916,7 +918,7 @@ def get_statistics(
 def score_work(
     student_id: int,
     work_id: int,
-    user: Annotated[dict, Depends(require_curator)],
+    user: Annotated[dict, Depends(require_scorer)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
     background_tasks: BackgroundTasks,
@@ -924,13 +926,14 @@ def score_work(
     comment: str = Form(""),
     tab: str = Form("mock-exams"),
 ):
-    """Решение владельца 01.09.2026: куратор тоже ставит балл (не только rank ≥4).
+    """Балл ставит только Главный преподаватель и выше (`rbac.SCORE_MIN_RANK`,
+    владелец 30.09.2026). С 01.09 по 30.09.2026 балл ставил и куратор — он
+    теперь даёт обратную связь и видит балл ГП.
 
-    `_check_access` пускает куратора только к своим ученикам (полный доступ —
-    с ранга 4) и закрывает архивного и удалённого ученика на запись. Модератор
-    сюда не доходит: его запись отсекает белый список `rbac.py`, а по рангу
-    (`effective_role_rank`) он равен ГП — расширят ему список на запись, и
-    он получит всех учеников.
+    Адрес общий: им же пользуются «Проверка пробников» и «Проверка отработок»
+    ГП, поэтому закрыт рангом, а не удалён. `_check_access` закрывает
+    архивного и удалённого ученика на запись. Модератор сюда не доходит: его
+    запись отсекает белый список `rbac.py`.
     """
     _check_access(student_id, user, db)
     work = db.query(Work).filter(Work.id == work_id, Work.user_id == student_id).first()

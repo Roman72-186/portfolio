@@ -16,7 +16,10 @@ Staff (куратор / админ / суперадмин):
   GET  /cabinet/admin/feedback/{cycle_id}       — диалог цикла (админ)
   GET  /cabinet/superadmin/feedback/{cycle_id}  — диалог цикла (суперадмин)
   POST /cabinet/feedback/{cycle_id}/close       — закрыть цикл вручную после ОС
-                                                   (куратор/админ/SA, требует выставленного балла)
+                                                   (ГП/SA, требует выставленного балла)
+
+Балл (итоговый и промежуточный) и закрытие цикла — только ГП и выше
+(`rbac.can_score`, владелец 30.09.2026). Куратор даёт обратную связь и видит балл.
 
 """
 from __future__ import annotations
@@ -35,10 +38,12 @@ from app.db.database import get_db
 from app.dependencies import (
     get_current_user,
     require_curator,
+    require_scorer,
     require_superadmin,
     require_csrf,
 )
 from app.services.notify import notify
+from app.services.rbac import can_score
 from app.models.exam_cycle import ExamCycle
 from app.models.exam_assignment import ExamTicket
 from app.models.feedback import Feedback, FeedbackMessage
@@ -368,6 +373,14 @@ async def post_dialog_message(
                 status_code=422,
                 detail="Промежуточный балл должен быть от 0 до 100",
             )
+        # Балл — только ГП и выше (`rbac.can_score`, 30.09.2026). Куратору
+        # поле не рисуется; пришло всё равно — отказ целиком, а не молчаливый
+        # пропуск: иначе ОС уйдёт, а куратор решит, что балл сохранился.
+        if not can_score(role_rank):
+            raise HTTPException(
+                status_code=403,
+                detail="Балл ставит Главный преподаватель",
+            )
 
     # Первая обратная связь staff: структурная форма из 4 пунктов
     # склеивается в одно сообщение с заголовками. Только если свободный
@@ -536,6 +549,7 @@ def _staff_dialog_detail(db: DBSession, request: Request, user: dict, cycle_id: 
         "target_work_id": payload.get("target_work_id"),
         "has_staff_message": payload.get("has_staff_message", False),
         "viewer_role": viewer_role,
+        "can_score": can_score(user["role_rank"]),
         "student": {"id": student.id, "name": student.name},
         "back_url": f"/cabinet/staff/students-review/{student.id}",
         "back_label": "К проверке ученика",
@@ -577,11 +591,12 @@ def superadmin_feedback_detail(
 @router.post("/cabinet/feedback/{cycle_id}/close")
 def close_cycle_route(
     cycle_id: int,
-    user: Annotated[dict, Depends(require_curator)],
+    user: Annotated[dict, Depends(require_scorer)],
     db: Annotated[DBSession, Depends(get_db)],
     _csrf: Annotated[None, Depends(require_csrf)],
 ):
-    """Куратор/админ/SA закрывает цикл вручную после того, как дана обратная связь.
+    """ГП/SA закрывает цикл вручную после того, как дана обратная связь.
+    Куратору закрытие не положено с 30.09.2026 (`rbac.can_score`).
 
     Балл ставится раньше отдельным шагом (score_work) и не закрывает цикл сам.
     close_cycle проверяет, что финалке Пробника уже выставлен балл — иначе 409.

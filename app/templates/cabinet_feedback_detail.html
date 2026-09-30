@@ -248,6 +248,7 @@
                         <label class="dlg-sf-label">Рекомендации</label>
                         <textarea data-rich-text name="recommendations" rows="2" placeholder="Что доработать, на что обратить внимание"></textarea>
                     </div>
+                    {% if can_score %}
                     <div class="dlg-sf-score">
                         <label class="dlg-sf-label" for="dlg-intermediate-score">Промежуточный балл для отработки</label>
                         <div class="dlg-sf-score-row">
@@ -255,6 +256,7 @@
                             <span class="dlg-sf-score-hint">Сохраняется отдельно и не закрывает цикл</span>
                         </div>
                     </div>
+                    {% endif %}
                     <div class="dlg-sf-field">
                         <label class="dlg-sf-label" for="dlg-video-link">Ссылка на видео (вместо загрузки файла)</label>
                         <input id="dlg-video-link" class="field-input" type="url" name="video_link" placeholder="https://...">
@@ -315,10 +317,30 @@
         </section>
     {% endif %}
 
-    {# Решение владельца 01.09.2026: куратор тоже ставит балл (не только
-       admin/superadmin) — эндпоинт уже ослаблен (score_work, require_curator
-       + скоуп по curator_id), здесь только открыть форму. #}
-    {% if viewer_role in ('curator', 'admin', 'superadmin') and not cycle.closed_at and attempts %}
+    {# Балл и закрытие цикла — только ГП и выше (`rbac.can_score`, владелец
+       30.09.2026; с 01.09 балл ставил и куратор). Куратор видит балл ГП
+       только для чтения. #}
+    {% if viewer_role == 'curator' and not cycle.closed_at and attempts %}
+        {% set a = attempts|last %}
+        <section class="dlg-close-zone">
+            <div class="dlg-score">
+                <div class="dlg-score-label">Оценка Главного преподавателя</div>
+                {% if a.score is not none %}
+                    {% set s = a.score|int %}
+                    <div class="dlg-score-current">
+                        <span class="dlg-attempt-score {% if s < 50 %}red{% elif s < 70 %}orange{% elif s < 85 %}lime{% else %}green{% endif %}">{{ s }} / 100</span>
+                    </div>
+                    {% if a.comment %}
+                        <div class="dlg-score-current-comment">{{ a.comment | rich_text | safe }}</div>
+                    {% endif %}
+                {% else %}
+                    <div class="dlg-score-hint">Главный преподаватель ещё не поставил оценку.</div>
+                {% endif %}
+            </div>
+        </section>
+    {% endif %}
+
+    {% if can_score and viewer_role in ('admin', 'superadmin') and not cycle.closed_at and attempts %}
         {% set a = attempts|last %}
         {% set score_cls = 'no-score' %}
         {% if a.score is not none %}
@@ -367,7 +389,7 @@
         </section>
     {% endif %}
 
-    {% if viewer_role in ('curator', 'admin', 'superadmin') and not cycle.closed_at and attempts %}
+    {% if can_score and viewer_role in ('admin', 'superadmin') and not cycle.closed_at and attempts %}
         {% set last_attempt = attempts|last %}
         {% if last_attempt.score is not none %}
         <section class="dlg-close-zone">
